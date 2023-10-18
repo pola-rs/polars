@@ -136,7 +136,7 @@ impl<T> Buffer<T> {
     pub fn sliced(self, offset: usize, length: usize) -> Self {
         assert!(
             offset + length <= self.len(),
-            "the offset of the new Buffer cannot exceed the existing length"
+            "the `offset` of the new Buffer cannot exceed the existing length"
         );
         // Safety: we just checked bounds
         unsafe { self.sliced_unchecked(offset, length) }
@@ -149,7 +149,7 @@ impl<T> Buffer<T> {
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(
             offset + length <= self.len(),
-            "the offset of the new Buffer cannot exceed the existing length"
+            "the `offset` of the new Buffer cannot exceed the existing length"
         );
         // Safety: we just checked bounds
         unsafe { self.slice_unchecked(offset, length) }

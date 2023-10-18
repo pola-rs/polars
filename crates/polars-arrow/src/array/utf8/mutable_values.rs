@@ -79,7 +79,7 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
     ) -> PolarsResult<Self> {
         try_check_utf8(&offsets, &values)?;
         if data_type.to_physical_type() != Self::default_data_type().to_physical_type() {
-            polars_bail!(ComputeError: "MutableUtf8ValuesArray can only be initialized with DataType::Utf8 or DataType::LargeUtf8")
+            polars_bail!(ComputeError: "`MutableUtf8ValuesArray` can only be initialized with `DataType::Utf8` or `DataType::LargeUtf8`")
         }
 
         Ok(Self {
@@ -103,10 +103,10 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
     /// This function is `O(1)`
     pub unsafe fn new_unchecked(data_type: DataType, offsets: Offsets<O>, values: Vec<u8>) -> Self {
         try_check_offsets_bounds(&offsets, values.len())
-            .expect("The length of the values must be equal to the last offset value");
+            .expect("the length of the `values` must be equal to the last offset value");
 
         if data_type.to_physical_type() != Self::default_data_type().to_physical_type() {
-            panic!("MutableUtf8ValuesArray can only be initialized with DataType::Utf8 or DataType::LargeUtf8")
+            panic!("`MutableUtf8ValuesArray` can only be initialized with `DataType::Utf8` or `DataType::LargeUtf8`")
         }
 
         Self {

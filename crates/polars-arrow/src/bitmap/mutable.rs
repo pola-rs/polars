@@ -80,7 +80,7 @@ impl MutableBitmap {
     pub fn try_new(bytes: Vec<u8>, length: usize) -> PolarsResult<Self> {
         if length > bytes.len().saturating_mul(8) {
             polars_bail!(InvalidOperation:
-                "The length of the bitmap ({}) must be `<=` to the number of bytes times 8 ({})",
+                "the length of the bitmap ({}) must be `<=` to the number of bytes times 8 ({})",
                 length,
                 bytes.len().saturating_mul(8)
             )

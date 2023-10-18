@@ -14,7 +14,7 @@ where
     I: Iterator<Item = std::result::Result<Option<P>, E>>,
 {
     let (_, upper) = iterator.size_hint();
-    let len = upper.expect("trusted_len_unzip requires an upper limit");
+    let len = upper.expect("`trusted_len_unzip` requires an upper limit");
 
     let mut null = MutableBitmap::with_capacity(len);
     let mut offsets = Vec::<O>::with_capacity(len + 1);
@@ -40,7 +40,7 @@ where
     assert_eq!(
         dst.offset_from(offsets.as_ptr()) as usize,
         len + 1,
-        "Trusted iterator length was not accurately reported"
+        "trusted iterator length was not accurately reported"
     );
     offsets.set_len(len + 1);
 
@@ -62,7 +62,7 @@ where
     I: Iterator<Item = Option<P>>,
 {
     let (_, upper) = iterator.size_hint();
-    let len = upper.expect("trusted_len_unzip requires an upper limit");
+    let len = upper.expect("`trusted_len_unzip` requires an upper limit");
 
     let mut offsets = Offsets::<O>::with_capacity(len);
     let mut values = Vec::<u8>::new();
@@ -91,7 +91,7 @@ where
     I: Iterator<Item = P>,
 {
     let (_, upper) = iterator.size_hint();
-    let len = upper.expect("trusted_len_unzip requires an upper limit");
+    let len = upper.expect("`trusted_len_unzip` requires an upper limit");
 
     let mut offsets = Offsets::<O>::with_capacity(len);
     let mut values = Vec::<u8>::new();
@@ -169,7 +169,7 @@ pub(crate) unsafe fn extend_from_trusted_len_iter<O, I, P>(
     I: Iterator<Item = Option<P>>,
 {
     let (_, upper) = iterator.size_hint();
-    let additional = upper.expect("extend_from_trusted_len_iter requires an upper limit");
+    let additional = upper.expect("`extend_from_trusted_len_iter` requires an upper limit");
 
     offsets.reserve(additional);
     validity.reserve(additional);

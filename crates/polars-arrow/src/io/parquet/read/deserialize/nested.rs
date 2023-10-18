@@ -169,7 +169,7 @@ where
                 )),
                 other => {
                     polars_bail!(ComputeError:
-                        "deserializing UInt32 from {other:?}'s parquet"
+                        "deserializing `UInt32` from {other:?}'s parquet"
                     )
                 },
             }
@@ -283,7 +283,7 @@ where
                     )),
                     PhysicalType::FixedLenByteArray(n) if n > 16 => {
                         polars_bail!(
-                            ComputeError: "Can't decode Decimal128 type from `FixedLenByteArray` of len {n}"
+                            ComputeError: "cannot decode `Decimal128` type from `FixedLenByteArray` of len {n}"
                         )
                     },
                     PhysicalType::FixedLenByteArray(n) => {
@@ -318,7 +318,7 @@ where
                     },
                     _ => {
                         polars_bail!(ComputeError:
-                            "Deserializing type for Decimal {:?} from parquet",
+                            "deserializing type for `Decimal` {:?} from parquet",
                             type_.physical_type
                         )
                     },
@@ -407,12 +407,12 @@ where
                     },
                     PhysicalType::FixedLenByteArray(n) => {
                         polars_bail!(ComputeError:
-                            "Can't decode Decimal256 type from from `FixedLenByteArray` of len {n}"
+                            "cannot decode `Decimal256` type from from `FixedLenByteArray` of len {n}"
                         )
                     },
                     _ => {
                         polars_bail!(ComputeError:
-                            "Deserializing type for Decimal {:?} from parquet",
+                            "deserializing type for `Decimal` {:?} from parquet",
                             type_.physical_type
                         )
                     },
@@ -460,7 +460,7 @@ where
             },
             other => {
                 polars_bail!(ComputeError:
-                    "Deserializing type {other:?} from parquet"
+                    "deserializing type {other:?} from parquet"
                 )
             },
         },
@@ -584,7 +584,7 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + Pages>(
          */
         other => {
             polars_bail!(ComputeError:
-                "Reading nested dictionaries of type {other:?}"
+                "reading nested dictionaries of type {other:?}"
             )
         },
     })

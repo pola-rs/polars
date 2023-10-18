@@ -57,7 +57,7 @@ fn take_indices_validity<T: NativeType, I: Index>(
                     if !validity.get_bit(i) {
                         T::default()
                     } else {
-                        panic!("Out-of-bounds index {index}")
+                        panic!("out-of-bounds index {index}")
                     }
                 },
             }

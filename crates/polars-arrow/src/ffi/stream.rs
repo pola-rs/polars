@@ -66,11 +66,11 @@ impl<Iter: DerefMut<Target = ArrowArrayStream>> ArrowArrayStreamReader<Iter> {
         };
 
         if iter.get_next.is_none() {
-            polars_bail!(InvalidOperation: "the c stream must contain a non-null get_next")
+            polars_bail!(InvalidOperation: "the C stream must contain a non-null `get_next`")
         };
 
         if iter.get_last_error.is_none() {
-            polars_bail!(InvalidOperation: "The C stream MUST contain a non-null get_last_error")
+            polars_bail!(InvalidOperation: "The C stream must contain a non-null `get_last_error`")
         };
 
         let mut field = ArrowSchema::empty();
@@ -78,7 +78,7 @@ impl<Iter: DerefMut<Target = ArrowArrayStream>> ArrowArrayStreamReader<Iter> {
             unsafe { (f)(&mut *iter, &mut field) }
         } else {
             polars_bail!(InvalidOperation:
-                            "The C stream MUST contain a non-null get_schema"
+                            "The C stream must contain a non-null `get_schema`"
             )
         };
 
@@ -140,7 +140,7 @@ unsafe extern "C" fn get_next(iter: *mut ArrowArrayStream, array: *mut ArrowArra
             let item_dt = item.data_type();
             let expected_dt = private.field.data_type();
             if item_dt != expected_dt {
-                private.error = Some(CString::new(format!("The iterator produced an item of data type {item_dt:?} but the producer expects data type {expected_dt:?}").as_bytes().to_vec()).unwrap());
+                private.error = Some(CString::new(format!("the iterator produced an item of data type `{item_dt:?}` but the producer expects data type `{expected_dt:?}`").as_bytes().to_vec()).unwrap());
                 return 2001; // custom application specific error (since this is never a result of this interface)
             }
 

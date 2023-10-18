@@ -180,7 +180,7 @@ unsafe fn get_buffer_ptr<T: NativeType>(
 ) -> PolarsResult<*mut T> {
     if array.buffers.is_null() {
         polars_bail!( ComputeError:
-            "an ArrowArray of type {data_type:?} must have non-null buffers"
+            "an `ArrowArray` of type `{data_type:?}` must have non-null buffers"
         );
     }
 
@@ -190,7 +190,7 @@ unsafe fn get_buffer_ptr<T: NativeType>(
         != 0
     {
         polars_bail!( ComputeError:
-            "an ArrowArray of type {data_type:?}
+            "an `ArrowArray` of type `{data_type:?}`
             must have buffer {index} aligned to type {}",
             std::any::type_name::<*mut *const u8>()
         );
@@ -199,15 +199,15 @@ unsafe fn get_buffer_ptr<T: NativeType>(
 
     if index >= array.n_buffers as usize {
         polars_bail!(ComputeError:
-            "An ArrowArray of type {data_type:?}
-             must have buffer {index}."
+            "an ArrowArray of type `{data_type:?}`
+             must have buffer {index}"
         )
     }
 
     let ptr = *buffers.add(index);
     if ptr.is_null() {
         polars_bail!(ComputeError:
-            "An array of type {data_type:?}
+            "an array of type `{data_type:?}`
             must have a non-null buffer {index}"
         )
     }
@@ -290,13 +290,13 @@ fn buffer_offset(array: &ArrowArray, data_type: &DataType, i: usize) -> usize {
         (LargeUtf8, 2) | (LargeBinary, 2) | (Utf8, 2) | (Binary, 2) => 0,
         (FixedSizeBinary, 1) => {
             if let DataType::FixedSizeBinary(size) = data_type.to_logical_type() {
-                let offset: usize = array.offset.try_into().expect("Offset to fit in `usize`");
+                let offset: usize = array.offset.try_into().expect("offset to fit in `usize`");
                 offset * *size
             } else {
                 unreachable!()
             }
         },
-        _ => array.offset.try_into().expect("Offset to fit in `usize`"),
+        _ => array.offset.try_into().expect("offset to fit in `usize`"),
     }
 }
 
@@ -369,13 +369,13 @@ unsafe fn create_child(
 
     // catch what we can
     if array.children.is_null() {
-        polars_bail!(ComputeError: "an ArrowArray of type {data_type:?} must have non-null children");
+        polars_bail!(ComputeError: "an `ArrowArray` of type `{data_type:?}` must have non-null children");
     }
 
     if index >= array.n_children as usize {
         polars_bail!(ComputeError:
-            "an ArrowArray of type {data_type:?}
-             must have child {index}."
+            "an `ArrowArray` of type `{data_type:?}`
+             must have child {index}"
         );
     }
 
@@ -385,7 +385,7 @@ unsafe fn create_child(
     // catch what we can
     if arr_ptr.is_null() {
         polars_bail!(ComputeError:
-            "an array of type {data_type:?}
+            "an array of type `{data_type:?}`
             must have a non-null child {index}"
         )
     }
@@ -409,7 +409,7 @@ unsafe fn create_dictionary(
         // catch what we can
         if array.dictionary.is_null() {
             polars_bail!(ComputeError:
-                "an array of type {data_type:?}
+                "an array of type `{data_type:?}`
                 must have a non-null dictionary"
             )
         }

@@ -73,7 +73,7 @@ impl<O: Offset> MutableBinaryValuesArray<O> {
         try_check_offsets_bounds(&offsets, values.len())?;
 
         if data_type.to_physical_type() != Self::default_data_type().to_physical_type() {
-            polars_bail!(ComputeError: "MutableBinaryValuesArray can only be initialized with DataType::Binary or DataType::LargeBinary",)
+            polars_bail!(ComputeError: "`MutableBinaryValuesArray` can only be initialized with `DataType::Binary` or `DataType::LargeBinary`",)
         }
 
         Ok(Self {

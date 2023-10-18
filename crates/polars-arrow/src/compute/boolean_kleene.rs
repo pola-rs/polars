@@ -22,7 +22,7 @@ pub fn or(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
     assert_eq!(
         lhs.len(),
         rhs.len(),
-        "lhs and rhs must have the same length"
+        "`lhs` and `rhs` must have the same length"
     );
 
     let lhs_values = lhs.values();
@@ -105,7 +105,7 @@ pub fn and(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
     assert_eq!(
         lhs.len(),
         rhs.len(),
-        "lhs and rhs must have the same length"
+        "`lhs` and `rhs` must have the same length"
     );
 
     let lhs_values = lhs.values();

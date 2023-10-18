@@ -33,7 +33,7 @@ where
 {
     let field_node = field_nodes.pop_front().ok_or_else(|| {
         polars_err!(ComputeError:
-            "IPC: unable to fetch the field for {data_type:?}. The file or stream is corrupted."
+            "IPC: unable to fetch the field for `{data_type:?}`\n\nThe file or stream is corrupted."
         )
     })?;
 
@@ -94,16 +94,16 @@ pub fn skip_list<O: Offset>(
 ) -> PolarsResult<()> {
     let _ = field_nodes.pop_front().ok_or_else(|| {
         polars_err!(
-            oos = "IPC: unable to fetch the field for list. The file or stream is corrupted."
+            oos = "IPC: unable to fetch the field for list\n\nThe file or stream is corrupted."
         )
     })?;
 
     let _ = buffers
         .pop_front()
-        .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer."))?;
+        .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer"))?;
     let _ = buffers
         .pop_front()
-        .ok_or_else(|| polars_err!(oos = "IPC: missing offsets buffer."))?;
+        .ok_or_else(|| polars_err!(oos = "IPC: missing offsets buffer"))?;
 
     let data_type = ListArray::<O>::get_child_type(data_type);
 

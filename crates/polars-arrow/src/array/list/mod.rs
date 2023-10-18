@@ -46,13 +46,13 @@ impl<O: Offset> ListArray<O> {
             .as_ref()
             .map_or(false, |validity| validity.len() != offsets.len_proxy())
         {
-            polars_bail!(ComputeError: "validity mask length must match the number of values")
+            polars_bail!(ComputeError: "`validity` mask length must match the number of elements in `values`")
         }
 
         let child_data_type = Self::try_get_child(&data_type)?.data_type();
         let values_data_type = values.data_type();
         if child_data_type != values_data_type {
-            polars_bail!(ComputeError: "ListArray's child's DataType must match. However, the expected DataType is {child_data_type:?} while it got {values_data_type:?}.");
+            polars_bail!(ComputeError: "ListArray's child's `DataType` must match\n\nThe expected `DataType` is {child_data_type:?} while it got {values_data_type:?}.");
         }
 
         Ok(Self {
@@ -108,7 +108,7 @@ impl<O: Offset> ListArray<O> {
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(
             offset + length <= self.len(),
-            "the offset of the new Buffer cannot exceed the existing length"
+            "the `offset` of the new Buffer cannot exceed the existing `length`"
         );
         unsafe { self.slice_unchecked(offset, length) }
     }
@@ -205,12 +205,12 @@ impl<O: Offset> ListArray<O> {
         if O::IS_LARGE {
             match data_type.to_logical_type() {
                 DataType::LargeList(child) => Ok(child.as_ref()),
-                _ => polars_bail!(ComputeError: "ListArray<i64> expects DataType::LargeList"),
+                _ => polars_bail!(ComputeError: "`ListArray<i64>` expects `DataType::LargeList`"),
             }
         } else {
             match data_type.to_logical_type() {
                 DataType::List(child) => Ok(child.as_ref()),
-                _ => polars_bail!(ComputeError: "ListArray<i32> expects DataType::List"),
+                _ => polars_bail!(ComputeError: "`ListArray<i32>` expects `DataType::List`"),
             }
         }
     }

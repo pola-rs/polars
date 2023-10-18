@@ -57,11 +57,11 @@ pub(super) fn check<T: NativeType>(
     validity_len: Option<usize>,
 ) -> PolarsResult<()> {
     if validity_len.map_or(false, |len| len != values.len()) {
-        polars_bail!(ComputeError: "validity mask length must match the number of values")
+        polars_bail!(ComputeError: "`validity` mask length must match the number of elements in `values`")
     }
 
     if data_type.to_physical_type() != PhysicalType::Primitive(T::PRIMITIVE) {
-        polars_bail!(ComputeError: "PrimitiveArray can only be initialized with a DataType whose physical type is Primitive")
+        polars_bail!(ComputeError: "`PrimitiveArray` can only be initialized with a `DataType` whose physical type is `Primitive`")
     }
     Ok(())
 }
@@ -210,7 +210,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(
             offset + length <= self.len(),
-            "offset + length may not exceed length of array"
+            "`offset + length` may not exceed length of array"
         );
         unsafe { self.slice_unchecked(offset, length) }
     }
@@ -250,7 +250,7 @@ impl<T: NativeType> PrimitiveArray<T> {
         assert_eq!(
             values.len(),
             self.len(),
-            "values' length must be equal to this arrays' length"
+            "`values`' length must be equal to this arrays' length"
         );
         self.values = values;
     }

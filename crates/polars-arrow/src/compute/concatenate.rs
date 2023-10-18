@@ -22,14 +22,14 @@ use crate::bitmap::{Bitmap, MutableBitmap};
 /// Concatenate multiple [Array] of the same type into a single [`Array`].
 pub fn concatenate(arrays: &[&dyn Array]) -> PolarsResult<Box<dyn Array>> {
     if arrays.is_empty() {
-        polars_bail!(InvalidOperation: "concat requires input of at least one array")
+        polars_bail!(InvalidOperation: "`concatenate` requires input of at least one array")
     }
 
     if arrays
         .iter()
         .any(|array| array.data_type() != arrays[0].data_type())
     {
-        polars_bail!(InvalidOperation: "It is not possible to concatenate arrays of different data types.")
+        polars_bail!(InvalidOperation: "it is not possible to concatenate arrays of different data types")
     }
 
     let lengths = arrays.iter().map(|array| array.len()).collect::<Vec<_>>();

@@ -65,7 +65,7 @@ pub fn array_to_page<O: Offset>(
         ),
         _ => {
             polars_bail!(InvalidOperation:
-                "Datatype {:?} cannot be encoded by {:?} encoding",
+                "datatype `{:?}` cannot be encoded by `{:?}` encoding",
                 array.data_type(),
                 encoding
             )

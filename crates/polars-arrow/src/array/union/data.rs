@@ -55,7 +55,7 @@ impl Arrow2Arrow for UnionArray {
                 Some(map)
             },
             DataType::Union(_, None, _) => None,
-            _ => unreachable!("must be Union type"),
+            _ => unreachable!("must be `Union` type"),
         };
 
         Self {

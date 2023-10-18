@@ -23,7 +23,7 @@ where
         res
     };
     let out = binary_mut(lhs, rhs, lhs.data_type().clone(), op);
-    polars_ensure!(!overflow, ComputeError: "Decimal overflowed the allowed precision: {precision}");
+    polars_ensure!(!overflow, ComputeError: "decimal overflowed the allowed precision: {precision}");
     Ok(out)
 }
 

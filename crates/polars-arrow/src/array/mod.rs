@@ -480,7 +480,7 @@ macro_rules! impl_sliced {
         pub fn sliced(self, offset: usize, length: usize) -> Self {
             assert!(
                 offset + length <= self.len(),
-                "the offset of the new Buffer cannot exceed the existing length"
+                "the `offset` of the new Buffer cannot exceed the existing length"
             );
             unsafe { self.sliced_unchecked(offset, length) }
         }
@@ -518,7 +518,7 @@ macro_rules! impl_mut_validity {
         #[inline]
         pub fn set_validity(&mut self, validity: Option<Bitmap>) {
             if matches!(&validity, Some(bitmap) if bitmap.len() != self.len()) {
-                panic!("validity must be equal to the array's length")
+                panic!("`validity` must be equal to the array's length")
             }
             self.validity = validity;
         }
@@ -544,7 +544,7 @@ macro_rules! impl_mutable_array_mut_validity {
         #[inline]
         pub fn set_validity(&mut self, validity: Option<MutableBitmap>) {
             if matches!(&validity, Some(bitmap) if bitmap.len() != self.len()) {
-                panic!("validity must be equal to the array's length")
+                panic!("`validity` must be equal to the array's length")
             }
             self.validity = validity;
         }

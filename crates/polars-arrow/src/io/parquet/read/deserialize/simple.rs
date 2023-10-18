@@ -192,7 +192,7 @@ pub fn page_iter_to_arrays<'a, I: Pages + 'a>(
         ))),
         (PhysicalType::FixedLenByteArray(n), Decimal(_, _)) if *n > 16 => {
             polars_bail!(ComputeError:
-                "not implemented: can't decode Decimal128 type from Fixed Size Byte Array of len {n:?}"
+                "not implemented: cannot decode `Decimal128` type from `FixedLenByteArray` of len {n:?}"
             )
         },
         (PhysicalType::FixedLenByteArray(n), Decimal(_, _)) => {
@@ -289,7 +289,7 @@ pub fn page_iter_to_arrays<'a, I: Pages + 'a>(
         },
         (PhysicalType::FixedLenByteArray(n), Decimal256(_, _)) if *n > 32 => {
             polars_bail!(ComputeError:
-                "Can't decode Decimal256 type from Fixed Size Byte Array of len {n:?}"
+                "cannot decode `Decimal256` type from `FixedLenByteArray` of len {n:?}"
             )
         },
         (PhysicalType::Int32, Date64) => dyn_iter(iden(primitive::IntegerIter::new(
@@ -464,7 +464,7 @@ fn timestamp<'a, I: Pages + 'a>(
 
     if physical_type != &PhysicalType::Int64 {
         polars_bail!(ComputeError:
-            "not implemented: can't decode a timestamp from a non-int64 parquet type",
+            "not implemented: cannot decode a timestamp from a non-int64 parquet type",
         );
     }
 

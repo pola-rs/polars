@@ -81,7 +81,7 @@ impl StreamState {
         if let StreamState::Some(batch) = self {
             batch
         } else {
-            panic!("The batch is not available")
+            panic!("the batch is not available")
         }
     }
 }

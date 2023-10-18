@@ -122,7 +122,7 @@ pub fn build_compare(left: &dyn Array, right: &dyn Array) -> Result<DynComparato
     Ok(match (left.data_type(), right.data_type()) {
         (a, b) if a != b => {
             polars_bail!(ComputeError:
-                "Can't compare arrays of different types".to_string(),
+                "cannot compare arrays of different types".to_string(),
             );
         },
         (Boolean, Boolean) => compare_boolean(left, right),
@@ -168,7 +168,7 @@ pub fn build_compare(left: &dyn Array, right: &dyn Array) -> Result<DynComparato
                 (IntegerType::Int64, IntegerType::Int64) => dyn_dict!(i64, left, right),
                 (lhs, _) => {
                     return Err(Error::InvalidArgumentError(format!(
-                        "Dictionaries do not support keys of type {lhs:?}"
+                        "dictionaries do not support keys of type `{lhs:?}`"
                     )))
                 },
             }

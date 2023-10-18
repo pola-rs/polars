@@ -87,7 +87,7 @@ impl<O: Offset> BinaryArray<O> {
         }
 
         if data_type.to_physical_type() != Self::default_data_type().to_physical_type() {
-            polars_bail!(ComputeError: "BinaryArray can only be initialized with DataType::Binary or DataType::LargeBinary")
+            polars_bail!(ComputeError: "`BinaryArray` can only be initialized with `DataType::Binary` or `DataType::LargeBinary`")
         }
 
         Ok(Self {

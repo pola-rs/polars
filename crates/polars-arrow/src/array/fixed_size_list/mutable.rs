@@ -48,7 +48,7 @@ impl<M: MutableArray> MutableFixedSizeListArray<M> {
         assert_eq!(values.len(), 0);
         match data_type {
             DataType::FixedSizeList(..) => (),
-            _ => panic!("data type must be FixedSizeList (got {data_type:?})"),
+            _ => panic!("data type must be `FixedSizeList` (got {data_type:?})"),
         };
         Self {
             size,

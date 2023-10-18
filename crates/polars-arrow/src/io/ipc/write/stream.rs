@@ -79,7 +79,7 @@ impl<W: Write> StreamWriter<W> {
         if self.finished {
             let io_err = std::io::Error::new(
                 std::io::ErrorKind::UnexpectedEof,
-                "Cannot write to a finished stream".to_string(),
+                "cannot write to a finished stream".to_string(),
             );
             return Err(PolarsError::from(io_err));
         }

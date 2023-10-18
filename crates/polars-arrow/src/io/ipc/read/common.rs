@@ -339,7 +339,7 @@ pub fn prepare_projection(
         for &i in &projection[1..] {
             assert!(
                 previous < i,
-                "The projection on IPC must not contain duplicates"
+                "the projection on IPC must not contain duplicates"
             );
             previous = i;
         }

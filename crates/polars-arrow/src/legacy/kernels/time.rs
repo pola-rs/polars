@@ -15,14 +15,14 @@ pub fn convert_to_naive_local(
             "earliest" => Ok(dt_earliest.naive_utc()),
             "latest" => Ok(dt_latest.naive_utc()),
             "raise" => {
-                polars_bail!(InvalidOperation: "datetime '{}' is ambiguous in time zone '{}'. Please use `ambiguous` to tell how it should be localized.", ndt, to_tz)
+                polars_bail!(InvalidOperation: "datetime '{}' is ambiguous in time zone '{}'\n\nPlease use `ambiguous` to tell how it should be localized.", ndt, to_tz)
             },
             ambiguous => polars_bail!(InvalidOperation:
-                "Invalid argument {}, expected one of: \"earliest\", \"latest\", \"raise\"", ambiguous
+                "invalid argument {}, expected one of: \"earliest\", \"latest\", \"raise\"", ambiguous
             ),
         },
         LocalResult::None => polars_bail!(InvalidOperation:
-                "datetime '{}' is non-existent in time zone '{}'. Non-existent datetimes are not yet supported",
+                "datetime '{}' is non-existent in time zone '{}'\n\nNon-existent datetimes are not yet supported.",
                 ndt, to_tz
         ),
     }

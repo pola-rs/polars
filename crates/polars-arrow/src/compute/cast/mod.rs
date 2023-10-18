@@ -399,7 +399,7 @@ fn cast_list_to_fixed_size_list<O: Offset>(
         .find(|(actual, expected)| *actual != expected)
     {
         Some(_) => polars_bail!(ComputeError:
-            "incompatible offsets in source list"
+            "incompatible `offsets` in source `list`"
         ),
         None => {
             let sliced_values = list.values().sliced(
@@ -456,7 +456,7 @@ pub fn cast(
     match (from_type, to_type) {
         (Null, _) | (_, Null) => Ok(new_null_array(to_type.clone(), array.len())),
         (Struct(_), _) | (_, Struct(_)) => polars_bail!(InvalidOperation:
-            "Cannot cast from struct to other types"
+            "cannot cast from struct to other types"
         ),
         (List(_), FixedSizeList(inner, size)) => cast_list_to_fixed_size_list::<i32>(
             array.as_any().downcast_ref().unwrap(),
@@ -543,7 +543,7 @@ pub fn cast(
             Float32 => primitive_to_boolean_dyn::<f32>(array, to_type.clone()),
             Float64 => primitive_to_boolean_dyn::<f64>(array, to_type.clone()),
             _ => polars_bail!(InvalidOperation:
-                "casting from {from_type:?} to {to_type:?} not supported",
+                "casting from `{from_type:?}` to `{to_type:?}` not supported",
             ),
         },
         (Boolean, _) => match to_type {
@@ -560,7 +560,7 @@ pub fn cast(
             LargeUtf8 => boolean_to_utf8_dyn::<i64>(array),
             LargeBinary => boolean_to_binary_dyn::<i64>(array),
             _ => polars_bail!(InvalidOperation:
-                "casting from {from_type:?} to {to_type:?} not supported",
+                "casting from `{from_type:?}` to `{to_type:?}` not supported",
             ),
         },
 
@@ -585,7 +585,7 @@ pub fn cast(
                 utf8_to_timestamp_ns_dyn::<i32>(array, tz.clone())
             },
             _ => polars_bail!(InvalidOperation:
-                "casting from {from_type:?} to {to_type:?} not supported",
+                "casting from `{from_type:?}` to `{to_type:?}` not supported",
             ),
         },
         (LargeUtf8, _) => match to_type {
@@ -612,7 +612,7 @@ pub fn cast(
                 utf8_to_timestamp_ns_dyn::<i64>(array, tz.clone())
             },
             _ => polars_bail!(InvalidOperation:
-                "casting from {from_type:?} to {to_type:?} not supported",
+                "casting from `{from_type:?}` to `{to_type:?}` not supported",
             ),
         },
 
@@ -636,7 +636,7 @@ pub fn cast(
                 Ok(Box::new(naive_timestamp_to_utf8::<i32>(from, *from_unit)))
             },
             _ => polars_bail!(InvalidOperation:
-                "casting from {from_type:?} to {to_type:?} not supported",
+                "casting from `{from_type:?}` to `{to_type:?}` not supported",
             ),
         },
 
@@ -664,7 +664,7 @@ pub fn cast(
                 Ok(Box::new(naive_timestamp_to_utf8::<i64>(from, *from_unit)))
             },
             _ => polars_bail!(InvalidOperation:
-                "casting from {from_type:?} to {to_type:?} not supported",
+                "casting from `{from_type:?}` to `{to_type:?}` not supported",
             ),
         },
 
@@ -684,7 +684,7 @@ pub fn cast(
                 to_type.clone(),
             ))),
             _ => polars_bail!(InvalidOperation:
-                "casting from {from_type:?} to {to_type:?} not supported",
+                "casting from `{from_type:?}` to `{to_type:?}` not supported",
             ),
         },
 
@@ -713,7 +713,7 @@ pub fn cast(
                         .boxed(),
                 ),
                 _ => polars_bail!(InvalidOperation:
-                    "casting from {from_type:?} to {to_type:?} not supported",
+                    "casting from `{from_type:?}` to `{to_type:?}` not supported",
                 ),
             }
         },
@@ -729,7 +729,7 @@ pub fn cast(
             )
             .boxed()),
             _ => polars_bail!(InvalidOperation:
-                "casting from {from_type:?} to {to_type:?} not supported",
+                "casting from `{from_type:?}` to `{to_type:?}` not supported",
             ),
         },
 
@@ -745,7 +745,7 @@ pub fn cast(
             Float32 => primitive_to_binary_dyn::<f32, i32>(array),
             Float64 => primitive_to_binary_dyn::<f64, i32>(array),
             _ => polars_bail!(InvalidOperation:
-                "casting from {from_type:?} to {to_type:?} not supported",
+                "casting from `{from_type:?}` to `{to_type:?}` not supported",
             ),
         },
 
@@ -761,7 +761,7 @@ pub fn cast(
             Float32 => primitive_to_binary_dyn::<f32, i64>(array),
             Float64 => primitive_to_binary_dyn::<f64, i64>(array),
             _ => polars_bail!(InvalidOperation:
-                "casting from {from_type:?} to {to_type:?} not supported",
+                "casting from `{from_type:?}` to `{to_type:?}` not supported",
             ),
         },
 
@@ -955,7 +955,7 @@ pub fn cast(
         },
 
         _ => polars_bail!(InvalidOperation:
-            "casting from {from_type:?} to {to_type:?} not supported",
+            "casting from `{from_type:?}` to `{to_type:?}` not supported",
         ),
     }
 }

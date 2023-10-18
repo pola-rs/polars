@@ -65,11 +65,11 @@ impl BooleanArray {
             .as_ref()
             .map_or(false, |validity| validity.len() != values.len())
         {
-            polars_bail!(ComputeError: "validity mask length must match the number of values")
+            polars_bail!(ComputeError: "`validity` mask length must match the number of elements in `values`")
         }
 
         if data_type.to_physical_type() != PhysicalType::Boolean {
-            polars_bail!(ComputeError: "BooleanArray can only be initialized with a DataType whose physical type is Boolean")
+            polars_bail!(ComputeError: "`BooleanArray` can only be initialized with a `DataType` whose physical type is `Boolean`")
         }
 
         Ok(Self {
@@ -200,7 +200,7 @@ impl BooleanArray {
         assert_eq!(
             values.len(),
             self.len(),
-            "values length must be equal to this arrays length"
+            "the length of `values` must equal this array's length"
         );
         self.values = values;
     }

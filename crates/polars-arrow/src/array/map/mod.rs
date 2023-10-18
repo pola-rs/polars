@@ -42,20 +42,20 @@ impl MapArray {
         let inner_field = Self::try_get_field(&data_type)?;
         if let DataType::Struct(inner) = inner_field.data_type() {
             if inner.len() != 2 {
-                polars_bail!(ComputeError: "MapArray's inner `Struct` must have 2 fields (keys and maps)")
+                polars_bail!(ComputeError: "`MapArray`'s inner `Struct` must have 2 fields (keys and maps)")
             }
         } else {
-            polars_bail!(ComputeError: "MapArray expects `DataType::Struct` as its inner logical type")
+            polars_bail!(ComputeError: "`MapArray` expects `DataType::Struct` as its inner logical type")
         }
         if field.data_type() != inner_field.data_type() {
-            polars_bail!(ComputeError: "MapArray expects `field.data_type` to match its inner DataType")
+            polars_bail!(ComputeError: "`MapArray` expects `field.data_type` to match its inner `DataType`")
         }
 
         if validity
             .as_ref()
             .map_or(false, |validity| validity.len() != offsets.len_proxy())
         {
-            polars_bail!(ComputeError: "validity mask length must match the number of values")
+            polars_bail!(ComputeError: "`validity` mask length must match the number of elements in `values`")
         }
 
         Ok(Self {

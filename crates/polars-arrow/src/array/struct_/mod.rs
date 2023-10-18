@@ -51,10 +51,10 @@ impl StructArray {
     ) -> PolarsResult<Self> {
         let fields = Self::try_get_fields(&data_type)?;
         if fields.is_empty() {
-            polars_bail!(ComputeError: "a StructArray must contain at least one field")
+            polars_bail!(ComputeError: "a `StructArray` must contain at least one field")
         }
         if fields.len() != values.len() {
-            polars_bail!(ComputeError:"a StructArray must have a number of fields in its DataType equal to the number of child values")
+            polars_bail!(ComputeError:"a `StructArray` must have a number of fields in its `DataType` equal to the number of child values")
         }
 
         fields
@@ -64,8 +64,8 @@ impl StructArray {
             .try_for_each(|(index, (data_type, child))| {
                 if data_type != child {
                     polars_bail!(ComputeError:
-                        "The children DataTypes of a StructArray must equal the children data types.
-                         However, the field {index} has data type {data_type:?} but the value has data type {child:?}"
+                        "the children `DataType`s of a `StructArray` must equal the children data types
+                         \n\nThe field {index} has data type {data_type:?}, but the value has data type {child:?}."
                     )
                 } else {
                     Ok(())
@@ -79,8 +79,8 @@ impl StructArray {
             .enumerate()
             .try_for_each(|(index, a_len)| {
                 if a_len != len {
-                    polars_bail!(ComputeError: "The children must have an equal number of values.
-                         However, the values at index {index} have a length of {a_len}, which is different from values at index 0, {len}.")
+                    polars_bail!(ComputeError: "the children must have an equal number of values
+                         \n\nThe values at index {index} have a length of {a_len}, which is different from values at index 0, {len}.")
                 } else {
                     Ok(())
                 }
@@ -90,7 +90,7 @@ impl StructArray {
             .as_ref()
             .map_or(false, |validity| validity.len() != len)
         {
-            polars_bail!(ComputeError:"The validity length of a StructArray must match its number of elements")
+            polars_bail!(ComputeError:"the `validity` length of a `StructArray` must match its number of elements")
         }
 
         Ok(Self {
@@ -122,7 +122,7 @@ impl StructArray {
                 .collect();
             Self::new(data_type, values, None)
         } else {
-            panic!("StructArray must be initialized with DataType::Struct");
+            panic!("`StructArray` must be initialized with `DataType::Struct`");
         }
     }
 
@@ -135,7 +135,7 @@ impl StructArray {
                 .collect();
             Self::new(data_type, values, Some(Bitmap::new_zeroed(length)))
         } else {
-            panic!("StructArray must be initialized with DataType::Struct");
+            panic!("`StructArray` must be initialized with `DataType::Struct`");
         }
     }
 }
@@ -166,7 +166,7 @@ impl StructArray {
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(
             offset + length <= self.len(),
-            "offset + length may not exceed length of array"
+            "`offset + length` may not exceed length of array"
         );
         unsafe { self.slice_unchecked(offset, length) }
     }
@@ -224,7 +224,7 @@ impl StructArray {
         match data_type.to_logical_type() {
             DataType::Struct(fields) => Ok(fields),
             _ => {
-                polars_bail!(ComputeError: "Struct array must be created with a DataType whose physical type is Struct")
+                polars_bail!(ComputeError: "a `Struct` array must be created with a `DataType` whose physical type is `Struct`")
             },
         }
     }

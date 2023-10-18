@@ -39,7 +39,7 @@ impl FixedSizeBinaryArray {
 
         if values.len() % size != 0 {
             polars_bail!(ComputeError:
-                "values (of len {}) must be a multiple of size ({}) in FixedSizeBinaryArray.",
+                "values (of len {}) must be a multiple of size ({}) in `FixedSizeBinaryArray`",
                 values.len(),
                 size
             )
@@ -50,7 +50,7 @@ impl FixedSizeBinaryArray {
             .as_ref()
             .map_or(false, |validity| validity.len() != len)
         {
-            polars_bail!(ComputeError: "validity mask length must be equal to the number of values divided by size")
+            polars_bail!(ComputeError: "`validity` mask length must be equal to the number of elements in `values` divided by `size`")
         }
 
         Ok(Self {
@@ -97,7 +97,7 @@ impl FixedSizeBinaryArray {
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(
             offset + length <= self.len(),
-            "the offset of the new Buffer cannot exceed the existing length"
+            "the `offset` of the new Buffer cannot exceed the existing `length`"
         );
         unsafe { self.slice_unchecked(offset, length) }
     }
@@ -185,7 +185,7 @@ impl FixedSizeBinaryArray {
         ) {
             (DataType::FixedSizeBinary(size_a), DataType::FixedSizeBinary(size_b))
                 if size_a == size_b => {},
-            _ => panic!("Wrong DataType"),
+            _ => panic!("wrong `DataType`"),
         }
 
         Self {
@@ -206,11 +206,11 @@ impl FixedSizeBinaryArray {
     pub(crate) fn maybe_get_size(data_type: &DataType) -> PolarsResult<usize> {
         match data_type.to_logical_type() {
             DataType::FixedSizeBinary(size) => {
-                polars_ensure!(*size != 0, ComputeError: "FixedSizeBinaryArray expects a positive size");
+                polars_ensure!(*size != 0, ComputeError: "`FixedSizeBinaryArray` expects a positive `size`");
                 Ok(*size)
             },
             _ => {
-                polars_bail!(ComputeError: "FixedSizeBinaryArray expects DataType::FixedSizeBinary")
+                polars_bail!(ComputeError: "`FixedSizeBinaryArray` expects `DataType::FixedSizeBinary`")
             },
         }
     }

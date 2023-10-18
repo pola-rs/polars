@@ -31,14 +31,14 @@ pub fn if_then_else(
 ) -> PolarsResult<Box<dyn Array>> {
     if lhs.data_type() != rhs.data_type() {
         polars_bail!(InvalidOperation:
-            "If then else requires the arguments to have the same datatypes ({:?} != {:?})",
+            "if then else requires the arguments to have the same datatypes (`{:?}` != `{:?}`)",
             lhs.data_type(),
             rhs.data_type()
         )
     }
     if (lhs.len() != rhs.len()) | (lhs.len() != predicate.len()) {
         polars_bail!(ComputeError:
-            "If then else requires all arguments to have the same length (predicate = {}, lhs = {}, rhs = {})",
+            "if then else requires all arguments to have the same length (`predicate` = {}, `lhs` = {}, `rhs` = {})",
             predicate.len(),
             lhs.len(),
             rhs.len()

@@ -19,7 +19,7 @@ pub fn not_implemented(page: &DataPage) -> PolarsError {
     let required = if is_optional { "optional" } else { "required" };
     let is_filtered = if is_filtered { ", index-filtered" } else { "" };
     polars_err!(ComputeError:
-        "Decoding {:?} \"{:?}\"-encoded {} {} parquet pages",
+        "decoding {:?} \"{:?}\"-encoded {} {} parquet pages",
         page.descriptor.primitive_type.physical_type,
         page.encoding(),
         required,

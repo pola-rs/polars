@@ -110,7 +110,7 @@ pub(crate) fn serialize_field(field: &Field, ipc_field: &IpcField) -> arrow_form
             index_type,
             ipc_field
                 .dictionary_id
-                .expect("All Dictionary types have `dict_id`"),
+                .expect("all `Dictionary` types have `dict_id`"),
             *is_ordered,
         ))
     } else {

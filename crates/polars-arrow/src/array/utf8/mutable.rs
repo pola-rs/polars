@@ -68,7 +68,7 @@ impl<O: Offset> MutableUtf8Array<O> {
             .as_ref()
             .map_or(false, |validity| validity.len() != values.len())
         {
-            polars_bail!(ComputeError: "validity's length must be equal to the number of values")
+            polars_bail!(ComputeError: "`validity`'s length must be equal to the number of elements in `values`")
         }
 
         Ok(Self { values, validity })

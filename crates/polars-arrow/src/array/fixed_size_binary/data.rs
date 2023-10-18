@@ -21,7 +21,7 @@ impl Arrow2Arrow for FixedSizeBinaryArray {
         let data_type: DataType = data.data_type().clone().into();
         let size = match data_type {
             DataType::FixedSizeBinary(size) => size,
-            _ => unreachable!("must be FixedSizeBinary"),
+            _ => unreachable!("must be `FixedSizeBinary`"),
         };
 
         let mut values: Buffer<u8> = data.buffers()[0].clone().into();

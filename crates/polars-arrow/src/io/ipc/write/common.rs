@@ -42,7 +42,7 @@ fn encode_dictionary(
         | FixedSizeBinary => Ok(()),
         Dictionary(key_type) => match_integer_type!(key_type, |$T| {
             let dict_id = field.dictionary_id
-                .ok_or_else(|| polars_err!(InvalidOperation: "Dictionaries must have an associated id"))?;
+                .ok_or_else(|| polars_err!(InvalidOperation: "dictionaries must have an associated id"))?;
 
             let emit = dictionary_tracker.insert(dict_id, array)?;
 
@@ -70,7 +70,7 @@ fn encode_dictionary(
             let fields = field.fields.as_slice();
             if array.fields().len() != fields.len() {
                 polars_bail!(InvalidOperation:
-                    "The number of fields in a struct must equal the number of children in IpcField".to_string(),
+                    "the number of fields in a struct must equal the number of children in `IpcField`".to_string(),
                 );
             }
             fields
@@ -140,7 +140,7 @@ fn encode_dictionary(
             let fields = &field.fields[..]; // todo: error instead
             if values.len() != fields.len() {
                 polars_bail!(InvalidOperation:
-                    "The number of fields in a union must equal the number of children in IpcField"
+                    "the number of fields in a union must equal the number of children in `IpcField`"
                 );
             }
             fields
@@ -367,8 +367,8 @@ impl DictionaryTracker {
                 return Ok(false);
             } else if self.cannot_replace {
                 polars_bail!(InvalidOperation:
-                    "Dictionary replacement detected when writing IPC file format. \
-                     Arrow IPC files only support a single dictionary for a given field \
+                    "dictionary replacement detected when writing IPC file format
+                     \n\nArrow IPC files only support a single dictionary for a given field \
                      across all batches."
                 );
             }

@@ -49,11 +49,11 @@ pub fn div(lhs: &PrimitiveArray<i128>, rhs: &PrimitiveArray<i128>) -> PrimitiveA
 
         // The division can overflow if the dividend is divided
         // by zero.
-        let res: i128 = numeral.checked_div(b).expect("Found division by zero");
+        let res: i128 = numeral.checked_div(b).expect("found division by zero");
 
         assert!(
             res.abs() <= max,
-            "Overflow in multiplication presented for precision {precision}"
+            "overflow in multiplication presented for precision {precision}"
         );
 
         res
@@ -91,11 +91,11 @@ pub fn div_scalar(lhs: &PrimitiveArray<i128>, rhs: &PrimitiveScalar<i128>) -> Pr
 
         // The division can overflow if the dividend is divided
         // by zero.
-        let res: i128 = numeral.checked_div(rhs).expect("Found division by zero");
+        let res: i128 = numeral.checked_div(rhs).expect("found division by zero");
 
         assert!(
             res.abs() <= max,
-            "Overflow in multiplication presented for precision {precision}"
+            "overflow in multiplication presented for precision {precision}"
         );
 
         res
@@ -247,7 +247,7 @@ pub fn adaptive_div(
         {
             (*lhs_p, *lhs_s, *rhs_p, *rhs_s)
         } else {
-            polars_bail!(ComputeError: "Incorrect data type for the array")
+            polars_bail!(ComputeError: "incorrect data type for the array")
         };
 
     // The resulting precision is mutable because it could change while
@@ -272,7 +272,7 @@ pub fn adaptive_div(
             } else {
                 (numeral * shift).checked_div(*r)
             }
-            .expect("Found division by zero");
+            .expect("found division by zero");
 
             // The precision of the resulting array will change if one of the
             // multiplications during the iteration produces a value bigger

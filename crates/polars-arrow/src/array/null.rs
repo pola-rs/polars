@@ -21,7 +21,7 @@ impl NullArray {
     /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to [`crate::datatypes::PhysicalType::Null`].
     pub fn try_new(data_type: DataType, length: usize) -> PolarsResult<Self> {
         if data_type.to_physical_type() != PhysicalType::Null {
-            polars_bail!(ComputeError: "NullArray can only be initialized with a DataType whose physical type is Boolean");
+            polars_bail!(ComputeError: "`NullArray` can only be initialized with a `DataType::Boolean`");
         }
 
         Ok(Self { data_type, length })
@@ -56,7 +56,7 @@ impl NullArray {
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(
             offset + length <= self.len(),
-            "the offset of the new array cannot exceed the arrays' length"
+            "the `offset` of the new array cannot exceed the array's length"
         );
         unsafe { self.slice_unchecked(offset, length) };
     }
@@ -82,7 +82,7 @@ impl Array for NullArray {
     }
 
     fn with_validity(&self, _: Option<Bitmap>) -> Box<dyn Array> {
-        panic!("cannot set validity of a null array")
+        panic!("cannot set `validity` of a null array")
     }
 }
 

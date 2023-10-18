@@ -151,7 +151,7 @@ impl ArrowSchema {
         // safe because the lifetime of `self.format` equals `self`
         unsafe { CStr::from_ptr(self.format) }
             .to_str()
-            .expect("The external API has a non-utf8 as format")
+            .expect("the external API has a non-utf8 as format")
     }
 
     /// returns the name of this schema.
@@ -323,15 +323,15 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<DataType> {
                             // Example: "d:19,10,NNN" decimal bitwidth = NNN [precision 19, scale 10]
                             // Only bitwdth of 128 currently supported
                             let bit_width = width_raw.parse::<usize>().map_err(|_| {
-                                polars_err!(ComputeError: "Decimal bit width is not a valid integer")
+                                polars_err!(ComputeError: "decimal bit width is not a valid integer")
                             })?;
                             if bit_width == 256 {
                                 return Ok(DataType::Decimal256(
                                     precision_raw.parse::<usize>().map_err(|_| {
-                                        polars_err!(ComputeError: "Decimal precision is not a valid integer")
+                                        polars_err!(ComputeError: "decimal precision is not a valid integer")
                                     })?,
                                     scale_raw.parse::<usize>().map_err(|_| {
-                                        polars_err!(ComputeError: "Decimal scale is not a valid integer")
+                                        polars_err!(ComputeError: "decimal scale is not a valid integer")
                                     })?,
                                 ));
                             }
@@ -339,7 +339,7 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<DataType> {
                         },
                         _ => {
                             polars_bail!(ComputeError:
-                                "Decimal must contain 2 or 3 comma-separated values"
+                                "decimal must contain 2 or 3 comma-separated values"
                             )
                         },
                     };
@@ -347,12 +347,12 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<DataType> {
                     DataType::Decimal(
                         precision.parse::<usize>().map_err(|_| {
                             polars_err!(ComputeError:
-                            "Decimal precision is not a valid integer"
+                            "decimal precision is not a valid integer"
                             )
                         })?,
                         scale.parse::<usize>().map_err(|_| {
                             polars_err!(ComputeError:
-                            "Decimal scale is not a valid integer"
+                            "decimal scale is not a valid integer"
                             )
                         })?,
                     )
@@ -367,7 +367,7 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<DataType> {
                         .map(|x| {
                             x.parse::<i32>().map_err(|_| {
                                 polars_err!(ComputeError:
-                                "Union type id is not a valid integer"
+                                "`Union` type id is not a valid integer"
                                 )
                             })
                         })
@@ -379,7 +379,7 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<DataType> {
                 },
                 _ => {
                     polars_bail!(ComputeError:
-                    "The datatype \"{other}\" is still not supported in Rust implementation",
+                    "The datatype `{other}` is still not supported in Rust implementation",
                         )
                 },
             }
@@ -412,12 +412,12 @@ fn to_format(data_type: &DataType) -> String {
         DataType::Time32(TimeUnit::Second) => "tts".to_string(),
         DataType::Time32(TimeUnit::Millisecond) => "ttm".to_string(),
         DataType::Time32(_) => {
-            unreachable!("Time32 is only supported for seconds and milliseconds")
+            unreachable!("`Time32` is only supported for seconds and milliseconds")
         },
         DataType::Time64(TimeUnit::Microsecond) => "ttu".to_string(),
         DataType::Time64(TimeUnit::Nanosecond) => "ttn".to_string(),
         DataType::Time64(_) => {
-            unreachable!("Time64 is only supported for micro and nanoseconds")
+            unreachable!("`Time64` is only supported for micro and nanoseconds")
         },
         DataType::Duration(TimeUnit::Second) => "tDs".to_string(),
         DataType::Duration(TimeUnit::Millisecond) => "tDm".to_string(),
@@ -426,7 +426,7 @@ fn to_format(data_type: &DataType) -> String {
         DataType::Interval(IntervalUnit::YearMonth) => "tiM".to_string(),
         DataType::Interval(IntervalUnit::DayTime) => "tiD".to_string(),
         DataType::Interval(IntervalUnit::MonthDayNano) => {
-            todo!("Spec for FFI for MonthDayNano still not defined.")
+            todo!("Spec for FFI for `MonthDayNano` still not defined")
         },
         DataType::Timestamp(unit, tz) => {
             let unit = match unit {
@@ -477,7 +477,7 @@ pub(super) fn get_child(data_type: &DataType, index: usize) -> PolarsResult<Data
         (index, DataType::Union(fields, _, _)) => Ok(fields[index].data_type().clone()),
         (index, DataType::Extension(_, subtype, _)) => get_child(subtype, index),
         (child, data_type) => polars_bail!(ComputeError:
-            "Requested child {child} to type {data_type:?} that has no such child",
+            "requested child {child} to type `{data_type:?}` that has no such child",
         ),
     }
 }

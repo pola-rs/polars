@@ -107,7 +107,7 @@ impl<W: Write> FileWriter<W> {
     /// Errors if the file has been started or has finished.
     pub fn start(&mut self) -> PolarsResult<()> {
         if self.state != State::None {
-            polars_bail!(oos = "The IPC file can only be started once");
+            polars_bail!(oos = "the IPC file can only be started once");
         }
         // write magic to header
         self.writer.write_all(&ARROW_MAGIC_V2[..])?;
@@ -134,7 +134,7 @@ impl<W: Write> FileWriter<W> {
     ) -> PolarsResult<()> {
         if self.state != State::Started {
             polars_bail!(
-                oos ="The IPC file must be started before it can be written to. Call `start` before `write`"
+                oos ="the IPC file must be started before it can be written to\n\nCall `start` before `write`."
             );
         }
 
@@ -180,7 +180,7 @@ impl<W: Write> FileWriter<W> {
     pub fn finish(&mut self) -> PolarsResult<()> {
         if self.state != State::Started {
             polars_bail!(
-                oos = "The IPC file must be started before it can be finished. Call `start` before `finish`"
+                oos = "the IPC file must be started before it can be finished\n\nCall `start` before `finish`."
             );
         }
 

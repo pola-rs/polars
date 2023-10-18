@@ -62,7 +62,7 @@ pub struct ValueMap<K: DictionaryKey, M: MutableArray> {
 impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
     pub fn try_empty(values: M) -> PolarsResult<Self> {
         if !values.is_empty() {
-            polars_bail!(ComputeError: "initializing value map with non-empty values array")
+            polars_bail!(ComputeError: "initializing value map with non-empty `values` array")
         }
         Ok(Self {
             values,
@@ -90,7 +90,7 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
                 stored_value.borrow() == value.borrow()
             }) {
                 RawEntryMut::Occupied(_) => {
-                    polars_bail!(InvalidOperation: "duplicate value in dictionary values array")
+                    polars_bail!(InvalidOperation: "duplicate value in dictionary `values` array")
                 },
                 RawEntryMut::Vacant(entry) => {
                     // NB: don't use .insert() here!

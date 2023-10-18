@@ -116,13 +116,13 @@ fn check_data_type(
 ) -> PolarsResult<()> {
     if let DataType::Dictionary(key, value, _) = data_type.to_logical_type() {
         if *key != key_type {
-            polars_bail!(ComputeError: "DictionaryArray must be initialized with a DataType::Dictionary whose integer is compatible to its keys")
+            polars_bail!(ComputeError: "`DictionaryArray` must be initialized with a `DataType::Dictionary` whose integer is compatible to its keys")
         }
         if value.as_ref().to_logical_type() != values_data_type.to_logical_type() {
-            polars_bail!(ComputeError: "DictionaryArray must be initialized with a DataType::Dictionary whose value is equal to its values")
+            polars_bail!(ComputeError: "`DictionaryArray` must be initialized with a `DataType::Dictionary` whose value is equal to its values")
         }
     } else {
-        polars_bail!(ComputeError: "DictionaryArray must be initialized with logical DataType::Dictionary")
+        polars_bail!(ComputeError: "`DictionaryArray` must be initialized with logical `DataType::Dictionary`")
     }
     Ok(())
 }
@@ -383,7 +383,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
         Ok(match data_type.to_logical_type() {
             DataType::Dictionary(_, values, _) => values.as_ref(),
             _ => {
-                polars_bail!(ComputeError: "Dictionaries must be initialized with DataType::Dictionary")
+                polars_bail!(ComputeError: "dictionaries must be initialized with `DataType::Dictionary`")
             },
         })
     }

@@ -142,7 +142,7 @@ macro_rules! compare {
                 binary::$op::<i64>(lhs, rhs)
             },
             _ => todo!(
-                "Comparison between {:?} are not yet supported",
+                "comparison between `{:?}` are not yet supported",
                 lhs.data_type()
             ),
         }
@@ -310,7 +310,10 @@ macro_rules! compare_scalar {
                     take_boolean(&values, lhs.keys())
                 })
             },
-            _ => todo!("Comparisons of {:?} are not yet supported", lhs.data_type()),
+            _ => todo!(
+                "comparison of `{:?}` are not yet supported",
+                lhs.data_type()
+            ),
         }
     }};
 }

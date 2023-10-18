@@ -62,7 +62,7 @@ fn make_mutable(
                     as Box<dyn MutableArray>
             },
             other => {
-                polars_bail!(nyi = "Deserializing type {other:#?} is still not implemented")
+                polars_bail!(nyi = "deserializing type `{other:#?}` is still not implemented")
             },
         },
     })

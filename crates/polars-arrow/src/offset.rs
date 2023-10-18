@@ -281,7 +281,7 @@ impl<O: Offset> Offsets<O> {
             return Ok(());
         }
         let other = &other.0[start..start + length + 1];
-        let other_length = other.last().expect("Length to be non-zero");
+        let other_length = other.last().expect("`length` to be non-zero");
         let mut length = *self.last();
         // check if the operation would overflow
         length
@@ -308,10 +308,10 @@ impl<O: Offset> Offsets<O> {
 fn try_check_offsets<O: Offset>(offsets: &[O]) -> PolarsResult<()> {
     // this code is carefully constructed to auto-vectorize, don't change naively!
     match offsets.first() {
-        None => polars_bail!(ComputeError: "offsets must have at least one element"),
+        None => polars_bail!(ComputeError: "`offsets` must have at least one element"),
         Some(first) => {
             if *first < O::zero() {
-                polars_bail!(ComputeError: "offsets must be larger than 0")
+                polars_bail!(ComputeError: "`offsets` must be larger than 0")
             }
             let mut previous = *first;
             let mut any_invalid = false;
@@ -326,7 +326,7 @@ fn try_check_offsets<O: Offset>(offsets: &[O]) -> PolarsResult<()> {
             }
 
             if any_invalid {
-                polars_bail!(ComputeError: "offsets must be monotonically increasing")
+                polars_bail!(ComputeError: "`offsets` must be monotonically increasing")
             } else {
                 Ok(())
             }

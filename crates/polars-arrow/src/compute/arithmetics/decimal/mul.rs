@@ -40,7 +40,7 @@ pub fn mul(lhs: &PrimitiveArray<i128>, rhs: &PrimitiveArray<i128>) -> PrimitiveA
         // The multiplication between i128 can overflow if they are
         // very large numbers. For that reason a checked
         // multiplication is used.
-        let res: i128 = a.checked_mul(b).expect("Mayor overflow for multiplication");
+        let res: i128 = a.checked_mul(b).expect("major overflow for multiplication");
 
         // The multiplication is done using the numbers without scale.
         // The resulting scale of the value has to be corrected by
@@ -54,7 +54,7 @@ pub fn mul(lhs: &PrimitiveArray<i128>, rhs: &PrimitiveArray<i128>) -> PrimitiveA
 
         assert!(
             res.abs() <= max,
-            "Overflow in multiplication presented for precision {precision}"
+            "overflow in multiplication presented for precision {precision}"
         );
 
         res
@@ -85,7 +85,7 @@ pub fn mul_scalar(lhs: &PrimitiveArray<i128>, rhs: &PrimitiveScalar<i128>) -> Pr
         // multiplication is used.
         let res: i128 = a
             .checked_mul(rhs)
-            .expect("Mayor overflow for multiplication");
+            .expect("major overflow for multiplication");
 
         // The multiplication is done using the numbers without scale.
         // The resulting scale of the value has to be corrected by
@@ -99,7 +99,7 @@ pub fn mul_scalar(lhs: &PrimitiveArray<i128>, rhs: &PrimitiveScalar<i128>) -> Pr
 
         assert!(
             res.abs() <= max,
-            "Overflow in multiplication presented for precision {precision}"
+            "overflow in multiplication presented for precision {precision}"
         );
 
         res
@@ -259,7 +259,7 @@ pub fn adaptive_mul(
         {
             (*lhs_p, *lhs_s, *rhs_p, *rhs_s)
         } else {
-            polars_bail!(ComputeError: "Incorrect data type for the array")
+            polars_bail!(ComputeError: "incorrect data type for the array")
         };
 
     // The resulting precision is mutable because it could change while
@@ -282,7 +282,7 @@ pub fn adaptive_mul(
             } else {
                 (l * shift).checked_mul(*r)
             }
-            .expect("Mayor overflow for multiplication");
+            .expect("major overflow for multiplication");
 
             let res = res / shift_1;
 

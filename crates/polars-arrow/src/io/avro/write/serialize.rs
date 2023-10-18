@@ -470,7 +470,7 @@ pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSeria
             let schema = if let AvroSchema::Array(schema) = &inner[1] {
                 schema.as_ref()
             } else {
-                unreachable!("The schema declaration does not match the deserialization")
+                unreachable!("the schema declaration does not match the deserialization")
             };
             list_optional::<i32>(array.as_any().downcast_ref().unwrap(), schema)
         },
@@ -478,7 +478,7 @@ pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSeria
             let schema = if let AvroSchema::Array(schema) = &inner[1] {
                 schema.as_ref()
             } else {
-                unreachable!("The schema declaration does not match the deserialization")
+                unreachable!("the schema declaration does not match the deserialization")
             };
             list_optional::<i64>(array.as_any().downcast_ref().unwrap(), schema)
         },
@@ -489,7 +489,7 @@ pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSeria
             let inner = if let AvroSchema::Record(inner) = &inner[1] {
                 inner
             } else {
-                unreachable!("The schema declaration does not match the deserialization")
+                unreachable!("the schema declaration does not match the deserialization")
             };
             struct_optional(array.as_any().downcast_ref().unwrap(), inner)
         },

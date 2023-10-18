@@ -301,7 +301,7 @@ pub fn array_to_page_simple(
     let data_type = array.data_type();
     if !can_encode(data_type, encoding) {
         polars_bail!(InvalidOperation:
-            "The datatype {data_type:?} cannot be encoded by {encoding:?}"
+            "the datatype `{data_type:?}` cannot be encoded by `{encoding:?}`"
         )
     }
 
@@ -589,7 +589,7 @@ pub fn array_to_page_simple(
                 fixed_len_bytes::array_to_page(&array, options, type_, statistics)
             }
         },
-        other => polars_bail!(nyi = "Writing parquet pages for data type {other:?}"),
+        other => polars_bail!(nyi = "writing parquet pages for data type `{other:?}`"),
     }
     .map(Page::Data)
 }
@@ -798,7 +798,7 @@ fn array_to_page_nested(
                 fixed_len_bytes::array_to_page(&array, options, type_, statistics)
             }
         },
-        other => polars_bail!(nyi = "Writing nested parquet pages for data type {other:?}"),
+        other => polars_bail!(nyi = "writing nested parquet pages for data type `{other:?}`"),
     }
     .map(Page::Data)
 }

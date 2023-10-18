@@ -571,7 +571,7 @@ pub(crate) unsafe fn extend_trusted_len_unzip<I, P, T>(
     I: Iterator<Item = Option<P>>,
 {
     let (_, upper) = iterator.size_hint();
-    let additional = upper.expect("trusted_len_unzip requires an upper limit");
+    let additional = upper.expect("`trusted_len_unzip` requires an upper limit");
 
     validity.reserve(additional);
     let values = iterator.map(|item| {
@@ -620,7 +620,7 @@ where
     I: Iterator<Item = std::result::Result<Option<P>, E>>,
 {
     let (_, upper) = iterator.size_hint();
-    let len = upper.expect("trusted_len_unzip requires an upper limit");
+    let len = upper.expect("`trusted_len_unzip` requires an upper limit");
 
     let mut null = MutableBitmap::with_capacity(len);
     let mut buffer = Vec::<T>::with_capacity(len);
@@ -640,7 +640,7 @@ where
     assert_eq!(
         dst.offset_from(buffer.as_ptr()) as usize,
         len,
-        "Trusted iterator length was not accurately reported"
+        "trusted iterator length was not accurately reported"
     );
     buffer.set_len(len);
     null.set_len(len);

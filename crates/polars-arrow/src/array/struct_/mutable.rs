@@ -22,10 +22,10 @@ fn check(
 ) -> PolarsResult<()> {
     let fields = StructArray::try_get_fields(data_type)?;
     if fields.is_empty() {
-        polars_bail!(ComputeError: "a StructArray must contain at least one field")
+        polars_bail!(ComputeError: "a `StructArray` must contain at least one field")
     }
     if fields.len() != values.len() {
-        polars_bail!(ComputeError: "a StructArray must have a number of fields in its DataType equal to the number of child values")
+        polars_bail!(ComputeError: "a `StructArray` must have a number of fields in its `DataType` equal to the number of child values")
     }
 
     fields
@@ -35,8 +35,8 @@ fn check(
             .try_for_each(|(index, (data_type, child))| {
                 if data_type != child {
                     polars_bail!(ComputeError:
-                        "The children DataTypes of a StructArray must equal the children data types.
-                         However, the field {index} has data type {data_type:?} but the value has data type {child:?}"
+                        "the children `DataType`s of a `StructArray` must equal the children data types
+                         \n\nThe field {index} has data type `{data_type:?}` but the value has data type `{child:?}`."
                     )
                 } else {
                     Ok(())
@@ -51,8 +51,8 @@ fn check(
             .try_for_each(|(index, a_len)| {
                 if a_len != len {
                     polars_bail!(ComputeError:
-                        "The children must have an equal number of values.
-                         However, the values at index {index} have a length of {a_len}, which is different from values at index 0, {len}."
+                        "the children must have an equal number of values
+                         \n\nThe values at index {index} have a length of {a_len}, which is different from values at index 0, {len}."
                     )
                 } else {
                     Ok(())
@@ -61,7 +61,7 @@ fn check(
 
     if validity.map_or(false, |validity| validity != len) {
         polars_bail!(ComputeError:
-            "the validity length of a StructArray must match its number of elements",
+            "the validity length of a `StructArray` must match its number of elements",
         )
     }
     Ok(())

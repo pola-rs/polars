@@ -32,7 +32,7 @@ fn get_parameters(lhs: &DataType, rhs: &DataType) -> PolarsResult<(usize, usize)
             Ok((*lhs_p, *lhs_s))
         } else {
             Err(PolarsError::InvalidOperation(
-                "Arrays must have the same precision and scale".into(),
+                "arrays must have the same precision and scale".into(),
             ))
         }
     } else {

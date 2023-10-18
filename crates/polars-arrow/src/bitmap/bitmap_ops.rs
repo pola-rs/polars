@@ -12,7 +12,7 @@ pub unsafe fn from_chunk_iter_unchecked<T: BitChunk, I: Iterator<Item = T>>(
     iterator: I,
 ) -> Vec<u8> {
     let (_, upper) = iterator.size_hint();
-    let upper = upper.expect("try_from_trusted_len_iter requires an upper limit");
+    let upper = upper.expect("`try_from_trusted_len_iter` requires an upper limit");
     let len = upper * std::mem::size_of::<T>();
 
     let mut buffer = Vec::with_capacity(len);
@@ -28,7 +28,7 @@ pub unsafe fn from_chunk_iter_unchecked<T: BitChunk, I: Iterator<Item = T>>(
     assert_eq!(
         dst.offset_from(buffer.as_ptr()) as usize,
         len,
-        "Trusted iterator length was not accurately reported"
+        "trusted iterator length was not accurately reported"
     );
     buffer.set_len(len);
     buffer

@@ -102,7 +102,7 @@ where
     match encoding {
         Encoding::DeltaBinaryPacked => array_to_page(array, options, type_, encoding, encode_delta),
         Encoding::Plain => array_to_page(array, options, type_, encoding, encode_plain),
-        other => polars_bail!(nyi = "Encoding integer as {other:?}"),
+        other => polars_bail!(nyi = "encoding integer as `{other:?}`"),
     }
 }
 

@@ -68,7 +68,7 @@ pub fn create_list(
 
             Box::new(ListArray::<i64>::new(
                 data_type,
-                offsets.try_into().expect("List too large"),
+                offsets.try_into().expect("list too large"),
                 values,
                 validity.and_then(|x| x.into()),
             ))

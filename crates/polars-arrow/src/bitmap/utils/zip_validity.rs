@@ -202,7 +202,7 @@ where
     pub fn unwrap_required(self) -> I {
         match self {
             ZipValidity::Required(i) => i,
-            _ => panic!("Could not 'unwrap_required'. 'ZipValidity' iterator has nulls."),
+            _ => panic!("could not `unwrap_required` because `ZipValidity` iterator has nulls"),
         }
     }
 
@@ -210,7 +210,7 @@ where
     pub fn unwrap_optional(self) -> ZipValidityIter<T, I, V> {
         match self {
             ZipValidity::Optional(i) => i,
-            _ => panic!("Could not 'unwrap_optional'. 'ZipValidity' iterator has no nulls."),
+            _ => panic!("could not `unwrap_optional` because `ZipValidity` iterator has no nulls"),
         }
     }
 }

@@ -24,7 +24,7 @@ pub fn read_utf8<O: Offset, R: Read + Seek>(
 ) -> PolarsResult<Utf8Array<O>> {
     let field_node = field_nodes.pop_front().ok_or_else(|| {
         polars_err!(oos =
-            "IPC: unable to fetch the field for {data_type:?}. The file or stream is corrupted."
+            "IPC: unable to fetch the field for {data_type:?}\n\nThe file or stream is corrupted."
         )
     })?;
 
@@ -78,18 +78,18 @@ pub fn skip_utf8(
 ) -> PolarsResult<()> {
     let _ = field_nodes.pop_front().ok_or_else(|| {
         polars_err!(
-            oos = "IPC: unable to fetch the field for utf8. The file or stream is corrupted."
+            oos = "IPC: unable to fetch the field for utf8\n\nThe file or stream is corrupted."
         )
     })?;
 
     let _ = buffers
         .pop_front()
-        .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer."))?;
+        .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer"))?;
     let _ = buffers
         .pop_front()
-        .ok_or_else(|| polars_err!(oos = "IPC: missing offsets buffer."))?;
+        .ok_or_else(|| polars_err!(oos = "IPC: missing offsets buffer"))?;
     let _ = buffers
         .pop_front()
-        .ok_or_else(|| polars_err!(oos = "IPC: missing values buffer."))?;
+        .ok_or_else(|| polars_err!(oos = "IPC: missing values buffer"))?;
     Ok(())
 }

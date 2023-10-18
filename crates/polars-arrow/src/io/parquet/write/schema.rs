@@ -372,6 +372,6 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             )],
             None,
         )),
-        other => polars_bail!(nyi = "Writing the data type {other:?} is not yet implemented"),
+        other => polars_bail!(nyi = "writing the data type `{other:?}` is not yet implemented"),
     }
 }

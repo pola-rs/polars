@@ -53,7 +53,7 @@ fn create_scale(lhs: &DataType, rhs: &DataType) -> PolarsResult<f64> {
         },
         _ => {
             polars_bail!(ComputeError:
-                "Incorrect data type for the arguments"
+                "incorrect data type for the arguments"
             )
         },
     };
@@ -270,7 +270,7 @@ pub fn subtract_timestamps(
             Ok(binary(lhs, rhs, DataType::Duration(*timeunit_a), op))
         },
         _ => polars_bail!(ComputeError:
-            "Incorrect data type for the arguments"
+            "incorrect data type for the arguments"
         )
     }
 }
@@ -290,7 +290,7 @@ pub fn sub_timestamps_scalar(
             )
         } else {
             return Err(Error::InvalidArgumentError(
-                "sub_timestamps_scalar requires both arguments to be timestamps without timezone"
+                "`sub_timestamps_scalar` requires both arguments to be timestamps without timezone"
                     .to_string(),
             ));
         };
@@ -362,7 +362,7 @@ pub fn add_interval(
             ))
         },
         _ => Err(Error::InvalidArgumentError(
-            "Adding an interval is only supported for `DataType::Timestamp`".to_string(),
+            "adding an interval is only supported for `DataType::Timestamp`".to_string(),
         )),
     }
 }
@@ -426,7 +426,7 @@ pub fn add_interval_scalar(
             ))
         },
         _ => Err(Error::InvalidArgumentError(
-            "Adding an interval is only supported for `DataType::Timestamp`".to_string(),
+            "adding an interval is only supported for `DataType::Timestamp`".to_string(),
         )),
     }
 }

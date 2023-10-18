@@ -65,13 +65,13 @@ impl MutableBooleanArray {
             .map_or(false, |validity| validity.len() != values.len())
         {
             polars_bail!(ComputeError:
-                "validity mask length must match the number of values",
+                "`validity` mask length must match the number of elements in `values`",
             )
         }
 
         if data_type.to_physical_type() != PhysicalType::Boolean {
             polars_bail!(oos =
-                "MutableBooleanArray can only be initialized with a DataType whose physical type is Boolean",
+                "`MutableBooleanArray` can only be initialized with a `DataType` whose physical type is `Boolean`",
             )
         }
 
@@ -151,7 +151,7 @@ impl MutableBooleanArray {
     {
         let (_, upper) = iterator.size_hint();
         let additional =
-            upper.expect("extend_trusted_len_values_unchecked requires an upper limit");
+            upper.expect("`extend_trusted_len_values_unchecked` requires an upper limit");
 
         if let Some(validity) = self.validity.as_mut() {
             validity.extend_constant(additional, true);
@@ -382,7 +382,7 @@ pub(crate) unsafe fn extend_trusted_len_unzip<I, P>(
     I: Iterator<Item = Option<P>>,
 {
     let (_, upper) = iterator.size_hint();
-    let additional = upper.expect("extend_trusted_len_unzip requires an upper limit");
+    let additional = upper.expect("`extend_trusted_len_unzip` requires an upper limit");
 
     // Length of the array before new values are pushed,
     // variable created for assertion post operation
@@ -420,7 +420,7 @@ where
     I: Iterator<Item = std::result::Result<Option<P>, E>>,
 {
     let (_, upper) = iterator.size_hint();
-    let len = upper.expect("trusted_len_unzip requires an upper limit");
+    let len = upper.expect("`trusted_len_unzip` requires an upper limit");
 
     let mut null = MutableBitmap::with_capacity(len);
     let mut values = MutableBitmap::with_capacity(len);

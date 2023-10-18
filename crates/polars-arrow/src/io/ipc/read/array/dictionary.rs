@@ -30,14 +30,14 @@ where
     let id = if let Some(id) = id {
         id
     } else {
-        polars_bail!(oos = "Dictionary has no id.");
+        polars_bail!(oos = "`Dictionary` has no id");
     };
     let values = dictionaries
         .get(&id)
         .ok_or_else(|| {
             let valid_ids = dictionaries.keys().collect::<HashSet<_>>();
             polars_err!(ComputeError:
-                "Dictionary id {id} not found. Valid ids: {valid_ids:?}"
+                "`Dictionary` id {id} not found; valid ids: {valid_ids:?}"
             )
         })?
         .clone();

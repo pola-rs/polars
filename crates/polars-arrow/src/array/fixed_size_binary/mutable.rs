@@ -47,7 +47,7 @@ impl MutableFixedSizeBinaryArray {
 
         if values.len() % size != 0 {
             polars_bail!(ComputeError:
-                "values (of len {}) must be a multiple of size ({}) in FixedSizeBinaryArray.",
+                "values (of len {}) must be a multiple of size ({}) in `FixedSizeBinaryArray`",
                 values.len(),
                 size
             )
@@ -58,7 +58,7 @@ impl MutableFixedSizeBinaryArray {
             .as_ref()
             .map_or(false, |validity| validity.len() != len)
         {
-            polars_bail!(ComputeError: "validity mask length must be equal to the number of values divided by size")
+            polars_bail!(ComputeError: "`validity` mask length must be equal to the number of elements in `values` divided by `size`")
         }
 
         Ok(Self {
@@ -110,7 +110,7 @@ impl MutableFixedSizeBinaryArray {
             Some(bytes) => {
                 let bytes = bytes.as_ref();
                 if self.size != bytes.len() {
-                    polars_bail!(ComputeError: "FixedSizeBinaryArray requires every item to be of its length")
+                    polars_bail!(ComputeError: "`FixedSizeBinaryArray` requires every item to be of its length")
                 }
                 self.values.extend_from_slice(bytes);
 

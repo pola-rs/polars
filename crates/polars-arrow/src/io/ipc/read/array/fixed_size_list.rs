@@ -27,7 +27,7 @@ pub fn read_fixed_size_list<R: Read + Seek>(
 ) -> PolarsResult<FixedSizeListArray> {
     let field_node = field_nodes.pop_front().ok_or_else(|| {
         polars_err!(ComputeError:
-            "IPC: unable to fetch the field for {data_type:?}. The file or stream is corrupted."
+            "IPC: unable to fetch the field for `{data_type:?}`\n\nThe file or stream is corrupted."
         )
     })?;
 
@@ -70,13 +70,13 @@ pub fn skip_fixed_size_list(
 ) -> PolarsResult<()> {
     let _ = field_nodes.pop_front().ok_or_else(|| {
         polars_err!(oos =
-            "IPC: unable to fetch the field for fixed-size list. The file or stream is corrupted."
+            "IPC: unable to fetch the field for fixed-size list\n\nThe file or stream is corrupted."
         )
     })?;
 
     let _ = buffers
         .pop_front()
-        .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer."))?;
+        .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer"))?;
 
     let (field, _) = FixedSizeListArray::get_child_and_size(data_type);
 

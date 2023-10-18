@@ -55,10 +55,10 @@ impl UnionArray {
         let (f, ids, mode) = Self::try_get_all(&data_type)?;
 
         if f.len() != fields.len() {
-            polars_bail!(ComputeError: "the number of `fields` must equal the number of children fields in DataType::Union")
+            polars_bail!(ComputeError: "the number of `fields` must equal the number of children fields in `DataType::Union`")
         };
         let number_of_fields: i8 = fields.len().try_into().map_err(
-            |_| polars_err!(ComputeError: "the number of `fields` cannot be larger than i8::MAX"),
+            |_| polars_err!(ComputeError: "the number of `fields` cannot be larger than `i8::MAX`"),
         )?;
 
         f
@@ -68,8 +68,8 @@ impl UnionArray {
             .try_for_each(|(index, (data_type, child))| {
                 if data_type != child {
                     polars_bail!(ComputeError:
-                        "the children DataTypes of a UnionArray must equal the children data types.
-                         However, the field {index} has data type {data_type:?} but the value has data type {child:?}"
+                        "the children `DataType`s of a `UnionArray` must equal the children data types
+                         \n\nThe field {index} has data type `{data_type:?}` but the value has data type `{child:?}`"
                     )
                 } else {
                     Ok(())
@@ -79,13 +79,13 @@ impl UnionArray {
         if let Some(offsets) = &offsets {
             if offsets.len() != types.len() {
                 polars_bail!(ComputeError:
-                "in a UnionArray, the offsets' length must be equal to the number of types"
+                "in a `UnionArray`, the `offsets`' length must be equal to the number of types"
                 )
             }
         }
         if offsets.is_none() != mode.is_sparse() {
             polars_bail!(ComputeError:
-            "in a sparse UnionArray, the offsets must be set (and vice-versa)",
+            "in a sparse `UnionArray`, the `offsets` must be set (and vice-versa)",
                 )
         }
 
@@ -121,7 +121,7 @@ impl UnionArray {
                 let id = hash[type_ as usize];
                 if id >= fields.len() {
                     polars_bail!(ComputeError:
-    "in a union, when the ids are set, each id must be smaller than the number of fields."
+    "in a union, when the ids are set, each id must be smaller than the number of fields"
                     )
                 } else {
                     Ok(())
@@ -139,7 +139,7 @@ impl UnionArray {
             }
             if !is_valid {
                 polars_bail!(ComputeError:
-                    "every type in `types` must be larger than 0 and smaller than the number of fields.",
+                    "every type in `types` must be larger than 0 and smaller than the number of fields",
                 )
             }
 
@@ -190,7 +190,7 @@ impl UnionArray {
 
             Self::new(data_type, types, fields, offsets)
         } else {
-            panic!("Union struct must be created with the corresponding Union DataType")
+            panic!("`Union` struct must be created with the corresponding `DataType::Union`")
         }
     }
 
@@ -217,7 +217,7 @@ impl UnionArray {
                 offset: 0,
             }
         } else {
-            panic!("Union struct must be created with the corresponding Union DataType")
+            panic!("`Union` struct must be created with the corresponding `DataType::Union`")
         }
     }
 }
@@ -232,7 +232,7 @@ impl UnionArray {
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(
             offset + length <= self.len(),
-            "the offset of the new array cannot exceed the existing length"
+            "the `offset` of the new array cannot exceed the existing length"
         );
         unsafe { self.slice_unchecked(offset, length) }
     }
@@ -343,7 +343,7 @@ impl Array for UnionArray {
     }
 
     fn with_validity(&self, _: Option<Bitmap>) -> Box<dyn Array> {
-        panic!("cannot set validity of a union array")
+        panic!("cannot set `validity` of a union array")
     }
 }
 
@@ -354,7 +354,7 @@ impl UnionArray {
                 Ok((fields, ids.as_ref().map(|x| x.as_ref()), *mode))
             },
             _ => polars_bail!(ComputeError:
-                "The UnionArray requires a logical type of DataType::Union",
+                "the `UnionArray` requires a logical type of `DataType::Union`",
             ),
         }
     }

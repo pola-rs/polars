@@ -84,7 +84,7 @@ impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<Chunk<A>>>>
     ) -> PolarsResult<Self> {
         if encodings.len() != schema.fields.len() {
             polars_bail!(InvalidOperation:
-                "The number of encodings must equal the number of fields".to_string(),
+                "the number of encodings must equal the number of fields".to_string(),
             )
         }
         let parquet_schema = to_parquet_schema(schema)?;
@@ -115,7 +115,7 @@ impl<A: AsRef<dyn Array> + 'static + Send + Sync, I: Iterator<Item = PolarsResul
             let chunk = maybe_chunk?;
             if self.encodings.len() != chunk.arrays().len() {
                 polars_bail!(InvalidOperation:
-                    "The number of arrays in the chunk must equal the number of fields in the schema"
+                    "the number of arrays in the chunk must equal the number of fields in the schema"
                 )
             };
             let encodings = self.encodings.clone();

@@ -86,7 +86,7 @@ pub fn take<O: Index>(
             let array = values.as_any().downcast_ref().unwrap();
             Ok(Box::new(fixed_size_list::take::<O>(array, indices)))
         },
-        t => unimplemented!("Take not supported for data type {:?}", t),
+        t => unimplemented!("`take` not supported for data type `{:?}`", t),
     }
 }
 

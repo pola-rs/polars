@@ -32,7 +32,7 @@ impl<K: DictionaryKey, A: ffi::ArrowArrayRef> FromFfi<A> for DictionaryArray<K> 
 
         let keys = PrimitiveArray::<K>::try_new(K::PRIMITIVE.into(), values, validity)?;
         let values = array.dictionary()?.ok_or_else(
-            || polars_err!(ComputeError: "Dictionary Array must contain a dictionary in ffi"),
+            || polars_err!(ComputeError: "`DictionaryArray` must contain a dictionary in ffi"),
         )?;
         let values = ffi::try_from(values)?;
 

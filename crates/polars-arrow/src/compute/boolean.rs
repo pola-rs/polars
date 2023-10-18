@@ -9,7 +9,7 @@ fn assert_lengths(lhs: &BooleanArray, rhs: &BooleanArray) {
     assert_eq!(
         lhs.len(),
         rhs.len(),
-        "lhs and rhs must have the same length"
+        "`lhs` and `rhs` must have the same length"
     );
 }
 

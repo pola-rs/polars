@@ -18,7 +18,7 @@ def test_cast_list_array() -> None:
     # width is incorrect
     with pytest.raises(
         pl.ComputeError,
-        match=r"incompatible offsets in source list",
+        match=r"incompatible `offsets` in source `list`",
     ):
         s.cast(pl.Array(width=2, inner=pl.Int64))
 

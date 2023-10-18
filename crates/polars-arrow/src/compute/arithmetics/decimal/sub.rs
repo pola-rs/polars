@@ -38,7 +38,7 @@ pub fn sub(lhs: &PrimitiveArray<i128>, rhs: &PrimitiveArray<i128>) -> PrimitiveA
 
         assert!(
             res.abs() <= max,
-            "Overflow in subtract presented for precision {precision}"
+            "overflow in subtract presented for precision {precision}"
         );
 
         res
@@ -187,7 +187,7 @@ pub fn adaptive_sub(
         {
             (*lhs_p, *lhs_s, *rhs_p, *rhs_s)
         } else {
-            polars_bail!(ComputeError: "Incorrect data type for the array")
+            polars_bail!(ComputeError: "incorrect data type for the array")
         };
 
     // The resulting precision is mutable because it could change while

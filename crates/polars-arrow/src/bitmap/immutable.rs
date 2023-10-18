@@ -68,7 +68,7 @@ impl Default for Bitmap {
 pub(super) fn check(bytes: &[u8], offset: usize, length: usize) -> PolarsResult<()> {
     if offset + length > bytes.len().saturating_mul(8) {
         polars_bail!(InvalidOperation:
-            "The offset + length of the bitmap ({}) must be `<=` to the number of bytes times 8 ({})",
+            "the `offset + length` of the bitmap ({}) must be `<=` to the number of bytes times 8 ({})",
             offset + length,
             bytes.len().saturating_mul(8)
         );

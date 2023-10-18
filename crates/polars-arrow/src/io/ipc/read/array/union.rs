@@ -28,14 +28,14 @@ pub fn read_union<R: Read + Seek>(
 ) -> PolarsResult<UnionArray> {
     let field_node = field_nodes.pop_front().ok_or_else(|| {
         polars_err!(ComputeError:
-            "IPC: unable to fetch the field for {data_type:?}. The file or stream is corrupted."
+            "IPC: unable to fetch the field for `{data_type:?}`\n\nThe file or stream is corrupted."
         )
     })?;
 
     if version != Version::V5 {
         let _ = buffers
             .pop_front()
-            .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer."))?;
+            .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer"))?;
     };
 
     let length: usize = field_node
@@ -105,17 +105,17 @@ pub fn skip_union(
 ) -> PolarsResult<()> {
     let _ = field_nodes.pop_front().ok_or_else(|| {
         polars_err!(
-            oos = "IPC: unable to fetch the field for struct. The file or stream is corrupted."
+            oos = "IPC: unable to fetch the field for struct\n\nThe file or stream is corrupted."
         )
     })?;
 
     let _ = buffers
         .pop_front()
-        .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer."))?;
+        .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer"))?;
     if let DataType::Union(_, _, Dense) = data_type {
         let _ = buffers
             .pop_front()
-            .ok_or_else(|| polars_err!(oos = "IPC: missing offsets buffer."))?;
+            .ok_or_else(|| polars_err!(oos = "IPC: missing offsets buffer"))?;
     } else {
         unreachable!()
     };

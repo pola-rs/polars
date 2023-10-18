@@ -27,7 +27,7 @@ pub fn read_struct<R: Read + Seek>(
 ) -> PolarsResult<StructArray> {
     let field_node = field_nodes.pop_front().ok_or_else(|| {
         polars_err!(oos =
-            "IPC: unable to fetch the field for {data_type:?}. The file or stream is corrupted."
+            "IPC: unable to fetch the field for `{data_type:?}`\n\nThe file or stream is corrupted."
         )
     })?;
 
@@ -75,13 +75,13 @@ pub fn skip_struct(
 ) -> PolarsResult<()> {
     let _ = field_nodes.pop_front().ok_or_else(|| {
         polars_err!(
-            oos = "IPC: unable to fetch the field for struct. The file or stream is corrupted."
+            oos = "IPC: unable to fetch the field for struct\n\nThe file or stream is corrupted."
         )
     })?;
 
     let _ = buffers
         .pop_front()
-        .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer."))?;
+        .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer"))?;
 
     let fields = StructArray::get_fields(data_type);
 
