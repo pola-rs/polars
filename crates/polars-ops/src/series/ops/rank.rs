@@ -113,7 +113,7 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
                 rank += 1;
             }
         }
-        IdxCa::new_from_owned_with_null_bitmap(s.name(), out, validity).into_series()
+        IdxCa::from_vec_validity(s.name(), out, validity).into_series()
     } else {
         let sorted_values = unsafe { s.take_unchecked(&sort_idx_ca) };
         let not_consecutive_same = sorted_values
@@ -136,7 +136,7 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
                         rank += 1;
                     }
                 });
-                IdxCa::new_from_owned_with_null_bitmap(s.name(), out, validity).into_series()
+                IdxCa::from_vec_validity(s.name(), out, validity).into_series()
             },
             Average => unsafe {
                 let mut out = vec![0.0; s.len()];
@@ -149,8 +149,7 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
                         *out.get_unchecked_mut(*i as usize) = avg;
                     }
                 });
-                Float64Chunked::new_from_owned_with_null_bitmap(s.name(), out, validity)
-                    .into_series()
+                Float64Chunked::from_vec_validity(s.name(), out, validity).into_series()
             },
             Min => unsafe {
                 let mut out = vec![0 as IdxSize; s.len()];
@@ -160,7 +159,7 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
                     }
                     rank += ties.len() as IdxSize;
                 });
-                IdxCa::new_from_owned_with_null_bitmap(s.name(), out, validity).into_series()
+                IdxCa::from_vec_validity(s.name(), out, validity).into_series()
             },
             Max => unsafe {
                 let mut out = vec![0 as IdxSize; s.len()];
@@ -170,7 +169,7 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
                         *out.get_unchecked_mut(*i as usize) = rank - 1;
                     }
                 });
-                IdxCa::new_from_owned_with_null_bitmap(s.name(), out, validity).into_series()
+                IdxCa::from_vec_validity(s.name(), out, validity).into_series()
             },
             Dense => unsafe {
                 let mut out = vec![0 as IdxSize; s.len()];
@@ -180,7 +179,7 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
                     }
                     rank += 1;
                 });
-                IdxCa::new_from_owned_with_null_bitmap(s.name(), out, validity).into_series()
+                IdxCa::from_vec_validity(s.name(), out, validity).into_series()
             },
             Ordinal => unreachable!(),
         }

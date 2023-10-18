@@ -86,7 +86,7 @@ macro_rules! impl_ufuncs {
                             assert_eq!(get_refcnt(out_array), 3);
 
                             let validity = self.series.chunks()[0].validity().cloned();
-                            let ca = ChunkedArray::<$type>::new_from_owned_with_null_bitmap(
+                            let ca = ChunkedArray::<$type>::from_vec_validity(
                                 self.name(),
                                 av,
                                 validity,
