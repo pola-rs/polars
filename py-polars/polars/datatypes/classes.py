@@ -533,9 +533,9 @@ class Duration(TemporalType):
 class Categorical(DataType):
     """A categorical encoding of a set of strings."""
 
-    categories: List[str] | None = None
+    categories: list[str] | None = None
 
-    def __init__(self, categories: List[str] | None = None):
+    def __init__(self, categories: list[str] | None = None):
         """
         Categorical data type.
 
@@ -546,7 +546,6 @@ class Categorical(DataType):
 
         """
         self.categories = categories
-
 
 
 class Object(DataType):
