@@ -502,9 +502,6 @@ where
     if *remaining == 0 && items.is_empty() {
         return MaybeNext::None;
     }
-    if !items.is_empty() && items.front().unwrap().0.len() > chunk_size.unwrap_or(usize::MAX) {
-        return MaybeNext::Some(Ok(items.pop_front().unwrap()));
-    }
 
     match iter.next() {
         Err(e) => MaybeNext::Some(Err(e.into())),
@@ -539,7 +536,8 @@ where
                 Err(e) => return MaybeNext::Some(Err(e)),
             };
 
-            // if possible, return the value immediately.
+            // this comparison is strictly greater to ensure the contents of the
+            // row are fully read.
             if !items.is_empty()
                 && items.front().unwrap().0.len() > chunk_size.unwrap_or(usize::MAX)
             {
