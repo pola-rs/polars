@@ -153,9 +153,11 @@ def _assert_series_values_equal(
             return
 
     try:
-        can_be_subtracted = hasattr(dtype_to_py_type(left.dtype), "__sub__")
+        py_type = dtype_to_py_type(left.dtype)
     except NotImplementedError:
         can_be_subtracted = False
+    else:
+        can_be_subtracted = hasattr(py_type, "__sub__")
 
     check_exact = (
         check_exact or not can_be_subtracted or left.is_boolean() or left.is_temporal()
