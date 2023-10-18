@@ -107,10 +107,13 @@ def _date_to_pl_date(d: date) -> int:
     return int(dt.timestamp()) // SECONDS_PER_DAY
 
 
-def _seconds_and_micros_to_subseconds(
-    seconds: int, micro_seconds: int, time_unit: TimeUnit | None
-) -> int:
-    """Convert seconds and microseconds to subseconds in given time unit."""
+def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
+    """Convert a python datetime to a timestamp in given time unit."""
+    if dt.tzinfo is None:
+        # Make sure to use UTC rather than system time zone.
+        dt = dt.replace(tzinfo=timezone.utc)
+    micro_seconds = dt.microsecond
+    seconds = _timestamp_in_seconds(dt)
     if time_unit == "ns":
         return 1_000 * (seconds * 1_000_000 + micro_seconds)
     elif time_unit == "us" or time_unit is None:
@@ -122,24 +125,18 @@ def _seconds_and_micros_to_subseconds(
     )
 
 
-def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
-    """Convert a python datetime to a timestamp in given time unit."""
-    if dt.tzinfo is None:
-        # Make sure to use UTC rather than system time zone.
-        dt = dt.replace(tzinfo=timezone.utc)
-    micro_seconds = dt.microsecond
-    seconds = _timestamp_in_seconds(dt)
-    return _seconds_and_micros_to_subseconds(
-        seconds=seconds, micro_seconds=micro_seconds, time_unit=time_unit
-    )
-
-
 def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None) -> int:
     """Convert a Python timedelta object to a total number of subseconds."""
     micro_seconds = td.microseconds
     seconds = td.days * SECONDS_PER_DAY + td.seconds
-    return _seconds_and_micros_to_subseconds(
-        seconds=seconds, micro_seconds=micro_seconds, time_unit=time_unit
+    if time_unit == "ns":
+        return 1_000 * (seconds * 1_000_000 + micro_seconds)
+    elif time_unit == "us" or time_unit is None:
+        return seconds * 1_000_000 + micro_seconds
+    elif time_unit == "ms":
+        return seconds * 1_000 + micro_seconds // 1_000
+    raise ValueError(
+        f"`time_unit` must be one of {{'ms', 'us', 'ns'}}, got {time_unit!r}"
     )
 
 
@@ -161,7 +158,7 @@ def _to_python_timedelta(
 ) -> timedelta:
     if time_unit == "ns":
         return timedelta(microseconds=value // 1_000)
-    elif time_unit == "us" or time_unit is None:
+    elif time_unit == "us":
         return timedelta(microseconds=value)
     elif time_unit == "ms":
         return timedelta(milliseconds=value)
@@ -183,9 +180,27 @@ def _to_python_datetime(
 ) -> datetime:
     """Convert polars int64 timestamp to Python datetime."""
     if not time_zone:
-        return EPOCH + _to_python_timedelta(value, time_unit)
+        if time_unit == "ns":
+            return EPOCH + timedelta(microseconds=value // 1_000)
+        elif time_unit == "us":
+            return EPOCH + timedelta(microseconds=value)
+        elif time_unit == "ms":
+            return EPOCH + timedelta(milliseconds=value)
+        else:
+            raise ValueError(
+                f"`time_unit` must be one of {{'ms', 'us', 'ns'}}, got {time_unit!r}"
+            )
     elif _ZONEINFO_AVAILABLE:
-        dt = EPOCH_UTC + _to_python_timedelta(value, time_unit)
+        if time_unit == "ns":
+            dt = EPOCH_UTC + timedelta(microseconds=value // 1_000)
+        elif time_unit == "us":
+            dt = EPOCH_UTC + timedelta(microseconds=value)
+        elif time_unit == "ms":
+            dt = EPOCH_UTC + timedelta(milliseconds=value)
+        else:
+            raise ValueError(
+                f"`time_unit` must be one of {{'ms', 'us', 'ns'}}, got {time_unit!r}"
+            )
         return _localize(dt, time_zone)
     else:
         raise ImportError(
