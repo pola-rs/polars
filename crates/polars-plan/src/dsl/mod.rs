@@ -647,7 +647,6 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
                 fmt_str: "",
-                auto_explode: true,
                 ..Default::default()
             },
         }
