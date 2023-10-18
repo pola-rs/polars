@@ -50,14 +50,6 @@ EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
 EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
-def _validate_time_unit(time_unit: Any) -> None:
-    if time_unit not in ("ms", "us", "ns"):
-        raise ValueError(
-            f"`time_unit` must be one of {{'ms', 'us', 'ns'}}, got {time_unit!r}"
-        )
-
-
-
 def _timestamp_in_seconds(dt: datetime) -> int:
     du = dt - EPOCH_UTC
     return du.days * SECONDS_PER_DAY + du.seconds
@@ -105,7 +97,9 @@ def _negate_duration(duration: str) -> str:
 
 def _time_to_pl_time(t: time) -> int:
     t = t.replace(tzinfo=timezone.utc)
-    return int((t.hour * 3_600 + t.minute * 60 + t.second) * 1e9 + t.microsecond * 1e3)
+    return (
+        t.hour * 3_600 + t.minute * 60 + t.second
+    ) * 1_000_000_000 + t.microsecond * 1_000
 
 
 def _date_to_pl_date(d: date) -> int:
@@ -117,15 +111,15 @@ def _seconds_and_micros_to_subseconds(
     seconds: int, micro_seconds: int, time_unit: TimeUnit | None
 ) -> int:
     """Convert seconds and microseconds to subseconds in given time unit."""
-    if time_unit is None:
-        time_unit = "us"
-    _validate_time_unit(time_unit)
     if time_unit == "ns":
         return 1_000 * (seconds * 1_000_000 + micro_seconds)
-    elif time_unit == "us":
+    elif time_unit == "us" or time_unit is None:
         return seconds * 1_000_000 + micro_seconds
     elif time_unit == "ms":
         return seconds * 1_000 + micro_seconds // 1_000
+    raise ValueError(
+        f"`time_unit` must be one of {{'ms', 'us', 'ns'}}, got {time_unit!r}"
+    )
 
 
 def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
@@ -165,15 +159,15 @@ def _to_python_time(value: int) -> time:
 def _to_python_timedelta(
     value: int | float, time_unit: TimeUnit | None = "ns"
 ) -> timedelta:
-    if time_unit is None:
-        time_unit = "us"
-    _validate_time_unit(time_unit)
     if time_unit == "ns":
         return timedelta(microseconds=value // 1_000)
-    elif time_unit == "us":
+    elif time_unit == "us" or time_unit is None:
         return timedelta(microseconds=value)
     elif time_unit == "ms":
         return timedelta(milliseconds=value)
+    raise ValueError(
+        f"`time_unit` must be one of {{'ms', 'us', 'ns'}}, got {time_unit!r}"
+    )
 
 
 @lru_cache(256)
