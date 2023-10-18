@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-from polars import functions as F
 from polars.datatypes import (
     FLOAT_DTYPES,
     NESTED_DTYPES,
+    NUMERIC_DTYPES,
     UNSIGNED_INTEGER_DTYPES,
     Categorical,
     List,
     Struct,
     UInt64,
     Utf8,
-    dtype_to_py_type,
     unpack_dtypes,
 )
 from polars.series import Series
@@ -125,19 +124,19 @@ def _assert_series_values_equal(
     if categorical_as_str and left.dtype == Categorical:
         left, right = left.cast(Utf8), right.cast(Utf8)
 
-    # create mask of which (if any) values are unequal
+    # Start out simple - regular comparison where None == None
     unequal = left.ne_missing(right)
 
-    # handle NaN values (which compare unequal to themselves)
+    # Handle NaN values (which compare unequal to themselves)
     comparing_floats = left.dtype in FLOAT_DTYPES and right.dtype in FLOAT_DTYPES
-    if unequal.any() and nans_compare_equal:
-        # when both dtypes are scalar floats
-        if comparing_floats:
-            unequal = unequal & ~(
-                (left.is_nan() & right.is_nan()).fill_null(F.lit(False))
-            )
-    if comparing_floats and not nans_compare_equal:
-        unequal = unequal | left.is_nan() | right.is_nan()
+    if comparing_floats and nans_compare_equal:
+        both_nan = (left.is_nan() & right.is_nan()).fill_null(False)
+        unequal = unequal & ~both_nan
+    # TODO: When NaN logic is updated to such that NaN == NaN is True,
+    # delete the branch above and uncomment the branch below
+    # if comparing_floats and not nans_compare_equal:
+    #     both_nan = (left.is_nan() & right.is_nan()).fill_null(False)
+    #     unequal = unequal | both_nan
 
     # check nested dtypes in separate function
     if left.dtype in NESTED_DTYPES or right.dtype in NESTED_DTYPES:
@@ -152,44 +151,41 @@ def _assert_series_values_equal(
         ):
             return
 
-    try:
-        py_type = dtype_to_py_type(left.dtype)
-    except NotImplementedError:
-        can_be_subtracted = False
-    else:
-        can_be_subtracted = hasattr(py_type, "__sub__")
+    # If no differences found during exact checking, we're done
+    if not unequal.any():
+        return
 
+    # Only do inexact checking for numeric types
     check_exact = (
-        check_exact or not can_be_subtracted or left.is_boolean() or left.is_temporal()
+        check_exact
+        or left.dtype not in NUMERIC_DTYPES
+        or right.dtype not in NUMERIC_DTYPES
+    )
+    if check_exact:
+        raise_assertion_error(
+            "Series",
+            "exact value mismatch",
+            left=left.to_list(),
+            right=right.to_list(),
+        )
+
+    equal, nan_info = _check_series_equal_inexact(
+        left,
+        right,
+        unequal,
+        rtol=rtol,
+        atol=atol,
+        nans_compare_equal=nans_compare_equal,
+        comparing_floats=comparing_floats,
     )
 
-    # assert exact, or with tolerance
-    if unequal.any():
-        if check_exact:
-            raise_assertion_error(
-                "Series",
-                "exact value mismatch",
-                left=left.to_list(),
-                right=right.to_list(),
-            )
-        else:
-            equal, nan_info = _check_series_equal_inexact(
-                left,
-                right,
-                unequal,
-                rtol=rtol,
-                atol=atol,
-                nans_compare_equal=nans_compare_equal,
-                comparing_floats=comparing_floats,
-            )
-
-            if not equal:
-                raise_assertion_error(
-                    "Series",
-                    f"value mismatch{nan_info}",
-                    left=left.to_list(),
-                    right=right.to_list(),
-                )
+    if not equal:
+        raise_assertion_error(
+            "Series",
+            f"value mismatch{nan_info}",
+            left=left.to_list(),
+            right=right.to_list(),
+        )
 
 
 def _check_series_equal_inexact(
