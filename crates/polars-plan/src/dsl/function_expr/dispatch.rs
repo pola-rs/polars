@@ -76,3 +76,32 @@ pub(super) fn max_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
 pub(super) fn min_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     polars_ops::prelude::min_horizontal(s)
 }
+
+pub(super) fn drop_nulls(s: &Series) -> PolarsResult<Series> {
+    Ok(s.drop_nulls())
+}
+
+#[cfg(feature = "mode")]
+pub(super) fn mode(s: &Series) -> PolarsResult<Series> {
+    mode::mode(s)
+}
+
+#[cfg(feature = "moment")]
+pub(super) fn skew(s: &Series, bias: bool) -> PolarsResult<Series> {
+    s.skew(bias).map(|opt_v| Series::new(s.name(), &[opt_v]))
+}
+
+#[cfg(feature = "moment")]
+pub(super) fn kurtosis(s: &Series, fisher: bool, bias: bool) -> PolarsResult<Series> {
+    s.kurtosis(fisher, bias)
+        .map(|opt_v| Series::new(s.name(), &[opt_v]))
+}
+
+pub(super) fn arg_unique(s: &Series) -> PolarsResult<Series> {
+    s.arg_unique().map(|ok| ok.into_series())
+}
+
+#[cfg(feature = "rank")]
+pub(super) fn rank(s: &Series, options: RankOptions, seed: Option<u64>) -> PolarsResult<Series> {
+    Ok(s.rank(options, seed))
+}

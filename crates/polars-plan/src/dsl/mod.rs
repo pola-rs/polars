@@ -2,8 +2,6 @@
 //! Domain specific language for the Lazy API.
 #[cfg(feature = "rolling_window")]
 use polars_core::utils::ensure_sorted_arg;
-#[cfg(feature = "mode")]
-use polars_ops::chunked_array::mode::mode;
 #[cfg(feature = "dtype-categorical")]
 pub mod cat;
 #[cfg(feature = "dtype-categorical")]
@@ -183,7 +181,7 @@ impl Expr {
 
     /// Drop null values.
     pub fn drop_nulls(self) -> Self {
-        self.apply(|s| Ok(Some(s.drop_nulls())), GetOutput::same_type())
+        self.apply_private(FunctionExpr::DropNulls)
     }
 
     /// Drop NaN values.
@@ -345,11 +343,7 @@ impl Expr {
 
     /// Get the first index of unique values of this expression.
     pub fn arg_unique(self) -> Self {
-        self.apply(
-            |s: Series| s.arg_unique().map(|ca| Some(ca.into_series())),
-            GetOutput::from_type(IDX_DTYPE),
-        )
-        .with_fmt("arg_unique")
+        self.apply_private(FunctionExpr::ArgUnique)
     }
 
     /// Get the index value that has the minimum value.
@@ -1142,8 +1136,7 @@ impl Expr {
     #[cfg(feature = "mode")]
     /// Compute the mode(s) of this column. This is the most occurring value.
     pub fn mode(self) -> Expr {
-        self.apply(|s| mode(&s).map(Some), GetOutput::same_type())
-            .with_fmt("mode")
+        self.apply_private(FunctionExpr::Mode)
     }
 
     /// Keep the original root name
@@ -1484,14 +1477,7 @@ impl Expr {
     #[cfg(feature = "rank")]
     /// Assign ranks to data, dealing with ties appropriately.
     pub fn rank(self, options: RankOptions, seed: Option<u64>) -> Expr {
-        self.apply(
-            move |s| Ok(Some(s.rank(options, seed))),
-            GetOutput::map_field(move |fld| match options.method {
-                RankMethod::Average => Field::new(fld.name(), DataType::Float64),
-                _ => Field::new(fld.name(), IDX_DTYPE),
-            }),
-        )
-        .with_fmt("rank")
+        self.apply_private(FunctionExpr::Rank { options, seed })
     }
 
     #[cfg(feature = "cutqcut")]
@@ -1585,19 +1571,11 @@ impl Expr {
     ///
     /// see: [scipy](https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L1024)
     pub fn skew(self, bias: bool) -> Expr {
-        self.apply(
-            move |s| {
-                s.skew(bias)
-                    .map(|opt_v| Series::new(s.name(), &[opt_v]))
-                    .map(Some)
-            },
-            GetOutput::from_type(DataType::Float64),
-        )
-        .with_function_options(|mut options| {
-            options.fmt_str = "skew";
-            options.auto_explode = true;
-            options
-        })
+        self.apply_private(FunctionExpr::Skew(bias))
+            .with_function_options(|mut options| {
+                options.auto_explode = true;
+                options
+            })
     }
 
     #[cfg(feature = "moment")]
@@ -1609,18 +1587,11 @@ impl Expr {
     /// If bias is False then the kurtosis is calculated using k statistics to
     /// eliminate bias coming from biased moment estimators.
     pub fn kurtosis(self, fisher: bool, bias: bool) -> Expr {
-        self.apply(
-            move |s| {
-                s.kurtosis(fisher, bias)
-                    .map(|opt_v| Some(Series::new(s.name(), &[opt_v])))
-            },
-            GetOutput::from_type(DataType::Float64),
-        )
-        .with_function_options(|mut options| {
-            options.fmt_str = "kurtosis";
-            options.auto_explode = true;
-            options
-        })
+        self.apply_private(FunctionExpr::Kurtosis(fisher, bias))
+            .with_function_options(|mut options| {
+                options.auto_explode = true;
+                options
+            })
     }
 
     /// Get maximal value that could be hold by this dtype.

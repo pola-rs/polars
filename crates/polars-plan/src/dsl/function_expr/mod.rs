@@ -138,6 +138,19 @@ pub enum FunctionExpr {
         periods: i64,
     },
     DropNans,
+    DropNulls,
+    #[cfg(feature = "mode")]
+    Mode,
+    #[cfg(feature = "moment")]
+    Skew(bool),
+    #[cfg(feature = "moment")]
+    Kurtosis(bool, bool),
+    ArgUnique,
+    #[cfg(feature = "rank")]
+    Rank {
+        options: RankOptions,
+        seed: Option<u64>,
+    },
     #[cfg(feature = "round_series")]
     Clip {
         has_min: bool,
@@ -372,6 +385,16 @@ impl Display for FunctionExpr {
             RollingSkew { .. } => "rolling_skew",
             ShiftAndFill { .. } => "shift_and_fill",
             DropNans => "drop_nans",
+            DropNulls => "drop_nulls",
+            #[cfg(feature = "mode")]
+            Mode => "mode",
+            #[cfg(feature = "moment")]
+            Skew(_) => "skew",
+            #[cfg(feature = "moment")]
+            Kurtosis(..) => "kurtosis",
+            ArgUnique => "arg_unique",
+            #[cfg(feature = "rank")]
+            Rank { .. } => "rank",
             #[cfg(feature = "round_series")]
             Clip { has_min, has_max } => match (has_min, has_max) {
                 (true, true) => "clip",
@@ -626,10 +649,20 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map_as_slice!(shift_and_fill::shift_and_fill, periods)
             },
             DropNans => map_owned!(nan::drop_nans),
+            DropNulls => map!(dispatch::drop_nulls),
             #[cfg(feature = "round_series")]
             Clip { has_min, has_max } => {
                 map_as_slice!(clip::clip, has_min, has_max)
             },
+            #[cfg(feature = "mode")]
+            Mode => map!(dispatch::mode),
+            #[cfg(feature = "moment")]
+            Skew(bias) => map!(dispatch::skew, bias),
+            #[cfg(feature = "moment")]
+            Kurtosis(fisher, bias) => map!(dispatch::kurtosis, fisher, bias),
+            ArgUnique => map!(dispatch::arg_unique),
+            #[cfg(feature = "rank")]
+            Rank { options, seed } => map!(dispatch::rank, options, seed),
             ListExpr(lf) => {
                 use ListFunction::*;
                 match lf {
