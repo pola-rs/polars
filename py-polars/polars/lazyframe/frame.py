@@ -5831,7 +5831,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         # When include_nulls is True, we need to distinguish records after the join that
         # were originally null in the right frame, as opposed to records that were null
         # because the key was missing from the right frame.
-        # Add {name}__VALID columns indicating whether right frame was
+        # Add {name}__VALID columns indicating whether right frame had key.
         tmp_valid = "__VALID"
         if include_nulls:
             right_other_valid = [f"{name}{tmp_valid}" for name in right_other]
@@ -5844,7 +5844,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         tmp_name = "__POLARS_RIGHT"
         drop_columns = [
             *(f"{name}{tmp_name}" for name in right_other),
-            *(f"{name}{tmp_valid}" for name in right_other if include_nulls),
+            *right_other_valid,
         ]
         result = (
             self.join(
