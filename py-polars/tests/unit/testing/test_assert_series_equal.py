@@ -665,3 +665,24 @@ def test_assert_series_equal_nested_struct_float() -> None:
 
     with pytest.raises(AssertionError):
         assert_series_equal(s1, s2)
+
+
+def test_assert_series_equal_nested_list_none() -> None:
+    s1 = pl.Series([[1.0, 2.0], None], dtype=pl.List(pl.Float64))
+    s2 = pl.Series([[1.0, 2.0], None], dtype=pl.List(pl.Float64))
+
+    assert_series_equal(s1, s2, nans_compare_equal=False)
+
+
+def test_assert_series_equal_full_none_nested_not_nested() -> None:
+    s1 = pl.Series([None, None], dtype=pl.List(pl.Float64))
+    s2 = pl.Series([None, None], dtype=pl.Float64)
+
+    assert_series_equal(s1, s2, check_dtype=False)
+
+
+def test_assert_series_equal_unsigned_ints_underflow() -> None:
+    s1 = pl.Series([1, 3], dtype=pl.UInt8)
+    s2 = pl.Series([2, 4], dtype=pl.Int64)
+
+    assert_series_equal(s1, s2, atol=1, check_dtype=False)

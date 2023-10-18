@@ -278,25 +278,25 @@ def _assert_series_nested(
 
 
 def _assert_series_values_within_tolerance(
-    left_full: Series,
-    right_full: Series,
+    left: Series,
+    right: Series,
     unequal: Series,
     *,
     rtol: float,
     atol: float,
 ) -> None:
-    # apply check with tolerance (to the known-unequal matches).
-    left, right = left_full.filter(unequal), right_full.filter(unequal)
+    left_unequal, right_unequal = left.filter(unequal), right.filter(unequal)
 
-    difference = _calc_absolute_diff(left, right)
+    difference = _calc_absolute_diff(left_unequal, right_unequal)
     tolerance = atol + rtol * right.abs()
     exceeds_tolerance = difference > tolerance
+
     if exceeds_tolerance.any():
         raise_assertion_error(
             "Series",
             "value mismatch",
-            left_full.to_list(),
-            right_full.to_list(),
+            left.to_list(),
+            right.to_list(),
         )
 
 
