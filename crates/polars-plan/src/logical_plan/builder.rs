@@ -72,11 +72,13 @@ macro_rules! raise_err {
                 let format_err_outer = |msg: &str| format_err(msg, &input);
                 let err = $err.wrap_msg(&format_err_outer);
 
-                (Box::new($input.clone()), err.into())
+                LogicalPlan::Error {
+                    input: Box::new(input),
+                    err: err.into(), // PolarsError -> ErrorState(NotYetEncountered)
+                }
             },
-        };
-
-        LogicalPlan::Error { input, err }.$convert()
+        }
+        .$convert()
     }};
 }
 
