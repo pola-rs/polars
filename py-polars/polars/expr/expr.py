@@ -4494,7 +4494,7 @@ class Expr:
 
     def eq_missing(self, other: Any) -> Self:
         """
-        Method equivalent of equality operator ``expr == other`` where `None` == None`.
+        Method equivalent of equality operator ``expr == other`` where ``None == None``.
 
         This differs from default ``eq`` where null values are propagated.
 

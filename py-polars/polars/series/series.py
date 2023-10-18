@@ -618,7 +618,7 @@ class Series:
 
     def eq_missing(self, other: Any) -> Self | Expr:
         """
-        Method equivalent of equality operator ``series == other`` where `None` == None`.
+        Method equivalent of equality operator ``series == other`` where ``None == None``.
 
         This differs from the standard ``ne`` where null values are propagated.
 
