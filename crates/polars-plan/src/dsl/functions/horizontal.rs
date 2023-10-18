@@ -248,6 +248,7 @@ pub fn max_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
             ..Default::default()
         },
     }
+    .alias("max")
 }
 
 /// Create a new column with the the minimum value per row.
@@ -270,6 +271,7 @@ pub fn min_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
             ..Default::default()
         },
     }
+    .alias("min")
 }
 
 /// Create a new column with the the sum of the values in each row.
@@ -290,6 +292,7 @@ pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
             ..Default::default()
         },
     }
+    .alias("sum")
 }
 
 /// Folds the expressions from left to right keeping the first non-null values.
