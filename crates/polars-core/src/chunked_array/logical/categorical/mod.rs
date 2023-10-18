@@ -125,6 +125,21 @@ impl CategoricalChunked {
     }
 
     /// Create a [`CategoricalChunked`] from an array of `idx` and an existing [`RevMapping`]:  `rev_map`.
+    pub(crate) fn from_cats_and_rev_map(
+        idx: UInt32Chunked,
+        rev_map: Arc<RevMapping>,
+    ) -> PolarsResult<CategoricalChunked> {
+        let len = rev_map.len() as u32;
+        let oob_check = idx.into_iter().flatten().any(|cat| cat >= len);
+        polars_ensure!(
+            !oob_check,
+            ComputeError:
+            "cannot construct Categorical from these categories; at least one of them is out of bounds"
+        );
+        Ok(unsafe { Self::from_cats_and_rev_map_unchecked(idx, rev_map) })
+    }
+
+    /// Create a [`CategoricalChunked`] from an array of `idx` and an existing [`RevMapping`]:  `rev_map`.
     ///
     /// # Safety
     /// Invariant in `v < rev_map.len() for v in idx` must hold.

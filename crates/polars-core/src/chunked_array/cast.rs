@@ -98,7 +98,7 @@ where
         }
         match data_type {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => {
+            DataType::Categorical(rev_map) => {
                 polars_ensure!(
                     self.dtype() == &DataType::UInt32,
                     ComputeError: "cannot cast numeric types to 'Categorical'"
@@ -106,7 +106,15 @@ where
                 // SAFETY
                 // we are guarded by the type system
                 let ca = unsafe { &*(self as *const ChunkedArray<T> as *const UInt32Chunked) };
-                CategoricalChunked::from_global_indices(ca.clone()).map(|ca| ca.into_series())
+
+                match rev_map {
+                    Some(rev_map) => {
+                        CategoricalChunked::from_cats_and_rev_map(ca.clone(), rev_map.clone())
+                            .map(|ca| ca.into_series())
+                    },
+                    None => CategoricalChunked::from_global_indices(ca.clone())
+                        .map(|ca| ca.into_series()),
+                }
             },
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields),

@@ -422,3 +422,8 @@ def test_categorical_collect_11408() -> None:
         "groups": ["a", "b", "c"],
         "cats": ["a", "b", "c"],
     }
+
+
+def test_categorical_deeply_nested_11792() -> None:
+    s = pl.Series("col", [[["a"]]], dtype=pl.List(pl.List(pl.Categorical)))
+    assert s.dtype == pl.List(pl.List(pl.Categorical))

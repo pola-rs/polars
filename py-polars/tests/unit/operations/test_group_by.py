@@ -829,3 +829,27 @@ def test_lazy_group_by_reuse_11767() -> None:
     a = lgb.count()
     b = lgb.count()
     assert a.collect().frame_equal(b.collect())
+
+
+def test_group_by_list_categorical_first_11810() -> None:
+    df = pl.DataFrame(
+        {
+            "numbers": [1, 1, 1],
+            "categoricals": pl.Series(
+                [["str1", "str2"], ["str3", "str4"], ["str5", "str6"]],
+                dtype=pl.List(pl.Categorical),
+            ),
+        }
+    )
+
+    first_cat_in_group = (
+        df.lazy()
+        .group_by("numbers")
+        .agg(
+            pl.col("categoricals").first(),
+        )
+        .collect(streaming=True)
+    )
+    first_val = first_cat_in_group.get_column("categoricals")[0].cast(pl.Utf8)
+
+    assert_series_equal(first_val, pl.Series(["str1", "str2"]))
