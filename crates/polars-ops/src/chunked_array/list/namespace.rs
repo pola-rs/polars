@@ -17,6 +17,8 @@ use super::*;
 use crate::chunked_array::list::any_all::*;
 use crate::chunked_array::list::min_max::{list_max_function, list_min_function};
 use crate::chunked_array::list::sum_mean::sum_with_nulls;
+#[cfg(feature = "diff")]
+use crate::prelude::diff;
 use crate::prelude::list::sum_mean::{mean_list_numerical, sum_list_numerical};
 use crate::series::ArgAgg;
 
@@ -256,7 +258,7 @@ pub trait ListNameSpaceImpl: AsList {
     #[cfg(feature = "diff")]
     fn lst_diff(&self, n: i64, null_behavior: NullBehavior) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
-        ca.try_apply_amortized(|s| s.as_ref().diff(n, null_behavior))
+        ca.try_apply_amortized(|s| diff(s.as_ref(), n, null_behavior))
     }
 
     fn lst_shift(&self, periods: &Series) -> PolarsResult<ListChunked> {

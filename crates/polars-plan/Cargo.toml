@@ -107,7 +107,7 @@ rolling_window = [
   "polars-time/rolling_window",
 ]
 rank = ["polars-ops/rank"]
-diff = ["polars-core/diff", "polars-ops/diff"]
+diff = ["polars-ops/diff"]
 pct_change = ["polars-ops/pct_change"]
 moment = ["polars-core/moment", "polars-ops/moment"]
 abs = ["polars-core/abs"]

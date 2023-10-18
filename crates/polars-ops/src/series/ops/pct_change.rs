@@ -1,6 +1,8 @@
 use polars_core::prelude::*;
 use polars_core::series::ops::NullBehavior;
 
+use crate::prelude::diff;
+
 pub fn pct_change(s: &Series, n: &Series) -> PolarsResult<Series> {
     polars_ensure!(
         n.len() == 1,
@@ -16,9 +18,7 @@ pub fn pct_change(s: &Series, n: &Series) -> PolarsResult<Series> {
 
     let n_s = n.cast(&DataType::Int64)?;
     if let Some(n) = n_s.i64()?.get(0) {
-        fill_null_s
-            .diff(n, NullBehavior::Ignore)?
-            .divide(&fill_null_s.shift(n))
+        diff(&fill_null_s, n, NullBehavior::Ignore)?.divide(&fill_null_s.shift(n))
     } else {
         Ok(Series::full_null(s.name(), s.len(), s.dtype()))
     }
