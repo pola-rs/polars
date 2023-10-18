@@ -123,25 +123,20 @@ def _assert_series_values_equal(
     categorical_as_str: bool,
 ) -> None:
     """Assert that the values in both Series are equal."""
+    _assert_series_null_values_match(left, right)
+    _assert_series_nan_values_match(left, right, nans_compare_equal=nans_compare_equal)
+
     if categorical_as_str and left.dtype == Categorical:
         left, right = left.cast(Utf8), right.cast(Utf8)
 
     # Start out simple - regular comparison where None == None
     unequal = left.ne_missing(right)
 
-    print(unequal)
-
     # Handle NaN values (which compare unequal to themselves)
     comparing_floats = left.dtype in FLOAT_DTYPES and right.dtype in FLOAT_DTYPES
     if comparing_floats and nans_compare_equal:
-        both_nan = (left.is_nan() & right.is_nan()).fill_null(False)
+        both_nan = left.is_nan().fill_null(False)
         unequal = unequal & ~both_nan
-
-    # TODO: When NaN logic is updated to such that NaN == NaN is True,
-    # delete the branch above and uncomment the branch below
-    # if comparing_floats and not nans_compare_equal:
-    #     both_nan = (left.is_nan() & right.is_nan()).fill_null(False)
-    #     unequal = unequal | both_nan
 
     # check nested dtypes in separate function
     if left.dtype in NESTED_DTYPES or right.dtype in NESTED_DTYPES:
@@ -174,15 +169,46 @@ def _assert_series_values_equal(
             right=right.to_list(),
         )
 
-    _assert_series_values_equal_inexact(
+    _assert_series_values_within_tolerance(
         left,
         right,
         unequal,
         rtol=rtol,
         atol=atol,
-        nans_compare_equal=nans_compare_equal,
-        comparing_floats=comparing_floats,
     )
+
+
+def _assert_series_null_values_match(left: Series, right: Series) -> None:
+    null_value_mismatch = left.is_null() != right.is_null()
+    if null_value_mismatch.any():
+        raise_assertion_error(
+            "Series", "null value mismatch", left.to_list(), right.to_list()
+        )
+
+
+def _assert_series_nan_values_match(
+    left: Series, right: Series, *, nans_compare_equal: bool
+) -> None:
+    if not (left.dtype in FLOAT_DTYPES and right.dtype in FLOAT_DTYPES):
+        return
+
+    if nans_compare_equal:
+        nan_value_mismatch = left.is_nan() != right.is_nan()
+        if nan_value_mismatch.any():
+            raise_assertion_error(
+                "Series",
+                "nan value mismatch - nans compare equal",
+                left.to_list(),
+                right.to_list(),
+            )
+
+    elif left.is_nan().any() or right.is_nan().any():
+        raise_assertion_error(
+            "Series",
+            "nan value mismatch - nans compare unequal",
+            left.to_list(),
+            right.to_list(),
+        )
 
 
 def _assert_series_nested(
@@ -251,47 +277,26 @@ def _assert_series_nested(
         return False
 
 
-def _assert_series_values_equal_inexact(
+def _assert_series_values_within_tolerance(
     left_full: Series,
     right_full: Series,
     unequal: Series,
     *,
     rtol: float,
     atol: float,
-    nans_compare_equal: bool,
-    comparing_floats: bool,
 ) -> None:
     # apply check with tolerance (to the known-unequal matches).
     left, right = left_full.filter(unequal), right_full.filter(unequal)
 
-    s_diff = _calc_absolute_diff(left, right)
-
-    equal = True
-    nan_info = ""
-
-    if ((s_diff > (atol + rtol * right.abs())).sum() != 0) or (
-        left.is_null() != right.is_null()
-    ).any():
-        equal = False
-
-    elif comparing_floats:
-        # note: take special care with NaN values.
-        # if NaNs don't compare as equal, any NaN in the left Series is
-        # sufficient for a mismatch because the if condition above already
-        # compares the null values.
-        if not nans_compare_equal and left.is_nan().any():
-            equal = False
-            nan_info = " (nans_compare_equal=False)"
-        elif (left.is_nan() != right.is_nan()).any():
-            equal = False
-            nan_info = f" (nans_compare_equal={nans_compare_equal})"
-
-    if not equal:
+    difference = _calc_absolute_diff(left, right)
+    tolerance = atol + rtol * right.abs()
+    exceeds_tolerance = difference > tolerance
+    if exceeds_tolerance.any():
         raise_assertion_error(
             "Series",
-            f"value mismatch{nan_info}",
-            left=left_full.to_list(),
-            right=right_full.to_list(),
+            "value mismatch",
+            left_full.to_list(),
+            right_full.to_list(),
         )
 
 
