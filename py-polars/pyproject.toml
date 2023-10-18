@@ -190,6 +190,7 @@ strict = true
 
 [tool.pytest.ini_options]
 addopts = [
+  "--tb=short",
   "--strict-config",
   "--strict-markers",
   "--import-mode=importlib",

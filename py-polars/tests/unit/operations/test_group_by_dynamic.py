@@ -364,7 +364,7 @@ def test_sorted_flag_group_by_dynamic() -> None:
     )
 
 
-def test_group_by_rolling_dynamic_sortedness_check() -> None:
+def test_rolling_dynamic_sortedness_check() -> None:
     # when the by argument is passed, the sortedness flag
     # will be unset as the take shuffles data, so we must explicitly
     # check the sortedness

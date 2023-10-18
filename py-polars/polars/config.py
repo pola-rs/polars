@@ -11,15 +11,23 @@ from polars.utils.deprecation import deprecate_nonkeyword_arguments
 from polars.utils.various import normalize_filepath
 
 
-# dummy func required (so docs build)
+# dummy funcs required here (so that docs build)
 def _get_float_fmt() -> str:  # pragma: no cover
     return "n/a"
+
+
+def _get_float_precision() -> int:
+    return -1
 
 
 # note: module not available when building docs
 with contextlib.suppress(ImportError):
     from polars.polars import get_float_fmt as _get_float_fmt  # type: ignore[no-redef]
+    from polars.polars import (  # type: ignore[no-redef]
+        get_float_precision as _get_float_precision,
+    )
     from polars.polars import set_float_fmt as _set_float_fmt
+    from polars.polars import set_float_precision as _set_float_precision
 
 
 if sys.version_info >= (3, 10):
@@ -60,7 +68,9 @@ _POLARS_CFG_ENV_VARS = {
     "POLARS_FMT_MAX_COLS",
     "POLARS_FMT_MAX_ROWS",
     "POLARS_FMT_STR_LEN",
+    "POLARS_FMT_NUM_LEN",
     "POLARS_FMT_TABLE_CELL_ALIGNMENT",
+    "POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT",
     "POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW",
     "POLARS_FMT_TABLE_FORMATTING",
     "POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES",
@@ -69,6 +79,7 @@ _POLARS_CFG_ENV_VARS = {
     "POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION",
     "POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE",
     "POLARS_FMT_TABLE_ROUNDED_CORNERS",
+    "POLARS_FMT_TABLE_CELL_LIST_LEN",
     "POLARS_STREAMING_CHUNK_SIZE",
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
@@ -76,7 +87,10 @@ _POLARS_CFG_ENV_VARS = {
 
 # vars that set the rust env directly should declare themselves here as the Config
 # method name paired with a callable that returns the current state of that value:
-_POLARS_CFG_DIRECT_VARS = {"set_fmt_float": _get_float_fmt}
+_POLARS_CFG_DIRECT_VARS = {
+    "set_fmt_float": _get_float_fmt,
+    "set_float_precision": _get_float_precision,
+}
 
 
 class Config(contextlib.ContextDecorator):
@@ -252,6 +266,7 @@ class Config(contextlib.ContextDecorator):
 
         # apply any 'direct' setting values
         cls.set_fmt_float()
+        cls.set_float_precision()
         return cls
 
     @classmethod
@@ -347,7 +362,7 @@ class Config(contextlib.ContextDecorator):
         }
         if not env_only:
             for cfg_methodname, get_value in _POLARS_CFG_DIRECT_VARS.items():
-                config_state[cfg_methodname] = get_value()
+                config_state[cfg_methodname] = get_value()  # type: ignore[assignment]
 
         return config_state
 
@@ -425,6 +440,47 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_AUTO_STRUCTIFY", None)
         else:
             os.environ["POLARS_AUTO_STRUCTIFY"] = str(int(active))
+        return cls
+
+    @classmethod
+    def set_float_precision(cls, precision: int | None = None) -> type[Config]:
+        """
+        Control the number of decimal places displayed for floating point values.
+
+        Parameters
+        ----------
+        precision : int
+            Number of decimal places to display; set to ``None`` to revert to the
+            default/standard behaviour.
+
+        Notes
+        -----
+        When setting this to a larger value you should ensure that you are aware of both
+        the limitations of floating point representations, and of the precision of the
+        data that you are looking at.
+
+        This setting only applies to Float32 and Float64 dtypes; it does not cover
+        Decimal dtype values (which are displayed at their native level of precision).
+
+        Examples
+        --------
+        >>> from math import pi, e
+        >>> df = pl.DataFrame({"const": ["pi", "e"], "value": [pi, e]})
+        >>> with pl.Config(float_precision=15):
+        ...     print(repr(df))
+        ...
+        shape: (2, 2)
+        ┌───────┬───────────────────┐
+        │ const ┆ value             │
+        │ ---   ┆ ---               │
+        │ str   ┆ f64               │
+        ╞═══════╪═══════════════════╡
+        │ pi    ┆ 3.141592653589793 │
+        │ e     ┆ 2.718281828459045 │
+        └───────┴───────────────────┘
+
+        """
+        _set_float_precision(precision)
         return cls
 
     @classmethod
@@ -528,6 +584,56 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
+    def set_fmt_table_cell_list_len(cls, n: int | None) -> type[Config]:
+        """
+        Set the number of elements to display for List values.
+
+        Empty lists will always print "[]". Negative values will result in all values
+        being printed. A value of 0 will always "[…]" for lists with contents. A value
+        of 1 will print only the final item in the list.
+
+        Parameters
+        ----------
+        n : int
+            Number of values to display.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "nums": [
+        ...             [1, 2, 3, 4, 5, 6],
+        ...         ]
+        ...     }
+        ... )
+        >>> df
+        shape: (1, 1)
+        ┌─────────────┐
+        │ nums        │
+        │ ---         │
+        │ list[i64]   │
+        ╞═════════════╡
+        │ [1, 2, … 6] │
+        └─────────────┘
+        >>> with pl.Config(fmt_table_cell_list_len=10):
+        ...     print(df)
+        ...
+        shape: (1, 1)
+        ┌────────────────────┐
+        │ nums               │
+        │ ---                │
+        │ list[i64]          │
+        ╞════════════════════╡
+        │ [1, 2, 3, 4, 5, 6] │
+        └────────────────────┘
+        """
+        if n is None:
+            os.environ.pop("POLARS_FMT_TABLE_CELL_LIST_LEN", None)
+        else:
+            os.environ["POLARS_FMT_TABLE_CELL_LIST_LEN"] = str(n)
+        return cls
+
+    @classmethod
     def set_streaming_chunk_size(cls, size: int | None) -> type[Config]:
         """
         Overwrite chunk size used in ``streaming`` engine.
@@ -596,6 +702,56 @@ class Config(contextlib.ContextDecorator):
             raise ValueError(f"invalid alignment: {format!r}")
         else:
             os.environ["POLARS_FMT_TABLE_CELL_ALIGNMENT"] = format
+        return cls
+
+    @classmethod
+    def set_tbl_cell_numeric_alignment(
+        cls, format: Literal["LEFT", "CENTER", "RIGHT"] | None
+    ) -> type[Config]:
+        """
+        Set table cell alignment for numeric columns.
+
+        Parameters
+        ----------
+        format : str
+            * "LEFT": left aligned
+            * "CENTER": center aligned
+            * "RIGHT": right aligned
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "abc": [11, 2, 333],
+        ...         "mno": [date.today(), None, date.today()],
+        ...         "xyz": [True, False, None],
+        ...     }
+        ... )
+        >>> pl.Config.set_tbl_cell_numeric_alignment("RIGHT")  # doctest: +SKIP
+        # ...
+        # shape: (3, 3)
+        # ┌─────┬────────────┬───────┐
+        # │ abc ┆ mno        ┆ xyz   │
+        # │ --- ┆ ---        ┆ ---   │
+        # │ i64 ┆ date       ┆ bool  │
+        # ╞═════╪════════════╪═══════╡
+        # │  11 ┆ 2023-09-05 ┆ true  │
+        # │   2 ┆ null       ┆ false │
+        # │ 333 ┆ 2023-09-05 ┆ null  │
+        # └─────┴────────────┴───────┘
+
+        Raises
+        ------
+        KeyError: if alignment string not recognised.
+
+        """
+        if format is None:
+            os.environ.pop("POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT", None)
+        elif format not in {"LEFT", "CENTER", "RIGHT"}:
+            raise ValueError(f"invalid alignment: {format!r}")
+        else:
+            os.environ["POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT"] = format
         return cls
 
     @classmethod

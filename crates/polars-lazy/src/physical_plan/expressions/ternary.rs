@@ -170,9 +170,12 @@ impl PhysicalExpr for TernaryExpr {
             // truthy -> aggregated-flat | literal
             // falsy -> aggregated-flat | literal
             // simply align lengths and zip
-            (Literal(truthy) | AggregatedFlat(truthy), AggregatedFlat(falsy) | Literal(falsy))
+            (
+                Literal(truthy) | AggregatedScalar(truthy),
+                AggregatedScalar(falsy) | Literal(falsy),
+            )
             | (AggregatedList(truthy), AggregatedList(falsy))
-                if matches!(ac_mask.agg_state(), AggState::AggregatedFlat(_)) =>
+                if matches!(ac_mask.agg_state(), AggState::AggregatedScalar(_)) =>
             {
                 let mut truthy = truthy.clone();
                 let mut falsy = falsy.clone();

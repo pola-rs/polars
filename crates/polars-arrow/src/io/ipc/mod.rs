@@ -25,54 +25,6 @@
 //! the case of the `File` variant it also implements [`Seek`](std::io::Seek). In
 //! practice it means that `File`s can be arbitrarily accessed while `Stream`s are only
 //! read in certain order - the one they were written in (first in, first out).
-//!
-//! # Examples
-//! Read and write to a file:
-//! ```
-//! use polars_arrow::io::ipc::{{read::{FileReader, read_file_metadata}}, {write::{FileWriter, WriteOptions}}};
-//! # use std::fs::File;
-//! # use polars_arrow::datatypes::{Field, Schema, DataType};
-//! # use polars_arrow::array::{Int32Array, Array};
-//! # use polars_arrow::chunk::Chunk;
-//! # use polars_arrow::error::Error;
-//! // Setup the writer
-//! let path = "example.arrow".to_string();
-//! let mut file = File::create(&path)?;
-//! let x_coord = Field::new("x", DataType::Int32, false);
-//! let y_coord = Field::new("y", DataType::Int32, false);
-//! let schema = Schema::from(vec![x_coord, y_coord]);
-//! let options = WriteOptions {compression: None};
-//! let mut writer = FileWriter::try_new(file, schema, None, options)?;
-//!
-//! // Setup the data
-//! let x_data = Int32Array::from_slice([-1i32, 1]);
-//! let y_data = Int32Array::from_slice([1i32, -1]);
-//! let chunk = Chunk::try_new(vec![x_data.boxed(), y_data.boxed()])?;
-//!
-//! // Write the messages and finalize the stream
-//! for _ in 0..5 {
-//!     writer.write(&chunk, None);
-//! }
-//! writer.finish();
-//!
-//! // Fetch some of the data and get the reader back
-//! let mut reader = File::open(&path)?;
-//! let metadata = read_file_metadata(&mut reader)?;
-//! let mut reader = FileReader::new(reader, metadata, None, None);
-//! let row1 = reader.next().unwrap();  // [[-1, 1], [1, -1]]
-//! let row2 = reader.next().unwrap();  // [[-1, 1], [1, -1]]
-//! let mut reader = reader.into_inner();
-//! // Do more stuff with the reader, like seeking ahead.
-//! # Ok::<(), Error>(())
-//! ```
-//!
-//! For further information and examples please consult the
-//! [user guide](https://jorgecarleitao.github.io/polars_arrow/io/index.html).
-//! For even more examples check the `examples` folder in the main repository
-//! ([1](https://github.com/jorgecarleitao/polars_arrow/blob/main/examples/ipc_file_read.rs),
-//! [2](https://github.com/jorgecarleitao/polars_arrow/blob/main/examples/ipc_file_write.rs),
-//! [3](https://github.com/jorgecarleitao/polars_arrow/tree/main/examples/ipc_pyarrow)).
-
 mod compression;
 mod endianness;
 

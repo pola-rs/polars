@@ -6,10 +6,13 @@ use rand::prelude::SliceRandom;
 use rand::prelude::*;
 #[cfg(feature = "random")]
 use rand::{rngs::SmallRng, SeedableRng};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 use crate::prelude::SeriesSealed;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum RankMethod {
     Average,
     Min,
@@ -21,7 +24,8 @@ pub enum RankMethod {
 }
 
 // We might want to add a `nulls_last` or `null_behavior` field.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RankOptions {
     pub method: RankMethod,
     pub descending: bool,

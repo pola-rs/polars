@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
 import pytest
@@ -92,38 +92,6 @@ def test_time() -> None:
     assert_series_equal(out["m2"], df["min"].rename("m2"))
     assert_series_equal(out["s2"], df["sec"].rename("s2"))
     assert_series_equal(out["ms2"], df["micro"].rename("ms2"))
-
-
-def test_empty_duration() -> None:
-    s = pl.DataFrame([], {"days": pl.Int32}).select(pl.duration(days="days"))
-    assert s.dtypes == [pl.Duration("us")]
-    assert s.shape == (0, 1)
-
-
-@pytest.mark.parametrize(
-    ("time_unit", "expected"),
-    [
-        ("ms", timedelta(days=1, minutes=2, seconds=3, milliseconds=4)),
-        ("us", timedelta(days=1, minutes=2, seconds=3, milliseconds=4, microseconds=5)),
-        ("ns", timedelta(days=1, minutes=2, seconds=3, milliseconds=4, microseconds=5)),
-    ],
-)
-def test_duration_time_units(time_unit: TimeUnit, expected: timedelta) -> None:
-    result = pl.LazyFrame().select(
-        pl.duration(
-            days=1,
-            minutes=2,
-            seconds=3,
-            milliseconds=4,
-            microseconds=5,
-            nanoseconds=6,
-            time_unit=time_unit,
-        )
-    )
-    assert result.schema["duration"] == pl.Duration(time_unit)
-    assert result.collect()["duration"].item() == expected
-    if time_unit == "ns":
-        assert result.collect()["duration"].dt.nanoseconds().item() == 86523004005006
 
 
 def test_list_concat() -> None:

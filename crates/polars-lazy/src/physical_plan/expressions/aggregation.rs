@@ -11,9 +11,12 @@ use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 #[cfg(feature = "dtype-struct")]
 use polars_core::POOL;
+#[cfg(feature = "propagate_nans")]
+use polars_ops::prelude::nan_propagating_aggregate;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::PartitionedAggregation;
+use crate::prelude::AggState::{AggregatedList, AggregatedScalar};
 use crate::prelude::*;
 
 pub(crate) struct AggregationExpr {
@@ -55,7 +58,7 @@ impl PhysicalExpr for AggregationExpr {
         macro_rules! check_null_prop {
             () => {
                 match ac.agg_state() {
-                    AggState::AggregatedFlat(_) => {
+                    AggState::AggregatedScalar(_) => {
                         if ac.null_propagated {
                             let agg_s = ac.aggregated();
                             let out = rename_series(agg_s, &keep_name);
@@ -76,31 +79,31 @@ impl PhysicalExpr for AggregationExpr {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_min(&groups);
-                    rename_series(agg_s, &keep_name)
+                    AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::Max => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_max(&groups);
-                    rename_series(agg_s, &keep_name)
+                    AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::Median => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_median(&groups);
-                    rename_series(agg_s, &keep_name)
+                    AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::Mean => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_mean(&groups);
-                    rename_series(agg_s, &keep_name)
+                    AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::Sum => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_sum(&groups);
-                    rename_series(agg_s, &keep_name)
+                    AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::Count => {
                     // a few fast paths that prevent materializing new groups
@@ -142,7 +145,7 @@ impl PhysicalExpr for AggregationExpr {
                                 },
                             };
                             s.rename(&keep_name);
-                            s.into_series()
+                            AggregatedScalar(s.into_series())
                         },
                         UpdateGroups::WithGroupsLen => {
                             // no need to update the groups
@@ -150,13 +153,13 @@ impl PhysicalExpr for AggregationExpr {
                             // not the correct order
                             let mut ca = ac.groups.group_count();
                             ca.rename(&keep_name);
-                            ca.into_series()
+                            AggregatedScalar(ca.into_series())
                         },
                         // materialize groups
                         _ => {
                             let mut ca = ac.groups().group_count();
                             ca.rename(&keep_name);
-                            ca.into_series()
+                            AggregatedScalar(ca.into_series())
                         },
                     }
                 },
@@ -164,19 +167,19 @@ impl PhysicalExpr for AggregationExpr {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_first(&groups);
-                    rename_series(agg_s, &keep_name)
+                    AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::Last => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_last(&groups);
-                    rename_series(agg_s, &keep_name)
+                    AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::NUnique => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_n_unique(&groups);
-                    rename_series(agg_s, &keep_name)
+                    AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::Implode => {
                     // if the aggregation is already
@@ -188,30 +191,30 @@ impl PhysicalExpr for AggregationExpr {
                     let s = match ac.agg_state() {
                         // mean agg:
                         // -> f64 -> list<f64>
-                        AggState::AggregatedFlat(s) => s.reshape(&[-1, 1]).unwrap(),
+                        AggState::AggregatedScalar(s) => s.reshape(&[-1, 1]).unwrap(),
                         _ => {
                             let agg = ac.aggregated();
                             agg.as_list().into_series()
                         },
                     };
-                    rename_series(s, &keep_name)
+                    AggregatedList(rename_series(s, &keep_name))
                 },
                 GroupByMethod::Groups => {
                     let mut column: ListChunked = ac.groups().as_list_chunked();
                     column.rename(&keep_name);
-                    column.into_series()
+                    AggregatedScalar(column.into_series())
                 },
                 GroupByMethod::Std(ddof) => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_std(&groups, ddof);
-                    rename_series(agg_s, &keep_name)
+                    AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::Var(ddof) => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_var(&groups, ddof);
-                    rename_series(agg_s, &keep_name)
+                    AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::Quantile(_, _) => {
                     // implemented explicitly in AggQuantile struct
@@ -227,7 +230,7 @@ impl PhysicalExpr for AggregationExpr {
                         } else {
                             s.agg_min(&groups)
                         };
-                        rename_series(agg_s, &keep_name)
+                        AggregatedScalar(rename_series(agg_s, &keep_name))
                     }
                     #[cfg(not(feature = "propagate_nans"))]
                     {
@@ -244,7 +247,7 @@ impl PhysicalExpr for AggregationExpr {
                         } else {
                             s.agg_max(&groups)
                         };
-                        rename_series(agg_s, &keep_name)
+                        AggregatedScalar(rename_series(agg_s, &keep_name))
                     }
                     #[cfg(not(feature = "propagate_nans"))]
                     {
@@ -254,7 +257,10 @@ impl PhysicalExpr for AggregationExpr {
             }
         };
 
-        Ok(AggregationContext::new(out, Cow::Borrowed(groups), true))
+        Ok(AggregationContext::from_agg_state(
+            out,
+            Cow::Borrowed(groups),
+        ))
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
@@ -543,7 +549,10 @@ impl PhysicalExpr for AggQuantileExpr {
                 .agg_quantile(ac.groups(), quantile, self.interpol)
         };
         agg.rename(&keep_name);
-        Ok(AggregationContext::new(agg, Cow::Borrowed(groups), true))
+        Ok(AggregationContext::from_agg_state(
+            AggregatedScalar(agg),
+            Cow::Borrowed(groups),
+        ))
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

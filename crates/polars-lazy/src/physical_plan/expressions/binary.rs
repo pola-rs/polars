@@ -3,6 +3,8 @@ use std::sync::Arc;
 use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
+#[cfg(feature = "round_series")]
+use polars_ops::prelude::floor_div_series;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
@@ -205,11 +207,11 @@ impl PhysicalExpr for BinaryExpr {
                 AggState::Literal(_) | AggState::NotAggregated(_),
             ) => self.apply_elementwise(ac_l, ac_r, false),
             (
-                AggState::AggregatedFlat(_) | AggState::Literal(_),
-                AggState::AggregatedFlat(_) | AggState::Literal(_),
+                AggState::AggregatedScalar(_) | AggState::Literal(_),
+                AggState::AggregatedScalar(_) | AggState::Literal(_),
             ) => self.apply_elementwise(ac_l, ac_r, true),
-            (AggState::AggregatedFlat(_), AggState::NotAggregated(_))
-            | (AggState::NotAggregated(_), AggState::AggregatedFlat(_)) => {
+            (AggState::AggregatedScalar(_), AggState::NotAggregated(_))
+            | (AggState::NotAggregated(_), AggState::AggregatedScalar(_)) => {
                 self.apply_group_aware(ac_l, ac_r)
             },
             (AggState::AggregatedList(lhs), AggState::AggregatedList(rhs)) => {

@@ -602,19 +602,23 @@ def test_to_pandas() -> None:
             pass
 
 
-def test_to_python() -> None:
-    a = pl.Series("a", range(20))
-    b = a.to_list()
-    assert isinstance(b, list)
-    assert len(b) == 20
-
-    b = a.to_list(use_pyarrow=True)
-    assert isinstance(b, list)
-    assert len(b) == 20
+def test_series_to_list() -> None:
+    s = pl.Series("a", range(20))
+    result = s.to_list()
+    assert isinstance(result, list)
+    assert len(result) == 20
 
     a = pl.Series("a", [1, None, 2])
     assert a.null_count() == 1
     assert a.to_list() == [1, None, 2]
+
+
+def test_series_to_list_use_pyarrow_deprecated() -> None:
+    s = pl.Series("a", range(20))
+    with pytest.deprecated_call():
+        result = s.to_list(use_pyarrow=True)
+    assert isinstance(result, list)
+    assert len(result) == 20
 
 
 def test_to_struct() -> None:
@@ -1263,6 +1267,7 @@ def test_pct_change() -> None:
     s = pl.Series("a", [1, 2, 4, 8, 16, 32, 64])
     expected = pl.Series("a", [None, None, float("inf"), 3.0, 3.0, 3.0, 3.0])
     assert_series_equal(s.pct_change(2), expected)
+    assert_series_equal(s.pct_change(pl.Series([2])), expected)
     # negative
     assert pl.Series(range(5)).pct_change(-1).to_list() == [
         -1.0,
@@ -1433,10 +1438,10 @@ def test_bitwise() -> None:
 
     # ensure mistaken use of logical 'and'/'or' raises an exception
     with pytest.raises(TypeError, match="ambiguous"):
-        a and b
+        a and b  # type: ignore[redundant-expr]
 
     with pytest.raises(TypeError, match="ambiguous"):
-        a or b
+        a or b  # type: ignore[redundant-expr]
 
 
 def test_to_numpy(monkeypatch: Any) -> None:
@@ -2131,7 +2136,9 @@ def test_ewm_mean() -> None:
 def test_ewm_mean_leading_nulls() -> None:
     for min_periods in [1, 2, 3]:
         assert (
-            pl.Series([1, 2, 3, 4]).ewm_mean(3, min_periods=min_periods).null_count()
+            pl.Series([1, 2, 3, 4])
+            .ewm_mean(com=3, min_periods=min_periods)
+            .null_count()
             == min_periods - 1
         )
     assert pl.Series([None, 1.0, 1.0, 1.0]).ewm_mean(

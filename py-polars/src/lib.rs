@@ -229,6 +229,10 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::meta::get_float_fmt))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::set_float_precision))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::get_float_precision))
+        .unwrap();
 
     // Functions - misc
     m.add_wrapped(wrap_pyfunction!(functions::misc::dtype_str_repr))

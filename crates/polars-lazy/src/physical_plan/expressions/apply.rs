@@ -103,7 +103,7 @@ impl ApplyExpr {
         let s = ac.series();
 
         polars_ensure!(
-            !matches!(ac.agg_state(), AggState::AggregatedFlat(_)),
+            !matches!(ac.agg_state(), AggState::AggregatedScalar(_)),
             expr = self.expr,
             ComputeError: "cannot aggregate, the column is already aggregated",
         );
@@ -162,7 +162,7 @@ impl ApplyExpr {
                 let out = ca.apply_to_inner(&|s| self.eval_and_flatten(&mut [s]))?;
                 (out.into_series(), true)
             },
-            AggState::AggregatedFlat(s) => (self.eval_and_flatten(&mut [s.clone()])?, true),
+            AggState::AggregatedScalar(s) => (self.eval_and_flatten(&mut [s.clone()])?, true),
             AggState::NotAggregated(s) | AggState::Literal(s) => {
                 let (out, aggregated) = (self.eval_and_flatten(&mut [s.clone()])?, false);
                 check_map_output_len(s.len(), out.len(), &self.expr)?;

@@ -669,7 +669,7 @@ class Series:
 
     def ne_missing(self, other: Any) -> Self | Expr:
         """
-        Method equivalent of equality operator ``series != other`` where `None` == None`.
+        Method equivalent of equality operator ``series != other`` where ``None == None``.
 
         This differs from the standard ``ne`` where null values are propagated.
 
@@ -3811,7 +3811,7 @@ class Series:
 
         """
 
-    def to_list(self, *, use_pyarrow: bool = False) -> list[Any]:
+    def to_list(self, *, use_pyarrow: bool | None = None) -> list[Any]:
         """
         Convert this Series to a Python List. This operation clones data.
 
@@ -3829,8 +3829,15 @@ class Series:
         <class 'list'>
 
         """
-        if use_pyarrow:
-            return self.to_arrow().to_pylist()
+        if use_pyarrow is not None:
+            issue_deprecation_warning(
+                "The parameter `use_pyarrow` for `Series.to_list` is deprecated."
+                " Call the method without `use_pyarrow` to silence this warning.",
+                version="0.19.9",
+            )
+            if use_pyarrow:
+                return self.to_arrow().to_pylist()
+
         return self._s.to_list()
 
     def rechunk(self, *, in_place: bool = False) -> Self:
@@ -6026,7 +6033,7 @@ class Series:
 
         """
 
-    def pct_change(self, n: int = 1) -> Series:
+    def pct_change(self, n: int | IntoExprColumn = 1) -> Series:
         """
         Computes percentage change between values.
 
@@ -6406,6 +6413,7 @@ class Series:
 
         """
 
+    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_mean(
         self,
         com: float | None = None,
@@ -6473,8 +6481,21 @@ class Series:
                   :math:`1-\alpha` and :math:`1` if ``adjust=True``,
                   and :math:`1-\alpha` and :math:`\alpha` if ``adjust=False``.
 
+        Examples
+        --------
+        >>> s = pl.Series([1, 2, 3])
+        >>> s.ewm_mean(com=1)
+        shape: (3,)
+        Series: '' [f64]
+        [
+                1.0
+                1.666667
+                2.428571
+        ]
+
         """
 
+    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_std(
         self,
         com: float | None = None,
@@ -6560,6 +6581,7 @@ class Series:
 
         """
 
+    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_var(
         self,
         com: float | None = None,

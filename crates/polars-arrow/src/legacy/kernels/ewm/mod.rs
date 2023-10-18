@@ -2,9 +2,12 @@ mod average;
 mod variance;
 
 pub use average::*;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 pub use variance::*;
 
-#[derive(Debug, Copy, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Copy, Clone, PartialEq)]
 #[must_use]
 pub struct EWMOptions {
     pub alpha: f64,

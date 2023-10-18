@@ -90,7 +90,7 @@ avro-schema = { version = "0.3" }
 
 [workspace.dependencies.arrow]
 package = "polars-arrow"
-version = "0.1.0"
+version = "0.33.2"
 path = "crates/polars-arrow"
 default-features = false
 features = [
@@ -106,5 +106,6 @@ features = [
 ]
 
 [patch.crates-io]
+ahash = { git = "https://github.com/orlp/aHash", branch = "fix-arm-intrinsics" }
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
 # simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }

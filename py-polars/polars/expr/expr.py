@@ -3225,7 +3225,7 @@ class Expr:
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
-        In case of a group_by_rolling on an integer column, the windows are defined by:
+        In case of a rolling operation on an integer column, the windows are defined by:
 
         - "1i"      # length 1
         - "10i"     # length 10
@@ -4709,7 +4709,7 @@ class Expr:
 
     def ne_missing(self, other: Any) -> Self:
         """
-        Method equivalent of equality operator ``expr != other`` where `None` == None`.
+        Method equivalent of equality operator ``expr != other`` where ``None == None``.
 
         This differs from default ``ne`` where null values are propagated.
 
@@ -5530,7 +5530,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `group_by_rolling` this method can cache the window size
+        window, consider using `rolling` - this method can cache the window size
         computation.
 
         Examples
@@ -5736,7 +5736,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `group_by_rolling` this method can cache the window size
+        window, consider using `rolling` - this method can cache the window size
         computation.
 
         Examples
@@ -5973,7 +5973,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `group_by_rolling` this method can cache the window size
+        window, consider using `rolling` - this method can cache the window size
         computation.
 
         Examples
@@ -6206,7 +6206,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `group_by_rolling` this method can cache the window size
+        window, consider using `rolling` - this method can cache the window size
         computation.
 
         Examples
@@ -6442,7 +6442,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `group_by_rolling` this method can cache the window size
+        window, consider using `rolling` - this method can cache the window size
         computation.
 
         Examples
@@ -6678,7 +6678,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `group_by_rolling` this method can cache the window size
+        window, consider using `rolling` - this method can cache the window size
         computation.
 
         Examples
@@ -6917,7 +6917,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `group_by_rolling` this method can cache the window size
+        window, consider using `rolling` - this method can cache the window size
         computation.
 
         Examples
@@ -7082,7 +7082,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `group_by_rolling` this method can cache the window size
+        window, consider using `rolling` - this method can cache the window size
         computation.
 
         Examples
@@ -7464,7 +7464,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.diff(n, null_behavior))
 
-    def pct_change(self, n: int = 1) -> Self:
+    def pct_change(self, n: int | IntoExprColumn = 1) -> Self:
         """
         Computes percentage change between values.
 
@@ -7500,6 +7500,7 @@ class Expr:
         └──────┴────────────┘
 
         """
+        n = parse_as_expression(n)
         return self._from_pyexpr(self._pyexpr.pct_change(n))
 
     def skew(self, *, bias: bool = True) -> Self:
@@ -8299,6 +8300,7 @@ class Expr:
             self._pyexpr.sample_n(n, with_replacement, shuffle, seed)
         )
 
+    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_mean(
         self,
         com: float | None = None,
@@ -8366,7 +8368,6 @@ class Expr:
                   :math:`1-\alpha` and :math:`1` if ``adjust=True``,
                   and :math:`1-\alpha` and :math:`\alpha` if ``adjust=False``.
 
-
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
@@ -8388,6 +8389,7 @@ class Expr:
             self._pyexpr.ewm_mean(alpha, adjust, min_periods, ignore_nulls)
         )
 
+    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_std(
         self,
         com: float | None = None,
@@ -8480,6 +8482,7 @@ class Expr:
             self._pyexpr.ewm_std(alpha, adjust, bias, min_periods, ignore_nulls)
         )
 
+    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_var(
         self,
         com: float | None = None,
@@ -9508,10 +9511,11 @@ class Expr:
 
     def _register_plugin(
         self,
+        *,
         lib: str,
         symbol: str,
         args: list[IntoExpr] | None = None,
-        *,
+        kwargs: dict[Any, Any] | None = None,
         is_elementwise: bool = False,
         input_wildcard_expansion: bool = False,
         auto_explode: bool = False,
@@ -9536,6 +9540,9 @@ class Expr:
             Function to load.
         args
             Arguments (other than self) passed to this function.
+            These arguments have to be of type Expression.
+        kwargs
+            Non-expression arguments. They must be JSON serializable.
         is_elementwise
             If the function only operates on scalars
             this will trigger fast paths.
@@ -9552,11 +9559,19 @@ class Expr:
             args = []
         else:
             args = [parse_as_expression(a) for a in args]
+        if kwargs is None:
+            serialized_kwargs = b""
+        else:
+            import pickle
+
+            serialized_kwargs = pickle.dumps(kwargs, protocol=2)
+
         return self._from_pyexpr(
             self._pyexpr.register_plugin(
                 lib,
                 symbol,
                 args,
+                serialized_kwargs,
                 is_elementwise,
                 input_wildcard_expansion,
                 auto_explode,

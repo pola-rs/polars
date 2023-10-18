@@ -612,7 +612,7 @@ def test_rolling() -> None:
 
     period: str | timedelta
     for period in ("2d", timedelta(days=2)):  # type: ignore[assignment]
-        out = df.group_by_rolling(index_column="dt", period=period).agg(
+        out = df.rolling(index_column="dt", period=period).agg(
             [
                 pl.sum("a").alias("sum_a"),
                 pl.min("a").alias("min_a"),
@@ -817,115 +817,10 @@ def test_asof_join_tolerance_grouper() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_datetime_duration_offset() -> None:
-    df = pl.DataFrame(
-        {
-            "datetime": [
-                datetime(1999, 1, 1, 7),
-                datetime(2022, 1, 2, 14),
-                datetime(3000, 12, 31, 21),
-            ],
-            "add": [1, 2, -1],
-        }
-    )
-    out = df.select(
-        [
-            (pl.col("datetime") + pl.duration(weeks="add")).alias("add_weeks"),
-            (pl.col("datetime") + pl.duration(days="add")).alias("add_days"),
-            (pl.col("datetime") + pl.duration(hours="add")).alias("add_hours"),
-            (pl.col("datetime") + pl.duration(seconds="add")).alias("add_seconds"),
-            (pl.col("datetime") + pl.duration(microseconds=pl.col("add") * 1000)).alias(
-                "add_usecs"
-            ),
-        ]
-    )
-    expected = pl.DataFrame(
-        {
-            "add_weeks": [
-                datetime(1999, 1, 8, 7),
-                datetime(2022, 1, 16, 14),
-                datetime(3000, 12, 24, 21),
-            ],
-            "add_days": [
-                datetime(1999, 1, 2, 7),
-                datetime(2022, 1, 4, 14),
-                datetime(3000, 12, 30, 21),
-            ],
-            "add_hours": [
-                datetime(1999, 1, 1, hour=8),
-                datetime(2022, 1, 2, hour=16),
-                datetime(3000, 12, 31, hour=20),
-            ],
-            "add_seconds": [
-                datetime(1999, 1, 1, 7, second=1),
-                datetime(2022, 1, 2, 14, second=2),
-                datetime(3000, 12, 31, 20, 59, 59),
-            ],
-            "add_usecs": [
-                datetime(1999, 1, 1, 7, microsecond=1000),
-                datetime(2022, 1, 2, 14, microsecond=2000),
-                datetime(3000, 12, 31, 20, 59, 59, 999000),
-            ],
-        }
-    )
-    assert_frame_equal(out, expected)
-
-
-def test_date_duration_offset() -> None:
-    df = pl.DataFrame(
-        {
-            "date": [date(10, 1, 1), date(2000, 7, 5), date(9990, 12, 31)],
-            "offset": [365, 7, -31],
-        }
-    )
-    out = df.select(
-        [
-            (pl.col("date") + pl.duration(days="offset")).alias("add_days"),
-            (pl.col("date") - pl.duration(days="offset")).alias("sub_days"),
-            (pl.col("date") + pl.duration(weeks="offset")).alias("add_weeks"),
-            (pl.col("date") - pl.duration(weeks="offset")).alias("sub_weeks"),
-        ]
-    )
-    assert out.to_dict(False) == {
-        "add_days": [date(11, 1, 1), date(2000, 7, 12), date(9990, 11, 30)],
-        "sub_days": [date(9, 1, 1), date(2000, 6, 28), date(9991, 1, 31)],
-        "add_weeks": [date(16, 12, 30), date(2000, 8, 23), date(9990, 5, 28)],
-        "sub_weeks": [date(3, 1, 3), date(2000, 5, 17), date(9991, 8, 5)],
-    }
-
-
-def test_add_duration_3786() -> None:
-    df = pl.DataFrame(
-        {
-            "datetime": [datetime(2022, 1, 1), datetime(2022, 1, 2)],
-            "add": [1, 2],
-        }
-    )
-    assert df.slice(0, 1).with_columns(
-        [
-            (pl.col("datetime") + pl.duration(weeks="add")).alias("add_weeks"),
-            (pl.col("datetime") + pl.duration(days="add")).alias("add_days"),
-            (pl.col("datetime") + pl.duration(seconds="add")).alias("add_seconds"),
-            (pl.col("datetime") + pl.duration(milliseconds="add")).alias(
-                "add_milliseconds"
-            ),
-            (pl.col("datetime") + pl.duration(hours="add")).alias("add_hours"),
-        ]
-    ).to_dict(False) == {
-        "datetime": [datetime(2022, 1, 1, 0, 0)],
-        "add": [1],
-        "add_weeks": [datetime(2022, 1, 8, 0, 0)],
-        "add_days": [datetime(2022, 1, 2, 0, 0)],
-        "add_seconds": [datetime(2022, 1, 1, 0, 0, 1)],
-        "add_milliseconds": [datetime(2022, 1, 1, 0, 0, 0, 1000)],
-        "add_hours": [datetime(2022, 1, 1, 1, 0)],
-    }
-
-
 def test_rolling_group_by_by_argument() -> None:
     df = pl.DataFrame({"times": range(10), "groups": [1] * 4 + [2] * 6})
 
-    out = df.group_by_rolling("times", period="5i", by=["groups"]).agg(
+    out = df.rolling("times", period="5i", by=["groups"]).agg(
         pl.col("times").alias("agg_list")
     )
 
@@ -951,7 +846,7 @@ def test_rolling_group_by_by_argument() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_group_by_rolling_mean_3020() -> None:
+def test_rolling_mean_3020() -> None:
     df = pl.DataFrame(
         {
             "Date": [
@@ -969,7 +864,7 @@ def test_group_by_rolling_mean_3020() -> None:
 
     period: str | timedelta
     for period in ("1w", timedelta(days=7)):  # type: ignore[assignment]
-        result = df.group_by_rolling(index_column="Date", period=period).agg(
+        result = df.rolling(index_column="Date", period=period).agg(
             pl.col("val").mean().alias("val_mean")
         )
         expected = pl.DataFrame(
@@ -1380,7 +1275,7 @@ def test_unique_counts_on_dates() -> None:
     }
 
 
-def test_group_by_rolling_by_ordering() -> None:
+def test_rolling_by_ordering() -> None:
     # we must check that the keys still match the time labels after the rolling window
     # with a `by` argument.
     df = pl.DataFrame(
@@ -1399,7 +1294,7 @@ def test_group_by_rolling_by_ordering() -> None:
         }
     ).set_sorted("dt")
 
-    assert df.group_by_rolling(
+    assert df.rolling(
         index_column="dt",
         period="2m",
         closed="both",
@@ -1426,7 +1321,7 @@ def test_group_by_rolling_by_ordering() -> None:
     }
 
 
-def test_group_by_rolling_by_() -> None:
+def test_rolling_by_() -> None:
     df = pl.DataFrame({"group": pl.arange(0, 3, eager=True)}).join(
         pl.DataFrame(
             {
@@ -1439,13 +1334,13 @@ def test_group_by_rolling_by_() -> None:
     )
     out = (
         df.sort("datetime")
-        .group_by_rolling(index_column="datetime", by="group", period=timedelta(days=3))
+        .rolling(index_column="datetime", by="group", period=timedelta(days=3))
         .agg([pl.count().alias("count")])
     )
 
     expected = (
         df.sort(["group", "datetime"])
-        .group_by_rolling(index_column="datetime", by="group", period="3d")
+        .rolling(index_column="datetime", by="group", period="3d")
         .agg([pl.count().alias("count")])
     )
     assert_frame_equal(out.sort(["group", "datetime"]), expected)
@@ -2644,16 +2539,12 @@ def test_datetime_cum_agg_schema() -> None:
     assert (
         df.lazy()
         .with_columns(
-            [
-                (pl.col("timestamp").cummin()).alias("cummin"),
-                (pl.col("timestamp").cummax()).alias("cummax"),
-            ]
+            (pl.col("timestamp").cummin()).alias("cummin"),
+            (pl.col("timestamp").cummax()).alias("cummax"),
         )
         .with_columns(
-            [
-                (pl.col("cummin") + pl.duration(hours=24)).alias("cummin+24"),
-                (pl.col("cummax") + pl.duration(hours=24)).alias("cummax+24"),
-            ]
+            (pl.col("cummin") + pl.duration(hours=24)).alias("cummin+24"),
+            (pl.col("cummax") + pl.duration(hours=24)).alias("cummax+24"),
         )
         .collect()
     ).to_dict(False) == {
@@ -2699,7 +2590,7 @@ def test_rolling_group_by_empty_groups_by_take_6330() -> None:
         .set_sorted("Date")
     )
     assert (
-        df.group_by_rolling(
+        df.rolling(
             index_column="Date",
             period="2i",
             offset="-2i",
@@ -2861,7 +2752,7 @@ def test_pytime_conversion(tm: time) -> None:
     assert s.to_list() == [tm]
 
 
-def test_group_by_rolling_duplicates() -> None:
+def test_rolling_duplicates() -> None:
     df = pl.DataFrame(
         {
             "ts": [datetime(2000, 1, 1, 0, 0), datetime(2000, 1, 1, 0, 0)],

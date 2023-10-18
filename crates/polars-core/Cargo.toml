@@ -89,17 +89,12 @@ reinterpret = []
 take_opt_iter = []
 # allow group_by operation on list type
 group_by_list = []
-# cumsum, cummin, etc.
-cum_agg = []
 # rolling window functions
 rolling_window = []
-diff = []
-pct_change = ["diff"]
 moment = []
 diagonal_concat = []
 horizontal_concat = []
 abs = []
-ewma = []
 dataframe_arithmetic = []
 product = []
 unique_counts = []
@@ -150,9 +145,7 @@ docs-selection = [
   "asof_join",
   "dot_product",
   "row_hash",
-  "cum_agg",
   "rolling_window",
-  "diff",
   "moment",
   "dtype-categorical",
   "dtype-decimal",

@@ -11,6 +11,7 @@ use polars_core::{downcast_as_macro_arg_physical, POOL};
 use polars_ops::frame::join::{
     default_join_ids, private_left_join_multiple_keys, ChunkJoinOptIds, JoinValidation,
 };
+use polars_ops::frame::SeriesJoin;
 use polars_utils::format_smartstring;
 use polars_utils::sort::perfect_sort;
 use polars_utils::sync::SyncPtr;
@@ -330,7 +331,7 @@ impl WindowExpr {
             // (false, false, _) => Ok(MapStrategy::Join),
             // aggregations
             //`sum("foo").over("groups")`
-            (_, AggState::AggregatedFlat(_)) => Ok(MapStrategy::Join),
+            (_, AggState::AggregatedScalar(_)) => Ok(MapStrategy::Join),
             // no explicit aggregations, map over the groups
             //`(col("x").sum() * col("y")).over("groups")`
             (WindowMapping::Join, AggState::AggregatedList(_)) => Ok(MapStrategy::Join),

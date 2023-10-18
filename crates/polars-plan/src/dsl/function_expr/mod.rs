@@ -14,10 +14,13 @@ mod clip;
 mod coerce;
 mod concat;
 mod correlation;
+#[cfg(feature = "cum_agg")]
 mod cum;
 #[cfg(feature = "temporal")]
 mod datetime;
 mod dispatch;
+#[cfg(feature = "ewma")]
+mod ewm;
 mod fill_null;
 #[cfg(feature = "fused")]
 mod fused;
@@ -135,6 +138,19 @@ pub enum FunctionExpr {
         periods: i64,
     },
     DropNans,
+    DropNulls,
+    #[cfg(feature = "mode")]
+    Mode,
+    #[cfg(feature = "moment")]
+    Skew(bool),
+    #[cfg(feature = "moment")]
+    Kurtosis(bool, bool),
+    ArgUnique,
+    #[cfg(feature = "rank")]
+    Rank {
+        options: RankOptions,
+        seed: Option<u64>,
+    },
     #[cfg(feature = "round_series")]
     Clip {
         has_min: bool,
@@ -150,18 +166,23 @@ pub enum FunctionExpr {
     #[cfg(feature = "top_k")]
     TopK(bool),
     Shift(i64),
+    #[cfg(feature = "cum_agg")]
     Cumcount {
         reverse: bool,
     },
+    #[cfg(feature = "cum_agg")]
     Cumsum {
         reverse: bool,
     },
+    #[cfg(feature = "cum_agg")]
     Cumprod {
         reverse: bool,
     },
+    #[cfg(feature = "cum_agg")]
     Cummin {
         reverse: bool,
     },
+    #[cfg(feature = "cum_agg")]
     Cummax {
         reverse: bool,
     },
@@ -182,6 +203,8 @@ pub enum FunctionExpr {
     ShrinkType,
     #[cfg(feature = "diff")]
     Diff(i64, NullBehavior),
+    #[cfg(feature = "pct_change")]
+    PctChange,
     #[cfg(feature = "interpolate")]
     Interpolate(InterpolationMethod),
     #[cfg(feature = "log")]
@@ -246,9 +269,15 @@ pub enum FunctionExpr {
     },
     SetSortedFlag(IsSorted),
     #[cfg(feature = "ffi_plugin")]
+    /// Creating this node is unsafe
+    /// This will lead to calls over FFI>
     FfiPlugin {
+        /// Shared library.
         lib: Arc<str>,
+        /// Identifier in the shared lib.
         symbol: Arc<str>,
+        /// Pickle serialized keyword arguments.
+        kwargs: Arc<[u8]>,
     },
     BackwardFill {
         limit: FillNullLimit,
@@ -259,6 +288,18 @@ pub enum FunctionExpr {
     SumHorizontal,
     MaxHorizontal,
     MinHorizontal,
+    #[cfg(feature = "ewma")]
+    EwmMean {
+        options: EWMOptions,
+    },
+    #[cfg(feature = "ewma")]
+    EwmStd {
+        options: EWMOptions,
+    },
+    #[cfg(feature = "ewma")]
+    EwmVar {
+        options: EWMOptions,
+    },
 }
 
 impl Hash for FunctionExpr {
@@ -295,7 +336,12 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "dtype-categorical")]
             FunctionExpr::Categorical(f) => f.hash(state),
             #[cfg(feature = "ffi_plugin")]
-            FunctionExpr::FfiPlugin { lib, symbol } => {
+            FunctionExpr::FfiPlugin {
+                lib,
+                symbol,
+                kwargs,
+            } => {
+                kwargs.hash(state);
                 lib.hash(state);
                 symbol.hash(state);
             },
@@ -339,6 +385,16 @@ impl Display for FunctionExpr {
             RollingSkew { .. } => "rolling_skew",
             ShiftAndFill { .. } => "shift_and_fill",
             DropNans => "drop_nans",
+            DropNulls => "drop_nulls",
+            #[cfg(feature = "mode")]
+            Mode => "mode",
+            #[cfg(feature = "moment")]
+            Skew(_) => "skew",
+            #[cfg(feature = "moment")]
+            Kurtosis(..) => "kurtosis",
+            ArgUnique => "arg_unique",
+            #[cfg(feature = "rank")]
+            Rank { .. } => "rank",
             #[cfg(feature = "round_series")]
             Clip { has_min, has_max } => match (has_min, has_max) {
                 (true, true) => "clip",
@@ -360,10 +416,15 @@ impl Display for FunctionExpr {
                 }
             },
             Shift(_) => "shift",
+            #[cfg(feature = "cum_agg")]
             Cumcount { .. } => "cumcount",
+            #[cfg(feature = "cum_agg")]
             Cumsum { .. } => "cumsum",
+            #[cfg(feature = "cum_agg")]
             Cumprod { .. } => "cumprod",
+            #[cfg(feature = "cum_agg")]
             Cummin { .. } => "cummin",
+            #[cfg(feature = "cum_agg")]
             Cummax { .. } => "cummax",
             #[cfg(feature = "dtype-struct")]
             ValueCounts { .. } => "value_counts",
@@ -379,6 +440,8 @@ impl Display for FunctionExpr {
             ShrinkType => "shrink_dtype",
             #[cfg(feature = "diff")]
             Diff(_, _) => "diff",
+            #[cfg(feature = "pct_change")]
+            PctChange => "pct_change",
             #[cfg(feature = "interpolate")]
             Interpolate(_) => "interpolate",
             #[cfg(feature = "log")]
@@ -433,6 +496,12 @@ impl Display for FunctionExpr {
             SumHorizontal => "sum_horizontal",
             MaxHorizontal => "max_horizontal",
             MinHorizontal => "min_horizontal",
+            #[cfg(feature = "ewma")]
+            EwmMean { .. } => "ewm_mean",
+            #[cfg(feature = "ewma")]
+            EwmStd { .. } => "ewm_std",
+            #[cfg(feature = "ewma")]
+            EwmVar { .. } => "ewm_var",
         };
         write!(f, "{s}")
     }
@@ -580,10 +649,20 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map_as_slice!(shift_and_fill::shift_and_fill, periods)
             },
             DropNans => map_owned!(nan::drop_nans),
+            DropNulls => map!(dispatch::drop_nulls),
             #[cfg(feature = "round_series")]
             Clip { has_min, has_max } => {
                 map_as_slice!(clip::clip, has_min, has_max)
             },
+            #[cfg(feature = "mode")]
+            Mode => map!(dispatch::mode),
+            #[cfg(feature = "moment")]
+            Skew(bias) => map!(dispatch::skew, bias),
+            #[cfg(feature = "moment")]
+            Kurtosis(fisher, bias) => map!(dispatch::kurtosis, fisher, bias),
+            ArgUnique => map!(dispatch::arg_unique),
+            #[cfg(feature = "rank")]
+            Rank { options, seed } => map!(dispatch::rank, options, seed),
             ListExpr(lf) => {
                 use ListFunction::*;
                 match lf {
@@ -648,10 +727,15 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map_as_slice!(top_k, descending)
             },
             Shift(periods) => map!(dispatch::shift, periods),
+            #[cfg(feature = "cum_agg")]
             Cumcount { reverse } => map!(cum::cumcount, reverse),
+            #[cfg(feature = "cum_agg")]
             Cumsum { reverse } => map!(cum::cumsum, reverse),
+            #[cfg(feature = "cum_agg")]
             Cumprod { reverse } => map!(cum::cumprod, reverse),
+            #[cfg(feature = "cum_agg")]
             Cummin { reverse } => map!(cum::cummin, reverse),
+            #[cfg(feature = "cum_agg")]
             Cummax { reverse } => map!(cum::cummax, reverse),
             #[cfg(feature = "dtype-struct")]
             ValueCounts { sort, parallel } => map!(dispatch::value_counts, sort, parallel),
@@ -667,6 +751,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             ShrinkType => map_owned!(shrink_type::shrink),
             #[cfg(feature = "diff")]
             Diff(n, null_behavior) => map!(dispatch::diff, n, null_behavior),
+            #[cfg(feature = "pct_change")]
+            PctChange => map_as_slice!(dispatch::pct_change),
             #[cfg(feature = "interpolate")]
             Interpolate(method) => {
                 map!(dispatch::interpolate, method)
@@ -747,14 +833,29 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             },
             SetSortedFlag(sorted) => map!(dispatch::set_sorted_flag, sorted),
             #[cfg(feature = "ffi_plugin")]
-            FfiPlugin { lib, symbol, .. } => unsafe {
-                map_as_slice!(plugin::call_plugin, lib.as_ref(), symbol.as_ref())
+            FfiPlugin {
+                lib,
+                symbol,
+                kwargs,
+            } => unsafe {
+                map_as_slice!(
+                    plugin::call_plugin,
+                    lib.as_ref(),
+                    symbol.as_ref(),
+                    kwargs.as_ref()
+                )
             },
             BackwardFill { limit } => map!(dispatch::backward_fill, limit),
             ForwardFill { limit } => map!(dispatch::forward_fill, limit),
             SumHorizontal => map_as_slice!(dispatch::sum_horizontal),
             MaxHorizontal => wrap!(dispatch::max_horizontal),
             MinHorizontal => wrap!(dispatch::min_horizontal),
+            #[cfg(feature = "ewma")]
+            EwmMean { options } => map!(ewm::ewm_mean, options),
+            #[cfg(feature = "ewma")]
+            EwmStd { options } => map!(ewm::ewm_std, options),
+            #[cfg(feature = "ewma")]
+            EwmVar { options } => map!(ewm::ewm_var, options),
         }
     }
 }

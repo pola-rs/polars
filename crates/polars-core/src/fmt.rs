@@ -1,7 +1,8 @@
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use std::borrow::Cow;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Display, Formatter, Write};
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::RwLock;
 use std::{fmt, str};
 
 #[cfg(any(
@@ -33,6 +34,7 @@ pub enum FloatFmt {
     Full,
 }
 static FLOAT_FMT: AtomicU8 = AtomicU8::new(FloatFmt::Mixed as u8);
+static FLOAT_PRECISION: RwLock<Option<usize>> = RwLock::new(None);
 
 pub fn get_float_fmt() -> FloatFmt {
     match FLOAT_FMT.load(Ordering::Relaxed) {
@@ -42,8 +44,16 @@ pub fn get_float_fmt() -> FloatFmt {
     }
 }
 
+pub fn get_float_precision() -> Option<usize> {
+    *FLOAT_PRECISION.read().unwrap()
+}
+
 pub fn set_float_fmt(fmt: FloatFmt) {
     FLOAT_FMT.store(fmt as u8, Ordering::Relaxed)
+}
+
+pub fn set_float_precision(precision: Option<usize>) {
+    *FLOAT_PRECISION.write().unwrap() = precision;
 }
 
 macro_rules! format_array {
@@ -655,19 +665,24 @@ impl Display for DataFrame {
             }
 
             // set alignment of cells, if defined
-            if std::env::var(FMT_TABLE_CELL_ALIGNMENT).is_ok() {
-                // for (column_index, column) in table.column_iter_mut().enumerate() {
+            if std::env::var(FMT_TABLE_CELL_ALIGNMENT).is_ok()
+                | std::env::var(FMT_TABLE_CELL_NUMERIC_ALIGNMENT).is_ok()
+            {
                 let str_preset = std::env::var(FMT_TABLE_CELL_ALIGNMENT)
                     .unwrap_or_else(|_| "DEFAULT".to_string());
-                for column in table.column_iter_mut() {
-                    if str_preset == "RIGHT" {
-                        column.set_cell_alignment(CellAlignment::Right);
-                    } else if str_preset == "LEFT" {
-                        column.set_cell_alignment(CellAlignment::Left);
-                    } else if str_preset == "CENTER" {
-                        column.set_cell_alignment(CellAlignment::Center);
-                    } else {
-                        column.set_cell_alignment(CellAlignment::Left);
+                let num_preset = std::env::var(FMT_TABLE_CELL_NUMERIC_ALIGNMENT)
+                    .unwrap_or_else(|_| str_preset.to_string());
+                for (column_index, column) in table.column_iter_mut().enumerate() {
+                    let dtype = fields[column_index].data_type();
+                    let mut preset = str_preset.as_str();
+                    if dtype.is_numeric() {
+                        preset = num_preset.as_str();
+                    }
+                    match preset {
+                        "RIGHT" => column.set_cell_alignment(CellAlignment::Right),
+                        "LEFT" => column.set_cell_alignment(CellAlignment::Left),
+                        "CENTER" => column.set_cell_alignment(CellAlignment::Center),
+                        _ => {},
                     }
                 }
             }
@@ -709,6 +724,16 @@ const SCIENTIFIC_BOUND: f64 = 999999.0;
 
 fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt::Result {
     let v: f64 = NumCast::from(v).unwrap();
+
+    let float_precision = get_float_precision();
+
+    if let Some(precision) = float_precision {
+        if format!("{v:.precision$}", precision = precision).len() > 19 {
+            return write!(f, "{v:>width$.precision$e}", precision = precision);
+        }
+        return write!(f, "{v:>width$.precision$}", precision = precision);
+    }
+
     if matches!(get_float_fmt(), FloatFmt::Full) {
         return write!(f, "{v:>width$}");
     }
@@ -939,22 +964,52 @@ fn fmt_struct(f: &mut Formatter<'_>, vals: &[AnyValue]) -> fmt::Result {
 
 impl Series {
     pub fn fmt_list(&self) -> String {
-        match self.len() {
-            0 => "[]".to_string(),
-            1 => format!("[{}]", self.get(0).unwrap()),
-            2 => format!("[{}, {}]", self.get(0).unwrap(), self.get(1).unwrap()),
-            3 => format!(
-                "[{}, {}, {}]",
-                self.get(0).unwrap(),
-                self.get(1).unwrap(),
-                self.get(2).unwrap()
-            ),
-            _ => format!(
-                "[{}, {}, … {}]",
-                self.get(0).unwrap(),
-                self.get(1).unwrap(),
-                self.get(self.len() - 1).unwrap()
-            ),
+        if self.is_empty() {
+            return "[]".to_owned();
+        }
+
+        let max_items = std::env::var(FMT_TABLE_CELL_LIST_LEN)
+            .as_deref()
+            .unwrap_or("")
+            .parse()
+            .map_or(3, |n: i64| if n < 0 { self.len() } else { n as usize });
+
+        match max_items {
+            0 => "[…]".to_owned(),
+            _ if max_items >= self.len() => {
+                let mut result = "[".to_owned();
+
+                for i in 0..self.len() {
+                    let item = self.get(i).unwrap();
+                    write!(result, "{item}").unwrap();
+                    // this will always leave a trailing ", " after the last item
+                    // but for long lists, this is faster than checking against the length each time
+                    result.push_str(", ");
+                }
+                // remove trailing ", " and replace with closing brace
+                result.pop();
+                result.pop();
+                result.push(']');
+
+                result
+            },
+            _ => {
+                let mut result = "[".to_owned();
+
+                for (i, item) in self.iter().enumerate() {
+                    if i == max_items.saturating_sub(1) {
+                        result.push_str("… ");
+                        write!(result, "{}", self.get(self.len() - 1).unwrap()).unwrap();
+                        break;
+                    } else {
+                        write!(result, "{item}").unwrap();
+                        result.push_str(", ");
+                    }
+                }
+                result.push(']');
+
+                result
+            },
         }
     }
 }
@@ -1089,18 +1144,138 @@ mod test {
     fn test_fmt_list() {
         let mut builder =
             ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
-        builder.append_opt_slice(Some(&[1, 2, 3]));
+        builder.append_opt_slice(Some(&[1, 2, 3, 4, 5, 6]));
         builder.append_opt_slice(None);
-        let list = builder.finish().into_series();
+        let list_long = builder.finish().into_series();
 
         assert_eq!(
             r#"shape: (2,)
 Series: 'a' [list[i32]]
 [
-	[1, 2, 3]
+	[1, 2, … 6]
 	null
 ]"#,
-            format!("{:?}", list)
+            format!("{:?}", list_long)
+        );
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "10");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[1, 2, 3, 4, 5, 6]
+	null
+]"#,
+            format!("{:?}", list_long)
+        );
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "-1");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[1, 2, 3, 4, 5, 6]
+	null
+]"#,
+            format!("{:?}", list_long)
+        );
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "0");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[…]
+	null
+]"#,
+            format!("{:?}", list_long)
+        );
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "1");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[… 6]
+	null
+]"#,
+            format!("{:?}", list_long)
+        );
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "4");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[1, 2, 3, … 6]
+	null
+]"#,
+            format!("{:?}", list_long)
+        );
+
+        let mut builder =
+            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
+        builder.append_opt_slice(Some(&[1]));
+        builder.append_opt_slice(None);
+        let list_short = builder.finish().into_series();
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[1]
+	null
+]"#,
+            format!("{:?}", list_short)
+        );
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "0");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[…]
+	null
+]"#,
+            format!("{:?}", list_short)
+        );
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "-1");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[1]
+	null
+]"#,
+            format!("{:?}", list_short)
+        );
+
+        let mut builder =
+            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
+        builder.append_opt_slice(Some(&[]));
+        builder.append_opt_slice(None);
+        let list_empty = builder.finish().into_series();
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[]
+	null
+]"#,
+            format!("{:?}", list_empty)
         );
     }
 
