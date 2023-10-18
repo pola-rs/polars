@@ -169,7 +169,7 @@ def _assert_series_values_equal(
             right=right.to_list(),
         )
 
-    equal, nan_info = _check_series_equal_inexact(
+    equal, nan_info = _assert_series_values_equal_inexact(
         left,
         right,
         unequal,
@@ -186,48 +186,6 @@ def _assert_series_values_equal(
             left=left.to_list(),
             right=right.to_list(),
         )
-
-
-def _check_series_equal_inexact(
-    left: Series,
-    right: Series,
-    unequal: Series,
-    *,
-    rtol: float,
-    atol: float,
-    nans_compare_equal: bool,
-    comparing_floats: bool,
-) -> tuple[bool, str]:
-    # apply check with tolerance (to the known-unequal matches).
-    left, right = left.filter(unequal), right.filter(unequal)
-
-    if all(tp in UNSIGNED_INTEGER_DTYPES for tp in (left.dtype, right.dtype)):
-        # avoid potential "subtract-with-overflow" panic on uint math
-        s_diff = Series(
-            "diff", [abs(v1 - v2) for v1, v2 in zip(left, right)], dtype=UInt64
-        )
-    else:
-        s_diff = (left - right).abs()
-
-    equal, nan_info = True, ""
-    if ((s_diff > (atol + rtol * right.abs())).sum() != 0) or (
-        left.is_null() != right.is_null()
-    ).any():
-        equal = False
-
-    elif comparing_floats:
-        # note: take special care with NaN values.
-        # if NaNs don't compare as equal, any NaN in the left Series is
-        # sufficient for a mismatch because the if condition above already
-        # compares the null values.
-        if not nans_compare_equal and left.is_nan().any():
-            equal = False
-            nan_info = " (nans_compare_equal=False)"
-        elif (left.is_nan() != right.is_nan()).any():
-            equal = False
-            nan_info = f" (nans_compare_equal={nans_compare_equal})"
-
-    return equal, nan_info
 
 
 def _assert_series_nested(
@@ -304,6 +262,48 @@ def _assert_series_nested(
         # fall-back to outer codepath (if mismatched dtypes we would expect
         # the equality check to fail - unless ALL series values are null)
         return False
+
+
+def _assert_series_values_equal_inexact(
+    left: Series,
+    right: Series,
+    unequal: Series,
+    *,
+    rtol: float,
+    atol: float,
+    nans_compare_equal: bool,
+    comparing_floats: bool,
+) -> tuple[bool, str]:
+    # apply check with tolerance (to the known-unequal matches).
+    left, right = left.filter(unequal), right.filter(unequal)
+
+    if all(tp in UNSIGNED_INTEGER_DTYPES for tp in (left.dtype, right.dtype)):
+        # avoid potential "subtract-with-overflow" panic on uint math
+        s_diff = Series(
+            "diff", [abs(v1 - v2) for v1, v2 in zip(left, right)], dtype=UInt64
+        )
+    else:
+        s_diff = (left - right).abs()
+
+    equal, nan_info = True, ""
+    if ((s_diff > (atol + rtol * right.abs())).sum() != 0) or (
+        left.is_null() != right.is_null()
+    ).any():
+        equal = False
+
+    elif comparing_floats:
+        # note: take special care with NaN values.
+        # if NaNs don't compare as equal, any NaN in the left Series is
+        # sufficient for a mismatch because the if condition above already
+        # compares the null values.
+        if not nans_compare_equal and left.is_nan().any():
+            equal = False
+            nan_info = " (nans_compare_equal=False)"
+        elif (left.is_nan() != right.is_nan()).any():
+            equal = False
+            nan_info = f" (nans_compare_equal={nans_compare_equal})"
+
+    return equal, nan_info
 
 
 def assert_series_not_equal(
