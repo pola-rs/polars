@@ -6,12 +6,14 @@ from polars.datatypes import (
     NUMERIC_DTYPES,
     UNSIGNED_INTEGER_DTYPES,
     Categorical,
+    Int64,
     List,
     Struct,
     UInt64,
     Utf8,
     unpack_dtypes,
 )
+from polars.exceptions import ComputeError
 from polars.series import Series
 from polars.testing.asserts.utils import raise_assertion_error
 
@@ -127,11 +129,14 @@ def _assert_series_values_equal(
     # Start out simple - regular comparison where None == None
     unequal = left.ne_missing(right)
 
+    print(unequal)
+
     # Handle NaN values (which compare unequal to themselves)
     comparing_floats = left.dtype in FLOAT_DTYPES and right.dtype in FLOAT_DTYPES
     if comparing_floats and nans_compare_equal:
         both_nan = (left.is_nan() & right.is_nan()).fill_null(False)
         unequal = unequal & ~both_nan
+
     # TODO: When NaN logic is updated to such that NaN == NaN is True,
     # delete the branch above and uncomment the branch below
     # if comparing_floats and not nans_compare_equal:
@@ -169,7 +174,7 @@ def _assert_series_values_equal(
             right=right.to_list(),
         )
 
-    equal, nan_info = _assert_series_values_equal_inexact(
+    _assert_series_values_equal_inexact(
         left,
         right,
         unequal,
@@ -178,14 +183,6 @@ def _assert_series_values_equal(
         nans_compare_equal=nans_compare_equal,
         comparing_floats=comparing_floats,
     )
-
-    if not equal:
-        raise_assertion_error(
-            "Series",
-            f"value mismatch{nan_info}",
-            left=left.to_list(),
-            right=right.to_list(),
-        )
 
 
 def _assert_series_nested(
@@ -205,19 +202,9 @@ def _assert_series_nested(
     # compare nested lists element-wise
     elif left.dtype == List == right.dtype:
         for s1, s2 in zip(left, right):
-            if s1 is None and s2 is None:
-                if nans_compare_equal:
-                    continue
-                else:
-                    raise_assertion_error(
-                        "Series",
-                        f"Nested value mismatch (nans_compare_equal={nans_compare_equal})",
-                        s1,
-                        s2,
-                    )
-            elif (s1 is None and s2 is not None) or (s2 is None and s1 is not None):
+            if (s1 is None and s2 is not None) or (s2 is None and s1 is not None):
                 raise_assertion_error("Series", "nested value mismatch", s1, s2)
-            elif len(s1) != len(s2):
+            elif s1.len() != s2.len():
                 raise_assertion_error(
                     "Series", "nested list length mismatch", len(s1), len(s2)
                 )
@@ -265,27 +252,23 @@ def _assert_series_nested(
 
 
 def _assert_series_values_equal_inexact(
-    left: Series,
-    right: Series,
+    left_full: Series,
+    right_full: Series,
     unequal: Series,
     *,
     rtol: float,
     atol: float,
     nans_compare_equal: bool,
     comparing_floats: bool,
-) -> tuple[bool, str]:
+) -> None:
     # apply check with tolerance (to the known-unequal matches).
-    left, right = left.filter(unequal), right.filter(unequal)
+    left, right = left_full.filter(unequal), right_full.filter(unequal)
 
-    if all(tp in UNSIGNED_INTEGER_DTYPES for tp in (left.dtype, right.dtype)):
-        # avoid potential "subtract-with-overflow" panic on uint math
-        s_diff = Series(
-            "diff", [abs(v1 - v2) for v1, v2 in zip(left, right)], dtype=UInt64
-        )
-    else:
-        s_diff = (left - right).abs()
+    s_diff = _calc_absolute_diff(left, right)
 
-    equal, nan_info = True, ""
+    equal = True
+    nan_info = ""
+
     if ((s_diff > (atol + rtol * right.abs())).sum() != 0) or (
         left.is_null() != right.is_null()
     ).any():
@@ -303,7 +286,26 @@ def _assert_series_values_equal_inexact(
             equal = False
             nan_info = f" (nans_compare_equal={nans_compare_equal})"
 
-    return equal, nan_info
+    if not equal:
+        raise_assertion_error(
+            "Series",
+            f"value mismatch{nan_info}",
+            left=left_full.to_list(),
+            right=right_full.to_list(),
+        )
+
+
+def _calc_absolute_diff(left: Series, right: Series) -> Series:
+    if left.dtype in UNSIGNED_INTEGER_DTYPES and right.dtype in UNSIGNED_INTEGER_DTYPES:
+        try:
+            left = left.cast(Int64)
+            right = right.cast(Int64)
+        except ComputeError:
+            # Handle big UInt64 values through conversion to Python
+            diff = [abs(v1 - v2) for v1, v2 in zip(left, right)]
+            return Series(diff, dtype=UInt64)
+
+    return (left - right).abs()
 
 
 def assert_series_not_equal(
