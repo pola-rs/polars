@@ -62,6 +62,13 @@ def assert_frame_equal(
     assert_series_equal
     assert_frame_not_equal
 
+    Notes
+    -----
+    When using pytest, it may be worthwhile to shorten Python traceback printing
+    by passing ``--tb=short``. The default mode tends to be unhelpfully verbose.
+    More information in the
+    `pytest docs <https://docs.pytest.org/en/latest/how-to/output.html#modifying-python-traceback-printing>`_.
+
     Examples
     --------
     >>> from polars.testing import assert_frame_equal
@@ -82,27 +89,27 @@ def assert_frame_equal(
 
     """
     lazy = _assert_correct_input_type(left, right)
-    objs = "LazyFrames" if lazy else "DataFrames"
+    objects = "LazyFrames" if lazy else "DataFrames"
 
     _assert_frame_schema_equal(
-        left, right, check_column_order=check_column_order, check_dtype=check_dtype
+        left,
+        right,
+        check_column_order=check_column_order,
+        check_dtype=check_dtype,
+        objects=objects,
     )
 
     if lazy:
         left, right = left.collect(), right.collect()  # type: ignore[union-attr]
-
     left, right = cast(DataFrame, left), cast(DataFrame, right)
 
     if left.height != right.height:
-        raise_assertion_error(objs, "length mismatch", left.height, right.height)
+        raise_assertion_error(
+            objects, "number of rows does not match", left.height, right.height
+        )
 
     if not check_row_order:
-        try:
-            left = left.sort(by=left.columns)
-            right = right.sort(by=left.columns)
-        except ComputeError as exc:
-            msg = "cannot set `check_row_order=False` on frame with unsortable columns"
-            raise InvalidAssert(msg) from exc
+        left, right = _sort_dataframes(left, right)
 
     for c in left.columns:
         try:
@@ -140,8 +147,9 @@ def _assert_frame_schema_equal(
     left: DataFrame | LazyFrame,
     right: DataFrame | LazyFrame,
     *,
-    check_dtype: bool = True,
-    check_column_order: bool = True,
+    check_dtype: bool,
+    check_column_order: bool,
+    objects: str,
 ) -> None:
     left_schema, right_schema = left.schema, right.schema
 
@@ -152,24 +160,35 @@ def _assert_frame_schema_equal(
     # Special error message for when column names do not match
     if left_schema.keys() != right_schema.keys():
         if left_not_right := [c for c in left_schema if c not in right_schema]:
-            msg = f"columns {left_not_right!r} in left frame, but not in right"
+            msg = f"columns {left_not_right!r} in left {objects[:-1]}, but not in right"
             raise AssertionError(msg)
         else:
             right_not_left = [c for c in right_schema if c not in left_schema]
-            msg = f"columns {right_not_left!r} in right frame, but not in left"
+            msg = f"columns {right_not_left!r} in right {objects[:-1]}, but not in left"
             raise AssertionError(msg)
 
     if check_column_order:
         left_columns, right_columns = list(left_schema), list(right_schema)
         if left_columns != right_columns:
-            msg = "columns are not in the same order"
-            raise_assertion_error("Frames", msg, left_columns, right_columns)
+            detail = "columns are not in the same order"
+            raise_assertion_error(objects, detail, left_columns, right_columns)
 
     if check_dtype:
         left_schema_dict, right_schema_dict = dict(left_schema), dict(right_schema)
         if check_column_order or left_schema_dict != right_schema_dict:
-            msg = "dtypes do not match"
-            raise_assertion_error("frames", msg, left_schema_dict, right_schema_dict)
+            detail = "dtypes do not match"
+            raise_assertion_error(objects, detail, left_schema_dict, right_schema_dict)
+
+
+def _sort_dataframes(left: DataFrame, right: DataFrame) -> tuple[DataFrame, DataFrame]:
+    by = left.columns
+    try:
+        left = left.sort(by)
+        right = right.sort(by)
+    except ComputeError as exc:
+        msg = "cannot set `check_row_order=False` on frame with unsortable columns"
+        raise InvalidAssert(msg) from exc
+    return left, right
 
 
 def assert_frame_not_equal(

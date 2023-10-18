@@ -289,7 +289,8 @@ def test_assert_frame_equal_length_mismatch() -> None:
     df1 = pl.DataFrame({"a": [1, 2]})
     df2 = pl.DataFrame({"a": [1, 2, 3]})
     with pytest.raises(
-        AssertionError, match=r"DataFrames are different \(length mismatch\)"
+        AssertionError,
+        match=r"DataFrames are different \(number of rows does not match\)",
     ):
         assert_frame_equal(df1, df2)
 
@@ -298,16 +299,17 @@ def test_assert_frame_equal_column_mismatch() -> None:
     df1 = pl.DataFrame({"a": [1, 2]})
     df2 = pl.DataFrame({"b": [1, 2]})
     with pytest.raises(
-        AssertionError, match="columns \\['a'\\] in left frame, but not in right"
+        AssertionError, match="columns \\['a'\\] in left DataFrame, but not in right"
     ):
         assert_frame_equal(df1, df2)
 
 
 def test_assert_frame_equal_column_mismatch2() -> None:
-    df1 = pl.DataFrame({"a": [1, 2]})
-    df2 = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})
+    df1 = pl.LazyFrame({"a": [1, 2]})
+    df2 = pl.LazyFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})
     with pytest.raises(
-        AssertionError, match="columns \\['b', 'c'\\] in right frame, but not in left"
+        AssertionError,
+        match="columns \\['b', 'c'\\] in right LazyFrame, but not in left",
     ):
         assert_frame_equal(df1, df2)
 

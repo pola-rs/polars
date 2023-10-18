@@ -62,6 +62,13 @@ def assert_series_equal(
     assert_frame_equal
     assert_series_not_equal
 
+    Notes
+    -----
+    When using pytest, it may be worthwhile to shorten Python traceback printing
+    by passing ``--tb=short``. The default mode tends to be unhelpfully verbose.
+    More information in the
+    `pytest docs <https://docs.pytest.org/en/latest/how-to/output.html#modifying-python-traceback-printing>`_.
+
     Examples
     --------
     >>> from polars.testing import assert_series_equal
