@@ -36,7 +36,7 @@ lexical-core = { workspace = true, optional = true }
 
 fallible-streaming-iterator = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
-regex-syntax = { version = "0.7", optional = true }
+regex-syntax = { version = "0.8", optional = true }
 streaming-iterator = { workspace = true }
 
 indexmap = { workspace = true, optional = true }
