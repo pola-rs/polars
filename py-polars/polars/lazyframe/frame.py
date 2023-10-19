@@ -3603,11 +3603,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             raise ValueError("you should pass the column to join on as an argument")
 
         if by is not None:
-            by_left_ = [by] if isinstance(by, str) else by
-            by_right_ = by_left_
+            by_left_ = by_right_ = [by] if isinstance(by, str) else list(set(by))
         elif (by_left is not None) and (by_right is not None):
-            by_left_ = [by_left] if isinstance(by_left, str) else by_left
-            by_right_ = [by_right] if isinstance(by_right, str) else by_right
+            by_left_ = [by_left] if isinstance(by_left, str) else list(set(by_left))
+            by_right_ = [by_right] if isinstance(by_right, str) else list(set(by_right))
         else:
             # no by
             by_left_ = None
@@ -3792,11 +3791,31 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 )
             )
 
+        def _process_args(
+            input: str | Expr | Sequence[str | Expr],
+        ) -> Expr | Sequence[str | Expr]:
+            # set strings to list and remove duplicates from list
+            if isinstance(input, str):
+                input = [input]
+            elif isinstance(input, Sequence):
+                # isolate string args and remove duplicates, preserving original order
+                input = list(enumerate(input))  # type: ignore[arg-type]
+                str_args = [x for x in input if isinstance(x[1], str)]  # type: ignore[index]
+                nonstr_args = [x for x in input if not isinstance(x[1], str)]  # type: ignore[index]
+                str_args = list(set(str_args))  # remove duplicates
+                input = [*str_args, *nonstr_args]
+                input.sort()
+                input = [x[1] for x in input]  # type: ignore[index]
+            return input
+
         if on is not None:
+            on = _process_args(on)
             pyexprs = parse_as_list_of_expressions(on)
             pyexprs_left = pyexprs
             pyexprs_right = pyexprs
         elif left_on is not None and right_on is not None:
+            left_on = _process_args(left_on)
+            right_on = _process_args(right_on)
             pyexprs_left = parse_as_list_of_expressions(left_on)
             pyexprs_right = parse_as_list_of_expressions(right_on)
         else:
