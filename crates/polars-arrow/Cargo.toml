@@ -47,7 +47,7 @@ hex = { workspace = true, optional = true }
 
 # for IPC compression
 lz4 = { version = "1.24", optional = true }
-zstd = { version = "0.12", optional = true }
+zstd = { version = "0.13", optional = true }
 
 base64 = { workspace = true, optional = true }
 
