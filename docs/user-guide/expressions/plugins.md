@@ -228,4 +228,4 @@ fn haversine(inputs: &[Series]) -> PolarsResult<Series> {
 }
 ```
 
-That's all you need to know to get started. Take a look at <examples link> to see how this all fits together.
+That's all you need to know to get started. Take a look at this [repo](https://github.com/pola-rs/pyo3-polars/tree/main/example/derive_expression) to see how this all fits together.
