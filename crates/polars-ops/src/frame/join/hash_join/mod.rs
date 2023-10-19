@@ -156,18 +156,34 @@ pub trait JoinDispatch: IntoDf {
         let (left_idx, right_idx) = ids;
         let materialize_left = || match left_idx {
             ChunkJoinIds::Left(left_idx) => unsafe {
+                let mut left_idx = &*left_idx;
+                if let Some((offset, len)) = args.slice {
+                    left_idx = slice_slice(left_idx, offset, len);
+                }
                 ca_self._create_left_df_from_slice(&left_idx, true, true)
             },
             ChunkJoinIds::Right(left_idx) => unsafe {
+                let mut left_idx = &*left_idx;
+                if let Some((offset, len)) = args.slice {
+                    left_idx = slice_slice(left_idx, offset, len);
+                }
                 ca_self.create_left_df_chunked(&left_idx, true)
             },
         };
 
         let materialize_right = || match right_idx {
             ChunkJoinOptIds::Left(right_idx) => unsafe {
+                let mut right_idx = &*right_idx;
+                if let Some((offset, len)) = args.slice {
+                    right_idx = slice_slice(right_idx, offset, len);
+                }
                 other.take_unchecked(&right_idx.iter().copied().collect_ca(""))
             },
             ChunkJoinOptIds::Right(right_idx) => unsafe {
+                let mut right_idx = &*right_idx;
+                if let Some((offset, len)) = args.slice {
+                    right_idx = slice_slice(right_idx, offset, len);
+                }
                 other._take_opt_chunked_unchecked(&right_idx)
             },
         };
@@ -190,9 +206,12 @@ pub trait JoinDispatch: IntoDf {
 
         let mut left = ca_self.clone();
         let mut s_left = s_left.clone();
+        // Eagerly limit left if possible.
         if let Some((offset, len)) = args.slice {
-            left = left.slice(offset, len);
-            s_left = s_left.slice(offset, len);
+            if offset == 0 {
+                left = left.slice(0, len);
+                s_left = s_left.slice(0, len);
+            }
         }
 
         // Ensure that the chunks are aligned otherwise we go OOB.
