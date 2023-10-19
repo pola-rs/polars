@@ -596,7 +596,7 @@ def test_assert_series_equal_raises_assertion_error(
 def test_assert_series_equal_categorical() -> None:
     s1 = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
     s2 = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
-    with pytest.raises(pl.ComputeError, match="cannot compare categoricals"):
+    with pytest.raises(AssertionError, match="incompatible data types"):
         assert_series_equal(s1, s2)
 
     assert_series_equal(s1, s2, categorical_as_str=True)
@@ -608,6 +608,17 @@ def test_assert_series_equal_categorical_vs_str() -> None:
 
     with pytest.raises(AssertionError, match="dtype mismatch"):
         assert_series_equal(s1, s2, categorical_as_str=True)
+
+    assert_series_equal(s1, s2, check_dtype=False, categorical_as_str=True)
+    assert_series_equal(s2, s1, check_dtype=False, categorical_as_str=True)
+
+
+def test_assert_series_equal_incompatible_data_types() -> None:
+    s1 = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
+    s2 = pl.Series([0, 1, 0], dtype=pl.Int8)
+
+    with pytest.raises(AssertionError, match="incompatible data types"):
+        assert_series_equal(s1, s2, check_dtype=False)
 
 
 def test_assert_series_equal_full_series() -> None:
@@ -674,6 +685,9 @@ def test_assert_series_equal_nested_list_none() -> None:
     assert_series_equal(s1, s2, nans_compare_equal=False)
 
 
+@pytest.mark.xfail(
+    reason="bug in `eq_missing`: https://github.com/pola-rs/polars/issues/11836"
+)
 def test_assert_series_equal_full_none_nested_not_nested() -> None:
     s1 = pl.Series([None, None], dtype=pl.List(pl.Float64))
     s2 = pl.Series([None, None], dtype=pl.Float64)

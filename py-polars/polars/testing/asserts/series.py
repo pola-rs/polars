@@ -123,22 +123,32 @@ def _assert_series_values_equal(
     categorical_as_str: bool,
 ) -> None:
     """Assert that the values in both Series are equal."""
-    _assert_series_null_values_match(left, right)
-    _assert_series_nan_values_match(left, right, nans_compare_equal=nans_compare_equal)
+    # Handle categoricals
+    if categorical_as_str:
+        if left.dtype == Categorical:
+            left = left.cast(Utf8)
+        if right.dtype == Categorical:
+            right = right.cast(Utf8)
 
-    if categorical_as_str and left.dtype == Categorical:
-        left, right = left.cast(Utf8), right.cast(Utf8)
-
-    # Start out simple - regular comparison where None == None
-    unequal = left.ne_missing(right)
+    # Determine unequal elements
+    try:
+        unequal = left.ne_missing(right)
+    except ComputeError as exc:
+        raise_assertion_error(
+            "Series",
+            "incompatible data types",
+            left=left.dtype,
+            right=right.dtype,
+            cause=exc,
+        )
 
     # Handle NaN values (which compare unequal to themselves)
     comparing_floats = left.dtype in FLOAT_DTYPES and right.dtype in FLOAT_DTYPES
     if comparing_floats and nans_compare_equal:
-        both_nan = left.is_nan().fill_null(False)
+        both_nan = (left.is_nan() & right.is_nan()).fill_null(False)
         unequal = unequal & ~both_nan
 
-    # check nested dtypes in separate function
+    # Check nested dtypes in separate function
     if left.dtype in NESTED_DTYPES or right.dtype in NESTED_DTYPES:
         if _assert_series_nested(
             left=left.filter(unequal),
@@ -169,6 +179,11 @@ def _assert_series_values_equal(
             right=right.to_list(),
         )
 
+    _assert_series_null_values_match(left, right)
+    if comparing_floats:
+        _assert_series_nan_values_match(
+            left, right, nans_compare_equal=nans_compare_equal
+        )
     _assert_series_values_within_tolerance(
         left,
         right,
@@ -189,9 +204,6 @@ def _assert_series_null_values_match(left: Series, right: Series) -> None:
 def _assert_series_nan_values_match(
     left: Series, right: Series, *, nans_compare_equal: bool
 ) -> None:
-    if not (left.dtype in FLOAT_DTYPES and right.dtype in FLOAT_DTYPES):
-        return
-
     if nans_compare_equal:
         nan_value_mismatch = left.is_nan() != right.is_nan()
         if nan_value_mismatch.any():
