@@ -43,7 +43,7 @@ def test_dtype() -> None:
         "dt": pl.List(pl.Date),
         "dtm": pl.List(pl.Datetime),
     }
-    assert all(tp.is_nested for tp in df.dtypes)
+    assert all(tp in pl.NESTED_DTYPES for tp in df.dtypes)
     assert df.schema["i"].inner == pl.Int8  # type: ignore[union-attr]
     assert df.rows() == [
         (
@@ -69,17 +69,15 @@ def test_categorical() -> None:
     out = (
         df.group_by(["a", "b"])
         .agg(
-            [
-                pl.col("c").count().alias("num_different_c"),
-                pl.col("c").alias("c_values"),
-            ]
+            pl.col("c").count().alias("num_different_c"),
+            pl.col("c").alias("c_values"),
         )
         .filter(pl.col("num_different_c") >= 2)
         .to_series(3)
     )
 
     assert out.inner_dtype == pl.Categorical
-    assert not out.inner_dtype.is_nested
+    assert out.inner_dtype not in pl.NESTED_DTYPES
 
 
 def test_cast_inner() -> None:
@@ -565,3 +563,11 @@ def test_list_inner_cast_physical_11513() -> None:
         },
     )
     assert df.select(pl.col("struct").take(0)).to_dict(False) == {"struct": [[]]}
+
+
+@pytest.mark.parametrize(
+    ("dtype", "expected"), [(pl.List, True), (pl.Struct, True), (pl.Utf8, False)]
+)
+def test_list_is_nested_deprecated(dtype: PolarsDataType, expected: bool) -> None:
+    with pytest.deprecated_call():
+        assert dtype.is_nested is expected
