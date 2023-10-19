@@ -1,7 +1,7 @@
 # Expression plugins
 
 Expression plugins are the preferred way to create user defined functions. They allow you to compile a rust function
-and register as an expression into the polars library. The polars engine will dynamically link your function at runtime
+and register that as an expression into the polars library. The polars engine will dynamically link your function at runtime
 and your expression will run almost as fast as native expressions. Note that this works without any interference of python
 and thus no GIL contention.
 
@@ -11,7 +11,7 @@ They will benefit from the same benefits default expression have:
 - Parallelism
 - Rust native performance
 
-To get started we will see what is needed to create a custom expresison.
+To get started we will see what is needed to create a custom expression.
 
 ## Our first custom expression: Pig Latin
 
@@ -222,8 +222,10 @@ fn haversine(inputs: &[Series]) -> PolarsResult<Series> {
             crate::distances::naive_haversine(start_lat, start_long, end_lat, end_long)?
                 .into_series()
         }
-        _ => unimplemented!(),
+        _ => polars_bail!(InvalidOperation: "only supported for float types"),
     };
     Ok(out)
 }
 ```
+
+That's all you need to know to get started. Take a look at <examples link> to see how this all fits together.

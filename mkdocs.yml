@@ -37,6 +37,7 @@ nav:
       - user-guide/expressions/window.md
       - user-guide/expressions/folds.md
       - user-guide/expressions/lists.md
+      - user-guide/expressions/plugins.md
       - user-guide/expressions/user-defined-functions.md
       - user-guide/expressions/structs.md
       - user-guide/expressions/numpy.md
