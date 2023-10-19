@@ -138,6 +138,7 @@ binary_encoding = ["polars/binary_encoding"]
 list_sets = ["polars-lazy/list_sets"]
 list_any_all = ["polars/list_any_all"]
 list_drop_nulls = ["polars/list_drop_nulls"]
+list_sample = ["polars/list_sample"]
 cutqcut = ["polars/cutqcut"]
 rle = ["polars/rle"]
 extract_groups = ["polars/extract_groups"]
@@ -165,6 +166,7 @@ operations = [
   "list_sets",
   "list_any_all",
   "list_drop_nulls",
+  "list_sample",
   "cutqcut",
   "rle",
   "extract_groups",

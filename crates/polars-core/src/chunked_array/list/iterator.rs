@@ -229,6 +229,52 @@ impl ListChunked {
         out
     }
 
+    pub fn try_zip_and_apply_amortized<'a, T, I, F>(
+        &'a self,
+        ca: &'a ChunkedArray<T>,
+        mut f: F,
+    ) -> PolarsResult<Self>
+    where
+        T: PolarsDataType,
+        &'a ChunkedArray<T>: IntoIterator<IntoIter = I>,
+        I: TrustedLen<Item = Option<T::Physical<'a>>>,
+        F: FnMut(
+            Option<UnstableSeries<'a>>,
+            Option<T::Physical<'a>>,
+        ) -> PolarsResult<Option<Series>>,
+    {
+        if self.is_empty() {
+            return Ok(self.clone());
+        }
+        let mut fast_explode = self.null_count() == 0;
+        // SAFETY: unstable series never lives longer than the iterator.
+        let mut out: ListChunked = unsafe {
+            self.amortized_iter()
+                .zip(ca)
+                .map(|(opt_s, opt_v)| {
+                    let out = f(opt_s, opt_v)?;
+                    match out {
+                        Some(out) if out.is_empty() => {
+                            fast_explode = false;
+                            Ok(Some(out))
+                        },
+                        None => {
+                            fast_explode = false;
+                            Ok(out)
+                        },
+                        _ => Ok(out),
+                    }
+                })
+                .collect::<PolarsResult<_>>()?
+        };
+
+        out.rename(self.name());
+        if fast_explode {
+            out.set_fast_explode();
+        }
+        Ok(out)
+    }
+
     /// Apply a closure `F` elementwise.
     #[must_use]
     pub fn apply_amortized<'a, F>(&'a self, mut f: F) -> Self

@@ -70,6 +70,8 @@ impl FunctionExpr {
                     Contains => mapper.with_dtype(DataType::Boolean),
                     #[cfg(feature = "list_drop_nulls")]
                     DropNulls => mapper.with_same_dtype(),
+                    #[cfg(feature = "list_sample")]
+                    Sample { .. } => mapper.with_same_dtype(),
                     Slice => mapper.with_same_dtype(),
                     Shift => mapper.with_same_dtype(),
                     Get => mapper.map_to_list_inner_dtype(),

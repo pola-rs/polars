@@ -11,6 +11,13 @@ pub enum ListFunction {
     Contains,
     #[cfg(feature = "list_drop_nulls")]
     DropNulls,
+    #[cfg(feature = "list_sample")]
+    Sample {
+        is_fraction: bool,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    },
     Slice,
     Shift,
     Get,
@@ -52,6 +59,14 @@ impl Display for ListFunction {
             Contains => "contains",
             #[cfg(feature = "list_drop_nulls")]
             DropNulls => "drop_nulls",
+            #[cfg(feature = "list_sample")]
+            Sample { is_fraction, .. } => {
+                if *is_fraction {
+                    "sample_fraction"
+                } else {
+                    "sample_n"
+                }
+            },
             Slice => "slice",
             Shift => "shift",
             Get => "get",
@@ -105,6 +120,32 @@ pub(super) fn drop_nulls(s: &Series) -> PolarsResult<Series> {
     let list = s.list()?;
 
     Ok(list.lst_drop_nulls().into_series())
+}
+
+#[cfg(feature = "list_sample")]
+pub(super) fn sample_n(
+    s: &[Series],
+    with_replacement: bool,
+    shuffle: bool,
+    seed: Option<u64>,
+) -> PolarsResult<Series> {
+    let list = s[0].list()?;
+    let n = &s[1];
+    list.lst_sample_n(n, with_replacement, shuffle, seed)
+        .map(|ok| ok.into_series())
+}
+
+#[cfg(feature = "list_sample")]
+pub(super) fn sample_fraction(
+    s: &[Series],
+    with_replacement: bool,
+    shuffle: bool,
+    seed: Option<u64>,
+) -> PolarsResult<Series> {
+    let list = s[0].list()?;
+    let fraction = &s[1];
+    list.lst_sample_fraction(fraction, with_replacement, shuffle, seed)
+        .map(|ok| ok.into_series())
 }
 
 fn check_slice_arg_shape(slice_len: usize, ca_len: usize, name: &str) -> PolarsResult<()> {
