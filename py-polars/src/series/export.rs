@@ -71,7 +71,7 @@ impl PySeries {
             },
             DataType::Null => {
                 let n = s.len();
-                let np_arr = PyArray1::from_iter(py, std::iter::repeat(f64::NAN).take(n));
+                let np_arr = PyArray1::from_iter(py, std::iter::repeat(f32::NAN).take(n));
                 Ok(np_arr.into_py(py))
             },
             dt => {
