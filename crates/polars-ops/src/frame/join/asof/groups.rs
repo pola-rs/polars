@@ -698,14 +698,14 @@ where
 fn dispatch_join<T: PolarsNumericType>(
     left_asof: &ChunkedArray<T>,
     right_asof: &ChunkedArray<T>,
-    left_by_s: &Series,
-    right_by_s: &Series,
     left_by: &mut DataFrame,
     right_by: &mut DataFrame,
     strategy: AsofStrategy,
     tolerance: Option<AnyValue<'static>>,
 ) -> PolarsResult<Vec<Option<IdxSize>>> {
     let out = if left_by.width() == 1 {
+        let left_by_s = left_by.get_columns()[0].to_physical_repr().into_owned();
+        let right_by_s = right_by.get_columns()[0].to_physical_repr().into_owned();
         let left_dtype = left_by_s.dtype();
         let right_dtype = right_by_s.dtype();
         polars_ensure!(left_dtype == right_dtype,
@@ -814,9 +814,6 @@ pub trait AsofJoinBy: IntoDf {
             }
         }
 
-        let left_by_s = left_by.get_columns()[0].to_physical_repr().into_owned();
-        let right_by_s = right_by.get_columns()[0].to_physical_repr().into_owned();
-
         let right_join_tuples = with_match_physical_numeric_polars_type!(left_asof.dtype(), |$T| {
             let left_asof: &ChunkedArray<$T> = left_asof.as_ref().as_ref().as_ref();
             let right_asof: &ChunkedArray<$T> = right_asof.as_ref().as_ref().as_ref();
@@ -824,8 +821,6 @@ pub trait AsofJoinBy: IntoDf {
             dispatch_join(
                 left_asof,
                 right_asof,
-                &left_by_s,
-                &right_by_s,
                 &mut left_by,
                 &mut right_by,
                 strategy,
@@ -841,13 +836,8 @@ pub trait AsofJoinBy: IntoDf {
         let cols = other_df
             .get_columns()
             .iter()
-            .filter_map(|s| {
-                if drop_these.contains(&s.name()) {
-                    None
-                } else {
-                    Some(s.clone())
-                }
-            })
+            .filter(|s| !drop_these.contains(&s.name()))
+            .cloned()
             .collect();
         let proj_other_df = DataFrame::new_no_checks(cols);
 
@@ -862,9 +852,10 @@ pub trait AsofJoinBy: IntoDf {
         _finish_join(left, right_df, suffix)
     }
 
-    /// This is similar to a left-join except that we match on nearest key rather than equal keys.
-    /// The keys must be sorted to perform an asof join. This is a special implementation of an asof join
-    /// that searches for the nearest keys within a subgroup set by `by`.
+    /// This is similar to a left-join except that we match on nearest key
+    /// rather than equal keys. The keys must be sorted to perform an asof join.
+    /// This is a special implementation of an asof join that searches for the
+    /// nearest keys within a subgroup set by `by`.
     #[allow(clippy::too_many_arguments)]
     fn join_asof_by<I, S>(
         &self,
