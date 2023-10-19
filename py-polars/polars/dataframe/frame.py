@@ -3970,8 +3970,8 @@ class DataFrame:
         Provide multiple filters using `*args` syntax:
 
         >>> df.filter(
-        ...     pl.col("foo") == 1,
-        ...     pl.col("ham") == "a",
+        ...     pl.col("foo") <= 2,
+        ...     ~pl.col("ham").is_in(["b", "c"]),
         ... )
         shape: (1, 3)
         ┌─────┬─────┬─────┐
@@ -3984,14 +3984,14 @@ class DataFrame:
 
         Provide multiple filters using `**kwargs` syntax:
 
-        >>> df.filter(foo=1, ham="a")
+        >>> df.filter(foo=2, ham="b")
         shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
         │ i64 ┆ i64 ┆ str │
         ╞═════╪═════╪═════╡
-        │ 1   ┆ 6   ┆ a   │
+        │ 2   ┆ 7   ┆ b   │
         └─────┴─────┴─────┘
 
         """
