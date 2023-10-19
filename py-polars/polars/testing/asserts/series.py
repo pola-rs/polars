@@ -288,7 +288,7 @@ def _assert_series_values_within_tolerance(
     left_unequal, right_unequal = left.filter(unequal), right.filter(unequal)
 
     difference = _calc_absolute_diff(left_unequal, right_unequal)
-    tolerance = atol + rtol * right.abs()
+    tolerance = atol + rtol * right_unequal.abs()
     exceeds_tolerance = difference > tolerance
 
     if exceeds_tolerance.any():
