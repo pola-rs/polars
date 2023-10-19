@@ -160,14 +160,14 @@ pub trait JoinDispatch: IntoDf {
                 if let Some((offset, len)) = args.slice {
                     left_idx = slice_slice(left_idx, offset, len);
                 }
-                ca_self._create_left_df_from_slice(&left_idx, true, true)
+                ca_self._create_left_df_from_slice(left_idx, true, true)
             },
             ChunkJoinIds::Right(left_idx) => unsafe {
                 let mut left_idx = &*left_idx;
                 if let Some((offset, len)) = args.slice {
                     left_idx = slice_slice(left_idx, offset, len);
                 }
-                ca_self.create_left_df_chunked(&left_idx, true)
+                ca_self.create_left_df_chunked(left_idx, true)
             },
         };
 
@@ -184,7 +184,7 @@ pub trait JoinDispatch: IntoDf {
                 if let Some((offset, len)) = args.slice {
                     right_idx = slice_slice(right_idx, offset, len);
                 }
-                other._take_opt_chunked_unchecked(&right_idx)
+                other._take_opt_chunked_unchecked(right_idx)
             },
         };
         let (df_left, df_right) = POOL.join(materialize_left, materialize_right);
