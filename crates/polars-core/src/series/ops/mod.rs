@@ -3,8 +3,6 @@ mod extend;
 #[cfg(feature = "moment")]
 pub mod moment;
 mod null;
-#[cfg(feature = "round_series")]
-mod round;
 mod to_list;
 mod unique;
 #[cfg(feature = "serde")]

@@ -138,7 +138,6 @@ docs-selection = [
   "temporal",
   "random",
   "zip_with",
-  "round_series",
   "checked_arithmetic",
   "is_first_distinct",
   "is_last_distinct",
