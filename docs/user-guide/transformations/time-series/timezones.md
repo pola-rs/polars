@@ -18,6 +18,8 @@ Examples of valid time zones are:
   See the [list of tz database time zones](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)
   to see what's available.
 
+Caution: Fixed offsets such as +02:00, should not be used for handling time zones. It's advised to use the "Area/Location" format mentioned above, as it can manage timezones more effectively.
+
 Note that, because a `Datetime` can only have a single time zone, it is
 impossible to have a column with multiple time zones. If you are parsing data
 with multiple offsets, you may want to pass `utc=True` to convert
