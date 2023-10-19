@@ -45,6 +45,9 @@ impl LogicalPlan {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FileInfo {
     pub schema: SchemaRef,
+    // Stores the schema used for the reader, as the main schema can contain
+    // extra hive columns.
+    pub reader_schema: SchemaRef,
     // - known size
     // - estimated size
     pub row_estimation: (Option<usize>, usize),
@@ -54,7 +57,8 @@ pub struct FileInfo {
 impl FileInfo {
     pub fn new(schema: SchemaRef, row_estimation: (Option<usize>, usize)) -> Self {
         Self {
-            schema,
+            schema: schema.clone(),
+            reader_schema: schema.clone(),
             row_estimation,
             hive_parts: None,
         }
