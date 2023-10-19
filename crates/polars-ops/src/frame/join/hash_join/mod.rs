@@ -132,19 +132,11 @@ pub trait JoinDispatch: IntoDf {
     ) -> PolarsResult<DataFrame> {
         let ca_self = self.to_df();
         let (left_idx, right_idx) = ids;
-        let materialize_left = || {
-            let mut left_idx = &*left_idx;
-            if let Some((offset, len)) = args.slice {
-                left_idx = slice_slice(left_idx, offset, len);
-            }
-            unsafe { ca_self._create_left_df_from_slice(left_idx, true, true) }
-        };
+        let materialize_left =
+            || unsafe { ca_self._create_left_df_from_slice(&left_idx, true, true) };
 
         let materialize_right = || {
-            let mut right_idx = &*right_idx;
-            if let Some((offset, len)) = args.slice {
-                right_idx = slice_slice(right_idx, offset, len);
-            }
+            let right_idx = &*right_idx;
             unsafe { other.take_unchecked(&right_idx.iter().copied().collect_ca("")) }
         };
         let (df_left, df_right) = POOL.join(materialize_left, materialize_right);
@@ -161,39 +153,22 @@ pub trait JoinDispatch: IntoDf {
     ) -> PolarsResult<DataFrame> {
         let ca_self = self.to_df();
         let suffix = &args.suffix;
-        let slice = args.slice;
         let (left_idx, right_idx) = ids;
         let materialize_left = || match left_idx {
-            ChunkJoinIds::Left(left_idx) => {
-                let mut left_idx = &*left_idx;
-                if let Some((offset, len)) = slice {
-                    left_idx = slice_slice(left_idx, offset, len);
-                }
-                unsafe { ca_self._create_left_df_from_slice(left_idx, true, true) }
+            ChunkJoinIds::Left(left_idx) => unsafe {
+                ca_self._create_left_df_from_slice(&left_idx, true, true)
             },
-            ChunkJoinIds::Right(left_idx) => {
-                let mut left_idx = &*left_idx;
-                if let Some((offset, len)) = slice {
-                    left_idx = slice_slice(left_idx, offset, len);
-                }
-                unsafe { ca_self.create_left_df_chunked(left_idx, true) }
+            ChunkJoinIds::Right(left_idx) => unsafe {
+                ca_self.create_left_df_chunked(&left_idx, true)
             },
         };
 
         let materialize_right = || match right_idx {
-            ChunkJoinOptIds::Left(right_idx) => {
-                let mut right_idx = &*right_idx;
-                if let Some((offset, len)) = slice {
-                    right_idx = slice_slice(right_idx, offset, len);
-                }
-                unsafe { other.take_unchecked(&right_idx.iter().copied().collect_ca("")) }
+            ChunkJoinOptIds::Left(right_idx) => unsafe {
+                other.take_unchecked(&right_idx.iter().copied().collect_ca(""))
             },
-            ChunkJoinOptIds::Right(right_idx) => {
-                let mut right_idx = &*right_idx;
-                if let Some((offset, len)) = slice {
-                    right_idx = slice_slice(right_idx, offset, len);
-                }
-                unsafe { other._take_opt_chunked_unchecked(right_idx) }
+            ChunkJoinOptIds::Right(right_idx) => unsafe {
+                other._take_opt_chunked_unchecked(&right_idx)
             },
         };
         let (df_left, df_right) = POOL.join(materialize_left, materialize_right);
@@ -213,9 +188,14 @@ pub trait JoinDispatch: IntoDf {
         #[cfg(feature = "dtype-categorical")]
         _check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
-        // ensure that the chunks are aligned otherwise we go OOB
         let mut left = ca_self.clone();
         let mut s_left = s_left.clone();
+        if let Some((offset, len)) = args.slice {
+            left = left.slice(offset, len);
+            s_left = s_left.slice(offset, len);
+        }
+
+        // Ensure that the chunks are aligned otherwise we go OOB.
         let mut right = other.clone();
         let mut s_right = s_right.clone();
         if left.should_rechunk() {
