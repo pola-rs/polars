@@ -69,6 +69,11 @@ impl PySeries {
                     PyArray1::from_iter(py, ca.into_iter().map(|opt_v| opt_v.to_object(py)));
                 Ok(np_arr.into_py(py))
             },
+            DataType::Null => {
+                let n = s.len();
+                let np_arr = PyArray1::from_iter(py, std::iter::repeat(f64::NAN).take(n));
+                Ok(np_arr.into_py(py))
+            },
             dt => {
                 raise_err!(
                     format!("'to_numpy' not supported for dtype: {dt:?}"),
