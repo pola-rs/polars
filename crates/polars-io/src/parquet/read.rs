@@ -129,7 +129,8 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         self
     }
 
-    /// Set the [`Schema`] if already known.
+    /// Set the [`Schema`] if already known. This must be exactly the same as
+    /// the schema in the file itself.
     pub fn with_schema(mut self, schema: Option<SchemaRef>) -> Self {
         self.schema = schema;
         self
