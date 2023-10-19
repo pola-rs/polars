@@ -1182,7 +1182,7 @@ impl LazyFrame {
         JoinBuilder::new(self)
     }
 
-    /// Add a column, given as an expression, to a DataFrame.
+    /// Add or replace a column, given as an expression, to a DataFrame.
     ///
     /// # Example
     ///
@@ -1214,7 +1214,7 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Add multiple columns, given as expressions, to a DataFrame.
+    /// Add or replace multiple columns, given as expressions, to a DataFrame.
     ///
     /// # Example
     ///
@@ -1239,7 +1239,7 @@ impl LazyFrame {
         )
     }
 
-    /// Add multiple columns to a DataFrame, but evaluate them sequentially.
+    /// Add or replace multiple columns to a DataFrame, but evaluate them sequentially.
     pub fn with_columns_seq<E: AsRef<[Expr]>>(self, exprs: E) -> LazyFrame {
         let exprs = exprs.as_ref().to_vec();
         self.with_columns_impl(
