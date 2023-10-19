@@ -52,12 +52,13 @@ pub trait DataFrameJoinOps: IntoDf {
     ///
     /// ```no_run
     /// # use polars_core::prelude::*;
+    /// # use polars_ops::prelude::*;
     /// let df1: DataFrame = df!("Fruit" => &["Apple", "Banana", "Pear"],
     ///                          "Phosphorus (mg/100g)" => &[11, 22, 12])?;
     /// let df2: DataFrame = df!("Name" => &["Apple", "Banana", "Pear"],
     ///                          "Potassium (mg/100g)" => &[107, 358, 115])?;
     ///
-    /// let df3: DataFrame = df1.join(&df2, ["Fruit"], ["Name"], JoinType::Inner, None)?;
+    /// let df3: DataFrame = df1.join(&df2, ["Fruit"], ["Name"], JoinArgs::new(JoinType::Inner))?;
     /// assert_eq!(df3.shape(), (3, 3));
     /// println!("{}", df3);
     /// # Ok::<(), PolarsError>(())
@@ -373,6 +374,7 @@ pub trait DataFrameJoinOps: IntoDf {
     ///
     /// ```
     /// # use polars_core::prelude::*;
+    /// # use polars_ops::prelude::*;
     /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> PolarsResult<DataFrame> {
     ///     left.inner_join(right, ["join_column_left"], ["join_column_right"])
     /// }
@@ -395,6 +397,7 @@ pub trait DataFrameJoinOps: IntoDf {
     ///
     /// ```no_run
     /// # use polars_core::prelude::*;
+    /// # use polars_ops::prelude::*;
     /// let df1: DataFrame = df!("Wavelength (nm)" => &[480.0, 650.0, 577.0, 1201.0, 100.0])?;
     /// let df2: DataFrame = df!("Color" => &["Blue", "Yellow", "Red"],
     ///                          "Wavelength nm" => &[480.0, 577.0, 650.0])?;
@@ -437,6 +440,7 @@ pub trait DataFrameJoinOps: IntoDf {
     ///
     /// ```
     /// # use polars_core::prelude::*;
+    /// # use polars_ops::prelude::*;
     /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> PolarsResult<DataFrame> {
     ///     left.outer_join(right, ["join_column_left"], ["join_column_right"])
     /// }

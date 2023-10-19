@@ -156,6 +156,7 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
 /// their default value of `lit(0)`, as demonstrated below.
 ///
 /// ```
+/// # use polars_plan::prelude::*;
 /// let args = DurationArgs {
 ///     days: lit(5),
 ///     hours: col("num_hours"),
@@ -165,6 +166,7 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
 /// ```
 /// If you prefer builder syntax, `with_*` methods are also available.
 /// ```
+/// # use polars_plan::prelude::*;
 /// let args = DurationArgs::new().with_weeks(lit(42)).with_hours(lit(84));
 /// ```
 #[derive(Debug, Clone)]
