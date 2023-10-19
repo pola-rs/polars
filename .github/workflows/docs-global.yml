@@ -26,7 +26,7 @@ jobs:
       - uses: psf/black@stable
         with:
           src: docs/src/python
-          version: "23.9.1"
+          version: "23.10.0"
 
   deploy:
     runs-on: ubuntu-latest
