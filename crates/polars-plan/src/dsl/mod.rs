@@ -1141,6 +1141,7 @@ impl Expr {
     /// Keep the original root name
     ///
     /// ```rust,no_run
+    /// # use polars_core::prelude::*;
     /// # use polars_plan::prelude::*;
     /// fn example(df: LazyFrame) -> LazyFrame {
     ///     df.select([
@@ -1181,21 +1182,6 @@ impl Expr {
     /// Exclude a column from a wildcard/regex selection.
     ///
     /// You may also use regexes in the exclude as long as they start with `^` and end with `$`/
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use polars_core::prelude::*;
-    /// use polars_lazy::prelude::*;
-    ///
-    /// // Select all columns except foo.
-    /// fn example(df: DataFrame) -> LazyFrame {
-    ///       df.lazy()
-    ///         .select(&[
-    ///                 col("*").exclude(&["foo"])
-    ///                 ])
-    /// }
-    /// ```
     pub fn exclude(self, columns: impl IntoVec<String>) -> Expr {
         let v = columns
             .into_vec()
