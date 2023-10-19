@@ -468,10 +468,10 @@ def test_list_recursive_categorical_cast() -> None:
 @pytest.mark.parametrize(
     ("data", "expected_data", "dtype"),
     [
-        ([1, 2], [[1], [2]], pl.Int64),
-        ([1.0, 2.0], [[1.0], [2.0]], pl.Float64),
-        (["x", "y"], [["x"], ["y"]], pl.Utf8),
-        ([True, False], [[True], [False]], pl.Boolean),
+        ([None, 1, 2], [None, [1], [2]], pl.Int64),
+        ([None, 1.0, 2.0], [None, [1.0], [2.0]], pl.Float64),
+        ([None, "x", "y"], [None, ["x"], ["y"]], pl.Utf8),
+        ([None, True, False], [None, [True], [False]], pl.Boolean),
     ],
 )
 def test_non_nested_cast_to_list(
