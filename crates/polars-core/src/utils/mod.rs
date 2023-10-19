@@ -238,7 +238,7 @@ macro_rules! match_dtype_to_physical_apply_macro {
             DataType::Int64 => $macro!(i64 $(, $opt_args)*),
             DataType::Float32 => $macro!(f32 $(, $opt_args)*),
             DataType::Float64 => $macro!(f64 $(, $opt_args)*),
-            dt => panic!("not implemented for dtype {:?}", dt),
+            dt => panic!("not implemented for dtype `{:?}`", dt),
         }
     }};
 }
@@ -265,7 +265,7 @@ macro_rules! match_dtype_to_logical_apply_macro {
             DataType::Int64 => $macro!(Int64Type $(, $opt_args)*),
             DataType::Float32 => $macro!(Float32Type $(, $opt_args)*),
             DataType::Float64 => $macro!(Float64Type $(, $opt_args)*),
-            dt => panic!("not implemented for dtype {:?}", dt),
+            dt => panic!("not implemented for dtype `{:?}`", dt),
         }
     }};
 }
@@ -418,7 +418,7 @@ macro_rules! downcast_as_macro_arg_physical {
             DataType::Int64 => $macro!($self.i64().unwrap() $(, $opt_args)*),
             DataType::Float32 => $macro!($self.f32().unwrap() $(, $opt_args)*),
             DataType::Float64 => $macro!($self.f64().unwrap() $(, $opt_args)*),
-            dt => panic!("not implemented for {:?}", dt),
+            dt => panic!("not implemented for dtype `{:?}`", dt),
         }
     }};
 }
@@ -474,7 +474,7 @@ macro_rules! downcast_as_macro_arg_physical_mut {
                 let ca: &mut Float64Chunked = $self.as_mut();
                 $macro!(Float64Type, ca $(, $opt_args)*)
             },
-            dt => panic!("not implemented for {:?}", dt),
+            dt => panic!("not implemented for dtype `{:?}`", dt),
         }
     }};
 }
@@ -504,7 +504,7 @@ macro_rules! apply_method_all_arrow_series {
             DataType::Datetime(_, _) => $self.datetime().unwrap().$method($($args),*),
             DataType::List(_) => $self.list().unwrap().$method($($args),*),
             DataType::Struct(_) => $self.struct_().unwrap().$method($($args),*),
-            dt => panic!("dtype {:?} not supported", dt)
+            dt => panic!("dtype `{:?}` not supported", dt)
         }
     }
 }

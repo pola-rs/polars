@@ -1305,7 +1305,7 @@ impl DataFrame {
             let start = match start {
                 ops::Bound::Included(&start) => start,
                 ops::Bound::Excluded(start) => start.checked_add(1).unwrap_or_else(|| {
-                    panic!("attempted to index slice from after maximum usize");
+                    panic!("attempted to index slice from after maximum `usize`");
                 }),
                 ops::Bound::Unbounded => 0,
             };
@@ -1313,7 +1313,7 @@ impl DataFrame {
             let end: ops::Bound<&usize> = range.end_bound();
             let end = match end {
                 ops::Bound::Included(end) => end.checked_add(1).unwrap_or_else(|| {
-                    panic!("attempted to index slice up to maximum usize");
+                    panic!("attempted to index slice up to maximum `usize`");
                 }),
                 ops::Bound::Excluded(&end) => end,
                 ops::Bound::Unbounded => len,

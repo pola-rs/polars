@@ -183,7 +183,7 @@ impl DataFrame {
     ) -> PolarsResult<Self> {
         polars_ensure!(
         n.len() == 1,
-        ComputeError: "Sample size must be a single value."
+        ComputeError: "sample size must be a single value"
         );
 
         let n = n.cast(&IDX_DTYPE)?;

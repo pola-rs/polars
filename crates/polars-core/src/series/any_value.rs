@@ -21,13 +21,13 @@ fn any_values_to_utf8(avs: &[AnyValue], strict: bool) -> PolarsResult<Utf8Chunke
             AnyValue::Null => builder.append_null(),
             AnyValue::Binary(_) | AnyValue::BinaryOwned(_) => {
                 if strict {
-                    polars_bail!(ComputeError: "mixed dtypes found when building Utf8 Series")
+                    polars_bail!(ComputeError: "mixed dtypes found when building `Utf8` `Series`")
                 }
                 builder.append_null()
             },
             av => {
                 if strict {
-                    polars_bail!(ComputeError: "mixed dtypes found when building Utf8 Series")
+                    polars_bail!(ComputeError: "mixed dtypes found when building `Utf8` `Series`")
                 }
                 owned.clear();
                 write!(owned, "{av}").unwrap();
@@ -55,7 +55,7 @@ fn any_values_to_decimal(
             continue;
         } else {
             polars_bail!(
-                ComputeError: "unable to convert any-value of dtype {} to decimal", av.dtype(),
+                ComputeError: "unable to convert any-value of dtype `{}` to decimal", av.dtype(),
             );
         };
         scale_range = match scale_range {
@@ -178,7 +178,7 @@ fn any_values_to_list(
     if valid || !strict {
         Ok(out)
     } else {
-        polars_bail!(ComputeError: "got mixed dtypes while constructing List Series")
+        polars_bail!(ComputeError: "got mixed dtypes while constructing `List` `Series`")
     }
 }
 
@@ -334,7 +334,7 @@ impl Series {
                         },
                         _ => polars_bail!(
                              ComputeError:
-                             "categorical dtype with any-values of dtype {} not supported",
+                             "categorical dtype with any-values of dtype `{}` not supported",
                              single_av.dtype()
                         ),
                     }
@@ -344,7 +344,7 @@ impl Series {
 
                 ca.cast(&DataType::Categorical(None)).unwrap()
             },
-            dt => panic!("{dt:?} not supported"),
+            dt => panic!("`{dt:?}` not supported"),
         };
         s.rename(name);
         Ok(s)

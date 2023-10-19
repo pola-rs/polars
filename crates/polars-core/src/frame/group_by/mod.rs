@@ -58,7 +58,7 @@ impl DataFrame {
     ) -> PolarsResult<GroupBy> {
         polars_ensure!(
             !by.is_empty(),
-            ComputeError: "at least one key is required in a group_by operation"
+            ComputeError: "at least one key is required in a `group_by` operation"
         );
         let minimal_by_len = by.iter().map(|s| s.len()).min().expect("at least 1 key");
         let df_height = self.height();
@@ -776,7 +776,7 @@ impl<'df> GroupBy<'df> {
     }
 
     fn prepare_apply(&self) -> PolarsResult<DataFrame> {
-        polars_ensure!(self.df.height() > 0, ComputeError: "cannot group_by + apply on empty 'DataFrame'");
+        polars_ensure!(self.df.height() > 0, ComputeError: "cannot `group_by` + `apply` on empty `DataFrame`");
         if let Some(agg) = &self.selected_agg {
             if agg.is_empty() {
                 Ok(self.df.clone())

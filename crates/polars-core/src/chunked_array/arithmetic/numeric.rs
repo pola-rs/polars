@@ -28,7 +28,7 @@ where
                 Some(lhs) => rhs.apply_values(|rhs| operation(lhs, rhs)),
             }
         },
-        _ => panic!("Cannot apply operation on arrays of different lengths"),
+        _ => panic!("cannot apply operation on arrays of different lengths"),
     };
     ca.rename(lhs.name());
     ca
@@ -80,7 +80,7 @@ where
                 },
             }
         },
-        _ => panic!("Cannot apply operation on arrays of different lengths"),
+        _ => panic!("cannot apply operation on arrays of different lengths"),
     };
     ca
 }

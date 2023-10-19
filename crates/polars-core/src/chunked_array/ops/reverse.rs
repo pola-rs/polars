@@ -48,7 +48,7 @@ impl_reverse!(ListType, ListChunked);
 impl ChunkReverse for ArrayChunked {
     fn reverse(&self) -> Self {
         if !self.inner_dtype().is_numeric() {
-            todo!("reverse for FixedSizeList with non-numeric dtypes not yet supported")
+            todo!("reverse for `FixedSizeList` with non-numeric dtypes not yet supported")
         }
         let ca = self.rechunk();
         let arr = ca.downcast_iter().next().unwrap();

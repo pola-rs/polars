@@ -31,7 +31,7 @@ pub(crate) fn validate_time_zone(tz: &str) -> PolarsResult<()> {
     match tz.parse::<Tz>() {
         Ok(_) => Ok(()),
         Err(_) => {
-            polars_bail!(ComputeError: "unable to parse time zone: '{}'. Please check the Time Zone Database for a list of available time zones", tz)
+            polars_bail!(ComputeError: "unable to parse time zone: `{}`\n\nPlease check the Time Zone Database for a list of available time zones.", tz)
         },
     }
 }

@@ -758,7 +758,7 @@ impl ArrayFromIterDtype<Box<dyn Array>> for FixedSizeListArray {
         iter: I,
     ) -> Self {
         let DataType::Array(_, width) = &dtype else {
-            panic!("FixedSizeListArray::arr_from_iter_with_dtype called with non-Array dtype");
+            panic!("`FixedSizeListArray::arr_from_iter_with_dtype` called with non-Array dtype");
         };
         let iter_values: Vec<_> = iter.into_iter().collect();
         let mut builder = AnonymousFixedSizeListArrayBuilder::new(iter_values.len(), *width);
@@ -767,7 +767,7 @@ impl ArrayFromIterDtype<Box<dyn Array>> for FixedSizeListArray {
         }
         let inner = dtype
             .inner_dtype()
-            .expect("expected nested type in ListArray collect");
+            .expect("expected nested type in `ListArray` collect");
         builder
             .finish(Some(&inner.to_physical().to_arrow()))
             .unwrap()
@@ -789,7 +789,7 @@ impl ArrayFromIterDtype<Option<Box<dyn Array>>> for FixedSizeListArray {
         iter: I,
     ) -> Self {
         let DataType::Array(_, width) = &dtype else {
-            panic!("FixedSizeListArray::arr_from_iter_with_dtype called with non-Array dtype");
+            panic!("`FixedSizeListArray::arr_from_iter_with_dtype` called with non-Array dtype");
         };
         let iter_values: Vec<_> = iter.into_iter().collect();
         let mut builder = AnonymousFixedSizeListArrayBuilder::new(iter_values.len(), *width);

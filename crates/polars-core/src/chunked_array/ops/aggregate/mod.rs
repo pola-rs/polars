@@ -72,7 +72,7 @@ where
             };
             unsafe { std::mem::transmute_copy::<f64, T>(&sum) }
         } else {
-            unreachable!("only supported float types are f32 and f64");
+            unreachable!("only supported float types are `f32` and `f64`");
         }
     } else {
         compute::aggregate::sum_primitive(array).unwrap_or(T::zero())

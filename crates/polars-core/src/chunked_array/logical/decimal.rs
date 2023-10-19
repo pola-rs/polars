@@ -84,7 +84,7 @@ impl LogicalType for DecimalChunked {
         let (precision_src, scale_src) = (self.precision(), self.scale());
         if let &DataType::Decimal(precision_dst, scale_dst) = dtype {
             let scale_dst = scale_dst.ok_or_else(
-                || polars_err!(ComputeError: "cannot cast to Decimal with unknown scale"),
+                || polars_err!(ComputeError: "cannot cast to `Decimal` with unknown scale"),
             )?;
             // for now, let's just allow same-scale conversions
             // where precision is either the same or bigger or gets converted to `None`

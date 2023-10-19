@@ -42,7 +42,7 @@ impl DataFrame {
             #[cfg(feature = "object")]
             DataType::Object(_) => {
                 // this requires to support `Object` in Series::iter which we don't yet
-                polars_bail!(InvalidOperation: "Object dtype not supported in 'transpose'")
+                polars_bail!(InvalidOperation: "`Object` dtype not supported in `transpose`")
             },
             _ => {
                 let phys_dtype = dtype.to_physical();
@@ -63,7 +63,7 @@ impl DataFrame {
                 // this is very expensive. A lot of cache misses here.
                 // This is the part that is performance critical.
                 for s in columns {
-                    polars_ensure!(s.dtype() == &phys_dtype, ComputeError: "cannot transpose with supertype: {}", dtype);
+                    polars_ensure!(s.dtype() == &phys_dtype, ComputeError: "cannot transpose with supertype: `{}`", dtype);
                     s.iter().zip(buffers.iter_mut()).for_each(|(av, buf)| {
                         // safety: we checked the type and we borrow
                         unsafe {
@@ -93,7 +93,7 @@ impl DataFrame {
             Some(cn) => match cn {
                 Either::Left(name) => {
                     let new_names = self.column(&name).and_then(|x| x.utf8())?;
-                    polars_ensure!(!new_names.has_validity(), ComputeError: "Column with new names can't have null values");
+                    polars_ensure!(!new_names.has_validity(), ComputeError: "column with new names cannot have null values");
                     df = Cow::Owned(self.drop(&name)?);
                     new_names
                         .into_no_null_iter()
@@ -101,7 +101,7 @@ impl DataFrame {
                         .collect()
                 },
                 Either::Right(names) => {
-                    polars_ensure!(names.len() == self.height(), ShapeMismatch: "Length of new column names must be the same as the row count");
+                    polars_ensure!(names.len() == self.height(), ShapeMismatch: "length of new column names must be the same as the row count");
                     names
                 },
             },
@@ -136,7 +136,7 @@ impl DataFrame {
                         }
                     }
                 }
-                polars_ensure!(valid, ComputeError: "'transpose' of categorical can only be done if all are from the same global string cache")
+                polars_ensure!(valid, ComputeError: "`transpose` of categorical can only be done if all are from the same global string cache")
             },
             _ => {},
         }

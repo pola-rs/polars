@@ -76,8 +76,7 @@ impl RevMapMerger {
         if Arc::ptr_eq(&self.original, rev_map) {
             return Ok(());
         }
-        let msg = "categoricals don't originate from the same string cache\n\
-    try setting a global string cache or increase the scope of the local string cache";
+        let msg = "categoricals don't originate from the same string cache\n\nTry setting a global string cache or increase the scope of the local string cache.";
         let RevMapping::Global(map, slots, id) = rev_map.as_ref() else {
             polars_bail!(ComputeError: msg)
         };

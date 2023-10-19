@@ -34,14 +34,14 @@ impl ListChunked {
     {
         polars_ensure!(
             self.null_count() == 0,
-            ComputeError: "creation of ndarray with null values is not supported"
+            ComputeError: "creation of `ndarray` with null values is not supported"
         );
 
         // first iteration determine the size
         let mut iter = self.into_no_null_iter();
-        let series = iter
-            .next()
-            .ok_or_else(|| polars_err!(NoData: "unable to create ndarray of empty ListChunked"))?;
+        let series = iter.next().ok_or_else(
+            || polars_err!(NoData: "unable to create `ndarray` of empty `ListChunked`"),
+        )?;
 
         let width = series.len();
         let mut row_idx = 0;
@@ -133,7 +133,7 @@ impl DataFrame {
                 .map(|(col_idx, s)| {
                     polars_ensure!(
                         s.null_count() == 0,
-                        ComputeError: "creation of ndarray with null values is not supported"
+                        ComputeError: "creation of `ndarray` with null values is not supported"
                     );
 
                     // this is an Arc clone if already of type N

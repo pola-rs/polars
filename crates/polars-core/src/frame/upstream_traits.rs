@@ -9,7 +9,7 @@ impl FromIterator<Series> for DataFrame {
     /// Panics if Series have different lengths.
     fn from_iter<T: IntoIterator<Item = Series>>(iter: T) -> Self {
         let v = iter.into_iter().collect();
-        DataFrame::new(v).expect("could not create DataFrame from iterator")
+        DataFrame::new(v).expect("could not create `DataFrame` from iterator")
     }
 }
 

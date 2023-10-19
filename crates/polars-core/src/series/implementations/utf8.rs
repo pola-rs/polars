@@ -129,7 +129,7 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(
             self.0.dtype() == other.dtype(),
-            SchemaMismatch: "cannot extend Series: data types don't match",
+            SchemaMismatch: "cannot extend `Series`: data types don't match",
         );
         // todo! add object
         self.0.append(other.as_ref().as_ref());
@@ -139,7 +139,7 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(
             self.0.dtype() == other.dtype(),
-            SchemaMismatch: "cannot extend Series: data types don't match",
+            SchemaMismatch: "cannot extend `Series`: data types don't match",
         );
         self.0.extend(other.as_ref().as_ref());
         Ok(())

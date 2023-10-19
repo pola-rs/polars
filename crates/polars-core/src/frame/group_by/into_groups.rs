@@ -57,7 +57,7 @@ where
 {
     fn create_groups_from_sorted(&self, multithreaded: bool) -> GroupsSlice {
         if verbose() {
-            eprintln!("group_by keys are sorted; running sorted key fast path");
+            eprintln!("`group_by` keys are sorted; running sorted key fast path");
         }
         let arr = self.downcast_iter().next().unwrap();
         if arr.is_empty() {
@@ -352,7 +352,7 @@ impl IntoGroupsProxy for ListChunked {
         }
         #[cfg(not(feature = "group_by_list"))]
         {
-            panic!("activate 'group_by_list' feature")
+            panic!("activate `group_by_list` feature")
         }
     }
 }
@@ -366,7 +366,7 @@ impl IntoGroupsProxy for ArrayChunked {
         _multithreaded: bool,
         _sorted: bool,
     ) -> PolarsResult<GroupsProxy> {
-        todo!("grouping FixedSizeList not yet supported")
+        todo!("grouping `FixedSizeList` not yet supported")
     }
 }
 

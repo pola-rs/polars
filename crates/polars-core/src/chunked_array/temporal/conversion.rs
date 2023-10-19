@@ -19,7 +19,7 @@ impl From<&AnyValue<'_>> for NaiveDateTime {
                 TimeUnit::Microseconds => timestamp_us_to_datetime(*v),
                 TimeUnit::Milliseconds => timestamp_ms_to_datetime(*v),
             },
-            _ => panic!("can only convert date/datetime to NaiveDateTime"),
+            _ => panic!("can only convert `date`/`datetime` to `NaiveDateTime`"),
         }
     }
 }
@@ -29,7 +29,7 @@ impl From<&AnyValue<'_>> for NaiveTime {
         match v {
             #[cfg(feature = "dtype-time")]
             AnyValue::Time(v) => time64ns_to_time(*v),
-            _ => panic!("can only convert date/datetime to NaiveTime"),
+            _ => panic!("can only convert `date`/`datetime` to `NaiveTime`"),
         }
     }
 }

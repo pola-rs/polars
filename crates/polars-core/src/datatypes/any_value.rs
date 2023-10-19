@@ -466,7 +466,7 @@ impl<'a> AnyValue<'a> {
                     DataType::Time => AnyValue::Time($av as i64),
                     DataType::Utf8 => AnyValue::Utf8Owned(format_smartstring!("{}", $av)),
                     _ => polars_bail!(
-                        ComputeError: "cannot cast any-value {:?} to dtype '{}'", self, dtype,
+                        ComputeError: "cannot cast any-value `{:?}` to dtype `{}`", self, dtype,
                     ),
                 }
 
@@ -493,14 +493,14 @@ impl<'a> AnyValue<'a> {
                     AnyValue::Date(date_value)
                 },
                 _ => polars_bail!(
-                    ComputeError: format!("cannot cast 'datetime' any-value to dtype {dtype}")
+                    ComputeError: format!("cannot cast `datetime` any-value to dtype `{dtype}`")
                 ),
             },
             #[cfg(feature = "dtype-time")]
             AnyValue::Time(v) => match dtype {
                 DataType::Int64 => AnyValue::Int64(*v),
                 _ => polars_bail!(
-                    ComputeError: format!("cannot cast 'time' any-value to dtype {dtype}")
+                    ComputeError: format!("cannot cast `time` any-value to dtype `{dtype}`")
                 ),
             },
             #[cfg(feature = "dtype-date")]
@@ -519,7 +519,7 @@ impl<'a> AnyValue<'a> {
                     AnyValue::Datetime(value, *tu, &None)
                 },
                 _ => polars_bail!(
-                    ComputeError: format!("cannot cast 'date' any-value to dtype {dtype}")
+                    ComputeError: format!("cannot cast `date` any-value to dtype `{dtype}`")
                 ),
             },
             _ => polars_bail!(ComputeError: "cannot cast non numeric any-value to numeric dtype"),
@@ -633,7 +633,7 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-date")]
             AnyValue::Int32(v) => AnyValue::Date(v),
             AnyValue::Null => AnyValue::Null,
-            dt => panic!("cannot create date from other type. dtype: {dt}"),
+            dt => panic!("cannot create `date` from other type; got dtype: `{dt}`"),
         }
     }
     #[cfg(feature = "dtype-datetime")]
@@ -641,7 +641,7 @@ impl<'a> AnyValue<'a> {
         match self {
             AnyValue::Int64(v) => AnyValue::Datetime(v, tu, tz),
             AnyValue::Null => AnyValue::Null,
-            dt => panic!("cannot create date from other type. dtype: {dt}"),
+            dt => panic!("cannot create `date` from other type; got dtype: `{dt}`"),
         }
     }
 
@@ -650,7 +650,7 @@ impl<'a> AnyValue<'a> {
         match self {
             AnyValue::Int64(v) => AnyValue::Duration(v, tu),
             AnyValue::Null => AnyValue::Null,
-            dt => panic!("cannot create date from other type. dtype: {dt}"),
+            dt => panic!("cannot create `date` from other type; got dtype: `{dt}`"),
         }
     }
 
@@ -659,7 +659,7 @@ impl<'a> AnyValue<'a> {
         match self {
             AnyValue::Int64(v) => AnyValue::Time(v),
             AnyValue::Null => AnyValue::Null,
-            dt => panic!("cannot create date from other type. dtype: {dt}"),
+            dt => panic!("cannot create `date` from other type; got dtype: `{dt}`"),
         }
     }
 
@@ -736,7 +736,7 @@ impl<'a> AnyValue<'a> {
             },
             #[cfg(feature = "dtype-decimal")]
             Decimal(val, scale) => Decimal(val, scale),
-            dt => polars_bail!(ComputeError: "cannot get static any-value from {}", dt),
+            dt => polars_bail!(ComputeError: "cannot get static any-value from `{}`", dt),
         };
         Ok(av)
     }

@@ -93,7 +93,7 @@ fn quantile_slice<T: ToPrimitive + Ord>(
     interpol: QuantileInterpolOptions,
 ) -> PolarsResult<Option<f64>> {
     polars_ensure!((0.0..=1.0).contains(&quantile),
-        ComputeError: "quantile should be between 0.0 and 1.0",
+        ComputeError: "`quantile` should be between 0.0 and 1.0",
     );
     if vals.is_empty() {
         return Ok(None);

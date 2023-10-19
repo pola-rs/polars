@@ -72,7 +72,7 @@ impl Series {
             Decimal(precision, scale) => Int128Chunked::from_chunks(name, chunks)
                 .into_decimal_unchecked(
                     *precision,
-                    scale.unwrap_or_else(|| unreachable!("scale should be set")),
+                    scale.unwrap_or_else(|| unreachable!("`scale` should be set")),
                 )
                 .into_series(),
             #[cfg(feature = "dtype-array")]
@@ -254,7 +254,7 @@ impl Series {
             ArrowDataType::Null => Ok(new_null(name, &chunks)),
             #[cfg(not(feature = "dtype-categorical"))]
             ArrowDataType::Dictionary(_, _, _) => {
-                panic!("activate dtype-categorical to convert dictionary arrays")
+                panic!("activate `dtype-categorical` to convert dictionary arrays")
             },
             #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(key_type, value_type, _) => {
@@ -399,7 +399,7 @@ impl Series {
             ArrowDataType::FixedSizeBinary(_) => {
                 if verbose() {
                     eprintln!(
-                        "Polars does not support decimal types so the 'Series' are read as Float64"
+                        "Polars does not support decimal types so the `Series` are read as `Float64`"
                     );
                 }
                 let chunks = cast_chunks(&chunks, &DataType::Binary, true)?;
@@ -421,7 +421,7 @@ impl Series {
                     } else {
                         if verbose() {
                             eprintln!(
-                                "Activate beta decimal types to read as decimal. Current behavior casts to Float64."
+                                "activate beta decimal types to read as decimal\n\nCurrent behavior casts to `Float64`."
                             );
                         }
                         Ok(Float64Chunked::from_chunks(
@@ -448,7 +448,7 @@ impl Series {
             ArrowDataType::Decimal256(_, _) | ArrowDataType::Decimal(_, _) => {
                 if verbose() {
                     eprintln!(
-                        "Polars does not support decimal types so the 'Series' are read as Float64"
+                        "Polars does not support decimal types so the `Series` are read as `Float64`"
                     );
                 }
                 Ok(Float64Chunked::from_chunks(
@@ -458,7 +458,7 @@ impl Series {
                 .into_series())
             },
             ArrowDataType::Map(_, _) => map_arrays_to_series(name, chunks),
-            dt => polars_bail!(ComputeError: "cannot create series from {:?}", dt),
+            dt => polars_bail!(ComputeError: "cannot create series from `{:?}`", dt),
         }
     }
 }

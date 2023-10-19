@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 def test_error_on_empty_group_by() -> None:
     with pytest.raises(
-        pl.ComputeError, match="at least one key is required in a group_by operation"
+        pl.ComputeError, match="at least one key is required in a `group_by` operation"
     ):
         pl.DataFrame({"x": [0, 0, 1, 1]}).group_by([]).agg(pl.count())
 
@@ -526,8 +526,8 @@ def test_skip_nulls_err() -> None:
             pl.UInt32,
             re.escape(
                 "strict conversion from `str` to `u32` failed for column: B, "
-                'value(s) ["help"]; if you were trying to cast Utf8 to temporal '
-                "dtypes, consider using `strptime`"
+                'value(s) ["help"]\n\nIf you were trying to cast `Utf8` to temporal '
+                "dtypes, consider using `strptime`."
             ),
             id="Unsigned integer",
         )
@@ -548,14 +548,15 @@ def test_err_on_time_datetime_cast() -> None:
 
 def test_err_on_invalid_time_zone_cast() -> None:
     s = pl.Series([datetime(2021, 1, 1)])
-    with pytest.raises(pl.ComputeError, match=r"unable to parse time zone: 'qwerty'"):
+    with pytest.raises(pl.ComputeError, match=r"unable to parse time zone: `qwerty`"):
         s.cast(pl.Datetime("us", "qwerty"))
 
 
 def test_invalid_inner_type_cast_list() -> None:
     s = pl.Series([[-1, 1]])
     with pytest.raises(
-        pl.ComputeError, match=r"cannot cast List inner type: 'Int64' to Categorical"
+        pl.ComputeError,
+        match=r"cannot cast `List` inner type: `Int64` to `Categorical`",
     ):
         s.cast(pl.List(pl.Categorical))
 
@@ -621,7 +622,7 @@ def test_serde_validation() -> None:
 def test_transpose_categorical_cached() -> None:
     with pytest.raises(
         pl.ComputeError,
-        match=r"'transpose' of categorical can only be done if all are from the same global string cache",
+        match=r"`transpose` of categorical can only be done if all are from the same global string cache",
     ):
         pl.DataFrame(
             {"b": pl.Series(["a", "b", "c"], dtype=pl.Categorical)}

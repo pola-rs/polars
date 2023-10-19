@@ -117,10 +117,10 @@ impl DatetimeChunked {
                 Utc.from_local_datetime(&dt).earliest().unwrap().format(format)
             )
             .map_err(
-                |_| polars_err!(ComputeError: "cannot format DateTime with format '{}'", format),
+                |_| polars_err!(ComputeError: "cannot format `DateTime` with format `{}`", format),
             )?,
             _ => write!(fmted, "{}", dt.format(format)).map_err(
-                |_| polars_err!(ComputeError: "cannot format NaiveDateTime with format '{}'", format),
+                |_| polars_err!(ComputeError: "cannot format `NaiveDateTime` with format `{}`", format),
             )?,
         };
         let fmted = fmted; // discard mut

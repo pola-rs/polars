@@ -636,7 +636,7 @@ impl Series {
                 UInt64 => self.u64().unwrap().prod_as_series(),
                 Float32 => self.f32().unwrap().prod_as_series(),
                 Float64 => self.f64().unwrap().prod_as_series(),
-                dt => panic!("product not supported for dtype: {dt:?}"),
+                dt => panic!("product not supported for dtype: `{dt:?}`"),
             }
         }
         #[cfg(not(feature = "product"))]
@@ -664,8 +664,7 @@ impl Series {
             let failures = get_casting_failures(self, &s)?;
             polars_bail!(
                 ComputeError:
-                "strict conversion from `{}` to `{}` failed for column: {}, value(s) {}; \
-                if you were trying to cast Utf8 to temporal dtypes, consider using `strptime`",
+                "strict conversion from `{}` to `{}` failed for column: {}, value(s) {}\n\nIf you were trying to cast `Utf8` to temporal dtypes, consider using `strptime`.",
                 self.dtype(), dtype, s.name(), failures.fmt_list(),
             );
         } else {
@@ -677,7 +676,7 @@ impl Series {
     pub(crate) fn into_time(self) -> Series {
         #[cfg(not(feature = "dtype-time"))]
         {
-            panic!("activate feature dtype-time")
+            panic!("activate feature `dtype-time`")
         }
         match self.dtype() {
             DataType::Int64 => self.i64().unwrap().clone().into_time().into_series(),
@@ -688,14 +687,14 @@ impl Series {
                 .clone()
                 .into_time()
                 .into_series(),
-            dt => panic!("date not implemented for {dt:?}"),
+            dt => panic!("date not implemented for `{dt:?}`"),
         }
     }
 
     pub(crate) fn into_date(self) -> Series {
         #[cfg(not(feature = "dtype-date"))]
         {
-            panic!("activate feature dtype-date")
+            panic!("activate feature `dtype-date`")
         }
         #[cfg(feature = "dtype-date")]
         match self.dtype() {
@@ -707,13 +706,13 @@ impl Series {
                 .clone()
                 .into_date()
                 .into_series(),
-            dt => panic!("date not implemented for {dt:?}"),
+            dt => panic!("date not implemented for `{dt:?}`"),
         }
     }
     pub(crate) fn into_datetime(self, timeunit: TimeUnit, tz: Option<TimeZone>) -> Series {
         #[cfg(not(feature = "dtype-datetime"))]
         {
-            panic!("activate feature dtype-datetime")
+            panic!("activate feature `dtype-datetime`")
         }
 
         #[cfg(feature = "dtype-datetime")]
@@ -731,14 +730,14 @@ impl Series {
                 .clone()
                 .into_datetime(timeunit, tz)
                 .into_series(),
-            dt => panic!("into_datetime not implemented for {dt:?}"),
+            dt => panic!("`into_datetime` not implemented for `{dt:?}`"),
         }
     }
 
     pub(crate) fn into_duration(self, timeunit: TimeUnit) -> Series {
         #[cfg(not(feature = "dtype-duration"))]
         {
-            panic!("activate feature dtype-duration")
+            panic!("activate feature `dtype-duration`")
         }
         #[cfg(feature = "dtype-duration")]
         match self.dtype() {
@@ -755,7 +754,7 @@ impl Series {
                 .clone()
                 .into_duration(timeunit)
                 .into_series(),
-            dt => panic!("into_duration not implemented for {dt:?}"),
+            dt => panic!("`into_duration` not implemented for `{dt:?}`"),
         }
     }
 
@@ -929,7 +928,7 @@ where
     fn as_ref(&self) -> &ChunkedArray<T> {
         match T::get_dtype() {
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(None, None) => panic!("impl error"),
+            DataType::Decimal(None, None) => panic!("implementation error"),
             _ => {
                 if &T::get_dtype() == self.dtype() ||
                     // Needed because we want to get ref of List no matter what the inner type is.
@@ -938,7 +937,7 @@ where
                     unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
                 } else {
                     panic!(
-                        "implementation error, cannot get ref {:?} from {:?}",
+                        "implementation error, cannot get ref `{:?}` from `{:?}`",
                         T::get_dtype(),
                         self.dtype()
                     );
@@ -960,7 +959,7 @@ where
             unsafe { &mut *(self as *mut dyn SeriesTrait as *mut ChunkedArray<T>) }
         } else {
             panic!(
-                "implementation error, cannot get ref {:?} from {:?}",
+                "implementation error, cannot get ref `{:?}` from `{:?}`",
                 T::get_dtype(),
                 self.dtype()
             )

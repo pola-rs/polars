@@ -1119,5 +1119,5 @@ def test_from_arrow_invalid_time_zone() -> None:
     arr = pa.array(
         [datetime(2021, 1, 1, 0, 0, 0, 0)], type=pa.timestamp("ns", tz="+01:00")
     )
-    with pytest.raises(ComputeError, match=r"unable to parse time zone: '\+01:00'"):
+    with pytest.raises(ComputeError, match=r"unable to parse time zone: `\+01:00`"):
         pl.from_arrow(arr)

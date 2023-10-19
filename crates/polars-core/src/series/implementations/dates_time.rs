@@ -273,7 +273,7 @@ macro_rules! impl_dyn_series {
                     (DataType::Time, DataType::Datetime(_, _)) => {
                         polars_bail!(
                             ComputeError:
-                            "cannot cast `Time` to `Datetime`; consider using 'dt.combine'"
+                            "cannot cast `Time` to `Datetime`; consider using `dt.combine`"
                         );
                     }
                     #[cfg(feature = "dtype-datetime")]

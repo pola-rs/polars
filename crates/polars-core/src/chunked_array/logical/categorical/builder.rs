@@ -472,7 +472,7 @@ impl CategoricalChunked {
         polars_ensure!(
             !oob,
             ComputeError:
-            "cannot construct Categorical from these categories; at least one of them is out of bounds"
+            "cannot construct `Categorical` from these categories; at least one of them is out of bounds"
         );
         Ok(unsafe { Self::from_global_indices_unchecked(cats) })
     }

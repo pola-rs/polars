@@ -41,7 +41,7 @@ impl Series {
             match self.dtype() {
                 DataType::Utf8 => unique_counts(self.utf8().unwrap().into_iter()),
                 dt => {
-                    panic!("'unique_counts' not implemented for {dt} data types")
+                    panic!("`unique_counts` not implemented for `{dt}` data types")
                 },
             }
         }

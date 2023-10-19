@@ -169,7 +169,7 @@ where
             Ok(self.0.clone().into_series())
         } else {
             Err(PolarsError::ComputeError(
-                "cannot cast 'Object' type".into(),
+                "cannot cast `Object` type".into(),
             ))
         }
     }

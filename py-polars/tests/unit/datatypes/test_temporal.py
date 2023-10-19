@@ -1593,7 +1593,7 @@ def test_strptime_unguessable_format() -> None:
 
 def test_convert_time_zone_invalid() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
-    with pytest.raises(ComputeError, match="unable to parse time zone: 'foo'"):
+    with pytest.raises(ComputeError, match="unable to parse time zone: `foo`"):
         ts.dt.replace_time_zone("UTC").dt.convert_time_zone("foo")
 
 
@@ -2055,10 +2055,10 @@ def test_tz_aware_truncate() -> None:
 def test_to_string_invalid_format() -> None:
     tz_naive = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
     with pytest.raises(
-        ComputeError, match="cannot format NaiveDateTime with format '%z'"
+        ComputeError, match="cannot format `NaiveDateTime` with format `%z`"
     ):
         tz_naive.dt.to_string("%z")
-    with pytest.raises(ComputeError, match="cannot format DateTime with format '%q'"):
+    with pytest.raises(ComputeError, match="cannot format `DateTime` with format `%q`"):
         tz_naive.dt.replace_time_zone("UTC").dt.to_string("%q")
 
 

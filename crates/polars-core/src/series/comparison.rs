@@ -418,7 +418,7 @@ fn compare_series_str(
     validate_types(lhs.dtype(), &DataType::Utf8)?;
     lhs.utf8().map(|ca| op(ca, rhs)).map_err(|_| {
         polars_err!(
-            ComputeError: "cannot compare str value to series of type {}", lhs.dtype(),
+            ComputeError: "cannot compare str value to series of type `{}`", lhs.dtype(),
         )
     })
 }

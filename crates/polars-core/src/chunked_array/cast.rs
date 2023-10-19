@@ -101,7 +101,7 @@ where
             DataType::Categorical(_) => {
                 polars_ensure!(
                     self.dtype() == &DataType::UInt32,
-                    ComputeError: "cannot cast numeric types to 'Categorical'"
+                    ComputeError: "cannot cast numeric types to `Categorical`"
                 );
                 // SAFETY
                 // we are guarded by the type system
@@ -159,7 +159,7 @@ where
                     }
                     .into_series())
                 } else {
-                    polars_bail!(ComputeError: "cannot cast numeric types to 'Categorical'");
+                    polars_bail!(ComputeError: "cannot cast numeric types to `Categorical`");
                 }
             },
             _ => self.cast_impl(data_type, false),
@@ -192,7 +192,7 @@ impl ChunkCast for Utf8Chunked {
                 },
                 (None, None) => self.to_decimal(100),
                 _ => {
-                    polars_bail!(ComputeError: "expected 'precision' or 'scale' when casting to Decimal")
+                    polars_bail!(ComputeError: "expected `precision` or `scale` when casting to `Decimal`")
                 },
             },
             _ => cast_impl(self.name(), &self.chunks, data_type),
@@ -303,7 +303,7 @@ impl ChunkCast for ListChunked {
                 match (self.inner_dtype(), &**child_type) {
                     #[cfg(feature = "dtype-categorical")]
                     (dt, Categorical(None)) if !matches!(dt, Utf8 | Null) => {
-                        polars_bail!(ComputeError: "cannot cast List inner type: '{:?}' to Categorical", dt)
+                        polars_bail!(ComputeError: "cannot cast `List` inner type: `{:?}` to `Categorical`", dt)
                     },
                     _ => {
                         // ensure the inner logical type bubbles up
@@ -328,7 +328,7 @@ impl ChunkCast for ListChunked {
             },
             _ => {
                 polars_bail!(
-                    ComputeError: "cannot cast List type (inner: '{:?}', to: '{:?}')",
+                    ComputeError: "cannot cast `List` type (inner: `{:?}`, to: `{:?}`)",
                     self.inner_dtype(),
                     data_type,
                 )
@@ -352,7 +352,7 @@ impl ChunkCast for ArrayChunked {
                 match (self.inner_dtype(), &**child_type) {
                     #[cfg(feature = "dtype-categorical")]
                     (dt, Categorical(None)) if !matches!(dt, Utf8) => {
-                        polars_bail!(ComputeError: "cannot cast fixed-size-list inner type: '{:?}' to Categorical", dt)
+                        polars_bail!(ComputeError: "cannot cast fixed-size-list inner type: `{:?}` to `Categorical`", dt)
                     },
                     _ => {
                         // ensure the inner logical type bubbles up

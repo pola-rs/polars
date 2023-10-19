@@ -89,7 +89,7 @@ impl DecimalChunked {
                 }
             },
             _ => {
-                polars_bail!(ComputeError: "Cannot apply operation on arrays of different lengths")
+                polars_bail!(ComputeError: "cannot apply operation on arrays of different lengths")
             },
         };
         ca.rename(lhs.name());

@@ -34,7 +34,7 @@ impl DtypeMerger {
                 return merger.merge_map(rev_map);
             },
             DtypeMerger::Other(Some(set_dtype)) => {
-                polars_ensure!(set_dtype == dtype, ComputeError: "dtypes don't match, got {}, expected: {}", dtype, set_dtype)
+                polars_ensure!(set_dtype == dtype, ComputeError: "dtypes don't match, got `{}`, expected: `{}`", dtype, set_dtype)
             },
             _ => {},
         }
