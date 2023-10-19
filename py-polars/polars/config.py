@@ -20,14 +20,38 @@ def _get_float_precision() -> int:
     return -1
 
 
+def _get_digit_group_separator() -> str:  # pragma: no cover
+    return ","
+
+
+def _get_digit_group_size() -> int:
+    return 3
+
+
+def _get_decimal_separator() -> str:
+    return "."
+
+
+def _get_trim_decimal_zeros() -> bool:
+    return False
+
+
 # note: module not available when building docs
 with contextlib.suppress(ImportError):
-    from polars.polars import get_float_fmt as _get_float_fmt  # type: ignore[no-redef]
-    from polars.polars import (  # type: ignore[no-redef]
+    from polars.polars import (  # type: ignore[no-redef]  # noqa
+        get_float_fmt as _get_float_fmt,
+        set_float_fmt as _set_float_fmt,
         get_float_precision as _get_float_precision,
+        set_float_precision as _set_float_precision,
+        set_digit_group_separator as _set_digit_group_separator,
+        get_digit_group_separator as _get_digit_group_separator,
+        set_digit_group_size as _set_digit_group_size,
+        get_digit_group_size as _get_digit_group_size,
+        set_decimal_separator as _set_decimal_separator,
+        get_decimal_separator as _get_decimal_separator,
+        get_trim_decimal_zeros as _get_trim_decimal_zeros,
+        set_trim_decimal_zeros as _set_trim_decimal_zeros,
     )
-    from polars.polars import set_float_fmt as _set_float_fmt
-    from polars.polars import set_float_precision as _set_float_precision
 
 
 if sys.version_info >= (3, 10):
@@ -67,9 +91,12 @@ _POLARS_CFG_ENV_VARS = {
     "POLARS_AUTO_STRUCTIFY",
     "POLARS_FMT_MAX_COLS",
     "POLARS_FMT_MAX_ROWS",
-    "POLARS_FMT_STR_LEN",
+    "POLARS_FMT_NUM_DECIMAL",
+    "POLARS_FMT_NUM_GROUP_SEPARATOR",
     "POLARS_FMT_NUM_LEN",
+    "POLARS_FMT_STR_LEN",
     "POLARS_FMT_TABLE_CELL_ALIGNMENT",
+    "POLARS_FMT_TABLE_CELL_LIST_LEN",
     "POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT",
     "POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW",
     "POLARS_FMT_TABLE_FORMATTING",
@@ -79,7 +106,6 @@ _POLARS_CFG_ENV_VARS = {
     "POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION",
     "POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE",
     "POLARS_FMT_TABLE_ROUNDED_CORNERS",
-    "POLARS_FMT_TABLE_CELL_LIST_LEN",
     "POLARS_STREAMING_CHUNK_SIZE",
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
@@ -90,6 +116,10 @@ _POLARS_CFG_ENV_VARS = {
 _POLARS_CFG_DIRECT_VARS = {
     "set_fmt_float": _get_float_fmt,
     "set_float_precision": _get_float_precision,
+    "set_digit_group_separator": _get_digit_group_separator,
+    "set_digit_group_size": _get_digit_group_size,
+    "set_decimal_separator": _get_decimal_separator,
+    "set_trim_decimal_zeros": _get_trim_decimal_zeros,
 }
 
 
@@ -264,9 +294,10 @@ class Config(contextlib.ContextDecorator):
         for var in _POLARS_CFG_ENV_VARS:
             os.environ.pop(var, None)
 
-        # apply any 'direct' setting values
-        cls.set_fmt_float()
-        cls.set_float_precision()
+        # reset all 'direct' defaults
+        for method in _POLARS_CFG_DIRECT_VARS:
+            getattr(cls, method)(None)
+
         return cls
 
     @classmethod
@@ -445,6 +476,136 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
+    def set_decimal_separator(cls, separator: str | None = None) -> type[Config]:
+        """
+        Set the decimal separator character.
+
+        Parameters
+        ----------
+        separator : str
+            Character to use as the decimal separator.
+            Set to ``None`` to revert to the default (".").
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"v": [9876.54321, 1010101.0, -123456.78]})
+        >>> with pl.Config(
+        ...     tbl_cell_numeric_alignment="RIGHT",
+        ...     decimal_separator=",",
+        ...     digit_group_separator=".",
+        ...     digit_group_size=3,
+        ...     float_precision=3,
+        ... ):
+        ...     print(df)
+        shape: (3, 1)
+        ┌───────────────┐
+        │             v │
+        │           --- │
+        │           f64 │
+        ╞═══════════════╡
+        │     9.876,543 │
+        │ 1.010.101,000 │
+        │  -123.456,780 │
+        └───────────────┘
+
+        """
+        if isinstance(separator, str) and len(separator) != 1:
+            raise ValueError(
+                f"`separator` must be a single character; found {separator!r}"
+            )
+        _set_decimal_separator(sep=separator)
+        return cls
+
+    @classmethod
+    def set_digit_group_separator(cls, separator: str | None = None) -> type[Config]:
+        """
+        Set the digit group separator character.
+
+        Parameters
+        ----------
+        separator : str
+            Character to use as the digit group separator.
+            Set to ``None`` to revert to the default (",").
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"v": [1234567, 987654, 10101]})
+        >>> with pl.Config(
+        ...     tbl_cell_numeric_alignment="RIGHT",
+        ...     digit_group_separator=" ",
+        ...     digit_group_size=3,
+        ... ):
+        ...     print(df)
+        shape: (3, 1)
+        ┌───────────┐
+        │         v │
+        │       --- │
+        │       i64 │
+        ╞═══════════╡
+        │ 1 234 567 │
+        │   987 654 │
+        │    10 101 │
+        └───────────┘
+
+        """
+        if isinstance(separator, str) and len(separator) != 1:
+            raise ValueError(
+                f"`separator` must be a single character; found {separator!r}"
+            )
+        _set_digit_group_separator(sep=separator)
+        return cls
+
+    @classmethod
+    def set_digit_group_size(cls, n: int | None = None) -> type[Config]:
+        """
+        Set the number of digits between digit group separators.
+
+        Parameters
+        ----------
+        n : int
+            Number of digits between digit group separators.
+            Set to ``None`` (or zero) to disable digit grouping.
+
+        Notes
+        -----
+        Use of digit-grouping disables scientific notation as the
+        two styles do not mix well.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"v": [123456789, 9876543, 10101]})
+        >>> pl.Config.set_tbl_cell_numeric_alignment("RIGHT")  # doctest: +IGNORE_RESULT
+        >>> pl.Config.set_digit_group_size(3)  # doctest: +IGNORE_RESULT
+        >>> print(df)
+        shape: (3, 1)
+        ┌─────────────┐
+        │           v │
+        │         --- │
+        │         i64 │
+        ╞═════════════╡
+        │ 123,456,789 │
+        │   9,876,543 │
+        │      10,101 │
+        └─────────────┘
+        >>> with pl.Config(digit_group_size=4):
+        ...     print(df)
+        ...
+        shape: (3, 1)
+        ┌─────────────┐
+        │           v │
+        │         --- │
+        │         i64 │
+        ╞═════════════╡
+        │ 1,2345,6789 │
+        │    987,6543 │
+        │      1,0101 │
+        └─────────────┘
+
+        """
+        _set_digit_group_size(n)
+        return cls
+
+    @classmethod
     def set_float_precision(cls, precision: int | None = None) -> type[Config]:
         """
         Control the number of decimal places displayed for floating point values.
@@ -466,10 +627,12 @@ class Config(contextlib.ContextDecorator):
 
         Examples
         --------
+        Set a large maximum float precision:
+
         >>> from math import pi, e
         >>> df = pl.DataFrame({"const": ["pi", "e"], "value": [pi, e]})
         >>> with pl.Config(float_precision=15):
-        ...     print(repr(df))
+        ...     print(df)
         ...
         shape: (2, 2)
         ┌───────┬───────────────────┐
@@ -480,6 +643,32 @@ class Config(contextlib.ContextDecorator):
         │ pi    ┆ 3.141592653589793 │
         │ e     ┆ 2.718281828459045 │
         └───────┴───────────────────┘
+
+        Set a fixed float precision and align numeric columns to the
+        right in order to cleanly line-up the decimal separator:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": ["xx", "yy"],
+        ...         "b": [-11111111, 44444444444],
+        ...         "c": [100000.987654321, -23456789],
+        ...     }
+        ... )
+        >>> with pl.Config(
+        ...     tbl_cell_numeric_alignment="RIGHT",
+        ...     digit_group_size=3,
+        ...     float_precision=3,
+        ... ):
+        ...     print(df)
+        shape: (2, 3)
+        ┌─────┬────────────────┬─────────────────┐
+        │ a   ┆              b ┆               c │
+        │ --- ┆            --- ┆             --- │
+        │ str ┆            i64 ┆             f64 │
+        ╞═════╪════════════════╪═════════════════╡
+        │ xx  ┆    -11,111,111 ┆     100,000.988 │
+        │ yy  ┆ 44,444,444,444 ┆ -23,456,789.000 │
+        └─────┴────────────────┴─────────────────┘
 
         """
         _set_float_precision(precision)
@@ -680,18 +869,18 @@ class Config(contextlib.ContextDecorator):
         >>> df = pl.DataFrame(
         ...     {"column_abc": [1.0, 2.5, 5.0], "column_xyz": [True, False, True]}
         ... )
-        >>> pl.Config.set_tbl_cell_alignment("RIGHT")  # doctest: +SKIP
-        # ...
-        # shape: (3, 2)
-        # ┌────────────┬────────────┐
-        # │ column_abc ┆ column_xyz │
-        # │        --- ┆        --- │
-        # │        f64 ┆       bool │
-        # ╞════════════╪════════════╡
-        # │        1.0 ┆       true │
-        # │        2.5 ┆      false │
-        # │        5.0 ┆       true │
-        # └────────────┴────────────┘
+        >>> pl.Config.set_tbl_cell_alignment("RIGHT")  # doctest: +IGNORE_RESULT
+        >>> print(df)
+        shape: (3, 2)
+        ┌────────────┬────────────┐
+        │ column_abc ┆ column_xyz │
+        │        --- ┆        --- │
+        │        f64 ┆       bool │
+        ╞════════════╪════════════╡
+        │        1.0 ┆       true │
+        │        2.5 ┆      false │
+        │        5.0 ┆       true │
+        └────────────┴────────────┘
 
         Raises
         ------
@@ -726,22 +915,22 @@ class Config(contextlib.ContextDecorator):
         >>> df = pl.DataFrame(
         ...     {
         ...         "abc": [11, 2, 333],
-        ...         "mno": [date.today(), None, date.today()],
+        ...         "mno": [date(2023, 10, 29), None, date(2001, 7, 5)],
         ...         "xyz": [True, False, None],
         ...     }
         ... )
-        >>> pl.Config.set_tbl_cell_numeric_alignment("RIGHT")  # doctest: +SKIP
-        # ...
-        # shape: (3, 3)
-        # ┌─────┬────────────┬───────┐
-        # │ abc ┆ mno        ┆ xyz   │
-        # │ --- ┆ ---        ┆ ---   │
-        # │ i64 ┆ date       ┆ bool  │
-        # ╞═════╪════════════╪═══════╡
-        # │  11 ┆ 2023-09-05 ┆ true  │
-        # │   2 ┆ null       ┆ false │
-        # │ 333 ┆ 2023-09-05 ┆ null  │
-        # └─────┴────────────┴───────┘
+        >>> pl.Config.set_tbl_cell_numeric_alignment("RIGHT")  # doctest: +IGNORE_RESULT
+        >>> print(df)
+        shape: (3, 3)
+        ┌─────┬────────────┬───────┐
+        │ abc ┆ mno        ┆ xyz   │
+        │ --- ┆ ---        ┆ ---   │
+        │ i64 ┆ date       ┆ bool  │
+        ╞═════╪════════════╪═══════╡
+        │  11 ┆ 2023-10-29 ┆ true  │
+        │   2 ┆ null       ┆ false │
+        │ 333 ┆ 2001-07-05 ┆ null  │
+        └─────┴────────────┴───────┘
 
         Raises
         ------
@@ -1107,6 +1296,24 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_TABLE_WIDTH", None)
         else:
             os.environ["POLARS_TABLE_WIDTH"] = str(width)
+        return cls
+
+    @classmethod
+    def set_trim_decimal_zeros(cls, active: bool | None = True) -> type[Config]:
+        """
+        Strip trailing zeros from Decimal data type values.
+
+        Parameters
+        ----------
+        active : bool
+            Enable stripping of trailing '0' characters from Decimal values.
+
+        Examples
+        --------
+        >>>
+
+        """
+        _set_trim_decimal_zeros(active)
         return cls
 
     @classmethod

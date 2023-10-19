@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal as D
 from typing import Any, Iterator
 
 import pytest
@@ -190,4 +191,68 @@ Series: '' [list[cat]]
 	["b", "a"]
 	["b"]
 ]"""
+    )
+
+
+def test_format_numeric_locale_options() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["xx", "yy"],
+            "b": [100000.987654321, -234567.89],
+            "c": [-11111111, 44444444444],
+            "d": [D("12345.6789"), D("-9999999.99")],
+        }
+    )
+
+    # note: numeric digit grouping looks much better
+    # when right-aligned with fixed float precision
+    with pl.Config(
+        tbl_cell_numeric_alignment="RIGHT",
+        digit_group_size=3,
+        float_precision=3,
+    ):
+        assert (
+            str(df)
+            == """shape: (2, 4)
+┌─────┬──────────────┬────────────────┬─────────────────┐
+│ a   ┆            b ┆              c ┆               d │
+│ --- ┆          --- ┆            --- ┆             --- │
+│ str ┆          f64 ┆            i64 ┆      decimal[4] │
+╞═════╪══════════════╪════════════════╪═════════════════╡
+│ xx  ┆  100,000.988 ┆    -11,111,111 ┆     12,345.6789 │
+│ yy  ┆ -234,567.890 ┆ 44,444,444,444 ┆ -9,999,999.9900 │
+└─────┴──────────────┴────────────────┴─────────────────┘"""
+        )
+
+    # custom digit/decimal separators, 4-digit grouping
+    with pl.Config(
+        digit_group_size=4,
+        decimal_separator=",",
+        digit_group_separator=".",
+    ):
+        assert (
+            str(df)
+            == """shape: (2, 4)
+┌─────┬────────────────┬───────────────┬────────────────┐
+│ a   ┆ b              ┆ c             ┆ d              │
+│ --- ┆ ---            ┆ ---           ┆ ---            │
+│ str ┆ f64            ┆ i64           ┆ decimal[4]     │
+╞═════╪════════════════╪═══════════════╪════════════════╡
+│ xx  ┆ 10.0000,987654 ┆ -1111.1111    ┆ 1.2345,6789    │
+│ yy  ┆ -23.4567,89    ┆ 444.4444.4444 ┆ -999.9999,9900 │
+└─────┴────────────────┴───────────────┴────────────────┘"""
+        )
+
+    # default (no digit grouping, standard digit/decimal separators)
+    assert (
+        str(df)
+        == """shape: (2, 4)
+┌─────┬───────────────┬─────────────┬───────────────┐
+│ a   ┆ b             ┆ c           ┆ d             │
+│ --- ┆ ---           ┆ ---         ┆ ---           │
+│ str ┆ f64           ┆ i64         ┆ decimal[4]    │
+╞═════╪═══════════════╪═════════════╪═══════════════╡
+│ xx  ┆ 100000.987654 ┆ -11111111   ┆ 12345.6789    │
+│ yy  ┆ -234567.89    ┆ 44444444444 ┆ -9999999.9900 │
+└─────┴───────────────┴─────────────┴───────────────┘"""
     )

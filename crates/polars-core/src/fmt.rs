@@ -1,7 +1,7 @@
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter, Write};
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::RwLock;
 use std::{fmt, str};
 
@@ -33,9 +33,15 @@ pub enum FloatFmt {
     Mixed,
     Full,
 }
-static FLOAT_FMT: AtomicU8 = AtomicU8::new(FloatFmt::Mixed as u8);
 static FLOAT_PRECISION: RwLock<Option<usize>> = RwLock::new(None);
+static FLOAT_FMT: AtomicU8 = AtomicU8::new(FloatFmt::Mixed as u8);
 
+static TRIM_DECIMAL_ZEROS: AtomicBool = AtomicBool::new(false);
+static DIGIT_GROUP_SEPARATOR: AtomicU8 = AtomicU8::new(b',');
+static DIGIT_GROUP_SIZE: AtomicU8 = AtomicU8::new(0);
+static DECIMAL_SEPARATOR: AtomicU8 = AtomicU8::new(b'.');
+
+// Numeric formatting getters
 pub fn get_float_fmt() -> FloatFmt {
     match FLOAT_FMT.load(Ordering::Relaxed) {
         0 => FloatFmt::Mixed,
@@ -43,17 +49,40 @@ pub fn get_float_fmt() -> FloatFmt {
         _ => panic!(),
     }
 }
-
 pub fn get_float_precision() -> Option<usize> {
     *FLOAT_PRECISION.read().unwrap()
 }
+pub fn get_decimal_separator() -> char {
+    DECIMAL_SEPARATOR.load(Ordering::Relaxed) as char
+}
+pub fn get_digit_group_separator() -> char {
+    DIGIT_GROUP_SEPARATOR.load(Ordering::Relaxed) as char
+}
+pub fn get_digit_group_size() -> u8 {
+    DIGIT_GROUP_SIZE.load(Ordering::Relaxed)
+}
+pub fn get_trim_decimal_zeros() -> bool {
+    TRIM_DECIMAL_ZEROS.load(Ordering::Relaxed)
+}
 
+// Numeric formatting setters
 pub fn set_float_fmt(fmt: FloatFmt) {
     FLOAT_FMT.store(fmt as u8, Ordering::Relaxed)
 }
-
 pub fn set_float_precision(precision: Option<usize>) {
     *FLOAT_PRECISION.write().unwrap() = precision;
+}
+pub fn set_decimal_separator(dec: Option<char>) {
+    DECIMAL_SEPARATOR.store(dec.unwrap_or('.') as u8, Ordering::Relaxed)
+}
+pub fn set_digit_group_separator(sep: Option<char>) {
+    DIGIT_GROUP_SEPARATOR.store(sep.unwrap_or(',') as u8, Ordering::Relaxed)
+}
+pub fn set_digit_group_size(n: Option<u8>) {
+    DIGIT_GROUP_SIZE.store(n.unwrap_or(0), Ordering::Relaxed)
+}
+pub fn set_trim_decimal_zeros(trim: Option<bool>) {
+    TRIM_DECIMAL_ZEROS.store(trim.unwrap_or(false), Ordering::Relaxed)
 }
 
 macro_rules! format_array {
@@ -61,7 +90,7 @@ macro_rules! format_array {
         write!(
             $f,
             "shape: ({},)\n{}: '{}' [{}]\n[\n",
-            fmt_uint(&$a.len()),
+            fmt_int_string_custom(&$a.len().to_string(), 3, "_"),
             $array_type,
             $name,
             $dtype
@@ -138,21 +167,18 @@ fn format_object_array(
     match object.dtype() {
         DataType::Object(inner_type) => {
             let limit = std::cmp::min(LIMIT, object.len());
-
             write!(
                 f,
                 "shape: ({},)\n{}: '{}' [o][{}]\n[\n",
-                fmt_uint(&object.len()),
+                fmt_int_string_custom(&object.len().to_string(), 3, "_"),
                 array_type,
                 name,
                 inner_type
             )?;
-
             for i in 0..limit {
                 let v = object.str_value(i);
                 writeln!(f, "\t{}", v.unwrap())?;
             }
-
             write!(f, "]")
         },
         _ => unreachable!(),
@@ -442,22 +468,13 @@ fn env_is_true(varname: &str) -> bool {
     std::env::var(varname).as_deref().unwrap_or("0") == "1"
 }
 
-fn fmt_uint(num: &usize) -> String {
-    // Return a string with thousands separated by _
-    // e.g. 1_000_000
-    num.to_string()
-        .as_bytes()
-        .rchunks(3)
-        .rev()
-        .map(str::from_utf8)
-        .collect::<Result<Vec<&str>, _>>()
-        .unwrap()
-        .join("_") // separator
-}
-
 fn fmt_df_shape((shape0, shape1): &(usize, usize)) -> String {
     // e.g. (1_000_000, 4_000)
-    format!("({}, {})", fmt_uint(shape0), fmt_uint(shape1))
+    format!(
+        "({}, {})",
+        fmt_int_string_custom(&shape0.to_string(), 3, "_"),
+        fmt_int_string_custom(&shape1.to_string(), 3, "_")
+    )
 }
 
 impl Display for DataFrame {
@@ -675,7 +692,7 @@ impl Display for DataFrame {
                 for (column_index, column) in table.column_iter_mut().enumerate() {
                     let dtype = fields[column_index].data_type();
                     let mut preset = str_preset.as_str();
-                    if dtype.is_numeric() {
+                    if dtype.is_numeric() || dtype.is_decimal() {
                         preset = num_preset.as_str();
                     }
                     match preset {
@@ -699,7 +716,6 @@ impl Display for DataFrame {
                 }
             }
         }
-
         #[cfg(not(any(feature = "fmt", feature = "fmt_no_tty")))]
         {
             write!(
@@ -712,12 +728,85 @@ impl Display for DataFrame {
     }
 }
 
+fn fmt_int_string_custom(num: &str, group_size: u8, group_separator: &str) -> String {
+    if group_size == 0 || num.len() <= 1 {
+        num.to_string()
+    } else {
+        let mut out = String::new();
+        let sign_offset = if num.starts_with('-') || num.starts_with('+') {
+            out.push(num.chars().next().unwrap());
+            1
+        } else {
+            0
+        };
+        let int_body = num[sign_offset..]
+            .as_bytes()
+            .rchunks(group_size as usize)
+            .rev()
+            .map(str::from_utf8)
+            .collect::<Result<Vec<&str>, _>>()
+            .unwrap()
+            .join(group_separator);
+        out.push_str(&int_body);
+        out
+    }
+}
+
+fn fmt_int_string(num: &str) -> String {
+    fmt_int_string_custom(
+        num,
+        get_digit_group_size(),
+        &get_digit_group_separator().to_string(),
+    )
+}
+
+fn fmt_float_string_custom(
+    num: &str,
+    group_size: u8,
+    group_separator: &str,
+    decimal: char,
+) -> String {
+    // Quick exit if no formatting would be applied
+    if num.len() <= 1 || (group_size == 0 && decimal == '.') {
+        num.to_string()
+    } else {
+        // Take existing numeric string and apply digit grouping & separator/decimal chars
+        // e.g. "1000000" → "1_000_000", "-123456.798" → "-123,456.789", etc
+        let (idx, has_fractional) = match num.find('.') {
+            Some(i) => (i, true),
+            None => (num.len(), false),
+        };
+        let mut out = String::new();
+        let integer_part = &num[..idx];
+
+        out.push_str(&fmt_int_string_custom(
+            integer_part,
+            group_size,
+            group_separator,
+        ));
+        if has_fractional {
+            out.push(decimal);
+            out.push_str(&num[idx + 1..]);
+        };
+        out
+    }
+}
+
+fn fmt_float_string(num: &str) -> String {
+    fmt_float_string_custom(
+        num,
+        get_digit_group_size(),
+        &get_digit_group_separator().to_string(),
+        get_decimal_separator(),
+    )
+}
+
 fn fmt_integer<T: Num + NumCast + Display>(
     f: &mut Formatter<'_>,
     width: usize,
     v: T,
 ) -> fmt::Result {
-    write!(f, "{v:>width$}")
+    write!(f, "{:>width$}", fmt_int_string(&v.to_string()))
 }
 
 const SCIENTIFIC_BOUND: f64 = 999999.0;
@@ -731,20 +820,27 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
         if format!("{v:.precision$}", precision = precision).len() > 19 {
             return write!(f, "{v:>width$.precision$e}", precision = precision);
         }
-        return write!(f, "{v:>width$.precision$}", precision = precision);
+        let s = format!("{v:>width$.precision$}", precision = precision);
+        return write!(f, "{}", fmt_float_string(s.as_str()));
     }
 
     if matches!(get_float_fmt(), FloatFmt::Full) {
-        return write!(f, "{v:>width$}");
+        let s = format!("{v:>width$}");
+        return write!(f, "{}", fmt_float_string(s.as_str()));
     }
 
     // show integers as 0.0, 1.0 ... 101.0
     if v.fract() == 0.0 && v.abs() < SCIENTIFIC_BOUND {
-        write!(f, "{v:>width$.1}")
+        let s = format!("{v:>width$.1}");
+        write!(f, "{}", fmt_float_string(s.as_str()))
     } else if format!("{v}").len() > 9 {
-        // large and small floats in scientific notation
-        if !(0.000001..=SCIENTIFIC_BOUND).contains(&v.abs()) | (v.abs() > SCIENTIFIC_BOUND) {
-            write!(f, "{v:>width$.4e}")
+        // large and small floats in scientific notation.
+        // (note: scientific notation does not play well with digit grouping)
+        if (!(0.000001..=SCIENTIFIC_BOUND).contains(&v.abs()) | (v.abs() > SCIENTIFIC_BOUND))
+            && get_digit_group_size() == 0
+        {
+            let s = format!("{v:>width$.4e}");
+            write!(f, "{}", fmt_float_string(s.as_str()))
         } else {
             // this makes sure we don't write 12.00000 in case of a long flt that is 12.0000000001
             // instead we write 12.0
@@ -758,22 +854,27 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
                     s = &s[..len];
                     len -= 1;
                 }
-                if s.ends_with('.') {
-                    write!(f, "{s}0")
+                let s = if s.ends_with('.') {
+                    format!("{s}0")
                 } else {
-                    write!(f, "{s}")
-                }
+                    s.to_string()
+                };
+                write!(f, "{}", fmt_float_string(s.as_str()))
             } else {
                 // 12.0934509341243124
                 // written as
                 // 12.09345
-                write!(f, "{v:>width$.6}")
+                let s = format!("{v:>width$.6}");
+                write!(f, "{}", fmt_float_string(s.as_str()))
             }
         }
-    } else if v.fract() == 0.0 {
-        write!(f, "{v:>width$e}")
     } else {
-        write!(f, "{v:>width$}")
+        let s = if v.fract() == 0.0 {
+            format!("{v:>width$e}")
+        } else {
+            format!("{v:>width$}")
+        };
+        write!(f, "{}", fmt_float_string(s.as_str()))
     }
 }
 
@@ -1019,6 +1120,8 @@ mod decimal {
     use std::fmt::Formatter;
     use std::{fmt, ptr, str};
 
+    use crate::fmt::{fmt_float_string, get_trim_decimal_zeros};
+
     const BUF_LEN: usize = 48;
 
     #[derive(Clone, Copy)]
@@ -1124,7 +1227,8 @@ mod decimal {
 
     #[inline]
     pub fn fmt_decimal(f: &mut Formatter<'_>, v: i128, scale: usize) -> fmt::Result {
-        f.write_str(format_decimal(v, scale, !f.alternate()).as_str())
+        let trim_zeros = get_trim_decimal_zeros();
+        f.write_str(fmt_float_string(format_decimal(v, scale, trim_zeros).as_str()).as_str())
     }
 }
 

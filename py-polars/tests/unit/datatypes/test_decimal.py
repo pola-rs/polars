@@ -65,23 +65,31 @@ def test_frame_from_pydecimal_and_ints(
                 assert df.rows() == row_data
 
 
-def test_to_from_pydecimal_and_format() -> None:
+@pytest.mark.parametrize(
+    ("trim_zeros", "expected"),
+    [
+        (True, "0.01"),
+        (False, "0.010000000000000000000000000"),
+    ],
+)
+def test_to_from_pydecimal_and_format(trim_zeros: bool, expected: str) -> None:
     dec_strs = [
         "0",
         "-1",
-        "0.01",
+        expected,
         "-1.123801239123981293891283123",
         "12345678901.234567890123458390192857685",
         "-99999999999.999999999999999999999999999",
     ]
-    formatted = (
-        str(pl.Series(list(map(D, dec_strs))))
-        .split("[", 1)[1]
-        .split("\n", 1)[1]
-        .strip()[1:-1]
-        .split()
-    )
-    assert formatted == dec_strs
+    with pl.Config(trim_decimal_zeros=trim_zeros):
+        formatted = (
+            str(pl.Series(list(map(D, dec_strs))))
+            .split("[", 1)[1]
+            .split("\n", 1)[1]
+            .strip()[1:-1]
+            .split()
+        )
+        assert formatted == dec_strs
 
 
 def test_init_decimal_dtype() -> None:

@@ -59,3 +59,55 @@ pub fn get_float_precision() -> PyResult<Option<usize>> {
     use polars_core::fmt::get_float_precision;
     Ok(get_float_precision())
 }
+
+#[pyfunction]
+pub fn set_digit_group_separator(sep: Option<char>) -> PyResult<()> {
+    use polars_core::fmt::set_digit_group_separator;
+    set_digit_group_separator(sep);
+    Ok(())
+}
+
+#[pyfunction]
+pub fn get_digit_group_separator() -> PyResult<Option<char>> {
+    use polars_core::fmt::get_digit_group_separator;
+    Ok(Some(get_digit_group_separator()))
+}
+
+#[pyfunction]
+pub fn set_digit_group_size(sep: Option<u8>) -> PyResult<()> {
+    use polars_core::fmt::set_digit_group_size;
+    set_digit_group_size(sep);
+    Ok(())
+}
+
+#[pyfunction]
+pub fn get_digit_group_size() -> PyResult<Option<u8>> {
+    use polars_core::fmt::get_digit_group_size;
+    Ok(Some(get_digit_group_size()))
+}
+
+#[pyfunction]
+pub fn set_decimal_separator(sep: Option<char>) -> PyResult<()> {
+    use polars_core::fmt::set_decimal_separator;
+    set_decimal_separator(sep);
+    Ok(())
+}
+
+#[pyfunction]
+pub fn get_decimal_separator() -> PyResult<Option<char>> {
+    use polars_core::fmt::get_decimal_separator;
+    Ok(Some(get_decimal_separator()))
+}
+
+#[pyfunction]
+pub fn set_trim_decimal_zeros(trim: Option<bool>) -> PyResult<()> {
+    use polars_core::fmt::set_trim_decimal_zeros;
+    set_trim_decimal_zeros(trim);
+    Ok(())
+}
+
+#[pyfunction]
+pub fn get_trim_decimal_zeros() -> PyResult<Option<bool>> {
+    use polars_core::fmt::get_trim_decimal_zeros;
+    Ok(Some(get_trim_decimal_zeros()))
+}
