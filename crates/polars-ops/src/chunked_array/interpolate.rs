@@ -261,7 +261,15 @@ mod test {
         let out = out.f64().unwrap();
         assert_eq!(
             Vec::from(out),
-            &[None, Some(1.0), Some(2.0), Some(3.0), Some(4.0), Some(5.0), None]
+            &[
+                None,
+                Some(1.0),
+                Some(2.0),
+                Some(3.0),
+                Some(4.0),
+                Some(5.0),
+                None
+            ]
         );
         let ca = UInt32Chunked::new("", &[None, Some(1), None, None, Some(4), Some(5), None]);
         let out = interpolate(&ca.into_series(), InterpolationMethod::Nearest);
@@ -277,7 +285,10 @@ mod test {
         let ca = UInt32Chunked::new("", &[Some(4), None, None, Some(1)]);
         let out = interpolate(&ca.into_series(), InterpolationMethod::Linear);
         let out = out.f64().unwrap();
-        assert_eq!(Vec::from(out), &[Some(4.0), Some(3.0), Some(2.0), Some(1.0)])
+        assert_eq!(
+            Vec::from(out),
+            &[Some(4.0), Some(3.0), Some(2.0), Some(1.0)]
+        )
     }
 
     #[test]
