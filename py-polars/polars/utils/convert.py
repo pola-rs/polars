@@ -124,6 +124,7 @@ def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
         f"`time_unit` must be one of {{'ms', 'us', 'ns'}}, got {time_unit!r}"
     )
 
+
 def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None) -> int:
     """Convert a Python timedelta object to a total number of subseconds."""
     microseconds = td.microseconds
@@ -179,7 +180,7 @@ def _to_python_datetime(
         if time_unit == "us":
             return EPOCH + timedelta(microseconds=value)
         elif time_unit == "ns":
-            return EPOCH + timedelt (microseconds=value // 1_000)
+            return EPOCH + timedelta(microseconds=value // 1_000)
         elif time_unit == "ms":
             return EPOCH + timedelta(milliseconds=value)
         else:
