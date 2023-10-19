@@ -80,7 +80,7 @@ impl ParquetSource {
                     ParquetAsyncReader::from_uri(
                         &uri,
                         self.cloud_options.as_ref(),
-                        Some(self.file_info.schema.clone()),
+                        Some(self.file_info.reader_schema.clone()),
                         self.metadata.clone(),
                     )
                     .await?
@@ -102,6 +102,7 @@ impl ParquetSource {
             let file = std::fs::File::open(path).unwrap();
 
             ParquetReader::new(file)
+                .with_schema(Some(self.file_info.reader_schema.clone()))
                 .with_n_rows(file_options.n_rows)
                 .with_row_count(file_options.row_count)
                 .with_projection(projection)

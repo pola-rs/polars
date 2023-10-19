@@ -129,6 +129,12 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         self
     }
 
+    /// Set the [`Schema`] if already known.
+    pub fn with_schema(mut self, schema: Option<SchemaRef>) -> Self {
+        self.schema = schema;
+        self
+    }
+
     /// [`Schema`] of the file.
     pub fn schema(&mut self) -> PolarsResult<SchemaRef> {
         match &self.schema {
