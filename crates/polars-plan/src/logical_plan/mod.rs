@@ -81,7 +81,7 @@ pub(crate) enum ErrorStateEncounters {
     },
     AlreadyEncountered {
         n_times: usize,
-        prev_err_msg: String,
+        orig_err: PolarsError,
     },
 }
 
@@ -111,14 +111,13 @@ impl ErrorState {
 
         match &mut *curr_err {
             ErrorStateEncounters::NotYetEncountered { err: polars_err } => {
-                // Need to finish using `polars_err` here so that NLL considers `err` dropped
-                let prev_err_msg = polars_err.to_string();
-                // Place AlreadyEncountered in `self` for future callers of `self.take()`
+                let orig_err = polars_err.wrap_msg(&str::to_owned);
+
                 let prev_err = std::mem::replace(
                     &mut *curr_err,
                     ErrorStateEncounters::AlreadyEncountered {
                         n_times: 1,
-                        prev_err_msg,
+                        orig_err,
                     },
                 );
                 // Since we're in this branch, we know err was a NotYetEncountered
@@ -127,13 +126,14 @@ impl ErrorState {
                     ErrorStateEncounters::AlreadyEncountered { .. } => unreachable!(),
                 }
             },
-            ErrorStateEncounters::AlreadyEncountered {
-                n_times,
-                prev_err_msg,
-            } => {
-                let err = polars_err!(
-                    ComputeError: "LogicalPlan already failed (depth: {}) with error: '{}'", n_times, prev_err_msg,
-                );
+            ErrorStateEncounters::AlreadyEncountered { n_times, orig_err } => {
+                let err = orig_err.wrap_msg(&|msg| {
+                    format!(
+                        "LogicalPlan already failed (depth: {}) with error: '{}'",
+                        n_times, msg
+                    )
+                });
+
                 *n_times += 1;
                 err
             },
