@@ -19,3 +19,23 @@ pub(super) fn ensure_range_bounds_contain_exactly_one_value(
     );
     Ok(())
 }
+
+pub(super) fn broadcast_scalar_inputs(start: Series, end: Series) -> PolarsResult<(Series, Series)> {
+    if start.len() == end.len() {
+        return Ok((start, end));
+    }
+
+    if start.len() == 1 {
+        let start_matched = start.new_from_index(0, end.len());
+        Ok((start_matched, end))
+    } else if end.len() == 1 {
+        let end_matched = end.new_from_index(0, start.len());
+        Ok((start, end_matched))
+    } else {
+        polars_bail!(
+            ComputeError:
+            "lengths of `start` ({}) and `end` ({}) do not match",
+            start.len(), end.len()
+        )
+    }
+}

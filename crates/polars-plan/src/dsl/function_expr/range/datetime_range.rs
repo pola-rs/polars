@@ -2,7 +2,10 @@ use polars_core::prelude::*;
 use polars_core::series::Series;
 use polars_time::{datetime_range_impl, ClosedWindow, Duration};
 
-use super::utils::{ensure_range_bounds_contain_exactly_one_value, temporal_series_to_i64_scalar};
+use super::utils::{
+    broadcast_scalar_inputs, ensure_range_bounds_contain_exactly_one_value,
+    temporal_series_to_i64_scalar,
+};
 use crate::dsl::function_expr::FieldsMapper;
 
 const CAPACITY_FACTOR: usize = 5;
@@ -91,11 +94,6 @@ pub(super) fn datetime_ranges(
     let start = &s[0];
     let end = &s[1];
 
-    polars_ensure!(
-        start.len() == end.len(),
-        ComputeError: "`start` and `end` must have the same length",
-    );
-
     // Note: `start` and `end` have already been cast to their supertype,
     // so only `start`'s dtype needs to be matched against.
     #[allow(unused_mut)] // `dtype` is mutated within a "feature = timezones" block.
@@ -116,7 +114,7 @@ pub(super) fn datetime_ranges(
         _ => unreachable!(),
     };
 
-    let (start, end) = match dtype {
+    let (mut start, mut end) = match dtype {
         #[cfg(feature = "timezones")]
         DataType::Datetime(_, Some(_)) => (
             polars_ops::prelude::replace_time_zone(
@@ -146,6 +144,8 @@ pub(super) fn datetime_ranges(
                 .cast(&DataType::Int64)?,
         ),
     };
+
+    (start, end) = broadcast_scalar_inputs(start, end)?;
 
     // overwrite time zone, if specified
     match (&dtype, &time_zone) {

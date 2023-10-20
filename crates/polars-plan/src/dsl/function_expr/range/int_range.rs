@@ -2,7 +2,7 @@ use polars_core::prelude::*;
 use polars_core::series::{IsSorted, Series};
 use polars_core::with_match_physical_integer_polars_type;
 
-use super::utils::ensure_range_bounds_contain_exactly_one_value;
+use super::utils::{broadcast_scalar_inputs, ensure_range_bounds_contain_exactly_one_value};
 
 pub(super) fn int_range(s: &[Series], step: i64, dtype: DataType) -> PolarsResult<Series> {
     let mut start = &s[0];
@@ -77,20 +77,7 @@ pub(super) fn int_ranges(s: &[Series], step: i64) -> PolarsResult<Series> {
     let mut start = start.cast(&DataType::Int64)?;
     let mut end = end.cast(&DataType::Int64)?;
 
-    if start.len() != end.len() {
-        if start.len() == 1 {
-            start = start.new_from_index(0, end.len())
-        } else if end.len() == 1 {
-            end = end.new_from_index(0, start.len())
-        } else {
-            polars_bail!(
-                ComputeError:
-                "lengths of `start`: {} and `end`: {} arguments `\
-                cannot be matched in the `int_ranges` expression",
-                start.len(), end.len()
-            );
-        }
-    }
+    (start, end) = broadcast_scalar_inputs(start, end)?;
 
     let start = start.i64()?;
     let end = end.i64()?;

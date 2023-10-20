@@ -4,7 +4,10 @@ use polars_core::utils::arrow::temporal_conversions::MILLISECONDS_IN_DAY;
 use polars_time::{datetime_range_impl, ClosedWindow, Duration};
 
 use super::datetime_range::{datetime_range, datetime_ranges};
-use super::utils::{ensure_range_bounds_contain_exactly_one_value, temporal_series_to_i64_scalar};
+use super::utils::{
+    broadcast_scalar_inputs, ensure_range_bounds_contain_exactly_one_value,
+    temporal_series_to_i64_scalar,
+};
 use crate::dsl::function_expr::FieldsMapper;
 
 const CAPACITY_FACTOR: usize = 5;
@@ -73,16 +76,18 @@ fn date_ranges(s: &[Series], interval: Duration, closed: ClosedWindow) -> Polars
     let start = &s[0];
     let end = &s[1];
 
-    polars_ensure!(
-        start.len() == end.len(),
-        ComputeError: "`start` and `end` must have the same length",
-    );
+    let output_name = "date_range";
 
-    let start = date_series_to_i64_ca(start)? * MILLISECONDS_IN_DAY;
-    let end = date_series_to_i64_ca(end)? * MILLISECONDS_IN_DAY;
+    let mut start = start.cast(&DataType::Int64)?;
+    let mut end = end.cast(&DataType::Int64)?;
+
+    (start, end) = broadcast_scalar_inputs(start, end)?;
+
+    let start = start.i64().unwrap() * MILLISECONDS_IN_DAY;
+    let end = end.i64().unwrap() * MILLISECONDS_IN_DAY;
 
     let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
-        "date_range",
+        output_name,
         start.len(),
         start.len() * CAPACITY_FACTOR,
         DataType::Int32,
@@ -112,11 +117,6 @@ fn date_ranges(s: &[Series], interval: Duration, closed: ClosedWindow) -> Polars
 
     let to_type = DataType::List(Box::new(DataType::Date));
     list.cast(&to_type)
-}
-fn date_series_to_i64_ca(s: &Series) -> PolarsResult<ChunkedArray<Int64Type>> {
-    let s = s.cast(&DataType::Int64)?;
-    let result = s.i64().unwrap();
-    Ok(result.clone())
 }
 
 impl<'a> FieldsMapper<'a> {
