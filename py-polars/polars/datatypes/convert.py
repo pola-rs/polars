@@ -21,6 +21,7 @@ from typing import (
 )
 
 from polars.datatypes import (
+    Array,
     Binary,
     Boolean,
     Categorical,
@@ -203,7 +204,7 @@ def unpack_dtypes(
 
     unpacked: set[PolarsDataType] = set()
     for tp in dtypes:
-        if isinstance(tp, List):
+        if isinstance(tp, (List, Array)):
             if include_compound:
                 unpacked.add(tp)
             unpacked.update(unpack_dtypes(tp.inner, include_compound=include_compound))
