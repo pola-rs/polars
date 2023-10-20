@@ -243,13 +243,7 @@ Alternatively, if the performance cost is acceptable, you could just set:
 on startup."#.trim_start())
     };
     (duplicate = $name:expr) => {
-        polars_err!(
-            Duplicate: "column '{}' is duplicate.\n\n\
-            It's possible that multiple expressions are returning the same default column name. \
-            If this is the case, try renaming the columns with `.alias(\"new_name\")` to avoid \
-            duplicate column names.",
-            $name
-        )
+        polars_err!(Duplicate: "column with name '{}' has more than one occurrences", $name)
     };
     (oob = $idx:expr, $len:expr) => {
         polars_err!(OutOfBounds: "index {} is out of bounds for sequence of length {}", $idx, $len)
