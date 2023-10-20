@@ -671,6 +671,19 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     Contains => wrap!(list::contains),
                     #[cfg(feature = "list_drop_nulls")]
                     DropNulls => map!(list::drop_nulls),
+                    #[cfg(feature = "list_sample")]
+                    Sample {
+                        is_fraction,
+                        with_replacement,
+                        shuffle,
+                        seed,
+                    } => {
+                        if is_fraction {
+                            map_as_slice!(list::sample_fraction, with_replacement, shuffle, seed)
+                        } else {
+                            map_as_slice!(list::sample_n, with_replacement, shuffle, seed)
+                        }
+                    },
                     Slice => wrap!(list::slice),
                     Shift => map_as_slice!(list::shift),
                     Get => wrap!(list::get),

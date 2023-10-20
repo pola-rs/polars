@@ -34,6 +34,48 @@ impl ListNameSpace {
             .map_private(FunctionExpr::ListExpr(ListFunction::DropNulls))
     }
 
+    #[cfg(feature = "list_sample")]
+    pub fn sample_n(
+        self,
+        n: Expr,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::ListExpr(ListFunction::Sample {
+                is_fraction: false,
+                with_replacement,
+                shuffle,
+                seed,
+            }),
+            &[n],
+            false,
+            false,
+        )
+    }
+
+    #[cfg(feature = "list_sample")]
+    pub fn sample_fraction(
+        self,
+        fraction: Expr,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::ListExpr(ListFunction::Sample {
+                is_fraction: true,
+                with_replacement,
+                shuffle,
+                seed,
+            }),
+            &[fraction],
+            false,
+            false,
+        )
+    }
+
     /// Return the number of elements in each list.
     ///
     /// Null values are treated like regular elements in this context.

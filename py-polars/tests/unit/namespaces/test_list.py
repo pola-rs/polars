@@ -179,6 +179,37 @@ def test_list_drop_nulls() -> None:
     assert_frame_equal(df, expected_df)
 
 
+def test_list_sample() -> None:
+    s = pl.Series("values", [[1, 2, 3, None], [None, None], [1, 2], None])
+
+    expected_sample_n = pl.Series("values", [[3, 1], [None], [2], None])
+    assert_series_equal(
+        s.list.sample(n=pl.Series([2, 1, 1, 1]), seed=1), expected_sample_n
+    )
+
+    expected_sample_frac = pl.Series("values", [[3, 1], [None], [1, 2], None])
+    assert_series_equal(
+        s.list.sample(fraction=pl.Series([0.5, 0.5, 1.0, 0.3]), seed=1),
+        expected_sample_frac,
+    )
+
+    df = pl.DataFrame(
+        {
+            "values": [[1, 2, 3, None], [None, None], [3, 4]],
+            "n": [2, 1, 2],
+            "frac": [0.5, 0.5, 1.0],
+        }
+    )
+    df = df.select(
+        sample_n=pl.col("values").list.sample(n=pl.col("n"), seed=1),
+        sample_frac=pl.col("values").list.sample(fraction=pl.col("frac"), seed=1),
+    )
+    expected_df = pl.DataFrame(
+        {"sample_n": [[3, 1], [None], [3, 4]], "sample_frac": [[3, 1], [None], [3, 4]]}
+    )
+    assert_frame_equal(df, expected_df)
+
+
 def test_list_diff() -> None:
     s = pl.Series("a", [[1, 2], [10, 2, 1]])
     expected = pl.Series("a", [[None, 1], [None, -8, -1]])

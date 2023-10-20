@@ -8244,7 +8244,7 @@ class Expr:
 
     def sample(
         self,
-        n: int | Expr | None = None,
+        n: int | IntoExprColumn | None = None,
         *,
         fraction: float | None = None,
         with_replacement: bool = False,
