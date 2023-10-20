@@ -362,3 +362,26 @@ def test_long_date_range_12461() -> None:
     assert result[0] == date(1900, 1, 1)
     assert result[-1] == date(2300, 1, 1)
     assert (result.diff()[1:].dt.total_days() == 1).all()
+
+
+def test_date_ranges_broadcasting() -> None:
+    df = pl.DataFrame({"dates": [date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)]})
+    result = df.select(
+        pl.date_ranges(start="dates", end=date(2021, 1, 3)).alias("end"),
+        pl.date_ranges(start=date(2021, 1, 1), end="dates").alias("start"),
+    )
+    expected = pl.DataFrame(
+        {
+            "end": [
+                [date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)],
+                [date(2021, 1, 2), date(2021, 1, 3)],
+                [date(2021, 1, 3)],
+            ],
+            "start": [
+                [date(2021, 1, 1)],
+                [date(2021, 1, 1), date(2021, 1, 2)],
+                [date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)],
+            ],
+        }
+    )
+    assert_frame_equal(result, expected)

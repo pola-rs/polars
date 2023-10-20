@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars.type_aliases import ClosedInterval
@@ -241,3 +241,26 @@ def test_time_range_name() -> None:
 
     result_lazy = pl.select(pl.time_range(time(10), time(12), eager=False)).to_series()
     assert result_lazy.name == expected_name
+
+
+def test_time_ranges_broadcasting() -> None:
+    df = pl.DataFrame({"time": [time(10, 0), time(11, 0), time(12, 0)]})
+    result = df.select(
+        pl.time_ranges(start="time", end=time(12, 0)).alias("end"),
+        pl.time_ranges(start=time(10, 0), end="time").alias("start"),
+    )
+    expected = pl.DataFrame(
+        {
+            "end": [
+                [time(10, 0), time(11, 0), time(12, 0)],
+                [time(11, 0), time(12, 0)],
+                [time(12, 0)],
+            ],
+            "start": [
+                [time(10, 0)],
+                [time(10, 0), time(11, 0)],
+                [time(10, 0), time(11, 0), time(12, 0)],
+            ],
+        }
+    )
+    assert_frame_equal(result, expected)
