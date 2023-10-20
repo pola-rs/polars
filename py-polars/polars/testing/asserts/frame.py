@@ -47,6 +47,7 @@ def assert_frame_equal(
     check_exact
         Require data values to match exactly. If set to ``False``, values are considered
         equal when within tolerance of each other (see ``rtol`` and ``atol``).
+        Logical types like dates are always checked exactly.
     rtol
         Relative tolerance for inexact checking. Fraction of values in ``right``.
     atol
@@ -228,6 +229,7 @@ def assert_frame_not_equal(
     check_exact
         Require data values to match exactly. If set to ``False``, values are considered
         equal when within tolerance of each other (see ``rtol`` and ``atol``).
+        Logical types like dates are always checked exactly.
     rtol
         Relative tolerance for inexact checking. Fraction of values in ``right``.
     atol

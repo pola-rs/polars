@@ -99,31 +99,6 @@ def test_compare_series_nulls() -> None:
         assert_series_equal(srs1, srs2)
 
 
-def test_series_cmp_fast_paths() -> None:
-    assert (
-        pl.Series([None], dtype=pl.Int32) != pl.Series([1, 2], dtype=pl.Int32)
-    ).to_list() == [None, None]
-    assert (
-        pl.Series([None], dtype=pl.Int32) == pl.Series([1, 2], dtype=pl.Int32)
-    ).to_list() == [None, None]
-
-    assert (
-        pl.Series([None], dtype=pl.Utf8) != pl.Series(["a", "b"], dtype=pl.Utf8)
-    ).to_list() == [None, None]
-    assert (
-        pl.Series([None], dtype=pl.Utf8) == pl.Series(["a", "b"], dtype=pl.Utf8)
-    ).to_list() == [None, None]
-
-    assert (
-        pl.Series([None], dtype=pl.Boolean)
-        != pl.Series([True, False], dtype=pl.Boolean)
-    ).to_list() == [None, None]
-    assert (
-        pl.Series([None], dtype=pl.Boolean)
-        == pl.Series([False, False], dtype=pl.Boolean)
-    ).to_list() == [None, None]
-
-
 def test_compare_series_value_mismatch_string() -> None:
     srs1 = pl.Series(["hello", "no"])
     srs2 = pl.Series(["hello", "yes"])
@@ -159,7 +134,7 @@ def test_compare_series_name_mismatch() -> None:
         assert_series_equal(srs1, srs2)
 
 
-def test_compare_series_shape_mismatch() -> None:
+def test_compare_series_length_mismatch() -> None:
     srs1 = pl.Series(values=[1, 2, 3, 4], name="srs1")
     srs2 = pl.Series(values=[1, 2, 3], name="srs2")
 
@@ -621,7 +596,7 @@ def test_assert_series_equal_raises_assertion_error(
 def test_assert_series_equal_categorical() -> None:
     s1 = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
     s2 = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
-    with pytest.raises(pl.ComputeError, match="cannot compare categoricals"):
+    with pytest.raises(AssertionError, match="incompatible data types"):
         assert_series_equal(s1, s2)
 
     assert_series_equal(s1, s2, categorical_as_str=True)
@@ -633,6 +608,17 @@ def test_assert_series_equal_categorical_vs_str() -> None:
 
     with pytest.raises(AssertionError, match="dtype mismatch"):
         assert_series_equal(s1, s2, categorical_as_str=True)
+
+    assert_series_equal(s1, s2, check_dtype=False, categorical_as_str=True)
+    assert_series_equal(s2, s1, check_dtype=False, categorical_as_str=True)
+
+
+def test_assert_series_equal_incompatible_data_types() -> None:
+    s1 = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
+    s2 = pl.Series([0, 1, 0], dtype=pl.Int8)
+
+    with pytest.raises(AssertionError, match="incompatible data types"):
+        assert_series_equal(s1, s2, check_dtype=False)
 
 
 def test_assert_series_equal_full_series() -> None:
@@ -651,3 +637,63 @@ def test_assert_series_not_equal() -> None:
     s = pl.Series("a", [1, 2])
     with pytest.raises(AssertionError, match="Series are equal"):
         assert_series_not_equal(s, s)
+
+
+def test_assert_series_equal_nested_list_float() -> None:
+    # First entry has only integers
+    s1 = pl.Series([[1.0, 2.0], [3.0, 4.0]], dtype=pl.List(pl.Float64))
+    s2 = pl.Series([[1.0, 2.0], [3.0, 4.9]], dtype=pl.List(pl.Float64))
+
+    with pytest.raises(AssertionError):
+        assert_series_equal(s1, s2)
+
+
+def test_assert_series_equal_nested_struct_float() -> None:
+    s1 = pl.Series(
+        [{"a": 1.0, "b": 2.0}, {"a": 3.0, "b": 4.0}],
+        dtype=pl.Struct({"a": pl.Float64, "b": pl.Float64}),
+    )
+    s2 = pl.Series(
+        [{"a": 1.0, "b": 2.0}, {"a": 3.0, "b": 4.9}],
+        dtype=pl.Struct({"a": pl.Float64, "b": pl.Float64}),
+    )
+
+    with pytest.raises(AssertionError):
+        assert_series_equal(s1, s2)
+
+
+def test_assert_series_equal_nested_list_full_null() -> None:
+    # First entry has only integers
+    s1 = pl.Series([None, None], dtype=pl.List(pl.Float64))
+    s2 = pl.Series([None, None], dtype=pl.List(pl.Float64))
+
+    assert_series_equal(s1, s2)
+
+
+def test_assert_series_equal_nested_list_nan() -> None:
+    s1 = pl.Series([[1.0, 2.0], [3.0, float("nan")]], dtype=pl.List(pl.Float64))
+    s2 = pl.Series([[1.0, 2.0], [3.0, float("nan")]], dtype=pl.List(pl.Float64))
+
+    with pytest.raises(AssertionError):
+        assert_series_equal(s1, s2, nans_compare_equal=False)
+
+
+def test_assert_series_equal_nested_list_none() -> None:
+    s1 = pl.Series([[1.0, 2.0], None], dtype=pl.List(pl.Float64))
+    s2 = pl.Series([[1.0, 2.0], None], dtype=pl.List(pl.Float64))
+
+    assert_series_equal(s1, s2, nans_compare_equal=False)
+
+
+def test_assert_series_equal_full_none_nested_not_nested() -> None:
+    s1 = pl.Series([None, None], dtype=pl.List(pl.Float64))
+    s2 = pl.Series([None, None], dtype=pl.Float64)
+
+    assert_series_equal(s1, s2, check_dtype=False)
+
+
+def test_assert_series_equal_unsigned_ints_underflow() -> None:
+    s1 = pl.Series([1, 3], dtype=pl.UInt8)
+    s2 = pl.Series([2, 4], dtype=pl.Int64)
+
+    assert_series_equal(s1, s2, atol=1, check_dtype=False)
