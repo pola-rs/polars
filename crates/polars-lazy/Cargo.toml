@@ -10,7 +10,7 @@ description = "Lazy query engine for the Polars DataFrame library"
 
 [dependencies]
 arrow = { workspace = true }
-polars-core = { workspace = true, features = ["lazy", "zip_with", "random"], default-features = false }
+polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-io = { workspace = true, features = ["lazy"] }
 polars-json = { workspace = true, optional = true }
 polars-ops = { workspace = true }
