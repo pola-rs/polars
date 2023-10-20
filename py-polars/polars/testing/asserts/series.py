@@ -49,8 +49,10 @@ def assert_series_equal(
     check_exact
         Require data values to match exactly. If set to ``False``, values are considered
         equal when within tolerance of each other (see ``rtol`` and ``atol``).
+        Non-numeric values like dates are always checked exactly.
     rtol
-        Relative tolerance for inexact checking. Fraction of values in ``right``.
+        Relative tolerance for inexact checking, given as a fraction of the values in
+        ``right``.
     atol
         Absolute tolerance for inexact checking.
     nans_compare_equal
