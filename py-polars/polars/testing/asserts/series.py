@@ -49,7 +49,7 @@ def assert_series_equal(
     check_exact
         Require data values to match exactly. If set to ``False``, values are considered
         equal when within tolerance of each other (see ``rtol`` and ``atol``).
-        Non-numeric values like dates are always checked exactly.
+        Logical types like dates are always checked exactly.
     rtol
         Relative tolerance for inexact checking, given as a fraction of the values in
         ``right``.
@@ -347,25 +347,27 @@ def assert_series_not_equal(
     Parameters
     ----------
     left
-        the series to compare.
+        The first Series to compare.
     right
-        the series to compare with.
+        The second Series to compare.
     check_dtype
-        if True, data types need to match exactly.
+        Require data types to match.
     check_names
-        if True, names need to match.
+        Require names to match.
     check_exact
-        if False, test if values are within tolerance of each other
-        (see `rtol` & `atol`).
+        Require data values to match exactly. If set to ``False``, values are considered
+        equal when within tolerance of each other (see ``rtol`` and ``atol``).
+        Logical types like dates are always checked exactly.
     rtol
-        relative tolerance for inexact checking. Fraction of values in `right`.
+        Relative tolerance for inexact checking, given as a fraction of the values in
+        ``right``.
     atol
-        absolute tolerance for inexact checking.
+        Absolute tolerance for inexact checking.
     nans_compare_equal
-        if your assert/test requires float NaN != NaN, set this to False.
+        Consider NaN values to be equal.
     categorical_as_str
         Cast categorical columns to string before comparing. Enabling this helps
-        compare DataFrames that do not share the same string cache.
+        compare columns that do not share the same string cache.
 
     See Also
     --------
