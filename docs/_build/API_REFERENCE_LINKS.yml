@@ -333,7 +333,7 @@ rust:
   str.contains:
     name: str.contains
     link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.contains
-    feature_flags: [regex]
+    feature_flags: [lazy_regex]
   str.extract:
     name: str.extract
     link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.extract
@@ -343,11 +343,11 @@ rust:
   str.replace:
     name: str.replace
     link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.replace
-    feature_flags: [regex]
+    feature_flags: [lazy_regex]
   str.replace_all:
     name: str.replace_all
     link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.replace_all
-    feature_flags: [regex]
+    feature_flags: [lazy_regex]
   str.starts_with: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.starts_with
   str.ends_with: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.ends_with
   str.split:
