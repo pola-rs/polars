@@ -523,7 +523,9 @@ class Array(NestedType):
     inner: PolarsDataType | None = None
     width: int
 
-    def __init__(self, width: int, inner: PolarsDataType | PythonDataType = Null):
+    def __init__(
+        self, width: int, inner: PolarsDataType | PythonDataType | None = None
+    ):
         """
         Fixed length list type.
 
@@ -548,6 +550,16 @@ class Array(NestedType):
         ]
 
         """
+        if inner is None:
+            from polars.utils.deprecation import issue_deprecation_warning
+
+            issue_deprecation_warning(
+                "The default value for the `inner` parameter of `Array` will be removed in the next breaking release."
+                " Pass `inner=pl.Null`to keep current behavior and silence this warning.",
+                version="0.19.11",
+            )
+            inner = Null
+
         self.width = width
         self.inner = polars.datatypes.py_type_to_dtype(inner)
 
