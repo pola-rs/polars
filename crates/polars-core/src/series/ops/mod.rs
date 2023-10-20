@@ -1,7 +1,5 @@
 mod downcast;
 mod extend;
-#[cfg(feature = "moment")]
-pub mod moment;
 mod null;
 mod to_list;
 mod unique;

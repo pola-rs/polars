@@ -91,7 +91,6 @@ take_opt_iter = []
 group_by_list = []
 # rolling window functions
 rolling_window = []
-moment = []
 diagonal_concat = []
 horizontal_concat = []
 abs = []
@@ -145,7 +144,6 @@ docs-selection = [
   "dot_product",
   "row_hash",
   "rolling_window",
-  "moment",
   "dtype-categorical",
   "dtype-decimal",
   "diagonal_concat",
