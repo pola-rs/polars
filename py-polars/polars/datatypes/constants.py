@@ -14,6 +14,8 @@ from polars.datatypes import (
     Int16,
     Int32,
     Int64,
+    List,
+    Struct,
     Time,
     UInt8,
     UInt16,
@@ -72,6 +74,8 @@ FLOAT_DTYPES: frozenset[PolarsDataType] = DataTypeGroup([Float32, Float64])
 NUMERIC_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
     FLOAT_DTYPES | INTEGER_DTYPES | frozenset([Decimal])
 )
+
+NESTED_DTYPES: frozenset[PolarsDataType] = DataTypeGroup([List, Struct])
 
 # number of rows to scan by default when inferring datatypes
 N_INFER_DEFAULT = 100

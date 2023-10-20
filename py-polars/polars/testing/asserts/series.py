@@ -3,6 +3,7 @@ from __future__ import annotations
 from polars import functions as F
 from polars.datatypes import (
     FLOAT_DTYPES,
+    NESTED_DTYPES,
     UNSIGNED_INTEGER_DTYPES,
     Categorical,
     List,
@@ -139,7 +140,7 @@ def _assert_series_values_equal(
         unequal = unequal | left.is_nan() | right.is_nan()
 
     # check nested dtypes in separate function
-    if left.dtype.is_nested or right.dtype.is_nested:
+    if left.dtype in NESTED_DTYPES or right.dtype in NESTED_DTYPES:
         if _assert_series_nested(
             left=left.filter(unequal),
             right=right.filter(unequal),
