@@ -639,10 +639,24 @@ def test_assert_series_not_equal() -> None:
         assert_series_not_equal(s, s)
 
 
-def test_assert_series_equal_nested_list_float_int_mix() -> None:
+def test_assert_series_equal_nested_list_float() -> None:
     # First entry has only integers
     s1 = pl.Series([[1.0, 2.0], [3.0, 4.0]], dtype=pl.List(pl.Float64))
     s2 = pl.Series([[1.0, 2.0], [3.0, 4.9]], dtype=pl.List(pl.Float64))
+
+    with pytest.raises(AssertionError):
+        assert_series_equal(s1, s2)
+
+
+def test_assert_series_equal_nested_struct_float() -> None:
+    s1 = pl.Series(
+        [{"a": 1.0, "b": 2.0}, {"a": 3.0, "b": 4.0}],
+        dtype=pl.Struct({"a": pl.Float64, "b": pl.Float64}),
+    )
+    s2 = pl.Series(
+        [{"a": 1.0, "b": 2.0}, {"a": 3.0, "b": 4.9}],
+        dtype=pl.Struct({"a": pl.Float64, "b": pl.Float64}),
+    )
 
     with pytest.raises(AssertionError):
         assert_series_equal(s1, s2)
@@ -662,20 +676,6 @@ def test_assert_series_equal_nested_list_nan() -> None:
 
     with pytest.raises(AssertionError):
         assert_series_equal(s1, s2, nans_compare_equal=False)
-
-
-def test_assert_series_equal_nested_struct_float() -> None:
-    s1 = pl.Series(
-        [{"a": 1.0, "b": 2.0}, {"a": 3.0, "b": 4.0}],
-        dtype=pl.Struct({"a": pl.Float64, "b": pl.Float64}),
-    )
-    s2 = pl.Series(
-        [{"a": 1.0, "b": 2.0}, {"a": 3.0, "b": 4.9}],
-        dtype=pl.Struct({"a": pl.Float64, "b": pl.Float64}),
-    )
-
-    with pytest.raises(AssertionError):
-        assert_series_equal(s1, s2)
 
 
 def test_assert_series_equal_nested_list_none() -> None:
