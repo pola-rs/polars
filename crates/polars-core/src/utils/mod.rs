@@ -879,6 +879,7 @@ pub fn coalesce_nulls<'a, T: PolarsDataType>(
                 *arr_b = arr_b.with_validity(arr.validity().cloned())
             }
         }
+        b.compute_len();
         (Cow::Owned(a), Cow::Owned(b))
     } else {
         (Cow::Borrowed(a), Cow::Borrowed(b))
@@ -899,6 +900,8 @@ pub fn coalesce_nulls_series(a: &Series, b: &Series) -> (Series, Series) {
             *arr_a = arr_a.with_validity(validity.clone());
             *arr_b = arr_b.with_validity(validity);
         }
+        a.compute_len();
+        b.compute_len();
         (a, b)
     } else {
         (a.clone(), b.clone())

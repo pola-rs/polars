@@ -304,6 +304,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     ///
     /// # Safety
     /// The caller must ensure to not change the [`DataType`] or `length` of any of the chunks.
+    /// And the `null_count` remains correct.
     #[inline]
     pub unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
         &mut self.chunks

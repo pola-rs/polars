@@ -181,6 +181,7 @@ impl Series {
 
     /// # Safety
     /// The caller must ensure the length and the data types of `ArrayRef` does not change.
+    /// And that the null_count is updated (e.g. with a `compute_len()`)
     pub unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
         #[allow(unused_mut)]
         let mut ca = self._get_inner_mut();
@@ -252,6 +253,11 @@ impl Series {
     pub fn append(&mut self, other: &Series) -> PolarsResult<&mut Self> {
         self._get_inner_mut().append(other)?;
         Ok(self)
+    }
+
+    /// Redo a length and null_count compute
+    pub fn compute_len(&mut self) {
+        self._get_inner_mut().compute_len()
     }
 
     /// Extend the memory backed by this array with the values from `other`.
