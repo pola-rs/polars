@@ -168,12 +168,11 @@ def _assert_series_values_equal(
         return
 
     # Only do inexact checking for numeric types
-    check_exact = (
+    if (
         check_exact
         or left.dtype not in NUMERIC_DTYPES
         or right.dtype not in NUMERIC_DTYPES
-    )
-    if check_exact:
+    ):
         raise_assertion_error(
             "Series",
             "exact value mismatch",
