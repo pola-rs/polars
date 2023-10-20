@@ -105,7 +105,7 @@ def test_string_numeric_comp_err() -> None:
 def test_panic_error() -> None:
     with pytest.raises(
         pl.PolarsPanicError,
-        match="""dimensions cannot be empty""",
+        match="dimensions cannot be empty",
     ):
         pl.Series("a", [1, 2, 3]).reshape(())
 

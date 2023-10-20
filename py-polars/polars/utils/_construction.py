@@ -1024,7 +1024,11 @@ def _sequence_of_sequence_to_pydf(
         local_schema_override = (
             include_unknowns(schema_overrides, column_names) if schema_overrides else {}
         )
-        if column_names and first_element and len(first_element) != len(column_names):
+        if (
+            column_names
+            and len(first_element) > 0
+            and len(first_element) != len(column_names)
+        ):
             raise ShapeError("the row data does not match the number of columns")
 
         unpack_nested = False
