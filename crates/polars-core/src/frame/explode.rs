@@ -279,6 +279,10 @@ impl DataFrame {
                     }
                 })
                 .collect();
+            // if value_vars is still empty after attempting to populate it, return original dataframe
+            if value_vars.is_empty() {
+                return Ok(self.clone());
+            }
         }
 
         // values will all be placed in single column, so we must find their supertype
@@ -288,10 +292,6 @@ impl DataFrame {
                 .get(v)
                 .ok_or_else(|| polars_err!(ColumnNotFound: "{}", v))
         });
-        // if there only is a single column, we return the original DataFrame
-        if value_vars.len() < 1 {
-            return Ok(self.clone());
-        }
 
         let mut st = iter.next().unwrap()?.clone();
         for dt in iter {
