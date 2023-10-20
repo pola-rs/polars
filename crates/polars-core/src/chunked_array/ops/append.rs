@@ -22,11 +22,11 @@ where
     // TODO: attempt to maintain sortedness better in case of nulls.
 
     // If either is empty, copy the sorted flag from the other.
-    if ca.len() == 0 {
+    if ca.is_empty() {
         ca.set_sorted_flag(other.is_sorted_flag());
         return;
     }
-    if other.len() == 0 {
+    if other.is_empty() {
         return;
     }
 
