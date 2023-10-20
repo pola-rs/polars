@@ -45,7 +45,7 @@ rayon = "1.8"
 regex = "1.9"
 serde = "1.0.188"
 serde_json = "1"
-simd-json = { version = "0.11", features = ["allow-non-simd", "known-key"] }
+simd-json = { version = "0.12", features = ["known-key"] }
 smartstring = "1"
 sqlparser = "0.38"
 strum_macros = "0.25"
