@@ -144,7 +144,21 @@ class DataType(metaclass=DataTypeClass):
 
     @classproperty
     def is_nested(self) -> bool:
-        """Check if this data type is nested."""
+        """
+        Check if this data type is nested.
+
+        .. deprecated:: 0.19.10
+            Use `dtype in pl.NESTED_DTYPES` instead.
+
+        """
+        from polars.utils.deprecation import issue_deprecation_warning
+
+        message = (
+            "`DataType.is_nested` is deprecated and will be removed in the next breaking release."
+            " It will be changed to a classmethod rather than a property."
+            " To silence this warning, use `dtype in pl.NESTED_DTYPES` instead."
+        )
+        issue_deprecation_warning(message, version="0.19.10")
         return False
 
 
@@ -220,7 +234,21 @@ class NestedType(DataType):
 
     @classproperty
     def is_nested(self) -> bool:
-        """Check if this data type is nested."""
+        """
+        Check if this data type is nested.
+
+        .. deprecated:: 0.19.10
+            Use `dtype in pl.NESTED_DTYPES` instead.
+
+        """
+        from polars.utils.deprecation import issue_deprecation_warning
+
+        message = (
+            "`DataType.is_nested` is deprecated and will be removed in the next breaking release."
+            " It will be changed to a classmethod rather than a property."
+            " To silence this warning, use `dtype in pl.NESTED_DTYPES` instead."
+        )
+        issue_deprecation_warning(message, version="0.19.10")
         return True
 
 
