@@ -512,7 +512,7 @@ fn run_pipeline_no_finalize_iterative(
                     unreachable!()
                 },
             }
-            Self::iteration_init(
+            let (shared_count, reduced_sink) = Self::iteration_init(
                 self.pipeline.deref_mut(),
                 ec,
                 sink,
@@ -522,6 +522,8 @@ fn run_pipeline_no_finalize_iterative(
                 &mut self.sink_finished,
             )?;
             self.operator_start = operator_end;
+            self.shared_sink_count = shared_count;
+            self.reduced_sink = reduced_sink;
             Ok(Some(()))
         }
 

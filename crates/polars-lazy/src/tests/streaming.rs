@@ -24,6 +24,7 @@ fn assert_streaming_with_default(q: LazyFrame, total: bool, check_shape_only: bo
     }
     let q_expected = q.with_streaming(false);
     let out = q_streaming.collect().unwrap();
+    dbg!("Non-streaming");
     let expected = q_expected.collect().unwrap();
     if check_shape_only {
         assert_eq!(out.shape(), expected.shape())
