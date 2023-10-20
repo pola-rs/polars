@@ -194,6 +194,36 @@ def test_read_excel_basic_datatypes(
         assert_frame_equal(df, df)
 
 
+@pytest.mark.parametrize(
+    ("read_spreadsheet", "source", "params"),
+    [
+        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
+        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsb", {"engine": "pyxlsb"}),
+        (pl.read_ods, "path_ods", {}),
+    ],
+)
+def test_read_invalid_worksheet(
+    read_spreadsheet: Callable[..., dict[str, pl.DataFrame]],
+    source: str,
+    params: dict[str, str],
+    request: pytest.FixtureRequest,
+) -> None:
+    spreadsheet_path = request.getfixturevalue(source)
+    for param, sheet_id, sheet_name in (
+        ("id", 999, None),
+        ("name", None, "not_a_sheet_name"),
+    ):
+        value = sheet_id if param == "id" else sheet_name
+        with pytest.raises(
+            ValueError,
+            match=f"no matching sheets found when `sheet_{param}` is {value!r}",
+        ):
+            read_spreadsheet(
+                spreadsheet_path, sheet_id=sheet_id, sheet_name=sheet_name, **params
+            )
+
+
 @pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl"])
 def test_write_excel_bytes(engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"]) -> None:
     df = pl.DataFrame({"A": [1, 2, 3, 4, 5]})
