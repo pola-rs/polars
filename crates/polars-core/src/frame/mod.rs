@@ -1537,7 +1537,7 @@ impl DataFrame {
         for name in cols {
             if !names.insert(name.as_str()) {
                 let msg = format!(
-                    "the name: '{}' passed to `select` is duplicate.\n\n\
+                    "the name: '{}' passed to `select` is duplicate\n\n\
                     It's possible that multiple expressions are returning the same default column name. \
                     If this is the case, try renaming the columns with `.alias(\"new_name\")` to avoid \
                     duplicate column names.",
