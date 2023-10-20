@@ -264,3 +264,22 @@ def test_time_ranges_broadcasting() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_time_ranges_mismatched_chunks() -> None:
+    s1 = pl.Series([time(10), time(11)])
+    s1.append(pl.Series([time(12)]))
+
+    s2 = pl.Series([time(12)])
+    s2.append(pl.Series([time(12), time(12)]))
+
+    result = pl.time_ranges(s1, s2, eager=True)
+    expected = pl.Series(
+        "time_range",
+        [
+            [time(10, 0), time(11, 0), time(12, 0)],
+            [time(11, 0), time(12, 0)],
+            [time(12, 0)],
+        ],
+    )
+    assert_series_equal(result, expected)
