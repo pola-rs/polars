@@ -664,7 +664,7 @@ class ExprListNameSpace:
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Expr:
         """
-        Calculate the n-th discrete difference of every sublist.
+        Compute the first discrete difference between shifted elements of every sublist.
 
         Parameters
         ----------

@@ -5988,7 +5988,7 @@ class Series:
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Series:
         """
-        Calculate the n-th discrete difference.
+        Calculate the first discrete difference between shifted elements.
 
         Parameters
         ----------
