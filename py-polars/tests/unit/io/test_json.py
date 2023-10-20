@@ -183,6 +183,18 @@ def test_json_supertype_infer() -> None:
     assert_frame_equal(python_infer, polars_infer)
 
 
+def test_read_json_with_null_column() -> None:
+    json_string = """[
+    {"a": null, "b": 1, "c": null},
+    {"a": null, "b": 2, "c": null},
+    {"a": null, "b": 3, "c": null}
+    ]"""
+
+    df = pl.read_json(io.StringIO(json_string))
+
+    assert df.schema == {"a": pl.Null, "b": pl.Int64, "c": pl.Null}
+
+
 def test_json_sliced_list_serialization() -> None:
     data = {"col1": [0, 2], "col2": [[3, 4, 5], [6, 7, 8]]}
     df = pl.DataFrame(data)

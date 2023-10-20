@@ -178,6 +178,7 @@ fn test_read_ndjson_iss_5875_part2() {
         "struct".into(),
         DataType::Struct(vec![field_int_list_inner, field_float, field_str_list]),
     );
+    schema.with_column("int_opt".into(), DataType::Null);
     schema.with_column(
         "float_list_outer".into(),
         field_float_list.data_type().clone(),
