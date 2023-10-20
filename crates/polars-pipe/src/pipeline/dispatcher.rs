@@ -444,6 +444,7 @@ fn run_pipeline_no_finalize_iterative(
         pipeline: OwnedOrMut<'a, PipeLine>,
         operator_start: usize,
         sink_finished: bool,
+        #[allow(clippy::type_complexity)]
         remaining: std::vec::IntoIter<(usize, Rc<RefCell<u32>>, Vec<Box<dyn Sink>>)>,
         // Sink-local data
         shared_sink_count: u32,
@@ -583,7 +584,7 @@ fn run_pipeline_no_finalize_iterative(
     )?);
 
     'outer: while let Some(mut current_frame) = stack.pop() {
-        while current_frame.shared_sink_count > 0 && !current_frame.sink_finished {
+        if current_frame.shared_sink_count > 0 && !current_frame.sink_finished {
             let pipeline = pipeline_q.borrow_mut().pop_front().unwrap();
             let parent_index = {
                 stack.push(current_frame);
@@ -597,17 +598,14 @@ fn run_pipeline_no_finalize_iterative(
         if current_frame.advance(ec)?.is_some() {
             // We re-enqueue for execution since we have more work to do.
             stack.push(current_frame);
-            continue 'outer;
+        } else if let Some(parent_index) = current_frame.parent_index {
+            let parent_frame = &mut stack[parent_index];
+            parent_frame.shared_sink_count = current_frame.shared_sink_count;
+            parent_frame
+                .reduced_sink
+                .combine(current_frame.reduced_sink.as_mut());
         } else {
-            if let Some(parent_index) = current_frame.parent_index {
-                let parent_frame = &mut stack[parent_index];
-                parent_frame.shared_sink_count = current_frame.shared_sink_count;
-                parent_frame
-                    .reduced_sink
-                    .combine(current_frame.reduced_sink.as_mut());
-            } else {
-                return Ok((current_frame.shared_sink_count, current_frame.reduced_sink));
-            }
+            return Ok((current_frame.shared_sink_count, current_frame.reduced_sink));
         }
     }
     unreachable!()
