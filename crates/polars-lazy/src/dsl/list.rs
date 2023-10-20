@@ -23,9 +23,8 @@ impl IntoListNameSpace for ListNameSpace {
 fn offsets_to_groups(offsets: &[i64]) -> Option<GroupsProxy> {
     let mut start = offsets[0];
     let end = *offsets.last().unwrap();
-    match IdxSize::try_from(end - start) {
-        Err(_) => return None,
-        Ok(_) => (),
+    if IdxSize::try_from(end - start).is_err() {
+        return None;
     }
     let groups = offsets
         .iter()
