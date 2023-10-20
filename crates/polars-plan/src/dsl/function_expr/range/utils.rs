@@ -20,7 +20,10 @@ pub(super) fn ensure_range_bounds_contain_exactly_one_value(
     Ok(())
 }
 
-pub(super) fn broadcast_scalar_inputs(start: Series, end: Series) -> PolarsResult<(Series, Series)> {
+pub(super) fn broadcast_scalar_inputs(
+    start: Series,
+    end: Series,
+) -> PolarsResult<(Series, Series)> {
     if start.len() == end.len() {
         return Ok((start, end));
     }
