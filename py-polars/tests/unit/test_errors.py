@@ -464,7 +464,7 @@ def test_with_column_duplicates() -> None:
     df = pl.DataFrame({"a": [0, None, 2, 3, None], "b": [None, 1, 2, 3, None]})
     with pytest.raises(
         pl.ComputeError,
-        match=r"The name: 'same' passed to `LazyFrame.with_columns` is duplicate",
+        match=r"the name: 'same' passed to `LazyFrame.with_columns` is duplicate.*",
     ):
         assert df.with_columns([pl.all().alias("same")]).columns == ["a", "b", "same"]
 
