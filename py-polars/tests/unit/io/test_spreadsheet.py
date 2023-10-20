@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import warnings
+from collections import OrderedDict
 from datetime import date, datetime
 from io import BytesIO
 from typing import TYPE_CHECKING, Any, Callable, Literal
@@ -274,6 +275,22 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
             schema_overrides={"cardinality": pl.UInt16},
             read_csv_options={"dtypes": {"cardinality": pl.Int32}},
         )
+
+    # read multiple sheets in conjunction with 'schema_overrides'
+    # (note: reading the same sheet twice simulates the issue in #11850)
+    overrides = OrderedDict(
+        [
+            ("cardinality", pl.UInt32),
+            ("rows_by_key", pl.Float32),
+            ("iter_groups", pl.Float64),
+        ]
+    )
+    df = pl.read_excel(  # type: ignore[call-overload]
+        path_xlsx,
+        sheet_name=["test4", "test4"],
+        schema_overrides=overrides,
+    )
+    assert df["test4"].schema == overrides
 
 
 def test_unsupported_engine() -> None:
