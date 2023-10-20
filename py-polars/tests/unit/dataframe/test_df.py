@@ -124,7 +124,7 @@ def test_selection() -> None:
 
     # select columns by mask
     assert df[:2, :1].rows() == [(1,), (2,)]
-    assert df[:2, "a"].rows() == [(1,), (2,)]  # type: ignore[attr-defined]
+    assert df[:2, ["a"]].rows() == [(1,), (2,)]
 
     # column selection by string(s) in first dimension
     assert df["a"].to_list() == [1, 2, 3]
@@ -136,7 +136,7 @@ def test_selection() -> None:
     assert_frame_equal(df[-1], pl.DataFrame({"a": [3], "b": [3.0], "c": ["c"]}))
 
     # row, column selection when using two dimensions
-    assert df[:, 0].to_list() == [1, 2, 3]
+    assert df[:, "a"].to_list() == [1, 2, 3]
     assert df[:, 1].to_list() == [1.0, 2.0, 3.0]
     assert df[:2, 2].to_list() == ["a", "b"]
 
@@ -155,7 +155,6 @@ def test_selection() -> None:
     assert typing.cast(float, df[1, 1]) == 2.0
     assert typing.cast(int, df[2, 0]) == 3
 
-    assert df[[0, 1], "b"].rows() == [(1.0,), (2.0,)]  # type: ignore[attr-defined]
     assert df[[2], ["a", "b"]].rows() == [(3, 3.0)]
     assert df.to_series(0).name == "a"
     assert (df["a"] == df["a"]).sum() == 3
