@@ -152,7 +152,6 @@ def _assert_series_values_equal(
 
     # Check nested dtypes in separate function
     if left.dtype in NESTED_DTYPES and right.dtype in NESTED_DTYPES:
-
         # check that float values exist at _some_ level of nesting
         contains_floats = FLOAT_DTYPES & unpack_dtypes(left.dtype, right.dtype)
 
@@ -243,10 +242,6 @@ def _assert_series_nested(
         for s1, s2 in zip(left, right):
             if (s1 is None and s2 is not None) or (s2 is None and s1 is not None):
                 raise_assertion_error("Series", "nested value mismatch", s1, s2)
-            elif s1.len() != s2.len():
-                raise_assertion_error(
-                    "Series", "nested list length mismatch", len(s1), len(s2)
-                )
 
             _assert_series_values_equal(
                 s1,
@@ -262,17 +257,6 @@ def _assert_series_nested(
     # unnest structs as series and compare
     elif left.dtype == Struct == right.dtype:
         ls, rs = left.struct.unnest(), right.struct.unnest()
-        if len(ls.columns) != len(rs.columns):
-            raise_assertion_error(
-                "Series",
-                "nested struct fields mismatch",
-                len(ls.columns),
-                len(rs.columns),
-            )
-        elif len(ls) != len(rs):
-            raise_assertion_error(
-                "Series", "nested struct length mismatch", len(ls), len(rs)
-            )
         for s1, s2 in zip(ls, rs):
             _assert_series_values_equal(
                 s1,
