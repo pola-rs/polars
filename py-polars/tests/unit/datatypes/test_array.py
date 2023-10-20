@@ -104,3 +104,14 @@ def test_array_concat() -> None:
     assert pl.concat([a_df, b_df]).to_dict(False) == {
         "a": [[0, 1], [1, 0], [1, 1], [0, 0]]
     }
+
+
+def test_array_init_deprecation() -> None:
+    with pytest.deprecated_call():
+        pl.Array(2)
+    with pytest.deprecated_call():
+        pl.Array(2, pl.Utf8)
+    with pytest.deprecated_call():
+        pl.Array(2, inner=pl.Utf8)
+    with pytest.deprecated_call():
+        pl.Array(width=2)
