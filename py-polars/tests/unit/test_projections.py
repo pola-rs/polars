@@ -320,3 +320,9 @@ def test_projection_rename_10595() -> None:
     assert lf.select("a", "b").rename({"b": "a", "a": "b"}).select(
         "a"
     ).collect().schema == {"a": pl.Float32}
+
+
+def test_projection_count_11841() -> None:
+    pl.LazyFrame({"x": 1}).select(records=pl.count()).select(
+        pl.lit(1).alias("x"), pl.all()
+    ).collect()
