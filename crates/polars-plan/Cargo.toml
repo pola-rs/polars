@@ -13,10 +13,10 @@ doctest = false
 
 [dependencies]
 libloading = { version = "0.8.0", optional = true }
-polars-core = { workspace = true, features = ["lazy", "zip_with", "random"], default-features = false }
+polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-ffi = { workspace = true, optional = true }
-polars-io = { workspace = true, features = ["lazy"], default-features = false }
-polars-ops = { workspace = true, features = ["zip_with"], default-features = false }
+polars-io = { workspace = true, features = ["lazy"] }
+polars-ops = { workspace = true, features = ["zip_with"] }
 polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
 

@@ -9,10 +9,10 @@ repository = { workspace = true }
 description = "More operations on Polars data structures"
 
 [dependencies]
-polars-core = { workspace = true, features = ["algorithm_group_by"], default-features = false }
+polars-core = { workspace = true, features = ["algorithm_group_by"] }
 polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
-polars-utils = { workspace = true, default-features = false }
+polars-utils = { workspace = true }
 
 ahash = { workspace = true }
 argminmax = { version = "0.6.1", default-features = false, features = ["float"] }

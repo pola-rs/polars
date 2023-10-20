@@ -74,7 +74,7 @@ arrow-array = { workspace = true, optional = true }
 arrow-buffer = { workspace = true, optional = true }
 arrow-data = { workspace = true, optional = true }
 arrow-schema = { workspace = true, optional = true }
-parquet2 = { workspace = true, optional = true, features = ["async"] }
+parquet2 = { workspace = true, optional = true, default-features = true, features = ["async"] }
 
 [dev-dependencies]
 avro-rs = { version = "0.13", features = ["snappy"] }
