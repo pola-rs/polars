@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use arrow::legacy::utils::CustomIterTools;
 #[cfg(feature = "timezones")]
 use once_cell::sync::Lazy;
-#[cfg(feature = "regex")]
+#[cfg(feature = "lazy_regex")]
 use regex::{escape, Regex};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -24,7 +24,7 @@ pub enum StringFunction {
     ConcatHorizontal(String),
     #[cfg(feature = "concat_str")]
     ConcatVertical(String),
-    #[cfg(feature = "regex")]
+    #[cfg(feature = "lazy_regex")]
     Contains {
         literal: bool,
         strict: bool,
@@ -57,7 +57,7 @@ pub enum StringFunction {
         dtype: Option<DataType>,
         infer_schema_len: Option<usize>,
     },
-    #[cfg(feature = "regex")]
+    #[cfg(feature = "lazy_regex")]
     Replace {
         // negative is replace all
         // how many matches to replace
@@ -101,7 +101,7 @@ impl StringFunction {
         match self {
             #[cfg(feature = "concat_str")]
             ConcatVertical(_) | ConcatHorizontal(_) => mapper.with_dtype(DataType::Utf8),
-            #[cfg(feature = "regex")]
+            #[cfg(feature = "lazy_regex")]
             Contains { .. } => mapper.with_dtype(DataType::Boolean),
             CountMatches(_) => mapper.with_dtype(DataType::UInt32),
             EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
@@ -116,7 +116,7 @@ impl StringFunction {
             JsonExtract { dtype, .. } => mapper.with_opt_dtype(dtype.clone()),
             LenBytes => mapper.with_dtype(DataType::UInt32),
             LenChars => mapper.with_dtype(DataType::UInt32),
-            #[cfg(feature = "regex")]
+            #[cfg(feature = "lazy_regex")]
             Replace { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "temporal")]
             Strptime(dtype, _) => mapper.with_dtype(dtype.clone()),
@@ -154,7 +154,7 @@ impl StringFunction {
 impl Display for StringFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            #[cfg(feature = "regex")]
+            #[cfg(feature = "lazy_regex")]
             StringFunction::Contains { .. } => "contains",
             StringFunction::CountMatches(_) => "count_matches",
             StringFunction::EndsWith { .. } => "ends_with",
@@ -178,7 +178,7 @@ impl Display for StringFunction {
             StringFunction::LenChars => "len_chars",
             #[cfg(feature = "string_justify")]
             StringFunction::RJust { .. } => "rjust",
-            #[cfg(feature = "regex")]
+            #[cfg(feature = "lazy_regex")]
             StringFunction::Replace { .. } => "replace",
             StringFunction::Slice(_, _) => "slice",
             StringFunction::StartsWith { .. } => "starts_with",
@@ -244,7 +244,7 @@ pub(super) fn len_bytes(s: &Series) -> PolarsResult<Series> {
     Ok(ca.str_len_bytes().into_series())
 }
 
-#[cfg(feature = "regex")]
+#[cfg(feature = "lazy_regex")]
 pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResult<Series> {
     let ca = s[0].utf8()?;
     let pat = s[1].utf8()?;
@@ -569,7 +569,7 @@ impl From<StringFunction> for FunctionExpr {
     }
 }
 
-#[cfg(feature = "regex")]
+#[cfg(feature = "lazy_regex")]
 fn get_pat(pat: &Utf8Chunked) -> PolarsResult<&str> {
     pat.get(0).ok_or_else(
         || polars_err!(ComputeError: "pattern cannot be 'null' in 'replace' expression"),
@@ -595,12 +595,12 @@ where
     out
 }
 
-#[cfg(feature = "regex")]
+#[cfg(feature = "lazy_regex")]
 fn is_literal_pat(pat: &str) -> bool {
     pat.chars().all(|c| !c.is_ascii_punctuation())
 }
 
-#[cfg(feature = "regex")]
+#[cfg(feature = "lazy_regex")]
 fn replace_n<'a>(
     ca: &'a Utf8Chunked,
     pat: &'a Utf8Chunked,
@@ -661,7 +661,7 @@ fn replace_n<'a>(
     }
 }
 
-#[cfg(feature = "regex")]
+#[cfg(feature = "lazy_regex")]
 fn replace_all<'a>(
     ca: &'a Utf8Chunked,
     pat: &'a Utf8Chunked,
@@ -706,7 +706,7 @@ fn replace_all<'a>(
     }
 }
 
-#[cfg(feature = "regex")]
+#[cfg(feature = "lazy_regex")]
 pub(super) fn replace(s: &[Series], literal: bool, n: i64) -> PolarsResult<Series> {
     let column = &s[0];
     let pat = &s[1];

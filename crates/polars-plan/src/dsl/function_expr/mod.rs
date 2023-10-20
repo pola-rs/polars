@@ -878,7 +878,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: StringFunction) -> Self {
         use StringFunction::*;
         match func {
-            #[cfg(feature = "regex")]
+            #[cfg(feature = "lazy_regex")]
             Contains { literal, strict } => map_as_slice!(strings::contains, literal, strict),
             CountMatches(literal) => {
                 map_as_slice!(strings::count_matches, literal)
@@ -924,7 +924,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             ConcatVertical(delimiter) => map!(strings::concat, &delimiter),
             #[cfg(feature = "concat_str")]
             ConcatHorizontal(delimiter) => map_as_slice!(strings::concat_hor, &delimiter),
-            #[cfg(feature = "regex")]
+            #[cfg(feature = "lazy_regex")]
             Replace { n, literal } => map_as_slice!(strings::replace, literal, n),
             Uppercase => map!(strings::uppercase),
             Lowercase => map!(strings::lowercase),

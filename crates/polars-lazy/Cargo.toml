@@ -125,7 +125,7 @@ semi_anti_join = ["polars-plan/semi_anti_join"]
 cse = ["polars-plan/cse"]
 propagate_nans = ["polars-plan/propagate_nans"]
 coalesce = ["polars-plan/coalesce"]
-regex = ["polars-plan/regex"]
+regex = ["polars-plan/lazy_regex"]
 serde = [
   "polars-plan/serde",
   "arrow/serde",

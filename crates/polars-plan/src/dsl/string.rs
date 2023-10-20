@@ -5,7 +5,7 @@ pub struct StringNameSpace(pub(crate) Expr);
 
 impl StringNameSpace {
     /// Check if a string value contains a literal substring.
-    #[cfg(feature = "regex")]
+    #[cfg(feature = "lazy_regex")]
     pub fn contains_literal(self, pat: Expr) -> Expr {
         self.0.map_many_private(
             FunctionExpr::StringExpr(StringFunction::Contains {
@@ -20,7 +20,7 @@ impl StringNameSpace {
 
     /// Check if this column of strings contains a Regex. If `strict` is `true`, then it is an error if any `pat` is
     /// an invalid regex, whereas if `strict` is `false`, an invalid regex will simply evaluate to `false`.
-    #[cfg(feature = "regex")]
+    #[cfg(feature = "lazy_regex")]
     pub fn contains(self, pat: Expr, strict: bool) -> Expr {
         self.0.map_many_private(
             FunctionExpr::StringExpr(StringFunction::Contains {
@@ -258,7 +258,7 @@ impl StringNameSpace {
             .map_many_private(StringFunction::SplitN(n).into(), &[by], false, false)
     }
 
-    #[cfg(feature = "regex")]
+    #[cfg(feature = "lazy_regex")]
     /// Replace values that match a regex `pat` with a `value`.
     pub fn replace(self, pat: Expr, value: Expr, literal: bool) -> Expr {
         self.0.map_many_private(
@@ -269,7 +269,7 @@ impl StringNameSpace {
         )
     }
 
-    #[cfg(feature = "regex")]
+    #[cfg(feature = "lazy_regex")]
     /// Replace values that match a regex `pat` with a `value`.
     pub fn replace_n(self, pat: Expr, value: Expr, literal: bool, n: i64) -> Expr {
         self.0.map_many_private(
@@ -280,7 +280,7 @@ impl StringNameSpace {
         )
     }
 
-    #[cfg(feature = "regex")]
+    #[cfg(feature = "lazy_regex")]
     /// Replace all values that match a regex `pat` with a `value`.
     pub fn replace_all(self, pat: Expr, value: Expr, literal: bool) -> Expr {
         self.0.map_many_private(
