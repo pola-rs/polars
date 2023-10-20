@@ -445,6 +445,10 @@ def _read_spreadsheet(
         if hasattr(parser, "close"):
             parser.close()
 
+    if not parsed_sheets:
+        param, value = ("id", sheet_id) if sheet_name is None else ("name", sheet_name)
+        raise ValueError(f"no matching sheets found when `sheet_{param}` is {value!r}")
+
     if return_multi:
         return parsed_sheets
     return next(iter(parsed_sheets.values()))
