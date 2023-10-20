@@ -208,15 +208,14 @@ impl ListChunked {
                 .map(|(opt_s, opt_v)| {
                     let out = f(opt_s, opt_v);
                     match out {
-                        Some(out) if out.is_empty() => {
-                            fast_explode = false;
+                        Some(out) => {
+                            fast_explode &= !out.is_empty();
                             Some(out)
                         },
                         None => {
                             fast_explode = false;
                             out
                         },
-                        _ => out,
                     }
                 })
                 .collect_trusted()
@@ -254,15 +253,14 @@ impl ListChunked {
                 .map(|(opt_s, opt_v)| {
                     let out = f(opt_s, opt_v)?;
                     match out {
-                        Some(out) if out.is_empty() => {
-                            fast_explode = false;
+                        Some(out) => {
+                            fast_explode &= !out.is_empty();
                             Ok(Some(out))
                         },
                         None => {
                             fast_explode = false;
                             Ok(out)
                         },
-                        _ => Ok(out),
                     }
                 })
                 .collect::<PolarsResult<_>>()?
