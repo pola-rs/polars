@@ -358,6 +358,7 @@ pub(crate) fn insert_streaming_nodes(
                         #[cfg(feature = "dtype-categorical")]
                         DataType::Categorical(_) => string_cache,
                         DataType::List(inner) => allowed_dtype(inner, string_cache),
+                        #[cfg(feature = "dtype-struct")]
                         DataType::Struct(fields) => fields
                             .iter()
                             .all(|fld| allowed_dtype(fld.data_type(), string_cache)),

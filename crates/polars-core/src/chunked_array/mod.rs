@@ -140,6 +140,7 @@ pub struct ChunkedArray<T: PolarsDataType> {
     phantom: PhantomData<T>,
     pub(crate) bit_settings: Settings,
     length: IdxSize,
+    null_count: IdxSize,
 }
 
 bitflags! {
@@ -303,6 +304,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     ///
     /// # Safety
     /// The caller must ensure to not change the [`DataType`] or `length` of any of the chunks.
+    /// And the `null_count` remains correct.
     #[inline]
     pub unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
         &mut self.chunks
@@ -316,7 +318,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// Count the null values.
     #[inline]
     pub fn null_count(&self) -> usize {
-        self.chunks.iter().map(|arr| arr.null_count()).sum()
+        self.null_count as usize
     }
 
     /// Create a new [`ChunkedArray`] from self, where the chunks are replaced.
@@ -610,6 +612,7 @@ impl<T: PolarsDataType> Clone for ChunkedArray<T> {
             phantom: PhantomData,
             bit_settings: self.bit_settings,
             length: self.length,
+            null_count: self.null_count,
         }
     }
 }

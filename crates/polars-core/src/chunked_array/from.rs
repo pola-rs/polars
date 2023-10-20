@@ -1,3 +1,5 @@
+use polars_error::constants::LENGTH_LIMIT_MSG;
+
 use super::*;
 
 #[allow(clippy::all)]
@@ -143,10 +145,12 @@ where
         );
 
         let mut length = 0;
+        let mut null_count = 0;
         let chunks = chunks
             .into_iter()
             .map(|x| {
                 length += x.len();
+                null_count += x.null_count();
                 Box::new(x) as Box<dyn Array>
             })
             .collect();
@@ -156,7 +160,8 @@ where
             chunks,
             phantom: PhantomData,
             bit_settings: Default::default(),
-            length: length.try_into().unwrap(),
+            length: length.try_into().expect(LENGTH_LIMIT_MSG),
+            null_count: null_count as IdxSize,
         }
     }
 
@@ -184,6 +189,7 @@ where
             phantom: PhantomData,
             bit_settings: Default::default(),
             length: 0,
+            null_count: 0,
         };
         out.compute_len();
         out
@@ -213,6 +219,7 @@ where
             phantom: PhantomData,
             bit_settings: Default::default(),
             length: 0,
+            null_count: 0,
         };
         out.compute_len();
         out
@@ -235,6 +242,7 @@ where
             phantom: PhantomData,
             bit_settings,
             length: 0,
+            null_count: 0,
         };
         out.compute_len();
         if !keep_sorted {
@@ -258,6 +266,7 @@ where
             phantom: PhantomData,
             bit_settings: Default::default(),
             length: 0,
+            null_count: 0,
         };
         out.compute_len();
         out

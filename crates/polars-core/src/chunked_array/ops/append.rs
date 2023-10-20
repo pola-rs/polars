@@ -78,6 +78,7 @@ where
         update_sorted_flag_before_append::<T>(self, other);
         let len = self.len();
         self.length += other.length;
+        self.null_count += other.null_count;
         new_chunks(&mut self.chunks, &other.chunks, len);
     }
 }
@@ -90,6 +91,7 @@ impl ListChunked {
 
         let len = self.len();
         self.length += other.length;
+        self.null_count += other.null_count;
         new_chunks(&mut self.chunks, &other.chunks, len);
         self.set_sorted_flag(IsSorted::Not);
         if !other._can_fast_explode() {
@@ -108,6 +110,7 @@ impl ArrayChunked {
 
         let len = self.len();
         self.length += other.length;
+        self.null_count += other.null_count;
         new_chunks(&mut self.chunks, &other.chunks, len);
         self.set_sorted_flag(IsSorted::Not);
         Ok(())
@@ -120,6 +123,7 @@ impl<T: PolarsObject> ObjectChunked<T> {
     pub fn append(&mut self, other: &Self) {
         let len = self.len();
         self.length += other.length;
+        self.null_count += other.null_count;
         self.set_sorted_flag(IsSorted::Not);
         new_chunks(&mut self.chunks, &other.chunks, len);
     }
