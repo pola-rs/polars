@@ -214,8 +214,13 @@ def test_json_deserialize_9687() -> None:
 
 
 def test_json_infer_schema_length_11148() -> None:
-    response = [{"col1": 1}] * 100 + [{"col1": 1, "col2": 2}] * 50
-    result = pl.read_json(json.dumps(response).encode(), infer_schema_length=101)
+    response = [{"col1": 1}] * 2 + [{"col1": 1, "col2": 2}] * 1
+    result = pl.read_json(json.dumps(response).encode(), infer_schema_length=2)
+    with pytest.raises(AssertionError):
+        assert set(result.columns) == {"col1", "col2"}
+
+    response = [{"col1": 1}] * 2 + [{"col1": 1, "col2": 2}] * 1
+    result = pl.read_json(json.dumps(response).encode(), infer_schema_length=3)
     assert set(result.columns) == {"col1", "col2"}
 
 
