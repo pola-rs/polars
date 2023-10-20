@@ -69,3 +69,8 @@ def test_melt_projection_pd_7747() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+def test_melt_single_column() -> None:
+    df = pl.DataFrame({'single_column': [1,2,3],})
+    result = df.melt('single_column')
+    assert_frame_equal(result, df)
