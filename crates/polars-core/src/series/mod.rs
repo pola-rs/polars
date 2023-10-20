@@ -888,7 +888,8 @@ impl Series {
     /// Packs every element into a list.
     pub fn as_list(&self) -> ListChunked {
         let s = self.rechunk();
-        let values = s.to_arrow(0);
+        // don't  use `to_arrow` as we need the physical types
+        let values = s.chunks()[0].clone();
         let offsets = (0i64..(s.len() as i64 + 1)).collect::<Vec<_>>();
         let offsets = unsafe { Offsets::new_unchecked(offsets) };
 
