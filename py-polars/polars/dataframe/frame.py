@@ -9754,13 +9754,19 @@ class DataFrame:
         left_on: str | Sequence[str] | None = None,
         right_on: str | Sequence[str] | None = None,
         how: Literal["left", "inner", "outer"] = "left",
+        include_nulls: bool | None = False,
     ) -> DataFrame:
         """
-        Update the values in this `DataFrame` with the non-null values in `other`.
+        Update the values in this `DataFrame` with the values in `other`.
+
+        By default, null values in the right dataframe are ignored. Use
+        `ignore_nulls=False` to overwrite values in this frame with null values in other
+        frame.
 
         Notes
         -----
-        This is syntactic sugar for a left/inner join + coalesce
+        This is syntactic sugar for a left/inner join, with an optional coalesce when
+        `include_nulls = False`.
 
         Warnings
         --------
@@ -9784,6 +9790,9 @@ class DataFrame:
             * 'inner' keeps only those rows where the key exists in both frames.
             * 'outer' will update existing rows where the key matches while also
               adding any new rows contained in the given frame.
+        include_nulls
+            If True, null values from the right dataframe will be used to update the
+            left dataframe.
 
         Examples
         --------
@@ -9859,10 +9868,29 @@ class DataFrame:
         │ 5   ┆ -66 │
         └─────┴─────┘
 
+        Update `df` values including null values in `new_df`, using an outer join
+        strategy that defines explicit join columns in each frame:
+
+        >>> df.update(
+        ...     new_df, left_on="A", right_on="C", how="outer", include_nulls=True
+        ... )
+        shape: (5, 2)
+        ┌─────┬──────┐
+        │ A   ┆ B    │
+        │ --- ┆ ---  │
+        │ i64 ┆ i64  │
+        ╞═════╪══════╡
+        │ 1   ┆ -99  │
+        │ 2   ┆ 500  │
+        │ 3   ┆ null │
+        │ 4   ┆ 700  │
+        │ 5   ┆ -66  │
+        └─────┴──────┘
+
         """
         return (
             self.lazy()
-            .update(other.lazy(), on, left_on, right_on, how)
+            .update(other.lazy(), on, left_on, right_on, how, include_nulls)
             .collect(_eager=True)
         )
 
