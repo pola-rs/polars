@@ -151,8 +151,12 @@ def _assert_series_values_equal(
         unequal = unequal & ~both_nan
 
     # Check nested dtypes in separate function
-    if left.dtype in NESTED_DTYPES or right.dtype in NESTED_DTYPES:
-        if _assert_series_nested(
+    if left.dtype in NESTED_DTYPES and right.dtype in NESTED_DTYPES:
+
+        # check that float values exist at _some_ level of nesting
+        contains_floats = FLOAT_DTYPES & unpack_dtypes(left.dtype, right.dtype)
+
+        if contains_floats and _assert_series_nested(
             left=left.filter(unequal),
             right=right.filter(unequal),
             check_exact=check_exact,
@@ -234,12 +238,8 @@ def _assert_series_nested(
     nans_compare_equal: bool,
     categorical_as_str: bool,
 ) -> bool:
-    # check that float values exist at _some_ level of nesting
-    if not any(tp in FLOAT_DTYPES for tp in unpack_dtypes(left.dtype, right.dtype)):
-        return False
-
     # compare nested lists element-wise
-    elif left.dtype == List == right.dtype:
+    if left.dtype == List == right.dtype:
         for s1, s2 in zip(left, right):
             if (s1 is None and s2 is not None) or (s2 is None and s1 is not None):
                 raise_assertion_error("Series", "nested value mismatch", s1, s2)
