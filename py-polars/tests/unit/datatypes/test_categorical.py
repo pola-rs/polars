@@ -422,3 +422,8 @@ def test_categorical_collect_11408() -> None:
         "groups": ["a", "b", "c"],
         "cats": ["a", "b", "c"],
     }
+
+
+def test_categorical_nested_cast_unchecked() -> None:
+    s = pl.Series("cat", [["cat"]]).cast(pl.List(pl.Categorical))
+    assert pl.Series([s]).to_list() == [[["cat"]]]
