@@ -456,18 +456,18 @@ class Unknown(DataType):
 
 
 class List(NestedType):
-    """Nested list/array type with variable length of inner lists."""
+    """Variable length list type."""
 
     inner: PolarsDataType | None = None
 
     def __init__(self, inner: PolarsDataType | PythonDataType):
         """
-        Nested list/array type with variable length of inner lists.
+        Variable length list type.
 
         Parameters
         ----------
         inner
-            The `DataType` of values within the list
+            The ``DataType`` of the values within each list.
 
         Examples
         --------
@@ -518,26 +518,26 @@ class List(NestedType):
 
 
 class Array(NestedType):
-    """Nested list/array type with fixed length of inner arrays."""
+    """Fixed length list type."""
 
     inner: PolarsDataType | None = None
     width: int
 
     def __init__(self, width: int, inner: PolarsDataType | PythonDataType = Null):
         """
-        Nested list/array type with fixed length of inner arrays.
+        Fixed length list type.
 
         Parameters
         ----------
         width
-            The fixed size length of the inner arrays.
+            The length of the arrays.
         inner
-            The `DataType` of values within the inner arrays
+            The ``DataType`` of the values within each array.
 
         Examples
         --------
         >>> s = pl.Series(
-        ...     "a", [[1, 2], [4, 3]], dtype=pl.Array(width=2, inner=pl.Int64)
+        ...     "a", [[1, 2], [4, 3]], dtype=pl.Array(inner=pl.Int64, width=2)
         ... )
         >>> s
         shape: (2,)
@@ -570,11 +570,11 @@ class Array(NestedType):
             return False
 
     def __hash__(self) -> int:
-        return hash((self.__class__, self.inner))
+        return hash((self.__class__, self.inner, self.width))
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        return f"{class_name}({self.inner!r})"
+        return f"{class_name}({self.inner!r}, {self.width})"
 
 
 class Field:
