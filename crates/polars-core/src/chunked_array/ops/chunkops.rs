@@ -74,6 +74,11 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             }
         }
         self.length = IdxSize::try_from(inner(&self.chunks)).expect(LENGTH_LIMIT_MSG);
+        self.null_count = self
+            .chunks
+            .iter()
+            .map(|arr| arr.null_count())
+            .sum::<usize>() as IdxSize;
 
         if self.length <= 1 {
             self.set_sorted_flag(IsSorted::Ascending)

@@ -21,14 +21,14 @@ impl ChunkedBuilder<bool, BooleanType> for BooleanChunkedBuilder {
 
     fn finish(mut self) -> BooleanChunked {
         let arr = self.array_builder.as_box();
-        let length = arr.len() as IdxSize;
 
         let mut ca = ChunkedArray {
             field: Arc::new(self.field),
             chunks: vec![arr],
             phantom: PhantomData,
             bit_settings: Default::default(),
-            length,
+            length: 0,
+            null_count: 0,
         };
         ca.compute_len();
         ca
