@@ -273,12 +273,8 @@ where
         Self::with_chunk(name, to_primitive::<T>(v, None))
     }
 
-    /// Nullify values in slice with an existing null bitmap
-    pub fn new_from_owned_with_null_bitmap(
-        name: &str,
-        values: Vec<T::Native>,
-        buffer: Option<Bitmap>,
-    ) -> Self {
+    /// Create a new ChunkedArray from a Vec and a validity mask.
+    pub fn from_vec_validity(name: &str, values: Vec<T::Native>, buffer: Option<Bitmap>) -> Self {
         let arr = to_array::<T>(values, buffer);
         let mut out = ChunkedArray {
             field: Arc::new(Field::new(name, T::get_dtype())),
