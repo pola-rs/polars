@@ -2354,7 +2354,7 @@ class Expr:
     @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift(self, n: int = 1) -> Self:
         """
-        Shift the values by a given period.
+        Shift values by the given number of places.
 
         Parameters
         ----------
@@ -2388,7 +2388,7 @@ class Expr:
         n: int = 1,
     ) -> Self:
         """
-        Shift the values by a given period and fill the resulting null values.
+        Shift values by the given number of places and fill the resulting null values.
 
         Parameters
         ----------
