@@ -150,16 +150,20 @@ pub fn create_physical_plan(
     match logical_plan {
         #[cfg(feature = "python")]
         PythonScan { options, .. } => Ok(Box::new(executors::PythonScanExec { options })),
-        Sink { payload, .. } => {
-            match payload {
-                SinkType::Memory => panic!("Memory Sink not supported in the standard engine."),
-                SinkType::File{file_type, ..} => panic!(
+        Sink { payload, .. } => match payload {
+            SinkType::Memory => {
+                polars_bail!(InvalidOperation: "memory sink not supported in the standard engine")
+            },
+            SinkType::File { file_type, .. } => {
+                polars_bail!(InvalidOperation:
                     "sink_{file_type:?} not yet supported in standard engine. Use 'collect().write_parquet()'"
-                ),
-                #[cfg(feature = "cloud")]
-                SinkType::Cloud{..} => panic!("Cloud Sink not supported in standard engine.")
-            }
-        }
+                )
+            },
+            #[cfg(feature = "cloud")]
+            SinkType::Cloud { .. } => {
+                polars_bail!(InvalidOperation: "cloud sink not supported in standard engine.")
+            },
+        },
         Union { inputs, options } => {
             let inputs = inputs
                 .into_iter()
@@ -240,7 +244,7 @@ pub fn create_physical_plan(
                 FileScan::Parquet {
                     options,
                     cloud_options,
-                    metadata
+                    metadata,
                 } => {
                     assert_eq!(paths.len(), 1);
                     let path = paths[0].clone();
@@ -251,13 +255,10 @@ pub fn create_physical_plan(
                         options,
                         cloud_options,
                         file_options,
-                        metadata
+                        metadata,
                     )))
                 },
-                FileScan::Anonymous {
-                    function,
-                    ..
-                } => {
+                FileScan::Anonymous { function, .. } => {
                     Ok(Box::new(executors::AnonymousScanExec {
                         function,
                         predicate,
@@ -266,8 +267,7 @@ pub fn create_physical_plan(
                         output_schema,
                         predicate_has_windows: state.has_windows,
                     }))
-
-                }
+                },
             }
         },
         Projection {
