@@ -554,9 +554,7 @@ def test_empty_line_with_single_column() -> None:
         comment_char="#",
         use_pyarrow=False,
     )
-    expected = pl.DataFrame(
-        {"A": ["a", None, "b"]}
-    )
+    expected = pl.DataFrame({"A": ["a", None, "b"]})
     print(df)
     assert_frame_equal(df, expected)
 
@@ -567,10 +565,9 @@ def test_empty_line_with_multiple_columns() -> None:
         new_columns=["A", "B"],
         has_header=False,
         comment_char="#",
-        use_pyarrow=False)
-    expected = pl.DataFrame(
-        {"A": ["a", "c"], "B": ["b", "d"]}
+        use_pyarrow=False,
     )
+    expected = pl.DataFrame({"A": ["a", "c"], "B": ["b", "d"]})
     print(df)
     assert_frame_equal(df, expected)
 
