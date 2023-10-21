@@ -481,14 +481,30 @@ class Series:
                 return self.clone()
             elif (other is False and op == "eq") or (other is True and op == "neq"):
                 return ~self
-
-        if isinstance(other, datetime) and self.dtype == Datetime:
-            time_zone = self.dtype.time_zone  # type: ignore[union-attr]
-            if str(other.tzinfo) != str(time_zone):
-                raise TypeError(
-                    f"Datetime time zone {other.tzinfo!r} does not match Series timezone {time_zone!r}"
+        elif isinstance(other, float) and self.dtype in INTEGER_DTYPES:
+            # require upcast when comparing int series to float value
+            self = self.cast(Float64)
+            f = get_ffi_func(op + "_<>", Float64, self._s)
+            assert f is not None
+            return self._from_pyseries(f(other))
+        elif isinstance(other, datetime):
+            if self.dtype == Date:
+                # require upcast when comparing date series to datetime
+                self = self.cast(Datetime("us"))
+                time_unit = "us"
+            elif self.dtype == Datetime:
+                # Use local time zone info
+                time_zone = self.dtype.time_zone  # type: ignore[union-attr]
+                if str(other.tzinfo) != str(time_zone):
+                    raise TypeError(
+                        f"Datetime time zone {other.tzinfo!r} does not match Series timezone {time_zone!r}"
+                    )
+                time_unit = self.dtype.time_unit  # type: ignore[union-attr]
+            else:
+                raise ValueError(
+                    f"cannot compare datetime.datetime to series of type {self.dtype}"
                 )
-            ts = _datetime_to_pl_timestamp(other, self.dtype.time_unit)  # type: ignore[union-attr]
+            ts = _datetime_to_pl_timestamp(other, time_unit)  # type: ignore[arg-type]
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(ts))
@@ -497,14 +513,13 @@ class Series:
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(d))
+        elif self.dtype == Categorical and not isinstance(other, Series):
+            other = Series([other])
         elif isinstance(other, date) and self.dtype == Date:
             d = _date_to_pl_date(other)
             f = get_ffi_func(op + "_<>", Int32, self._s)
             assert f is not None
             return self._from_pyseries(f(d))
-        elif self.dtype == Categorical and not isinstance(other, Series):
-            other = Series([other])
-
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, dtype_if_empty=self.dtype)
         if isinstance(other, Series):

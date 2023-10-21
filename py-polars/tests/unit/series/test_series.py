@@ -1568,6 +1568,21 @@ def test_comparisons_int_series_to_float() -> None:
     assert_series_equal(srs_int - True, pl.Series([0, 1, 2, 3]))
 
 
+def test_comparisons_int_series_to_float_scalar() -> None:
+    srs_int = pl.Series([1, 2, 3, 4])
+
+    assert_series_equal(srs_int < 1.5, pl.Series([True, False, False, False]))
+    assert_series_equal(srs_int > 1.5, pl.Series([False, True, True, True]))
+
+
+def test_comparisons_datetime_series_to_date_scalar() -> None:
+    srs_date = pl.Series([date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3)])
+    dt = datetime(2023, 1, 1, 12, 0, 0)
+
+    assert_series_equal(srs_date < dt, pl.Series([True, False, False]))
+    assert_series_equal(srs_date > dt, pl.Series([False, True, True]))
+
+
 def test_comparisons_float_series_to_int() -> None:
     srs_float = pl.Series([1.0, 2.0, 3.0, 4.0])
 
