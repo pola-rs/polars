@@ -122,7 +122,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         }
         #[cfg(not(feature = "performant"))]
         {
-            self.0.logical().group_tuples(multithreaded, sorted)
+            self.0.physical().group_tuples(multithreaded, sorted)
         }
     }
 
