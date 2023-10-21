@@ -592,6 +592,10 @@ def test_init_ndarray(monkeypatch: Any) -> None:
     assert df.shape == (2, 1)
     assert df.rows() == [([0, 1, 2, 3, 4],), ([5, 6, 7, 8, 9],)]
 
+    test_rows = [(1, 2), (3, 4)]
+    df = pl.DataFrame([np.array(test_rows[0]), np.array(test_rows[1])], orient="row")
+    assert_frame_equal(df, pl.DataFrame(test_rows, orient="row"))
+
     # numpy arrays containing NaN
     df0 = pl.DataFrame(
         data={"x": [1.0, 2.5, float("nan")], "y": [4.0, float("nan"), 6.5]},
