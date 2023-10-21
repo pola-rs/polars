@@ -306,7 +306,7 @@ impl PyLazyFrame {
         let lf = if path.is_some() {
             LazyFrame::scan_parquet(first_path, args)
         } else {
-            LazyFrame::scan_parquet_files(paths, args)
+            LazyFrame::scan_parquet_files(Arc::from(paths), args)
         }
         .map_err(PyPolarsErr::from)?;
         Ok(lf.into())

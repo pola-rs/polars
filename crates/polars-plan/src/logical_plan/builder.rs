@@ -136,8 +136,8 @@ impl LogicalPlanBuilder {
 
     #[cfg(any(feature = "parquet", feature = "parquet_async"))]
     #[allow(clippy::too_many_arguments)]
-    pub fn scan_parquet<P: Into<std::path::PathBuf>>(
-        path: P,
+    pub fn scan_parquet<P: Into<Arc<[std::path::PathBuf]>>>(
+        paths: P,
         n_rows: Option<usize>,
         cache: bool,
         parallel: polars_io::parquet::ParallelStrategy,
@@ -147,22 +147,23 @@ impl LogicalPlanBuilder {
         cloud_options: Option<CloudOptions>,
         use_statistics: bool,
         hive_partitioning: bool,
-        // used to prevent multiple cloud calls
-        known_schema: Option<SchemaRef>,
     ) -> PolarsResult<Self> {
         use polars_io::{is_cloud_url, SerReader as _};
 
-        let path = path.into();
-        let (schema, num_rows, metadata) = if is_cloud_url(&path) {
+        let paths = paths.into();
+        polars_ensure!(paths.len() > 1, ComputeError: "expected at least 1 path");
+
+        // Use first path to get schema.
+        let path = &paths[0];
+
+        let (schema, num_rows, metadata) = if is_cloud_url(path) {
             #[cfg(not(feature = "cloud"))]
             panic!(
                 "One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled."
             );
 
             #[cfg(feature = "cloud")]
-            if let Some(known_schema) = known_schema {
-                (known_schema, None, None)
-            } else {
+            {
                 let uri = path.to_string_lossy();
                 get_runtime().block_on(async {
                     let mut reader =
@@ -176,7 +177,7 @@ impl LogicalPlanBuilder {
                 })?
             }
         } else {
-            let file = polars_utils::open_file(&path)?;
+            let file = polars_utils::open_file(path)?;
             let mut reader = ParquetReader::new(file);
             (
                 prepare_schema(reader.schema()?, row_count.as_ref()),
@@ -201,7 +202,7 @@ impl LogicalPlanBuilder {
             hive_partitioning,
         };
         Ok(LogicalPlan::Scan {
-            paths: Arc::new([path]),
+            paths,
             file_info,
             file_options: options,
             predicate: None,
