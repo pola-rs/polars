@@ -7456,13 +7456,14 @@ class DataFrame:
 
         return partitions
 
-    def shift(self, periods: int) -> Self:
+    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
+    def shift(self, n: int = 1) -> Self:
         """
-        Shift values by the given period.
+        Shift values by the given number of places.
 
         Parameters
         ----------
-        periods
+        n
             Number of places to shift (may be negative).
 
         See Also
@@ -7478,7 +7479,7 @@ class DataFrame:
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> df.shift(periods=1)
+        >>> df.shift(1)
         shape: (3, 3)
         ┌──────┬──────┬──────┐
         │ foo  ┆ bar  ┆ ham  │
@@ -7489,7 +7490,7 @@ class DataFrame:
         │ 1    ┆ 6    ┆ a    │
         │ 2    ┆ 7    ┆ b    │
         └──────┴──────┴──────┘
-        >>> df.shift(periods=-1)
+        >>> df.shift(-1)
         shape: (3, 3)
         ┌──────┬──────┬──────┐
         │ foo  ┆ bar  ┆ ham  │
@@ -7502,22 +7503,23 @@ class DataFrame:
         └──────┴──────┴──────┘
 
         """
-        return self._from_pydf(self._df.shift(periods))
+        return self._from_pydf(self._df.shift(n))
 
+    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift_and_fill(
         self,
         fill_value: int | str | float,
         *,
-        periods: int = 1,
+        n: int = 1,
     ) -> DataFrame:
         """
-        Shift the values by a given period and fill the resulting null values.
+        Shift values by the given number of places and fill the resulting null values.
 
         Parameters
         ----------
         fill_value
             fill None values with this value.
-        periods
+        n
             Number of places to shift (may be negative).
 
         Examples
@@ -7529,7 +7531,7 @@ class DataFrame:
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> df.shift_and_fill(periods=1, fill_value=0)
+        >>> df.shift_and_fill(n=1, fill_value=0)
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -7543,9 +7545,7 @@ class DataFrame:
 
         """
         return (
-            self.lazy()
-            .shift_and_fill(fill_value=fill_value, periods=periods)
-            .collect(_eager=True)
+            self.lazy().shift_and_fill(fill_value=fill_value, n=n).collect(_eager=True)
         )
 
     def is_duplicated(self) -> Series:

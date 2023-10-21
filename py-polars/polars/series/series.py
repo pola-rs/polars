@@ -5082,14 +5082,20 @@ class Series:
             self._s.apply_lambda(function, pl_return_dtype, skip_nulls)
         )
 
-    def shift(self, periods: int = 1) -> Series:
+    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
+    def shift(self, n: int = 1) -> Series:
         """
         Shift the values by a given period.
+
+        Parameters
+        ----------
+        n
+            Number of places to shift (may be negative).
 
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.shift(periods=1)
+        >>> s.shift(1)
         shape: (3,)
         Series: 'a' [i64]
         [
@@ -5097,7 +5103,7 @@ class Series:
                 1
                 2
         ]
-        >>> s.shift(periods=-1)
+        >>> s.shift(-1)
         shape: (3,)
         Series: 'a' [i64]
         [
@@ -5106,18 +5112,14 @@ class Series:
                 null
         ]
 
-        Parameters
-        ----------
-        periods
-            Number of places to shift (may be negative).
-
         """
 
+    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift_and_fill(
         self,
         fill_value: int | Expr,
         *,
-        periods: int = 1,
+        n: int = 1,
     ) -> Series:
         """
         Shift the values by a given period and fill the resulting null values.
@@ -5126,7 +5128,7 @@ class Series:
         ----------
         fill_value
             Fill None values with the result of this expression.
-        periods
+        n
             Number of places to shift (may be negative).
 
         """

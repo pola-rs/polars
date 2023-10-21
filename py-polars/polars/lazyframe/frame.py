@@ -4206,13 +4206,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.reverse())
 
-    def shift(self, periods: int) -> Self:
+    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
+    def shift(self, n: int = 1) -> Self:
         """
-        Shift the values by a given period.
+        Shift values by the given number of places.
 
         Parameters
         ----------
-        periods
+        n
             Number of places to shift (may be negative).
 
         Examples
@@ -4223,7 +4224,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "b": [2, 4, 6],
         ...     }
         ... )
-        >>> lf.shift(periods=1).collect()
+        >>> lf.shift(1).collect()
         shape: (3, 2)
         ┌──────┬──────┐
         │ a    ┆ b    │
@@ -4234,7 +4235,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1    ┆ 2    │
         │ 3    ┆ 4    │
         └──────┴──────┘
-        >>> lf.shift(periods=-1).collect()
+        >>> lf.shift(-1).collect()
         shape: (3, 2)
         ┌──────┬──────┐
         │ a    ┆ b    │
@@ -4247,22 +4248,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────┴──────┘
 
         """
-        return self._from_pyldf(self._ldf.shift(periods))
+        return self._from_pyldf(self._ldf.shift(n))
 
+    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift_and_fill(
         self,
         fill_value: Expr | int | str | float,
         *,
-        periods: int = 1,
+        n: int = 1,
     ) -> Self:
         """
-        Shift the values by a given period and fill the resulting null values.
+        Shift values by the given number of places and fill the resulting null values.
 
         Parameters
         ----------
         fill_value
             fill None values with the result of this expression.
-        periods
+        n
             Number of places to shift (may be negative).
 
         Examples
@@ -4273,7 +4275,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "b": [2, 4, 6],
         ...     }
         ... )
-        >>> lf.shift_and_fill(fill_value=0, periods=1).collect()
+        >>> lf.shift_and_fill(fill_value=0, n=1).collect()
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -4284,7 +4286,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ 2   │
         │ 3   ┆ 4   │
         └─────┴─────┘
-        >>> lf.shift_and_fill(periods=-1, fill_value=0).collect()
+        >>> lf.shift_and_fill(fill_value=0, n=-1).collect()
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -4299,7 +4301,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         if not isinstance(fill_value, pl.Expr):
             fill_value = F.lit(fill_value)
-        return self._from_pyldf(self._ldf.shift_and_fill(periods, fill_value._pyexpr))
+        return self._from_pyldf(self._ldf.shift_and_fill(n, fill_value._pyexpr))
 
     def slice(self, offset: int, length: int | None = None) -> Self:
         """
