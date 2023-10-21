@@ -1,8 +1,11 @@
 from datetime import date, datetime, timedelta
+from typing import Any
 
 import numpy as np
+import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_predicate_4906() -> None:
@@ -203,3 +206,26 @@ def test_no_predicate_push_down_with_cast_and_alias_11883() -> None:
         .filter((pl.col("b") >= 1) & (pl.col("b") < 1))
     )
     assert 'SELECTION: "None"' in out.explain(predicate_pushdown=True)
+
+
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        0,
+        "x",
+        [2, 3],
+        {"x": 1},
+        pl.Series([1, 2, 3]),
+        None,
+    ],
+)
+def test_invalid_filter_predicates(predicate: Any) -> None:
+    df = pl.DataFrame({"colx": ["aa", "bb", "cc", "dd"]})
+    with pytest.raises(ValueError, match="invalid predicate"):
+        df.filter(predicate)
+
+
+def test_fast_path_boolean_filter_predicates() -> None:
+    df = pl.DataFrame({"colx": ["aa", "bb", "cc", "dd"]})
+    assert_frame_equal(df.filter(False), pl.DataFrame(schema={"colx": pl.Utf8}))
+    assert_frame_equal(df.filter(True), df)
