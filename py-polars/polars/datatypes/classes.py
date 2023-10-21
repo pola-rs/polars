@@ -556,6 +556,9 @@ class Array(NestedType):
         from polars.utils.deprecation import issue_deprecation_warning
 
         if args:
+            # TODO: When removing this deprecation, update the `to_object`
+            # implementation in py-polars/src/conversion.rs to use `call1` instead of
+            # `call`
             issue_deprecation_warning(
                 "Parameters `inner` and `width` will change positions in the next breaking release."
                 " Use keyword arguments to keep current behavior and silence this warning.",
