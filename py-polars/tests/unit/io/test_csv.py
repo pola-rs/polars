@@ -546,6 +546,35 @@ def test_empty_bytes() -> None:
     assert_frame_equal(df, pl.DataFrame())
 
 
+def test_empty_line_with_single_column() -> None:
+    df = pl.read_csv(
+        b"a\n\nb\n",
+        new_columns=["A"],
+        has_header=False,
+        comment_char="#",
+        use_pyarrow=False,
+    )
+    expected = pl.DataFrame(
+        {"A": ["a", None, "b"]}
+    )
+    print(df)
+    assert_frame_equal(df, expected)
+
+
+def test_empty_line_with_multiple_columns() -> None:
+    df = pl.read_csv(
+        b"a,b\n\nc,d\n",
+        new_columns=["A", "B"],
+        has_header=False,
+        comment_char="#",
+        use_pyarrow=False)
+    expected = pl.DataFrame(
+        {"A": ["a", "c"], "B": ["b", "d"]}
+    )
+    print(df)
+    assert_frame_equal(df, expected)
+
+
 def test_csv_quote_char() -> None:
     expected = pl.DataFrame(
         [
