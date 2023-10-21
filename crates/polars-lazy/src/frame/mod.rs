@@ -190,6 +190,11 @@ impl LazyFrame {
         self
     }
 
+    pub fn _with_fast_projection(mut self, toggle: bool) -> Self {
+        self.opt_state.fast_projection = toggle;
+        self
+    }
+
     /// Return a String describing the naive (un-optimized) logical plan.
     pub fn describe_plan(&self) -> String {
         self.logical_plan.describe()
