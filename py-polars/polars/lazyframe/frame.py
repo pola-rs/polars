@@ -2658,8 +2658,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         # note: identify masks separately from predicates
         for p in predicates:
-            if p is False:
-                # immediately disallows all rows
+            if p is False:  # immediately disallows all rows
                 return self.clear()  # type: ignore[return-value]
             elif p is True:
                 continue  # no-op; matches all rows
@@ -2668,7 +2667,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             elif (
                 (is_seq := is_sequence(p))
                 and any(not isinstance(x, pl.Expr) for x in p)
-            ) or (not is_seq and not isinstance(p, pl.Expr) and p not in self.columns):
+            ) or (
+                not is_seq
+                and not isinstance(p, pl.Expr)
+                and not (isinstance(p, str) and p in self.columns)
+            ):
                 err = (
                     f"Series(…, dtype={p.dtype})"
                     if isinstance(p, pl.Series)
