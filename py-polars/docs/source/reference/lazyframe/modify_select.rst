@@ -45,6 +45,7 @@ Manipulation/selection
     LazyFrame.slice
     LazyFrame.sort
     LazyFrame.tail
+    LazyFrame.take
     LazyFrame.take_every
     LazyFrame.top_k
     LazyFrame.unique

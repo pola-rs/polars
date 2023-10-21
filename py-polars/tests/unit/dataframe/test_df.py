@@ -3633,3 +3633,15 @@ def test_interchange() -> None:
     assert dfi.num_rows() == 2
     assert dfi.get_column(0).dtype[1] == 64
     assert dfi.get_column_by_name("c").get_buffers()["data"][0].bufsize == 6
+
+
+def test_take() -> None:
+    df = pl.DataFrame({"foo": ["a", "b", "c"], "bar": ["d", "e", "f"]})
+
+    expected = pl.DataFrame({"foo": ["b"], "bar": ["e"]})
+    assert_frame_equal(df.take(1), expected)
+    assert_frame_equal(df.lazy().take(1).collect(), expected)
+
+    expected = pl.DataFrame({"foo": ["b", "c"], "bar": ["e", "f"]})
+    assert_frame_equal(df.take([1, 2]), expected)
+    assert_frame_equal(df.lazy().take([1, 2]).collect(), expected)

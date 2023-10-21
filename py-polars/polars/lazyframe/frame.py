@@ -4613,6 +4613,47 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.with_row_count(name, offset))
 
+    def take(self, idx: int | list[int] | np.ndarray[Any, Any]) -> Self:
+        """
+        Get rows by index.
+
+        Parameters
+        ----------
+        idx
+            Index or list of indices indicating which rows to retrieve.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "foo": ["a", "b", "c"],
+        ...         "bar": ["d", "e", "f"],
+        ...     }
+        ... )
+        >>> lf.take(1).collect()
+        shape: (1, 2)
+        ┌─────┬─────┐
+        │ foo ┆ bar │
+        │ --- ┆ --- │
+        │ str ┆ str │
+        ╞═════╪═════╡
+        │ b   ┆ e   │
+        └─────┴─────┘
+
+        >>> lf.take([1, 2]).collect()
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ foo ┆ bar │
+        │ --- ┆ --- │
+        │ str ┆ str │
+        ╞═════╪═════╡
+        │ b   ┆ e   │
+        │ c   ┆ f   │
+        └─────┴─────┘
+
+        """
+        return self.select(F.col("*").take(idx))
+
     def take_every(self, n: int) -> Self:
         """
         Take every nth row in the LazyFrame and return as a new LazyFrame.

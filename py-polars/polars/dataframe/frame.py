@@ -4752,6 +4752,51 @@ class DataFrame:
             n = max(0, self.height + n)
         return self._from_pydf(self._df.tail(n))
 
+    def take(self, idx: int | list[int] | np.ndarray[Any, Any]) -> Self:
+        """
+        Get rows by index.
+
+        Parameters
+        ----------
+        idx
+            Index or list of indices indicating which rows to retrieve.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": ["a", "b", "c"],
+        ...         "bar": ["d", "e", "f"],
+        ...     }
+        ... )
+        >>> df.take(1)
+        shape: (1, 2)
+        ┌─────┬─────┐
+        │ foo ┆ bar │
+        │ --- ┆ --- │
+        │ str ┆ str │
+        ╞═════╪═════╡
+        │ b   ┆ e   │
+        └─────┴─────┘
+
+        >>> df.take([1, 2])
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ foo ┆ bar │
+        │ --- ┆ --- │
+        │ str ┆ str │
+        ╞═════╪═════╡
+        │ b   ┆ e   │
+        │ c   ┆ f   │
+        └─────┴─────┘
+
+        """
+        if isinstance(idx, int):
+            idx = [idx]
+        elif _check_for_numpy(idx) and isinstance(idx, np.ndarray):
+            idx = idx.tolist()
+        return self._from_pydf(self._df.take(idx))
+
     def limit(self, n: int = 5) -> Self:
         """
         Get the first `n` rows.

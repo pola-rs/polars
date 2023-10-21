@@ -61,6 +61,7 @@ Manipulation/selection
     DataFrame.slice
     DataFrame.sort
     DataFrame.tail
+    DataFrame.take
     DataFrame.take_every
     DataFrame.top_k
     DataFrame.to_dummies
