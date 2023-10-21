@@ -209,13 +209,13 @@ pub fn create_physical_plan(
                 })
                 .map_or(Ok(None), |v| v.map(Some))?;
 
-            let path = paths[0].clone();
             match scan_type {
                 #[cfg(feature = "csv")]
                 FileScan::Csv {
                     options: csv_options,
                 } => {
                     assert_eq!(paths.len(), 1);
+                    let path = paths[0].clone();
                     Ok(Box::new(executors::CsvExec {
                         path,
                         schema: file_info.schema,
@@ -227,6 +227,7 @@ pub fn create_physical_plan(
                 #[cfg(feature = "ipc")]
                 FileScan::Ipc { options } => {
                     assert_eq!(paths.len(), 1);
+                    let path = paths[0].clone();
                     Ok(Box::new(executors::IpcExec {
                         path,
                         schema: file_info.schema,
@@ -242,6 +243,7 @@ pub fn create_physical_plan(
                     metadata
                 } => {
                     assert_eq!(paths.len(), 1);
+                    let path = paths[0].clone();
                     Ok(Box::new(executors::ParquetExec::new(
                         path,
                         file_info,
@@ -256,7 +258,6 @@ pub fn create_physical_plan(
                     function,
                     ..
                 } => {
-                    assert_eq!(paths.len(), 1);
                     Ok(Box::new(executors::AnonymousScanExec {
                         function,
                         predicate,
