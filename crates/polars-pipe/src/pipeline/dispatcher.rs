@@ -537,7 +537,7 @@ fn run_pipeline_no_finalize_iterative(
             operator_end: usize,
             sink_finished: &mut bool,
         ) -> PolarsResult<(u32, Box<dyn Sink>)> {
-            for src in &mut std::mem::take(&mut pipeline.sources) {
+            'outer: for src in &mut std::mem::take(&mut pipeline.sources) {
                 let mut next_batches = src.get_batches(ec)?;
 
                 while let SourceResult::GotMoreData(chunks) = next_batches {
@@ -553,7 +553,7 @@ fn run_pipeline_no_finalize_iterative(
 
                     if let Some(SinkResult::Finished) = sink_result {
                         *sink_finished = true;
-                        break;
+                        break 'outer;
                     }
                 }
             }
