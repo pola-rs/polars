@@ -155,7 +155,7 @@ impl<'a> GetInner for GlobalCategorical<'a> {
 #[cfg(feature = "dtype-categorical")]
 impl<'a> IntoPartialOrdInner<'a> for &'a CategoricalChunked {
     fn into_partial_ord_inner(self) -> Box<dyn PartialOrdInner + 'a> {
-        let cats = self.logical();
+        let cats = self.physical();
         match &**self.get_rev_map() {
             RevMapping::Global(p1, p2, _) => Box::new(GlobalCategorical { p1, p2, cats }),
             RevMapping::Local(rev_map) => Box::new(LocalCategorical { rev_map, cats }),

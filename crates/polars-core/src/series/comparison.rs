@@ -126,7 +126,7 @@ impl ChunkCompare<&Series> for Series {
             #[cfg(feature = "dtype-categorical")]
             (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r)), _, _) => {
                 if rev_map_l.same_src(rev_map_r) {
-                    let rhs = rhs.categorical().unwrap().logical();
+                    let rhs = rhs.categorical().unwrap().physical();
 
                     // first check the rev-map
                     if rhs.len() == 1 && rhs.null_count() == 0 {
@@ -136,7 +136,7 @@ impl ChunkCompare<&Series> for Series {
                         }
                     }
 
-                    self.categorical().unwrap().logical().equal(rhs)
+                    self.categorical().unwrap().physical().equal(rhs)
                 } else {
                     polars_bail!(
                         ComputeError:
@@ -182,7 +182,7 @@ impl ChunkCompare<&Series> for Series {
             #[cfg(feature = "dtype-categorical")]
             (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r)), _, _) => {
                 if rev_map_l.same_src(rev_map_r) {
-                    let rhs = rhs.categorical().unwrap().logical();
+                    let rhs = rhs.categorical().unwrap().physical();
 
                     // first check the rev-map
                     if rhs.len() == 1 && rhs.null_count() == 0 {
@@ -192,7 +192,7 @@ impl ChunkCompare<&Series> for Series {
                         }
                     }
 
-                    self.categorical().unwrap().logical().equal_missing(rhs)
+                    self.categorical().unwrap().physical().equal_missing(rhs)
                 } else {
                     polars_bail!(
                         ComputeError:
@@ -238,7 +238,7 @@ impl ChunkCompare<&Series> for Series {
             #[cfg(feature = "dtype-categorical")]
             (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r)), _, _) => {
                 if rev_map_l.same_src(rev_map_r) {
-                    let rhs = rhs.categorical().unwrap().logical();
+                    let rhs = rhs.categorical().unwrap().physical();
 
                     // first check the rev-map
                     if rhs.len() == 1 && rhs.null_count() == 0 {
@@ -248,7 +248,7 @@ impl ChunkCompare<&Series> for Series {
                         }
                     }
 
-                    self.categorical().unwrap().logical().not_equal(rhs)
+                    self.categorical().unwrap().physical().not_equal(rhs)
                 } else {
                     polars_bail!(
                         ComputeError:
@@ -294,7 +294,7 @@ impl ChunkCompare<&Series> for Series {
             #[cfg(feature = "dtype-categorical")]
             (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r)), _, _) => {
                 if rev_map_l.same_src(rev_map_r) {
-                    let rhs = rhs.categorical().unwrap().logical();
+                    let rhs = rhs.categorical().unwrap().physical();
 
                     // first check the rev-map
                     if rhs.len() == 1 && rhs.null_count() == 0 {
@@ -304,7 +304,10 @@ impl ChunkCompare<&Series> for Series {
                         }
                     }
 
-                    self.categorical().unwrap().logical().not_equal_missing(rhs)
+                    self.categorical()
+                        .unwrap()
+                        .physical()
+                        .not_equal_missing(rhs)
                 } else {
                     polars_bail!(
                         ComputeError:

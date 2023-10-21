@@ -315,12 +315,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.chunks.len() == 1 && self.null_count() == 0
     }
 
-    /// Count the null values.
-    #[inline]
-    pub fn null_count(&self) -> usize {
-        self.null_count as usize
-    }
-
     /// Create a new [`ChunkedArray`] from self, where the chunks are replaced.
     ///
     /// # Safety
@@ -836,7 +830,7 @@ pub(crate) mod test {
         let ca = Utf8Chunked::new("", &[Some("foo"), None, Some("bar"), Some("ham")]);
         let ca = ca.cast(&DataType::Categorical(None)).unwrap();
         let ca = ca.categorical().unwrap();
-        let v: Vec<_> = ca.logical().into_iter().collect();
+        let v: Vec<_> = ca.physical().into_iter().collect();
         assert_eq!(v, &[Some(0), None, Some(1), Some(2)]);
     }
 

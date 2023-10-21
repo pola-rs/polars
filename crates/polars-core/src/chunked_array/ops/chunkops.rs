@@ -55,8 +55,15 @@ fn slice(
 
 impl<T: PolarsDataType> ChunkedArray<T> {
     /// Get the length of the ChunkedArray
+    #[inline]
     pub fn len(&self) -> usize {
         self.length as usize
+    }
+
+    /// Count the null values.
+    #[inline]
+    pub fn null_count(&self) -> usize {
+        self.null_count as usize
     }
 
     /// Check if ChunkedArray is empty.
