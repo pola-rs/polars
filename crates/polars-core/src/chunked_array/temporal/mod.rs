@@ -19,7 +19,6 @@ use chrono_tz::Tz;
 pub use time::time_to_time64ns;
 
 pub use self::conversion::*;
-use crate::prelude::ArrayRef;
 #[cfg(feature = "timezones")]
 use crate::prelude::{polars_bail, PolarsResult};
 
