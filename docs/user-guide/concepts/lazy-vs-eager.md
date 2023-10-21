@@ -6,7 +6,7 @@
 
 In this example we use the eager API to:
 
-1. Read the iris [dataset](https://archive.ics.uci.edu/ml/datasets/iris).
+1. Read the iris [dataset](https://archive.ics.uci.edu/dataset/53/iris).
 1. Filter the dataset based on sepal length
 1. Calculate the mean of the sepal width per species
 
