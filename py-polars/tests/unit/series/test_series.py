@@ -1085,7 +1085,7 @@ def test_shift() -> None:
     assert_series_equal(a.shift(1), pl.Series("a", [None, 1, 2]))
     assert_series_equal(a.shift(-1), pl.Series("a", [2, 3, None]))
     assert_series_equal(a.shift(-2), pl.Series("a", [3, None, None]))
-    assert_series_equal(a.shift_and_fill(10, periods=-1), pl.Series("a", [2, 3, 10]))
+    assert_series_equal(a.shift_and_fill(10, n=-1), pl.Series("a", [2, 3, 10]))
 
 
 def test_object() -> None:

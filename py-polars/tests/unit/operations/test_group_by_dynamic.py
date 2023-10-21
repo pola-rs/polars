@@ -320,7 +320,7 @@ def test_group_by_dynamic_slice_pushdown() -> None:
         df.sort("a")
         .group_by_dynamic("a", by="b", every="2i")
         .agg(
-            (pl.col("c") - pl.col("c").shift_and_fill(fill_value=0, periods=1))
+            (pl.col("c") - pl.col("c").shift_and_fill(fill_value=0, n=1))
             .sum()
             .alias("c")
         )

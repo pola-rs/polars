@@ -289,12 +289,12 @@ def test_shift_and_fill() -> None:
 
     # use exprs
     out = ldf.with_columns(
-        pl.col("a").shift_and_fill(pl.col("b").mean(), periods=-2)
+        pl.col("a").shift_and_fill(pl.col("b").mean(), n=-2)
     ).collect()
     assert out["a"].null_count() == 0
 
     # use df method
-    out = ldf.shift_and_fill(pl.col("b").std(), periods=2).collect()
+    out = ldf.shift_and_fill(pl.col("b").std(), n=2).collect()
     assert out["a"].null_count() == 0
 
 
