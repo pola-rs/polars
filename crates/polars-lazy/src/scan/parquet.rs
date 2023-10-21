@@ -65,7 +65,7 @@ impl LazyFileListReader for LazyParquetReader {
         self.finish_no_glob()
     }
 
-    fn finish_no_glob(mut self) -> PolarsResult<LazyFrame> {
+    fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
         let row_count = self.args.row_count;
 
         let paths = if self.paths.is_empty() {

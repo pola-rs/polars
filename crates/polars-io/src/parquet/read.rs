@@ -334,12 +334,15 @@ impl ParquetAsyncReader {
 
     pub async fn batched(mut self, chunk_size: usize) -> PolarsResult<BatchedParquetReader> {
         let metadata = self.reader.get_metadata().await?.clone();
-        let schema = self.schema().await?;
+        let schema = match self.schema {
+            Some(schema) => schema,
+            None => self.schema().await?,
+        };
         // row group fetched deals with projection
         let row_group_fetcher = FetchRowGroupsFromObjectStore::new(
             self.reader,
             &metadata,
-            self.schema.unwrap(),
+            schema.clone(),
             self.projection.as_deref(),
             self.predicate.clone(),
         )?
