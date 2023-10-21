@@ -225,8 +225,8 @@ impl<'a> PredicatePushDown<'a> {
                 Ok(lp)
             }
             Scan {
-                paths,
-                file_info,
+                mut paths,
+                mut file_info,
                 predicate,
                 scan_type,
                 file_options: options,
@@ -235,14 +235,25 @@ impl<'a> PredicatePushDown<'a> {
                 let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
                 let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
-                // TODO! this still assumes a single file. Fix hive partitioning for multiple files
-                if let (Some(hive_part_stats), Some(predicate)) = (file_info.hive_parts.as_deref(), predicate) {
+                if let (true, Some(predicate)) = (file_info.hive_parts.is_some(), predicate) {
                     if let Some(io_expr) = self.hive_partition_eval.unwrap()(predicate, expr_arena) {
                         if let Some(stats_evaluator) = io_expr.as_stats_evaluator() {
-                            if !stats_evaluator.should_read(hive_part_stats.get_statistics())? {
-                                if self.verbose {
-                                    eprintln!("hive partitioning: skipped: {}", paths[0].display())
+                            let mut new_paths = Vec::with_capacity(paths.len());
+
+
+                            for path in paths.as_ref().iter() {
+                                file_info.update_hive_partitions(path);
+                                let hive_part_stats = file_info.hive_parts.as_deref().ok_or_else(|| polars_err!(ComputeError: "cannot combine hive partitioned directories with non-hive partitioned ones"))?;
+
+                                if stats_evaluator.should_read(hive_part_stats.get_statistics())? {
+                                    new_paths.push(path.clone());
                                 }
+                            }
+
+                            if self.verbose && paths.len() != new_paths.len() {
+                                eprintln!("hive partitioning: skipped {} files, first file : {}", paths.len() - new_paths.len(), paths[0].display())
+                            }
+                            if paths.is_empty() {
                                 let schema = output_schema.as_ref().unwrap_or(&file_info.schema);
                                 let df = DataFrame::from(schema.as_ref());
 
@@ -253,6 +264,8 @@ impl<'a> PredicatePushDown<'a> {
                                     projection: None,
                                     selection: None
                                 })
+                            } else {
+                                paths = Arc::from(new_paths)
                             }
                         }
                     }

@@ -64,13 +64,33 @@ impl FileInfo {
         }
     }
 
-    pub fn set_hive_partitions(&mut self, url: &Path) {
+    /// Updates the statistics and merges the hive partitions schema with the file one.
+    pub fn init_hive_partitions(&mut self, url: &Path) {
         self.hive_parts = hive::HivePartitions::parse_url(url).map(|hive_parts| {
             let schema = Arc::make_mut(&mut self.schema);
             schema.merge(hive_parts.get_statistics().schema().clone());
 
             Arc::new(hive_parts)
         });
+    }
+
+    /// Updates the statistics, but not the schema.
+    pub fn update_hive_partitions(&mut self, url: &Path) {
+        let new = hive::HivePartitions::parse_url(url);
+
+        match (&mut self.hive_parts, new) {
+            (Some(current), Some(new)) => {
+                match Arc::get_mut(current) {
+                    Some(current) => {
+                        *current = new;
+                    },
+                    _ => {
+                        *current = Arc::new(new);
+                    }
+                }
+            },
+            (_, new) => self.hive_parts = new.map(Arc::new),
+        }
     }
 }
 

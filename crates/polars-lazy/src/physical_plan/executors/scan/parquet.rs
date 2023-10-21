@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use polars_core::utils::accumulate_dataframes_vertical;
 
 use polars_core::utils::arrow::io::parquet::read::FileMetaData;
 use polars_io::cloud::CloudOptions;
@@ -7,7 +8,7 @@ use polars_io::is_cloud_url;
 use super::*;
 
 pub struct ParquetExec {
-    path: PathBuf,
+    paths: Arc<[PathBuf]>,
     file_info: FileInfo,
     predicate: Option<Arc<dyn PhysicalExpr>>,
     options: ParquetOptions,
@@ -19,7 +20,7 @@ pub struct ParquetExec {
 
 impl ParquetExec {
     pub(crate) fn new(
-        path: PathBuf,
+        paths: Arc<[PathBuf]>,
         file_info: FileInfo,
         predicate: Option<Arc<dyn PhysicalExpr>>,
         options: ParquetOptions,
@@ -28,7 +29,7 @@ impl ParquetExec {
         metadata: Option<Arc<FileMetaData>>,
     ) -> Self {
         ParquetExec {
-            path,
+            paths,
             file_info,
             predicate,
             options,
@@ -39,68 +40,76 @@ impl ParquetExec {
     }
 
     fn read(&mut self) -> PolarsResult<DataFrame> {
-        let hive_partitions = self
-            .file_info
-            .hive_parts
-            .as_ref()
-            .map(|hive| hive.materialize_partition_columns());
+        let mut out = Vec::with_capacity(self.paths.len());
 
-        let (file, projection, n_rows, predicate) = prepare_scan_args(
-            &self.path,
-            &self.predicate,
-            &mut self.file_options.with_columns,
-            &mut self.file_info.schema.clone(),
-            self.file_options.n_rows,
-            self.file_options.row_count.is_some(),
-            hive_partitions.as_deref(),
-        );
+        for path in self.paths.iter() {
 
-        if let Some(file) = file {
-            ParquetReader::new(file)
-                .with_schema(Some(self.file_info.reader_schema.clone()))
-                .with_n_rows(n_rows)
-                .read_parallel(self.options.parallel)
-                .with_row_count(mem::take(&mut self.file_options.row_count))
-                .set_rechunk(self.file_options.rechunk)
-                .set_low_memory(self.options.low_memory)
-                .use_statistics(self.options.use_statistics)
-                .with_hive_partition_columns(hive_partitions)
-                ._finish_with_scan_ops(predicate, projection.as_ref().map(|v| v.as_ref()))
-        } else if is_cloud_url(self.path.as_path()) {
-            #[cfg(feature = "cloud")]
-            {
-                polars_io::pl_async::get_runtime().block_on_potential_spawn(async {
-                    let reader = ParquetAsyncReader::from_uri(
-                        &self.path.to_string_lossy(),
-                        self.cloud_options.as_ref(),
-                        Some(self.file_info.reader_schema.clone()),
-                        self.metadata.clone(),
-                    )
-                    .await?
+            let hive_partitions = self
+                .file_info
+                .hive_parts
+                .as_ref()
+                .map(|hive| hive.materialize_partition_columns());
+
+            let (file, projection, n_rows, predicate) = prepare_scan_args(
+                path,
+                &self.predicate,
+                &mut self.file_options.with_columns,
+                &mut self.file_info.schema.clone(),
+                self.file_options.n_rows,
+                self.file_options.row_count.is_some(),
+                hive_partitions.as_deref(),
+            );
+
+            let df = if let Some(file) = file {
+                ParquetReader::new(file)
+                    .with_schema(Some(self.file_info.reader_schema.clone()))
                     .with_n_rows(n_rows)
+                    .read_parallel(self.options.parallel)
                     .with_row_count(mem::take(&mut self.file_options.row_count))
-                    .with_projection(projection)
+                    .set_rechunk(self.file_options.rechunk)
+                    .set_low_memory(self.options.low_memory)
                     .use_statistics(self.options.use_statistics)
-                    .with_predicate(predicate)
-                    .with_hive_partition_columns(hive_partitions);
+                    .with_hive_partition_columns(hive_partitions)
+                    ._finish_with_scan_ops(predicate, projection.as_ref().map(|v| v.as_ref()))
+            } else if is_cloud_url(path.as_path()) {
+                #[cfg(feature = "cloud")]
+                {
+                    polars_io::pl_async::get_runtime().block_on_potential_spawn(async {
+                        let reader = ParquetAsyncReader::from_uri(
+                            &path.to_string_lossy(),
+                            self.cloud_options.as_ref(),
+                            Some(self.file_info.reader_schema.clone()),
+                            self.metadata.clone(),
+                        )
+                            .await?
+                            .with_n_rows(n_rows)
+                            .with_row_count(mem::take(&mut self.file_options.row_count))
+                            .with_projection(projection)
+                            .use_statistics(self.options.use_statistics)
+                            .with_predicate(predicate)
+                            .with_hive_partition_columns(hive_partitions);
 
-                    reader.finish().await
-                })
-            }
-            #[cfg(not(feature = "cloud"))]
-            {
-                panic!("activate cloud feature")
-            }
-        } else {
-            polars_bail!(ComputeError: "could not read {}", self.path.display())
+                        reader.finish().await
+                    })
+                }
+                #[cfg(not(feature = "cloud"))]
+                {
+                    panic!("activate cloud feature")
+                }
+            } else {
+                polars_bail!(ComputeError: "could not read {}", path.display())
+            }?;
+            out.push(df)
+
         }
+        accumulate_dataframes_vertical(out)
     }
 }
 
 impl Executor for ParquetExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let finger_print = FileFingerPrint {
-            paths: Arc::new([self.path.clone()]),
+            paths: self.paths.clone(),
             predicate: self
                 .predicate
                 .as_ref()
@@ -109,7 +118,7 @@ impl Executor for ParquetExec {
         };
 
         let profile_name = if state.has_node_timer() {
-            let mut ids = vec![self.path.to_string_lossy().into()];
+            let mut ids = vec![self.paths[0].to_string_lossy().into()];
             if self.predicate.is_some() {
                 ids.push("predicate".into())
             }

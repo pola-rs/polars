@@ -246,10 +246,8 @@ pub fn create_physical_plan(
                     cloud_options,
                     metadata,
                 } => {
-                    assert_eq!(paths.len(), 1);
-                    let path = paths[0].clone();
                     Ok(Box::new(executors::ParquetExec::new(
-                        path,
+                        paths,
                         file_info,
                         predicate,
                         options,

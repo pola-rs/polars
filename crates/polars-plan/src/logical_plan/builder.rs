@@ -188,8 +188,10 @@ impl LogicalPlanBuilder {
 
         let mut file_info = FileInfo::new(schema, (num_rows, num_rows.unwrap_or(0)));
 
+        // We set the hive partitions of the first path to determine the schema.
+        // On iteration the partition values will be re-set per file.
         if hive_partitioning {
-            file_info.set_hive_partitions(path.as_path());
+            file_info.init_hive_partitions(path.as_path());
         }
 
         let options = FileScanOptions {
