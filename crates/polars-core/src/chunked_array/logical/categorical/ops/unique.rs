@@ -7,10 +7,10 @@ impl CategoricalChunked {
         if self.can_fast_unique() {
             let ca = match &**cat_map {
                 RevMapping::Local(a) => {
-                    UInt32Chunked::from_iter_values(self.logical().name(), 0..(a.len() as u32))
+                    UInt32Chunked::from_iter_values(self.physical().name(), 0..(a.len() as u32))
                 },
                 RevMapping::Global(map, _, _) => {
-                    UInt32Chunked::from_iter_values(self.logical().name(), map.keys().copied())
+                    UInt32Chunked::from_iter_values(self.physical().name(), map.keys().copied())
                 },
             };
             // safety:
@@ -22,7 +22,7 @@ impl CategoricalChunked {
                 Ok(out)
             }
         } else {
-            let ca = self.logical().unique()?;
+            let ca = self.physical().unique()?;
             // safety:
             // we only removed some indexes so we are still in bounds
             unsafe {
@@ -38,14 +38,14 @@ impl CategoricalChunked {
         if self.can_fast_unique() {
             Ok(self.get_rev_map().len())
         } else {
-            self.logical().n_unique()
+            self.physical().n_unique()
         }
     }
 
     pub fn value_counts(&self) -> PolarsResult<DataFrame> {
-        let groups = self.logical().group_tuples(true, false).unwrap();
-        let logical_values = unsafe {
-            self.logical()
+        let groups = self.physical().group_tuples(true, false).unwrap();
+        let physical_values = unsafe {
+            self.physical()
                 .clone()
                 .into_series()
                 .agg_first(&groups)
@@ -55,7 +55,7 @@ impl CategoricalChunked {
         };
 
         let mut values = self.clone();
-        *values.logical_mut() = logical_values;
+        *values.physical_mut() = physical_values;
 
         let mut counts = groups.group_count();
         counts.rename("counts");
