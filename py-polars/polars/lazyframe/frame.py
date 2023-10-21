@@ -2653,7 +2653,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         boolean_masks = []
 
         # no-op; immediately matches all rows
-        if predicates == (True,) and not constraints:
+        if len(predicates) == 1 and predicates[0] is True and not constraints:
             return self.clone()
 
         # note: identify masks separately from predicates
