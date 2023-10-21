@@ -7457,7 +7457,7 @@ class DataFrame:
         return partitions
 
     @deprecate_renamed_parameter("periods", "n", version="0.19.11")
-    def shift(self, n: int = 1) -> Self:
+    def shift(self, n: int = 1) -> DataFrame:
         """
         Shift values by the given number of places.
 
@@ -7503,7 +7503,7 @@ class DataFrame:
         └──────┴──────┴──────┘
 
         """
-        return self._from_pydf(self._df.shift(n))
+        return self.lazy().shift(n=n).collect(_eager=True)
 
     @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift_and_fill(

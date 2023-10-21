@@ -1229,10 +1229,6 @@ impl PyDataFrame {
         Ok(unsafe { std::mem::transmute::<Vec<DataFrame>, Vec<PyDataFrame>>(out) })
     }
 
-    pub fn shift(&self, periods: i64) -> Self {
-        self.df.shift(periods).into()
-    }
-
     pub fn lazy(&self) -> PyLazyFrame {
         self.df.clone().lazy().into()
     }
