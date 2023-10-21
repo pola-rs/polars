@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter, Write};
-use std::path::Path;
+use std::path::PathBuf;
 
 use crate::prelude::*;
 
@@ -9,7 +9,7 @@ use crate::prelude::*;
 fn write_scan<P: Display>(
     f: &mut Formatter,
     name: &str,
-    path: &Path,
+    path: &[PathBuf],
     indent: usize,
     n_columns: i64,
     total_columns: usize,
@@ -19,7 +19,17 @@ fn write_scan<P: Display>(
     if indent != 0 {
         writeln!(f)?;
     }
-    write!(f, "{:indent$}{} SCAN {}", "", name, path.display())?;
+    let path_fmt = if path.len() == 1 {
+        path[0].to_string_lossy()
+    } else {
+        Cow::Owned(format!(
+            "{} files: first file: {}",
+            path.len(),
+            path[0].to_string_lossy()
+        ))
+    };
+
+    write!(f, "{:indent$}{} SCAN {}", "", name, path_fmt)?;
     if n_columns > 0 {
         write!(
             f,
@@ -58,7 +68,7 @@ impl LogicalPlan {
                 write_scan(
                     f,
                     "PYTHON",
-                    Path::new(""),
+                    &[],
                     sub_indent,
                     n_columns,
                     total_columns,
@@ -91,7 +101,7 @@ impl LogicalPlan {
                 input._format(f, sub_indent)
             },
             Scan {
-                path,
+                paths,
                 file_info,
                 predicate,
                 scan_type,
@@ -106,7 +116,7 @@ impl LogicalPlan {
                 write_scan(
                     f,
                     scan_type.into(),
-                    path,
+                    paths,
                     sub_indent,
                     n_columns,
                     file_info.schema.len(),

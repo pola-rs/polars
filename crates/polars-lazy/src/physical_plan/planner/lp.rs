@@ -189,7 +189,7 @@ pub fn create_physical_plan(
             )))
         },
         Scan {
-            path,
+            paths,
             file_info,
             output_schema,
             scan_type,
@@ -213,35 +213,47 @@ pub fn create_physical_plan(
                 #[cfg(feature = "csv")]
                 FileScan::Csv {
                     options: csv_options,
-                } => Ok(Box::new(executors::CsvExec {
-                    path,
-                    schema: file_info.schema,
-                    options: csv_options,
-                    predicate,
-                    file_options,
-                })),
+                } => {
+                    assert_eq!(paths.len(), 1);
+                    let path = paths[0].clone();
+                    Ok(Box::new(executors::CsvExec {
+                        path,
+                        schema: file_info.schema,
+                        options: csv_options,
+                        predicate,
+                        file_options,
+                    }))
+                },
                 #[cfg(feature = "ipc")]
-                FileScan::Ipc { options } => Ok(Box::new(executors::IpcExec {
-                    path,
-                    schema: file_info.schema,
-                    predicate,
-                    options,
-                    file_options,
-                })),
+                FileScan::Ipc { options } => {
+                    assert_eq!(paths.len(), 1);
+                    let path = paths[0].clone();
+                    Ok(Box::new(executors::IpcExec {
+                        path,
+                        schema: file_info.schema,
+                        predicate,
+                        options,
+                        file_options,
+                    }))
+                },
                 #[cfg(feature = "parquet")]
                 FileScan::Parquet {
                     options,
                     cloud_options,
                     metadata
-                } => Ok(Box::new(executors::ParquetExec::new(
-                    path,
-                    file_info,
-                    predicate,
-                    options,
-                    cloud_options,
-                    file_options,
-                    metadata
-                ))),
+                } => {
+                    assert_eq!(paths.len(), 1);
+                    let path = paths[0].clone();
+                    Ok(Box::new(executors::ParquetExec::new(
+                        path,
+                        file_info,
+                        predicate,
+                        options,
+                        cloud_options,
+                        file_options,
+                        metadata
+                    )))
+                },
                 FileScan::Anonymous {
                     function,
                     ..
