@@ -456,18 +456,18 @@ class Unknown(DataType):
 
 
 class List(NestedType):
-    """Nested list/array type with variable length of inner lists."""
+    """Variable length list type."""
 
     inner: PolarsDataType | None = None
 
     def __init__(self, inner: PolarsDataType | PythonDataType):
         """
-        Nested list/array type with variable length of inner lists.
+        Variable length list type.
 
         Parameters
         ----------
         inner
-            The `DataType` of values within the list
+            The ``DataType`` of the values within each list.
 
         Examples
         --------
@@ -518,26 +518,31 @@ class List(NestedType):
 
 
 class Array(NestedType):
-    """Nested list/array type with fixed length of inner arrays."""
+    """Fixed length list type."""
 
     inner: PolarsDataType | None = None
     width: int
 
-    def __init__(self, width: int, inner: PolarsDataType | PythonDataType = Null):
+    def __init__(  # noqa: D417
+        self,
+        *args: Any,
+        width: int | None = None,
+        inner: PolarsDataType | PythonDataType | None = None,
+    ):
         """
-        Nested list/array type with fixed length of inner arrays.
+        Fixed length list type.
 
         Parameters
         ----------
         width
-            The fixed size length of the inner arrays.
+            The length of the arrays.
         inner
-            The `DataType` of values within the inner arrays
+            The ``DataType`` of the values within each array.
 
         Examples
         --------
         >>> s = pl.Series(
-        ...     "a", [[1, 2], [4, 3]], dtype=pl.Array(width=2, inner=pl.Int64)
+        ...     "a", [[1, 2], [4, 3]], dtype=pl.Array(inner=pl.Int64, width=2)
         ... )
         >>> s
         shape: (2,)
@@ -548,6 +553,32 @@ class Array(NestedType):
         ]
 
         """
+        from polars.utils.deprecation import issue_deprecation_warning
+
+        if args:
+            # TODO: When removing this deprecation, update the `to_object`
+            # implementation in py-polars/src/conversion.rs to use `call1` instead of
+            # `call`
+            issue_deprecation_warning(
+                "Parameters `inner` and `width` will change positions in the next breaking release."
+                " Use keyword arguments to keep current behavior and silence this warning.",
+                version="0.19.11",
+            )
+            if len(args) == 1:
+                width = args[0]
+            else:
+                width, inner = args[:2]
+        if width is None:
+            raise TypeError("`width` must be specified when initializing an `Array`")
+
+        if inner is None:
+            issue_deprecation_warning(
+                "The default value for the `inner` parameter of `Array` will be removed in the next breaking release."
+                " Pass `inner=pl.Null`to keep current behavior and silence this warning.",
+                version="0.19.11",
+            )
+            inner = Null
+
         self.width = width
         self.inner = polars.datatypes.py_type_to_dtype(inner)
 
@@ -570,11 +601,11 @@ class Array(NestedType):
             return False
 
     def __hash__(self) -> int:
-        return hash((self.__class__, self.inner))
+        return hash((self.__class__, self.inner, self.width))
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        return f"{class_name}({self.inner!r})"
+        return f"{class_name}({self.inner!r}, {self.width})"
 
 
 class Field:
