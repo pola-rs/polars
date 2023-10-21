@@ -41,7 +41,7 @@ impl LogicalPlan {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FileInfo {
     pub schema: SchemaRef,
@@ -79,15 +79,13 @@ impl FileInfo {
         let new = hive::HivePartitions::parse_url(url);
 
         match (&mut self.hive_parts, new) {
-            (Some(current), Some(new)) => {
-                match Arc::get_mut(current) {
-                    Some(current) => {
-                        *current = new;
-                    },
-                    _ => {
-                        *current = Arc::new(new);
-                    }
-                }
+            (Some(current), Some(new)) => match Arc::get_mut(current) {
+                Some(current) => {
+                    *current = new;
+                },
+                _ => {
+                    *current = Arc::new(new);
+                },
             },
             (_, new) => self.hive_parts = new.map(Arc::new),
         }

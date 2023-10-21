@@ -41,7 +41,6 @@ struct LazyParquetReader {
     args: ScanArgsParquet,
     path: PathBuf,
     paths: Arc<[PathBuf]>,
-    known_schema: Option<SchemaRef>,
 }
 
 impl LazyParquetReader {
@@ -50,7 +49,6 @@ impl LazyParquetReader {
             args,
             path,
             paths: Arc::new([]),
-            known_schema: None,
         }
     }
 }
@@ -94,7 +92,6 @@ impl LazyFileListReader for LazyParquetReader {
         if let Some(row_count) = row_count {
             lf = lf.with_row_count(&row_count.name, Some(row_count.offset))
         }
-        self.known_schema = Some(lf.schema()?);
 
         lf.opt_state.file_caching = true;
         Ok(lf)

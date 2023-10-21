@@ -245,17 +245,15 @@ pub fn create_physical_plan(
                     options,
                     cloud_options,
                     metadata,
-                } => {
-                    Ok(Box::new(executors::ParquetExec::new(
-                        paths,
-                        file_info,
-                        predicate,
-                        options,
-                        cloud_options,
-                        file_options,
-                        metadata,
-                    )))
-                },
+                } => Ok(Box::new(executors::ParquetExec::new(
+                    paths,
+                    file_info,
+                    predicate,
+                    options,
+                    cloud_options,
+                    file_options,
+                    metadata,
+                ))),
                 FileScan::Anonymous { function, .. } => {
                     Ok(Box::new(executors::AnonymousScanExec {
                         function,

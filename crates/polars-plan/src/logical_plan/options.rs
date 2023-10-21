@@ -90,7 +90,7 @@ pub struct IpcScanOptions {
     pub memmap: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// Generic options for all file types
 pub struct FileScanOptions {

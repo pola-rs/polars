@@ -151,7 +151,7 @@ impl LogicalPlanBuilder {
         use polars_io::{is_cloud_url, SerReader as _};
 
         let paths = paths.into();
-        polars_ensure!(paths.len() > 1, ComputeError: "expected at least 1 path");
+        polars_ensure!(paths.len() >= 1, ComputeError: "expected at least 1 path");
 
         // Use first path to get schema.
         let path = &paths[0];

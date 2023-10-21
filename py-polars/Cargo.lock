@@ -1750,6 +1750,7 @@ version = "0.33.2"
 dependencies = [
  "ahash",
  "bitflags 2.4.0",
+ "futures",
  "glob",
  "once_cell",
  "polars-arrow",

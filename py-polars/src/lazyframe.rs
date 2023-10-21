@@ -128,7 +128,7 @@ impl PyLazyFrame {
         let r = if let Some(path) = &path {
             LazyJsonLineReader::new(path)
         } else {
-            LazyJsonLineReader::new_paths(paths)
+            LazyJsonLineReader::new_paths(paths.into())
         };
 
         let lf = r
@@ -197,7 +197,7 @@ impl PyLazyFrame {
         let r = if let Some(path) = path.as_ref() {
             LazyCsvReader::new(path)
         } else {
-            LazyCsvReader::new_paths(paths)
+            LazyCsvReader::new_paths(paths.into())
         };
 
         let mut r = r
@@ -336,7 +336,7 @@ impl PyLazyFrame {
         let lf = if let Some(path) = &path {
             LazyFrame::scan_ipc(path, args)
         } else {
-            LazyFrame::scan_ipc_files(paths, args)
+            LazyFrame::scan_ipc_files(paths.into(), args)
         }
         .map_err(PyPolarsErr::from)?;
         Ok(lf.into())
