@@ -5,7 +5,7 @@ and register that as an expression into the polars library. The polars engine wi
 and your expression will run almost as fast as native expressions. Note that this works without any interference of python
 and thus no GIL contention.
 
-They will benefit from the same benefits default expression have:
+They will benefit from the same benefits default expressions have:
 
 - Optimization
 - Parallelism
@@ -18,8 +18,8 @@ To get started we will see what is needed to create a custom expression.
 For our first expression we are going to create a pig latin converter. Pig latin is a silly language where in every word
 the first letter is removed, added to the back and finally "ay" is added. So the word "pig" would convert to "igpay".
 
-We could of course already do that with expressions, e.g. `col(..) + col(..).str.slice(0, 1) + "ay"`, but a specialized
-function for this would perform better and allows us to learn about the plugins.
+We could of course already do that with expressions, e.g. `col("name").str.slice(1) + col("name").str.slice(0, 1) + "ay"`,
+but a specialized function for this would perform better and allows us to learn about the plugins.
 
 ### Setting up
 
@@ -37,9 +37,9 @@ crate-type = ["cdylib"]
 
 [dependencies]
 polars = { version = "*" }
-pyo3 = { version = "0.20.0", features = ["extension-module"] }
+pyo3 = { version = "*", features = ["extension-module"] }
 pyo3-polars = { version = "*", features = ["derive"] }
-serde = { version = "1", features = ["derive"] }
+serde = { version = "*", features = ["derive"] }
 ```
 
 ### Writing the expression
@@ -229,3 +229,9 @@ fn haversine(inputs: &[Series]) -> PolarsResult<Series> {
 ```
 
 That's all you need to know to get started. Take a look at this [repo](https://github.com/pola-rs/pyo3-polars/tree/main/example/derive_expression) to see how this all fits together.
+
+## Community plugins
+
+Here is a curated (non-exhaustive) list of community implemented plugins.
+
+- [polars-business](https://github.com/MarcoGorelli/polars-business) Polars extension offering utilities for business day operations
