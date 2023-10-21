@@ -19,9 +19,9 @@ use chrono_tz::Tz;
 pub use time::time_to_time64ns;
 
 pub use self::conversion::*;
+use crate::prelude::ArrayRef;
 #[cfg(feature = "timezones")]
 use crate::prelude::{polars_bail, PolarsResult};
-use crate::prelude::{ArrayRef, LargeStringArray};
 
 pub fn unix_time() -> NaiveDateTime {
     NaiveDateTime::from_timestamp_opt(0, 0).unwrap()
@@ -34,22 +34,5 @@ pub(crate) fn validate_time_zone(tz: &str) -> PolarsResult<()> {
         Err(_) => {
             polars_bail!(ComputeError: "unable to parse time zone: '{}'. Please check the Time Zone Database for a list of available time zones", tz)
         },
-    }
-}
-
-pub(crate) fn validate_is_number(vec_array: &[ArrayRef]) -> bool {
-    vec_array.iter().all(is_parsable_as_number)
-}
-
-fn is_parsable_as_number(array: &ArrayRef) -> bool {
-    if let Some(array) = array.as_any().downcast_ref::<LargeStringArray>() {
-        array.iter().all(|value| {
-            value
-                .expect("Unable to parse int string to datetime")
-                .parse::<i64>()
-                .is_ok()
-        })
-    } else {
-        false
     }
 }
