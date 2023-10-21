@@ -119,7 +119,7 @@ impl LogicalPlanBuilder {
         };
 
         Ok(LogicalPlan::Scan {
-            path: "".into(),
+            paths: Arc::new([]),
             file_info,
             predicate: None,
             file_options,
@@ -201,7 +201,7 @@ impl LogicalPlanBuilder {
             hive_partitioning,
         };
         Ok(LogicalPlan::Scan {
-            path,
+            paths: Arc::new([path]),
             file_info,
             file_options: options,
             predicate: None,
@@ -253,7 +253,7 @@ impl LogicalPlanBuilder {
             hive_partitioning: false,
         };
         Ok(LogicalPlan::Scan {
-            path,
+            paths: Arc::new([path]),
             file_info,
             file_options,
             predicate: None,
@@ -298,6 +298,8 @@ impl LogicalPlanBuilder {
                 polars_err!(ComputeError: "error open file: {}, {}", path, e)
             }
         })?;
+
+        let paths = Arc::new([path]);
 
         let mut magic_nr = [0u8; 2];
         let res = file.read_exact(&mut magic_nr);
@@ -362,7 +364,7 @@ impl LogicalPlanBuilder {
             hive_partitioning: false,
         };
         Ok(LogicalPlan::Scan {
-            path,
+            paths,
             file_info,
             file_options: options,
             predicate: None,
