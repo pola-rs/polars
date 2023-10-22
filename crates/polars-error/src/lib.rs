@@ -18,7 +18,7 @@ where
     T: Into<Cow<'static, str>>,
 {
     fn from(msg: T) -> Self {
-        if env::var("POLARS_PANIC_ON_ERR").is_ok() {
+        if env::var("POLARS_PANIC_ON_ERR").as_deref().unwrap_or("") == "1" {
             panic!("{}", msg.into())
         } else {
             ErrString(msg.into())

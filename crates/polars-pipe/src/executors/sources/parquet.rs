@@ -23,9 +23,10 @@ pub struct ParquetSource {
     batched_reader: Option<BatchedParquetReader>,
     n_threads: usize,
     chunk_index: IdxSize,
-    path: Option<PathBuf>,
-    options: Option<ParquetOptions>,
-    file_options: Option<FileScanOptions>,
+    paths: std::slice::Iter<'static, PathBuf>,
+    _paths_lifetime: Arc<[PathBuf]>,
+    options: ParquetOptions,
+    file_options: FileScanOptions,
     #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
     metadata: Option<Arc<FileMetaData>>,
@@ -38,9 +39,11 @@ impl ParquetSource {
     // otherwise all files would be opened during construction of the pipeline
     // leading to Too many Open files error
     fn init_reader(&mut self) -> PolarsResult<()> {
-        let path = self.path.take().unwrap();
-        let options = self.options.take().unwrap();
-        let file_options = self.file_options.take().unwrap();
+        let Some(path) = self.paths.next() else {
+            return Ok(());
+        };
+        let options = self.options;
+        let file_options = self.file_options.clone();
         let schema = self.file_info.schema.clone();
 
         let hive_partitions = self
@@ -66,7 +69,7 @@ impl ParquetSource {
             eprintln!("STREAMING CHUNK SIZE: {chunk_size} rows")
         }
 
-        let batched_reader = if is_cloud_url(&path) {
+        let batched_reader = if is_cloud_url(path) {
             #[cfg(not(feature = "async"))]
             {
                 panic!(
@@ -121,7 +124,7 @@ impl ParquetSource {
 
     #[allow(unused_variables)]
     pub(crate) fn new(
-        path: PathBuf,
+        paths: Arc<[PathBuf]>,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         metadata: Option<Arc<FileMetaData>>,
@@ -131,13 +134,21 @@ impl ParquetSource {
     ) -> PolarsResult<Self> {
         let n_threads = POOL.current_num_threads();
 
+        // extend lifetime as it will be bound to parquet source
+        let iter = unsafe {
+            std::mem::transmute::<std::slice::Iter<'_, PathBuf>, std::slice::Iter<'static, PathBuf>>(
+                paths.iter(),
+            )
+        };
+
         Ok(ParquetSource {
             batched_reader: None,
             n_threads,
             chunk_index: 0,
-            options: Some(options),
-            file_options: Some(file_options),
-            path: Some(path),
+            options,
+            file_options,
+            paths: iter,
+            _paths_lifetime: paths,
             cloud_options,
             metadata,
             file_info,
@@ -150,6 +161,11 @@ impl Source for ParquetSource {
     fn get_batches(&mut self, _context: &PExecutionContext) -> PolarsResult<SourceResult> {
         if self.batched_reader.is_none() {
             self.init_reader()?;
+
+            // If there was no new reader, we depleted all of them and are finished.
+            if self.batched_reader.is_none() {
+                return Ok(SourceResult::Finished);
+            }
         }
         let batches = get_runtime().block_on(
             self.batched_reader
@@ -158,7 +174,11 @@ impl Source for ParquetSource {
                 .next_batches(self.n_threads),
         )?;
         Ok(match batches {
-            None => SourceResult::Finished,
+            None => {
+                // reset the reader
+                self.batched_reader = None;
+                return self.get_batches(_context);
+            },
             Some(batches) => SourceResult::GotMoreData(
                 batches
                     .into_iter()

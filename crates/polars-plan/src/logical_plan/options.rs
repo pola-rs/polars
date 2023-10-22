@@ -40,7 +40,7 @@ pub struct CsvParserOptions {
 }
 
 #[cfg(feature = "parquet")]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Copy)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ParquetOptions {
     pub parallel: polars_io::parquet::ParallelStrategy,
@@ -90,7 +90,7 @@ pub struct IpcScanOptions {
     pub memmap: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// Generic options for all file types
 pub struct FileScanOptions {

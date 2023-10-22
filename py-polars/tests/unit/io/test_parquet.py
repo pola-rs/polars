@@ -406,7 +406,9 @@ def test_fetch_union(tmp_path: Path) -> None:
     expected = pl.DataFrame({"a": [0], "b": [1]})
     assert_frame_equal(result_one, expected)
 
-    expected = pl.DataFrame({"a": [0, 3], "b": [1, 4]})
+    # Both fetch 1 per file or 1 per dataset would be ok, as we don't guarantee anything
+    # currently we have one per dataset.
+    expected = pl.DataFrame({"a": [0], "b": [1]})
     assert_frame_equal(result_glob, expected)
 
 
