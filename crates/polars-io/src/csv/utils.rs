@@ -350,9 +350,7 @@ pub fn infer_file_schema_inner(
         // keep track so that we can determine the amount of bytes read
         end_ptr = line.as_ptr() as usize + line.len();
 
-        let len = line.len();
-
-        if len == 0 {
+        if line.is_empty() {
             continue;
         }
 
@@ -363,6 +361,7 @@ pub fn infer_file_schema_inner(
             }
         }
 
+        let len = line.len();
         if len > 1 {
             // remove carriage return
             let trailing_byte = line[len - 1];
