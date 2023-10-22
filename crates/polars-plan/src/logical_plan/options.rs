@@ -40,7 +40,7 @@ pub struct CsvParserOptions {
 }
 
 #[cfg(feature = "parquet")]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Copy)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ParquetOptions {
     pub parallel: polars_io::parquet::ParallelStrategy,

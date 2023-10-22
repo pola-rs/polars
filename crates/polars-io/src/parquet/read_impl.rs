@@ -342,8 +342,11 @@ pub fn read_parquet<R: MmapBytesReader>(
     use_statistics: bool,
     hive_partition_columns: Option<&[Series]>,
 ) -> PolarsResult<DataFrame> {
-    if limit == 0 {
-        return Ok(DataFrame::from(schema.as_ref()));
+    // Fast path.
+    if limit == 0 && hive_partition_columns.is_none() {
+        let mut df = DataFrame::from(schema.as_ref());
+        materialize_hive_partitions(&mut df, hive_partition_columns, 0);
+        return Ok(df);
     }
 
     let file_metadata = metadata

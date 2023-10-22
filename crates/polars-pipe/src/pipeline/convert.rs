@@ -103,9 +103,8 @@ where
                     cloud_options,
                     metadata,
                 } => {
-                    assert_eq!(paths.len(), 1);
                     let src = sources::ParquetSource::new(
-                        paths[0].clone(),
+                        paths,
                         parquet_options,
                         cloud_options,
                         metadata,

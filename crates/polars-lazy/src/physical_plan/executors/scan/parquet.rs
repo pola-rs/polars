@@ -167,25 +167,19 @@ impl ParquetExec {
         });
         let readers_and_metadata = futures::future::try_join_all(iter).await?;
 
-        // Then compute `n_rows` to be take per file up front, so we can actually read concurrently
+        // Then compute `n_rows` to be taken per file up front, so we can actually read concurrently
         // after this.
-        let mut n_rows_to_read = self.file_options.n_rows.unwrap_or(usize::MAX);
-        let mut cumulative_read = 0;
-        let row_counts = readers_and_metadata
+        let n_rows_to_read = self.file_options.n_rows.unwrap_or(usize::MAX);
+        let iter = readers_and_metadata
             .iter()
-            .map(|(num_rows, _)| {
-                let n_rows = n_rows_to_read;
-                n_rows_to_read -= n_rows_to_read.saturating_sub(*num_rows);
-                cumulative_read += num_rows;
+            .map(|(num_rows, _)| num_rows)
+            .copied();
 
-                (n_rows, cumulative_read)
-            })
-            .collect::<Vec<_>>();
+        let rows_statistics = get_sequential_row_statistics(iter, n_rows_to_read);
 
         // Now read the actual data.
         let base_row_count = &self.file_options.row_count;
         let file_info = &self.file_info;
-        let reader_schema = &file_info.reader_schema;
         let file_options = &self.file_options;
         let paths = &self.paths;
         let use_statistics = self.options.use_statistics;
@@ -193,20 +187,23 @@ impl ParquetExec {
 
         let iter = readers_and_metadata
             .into_iter()
-            .zip(row_counts.iter())
+            .zip(rows_statistics.iter())
             .zip(paths.as_ref().iter())
             .map(
-                |(((row_count, reader), (n_rows, cumulative_read)), path)| async move {
+                |(
+                    ((num_rows_this_file, reader), (remaining_rows_to_read, cumulative_read)),
+                    path,
+                )| async move {
                     let mut file_info = file_info.clone();
-                    let n_rows = *n_rows;
-                    if n_rows == 0 {
+                    let remaining_rows_to_read = *remaining_rows_to_read;
+                    if remaining_rows_to_read == 0 {
                         return Ok(None);
                     }
 
-                    let n_rows = if row_count < n_rows {
+                    let remaining_rows_to_read = if num_rows_this_file < remaining_rows_to_read {
                         None
                     } else {
-                        Some(n_rows)
+                        Some(remaining_rows_to_read)
                     };
                     let row_count = base_row_count.as_ref().map(|rc| RowCount {
                         name: rc.name.clone(),
@@ -220,18 +217,18 @@ impl ParquetExec {
                         .as_ref()
                         .map(|hive| hive.materialize_partition_columns());
 
-                    let (_, projection, n_rows, predicate) = prepare_scan_args(
+                    let (_, projection, remaining_rows_to_read, predicate) = prepare_scan_args(
                         Path::new(""),
                         predicate,
                         &mut file_options.with_columns.clone(),
-                        &mut reader_schema.clone(),
-                        n_rows,
+                        &mut file_info.schema.clone(),
+                        remaining_rows_to_read,
                         row_count.is_some(),
                         hive_partitions.as_deref(),
                     );
 
                     reader
-                        .with_n_rows(n_rows)
+                        .with_n_rows(remaining_rows_to_read)
                         .with_row_count(row_count)
                         .with_projection(projection)
                         .use_statistics(use_statistics)
