@@ -18,8 +18,6 @@ use crate::parquet::async_impl::FetchRowGroupsFromObjectStore;
 use crate::parquet::async_impl::ParquetObjectStore;
 pub use crate::parquet::read_impl::BatchedParquetReader;
 use crate::parquet::read_impl::{materialize_hive_partitions, read_parquet};
-#[cfg(feature = "cloud")]
-use crate::predicates::apply_predicate;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::RowCount;
@@ -370,7 +368,6 @@ impl ParquetAsyncReader {
         let schema = self.schema().await?;
         let hive_partition_columns = self.hive_partition_columns.clone();
 
-        let predicate = self.predicate.clone();
         // batched reader deals with slice pushdown
         let reader = self.batched(usize::MAX).await?;
         let n_batches = metadata.row_groups.len();
@@ -378,11 +375,7 @@ impl ParquetAsyncReader {
 
         let mut chunks = Vec::with_capacity(n_batches);
         while let Some(result) = iter.next_().await {
-            let out = result.and_then(|mut df| {
-                apply_predicate(&mut df, predicate.as_deref(), true)?;
-                Ok(df)
-            })?;
-            chunks.push(out)
+            chunks.push(result?)
         }
         if chunks.is_empty() {
             let mut df = DataFrame::from(schema.as_ref());
