@@ -1,3 +1,5 @@
+use polars_core::frame::NullStrategy;
+
 use super::*;
 
 pub(super) fn reverse(s: &Series) -> PolarsResult<Series> {
