@@ -152,7 +152,7 @@ def read_excel(
         * "openpyxl": this engine is significantly slower than ``xlsx2csv`` but supports
           additional automatic type inference; potentially useful if you are otherwise
           unable to parse your sheet with the (default) ``xlsx2csv`` engine in
-          ocnjunction with the ``schema_overrides`` parameter.
+          conjunction with the ``schema_overrides`` parameter.
         * "pyxlsb": this engine is used for Excel Binary Workbooks (`.xlsb` files).
           Note that you have to use ``schema_overrides`` to correctly load date/datetime
           columns (or these will be read as floats representing offset Julian values).
