@@ -40,8 +40,8 @@ fn prepare_scan_args(
     schema: &mut SchemaRef,
     has_row_count: bool,
     hive_partitions: Option<&[Series]>,
-) -> (Option<std::fs::File>, Projection, Predicate) {
-    let file = std::fs::File::open(path).ok();
+) -> (std::io::Result<std::fs::File>, Projection, Predicate) {
+    let file = std::fs::File::open(path);
 
     let with_columns = mem::take(with_columns);
     let schema = mem::take(schema);
