@@ -59,7 +59,7 @@ impl ParquetExec {
             // files in parallel even when we add row counts or slices.
             let readers_and_metadata = paths
                 .iter()
-                .map(|patbh| {
+                .map(|path| {
                     let mut file_info = self.file_info.clone();
                     file_info.update_hive_partitions(path);
 
