@@ -90,8 +90,8 @@ nav:
 
   - Releases:
     - releases/changelog.md
-    - Migration guide:
-      - releases/migration/0.19.md
+    - Upgrade guide:
+      - releases/upgrade/0.19.md
 
 not_in_nav: |
   /_build/
