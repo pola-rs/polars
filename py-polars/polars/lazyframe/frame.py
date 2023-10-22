@@ -74,6 +74,7 @@ from polars.utils.various import (
     _process_null_values,
     find_stacklevel,
     is_bool_sequence,
+    is_sequence,
     normalize_filepath,
 )
 
@@ -2651,10 +2652,32 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         all_predicates: list[pl.Expr] = []
         boolean_masks = []
 
+        # no-op; immediately matches all rows
+        if len(predicates) == 1 and predicates[0] is True and not constraints:
+            return self.clone()
+
         # note: identify masks separately from predicates
         for p in predicates:
-            if is_bool_sequence(p):
+            if p is False:  # immediately disallows all rows
+                return self.clear()  # type: ignore[return-value]
+            elif p is True:
+                continue  # no-op; matches all rows
+            elif is_bool_sequence(p, include_series=True):
                 boolean_masks.append(pl.Series(p, dtype=Boolean))
+            elif (
+                (is_seq := is_sequence(p))
+                and any(not isinstance(x, pl.Expr) for x in p)
+            ) or (
+                not is_seq
+                and not isinstance(p, pl.Expr)
+                and not (isinstance(p, str) and p in self.columns)
+            ):
+                err = (
+                    f"Series(…, dtype={p.dtype})"
+                    if isinstance(p, pl.Series)
+                    else f"{p!r}"
+                )
+                raise ValueError(f"invalid predicate for `filter`: {err}")
             else:
                 all_predicates.extend(
                     wrap_expr(x) for x in parse_as_list_of_expressions(p)
