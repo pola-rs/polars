@@ -1,3 +1,7 @@
+---
+render_macros: false
+---
+
 # Contributing
 
 Thanks for taking the time to contribute! We appreciate all contributions, from reporting bugs to implementing new features.
@@ -177,7 +181,7 @@ To add a code block with code to be run in a shell with tabs for Python and Rust
 The snippets for Python and Rust code blocks are in the `docs/src/python/` and `docs/src/rust/` directories, respectively. To add a code snippet with Python or Rust code to a `.md` page, use the following format:
 
 ```
-{{code_block('user-guide/io/cloud-storage','read_parquet',[read_parquet,read_csv])}}
+{{code_block('user-guide/io/cloud-storage','read_parquet',['read_parquet','read_csv'])}}
 ```
 
 - The first argument is a path to either or both files called `docs/src/python/user-guide/io/cloud-storage.py` and `docs/src/rust/user-guide/io/cloud-storage.rs`.
