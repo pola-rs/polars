@@ -69,6 +69,7 @@ pub(crate) use correlation::CorrelationMethod;
 #[cfg(feature = "fused")]
 pub(crate) use fused::FusedOperator;
 pub(super) use list::ListFunction;
+use polars_core::frame::NullStrategy;
 use polars_core::prelude::*;
 #[cfg(feature = "cutqcut")]
 use polars_ops::prelude::{cut, qcut};
@@ -304,6 +305,7 @@ pub enum FunctionExpr {
     EwmVar {
         options: EWMOptions,
     },
+    MeanHorizontal,
 }
 
 impl Hash for FunctionExpr {
@@ -652,6 +654,7 @@ impl Display for FunctionExpr {
             EwmStd { .. } => "ewm_std",
             #[cfg(feature = "ewma")]
             EwmVar { .. } => "ewm_var",
+            MeanHorizontal { .. } => "mean_horizontal",
         };
         write!(f, "{s}")
     }
@@ -964,6 +967,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             EwmStd { options } => map!(ewm::ewm_std, options),
             #[cfg(feature = "ewma")]
             EwmVar { options } => map!(ewm::ewm_var, options),
+            MeanHorizontal => wrap!(dispatch::mean_horizontal),
         }
     }
 }

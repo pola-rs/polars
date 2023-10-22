@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::ops::{BitAnd, BitOr};
 
+use polars_core::frame::NullStrategy;
 use polars_core::prelude::*;
 use polars_core::POOL;
 use rayon::prelude::*;
@@ -77,4 +78,11 @@ pub fn max_horizontal(s: &[Series]) -> PolarsResult<Option<Series>> {
 pub fn min_horizontal(s: &[Series]) -> PolarsResult<Option<Series>> {
     let df = DataFrame::new_no_checks(Vec::from(s));
     df.hmin().map(|opt_s| opt_s.map(|s| s.with_name("min")))
+}
+
+#[cfg(feature = "zip_with")]
+pub fn mean_horizontal(s: &[Series], none_strategy: NullStrategy) -> PolarsResult<Option<Series>> {
+    let df = DataFrame::new_no_checks(Vec::from(s));
+    df.hmean(none_strategy)
+        .map(|opt_s| opt_s.map(|s| s.with_name("mean")))
 }

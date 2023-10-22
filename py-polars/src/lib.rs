@@ -121,6 +121,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::aggregation::sum_horizontal))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::aggregation::mean_horizontal))
+        .unwrap();
 
     // Functions - lazy
     m.add_wrapped(wrap_pyfunction!(functions::lazy::arg_sort_by))

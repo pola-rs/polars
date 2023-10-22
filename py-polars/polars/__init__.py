@@ -130,6 +130,7 @@ from polars.functions import (
     max,
     max_horizontal,
     mean,
+    mean_horizontal,
     median,
     min,
     min_horizontal,
@@ -318,6 +319,7 @@ __all__ = [
     "max_horizontal",
     "min_horizontal",
     "sum_horizontal",
+    "mean_horizontal",
     # polars.functions.lazy
     "apply",
     "approx_n_unique",

@@ -1,4 +1,5 @@
 use super::*;
+// use polars_core::frame::NullStrategy;
 
 pub(super) fn reverse(s: &Series) -> PolarsResult<Series> {
     Ok(s.reverse())
@@ -83,6 +84,10 @@ pub(super) fn max_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
 
 pub(super) fn min_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     polars_ops::prelude::min_horizontal(s)
+}
+
+pub(super) fn mean_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
+    polars_ops::prelude::mean_horizontal(s, NullStrategy::Ignore)
 }
 
 pub(super) fn drop_nulls(s: &Series) -> PolarsResult<Series> {

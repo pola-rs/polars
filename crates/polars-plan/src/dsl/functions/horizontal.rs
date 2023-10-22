@@ -293,6 +293,26 @@ pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     })
 }
 
+/// Create a new column with the the sum of the values in each row.
+///
+/// The name of the resulting column will be `"sum"`; use [`alias`](Expr::alias) to choose a different name.
+pub fn mean_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
+    let exprs = exprs.as_ref().to_vec();
+
+    Expr::Function {
+        input: exprs,
+        function: FunctionExpr::MeanHorizontal,
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyFlat,
+            input_wildcard_expansion: true,
+            auto_explode: true,
+            cast_to_supertypes: false,
+            allow_rename: true,
+            ..Default::default()
+        },
+    }
+}
+
 /// Folds the expressions from left to right keeping the first non-null values.
 ///
 /// It is an error to provide an empty `exprs`.

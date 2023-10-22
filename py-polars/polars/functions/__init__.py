@@ -7,6 +7,7 @@ from polars.functions.aggregation import (
     cumsum_horizontal,
     max,
     max_horizontal,
+    mean_horizontal,
     min,
     min_horizontal,
     sum,
@@ -95,6 +96,7 @@ __all__ = [
     "max_horizontal",
     "min_horizontal",
     "sum_horizontal",
+    "mean_horizontal",
     # polars.functions.eager
     "align_frames",
     "approx_n_unique",

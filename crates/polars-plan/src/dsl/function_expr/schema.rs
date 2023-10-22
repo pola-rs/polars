@@ -231,6 +231,7 @@ impl FunctionExpr {
             EwmStd { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "ewma")]
             EwmVar { .. } => mapper.map_to_float_dtype(),
+            MeanHorizontal => mapper.map_to_supertype(),
         }
     }
 }
