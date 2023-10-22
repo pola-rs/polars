@@ -5,7 +5,6 @@ from polars.functions.aggregation.horizontal import (
     max_horizontal,
     min_horizontal,
     sum_horizontal,
-    mean_horizontal,
 )
 from polars.functions.aggregation.vertical import all, any, cumsum, max, min, sum
 

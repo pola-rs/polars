@@ -214,12 +214,20 @@ def mean_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     >>> df = pl.DataFrame(
     ...     {
     ...         "a": [1, 8, 3],
-    ...         "b": [4, 5, None],
-    ...         "c": ["x", "y", "z"],
+    ...         "b": [None, 7, 8],
     ...     }
     ... )
     >>> df.with_columns(pl.mean_horizontal("a", "b"))
-
+    shape: (3, 3)
+    ┌─────┬──────┬──────┐
+    │ a   ┆ b    ┆ mean │
+    │ --- ┆ ---  ┆ ---  │
+    │ i64 ┆ i64  ┆ f64  │
+    ╞═════╪══════╪══════╡
+    │ 1   ┆ null ┆ 1.0  │
+    │ 8   ┆ 7    ┆ 7.5  │
+    │ 3   ┆ 8    ┆ 5.5  │
+    └─────┴──────┴──────┘
 
     """
     pyexprs = parse_as_list_of_expressions(*exprs)
