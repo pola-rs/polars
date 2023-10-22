@@ -1,5 +1,6 @@
 use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_plan::global::_set_n_rows_for_scan;
 
 use super::super::executors::{self, Executor};
 use super::*;
@@ -198,8 +199,9 @@ pub fn create_physical_plan(
             output_schema,
             scan_type,
             predicate,
-            file_options,
+            mut file_options,
         } => {
+            file_options.n_rows = _set_n_rows_for_scan(file_options.n_rows);
             let mut state = ExpressionConversionState::default();
             let predicate = predicate
                 .map(|pred| {

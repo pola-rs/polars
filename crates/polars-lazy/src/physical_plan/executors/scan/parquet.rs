@@ -46,6 +46,7 @@ impl ParquetExec {
             },
             identity => identity,
         };
+        let n_rows = self.file_options.n_rows;
 
         POOL.install(|| {
             self.paths
@@ -59,12 +60,11 @@ impl ParquetExec {
                         .as_ref()
                         .map(|hive| hive.materialize_partition_columns());
 
-                    let (file, projection, _, predicate) = prepare_scan_args(
+                    let (file, projection, predicate) = prepare_scan_args(
                         path,
                         &self.predicate,
                         &mut self.file_options.with_columns.clone(),
                         &mut self.file_info.schema.clone(),
-                        None,
                         self.file_options.row_count.is_some(),
                         hive_partitions.as_deref(),
                     );
@@ -73,6 +73,7 @@ impl ParquetExec {
                         ParquetReader::new(file)
                             .with_schema(Some(self.file_info.reader_schema.clone()))
                             .read_parallel(parallel)
+                            .with_n_rows(n_rows)
                             .set_low_memory(self.options.low_memory)
                             .use_statistics(self.options.use_statistics)
                             .with_hive_partition_columns(hive_partitions)
@@ -109,12 +110,11 @@ impl ParquetExec {
                     .as_ref()
                     .map(|hive| hive.materialize_partition_columns());
 
-                let (file, projection, n_rows, predicate) = prepare_scan_args(
+                let (file, projection, predicate) = prepare_scan_args(
                     path,
                     &self.predicate,
                     &mut self.file_options.with_columns.clone(),
                     &mut self.file_info.schema.clone(),
-                    n_rows_total,
                     self.file_options.row_count.is_some(),
                     hive_partitions.as_deref(),
                 );
@@ -122,7 +122,7 @@ impl ParquetExec {
                 let df = if let Some(file) = file {
                     ParquetReader::new(file)
                         .with_schema(Some(self.file_info.reader_schema.clone()))
-                        .with_n_rows(n_rows)
+                        .with_n_rows(n_rows_total)
                         .read_parallel(self.options.parallel)
                         .with_row_count(row_count)
                         .set_low_memory(self.options.low_memory)
@@ -217,12 +217,11 @@ impl ParquetExec {
                         .as_ref()
                         .map(|hive| hive.materialize_partition_columns());
 
-                    let (_, projection, remaining_rows_to_read, predicate) = prepare_scan_args(
+                    let (_, projection, predicate) = prepare_scan_args(
                         Path::new(""),
                         predicate,
                         &mut file_options.with_columns.clone(),
                         &mut file_info.schema.clone(),
-                        remaining_rows_to_read,
                         row_count.is_some(),
                         hive_partitions.as_deref(),
                     );

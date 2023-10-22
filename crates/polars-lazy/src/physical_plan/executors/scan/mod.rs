@@ -30,8 +30,6 @@ use crate::prelude::*;
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 type Projection = Option<Vec<usize>>;
 #[cfg(any(feature = "ipc", feature = "parquet"))]
-type StopNRows = Option<usize>;
-#[cfg(any(feature = "ipc", feature = "parquet"))]
 type Predicate = Option<Arc<dyn PhysicalIoExpr>>;
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
@@ -40,10 +38,9 @@ fn prepare_scan_args(
     predicate: &Option<Arc<dyn PhysicalExpr>>,
     with_columns: &mut Option<Arc<Vec<String>>>,
     schema: &mut SchemaRef,
-    n_rows: Option<usize>,
     has_row_count: bool,
     hive_partitions: Option<&[Series]>,
-) -> (Option<std::fs::File>, Projection, StopNRows, Predicate) {
+) -> (Option<std::fs::File>, Projection, Predicate) {
     let file = std::fs::File::open(path).ok();
 
     let with_columns = mem::take(with_columns);
@@ -56,10 +53,9 @@ fn prepare_scan_args(
         has_row_count,
     );
 
-    let n_rows = _set_n_rows_for_scan(n_rows);
     let predicate = predicate.clone().map(phys_expr_to_io_expr);
 
-    (file, projection, n_rows, predicate)
+    (file, projection, predicate)
 }
 
 /// Producer of an in memory DataFrame
