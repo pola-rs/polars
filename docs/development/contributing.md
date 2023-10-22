@@ -3,15 +3,6 @@
 Thanks for taking the time to contribute! We appreciate all contributions, from reporting bugs to implementing new features.
 If you're unclear on how to proceed after reading this guide, please contact us on [Discord](https://discord.gg/4UfP5cfBE7).
 
-## Table of contents
-
-- [Reporting bugs](#reporting-bugs)
-- [Suggesting enhancements](#suggesting-enhancements)
-- [Contributing to the codebase](#contributing-to-the-codebase)
-- [Contributing to documentation](#contributing-to-documentation)
-- [Release flow](#release-flow)
-- [License](#license)
-
 ## Reporting bugs
 
 We use [GitHub issues](https://github.com/pola-rs/polars/issues) to track bugs and suggested enhancements.
