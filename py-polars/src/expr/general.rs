@@ -453,6 +453,10 @@ impl PyExpr {
         self.inner.clone().round(decimals).into()
     }
 
+    fn round_sf(&self, significant_figures: u32) -> Self {
+        self.clone().inner.round_sf(significant_figures).into()
+    }
+
     fn floor(&self) -> Self {
         self.inner.clone().floor().into()
     }

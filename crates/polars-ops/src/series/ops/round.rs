@@ -37,6 +37,38 @@ pub trait RoundSeries: SeriesSealed {
         polars_bail!(opq = round, s.dtype());
     }
 
+    fn round_sf(&self, significant_figures: u32) -> PolarsResult<Series> {
+        let s = self.as_series();
+
+        if let Ok(ca) = s.f32() {
+            return if significant_figures == 0 {
+                let s = ca.apply_values(|val| val.round()).into_series();
+                Ok(s)
+            } else {
+                // Note we do the computation on f64 floats to not lose precision
+                // when the computation is done, we cast to f32
+                let multiplier = 10.0.pow(significant_figures as f64);
+                let s = ca
+                    .apply_values(|val| ((val as f64 * multiplier).round() / multiplier) as f32)
+                    .into_series();
+                Ok(s)
+            };
+        }
+        if let Ok(ca) = s.f64() {
+            return if significant_figures == 0 {
+                let s = ca.apply_values(|val| val.round()).into_series();
+                Ok(s)
+            } else {
+                let multiplier = 10.0.pow(significant_figures as f64);
+                let s = ca
+                    .apply_values(|val| (val * multiplier).round() / multiplier)
+                    .into_series();
+                Ok(s)
+            };
+        }
+        polars_bail!(opq = round_sf, s.dtype());
+    }
+
     /// Floor underlying floating point array to the lowest integers smaller or equal to the float value.
     fn floor(&self) -> PolarsResult<Series> {
         let s = self.as_series();

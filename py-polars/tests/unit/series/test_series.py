@@ -1234,6 +1234,17 @@ def test_round() -> None:
     assert b.to_list() == [1.0, 2.0]
 
 
+@pytest.mark.parametrize(
+    "series, significant_figures, expected_result",
+    [pytest.param(pl.Series("f", [1.234, 0.1234]), 2, pl.Series([1.2, 0.12]))],
+)
+def test_round_sf(
+    series: pl.Series, significant_figures: int, expected_result: pl.Series
+) -> None:
+    result = series.round_sf(significant_figures=significant_figures)
+    assert_series_equal(result, expected_result)
+
+
 def test_apply_list_out() -> None:
     s = pl.Series("count", [3, 2, 2])
     out = s.map_elements(lambda val: pl.repeat(val, val, eager=True))
