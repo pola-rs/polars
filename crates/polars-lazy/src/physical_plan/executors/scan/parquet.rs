@@ -48,6 +48,32 @@ impl ParquetExec {
         };
         let n_rows = self.file_options.n_rows;
 
+        // self.paths.iter().map(|path| {
+        //     let (file, projection, predicate) = prepare_scan_args(
+        //         path,
+        //         &self.predicate,
+        //         &mut self.file_options.with_columns.clone(),
+        //         &mut self.file_info.schema.clone(),
+        //         self.file_options.row_count.is_some(),
+        //         hive_partitions.as_deref(),
+        //     );
+        //
+        //     let reader = if let Some(file) = file {
+        //         ParquetReader::new(file)
+        //             .with_schema(Some(self.file_info.reader_schema.clone()))
+        //             .read_parallel(parallel)
+        //             .set_low_memory(self.options.low_memory)
+        //             .use_statistics(self.options.use_statistics)
+        //             .with_hive_partition_columns(hive_partitions);
+        //             )
+        //     } else {
+        //         polars_bail!(ComputeError: "could not read {}", path.display())
+        //     }?;
+        //
+        //
+        //
+        // })
+
         POOL.install(|| {
             self.paths
                 .par_iter()
@@ -150,15 +176,12 @@ impl ParquetExec {
         // First initialize the readers and get the metadata concurrently.
         let iter = self.paths.iter().enumerate().map(|(i, path)| async move {
             // use the cached one as this saves a cloud call
-            let (schema, metadata) = if i == 0 {
-                (Some(first_schema.clone()), first_metadata.clone())
-            } else {
-                (None, None)
-            };
+            let metadata = if i == 0 { first_metadata.clone() } else { None };
             let mut reader = ParquetAsyncReader::from_uri(
                 &path.to_string_lossy(),
                 cloud_options,
-                schema,
+                // Schema must be the same for all files. The hive partitions are included in this schema.
+                Some(first_schema.clone()),
                 metadata,
             )
             .await?;
@@ -196,10 +219,6 @@ impl ParquetExec {
                 )| async move {
                     let mut file_info = file_info.clone();
                     let remaining_rows_to_read = *remaining_rows_to_read;
-                    if remaining_rows_to_read == 0 {
-                        return Ok(None);
-                    }
-
                     let remaining_rows_to_read = if num_rows_this_file < remaining_rows_to_read {
                         None
                     } else {

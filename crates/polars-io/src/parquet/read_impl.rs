@@ -99,7 +99,7 @@ pub(super) fn array_iter_to_series(
 /// We have a special num_rows arg, as df can be empty when a projection contains
 /// only hive partition columns.
 /// Safety: num_rows equals the height of the df when the df height is non-zero.
-fn materialize_hive_partitions(
+pub(crate) fn materialize_hive_partitions(
     df: &mut DataFrame,
     hive_partition_columns: Option<&[Series]>,
     num_rows: usize,
@@ -416,12 +416,7 @@ pub fn read_parquet<R: MmapBytesReader>(
             Cow::Borrowed(schema)
         };
         let mut df = DataFrame::from(schema.as_ref().as_ref());
-        if let Some(parts) = hive_partition_columns {
-            for s in parts {
-                // SAFETY: length is equal
-                unsafe { df.with_column_unchecked(s.clear()) };
-            }
-        }
+        materialize_hive_partitions(&mut df, hive_partition_columns, 0);
         Ok(df)
     } else {
         accumulate_dataframes_vertical(dfs)

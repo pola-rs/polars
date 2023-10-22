@@ -16,8 +16,8 @@ use crate::mmap::MmapBytesReader;
 use crate::parquet::async_impl::FetchRowGroupsFromObjectStore;
 #[cfg(feature = "cloud")]
 use crate::parquet::async_impl::ParquetObjectStore;
-use crate::parquet::read_impl::read_parquet;
 pub use crate::parquet::read_impl::BatchedParquetReader;
+use crate::parquet::read_impl::{materialize_hive_partitions, read_parquet};
 #[cfg(feature = "cloud")]
 use crate::predicates::apply_predicate;
 use crate::predicates::PhysicalIoExpr;
@@ -368,6 +368,7 @@ impl ParquetAsyncReader {
         let rechunk = self.rechunk;
         let metadata = self.get_metadata().await?.clone();
         let schema = self.schema().await?;
+        let hive_partition_columns = self.hive_partition_columns.clone();
 
         let predicate = self.predicate.clone();
         // batched reader deals with slice pushdown
@@ -384,7 +385,9 @@ impl ParquetAsyncReader {
             chunks.push(out)
         }
         if chunks.is_empty() {
-            return Ok(DataFrame::from(schema.as_ref()));
+            let mut df = DataFrame::from(schema.as_ref());
+            materialize_hive_partitions(&mut df, hive_partition_columns.as_deref(), 0);
+            return Ok(df);
         }
         let mut df = accumulate_dataframes_vertical_unchecked(chunks);
 

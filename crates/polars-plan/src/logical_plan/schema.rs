@@ -45,11 +45,11 @@ impl LogicalPlan {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FileInfo {
     pub schema: SchemaRef,
-    // Stores the schema used for the reader, as the main schema can contain
-    // extra hive columns.
+    /// Stores the schema used for the reader, as the main schema can contain
+    /// extra hive columns.
     pub reader_schema: SchemaRef,
-    // - known size
-    // - estimated size
+    /// - known size
+    /// - estimated size
     pub row_estimation: (Option<usize>, usize),
     pub hive_parts: Option<Arc<hive::HivePartitions>>,
 }

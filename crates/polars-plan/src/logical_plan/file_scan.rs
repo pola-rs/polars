@@ -50,6 +50,16 @@ impl PartialEq for FileScan {
 }
 
 impl FileScan {
+    pub(crate) fn remove_metadata(&mut self) {
+        match self {
+            #[cfg(feature = "parquet")]
+            Self::Parquet { metadata, .. } => {
+                *metadata = None;
+            },
+            _ => {},
+        }
+    }
+
     pub(crate) fn skip_rows(&self) -> usize {
         #[allow(unreachable_patterns)]
         match self {

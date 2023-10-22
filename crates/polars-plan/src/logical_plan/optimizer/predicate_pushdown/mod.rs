@@ -228,7 +228,7 @@ impl<'a> PredicatePushDown<'a> {
                 mut paths,
                 mut file_info,
                 predicate,
-                scan_type,
+                mut scan_type,
                 file_options: options,
                 output_schema
             } => {
@@ -250,8 +250,11 @@ impl<'a> PredicatePushDown<'a> {
                                 }
                             }
 
-                            if self.verbose && paths.len() != new_paths.len() {
-                                eprintln!("hive partitioning: skipped {} files, first file : {}", paths.len() - new_paths.len(), paths[0].display())
+                            if paths.len() != new_paths.len() {
+                                if self.verbose {
+                                    eprintln!("hive partitioning: skipped {} files, first file : {}", paths.len() - new_paths.len(), paths[0].display())
+                                }
+                                scan_type.remove_metadata();
                             }
                             if paths.is_empty() {
                                 let schema = output_schema.as_ref().unwrap_or(&file_info.schema);
