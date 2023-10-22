@@ -7,7 +7,10 @@ import polars._reexport as pl
 from polars import functions as F
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import deprecate_renamed_function
+from polars.utils.deprecation import (
+    deprecate_renamed_function,
+    deprecate_renamed_parameter,
+)
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
@@ -712,13 +715,14 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_diff(n, null_behavior))
 
-    def shift(self, periods: int | IntoExprColumn = 1) -> Expr:
+    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
+    def shift(self, n: int | IntoExprColumn = 1) -> Expr:
         """
-        Shift values by the given period.
+        Shift values by the given number of places.
 
         Parameters
         ----------
-        periods
+        n
             Number of places to shift (may be negative).
 
         Examples
@@ -733,8 +737,8 @@ class ExprListNameSpace:
         ]
 
         """
-        periods = parse_as_expression(periods)
-        return wrap_expr(self._pyexpr.list_shift(periods))
+        n = parse_as_expression(n)
+        return wrap_expr(self._pyexpr.list_shift(n))
 
     def slice(
         self, offset: int | str | Expr, length: int | str | Expr | None = None

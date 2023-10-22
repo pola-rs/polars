@@ -2351,13 +2351,14 @@ class Expr:
             indices_lit = parse_as_expression(indices)  # type: ignore[arg-type]
         return self._from_pyexpr(self._pyexpr.take(indices_lit))
 
-    def shift(self, periods: int = 1) -> Self:
+    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
+    def shift(self, n: int = 1) -> Self:
         """
-        Shift the values by a given period.
+        Shift values by the given number of places.
 
         Parameters
         ----------
-        periods
+        n
             Number of places to shift (may be negative).
 
         Examples
@@ -2377,28 +2378,29 @@ class Expr:
         └─────┴─────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.shift(periods))
+        return self._from_pyexpr(self._pyexpr.shift(n))
 
+    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift_and_fill(
         self,
         fill_value: IntoExpr,
         *,
-        periods: int = 1,
+        n: int = 1,
     ) -> Self:
         """
-        Shift the values by a given period and fill the resulting null values.
+        Shift values by the given number of places and fill the resulting null values.
 
         Parameters
         ----------
         fill_value
             Fill None values with the result of this expression.
-        periods
+        n
             Number of places to shift (may be negative).
 
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
-        >>> df.with_columns(foo_shifted=pl.col("foo").shift_and_fill("a", periods=1))
+        >>> df.with_columns(foo_shifted=pl.col("foo").shift_and_fill("a", n=1))
         shape: (4, 2)
         ┌─────┬─────────────┐
         │ foo ┆ foo_shifted │
@@ -2413,7 +2415,7 @@ class Expr:
 
         """
         fill_value = parse_as_expression(fill_value, str_as_lit=True)
-        return self._from_pyexpr(self._pyexpr.shift_and_fill(periods, fill_value))
+        return self._from_pyexpr(self._pyexpr.shift_and_fill(n, fill_value))
 
     def fill_null(
         self,

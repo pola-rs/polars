@@ -834,14 +834,14 @@ impl PyLazyFrame {
         ldf.reverse().into()
     }
 
-    fn shift(&self, periods: i64) -> Self {
+    fn shift(&self, n: i64) -> Self {
         let ldf = self.ldf.clone();
-        ldf.shift(periods).into()
+        ldf.shift(n).into()
     }
 
-    fn shift_and_fill(&self, periods: i64, fill_value: PyExpr) -> Self {
+    fn shift_and_fill(&self, n: i64, fill_value: PyExpr) -> Self {
         let ldf = self.ldf.clone();
-        ldf.shift_and_fill(periods, fill_value.inner).into()
+        ldf.shift_and_fill(n, fill_value.inner).into()
     }
 
     fn fill_nan(&self, fill_value: PyExpr) -> Self {

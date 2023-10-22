@@ -5,7 +5,10 @@ from typing import TYPE_CHECKING, Any, Callable, Sequence
 from polars import functions as F
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
-from polars.utils.deprecation import deprecate_renamed_function
+from polars.utils.deprecation import (
+    deprecate_renamed_function,
+    deprecate_renamed_parameter,
+)
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
@@ -385,13 +388,14 @@ class ListNameSpace:
 
         """
 
-    def shift(self, periods: int | IntoExprColumn = 1) -> Series:
+    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
+    def shift(self, n: int | IntoExprColumn = 1) -> Series:
         """
-        Shift values by the given period.
+        Shift values by the given number of places.
 
         Parameters
         ----------
-        periods
+        n
             Number of places to shift (may be negative).
 
         Examples

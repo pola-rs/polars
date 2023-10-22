@@ -335,13 +335,13 @@ impl PyExpr {
         self.clone().inner.forward_fill(limit).into()
     }
 
-    fn shift(&self, periods: i64) -> Self {
-        self.clone().inner.shift(periods).into()
+    fn shift(&self, n: i64) -> Self {
+        self.clone().inner.shift(n).into()
     }
-    fn shift_and_fill(&self, periods: i64, fill_value: Self) -> Self {
+    fn shift_and_fill(&self, n: i64, fill_value: Self) -> Self {
         self.clone()
             .inner
-            .shift_and_fill(periods, fill_value.inner)
+            .shift_and_fill(n, fill_value.inner)
             .into()
     }
 
