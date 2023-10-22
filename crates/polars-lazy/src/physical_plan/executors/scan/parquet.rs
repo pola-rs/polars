@@ -52,8 +52,15 @@ impl ParquetExec {
         let mut remaining_rows_to_read = self.file_options.n_rows.unwrap_or(usize::MAX);
         let mut base_row_count = self.file_options.row_count.take();
 
-        // 'Only' 256 files at a time to prevent open file limits.
-        for paths in self.paths.chunks(256) {
+        // Limit no. of files at a time to prevent open file limits.
+        for paths in self
+            .paths
+            .chunks(std::cmp::min(POOL.current_num_threads(), 128))
+        {
+            if remaining_rows_to_read == 0 && !result.is_empty() {
+                return Ok(result);
+            }
+
             // First initialize the readers, predicates and metadata.
             // This will be used to determine the slices. That way we can actually read all the
             // files in parallel even when we add row counts or slices.
@@ -143,8 +150,7 @@ impl ParquetExec {
                 result.extend_from_slice(&out)
             }
         }
-
-        todo!()
+        Ok(result)
     }
 
     #[cfg(feature = "cloud")]
