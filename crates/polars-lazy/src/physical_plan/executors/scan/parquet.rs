@@ -80,7 +80,7 @@ impl ParquetExec {
                         &self.predicate,
                         &mut self.file_options.with_columns.clone(),
                         &mut self.file_info.schema.clone(),
-                        self.file_options.row_count.is_some(),
+                        base_row_count.is_some(),
                         hive_partitions.as_deref(),
                     );
 
@@ -138,9 +138,8 @@ impl ParquetExec {
                     .collect::<PolarsResult<Vec<_>>>()
             })?;
 
-            let n_read =
-                remaining_rows_to_read.saturating_sub(out.iter().map(|df| df.height()).sum());
-            remaining_rows_to_read = n_read;
+            let n_read = out.iter().map(|df| df.height()).sum();
+            remaining_rows_to_read = remaining_rows_to_read.saturating_sub(n_read);
             if let Some(rc) = &mut base_row_count {
                 rc.offset += n_read as IdxSize;
             }
