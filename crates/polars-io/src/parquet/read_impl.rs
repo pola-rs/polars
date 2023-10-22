@@ -342,6 +342,10 @@ pub fn read_parquet<R: MmapBytesReader>(
     use_statistics: bool,
     hive_partition_columns: Option<&[Series]>,
 ) -> PolarsResult<DataFrame> {
+    if limit == 0 {
+        return Ok(DataFrame::from(schema.as_ref()));
+    }
+
     let file_metadata = metadata
         .map(Ok)
         .unwrap_or_else(|| read::read_metadata(&mut reader).map(Arc::new))?;

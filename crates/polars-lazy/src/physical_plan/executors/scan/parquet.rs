@@ -256,7 +256,7 @@ impl ParquetExec {
             || is_cloud
             || force_async
         {
-            if is_cloud {
+            if is_cloud || force_async {
                 #[cfg(not(feature = "cloud"))]
                 {
                     panic!("activate cloud feature")
