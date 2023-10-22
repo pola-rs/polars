@@ -220,16 +220,18 @@ def test_expanding_sum() -> None:
     assert result.to_list() == [2.1, 4.7, 6.8]
 
 
-def test_sum_max_min() -> None:
+def test_sum_max_min_mean_horizontal() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     out = df.select(
         pl.sum_horizontal("a", "b"),
         pl.max_horizontal("a", pl.col("b") ** 2),
         pl.min_horizontal("a", pl.col("b") ** 2),
+        pl.mean_horizontal("a", "b"),
     )
     assert_series_equal(out["sum"], pl.Series("sum", [2.0, 4.0, 6.0]))
     assert_series_equal(out["max"], pl.Series("max", [1.0, 4.0, 9.0]))
     assert_series_equal(out["min"], pl.Series("min", [1.0, 2.0, 3.0]))
+    assert_series_equal(out["mean"], pl.Series("mean", [1.0, 2.0, 3.0]))
 
 
 def test_cumsum_fold() -> None:
