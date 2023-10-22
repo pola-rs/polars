@@ -40,15 +40,15 @@ A feature is part of the public API if it is documented in the [API reference](h
 
 Examples of breaking changes:
 
-* A deprecated function or method is removed.
-* The default value of a parameter is changed.
-* The outcome of a query has changed due to changes to the query engine.
+- A deprecated function or method is removed.
+- The default value of a parameter is changed.
+- The outcome of a query has changed due to changes to the query engine.
 
 Examples of changes that are _not_ considered breaking:
 
-* An undocumented function is removed.
-* The module path of a public class is changed.
-* An optional parameter is added to an existing method.
+- An undocumented function is removed.
+- The module path of a public class is changed.
+- An optional parameter is added to an existing method.
 
 Bug fixes are not considered a breaking change, even though it may impact some users' [workflows](https://xkcd.com/1172/).
 
@@ -59,7 +59,7 @@ For example, if we choose to rename a function, the new function is added alongs
 
 Not all changes can be deprecated nicely.
 A change to the query engine may have effects across a large part of the API.
-Such changes will not be warned for, but *will* be included in the changelog and the migration guide.
+Such changes will not be warned for, but _will_ be included in the changelog and the migration guide.
 
 ### Deprecation period
 
