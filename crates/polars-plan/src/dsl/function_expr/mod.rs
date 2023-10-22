@@ -69,7 +69,6 @@ pub(crate) use correlation::CorrelationMethod;
 #[cfg(feature = "fused")]
 pub(crate) use fused::FusedOperator;
 pub(super) use list::ListFunction;
-use polars_core::frame::NullStrategy;
 use polars_core::prelude::*;
 #[cfg(feature = "cutqcut")]
 use polars_ops::prelude::{cut, qcut};

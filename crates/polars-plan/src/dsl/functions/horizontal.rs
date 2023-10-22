@@ -293,9 +293,9 @@ pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     })
 }
 
-/// Create a new column with the the sum of the values in each row.
+/// Create a new column with the the mean of the values in each row.
 ///
-/// The name of the resulting column will be `"sum"`; use [`alias`](Expr::alias) to choose a different name.
+/// The name of the resulting column will be `"mean"`; use [`alias`](Expr::alias) to choose a different name.
 pub fn mean_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     let exprs = exprs.as_ref().to_vec();
 
