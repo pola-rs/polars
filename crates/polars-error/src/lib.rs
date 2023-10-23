@@ -72,6 +72,8 @@ pub enum PolarsError {
     StringCacheMismatch(ErrString),
     #[error("field not found: {0}")]
     StructFieldNotFound(ErrString),
+    #[error("File not found: {0}")]
+    FileNotFound(ErrString),
 }
 
 #[cfg(feature = "regex")]
@@ -142,6 +144,7 @@ impl PolarsError {
             ShapeMismatch(msg) => ShapeMismatch(func(msg).into()),
             StringCacheMismatch(msg) => StringCacheMismatch(func(msg).into()),
             StructFieldNotFound(msg) => StructFieldNotFound(func(msg).into()),
+            FileNotFound(msg) => FileNotFound(func(msg).into()),
         }
     }
 }

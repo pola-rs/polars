@@ -52,7 +52,7 @@ use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::error::{
     ColumnNotFoundError, ComputeError, DuplicateError, InvalidOperationError, NoDataError,
-    OutOfBoundsError, PyPolarsErr, SchemaError, SchemaFieldNotFoundError, StructFieldNotFoundError,
+    OutOfBoundsError, PyPolarsErr, SchemaError, SchemaFieldNotFoundError, StructFieldNotFoundError,FileNotFoundError,
 };
 use crate::expr::PyExpr;
 use crate::functions::string_cache::PyStringCacheHolder;
@@ -294,6 +294,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         py.get_type::<StructFieldNotFoundError>(),
     )
     .unwrap();
+    m.add("FileNotFoundError", py.get_type::<FileNotFoundError>())
+        .unwrap();
 
     // Build info
     #[cfg(feature = "build_info")]
