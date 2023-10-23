@@ -1,7 +1,7 @@
 use num_traits::Num;
 
 pub trait AbsDiff {
-    type Abs: Num + PartialOrd + Copy + std::fmt::Debug;
+    type Abs: Num + PartialOrd + Copy + std::fmt::Debug + Send + Sync;
 
     fn max_abs_diff() -> Self::Abs;
     fn abs_diff(self, other: Self) -> Self::Abs;
