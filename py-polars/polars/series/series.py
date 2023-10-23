@@ -4698,7 +4698,7 @@ class Series:
 
     def round_sf(self, significant_figures: int = 1) -> Series:
         """
-        Round underlying floating point data by `decimals` digits.
+        Round underlying floating point data by `significant` figures.
 
         Examples
         --------
@@ -4715,7 +4715,7 @@ class Series:
         Parameters
         ----------
         significant_figures
-            number of signficant figures to round by.
+            number of significant figures to round by.
 
         """
 
