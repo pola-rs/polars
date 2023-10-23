@@ -895,7 +895,7 @@ impl PyExpr {
         kwargs: Vec<u8>,
         is_elementwise: bool,
         input_wildcard_expansion: bool,
-        auto_explode: bool,
+        returns_scalar: bool,
         cast_to_supertypes: bool,
     ) -> PyResult<Self> {
         use polars_plan::prelude::*;
@@ -922,7 +922,7 @@ impl PyExpr {
             options: FunctionOptions {
                 collect_groups,
                 input_wildcard_expansion,
-                auto_explode,
+                returns_scalar,
                 cast_to_supertypes,
                 ..Default::default()
             },

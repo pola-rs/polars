@@ -206,7 +206,7 @@ impl StringNameSpace {
         self.0
             .apply_private(StringFunction::ConcatVertical(delimiter.to_owned()).into())
             .with_function_options(|mut options| {
-                options.auto_explode = true;
+                options.returns_scalar = true;
                 options
             })
     }

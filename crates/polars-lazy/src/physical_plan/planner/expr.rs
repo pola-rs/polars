@@ -462,8 +462,8 @@ pub(crate) fn create_physical_expr(
             output_type: _,
             options,
         } => {
-            let is_reducing_aggregation =
-                options.auto_explode && matches!(options.collect_groups, ApplyOptions::ApplyGroups);
+            let is_reducing_aggregation = options.returns_scalar
+                && matches!(options.collect_groups, ApplyOptions::ApplyGroups);
             // will be reset in the function so get that here
             let has_window = state.local.has_window;
             let input = create_physical_expressions_check_state(
@@ -478,19 +478,14 @@ pub(crate) fn create_physical_expr(
                 },
             )?;
 
-            Ok(Arc::new(ApplyExpr {
-                inputs: input,
+            Ok(Arc::new(ApplyExpr::new(
+                input,
                 function,
-                expr: node_to_expr(expression, expr_arena),
-                collect_groups: options.collect_groups,
-                auto_explode: options.auto_explode,
-                allow_rename: options.allow_rename,
-                pass_name_to_apply: options.pass_name_to_apply,
-                input_schema: schema.cloned(),
-                allow_threading: !state.has_cache,
-                check_lengths: options.check_lengths(),
-                allow_group_aware: options.allow_group_aware,
-            }))
+                node_to_expr(expression, expr_arena),
+                options,
+                !state.has_cache,
+                schema.cloned(),
+            )))
         },
         Function {
             input,
@@ -498,8 +493,8 @@ pub(crate) fn create_physical_expr(
             options,
             ..
         } => {
-            let is_reducing_aggregation =
-                options.auto_explode && matches!(options.collect_groups, ApplyOptions::ApplyGroups);
+            let is_reducing_aggregation = options.returns_scalar
+                && matches!(options.collect_groups, ApplyOptions::ApplyGroups);
             // will be reset in the function so get that here
             let has_window = state.local.has_window;
             let input = create_physical_expressions_check_state(
@@ -514,19 +509,14 @@ pub(crate) fn create_physical_expr(
                 },
             )?;
 
-            Ok(Arc::new(ApplyExpr {
-                inputs: input,
-                function: function.into(),
-                expr: node_to_expr(expression, expr_arena),
-                collect_groups: options.collect_groups,
-                auto_explode: options.auto_explode,
-                allow_rename: options.allow_rename,
-                pass_name_to_apply: options.pass_name_to_apply,
-                input_schema: schema.cloned(),
-                allow_threading: !state.has_cache,
-                check_lengths: options.check_lengths(),
-                allow_group_aware: options.allow_group_aware,
-            }))
+            Ok(Arc::new(ApplyExpr::new(
+                input,
+                function.into(),
+                node_to_expr(expression, expr_arena),
+                options,
+                !state.has_cache,
+                schema.cloned(),
+            )))
         },
         Slice {
             input,

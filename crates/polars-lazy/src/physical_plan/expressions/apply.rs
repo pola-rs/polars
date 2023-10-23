@@ -14,20 +14,47 @@ use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
 pub struct ApplyExpr {
-    pub inputs: Vec<Arc<dyn PhysicalExpr>>,
-    pub function: SpecialEq<Arc<dyn SeriesUdf>>,
-    pub expr: Expr,
-    pub collect_groups: ApplyOptions,
-    pub auto_explode: bool,
-    pub allow_rename: bool,
-    pub pass_name_to_apply: bool,
-    pub input_schema: Option<SchemaRef>,
-    pub allow_threading: bool,
-    pub check_lengths: bool,
-    pub allow_group_aware: bool,
+    inputs: Vec<Arc<dyn PhysicalExpr>>,
+    function: SpecialEq<Arc<dyn SeriesUdf>>,
+    expr: Expr,
+    collect_groups: ApplyOptions,
+    returns_scalar: bool,
+    allow_rename: bool,
+    pass_name_to_apply: bool,
+    input_schema: Option<SchemaRef>,
+    allow_threading: bool,
+    check_lengths: bool,
+    allow_group_aware: bool,
 }
 
 impl ApplyExpr {
+    pub(crate) fn new(
+        inputs: Vec<Arc<dyn PhysicalExpr>>,
+        function: SpecialEq<Arc<dyn SeriesUdf>>,
+        expr: Expr,
+        options: FunctionOptions,
+        allow_threading: bool,
+        input_schema: Option<SchemaRef>,
+    ) -> Self {
+        if matches!(options.collect_groups, ApplyOptions::ApplyFlat) && options.returns_scalar {
+            panic!("expr {} is not implemented correctly. 'returns_scalar' and 'elementwise' are mutually exclusive", expr)
+        }
+
+        Self {
+            inputs,
+            function,
+            expr,
+            collect_groups: options.collect_groups,
+            returns_scalar: options.returns_scalar,
+            allow_rename: options.allow_rename,
+            pass_name_to_apply: options.pass_name_to_apply,
+            input_schema,
+            allow_threading,
+            check_lengths: options.check_lengths(),
+            allow_group_aware: options.allow_group_aware,
+        }
+    }
+
     pub(crate) fn new_minimal(
         inputs: Vec<Arc<dyn PhysicalExpr>>,
         function: SpecialEq<Arc<dyn SeriesUdf>>,
@@ -39,7 +66,7 @@ impl ApplyExpr {
             function,
             expr,
             collect_groups,
-            auto_explode: false,
+            returns_scalar: false,
             allow_rename: false,
             pass_name_to_apply: false,
             input_schema: None,
@@ -70,7 +97,7 @@ impl ApplyExpr {
         ca: ListChunked,
     ) -> PolarsResult<AggregationContext<'a>> {
         let all_unit_len = all_unit_length(&ca);
-        if all_unit_len && self.auto_explode {
+        if all_unit_len && self.returns_scalar {
             ac.with_series(ca.explode().unwrap().into_series(), true, Some(&self.expr))?;
             ac.update_groups = UpdateGroups::No;
         } else {

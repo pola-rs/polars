@@ -191,7 +191,7 @@ pub struct FunctionOptions {
     ///
     /// this also accounts for regex expansion
     pub input_wildcard_expansion: bool,
-    /// automatically explode on unit length it ran as final aggregation.
+    /// Automatically explode on unit length if it ran as final aggregation.
     ///
     /// this is the case for aggregations like sum, min, covariance etc.
     /// We need to know this because we cannot see the difference between
@@ -201,7 +201,7 @@ pub struct FunctionOptions {
     ///
     /// head_1(x) -> {1}
     /// sum(x) -> {4}
-    pub auto_explode: bool,
+    pub returns_scalar: bool,
     // if the expression and its inputs should be cast to supertypes
     pub cast_to_supertypes: bool,
     // The physical expression may rename the output of this function.
@@ -242,7 +242,7 @@ impl Default for FunctionOptions {
         FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: false,
-            auto_explode: false,
+            returns_scalar: false,
             fmt_str: "",
             cast_to_supertypes: false,
             allow_rename: false,

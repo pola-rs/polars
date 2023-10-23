@@ -46,7 +46,7 @@ where
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,
-            auto_explode: true,
+            returns_scalar: true,
             fmt_str: "fold",
             ..Default::default()
         },
@@ -89,7 +89,7 @@ where
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,
-            auto_explode: true,
+            returns_scalar: true,
             fmt_str: "reduce",
             ..Default::default()
         },
@@ -134,7 +134,7 @@ where
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,
-            auto_explode: true,
+            returns_scalar: true,
             fmt_str: "cumreduce",
             ..Default::default()
         },
@@ -183,7 +183,7 @@ where
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,
-            auto_explode: true,
+            returns_scalar: true,
             fmt_str: "cumfold",
             ..Default::default()
         },
@@ -201,7 +201,7 @@ pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
-            auto_explode: true,
+            returns_scalar: true,
             cast_to_supertypes: false,
             allow_rename: true,
             ..Default::default()
@@ -220,7 +220,7 @@ pub fn any_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
-            auto_explode: true,
+            returns_scalar: true,
             cast_to_supertypes: false,
             allow_rename: true,
             ..Default::default()
@@ -243,7 +243,7 @@ pub fn max_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
-            auto_explode: true,
+            returns_scalar: true,
             allow_rename: true,
             ..Default::default()
         },
@@ -265,7 +265,7 @@ pub fn min_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
-            auto_explode: true,
+            returns_scalar: true,
             allow_rename: true,
             ..Default::default()
         },
@@ -284,7 +284,7 @@ pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
-            auto_explode: true,
+            returns_scalar: true,
             cast_to_supertypes: false,
             allow_rename: true,
             ..Default::default()

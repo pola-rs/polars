@@ -9511,7 +9511,7 @@ class Expr:
         """
         return self.is_last_distinct()
 
-    def _register_plugin(
+    def register_plugin(
         self,
         *,
         lib: str,
@@ -9520,7 +9520,7 @@ class Expr:
         kwargs: dict[Any, Any] | None = None,
         is_elementwise: bool = False,
         input_wildcard_expansion: bool = False,
-        auto_explode: bool = False,
+        returns_scalar: bool = False,
         cast_to_supertypes: bool = False,
     ) -> Self:
         """
@@ -9550,9 +9550,10 @@ class Expr:
             this will trigger fast paths.
         input_wildcard_expansion
             Expand expressions as input of this function.
-        auto_explode
-            Explode the results in a group_by.
-            This is recommended for aggregation functions.
+        returns_scalar
+            Automatically explode on unit length if it ran as final aggregation.
+            this is the case for aggregations like ``sum``, ``min``, ``covariance`` etc.
+
         cast_to_supertypes
             Cast the input datatypes to their supertype.
 
@@ -9566,7 +9567,8 @@ class Expr:
         else:
             import pickle
 
-            serialized_kwargs = pickle.dumps(kwargs, protocol=2)
+            # Choose the highest protocol supported by https://docs.rs/serde-pickle/latest/serde_pickle/
+            serialized_kwargs = pickle.dumps(kwargs, protocol=5)
 
         return self._from_pyexpr(
             self._pyexpr.register_plugin(
@@ -9576,9 +9578,33 @@ class Expr:
                 serialized_kwargs,
                 is_elementwise,
                 input_wildcard_expansion,
-                auto_explode,
+                returns_scalar,
                 cast_to_supertypes,
             )
+        )
+
+    @deprecate_renamed_function("register_plugin", version="0.19.12")
+    def _register_plugin(
+        self,
+        *,
+        lib: str,
+        symbol: str,
+        args: list[IntoExpr] | None = None,
+        kwargs: dict[Any, Any] | None = None,
+        is_elementwise: bool = False,
+        input_wildcard_expansion: bool = False,
+        auto_explode: bool = False,
+        cast_to_supertypes: bool = False,
+    ) -> Self:
+        return self.register_plugin(
+            lib=lib,
+            symbol=symbol,
+            args=args,
+            kwargs=kwargs,
+            is_elementwise=is_elementwise,
+            input_wildcard_expansion=input_wildcard_expansion,
+            returns_scalar=auto_explode,
+            cast_to_supertypes=cast_to_supertypes,
         )
 
     @property

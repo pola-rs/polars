@@ -402,7 +402,7 @@ fn string_addition_to_linear_concat(
                     options: FunctionOptions {
                         collect_groups: ApplyOptions::ApplyFlat,
                         input_wildcard_expansion: true,
-                        auto_explode: true,
+                        returns_scalar: true,
                         ..Default::default()
                     },
                 }),
