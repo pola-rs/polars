@@ -1236,7 +1236,31 @@ def test_round() -> None:
 
 @pytest.mark.parametrize(
     "series, significant_figures, expected_result",
-    [pytest.param(pl.Series([1.234, 0.1234]), 2, pl.Series([1.2, 0.12]))],
+    [
+        pytest.param(pl.Series([1.234, 0.1234]), 2, pl.Series([1.2, 0.12]), id="f64"),
+        pytest.param(
+            pl.Series([1.234, 0.1234]).cast(pl.Float32),
+            2,
+            pl.Series([1.2, 0.12]).cast(pl.Float32),
+            id="f32",
+        ),
+        pytest.param(pl.Series([123400, 1234]), 2, pl.Series([120000, 1200]), id="i64"),
+        pytest.param(
+            pl.Series([123400, 1234]).cast(pl.Int32),
+            2,
+            pl.Series([120000, 1200]).cast(pl.Int32),
+            id="i32",
+        ),
+        pytest.param(
+            pl.Series([0.0]), 2, pl.Series([0.0]), id="0 should remain the same"
+        ),
+        pytest.param(
+            pl.Series([1.234, 0.1234]),
+            0,
+            pl.Series([1.0, 0.1]),
+            id="Significant figures set to 0 reverts to 1 sf",
+        ),
+    ],
 )
 def test_round_sf(
     series: pl.Series, significant_figures: int, expected_result: pl.Series

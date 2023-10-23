@@ -44,6 +44,7 @@ Manipulation/selection
     Expr.rle
     Expr.rle_id
     Expr.round
+    Expr.round_sf
     Expr.sample
     Expr.shift
     Expr.shift_and_fill

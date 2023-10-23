@@ -4696,7 +4696,7 @@ class Series:
 
         """
 
-    def round_sf(self, significant_figures: int = 0) -> Series:
+    def round_sf(self, significant_figures: int = 1) -> Series:
         """
         Round underlying floating point data by `decimals` digits.
 
