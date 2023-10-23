@@ -74,6 +74,7 @@ from polars.exceptions import (
     SchemaFieldNotFoundError,
     ShapeError,
     StructFieldNotFoundError,
+    FileNotFoundError,
 )
 from polars.expr import Expr
 from polars.functions import (
@@ -216,6 +217,7 @@ __all__ = [
     "SchemaFieldNotFoundError",
     "ShapeError",
     "StructFieldNotFoundError",
+    "FileNotFoundError",
     # core classes
     "DataFrame",
     "Expr",
