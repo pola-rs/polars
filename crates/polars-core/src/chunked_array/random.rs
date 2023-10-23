@@ -5,6 +5,7 @@ use rand::prelude::*;
 use rand::seq::index::IndexVec;
 use rand_distr::{Distribution, Normal, Standard, StandardNormal, Uniform};
 
+use crate::prelude::DataType::Float64;
 use crate::prelude::*;
 use crate::random::get_global_random_u64;
 use crate::utils::{CustomIterTools, NoNull};
@@ -192,11 +193,7 @@ impl DataFrame {
         match n.get(0) {
             Some(n) => self.sample_n_literal(n as usize, with_replacement, shuffle, seed),
             None => {
-                let new_cols = self
-                    .columns
-                    .iter()
-                    .map(|c| Series::new_empty(c.name(), c.dtype()))
-                    .collect_trusted();
+                let new_cols = self.columns.iter().map(Series::clear).collect_trusted();
                 Ok(DataFrame::new_no_checks(new_cols))
             },
         }
@@ -222,13 +219,29 @@ impl DataFrame {
     /// Sample a fraction between 0.0-1.0 of this [`DataFrame`].
     pub fn sample_frac(
         &self,
-        frac: f64,
+        frac: &Series,
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
     ) -> PolarsResult<Self> {
-        let n = (self.height() as f64 * frac) as usize;
-        self.sample_n_literal(n, with_replacement, shuffle, seed)
+        polars_ensure!(
+        frac.len() == 1,
+        ComputeError: "Sample fraction must be a single value."
+        );
+
+        let frac = frac.cast(&Float64)?;
+        let frac = frac.f64()?;
+
+        match frac.get(0) {
+            Some(frac) => {
+                let n = (self.height() as f64 * frac) as usize;
+                self.sample_n_literal(n, with_replacement, shuffle, seed)
+            },
+            None => {
+                let new_cols = self.columns.iter().map(Series::clear).collect_trusted();
+                Ok(DataFrame::new_no_checks(new_cols))
+            },
+        }
     }
 }
 
@@ -305,19 +318,29 @@ mod test {
         assert!(df
             .sample_n(&Series::new("s", &[3]), false, false, None)
             .is_ok());
-        assert!(df.sample_frac(0.4, false, false, None).is_ok());
+        assert!(df
+            .sample_frac(&Series::new("frac", &[0.4]), false, false, None)
+            .is_ok());
         // With seeding.
         assert!(df
             .sample_n(&Series::new("s", &[3]), false, false, Some(0))
             .is_ok());
-        assert!(df.sample_frac(0.4, false, false, Some(0)).is_ok());
+        assert!(df
+            .sample_frac(&Series::new("frac", &[0.4]), false, false, Some(0))
+            .is_ok());
         // Without replacement can not sample more than 100%.
-        assert!(df.sample_frac(2.0, false, false, Some(0)).is_err());
+        assert!(df
+            .sample_frac(&Series::new("frac", &[2.0]), false, false, Some(0))
+            .is_err());
         assert!(df
             .sample_n(&Series::new("s", &[3]), true, false, Some(0))
             .is_ok());
-        assert!(df.sample_frac(0.4, true, false, Some(0)).is_ok());
+        assert!(df
+            .sample_frac(&Series::new("frac", &[0.4]), true, false, Some(0))
+            .is_ok());
         // With replacement can sample more than 100%.
-        assert!(df.sample_frac(2.0, true, false, Some(0)).is_ok());
+        assert!(df
+            .sample_frac(&Series::new("frac", &[2.0]), true, false, Some(0))
+            .is_ok());
     }
 }

@@ -8248,7 +8248,7 @@ class Expr:
         self,
         n: int | IntoExprColumn | None = None,
         *,
-        fraction: float | None = None,
+        fraction: float | IntoExprColumn | None = None,
         with_replacement: bool = False,
         shuffle: bool = False,
         seed: int | None = None,
@@ -8291,6 +8291,7 @@ class Expr:
             raise ValueError("cannot specify both `n` and `fraction`")
 
         if fraction is not None:
+            fraction = parse_as_expression(fraction)
             return self._from_pyexpr(
                 self._pyexpr.sample_frac(fraction, with_replacement, shuffle, seed)
             )

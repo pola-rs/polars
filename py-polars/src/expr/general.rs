@@ -780,14 +780,14 @@ impl PyExpr {
     #[pyo3(signature = (frac, with_replacement, shuffle, seed))]
     fn sample_frac(
         &self,
-        frac: f64,
+        frac: Self,
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
     ) -> Self {
         self.inner
             .clone()
-            .sample_frac(frac, with_replacement, shuffle, seed)
+            .sample_frac(frac.inner, with_replacement, shuffle, seed)
             .into()
     }
 
