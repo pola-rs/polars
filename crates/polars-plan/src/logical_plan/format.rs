@@ -19,14 +19,14 @@ fn write_scan<P: Display>(
     if indent != 0 {
         writeln!(f)?;
     }
-    let path_fmt = if path.len() == 1 {
-        path[0].to_string_lossy()
-    } else {
-        Cow::Owned(format!(
+    let path_fmt = match path.len() {
+        1 => path[0].to_string_lossy(),
+        0 => "".into(),
+        _ => Cow::Owned(format!(
             "{} files: first file: {}",
             path.len(),
             path[0].to_string_lossy()
-        ))
+        )),
     };
 
     write!(f, "{:indent$}{} SCAN {}", "", name, path_fmt)?;
