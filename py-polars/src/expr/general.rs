@@ -462,16 +462,15 @@ impl PyExpr {
         self.inner.clone().ceil().into()
     }
 
-    fn clip(&self, min: Self, max: Self) -> Self {
-        self.inner.clone().clip(min.inner, max.inner).into()
-    }
-
-    fn clip_min(&self, min: Self) -> Self {
-        self.inner.clone().clip_min(min.inner).into()
-    }
-
-    fn clip_max(&self, max: Self) -> Self {
-        self.inner.clone().clip_max(max.inner).into()
+    fn clip(&self, min: Option<Self>, max: Option<Self>) -> Self {
+        let expr = self.inner.clone();
+        let out = match (min, max) {
+            (Some(min), Some(max)) => expr.clip(min.inner, max.inner),
+            (Some(min), None) => expr.clip_min(min.inner),
+            (None, Some(max)) => expr.clip_max(max.inner),
+            (None, None) => expr,
+        };
+        out.into()
     }
 
     fn abs(&self) -> Self {

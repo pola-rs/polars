@@ -7645,116 +7645,69 @@ class Expr:
 
     def clip(
         self,
-        lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn,
-        upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn,
+        lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn | None = None,
+        upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn | None = None,
     ) -> Self:
         """
-        Clip (limit) the values in an array to a `min` and `max` boundary.
-
-        Only works for physical numerical types.
-
-        If you want to clip other dtypes, consider writing a "when, then, otherwise"
-        expression. See :func:`when` for more information.
+        Set values outside the given boundaries to the boundary value.
 
         Parameters
         ----------
         lower_bound
-            Lower bound.
+            Lower bound. Accepts expression input.
+            Non-expression inputs are parsed as literals.
         upper_bound
-            Upper bound.
+            Upper bound. Accepts expression input.
+            Non-expression inputs are parsed as literals.
+
+        See Also
+        --------
+        when
+
+        Notes
+        -----
+        This method only works for numeric and temporal columns. To clip other data
+        types, consider writing a `when-then-otherwise` expression. See :func:`when`.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [-50, 5, None, 50]})
-        >>> df.with_columns(pl.col("foo").clip(1, 10).alias("foo_clipped"))
+        Specifying both a lower and upper bound:
+
+        >>> df = pl.DataFrame({"a": [-50, 5, 50, None]})
+        >>> df.with_columns(clip=pl.col("a").clip(1, 10))
         shape: (4, 2)
-        ┌──────┬─────────────┐
-        │ foo  ┆ foo_clipped │
-        │ ---  ┆ ---         │
-        │ i64  ┆ i64         │
-        ╞══════╪═════════════╡
-        │ -50  ┆ 1           │
-        │ 5    ┆ 5           │
-        │ null ┆ null        │
-        │ 50   ┆ 10          │
-        └──────┴─────────────┘
+        ┌──────┬──────┐
+        │ a    ┆ clip │
+        │ ---  ┆ ---  │
+        │ i64  ┆ i64  │
+        ╞══════╪══════╡
+        │ -50  ┆ 1    │
+        │ 5    ┆ 5    │
+        │ 50   ┆ 10   │
+        │ null ┆ null │
+        └──────┴──────┘
+
+        Specifying only a single bound:
+
+        >>> df.with_columns(clip=pl.col("a").clip(upper_bound=10))
+        shape: (4, 2)
+        ┌──────┬──────┐
+        │ a    ┆ clip │
+        │ ---  ┆ ---  │
+        │ i64  ┆ i64  │
+        ╞══════╪══════╡
+        │ -50  ┆ -50  │
+        │ 5    ┆ 5    │
+        │ 50   ┆ 10   │
+        │ null ┆ null │
+        └──────┴──────┘
 
         """
-        lower_bound = parse_as_expression(lower_bound, str_as_lit=True)
-        upper_bound = parse_as_expression(upper_bound, str_as_lit=True)
+        if lower_bound is not None:
+            lower_bound = parse_as_expression(lower_bound, str_as_lit=True)
+        if upper_bound is not None:
+            upper_bound = parse_as_expression(upper_bound, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.clip(lower_bound, upper_bound))
-
-    def clip_min(
-        self, lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
-    ) -> Self:
-        """
-        Clip (limit) the values in an array to a `min` boundary.
-
-        Only works for physical numerical types.
-
-        If you want to clip other dtypes, consider writing a "when, then, otherwise"
-        expression. See :func:`when` for more information.
-
-        Parameters
-        ----------
-        lower_bound
-            Lower bound.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [-50, 5, None, 50]})
-        >>> df.with_columns(pl.col("foo").clip_min(0).alias("foo_clipped"))
-        shape: (4, 2)
-        ┌──────┬─────────────┐
-        │ foo  ┆ foo_clipped │
-        │ ---  ┆ ---         │
-        │ i64  ┆ i64         │
-        ╞══════╪═════════════╡
-        │ -50  ┆ 0           │
-        │ 5    ┆ 5           │
-        │ null ┆ null        │
-        │ 50   ┆ 50          │
-        └──────┴─────────────┘
-
-        """
-        lower_bound = parse_as_expression(lower_bound, str_as_lit=True)
-        return self._from_pyexpr(self._pyexpr.clip_min(lower_bound))
-
-    def clip_max(
-        self, upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
-    ) -> Self:
-        """
-        Clip (limit) the values in an array to a `max` boundary.
-
-        Only works for physical numerical types.
-
-        If you want to clip other dtypes, consider writing a "when, then, otherwise"
-        expression. See :func:`when` for more information.
-
-        Parameters
-        ----------
-        upper_bound
-            Upper bound.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [-50, 5, None, 50]})
-        >>> df.with_columns(pl.col("foo").clip_max(0).alias("foo_clipped"))
-        shape: (4, 2)
-        ┌──────┬─────────────┐
-        │ foo  ┆ foo_clipped │
-        │ ---  ┆ ---         │
-        │ i64  ┆ i64         │
-        ╞══════╪═════════════╡
-        │ -50  ┆ -50         │
-        │ 5    ┆ 0           │
-        │ null ┆ null        │
-        │ 50   ┆ 0           │
-        └──────┴─────────────┘
-
-        """
-        upper_bound = parse_as_expression(upper_bound, str_as_lit=True)
-        return self._from_pyexpr(self._pyexpr.clip_max(upper_bound))
 
     def lower_bound(self) -> Self:
         """
@@ -9559,6 +9512,46 @@ class Expr:
 
         """
         return self.is_last_distinct()
+
+    @deprecate_function("Use `clip` instead.", version="0.19.12")
+    def clip_min(
+        self, lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
+    ) -> Self:
+        """
+        Clip (limit) the values in an array to a `min` boundary.
+
+        Only works for physical numerical types.
+
+        If you want to clip other dtypes, consider writing a "when, then, otherwise"
+        expression. See :func:`when` for more information.
+
+        Parameters
+        ----------
+        lower_bound
+            Lower bound.
+
+        """
+        return self.clip(lower_bound=lower_bound)
+
+    @deprecate_function("Use `clip` instead.", version="0.19.12")
+    def clip_max(
+        self, upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
+    ) -> Self:
+        """
+        Clip (limit) the values in an array to a `max` boundary.
+
+        Only works for physical numerical types.
+
+        If you want to clip other dtypes, consider writing a "when, then, otherwise"
+        expression. See :func:`when` for more information.
+
+        Parameters
+        ----------
+        upper_bound
+            Upper bound.
+
+        """
+        return self.clip(upper_bound=upper_bound)
 
     def register_plugin(
         self,
