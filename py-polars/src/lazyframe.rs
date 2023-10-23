@@ -836,12 +836,11 @@ impl PyLazyFrame {
 
     fn shift(&self, n: i64, fill_value: Option<PyExpr>) -> Self {
         let lf = self.ldf.clone();
-
-        if let Some(v) = fill_value {
-            lf.shift_and_fill(n, v.inner).into()
-        } else {
-            lf.shift(n).into()
-        }
+        let out = match fill_value {
+            Some(v) => lf.shift_and_fill(n, v.inner),
+            None => lf.shift(n)
+        };
+        out.into()
     }
 
     fn fill_nan(&self, fill_value: PyExpr) -> Self {

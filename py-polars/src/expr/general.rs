@@ -341,12 +341,11 @@ impl PyExpr {
 
     fn shift(&self, n: i64, fill_value: Option<Self>) -> Self {
         let expr = self.inner.clone();
-
-        if let Some(v) = fill_value {
-            expr.shift_and_fill(n, v.inner).into()
-        } else {
-            expr.shift(n).into()
-        }
+        let out = match fill_value {
+            Some(v) => expr.shift_and_fill(n, v.inner),
+            None => expr.shift(n)
+        };
+        out.into()
     }
 
     fn fill_null(&self, expr: Self) -> Self {
