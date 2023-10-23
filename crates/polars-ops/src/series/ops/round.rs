@@ -3,6 +3,9 @@ use polars_core::prelude::*;
 
 use crate::series::ops::SeriesSealed;
 
+fn get_magnitude(value: f64, significant_figures: u32) -> f64 {
+    10.0.pow(significant_figures as f64 - 1.0 - ((value).log10().floor()))
+}
 pub trait RoundSeries: SeriesSealed {
     /// Round underlying floating point array to given decimal.
     fn round(&self, decimals: u32) -> PolarsResult<Series> {
@@ -47,9 +50,13 @@ pub trait RoundSeries: SeriesSealed {
             } else {
                 // Note we do the computation on f64 floats to not lose precision
                 // when the computation is done, we cast to f32
-                let multiplier = 10.0.pow(significant_figures as f64);
                 let s = ca
-                    .apply_values(|val| ((val as f64 * multiplier).round() / multiplier) as f32)
+                    .apply_values(|val| {
+                        ((val as f64 * get_magnitude(val.abs() as f64, significant_figures))
+                            .round()
+                            / get_magnitude(val.abs() as f64, significant_figures))
+                            as f32
+                    })
                     .into_series();
                 Ok(s)
             };
@@ -59,9 +66,11 @@ pub trait RoundSeries: SeriesSealed {
                 let s = ca.apply_values(|val| val.round()).into_series();
                 Ok(s)
             } else {
-                let multiplier = 10.0.pow(significant_figures as f64);
                 let s = ca
-                    .apply_values(|val| (val * multiplier).round() / multiplier)
+                    .apply_values(|val| {
+                        (val * get_magnitude(val.abs(), significant_figures)).round()
+                            / get_magnitude(val.abs(), significant_figures)
+                    })
                     .into_series();
                 Ok(s)
             };

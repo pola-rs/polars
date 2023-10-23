@@ -1236,7 +1236,7 @@ def test_round() -> None:
 
 @pytest.mark.parametrize(
     "series, significant_figures, expected_result",
-    [pytest.param(pl.Series("f", [1.234, 0.1234]), 2, pl.Series([1.2, 0.12]))],
+    [pytest.param(pl.Series([1.234, 0.1234]), 2, pl.Series([1.2, 0.12]))],
 )
 def test_round_sf(
     series: pl.Series, significant_figures: int, expected_result: pl.Series
