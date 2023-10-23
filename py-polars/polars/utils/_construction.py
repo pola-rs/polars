@@ -267,6 +267,26 @@ def sequence_from_anyvalue_or_object(name: str, values: Sequence[Any]) -> PySeri
         raise
 
 
+def sequence_from_anyvalue_and_dtype_or_object(
+    name: str, values: Sequence[Any], dtype: PolarsDataType
+) -> PySeries:
+    """
+    Last resort conversion.
+
+    AnyValues are most flexible and if they fail we go for object types
+
+    """
+    try:
+        return PySeries.new_from_anyvalues_and_dtype(name, values, dtype, strict=True)
+    # raised if we cannot convert to Wrap<AnyValue>
+    except RuntimeError:
+        return PySeries.new_object(name, values, _strict=False)
+    except ComputeError as exc:
+        if "mixed dtypes" in str(exc):
+            return PySeries.new_object(name, values, _strict=False)
+        raise
+
+
 def iterable_to_pyseries(
     name: str,
     values: Iterable[Any],
@@ -518,7 +538,7 @@ def sequence_to_pyseries(
             if isinstance(dtype, Object):
                 return PySeries.new_object(name, values, strict)
             if dtype:
-                srs = sequence_from_anyvalue_or_object(name, values)
+                srs = sequence_from_anyvalue_and_dtype_or_object(name, values, dtype)
                 if dtype.is_not(srs.dtype()):
                     srs = srs.cast(dtype, strict=False)
                 return srs

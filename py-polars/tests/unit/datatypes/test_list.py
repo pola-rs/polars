@@ -571,3 +571,23 @@ def test_list_inner_cast_physical_11513() -> None:
 def test_list_is_nested_deprecated(dtype: PolarsDataType, expected: bool) -> None:
     with pytest.deprecated_call():
         assert dtype.is_nested is expected
+
+
+def test_list_series_construction_with_dtype_11849_11878() -> None:
+    s = pl.Series([[1, 2], [3.3, 4.9]], dtype=pl.List(pl.Float64))
+    assert s.to_list() == [[1, 2], [3.3, 4.9]]
+
+    s1 = pl.Series([[1, 2], [3.0, 4.0]], dtype=pl.List(pl.Float64))
+    s2 = pl.Series([[1, 2], [3.0, 4.9]], dtype=pl.List(pl.Float64))
+    assert_series_equal(s1 == s2, pl.Series([True, False]))
+
+    s = pl.Series(
+        "groups",
+        [[{"1": "A", "2": None}], [{"1": "B", "2": "C"}, {"1": "D", "2": "E"}]],
+        dtype=pl.List(pl.Struct([pl.Field("1", pl.Utf8), pl.Field("2", pl.Utf8)])),
+    )
+
+    assert s.to_list() == [
+        [{"1": "A", "2": None}],
+        [{"1": "B", "2": "C"}, {"1": "D", "2": "E"}],
+    ]
