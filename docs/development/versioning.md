@@ -30,7 +30,7 @@ A change in the query engine can seriously impact the assumptions in a data pipe
 We do not make such changes lightly, but we will make them if we believe it makes Polars better.
 
 Freeing ourselves of past indiscretions is important to keep Polars moving forward.
-We know it takes time and energy for our users to keep up with new releases, but in the end, it benefits everyone for Polars to be the best product possible.
+We know it takes time and energy for our users to keep up with new releases but, in the end, it benefits everyone for Polars to be the best product possible.
 
 ### What qualifies as a breaking change
 
