@@ -384,8 +384,9 @@ impl SqlExprVisitor<'_> {
             SqlValue::Number(s, _) => {
                 let negate = match op {
                     Some(UnaryOperator::Minus) => true,
-                    Some(UnaryOperator::Plus) => false,
-                    _ => {
+                    // no op should be taken as plus.
+                    Some(UnaryOperator::Plus) | None => false,
+                    Some(op) => {
                         polars_bail!(ComputeError: "Unary op {:?} not supported for numeric SQL value", op)
                     },
                 };
