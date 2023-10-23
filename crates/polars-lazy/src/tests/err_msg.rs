@@ -29,21 +29,13 @@ fn col_not_found_error_messages() {
              operation:\n{INITIAL_PROJECTION_STR}"
         );
 
-        let plan_err_str;
-        let collect_err;
+        let plan_err_str =
+            format!("ErrorState {{ n_times: {n}, err: ColumnNotFound(ErrString({err_msg:?})) }}");
 
-        if n == 0 {
-            plan_err_str = format!(
-                "ErrorState(NotYetEncountered {{ \
-                 err: ColumnNotFound(ErrString({err_msg:?})) }})"
-            );
-            collect_err = PolarsError::ColumnNotFound(ErrString::from(err_msg.to_owned()));
+        let collect_err = if n == 0 {
+            PolarsError::ColumnNotFound(ErrString::from(err_msg.to_owned()))
         } else {
-            plan_err_str = format!(
-                "ErrorState(AlreadyEncountered {{ n_times: {n}, \
-                 orig_err: ColumnNotFound(ErrString({err_msg:?})) }})",
-            );
-            collect_err = PolarsError::ColumnNotFound(ErrString::from(format!(
+            PolarsError::ColumnNotFound(ErrString::from(format!(
                 "LogicalPlan already failed (depth: {n}) with error: '{err_msg}'"
             )))
         };

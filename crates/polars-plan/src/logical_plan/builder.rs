@@ -74,7 +74,7 @@ macro_rules! raise_err {
 
                 LogicalPlan::Error {
                     input: Box::new(input),
-                    err: err.into(), // PolarsError -> ErrorState(NotYetEncountered)
+                    err: err.into(), // PolarsError -> ErrorState
                 }
             },
         }

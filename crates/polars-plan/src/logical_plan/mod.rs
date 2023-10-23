@@ -75,69 +75,51 @@ pub enum Context {
 }
 
 #[derive(Debug)]
-pub(crate) enum ErrorStateEncounters {
-    NotYetEncountered {
-        err: PolarsError,
-    },
-    AlreadyEncountered {
-        n_times: usize,
-        orig_err: PolarsError,
-    },
+pub(crate) struct ErrorStateUnsync {
+    n_times: usize,
+    err: PolarsError,
 }
 
 #[derive(Clone)]
-pub struct ErrorState(pub(crate) Arc<Mutex<ErrorStateEncounters>>);
+pub struct ErrorState(pub(crate) Arc<Mutex<ErrorStateUnsync>>);
 
 impl std::fmt::Debug for ErrorState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Skip over the Arc<Mutex<_>> and just print the ErrorStateEncounters
-        f.debug_tuple("ErrorState")
-            .field(&self.0.lock().unwrap())
+        let this = self.0.lock().unwrap();
+        // Skip over the Arc<Mutex<ErrorStateUnsync>> and just print the fields we care
+        // about. Technically this is misleading, but the insides of ErrorState are not
+        // public, so this only affects authors of polars, not users (and the odds that
+        // this affects authors is slim)
+        f.debug_struct("ErrorState")
+            .field("n_times", &this.n_times)
+            .field("err", &this.err)
             .finish()
     }
 }
 
 impl From<PolarsError> for ErrorState {
     fn from(err: PolarsError) -> Self {
-        Self(Arc::new(Mutex::new(
-            ErrorStateEncounters::NotYetEncountered { err },
-        )))
+        Self(Arc::new(Mutex::new(ErrorStateUnsync { n_times: 0, err })))
     }
 }
 
 impl ErrorState {
     fn take(&self) -> PolarsError {
-        let mut curr_err = self.0.lock().unwrap();
+        let mut this = self.0.lock().unwrap();
 
-        match &mut *curr_err {
-            ErrorStateEncounters::NotYetEncountered { err: polars_err } => {
-                let orig_err = polars_err.wrap_msg(&str::to_owned);
+        let ret_err = if this.n_times == 0 {
+            this.err.wrap_msg(&|msg| msg.to_owned())
+        } else {
+            this.err.wrap_msg(&|msg| {
+                format!(
+                    "LogicalPlan already failed (depth: {}) with error: '{}'",
+                    this.n_times, msg
+                )
+            })
+        };
+        this.n_times += 1;
 
-                let prev_err = std::mem::replace(
-                    &mut *curr_err,
-                    ErrorStateEncounters::AlreadyEncountered {
-                        n_times: 1,
-                        orig_err,
-                    },
-                );
-                // Since we're in this branch, we know err was a NotYetEncountered
-                match prev_err {
-                    ErrorStateEncounters::NotYetEncountered { err } => err,
-                    ErrorStateEncounters::AlreadyEncountered { .. } => unreachable!(),
-                }
-            },
-            ErrorStateEncounters::AlreadyEncountered { n_times, orig_err } => {
-                let err = orig_err.wrap_msg(&|msg| {
-                    format!(
-                        "LogicalPlan already failed (depth: {}) with error: '{}'",
-                        n_times, msg
-                    )
-                });
-
-                *n_times += 1;
-                err
-            },
-        }
+        ret_err
     }
 }
 
