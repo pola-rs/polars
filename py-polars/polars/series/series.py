@@ -4702,20 +4702,20 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("a", [1.12345, 2.56789, 3.901234])
-        >>> s.round(2)
+        >>> s = pl.Series("a", [0.12345, 2.56789, 39.01234])
+        >>> s.round_sf(2)
         shape: (3,)
         Series: 'a' [f64]
         [
-                1.12
-                2.57
-                3.9
+                0.12
+                2.6
+                39.0
         ]
 
         Parameters
         ----------
-        decimals
-            number of decimals to round by.
+        significant_figures
+            number of signficant figures to round by.
 
         """
 

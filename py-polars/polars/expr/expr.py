@@ -1792,13 +1792,13 @@ class Expr:
 
         Parameters
         ----------
-        decimals
-            Number of decimals to round by.
+        significant_figures
+            Number of significant figures to round by.
 
         Examples
         --------
         >>> df = pl.DataFrame({"a": [0.33, 0.52, 1.02, 1.17]})
-        >>> df.select(pl.col("a").round(1))
+        >>> df.select(pl.col("a").round_sf(1))
         shape: (4, 1)
         ┌─────┐
         │ a   │
