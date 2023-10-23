@@ -8744,7 +8744,7 @@ class DataFrame:
         self,
         n: int | Series | None = None,
         *,
-        fraction: float | None = None,
+        fraction: float | Series | None = None,
         with_replacement: bool = False,
         shuffle: bool = False,
         seed: int | None = None,
@@ -8797,8 +8797,11 @@ class DataFrame:
             seed = random.randint(0, 10000)
 
         if n is None and fraction is not None:
+            if not isinstance(fraction, pl.Series):
+                fraction = pl.Series("frac", [fraction])
+
             return self._from_pydf(
-                self._df.sample_frac(fraction, with_replacement, shuffle, seed)
+                self._df.sample_frac(fraction._s, with_replacement, shuffle, seed)
             )
 
         if n is None:

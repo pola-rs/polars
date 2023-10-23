@@ -833,15 +833,17 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 use RandomMethod::*;
                 match method {
                     Shuffle => map!(random::shuffle, seed),
-                    SampleFrac {
-                        frac,
+                    Sample {
+                        is_fraction,
                         with_replacement,
                         shuffle,
-                    } => map!(random::sample_frac, frac, with_replacement, shuffle, seed),
-                    SampleN {
-                        with_replacement,
-                        shuffle,
-                    } => map_as_slice!(random::sample_n, with_replacement, shuffle, seed),
+                    } => {
+                        if is_fraction {
+                            map_as_slice!(random::sample_frac, with_replacement, shuffle, seed)
+                        } else {
+                            map_as_slice!(random::sample_n, with_replacement, shuffle, seed)
+                        }
+                    },
                 }
             },
             SetSortedFlag(sorted) => map!(dispatch::set_sorted_flag, sorted),

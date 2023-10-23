@@ -926,14 +926,14 @@ impl PyDataFrame {
 
     pub fn sample_frac(
         &self,
-        frac: f64,
+        frac: &PySeries,
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
         let df = self
             .df
-            .sample_frac(frac, with_replacement, shuffle, seed)
+            .sample_frac(&frac.series, with_replacement, shuffle, seed)
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
