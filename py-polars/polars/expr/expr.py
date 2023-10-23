@@ -9520,10 +9520,8 @@ class Expr:
         """
         Clip (limit) the values in an array to a `min` boundary.
 
-        Only works for physical numerical types.
-
-        If you want to clip other dtypes, consider writing a "when, then, otherwise"
-        expression. See :func:`when` for more information.
+        .. deprecated:: 0.19.12
+            Use :func:`clip` instead.
 
         Parameters
         ----------
@@ -9540,10 +9538,8 @@ class Expr:
         """
         Clip (limit) the values in an array to a `max` boundary.
 
-        Only works for physical numerical types.
-
-        If you want to clip other dtypes, consider writing a "when, then, otherwise"
-        expression. See :func:`when` for more information.
+        .. deprecated:: 0.19.12
+            Use :func:`clip` instead.
 
         Parameters
         ----------
