@@ -2402,19 +2402,24 @@ class Expr:
     @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift(self, n: int = 1, *, fill_value: IntoExpr | None = None) -> Self:
         """
-        Shift values by the given number of rows.
+        Shift values by the given number of indices.
 
         Parameters
         ----------
         n
-            Number of rows to shift down. If a negative value is passed, rows are
-            shifted in the other direction instead.
+            Number of indices to shift forward. If a negative value is passed, values
+            are shifted in the opposite direction instead.
         fill_value
             Fill the resulting null values with this value.
 
+        Notes
+        -----
+        This method is similar to the ``LAG`` operation in SQL when the value for ``n``
+        is positive. With a negative value for ``n``, it is similar to ``LEAD``.
+
         Examples
         --------
-        By default, values are shifted down one row.
+        By default, values are shifted forward by one index.
 
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
         >>> df.with_columns(shift=pl.col("a").shift())
@@ -2430,7 +2435,7 @@ class Expr:
         │ 4   ┆ 3     │
         └─────┴───────┘
 
-        Pass a negative value to shift upwards instead.
+        Pass a negative value to shift in the opposite direction instead.
 
         >>> df.with_columns(shift=pl.col("a").shift(-2))
         shape: (4, 2)
