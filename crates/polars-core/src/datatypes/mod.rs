@@ -35,7 +35,6 @@ use bytemuck::Zeroable;
 pub use dtype::*;
 pub use field::*;
 use num_traits::{Bounded, FromPrimitive, Num, NumCast, One, Zero};
-use polars_arrow::data_types::IsFloat;
 use polars_utils::abs_diff::AbsDiff;
 #[cfg(feature = "serde")]
 use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};

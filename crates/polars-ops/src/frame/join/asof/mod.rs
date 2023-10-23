@@ -5,7 +5,7 @@ use std::borrow::Cow;
 use default::*;
 pub(super) use groups::AsofJoinBy;
 use polars_core::prelude::*;
-use polars_core::utils::{ensure_sorted_arg, slice_slice};
+use polars_core::utils::ensure_sorted_arg;
 use polars_core::with_match_physical_numeric_polars_type;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -19,95 +19,132 @@ use super::{
 };
 use crate::frame::IntoDf;
 
-// If called with increasing val_l it will increment offset to the first
-// right(offset) >= val_l and return it. If offset == n_right, the loop is done
-// (but harmless to call again). offset should initially be 0.
-fn asof_forward_step<T: PartialOrd, F: FnMut(usize) -> Option<T>>(
-    offset: &mut usize,
-    val_l: &T,
-    mut right: F,
-    n_right: usize,
-) -> Option<T> {
-    while *offset < n_right {
-        if let Some(val_r) = right(*offset) {
-            if val_r >= *val_l {
-                return Some(val_r);
-            }
-        }
-        *offset += 1;
-    }
-    None
+trait AsofJoinState<T> : Default {
+    fn next<F: FnMut(IdxSize) -> Option<T>>(
+        &mut self,
+        left_val: &T,
+        right: F,
+        n_right: IdxSize,
+    ) -> Option<IdxSize>;
 }
 
-// If called with decreasing val_l it will decrement offset to the last
-// right(offset - 1) <= val_l and return it. If offset == 0, the loop is done
-// (but harmless to call again). offset should initially be right.len().
-fn asof_backward_step<T: PartialOrd, F: FnMut(usize) -> Option<T>>(
-    offset: &mut usize,
-    val_l: &T,
-    mut right: F,
-) -> Option<T> {
-    while *offset > 0 {
-        if let Some(val_r) = right(*offset - 1) {
-            if val_r <= *val_l {
-                return Some(val_r);
-            }
-        }
-        *offset -= 1;
-    }
-    None
+#[derive(Default)]
+struct AsofJoinForwardState {
+    scan_offset: IdxSize,
 }
 
-// If called with decreasing val_l it will decrement offset to the last
-// right(offset - 1) which is nearest to val_l and return it. This loop never
-// indicates it is done by itself, there is always a nearest element.
-// offset and next_offset should initially be right.len().
-fn asof_nearest_step<T: NumericNative, F: FnMut(usize) -> Option<T>>(
-    offset: &mut usize,
-    next_offset: &mut usize,
-    val_l: &T,
-    mut right: F,
-) -> Option<T> {
-    // right(offset - 1) is the best known bound on the nearest value.
-    // next_offset is the rightmost value <= val_l, which is a candidate for
-    // being closer.
-    while *next_offset > 0 {
-        if let Some(val_r) = right(*next_offset - 1) {
-            if val_r <= *val_l {
-                break;
+impl<T: PartialOrd> AsofJoinState<T> for AsofJoinForwardState {
+    fn next<F: FnMut(IdxSize) -> Option<T>>(
+        &mut self,
+        left_val: &T,
+        mut right: F,
+        n_right: IdxSize,
+    ) -> Option<IdxSize> {
+        while (self.scan_offset) < n_right {
+            if let Some(right_val) = right(self.scan_offset) {
+                if right_val >= *left_val {
+                    return Some(self.scan_offset);
+                }
+            }
+            self.scan_offset += 1;
+        }
+        None
+    }
+}
+
+#[derive(Default)]
+struct AsofJoinBackwardState {
+    // best_bound is the greatest right index <= left_val.
+    best_bound: Option<IdxSize>,
+    scan_offset: IdxSize,
+}
+
+impl<T: PartialOrd> AsofJoinState<T> for AsofJoinBackwardState {
+    fn next<F: FnMut(IdxSize) -> Option<T>>(
+        &mut self,
+        left_val: &T,
+        mut right: F,
+        n_right: IdxSize,
+    ) -> Option<IdxSize> {
+        while self.scan_offset < n_right {
+            if let Some(right_val) = right(self.scan_offset) {
+                if right_val <= *left_val {
+                    self.best_bound = Some(self.scan_offset);
+                } else {
+                    break;
+                }
+            }
+            self.scan_offset += 1;
+        }
+        self.best_bound
+    }
+}
+
+#[derive(Default)]
+struct AsofJoinNearestState {
+    // best_bound is the nearest value to left_val, with ties broken towards the last element.
+    best_bound: Option<IdxSize>,
+    scan_offset: IdxSize,
+}
+
+impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
+    fn next<F: FnMut(IdxSize) -> Option<T>>(
+        &mut self,
+        left_val: &T,
+        mut right: F,
+        n_right: IdxSize,
+    ) -> Option<IdxSize> {
+        // Skipping ahead to the first value greater than left_val. This is
+        // cheaper than computing differences.
+        while self.scan_offset < n_right {
+            if let Some(right_val) = right(self.scan_offset) {
+                if right_val <= *left_val {
+                    self.best_bound = Some(self.scan_offset);
+                } else {
+                    break;
+                }
+            }
+
+            self.scan_offset += 1;
+        }
+        
+        if let Some(scan_right_val) = right(self.scan_offset) {
+            // Now we must compute a difference to see if this value
+            // greater than left_val is closer than our current best bound.
+            let scan_is_better = if let Some(best_idx) = self.best_bound {
+                let best_right_val = unsafe { right(best_idx).unwrap_unchecked() };
+                let best_diff = left_val.abs_diff(best_right_val);
+                let scan_diff = left_val.abs_diff(scan_right_val);
+                
+                scan_diff <= best_diff
             } else {
-                *offset = *next_offset;
+                true
+            };
+            
+            if scan_is_better {
+                self.best_bound = Some(self.scan_offset);
+                self.scan_offset += 1;
+
+                // It is possible there are later elements equal to our
+                // scan, so keep going on.
+                while self.scan_offset < n_right {
+                    if let Some(next_right_val) = right(self.scan_offset) {
+                        if next_right_val == scan_right_val {
+                            self.best_bound = Some(self.scan_offset);
+                        } else {
+                            break;
+                        }
+                    }
+                    
+                    self.scan_offset += 1;
+                }
             }
         }
         
-        *next_offset -= 1;
-    }
-    
-    // No new candidate option for nearest.
-    if *next_offset == 0 {
-        return right(*offset - 1);
-    }
-    
-    if let Some(val_r) = right(*offset - 1) {
-        // SAFETY: if right(offset - 1) is non-null and next_offset > 0, then
-        // this must be non-null as well.
-        let next_val_r = unsafe { right(*next_offset - 1).unwrap_unchecked() };
-        let diff = val_l.abs_diff(val_r);
-        let next_diff = val_l.abs_diff(next_val_r);
-        // Because diff can be NaN, but next_diff can't be, we use a 'backwards'
-        // check to see if next_diff is worse rather than to see if it's better.
-        // This way, if diff is NaN it gets replaced.
-        if next_diff >= diff {
-            Some(val_r)
-        } else {
-            *offset = *next_offset;
-            Some(next_val_r)
-        }
-    } else {
-        *offset = *next_offset;
-        right(*offset - 1)
+        self.best_bound
     }
 }
+
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

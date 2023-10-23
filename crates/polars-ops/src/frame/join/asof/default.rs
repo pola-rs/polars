@@ -1,19 +1,19 @@
 use arrow::array::Array;
 use arrow::bitmap::Bitmap;
 use num_traits::Zero;
-use polars_arrow::index::IdxSize;
 use polars_core::prelude::*;
 use polars_utils::abs_diff::AbsDiff;
 
-use super::{asof_backward_step, asof_forward_step, asof_nearest_step, AsofStrategy};
+use super::{
+    AsofJoinBackwardState,
+    AsofJoinForwardState, AsofJoinNearestState, AsofJoinState, AsofStrategy,
+};
 
-fn join_asof_forward<'a, T: PolarsDataType, F: FnMut(T::Physical<'a>, T::Physical<'a>) -> bool>(
-    left: &'a T::Array,
-    right: &'a T::Array,
-    mut filter: F,
-) -> IdxCa
+fn join_asof_impl<'a, T, S, F>(left: &'a T::Array, right: &'a T::Array, mut filter: F) -> IdxCa
 where
-    T::Physical<'a>: PartialOrd
+    T: PolarsDataType,
+    S: AsofJoinState<T::Physical<'a>>,
+    F: FnMut(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
     if left.len() == left.null_count() || right.len() == right.null_count() {
         return IdxCa::full_null("", left.len());
@@ -21,82 +21,49 @@ where
 
     let mut out = vec![0; left.len()];
     let mut mask = vec![0; (left.len() + 7) / 8];
-    let mut offset = 0;
+    let mut state = S::default();
 
     for (i, opt_val_l) in left.iter().enumerate() {
         if let Some(val_l) = opt_val_l {
-            let Some(val_r) = asof_forward_step(&mut offset, &val_l, |j| right.get(j), right.len()) else {
-                break;
-            };
-            out[i] = offset as IdxSize;
-            mask[i / 8] |= (filter(val_l, val_r) as u8) << (i % 8);
+            if let Some(r_idx) =
+                state.next(&val_l, |j| right.get(j as usize), right.len() as IdxSize)
+            {
+                let val_r = unsafe { right.get_unchecked(r_idx as usize).unwrap_unchecked() };
+                out[i] = r_idx;
+                mask[i / 8] |= (filter(val_l, val_r) as u8) << (i % 8);
+            }
         }
     }
 
     let bitmap = Bitmap::try_new(mask, out.len()).unwrap();
-    IdxCa::new_from_owned_with_null_bitmap("", out, Some(bitmap))
+    IdxCa::from_vec_validity("", out, Some(bitmap))
 }
 
-fn join_asof_backward<'a, T: PolarsDataType, F: FnMut(T::Physical<'a>, T::Physical<'a>) -> bool>(
-    left: &'a T::Array,
-    right: &'a T::Array,
-    mut filter: F,
-) -> IdxCa
+fn join_asof_forward<'a, T, F>(left: &'a T::Array, right: &'a T::Array, filter: F) -> IdxCa
 where
-    T::Physical<'a>: PartialOrd
+    T: PolarsDataType,
+    T::Physical<'a>: PartialOrd,
+    F: FnMut(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
-    if left.len() == left.null_count() || right.len() == right.null_count() {
-        return IdxCa::full_null("", left.len());
-    }
-
-    let mut out = vec![0; left.len()];
-    let mut mask = vec![0; (left.len() + 7) / 8];
-    let mut offset = right.len();
-
-    let mut i = left.len();
-    while i > 0 {
-        i -= 1;
-        if let Some(val_l) = left.get(i) {
-            let Some(val_r) = asof_backward_step(&mut offset, &val_l, |j| right.get(j)) else {
-                break;
-            };
-            out[i] = offset as IdxSize - 1;
-            mask[i / 8] |= (filter(val_l, val_r) as u8) << (i % 8);
-        }
-    }
-
-    let bitmap = Bitmap::try_new(mask, out.len()).unwrap();
-    IdxCa::new_from_owned_with_null_bitmap("", out, Some(bitmap))
+    join_asof_impl::<'a, T, AsofJoinForwardState, _>(left, right, filter)
 }
 
-fn join_asof_nearest<'a, T: PolarsNumericType, F: FnMut(T::Physical<'a>, T::Physical<'a>) -> bool>(
-    left: &'a T::Array,
-    right: &'a T::Array,
-    mut filter: F,
-) -> IdxCa {
-    if left.len() == left.null_count() || right.len() == right.null_count() {
-        return IdxCa::full_null("", left.len());
-    }
+fn join_asof_backward<'a, T, F>(left: &'a T::Array, right: &'a T::Array, filter: F) -> IdxCa
+where
+    T: PolarsDataType,
+    T::Physical<'a>: PartialOrd,
+    F: FnMut(T::Physical<'a>, T::Physical<'a>) -> bool,
+{
+    join_asof_impl::<'a, T, AsofJoinBackwardState, _>(left, right, filter)
+}
 
-    let mut out = vec![0; left.len()];
-    let mut mask = vec![0; (left.len() + 7) / 8];
-    let mut offset = right.len();
-    let mut next_offset = offset;
-
-    let mut i = left.len();
-    while i > 0 {
-        i -= 1;
-        if let Some(val_l) = left.get(i) {
-            let Some(val_r) = asof_nearest_step(&mut offset, &mut next_offset, &val_l, |j| right.get(j)) else {
-                break;
-            };
-            out[i] = offset as IdxSize - 1;
-            mask[i / 8] |= (filter(val_l, val_r) as u8) << (i % 8);
-        }
-    }
-
-    let bitmap = Bitmap::try_new(mask, out.len()).unwrap();
-    IdxCa::new_from_owned_with_null_bitmap("", out, Some(bitmap))
+fn join_asof_nearest<'a, T, F>(left: &'a T::Array, right: &'a T::Array, filter: F) -> IdxCa
+where
+    T: PolarsDataType,
+    T::Physical<'a>: NumericNative,
+    F: FnMut(T::Physical<'a>, T::Physical<'a>) -> bool,
+{
+    join_asof_impl::<'a, T, AsofJoinNearestState, _>(left, right, filter)
 }
 
 pub(crate) fn join_asof_numeric<T: PolarsNumericType>(
@@ -117,15 +84,15 @@ pub(crate) fn join_asof_numeric<T: PolarsNumericType>(
         let abs_tolerance = native_tolerance.abs_diff(T::Native::zero());
         let filter = |l: T::Native, r: T::Native| l.abs_diff(r) <= abs_tolerance;
         match strategy {
-            AsofStrategy::Backward => join_asof_backward::<T, _>(left, right, filter),
             AsofStrategy::Forward => join_asof_forward::<T, _>(left, right, filter),
+            AsofStrategy::Backward => join_asof_backward::<T, _>(left, right, filter),
             AsofStrategy::Nearest => join_asof_nearest::<T, _>(left, right, filter),
         }
     } else {
         let filter = |_l: T::Native, _r: T::Native| true;
         match strategy {
-            AsofStrategy::Backward => join_asof_backward::<T, _>(left, right, filter),
             AsofStrategy::Forward => join_asof_forward::<T, _>(left, right, filter),
+            AsofStrategy::Backward => join_asof_backward::<T, _>(left, right, filter),
             AsofStrategy::Nearest => join_asof_nearest::<T, _>(left, right, filter),
         }
     };
@@ -150,8 +117,10 @@ where
 
     let filter = |_l: T::Physical<'_>, _r: T::Physical<'_>| true;
     Ok(match strategy {
-        AsofStrategy::Backward => join_asof_backward::<T, _>(left, right, filter),
-        AsofStrategy::Forward => join_asof_forward::<T, _>(left, right, filter),
+        AsofStrategy::Forward => join_asof_impl::<T, AsofJoinForwardState, _>(left, right, filter),
+        AsofStrategy::Backward => {
+            join_asof_impl::<T, AsofJoinBackwardState, _>(left, right, filter)
+        },
         AsofStrategy::Nearest => unimplemented!(),
     })
 }
