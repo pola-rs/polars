@@ -20,7 +20,7 @@ impl IpcExec {
             self.file_options.row_count.is_some(),
             None,
         );
-        IpcReader::new(file.unwrap())
+        IpcReader::new(file?)
             .with_n_rows(self.file_options.n_rows)
             .with_row_count(std::mem::take(&mut self.file_options.row_count))
             .set_rechunk(self.file_options.rechunk)
