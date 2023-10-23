@@ -1,4 +1,6 @@
-use crate::prelude::*;
+use polars_core::prelude::*;
+
+use crate::prelude::SeriesSealed;
 
 fn moment_precomputed_mean(s: &Series, moment: usize, mean: f64) -> PolarsResult<Option<f64>> {
     // see: https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L922
@@ -39,7 +41,7 @@ fn moment_precomputed_mean(s: &Series, moment: usize, mean: f64) -> PolarsResult
     Ok(out)
 }
 
-impl Series {
+pub trait MomentSeries: SeriesSealed {
     /// Compute the sample skewness of a data set.
     ///
     /// For normally distributed data, the skewness should be about zero. For
@@ -49,19 +51,21 @@ impl Series {
     /// is close enough to zero, statistically speaking.
     ///
     /// see: [scipy](https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L1024)
-    pub fn skew(&self, bias: bool) -> PolarsResult<Option<f64>> {
-        let mean = match self.mean() {
+    fn skew(&self, bias: bool) -> PolarsResult<Option<f64>> {
+        let s = self.as_series();
+
+        let mean = match s.mean() {
             Some(mean) => mean,
             None => return Ok(None),
         };
         // we can unwrap because if it were None, we already return None above
-        let m2 = moment_precomputed_mean(self, 2, mean)?.unwrap();
-        let m3 = moment_precomputed_mean(self, 3, mean)?.unwrap();
+        let m2 = moment_precomputed_mean(s, 2, mean)?.unwrap();
+        let m3 = moment_precomputed_mean(s, 3, mean)?.unwrap();
 
         let out = m3 / m2.powf(1.5);
 
         if !bias {
-            let n = (self.len() - self.null_count()) as f64;
+            let n = (s.len() - s.null_count()) as f64;
             Ok(Some(((n - 1.0) * n).sqrt() / (n - 2.0) * out))
         } else {
             Ok(Some(out))
@@ -77,17 +81,19 @@ impl Series {
     /// eliminate bias coming from biased moment estimators
     ///
     /// see: [scipy](https://github.com/scipy/scipy/blob/47bb6febaa10658c72962b9615d5d5aa2513fa3a/scipy/stats/stats.py#L1027)
-    pub fn kurtosis(&self, fisher: bool, bias: bool) -> PolarsResult<Option<f64>> {
-        let mean = match self.mean() {
+    fn kurtosis(&self, fisher: bool, bias: bool) -> PolarsResult<Option<f64>> {
+        let s = self.as_series();
+
+        let mean = match s.mean() {
             Some(mean) => mean,
             None => return Ok(None),
         };
         // we can unwrap because if it were None, we already return None above
-        let m2 = moment_precomputed_mean(self, 2, mean)?.unwrap();
-        let m4 = moment_precomputed_mean(self, 4, mean)?.unwrap();
+        let m2 = moment_precomputed_mean(s, 2, mean)?.unwrap();
+        let m4 = moment_precomputed_mean(s, 4, mean)?.unwrap();
 
         let out = if !bias {
-            let n = (self.len() - self.null_count()) as f64;
+            let n = (s.len() - s.null_count()) as f64;
             3.0 + 1.0 / (n - 2.0) / (n - 3.0)
                 * ((n.powf(2.0) - 1.0) * m4 / m2.powf(2.0) - 3.0 * (n - 1.0).powf(2.0))
         } else {
@@ -101,16 +107,16 @@ impl Series {
     }
 }
 
+impl MomentSeries for Series {}
+
 #[cfg(test)]
 mod test {
     use super::*;
 
-    impl Series {
-        fn moment(&self, moment: usize) -> PolarsResult<Option<f64>> {
-            match self.mean() {
-                Some(mean) => moment_precomputed_mean(self, moment, mean),
-                None => Ok(None),
-            }
+    fn moment(s: &Series, moment: usize) -> PolarsResult<Option<f64>> {
+        match s.mean() {
+            Some(mean) => moment_precomputed_mean(s, moment, mean),
+            None => Ok(None),
         }
     }
 
@@ -118,10 +124,10 @@ mod test {
     fn test_moment_compute() -> PolarsResult<()> {
         let s = Series::new("", &[1, 2, 3, 4, 5, 23]);
 
-        assert_eq!(s.moment(0)?, Some(1.0));
-        assert_eq!(s.moment(1)?, Some(0.0));
-        assert!((s.moment(2)?.unwrap() - 57.22222222222223).abs() < 0.00001);
-        assert!((s.moment(3)?.unwrap() - 724.0740740740742).abs() < 0.00001);
+        assert_eq!(moment(&s, 0)?, Some(1.0));
+        assert_eq!(moment(&s, 1)?, Some(0.0));
+        assert!((moment(&s, 2)?.unwrap() - 57.22222222222223).abs() < 0.00001);
+        assert!((moment(&s, 3)?.unwrap() - 724.0740740740742).abs() < 0.00001);
 
         Ok(())
     }
