@@ -403,6 +403,7 @@ impl PyDataFrame {
     #[cfg(feature = "json")]
     pub fn read_json(
         py_f: &PyAny,
+        infer_schema_length: Option<usize>,
         schema: Option<Wrap<Schema>>,
         schema_overrides: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
@@ -421,8 +422,9 @@ impl PyDataFrame {
                     let e = PyPolarsErr::from(PolarsError::ComputeError(msg.into()));
                     Err(PyErr::from(e))
                 } else {
-                    let mut builder =
-                        JsonReader::new(mmap_bytes_r).with_json_format(JsonFormat::Json);
+                    let mut builder = JsonReader::new(mmap_bytes_r)
+                        .with_json_format(JsonFormat::Json)
+                        .infer_schema_len(infer_schema_length);
 
                     if let Some(schema) = schema {
                         builder = builder.with_schema(Arc::new(schema.0));

@@ -1037,6 +1037,7 @@ class DataFrame:
         cls,
         source: str | Path | IOBase | bytes,
         *,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
         schema: SchemaDefinition | None = None,
         schema_overrides: SchemaDefinition | None = None,
     ) -> Self:
@@ -1057,7 +1058,10 @@ class DataFrame:
 
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_json(
-            source, schema=schema, schema_overrides=schema_overrides
+            source,
+            infer_schema_length=infer_schema_length,
+            schema=schema,
+            schema_overrides=schema_overrides,
         )
         return self
 
