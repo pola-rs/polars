@@ -20,6 +20,13 @@ def scan_pyarrow_dataset(
 
     This can be useful to connect to cloud or partitioned datasets.
 
+    .. warning::
+
+        This method can only can push down predicates that are allowed by PyArrow
+        (e.g. not the full Polars API).
+
+        If :func:`scan_parquet` works for your source, you should use that instead.
+
     Parameters
     ----------
     source
