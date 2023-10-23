@@ -6173,43 +6173,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Shift values by the given number of places and fill the resulting null values.
 
+        .. deprecated:: 0.19.12
+            Use :func:`shift` instead.
+
         Parameters
         ----------
         fill_value
             fill None values with the result of this expression.
         n
             Number of places to shift (may be negative).
-
-        Examples
-        --------
-        >>> lf = pl.LazyFrame(
-        ...     {
-        ...         "a": [1, 3, 5],
-        ...         "b": [2, 4, 6],
-        ...     }
-        ... )
-        >>> lf.shift_and_fill(fill_value=0, n=1).collect()
-        shape: (3, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 0   ┆ 0   │
-        │ 1   ┆ 2   │
-        │ 3   ┆ 4   │
-        └─────┴─────┘
-        >>> lf.shift_and_fill(fill_value=0, n=-1).collect()
-        shape: (3, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 3   ┆ 4   │
-        │ 5   ┆ 6   │
-        │ 0   ┆ 0   │
-        └─────┴─────┘
 
         """
         return self.shift(n, fill_value=fill_value)

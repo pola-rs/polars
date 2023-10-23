@@ -2417,7 +2417,7 @@ class Expr:
         By default, values are shifted down one row.
 
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
-        >>> df.with_columns(shift=pl.col("foo").shift())
+        >>> df.with_columns(shift=pl.col("a").shift())
         shape: (4, 2)
         ┌─────┬───────┐
         │ a   ┆ shift │
@@ -9560,28 +9560,15 @@ class Expr:
         """
         Shift values by the given number of places and fill the resulting null values.
 
+        .. deprecated:: 0.19.12
+            Use :func:`shift` instead.
+
         Parameters
         ----------
         fill_value
             Fill None values with the result of this expression.
         n
             Number of places to shift (may be negative).
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
-        >>> df.with_columns(foo_shifted=pl.col("foo").shift_and_fill("a", n=1))
-        shape: (4, 2)
-        ┌─────┬─────────────┐
-        │ foo ┆ foo_shifted │
-        │ --- ┆ ---         │
-        │ i64 ┆ str         │
-        ╞═════╪═════════════╡
-        │ 1   ┆ a           │
-        │ 2   ┆ 1           │
-        │ 3   ┆ 2           │
-        │ 4   ┆ 3           │
-        └─────┴─────────────┘
 
         """
         return self.shift(n, fill_value=fill_value)

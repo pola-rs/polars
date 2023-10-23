@@ -6884,6 +6884,9 @@ class Series:
         """
         Shift values by the given number of places and fill the resulting null values.
 
+        .. deprecated:: 0.19.12
+            Use :func:`shift` instead.
+
         Parameters
         ----------
         fill_value

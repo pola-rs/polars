@@ -10151,33 +10151,15 @@ class DataFrame:
         """
         Shift values by the given number of places and fill the resulting null values.
 
+        .. deprecated:: 0.19.12
+            Use :func:`shift` instead.
+
         Parameters
         ----------
         fill_value
             fill None values with this value.
         n
             Number of places to shift (may be negative).
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "foo": [1, 2, 3],
-        ...         "bar": [6, 7, 8],
-        ...         "ham": ["a", "b", "c"],
-        ...     }
-        ... )
-        >>> df.shift_and_fill(n=1, fill_value=0)
-        shape: (3, 3)
-        ┌─────┬─────┬─────┐
-        │ foo ┆ bar ┆ ham │
-        │ --- ┆ --- ┆ --- │
-        │ i64 ┆ i64 ┆ str │
-        ╞═════╪═════╪═════╡
-        │ 0   ┆ 0   ┆ 0   │
-        │ 1   ┆ 6   ┆ a   │
-        │ 2   ┆ 7   ┆ b   │
-        └─────┴─────┴─────┘
 
         """
         return self.shift(n, fill_value=fill_value)
