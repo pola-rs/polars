@@ -196,7 +196,7 @@ impl DataFrame {
                 let new_cols = self
                     .columns
                     .iter()
-                    .map(|c| Series::new_empty(c.name(), c.dtype()))
+                    .map(Series::clear)
                     .collect_trusted();
                 Ok(DataFrame::new_no_checks(new_cols))
             },
@@ -245,7 +245,7 @@ impl DataFrame {
                 let new_cols = self
                     .columns
                     .iter()
-                    .map(|c| Series::new_empty(c.name(), c.dtype()))
+                    .map(Series::clear)
                     .collect_trusted();
                 Ok(DataFrame::new_no_checks(new_cols))
             },
