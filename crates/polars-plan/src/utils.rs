@@ -147,6 +147,17 @@ pub(crate) fn has_leaf_literal(e: &Expr) -> bool {
         },
     }
 }
+/// Check if leaf expression is a literal
+#[cfg(feature = "is_in")]
+pub(crate) fn all_leaf_literal(e: &Expr) -> bool {
+    match e {
+        Expr::Literal(_) => true,
+        _ => {
+            let roots = expr_to_root_column_exprs(e);
+            roots.iter().all(|e| matches!(e, Expr::Literal(_)))
+        },
+    }
+}
 
 pub fn has_null(current_expr: &Expr) -> bool {
     has_expr(current_expr, |e| {

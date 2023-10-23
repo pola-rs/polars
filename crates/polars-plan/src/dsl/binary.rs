@@ -9,7 +9,7 @@ impl BinaryNameSpace {
         self.0.map_many_private(
             FunctionExpr::BinaryExpr(BinaryFunction::Contains),
             &[pat],
-            true,
+            false,
             true,
         )
     }
@@ -19,7 +19,7 @@ impl BinaryNameSpace {
         self.0.map_many_private(
             FunctionExpr::BinaryExpr(BinaryFunction::EndsWith),
             &[sub],
-            true,
+            false,
             true,
         )
     }
@@ -29,7 +29,7 @@ impl BinaryNameSpace {
         self.0.map_many_private(
             FunctionExpr::BinaryExpr(BinaryFunction::StartsWith),
             &[sub],
-            true,
+            false,
             true,
         )
     }

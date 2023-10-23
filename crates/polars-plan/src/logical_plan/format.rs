@@ -278,8 +278,16 @@ impl Debug for Expr {
             Filter { input, by } => {
                 write!(f, "{input:?}.filter({by:?})")
             },
-            Take { expr, idx } => {
-                write!(f, "{expr:?}.take({idx:?})")
+            Take {
+                expr,
+                idx,
+                returns_scalar,
+            } => {
+                if *returns_scalar {
+                    write!(f, "{expr:?}.get({idx:?})")
+                } else {
+                    write!(f, "{expr:?}.take({idx:?})")
+                }
             },
             SubPlan(lf, _) => {
                 write!(f, ".subplan({lf:?})")

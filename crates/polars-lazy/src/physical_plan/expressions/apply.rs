@@ -36,6 +36,7 @@ impl ApplyExpr {
         allow_threading: bool,
         input_schema: Option<SchemaRef>,
     ) -> Self {
+        #[cfg(debug_assertions)]
         if matches!(options.collect_groups, ApplyOptions::ElementWise) && options.returns_scalar {
             panic!("expr {} is not implemented correctly. 'returns_scalar' and 'elementwise' are mutually exclusive", expr)
         }

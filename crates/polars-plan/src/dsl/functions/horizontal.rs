@@ -201,7 +201,7 @@ pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
-            returns_scalar: true,
+            returns_scalar: false,
             cast_to_supertypes: false,
             allow_rename: true,
             ..Default::default()
@@ -220,7 +220,7 @@ pub fn any_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
-            returns_scalar: true,
+            returns_scalar: false,
             cast_to_supertypes: false,
             allow_rename: true,
             ..Default::default()
@@ -243,7 +243,7 @@ pub fn max_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
-            returns_scalar: true,
+            returns_scalar: false,
             allow_rename: true,
             ..Default::default()
         },
@@ -265,7 +265,7 @@ pub fn min_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
-            returns_scalar: true,
+            returns_scalar: false,
             allow_rename: true,
             ..Default::default()
         },
@@ -284,7 +284,7 @@ pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
-            returns_scalar: true,
+            returns_scalar: false,
             cast_to_supertypes: false,
             allow_rename: true,
             ..Default::default()

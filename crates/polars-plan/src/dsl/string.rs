@@ -13,7 +13,7 @@ impl StringNameSpace {
                 strict: false,
             }),
             &[pat],
-            true,
+            false,
             true,
         )
     }
@@ -28,7 +28,7 @@ impl StringNameSpace {
                 strict,
             }),
             &[pat],
-            true,
+            false,
             true,
         )
     }
@@ -38,7 +38,7 @@ impl StringNameSpace {
         self.0.map_many_private(
             FunctionExpr::StringExpr(StringFunction::EndsWith),
             &[sub],
-            true,
+            false,
             true,
         )
     }
@@ -48,7 +48,7 @@ impl StringNameSpace {
         self.0.map_many_private(
             FunctionExpr::StringExpr(StringFunction::StartsWith),
             &[sub],
-            true,
+            false,
             true,
         )
     }
@@ -131,7 +131,7 @@ impl StringNameSpace {
         self.0.map_many_private(
             StringFunction::CountMatches(literal).into(),
             &[pat],
-            true,
+            false,
             false,
         )
     }
@@ -142,7 +142,7 @@ impl StringNameSpace {
         self.0.map_many_private(
             StringFunction::Strptime(dtype, options).into(),
             &[ambiguous],
-            true,
+            false,
             false,
         )
     }
@@ -207,6 +207,7 @@ impl StringNameSpace {
             .apply_private(StringFunction::ConcatVertical(delimiter.to_owned()).into())
             .with_function_options(|mut options| {
                 options.returns_scalar = true;
+                options.collect_groups = ApplyOptions::GroupWise;
                 options
             })
     }

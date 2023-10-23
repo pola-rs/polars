@@ -2331,7 +2331,60 @@ class Expr:
         ...         "value": [1, 98, 2, 3, 99, 4],
         ...     }
         ... )
-        >>> df.group_by("group", maintain_order=True).agg(pl.col("value").take(1))
+        >>> df.group_by("group", maintain_order=True).agg(pl.col("value").take([2, 1]))
+        shape: (2, 2)
+        ┌───────┬───────────┐
+        │ group ┆ value     │
+        │ ---   ┆ ---       │
+        │ str   ┆ list[i64] │
+        ╞═══════╪═══════════╡
+        │ one   ┆ [2, 98]   │
+        │ two   ┆ [4, 99]   │
+        └───────┴───────────┘
+
+        See Also
+        --------
+        Expr.get : Take a single value
+
+        """
+        if isinstance(indices, list) or (
+            _check_for_numpy(indices) and isinstance(indices, np.ndarray)
+        ):
+            indices_lit = F.lit(pl.Series("", indices, dtype=UInt32))._pyexpr
+        else:
+            indices_lit = parse_as_expression(indices)  # type: ignore[arg-type]
+        return self._from_pyexpr(self._pyexpr.take(indices_lit))
+
+    def get(self, index: int | Expr) -> Self:
+        """
+        Return a single value by index.
+
+        Parameters
+        ----------
+        index
+            An expression that leads to a UInt32 index.
+
+        Returns
+        -------
+        Expr
+            Expression of the same data type.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "group": [
+        ...             "one",
+        ...             "one",
+        ...             "one",
+        ...             "two",
+        ...             "two",
+        ...             "two",
+        ...         ],
+        ...         "value": [1, 98, 2, 3, 99, 4],
+        ...     }
+        ... )
+        >>> df.group_by("group", maintain_order=True).agg(pl.col("value").get(1))
         shape: (2, 2)
         ┌───────┬───────┐
         │ group ┆ value │
@@ -2343,13 +2396,8 @@ class Expr:
         └───────┴───────┘
 
         """
-        if isinstance(indices, list) or (
-            _check_for_numpy(indices) and isinstance(indices, np.ndarray)
-        ):
-            indices_lit = F.lit(pl.Series("", indices, dtype=UInt32))._pyexpr
-        else:
-            indices_lit = parse_as_expression(indices)  # type: ignore[arg-type]
-        return self._from_pyexpr(self._pyexpr.take(indices_lit))
+        index_lit = parse_as_expression(index)
+        return self._from_pyexpr(self._pyexpr.get(index_lit))
 
     @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift(self, n: int = 1) -> Self:

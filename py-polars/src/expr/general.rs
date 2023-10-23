@@ -322,6 +322,10 @@ impl PyExpr {
         self.clone().inner.take(idx.inner).into()
     }
 
+    fn get(&self, idx: Self) -> Self {
+        self.clone().inner.get(idx.inner).into()
+    }
+
     fn sort_by(&self, by: Vec<Self>, descending: Vec<bool>) -> Self {
         let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
         self.clone().inner.sort_by(by, descending).into()

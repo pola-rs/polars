@@ -12,7 +12,7 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, separator: &str) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
-            returns_scalar: true,
+            returns_scalar: false,
             ..Default::default()
         },
     }

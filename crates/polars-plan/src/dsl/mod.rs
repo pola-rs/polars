@@ -444,6 +444,16 @@ impl Expr {
         Expr::Take {
             expr: Box::new(self),
             idx: Box::new(idx.into()),
+            returns_scalar: false,
+        }
+    }
+
+    /// Take the values by a single index.
+    pub fn get<E: Into<Expr>>(self, idx: E) -> Self {
+        Expr::Take {
+            expr: Box::new(self),
+            idx: Box::new(idx.into()),
+            returns_scalar: true,
         }
     }
 
@@ -679,7 +689,7 @@ impl Expr {
         self,
         function_expr: FunctionExpr,
         arguments: &[Expr],
-        auto_explode: bool,
+        returns_scalar: bool,
         cast_to_supertypes: bool,
     ) -> Self {
         let mut input = Vec::with_capacity(arguments.len() + 1);
@@ -691,7 +701,7 @@ impl Expr {
             function: function_expr,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
-                returns_scalar: auto_explode,
+                returns_scalar,
                 cast_to_supertypes,
                 ..Default::default()
             },
@@ -1060,12 +1070,25 @@ impl Expr {
         let other = other.into();
         let has_literal = has_leaf_literal(&other);
 
+        // lit(true).is_in() returns a scalar.
+        let returns_scalar = all_leaf_literal(&self);
+
         let arguments = &[other];
         // we don't have to apply on groups, so this is faster
         if has_literal {
-            self.map_many_private(BooleanFunction::IsIn.into(), arguments, true, true)
+            self.map_many_private(
+                BooleanFunction::IsIn.into(),
+                arguments,
+                returns_scalar,
+                true,
+            )
         } else {
-            self.apply_many_private(BooleanFunction::IsIn.into(), arguments, true, true)
+            self.apply_many_private(
+                BooleanFunction::IsIn.into(),
+                arguments,
+                returns_scalar,
+                true,
+            )
         }
     }
 
