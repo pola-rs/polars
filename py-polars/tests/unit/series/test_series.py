@@ -1080,14 +1080,6 @@ def test_map_elements() -> None:
     a.map_elements(lambda x: x)
 
 
-def test_shift() -> None:
-    a = pl.Series("a", [1, 2, 3])
-    assert_series_equal(a.shift(1), pl.Series("a", [None, 1, 2]))
-    assert_series_equal(a.shift(-1), pl.Series("a", [2, 3, None]))
-    assert_series_equal(a.shift(-2), pl.Series("a", [3, None, None]))
-    assert_series_equal(a.shift_and_fill(10, n=-1), pl.Series("a", [2, 3, 10]))
-
-
 def test_object() -> None:
     vals = [[12], "foo", 9]
     a = pl.Series("a", vals)

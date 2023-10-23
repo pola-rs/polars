@@ -2039,25 +2039,6 @@ def test_backward_fill() -> None:
     assert_series_equal(col_a_backward_fill, pl.Series("a", [1, 3, 3]).cast(pl.Float64))
 
 
-def test_shift_and_fill() -> None:
-    df = pl.DataFrame(
-        {
-            "foo": [1, 2, 3],
-            "bar": [6, 7, 8],
-            "ham": ["a", "b", "c"],
-        }
-    )
-    result = df.shift_and_fill(fill_value=0, n=1)
-    expected = pl.DataFrame(
-        {
-            "foo": [0, 1, 2],
-            "bar": [0, 6, 7],
-            "ham": ["0", "a", "b"],
-        }
-    )
-    assert_frame_equal(result, expected)
-
-
 def test_is_duplicated() -> None:
     df = pl.DataFrame({"foo": [1, 2, 2], "bar": [6, 7, 7]})
     assert_series_equal(df.is_duplicated(), pl.Series("", [False, True, True]))

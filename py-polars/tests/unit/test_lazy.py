@@ -260,44 +260,6 @@ def test_group_by() -> None:
     assert_frame_equal(out.sort(by="groups"), expected)
 
 
-def test_shift(fruits_cars: pl.DataFrame) -> None:
-    df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
-    out = df.select(pl.col("a").shift(1))
-    assert_series_equal(out["a"], pl.Series("a", [None, 1, 2, 3, 4]))
-
-    res = fruits_cars.lazy().shift(2).collect()
-
-    expected = pl.DataFrame(
-        {
-            "A": [None, None, 1, 2, 3],
-            "fruits": [None, None, "banana", "banana", "apple"],
-            "B": [None, None, 5, 4, 3],
-            "cars": [None, None, "beetle", "audi", "beetle"],
-        }
-    )
-    assert_frame_equal(res, expected)
-
-    # negative value
-    res = fruits_cars.lazy().shift(-2).collect()
-    for rows in [3, 4]:
-        for cols in range(4):
-            assert res[rows, cols] is None
-
-
-def test_shift_and_fill() -> None:
-    ldf = pl.LazyFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
-
-    # use exprs
-    out = ldf.with_columns(
-        pl.col("a").shift_and_fill(pl.col("b").mean(), n=-2)
-    ).collect()
-    assert out["a"].null_count() == 0
-
-    # use df method
-    out = ldf.shift_and_fill(pl.col("b").std(), n=2).collect()
-    assert out["a"].null_count() == 0
-
-
 def test_arg_unique() -> None:
     ldf = pl.LazyFrame({"a": [4, 1, 4]})
     col_a_unique = ldf.select(pl.col("a").arg_unique()).collect()["a"]

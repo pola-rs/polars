@@ -1421,7 +1421,7 @@ def test_supertype_timezones_4174() -> None:
 
     # test if this runs without error
     date_to_fill = df["dt_London"][0]
-    df.with_columns(df["dt_London"].shift_and_fill(date_to_fill, n=1))
+    df.with_columns(df["dt_London"].shift(fill_value=date_to_fill))
 
 
 @pytest.mark.skip(reason="from_dicts cannot yet infer timezones")
@@ -1432,22 +1432,6 @@ def test_from_dict_tu_consistency() -> None:
     from_dicts = pl.from_dicts([{"dt": dt}])
 
     assert from_dict.dtypes == from_dicts.dtypes
-
-
-def test_shift_and_fill_group_logicals() -> None:
-    df = pl.from_records(
-        [
-            (date(2001, 1, 2), "A"),
-            (date(2001, 1, 3), "A"),
-            (date(2001, 1, 4), "A"),
-            (date(2001, 1, 3), "B"),
-            (date(2001, 1, 4), "B"),
-        ],
-        schema=["d", "s"],
-    )
-    assert df.select(
-        pl.col("d").shift_and_fill(pl.col("d").max(), n=-1).over("s")
-    ).dtypes == [pl.Date]
 
 
 def test_date_arr_concat() -> None:

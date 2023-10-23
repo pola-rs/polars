@@ -141,16 +141,6 @@ def test_cast_null_to_categorical() -> None:
     ).dtypes == [pl.Categorical]
 
 
-def test_shift_and_fill() -> None:
-    df = pl.DataFrame({"a": ["a", "b"]}).with_columns(
-        [pl.col("a").cast(pl.Categorical)]
-    )
-
-    s = df.with_columns(pl.col("a").shift_and_fill("c", n=1))["a"]
-    assert s.dtype == pl.Categorical
-    assert s.to_list() == ["c", "a"]
-
-
 @StringCache()
 def test_merge_lit_under_global_cache_4491() -> None:
     df = pl.DataFrame(
