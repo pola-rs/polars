@@ -1209,6 +1209,23 @@ def test_sql_unary_ops_8890(match_float: bool) -> None:
         }
 
 
+def test_sql_in_no_ops_11946() -> None:
+    df = pl.LazyFrame(
+        [
+            {"i1": 1},
+            {"i1": 2},
+            {"i1": 3},
+        ]
+    )
+
+    ctx = pl.SQLContext(frame_data=df, eager_execution=False)
+
+    out = ctx.execute(
+        "SELECT * FROM frame_data WHERE i1 in (1, 3)", eager=False
+    ).collect()
+    assert out.to_dict(False) == {"i1": [1, 3]}
+
+
 def test_sql_date() -> None:
     df = pl.DataFrame(
         {
