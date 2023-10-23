@@ -2400,70 +2400,70 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.get(index_lit))
 
     @deprecate_renamed_parameter("periods", "n", version="0.19.11")
-    def shift(self, n: int = 1) -> Self:
+    def shift(self, n: int = 1, *, fill_value: IntoExpr | None = None) -> Self:
         """
-        Shift values by the given number of places.
+        Shift values by the given number of rows.
 
         Parameters
         ----------
         n
-            Number of places to shift (may be negative).
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
-        >>> df.with_columns(foo_shifted=pl.col("foo").shift(1))
-        shape: (4, 2)
-        ┌─────┬─────────────┐
-        │ foo ┆ foo_shifted │
-        │ --- ┆ ---         │
-        │ i64 ┆ i64         │
-        ╞═════╪═════════════╡
-        │ 1   ┆ null        │
-        │ 2   ┆ 1           │
-        │ 3   ┆ 2           │
-        │ 4   ┆ 3           │
-        └─────┴─────────────┘
-
-        """
-        return self._from_pyexpr(self._pyexpr.shift(n))
-
-    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
-    def shift_and_fill(
-        self,
-        fill_value: IntoExpr,
-        *,
-        n: int = 1,
-    ) -> Self:
-        """
-        Shift values by the given number of places and fill the resulting null values.
-
-        Parameters
-        ----------
+            Number of rows to shift down. If a negative value is passed, rows are
+            shifted in the other direction instead.
         fill_value
-            Fill None values with the result of this expression.
-        n
-            Number of places to shift (may be negative).
+            Fill the resulting null values with this value.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
-        >>> df.with_columns(foo_shifted=pl.col("foo").shift_and_fill("a", n=1))
+        By default, values are shifted down one row.
+
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
+        >>> df.with_columns(shift=pl.col("foo").shift())
         shape: (4, 2)
-        ┌─────┬─────────────┐
-        │ foo ┆ foo_shifted │
-        │ --- ┆ ---         │
-        │ i64 ┆ str         │
-        ╞═════╪═════════════╡
-        │ 1   ┆ a           │
-        │ 2   ┆ 1           │
-        │ 3   ┆ 2           │
-        │ 4   ┆ 3           │
-        └─────┴─────────────┘
+        ┌─────┬───────┐
+        │ a   ┆ shift │
+        │ --- ┆ ---   │
+        │ i64 ┆ i64   │
+        ╞═════╪═══════╡
+        │ 1   ┆ null  │
+        │ 2   ┆ 1     │
+        │ 3   ┆ 2     │
+        │ 4   ┆ 3     │
+        └─────┴───────┘
+
+        Pass a negative value to shift upwards instead.
+
+        >>> df.with_columns(shift=pl.col("a").shift(-2))
+        shape: (4, 2)
+        ┌─────┬───────┐
+        │ a   ┆ shift │
+        │ --- ┆ ---   │
+        │ i64 ┆ i64   │
+        ╞═════╪═══════╡
+        │ 1   ┆ 3     │
+        │ 2   ┆ 4     │
+        │ 3   ┆ null  │
+        │ 4   ┆ null  │
+        └─────┴───────┘
+
+        Specify ``fill_value`` to fill the resulting null values.
+
+        >>> df.with_columns(shift=pl.col("a").shift(-2, fill_value=100))
+        shape: (4, 2)
+        ┌─────┬───────┐
+        │ a   ┆ shift │
+        │ --- ┆ ---   │
+        │ i64 ┆ i64   │
+        ╞═════╪═══════╡
+        │ 1   ┆ 3     │
+        │ 2   ┆ 4     │
+        │ 3   ┆ 100   │
+        │ 4   ┆ 100   │
+        └─────┴───────┘
 
         """
-        fill_value = parse_as_expression(fill_value, str_as_lit=True)
-        return self._from_pyexpr(self._pyexpr.shift_and_fill(n, fill_value))
+        if fill_value is not None:
+            fill_value = parse_as_expression(fill_value, str_as_lit=True)
+        return self._from_pyexpr(self._pyexpr.shift(n, fill_value))
 
     def fill_null(
         self,
@@ -9548,6 +9548,43 @@ class Expr:
 
         """
         return self.clip(upper_bound=upper_bound)
+
+    @deprecate_function("Use `shift` instead.", version="0.19.12")
+    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
+    def shift_and_fill(
+        self,
+        fill_value: IntoExpr,
+        *,
+        n: int = 1,
+    ) -> Self:
+        """
+        Shift values by the given number of places and fill the resulting null values.
+
+        Parameters
+        ----------
+        fill_value
+            Fill None values with the result of this expression.
+        n
+            Number of places to shift (may be negative).
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
+        >>> df.with_columns(foo_shifted=pl.col("foo").shift_and_fill("a", n=1))
+        shape: (4, 2)
+        ┌─────┬─────────────┐
+        │ foo ┆ foo_shifted │
+        │ --- ┆ ---         │
+        │ i64 ┆ str         │
+        ╞═════╪═════════════╡
+        │ 1   ┆ a           │
+        │ 2   ┆ 1           │
+        │ 3   ┆ 2           │
+        │ 4   ┆ 3           │
+        └─────┴─────────────┘
+
+        """
+        return self.shift(n, fill_value=fill_value)
 
     def register_plugin(
         self,

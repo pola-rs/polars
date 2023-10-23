@@ -4230,101 +4230,76 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return self._from_pyldf(self._ldf.reverse())
 
     @deprecate_renamed_parameter("periods", "n", version="0.19.11")
-    def shift(self, n: int = 1) -> Self:
+    def shift(self, n: int = 1, *, fill_value: IntoExpr | None = None) -> Self:
         """
-        Shift values by the given number of places.
+        Shift values by the given number of rows.
 
         Parameters
         ----------
         n
-            Number of places to shift (may be negative).
-
-        Examples
-        --------
-        >>> lf = pl.LazyFrame(
-        ...     {
-        ...         "a": [1, 3, 5],
-        ...         "b": [2, 4, 6],
-        ...     }
-        ... )
-        >>> lf.shift(1).collect()
-        shape: (3, 2)
-        ┌──────┬──────┐
-        │ a    ┆ b    │
-        │ ---  ┆ ---  │
-        │ i64  ┆ i64  │
-        ╞══════╪══════╡
-        │ null ┆ null │
-        │ 1    ┆ 2    │
-        │ 3    ┆ 4    │
-        └──────┴──────┘
-        >>> lf.shift(-1).collect()
-        shape: (3, 2)
-        ┌──────┬──────┐
-        │ a    ┆ b    │
-        │ ---  ┆ ---  │
-        │ i64  ┆ i64  │
-        ╞══════╪══════╡
-        │ 3    ┆ 4    │
-        │ 5    ┆ 6    │
-        │ null ┆ null │
-        └──────┴──────┘
-
-        """
-        return self._from_pyldf(self._ldf.shift(n))
-
-    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
-    def shift_and_fill(
-        self,
-        fill_value: Expr | int | str | float,
-        *,
-        n: int = 1,
-    ) -> Self:
-        """
-        Shift values by the given number of places and fill the resulting null values.
-
-        Parameters
-        ----------
+            Number of rows to shift down. If a negative value is passed, rows are
+            shifted up instead.
         fill_value
-            fill None values with the result of this expression.
-        n
-            Number of places to shift (may be negative).
+            Fill the resulting null values with this value. Accepts expression input.
+            Non-expression inputs are parsed as literals.
 
         Examples
         --------
+        By default, values are shifted down one row.
+
         >>> lf = pl.LazyFrame(
         ...     {
-        ...         "a": [1, 3, 5],
-        ...         "b": [2, 4, 6],
+        ...         "a": [1, 2, 3, 4],
+        ...         "b": [5, 6, 7, 8],
         ...     }
         ... )
-        >>> lf.shift_and_fill(fill_value=0, n=1).collect()
-        shape: (3, 2)
+        >>> lf.shift().collect()
+        shape: (4, 2)
+        ┌──────┬──────┐
+        │ a    ┆ b    │
+        │ ---  ┆ ---  │
+        │ i64  ┆ i64  │
+        ╞══════╪══════╡
+        │ null ┆ null │
+        │ 1    ┆ 5    │
+        │ 2    ┆ 6    │
+        │ 3    ┆ 7    │
+        └──────┴──────┘
+
+        Pass a negative value to shift upwards instead.
+
+        >>> lf.shift(-2).collect()
+        shape: (4, 2)
+        ┌──────┬──────┐
+        │ a    ┆ b    │
+        │ ---  ┆ ---  │
+        │ i64  ┆ i64  │
+        ╞══════╪══════╡
+        │ 3    ┆ 7    │
+        │ 4    ┆ 8    │
+        │ null ┆ null │
+        │ null ┆ null │
+        └──────┴──────┘
+
+        Specify ``fill_value`` to fill the resulting null values.
+
+        >>> lf.shift(-2, fill_value=100).collect()
+        shape: (4, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
         │ i64 ┆ i64 │
         ╞═════╪═════╡
-        │ 0   ┆ 0   │
-        │ 1   ┆ 2   │
-        │ 3   ┆ 4   │
-        └─────┴─────┘
-        >>> lf.shift_and_fill(fill_value=0, n=-1).collect()
-        shape: (3, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 3   ┆ 4   │
-        │ 5   ┆ 6   │
-        │ 0   ┆ 0   │
+        │ 3   ┆ 7   │
+        │ 4   ┆ 8   │
+        │ 100 ┆ 100 │
+        │ 100 ┆ 100 │
         └─────┴─────┘
 
         """
-        if not isinstance(fill_value, pl.Expr):
-            fill_value = F.lit(fill_value)
-        return self._from_pyldf(self._ldf.shift_and_fill(n, fill_value._pyexpr))
+        if fill_value is not None:
+            fill_value = parse_as_expression(fill_value, str_as_lit=True)
+        return self._from_pyldf(self._ldf.shift(n, fill_value))
 
     def slice(self, offset: int, length: int | None = None) -> Self:
         """
@@ -6186,3 +6161,55 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             validate_output_schema=validate_output_schema,
             streamable=streamable,
         )
+
+    @deprecate_function("Use `shift` instead.", version="0.19.12")
+    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
+    def shift_and_fill(
+        self,
+        fill_value: Expr | int | str | float,
+        *,
+        n: int = 1,
+    ) -> Self:
+        """
+        Shift values by the given number of places and fill the resulting null values.
+
+        Parameters
+        ----------
+        fill_value
+            fill None values with the result of this expression.
+        n
+            Number of places to shift (may be negative).
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [1, 3, 5],
+        ...         "b": [2, 4, 6],
+        ...     }
+        ... )
+        >>> lf.shift_and_fill(fill_value=0, n=1).collect()
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 0   ┆ 0   │
+        │ 1   ┆ 2   │
+        │ 3   ┆ 4   │
+        └─────┴─────┘
+        >>> lf.shift_and_fill(fill_value=0, n=-1).collect()
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 3   ┆ 4   │
+        │ 5   ┆ 6   │
+        │ 0   ┆ 0   │
+        └─────┴─────┘
+
+        """
+        return self.shift(n, fill_value=fill_value)
