@@ -838,7 +838,7 @@ impl PyLazyFrame {
         let lf = self.ldf.clone();
         let out = match fill_value {
             Some(v) => lf.shift_and_fill(n, v.inner),
-            None => lf.shift(n)
+            None => lf.shift(n),
         };
         out.into()
     }

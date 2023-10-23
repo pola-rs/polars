@@ -343,7 +343,7 @@ impl PyExpr {
         let expr = self.inner.clone();
         let out = match fill_value {
             Some(v) => expr.shift_and_fill(n, v.inner),
-            None => expr.shift(n)
+            None => expr.shift(n),
         };
         out.into()
     }
