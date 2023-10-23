@@ -54,7 +54,7 @@ pub(super) fn value_counts(s: &Series, sort: bool, parallel: bool) -> PolarsResu
 
 #[cfg(feature = "unique_counts")]
 pub(super) fn unique_counts(s: &Series) -> PolarsResult<Series> {
-    Ok(s.unique_counts().into_series())
+    polars_ops::prelude::unique_counts(s)
 }
 
 pub(super) fn backward_fill(s: &Series, limit: FillNullLimit) -> PolarsResult<Series> {
