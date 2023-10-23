@@ -120,8 +120,8 @@ pub(super) fn predicate_is_pushdown_boundary(node: Node, expr_arena: &Arena<AExp
             | AExpr::Agg(_) // an aggregation needs all rows
             // Apply groups can be something like shift, sort, or an aggregation like skew
             // both need all values
-            | AExpr::AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
-            | AExpr::Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
+            | AExpr::AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::GroupWise, .. }, ..}
+            | AExpr::Function {options: FunctionOptions { collect_groups: ApplyOptions::GroupWise, .. }, ..}
             | AExpr::Explode {..}
             // A group_by needs all rows for aggregation
             | AExpr::Window {..}
@@ -150,8 +150,8 @@ pub(super) fn projection_is_definite_pushdown_boundary(
              Agg(_) // an aggregation needs all rows
             // Apply groups can be something like shift, sort, or an aggregation like skew
             // both need all values
-            | AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
-            | Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
+            | AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::GroupWise, .. }, ..}
+            | Function {options: FunctionOptions { collect_groups: ApplyOptions::GroupWise, .. }, ..}
             // still need to investigate this one
             | Explode {..}
             | Count

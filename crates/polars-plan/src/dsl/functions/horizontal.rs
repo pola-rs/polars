@@ -44,7 +44,7 @@ where
         function,
         output_type: GetOutput::super_type(),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             input_wildcard_expansion: true,
             returns_scalar: true,
             fmt_str: "fold",
@@ -87,7 +87,7 @@ where
         function,
         output_type: GetOutput::super_type(),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             input_wildcard_expansion: true,
             returns_scalar: true,
             fmt_str: "reduce",
@@ -132,7 +132,7 @@ where
         function,
         output_type: cumfold_dtype(),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             input_wildcard_expansion: true,
             returns_scalar: true,
             fmt_str: "cumreduce",
@@ -181,7 +181,7 @@ where
         function,
         output_type: cumfold_dtype(),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             input_wildcard_expansion: true,
             returns_scalar: true,
             fmt_str: "cumfold",
@@ -199,7 +199,7 @@ pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
         input: exprs,
         function: FunctionExpr::Boolean(BooleanFunction::AllHorizontal),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyFlat,
+            collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
             returns_scalar: true,
             cast_to_supertypes: false,
@@ -218,7 +218,7 @@ pub fn any_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
         input: exprs,
         function: FunctionExpr::Boolean(BooleanFunction::AnyHorizontal),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyFlat,
+            collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
             returns_scalar: true,
             cast_to_supertypes: false,
@@ -241,7 +241,7 @@ pub fn max_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
         input: exprs,
         function: FunctionExpr::MaxHorizontal,
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyFlat,
+            collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
             returns_scalar: true,
             allow_rename: true,
@@ -263,7 +263,7 @@ pub fn min_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
         input: exprs,
         function: FunctionExpr::MinHorizontal,
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyFlat,
+            collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
             returns_scalar: true,
             allow_rename: true,
@@ -282,7 +282,7 @@ pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
         input: exprs,
         function: FunctionExpr::SumHorizontal,
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyFlat,
+            collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
             returns_scalar: true,
             cast_to_supertypes: false,
@@ -301,7 +301,7 @@ pub fn coalesce(exprs: &[Expr]) -> Expr {
         input,
         function: FunctionExpr::Coalesce,
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyFlat,
+            collect_groups: ApplyOptions::ElementWise,
             cast_to_supertypes: true,
             input_wildcard_expansion: true,
             ..Default::default()

@@ -349,7 +349,7 @@ impl Expr {
     /// Get the index value that has the minimum value.
     pub fn arg_min(self) -> Self {
         let options = FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             returns_scalar: true,
             fmt_str: "arg_min",
             ..Default::default()
@@ -370,7 +370,7 @@ impl Expr {
     /// Get the index value that has the maximum value.
     pub fn arg_max(self) -> Self {
         let options = FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             returns_scalar: true,
             fmt_str: "arg_max",
             ..Default::default()
@@ -391,7 +391,7 @@ impl Expr {
     /// Get the index values that would sort this expression.
     pub fn arg_sort(self, sort_options: SortOptions) -> Self {
         let options = FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             fmt_str: "arg_sort",
             ..Default::default()
         };
@@ -411,7 +411,7 @@ impl Expr {
             input: vec![self, element],
             function: FunctionExpr::SearchSorted(side),
             options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyGroups,
+                collect_groups: ApplyOptions::GroupWise,
                 returns_scalar: true,
                 fmt_str: "search_sorted",
                 cast_to_supertypes: true,
@@ -507,7 +507,7 @@ impl Expr {
             function: SpecialEq::new(Arc::new(f)),
             output_type,
             options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
+                collect_groups: ApplyOptions::ElementWise,
                 fmt_str: "map",
                 ..Default::default()
             },
@@ -519,7 +519,7 @@ impl Expr {
             input: vec![self],
             function: function_expr,
             options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
+                collect_groups: ApplyOptions::ElementWise,
                 ..Default::default()
             },
         }
@@ -540,7 +540,7 @@ impl Expr {
             function: SpecialEq::new(Arc::new(function)),
             output_type,
             options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
+                collect_groups: ApplyOptions::ElementWise,
                 fmt_str: "",
                 ..Default::default()
             },
@@ -612,7 +612,7 @@ impl Expr {
             function: SpecialEq::new(Arc::new(f)),
             output_type,
             options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyGroups,
+                collect_groups: ApplyOptions::GroupWise,
                 fmt_str: "",
                 ..Default::default()
             },
@@ -624,7 +624,7 @@ impl Expr {
             input: vec![self],
             function: function_expr,
             options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyGroups,
+                collect_groups: ApplyOptions::GroupWise,
                 ..Default::default()
             },
         }
@@ -645,7 +645,7 @@ impl Expr {
             function: SpecialEq::new(Arc::new(function)),
             output_type,
             options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyGroups,
+                collect_groups: ApplyOptions::GroupWise,
                 fmt_str: "",
                 ..Default::default()
             },
@@ -667,7 +667,7 @@ impl Expr {
             input,
             function: function_expr,
             options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyGroups,
+                collect_groups: ApplyOptions::GroupWise,
                 returns_scalar: auto_explode,
                 cast_to_supertypes,
                 ..Default::default()
@@ -690,7 +690,7 @@ impl Expr {
             input,
             function: function_expr,
             options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
+                collect_groups: ApplyOptions::ElementWise,
                 returns_scalar: auto_explode,
                 cast_to_supertypes,
                 ..Default::default()
@@ -768,7 +768,7 @@ impl Expr {
     /// Get the product aggregation of an expression.
     pub fn product(self) -> Self {
         let options = FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             returns_scalar: true,
             fmt_str: "product",
             ..Default::default()
@@ -962,7 +962,7 @@ impl Expr {
                 super_type: DataType::Unknown,
             },
             options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
+                collect_groups: ApplyOptions::ElementWise,
                 cast_to_supertypes: true,
                 ..Default::default()
             },
@@ -1810,7 +1810,7 @@ where
         function: SpecialEq::new(Arc::new(function)),
         output_type,
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyFlat,
+            collect_groups: ApplyOptions::ElementWise,
             fmt_str: "",
             ..Default::default()
         },
@@ -1870,7 +1870,7 @@ where
         function: SpecialEq::new(Arc::new(function)),
         output_type,
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             // don't set this to true
             // this is for the caller to decide
             returns_scalar,

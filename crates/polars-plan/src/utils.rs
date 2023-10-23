@@ -99,7 +99,7 @@ pub(crate) fn aexpr_is_elementwise(current_node: Node, arena: &Arena<AExpr>) -> 
         use AExpr::*;
         match e {
             AnonymousFunction { options, .. } | Function { options, .. } => {
-                !matches!(options.collect_groups, ApplyOptions::ApplyGroups)
+                !matches!(options.collect_groups, ApplyOptions::GroupWise)
             },
             Column(_)
             | Alias(_, _)

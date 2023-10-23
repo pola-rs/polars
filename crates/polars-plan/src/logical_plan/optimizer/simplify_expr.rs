@@ -400,7 +400,7 @@ fn string_addition_to_linear_concat(
                     input: vec![left_ae, right_ae],
                     function: StringFunction::ConcatHorizontal("".to_string()).into(),
                     options: FunctionOptions {
-                        collect_groups: ApplyOptions::ApplyFlat,
+                        collect_groups: ApplyOptions::ElementWise,
                         input_wildcard_expansion: true,
                         returns_scalar: true,
                         ..Default::default()
@@ -558,7 +558,7 @@ impl OptimizationRule for SimplifyExprRule {
                         input: vec![*right],
                         function: BooleanFunction::IsNull.into(),
                         options: FunctionOptions {
-                            collect_groups: ApplyOptions::ApplyGroups,
+                            collect_groups: ApplyOptions::GroupWise,
                             ..Default::default()
                         },
                     }),
@@ -567,7 +567,7 @@ impl OptimizationRule for SimplifyExprRule {
                         input: vec![*left],
                         function: BooleanFunction::IsNull.into(),
                         options: FunctionOptions {
-                            collect_groups: ApplyOptions::ApplyGroups,
+                            collect_groups: ApplyOptions::GroupWise,
                             ..Default::default()
                         },
                     }),
@@ -576,7 +576,7 @@ impl OptimizationRule for SimplifyExprRule {
                         input: vec![*right],
                         function: BooleanFunction::IsNotNull.into(),
                         options: FunctionOptions {
-                            collect_groups: ApplyOptions::ApplyGroups,
+                            collect_groups: ApplyOptions::GroupWise,
                             ..Default::default()
                         },
                     }),
@@ -585,7 +585,7 @@ impl OptimizationRule for SimplifyExprRule {
                         input: vec![*left],
                         function: BooleanFunction::IsNotNull.into(),
                         options: FunctionOptions {
-                            collect_groups: ApplyOptions::ApplyGroups,
+                            collect_groups: ApplyOptions::GroupWise,
                             ..Default::default()
                         },
                     }),

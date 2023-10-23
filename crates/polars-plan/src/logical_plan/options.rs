@@ -148,13 +148,13 @@ pub enum ApplyOptions {
     /// Collect groups to a list and apply the function over the groups.
     /// This can be important in aggregation context.
     // e.g. [g1, g1, g2] -> [[g1, g1], g2]
-    ApplyGroups,
+    GroupWise,
     // collect groups to a list and then apply
     // e.g. [g1, g1, g2] -> list([g1, g1, g2])
     ApplyList,
     // do not collect before apply
     // e.g. [g1, g1, g2] -> [g1, g1, g2]
-    ApplyFlat,
+    ElementWise,
 }
 
 // a boolean that can only be set to `false` safely
@@ -225,7 +225,7 @@ impl FunctionOptions {
     /// - Sorts
     /// - Counts
     pub fn is_groups_sensitive(&self) -> bool {
-        matches!(self.collect_groups, ApplyOptions::ApplyGroups)
+        matches!(self.collect_groups, ApplyOptions::GroupWise)
     }
 
     #[cfg(feature = "fused")]
@@ -240,7 +240,7 @@ impl FunctionOptions {
 impl Default for FunctionOptions {
     fn default() -> Self {
         FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             input_wildcard_expansion: false,
             returns_scalar: false,
             fmt_str: "",

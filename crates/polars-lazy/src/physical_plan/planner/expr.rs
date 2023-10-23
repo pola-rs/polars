@@ -391,7 +391,7 @@ pub(crate) fn create_physical_expr(
                         vec![input],
                         function,
                         node_to_expr(expression, expr_arena),
-                        ApplyOptions::ApplyFlat,
+                        ApplyOptions::ElementWise,
                     )))
                 },
                 _ => {
@@ -462,8 +462,8 @@ pub(crate) fn create_physical_expr(
             output_type: _,
             options,
         } => {
-            let is_reducing_aggregation = options.returns_scalar
-                && matches!(options.collect_groups, ApplyOptions::ApplyGroups);
+            let is_reducing_aggregation =
+                options.returns_scalar && matches!(options.collect_groups, ApplyOptions::GroupWise);
             // will be reset in the function so get that here
             let has_window = state.local.has_window;
             let input = create_physical_expressions_check_state(
@@ -493,8 +493,8 @@ pub(crate) fn create_physical_expr(
             options,
             ..
         } => {
-            let is_reducing_aggregation = options.returns_scalar
-                && matches!(options.collect_groups, ApplyOptions::ApplyGroups);
+            let is_reducing_aggregation =
+                options.returns_scalar && matches!(options.collect_groups, ApplyOptions::GroupWise);
             // will be reset in the function so get that here
             let has_window = state.local.has_window;
             let input = create_physical_expressions_check_state(
@@ -543,7 +543,7 @@ pub(crate) fn create_physical_expr(
                 vec![input],
                 function,
                 node_to_expr(expression, expr_arena),
-                ApplyOptions::ApplyGroups,
+                ApplyOptions::GroupWise,
             )))
         },
         Wildcard => panic!("should be no wildcard at this point"),

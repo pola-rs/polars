@@ -902,9 +902,9 @@ impl PyExpr {
         let inner = self.inner.clone();
 
         let collect_groups = if is_elementwise {
-            ApplyOptions::ApplyFlat
+            ApplyOptions::ElementWise
         } else {
-            ApplyOptions::ApplyGroups
+            ApplyOptions::GroupWise
         };
         let mut input = Vec::with_capacity(args.len() + 1);
         input.push(inner);

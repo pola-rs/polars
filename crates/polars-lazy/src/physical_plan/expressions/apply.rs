@@ -36,7 +36,7 @@ impl ApplyExpr {
         allow_threading: bool,
         input_schema: Option<SchemaRef>,
     ) -> Self {
-        if matches!(options.collect_groups, ApplyOptions::ApplyFlat) && options.returns_scalar {
+        if matches!(options.collect_groups, ApplyOptions::ElementWise) && options.returns_scalar {
             panic!("expr {} is not implemented correctly. 'returns_scalar' and 'elementwise' are mutually exclusive", expr)
         }
 
@@ -316,8 +316,8 @@ impl PhysicalExpr for ApplyExpr {
                     ac.with_series(s, true, Some(&self.expr))?;
                     Ok(ac)
                 },
-                ApplyOptions::ApplyGroups => self.apply_single_group_aware(ac),
-                ApplyOptions::ApplyFlat => self.apply_single_elementwise(ac),
+                ApplyOptions::GroupWise => self.apply_single_group_aware(ac),
+                ApplyOptions::ElementWise => self.apply_single_elementwise(ac),
             }
         } else {
             let mut acs = self.prepare_multiple_inputs(df, groups, state)?;
@@ -332,8 +332,8 @@ impl PhysicalExpr for ApplyExpr {
                     ac.with_series(s, true, Some(&self.expr))?;
                     Ok(ac)
                 },
-                ApplyOptions::ApplyGroups => self.apply_multiple_group_aware(acs, df),
-                ApplyOptions::ApplyFlat => {
+                ApplyOptions::GroupWise => self.apply_multiple_group_aware(acs, df),
+                ApplyOptions::ElementWise => {
                     if acs
                         .iter()
                         .any(|ac| matches!(ac.agg_state(), AggState::AggregatedList(_)))
@@ -355,7 +355,7 @@ impl PhysicalExpr for ApplyExpr {
         self.expr.to_field(input_schema, Context::Default)
     }
     fn is_valid_aggregation(&self) -> bool {
-        matches!(self.collect_groups, ApplyOptions::ApplyGroups)
+        matches!(self.collect_groups, ApplyOptions::GroupWise)
     }
     #[cfg(feature = "parquet")]
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
@@ -372,7 +372,7 @@ impl PhysicalExpr for ApplyExpr {
         }
     }
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        if self.inputs.len() == 1 && matches!(self.collect_groups, ApplyOptions::ApplyFlat) {
+        if self.inputs.len() == 1 && matches!(self.collect_groups, ApplyOptions::ElementWise) {
             Some(self)
         } else {
             None
