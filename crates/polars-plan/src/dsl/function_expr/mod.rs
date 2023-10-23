@@ -137,6 +137,7 @@ pub enum FunctionExpr {
     ShiftAndFill {
         periods: i64,
     },
+    Shift(i64),
     DropNans,
     DropNulls,
     #[cfg(feature = "mode")]
@@ -165,7 +166,6 @@ pub enum FunctionExpr {
     AsStruct,
     #[cfg(feature = "top_k")]
     TopK(bool),
-    Shift(i64),
     #[cfg(feature = "cum_agg")]
     Cumcount {
         reverse: bool,
@@ -345,7 +345,148 @@ impl Hash for FunctionExpr {
                 lib.hash(state);
                 symbol.hash(state);
             },
-            _ => {},
+            FunctionExpr::Shift(periods) | FunctionExpr::ShiftAndFill { periods } => {
+                periods.hash(state)
+            },
+            FunctionExpr::SumHorizontal
+            | FunctionExpr::MaxHorizontal
+            | FunctionExpr::MinHorizontal
+            | FunctionExpr::DropNans
+            | FunctionExpr::DropNulls
+            | FunctionExpr::Reverse
+            | FunctionExpr::ArgUnique => {},
+            #[cfg(feature = "mode")]
+            FunctionExpr::Mode => {},
+            #[cfg(feature = "abs")]
+            FunctionExpr::Abs => {},
+            FunctionExpr::NullCount => {},
+            #[cfg(feature = "date_offset")]
+            FunctionExpr::DateOffset => {},
+            #[cfg(feature = "arg_where")]
+            FunctionExpr::ArgWhere => {},
+            #[cfg(feature = "trigonometry")]
+            FunctionExpr::Atan2 => {},
+            #[cfg(feature = "dtype-struct")]
+            FunctionExpr::AsStruct => {},
+            #[cfg(feature = "sign")]
+            FunctionExpr::Sign => {},
+            FunctionExpr::Hash(a, b, c, d) => (a, b, c, d).hash(state),
+            FunctionExpr::FillNull { super_type } => super_type.hash(state),
+            #[cfg(all(feature = "rolling_window", feature = "moment"))]
+            FunctionExpr::RollingSkew { window_size, bias } => {
+                window_size.hash(state);
+                bias.hash(state);
+            },
+            #[cfg(feature = "moment")]
+            FunctionExpr::Skew(a) => a.hash(state),
+            #[cfg(feature = "moment")]
+            FunctionExpr::Kurtosis(a, b) => {
+                a.hash(state);
+                b.hash(state);
+            },
+            #[cfg(feature = "rank")]
+            FunctionExpr::Rank { options, seed } => {
+                options.hash(state);
+                seed.hash(state);
+            },
+            #[cfg(feature = "round_series")]
+            FunctionExpr::Clip { has_min, has_max } => {
+                has_min.hash(state);
+                has_max.hash(state);
+            },
+            #[cfg(feature = "top_k")]
+            FunctionExpr::TopK(a) => a.hash(state),
+            #[cfg(feature = "cum_agg")]
+            FunctionExpr::Cumcount { reverse } => reverse.hash(state),
+            #[cfg(feature = "cum_agg")]
+            FunctionExpr::Cumsum { reverse } => reverse.hash(state),
+            #[cfg(feature = "cum_agg")]
+            FunctionExpr::Cumprod { reverse } => reverse.hash(state),
+            #[cfg(feature = "cum_agg")]
+            FunctionExpr::Cummin { reverse } => reverse.hash(state),
+            #[cfg(feature = "cum_agg")]
+            FunctionExpr::Cummax { reverse } => reverse.hash(state),
+            #[cfg(feature = "dtype-struct")]
+            FunctionExpr::ValueCounts { sort, parallel } => {
+                sort.hash(state);
+                parallel.hash(state);
+            },
+            #[cfg(feature = "unique_counts")]
+            FunctionExpr::UniqueCounts => {},
+            #[cfg(feature = "approx_unique")]
+            FunctionExpr::ApproxNUnique => {},
+            FunctionExpr::Coalesce => {},
+            FunctionExpr::ShrinkType => {},
+            #[cfg(feature = "pct_change")]
+            FunctionExpr::PctChange => {},
+            #[cfg(feature = "log")]
+            FunctionExpr::Entropy { base, normalize } => {
+                base.to_bits().hash(state);
+                normalize.hash(state);
+            },
+            #[cfg(feature = "log")]
+            FunctionExpr::Log { base } => base.to_bits().hash(state),
+            #[cfg(feature = "log")]
+            FunctionExpr::Log1p => {},
+            #[cfg(feature = "log")]
+            FunctionExpr::Exp => {},
+            FunctionExpr::Unique(a) => a.hash(state),
+            #[cfg(feature = "round_series")]
+            FunctionExpr::Round { decimals } => decimals.hash(state),
+            #[cfg(feature = "round_series")]
+            FunctionExpr::Floor => {},
+            #[cfg(feature = "round_series")]
+            FunctionExpr::Ceil => {},
+            FunctionExpr::UpperBound => {},
+            FunctionExpr::LowerBound => {},
+            FunctionExpr::ConcatExpr(a) => a.hash(state),
+            #[cfg(feature = "peaks")]
+            FunctionExpr::PeakMin => {},
+            #[cfg(feature = "peaks")]
+            FunctionExpr::PeakMax => {},
+            #[cfg(feature = "cutqcut")]
+            FunctionExpr::Cut {
+                breaks,
+                labels,
+                left_closed,
+                include_breaks,
+            } => {
+                let slice = bytemuck::cast_slice::<_, u64>(breaks);
+                slice.hash(state);
+                labels.hash(state);
+                left_closed.hash(state);
+                include_breaks.hash(state);
+            },
+            #[cfg(feature = "cutqcut")]
+            FunctionExpr::QCut {
+                probs,
+                labels,
+                left_closed,
+                allow_duplicates,
+                include_breaks,
+            } => {
+                let slice = bytemuck::cast_slice::<_, u64>(probs);
+                slice.hash(state);
+                labels.hash(state);
+                left_closed.hash(state);
+                allow_duplicates.hash(state);
+                include_breaks.hash(state);
+            },
+            #[cfg(feature = "rle")]
+            FunctionExpr::RLE => {},
+            #[cfg(feature = "rle")]
+            FunctionExpr::RLEID => {},
+            FunctionExpr::ToPhysical => {},
+            FunctionExpr::SetSortedFlag(is_sorted) => is_sorted.hash(state),
+            FunctionExpr::BackwardFill { limit } | FunctionExpr::ForwardFill { limit } => {
+                limit.hash(state)
+            },
+            #[cfg(feature = "ewma")]
+            FunctionExpr::EwmMean { options } => options.hash(state),
+            #[cfg(feature = "ewma")]
+            FunctionExpr::EwmStd { options } => options.hash(state),
+            #[cfg(feature = "ewma")]
+            FunctionExpr::EwmVar { options } => options.hash(state),
         }
     }
 }

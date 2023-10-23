@@ -1828,6 +1828,7 @@ name = "polars-plan"
 version = "0.33.2"
 dependencies = [
  "ahash",
+ "bytemuck",
  "chrono",
  "chrono-tz",
  "ciborium",

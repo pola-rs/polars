@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::prelude::SeriesSealed;
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum RankMethod {
     Average,
@@ -24,7 +24,7 @@ pub enum RankMethod {
 }
 
 // We might want to add a `nulls_last` or `null_behavior` field.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RankOptions {
     pub method: RankMethod,

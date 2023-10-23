@@ -1,6 +1,8 @@
 mod average;
 mod variance;
 
+use std::hash::{Hash, Hasher};
+
 pub use average::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -26,6 +28,16 @@ impl Default for EWMOptions {
             min_periods: 1,
             ignore_nulls: true,
         }
+    }
+}
+
+impl Hash for EWMOptions {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.alpha.to_bits().hash(state);
+        self.adjust.hash(state);
+        self.bias.hash(state);
+        self.min_periods.hash(state);
+        self.ignore_nulls.hash(state);
     }
 }
 
