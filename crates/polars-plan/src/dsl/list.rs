@@ -137,7 +137,7 @@ impl ListNameSpace {
         self.0.map_many_private(
             FunctionExpr::ListExpr(ListFunction::Get),
             &[index],
-            true,
+            false,
             false,
         )
     }
@@ -152,7 +152,7 @@ impl ListNameSpace {
         self.0.map_many_private(
             FunctionExpr::ListExpr(ListFunction::Take(null_on_oob)),
             &[index],
-            true,
+            false,
             false,
         )
     }
@@ -216,7 +216,7 @@ impl ListNameSpace {
         self.0.map_many_private(
             FunctionExpr::ListExpr(ListFunction::Slice),
             &[offset, length],
-            true,
+            false,
             false,
         )
     }
@@ -296,7 +296,7 @@ impl ListNameSpace {
             .map_many_private(
                 FunctionExpr::ListExpr(ListFunction::Contains),
                 &[other],
-                true,
+                false,
                 false,
             )
             .with_function_options(|mut options| {
@@ -313,7 +313,7 @@ impl ListNameSpace {
             .map_many_private(
                 FunctionExpr::ListExpr(ListFunction::CountMatches),
                 &[other],
-                true,
+                false,
                 false,
             )
             .with_function_options(|mut options| {

@@ -2331,7 +2331,60 @@ class Expr:
         ...         "value": [1, 98, 2, 3, 99, 4],
         ...     }
         ... )
-        >>> df.group_by("group", maintain_order=True).agg(pl.col("value").take(1))
+        >>> df.group_by("group", maintain_order=True).agg(pl.col("value").take([2, 1]))
+        shape: (2, 2)
+        ┌───────┬───────────┐
+        │ group ┆ value     │
+        │ ---   ┆ ---       │
+        │ str   ┆ list[i64] │
+        ╞═══════╪═══════════╡
+        │ one   ┆ [2, 98]   │
+        │ two   ┆ [4, 99]   │
+        └───────┴───────────┘
+
+        See Also
+        --------
+        Expr.get : Take a single value
+
+        """
+        if isinstance(indices, list) or (
+            _check_for_numpy(indices) and isinstance(indices, np.ndarray)
+        ):
+            indices_lit = F.lit(pl.Series("", indices, dtype=UInt32))._pyexpr
+        else:
+            indices_lit = parse_as_expression(indices)  # type: ignore[arg-type]
+        return self._from_pyexpr(self._pyexpr.take(indices_lit))
+
+    def get(self, index: int | Expr) -> Self:
+        """
+        Return a single value by index.
+
+        Parameters
+        ----------
+        index
+            An expression that leads to a UInt32 index.
+
+        Returns
+        -------
+        Expr
+            Expression of the same data type.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "group": [
+        ...             "one",
+        ...             "one",
+        ...             "one",
+        ...             "two",
+        ...             "two",
+        ...             "two",
+        ...         ],
+        ...         "value": [1, 98, 2, 3, 99, 4],
+        ...     }
+        ... )
+        >>> df.group_by("group", maintain_order=True).agg(pl.col("value").get(1))
         shape: (2, 2)
         ┌───────┬───────┐
         │ group ┆ value │
@@ -2343,13 +2396,8 @@ class Expr:
         └───────┴───────┘
 
         """
-        if isinstance(indices, list) or (
-            _check_for_numpy(indices) and isinstance(indices, np.ndarray)
-        ):
-            indices_lit = F.lit(pl.Series("", indices, dtype=UInt32))._pyexpr
-        else:
-            indices_lit = parse_as_expression(indices)  # type: ignore[arg-type]
-        return self._from_pyexpr(self._pyexpr.take(indices_lit))
+        index_lit = parse_as_expression(index)
+        return self._from_pyexpr(self._pyexpr.get(index_lit))
 
     @deprecate_renamed_parameter("periods", "n", version="0.19.11")
     def shift(self, n: int = 1) -> Self:
@@ -9512,7 +9560,7 @@ class Expr:
         """
         return self.is_last_distinct()
 
-    def _register_plugin(
+    def register_plugin(
         self,
         *,
         lib: str,
@@ -9521,7 +9569,7 @@ class Expr:
         kwargs: dict[Any, Any] | None = None,
         is_elementwise: bool = False,
         input_wildcard_expansion: bool = False,
-        auto_explode: bool = False,
+        returns_scalar: bool = False,
         cast_to_supertypes: bool = False,
     ) -> Self:
         """
@@ -9551,9 +9599,10 @@ class Expr:
             this will trigger fast paths.
         input_wildcard_expansion
             Expand expressions as input of this function.
-        auto_explode
-            Explode the results in a group_by.
-            This is recommended for aggregation functions.
+        returns_scalar
+            Automatically explode on unit length if it ran as final aggregation.
+            this is the case for aggregations like ``sum``, ``min``, ``covariance`` etc.
+
         cast_to_supertypes
             Cast the input datatypes to their supertype.
 
@@ -9567,7 +9616,8 @@ class Expr:
         else:
             import pickle
 
-            serialized_kwargs = pickle.dumps(kwargs, protocol=2)
+            # Choose the highest protocol supported by https://docs.rs/serde-pickle/latest/serde_pickle/
+            serialized_kwargs = pickle.dumps(kwargs, protocol=5)
 
         return self._from_pyexpr(
             self._pyexpr.register_plugin(
@@ -9577,9 +9627,33 @@ class Expr:
                 serialized_kwargs,
                 is_elementwise,
                 input_wildcard_expansion,
-                auto_explode,
+                returns_scalar,
                 cast_to_supertypes,
             )
+        )
+
+    @deprecate_renamed_function("register_plugin", version="0.19.12")
+    def _register_plugin(
+        self,
+        *,
+        lib: str,
+        symbol: str,
+        args: list[IntoExpr] | None = None,
+        kwargs: dict[Any, Any] | None = None,
+        is_elementwise: bool = False,
+        input_wildcard_expansion: bool = False,
+        auto_explode: bool = False,
+        cast_to_supertypes: bool = False,
+    ) -> Self:
+        return self.register_plugin(
+            lib=lib,
+            symbol=symbol,
+            args=args,
+            kwargs=kwargs,
+            is_elementwise=is_elementwise,
+            input_wildcard_expansion=input_wildcard_expansion,
+            returns_scalar=auto_explode,
+            cast_to_supertypes=cast_to_supertypes,
         )
 
     @property

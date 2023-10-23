@@ -22,7 +22,7 @@ pub fn arg_where<E: Into<Expr>>(condition: E) -> Expr {
         input: vec![condition],
         function: FunctionExpr::ArgWhere,
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             ..Default::default()
         },
     }

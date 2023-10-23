@@ -255,7 +255,7 @@ def test_err_on_implode_and_agg() -> None:
         pl.col("type").implode().list.head().alias("foo")
     ).to_dict(False) == {
         "type": ["water", "fire", "earth"],
-        "foo": [["water", "water"], ["fire"], ["earth"]],
+        "foo": [[["water", "water"]], [["fire"]], [["earth"]]],
     }
 
     # but not during a window function as the groups cannot be mapped back

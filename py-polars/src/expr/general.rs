@@ -322,6 +322,10 @@ impl PyExpr {
         self.clone().inner.take(idx.inner).into()
     }
 
+    fn get(&self, idx: Self) -> Self {
+        self.clone().inner.get(idx.inner).into()
+    }
+
     fn sort_by(&self, by: Vec<Self>, descending: Vec<bool>) -> Self {
         let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
         self.clone().inner.sort_by(by, descending).into()
@@ -895,16 +899,16 @@ impl PyExpr {
         kwargs: Vec<u8>,
         is_elementwise: bool,
         input_wildcard_expansion: bool,
-        auto_explode: bool,
+        returns_scalar: bool,
         cast_to_supertypes: bool,
     ) -> PyResult<Self> {
         use polars_plan::prelude::*;
         let inner = self.inner.clone();
 
         let collect_groups = if is_elementwise {
-            ApplyOptions::ApplyFlat
+            ApplyOptions::ElementWise
         } else {
-            ApplyOptions::ApplyGroups
+            ApplyOptions::GroupWise
         };
         let mut input = Vec::with_capacity(args.len() + 1);
         input.push(inner);
@@ -922,7 +926,7 @@ impl PyExpr {
             options: FunctionOptions {
                 collect_groups,
                 input_wildcard_expansion,
-                auto_explode,
+                returns_scalar,
                 cast_to_supertypes,
                 ..Default::default()
             },

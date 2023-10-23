@@ -141,7 +141,7 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
             time_zone,
         }),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyFlat,
+            collect_groups: ApplyOptions::ElementWise,
             allow_rename: true,
             input_wildcard_expansion: true,
             fmt_str: "datetime",
@@ -359,7 +359,7 @@ pub fn duration(args: DurationArgs) -> Expr {
         function,
         output_type: GetOutput::from_type(DataType::Duration(args.time_unit)),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyFlat,
+            collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
             fmt_str: "duration",
             ..Default::default()

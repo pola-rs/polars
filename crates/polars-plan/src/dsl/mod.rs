@@ -349,8 +349,8 @@ impl Expr {
     /// Get the index value that has the minimum value.
     pub fn arg_min(self) -> Self {
         let options = FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
-            auto_explode: true,
+            collect_groups: ApplyOptions::GroupWise,
+            returns_scalar: true,
             fmt_str: "arg_min",
             ..Default::default()
         };
@@ -370,8 +370,8 @@ impl Expr {
     /// Get the index value that has the maximum value.
     pub fn arg_max(self) -> Self {
         let options = FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
-            auto_explode: true,
+            collect_groups: ApplyOptions::GroupWise,
+            returns_scalar: true,
             fmt_str: "arg_max",
             ..Default::default()
         };
@@ -391,7 +391,7 @@ impl Expr {
     /// Get the index values that would sort this expression.
     pub fn arg_sort(self, sort_options: SortOptions) -> Self {
         let options = FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             fmt_str: "arg_sort",
             ..Default::default()
         };
@@ -411,8 +411,8 @@ impl Expr {
             input: vec![self, element],
             function: FunctionExpr::SearchSorted(side),
             options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyGroups,
-                auto_explode: true,
+                collect_groups: ApplyOptions::GroupWise,
+                returns_scalar: true,
                 fmt_str: "search_sorted",
                 cast_to_supertypes: true,
                 ..Default::default()
@@ -444,6 +444,16 @@ impl Expr {
         Expr::Take {
             expr: Box::new(self),
             idx: Box::new(idx.into()),
+            returns_scalar: false,
+        }
+    }
+
+    /// Take the values by a single index.
+    pub fn get<E: Into<Expr>>(self, idx: E) -> Self {
+        Expr::Take {
+            expr: Box::new(self),
+            idx: Box::new(idx.into()),
+            returns_scalar: true,
         }
     }
 
@@ -507,7 +517,7 @@ impl Expr {
             function: SpecialEq::new(Arc::new(f)),
             output_type,
             options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
+                collect_groups: ApplyOptions::ElementWise,
                 fmt_str: "map",
                 ..Default::default()
             },
@@ -519,7 +529,7 @@ impl Expr {
             input: vec![self],
             function: function_expr,
             options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
+                collect_groups: ApplyOptions::ElementWise,
                 ..Default::default()
             },
         }
@@ -540,7 +550,7 @@ impl Expr {
             function: SpecialEq::new(Arc::new(function)),
             output_type,
             options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
+                collect_groups: ApplyOptions::ElementWise,
                 fmt_str: "",
                 ..Default::default()
             },
@@ -612,7 +622,7 @@ impl Expr {
             function: SpecialEq::new(Arc::new(f)),
             output_type,
             options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyGroups,
+                collect_groups: ApplyOptions::GroupWise,
                 fmt_str: "",
                 ..Default::default()
             },
@@ -624,7 +634,7 @@ impl Expr {
             input: vec![self],
             function: function_expr,
             options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyGroups,
+                collect_groups: ApplyOptions::GroupWise,
                 ..Default::default()
             },
         }
@@ -645,7 +655,7 @@ impl Expr {
             function: SpecialEq::new(Arc::new(function)),
             output_type,
             options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyGroups,
+                collect_groups: ApplyOptions::GroupWise,
                 fmt_str: "",
                 ..Default::default()
             },
@@ -667,8 +677,8 @@ impl Expr {
             input,
             function: function_expr,
             options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyGroups,
-                auto_explode,
+                collect_groups: ApplyOptions::GroupWise,
+                returns_scalar: auto_explode,
                 cast_to_supertypes,
                 ..Default::default()
             },
@@ -679,7 +689,7 @@ impl Expr {
         self,
         function_expr: FunctionExpr,
         arguments: &[Expr],
-        auto_explode: bool,
+        returns_scalar: bool,
         cast_to_supertypes: bool,
     ) -> Self {
         let mut input = Vec::with_capacity(arguments.len() + 1);
@@ -690,8 +700,8 @@ impl Expr {
             input,
             function: function_expr,
             options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                auto_explode,
+                collect_groups: ApplyOptions::ElementWise,
+                returns_scalar,
                 cast_to_supertypes,
                 ..Default::default()
             },
@@ -768,8 +778,8 @@ impl Expr {
     /// Get the product aggregation of an expression.
     pub fn product(self) -> Self {
         let options = FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
-            auto_explode: true,
+            collect_groups: ApplyOptions::GroupWise,
+            returns_scalar: true,
             fmt_str: "product",
             ..Default::default()
         };
@@ -962,7 +972,7 @@ impl Expr {
                 super_type: DataType::Unknown,
             },
             options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
+                collect_groups: ApplyOptions::ElementWise,
                 cast_to_supertypes: true,
                 ..Default::default()
             },
@@ -1019,7 +1029,7 @@ impl Expr {
     pub fn approx_n_unique(self) -> Self {
         self.apply_private(FunctionExpr::ApproxNUnique)
             .with_function_options(|mut options| {
-                options.auto_explode = true;
+                options.returns_scalar = true;
                 options
             })
     }
@@ -1060,12 +1070,25 @@ impl Expr {
         let other = other.into();
         let has_literal = has_leaf_literal(&other);
 
+        // lit(true).is_in() returns a scalar.
+        let returns_scalar = all_leaf_literal(&self);
+
         let arguments = &[other];
         // we don't have to apply on groups, so this is faster
         if has_literal {
-            self.map_many_private(BooleanFunction::IsIn.into(), arguments, true, true)
+            self.map_many_private(
+                BooleanFunction::IsIn.into(),
+                arguments,
+                returns_scalar,
+                true,
+            )
         } else {
-            self.apply_many_private(BooleanFunction::IsIn.into(), arguments, true, true)
+            self.apply_many_private(
+                BooleanFunction::IsIn.into(),
+                arguments,
+                returns_scalar,
+                true,
+            )
         }
     }
 
@@ -1558,7 +1581,7 @@ impl Expr {
     pub fn skew(self, bias: bool) -> Expr {
         self.apply_private(FunctionExpr::Skew(bias))
             .with_function_options(|mut options| {
-                options.auto_explode = true;
+                options.returns_scalar = true;
                 options
             })
     }
@@ -1574,7 +1597,7 @@ impl Expr {
     pub fn kurtosis(self, fisher: bool, bias: bool) -> Expr {
         self.apply_private(FunctionExpr::Kurtosis(fisher, bias))
             .with_function_options(|mut options| {
-                options.auto_explode = true;
+                options.returns_scalar = true;
                 options
             })
     }
@@ -1644,7 +1667,7 @@ impl Expr {
     pub fn any(self, ignore_nulls: bool) -> Self {
         self.apply_private(BooleanFunction::Any { ignore_nulls }.into())
             .with_function_options(|mut opt| {
-                opt.auto_explode = true;
+                opt.returns_scalar = true;
                 opt
             })
     }
@@ -1659,7 +1682,7 @@ impl Expr {
     pub fn all(self, ignore_nulls: bool) -> Self {
         self.apply_private(BooleanFunction::All { ignore_nulls }.into())
             .with_function_options(|mut opt| {
-                opt.auto_explode = true;
+                opt.returns_scalar = true;
                 opt
             })
     }
@@ -1714,7 +1737,7 @@ impl Expr {
     pub fn entropy(self, base: f64, normalize: bool) -> Self {
         self.apply_private(FunctionExpr::Entropy { base, normalize })
             .with_function_options(|mut options| {
-                options.auto_explode = true;
+                options.returns_scalar = true;
                 options
             })
     }
@@ -1722,7 +1745,7 @@ impl Expr {
     pub fn null_count(self) -> Expr {
         self.apply_private(FunctionExpr::NullCount)
             .with_function_options(|mut options| {
-                options.auto_explode = true;
+                options.returns_scalar = true;
                 options
             })
     }
@@ -1810,7 +1833,7 @@ where
         function: SpecialEq::new(Arc::new(function)),
         output_type,
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyFlat,
+            collect_groups: ApplyOptions::ElementWise,
             fmt_str: "",
             ..Default::default()
         },
@@ -1837,7 +1860,7 @@ where
         output_type,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyList,
-            auto_explode: true,
+            returns_scalar: true,
             fmt_str: "",
             ..Default::default()
         },
@@ -1870,10 +1893,10 @@ where
         function: SpecialEq::new(Arc::new(function)),
         output_type,
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             // don't set this to true
             // this is for the caller to decide
-            auto_explode: returns_scalar,
+            returns_scalar,
             fmt_str: "",
             ..Default::default()
         },

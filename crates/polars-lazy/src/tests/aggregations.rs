@@ -421,7 +421,7 @@ fn take_aggregations() -> PolarsResult<()> {
         .clone()
         .lazy()
         .group_by([col("user")])
-        .agg([col("book").take(col("count").arg_max()).alias("fav_book")])
+        .agg([col("book").get(col("count").arg_max()).alias("fav_book")])
         .sort("user", Default::default())
         .collect()?;
 
@@ -460,7 +460,7 @@ fn take_aggregations() -> PolarsResult<()> {
     let out = df
         .lazy()
         .group_by([col("user")])
-        .agg([col("book").take(lit(0)).alias("take_lit")])
+        .agg([col("book").get(lit(0)).alias("take_lit")])
         .sort("user", Default::default())
         .collect()?;
 
@@ -484,7 +484,7 @@ fn test_take_consistency() -> PolarsResult<()> {
                 multithreaded: true,
                 maintain_order: false,
             })
-            .take(lit(0))])
+            .get(lit(0))])
         .collect()?;
 
     let a = out.column("A")?;
@@ -502,7 +502,7 @@ fn test_take_consistency() -> PolarsResult<()> {
                 multithreaded: true,
                 maintain_order: false,
             })
-            .take(lit(0))])
+            .get(lit(0))])
         .collect()?;
 
     let out = out.column("A")?;
@@ -521,10 +521,10 @@ fn test_take_consistency() -> PolarsResult<()> {
                     multithreaded: true,
                     maintain_order: false,
                 })
-                .take(lit(0))
+                .get(lit(0))
                 .alias("1"),
             col("A")
-                .take(
+                .get(
                     col("A")
                         .arg_sort(SortOptions {
                             descending: true,
@@ -532,7 +532,7 @@ fn test_take_consistency() -> PolarsResult<()> {
                             multithreaded: true,
                             maintain_order: false,
                         })
-                        .take(lit(0)),
+                        .get(lit(0)),
                 )
                 .alias("2"),
         ])
@@ -556,10 +556,7 @@ fn test_take_in_groups() -> PolarsResult<()> {
     let out = df
         .lazy()
         .sort("fruits", Default::default())
-        .select([col("B")
-            .take(lit(Series::new("", &[0u32])))
-            .over([col("fruits")])
-            .alias("taken")])
+        .select([col("B").get(lit(0u32)).over([col("fruits")]).alias("taken")])
         .collect()?;
 
     assert_eq!(

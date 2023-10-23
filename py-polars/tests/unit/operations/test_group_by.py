@@ -269,7 +269,7 @@ def test_apply_after_take_in_group_by_3869() -> None:
         )
         .group_by("k", maintain_order=True)
         .agg(
-            pl.col("v").take(pl.col("t").arg_max()).sqrt()
+            pl.col("v").get(pl.col("t").arg_max()).sqrt()
         )  # <- fails for sqrt, exp, log, pow, etc.
     ).to_dict(False) == {"k": ["a", "b"], "v": [1.4142135623730951, 2.0]}
 
@@ -387,7 +387,7 @@ def test_group_by_dynamic_overlapping_groups_flat_apply_multiple_5038(
 def test_take_in_group_by() -> None:
     df = pl.DataFrame({"group": [1, 1, 1, 2, 2, 2], "values": [10, 200, 3, 40, 500, 6]})
     assert df.group_by("group").agg(
-        pl.col("values").take(1) - pl.col("values").take(2)
+        pl.col("values").get(1) - pl.col("values").get(2)
     ).sort("group").to_dict(False) == {"group": [1, 2], "values": [197, 494]}
 
 

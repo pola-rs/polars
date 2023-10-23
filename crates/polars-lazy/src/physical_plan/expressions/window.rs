@@ -302,8 +302,8 @@ impl WindowExpr {
                         },
                         Expr::Function { options, .. }
                         | Expr::AnonymousFunction { options, .. } => {
-                            if options.auto_explode
-                                && matches!(options.collect_groups, ApplyOptions::ApplyGroups)
+                            if options.returns_scalar
+                                && matches!(options.collect_groups, ApplyOptions::GroupWise)
                             {
                                 agg_col = true;
                             }

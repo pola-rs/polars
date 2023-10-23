@@ -148,13 +148,13 @@ pub enum ApplyOptions {
     /// Collect groups to a list and apply the function over the groups.
     /// This can be important in aggregation context.
     // e.g. [g1, g1, g2] -> [[g1, g1], g2]
-    ApplyGroups,
+    GroupWise,
     // collect groups to a list and then apply
     // e.g. [g1, g1, g2] -> list([g1, g1, g2])
     ApplyList,
     // do not collect before apply
     // e.g. [g1, g1, g2] -> [g1, g1, g2]
-    ApplyFlat,
+    ElementWise,
 }
 
 // a boolean that can only be set to `false` safely
@@ -191,7 +191,7 @@ pub struct FunctionOptions {
     ///
     /// this also accounts for regex expansion
     pub input_wildcard_expansion: bool,
-    /// automatically explode on unit length it ran as final aggregation.
+    /// Automatically explode on unit length if it ran as final aggregation.
     ///
     /// this is the case for aggregations like sum, min, covariance etc.
     /// We need to know this because we cannot see the difference between
@@ -201,7 +201,7 @@ pub struct FunctionOptions {
     ///
     /// head_1(x) -> {1}
     /// sum(x) -> {4}
-    pub auto_explode: bool,
+    pub returns_scalar: bool,
     // if the expression and its inputs should be cast to supertypes
     pub cast_to_supertypes: bool,
     // The physical expression may rename the output of this function.
@@ -225,7 +225,7 @@ impl FunctionOptions {
     /// - Sorts
     /// - Counts
     pub fn is_groups_sensitive(&self) -> bool {
-        matches!(self.collect_groups, ApplyOptions::ApplyGroups)
+        matches!(self.collect_groups, ApplyOptions::GroupWise)
     }
 
     #[cfg(feature = "fused")]
@@ -240,9 +240,9 @@ impl FunctionOptions {
 impl Default for FunctionOptions {
     fn default() -> Self {
         FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             input_wildcard_expansion: false,
-            auto_explode: false,
+            returns_scalar: false,
             fmt_str: "",
             cast_to_supertypes: false,
             allow_rename: false,
