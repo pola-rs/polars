@@ -175,9 +175,9 @@ if TYPE_CHECKING:
     # MultiColSelector indexes into the horizontal axis
     # NOTE: wrapping these as strings is necessary for Python <3.10
 
-    MultiRowSelector: TypeAlias = Union[slice, range, list[int], "Series"]
+    MultiRowSelector: TypeAlias = Union[slice, range, "list[int]", "Series"]
     MultiColSelector: TypeAlias = Union[
-        slice, range, list[int], list[str], list[bool], "Series"
+        slice, range, "list[int]", "list[str]", "list[bool]", "Series"
     ]
 
     T = TypeVar("T")
