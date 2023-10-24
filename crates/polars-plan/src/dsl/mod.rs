@@ -731,17 +731,17 @@ impl Expr {
     }
 
     /// Shift the values in the array by some period. See [the eager implementation](polars_core::series::SeriesTrait::shift).
-    pub fn shift(self, periods: i64) -> Self {
-        self.apply_private(FunctionExpr::Shift(periods))
+    pub fn shift(self, n: Expr) -> Self {
+        self.apply_many_private(FunctionExpr::Shift, &[n], false, false)
     }
 
     /// Shift the values in the array by some period and fill the resulting empty values.
-    pub fn shift_and_fill<E: Into<Expr>>(self, periods: i64, fill_value: E) -> Self {
+    pub fn shift_and_fill<E: Into<Expr>>(self, n: E, fill_value: E) -> Self {
         self.apply_many_private(
-            FunctionExpr::ShiftAndFill { periods },
-            &[fill_value.into()],
+            FunctionExpr::ShiftAndFill,
+            &[n.into(), fill_value.into()],
             false,
-            true,
+            false,
         )
     }
 

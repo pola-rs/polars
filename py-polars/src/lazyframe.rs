@@ -834,11 +834,11 @@ impl PyLazyFrame {
         ldf.reverse().into()
     }
 
-    fn shift(&self, n: i64, fill_value: Option<PyExpr>) -> Self {
+    fn shift(&self, n: PyExpr, fill_value: Option<PyExpr>) -> Self {
         let lf = self.ldf.clone();
         let out = match fill_value {
-            Some(v) => lf.shift_and_fill(n, v.inner),
-            None => lf.shift(n),
+            Some(v) => lf.shift_and_fill(n.inner, v.inner),
+            None => lf.shift(n.inner),
         };
         out.into()
     }

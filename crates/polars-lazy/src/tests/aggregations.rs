@@ -75,7 +75,7 @@ fn test_cumsum_agg_as_key() -> PolarsResult<()> {
     let out = df
         .lazy()
         .group_by([col("soil")
-            .neq(col("soil").shift_and_fill(1, col("soil").first()))
+            .neq(col("soil").shift_and_fill(lit(1), col("soil").first()))
             .cumsum(false)
             .alias("key")])
         .agg([col("depth").max().keep_name()])
@@ -123,7 +123,7 @@ fn test_auto_list_agg() -> PolarsResult<()> {
         .clone()
         .lazy()
         .group_by([col("fruits")])
-        .agg([col("B").shift_and_fill(-1, lit(-1)).alias("foo")])
+        .agg([col("B").shift_and_fill(lit(-1), lit(-1)).alias("foo")])
         .collect()?;
 
     assert!(matches!(out.column("foo")?.dtype(), DataType::List(_)));
@@ -133,19 +133,19 @@ fn test_auto_list_agg() -> PolarsResult<()> {
         .clone()
         .lazy()
         .group_by([col("fruits")])
-        .agg([col("B").shift_and_fill(-1, lit(-1))])
+        .agg([col("B").shift_and_fill(lit(-1), lit(-1))])
         .collect()?;
 
     // test if window expr executor adds list
     let _out = df
         .clone()
         .lazy()
-        .select([col("B").shift_and_fill(-1, lit(-1)).alias("foo")])
+        .select([col("B").shift_and_fill(lit(-1), lit(-1)).alias("foo")])
         .collect()?;
 
     let _out = df
         .lazy()
-        .select([col("B").shift_and_fill(-1, lit(-1))])
+        .select([col("B").shift_and_fill(lit(-1), lit(-1))])
         .collect()?;
     Ok(())
 }
@@ -393,7 +393,7 @@ fn test_shift_elementwise_issue_2509() -> PolarsResult<()> {
         .lazy()
         // Don't use maintain order here! That hides the bug
         .group_by([col("x")])
-        .agg(&[(col("y").shift(-1) + col("x")).alias("sum")])
+        .agg(&[(col("y").shift(lit(-1)) + col("x")).alias("sum")])
         .sort("x", Default::default())
         .collect()?;
 
