@@ -1,3 +1,5 @@
+#[cfg(feature = "abs")]
+mod abs;
 mod approx_algo;
 #[cfg(feature = "approx_unique")]
 mod approx_unique;
@@ -46,6 +48,8 @@ mod search_sorted;
 mod to_dummies;
 mod various;
 
+#[cfg(feature = "abs")]
+pub use abs::*;
 pub use approx_algo::*;
 #[cfg(feature = "approx_unique")]
 pub use approx_unique::*;

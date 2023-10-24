@@ -93,7 +93,6 @@ group_by_list = []
 rolling_window = []
 diagonal_concat = []
 horizontal_concat = []
-abs = []
 dataframe_arithmetic = []
 product = []
 unique_counts = []
@@ -148,7 +147,6 @@ docs-selection = [
   "dtype-decimal",
   "diagonal_concat",
   "horizontal_concat",
-  "abs",
   "dataframe_arithmetic",
   "product",
   "unique_counts",
