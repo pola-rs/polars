@@ -552,6 +552,14 @@ impl BatchedParquetReader {
         })
     }
 
+    pub fn limit_reached(&self) -> bool {
+        self.limit == 0
+    }
+
+    pub fn schema(&self) -> &SchemaRef {
+        &self.schema
+    }
+
     pub async fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
         if self.limit == 0 && self.has_returned {
             return Ok(None);
