@@ -56,7 +56,7 @@ build-release-native: .venv  ## Same as build-release, except with native CPU op
 
 .PHONY: fmt
 fmt: .venv  ## Run autoformatting and linting
-	$(VENV_BIN)/ruff .
+	$(VENV_BIN)/ruff check .
 	$(VENV_BIN)/ruff format .
 	$(VENV_BIN)/blackdoc .
 	$(VENV_BIN)/typos ..
