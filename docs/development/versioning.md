@@ -4,16 +4,11 @@
 
 Polars adheres to the [semantic versioning](https://semver.org/) specification.
 
-As Polars has not released its `1.0.0` version yet, breaking releases lead to a minor version increase (e.g. from `0.18.15` to `0.19.0`), while all other releases increment the patch version (e.g. from `0.18.14` to `0.18.15`)
+As Polars has not released its `1.0.0` version yet, breaking releases lead to a minor version increase (e.g. from `0.18.15` to `0.19.0`), while all other releases increment the patch version (e.g. from `0.18.15` to `0.18.16`)
 
 ## Policy for breaking changes
 
 Polars takes backwards compatibility seriously, but we are not afraid to change things if it leads to a better product.
-
-!!! warning Rust users only
-
-    The Rust API for Polars is currently not considered stable.
-    Functionality can be changed or removed without warning.
 
 ### Philosophy
 
@@ -60,6 +55,11 @@ For example, if we choose to rename a function, the new function is added alongs
 Not all changes can be deprecated nicely.
 A change to the query engine may have effects across a large part of the API.
 Such changes will not be warned for, but _will_ be included in the changelog and the migration guide.
+
+!!! warning Rust users only
+
+    Breaking changes to the Rust API are not deprecated first, but _will_ be listed in the changelog.
+    Supporting deprecated functionality would slow down development too much at this point in time.
 
 ### Deprecation period
 
