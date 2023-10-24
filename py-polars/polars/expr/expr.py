@@ -1798,7 +1798,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [0.33, 0.52, 1.02, 1.17]})
-        >>> df.select(pl.col("a").round_sf(1))
+        >>> df.select(pl.col("a").round_sf(2))
         shape: (4, 1)
         ┌─────┐
         │ a   │
