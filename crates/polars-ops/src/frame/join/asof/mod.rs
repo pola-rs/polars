@@ -6,7 +6,6 @@ use default::*;
 pub(super) use groups::AsofJoinBy;
 use polars_core::prelude::*;
 use polars_core::utils::ensure_sorted_arg;
-use polars_core::with_match_physical_numeric_polars_type;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
