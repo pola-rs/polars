@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
 
 import numpy as np
 import pytest
@@ -157,3 +161,19 @@ def test_streaming_sort_sorted_flag() -> None:
     ).sort("timestamp")
 
     assert q.collect(streaming=True)["timestamp"].flags["SORTED_ASC"]
+
+
+@pytest.mark.parametrize(
+    ("sort_by"),
+    [
+        ["fats_g", "category"],
+        ["fats_g", "category", "calories"],
+        ["fats_g", "category", "calories", "sugars_g"],
+    ],
+)
+def test_streaming_sort_varying_order_and_dtypes(
+    io_files_path: Path, sort_by: list[str]
+) -> None:
+    q = pl.scan_parquet(io_files_path / "foods*.parquet")
+    q = q.sort(sort_by)
+    assert_frame_equal(q.collect(streaming=True), q.collect(streaming=False))

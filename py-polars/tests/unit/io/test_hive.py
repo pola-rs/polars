@@ -38,18 +38,19 @@ def test_hive_partitioned_predicate_pushdown(
     # The hive partitioned columns are appended,
     # so we must ensure we assert in the proper order.
     df = df.select(["calories", "sugars_g", "category", "fats_g"])
-    for pred in [
-        pl.col("category") == "vegetables",
-        pl.col("category") != "vegetables",
-        pl.col("fats_g") > 0.5,
-        (pl.col("fats_g") == 0.5) & (pl.col("category") == "vegetables"),
-    ]:
-        assert_frame_equal(
-            q.filter(pred).sort(sort_by).collect(),
-            df.filter(pred).sort(sort_by),
-        )
-        err = capfd.readouterr().err
-        assert "hive partitioning" in err
+    for streaming in [True, False]:
+        for pred in [
+            pl.col("category") == "vegetables",
+            pl.col("category") != "vegetables",
+            pl.col("fats_g") > 0.5,
+            (pl.col("fats_g") == 0.5) & (pl.col("category") == "vegetables"),
+        ]:
+            assert_frame_equal(
+                q.filter(pred).sort(sort_by).collect(streaming=streaming),
+                df.filter(pred).sort(sort_by),
+            )
+            err = capfd.readouterr().err
+            assert "hive partitioning" in err
 
     # tests: 11536
     assert q.filter(pl.col("sugars_g") == 25).collect().shape == (1, 4)
@@ -73,8 +74,19 @@ def test_hive_partitioned_slice_pushdown(io_files_path: Path, tmp_path: Path) ->
     q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
 
     # tests: 11682
-    assert q.head(1).collect().select(pl.all_horizontal(pl.all().count() == 1)).item()
-    assert q.head(0).collect().columns == ["calories", "sugars_g", "category", "fats_g"]
+    for streaming in [True, False]:
+        assert (
+            q.head(1)
+            .collect(streaming=streaming)
+            .select(pl.all_horizontal(pl.all().count() == 1))
+            .item()
+        )
+        assert q.head(0).collect(streaming=streaming).columns == [
+            "calories",
+            "sugars_g",
+            "category",
+            "fats_g",
+        ]
 
 
 @pytest.mark.write_disk()
