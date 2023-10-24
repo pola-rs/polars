@@ -9,6 +9,7 @@ repo_name: pola-rs/polars
 # Documentation layout
 nav:
   - Home: index.md
+
   - Getting started:
     - getting-started/intro.md
     - getting-started/installation.md
@@ -16,6 +17,7 @@ nav:
     - getting-started/reading-writing.md
     - getting-started/expressions.md
     - getting-started/joins.md
+
   - User guide:
     - user-guide/index.md
     - user-guide/installation.md
@@ -81,6 +83,16 @@ nav:
       - user-guide/misc/alternatives.md
       - user-guide/misc/reference-guides.md
       - user-guide/misc/contributing.md
+
+  - Development:
+    - development/contributing.md
+    - development/versioning.md
+
+  - Releases:
+    - releases/changelog.md
+    - Upgrade guide:
+      - releases/upgrade/0.19.md
+
 not_in_nav: |
   /_build/
   people.md

@@ -58,9 +58,9 @@ See the results in h2oai's [db-benchmark](https://duckdblabs.github.io/db-benchm
 
 --8<-- "docs/people.md"
 
-## Contribute
+## Contributing
 
-Thanks for taking the time to contribute! We appreciate all contributions, from reporting bugs to implementing new features. If you're unclear on how to proceed read our [contribution guide](https://github.com/pola-rs/polars/blob/main/CONTRIBUTING.md) or contact us on [discord](https://discord.com/invite/4UfP5cfBE7).
+We appreciate all contributions, from reporting bugs to implementing new features. Read our [contributing guide](development/contributing.md) to learn more.
 
 ## License
 
