@@ -115,7 +115,9 @@ def test_hive_partitioned_projection_pushdown(
     # the projection contains only hive partition columns (11796)
     for parallel in ("row_groups", "columns"):
         q = pl.scan_parquet(
-            root / "**/*.parquet", hive_partitioning=True, parallel=parallel  # type: ignore[arg-type]
+            root / "**/*.parquet",
+            hive_partitioning=True,
+            parallel=parallel,  # type: ignore[arg-type]
         )
 
         expect = q.collect().select("category")

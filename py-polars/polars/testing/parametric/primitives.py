@@ -718,9 +718,7 @@ def dataframes(
                         schema={repr(schema).replace("', ","', pl.")},
                         orient={orient!r},
                     )
-                    """.replace(
-                        "datetime.", ""
-                    )
+                    """.replace("datetime.", "")
                 )
                 # note: this avoids printing the repro twice
                 if failed_frame_init not in _failed_frame_init_msgs_:

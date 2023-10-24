@@ -336,9 +336,7 @@ def test_rolling_kernels_group_by_dynamic_7548() -> None:
         pl.col("value").min().alias("min_value"),
         pl.col("value").max().alias("max_value"),
         pl.col("value").sum().alias("sum_value"),
-    ).to_dict(
-        False
-    ) == {
+    ).to_dict(False) == {
         "time": [-1, 0, 1, 2, 3],
         "value": [[0, 1], [0, 1, 2], [1, 2, 3], [2, 3], [3]],
         "min_value": [0, 0, 1, 2, 3],
@@ -413,9 +411,7 @@ def test_group_by_dynamic_elementwise_following_mean_agg_6904(
     df = (
         pl.DataFrame(
             {
-                "a": [
-                    datetime(2021, 1, 1) + timedelta(seconds=2**i) for i in range(5)
-                ],
+                "a": [datetime(2021, 1, 1) + timedelta(seconds=2**i) for i in range(5)],
                 "b": [float(i) for i in range(5)],
             }
         )
@@ -623,9 +619,7 @@ def test_groupy_by_dynamic_median_10695() -> None:
         index_column="timestamp",
         every="60s",
         period="3m",
-    ).agg(
-        pl.col("foo").median()
-    ).to_dict(False) == {
+    ).agg(pl.col("foo").median()).to_dict(False) == {
         "timestamp": [
             datetime(2023, 8, 22, 15, 43),
             datetime(2023, 8, 22, 15, 44),

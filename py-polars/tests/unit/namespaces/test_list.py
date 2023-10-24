@@ -39,9 +39,7 @@ def test_list_arr_get() -> None:
         {"a": [[1], [2], [3], [4, 5, 6], [7, 8, 9], [None, 11]]}
     ).with_columns(
         [pl.col("a").list.get(i).alias(f"get_{i}") for i in range(4)]
-    ).to_dict(
-        False
-    ) == {
+    ).to_dict(False) == {
         "a": [[1], [2], [3], [4, 5, 6], [7, 8, 9], [None, 11]],
         "get_0": [1, 2, 3, 4, 7, None],
         "get_1": [None, None, None, 5, 8, 11],

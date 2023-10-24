@@ -286,9 +286,7 @@ def test_list_count_matches_deprecated() -> None:
             {"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}
         ).select(pl.col("listcol").list.count_match(2).alias("number_of_twos")).to_dict(
             False
-        ) == {
-            "number_of_twos": [0, 0, 2, 1, 0]
-        }
+        ) == {"number_of_twos": [0, 0, 2, 1, 0]}
 
 
 def test_list_count_matches() -> None:

@@ -36,7 +36,9 @@ class PolarsDataFrame(InterchangeDataFrame):
         self._allow_copy = allow_copy
 
     def __dataframe__(
-        self, nan_as_null: bool = False, allow_copy: bool = True  # noqa: FBT001
+        self,
+        nan_as_null: bool = False,  # noqa: FBT001
+        allow_copy: bool = True,  # noqa: FBT001
     ) -> PolarsDataFrame:
         """
         Construct a new dataframe object, potentially changing the parameters.

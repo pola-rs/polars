@@ -352,8 +352,7 @@ def _construct_series_with_fallbacks(
             if "'float'" in str_exc and (
                 # we do not accept float values as int/temporal, as it causes silent
                 # information loss; the caller should explicitly cast in this case.
-                target_dtype
-                not in (INTEGER_DTYPES | TEMPORAL_DTYPES)
+                target_dtype not in (INTEGER_DTYPES | TEMPORAL_DTYPES)
             ):
                 constructor = py_type_to_constructor(float)
 
@@ -741,9 +740,7 @@ def _unpack_schema(
         else None
     )
     column_dtypes: dict[str, PolarsDataType] = {
-        lookup.get((name := col[0]), name)
-        if lookup
-        else col[0]: dtype  # type: ignore[misc]
+        lookup.get((name := col[0]), name) if lookup else col[0]: dtype  # type: ignore[misc]
         if is_polars_dtype(dtype, include_unknown=True)
         else py_type_to_dtype(dtype)
         for col in schema

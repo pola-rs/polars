@@ -143,9 +143,7 @@ def _map_py_type_to_dtype(
             if len(nested) == 1:
                 nested = nested[0]
             return (
-                dtype
-                if nested is None
-                else dtype(_map_py_type_to_dtype(nested))  # type: ignore[operator]
+                dtype if nested is None else dtype(_map_py_type_to_dtype(nested))  # type: ignore[operator]
             )
 
     raise TypeError("invalid type")
