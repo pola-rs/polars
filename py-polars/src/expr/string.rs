@@ -137,16 +137,16 @@ impl PyExpr {
             .into()
     }
 
-    fn str_zfill(&self, alignment: usize) -> Self {
-        self.inner.clone().str().zfill(alignment).into()
+    fn str_pad_start(&self, length: usize, fill_char: char) -> Self {
+        self.inner.clone().str().rjust(length, fill_char).into()
     }
 
-    fn str_ljust(&self, width: usize, fillchar: char) -> Self {
-        self.inner.clone().str().ljust(width, fillchar).into()
+    fn str_pad_end(&self, length: usize, fill_char: char) -> Self {
+        self.inner.clone().str().ljust(length, fill_char).into()
     }
 
-    fn str_rjust(&self, width: usize, fillchar: char) -> Self {
-        self.inner.clone().str().rjust(width, fillchar).into()
+    fn str_zfill(&self, length: usize) -> Self {
+        self.inner.clone().str().zfill(length).into()
     }
 
     #[pyo3(signature = (pat, literal, strict))]
