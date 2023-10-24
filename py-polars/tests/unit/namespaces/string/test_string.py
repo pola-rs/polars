@@ -818,7 +818,6 @@ def test_extract_groups() -> None:
     ).to_dict(False) == {"literal": [{"foo": "foo", "bar": None}]}
 
 
-
 def test_starts_ends_with() -> None:
     df = pl.DataFrame(
         {

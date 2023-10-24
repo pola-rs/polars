@@ -93,28 +93,34 @@ impl StringNameSpace {
         ))
     }
 
-    /// Return the string right justified in a string of length width.
-    /// Padding is done using the specified `fillchar`,
-    /// The original string is returned if width is less than or equal to `s.len()`.
+    /// Pad the start of the string until it reaches the given length.
+    ///
+    /// Padding is done using the specified `fill_char`.
+    /// Strings with length equal to or greater than the given length are
+    /// returned as-is.
     #[cfg(feature = "string_pad")]
     pub fn pad_start(self, length: usize, fill_char: char) -> Expr {
         self.0
             .map_private(StringFunction::PadStart { length, fill_char }.into())
     }
 
-    /// Return the string left justified in a string of length width.
-    /// Padding is done using the specified `fillchar`,
-    /// The original string is returned if width is less than or equal to `s.len()`.
+    /// Pad the end of the string until it reaches the given length.
+    ///
+    /// Padding is done using the specified `fill_char`.
+    /// Strings with length equal to or greater than the given length are
+    /// returned as-is.
     #[cfg(feature = "string_pad")]
     pub fn pad_end(self, length: usize, fill_char: char) -> Expr {
         self.0
             .map_private(StringFunction::PadEnd { length, fill_char }.into())
     }
 
-    /// Return a copy of the string left filled with ASCII '0' digits to make a string of length width.
-    /// A leading sign prefix ('+'/'-') is handled by inserting the padding after the sign character
-    /// rather than before.
-    /// The original string is returned if width is less than or equal to `s.len()`.
+    /// Pad the start of the string with zeros until it reaches the given length.
+    ///
+    /// A sign prefix (`-`) is handled by inserting the padding after the sign
+    /// character rather than before.
+    /// Strings with length equal to or greater than the given length are
+    /// returned as-is.
     #[cfg(feature = "string_pad")]
     pub fn zfill(self, length: usize) -> Expr {
         self.0.map_private(StringFunction::ZFill(length).into())

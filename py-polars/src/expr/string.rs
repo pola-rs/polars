@@ -138,11 +138,11 @@ impl PyExpr {
     }
 
     fn str_pad_start(&self, length: usize, fill_char: char) -> Self {
-        self.inner.clone().str().rjust(length, fill_char).into()
+        self.inner.clone().str().pad_start(length, fill_char).into()
     }
 
     fn str_pad_end(&self, length: usize, fill_char: char) -> Self {
-        self.inner.clone().str().ljust(length, fill_char).into()
+        self.inner.clone().str().pad_end(length, fill_char).into()
     }
 
     fn str_zfill(&self, length: usize) -> Self {

@@ -772,33 +772,34 @@ class ExprStringNameSpace:
         Parameters
         ----------
         length
-            Pad the string until it reaches this length. Strings with a length equal to
+            Pad the string until it reaches this length. Strings with length equal to
             or greater than this value are returned as-is.
         fill_char
-            The ASCII character to pad the string with.
+            The character to pad the string with.
 
         See Also
         --------
         pad_end
+        zfill
 
         Examples
         --------
         >>> df = pl.DataFrame({"a": ["cow", "monkey", "hippopotamus", None]})
-        >>> df.select(pl.col("a").str.rjust(8, "*"))
-        shape: (4, 1)
-        ┌──────────────┐
-        │ a            │
-        │ ---          │
-        │ str          │
-        ╞══════════════╡
-        │ *****cow     │
-        │ **monkey     │
-        │ null         │
-        │ hippopotamus │
-        └──────────────┘
+        >>> df.with_columns(padded=pl.col("a").str.pad_start(8, "*"))
+        shape: (4, 2)
+        ┌──────────────┬──────────────┐
+        │ a            ┆ padded       │
+        │ ---          ┆ ---          │
+        │ str          ┆ str          │
+        ╞══════════════╪══════════════╡
+        │ cow          ┆ *****cow     │
+        │ monkey       ┆ **monkey     │
+        │ hippopotamus ┆ hippopotamus │
+        │ null         ┆ null         │
+        └──────────────┴──────────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_rjust(length, fill_char))
+        return wrap_expr(self._pyexpr.str_pad_start(length, fill_char))
 
     def pad_end(self, length: int, fill_char: str = " ") -> Expr:
         """
@@ -807,10 +808,10 @@ class ExprStringNameSpace:
         Parameters
         ----------
         length
-            Pad the string until it reaches this length. Strings with a length equal to
+            Pad the string until it reaches this length. Strings with length equal to
             or greater than this value are returned as-is.
         fill_char
-            The ASCII character to pad the string with.
+            The character to pad the string with.
 
         See Also
         --------
@@ -818,38 +819,36 @@ class ExprStringNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": ["cow", "monkey", None, "hippopotamus"]})
-        >>> df.select(pl.col("a").str.ljust(8, "*"))
-        shape: (4, 1)
-        ┌──────────────┐
-        │ a            │
-        │ ---          │
-        │ str          │
-        ╞══════════════╡
-        │ cow*****     │
-        │ monkey**     │
-        │ null         │
-        │ hippopotamus │
-        └──────────────┘
+        >>> df = pl.DataFrame({"a": ["cow", "monkey", "hippopotamus", None]})
+        >>> df.with_columns(padded=pl.col("a").str.pad_end(8, "*"))
+        shape: (4, 2)
+        ┌──────────────┬──────────────┐
+        │ a            ┆ padded       │
+        │ ---          ┆ ---          │
+        │ str          ┆ str          │
+        ╞══════════════╪══════════════╡
+        │ cow          ┆ cow*****     │
+        │ monkey       ┆ monkey**     │
+        │ hippopotamus ┆ hippopotamus │
+        │ null         ┆ null         │
+        └──────────────┴──────────────┘
+
         """
-        return wrap_expr(self._pyexpr.str_ljust(length, fill_char))
+        return wrap_expr(self._pyexpr.str_pad_end(length, fill_char))
 
     @deprecate_renamed_parameter("alignment", "length", version="0.19.12")
     def zfill(self, length: int) -> Expr:
         """
-        Fills the string with zeroes.
+        Pad the start of the string with zeros until it reaches the given length.
 
-        Return a copy of the string left filled with ASCII '0' digits to make a string
-        of length width.
-
-        A leading sign prefix ('+'/'-') is handled by inserting the padding after the
-        sign character rather than before. The original string is returned if width is
-        less than or equal to ``len(s)``.
+        A sign prefix (``-``) is handled by inserting the padding after the sign
+        character rather than before.
 
         Parameters
         ----------
         length
-            Fill the value up to this length
+            Pad the string until it reaches this length. Strings with length equal to
+            or greater than this value are returned as-is.
 
         See Also
         --------
@@ -857,28 +856,19 @@ class ExprStringNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "num": [-10, -1, 0, 1, 10, 100, 1000, 10000, 100000, 1000000, None],
-        ...     }
-        ... )
-        >>> df.with_columns(pl.col("num").cast(str).str.zfill(5))
-        shape: (11, 1)
-        ┌─────────┐
-        │ num     │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │ -0010   │
-        │ -0001   │
-        │ 00000   │
-        │ 00001   │
-        │ …       │
-        │ 10000   │
-        │ 100000  │
-        │ 1000000 │
-        │ null    │
-        └─────────┘
+        >>> df = pl.DataFrame({"a": [-1, 123, 999999, None]})
+        >>> df.with_columns(zfill=pl.col("a").cast(pl.Utf8).str.zfill(4))
+        shape: (4, 2)
+        ┌────────┬────────┐
+        │ a      ┆ zfill  │
+        │ ---    ┆ ---    │
+        │ i64    ┆ str    │
+        ╞════════╪════════╡
+        │ -1     ┆ -001   │
+        │ 123    ┆ 0123   │
+        │ 999999 ┆ 999999 │
+        │ null   ┆ null   │
+        └────────┴────────┘
 
         """
         return wrap_expr(self._pyexpr.str_zfill(length))

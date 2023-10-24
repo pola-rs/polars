@@ -19,7 +19,7 @@ def test_str_pad_start() -> None:
             "padded": ["       foo", "longer_foo", "longest_fooooooo", "        hi"],
             "padded_len": [10, 10, 16, 10],
         },
-        schema_overrides={"padded_len": pl.UInt32}
+        schema_overrides={"padded_len": pl.UInt32},
     )
     assert_frame_equal(result, expected)
 
@@ -37,7 +37,7 @@ def test_str_pad_end() -> None:
             "padded": ["foo       ", "longer_foo", "longest_fooooooo", "hi        "],
             "padded_len": [10, 10, 16, 10],
         },
-        schema_overrides={"padded_len": pl.UInt32}
+        schema_overrides={"padded_len": pl.UInt32},
     )
     assert_frame_equal(result, expected)
 
