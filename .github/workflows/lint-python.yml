@@ -30,9 +30,9 @@ jobs:
 
       - name: Lint Python
         run: |
-          ruff --exit-non-zero-on-fix .
-          black --check .
-          blackdoc --check .
+          ruff check --diff --exit-non-zero-on-fix .
+          ruff format --diff .
+          blackdoc --diff .
 
   mypy:
     runs-on: ubuntu-latest

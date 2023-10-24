@@ -95,8 +95,8 @@ make pre-commit
 Note that we do not actually use the [pre-commit](https://pre-commit.com/) tool.
 We use the Makefile to conveniently run the following formatting and linting tools:
 
-- [black](https://black.readthedocs.io/) and [blackdoc](https://github.com/keewis/blackdoc)
 - [ruff](https://github.com/charliermarsh/ruff)
+- [blackdoc](https://github.com/keewis/blackdoc)
 - [mypy](http://mypy-lang.org/)
 - [rustfmt](https://github.com/rust-lang/rustfmt)
 - [clippy](https://doc.rust-lang.org/nightly/clippy/index.html)
