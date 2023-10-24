@@ -15,7 +15,7 @@ polars-lazy = { path = "../crates/polars-lazy", default-features = false, featur
 polars-ops = { path = "../crates/polars-ops", default-features = false, features = ["convert_index"] }
 polars-plan = { path = "../crates/polars-plan", default-features = false }
 
-ahash = ">=0.8.3"
+ahash = ">=0.8.5"
 ciborium = "0.2"
 either = "1.8"
 lexical-core = "0.8"
