@@ -401,8 +401,8 @@ impl PyExpr {
     }
 
     fn is_between(&self, lower: Self, upper: Self, closed: Wrap<ClosedInterval>) -> Self {
-        self.clone()
-            .inner
+        self.inner
+            .clone()
             .is_between(lower.inner, upper.inner, closed.0)
             .into()
     }
