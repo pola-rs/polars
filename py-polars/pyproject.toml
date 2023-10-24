@@ -102,6 +102,7 @@ ignore_missing_imports = true
 module = [
   "IPython.*",
   "matplotlib.*",
+  "dataframe_api_compat.*",
 ]
 follow_imports = "skip"
 
