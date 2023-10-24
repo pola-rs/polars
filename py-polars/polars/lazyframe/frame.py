@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import os
-import warnings
 from collections import OrderedDict
 from datetime import date, datetime, time, timedelta
 from functools import reduce
@@ -72,7 +71,6 @@ from polars.utils.various import (
     _in_notebook,
     _prepare_row_count_args,
     _process_null_values,
-    find_stacklevel,
     is_bool_sequence,
     is_sequence,
     normalize_filepath,
@@ -3443,12 +3441,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 label = "left"
             else:
                 label = "datapoint"
-            warnings.warn(
-                f"`truncate` is deprecated and will be removed in a future version. "
-                f"Please replace `truncate={truncate}` with `label='{label}'` to "
-                "silence this warning.",
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
+            issue_deprecation_warning(
+                f"`truncate` is deprecated and will be removed in a future version."
+                f" Please replace `truncate={truncate}` with `label='{label}'` to silence this warning.",
+                version="0.19.4",
             )
 
         index_column = parse_as_expression(index_column)

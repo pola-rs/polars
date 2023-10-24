@@ -2103,6 +2103,4 @@ def _validate_format_argument(format: str | None) -> None:
             " Use `%.f` instead."
             " See the full specification: https://docs.rs/chrono/latest/chrono/format/strftime"
         )
-        warnings.warn(
-            message, category=ChronoFormatWarning, stacklevel=find_stacklevel()
-        )
+        warnings.warn(message, ChronoFormatWarning, stacklevel=find_stacklevel())
