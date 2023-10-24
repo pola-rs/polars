@@ -18,7 +18,7 @@ use super::{
 };
 use crate::frame::IntoDf;
 
-trait AsofJoinState<T> : Default {
+trait AsofJoinState<T>: Default {
     fn next<F: FnMut(IdxSize) -> Option<T>>(
         &mut self,
         left_val: &T,
@@ -106,7 +106,7 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
                         let best_right_val = unsafe { right(best_idx).unwrap_unchecked() };
                         let best_diff = left_val.abs_diff(best_right_val);
                         let scan_diff = left_val.abs_diff(scan_right_val);
-                        
+
                         scan_diff <= best_diff
                     } else {
                         true
@@ -126,22 +126,21 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
                                     break;
                                 }
                             }
-                            
+
                             self.scan_offset += 1;
                         }
                     }
-            
+
                     break;
                 }
             }
 
             self.scan_offset += 1;
         }
-        
+
         self.best_bound
     }
 }
-
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -159,7 +158,12 @@ pub struct AsOfOptions {
     pub right_by: Option<Vec<SmartString>>,
 }
 
-fn check_asof_columns(a: &Series, b: &Series, has_tolerance: bool, check_sorted: bool) -> PolarsResult<()> {
+fn check_asof_columns(
+    a: &Series,
+    b: &Series,
+    has_tolerance: bool,
+    check_sorted: bool,
+) -> PolarsResult<()> {
     let dtype_a = a.dtype();
     let dtype_b = b.dtype();
     if has_tolerance {
@@ -174,7 +178,6 @@ fn check_asof_columns(a: &Series, b: &Series, has_tolerance: bool, check_sorted:
             InvalidOperation:
             "asof join is only supported on primitive key typess"
         );
-
     }
     polars_ensure!(
         dtype_a == dtype_b,
@@ -199,7 +202,6 @@ pub enum AsofStrategy {
     /// selects the right in the right DataFrame whose 'on' key is nearest to the left's key.
     Nearest,
 }
-
 
 pub trait AsofJoin: IntoDf {
     #[doc(hidden)]

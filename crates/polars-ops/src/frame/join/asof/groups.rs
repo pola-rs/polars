@@ -246,7 +246,7 @@ where
                     for h_left in by_left_view.iter().copied() {
                         let idx_left = offset + ctr;
                         ctr += 1;
-                        let opt_left_val = left_val_arr.get(idx_left as usize);
+                        let opt_left_val = left_val_arr.get(idx_left);
 
                         let Some(left_val) = opt_left_val else {
                             results.push(None);
@@ -264,7 +264,7 @@ where
                                 mk::compare_df_rows2(
                                     by_left,
                                     by_right,
-                                    idx_left as usize,
+                                    idx_left,
                                     idx_right as usize,
                                 )
                             }
@@ -314,12 +314,12 @@ where
             DataType::Utf8 => {
                 let left_by = &left_by_s.utf8().unwrap().as_binary();
                 let right_by = right_by_s.utf8().unwrap().as_binary();
-                asof_join_by_binary::<T, A, F>(&left_by, &right_by, left_asof, right_asof, filter)
+                asof_join_by_binary::<T, A, F>(left_by, &right_by, left_asof, right_asof, filter)
             },
             DataType::Binary => {
                 let left_by = &left_by_s.binary().unwrap();
                 let right_by = right_by_s.binary().unwrap();
-                asof_join_by_binary::<T, A, F>(&left_by, &right_by, left_asof, right_asof, filter)
+                asof_join_by_binary::<T, A, F>(left_by, right_by, left_asof, right_asof, filter)
             },
             _ => {
                 if left_by_s.bit_repr_is_large() {
@@ -429,35 +429,35 @@ fn dispatch_join_type(
     match left_asof.dtype() {
         DataType::Int64 => {
             let ca = left_asof.i64().unwrap();
-            dispatch_join_strategy_numeric(ca, &right_asof, left_by, right_by, strategy, tolerance)
+            dispatch_join_strategy_numeric(ca, right_asof, left_by, right_by, strategy, tolerance)
         },
         DataType::Int32 => {
             let ca = left_asof.i32().unwrap();
-            dispatch_join_strategy_numeric(ca, &right_asof, left_by, right_by, strategy, tolerance)
+            dispatch_join_strategy_numeric(ca, right_asof, left_by, right_by, strategy, tolerance)
         },
         DataType::UInt64 => {
             let ca = left_asof.u64().unwrap();
-            dispatch_join_strategy_numeric(ca, &right_asof, left_by, right_by, strategy, tolerance)
+            dispatch_join_strategy_numeric(ca, right_asof, left_by, right_by, strategy, tolerance)
         },
         DataType::UInt32 => {
             let ca = left_asof.u32().unwrap();
-            dispatch_join_strategy_numeric(ca, &right_asof, left_by, right_by, strategy, tolerance)
+            dispatch_join_strategy_numeric(ca, right_asof, left_by, right_by, strategy, tolerance)
         },
         DataType::Float32 => {
             let ca = left_asof.f32().unwrap();
-            dispatch_join_strategy_numeric(ca, &right_asof, left_by, right_by, strategy, tolerance)
+            dispatch_join_strategy_numeric(ca, right_asof, left_by, right_by, strategy, tolerance)
         },
         DataType::Float64 => {
             let ca = left_asof.f64().unwrap();
-            dispatch_join_strategy_numeric(ca, &right_asof, left_by, right_by, strategy, tolerance)
+            dispatch_join_strategy_numeric(ca, right_asof, left_by, right_by, strategy, tolerance)
         },
         DataType::Boolean => {
             let ca = left_asof.bool().unwrap();
-            dispatch_join_strategy::<BooleanType>(ca, &right_asof, left_by, right_by, strategy)
+            dispatch_join_strategy::<BooleanType>(ca, right_asof, left_by, right_by, strategy)
         },
         DataType::Binary => {
             let ca = left_asof.binary().unwrap();
-            dispatch_join_strategy::<BinaryType>(ca, &right_asof, left_by, right_by, strategy)
+            dispatch_join_strategy::<BinaryType>(ca, right_asof, left_by, right_by, strategy)
         },
         DataType::Utf8 => {
             let ca = left_asof.utf8().unwrap();
@@ -534,8 +534,8 @@ pub trait AsofJoinBy: IntoDf {
         }
 
         let right_join_tuples = dispatch_join_type(
-            &*left_asof,
-            &*right_asof,
+            &left_asof,
+            &right_asof,
             &mut left_by,
             &mut right_by,
             strategy,

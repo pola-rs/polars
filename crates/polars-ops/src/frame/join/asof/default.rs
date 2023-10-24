@@ -5,8 +5,7 @@ use polars_core::prelude::*;
 use polars_utils::abs_diff::AbsDiff;
 
 use super::{
-    AsofJoinBackwardState,
-    AsofJoinForwardState, AsofJoinNearestState, AsofJoinState, AsofStrategy,
+    AsofJoinBackwardState, AsofJoinForwardState, AsofJoinNearestState, AsofJoinState, AsofStrategy,
 };
 
 fn join_asof_impl<'a, T, S, F>(left: &'a T::Array, right: &'a T::Array, mut filter: F) -> IdxCa

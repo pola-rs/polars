@@ -17,10 +17,14 @@ macro_rules! impl_trivial_abs_diff {
             }
 
             fn abs_diff(self, other: Self) -> Self::Abs {
-                if self > other { self - other } else { other - self }
+                if self > other {
+                    self - other
+                } else {
+                    other - self
+                }
             }
         }
-    }
+    };
 }
 
 macro_rules! impl_signed_abs_diff {
@@ -36,7 +40,7 @@ macro_rules! impl_signed_abs_diff {
                 self.abs_diff(other)
             }
         }
-    }
+    };
 }
 
 impl_trivial_abs_diff!(u8, u8::MAX);
