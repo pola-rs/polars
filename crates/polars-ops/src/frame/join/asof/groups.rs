@@ -41,15 +41,23 @@ where
     let id = right_grp_idxs.first()?;
     let grp_state = group_states.entry(*id).or_default();
 
-    let r_grp_idx = grp_state.next(
-        &left_val,
-        |i| right_val_arr.get(right_grp_idxs[i as usize] as usize),
-        right_grp_idxs.len() as IdxSize,
-    )?;
+    unsafe {
+        let r_grp_idx = grp_state.next(
+            &left_val,
+            |i| {
+                // SAFETY: the group indices are valid, and next() only calls with
+                // i < right_grp_idxs.len().
+                right_val_arr.get_unchecked(*right_grp_idxs.get_unchecked(i as usize) as usize)
+            },
+            right_grp_idxs.len() as IdxSize,
+        )?;
 
-    let r_idx = right_grp_idxs[r_grp_idx as usize];
-    let right_val = right_val_arr.get(r_idx as usize).unwrap();
-    filter(left_val, right_val).then_some(r_idx)
+        // SAFETY: r_grp_idx is valid, as is r_idx (which must be non-null) if
+        // we get here.
+        let r_idx = *right_grp_idxs.get_unchecked(r_grp_idx as usize);
+        let right_val = right_val_arr.value_unchecked(r_idx as usize);
+        filter(left_val, right_val).then_some(r_idx)
+    }
 }
 
 fn asof_join_by_numeric<T, S, A, F>(
