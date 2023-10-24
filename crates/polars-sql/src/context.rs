@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::collections::BTreeSet;
-use std::fmt::Debug;
 
 use polars_core::prelude::*;
 use polars_error::to_compute_err;
