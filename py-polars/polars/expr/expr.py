@@ -112,6 +112,7 @@ class Expr:
         "dt",
         "list",
         "meta",
+        "name",
         "str",
         "bin",
         "struct",
