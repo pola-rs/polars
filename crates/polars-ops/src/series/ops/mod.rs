@@ -44,6 +44,8 @@ mod round;
 mod search_sorted;
 #[cfg(feature = "to_dummies")]
 mod to_dummies;
+#[cfg(feature = "unique_counts")]
+mod unique;
 mod various;
 
 pub use approx_algo::*;
@@ -93,6 +95,8 @@ pub use round::*;
 pub use search_sorted::*;
 #[cfg(feature = "to_dummies")]
 pub use to_dummies::*;
+#[cfg(feature = "unique_counts")]
+pub use unique::*;
 pub use various::*;
 
 pub trait SeriesSealed {

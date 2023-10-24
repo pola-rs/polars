@@ -151,7 +151,6 @@ docs-selection = [
   "abs",
   "dataframe_arithmetic",
   "product",
-  "unique_counts",
   "describe",
   "chunked_ids",
   "partition_by",

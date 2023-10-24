@@ -2,7 +2,6 @@ mod downcast;
 mod extend;
 mod null;
 mod to_list;
-mod unique;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
