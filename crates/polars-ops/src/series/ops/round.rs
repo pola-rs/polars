@@ -47,10 +47,7 @@ pub trait RoundSeries: SeriesSealed {
 
         if let Ok(ca) = s.f64() {
             let s = ca
-                .zip_with(
-                    &ca.equal(0),
-                    &ca.apply_values(|val| round_sf(val, significant_figures)),
-                )?
+                .apply_values(|val| round_sf(val, significant_figures))
                 .into_series();
             return Ok(s);
         }
@@ -58,28 +55,19 @@ pub trait RoundSeries: SeriesSealed {
         // when the computation is done we cast back
         if let Ok(ca) = s.f32() {
             let s = ca
-                .zip_with(
-                    &ca.equal(0),
-                    &ca.apply_values(|val| round_sf(val as f64, significant_figures) as f32),
-                )?
+                .apply_values(|val| round_sf(val as f64, significant_figures) as f32)
                 .into_series();
             return Ok(s);
         }
         if let Ok(ca) = s.i32() {
             let s = ca
-                .zip_with(
-                    &ca.equal(0),
-                    &ca.apply_values(|val| round_sf(val as f64, significant_figures) as i32),
-                )?
+                .apply_values(|val| round_sf(val as f64, significant_figures) as i32)
                 .into_series();
             return Ok(s);
         }
         if let Ok(ca) = s.i64() {
             let s = ca
-                .zip_with(
-                    &ca.equal(0),
-                    &ca.apply_values(|val| round_sf(val as f64, significant_figures) as i64),
-                )?
+                .apply_values(|val| round_sf(val as f64, significant_figures) as i64)
                 .into_series();
             return Ok(s);
         }
@@ -123,6 +111,9 @@ fn get_magnitude(value: f64, significant_figures: u32) -> f64 {
     10.0.pow(significant_figures as f64 - 1.0 - ((value).log10().floor()))
 }
 fn round_sf(value: f64, significant_figures: u32) -> f64 {
+    if value == 0.0 {
+        return value;
+    }
     (value * get_magnitude(value.abs(), significant_figures)).round()
         / get_magnitude(value.abs(), significant_figures)
 }
