@@ -440,7 +440,11 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "round_series")]
             Round { decimals } => decimals.hash(state),
             #[cfg(feature = "round_series")]
-            Floor => {},
+            FunctionExpr::RoundSF {
+                significant_figures,
+            } => significant_figures.hash(state),
+            #[cfg(feature = "round_series")]
+            FunctionExpr::Floor => {},
             #[cfg(feature = "round_series")]
             Ceil => {},
             UpperBound => {},
