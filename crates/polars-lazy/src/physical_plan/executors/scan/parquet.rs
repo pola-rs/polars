@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use polars_core::config::verbose;
+use polars_core::config::{concurrent_download_limit, verbose};
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::utils::arrow::io::parquet::read::FileMetaData;
 use polars_io::cloud::CloudOptions;
@@ -161,7 +161,6 @@ impl ParquetExec {
         let cloud_options = self.cloud_options.as_ref();
 
         let mut result = vec![];
-        const MAX_CONCURRENT: usize = 64;
         let batch_size = if let Some(md) = self.metadata.as_ref() {
             let n_columns = self
                 .file_options
@@ -176,7 +175,7 @@ impl ParquetExec {
                     concurrent_per_file
                 );
             }
-            MAX_CONCURRENT / concurrent_per_file + 1
+            concurrent_download_limit() / concurrent_per_file + 1
         } else {
             std::cmp::min(POOL.current_num_threads(), 16)
         };
