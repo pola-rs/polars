@@ -176,7 +176,7 @@ fn check_asof_columns(
         polars_ensure!(
             dtype_a.to_physical().is_primitive() && dtype_b.to_physical().is_primitive(),
             InvalidOperation:
-            "asof join is only supported on primitive key typess"
+            "asof join is only supported on primitive key types"
         );
     }
     polars_ensure!(

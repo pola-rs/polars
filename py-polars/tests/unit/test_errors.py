@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import re
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 

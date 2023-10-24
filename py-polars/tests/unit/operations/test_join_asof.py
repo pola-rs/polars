@@ -1067,11 +1067,23 @@ def test_asof_join_nearest_by_date() -> None:
 
 def test_asof_join_string() -> None:
     left = pl.DataFrame({"x": [None, "a", "b", "c", None, "d", None]}).set_sorted("x")
-    right = pl.DataFrame({"x": ["apple", None, "chutney"], "y": [0, 1, 2]}).set_sorted("x")
+    right = pl.DataFrame({"x": ["apple", None, "chutney"], "y": [0, 1, 2]}).set_sorted(
+        "x"
+    )
     forward = left.join_asof(right, on="x", strategy="forward")
     backward = left.join_asof(right, on="x", strategy="backward")
-    forward_expected = pl.DataFrame({"x": [None, "a", "b", "c", None, "d", None], "y": [None, 0, 2, 2, None, None, None]})
-    backward_expected = pl.DataFrame({"x": [None, "a", "b", "c", None, "d", None], "y": [None, None, 0, 0, None, 2, None]})
+    forward_expected = pl.DataFrame(
+        {
+            "x": [None, "a", "b", "c", None, "d", None],
+            "y": [None, 0, 2, 2, None, None, None],
+        }
+    )
+    backward_expected = pl.DataFrame(
+        {
+            "x": [None, "a", "b", "c", None, "d", None],
+            "y": [None, None, 0, 0, None, 2, None],
+        }
+    )
     assert_frame_equal(forward, forward_expected)
     assert_frame_equal(backward, backward_expected)
 
