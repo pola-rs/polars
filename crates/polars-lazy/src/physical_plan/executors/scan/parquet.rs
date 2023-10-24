@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use polars_core::config::verbose;
+use polars_core::config::{concurrent_download_limit, verbose};
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::utils::arrow::io::parquet::read::FileMetaData;
 use polars_io::cloud::CloudOptions;
@@ -161,15 +161,29 @@ impl ParquetExec {
         let cloud_options = self.cloud_options.as_ref();
 
         let mut result = vec![];
+        let batch_size = if let Some(md) = self.metadata.as_ref() {
+            let n_columns = self
+                .file_options
+                .with_columns
+                .as_ref()
+                .map(|opt| opt.len())
+                .unwrap_or(first_schema.len());
+            let concurrent_per_file = md.row_groups.len() * n_columns;
+            if verbose {
+                eprintln!(
+                    "estimated concurrent downloads per file: {}",
+                    concurrent_per_file
+                );
+            }
+            concurrent_download_limit() / concurrent_per_file + 1
+        } else {
+            std::cmp::min(POOL.current_num_threads(), 16)
+        };
 
         let mut remaining_rows_to_read = self.file_options.n_rows.unwrap_or(usize::MAX);
         let mut base_row_count = self.file_options.row_count.take();
         let mut processed = 0;
-        for (batch_idx, paths) in self
-            .paths
-            .chunks(std::cmp::min(POOL.current_num_threads(), 128))
-            .enumerate()
-        {
+        for (batch_idx, paths) in self.paths.chunks(batch_size).enumerate() {
             if remaining_rows_to_read == 0 && !result.is_empty() {
                 return Ok(result);
             }
