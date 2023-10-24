@@ -8,6 +8,16 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 
+def test_asof_join_singular_right_11966() -> None:
+    df = pl.DataFrame({"id": [1, 2, 3], "time": [0.9, 2.1, 2.8]}).sort("time")
+    lookup = pl.DataFrame({"time": [2.0], "value": [100]}).sort("time")
+    joined = df.join_asof(lookup, on="time", strategy="nearest")
+    expected = pl.DataFrame(
+        {"id": [1, 2, 3], "time": [0.9, 2.1, 2.8], "value": [100, 100, 100]}
+    )
+    assert_frame_equal(joined, expected)
+
+
 def test_asof_join_inline_cast_6438() -> None:
     df_trades = pl.DataFrame(
         {
