@@ -1417,7 +1417,9 @@ def test_supertype_timezones_4174() -> None:
                 datetime(2020, 3, 1), datetime(2020, 5, 1), "1mo", eager=True
             ),
         }
-    ).with_columns(pl.col("dt").dt.replace_time_zone("Europe/London").suffix("_London"))
+    ).with_columns(
+        pl.col("dt").dt.replace_time_zone("Europe/London").name.suffix("_London")
+    )
 
     # test if this runs without error
     date_to_fill = df["dt_London"][0]

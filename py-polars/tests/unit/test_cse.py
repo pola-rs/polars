@@ -363,11 +363,11 @@ def test_cse_quantile_10815() -> None:
     cols = ["a", "b"]
     q = df.lazy().select(
         *(
-            pl.col(c).quantile(0.75, interpolation="midpoint").suffix("_3")
+            pl.col(c).quantile(0.75, interpolation="midpoint").name.suffix("_3")
             for c in cols
         ),
         *(
-            pl.col(c).quantile(0.25, interpolation="midpoint").suffix("_1")
+            pl.col(c).quantile(0.25, interpolation="midpoint").name.suffix("_1")
             for c in cols
         ),
     )

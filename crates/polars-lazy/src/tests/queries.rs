@@ -563,7 +563,10 @@ fn test_lazy_wildcard() {
     let new = df
         .lazy()
         .group_by([col("b")])
-        .agg([col("*").sum().suffix(""), col("*").first().suffix("_first")])
+        .agg([
+            col("*").sum().name().suffix(""),
+            col("*").first().name().suffix("_first"),
+        ])
         .collect()
         .unwrap();
     assert_eq!(new.shape(), (3, 5)); // Should exclude b from wildcard aggregations.
@@ -1197,8 +1200,8 @@ fn test_keep_name() -> PolarsResult<()> {
     let out = df
         .lazy()
         .select([
-            col("a").alias("bar").keep_name(),
-            col("b").alias("bar").keep_name(),
+            col("a").alias("bar").name().keep(),
+            col("b").alias("bar").name().keep(),
         ])
         .collect()?;
 

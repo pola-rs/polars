@@ -177,7 +177,7 @@ class ExprMetaNameSpace:
 
     def undo_aliases(self) -> Expr:
         """
-        Undo any renaming operation like ``alias`` or ``keep_name``.
+        Undo any renaming operation like ``alias`` or ``name.keep``.
 
         Examples
         --------
@@ -185,7 +185,7 @@ class ExprMetaNameSpace:
         >>> e.meta.undo_aliases().meta == pl.col("foo")
         True
         >>> e = pl.col("foo").sum().over("bar")
-        >>> e.keep_name().meta.undo_aliases().meta == e
+        >>> e.name.keep().meta.undo_aliases().meta == e
         True
 
         """

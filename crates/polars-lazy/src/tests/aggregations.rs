@@ -78,7 +78,7 @@ fn test_cumsum_agg_as_key() -> PolarsResult<()> {
             .neq(col("soil").shift_and_fill(1, col("soil").first()))
             .cumsum(false)
             .alias("key")])
-        .agg([col("depth").max().keep_name()])
+        .agg([col("depth").max().name().keep()])
         .sort("depth", SortOptions::default())
         .collect()?;
 

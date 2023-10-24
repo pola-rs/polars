@@ -130,7 +130,9 @@ def test_count_suffix_10783() -> None:
         }
     )
     df_with_cnt = df.with_columns(
-        pl.count().over(pl.col("a").list.sort().list.join("").hash()).suffix("_suffix")
+        pl.count()
+        .over(pl.col("a").list.sort().list.join("").hash())
+        .name.suffix("_suffix")
     )
     df_expect = df.with_columns(pl.Series("count_suffix", [3, 3, 1, 3]))
     assert_frame_equal(df_with_cnt, df_expect, check_dtype=False)
@@ -410,7 +412,7 @@ def test_head_group_by() -> None:
     out = (
         ldf.sort(by="price", descending=True)
         .group_by(keys, maintain_order=True)
-        .agg([pl.col("*").exclude(keys).head(2).keep_name()])
+        .agg([pl.col("*").exclude(keys).head(2).name.keep()])
         .explode(pl.col("*").exclude(keys))
     )
 

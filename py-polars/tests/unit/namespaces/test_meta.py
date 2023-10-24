@@ -45,9 +45,11 @@ def test_root_and_output_names() -> None:
         pl.ComputeError,
         match="cannot determine output column without a context for this expression",
     ):
-        pl.all().suffix("_").meta.output_name()
+        pl.all().name.suffix("_").meta.output_name()
 
-    assert pl.all().suffix("_").meta.output_name(raise_if_undetermined=False) is None
+    assert (
+        pl.all().name.suffix("_").meta.output_name(raise_if_undetermined=False) is None
+    )
 
 
 def test_undo_aliases() -> None:
@@ -55,7 +57,7 @@ def test_undo_aliases() -> None:
     assert e.meta.undo_aliases().meta == pl.col("foo")
 
     e = pl.col("foo").sum().over("bar")
-    assert e.keep_name().meta.undo_aliases().meta == e
+    assert e.name.keep().meta.undo_aliases().meta == e
 
     e.alias("bar").alias("foo")
     assert e.meta.undo_aliases().meta == e

@@ -795,7 +795,7 @@ def test_head_group_by() -> None:
     out = (
         df.sort(by="price", descending=True)
         .group_by(keys, maintain_order=True)
-        .agg([pl.col("*").exclude(keys).head(2).keep_name()])
+        .agg([pl.col("*").exclude(keys).head(2).name.keep()])
         .explode(pl.col("*").exclude(keys))
     )
 
@@ -1983,8 +1983,8 @@ def test_fill_null() -> None:
 
     assert df.select(
         [
-            pl.all().forward_fill().suffix("_forward"),
-            pl.all().backward_fill().suffix("_backward"),
+            pl.all().forward_fill().name.suffix("_forward"),
+            pl.all().backward_fill().name.suffix("_backward"),
         ]
     ).to_dict(False) == {
         "c_forward": [
@@ -2639,7 +2639,7 @@ def test_fill_null_limits() -> None:
     ).select(
         [
             pl.all().fill_null(strategy="forward", limit=2),
-            pl.all().fill_null(strategy="backward", limit=2).suffix("_backward"),
+            pl.all().fill_null(strategy="backward", limit=2).name.suffix("_backward"),
         ]
     ).to_dict(
         False
@@ -2704,9 +2704,9 @@ def test_selection_regex_and_multicol() -> None:
     # Selection only
     test_df.select(
         [
-            pl.col(["a", "b", "c"]).suffix("_list"),
-            pl.all().exclude("foo").suffix("_wild"),
-            pl.col("^\\w$").suffix("_regex"),
+            pl.col(["a", "b", "c"]).name.suffix("_list"),
+            pl.all().exclude("foo").name.suffix("_wild"),
+            pl.col("^\\w$").name.suffix("_regex"),
         ]
     )
 
@@ -2749,8 +2749,8 @@ def test_selection_regex_and_multicol() -> None:
 
         df = test_df.select(
             pl.col("^\\w$").alias("re"),
-            odd=(pl.col(INTEGER_DTYPES) % 2).suffix("_is_odd"),
-            maxes=pl.all().max().suffix("_max"),
+            odd=(pl.col(INTEGER_DTYPES) % 2).name.suffix("_is_odd"),
+            maxes=pl.all().max().name.suffix("_max"),
         ).head(2)
         # ┌───────────┬───────────┬─────────────┐
         # │ re        ┆ odd       ┆ maxes       │

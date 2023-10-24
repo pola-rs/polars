@@ -226,7 +226,7 @@ def test_rolling_extrema() -> None:
             pl.when(pl.int_range(0, pl.count(), eager=False) < 2)
             .then(None)
             .otherwise(pl.all())
-            .suffix("_nulls")
+            .name.suffix("_nulls")
         ]
     )
 
@@ -277,9 +277,9 @@ def test_rolling_group_by_extrema() -> None:
         )
         .agg(
             [
-                pl.col("col1").suffix("_list"),
-                pl.col("col1").min().suffix("_min"),
-                pl.col("col1").max().suffix("_max"),
+                pl.col("col1").name.suffix("_list"),
+                pl.col("col1").min().name.suffix("_min"),
+                pl.col("col1").max().name.suffix("_max"),
                 pl.col("col1").first().alias("col1_first"),
                 pl.col("col1").last().alias("col1_last"),
             ]
@@ -316,9 +316,9 @@ def test_rolling_group_by_extrema() -> None:
         )
         .agg(
             [
-                pl.col("col1").suffix("_list"),
-                pl.col("col1").min().suffix("_min"),
-                pl.col("col1").max().suffix("_max"),
+                pl.col("col1").name.suffix("_list"),
+                pl.col("col1").min().name.suffix("_min"),
+                pl.col("col1").max().name.suffix("_max"),
                 pl.col("col1").first().alias("col1_first"),
                 pl.col("col1").last().alias("col1_last"),
             ]
@@ -354,9 +354,9 @@ def test_rolling_group_by_extrema() -> None:
         )
         .agg(
             [
-                pl.col("col1").min().suffix("_min"),
-                pl.col("col1").max().suffix("_max"),
-                pl.col("col1").suffix("_list"),
+                pl.col("col1").min().name.suffix("_min"),
+                pl.col("col1").max().name.suffix("_max"),
+                pl.col("col1").name.suffix("_list"),
             ]
         )
         .select(["col1_list", "col1_min", "col1_max"])

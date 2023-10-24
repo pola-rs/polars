@@ -6,7 +6,7 @@ fn main() -> PolarsResult<()> {
             // select all columns
             all(),
             // and do some aggregations
-            cols(["fats_g", "sugars_g"]).sum().suffix("_summed"),
+            cols(["fats_g", "sugars_g"]).sum().name().suffix("_summed"),
         ])
         .collect()?;
 

@@ -11,6 +11,7 @@ mod arity;
 #[cfg(feature = "dtype-array")]
 mod array;
 pub mod binary;
+pub mod consts;
 #[cfg(feature = "temporal")]
 pub mod dt;
 mod expr;
@@ -21,7 +22,7 @@ pub mod functions;
 mod list;
 #[cfg(feature = "meta")]
 mod meta;
-pub mod names;
+mod name;
 mod options;
 #[cfg(feature = "python")]
 pub mod python_udf;
@@ -1161,47 +1162,6 @@ impl Expr {
         self.apply_private(FunctionExpr::Mode)
     }
 
-    /// Keep the original root name
-    ///
-    /// ```rust,no_run
-    /// # use polars_core::prelude::*;
-    /// # use polars_plan::prelude::*;
-    /// fn example(df: LazyFrame) -> LazyFrame {
-    ///     df.select([
-    /// // even thought the alias yields a different column name,
-    /// // `keep_name` will make sure that the original column name is used
-    ///         col("*").alias("foo").keep_name()
-    /// ])
-    /// }
-    /// ```
-    pub fn keep_name(self) -> Expr {
-        Expr::KeepName(Box::new(self))
-    }
-
-    /// Define an alias by mapping a function over the original root column name.
-    pub fn map_alias<F>(self, function: F) -> Expr
-    where
-        F: Fn(&str) -> PolarsResult<String> + 'static + Send + Sync,
-    {
-        let function = SpecialEq::new(Arc::new(function) as Arc<dyn RenameAliasFn>);
-        Expr::RenameAlias {
-            expr: Box::new(self),
-            function,
-        }
-    }
-
-    /// Add a suffix to the root column name.
-    pub fn suffix(self, suffix: &str) -> Expr {
-        let suffix = suffix.to_string();
-        self.map_alias(move |name| Ok(format!("{name}{suffix}")))
-    }
-
-    /// Add a prefix to the root column name.
-    pub fn prefix(self, prefix: &str) -> Expr {
-        let prefix = prefix.to_string();
-        self.map_alias(move |name| Ok(format!("{prefix}{name}")))
-    }
-
     /// Exclude a column from a wildcard/regex selection.
     ///
     /// You may also use regexes in the exclude as long as they start with `^` and end with `$`/
@@ -1770,21 +1730,30 @@ impl Expr {
     }
 
     #[cfg(feature = "strings")]
+    /// Get the [`string::StringNameSpace`]
     pub fn str(self) -> string::StringNameSpace {
         string::StringNameSpace(self)
     }
 
+    /// Get the [`binary::BinaryNameSpace`]
     pub fn binary(self) -> binary::BinaryNameSpace {
         binary::BinaryNameSpace(self)
     }
 
     #[cfg(feature = "temporal")]
+    /// Get the [`dt::DateLikeNameSpace`]
     pub fn dt(self) -> dt::DateLikeNameSpace {
         dt::DateLikeNameSpace(self)
     }
 
+    /// Get the [`list::ListNameSpace`]
     pub fn list(self) -> list::ListNameSpace {
         list::ListNameSpace(self)
+    }
+
+    /// Get the [`name::ExprNameNameSpace`]
+    pub fn name(self) -> name::ExprNameNameSpace {
+        name::ExprNameNameSpace(self)
     }
 
     /// Get the [`array::ArrayNameSpace`].

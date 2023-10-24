@@ -1355,7 +1355,7 @@ class DataFrame:
             raise ValueError("DataFrame dimensions do not match")
 
         suffix = "__POLARS_CMP_OTHER"
-        other_renamed = other.select(F.all().suffix(suffix))
+        other_renamed = other.select(F.all().name.suffix(suffix))
         combined = F.concat([self, other_renamed], how="horizontal")
 
         if op == "eq":
@@ -1489,7 +1489,7 @@ class DataFrame:
         self, other: DataFrame | Series | int | float | bool | str
     ) -> DataFrame:
         if isinstance(other, str):
-            return self.select((lit(other) + F.col("*")).keep_name())
+            return self.select((lit(other) + F.col("*")).name.keep())
         return self + other
 
     def __sub__(self, other: DataFrame | Series | int | float) -> Self:
@@ -4166,19 +4166,19 @@ class DataFrame:
         metrics = ["count", "null_count", "mean", "std", "min"]
         percentile_exprs = []
         for p in parse_percentiles(percentiles):
-            percentile_exprs.append(F.all().quantile(p).prefix(f"{p}:"))
+            percentile_exprs.append(F.all().quantile(p).name.prefix(f"{p}:"))
             metrics.append(f"{p:.0%}")
         metrics.append("max")
 
         # execute metrics in parallel
         df_metrics = self.select(
-            F.all().count().prefix("count:"),
-            F.all().null_count().prefix("null_count:"),
-            F.all().mean().prefix("mean:"),
-            F.all().std().prefix("std:"),
-            F.all().min().prefix("min:"),
+            F.all().count().name.prefix("count:"),
+            F.all().null_count().name.prefix("null_count:"),
+            F.all().mean().name.prefix("mean:"),
+            F.all().std().name.prefix("std:"),
+            F.all().min().name.prefix("min:"),
             *percentile_exprs,
-            F.all().max().prefix("max:"),
+            F.all().max().name.prefix("max:"),
         ).row(0)
 
         # reshape wide result
@@ -7736,7 +7736,7 @@ class DataFrame:
 
         >>> with pl.Config(auto_structify=True):
         ...     df.select(
-        ...         is_odd=(pl.col(pl.INTEGER_DTYPES) % 2).suffix("_is_odd"),
+        ...         is_odd=(pl.col(pl.INTEGER_DTYPES) % 2).name.suffix("_is_odd"),
         ...     )
         ...
         shape: (3, 1)
@@ -7911,7 +7911,7 @@ class DataFrame:
 
         >>> with pl.Config(auto_structify=True):
         ...     df.drop("c").with_columns(
-        ...         diffs=pl.col(["a", "b"]).diff().suffix("_diff"),
+        ...         diffs=pl.col(["a", "b"]).diff().name.suffix("_diff"),
         ...     )
         ...
         shape: (4, 3)

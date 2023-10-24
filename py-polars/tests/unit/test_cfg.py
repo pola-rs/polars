@@ -380,7 +380,7 @@ def test_set_tbl_width_chars() -> None:
             "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
         },
         schema_overrides={"A": pl.Int64, "B": pl.Int64},
-    ).select(pl.all(), pl.all().suffix("_suffix!"))
+    ).select(pl.all(), pl.all().name.suffix("_suffix!"))
 
     with pl.Config(tbl_width_chars=87):
         assert max(len(line) for line in str(df).split("\n")) == 87

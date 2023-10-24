@@ -679,29 +679,6 @@ impl PyExpr {
     fn mode(&self) -> Self {
         self.inner.clone().mode().into()
     }
-    fn keep_name(&self) -> Self {
-        self.inner.clone().keep_name().into()
-    }
-    fn prefix(&self, prefix: &str) -> Self {
-        self.inner.clone().prefix(prefix).into()
-    }
-    fn suffix(&self, suffix: &str) -> Self {
-        self.inner.clone().suffix(suffix).into()
-    }
-    fn map_alias(&self, lambda: PyObject) -> Self {
-        self.inner
-            .clone()
-            .map_alias(move |name| {
-                let out = Python::with_gil(|py| lambda.call1(py, (name,)));
-                match out {
-                    Ok(out) => Ok(out.to_string()),
-                    Err(e) => Err(PolarsError::ComputeError(
-                        format!("Python function in 'map_alias' produced an error: {e}.").into(),
-                    )),
-                }
-            })
-            .into()
-    }
     fn exclude(&self, columns: Vec<String>) -> Self {
         self.inner.clone().exclude(columns).into()
     }

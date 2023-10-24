@@ -193,7 +193,7 @@ def test_when_then_edge_cases_3994() -> None:
             pl.when(pl.col("type").list.len() == 0)
             .then(pl.lit(None))
             .otherwise(pl.col("type"))
-            .keep_name()
+            .name.keep()
         )
         .collect()
     ).to_dict(False) == {"id": [1], "type": [[2, 2]]}
@@ -207,7 +207,7 @@ def test_when_then_edge_cases_3994() -> None:
             pl.when(pl.col("type").list.len() == 0)
             .then(pl.lit(None))
             .otherwise(pl.col("type"))
-            .keep_name()
+            .name.keep()
         )
     ).to_dict(False) == {"id": [], "type": []}
 

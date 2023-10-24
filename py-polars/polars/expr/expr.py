@@ -43,6 +43,7 @@ from polars.expr.categorical import ExprCatNameSpace
 from polars.expr.datetime import ExprDateTimeNameSpace
 from polars.expr.list import ExprListNameSpace
 from polars.expr.meta import ExprMetaNameSpace
+from polars.expr.name import ExprNameNameSpace
 from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
 from polars.utils._parse_expr_input import (
@@ -575,7 +576,7 @@ class Expr:
 
         See Also
         --------
-        map_alias
+        map
         prefix
         suffix
 
@@ -625,6 +626,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.alias(name))
 
+    @deprecate_renamed_function("name.map", moved=True, version="0.19.12")
     def map_alias(self, function: Callable[[str], str]) -> Self:
         """
         Rename the output of an expression by mapping a function over the root name.
@@ -651,7 +653,7 @@ class Expr:
         ...     }
         ... )
         >>> df.with_columns(
-        ...     pl.all().reverse().map_alias(lambda c: c.rstrip("_reverse").lower())
+        ...     pl.all().reverse().name.map(lambda c: c.rstrip("_reverse").lower())
         ... )
         shape: (3, 4)
         ┌───────────┬───────────┬─────┬─────┐
@@ -665,8 +667,9 @@ class Expr:
         └───────────┴───────────┴─────┴─────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.map_alias(function))
+        return self.name.map(function)  # type: ignore[return-value]
 
+    @deprecate_renamed_function("name.prefix", moved=True, version="0.19.12")
     def prefix(self, prefix: str) -> Self:
         """
         Add a prefix to the root column name of the expression.
@@ -695,7 +698,7 @@ class Expr:
         ...         "b": ["x", "y", "z"],
         ...     }
         ... )
-        >>> df.with_columns(pl.all().reverse().prefix("reverse_"))
+        >>> df.with_columns(pl.all().reverse().name.prefix("reverse_"))
         shape: (3, 4)
         ┌─────┬─────┬───────────┬───────────┐
         │ a   ┆ b   ┆ reverse_a ┆ reverse_b │
@@ -708,8 +711,9 @@ class Expr:
         └─────┴─────┴───────────┴───────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.prefix(prefix))
+        return self.name.prefix(prefix)  # type: ignore[return-value]
 
+    @deprecate_renamed_function("name.suffix", moved=True, version="0.19.12")
     def suffix(self, suffix: str) -> Self:
         """
         Add a suffix to the root column name of the expression.
@@ -738,7 +742,7 @@ class Expr:
         ...         "b": ["x", "y", "z"],
         ...     }
         ... )
-        >>> df.with_columns(pl.all().reverse().suffix("_reverse"))
+        >>> df.with_columns(pl.all().reverse().name.suffix("_reverse"))
         shape: (3, 4)
         ┌─────┬─────┬───────────┬───────────┐
         │ a   ┆ b   ┆ a_reverse ┆ b_reverse │
@@ -751,8 +755,9 @@ class Expr:
         └─────┴─────┴───────────┴───────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.suffix(suffix))
+        return self.name.suffix(suffix)  # type: ignore[return-value]
 
+    @deprecate_renamed_function("name.keep", moved=True, version="0.19.12")
     def keep_name(self) -> Self:
         """
         Keep the original root name of the expression.
@@ -776,7 +781,7 @@ class Expr:
         ...         "b": [3, 4],
         ...     }
         ... )
-        >>> df.with_columns((pl.col("a") * 9).alias("c").keep_name())
+        >>> df.with_columns((pl.col("a") * 9).alias("c").name.keep())
         shape: (2, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -789,7 +794,7 @@ class Expr:
 
         Prevent errors due to duplicate column names.
 
-        >>> df.select((pl.lit(10) / pl.all()).keep_name())
+        >>> df.select((pl.lit(10) / pl.all()).name.keep())
         shape: (2, 2)
         ┌──────┬──────────┐
         │ a    ┆ b        │
@@ -801,7 +806,7 @@ class Expr:
         └──────┴──────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.keep_name())
+        return self.name.keep()  # type: ignore[return-value]
 
     def exclude(
         self,
@@ -1028,7 +1033,7 @@ class Expr:
         ...         "b": [1.0, 2.0, float("nan"), 1.0, 5.0],
         ...     }
         ... )
-        >>> df.with_columns(pl.all().is_null().suffix("_isnull"))  # nan != null
+        >>> df.with_columns(pl.all().is_null().name.suffix("_isnull"))  # nan != null
         shape: (5, 4)
         ┌──────┬─────┬──────────┬──────────┐
         │ a    ┆ b   ┆ a_isnull ┆ b_isnull │
@@ -1057,7 +1062,9 @@ class Expr:
         ...         "b": [1.0, 2.0, float("nan"), 1.0, 5.0],
         ...     }
         ... )
-        >>> df.with_columns(pl.all().is_not_null().suffix("_not_null"))  # nan != null
+        >>> df.with_columns(
+        ...     pl.all().is_not_null().name.suffix("_not_null")  # nan != null
+        ... )
         shape: (5, 4)
         ┌──────┬─────┬────────────┬────────────┐
         │ a    ┆ b   ┆ a_not_null ┆ b_not_null │
@@ -1153,7 +1160,7 @@ class Expr:
         ...         "b": [1.0, 2.0, float("nan"), 1.0, 5.0],
         ...     }
         ... )
-        >>> df.with_columns(pl.col(pl.Float64).is_nan().suffix("_isnan"))
+        >>> df.with_columns(pl.col(pl.Float64).is_nan().name.suffix("_isnan"))
         shape: (5, 3)
         ┌──────┬─────┬─────────┐
         │ a    ┆ b   ┆ b_isnan │
@@ -1187,7 +1194,7 @@ class Expr:
         ...         "b": [1.0, 2.0, float("nan"), 1.0, 5.0],
         ...     }
         ... )
-        >>> df.with_columns(pl.col(pl.Float64).is_not_nan().suffix("_is_not_nan"))
+        >>> df.with_columns(pl.col(pl.Float64).is_not_nan().name.suffix("_is_not_nan"))
         shape: (5, 3)
         ┌──────┬─────┬──────────────┐
         │ a    ┆ b   ┆ b_is_not_nan │
@@ -2695,7 +2702,7 @@ class Expr:
         >>> df.select(
         ...     [
         ...         pl.all(),
-        ...         pl.all().reverse().suffix("_reverse"),
+        ...         pl.all().reverse().name.suffix("_reverse"),
         ...     ]
         ... )
         shape: (5, 8)
@@ -3167,7 +3174,9 @@ class Expr:
         ...         "c": [5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> df.with_columns(pl.col("c").max().over("a").suffix("_max"))
+        >>> df.with_columns(
+        ...     pl.col("c").max().over("a").name.suffix("_max"),
+        ... )
         shape: (5, 4)
         ┌─────┬─────┬─────┬───────┐
         │ a   ┆ b   ┆ c   ┆ c_max │
@@ -3183,7 +3192,9 @@ class Expr:
 
         Expression input is supported.
 
-        >>> df.with_columns(pl.col("c").max().over(pl.col("b") // 2).suffix("_max"))
+        >>> df.with_columns(
+        ...     pl.col("c").max().over(pl.col("b") // 2).name.suffix("_max"),
+        ... )
         shape: (5, 4)
         ┌─────┬─────┬─────┬───────┐
         │ a   ┆ b   ┆ c   ┆ c_max │
@@ -3199,7 +3210,9 @@ class Expr:
 
         Group by multiple columns by passing a list of column names or expressions.
 
-        >>> df.with_columns(pl.col("c").min().over(["a", "b"]).suffix("_min"))
+        >>> df.with_columns(
+        ...     pl.col("c").min().over(["a", "b"]).name.suffix("_min"),
+        ... )
         shape: (5, 4)
         ┌─────┬─────┬─────┬───────┐
         │ a   ┆ b   ┆ c   ┆ c_min │
@@ -3215,7 +3228,9 @@ class Expr:
 
         Or use positional arguments to group by multiple columns in the same way.
 
-        >>> df.with_columns(pl.col("c").min().over("a", pl.col("b") % 2).suffix("_min"))
+        >>> df.with_columns(
+        ...     pl.col("c").min().over("a", pl.col("b") % 2).name.suffix("_min"),
+        ... )
         shape: (5, 4)
         ┌─────┬─────┬─────┬───────┐
         │ a   ┆ b   ┆ c   ┆ c_min │
@@ -9722,7 +9737,7 @@ class Expr:
         """
         Create an object namespace of all list related methods.
 
-        See the individual method pages for full details
+        See the individual method pages for full details.
 
         """
         return ExprListNameSpace(self)
@@ -9732,7 +9747,7 @@ class Expr:
         """
         Create an object namespace of all array related methods.
 
-        See the individual method pages for full details
+        See the individual method pages for full details.
 
         """
         return ExprArrayNameSpace(self)
@@ -9742,17 +9757,27 @@ class Expr:
         """
         Create an object namespace of all meta related expression methods.
 
-        This can be used to modify and traverse existing expressions
+        This can be used to modify and traverse existing expressions.
 
         """
         return ExprMetaNameSpace(self)
+
+    @property
+    def name(self) -> ExprNameNameSpace:
+        """
+        Create an object namespace of all expressions that modify expression names.
+
+        See the individual method pages for full details.
+
+        """
+        return ExprNameNameSpace(self)
 
     @property
     def str(self) -> ExprStringNameSpace:
         """
         Create an object namespace of all string related methods.
 
-        See the individual method pages for full details
+        See the individual method pages for full details.
 
         Examples
         --------
@@ -9776,7 +9801,7 @@ class Expr:
         """
         Create an object namespace of all struct related methods.
 
-        See the individual method pages for full details
+        See the individual method pages for full details.
 
         Examples
         --------

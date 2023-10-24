@@ -6,6 +6,7 @@ mod general;
 mod list;
 #[cfg(feature = "meta")]
 mod meta;
+mod name;
 mod rolling;
 mod string;
 mod r#struct;
