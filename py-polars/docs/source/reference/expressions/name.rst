@@ -13,3 +13,5 @@ The following methods are available under the `expr.name` attribute.
     Expr.name.map
     Expr.name.prefix
     Expr.name.suffix
+    Expr.name.to_lowercase
+    Expr.name.to_uppercase
