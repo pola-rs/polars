@@ -33,6 +33,7 @@ struct AsofJoinForwardState {
 }
 
 impl<T: PartialOrd> AsofJoinState<T> for AsofJoinForwardState {
+    #[inline]
     fn next<F: FnMut(IdxSize) -> Option<T>>(
         &mut self,
         left_val: &T,
@@ -59,6 +60,7 @@ struct AsofJoinBackwardState {
 }
 
 impl<T: PartialOrd> AsofJoinState<T> for AsofJoinBackwardState {
+    #[inline]
     fn next<F: FnMut(IdxSize) -> Option<T>>(
         &mut self,
         left_val: &T,
@@ -87,6 +89,7 @@ struct AsofJoinNearestState {
 }
 
 impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
+    #[inline]
     fn next<F: FnMut(IdxSize) -> Option<T>>(
         &mut self,
         left_val: &T,

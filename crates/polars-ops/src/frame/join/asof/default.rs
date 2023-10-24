@@ -22,14 +22,34 @@ where
     let mut mask = vec![0; (left.len() + 7) / 8];
     let mut state = S::default();
 
-    for (i, opt_val_l) in left.iter().enumerate() {
-        if let Some(val_l) = opt_val_l {
-            if let Some(r_idx) =
-                state.next(&val_l, |j| right.get(j as usize), right.len() as IdxSize)
-            {
-                let val_r = unsafe { right.get_unchecked(r_idx as usize).unwrap_unchecked() };
+    if left.null_count() == 0 && right.null_count() == 0 {
+        for (i, val_l) in left.values_iter().enumerate() {
+            if let Some(r_idx) = state.next(
+                &val_l,
+                // SAFETY: next() only calls with indices < right.len().
+                |j| Some(unsafe { right.value_unchecked(j as usize) }),
+                right.len() as IdxSize,
+            ) {
+                // SAFETY: r_idx is non-null and valid.
+                let val_r = unsafe { right.value_unchecked(r_idx as usize) };
                 out[i] = r_idx;
                 mask[i / 8] |= (filter(val_l, val_r) as u8) << (i % 8);
+            }
+        }
+    } else {
+        for (i, opt_val_l) in left.iter().enumerate() {
+            if let Some(val_l) = opt_val_l {
+                if let Some(r_idx) = state.next(
+                    &val_l,
+                    // SAFETY: next() only calls with indices < right.len().
+                    |j| unsafe { right.get_unchecked(j as usize) },
+                    right.len() as IdxSize,
+                ) {
+                    // SAFETY: r_idx is non-null and valid.
+                    let val_r = unsafe { right.value_unchecked(r_idx as usize) };
+                    out[i] = r_idx;
+                    mask[i / 8] |= (filter(val_l, val_r) as u8) << (i % 8);
+                }
             }
         }
     }
