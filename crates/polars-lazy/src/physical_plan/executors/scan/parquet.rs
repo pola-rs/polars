@@ -159,16 +159,16 @@ impl ParquetExec {
         let first_schema = &self.file_info.reader_schema;
         let first_metadata = &self.metadata;
         let cloud_options = self.cloud_options.as_ref();
-        dbg!(self.file_options.n_rows);
 
         let mut result = vec![];
 
         let mut remaining_rows_to_read = self.file_options.n_rows.unwrap_or(usize::MAX);
         let mut base_row_count = self.file_options.row_count.take();
         let mut processed = 0;
-        for paths in self
+        for (batch_idx, paths) in self
             .paths
             .chunks(std::cmp::min(POOL.current_num_threads(), 128))
+            .enumerate()
         {
             if remaining_rows_to_read == 0 && !result.is_empty() {
                 return Ok(result);
@@ -184,16 +184,22 @@ impl ParquetExec {
 
             // First initialize the readers and get the metadata concurrently.
             let iter = paths.iter().enumerate().map(|(i, path)| async move {
+                let first_file = batch_idx == 0 && i == 0;
                 // use the cached one as this saves a cloud call
-                let metadata = if i == 0 { first_metadata.clone() } else { None };
+                let (metadata, schema) = if first_file { (first_metadata.clone(), Some(first_schema.clone())) } else { (None, None) };
                 let mut reader = ParquetAsyncReader::from_uri(
                     &path.to_string_lossy(),
                     cloud_options,
                     // Schema must be the same for all files. The hive partitions are included in this schema.
-                    Some(first_schema.clone()),
+                    schema,
                     metadata,
                 )
                 .await?;
+
+                if !first_file {
+                    polars_ensure!(reader.schema().await?.as_ref() == first_schema.as_ref(), ComputeError: "schema of all files in a single scan_parquet must be equal");
+                }
+
                 let num_rows = reader.num_rows().await?;
                 PolarsResult::Ok((num_rows, reader))
             });
@@ -228,7 +234,6 @@ impl ParquetExec {
                         ((num_rows_this_file, reader), (remaining_rows_to_read, cumulative_read)),
                         path,
                     )| async move {
-                        dbg!(remaining_rows_to_read);
                         let mut file_info = file_info.clone();
                         let remaining_rows_to_read = *remaining_rows_to_read;
                         let remaining_rows_to_read = if num_rows_this_file < remaining_rows_to_read
@@ -237,7 +242,6 @@ impl ParquetExec {
                         } else {
                             Some(remaining_rows_to_read)
                         };
-                        dbg!(remaining_rows_to_read);
                         let row_count = base_row_count_ref.as_ref().map(|rc| RowCount {
                             name: rc.name.clone(),
                             offset: rc.offset + *cumulative_read as IdxSize,
@@ -259,8 +263,7 @@ impl ParquetExec {
                             hive_partitions.as_deref(),
                         );
 
-                        let now = std::time::Instant::now();
-                        let out = reader
+                        reader
                             .with_n_rows(remaining_rows_to_read)
                             .with_row_count(row_count)
                             .with_projection(projection)
@@ -270,9 +273,7 @@ impl ParquetExec {
                             .with_hive_partition_columns(hive_partitions)
                             .finish()
                             .await
-                            .map(Some);
-                        dbg!(now.elapsed().as_millis());
-                        out
+                            .map(Some)
                     },
                 );
 

@@ -559,8 +559,20 @@ impl BatchedParquetReader {
 
         // fill up fifo stack
         if self.row_group_offset <= self.n_row_groups && self.chunks_fifo.len() < n {
+            // Ensure we apply the limit on the metadata, before we download the row-groups.
             let row_group_start = self.row_group_offset;
-            let row_group_end = std::cmp::min(self.row_group_offset + n, self.n_row_groups);
+            let mut row_group_end = row_group_start;
+            let mut acc_row_count = 0;
+            for rg_i in
+                row_group_start..(std::cmp::min(self.row_group_offset + n, self.n_row_groups))
+            {
+                if acc_row_count >= self.limit {
+                    break;
+                }
+                row_group_end = rg_i + 1;
+                acc_row_count += self.metadata.row_groups[rg_i].num_rows();
+            }
+
             let store = self
                 .row_group_fetcher
                 .fetch_row_groups(row_group_start..row_group_end)
@@ -586,8 +598,11 @@ impl BatchedParquetReader {
             // case where there is no data in the file
             // the streaming engine needs at least a single chunk
             if self.rows_read == 0 && dfs.is_empty() {
-                let df = DataFrame::from(self.schema.as_ref());
-                return Ok(Some(vec![df]));
+                return Ok(Some(vec![materialize_empty_df(
+                    Some(&self.projection),
+                    self.schema.as_ref(),
+                    self.hive_partition_columns.as_deref(),
+                )]));
             }
 
             // TODO! this is slower than it needs to be
