@@ -12,6 +12,19 @@ fn create_ctx() -> SQLContext {
 }
 
 #[test]
+fn tbl_alias() {
+    let mut ctx = create_ctx();
+    let sql = r#"
+    SELECT
+        tbl.a,
+        tbl.b,
+    FROM df as tbl
+    "#;
+    let actual = ctx.execute(sql);
+    assert!(actual.is_ok());
+}
+
+#[test]
 fn trailing_commas_allowed() {
     let mut ctx = create_ctx();
     let sql = r#"

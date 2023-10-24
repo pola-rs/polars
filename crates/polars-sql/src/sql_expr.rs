@@ -177,12 +177,15 @@ impl SqlExprVisitor<'_> {
     fn visit_compound_identifier(&self, idents: &[Ident]) -> PolarsResult<Expr> {
         match idents {
             [tbl_name, column_name] => {
-                let lf = self.ctx.table_map.get(&tbl_name.value).ok_or_else(|| {
-                    polars_err!(
-                        ComputeError: "no table named '{}' found",
-                        tbl_name
-                    )
-                })?;
+                let lf = self
+                    .ctx
+                    .get_table_from_current_scope(&tbl_name.value)
+                    .ok_or_else(|| {
+                        polars_err!(
+                            ComputeError: "no table or alias named '{}' found",
+                            tbl_name
+                        )
+                    })?;
 
                 let schema = lf.schema()?;
                 if let Some((_, name, _)) = schema.get_full(&column_name.value) {
