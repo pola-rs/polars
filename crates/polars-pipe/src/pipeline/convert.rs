@@ -270,7 +270,7 @@ where
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                let sort_sink = SortSinkMultiple::new(args.clone(), input_schema, sort_idx);
+                let sort_sink = SortSinkMultiple::new(args.clone(), input_schema, sort_idx)?;
                 Box::new(sort_sink) as Box<dyn SinkTrait>
             }
         },

@@ -47,6 +47,7 @@ impl ParquetSource {
         let file_options = self.file_options.clone();
         let schema = self.file_info.schema.clone();
 
+        self.file_info.update_hive_partitions(path);
         let hive_partitions = self
             .file_info
             .hive_parts
@@ -98,12 +99,7 @@ impl ParquetSource {
                     .with_row_count(file_options.row_count)
                     .with_projection(projection)
                     .use_statistics(options.use_statistics)
-                    .with_hive_partition_columns(
-                        self.file_info
-                            .hive_parts
-                            .as_ref()
-                            .map(|hive| hive.materialize_partition_columns()),
-                    )
+                    .with_hive_partition_columns(hive_partitions)
                     .batched(chunk_size)
                     .await
                 })?
@@ -117,12 +113,7 @@ impl ParquetSource {
                 .with_row_count(file_options.row_count)
                 .with_projection(projection)
                 .use_statistics(options.use_statistics)
-                .with_hive_partition_columns(
-                    self.file_info
-                        .hive_parts
-                        .as_ref()
-                        .map(|hive| hive.materialize_partition_columns()),
-                )
+                .with_hive_partition_columns(hive_partitions)
                 .batched(chunk_size)?
         };
         if self.processed_paths >= 1 {
