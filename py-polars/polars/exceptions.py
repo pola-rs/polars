@@ -3,6 +3,7 @@ try:
         ColumnNotFoundError,
         ComputeError,
         DuplicateError,
+        FileNotFoundError,
         InvalidOperationError,
         NoDataError,
         OutOfBoundsError,
@@ -12,7 +13,6 @@ try:
         ShapeError,
         StringCacheMismatchError,
         StructFieldNotFoundError,
-        FileNotFoundError,
     )
 except ImportError:
     # They are only redefined for documentation purposes

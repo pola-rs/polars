@@ -66,6 +66,7 @@ from polars.exceptions import (
     ColumnNotFoundError,
     ComputeError,
     DuplicateError,
+    FileNotFoundError,
     InvalidOperationError,
     NoDataError,
     OutOfBoundsError,
@@ -74,7 +75,6 @@ from polars.exceptions import (
     SchemaFieldNotFoundError,
     ShapeError,
     StructFieldNotFoundError,
-    FileNotFoundError,
 )
 from polars.expr import Expr
 from polars.functions import (

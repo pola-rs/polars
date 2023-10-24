@@ -1,6 +1,7 @@
 use std::fs::File;
-use std::path::Path;
 use std::io::ErrorKind;
+use std::path::Path;
+
 use polars_error::*;
 
 pub fn open_file<P>(path: P) -> PolarsResult<File>
@@ -16,11 +17,10 @@ where
         match e.kind() {
             ErrorKind::NotFound => {
                 polars_err!(FileNotFound: "No such file or directory: {}", path)
-            },        
+            },
             _ => {
                 polars_err!(ComputeError: "error open file: {}, {}", path, e)
-                
-            }
+            },
         }
     })
 }
