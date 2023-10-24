@@ -818,50 +818,6 @@ def test_extract_groups() -> None:
     ).to_dict(False) == {"literal": [{"foo": "foo", "bar": None}]}
 
 
-def test_zfill() -> None:
-    df = pl.DataFrame(
-        {
-            "num": [-10, -1, 0, 1, 10, 100, 1000, 10000, 100000, 1000000, None],
-        }
-    )
-    out = [
-        "-0010",
-        "-0001",
-        "00000",
-        "00001",
-        "00010",
-        "00100",
-        "01000",
-        "10000",
-        "100000",
-        "1000000",
-        None,
-    ]
-    assert (
-        df.with_columns(pl.col("num").cast(str).str.zfill(5)).to_series().to_list()
-        == out
-    )
-    assert df["num"].cast(str).str.zfill(5).to_list() == out
-
-
-def test_ljust_and_rjust() -> None:
-    df = pl.DataFrame({"a": ["foo", "longer_foo", "longest_fooooooo", "hi"]})
-    assert (
-        df.select(
-            [
-                pl.col("a").str.rjust(10).alias("rjust"),
-                pl.col("a").str.rjust(10).str.len_bytes().alias("rjust_len"),
-                pl.col("a").str.ljust(10).alias("ljust"),
-                pl.col("a").str.ljust(10).str.len_bytes().alias("ljust_len"),
-            ]
-        ).to_dict(False)
-    ) == {
-        "rjust": ["       foo", "longer_foo", "longest_fooooooo", "        hi"],
-        "rjust_len": [10, 10, 16, 10],
-        "ljust": ["foo       ", "longer_foo", "longest_fooooooo", "hi        "],
-        "ljust_len": [10, 10, 16, 10],
-    }
-
 
 def test_starts_ends_with() -> None:
     df = pl.DataFrame(
