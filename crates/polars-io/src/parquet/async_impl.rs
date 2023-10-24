@@ -110,7 +110,7 @@ async fn read_single_column_async(
     Ok((start as u64, chunk))
 }
 
-async fn read_columns_async2(
+async fn read_columns_async(
     async_reader: &ParquetObjectStore,
     ranges: &[(u64, u64)],
 ) -> PolarsResult<Vec<(u64, Bytes)>> {
@@ -146,7 +146,7 @@ async fn download_projection(
                 .collect::<Vec<_>>();
             let async_reader = async_reader.clone();
             let handle =
-                tokio::spawn(async move { read_columns_async2(&async_reader, &ranges).await });
+                tokio::spawn(async move { read_columns_async(&async_reader, &ranges).await });
             handle.await.unwrap()
         });
 
@@ -196,6 +196,9 @@ impl FetchRowGroupsFromObjectStore {
         &mut self,
         row_groups: Range<usize>,
     ) -> PolarsResult<ColumnStore> {
+        if row_groups.start == row_groups.end {
+            return Ok(ColumnStore::Fetched(Default::default()));
+        }
         // Fetch the required row groups.
         let row_groups = self
             .row_groups_metadata

@@ -161,15 +161,30 @@ impl ParquetExec {
         let cloud_options = self.cloud_options.as_ref();
 
         let mut result = vec![];
+        const MAX_CONCURRENT: usize = 64;
+        let batch_size = if let Some(md) = self.metadata.as_ref() {
+            let n_columns = self
+                .file_options
+                .with_columns
+                .as_ref()
+                .map(|opt| opt.len())
+                .unwrap_or(first_schema.len());
+            let concurrent_per_file = md.row_groups.len() * n_columns;
+            if verbose {
+                eprintln!(
+                    "estimated concurrent downloads per file: {}",
+                    concurrent_per_file
+                );
+            }
+            MAX_CONCURRENT / concurrent_per_file + 1
+        } else {
+            std::cmp::min(POOL.current_num_threads(), 16)
+        };
 
         let mut remaining_rows_to_read = self.file_options.n_rows.unwrap_or(usize::MAX);
         let mut base_row_count = self.file_options.row_count.take();
         let mut processed = 0;
-        for (batch_idx, paths) in self
-            .paths
-            .chunks(std::cmp::min(POOL.current_num_threads(), 128))
-            .enumerate()
-        {
+        for (batch_idx, paths) in self.paths.chunks(batch_size).enumerate() {
             if remaining_rows_to_read == 0 && !result.is_empty() {
                 return Ok(result);
             }
