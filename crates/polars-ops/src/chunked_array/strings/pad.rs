@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use polars_core::prelude::Utf8Chunked;
 
-pub(super) fn ljust<'a>(ca: &'a Utf8Chunked, width: usize, fillchar: char) -> Utf8Chunked {
+pub(super) fn pad_end<'a>(ca: &'a Utf8Chunked, width: usize, fillchar: char) -> Utf8Chunked {
     // amortize allocation
     let mut buf = String::new();
     let f = |s: &'a str| {
@@ -24,7 +24,7 @@ pub(super) fn ljust<'a>(ca: &'a Utf8Chunked, width: usize, fillchar: char) -> Ut
     ca.apply_mut(f)
 }
 
-pub(super) fn rjust<'a>(ca: &'a Utf8Chunked, width: usize, fillchar: char) -> Utf8Chunked {
+pub(super) fn pad_start<'a>(ca: &'a Utf8Chunked, width: usize, fillchar: char) -> Utf8Chunked {
     // amortize allocation
     let mut buf = String::new();
     let f = |s: &'a str| {

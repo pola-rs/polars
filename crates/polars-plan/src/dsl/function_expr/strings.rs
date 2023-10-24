@@ -46,11 +46,6 @@ pub enum StringFunction {
     FromRadix(u32, bool),
     LenBytes,
     LenChars,
-    #[cfg(feature = "string_justify")]
-    LJust {
-        width: usize,
-        fillchar: char,
-    },
     Lowercase,
     #[cfg(feature = "extract_jsonpath")]
     JsonExtract {
@@ -64,10 +59,15 @@ pub enum StringFunction {
         n: i64,
         literal: bool,
     },
-    #[cfg(feature = "string_justify")]
-    RJust {
-        width: usize,
-        fillchar: char,
+    #[cfg(feature = "string_pad")]
+    PadStart {
+        length: usize,
+        fill_char: char,
+    },
+    #[cfg(feature = "string_pad")]
+    PadEnd {
+        length: usize,
+        fill_char: char,
     },
     Slice(i64, Option<u64>),
     StartsWith,
@@ -91,8 +91,8 @@ pub enum StringFunction {
     #[cfg(feature = "nightly")]
     Titlecase,
     Uppercase,
-    #[cfg(feature = "string_justify")]
-    Zfill(usize),
+    #[cfg(feature = "string_pad")]
+    ZFill(usize),
 }
 
 impl StringFunction {
@@ -133,8 +133,8 @@ impl StringFunction {
             | StripPrefix
             | StripSuffix
             | Slice(_, _) => mapper.with_same_dtype(),
-            #[cfg(feature = "string_justify")]
-            Zfill { .. } | LJust { .. } | RJust { .. } => mapper.with_same_dtype(),
+            #[cfg(feature = "string_pad")]
+            PadStart { .. } | PadEnd { .. } | ZFill { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-struct")]
             SplitExact { n, .. } => mapper.with_dtype(DataType::Struct(
                 (0..n + 1)
@@ -171,13 +171,13 @@ impl Display for StringFunction {
             StringFunction::FromRadix { .. } => "from_radix",
             #[cfg(feature = "extract_jsonpath")]
             StringFunction::JsonExtract { .. } => "json_extract",
-            #[cfg(feature = "string_justify")]
-            StringFunction::LJust { .. } => "ljust",
             StringFunction::LenBytes => "len_bytes",
             StringFunction::Lowercase => "lowercase",
             StringFunction::LenChars => "len_chars",
-            #[cfg(feature = "string_justify")]
-            StringFunction::RJust { .. } => "rjust",
+            #[cfg(feature = "string_pad")]
+            StringFunction::PadEnd { .. } => "pad_end",
+            #[cfg(feature = "string_pad")]
+            StringFunction::PadStart { .. } => "pad_start",
             #[cfg(feature = "regex")]
             StringFunction::Replace { .. } => "replace",
             StringFunction::Slice(_, _) => "slice",
@@ -211,8 +211,8 @@ impl Display for StringFunction {
             #[cfg(feature = "dtype-decimal")]
             StringFunction::ToDecimal(_) => "to_decimal",
             StringFunction::Uppercase => "uppercase",
-            #[cfg(feature = "string_justify")]
-            StringFunction::Zfill(_) => "zfill",
+            #[cfg(feature = "string_pad")]
+            StringFunction::ZFill(_) => "zfill",
         };
         write!(f, "str.{s}")
     }
@@ -281,21 +281,22 @@ pub(super) fn extract_groups(s: &Series, pat: &str, dtype: &DataType) -> PolarsR
     ca.extract_groups(pat, dtype)
 }
 
-#[cfg(feature = "string_justify")]
-pub(super) fn zfill(s: &Series, alignment: usize) -> PolarsResult<Series> {
+#[cfg(feature = "string_pad")]
+pub(super) fn pad_start(s: &Series, length: usize, fill_char: char) -> PolarsResult<Series> {
     let ca = s.utf8()?;
-    Ok(ca.zfill(alignment).into_series())
+    Ok(ca.pad_start(length, fill_char).into_series())
 }
 
-#[cfg(feature = "string_justify")]
-pub(super) fn ljust(s: &Series, width: usize, fillchar: char) -> PolarsResult<Series> {
+#[cfg(feature = "string_pad")]
+pub(super) fn pad_end(s: &Series, length: usize, fill_char: char) -> PolarsResult<Series> {
     let ca = s.utf8()?;
-    Ok(ca.ljust(width, fillchar).into_series())
+    Ok(ca.pad_end(length, fill_char).into_series())
 }
-#[cfg(feature = "string_justify")]
-pub(super) fn rjust(s: &Series, width: usize, fillchar: char) -> PolarsResult<Series> {
+
+#[cfg(feature = "string_pad")]
+pub(super) fn zfill(s: &Series, length: usize) -> PolarsResult<Series> {
     let ca = s.utf8()?;
-    Ok(ca.rjust(width, fillchar).into_series())
+    Ok(ca.zfill(length).into_series())
 }
 
 pub(super) fn strip_chars(s: &[Series]) -> PolarsResult<Series> {

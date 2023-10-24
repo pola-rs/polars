@@ -1041,17 +1041,17 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             },
             LenBytes => map!(strings::len_bytes),
             LenChars => map!(strings::len_chars),
-            #[cfg(feature = "string_justify")]
-            Zfill(alignment) => {
+            #[cfg(feature = "string_pad")]
+            PadEnd { length, fill_char } => {
+                map!(strings::pad_end, length, fill_char)
+            },
+            #[cfg(feature = "string_pad")]
+            PadStart { length, fill_char } => {
+                map!(strings::pad_start, length, fill_char)
+            },
+            #[cfg(feature = "string_pad")]
+            ZFill(alignment) => {
                 map!(strings::zfill, alignment)
-            },
-            #[cfg(feature = "string_justify")]
-            LJust { width, fillchar } => {
-                map!(strings::ljust, width, fillchar)
-            },
-            #[cfg(feature = "string_justify")]
-            RJust { width, fillchar } => {
-                map!(strings::rjust, width, fillchar)
             },
             #[cfg(feature = "temporal")]
             Strptime(dtype, options) => {

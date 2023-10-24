@@ -6,8 +6,8 @@ mod concat;
 mod extract;
 #[cfg(feature = "extract_jsonpath")]
 mod json_path;
-#[cfg(feature = "string_justify")]
-mod justify;
+#[cfg(feature = "string_pad")]
+mod pad;
 #[cfg(feature = "strings")]
 mod namespace;
 #[cfg(feature = "strings")]

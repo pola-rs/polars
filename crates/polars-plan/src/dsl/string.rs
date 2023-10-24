@@ -93,31 +93,31 @@ impl StringNameSpace {
         ))
     }
 
-    /// Return a copy of the string left filled with ASCII '0' digits to make a string of length width.
-    /// A leading sign prefix ('+'/'-') is handled by inserting the padding after the sign character
-    /// rather than before.
+    /// Return the string right justified in a string of length width.
+    /// Padding is done using the specified `fillchar`,
     /// The original string is returned if width is less than or equal to `s.len()`.
-    #[cfg(feature = "string_justify")]
-    pub fn zfill(self, alignment: usize) -> Expr {
-        self.0.map_private(StringFunction::Zfill(alignment).into())
+    #[cfg(feature = "string_pad")]
+    pub fn pad_start(self, length: usize, fill_char: char) -> Expr {
+        self.0
+            .map_private(StringFunction::PadStart { length, fill_char }.into())
     }
 
     /// Return the string left justified in a string of length width.
     /// Padding is done using the specified `fillchar`,
     /// The original string is returned if width is less than or equal to `s.len()`.
-    #[cfg(feature = "string_justify")]
-    pub fn ljust(self, width: usize, fillchar: char) -> Expr {
+    #[cfg(feature = "string_pad")]
+    pub fn pad_end(self, length: usize, fill_char: char) -> Expr {
         self.0
-            .map_private(StringFunction::LJust { width, fillchar }.into())
+            .map_private(StringFunction::PadEnd { length, fill_char }.into())
     }
 
-    /// Return the string right justified in a string of length width.
-    /// Padding is done using the specified `fillchar`,
+    /// Return a copy of the string left filled with ASCII '0' digits to make a string of length width.
+    /// A leading sign prefix ('+'/'-') is handled by inserting the padding after the sign character
+    /// rather than before.
     /// The original string is returned if width is less than or equal to `s.len()`.
-    #[cfg(feature = "string_justify")]
-    pub fn rjust(self, width: usize, fillchar: char) -> Expr {
-        self.0
-            .map_private(StringFunction::RJust { width, fillchar }.into())
+    #[cfg(feature = "string_pad")]
+    pub fn zfill(self, length: usize) -> Expr {
+        self.0.map_private(StringFunction::ZFill(length).into())
     }
 
     /// Extract each successive non-overlapping match in an individual string as an array
