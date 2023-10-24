@@ -536,3 +536,21 @@ def test_cse_is_in_11489() -> None:
         "any_cond": [False, True, True, True, False],
         "val": [0.0, 1.0, 1.0, 1.0, 0.0],
     }
+
+
+def test_cse_11958() -> None:
+    df = pl.LazyFrame({"a": [1, 2, 3, 4, 5]})
+    vector_losses = []
+    for lag in range(1, 5):
+        difference = pl.col("a") - pl.col("a").shift(lag)
+        component_loss = pl.when(difference >= 0).then(difference * 10)
+        vector_losses.append(component_loss.alias(f"diff{lag}"))
+
+    q = df.select(vector_losses)
+    assert "__POLARS_CSE" in q.explain(comm_subexpr_elim=True)
+    assert q.collect(comm_subexpr_elim=True).to_dict(False) == {
+        "diff1": [None, 10, 10, 10, 10],
+        "diff2": [None, None, 20, 20, 20],
+        "diff3": [None, None, None, 30, 30],
+        "diff4": [None, None, None, None, 40],
+    }

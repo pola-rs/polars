@@ -21,7 +21,7 @@ repository = "https://github.com/pola-rs/polars"
 license = "MIT"
 
 [workspace.dependencies]
-ahash = "0.8"
+ahash = ">=0.8.5"
 atoi = "2"
 bitflags = "2"
 bytemuck = { version = "1", features = ["derive", "extern_crate_alloc"] }

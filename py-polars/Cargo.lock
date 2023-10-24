@@ -1830,6 +1830,7 @@ name = "polars-plan"
 version = "0.33.2"
 dependencies = [
  "ahash",
+ "bytemuck",
  "chrono",
  "chrono-tz",
  "ciborium",
@@ -3178,3 +3179,8 @@ dependencies = [
  "libc",
  "pkg-config",
 ]
+
+[[patch.unused]]
+name = "ahash"
+version = "0.8.3"
+source = "git+https://github.com/orlp/aHash?branch=fix-arm-intrinsics#80685f88d3c120ef39fb3fde1c7786b044af5e8b"
