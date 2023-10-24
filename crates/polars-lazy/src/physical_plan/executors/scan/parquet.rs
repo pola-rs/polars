@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use polars_core::config::verbose;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::utils::arrow::io::parquet::read::FileMetaData;
 use polars_io::cloud::CloudOptions;
@@ -154,97 +155,141 @@ impl ParquetExec {
 
     #[cfg(feature = "cloud")]
     async fn read_async(&mut self) -> PolarsResult<Vec<DataFrame>> {
+        let verbose = verbose();
         let first_schema = &self.file_info.reader_schema;
         let first_metadata = &self.metadata;
         let cloud_options = self.cloud_options.as_ref();
-        // First initialize the readers and get the metadata concurrently.
-        let iter = self.paths.iter().enumerate().map(|(i, path)| async move {
-            // use the cached one as this saves a cloud call
-            let metadata = if i == 0 { first_metadata.clone() } else { None };
-            let mut reader = ParquetAsyncReader::from_uri(
-                &path.to_string_lossy(),
-                cloud_options,
-                // Schema must be the same for all files. The hive partitions are included in this schema.
-                Some(first_schema.clone()),
-                metadata,
-            )
-            .await?;
-            let num_rows = reader.num_rows().await?;
-            PolarsResult::Ok((num_rows, reader))
-        });
-        let readers_and_metadata = futures::future::try_join_all(iter).await?;
 
-        // Then compute `n_rows` to be taken per file up front, so we can actually read concurrently
-        // after this.
-        let n_rows_to_read = self.file_options.n_rows.unwrap_or(usize::MAX);
-        let iter = readers_and_metadata
-            .iter()
-            .map(|(num_rows, _)| num_rows)
-            .copied();
+        let mut result = vec![];
 
-        let rows_statistics = get_sequential_row_statistics(iter, n_rows_to_read);
+        let mut remaining_rows_to_read = self.file_options.n_rows.unwrap_or(usize::MAX);
+        let mut base_row_count = self.file_options.row_count.take();
+        let mut processed = 0;
+        for (batch_idx, paths) in self
+            .paths
+            .chunks(std::cmp::min(POOL.current_num_threads(), 128))
+            .enumerate()
+        {
+            if remaining_rows_to_read == 0 && !result.is_empty() {
+                return Ok(result);
+            }
+            processed += paths.len();
+            if verbose {
+                eprintln!(
+                    "querying metadata of {}/{} files...",
+                    processed,
+                    self.paths.len()
+                );
+            }
 
-        // Now read the actual data.
-        let base_row_count = &self.file_options.row_count;
-        let file_info = &self.file_info;
-        let file_options = &self.file_options;
-        let paths = &self.paths;
-        let use_statistics = self.options.use_statistics;
-        let predicate = &self.predicate;
+            // First initialize the readers and get the metadata concurrently.
+            let iter = paths.iter().enumerate().map(|(i, path)| async move {
+                let first_file = batch_idx == 0 && i == 0;
+                // use the cached one as this saves a cloud call
+                let (metadata, schema) = if first_file { (first_metadata.clone(), Some(first_schema.clone())) } else { (None, None) };
+                let mut reader = ParquetAsyncReader::from_uri(
+                    &path.to_string_lossy(),
+                    cloud_options,
+                    // Schema must be the same for all files. The hive partitions are included in this schema.
+                    schema,
+                    metadata,
+                )
+                .await?;
 
-        let iter = readers_and_metadata
-            .into_iter()
-            .zip(rows_statistics.iter())
-            .zip(paths.as_ref().iter())
-            .map(
-                |(
-                    ((num_rows_this_file, reader), (remaining_rows_to_read, cumulative_read)),
-                    path,
-                )| async move {
-                    let mut file_info = file_info.clone();
-                    let remaining_rows_to_read = *remaining_rows_to_read;
-                    let remaining_rows_to_read = if num_rows_this_file < remaining_rows_to_read {
-                        None
-                    } else {
-                        Some(remaining_rows_to_read)
-                    };
-                    let row_count = base_row_count.as_ref().map(|rc| RowCount {
-                        name: rc.name.clone(),
-                        offset: rc.offset + *cumulative_read as IdxSize,
-                    });
+                if !first_file {
+                    polars_ensure!(reader.schema().await?.as_ref() == first_schema.as_ref(), ComputeError: "schema of all files in a single scan_parquet must be equal");
+                }
 
-                    file_info.update_hive_partitions(path);
+                let num_rows = reader.num_rows().await?;
+                PolarsResult::Ok((num_rows, reader))
+            });
+            let readers_and_metadata = futures::future::try_join_all(iter).await?;
 
-                    let hive_partitions = file_info
-                        .hive_parts
-                        .as_ref()
-                        .map(|hive| hive.materialize_partition_columns());
+            // Then compute `n_rows` to be taken per file up front, so we can actually read concurrently
+            // after this.
+            let iter = readers_and_metadata
+                .iter()
+                .map(|(num_rows, _)| num_rows)
+                .copied();
 
-                    let (_, projection, predicate) = prepare_scan_args(
-                        Path::new(""),
-                        predicate,
-                        &mut file_options.with_columns.clone(),
-                        &mut file_info.schema.clone(),
-                        row_count.is_some(),
-                        hive_partitions.as_deref(),
-                    );
+            let rows_statistics = get_sequential_row_statistics(iter, remaining_rows_to_read);
 
-                    reader
-                        .with_n_rows(remaining_rows_to_read)
-                        .with_row_count(row_count)
-                        .with_projection(projection)
-                        .use_statistics(use_statistics)
-                        .with_predicate(predicate)
-                        .set_rechunk(false)
-                        .with_hive_partition_columns(hive_partitions)
-                        .finish()
-                        .await
-                        .map(Some)
-                },
-            );
+            // Now read the actual data.
+            let file_info = &self.file_info;
+            let file_options = &self.file_options;
+            let use_statistics = self.options.use_statistics;
+            let predicate = &self.predicate;
+            let base_row_count_ref = &base_row_count;
 
-        let dfs = futures::future::try_join_all(iter).await?;
-        Ok(dfs.into_iter().flatten().collect())
+            if verbose {
+                eprintln!("reading of {}/{} file...", processed, self.paths.len());
+            }
+
+            let iter = readers_and_metadata
+                .into_iter()
+                .zip(rows_statistics.iter())
+                .zip(paths.as_ref().iter())
+                .map(
+                    |(
+                        ((num_rows_this_file, reader), (remaining_rows_to_read, cumulative_read)),
+                        path,
+                    )| async move {
+                        let mut file_info = file_info.clone();
+                        let remaining_rows_to_read = *remaining_rows_to_read;
+                        let remaining_rows_to_read = if num_rows_this_file < remaining_rows_to_read
+                        {
+                            None
+                        } else {
+                            Some(remaining_rows_to_read)
+                        };
+                        let row_count = base_row_count_ref.as_ref().map(|rc| RowCount {
+                            name: rc.name.clone(),
+                            offset: rc.offset + *cumulative_read as IdxSize,
+                        });
+
+                        file_info.update_hive_partitions(path);
+
+                        let hive_partitions = file_info
+                            .hive_parts
+                            .as_ref()
+                            .map(|hive| hive.materialize_partition_columns());
+
+                        let (_, projection, predicate) = prepare_scan_args(
+                            Path::new(""),
+                            predicate,
+                            &mut file_options.with_columns.clone(),
+                            &mut file_info.schema.clone(),
+                            row_count.is_some(),
+                            hive_partitions.as_deref(),
+                        );
+
+                        reader
+                            .with_n_rows(remaining_rows_to_read)
+                            .with_row_count(row_count)
+                            .with_projection(projection)
+                            .use_statistics(use_statistics)
+                            .with_predicate(predicate)
+                            .set_rechunk(false)
+                            .with_hive_partition_columns(hive_partitions)
+                            .finish()
+                            .await
+                            .map(Some)
+                    },
+                );
+
+            let dfs = futures::future::try_join_all(iter).await?;
+            let n_read = dfs
+                .iter()
+                .map(|opt_df| opt_df.as_ref().map(|df| df.height()).unwrap_or(0))
+                .sum();
+            remaining_rows_to_read = remaining_rows_to_read.saturating_sub(n_read);
+            if let Some(rc) = &mut base_row_count {
+                rc.offset += n_read as IdxSize;
+            }
+            result.extend(dfs.into_iter().flatten())
+        }
+
+        Ok(result)
     }
 
     fn read(&mut self) -> PolarsResult<DataFrame> {

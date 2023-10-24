@@ -30,6 +30,8 @@ pub use crate::chunked_array::ops::*;
 pub use crate::chunked_array::temporal::conversion::*;
 pub(crate) use crate::chunked_array::ChunkIdIter;
 pub use crate::chunked_array::ChunkedArray;
+#[cfg(feature = "dtype-categorical")]
+pub use crate::datatypes::string_cache::StringCacheHolder;
 pub use crate::datatypes::{ArrayCollectIterExt, *};
 pub use crate::error::{
     polars_bail, polars_ensure, polars_err, polars_warn, PolarsError, PolarsResult,

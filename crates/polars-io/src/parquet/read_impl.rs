@@ -329,12 +329,27 @@ fn rg_to_dfs_par_over_rg(
     Ok(dfs.into_iter().flatten().collect())
 }
 
+fn materialize_empty_df(
+    projection: Option<&[usize]>,
+    reader_schema: &Schema,
+    hive_partition_columns: Option<&[Series]>,
+) -> DataFrame {
+    let schema = if let Some(projection) = projection {
+        Cow::Owned(apply_projection_pl_schema(reader_schema, projection))
+    } else {
+        Cow::Borrowed(reader_schema)
+    };
+    let mut df = DataFrame::from(schema.as_ref());
+    materialize_hive_partitions(&mut df, hive_partition_columns, 0);
+    df
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet<R: MmapBytesReader>(
     mut reader: R,
     mut limit: usize,
     projection: Option<&[usize]>,
-    schema: &SchemaRef,
+    reader_schema: &SchemaRef,
     metadata: Option<FileMetaDataRef>,
     predicate: Option<&dyn PhysicalIoExpr>,
     mut parallel: ParallelStrategy,
@@ -343,10 +358,12 @@ pub fn read_parquet<R: MmapBytesReader>(
     hive_partition_columns: Option<&[Series]>,
 ) -> PolarsResult<DataFrame> {
     // Fast path.
-    if limit == 0 && hive_partition_columns.is_none() {
-        let mut df = DataFrame::from(schema.as_ref());
-        materialize_hive_partitions(&mut df, hive_partition_columns, 0);
-        return Ok(df);
+    if limit == 0 {
+        return Ok(materialize_empty_df(
+            projection,
+            reader_schema,
+            hive_partition_columns,
+        ));
     }
 
     let file_metadata = metadata
@@ -370,19 +387,20 @@ pub fn read_parquet<R: MmapBytesReader>(
         None
     };
 
-    let projection = projection
+    let materialized_projection = projection
         .map(Cow::Borrowed)
-        .unwrap_or_else(|| Cow::Owned((0usize..schema.len()).collect::<Vec<_>>()));
+        .unwrap_or_else(|| Cow::Owned((0usize..reader_schema.len()).collect::<Vec<_>>()));
 
     if let ParallelStrategy::Auto = parallel {
-        if n_row_groups > projection.len() || n_row_groups > POOL.current_num_threads() {
+        if n_row_groups > materialized_projection.len() || n_row_groups > POOL.current_num_threads()
+        {
             parallel = ParallelStrategy::RowGroups;
         } else {
             parallel = ParallelStrategy::Columns;
         }
     }
 
-    if let (ParallelStrategy::Columns, true) = (parallel, projection.len() == 1) {
+    if let (ParallelStrategy::Columns, true) = (parallel, materialized_projection.len() == 1) {
         parallel = ParallelStrategy::None;
     }
 
@@ -397,27 +415,21 @@ pub fn read_parquet<R: MmapBytesReader>(
         n_row_groups,
         &mut limit,
         &file_metadata,
-        schema,
+        reader_schema,
         predicate,
         row_count,
         parallel,
-        &projection,
+        &materialized_projection,
         use_statistics,
         hive_partition_columns,
     )?;
 
     if dfs.is_empty() {
-        let schema = if let Cow::Borrowed(_) = projection {
-            Cow::Owned(Arc::new(apply_projection_pl_schema(
-                schema.as_ref(),
-                &projection,
-            )))
-        } else {
-            Cow::Borrowed(schema)
-        };
-        let mut df = DataFrame::from(schema.as_ref().as_ref());
-        materialize_hive_partitions(&mut df, hive_partition_columns, 0);
-        Ok(df)
+        Ok(materialize_empty_df(
+            projection,
+            reader_schema,
+            hive_partition_columns,
+        ))
     } else {
         accumulate_dataframes_vertical(dfs)
     }
@@ -492,6 +504,8 @@ pub struct BatchedParquetReader {
     chunk_size: usize,
     use_statistics: bool,
     hive_partition_columns: Option<Vec<Series>>,
+    /// Has returned at least one materialized frame.
+    has_returned: bool,
 }
 
 impl BatchedParquetReader {
@@ -534,14 +548,31 @@ impl BatchedParquetReader {
             chunk_size,
             use_statistics,
             hive_partition_columns,
+            has_returned: false,
         })
     }
 
     pub async fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
+        if self.limit == 0 && self.has_returned {
+            return Ok(None);
+        }
+
         // fill up fifo stack
         if self.row_group_offset <= self.n_row_groups && self.chunks_fifo.len() < n {
+            // Ensure we apply the limit on the metadata, before we download the row-groups.
             let row_group_start = self.row_group_offset;
-            let row_group_end = std::cmp::min(self.row_group_offset + n, self.n_row_groups);
+            let mut row_group_end = row_group_start;
+            let mut acc_row_count = 0;
+            for rg_i in
+                row_group_start..(std::cmp::min(self.row_group_offset + n, self.n_row_groups))
+            {
+                if acc_row_count >= self.limit {
+                    break;
+                }
+                row_group_end = rg_i + 1;
+                acc_row_count += self.metadata.row_groups[rg_i].num_rows();
+            }
+
             let store = self
                 .row_group_fetcher
                 .fetch_row_groups(row_group_start..row_group_end)
@@ -567,8 +598,11 @@ impl BatchedParquetReader {
             // case where there is no data in the file
             // the streaming engine needs at least a single chunk
             if self.rows_read == 0 && dfs.is_empty() {
-                let df = DataFrame::from(self.schema.as_ref());
-                return Ok(Some(vec![df]));
+                return Ok(Some(vec![materialize_empty_df(
+                    Some(&self.projection),
+                    self.schema.as_ref(),
+                    self.hive_partition_columns.as_deref(),
+                )]));
             }
 
             // TODO! this is slower than it needs to be
@@ -600,6 +634,7 @@ impl BatchedParquetReader {
                 }
             }
 
+            self.has_returned |= true;
             Ok(Some(chunks))
         }
     }
