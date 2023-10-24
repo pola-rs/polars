@@ -308,7 +308,7 @@ pub(super) fn join_asof_nearest<T: PartialOrd + Copy + Debug + Sub<Output = T> +
                 },
 
                 None => {
-                    if offset > 1 {
+                    if offset >= 1 {
                         // we've reached the end with no matches, so the last item is the nearest for all remaining
                         out.extend(
                             std::iter::repeat(Some(offset - 1)).take(left.len() - out.len()),
