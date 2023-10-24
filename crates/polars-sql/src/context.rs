@@ -25,7 +25,7 @@ pub struct SQLContext {
     pub(crate) table_map: PlHashMap<String, LazyFrame>,
     pub(crate) function_registry: Arc<dyn FunctionRegistry>,
     cte_map: RefCell<PlHashMap<String, LazyFrame>>,
-    pub(super) aliases: RefCell<PlHashMap<String, String>>,
+    aliases: RefCell<PlHashMap<String, String>>,
 }
 
 impl Default for SQLContext {
