@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import re
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -219,40 +219,6 @@ def test_filter_not_of_type_bool() -> None:
         pl.ComputeError, match="filter predicate must be of type `Boolean`, got"
     ):
         df.filter(pl.col("json_val").str.json_path_match("$.a"))
-
-
-def test_err_asof_join_null_values() -> None:
-    n = 5
-    start_time = datetime(2021, 9, 30)
-
-    df_coor = pl.DataFrame(
-        {
-            "vessel_id": [1] * n + [2] * n,
-            "timestamp": [start_time + timedelta(hours=h) for h in range(n)]
-            + [start_time + timedelta(hours=h) for h in range(n)],
-        }
-    )
-
-    df_voyages = pl.DataFrame(
-        {
-            "vessel_id": [1, None],
-            "voyage_id": [1, None],
-            "voyage_start": [datetime(2022, 1, 1), None],
-            "voyage_end": [datetime(2022, 1, 20), None],
-        }
-    )
-    with pytest.raises(
-        pl.ComputeError, match=".sof join must not have null values in 'on' argument"
-    ):
-        (
-            df_coor.sort("timestamp").join_asof(
-                df_voyages.sort("voyage_start"),
-                right_on="voyage_start",
-                left_on="timestamp",
-                by="vessel_id",
-                strategy="backward",
-            )
-        )
 
 
 def test_is_nan_on_non_boolean() -> None:

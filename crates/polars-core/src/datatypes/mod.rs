@@ -35,6 +35,7 @@ use bytemuck::Zeroable;
 pub use dtype::*;
 pub use field::*;
 use num_traits::{Bounded, FromPrimitive, Num, NumCast, One, Zero};
+use polars_utils::abs_diff::AbsDiff;
 #[cfg(feature = "serde")]
 use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
@@ -61,7 +62,7 @@ pub struct Flat;
 ///
 /// The StaticArray and dtype return must be correct.
 pub unsafe trait PolarsDataType: Send + Sync + Sized {
-    type Physical<'a>;
+    type Physical<'a>: std::fmt::Debug;
     type ZeroablePhysical<'a>: Zeroable + From<Self::Physical<'a>>;
     type Array: for<'a> StaticArray<
         ValueT<'a> = Self::Physical<'a>,
@@ -255,6 +256,7 @@ pub trait NumericNative:
     + Rem<Output = Self>
     + AddAssign
     + SubAssign
+    + AbsDiff
     + Bounded
     + FromPrimitive
     + IsFloat
