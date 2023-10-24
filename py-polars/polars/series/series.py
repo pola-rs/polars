@@ -5084,53 +5084,62 @@ class Series:
         )
 
     @deprecate_renamed_parameter("periods", "n", version="0.19.11")
-    def shift(self, n: int = 1) -> Series:
+    def shift(self, n: int = 1, *, fill_value: IntoExpr | None = None) -> Series:
         """
-        Shift values by the given number of places.
+        Shift values by the given number of indices.
 
         Parameters
         ----------
         n
-            Number of places to shift (may be negative).
+            Number of indices to shift forward. If a negative value is passed, values
+            are shifted in the opposite direction instead.
+        fill_value
+            Fill the resulting null values with this value. Accepts expression input.
+            Non-expression inputs are parsed as literals.
+
+        Notes
+        -----
+        This method is similar to the ``LAG`` operation in SQL when the value for ``n``
+        is positive. With a negative value for ``n``, it is similar to ``LEAD``.
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.shift(1)
-        shape: (3,)
-        Series: 'a' [i64]
+        By default, values are shifted forward by one index.
+
+        >>> s = pl.Series([1, 2, 3, 4])
+        >>> s.shift()
+        shape: (4,)
+        Series: '' [i64]
         [
                 null
                 1
                 2
-        ]
-        >>> s.shift(-1)
-        shape: (3,)
-        Series: 'a' [i64]
-        [
-                2
                 3
+        ]
+
+        Pass a negative value to shift in the opposite direction instead.
+
+        >>> s.shift(-2)
+        shape: (4,)
+        Series: '' [i64]
+        [
+                3
+                4
+                null
                 null
         ]
 
-        """
+        Specify ``fill_value`` to fill the resulting null values.
 
-    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
-    def shift_and_fill(
-        self,
-        fill_value: int | Expr,
-        *,
-        n: int = 1,
-    ) -> Series:
-        """
-        Shift values by the given number of places and fill the resulting null values.
-
-        Parameters
-        ----------
-        fill_value
-            Fill None values with the result of this expression.
-        n
-            Number of places to shift (may be negative).
+        >>> s.shift(-2, fill_value=100)
+        shape: (4,)
+        Series: '' [i64]
+        [
+                3
+                4
+                100
+                100
+        ]
 
         """
 
@@ -6866,6 +6875,29 @@ class Series:
         ----------
         upper_bound
             Upper bound.
+
+        """
+
+    @deprecate_function("Use `shift` instead.", version="0.19.12")
+    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
+    def shift_and_fill(
+        self,
+        fill_value: int | Expr,
+        *,
+        n: int = 1,
+    ) -> Series:
+        """
+        Shift values by the given number of places and fill the resulting null values.
+
+        .. deprecated:: 0.19.12
+            Use :func:`shift` instead.
+
+        Parameters
+        ----------
+        fill_value
+            Fill None values with the result of this expression.
+        n
+            Number of places to shift (may be negative).
 
         """
 

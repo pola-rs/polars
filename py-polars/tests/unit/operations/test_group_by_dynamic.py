@@ -319,11 +319,7 @@ def test_group_by_dynamic_slice_pushdown() -> None:
     df = (
         df.sort("a")
         .group_by_dynamic("a", by="b", every="2i")
-        .agg(
-            (pl.col("c") - pl.col("c").shift_and_fill(fill_value=0, n=1))
-            .sum()
-            .alias("c")
-        )
+        .agg((pl.col("c") - pl.col("c").shift(fill_value=0)).sum().alias("c"))
     )
     assert df.head(2).collect().to_dict(False) == {
         "b": ["a", "a"],

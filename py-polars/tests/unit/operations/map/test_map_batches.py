@@ -22,7 +22,7 @@ def test_map_no_dtype_set_8531() -> None:
     df = pl.DataFrame({"a": [1]})
 
     result = df.with_columns(
-        pl.col("a").map_batches(lambda x: x * 2).shift_and_fill(fill_value=0, n=0)
+        pl.col("a").map_batches(lambda x: x * 2).shift(n=0, fill_value=0)
     )
 
     expected = pl.DataFrame({"a": [2]})
