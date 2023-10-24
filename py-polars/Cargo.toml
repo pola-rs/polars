@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.19.11"
+version = "0.19.12-rc.1"
 edition = "2021"
 
 [lib]
