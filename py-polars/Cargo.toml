@@ -237,9 +237,6 @@ lto = "thin"
 codegen-units = 1
 lto = "fat"
 
-[patch.crates-io]
-ahash = { git = "https://github.com/orlp/aHash", branch = "fix-arm-intrinsics" }
-
 # This is ignored here; would be set in .cargo/config.toml.
 # Should not be used when packaging
 # target-cpu = "native"
