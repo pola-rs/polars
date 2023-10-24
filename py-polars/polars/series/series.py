@@ -90,6 +90,7 @@ from polars.utils.convert import (
     _time_to_pl_time,
 )
 from polars.utils.deprecation import (
+    deprecate_function,
     deprecate_nonkeyword_arguments,
     deprecate_renamed_function,
     deprecate_renamed_parameter,
@@ -6166,72 +6167,58 @@ class Series:
 
     def clip(
         self,
-        lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn,
-        upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn,
+        lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn | None = None,
+        upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn | None = None,
     ) -> Series:
         """
-        Clip (limit) the values in an array to a `min` and `max` boundary.
-
-        Only works for physical numerical types.
-
-        If you want to clip other dtypes, consider writing a "when, then, otherwise"
-        expression. See :func:`when` for more information.
+        Set values outside the given boundaries to the boundary value.
 
         Parameters
         ----------
         lower_bound
-            Minimum value.
+            Lower bound. Accepts expression input.
+            Non-expression inputs are parsed as literals.
+            If set to ``None`` (default), no lower bound is applied.
         upper_bound
-            Maximum value.
+            Upper bound. Accepts expression input.
+            Non-expression inputs are parsed as literals.
+            If set to ``None`` (default), no upper bound is applied.
+
+        See Also
+        --------
+        when
+
+        Notes
+        -----
+        This method only works for numeric and temporal columns. To clip other data
+        types, consider writing a `when-then-otherwise` expression. See :func:`when`.
 
         Examples
         --------
-        >>> s = pl.Series("foo", [-50, 5, None, 50])
+        Specifying both a lower and upper bound:
+
+        >>> s = pl.Series([-50, 5, 50, None])
         >>> s.clip(1, 10)
         shape: (4,)
-        Series: 'foo' [i64]
+        Series: '' [i64]
         [
-            1
-            5
-            null
-            10
+                1
+                5
+                10
+                null
         ]
 
-        """
+        Specifying only a single bound:
 
-    def clip_min(
-        self, lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
-    ) -> Series:
-        """
-        Clip (limit) the values in an array to a `min` boundary.
-
-        Only works for physical numerical types.
-
-        If you want to clip other dtypes, consider writing a "when, then, otherwise"
-        expression. See :func:`when` for more information.
-
-        Parameters
-        ----------
-        lower_bound
-            Lower bound.
-
-        """
-
-    def clip_max(
-        self, upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
-    ) -> Series:
-        """
-        Clip (limit) the values in an array to a `max` boundary.
-
-        Only works for physical numerical types.
-
-        If you want to clip other dtypes, consider writing a "when, then, otherwise"
-        expression. See :func:`when` for more information.
-
-        Parameters
-        ----------
-        upper_bound
-            Upper bound.
+        >>> s.clip(upper_bound=10)
+        shape: (4,)
+        Series: '' [i64]
+        [
+                -50
+                5
+                10
+                null
+        ]
 
         """
 
@@ -6845,6 +6832,40 @@ class Series:
         -------
         Series
             Series of data type :class:`Boolean`.
+
+        """
+
+    @deprecate_function("Use `clip` instead.", version="0.19.12")
+    def clip_min(
+        self, lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
+    ) -> Series:
+        """
+        Clip (limit) the values in an array to a `min` boundary.
+
+        .. deprecated:: 0.19.12
+            Use :func:`clip` instead.
+
+        Parameters
+        ----------
+        lower_bound
+            Lower bound.
+
+        """
+
+    @deprecate_function("Use `clip` instead.", version="0.19.12")
+    def clip_max(
+        self, upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
+    ) -> Series:
+        """
+        Clip (limit) the values in an array to a `max` boundary.
+
+        .. deprecated:: 0.19.12
+            Use :func:`clip` instead.
+
+        Parameters
+        ----------
+        upper_bound
+            Upper bound.
 
         """
 
