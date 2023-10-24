@@ -370,6 +370,7 @@ impl Hash for FunctionExpr {
             FunctionExpr::AsStruct => {},
             #[cfg(feature = "sign")]
             FunctionExpr::Sign => {},
+            #[cfg(feature = "row_hash")]
             FunctionExpr::Hash(a, b, c, d) => (a, b, c, d).hash(state),
             FunctionExpr::FillNull { super_type } => super_type.hash(state),
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
