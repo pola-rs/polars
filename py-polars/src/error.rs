@@ -64,17 +64,17 @@ impl Debug for PyPolarsErr {
     }
 }
 
-create_exception!(polars.exceptions, ColumnNotFoundError, PyException);
-create_exception!(polars.exceptions, ComputeError, PyException);
-create_exception!(polars.exceptions, DuplicateError, PyException);
-create_exception!(polars.exceptions, InvalidOperationError, PyException);
-create_exception!(polars.exceptions, NoDataError, PyException);
-create_exception!(polars.exceptions, OutOfBoundsError, PyException);
-create_exception!(polars.exceptions, SchemaError, PyException);
-create_exception!(polars.exceptions, SchemaFieldNotFoundError, PyException);
-create_exception!(polars.exceptions, ShapeError, PyException);
-create_exception!(polars.exceptions, StringCacheMismatchError, PyException);
-create_exception!(polars.exceptions, StructFieldNotFoundError, PyException);
+create_exception!(exceptions, ColumnNotFoundError, PyException);
+create_exception!(exceptions, ComputeError, PyException);
+create_exception!(exceptions, DuplicateError, PyException);
+create_exception!(exceptions, InvalidOperationError, PyException);
+create_exception!(exceptions, NoDataError, PyException);
+create_exception!(exceptions, OutOfBoundsError, PyException);
+create_exception!(exceptions, SchemaError, PyException);
+create_exception!(exceptions, SchemaFieldNotFoundError, PyException);
+create_exception!(exceptions, ShapeError, PyException);
+create_exception!(exceptions, StringCacheMismatchError, PyException);
+create_exception!(exceptions, StructFieldNotFoundError, PyException);
 
 #[macro_export]
 macro_rules! raise_err(

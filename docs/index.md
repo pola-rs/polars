@@ -52,6 +52,10 @@ See the results in h2oai's [db-benchmark](https://duckdblabs.github.io/db-benchm
 
 {{code_block('home/example','example',['scan_csv','filter','group_by','collect'])}}
 
+## Sponsors
+
+[<img src="https://raw.githubusercontent.com/pola-rs/polars-static/master/sponsors/xomnia.png" style="height:50px"/>](https://www.xomnia.com/) &emsp; [<img src="https://www.jetbrains.com/company/brand/img/jetbrains_logo.png" style="height:50px"; />](https://www.jetbrains.com)
+
 ## Community
 
 `Polars` has a very active community with frequent releases (approximately weekly). Below are some of the top contributors to the project:

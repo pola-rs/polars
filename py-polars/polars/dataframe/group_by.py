@@ -800,7 +800,7 @@ class RollingGroupBy:
         groups_df = (
             self.df.lazy()
             .with_row_count(name=temp_col)
-            .rolling(
+            .group_by_rolling(
                 index_column=self.time_column,
                 period=self.period,
                 offset=self.offset,
@@ -859,7 +859,7 @@ class RollingGroupBy:
         """
         return (
             self.df.lazy()
-            .rolling(
+            .group_by_rolling(
                 index_column=self.time_column,
                 period=self.period,
                 offset=self.offset,
@@ -903,7 +903,7 @@ class RollingGroupBy:
         """
         return (
             self.df.lazy()
-            .rolling(
+            .group_by_rolling(
                 index_column=self.time_column,
                 period=self.period,
                 offset=self.offset,

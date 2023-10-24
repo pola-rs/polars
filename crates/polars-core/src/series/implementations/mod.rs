@@ -105,6 +105,16 @@ macro_rules! impl_dyn_series {
                 self.0.explode_by_offsets(offsets)
             }
 
+            #[cfg(feature = "cum_agg")]
+            fn _cummax(&self, reverse: bool) -> Series {
+                self.0.cummax(reverse).into_series()
+            }
+
+            #[cfg(feature = "cum_agg")]
+            fn _cummin(&self, reverse: bool) -> Series {
+                self.0.cummin(reverse).into_series()
+            }
+
             unsafe fn equal_element(
                 &self,
                 idx_self: usize,

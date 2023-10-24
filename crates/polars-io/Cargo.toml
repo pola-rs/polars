@@ -10,7 +10,7 @@ description = "IO related logic for the Polars DataFrame library"
 
 [dependencies]
 polars-core = { workspace = true }
-polars-error = { workspace = true }
+polars-error = { workspace = true, default-features = false }
 polars-json = { workspace = true, optional = true }
 polars-time = { workspace = true, features = [], optional = true }
 polars-utils = { workspace = true }

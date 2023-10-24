@@ -25,9 +25,7 @@ Polars provides some standard asserts for use with unit tests:
    :toctree: api/
 
     testing.assert_frame_equal
-    testing.assert_frame_not_equal
     testing.assert_series_equal
-    testing.assert_series_not_equal
 
 
 Parametric testing

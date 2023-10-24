@@ -33,7 +33,7 @@ def concat(
     ----------
     items
         DataFrames, LazyFrames, or Series to concatenate.
-    how : {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'align'}
+    how : {'vertical', 'vertical_relaxed', 'diagonal', 'horizontal', 'align'}
         Series only support the `vertical` strategy.
         LazyFrames do not support the `horizontal` strategy.
 
@@ -125,7 +125,7 @@ def concat(
     │ 3   ┆ null ┆ 6    ┆ 8    │
     └─────┴──────┴──────┴──────┘
 
-    """  # noqa: W505
+    """
     # unpack/standardise (handles generator input)
     elems = list(items)
 

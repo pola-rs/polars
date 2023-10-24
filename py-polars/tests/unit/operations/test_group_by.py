@@ -744,32 +744,7 @@ def test_groupby_rolling_deprecated() -> None:
             .collect()
         )
 
-    expected = df.rolling("date", period="2d").agg(pl.sum("value"))
-    assert_frame_equal(result, expected, check_row_order=False)
-    assert_frame_equal(result_lazy, expected, check_row_order=False)
-
-
-def test_group_by_rolling_deprecated() -> None:
-    df = pl.DataFrame(
-        {
-            "date": pl.datetime_range(
-                datetime(2020, 1, 1), datetime(2020, 1, 5), eager=True
-            ),
-            "value": [1, 2, 3, 4, 5],
-        }
-    )
-
-    with pytest.deprecated_call():
-        result = df.group_by_rolling("date", period="2d").agg(pl.sum("value"))
-    with pytest.deprecated_call():
-        result_lazy = (
-            df.lazy()
-            .groupby_rolling("date", period="2d")
-            .agg(pl.sum("value"))
-            .collect()
-        )
-
-    expected = df.rolling("date", period="2d").agg(pl.sum("value"))
+    expected = df.group_by_rolling("date", period="2d").agg(pl.sum("value"))
     assert_frame_equal(result, expected, check_row_order=False)
     assert_frame_equal(result_lazy, expected, check_row_order=False)
 
@@ -813,19 +788,3 @@ def test_group_by_list_scalar_11749() -> None:
         "group_name": ["a;b", "c;d"],
         "eq": [[True, True, True, True], [True, False]],
     }
-
-
-def test_group_by_with_expr_as_key() -> None:
-    gb = pl.select(x=1).group_by(pl.col("x").alias("key"))
-    assert gb.agg(pl.all().first()).frame_equal(gb.agg(pl.first("x")))
-
-    # tests: 11766
-    assert gb.head(0).frame_equal(gb.agg(pl.col("x").head(0)).explode("x"))
-    assert gb.tail(0).frame_equal(gb.agg(pl.col("x").tail(0)).explode("x"))
-
-
-def test_lazy_group_by_reuse_11767() -> None:
-    lgb = pl.select(x=1).lazy().group_by("x")
-    a = lgb.count()
-    b = lgb.count()
-    assert a.collect().frame_equal(b.collect())

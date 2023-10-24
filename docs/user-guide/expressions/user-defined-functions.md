@@ -1,4 +1,4 @@
-# User-defined functions (Python)
+# User-defined functions
 
 !!! warning "Not updated for Python Polars `0.19.0`"
 

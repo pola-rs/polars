@@ -4,7 +4,7 @@ use tokio::sync::RwLock;
 
 use super::*;
 
-type CacheKey = (String, Option<CloudOptions>);
+type CacheKey = (CloudType, Option<CloudOptions>);
 
 /// A very simple cache that only stores a single object-store.
 /// This greatly reduces the query times as multiple object stores (when reading many small files)
@@ -22,13 +22,21 @@ fn err_missing_feature(feature: &str, scheme: &str) -> BuildResult {
         "feature '{}' must be enabled in order to use '{}' cloud urls", feature, scheme,
     );
 }
+#[cfg(any(feature = "azure", feature = "aws", feature = "gcp"))]
+fn err_missing_configuration(feature: &str, scheme: &str) -> BuildResult {
+    polars_bail!(
+        ComputeError:
+        "configuration '{}' must be provided in order to use '{}' cloud urls", feature, scheme,
+    );
+}
 
 /// Build an [`ObjectStore`] based on the URL and passed in url. Return the cloud location and an implementation of the object store.
 pub async fn build_object_store(url: &str, options: Option<&CloudOptions>) -> BuildResult {
     let cloud_location = CloudLocation::new(url)?;
 
+    let cloud_type = CloudType::from_str(url)?;
     let options = options.cloned();
-    let key = (url.to_string(), options);
+    let key = (cloud_type, options);
 
     {
         let cache = OBJECT_STORE_CACHE.read().await;
@@ -39,13 +47,7 @@ pub async fn build_object_store(url: &str, options: Option<&CloudOptions>) -> Bu
         }
     }
 
-    let cloud_type = CloudType::from_str(url)?;
-    let options = key
-        .1
-        .as_ref()
-        .map(Cow::Borrowed)
-        .unwrap_or_else(|| Cow::Owned(Default::default()));
-    let store = match cloud_type {
+    let store = match key.0 {
         CloudType::File => {
             let local = LocalFileSystem::new();
             Ok::<_, PolarsError>(Arc::new(local) as Arc<dyn ObjectStore>)
@@ -53,6 +55,11 @@ pub async fn build_object_store(url: &str, options: Option<&CloudOptions>) -> Bu
         CloudType::Aws => {
             #[cfg(feature = "aws")]
             {
+                let options = key
+                    .1
+                    .as_ref()
+                    .map(Cow::Borrowed)
+                    .unwrap_or_else(|| Cow::Owned(Default::default()));
                 let store = options.build_aws(url).await?;
                 Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
             }
@@ -61,9 +68,12 @@ pub async fn build_object_store(url: &str, options: Option<&CloudOptions>) -> Bu
         },
         CloudType::Gcp => {
             #[cfg(feature = "gcp")]
-            {
-                let store = options.build_gcp(url)?;
-                Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
+            match key.1.as_ref() {
+                Some(options) => {
+                    let store = options.build_gcp(url)?;
+                    Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
+                },
+                _ => return err_missing_configuration("gcp", &cloud_location.scheme),
             }
             #[cfg(not(feature = "gcp"))]
             return err_missing_feature("gcp", &cloud_location.scheme);
@@ -71,9 +81,12 @@ pub async fn build_object_store(url: &str, options: Option<&CloudOptions>) -> Bu
         CloudType::Azure => {
             {
                 #[cfg(feature = "azure")]
-                {
-                    let store = options.build_azure(url)?;
-                    Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
+                match key.1.as_ref() {
+                    Some(options) => {
+                        let store = options.build_azure(url)?;
+                        Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
+                    },
+                    _ => return err_missing_configuration("azure", &cloud_location.scheme),
                 }
             }
             #[cfg(not(feature = "azure"))]

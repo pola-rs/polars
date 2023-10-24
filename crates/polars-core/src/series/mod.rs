@@ -181,7 +181,6 @@ impl Series {
 
     /// # Safety
     /// The caller must ensure the length and the data types of `ArrayRef` does not change.
-    /// And that the null_count is updated (e.g. with a `compute_len()`)
     pub unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
         #[allow(unused_mut)]
         let mut ca = self._get_inner_mut();
@@ -253,11 +252,6 @@ impl Series {
     pub fn append(&mut self, other: &Series) -> PolarsResult<&mut Self> {
         self._get_inner_mut().append(other)?;
         Ok(self)
-    }
-
-    /// Redo a length and null_count compute
-    pub fn compute_len(&mut self) {
-        self._get_inner_mut().compute_len()
     }
 
     /// Extend the memory backed by this array with the values from `other`.
@@ -624,6 +618,94 @@ impl Series {
         }
     }
 
+    /// Get an array with the cumulative max computed at every element.
+    pub fn cummax(&self, _reverse: bool) -> Series {
+        #[cfg(feature = "cum_agg")]
+        {
+            self._cummax(_reverse)
+        }
+        #[cfg(not(feature = "cum_agg"))]
+        {
+            panic!("activate 'cum_agg' feature")
+        }
+    }
+
+    /// Get an array with the cumulative min computed at every element.
+    pub fn cummin(&self, _reverse: bool) -> Series {
+        #[cfg(feature = "cum_agg")]
+        {
+            self._cummin(_reverse)
+        }
+        #[cfg(not(feature = "cum_agg"))]
+        {
+            panic!("activate 'cum_agg' feature")
+        }
+    }
+
+    /// Get an array with the cumulative sum computed at every element
+    ///
+    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
+    /// first cast to `Int64` to prevent overflow issues.
+    #[allow(unused_variables)]
+    pub fn cumsum(&self, reverse: bool) -> Series {
+        #[cfg(feature = "cum_agg")]
+        {
+            use DataType::*;
+            match self.dtype() {
+                Boolean => self.cast(&DataType::UInt32).unwrap().cumsum(reverse),
+                Int8 | UInt8 | Int16 | UInt16 => {
+                    let s = self.cast(&Int64).unwrap();
+                    s.cumsum(reverse)
+                },
+                Int32 => self.i32().unwrap().cumsum(reverse).into_series(),
+                UInt32 => self.u32().unwrap().cumsum(reverse).into_series(),
+                UInt64 => self.u64().unwrap().cumsum(reverse).into_series(),
+                Int64 => self.i64().unwrap().cumsum(reverse).into_series(),
+                Float32 => self.f32().unwrap().cumsum(reverse).into_series(),
+                Float64 => self.f64().unwrap().cumsum(reverse).into_series(),
+                #[cfg(feature = "dtype-duration")]
+                Duration(tu) => {
+                    let ca = self.to_physical_repr();
+                    let ca = ca.i64().unwrap();
+                    ca.cumsum(reverse).cast(&Duration(*tu)).unwrap()
+                },
+                dt => panic!("cumsum not supported for dtype: {dt:?}"),
+            }
+        }
+        #[cfg(not(feature = "cum_agg"))]
+        {
+            panic!("activate 'cum_agg' feature")
+        }
+    }
+
+    /// Get an array with the cumulative product computed at every element.
+    ///
+    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16, Int32, UInt32}` the `Series` is
+    /// first cast to `Int64` to prevent overflow issues.
+    #[allow(unused_variables)]
+    pub fn cumprod(&self, reverse: bool) -> Series {
+        #[cfg(feature = "cum_agg")]
+        {
+            use DataType::*;
+            match self.dtype() {
+                Boolean => self.cast(&DataType::Int64).unwrap().cumprod(reverse),
+                Int8 | UInt8 | Int16 | UInt16 | Int32 | UInt32 => {
+                    let s = self.cast(&Int64).unwrap();
+                    s.cumprod(reverse)
+                },
+                Int64 => self.i64().unwrap().cumprod(reverse).into_series(),
+                UInt64 => self.u64().unwrap().cumprod(reverse).into_series(),
+                Float32 => self.f32().unwrap().cumprod(reverse).into_series(),
+                Float64 => self.f64().unwrap().cumprod(reverse).into_series(),
+                dt => panic!("cumprod not supported for dtype: {dt:?}"),
+            }
+        }
+        #[cfg(not(feature = "cum_agg"))]
+        {
+            panic!("activate 'cum_agg' feature")
+        }
+    }
+
     /// Get the product of an array.
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
@@ -894,8 +976,7 @@ impl Series {
     /// Packs every element into a list.
     pub fn as_list(&self) -> ListChunked {
         let s = self.rechunk();
-        // don't  use `to_arrow` as we need the physical types
-        let values = s.chunks()[0].clone();
+        let values = s.to_arrow(0);
         let offsets = (0i64..(s.len() as i64 + 1)).collect::<Vec<_>>();
         let offsets = unsafe { Offsets::new_unchecked(offsets) };
 
@@ -1049,5 +1130,14 @@ mod test {
         let _ = series.slice(-3, 4);
         let _ = series.slice(-6, 2);
         let _ = series.slice(4, 2);
+    }
+
+    #[test]
+    #[cfg(feature = "round_series")]
+    fn test_round_series() {
+        let series = Series::new("a", &[1.003, 2.23222, 3.4352]);
+        let out = series.round(2).unwrap();
+        let ca = out.f64().unwrap();
+        assert_eq!(ca.get(0), Some(1.0));
     }
 }

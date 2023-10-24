@@ -661,7 +661,7 @@ impl PyLazyFrame {
         PyLazyGroupBy { lgb: Some(lazy_gb) }
     }
 
-    fn rolling(
+    fn group_by_rolling(
         &mut self,
         index_column: PyExpr,
         period: &str,

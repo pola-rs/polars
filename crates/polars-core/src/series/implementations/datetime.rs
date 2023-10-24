@@ -49,6 +49,22 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
+    #[cfg(feature = "cum_agg")]
+    fn _cummax(&self, reverse: bool) -> Series {
+        self.0
+            .cummax(reverse)
+            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_series()
+    }
+
+    #[cfg(feature = "cum_agg")]
+    fn _cummin(&self, reverse: bool) -> Series {
+        self.0
+            .cummin(reverse)
+            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_series()
+    }
+
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         let other = other.to_physical_repr().into_owned();

@@ -499,10 +499,15 @@ where
     D: NestedDecoder<'a>,
 {
     // front[a1, a2, a3, ...]back
-    if *remaining == 0 && items.is_empty() {
-        return MaybeNext::None;
+    if items.len() > 1 {
+        return MaybeNext::Some(Ok(items.pop_front().unwrap()));
     }
-
+    if *remaining == 0 {
+        return match items.pop_front() {
+            Some(decoded) => MaybeNext::Some(Ok(decoded)),
+            None => MaybeNext::None,
+        };
+    }
     match iter.next() {
         Err(e) => MaybeNext::Some(Err(e.into())),
         Ok(None) => {
@@ -536,9 +541,7 @@ where
                 Err(e) => return MaybeNext::Some(Err(e)),
             };
 
-            // this comparison is strictly greater to ensure the contents of the
-            // row are fully read.
-            if !items.is_empty()
+            if (items.len() == 1)
                 && items.front().unwrap().0.len() > chunk_size.unwrap_or(usize::MAX)
             {
                 MaybeNext::Some(Ok(items.pop_front().unwrap()))

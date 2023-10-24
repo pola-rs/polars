@@ -6,7 +6,8 @@ token = os.getenv("GITHUB_TOKEN")
 auth = Auth.Token(token) if token else None
 g = Github(auth=auth)
 
-ICON_TEMPLATE = '<a href="{html_url}"><img alt="{login}" class="contributor_icon" src="{avatar_url}&s=40" loading="lazy" /></a>'
+ICON_TEMPLATE = "[![{login}]({avatar_url}){{.contributor_icon}}]({html_url})"
+
 
 def get_people_md():
     repo = g.get_repo("pola-rs/polars")

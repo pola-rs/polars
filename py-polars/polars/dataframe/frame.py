@@ -1631,11 +1631,13 @@ class DataFrame:
                 ):
                     df = self[:, col_selection]
                     return df.slice(row_selection, 1)
+                # df[2, "a"]
+                if isinstance(col_selection, str):
+                    return self[col_selection][row_selection]
 
-            # df[:, "a"]
+            # column selection can be "a" and ["a", "b"]
             if isinstance(col_selection, str):
-                series = self.get_column(col_selection)
-                return series[row_selection]
+                col_selection = [col_selection]
 
             # df[:, 1]
             if isinstance(col_selection, int):
@@ -1664,7 +1666,7 @@ class DataFrame:
         # select single column
         # df["foo"]
         if isinstance(item, str):
-            return self.get_column(item)
+            return wrap_s(self._df.column(item))
 
         # df[idx]
         if isinstance(item, int):
@@ -1862,7 +1864,7 @@ class DataFrame:
         s = (
             self._df.select_at_idx(column)
             if isinstance(column, int)
-            else self._df.get_column(column)
+            else self._df.column(column)
         )
         if s is None:
             raise IndexError(f"column index {column!r} is out of bounds")
@@ -3968,8 +3970,8 @@ class DataFrame:
         Provide multiple filters using `*args` syntax:
 
         >>> df.filter(
-        ...     pl.col("foo") <= 2,
-        ...     ~pl.col("ham").is_in(["b", "c"]),
+        ...     pl.col("foo") == 1,
+        ...     pl.col("ham") == "a",
         ... )
         shape: (1, 3)
         ┌─────┬─────┬─────┐
@@ -3982,14 +3984,14 @@ class DataFrame:
 
         Provide multiple filters using `**kwargs` syntax:
 
-        >>> df.filter(foo=2, ham="b")
+        >>> df.filter(foo=1, ham="a")
         shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
         │ i64 ┆ i64 ┆ str │
         ╞═════╪═════╪═════╡
-        │ 2   ┆ 7   ┆ b   │
+        │ 1   ┆ 6   ┆ a   │
         └─────┴─────┴─────┘
 
         """
@@ -5123,7 +5125,7 @@ class DataFrame:
         """
         return GroupBy(self, by, *more_by, maintain_order=maintain_order)
 
-    def rolling(
+    def group_by_rolling(
         self,
         index_column: IntoExpr,
         *,
@@ -5175,7 +5177,7 @@ class DataFrame:
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
-        In case of a rolling operation on an integer column, the windows are defined by:
+        In case of a group_by_rolling on an integer column, the windows are defined by:
 
         - **"1i"      # length 1**
         - **"10i"     # length 10**
@@ -5188,7 +5190,7 @@ class DataFrame:
             This column must be sorted in ascending order (or, if `by` is specified,
             then it must be sorted in ascending order within each group).
 
-            In case of a rolling operation on indices, dtype needs to be one of
+            In case of a rolling group by on indices, dtype needs to be one of
             {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
             performance matters use an Int64 column.
         period
@@ -5230,7 +5232,7 @@ class DataFrame:
         >>> df = pl.DataFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]}).with_columns(
         ...     pl.col("dt").str.strptime(pl.Datetime).set_sorted()
         ... )
-        >>> out = df.rolling(index_column="dt", period="2d").agg(
+        >>> out = df.group_by_rolling(index_column="dt", period="2d").agg(
         ...     [
         ...         pl.sum("a").alias("sum_a"),
         ...         pl.min("a").alias("min_a"),
@@ -5368,7 +5370,7 @@ class DataFrame:
 
         See Also
         --------
-        rolling
+        group_by_rolling
 
         Notes
         -----
@@ -6648,16 +6650,12 @@ class DataFrame:
 
     def get_column(self, name: str) -> Series:
         """
-        Get a single column by name.
+        Get a single column as Series by name.
 
         Parameters
         ----------
         name : str
             Name of the column to retrieve.
-
-        Returns
-        -------
-        Series
 
         See Also
         --------
@@ -6676,7 +6674,11 @@ class DataFrame:
         ]
 
         """
-        return wrap_s(self._df.get_column(name))
+        if not isinstance(name, str):
+            raise TypeError(
+                f"column name {name!r} should be be a string, but is {type(name).__name__!r}"
+            )
+        return self[name]
 
     def fill_null(
         self,
@@ -9754,19 +9756,13 @@ class DataFrame:
         left_on: str | Sequence[str] | None = None,
         right_on: str | Sequence[str] | None = None,
         how: Literal["left", "inner", "outer"] = "left",
-        include_nulls: bool | None = False,
     ) -> DataFrame:
         """
-        Update the values in this `DataFrame` with the values in `other`.
-
-        By default, null values in the right dataframe are ignored. Use
-        `ignore_nulls=False` to overwrite values in this frame with null values in other
-        frame.
+        Update the values in this `DataFrame` with the non-null values in `other`.
 
         Notes
         -----
-        This is syntactic sugar for a left/inner join, with an optional coalesce when
-        `include_nulls = False`.
+        This is syntactic sugar for a left/inner join + coalesce
 
         Warnings
         --------
@@ -9790,9 +9786,6 @@ class DataFrame:
             * 'inner' keeps only those rows where the key exists in both frames.
             * 'outer' will update existing rows where the key matches while also
               adding any new rows contained in the given frame.
-        include_nulls
-            If True, null values from the right dataframe will be used to update the
-            left dataframe.
 
         Examples
         --------
@@ -9868,29 +9861,10 @@ class DataFrame:
         │ 5   ┆ -66 │
         └─────┴─────┘
 
-        Update `df` values including null values in `new_df`, using an outer join
-        strategy that defines explicit join columns in each frame:
-
-        >>> df.update(
-        ...     new_df, left_on="A", right_on="C", how="outer", include_nulls=True
-        ... )
-        shape: (5, 2)
-        ┌─────┬──────┐
-        │ A   ┆ B    │
-        │ --- ┆ ---  │
-        │ i64 ┆ i64  │
-        ╞═════╪══════╡
-        │ 1   ┆ -99  │
-        │ 2   ┆ 500  │
-        │ 3   ┆ null │
-        │ 4   ┆ 700  │
-        │ 5   ┆ -66  │
-        └─────┴──────┘
-
         """
         return (
             self.lazy()
-            .update(other.lazy(), on, left_on, right_on, how, include_nulls)
+            .update(other.lazy(), on, left_on, right_on, how)
             .collect(_eager=True)
         )
 
@@ -9932,7 +9906,7 @@ class DataFrame:
         """
         return self.group_by(by, *more_by, maintain_order=maintain_order)
 
-    @deprecate_renamed_function("rolling", version="0.19.0")
+    @deprecate_renamed_function("group_by_rolling", version="0.19.0")
     def groupby_rolling(
         self,
         index_column: IntoExpr,
@@ -9947,7 +9921,7 @@ class DataFrame:
         Create rolling groups based on a time, Int32, or Int64 column.
 
         .. deprecated:: 0.19.0
-            This method has been renamed to :func:`DataFrame.rolling`.
+            This method has been renamed to :func:`DataFrame.group_by_rolling`.
 
         Parameters
         ----------
@@ -9976,60 +9950,7 @@ class DataFrame:
             Doing so incorrectly will lead to incorrect output
 
         """
-        return self.rolling(
-            index_column,
-            period=period,
-            offset=offset,
-            closed=closed,
-            by=by,
-            check_sorted=check_sorted,
-        )
-
-    @deprecate_renamed_function("rolling", version="0.19.9")
-    def group_by_rolling(
-        self,
-        index_column: IntoExpr,
-        *,
-        period: str | timedelta,
-        offset: str | timedelta | None = None,
-        closed: ClosedInterval = "right",
-        by: IntoExpr | Iterable[IntoExpr] | None = None,
-        check_sorted: bool = True,
-    ) -> RollingGroupBy:
-        """
-        Create rolling groups based on a time, Int32, or Int64 column.
-
-        .. deprecated:: 0.19.9
-            This method has been renamed to :func:`DataFrame.rolling`.
-
-        Parameters
-        ----------
-        index_column
-            Column used to group based on the time window.
-            Often of type Date/Datetime.
-            This column must be sorted in ascending order (or, if `by` is specified,
-            then it must be sorted in ascending order within each group).
-
-            In case of a rolling group by on indices, dtype needs to be one of
-            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
-            performance matters use an Int64 column.
-        period
-            length of the window - must be non-negative
-        offset
-            offset of the window. Default is -period
-        closed : {'right', 'left', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
-        by
-            Also group by this column/these columns
-        check_sorted
-            When the ``by`` argument is given, polars can not check sortedness
-            by the metadata and has to do a full scan on the index column to
-            verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to ``False``.
-            Doing so incorrectly will lead to incorrect output
-
-        """
-        return self.rolling(
+        return self.group_by_rolling(
             index_column,
             period=period,
             offset=offset,

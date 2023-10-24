@@ -36,7 +36,7 @@ lexical-core = { workspace = true, optional = true }
 
 fallible-streaming-iterator = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
-regex-syntax = { version = "0.8", optional = true }
+regex-syntax = { version = "0.7", optional = true }
 streaming-iterator = { workspace = true }
 
 indexmap = { workspace = true, optional = true }
@@ -47,7 +47,7 @@ hex = { workspace = true, optional = true }
 
 # for IPC compression
 lz4 = { version = "1.24", optional = true }
-zstd = { version = "0.13", optional = true }
+zstd = { version = "0.12", optional = true }
 
 base64 = { workspace = true, optional = true }
 
@@ -74,7 +74,7 @@ arrow-array = { workspace = true, optional = true }
 arrow-buffer = { workspace = true, optional = true }
 arrow-data = { workspace = true, optional = true }
 arrow-schema = { workspace = true, optional = true }
-parquet2 = { workspace = true, optional = true, default-features = true, features = ["async"] }
+parquet2 = { workspace = true, optional = true, features = ["async"] }
 
 [dev-dependencies]
 avro-rs = { version = "0.13", features = ["snappy"] }

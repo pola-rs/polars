@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     data=st.data(),
     time_unit=strategy_time_unit,
 )
-def test_rolling(
+def test_group_by_rolling(
     period: str,
     offset: str,
     closed: ClosedInterval,
@@ -57,7 +57,7 @@ def test_rolling(
         )
     )
     df = dataframe.sort("ts")
-    result = df.rolling("ts", period=period, offset=offset, closed=closed).agg(
+    result = df.group_by_rolling("ts", period=period, offset=offset, closed=closed).agg(
         pl.col("value")
     )
 

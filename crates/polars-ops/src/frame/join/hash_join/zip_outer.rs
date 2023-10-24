@@ -17,11 +17,11 @@ pub(crate) unsafe fn zip_outer_join_column(
             let new_rev_map = left_column
                 ._merge_categorical_map(right_column.categorical().unwrap())
                 .unwrap();
-            let left = left_column.physical();
+            let left = left_column.logical();
             let right = right_column
                 .categorical()
                 .unwrap()
-                .physical()
+                .logical()
                 .clone()
                 .into_series();
 

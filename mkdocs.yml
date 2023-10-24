@@ -37,7 +37,6 @@ nav:
       - user-guide/expressions/window.md
       - user-guide/expressions/folds.md
       - user-guide/expressions/lists.md
-      - user-guide/expressions/plugins.md
       - user-guide/expressions/user-defined-functions.md
       - user-guide/expressions/structs.md
       - user-guide/expressions/numpy.md
@@ -141,8 +140,8 @@ markdown_extensions:
   - pymdownx.details
   - attr_list
   - pymdownx.emoji:
-      emoji_index: !!python/name:material.extensions.emoji.twemoji
-      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+      emoji_index: !!python/name:materialx.emoji.twemoji
+      emoji_generator: !!python/name:materialx.emoji.to_svg
   - pymdownx.superfences
   - pymdownx.tabbed:
       alternate_style: true

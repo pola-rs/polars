@@ -147,20 +147,19 @@ called `hundredXValue` where the `value` column is multiplied by 100.
 In `Pandas` this would be:
 
 ```python
-df.assign(
-    tenXValue=lambda df_: df_.value * 10,
-    hundredXValue=lambda df_: df_.value * 100
-)
+df["tenXValue"] = df["value"] * 10
+df["hundredXValue"] = df["value"] * 100
 ```
 
 These column assignments are executed sequentially.
 
-In `Polars` we add columns to `df` using the `.with_columns` method:
+In `Polars` we add columns to `df` using the `.with_columns` method and name them with
+the `.alias` method:
 
 ```python
 df.with_columns(
-    tenXValue=pl.col("value") * 10,
-    hundredXValue=pl.col("value") * 100,
+    (pl.col("value") * 10).alias("tenXValue"),
+    (pl.col("value") * 100).alias("hundredXValue"),
 )
 ```
 
@@ -175,7 +174,7 @@ the values in column `a` based on a condition. When the value in column `c` is e
 In `Pandas` this would be:
 
 ```python
-df.assign(a=lambda df_: df_.a.where(df_.c != 2, df_.b))
+df.loc[df["c"] == 2, "a"] = df.loc[df["c"] == 2, "b"]
 ```
 
 while in `Polars` this would be:
@@ -188,17 +187,21 @@ df.with_columns(
 )
 ```
 
-`Polars` can compute every branch of an `if -> then -> otherwise` in
+The `Polars` way is pure in that the original `DataFrame` is not modified. The `mask` is
+also not computed twice as in `Pandas` (you could prevent this in `Pandas`, but that
+would require setting a temporary variable).
+
+Additionally `Polars` can compute every branch of an `if -> then -> otherwise` in
 parallel. This is valuable, when the branches get more expensive to compute.
 
 #### Filtering
 
 We want to filter the dataframe `df` with housing data based on some criteria.
 
-In `Pandas` you filter the dataframe by passing Boolean expressions to the `query` method:
+In `Pandas` you filter the dataframe by passing Boolean expressions to the `loc` method:
 
 ```python
-df.query('m2_living > 2500 and price < 300000')
+df.loc[(df['sqft_living'] > 2500) & (df['price'] < 300000)]
 ```
 
 while in `Polars` you call the `filter` method:

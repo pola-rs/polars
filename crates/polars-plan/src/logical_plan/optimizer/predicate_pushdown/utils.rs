@@ -213,7 +213,7 @@ fn rename_predicate_columns_due_to_aliased_projection(
 ) -> LoopBehavior {
     let projection_aexpr = expr_arena.get(projection_node);
     if let AExpr::Alias(_, alias_name) = projection_aexpr {
-        let alias_name = alias_name.clone();
+        let alias_name = alias_name.as_ref();
         let projection_leaves = aexpr_to_leaf_names(projection_node, expr_arena);
 
         // this means the leaf is a literal
@@ -223,10 +223,9 @@ fn rename_predicate_columns_due_to_aliased_projection(
 
         // if this alias refers to one of the predicates in the upper nodes
         // we rename the column of the predicate before we push it downwards.
-        if let Some(predicate) = acc_predicates.remove(&alias_name) {
+        if let Some(predicate) = acc_predicates.remove(alias_name) {
             if projection_maybe_boundary {
                 local_predicates.push(predicate);
-                remove_predicate_refers_to_alias(acc_predicates, local_predicates, &alias_name);
                 return LoopBehavior::Continue;
             }
             if projection_leaves.len() == 1 {
@@ -241,34 +240,26 @@ fn rename_predicate_columns_due_to_aliased_projection(
                 // on this projected column so we do filter locally.
                 local_predicates.push(predicate)
             }
-        }
+        } else {
+            // we could not find the alias name
+            // that could still mean that a predicate that is a complicated binary expression
+            // refers to the aliased name. If we find it, we remove it for now
+            // TODO! rename the expression.
+            let mut remove_names = vec![];
+            for (composed_name, _) in acc_predicates.iter() {
+                if key_has_name(composed_name, alias_name) {
+                    remove_names.push(composed_name.clone());
+                    break;
+                }
+            }
 
-        remove_predicate_refers_to_alias(acc_predicates, local_predicates, &alias_name);
+            for composed_name in remove_names {
+                let predicate = acc_predicates.remove(&composed_name).unwrap();
+                local_predicates.push(predicate)
+            }
+        }
     }
     LoopBehavior::Nothing
-}
-
-/// we could not find the alias name
-/// that could still mean that a predicate that is a complicated binary expression
-/// refers to the aliased name. If we find it, we remove it for now
-/// TODO! rename the expression.
-fn remove_predicate_refers_to_alias(
-    acc_predicates: &mut PlHashMap<Arc<str>, Node>,
-    local_predicates: &mut Vec<Node>,
-    alias_name: &str,
-) {
-    let mut remove_names = vec![];
-    for (composed_name, _) in acc_predicates.iter() {
-        if key_has_name(composed_name, alias_name) {
-            remove_names.push(composed_name.clone());
-            break;
-        }
-    }
-
-    for composed_name in remove_names {
-        let predicate = acc_predicates.remove(&composed_name).unwrap();
-        local_predicates.push(predicate)
-    }
 }
 
 /// Implementation for both Hstack and Projection

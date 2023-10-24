@@ -16,6 +16,8 @@ pub mod arity;
 mod bit_repr;
 pub(crate) mod chunkops;
 pub(crate) mod compare_inner;
+#[cfg(feature = "cum_agg")]
+mod cum_agg;
 #[cfg(feature = "dtype-decimal")]
 mod decimal;
 pub(crate) mod downcast;
@@ -87,6 +89,26 @@ pub trait ChunkAnyValue {
 
     /// Get a single value. Beware this is slow.
     fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue>;
+}
+
+#[cfg(feature = "cum_agg")]
+pub trait ChunkCumAgg<T: PolarsDataType> {
+    /// Get an array with the cumulative max computed at every element
+    fn cummax(&self, _reverse: bool) -> ChunkedArray<T> {
+        panic!("operation cummax not supported for this dtype")
+    }
+    /// Get an array with the cumulative min computed at every element
+    fn cummin(&self, _reverse: bool) -> ChunkedArray<T> {
+        panic!("operation cummin not supported for this dtype")
+    }
+    /// Get an array with the cumulative sum computed at every element
+    fn cumsum(&self, _reverse: bool) -> ChunkedArray<T> {
+        panic!("operation cumsum not supported for this dtype")
+    }
+    /// Get an array with the cumulative product computed at every element
+    fn cumprod(&self, _reverse: bool) -> ChunkedArray<T> {
+        panic!("operation cumprod not supported for this dtype")
+    }
 }
 
 /// Explode/ flatten a List or Utf8 Series

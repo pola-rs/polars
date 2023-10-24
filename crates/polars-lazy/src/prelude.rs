@@ -1,6 +1,5 @@
+pub(crate) use polars_ops::prelude::*;
 pub use polars_ops::prelude::{JoinArgs, JoinType, JoinValidation};
-#[cfg(feature = "rank")]
-pub use polars_ops::prelude::{RankMethod, RankOptions};
 pub use polars_plan::logical_plan::{
     AnonymousScan, AnonymousScanOptions, Literal, LiteralValue, LogicalPlan, Null, NULL,
 };

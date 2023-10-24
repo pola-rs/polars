@@ -59,10 +59,6 @@ where
         let null_bitmap: Option<Bitmap> = self.bitmask_builder.into();
 
         let len = self.values.len();
-        let null_count = null_bitmap
-            .as_ref()
-            .map(|validity| validity.unset_bits())
-            .unwrap_or(0) as IdxSize;
 
         let arr = Box::new(ObjectArray {
             values: Arc::new(self.values),
@@ -76,7 +72,6 @@ where
             phantom: PhantomData,
             bit_settings: Default::default(),
             length: len as IdxSize,
-            null_count,
         }
     }
 }
@@ -141,7 +136,6 @@ where
             phantom: PhantomData,
             bit_settings: Default::default(),
             length: len as IdxSize,
-            null_count: 0,
         }
     }
 

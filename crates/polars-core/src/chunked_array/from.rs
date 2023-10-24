@@ -1,5 +1,3 @@
-use polars_error::constants::LENGTH_LIMIT_MSG;
-
 use super::*;
 
 #[allow(clippy::all)]
@@ -145,12 +143,10 @@ where
         );
 
         let mut length = 0;
-        let mut null_count = 0;
         let chunks = chunks
             .into_iter()
             .map(|x| {
                 length += x.len();
-                null_count += x.null_count();
                 Box::new(x) as Box<dyn Array>
             })
             .collect();
@@ -160,8 +156,7 @@ where
             chunks,
             phantom: PhantomData,
             bit_settings: Default::default(),
-            length: length.try_into().expect(LENGTH_LIMIT_MSG),
-            null_count: null_count as IdxSize,
+            length: length.try_into().unwrap(),
         }
     }
 
@@ -189,7 +184,6 @@ where
             phantom: PhantomData,
             bit_settings: Default::default(),
             length: 0,
-            null_count: 0,
         };
         out.compute_len();
         out
@@ -219,7 +213,6 @@ where
             phantom: PhantomData,
             bit_settings: Default::default(),
             length: 0,
-            null_count: 0,
         };
         out.compute_len();
         out
@@ -242,7 +235,6 @@ where
             phantom: PhantomData,
             bit_settings,
             length: 0,
-            null_count: 0,
         };
         out.compute_len();
         if !keep_sorted {
@@ -266,7 +258,6 @@ where
             phantom: PhantomData,
             bit_settings: Default::default(),
             length: 0,
-            null_count: 0,
         };
         out.compute_len();
         out
@@ -282,8 +273,12 @@ where
         Self::with_chunk(name, to_primitive::<T>(v, None))
     }
 
-    /// Create a new ChunkedArray from a Vec and a validity mask.
-    pub fn from_vec_validity(name: &str, values: Vec<T::Native>, buffer: Option<Bitmap>) -> Self {
+    /// Nullify values in slice with an existing null bitmap
+    pub fn new_from_owned_with_null_bitmap(
+        name: &str,
+        values: Vec<T::Native>,
+        buffer: Option<Bitmap>,
+    ) -> Self {
         let arr = to_array::<T>(values, buffer);
         let mut out = ChunkedArray {
             field: Arc::new(Field::new(name, T::get_dtype())),

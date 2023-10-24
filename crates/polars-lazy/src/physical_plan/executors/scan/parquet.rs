@@ -57,7 +57,6 @@ impl ParquetExec {
 
         if let Some(file) = file {
             ParquetReader::new(file)
-                .with_schema(Some(self.file_info.reader_schema.clone()))
                 .with_n_rows(n_rows)
                 .read_parallel(self.options.parallel)
                 .with_row_count(mem::take(&mut self.file_options.row_count))
@@ -73,7 +72,7 @@ impl ParquetExec {
                     let reader = ParquetAsyncReader::from_uri(
                         &self.path.to_string_lossy(),
                         self.cloud_options.as_ref(),
-                        Some(self.file_info.reader_schema.clone()),
+                        Some(self.file_info.schema.clone()),
                         self.metadata.clone(),
                     )
                     .await?
@@ -100,7 +99,7 @@ impl ParquetExec {
 impl Executor for ParquetExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let finger_print = FileFingerPrint {
-            paths: Arc::new([self.path.clone()]),
+            path: self.path.clone(),
             predicate: self
                 .predicate
                 .as_ref()

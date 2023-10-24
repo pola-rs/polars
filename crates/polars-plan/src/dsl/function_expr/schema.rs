@@ -47,21 +47,8 @@ impl FunctionExpr {
             RollingSkew { .. } => mapper.map_to_float_dtype(),
             ShiftAndFill { .. } => mapper.with_same_dtype(),
             DropNans => mapper.with_same_dtype(),
-            DropNulls => mapper.with_same_dtype(),
             #[cfg(feature = "round_series")]
             Clip { .. } => mapper.with_same_dtype(),
-            #[cfg(feature = "mode")]
-            Mode => mapper.with_same_dtype(),
-            #[cfg(feature = "moment")]
-            Skew(_) => mapper.with_dtype(DataType::Float64),
-            #[cfg(feature = "moment")]
-            Kurtosis(..) => mapper.with_dtype(DataType::Float64),
-            ArgUnique => mapper.with_dtype(IDX_DTYPE),
-            #[cfg(feature = "rank")]
-            Rank { options, .. } => mapper.with_dtype(match options.method {
-                RankMethod::Average => DataType::Float64,
-                _ => IDX_DTYPE,
-            }),
             ListExpr(l) => {
                 use ListFunction::*;
                 match l {
@@ -70,8 +57,6 @@ impl FunctionExpr {
                     Contains => mapper.with_dtype(DataType::Boolean),
                     #[cfg(feature = "list_drop_nulls")]
                     DropNulls => mapper.with_same_dtype(),
-                    #[cfg(feature = "list_sample")]
-                    Sample { .. } => mapper.with_same_dtype(),
                     Slice => mapper.with_same_dtype(),
                     Shift => mapper.with_same_dtype(),
                     Get => mapper.map_to_list_inner_dtype(),
@@ -137,15 +122,10 @@ impl FunctionExpr {
             Boolean(func) => func.get_field(mapper),
             #[cfg(feature = "dtype-categorical")]
             Categorical(func) => func.get_field(mapper),
-            #[cfg(feature = "cum_agg")]
             Cumcount { .. } => mapper.with_dtype(IDX_DTYPE),
-            #[cfg(feature = "cum_agg")]
             Cumsum { .. } => mapper.map_dtype(cum::dtypes::cumsum),
-            #[cfg(feature = "cum_agg")]
             Cumprod { .. } => mapper.map_dtype(cum::dtypes::cumprod),
-            #[cfg(feature = "cum_agg")]
             Cummin { .. } => mapper.with_same_dtype(),
-            #[cfg(feature = "cum_agg")]
             Cummax { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => mapper.with_dtype(IDX_DTYPE),
@@ -161,11 +141,6 @@ impl FunctionExpr {
                 DataType::UInt16 => DataType::Int32,
                 DataType::UInt8 => DataType::Int16,
                 dt => dt.clone(),
-            }),
-            #[cfg(feature = "pct_change")]
-            PctChange => mapper.map_dtype(|dt| match dt {
-                DataType::Float64 | DataType::Float32 => dt.clone(),
-                _ => DataType::Float64,
             }),
             #[cfg(feature = "interpolate")]
             Interpolate(method) => match method {
@@ -259,7 +234,7 @@ impl FunctionExpr {
             Random { .. } => mapper.with_same_dtype(),
             SetSortedFlag(_) => mapper.with_same_dtype(),
             #[cfg(feature = "ffi_plugin")]
-            FfiPlugin { lib, symbol, .. } => unsafe {
+            FfiPlugin { lib, symbol } => unsafe {
                 plugin::plugin_field(fields, lib, &format!("__polars_field_{}", symbol.as_ref()))
             },
             BackwardFill { .. } => mapper.with_same_dtype(),
@@ -267,12 +242,6 @@ impl FunctionExpr {
             SumHorizontal => mapper.map_to_supertype(),
             MaxHorizontal => mapper.map_to_supertype(),
             MinHorizontal => mapper.map_to_supertype(),
-            #[cfg(feature = "ewma")]
-            EwmMean { .. } => mapper.map_to_float_dtype(),
-            #[cfg(feature = "ewma")]
-            EwmStd { .. } => mapper.map_to_float_dtype(),
-            #[cfg(feature = "ewma")]
-            EwmVar { .. } => mapper.map_to_float_dtype(),
         }
     }
 }

@@ -4,7 +4,6 @@ use polars_core::utils::get_supertype;
 
 use super::*;
 use crate::prelude::function_expr::FunctionExpr;
-use crate::utils::expr_output_name;
 
 /// This replace the wildcard Expr with a Column Expr. It also removes the Exclude Expr from the
 /// expression chain.
@@ -355,9 +354,21 @@ fn prepare_excluded(
     }
 
     // exclude group_by keys
-    for expr in keys.iter() {
-        if let Ok(name) = expr_output_name(expr) {
-            exclude.insert(name.clone());
+    for mut expr in keys.iter() {
+        // Allow a number of aliases of a column expression, still exclude column from aggregation
+        loop {
+            match expr {
+                Expr::Column(name) => {
+                    exclude.insert(name.clone());
+                    break;
+                },
+                Expr::Alias(e, _) => {
+                    expr = e;
+                },
+                _ => {
+                    break;
+                },
+            }
         }
     }
     Ok(exclude)

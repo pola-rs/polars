@@ -243,18 +243,6 @@ def test_equal() -> None:
     assert s3.dt.convert_time_zone("Asia/Tokyo").series_equal(s4) is True
 
 
-@pytest.mark.parametrize(
-    "dtype",
-    [pl.Int64, pl.Float64, pl.Utf8, pl.Boolean],
-)
-def test_eq_missing_list_and_primitive(dtype: PolarsDataType) -> None:
-    s1 = pl.Series([None, None], dtype=dtype)
-    s2 = pl.Series([None, None], dtype=pl.List(dtype))
-
-    expected = pl.Series([True, True])
-    assert_series_equal(s1.eq_missing(s2), expected)
-
-
 def test_to_frame() -> None:
     s1 = pl.Series([1, 2])
     s2 = pl.Series("s", [1, 2])
@@ -614,23 +602,19 @@ def test_to_pandas() -> None:
             pass
 
 
-def test_series_to_list() -> None:
-    s = pl.Series("a", range(20))
-    result = s.to_list()
-    assert isinstance(result, list)
-    assert len(result) == 20
+def test_to_python() -> None:
+    a = pl.Series("a", range(20))
+    b = a.to_list()
+    assert isinstance(b, list)
+    assert len(b) == 20
+
+    b = a.to_list(use_pyarrow=True)
+    assert isinstance(b, list)
+    assert len(b) == 20
 
     a = pl.Series("a", [1, None, 2])
     assert a.null_count() == 1
     assert a.to_list() == [1, None, 2]
-
-
-def test_series_to_list_use_pyarrow_deprecated() -> None:
-    s = pl.Series("a", range(20))
-    with pytest.deprecated_call():
-        result = s.to_list(use_pyarrow=True)
-    assert isinstance(result, list)
-    assert len(result) == 20
 
 
 def test_to_struct() -> None:
@@ -1279,7 +1263,6 @@ def test_pct_change() -> None:
     s = pl.Series("a", [1, 2, 4, 8, 16, 32, 64])
     expected = pl.Series("a", [None, None, float("inf"), 3.0, 3.0, 3.0, 3.0])
     assert_series_equal(s.pct_change(2), expected)
-    assert_series_equal(s.pct_change(pl.Series([2])), expected)
     # negative
     assert pl.Series(range(5)).pct_change(-1).to_list() == [
         -1.0,
@@ -1450,10 +1433,10 @@ def test_bitwise() -> None:
 
     # ensure mistaken use of logical 'and'/'or' raises an exception
     with pytest.raises(TypeError, match="ambiguous"):
-        a and b  # type: ignore[redundant-expr]
+        a and b
 
     with pytest.raises(TypeError, match="ambiguous"):
-        a or b  # type: ignore[redundant-expr]
+        a or b
 
 
 def test_to_numpy(monkeypatch: Any) -> None:
@@ -1566,21 +1549,6 @@ def test_comparisons_int_series_to_float() -> None:
     assert_series_equal(srs_int >= 3.0, pl.Series([False, False, True, True]))
     assert_series_equal(srs_int == 3.0, pl.Series([False, False, True, False]))
     assert_series_equal(srs_int - True, pl.Series([0, 1, 2, 3]))
-
-
-def test_comparisons_int_series_to_float_scalar() -> None:
-    srs_int = pl.Series([1, 2, 3, 4])
-
-    assert_series_equal(srs_int < 1.5, pl.Series([True, False, False, False]))
-    assert_series_equal(srs_int > 1.5, pl.Series([False, True, True, True]))
-
-
-def test_comparisons_datetime_series_to_date_scalar() -> None:
-    srs_date = pl.Series([date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3)])
-    dt = datetime(2023, 1, 1, 12, 0, 0)
-
-    assert_series_equal(srs_date < dt, pl.Series([True, False, False]))
-    assert_series_equal(srs_date > dt, pl.Series([False, True, True]))
 
 
 def test_comparisons_float_series_to_int() -> None:
@@ -2163,9 +2131,7 @@ def test_ewm_mean() -> None:
 def test_ewm_mean_leading_nulls() -> None:
     for min_periods in [1, 2, 3]:
         assert (
-            pl.Series([1, 2, 3, 4])
-            .ewm_mean(com=3, min_periods=min_periods)
-            .null_count()
+            pl.Series([1, 2, 3, 4]).ewm_mean(3, min_periods=min_periods).null_count()
             == min_periods - 1
         )
     assert pl.Series([None, 1.0, 1.0, 1.0]).ewm_mean(
@@ -2775,28 +2741,3 @@ def test_series_getitem_out_of_bounds_negative() -> None:
         IndexError, match="index -10 is out of bounds for sequence of length 2"
     ):
         s[-10]
-
-
-def test_series_cmp_fast_paths() -> None:
-    assert (
-        pl.Series([None], dtype=pl.Int32) != pl.Series([1, 2], dtype=pl.Int32)
-    ).to_list() == [None, None]
-    assert (
-        pl.Series([None], dtype=pl.Int32) == pl.Series([1, 2], dtype=pl.Int32)
-    ).to_list() == [None, None]
-
-    assert (
-        pl.Series([None], dtype=pl.Utf8) != pl.Series(["a", "b"], dtype=pl.Utf8)
-    ).to_list() == [None, None]
-    assert (
-        pl.Series([None], dtype=pl.Utf8) == pl.Series(["a", "b"], dtype=pl.Utf8)
-    ).to_list() == [None, None]
-
-    assert (
-        pl.Series([None], dtype=pl.Boolean)
-        != pl.Series([True, False], dtype=pl.Boolean)
-    ).to_list() == [None, None]
-    assert (
-        pl.Series([None], dtype=pl.Boolean)
-        == pl.Series([False, False], dtype=pl.Boolean)
-    ).to_list() == [None, None]

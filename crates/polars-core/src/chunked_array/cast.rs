@@ -203,21 +203,21 @@ impl ChunkCast for Utf8Chunked {
                 Ok(out)
             },
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(time_unit, time_zone) => {
-                let out = match time_zone {
+            DataType::Datetime(tu, tz) => {
+                let out = match tz {
                     #[cfg(feature = "timezones")]
-                    Some(time_zone) => {
-                        validate_time_zone(time_zone)?;
+                    Some(tz) => {
+                        validate_time_zone(tz)?;
                         let result = cast_chunks(
                             &self.chunks,
-                            &Datetime(time_unit.to_owned(), Some(time_zone.clone())),
+                            &Datetime(tu.to_owned(), Some(tz.clone())),
                             true,
                         )?;
                         Series::try_from((self.name(), result))
                     },
                     _ => {
                         let result =
-                            cast_chunks(&self.chunks, &Datetime(time_unit.to_owned(), None), true)?;
+                            cast_chunks(&self.chunks, &Datetime(tu.to_owned(), None), true)?;
                         Series::try_from((self.name(), result))
                     },
                 };
@@ -365,11 +365,7 @@ impl ChunkCast for ListChunked {
     }
 
     unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
-        use DataType::*;
-        match data_type {
-            List(child_type) => cast_list_unchecked(self, child_type),
-            _ => self.cast(data_type),
-        }
+        self.cast(data_type)
     }
 }
 
@@ -418,8 +414,6 @@ impl ChunkCast for ArrayChunked {
 // Returns inner data type. This is needed because a cast can instantiate the dtype inner
 // values for instance with categoricals
 fn cast_list(ca: &ListChunked, child_type: &DataType) -> PolarsResult<(ArrayRef, DataType)> {
-    // We still rechunk because we must bubble up a single data-type
-    // TODO!: consider a version that works on chunks and merges the data-types and arrays.
     let ca = ca.rechunk();
     let arr = ca.downcast_iter().next().unwrap();
     // safety: inner dtype is passed correctly
@@ -441,32 +435,6 @@ fn cast_list(ca: &ListChunked, child_type: &DataType) -> PolarsResult<(ArrayRef,
         arr.validity().cloned(),
     );
     Ok((Box::new(new_arr), inner_dtype))
-}
-
-unsafe fn cast_list_unchecked(ca: &ListChunked, child_type: &DataType) -> PolarsResult<Series> {
-    // TODO! add chunked, but this must correct for list offsets.
-    let ca = ca.rechunk();
-    let arr = ca.downcast_iter().next().unwrap();
-    // safety: inner dtype is passed correctly
-    let s = unsafe {
-        Series::from_chunks_and_dtype_unchecked("", vec![arr.values().clone()], &ca.inner_dtype())
-    };
-    let new_inner = s.cast_unchecked(child_type)?;
-    let new_values = new_inner.array_ref(0).clone();
-
-    let data_type = ListArray::<i64>::default_datatype(new_values.data_type().clone());
-    let new_arr = ListArray::<i64>::new(
-        data_type,
-        arr.offsets().clone(),
-        new_values,
-        arr.validity().cloned(),
-    );
-    Ok(ListChunked::from_chunks_and_dtype_unchecked(
-        ca.name(),
-        vec![Box::new(new_arr)],
-        DataType::List(Box::new(child_type.clone())),
-    )
-    .into_series())
 }
 
 // Returns inner data type. This is needed because a cast can instantiate the dtype inner

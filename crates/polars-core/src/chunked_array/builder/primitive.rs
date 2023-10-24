@@ -27,13 +27,13 @@ where
 
     fn finish(mut self) -> ChunkedArray<T> {
         let arr = self.array_builder.as_box();
+        let length = arr.len() as IdxSize;
         let mut ca = ChunkedArray {
             field: Arc::new(self.field),
             chunks: vec![arr],
             phantom: PhantomData,
             bit_settings: Default::default(),
-            length: 0,
-            null_count: 0,
+            length,
         };
         ca.compute_len();
         ca

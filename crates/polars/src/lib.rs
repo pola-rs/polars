@@ -278,11 +278,11 @@
 //!     - `fmt` - Activate [`DataFrame`] formatting
 //!
 //! [`UInt64Chunked`]: crate::datatypes::UInt64Chunked
-//! [`cumsum`]: polars_ops::prelude::cumsum
-//! [`cummin`]: polars_ops::prelude::cummin
-//! [`cummax`]: polars_ops::prelude::cummax
+//! [`cumsum`]: crate::series::Series::cumsum
+//! [`cummin`]: crate::series::Series::cummin
+//! [`cummax`]: crate::series::Series::cummax
 //! [`rolling_mean`]: crate::series::Series#method.rolling_mean
-//! [`diff`]: polars_ops::prelude::diff
+//! [`diff`]: crate::series::Series::diff
 //! [`List`]: crate::datatypes::DataType::List
 //! [`Struct`]: crate::datatypes::DataType::Struct
 //!

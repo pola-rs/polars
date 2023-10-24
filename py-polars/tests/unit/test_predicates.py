@@ -192,14 +192,3 @@ def test_predicate_pushdown_group_by_keys() -> None:
         .filter(pl.col("group") == 1)
         .explain()
     )
-
-
-def test_no_predicate_push_down_with_cast_and_alias_11883() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3]})
-    out = (
-        df.lazy()
-        .select(pl.col("a").cast(pl.Int64).alias("b"))
-        .filter(pl.col("b") == 1)
-        .filter((pl.col("b") >= 1) & (pl.col("b") < 1))
-    )
-    assert 'SELECTION: "None"' in out.explain(predicate_pushdown=True)

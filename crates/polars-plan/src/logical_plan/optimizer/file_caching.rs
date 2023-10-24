@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use polars_core::datatypes::PlHashMap;
@@ -9,14 +9,14 @@ use crate::prelude::*;
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub struct FileFingerPrint {
-    pub paths: Arc<[PathBuf]>,
+    pub path: PathBuf,
     pub predicate: Option<Expr>,
     pub slice: (usize, Option<usize>),
 }
 
 #[allow(clippy::type_complexity)]
 fn process_with_columns(
-    paths: &Arc<[PathBuf]>,
+    path: &Path,
     with_columns: Option<&Vec<String>>,
     predicate: Option<Expr>,
     slice: (usize, Option<usize>),
@@ -25,7 +25,7 @@ fn process_with_columns(
 ) {
     let cols = file_count_and_column_union
         .entry(FileFingerPrint {
-            paths: paths.clone(),
+            path: path.into(),
             predicate,
             slice,
         })
@@ -59,7 +59,7 @@ pub fn collect_fingerprints(
     use ALogicalPlan::*;
     match lp_arena.get(root) {
         Scan {
-            paths,
+            path,
             file_options: options,
             predicate,
             scan_type,
@@ -68,7 +68,7 @@ pub fn collect_fingerprints(
             let slice = (scan_type.skip_rows(), options.n_rows);
             let predicate = predicate.map(|node| node_to_expr(node, expr_arena));
             let fp = FileFingerPrint {
-                paths: paths.clone(),
+                path: path.clone(),
                 predicate,
                 slice,
             };
@@ -96,7 +96,7 @@ pub fn find_column_union_and_fingerprints(
     use ALogicalPlan::*;
     match lp_arena.get(root) {
         Scan {
-            paths,
+            path,
             file_options: options,
             predicate,
             file_info,
@@ -106,7 +106,7 @@ pub fn find_column_union_and_fingerprints(
             let slice = (scan_type.skip_rows(), options.n_rows);
             let predicate = predicate.map(|node| node_to_expr(node, expr_arena));
             process_with_columns(
-                paths,
+                path,
                 options.with_columns.as_deref(),
                 predicate,
                 slice,
@@ -204,7 +204,7 @@ impl FileCacher {
             let lp = lp_arena.take(root);
             match lp {
                 ALogicalPlan::Scan {
-                    paths,
+                    path,
                     file_info,
                     predicate,
                     output_schema,
@@ -213,7 +213,7 @@ impl FileCacher {
                 } => {
                     let predicate_expr = predicate.map(|node| node_to_expr(node, expr_arena));
                     let finger_print = FileFingerPrint {
-                        paths,
+                        path,
                         predicate: predicate_expr,
                         slice: (scan_type.skip_rows(), options.n_rows),
                     };
@@ -230,7 +230,7 @@ impl FileCacher {
 
                     options.with_columns = with_columns;
                     let lp = ALogicalPlan::Scan {
-                        paths: finger_print.paths.clone(),
+                        path: finger_print.path.clone(),
                         file_info,
                         output_schema,
                         predicate,

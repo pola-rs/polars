@@ -588,9 +588,7 @@ class Config(contextlib.ContextDecorator):
         """
         Set the number of elements to display for List values.
 
-        Empty lists will always print "[]". Negative values will result in all values
-        being printed. A value of 0 will always "[…]" for lists with contents. A value
-        of 1 will print only the final item in the list.
+        Values less than 0 will result in all values being printed.
 
         Parameters
         ----------

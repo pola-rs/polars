@@ -4,7 +4,6 @@ use arrow::legacy::utils::CustomIterTools;
 use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
-use polars_ops::chunked_array::ListNameSpaceImpl;
 use rayon::prelude::*;
 
 use crate::physical_plan::state::ExecutionState;

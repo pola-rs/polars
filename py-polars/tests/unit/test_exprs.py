@@ -428,10 +428,10 @@ def test_logical_boolean() -> None:
     # note, cannot use expressions in logical
     # boolean context (eg: and/or/not operators)
     with pytest.raises(TypeError, match="ambiguous"):
-        pl.col("colx") and pl.col("coly")  # type: ignore[redundant-expr]
+        pl.col("colx") and pl.col("coly")
 
     with pytest.raises(TypeError, match="ambiguous"):
-        pl.col("colx") or pl.col("coly")  # type: ignore[redundant-expr]
+        pl.col("colx") or pl.col("coly")
 
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
 

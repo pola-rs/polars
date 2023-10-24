@@ -45,7 +45,7 @@ rayon = "1.8"
 regex = "1.9"
 serde = "1.0.188"
 serde_json = "1"
-simd-json = { version = "0.12", features = ["known-key"] }
+simd-json = { version = "0.11", features = ["allow-non-simd", "known-key"] }
 smartstring = "1"
 sqlparser = "0.38"
 strum_macros = "0.25"
@@ -85,7 +85,7 @@ arrow-array = { version = ">=41", default-features = false }
 arrow-buffer = { version = ">=41", default-features = false }
 arrow-data = { version = ">=41", default-features = false }
 arrow-schema = { version = ">=41", default-features = false }
-parquet2 = { version = "0.17.2", features = ["async"], default-features = false }
+parquet2 = { version = "0.17.2", features = ["async"] }
 avro-schema = { version = "0.3" }
 
 [workspace.dependencies.arrow]
@@ -106,6 +106,5 @@ features = [
 ]
 
 [patch.crates-io]
-ahash = { git = "https://github.com/orlp/aHash", branch = "fix-arm-intrinsics" }
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
 # simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }

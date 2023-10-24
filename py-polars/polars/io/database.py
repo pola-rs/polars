@@ -31,49 +31,42 @@ if TYPE_CHECKING:
         Selectable: TypeAlias = Any  # type: ignore[no-redef]
 
 
-class _ArrowDriverProperties_(TypedDict):
-    fetch_all: str  # name of the method that fetches all arrow data
-    fetch_batches: str | None  # name of the method that fetches arrow data in batches
-    exact_batch_size: bool | None  # whether indicated batch size is respected exactly
-    repeat_batch_calls: bool  # repeat batch calls (if False, batch call is generator)
+class _DriverProperties_(TypedDict):
+    fetch_all: str
+    fetch_batches: str | None
+    exact_batch_size: bool | None
 
 
-_ARROW_DRIVER_REGISTRY_: dict[str, _ArrowDriverProperties_] = {
+_ARROW_DRIVER_REGISTRY_: dict[str, _DriverProperties_] = {
     "adbc_.*": {
         "fetch_all": "fetch_arrow_table",
         "fetch_batches": None,
         "exact_batch_size": None,
-        "repeat_batch_calls": False,
     },
     "arrow_odbc_proxy": {
         "fetch_all": "fetch_record_batches",
         "fetch_batches": "fetch_record_batches",
         "exact_batch_size": True,
-        "repeat_batch_calls": False,
     },
     "databricks": {
         "fetch_all": "fetchall_arrow",
         "fetch_batches": "fetchmany_arrow",
         "exact_batch_size": True,
-        "repeat_batch_calls": True,
     },
     "duckdb": {
         "fetch_all": "fetch_arrow_table",
         "fetch_batches": "fetch_record_batch",
         "exact_batch_size": True,
-        "repeat_batch_calls": False,
     },
     "snowflake": {
         "fetch_all": "fetch_arrow_all",
         "fetch_batches": "fetch_arrow_batches",
         "exact_batch_size": False,
-        "repeat_batch_calls": False,
     },
     "turbodbc": {
         "fetch_all": "fetchallarrow",
         "fetch_batches": "fetcharrowbatches",
         "exact_batch_size": False,
-        "repeat_batch_calls": False,
     },
 }
 
@@ -128,9 +121,10 @@ class ODBCCursorProxy:
 class ConnectionExecutor:
     """Abstraction for querying databases with user-supplied connection objects."""
 
-    # indicate if we can/should close the cursor on scope exit. note that we
-    # should never close the underlying connection, or a user-supplied cursor.
-    can_close_cursor: bool = False
+    # indicate that we acquired a cursor (and are therefore responsible for closing
+    # it on scope-exit). note that we should never close the underlying connection,
+    # or a user-supplied cursor.
+    acquired_cursor: bool = False
 
     def __init__(self, connection: ConnectionOrCursor) -> None:
         self.driver_name = (
@@ -150,57 +144,24 @@ class ConnectionExecutor:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        # iif we created it and are finished with it, we can
-        # close the cursor (but NOT the connection)
-        if self.can_close_cursor:
+        # iif we created it, close the cursor (NOT the connection)
+        if self.acquired_cursor:
             self.cursor.close()
 
     def __repr__(self) -> str:
         return f"<{type(self).__name__} module={self.driver_name!r}>"
 
-    def _arrow_batches(
-        self,
-        driver_properties: _ArrowDriverProperties_,
-        *,
-        batch_size: int | None,
-        iter_batches: bool,
-    ) -> Iterable[pa.RecordBatch]:
-        """Yield Arrow data in batches, or as a single 'fetchall' batch."""
-        fetch_batches = driver_properties["fetch_batches"]
-        if not iter_batches or fetch_batches is None:
-            fetch_method = driver_properties["fetch_all"]
-            yield getattr(self.result, fetch_method)()
-        else:
-            size = batch_size if driver_properties["exact_batch_size"] else None
-            repeat_batch_calls = driver_properties["repeat_batch_calls"]
-            fetchmany_arrow = getattr(self.result, fetch_batches)
-            if not repeat_batch_calls:
-                yield from fetchmany_arrow(size)
-            else:
-                while True:
-                    arrow = fetchmany_arrow(size)
-                    if not arrow:
-                        break
-                    yield arrow
-
     def _normalise_cursor(self, conn: ConnectionOrCursor) -> Cursor:
         """Normalise a connection object such that we have the query executor."""
         if self.driver_name == "sqlalchemy" and type(conn).__name__ == "Engine":
-            self.can_close_cursor = True
-            if conn.driver == "databricks-sql-python":  # type: ignore[union-attr]
-                # take advantage of the raw connection to get arrow integration
-                self.driver_name = "databricks"
-                return conn.raw_connection().cursor()  # type: ignore[union-attr]
-            else:
-                # sqlalchemy engine; direct use is deprecated, so prefer the connection
-                return conn.connect()  # type: ignore[union-attr]
-
+            # sqlalchemy engine; direct use is deprecated, so prefer the connection
+            self.acquired_cursor = True
+            return conn.connect()  # type: ignore[union-attr]
         elif hasattr(conn, "cursor"):
             # connection has a dedicated cursor; prefer over direct execute
             cursor = cursor() if callable(cursor := conn.cursor) else cursor
-            self.can_close_cursor = True
+            self.acquired_cursor = True
             return cursor
-
         elif hasattr(conn, "execute"):
             # can execute directly (given cursor, sqlalchemy connection, etc)
             return conn  # type: ignore[return-value]
@@ -245,20 +206,22 @@ class ConnectionExecutor:
         try:
             for driver, driver_properties in _ARROW_DRIVER_REGISTRY_.items():
                 if re.match(f"^{driver}$", self.driver_name):
+                    size = batch_size if driver_properties["exact_batch_size"] else None
                     fetch_batches = driver_properties["fetch_batches"]
-                    self.can_close_cursor = fetch_batches is None or not iter_batches
                     frames = (
                         from_arrow(batch, schema_overrides=schema_overrides)
-                        for batch in self._arrow_batches(
-                            driver_properties,
-                            iter_batches=iter_batches,
-                            batch_size=batch_size,
+                        for batch in (
+                            getattr(self.result, fetch_batches)(size)
+                            if (iter_batches and fetch_batches is not None)
+                            else [
+                                getattr(self.result, driver_properties["fetch_all"])()
+                            ]
                         )
                     )
                     return frames if iter_batches else next(frames)  # type: ignore[arg-type,return-value]
         except Exception as err:
             # eg: valid turbodbc/snowflake connection, but no arrow support
-            # compiled in to the underlying driver (or on this connection)
+            # available in the underlying driver or this connection
             arrow_not_supported = (
                 "does not support Apache Arrow",
                 "Apache Arrow format is not supported",

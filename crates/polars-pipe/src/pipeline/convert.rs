@@ -68,7 +68,7 @@ where
             Ok(Box::new(sources::DataFrameSource::from_df(df)) as Box<dyn Source>)
         },
         Scan {
-            paths,
+            path,
             file_info,
             file_options,
             predicate,
@@ -87,9 +87,8 @@ where
                 FileScan::Csv {
                     options: csv_options,
                 } => {
-                    assert_eq!(paths.len(), 1);
                     let src = sources::CsvSource::new(
-                        paths[0].clone(),
+                        path,
                         file_info.schema,
                         csv_options,
                         file_options,
@@ -103,9 +102,8 @@ where
                     cloud_options,
                     metadata,
                 } => {
-                    assert_eq!(paths.len(), 1);
                     let src = sources::ParquetSource::new(
-                        paths[0].clone(),
+                        path,
                         parquet_options,
                         cloud_options,
                         metadata,

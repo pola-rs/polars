@@ -36,7 +36,7 @@ def example_df() -> pl.DataFrame:
     ["1d", "2d", "3d", timedelta(days=1), timedelta(days=2), timedelta(days=3)],
 )
 @pytest.mark.parametrize("closed", ["left", "right", "none", "both"])
-def test_rolling_kernels_and_rolling(
+def test_rolling_kernels_and_group_by_rolling(
     example_df: pl.DataFrame, period: str | timedelta, closed: ClosedInterval
 ) -> None:
     out1 = example_df.set_sorted("dt").select(
@@ -56,7 +56,7 @@ def test_rolling_kernels_and_rolling(
     )
     out2 = (
         example_df.set_sorted("dt")
-        .rolling("dt", period=period, closed=closed)
+        .group_by_rolling("dt", period=period, closed=closed)
         .agg(
             [
                 pl.col("values").sum().alias("sum"),
@@ -145,7 +145,7 @@ def test_rolling_negative_offset(
             "value": [1, 2, 3, 4],
         }
     )
-    result = df.rolling("ts", period="2d", offset=offset, closed=closed).agg(
+    result = df.group_by_rolling("ts", period="2d", offset=offset, closed=closed).agg(
         pl.col("value")
     )
     expected = pl.DataFrame(
@@ -271,7 +271,7 @@ def test_rolling_group_by_extrema() -> None:
     ).with_columns(pl.col("col1").reverse().alias("row_nr"))
 
     assert (
-        df.rolling(
+        df.group_by_rolling(
             index_column="row_nr",
             period="3i",
         )
@@ -310,7 +310,7 @@ def test_rolling_group_by_extrema() -> None:
     ).with_columns(pl.col("col1").alias("row_nr"))
 
     assert (
-        df.rolling(
+        df.group_by_rolling(
             index_column="row_nr",
             period="3i",
         )
@@ -348,7 +348,7 @@ def test_rolling_group_by_extrema() -> None:
     ).with_columns(pl.col("col1").sort().alias("row_nr"))
 
     assert (
-        df.rolling(
+        df.group_by_rolling(
             index_column="row_nr",
             period="3i",
         )
@@ -379,7 +379,7 @@ def test_rolling_slice_pushdown() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "a", "b"], "c": [1, 3, 5]}).lazy()
     df = (
         df.sort("a")
-        .rolling(
+        .group_by_rolling(
             "a",
             by="b",
             period="2i",
@@ -407,7 +407,7 @@ def test_overlapping_groups_4628() -> None:
         }
     )
     assert (
-        df.rolling(index_column=pl.col("index").set_sorted(), period="3i").agg(
+        df.group_by_rolling(index_column=pl.col("index").set_sorted(), period="3i").agg(
             [
                 pl.col("val").diff(n=1).alias("val.diff"),
                 (pl.col("val") - pl.col("val").shift(1)).alias("val - val.shift"),
@@ -473,7 +473,7 @@ def test_rolling_var_numerical_stability_5197() -> None:
     assert res[:4] == [None] * 4
 
 
-def test_rolling_iter() -> None:
+def test_group_by_rolling_iter() -> None:
     df = pl.DataFrame(
         {
             "date": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 5)],
@@ -485,7 +485,7 @@ def test_rolling_iter() -> None:
     # Without 'by' argument
     result1 = [
         (name, data.shape)
-        for name, data in df.rolling(index_column="date", period="2d")
+        for name, data in df.group_by_rolling(index_column="date", period="2d")
     ]
     expected1 = [
         (date(2020, 1, 1), (1, 3)),
@@ -497,7 +497,7 @@ def test_rolling_iter() -> None:
     # With 'by' argument
     result2 = [
         (name, data.shape)
-        for name, data in df.rolling(index_column="date", period="2d", by="a")
+        for name, data in df.group_by_rolling(index_column="date", period="2d", by="a")
     ]
     expected2 = [
         ((1, date(2020, 1, 1)), (1, 3)),
@@ -507,18 +507,18 @@ def test_rolling_iter() -> None:
     assert result2 == expected2
 
 
-def test_rolling_negative_period() -> None:
+def test_group_by_rolling_negative_period() -> None:
     df = pl.DataFrame({"ts": [datetime(2020, 1, 1)], "value": [1]}).with_columns(
         pl.col("ts").set_sorted()
     )
     with pytest.raises(
         ComputeError, match="rolling window period should be strictly positive"
     ):
-        df.rolling("ts", period="-1d", offset="-1d").agg(pl.col("value"))
+        df.group_by_rolling("ts", period="-1d", offset="-1d").agg(pl.col("value"))
     with pytest.raises(
         ComputeError, match="rolling window period should be strictly positive"
     ):
-        df.lazy().rolling("ts", period="-1d", offset="-1d").agg(
+        df.lazy().group_by_rolling("ts", period="-1d", offset="-1d").agg(
             pl.col("value")
         ).collect()
     with pytest.raises(ComputeError, match="window size should be strictly positive"):

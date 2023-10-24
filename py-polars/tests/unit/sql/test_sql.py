@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import datetime
 import math
 from pathlib import Path
 
@@ -942,14 +941,12 @@ def test_sql_trim(foods_ipc_path: Path) -> None:
             "BY NAME",
             [(1, "zz"), (2, "yy"), (3, "xx")],
         ),
-        pytest.param(
+        (
+            # note: waiting for "https://github.com/sqlparser-rs/sqlparser-rs/pull/997"
             ["c1", "c2"],
             ["c2", "c1"],
             "DISTINCT BY NAME",
-            [(1, "zz"), (2, "yy"), (3, "xx")],
-            # TODO: Remove xfail marker when supported added in sqlparser-rs
-            # https://github.com/sqlparser-rs/sqlparser-rs/pull/997
-            marks=pytest.mark.xfail,
+            None,  # [(1, "zz"), (2, "yy"), (3, "xx")],
         ),
     ],
 )
@@ -957,7 +954,7 @@ def test_sql_union(
     cols1: list[str],
     cols2: list[str],
     union_subtype: str,
-    expected: list[tuple[int, str]],
+    expected: dict[str, list[int] | list[str]] | None,
 ) -> None:
     with pl.SQLContext(
         frame1=pl.DataFrame({"c1": [1, 2], "c2": ["zz", "yy"]}),
@@ -969,7 +966,11 @@ def test_sql_union(
             UNION {union_subtype}
             SELECT {', '.join(cols2)} FROM frame2
         """
-        assert sorted(ctx.execute(query).rows()) == expected
+        if expected is not None:
+            assert sorted(ctx.execute(query).rows()) == expected
+        else:
+            with pytest.raises(pl.ComputeError, match="sql parser error"):
+                ctx.execute(query)
 
 
 def test_sql_nullif_coalesce(foods_ipc_path: Path) -> None:
@@ -1207,27 +1208,3 @@ def test_sql_unary_ops_8890(match_float: bool) -> None:
             "c": [-3, -3],
             "d": [4, 4],
         }
-
-
-def test_sql_date() -> None:
-    df = pl.DataFrame(
-        {
-            "date": [
-                datetime.date(2021, 3, 15),
-                datetime.date(2021, 3, 28),
-                datetime.date(2021, 4, 4),
-            ],
-            "version": ["0.0.1", "0.7.3", "0.7.4"],
-        }
-    )
-
-    with pl.SQLContext(df=df, eager_execution=True) as ctx:
-        expected = pl.DataFrame({"date": [True, False, False]})
-        assert ctx.execute("SELECT date < DATE('2021-03-20') from df").frame_equal(
-            expected
-        )
-
-    expected = pl.DataFrame({"literal": ["2023-03-01"]})
-    assert pl.select(
-        pl.sql_expr("""CAST(DATE('2023-03', '%Y-%m') as STRING)""")
-    ).frame_equal(expected)

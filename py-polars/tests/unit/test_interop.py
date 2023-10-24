@@ -79,14 +79,6 @@ def test_to_numpy_no_zero_copy(
         series.to_numpy(zero_copy_only=True, use_pyarrow=use_pyarrow)
 
 
-def test_to_numpy_empty_no_pyarrow() -> None:
-    series = pl.Series([], dtype=pl.Null)
-    result = series.to_numpy()
-    assert result.dtype == pl.Float32
-    assert result.shape == (0,)
-    assert result.size == 0
-
-
 def test_from_pandas() -> None:
     df = pd.DataFrame(
         {

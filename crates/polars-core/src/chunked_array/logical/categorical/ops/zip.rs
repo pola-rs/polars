@@ -10,10 +10,10 @@ impl CategoricalChunked {
             RevMapping::Local(rev_map) => {
                 // the logic for merging the rev maps will concatenate utf8 arrays
                 // to make sure the indexes still make sense we need to offset the right hand side
-                self.physical()
-                    .zip_with(mask, &(other.physical() + rev_map.len() as u32))?
+                self.logical()
+                    .zip_with(mask, &(other.logical() + rev_map.len() as u32))?
             },
-            _ => self.physical().zip_with(mask, other.physical())?,
+            _ => self.logical().zip_with(mask, other.logical())?,
         };
         let new_state = self._merge_categorical_map(other)?;
 

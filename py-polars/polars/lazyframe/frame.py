@@ -2946,7 +2946,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lgb = self._ldf.group_by(exprs, maintain_order)
         return LazyGroupBy(lgb)
 
-    def rolling(
+    def group_by_rolling(
         self,
         index_column: IntoExpr,
         *,
@@ -2998,7 +2998,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
-        In case of a rolling operation on an integer column, the windows are defined by:
+        In case of a group_by_rolling on an integer column, the windows are defined by:
 
         - "1i"      # length 1
         - "10i"     # length 10
@@ -3054,14 +3054,19 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     pl.col("dt").str.strptime(pl.Datetime).set_sorted()
         ... )
         >>> out = (
-        ...     df.rolling(index_column="dt", period="2d")
+        ...     df.group_by_rolling(index_column="dt", period="2d")
         ...     .agg(
-        ...         pl.sum("a").alias("sum_a"),
-        ...         pl.min("a").alias("min_a"),
-        ...         pl.max("a").alias("max_a"),
+        ...         [
+        ...             pl.sum("a").alias("sum_a"),
+        ...             pl.min("a").alias("min_a"),
+        ...             pl.max("a").alias("max_a"),
+        ...         ]
         ...     )
         ...     .collect()
         ... )
+        >>> assert out["sum_a"].to_list() == [3, 10, 15, 24, 11, 1]
+        >>> assert out["max_a"].to_list() == [3, 7, 7, 9, 9, 1]
+        >>> assert out["min_a"].to_list() == [3, 3, 3, 3, 2, 1]
         >>> out
         shape: (6, 4)
         ┌─────────────────────┬───────┬───────┬───────┐
@@ -3086,7 +3091,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         period = _timedelta_to_pl_duration(period)
         offset = _timedelta_to_pl_duration(offset)
 
-        lgb = self._ldf.rolling(
+        lgb = self._ldf.group_by_rolling(
             index_column, period, offset, closed, pyexprs_by, check_sorted
         )
         return LazyGroupBy(lgb)
@@ -3193,7 +3198,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         See Also
         --------
-        rolling
+        group_by_rolling
 
         Notes
         -----
@@ -5656,7 +5661,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         left_on: str | Sequence[str] | None = None,
         right_on: str | Sequence[str] | None = None,
         how: Literal["left", "inner", "outer"] = "left",
-        include_nulls: bool | None = False,
     ) -> Self:
         """
         Update the values in this `LazyFrame` with the non-null values in `other`.
@@ -5678,14 +5682,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * 'inner' keeps only those rows where the key exists in both frames.
             * 'outer' will update existing rows where the key matches while also
               adding any new rows contained in the given frame.
-        include_nulls
-            If True, null values from the right dataframe will be used to update the
-            left dataframe.
 
         Notes
         -----
-        This is syntactic sugar for a left/inner join, with an optional coalesce when
-        `include_nulls = False`.
+        This is syntactic sugar for a join + coalesce (upsert) operation.
 
         Examples
         --------
@@ -5761,25 +5761,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 5   ┆ -66 │
         └─────┴─────┘
 
-        Update `df` values including null values in `new_df`, using an outer join
-        strategy that defines explicit join columns in each frame:
-
-        >>> lf.update(
-        ...     new_lf, left_on="A", right_on="C", how="outer", include_nulls=True
-        ... ).collect()
-        shape: (5, 2)
-        ┌─────┬──────┐
-        │ A   ┆ B    │
-        │ --- ┆ ---  │
-        │ i64 ┆ i64  │
-        ╞═════╪══════╡
-        │ 1   ┆ -99  │
-        │ 2   ┆ 500  │
-        │ 3   ┆ null │
-        │ 4   ┆ 700  │
-        │ 5   ┆ -66  │
-        └─────┴──────┘
-
         """
         if how not in ("left", "inner", "outer"):
             raise ValueError(
@@ -5828,38 +5809,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         # only use non-idx right columns present in left frame
         right_other = set(other.columns).intersection(self.columns) - set(right_on)
 
-        # When include_nulls is True, we need to distinguish records after the join that
-        # were originally null in the right frame, as opposed to records that were null
-        # because the key was missing from the right frame.
-        # Add a validity column to track whether row was matched or not.
-        if include_nulls:
-            validity = ("__POLARS_VALIDITY",)
-            other = other.with_columns(F.lit(True).alias(validity[0]))
-        else:
-            validity = ()  # type: ignore[assignment]
-
         tmp_name = "__POLARS_RIGHT"
-        drop_columns = [*(f"{name}{tmp_name}" for name in right_other), *validity]
         result = (
             self.join(
-                other.select(*right_on, *right_other, *validity),
+                other.select(*right_on, *right_other),
                 left_on=left_on,
                 right_on=right_on,
                 how=how,
                 suffix=tmp_name,
             )
             .with_columns(
-                (
-                    # use left value only when right value failed to join
-                    F.when(F.col(validity).is_null())
-                    .then(F.col(name))
-                    .otherwise(F.col(f"{name}{tmp_name}"))
-                    if include_nulls
-                    else F.coalesce([f"{name}{tmp_name}", F.col(name)])
-                ).alias(name)
-                for name in right_other
+                [
+                    F.coalesce([f"{column_name}{tmp_name}", F.col(column_name)]).alias(
+                        column_name
+                    )
+                    for column_name in right_other
+                ]
             )
-            .drop(drop_columns)
+            .drop([f"{name}{tmp_name}" for name in right_other])
         )
         if row_count_used:
             result = result.drop(row_count_name)
@@ -5895,7 +5862,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.group_by(by, *more_by, maintain_order=maintain_order)
 
-    @deprecate_renamed_function("rolling", version="0.19.0")
+    @deprecate_renamed_function("group_by_rolling", version="0.19.0")
     def groupby_rolling(
         self,
         index_column: IntoExpr,
@@ -5910,7 +5877,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Create rolling groups based on a time, Int32, or Int64 column.
 
         .. deprecated:: 0.19.0
-            This method has been renamed to :func:`LazyFrame.rolling`.
+            This method has been renamed to :func:`LazyFrame.group_by_rolling`.
 
         Parameters
         ----------
@@ -5946,67 +5913,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             passed, it will only be sorted within each `by` group).
 
         """
-        return self.rolling(
-            index_column,
-            period=period,
-            offset=offset,
-            closed=closed,
-            by=by,
-            check_sorted=check_sorted,
-        )
-
-    @deprecate_renamed_function("rolling", version="0.19.9")
-    def group_by_rolling(
-        self,
-        index_column: IntoExpr,
-        *,
-        period: str | timedelta,
-        offset: str | timedelta | None = None,
-        closed: ClosedInterval = "right",
-        by: IntoExpr | Iterable[IntoExpr] | None = None,
-        check_sorted: bool = True,
-    ) -> LazyGroupBy:
-        """
-        Create rolling groups based on a time, Int32, or Int64 column.
-
-        .. deprecated:: 0.19.9
-            This method has been renamed to :func:`LazyFrame.rolling`.
-
-        Parameters
-        ----------
-        index_column
-            Column used to group based on the time window.
-            Often of type Date/Datetime.
-            This column must be sorted in ascending order (or, if `by` is specified,
-            then it must be sorted in ascending order within each group).
-
-            In case of a rolling group by on indices, dtype needs to be one of
-            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
-            performance matters use an Int64 column.
-        period
-            length of the window - must be non-negative
-        offset
-            offset of the window. Default is -period
-        closed : {'right', 'left', 'both', 'none'}
-            Define which sides of the temporal interval are closed (inclusive).
-        by
-            Also group by this column/these columns
-        check_sorted
-            When the ``by`` argument is given, polars can not check sortedness
-            by the metadata and has to do a full scan on the index column to
-            verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to ``False``.
-            Doing so incorrectly will lead to incorrect output
-
-        Returns
-        -------
-        LazyGroupBy
-            Object you can call ``.agg`` on to aggregate by groups, the result
-            of which will be sorted by `index_column` (but note that if `by` columns are
-            passed, it will only be sorted within each `by` group).
-
-        """
-        return self.rolling(
+        return self.group_by_rolling(
             index_column,
             period=period,
             offset=offset,

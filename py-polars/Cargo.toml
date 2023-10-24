@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.19.10"
+version = "0.19.8"
 edition = "2021"
 
 [lib]
@@ -138,7 +138,6 @@ binary_encoding = ["polars/binary_encoding"]
 list_sets = ["polars-lazy/list_sets"]
 list_any_all = ["polars/list_any_all"]
 list_drop_nulls = ["polars/list_drop_nulls"]
-list_sample = ["polars/list_sample"]
 cutqcut = ["polars/cutqcut"]
 rle = ["polars/rle"]
 extract_groups = ["polars/extract_groups"]
@@ -166,7 +165,6 @@ operations = [
   "list_sets",
   "list_any_all",
   "list_drop_nulls",
-  "list_sample",
   "cutqcut",
   "rle",
   "extract_groups",
@@ -236,9 +234,6 @@ lto = "thin"
 [profile.release]
 codegen-units = 1
 lto = "fat"
-
-[patch.crates-io]
-ahash = { git = "https://github.com/orlp/aHash", branch = "fix-arm-intrinsics" }
 
 # This is ignored here; would be set in .cargo/config.toml.
 # Should not be used when packaging

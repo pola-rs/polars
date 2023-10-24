@@ -11,8 +11,6 @@ use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 #[cfg(feature = "dtype-struct")]
 use polars_core::POOL;
-#[cfg(feature = "propagate_nans")]
-use polars_ops::prelude::nan_propagating_aggregate;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::PartitionedAggregation;

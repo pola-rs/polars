@@ -13,10 +13,10 @@ doctest = false
 
 [dependencies]
 libloading = { version = "0.8.0", optional = true }
-polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
+polars-core = { workspace = true, features = ["lazy", "zip_with", "random"], default-features = false }
 polars-ffi = { workspace = true, optional = true }
-polars-io = { workspace = true, features = ["lazy"] }
-polars-ops = { workspace = true, features = ["zip_with"] }
+polars-io = { workspace = true, features = ["lazy"], default-features = false }
+polars-ops = { workspace = true, features = ["zip_with"], default-features = false }
 polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
 
@@ -89,7 +89,7 @@ extract_jsonpath = ["polars-ops/extract_jsonpath"]
 approx_unique = ["polars-ops/approx_unique"]
 is_in = ["polars-ops/is_in"]
 repeat_by = ["polars-ops/repeat_by"]
-round_series = ["polars-ops/round_series"]
+round_series = ["polars-core/round_series"]
 is_first_distinct = ["polars-core/is_first_distinct", "polars-ops/is_first_distinct"]
 is_last_distinct = ["polars-core/is_last_distinct", "polars-ops/is_last_distinct"]
 is_unique = ["polars-ops/is_unique"]
@@ -98,7 +98,7 @@ asof_join = ["polars-core/asof_join", "polars-time", "polars-ops/asof_join"]
 concat_str = []
 range = []
 mode = ["polars-ops/mode"]
-cum_agg = ["polars-ops/cum_agg"]
+cum_agg = ["polars-core/cum_agg"]
 interpolate = ["polars-ops/interpolate"]
 rolling_window = [
   "polars-core/rolling_window",
@@ -107,13 +107,13 @@ rolling_window = [
   "polars-time/rolling_window",
 ]
 rank = ["polars-ops/rank"]
-diff = ["polars-ops/diff"]
-pct_change = ["polars-ops/pct_change"]
+diff = ["polars-core/diff", "polars-ops/diff"]
+pct_change = ["polars-core/pct_change"]
 moment = ["polars-core/moment", "polars-ops/moment"]
 abs = ["polars-core/abs"]
 random = ["polars-core/random"]
 dynamic_group_by = ["polars-core/dynamic_group_by"]
-ewma = ["polars-ops/ewma"]
+ewma = ["polars-core/ewma"]
 dot_diagram = []
 unique_counts = ["polars-core/unique_counts"]
 log = ["polars-ops/log"]
@@ -136,7 +136,6 @@ fused = ["polars-ops/fused"]
 list_sets = ["polars-ops/list_sets"]
 list_any_all = ["polars-ops/list_any_all"]
 list_drop_nulls = ["polars-ops/list_drop_nulls"]
-list_sample = ["polars-ops/list_sample"]
 cutqcut = ["polars-ops/cutqcut"]
 rle = ["polars-ops/rle"]
 extract_groups = ["regex", "dtype-struct", "polars-ops/extract_groups"]

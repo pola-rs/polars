@@ -150,20 +150,16 @@ pub fn create_physical_plan(
     match logical_plan {
         #[cfg(feature = "python")]
         PythonScan { options, .. } => Ok(Box::new(executors::PythonScanExec { options })),
-        Sink { payload, .. } => match payload {
-            SinkType::Memory => {
-                polars_bail!(InvalidOperation: "memory sink not supported in the standard engine")
-            },
-            SinkType::File { file_type, .. } => {
-                polars_bail!(InvalidOperation:
+        Sink { payload, .. } => {
+            match payload {
+                SinkType::Memory => panic!("Memory Sink not supported in the standard engine."),
+                SinkType::File{file_type, ..} => panic!(
                     "sink_{file_type:?} not yet supported in standard engine. Use 'collect().write_parquet()'"
-                )
-            },
-            #[cfg(feature = "cloud")]
-            SinkType::Cloud { .. } => {
-                polars_bail!(InvalidOperation: "cloud sink not supported in standard engine.")
-            },
-        },
+                ),
+                #[cfg(feature = "cloud")]
+                SinkType::Cloud{..} => panic!("Cloud Sink not supported in standard engine.")
+            }
+        }
         Union { inputs, options } => {
             let inputs = inputs
                 .into_iter()
@@ -193,7 +189,7 @@ pub fn create_physical_plan(
             )))
         },
         Scan {
-            paths,
+            path,
             file_info,
             output_schema,
             scan_type,
@@ -217,48 +213,39 @@ pub fn create_physical_plan(
                 #[cfg(feature = "csv")]
                 FileScan::Csv {
                     options: csv_options,
-                } => {
-                    assert_eq!(paths.len(), 1);
-                    let path = paths[0].clone();
-                    Ok(Box::new(executors::CsvExec {
-                        path,
-                        schema: file_info.schema,
-                        options: csv_options,
-                        predicate,
-                        file_options,
-                    }))
-                },
+                } => Ok(Box::new(executors::CsvExec {
+                    path,
+                    schema: file_info.schema,
+                    options: csv_options,
+                    predicate,
+                    file_options,
+                })),
                 #[cfg(feature = "ipc")]
-                FileScan::Ipc { options } => {
-                    assert_eq!(paths.len(), 1);
-                    let path = paths[0].clone();
-                    Ok(Box::new(executors::IpcExec {
-                        path,
-                        schema: file_info.schema,
-                        predicate,
-                        options,
-                        file_options,
-                    }))
-                },
+                FileScan::Ipc { options } => Ok(Box::new(executors::IpcExec {
+                    path,
+                    schema: file_info.schema,
+                    predicate,
+                    options,
+                    file_options,
+                })),
                 #[cfg(feature = "parquet")]
                 FileScan::Parquet {
                     options,
                     cloud_options,
-                    metadata,
+                    metadata
+                } => Ok(Box::new(executors::ParquetExec::new(
+                    path,
+                    file_info,
+                    predicate,
+                    options,
+                    cloud_options,
+                    file_options,
+                    metadata
+                ))),
+                FileScan::Anonymous {
+                    function,
+                    ..
                 } => {
-                    assert_eq!(paths.len(), 1);
-                    let path = paths[0].clone();
-                    Ok(Box::new(executors::ParquetExec::new(
-                        path,
-                        file_info,
-                        predicate,
-                        options,
-                        cloud_options,
-                        file_options,
-                        metadata,
-                    )))
-                },
-                FileScan::Anonymous { function, .. } => {
                     Ok(Box::new(executors::AnonymousScanExec {
                         function,
                         predicate,
@@ -267,7 +254,8 @@ pub fn create_physical_plan(
                         output_schema,
                         predicate_has_windows: state.has_windows,
                     }))
-                },
+
+                }
             }
         },
         Projection {

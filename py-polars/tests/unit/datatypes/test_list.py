@@ -43,7 +43,7 @@ def test_dtype() -> None:
         "dt": pl.List(pl.Date),
         "dtm": pl.List(pl.Datetime),
     }
-    assert all(tp in pl.NESTED_DTYPES for tp in df.dtypes)
+    assert all(tp.is_nested for tp in df.dtypes)
     assert df.schema["i"].inner == pl.Int8  # type: ignore[union-attr]
     assert df.rows() == [
         (
@@ -69,15 +69,17 @@ def test_categorical() -> None:
     out = (
         df.group_by(["a", "b"])
         .agg(
-            pl.col("c").count().alias("num_different_c"),
-            pl.col("c").alias("c_values"),
+            [
+                pl.col("c").count().alias("num_different_c"),
+                pl.col("c").alias("c_values"),
+            ]
         )
         .filter(pl.col("num_different_c") >= 2)
         .to_series(3)
     )
 
     assert out.inner_dtype == pl.Categorical
-    assert out.inner_dtype not in pl.NESTED_DTYPES
+    assert not out.inner_dtype.is_nested
 
 
 def test_cast_inner() -> None:
@@ -466,10 +468,10 @@ def test_list_recursive_categorical_cast() -> None:
 @pytest.mark.parametrize(
     ("data", "expected_data", "dtype"),
     [
-        ([None, 1, 2], [None, [1], [2]], pl.Int64),
-        ([None, 1.0, 2.0], [None, [1.0], [2.0]], pl.Float64),
-        ([None, "x", "y"], [None, ["x"], ["y"]], pl.Utf8),
-        ([None, True, False], [None, [True], [False]], pl.Boolean),
+        ([1, 2], [[1], [2]], pl.Int64),
+        ([1.0, 2.0], [[1.0], [2.0]], pl.Float64),
+        (["x", "y"], [["x"], ["y"]], pl.Utf8),
+        ([True, False], [[True], [False]], pl.Boolean),
     ],
 )
 def test_non_nested_cast_to_list(
@@ -563,11 +565,3 @@ def test_list_inner_cast_physical_11513() -> None:
         },
     )
     assert df.select(pl.col("struct").take(0)).to_dict(False) == {"struct": [[]]}
-
-
-@pytest.mark.parametrize(
-    ("dtype", "expected"), [(pl.List, True), (pl.Struct, True), (pl.Utf8, False)]
-)
-def test_list_is_nested_deprecated(dtype: PolarsDataType, expected: bool) -> None:
-    with pytest.deprecated_call():
-        assert dtype.is_nested is expected

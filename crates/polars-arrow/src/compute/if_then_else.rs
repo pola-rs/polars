@@ -6,6 +6,24 @@ use crate::bitmap::utils::SlicesIterator;
 
 /// Returns the values from `lhs` if the predicate is `true` or from the `rhs` if the predicate is false
 /// Returns `None` if the predicate is `None`.
+/// # Example
+/// ```rust
+/// # use polars_arrow::error::Result;
+/// use polars_arrow::compute::if_then_else::if_then_else;
+/// use polars_arrow::array::{Int32Array, BooleanArray};
+///
+/// # fn main() -> Result<()> {
+/// let lhs = Int32Array::from_slice(&[1, 2, 3]);
+/// let rhs = Int32Array::from_slice(&[4, 5, 6]);
+/// let predicate = BooleanArray::from(&[Some(true), None, Some(false)]);
+/// let result = if_then_else(&predicate, &lhs, &rhs)?;
+///
+/// let expected = Int32Array::from(&[Some(1), None, Some(6)]);
+///
+/// assert_eq!(expected, result.as_ref());
+/// # Ok(())
+/// # }
+/// ```
 pub fn if_then_else(
     predicate: &BooleanArray,
     lhs: &dyn Array,

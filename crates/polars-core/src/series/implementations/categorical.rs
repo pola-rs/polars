@@ -35,7 +35,7 @@ impl SeriesWrap<CategoricalChunked> {
     where
         F: Fn(&UInt32Chunked) -> UInt32Chunked,
     {
-        let cats = apply(self.0.physical());
+        let cats = apply(self.0.logical());
         self.finish_with_state(keep_fast_unique, cats)
     }
 
@@ -47,14 +47,14 @@ impl SeriesWrap<CategoricalChunked> {
     where
         F: for<'b> Fn(&'a UInt32Chunked) -> PolarsResult<UInt32Chunked>,
     {
-        let cats = apply(self.0.physical())?;
+        let cats = apply(self.0.logical())?;
         Ok(self.finish_with_state(keep_fast_unique, cats))
     }
 }
 
 impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     fn compute_len(&mut self) {
-        self.0.physical_mut().compute_len()
+        self.0.logical_mut().compute_len()
     }
     fn _field(&self) -> Cow<Field> {
         Cow::Owned(self.0.field())
@@ -78,7 +78,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        self.0.physical().equal_element(idx_self, idx_other, other)
+        self.0.logical().equal_element(idx_self, idx_other, other)
     }
 
     #[cfg(feature = "zip_with")]
@@ -91,24 +91,24 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         if self.0.uses_lexical_ordering() {
             (&self.0).into_partial_ord_inner()
         } else {
-            self.0.physical().into_partial_ord_inner()
+            self.0.logical().into_partial_ord_inner()
         }
     }
 
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
-        self.0.physical().vec_hash(random_state, buf)?;
+        self.0.logical().vec_hash(random_state, buf)?;
         Ok(())
     }
 
     fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
-        self.0.physical().vec_hash_combine(build_hasher, hashes)?;
+        self.0.logical().vec_hash_combine(build_hasher, hashes)?;
         Ok(())
     }
 
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
-        let list = self.0.physical().agg_list(groups);
+        let list = self.0.logical().agg_list(groups);
         let mut list = list.list().unwrap().clone();
         list.to_logical(self.dtype().clone());
         list.into_series()
@@ -122,7 +122,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         }
         #[cfg(not(feature = "performant"))]
         {
-            self.0.physical().group_tuples(multithreaded, sorted)
+            self.0.logical().group_tuples(multithreaded, sorted)
         }
     }
 
@@ -133,24 +133,24 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
 
 impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     fn rename(&mut self, name: &str) {
-        self.0.physical_mut().rename(name);
+        self.0.logical_mut().rename(name);
     }
 
     fn chunk_lengths(&self) -> ChunkIdIter {
-        self.0.physical().chunk_id()
+        self.0.logical().chunk_id()
     }
     fn name(&self) -> &str {
-        self.0.physical().name()
+        self.0.logical().name()
     }
 
     fn chunks(&self) -> &Vec<ArrayRef> {
-        self.0.physical().chunks()
+        self.0.logical().chunks()
     }
     unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
-        self.0.physical_mut().chunks_mut()
+        self.0.logical_mut().chunks_mut()
     }
     fn shrink_to_fit(&mut self) {
-        self.0.physical_mut().shrink_to_fit()
+        self.0.logical_mut().shrink_to_fit()
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
@@ -166,7 +166,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), extend);
         let other = other.categorical()?;
-        self.0.physical_mut().extend(other.physical());
+        self.0.logical_mut().extend(other.logical());
         let new_rev_map = self.0._merge_categorical_map(other)?;
         // SAFETY
         // rev_maps are merged
@@ -181,13 +181,13 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
 
     #[cfg(feature = "chunked_ids")]
     unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
-        let cats = self.0.physical().take_chunked_unchecked(by, sorted);
+        let cats = self.0.logical().take_chunked_unchecked(by, sorted);
         self.finish_with_state(false, cats).into_series()
     }
 
     #[cfg(feature = "chunked_ids")]
     unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-        let cats = self.0.physical().take_opt_chunked_unchecked(by);
+        let cats = self.0.logical().take_opt_chunked_unchecked(by);
         self.finish_with_state(false, cats).into_series()
     }
 
@@ -246,11 +246,11 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn null_count(&self) -> usize {
-        self.0.physical().null_count()
+        self.0.logical().null_count()
     }
 
     fn has_validity(&self) -> bool {
-        self.0.physical().has_validity()
+        self.0.logical().has_validity()
     }
 
     #[cfg(feature = "algorithm_group_by")]
@@ -265,15 +265,15 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
 
     #[cfg(feature = "algorithm_group_by")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
-        self.0.physical().arg_unique()
+        self.0.logical().arg_unique()
     }
 
     fn is_null(&self) -> BooleanChunked {
-        self.0.physical().is_null()
+        self.0.logical().is_null()
     }
 
     fn is_not_null(&self) -> BooleanChunked {
-        self.0.physical().is_not_null()
+        self.0.logical().is_not_null()
     }
 
     fn reverse(&self) -> Series {
@@ -281,7 +281,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn as_single_ptr(&mut self) -> PolarsResult<usize> {
-        self.0.physical_mut().as_single_ptr()
+        self.0.logical_mut().as_single_ptr()
     }
 
     fn shift(&self, periods: i64) -> Series {
@@ -289,29 +289,29 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn _sum_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.0.physical().name(), 1).into_series()
+        CategoricalChunked::full_null(self.0.logical().name(), 1).into_series()
     }
     fn max_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.0.physical().name(), 1).into_series()
+        CategoricalChunked::full_null(self.0.logical().name(), 1).into_series()
     }
     fn min_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.0.physical().name(), 1).into_series()
+        CategoricalChunked::full_null(self.0.logical().name(), 1).into_series()
     }
     fn median_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.0.physical().name(), 1).into_series()
+        CategoricalChunked::full_null(self.0.logical().name(), 1).into_series()
     }
     fn var_as_series(&self, _ddof: u8) -> Series {
-        CategoricalChunked::full_null(self.0.physical().name(), 1).into_series()
+        CategoricalChunked::full_null(self.0.logical().name(), 1).into_series()
     }
     fn std_as_series(&self, _ddof: u8) -> Series {
-        CategoricalChunked::full_null(self.0.physical().name(), 1).into_series()
+        CategoricalChunked::full_null(self.0.logical().name(), 1).into_series()
     }
     fn quantile_as_series(
         &self,
         _quantile: f64,
         _interpol: QuantileInterpolOptions,
     ) -> PolarsResult<Series> {
-        Ok(CategoricalChunked::full_null(self.0.physical().name(), 1).into_series())
+        Ok(CategoricalChunked::full_null(self.0.logical().name(), 1).into_series())
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
@@ -324,6 +324,6 @@ impl private::PrivateSeriesNumeric for SeriesWrap<CategoricalChunked> {
         false
     }
     fn bit_repr_small(&self) -> UInt32Chunked {
-        self.0.physical().clone()
+        self.0.logical().clone()
     }
 }

@@ -15,12 +15,7 @@ pub(super) fn approx_n_unique(s: &Series) -> PolarsResult<Series> {
 
 #[cfg(feature = "diff")]
 pub(super) fn diff(s: &Series, n: i64, null_behavior: NullBehavior) -> PolarsResult<Series> {
-    polars_ops::prelude::diff(s, n, null_behavior)
-}
-
-#[cfg(feature = "pct_change")]
-pub(super) fn pct_change(s: &[Series]) -> PolarsResult<Series> {
-    polars_ops::prelude::pct_change(&s[0], &s[1])
+    s.diff(n, null_behavior)
 }
 
 #[cfg(feature = "interpolate")]
@@ -75,33 +70,4 @@ pub(super) fn max_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
 
 pub(super) fn min_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     polars_ops::prelude::min_horizontal(s)
-}
-
-pub(super) fn drop_nulls(s: &Series) -> PolarsResult<Series> {
-    Ok(s.drop_nulls())
-}
-
-#[cfg(feature = "mode")]
-pub(super) fn mode(s: &Series) -> PolarsResult<Series> {
-    mode::mode(s)
-}
-
-#[cfg(feature = "moment")]
-pub(super) fn skew(s: &Series, bias: bool) -> PolarsResult<Series> {
-    s.skew(bias).map(|opt_v| Series::new(s.name(), &[opt_v]))
-}
-
-#[cfg(feature = "moment")]
-pub(super) fn kurtosis(s: &Series, fisher: bool, bias: bool) -> PolarsResult<Series> {
-    s.kurtosis(fisher, bias)
-        .map(|opt_v| Series::new(s.name(), &[opt_v]))
-}
-
-pub(super) fn arg_unique(s: &Series) -> PolarsResult<Series> {
-    s.arg_unique().map(|ok| ok.into_series())
-}
-
-#[cfg(feature = "rank")]
-pub(super) fn rank(s: &Series, options: RankOptions, seed: Option<u64>) -> PolarsResult<Series> {
-    Ok(s.rank(options, seed))
 }

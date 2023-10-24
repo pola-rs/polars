@@ -26,7 +26,8 @@ checksum = "aae1277d39aeec15cb388266ecc24b11c80469deae6067e17a1a7aa9e5c1f234"
 [[package]]
 name = "ahash"
 version = "0.8.3"
-source = "git+https://github.com/orlp/aHash?branch=fix-arm-intrinsics#80685f88d3c120ef39fb3fde1c7786b044af5e8b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c99f64d1e06488f620f932677e24bc6e2897582980441ae90a671415bd7ec2f"
 dependencies = [
  "cfg-if",
  "getrandom",
@@ -1489,7 +1490,7 @@ dependencies = [
  "snap",
  "streaming-decompression",
  "xxhash-rust",
- "zstd 0.12.4",
+ "zstd",
 ]
 
 [[package]]
@@ -1626,7 +1627,7 @@ dependencies = [
  "simdutf8",
  "streaming-iterator",
  "strength_reduce",
- "zstd 0.13.0",
+ "zstd",
 ]
 
 [[package]]
@@ -1925,7 +1926,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.19.10"
+version = "0.19.8"
 dependencies = [
  "ahash",
  "built",
@@ -2394,9 +2395,9 @@ dependencies = [
 
 [[package]]
 name = "simd-json"
-version = "0.12.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0f07a84c7456b901b8dd2c1d44caca8b0fd2c2616206ee5acc9d9da61e8d9ec"
+checksum = "474b451aaac1828ed12f6454a80fe58b940ae2998d10389d41533940a6f641bf"
 dependencies = [
  "ahash",
  "getrandom",
@@ -3114,16 +3115,7 @@ version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a27595e173641171fc74a1232b7b1c7a7cb6e18222c11e9dfb9888fa424c53c"
 dependencies = [
- "zstd-safe 6.0.6",
-]
-
-[[package]]
-name = "zstd"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bffb3309596d527cfcba7dfc6ed6052f1d39dfbd7c867aa2e865e4a449c10110"
-dependencies = [
- "zstd-safe 7.0.0",
+ "zstd-safe",
 ]
 
 [[package]]
@@ -3133,15 +3125,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee98ffd0b48ee95e6c5168188e44a54550b1564d9d530ee21d5f0eaed1069581"
 dependencies = [
  "libc",
- "zstd-sys",
-]
-
-[[package]]
-name = "zstd-safe"
-version = "7.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43747c7422e2924c11144d5229878b98180ef8b06cca4ab5af37afc8a8d8ea3e"
-dependencies = [
  "zstd-sys",
 ]
 

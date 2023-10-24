@@ -9,8 +9,6 @@ on:
   push:
     tags:
       - py-**
-  # Allow manual trigger until we have properly versioned docs
-  workflow_dispatch:
 
 jobs:
   markdown-link-check:
@@ -28,7 +26,7 @@ jobs:
       - uses: psf/black@stable
         with:
           src: docs/src/python
-          version: "23.10.0"
+          version: "23.9.1"
 
   deploy:
     runs-on: ubuntu-latest
@@ -74,12 +72,12 @@ jobs:
         run: mkdocs build
 
       - name: Add .nojekyll
-        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+        if: ${{ github.ref_type == 'tag' }}
         working-directory: site
         run: touch .nojekyll
 
       - name: Deploy docs
-        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+        if: ${{ github.ref_type == 'tag' }}
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: site

@@ -377,7 +377,7 @@ impl ProjectionPushDown {
                 Ok(PythonScan { options, predicate })
             },
             Scan {
-                paths,
+                path,
                 file_info,
                 scan_type,
                 predicate,
@@ -421,7 +421,7 @@ impl ProjectionPushDown {
                 }
 
                 let lp = Scan {
-                    paths,
+                    path,
                     file_info,
                     output_schema,
                     scan_type,

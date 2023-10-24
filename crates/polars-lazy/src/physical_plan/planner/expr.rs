@@ -603,11 +603,10 @@ where
 
     let mut iter = chunks.into_iter();
     let first = iter.next().unwrap();
-    let dtype = first.dtype();
-    let out = iter.fold(first.to_physical_repr().into_owned(), |mut acc, s| {
-        acc.append(&s.to_physical_repr()).unwrap();
+    let out = iter.fold(first, |mut acc, s| {
+        acc.append(&s).unwrap();
         acc
     });
 
-    unsafe { f(out.cast_unchecked(dtype).unwrap()).map(Some) }
+    f(out).map(Some)
 }

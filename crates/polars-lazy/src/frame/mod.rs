@@ -31,7 +31,7 @@ use polars_plan::global::FETCH_ROWS;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
 use polars_plan::logical_plan::collect_fingerprints;
 use polars_plan::logical_plan::optimize;
-use polars_plan::utils::expr_output_name;
+use polars_plan::utils::expr_to_leaf_column_names;
 use smartstring::alias::String as SmartString;
 
 use crate::fallible;
@@ -1182,7 +1182,7 @@ impl LazyFrame {
         JoinBuilder::new(self)
     }
 
-    /// Add or replace a column, given as an expression, to a DataFrame.
+    /// Add a column, given as an expression, to a DataFrame.
     ///
     /// # Example
     ///
@@ -1214,7 +1214,7 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Add or replace multiple columns, given as expressions, to a DataFrame.
+    /// Add multiple columns, given as expressions, to a DataFrame.
     ///
     /// # Example
     ///
@@ -1239,7 +1239,7 @@ impl LazyFrame {
         )
     }
 
-    /// Add or replace multiple columns to a DataFrame, but evaluate them sequentially.
+    /// Add multiple columns to a DataFrame, but evaluate them sequentially.
     pub fn with_columns_seq<E: AsRef<[Expr]>>(self, exprs: E) -> LazyFrame {
         let exprs = exprs.as_ref().to_vec();
         self.with_columns_impl(
@@ -1674,10 +1674,10 @@ impl LazyGroupBy {
         let keys = self
             .keys
             .iter()
-            .filter_map(|expr| expr_output_name(expr).ok())
+            .flat_map(|k| expr_to_leaf_column_names(k).into_iter())
             .collect::<Vec<_>>();
 
-        self.agg([col("*").exclude(&keys).head(n)])
+        self.agg([col("*").exclude(&keys).head(n).keep_name()])
             .explode([col("*").exclude(&keys)])
     }
 
@@ -1686,10 +1686,10 @@ impl LazyGroupBy {
         let keys = self
             .keys
             .iter()
-            .filter_map(|expr| expr_output_name(expr).ok())
+            .flat_map(|k| expr_to_leaf_column_names(k).into_iter())
             .collect::<Vec<_>>();
 
-        self.agg([col("*").exclude(&keys).tail(n)])
+        self.agg([col("*").exclude(&keys).tail(n).keep_name()])
             .explode([col("*").exclude(&keys)])
     }
 

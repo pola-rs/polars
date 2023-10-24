@@ -481,30 +481,14 @@ class Series:
                 return self.clone()
             elif (other is False and op == "eq") or (other is True and op == "neq"):
                 return ~self
-        elif isinstance(other, float) and self.dtype in INTEGER_DTYPES:
-            # require upcast when comparing int series to float value
-            self = self.cast(Float64)
-            f = get_ffi_func(op + "_<>", Float64, self._s)
-            assert f is not None
-            return self._from_pyseries(f(other))
-        elif isinstance(other, datetime):
-            if self.dtype == Date:
-                # require upcast when comparing date series to datetime
-                self = self.cast(Datetime("us"))
-                time_unit = "us"
-            elif self.dtype == Datetime:
-                # Use local time zone info
-                time_zone = self.dtype.time_zone  # type: ignore[union-attr]
-                if str(other.tzinfo) != str(time_zone):
-                    raise TypeError(
-                        f"Datetime time zone {other.tzinfo!r} does not match Series timezone {time_zone!r}"
-                    )
-                time_unit = self.dtype.time_unit  # type: ignore[union-attr]
-            else:
-                raise ValueError(
-                    f"cannot compare datetime.datetime to series of type {self.dtype}"
+
+        if isinstance(other, datetime) and self.dtype == Datetime:
+            time_zone = self.dtype.time_zone  # type: ignore[union-attr]
+            if str(other.tzinfo) != str(time_zone):
+                raise TypeError(
+                    f"Datetime time zone {other.tzinfo!r} does not match Series timezone {time_zone!r}"
                 )
-            ts = _datetime_to_pl_timestamp(other, time_unit)  # type: ignore[arg-type]
+            ts = _datetime_to_pl_timestamp(other, self.dtype.time_unit)  # type: ignore[union-attr]
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(ts))
@@ -513,13 +497,14 @@ class Series:
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(d))
-        elif self.dtype == Categorical and not isinstance(other, Series):
-            other = Series([other])
         elif isinstance(other, date) and self.dtype == Date:
             d = _date_to_pl_date(other)
             f = get_ffi_func(op + "_<>", Int32, self._s)
             assert f is not None
             return self._from_pyseries(f(d))
+        elif self.dtype == Categorical and not isinstance(other, Series):
+            other = Series([other])
+
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, dtype_if_empty=self.dtype)
         if isinstance(other, Series):
@@ -633,7 +618,7 @@ class Series:
 
     def eq_missing(self, other: Any) -> Self | Expr:
         """
-        Method equivalent of equality operator ``series == other`` where ``None == None``.
+        Method equivalent of equality operator ``series == other`` where `None` == None`.
 
         This differs from the standard ``ne`` where null values are propagated.
 
@@ -684,7 +669,7 @@ class Series:
 
     def ne_missing(self, other: Any) -> Self | Expr:
         """
-        Method equivalent of equality operator ``series != other`` where ``None == None``.
+        Method equivalent of equality operator ``series != other`` where `None` == None`.
 
         This differs from the standard ``ne`` where null values are propagated.
 
@@ -3826,7 +3811,7 @@ class Series:
 
         """
 
-    def to_list(self, *, use_pyarrow: bool | None = None) -> list[Any]:
+    def to_list(self, *, use_pyarrow: bool = False) -> list[Any]:
         """
         Convert this Series to a Python List. This operation clones data.
 
@@ -3844,15 +3829,8 @@ class Series:
         <class 'list'>
 
         """
-        if use_pyarrow is not None:
-            issue_deprecation_warning(
-                "The parameter `use_pyarrow` for `Series.to_list` is deprecated."
-                " Call the method without `use_pyarrow` to silence this warning.",
-                version="0.19.9",
-            )
-            if use_pyarrow:
-                return self.to_arrow().to_pylist()
-
+        if use_pyarrow:
+            return self.to_arrow().to_pylist()
         return self._s.to_list()
 
     def rechunk(self, *, in_place: bool = False) -> Self:
@@ -6003,7 +5981,7 @@ class Series:
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Series:
         """
-        Calculate the first discrete difference between shifted items.
+        Calculate the n-th discrete difference.
 
         Parameters
         ----------
@@ -6048,7 +6026,7 @@ class Series:
 
         """
 
-    def pct_change(self, n: int | IntoExprColumn = 1) -> Series:
+    def pct_change(self, n: int = 1) -> Series:
         """
         Computes percentage change between values.
 
@@ -6428,7 +6406,6 @@ class Series:
 
         """
 
-    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_mean(
         self,
         com: float | None = None,
@@ -6496,21 +6473,8 @@ class Series:
                   :math:`1-\alpha` and :math:`1` if ``adjust=True``,
                   and :math:`1-\alpha` and :math:`\alpha` if ``adjust=False``.
 
-        Examples
-        --------
-        >>> s = pl.Series([1, 2, 3])
-        >>> s.ewm_mean(com=1)
-        shape: (3,)
-        Series: '' [f64]
-        [
-                1.0
-                1.666667
-                2.428571
-        ]
-
         """
 
-    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_std(
         self,
         com: float | None = None,
@@ -6596,7 +6560,6 @@ class Series:
 
         """
 
-    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_var(
         self,
         com: float | None = None,

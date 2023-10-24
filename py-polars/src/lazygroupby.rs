@@ -19,18 +19,18 @@ pub struct PyLazyGroupBy {
 #[pymethods]
 impl PyLazyGroupBy {
     fn agg(&mut self, aggs: Vec<PyExpr>) -> PyLazyFrame {
-        let lgb = self.lgb.clone().unwrap();
+        let lgb = self.lgb.take().unwrap();
         let aggs = aggs.to_exprs();
         lgb.agg(aggs).into()
     }
 
     fn head(&mut self, n: usize) -> PyLazyFrame {
-        let lgb = self.lgb.clone().unwrap();
+        let lgb = self.lgb.take().unwrap();
         lgb.head(Some(n)).into()
     }
 
     fn tail(&mut self, n: usize) -> PyLazyFrame {
-        let lgb = self.lgb.clone().unwrap();
+        let lgb = self.lgb.take().unwrap();
         lgb.tail(Some(n)).into()
     }
 
@@ -39,7 +39,7 @@ impl PyLazyGroupBy {
         lambda: PyObject,
         schema: Option<Wrap<Schema>>,
     ) -> PyResult<PyLazyFrame> {
-        let lgb = self.lgb.clone().unwrap();
+        let lgb = self.lgb.take().unwrap();
         let schema = match schema {
             Some(schema) => Arc::new(schema.0),
             None => LazyFrame::from(lgb.logical_plan.clone())

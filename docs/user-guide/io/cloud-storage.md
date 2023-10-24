@@ -32,7 +32,7 @@ Polars can scan a Parquet file in lazy mode from cloud storage. We may need to p
 
 This query creates a `LazyFrame` without downloading the file. In the `LazyFrame` we have access to file metadata such as the schema. Polars uses the `object_store.rs` library internally to manage the interface with the cloud storage providers and so no extra dependencies are required in Python to scan a cloud Parquet file.
 
-If we create a lazy query with [predicate and projection pushdowns](../lazy/optimizations.md), the query optimizer will apply them before the file is downloaded. This can significantly reduce the amount of data that needs to be downloaded. The query evaluation is triggered by calling `collect`.
+If we create a lazy query with [predicate and projection pushdowns](../lazy/optimizations.md), the query optimiszr will apply them before the file is downloaded. This can significantly reduce the amount of data that needs to be downloaded. The query evaluation is triggered by calling `collect`.
 
 {{code_block('user-guide/io/cloud-storage','scan_parquet_query',[])}}
 

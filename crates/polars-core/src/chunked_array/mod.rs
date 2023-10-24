@@ -140,7 +140,6 @@ pub struct ChunkedArray<T: PolarsDataType> {
     phantom: PhantomData<T>,
     pub(crate) bit_settings: Settings,
     length: IdxSize,
-    null_count: IdxSize,
 }
 
 bitflags! {
@@ -304,7 +303,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     ///
     /// # Safety
     /// The caller must ensure to not change the [`DataType`] or `length` of any of the chunks.
-    /// And the `null_count` remains correct.
     #[inline]
     pub unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
         &mut self.chunks
@@ -313,6 +311,12 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// Returns true if contains a single chunk and has no null values
     pub fn is_optimal_aligned(&self) -> bool {
         self.chunks.len() == 1 && self.null_count() == 0
+    }
+
+    /// Count the null values.
+    #[inline]
+    pub fn null_count(&self) -> usize {
+        self.chunks.iter().map(|arr| arr.null_count()).sum()
     }
 
     /// Create a new [`ChunkedArray`] from self, where the chunks are replaced.
@@ -606,7 +610,6 @@ impl<T: PolarsDataType> Clone for ChunkedArray<T> {
             phantom: PhantomData,
             bit_settings: self.bit_settings,
             length: self.length,
-            null_count: self.null_count,
         }
     }
 }
@@ -830,7 +833,7 @@ pub(crate) mod test {
         let ca = Utf8Chunked::new("", &[Some("foo"), None, Some("bar"), Some("ham")]);
         let ca = ca.cast(&DataType::Categorical(None)).unwrap();
         let ca = ca.categorical().unwrap();
-        let v: Vec<_> = ca.physical().into_iter().collect();
+        let v: Vec<_> = ca.logical().into_iter().collect();
         assert_eq!(v, &[Some(0), None, Some(1), Some(2)]);
     }
 

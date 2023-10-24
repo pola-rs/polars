@@ -561,28 +561,6 @@ def test_update() -> None:
         a.update(b.rename({"b": "a"}), how="outer", on="a").collect().to_series()
     )
 
-    # check behavior of include_nulls=True
-    df = pl.DataFrame(
-        {
-            "A": [1, 2, 3, 4],
-            "B": [400, 500, 600, 700],
-        }
-    )
-    new_df = pl.DataFrame(
-        {
-            "B": [-66, None, -99],
-            "C": [5, 3, 1],
-        }
-    )
-    out = df.update(new_df, left_on="A", right_on="C", how="outer", include_nulls=True)
-    expected = pl.DataFrame(
-        {
-            "A": [1, 2, 3, 4, 5],
-            "B": [-99, 500, None, 700, -66],
-        }
-    )
-    assert_frame_equal(out, expected)
-
     # edge-case #11684
     x = pl.DataFrame({"a": [0, 1]})
     y = pl.DataFrame({"a": [2, 3]})

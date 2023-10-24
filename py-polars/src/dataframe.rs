@@ -1030,7 +1030,7 @@ impl PyDataFrame {
         self.df.find_idx_by_name(name)
     }
 
-    pub fn get_column(&self, name: &str) -> PyResult<PySeries> {
+    pub fn column(&self, name: &str) -> PyResult<PySeries> {
         let series = self
             .df
             .column(name)

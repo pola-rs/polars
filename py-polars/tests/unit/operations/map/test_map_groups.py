@@ -49,7 +49,9 @@ def test_map_groups_rolling() -> None:
             pl.col("b").max(),
         )
 
-    result = df.rolling("a", period="2i").map_groups(function, schema=df.schema)
+    result = df.group_by_rolling("a", period="2i").map_groups(
+        function, schema=df.schema
+    )
 
     expected = pl.DataFrame(
         [
@@ -160,7 +162,7 @@ def test_apply_deprecated() -> None:
     with pytest.deprecated_call():
         df.group_by("a").apply(lambda x: x)
     with pytest.deprecated_call():
-        df.rolling("a", period="2i").apply(lambda x: x, schema=None)
+        df.group_by_rolling("a", period="2i").apply(lambda x: x, schema=None)
     with pytest.deprecated_call():
         df.group_by_dynamic("a", every="2i").apply(lambda x: x, schema=None)
     with pytest.deprecated_call():

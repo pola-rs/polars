@@ -612,7 +612,7 @@ def test_rolling() -> None:
 
     period: str | timedelta
     for period in ("2d", timedelta(days=2)):  # type: ignore[assignment]
-        out = df.rolling(index_column="dt", period=period).agg(
+        out = df.group_by_rolling(index_column="dt", period=period).agg(
             [
                 pl.sum("a").alias("sum_a"),
                 pl.min("a").alias("min_a"),
@@ -820,7 +820,7 @@ def test_asof_join_tolerance_grouper() -> None:
 def test_rolling_group_by_by_argument() -> None:
     df = pl.DataFrame({"times": range(10), "groups": [1] * 4 + [2] * 6})
 
-    out = df.rolling("times", period="5i", by=["groups"]).agg(
+    out = df.group_by_rolling("times", period="5i", by=["groups"]).agg(
         pl.col("times").alias("agg_list")
     )
 
@@ -846,7 +846,7 @@ def test_rolling_group_by_by_argument() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_rolling_mean_3020() -> None:
+def test_group_by_rolling_mean_3020() -> None:
     df = pl.DataFrame(
         {
             "Date": [
@@ -864,7 +864,7 @@ def test_rolling_mean_3020() -> None:
 
     period: str | timedelta
     for period in ("1w", timedelta(days=7)):  # type: ignore[assignment]
-        result = df.rolling(index_column="Date", period=period).agg(
+        result = df.group_by_rolling(index_column="Date", period=period).agg(
             pl.col("val").mean().alias("val_mean")
         )
         expected = pl.DataFrame(
@@ -1275,7 +1275,7 @@ def test_unique_counts_on_dates() -> None:
     }
 
 
-def test_rolling_by_ordering() -> None:
+def test_group_by_rolling_by_ordering() -> None:
     # we must check that the keys still match the time labels after the rolling window
     # with a `by` argument.
     df = pl.DataFrame(
@@ -1294,7 +1294,7 @@ def test_rolling_by_ordering() -> None:
         }
     ).set_sorted("dt")
 
-    assert df.rolling(
+    assert df.group_by_rolling(
         index_column="dt",
         period="2m",
         closed="both",
@@ -1321,7 +1321,7 @@ def test_rolling_by_ordering() -> None:
     }
 
 
-def test_rolling_by_() -> None:
+def test_group_by_rolling_by_() -> None:
     df = pl.DataFrame({"group": pl.arange(0, 3, eager=True)}).join(
         pl.DataFrame(
             {
@@ -1334,13 +1334,13 @@ def test_rolling_by_() -> None:
     )
     out = (
         df.sort("datetime")
-        .rolling(index_column="datetime", by="group", period=timedelta(days=3))
+        .group_by_rolling(index_column="datetime", by="group", period=timedelta(days=3))
         .agg([pl.count().alias("count")])
     )
 
     expected = (
         df.sort(["group", "datetime"])
-        .rolling(index_column="datetime", by="group", period="3d")
+        .group_by_rolling(index_column="datetime", by="group", period="3d")
         .agg([pl.count().alias("count")])
     )
     assert_frame_equal(out.sort(["group", "datetime"]), expected)
@@ -2590,7 +2590,7 @@ def test_rolling_group_by_empty_groups_by_take_6330() -> None:
         .set_sorted("Date")
     )
     assert (
-        df.rolling(
+        df.group_by_rolling(
             index_column="Date",
             period="2i",
             offset="-2i",
@@ -2752,7 +2752,7 @@ def test_pytime_conversion(tm: time) -> None:
     assert s.to_list() == [tm]
 
 
-def test_rolling_duplicates() -> None:
+def test_group_by_rolling_duplicates() -> None:
     df = pl.DataFrame(
         {
             "ts": [datetime(2000, 1, 1, 0, 0), datetime(2000, 1, 1, 0, 0)],

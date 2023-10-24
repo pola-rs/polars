@@ -225,7 +225,7 @@ impl<'a> PredicatePushDown<'a> {
                 Ok(lp)
             }
             Scan {
-                paths,
+                path,
                 file_info,
                 predicate,
                 scan_type,
@@ -235,13 +235,12 @@ impl<'a> PredicatePushDown<'a> {
                 let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
                 let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
-                // TODO! this still assumes a single file. Fix hive partitioning for multiple files
                 if let (Some(hive_part_stats), Some(predicate)) = (file_info.hive_parts.as_deref(), predicate) {
                     if let Some(io_expr) = self.hive_partition_eval.unwrap()(predicate, expr_arena) {
                         if let Some(stats_evaluator) = io_expr.as_stats_evaluator() {
                             if !stats_evaluator.should_read(hive_part_stats.get_statistics())? {
                                 if self.verbose {
-                                    eprintln!("hive partitioning: skipped: {}", paths[0].display())
+                                    eprintln!("hive partitioning: skipped: {}", path.display())
                                 }
                                 let schema = output_schema.as_ref().unwrap_or(&file_info.schema);
                                 let df = DataFrame::from(schema.as_ref());
@@ -268,7 +267,7 @@ impl<'a> PredicatePushDown<'a> {
 
                 let lp = if do_optimization {
                     Scan {
-                        paths,
+                        path,
                         file_info,
                         predicate,
                         file_options: options,
@@ -277,7 +276,7 @@ impl<'a> PredicatePushDown<'a> {
                     }
                 } else {
                     let lp = Scan {
-                        paths,
+                        path,
                         file_info,
                         predicate: None,
                         file_options: options,

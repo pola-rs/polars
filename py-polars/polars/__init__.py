@@ -29,7 +29,6 @@ from polars.datatypes import (
     DURATION_DTYPES,
     FLOAT_DTYPES,
     INTEGER_DTYPES,
-    NESTED_DTYPES,
     NUMERIC_DTYPES,
     TEMPORAL_DTYPES,
     Array,
@@ -254,7 +253,6 @@ __all__ = [
     "DURATION_DTYPES",
     "FLOAT_DTYPES",
     "INTEGER_DTYPES",
-    "NESTED_DTYPES",
     "NUMERIC_DTYPES",
     "TEMPORAL_DTYPES",
     # polars.type_aliases

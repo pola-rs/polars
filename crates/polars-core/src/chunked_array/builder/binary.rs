@@ -1,5 +1,3 @@
-use polars_error::constants::LENGTH_LIMIT_MSG;
-
 use super::*;
 
 pub struct BinaryChunkedBuilder {
@@ -42,8 +40,7 @@ impl BinaryChunkedBuilder {
 
     pub fn finish(mut self) -> BinaryChunked {
         let arr = self.builder.as_box();
-        let length = IdxSize::try_from(arr.len()).expect(LENGTH_LIMIT_MSG);
-        let null_count = arr.null_count() as IdxSize;
+        let length = arr.len() as IdxSize;
 
         ChunkedArray {
             field: Arc::new(self.field),
@@ -51,7 +48,6 @@ impl BinaryChunkedBuilder {
             phantom: PhantomData,
             bit_settings: Default::default(),
             length,
-            null_count,
         }
     }
 

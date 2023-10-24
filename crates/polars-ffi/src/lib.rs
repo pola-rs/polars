@@ -24,22 +24,6 @@ pub struct SeriesExport {
     private_data: *mut std::os::raw::c_void,
 }
 
-impl SeriesExport {
-    pub fn empty() -> Self {
-        Self {
-            field: std::ptr::null_mut(),
-            arrays: std::ptr::null_mut(),
-            len: 0,
-            release: None,
-            private_data: std::ptr::null_mut(),
-        }
-    }
-
-    pub fn is_null(&self) -> bool {
-        self.private_data.is_null()
-    }
-}
-
 impl Drop for SeriesExport {
     fn drop(&mut self) {
         if let Some(release) = self.release {
@@ -97,7 +81,11 @@ pub unsafe fn import_series(e: SeriesExport) -> PolarsResult<Series> {
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    Series::try_from((field.name.as_str(), chunks))
+    Ok(Series::from_chunks_and_dtype_unchecked(
+        &field.name,
+        chunks,
+        &(&field.data_type).into(),
+    ))
 }
 
 /// # Safety

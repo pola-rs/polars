@@ -89,7 +89,7 @@ def _undecorated(function: Callable[P, T]) -> Callable[P, T]:
 def call_expr(func: SeriesMethod) -> SeriesMethod:
     """Dispatch Series method to an expression implementation."""
 
-    @wraps(func)
+    @wraps(func)  # type: ignore[arg-type]
     def wrapper(self: Any, *args: P.args, **kwargs: P.kwargs) -> Series:
         s = wrap_s(self._s)
         expr = F.col(s.name)

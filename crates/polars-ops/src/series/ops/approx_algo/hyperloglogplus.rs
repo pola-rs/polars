@@ -9,7 +9,6 @@
 //! # Examples
 //!
 //! ```
-//!     # use polars_ops::prelude::*;
 //!     let mut hllp = HyperLogLog::new();
 //!     hllp.add(&12345);
 //!     hllp.add(&23456);

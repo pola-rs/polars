@@ -44,6 +44,22 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
+    #[cfg(feature = "cum_agg")]
+    fn _cummax(&self, reverse: bool) -> Series {
+        self.0
+            .cummax(reverse)
+            .into_duration(self.0.time_unit())
+            .into_series()
+    }
+
+    #[cfg(feature = "cum_agg")]
+    fn _cummin(&self, reverse: bool) -> Series {
+        self.0
+            .cummin(reverse)
+            .into_duration(self.0.time_unit())
+            .into_series()
+    }
+
     fn _set_flags(&mut self, flags: Settings) {
         self.0.deref_mut().set_flags(flags)
     }
