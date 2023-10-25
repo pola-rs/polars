@@ -76,7 +76,7 @@ features = [
   "serde-lazy",
   "string_encoding",
   "string_from_radix",
-  "string_justify",
+  "string_pad",
   "strings",
   "temporal",
   "to_dummies",

@@ -11,6 +11,7 @@ from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.deprecation import (
     deprecate_renamed_function,
+    deprecate_renamed_parameter,
     issue_deprecation_warning,
     rename_use_earliest_to_ambiguous,
 )
@@ -764,117 +765,113 @@ class ExprStringNameSpace:
         suffix = parse_as_expression(suffix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_suffix(suffix))
 
-    def zfill(self, alignment: int) -> Expr:
+    def pad_start(self, length: int, fill_char: str = " ") -> Expr:
         """
-        Fills the string with zeroes.
-
-        Return a copy of the string left filled with ASCII '0' digits to make a string
-        of length width.
-
-        A leading sign prefix ('+'/'-') is handled by inserting the padding after the
-        sign character rather than before. The original string is returned if width is
-        less than or equal to ``len(s)``.
+        Pad the start of the string until it reaches the given length.
 
         Parameters
         ----------
-        alignment
-            Fill the value up to this length
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "num": [-10, -1, 0, 1, 10, 100, 1000, 10000, 100000, 1000000, None],
-        ...     }
-        ... )
-        >>> df.with_columns(pl.col("num").cast(str).str.zfill(5))
-        shape: (11, 1)
-        ┌─────────┐
-        │ num     │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │ -0010   │
-        │ -0001   │
-        │ 00000   │
-        │ 00001   │
-        │ …       │
-        │ 10000   │
-        │ 100000  │
-        │ 1000000 │
-        │ null    │
-        └─────────┘
-
-        """
-        return wrap_expr(self._pyexpr.str_zfill(alignment))
-
-    def ljust(self, width: int, fill_char: str = " ") -> Expr:
-        """
-        Return the string left justified in a string of length ``width``.
-
-        Padding is done using the specified ``fill_char``.
-        The original string is returned if ``width`` is less than or equal to
-        ``len(s)``.
-
-        Parameters
-        ----------
-        width
-            Justify left to this length.
+        length
+            Pad the string until it reaches this length. Strings with length equal to
+            or greater than this value are returned as-is.
         fill_char
-            Fill with this ASCII character.
+            The character to pad the string with.
+
+        See Also
+        --------
+        pad_end
+        zfill
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": ["cow", "monkey", None, "hippopotamus"]})
-        >>> df.select(pl.col("a").str.ljust(8, "*"))
-        shape: (4, 1)
-        ┌──────────────┐
-        │ a            │
-        │ ---          │
-        │ str          │
-        ╞══════════════╡
-        │ cow*****     │
-        │ monkey**     │
-        │ null         │
-        │ hippopotamus │
-        └──────────────┘
+        >>> df = pl.DataFrame({"a": ["cow", "monkey", "hippopotamus", None]})
+        >>> df.with_columns(padded=pl.col("a").str.pad_start(8, "*"))
+        shape: (4, 2)
+        ┌──────────────┬──────────────┐
+        │ a            ┆ padded       │
+        │ ---          ┆ ---          │
+        │ str          ┆ str          │
+        ╞══════════════╪══════════════╡
+        │ cow          ┆ *****cow     │
+        │ monkey       ┆ **monkey     │
+        │ hippopotamus ┆ hippopotamus │
+        │ null         ┆ null         │
+        └──────────────┴──────────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_ljust(width, fill_char))
+        return wrap_expr(self._pyexpr.str_pad_start(length, fill_char))
 
-    def rjust(self, width: int, fill_char: str = " ") -> Expr:
+    def pad_end(self, length: int, fill_char: str = " ") -> Expr:
         """
-        Return the string right justified in a string of length ``width``.
-
-        Padding is done using the specified ``fill_char``.
-        The original string is returned if ``width`` is less than or equal to
-        ``len(s)``.
+        Pad the end of the string until it reaches the given length.
 
         Parameters
         ----------
-        width
-            Justify right to this length.
+        length
+            Pad the string until it reaches this length. Strings with length equal to
+            or greater than this value are returned as-is.
         fill_char
-            Fill with this ASCII character.
+            The character to pad the string with.
+
+        See Also
+        --------
+        pad_start
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": ["cow", "monkey", None, "hippopotamus"]})
-        >>> df.select(pl.col("a").str.rjust(8, "*"))
-        shape: (4, 1)
-        ┌──────────────┐
-        │ a            │
-        │ ---          │
-        │ str          │
-        ╞══════════════╡
-        │ *****cow     │
-        │ **monkey     │
-        │ null         │
-        │ hippopotamus │
-        └──────────────┘
+        >>> df = pl.DataFrame({"a": ["cow", "monkey", "hippopotamus", None]})
+        >>> df.with_columns(padded=pl.col("a").str.pad_end(8, "*"))
+        shape: (4, 2)
+        ┌──────────────┬──────────────┐
+        │ a            ┆ padded       │
+        │ ---          ┆ ---          │
+        │ str          ┆ str          │
+        ╞══════════════╪══════════════╡
+        │ cow          ┆ cow*****     │
+        │ monkey       ┆ monkey**     │
+        │ hippopotamus ┆ hippopotamus │
+        │ null         ┆ null         │
+        └──────────────┴──────────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_rjust(width, fill_char))
+        return wrap_expr(self._pyexpr.str_pad_end(length, fill_char))
+
+    @deprecate_renamed_parameter("alignment", "length", version="0.19.12")
+    def zfill(self, length: int) -> Expr:
+        """
+        Pad the start of the string with zeros until it reaches the given length.
+
+        A sign prefix (``-``) is handled by inserting the padding after the sign
+        character rather than before.
+
+        Parameters
+        ----------
+        length
+            Pad the string until it reaches this length. Strings with length equal to
+            or greater than this value are returned as-is.
+
+        See Also
+        --------
+        pad_start
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [-1, 123, 999999, None]})
+        >>> df.with_columns(zfill=pl.col("a").cast(pl.Utf8).str.zfill(4))
+        shape: (4, 2)
+        ┌────────┬────────┐
+        │ a      ┆ zfill  │
+        │ ---    ┆ ---    │
+        │ i64    ┆ str    │
+        ╞════════╪════════╡
+        │ -1     ┆ -001   │
+        │ 123    ┆ 0123   │
+        │ 999999 ┆ 999999 │
+        │ null   ┆ null   │
+        └────────┴────────┘
+
+        """
+        return wrap_expr(self._pyexpr.str_zfill(length))
 
     def contains(
         self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
@@ -2093,6 +2090,44 @@ class ExprStringNameSpace:
 
         """
         return self.len_chars()
+
+    @deprecate_renamed_function("pad_end", version="0.19.12")
+    @deprecate_renamed_parameter("width", "length", version="0.19.12")
+    def ljust(self, length: int, fill_char: str = " ") -> Expr:
+        """
+        Return the string left justified in a string of length ``length``.
+
+        .. deprecated:: 0.19.12
+            This method has been renamed to :func:`pad_end`.
+
+        Parameters
+        ----------
+        length
+            Justify left to this length.
+        fill_char
+            Fill with this ASCII character.
+
+        """
+        return self.pad_end(length, fill_char)
+
+    @deprecate_renamed_function("pad_start", version="0.19.12")
+    @deprecate_renamed_parameter("width", "length", version="0.19.12")
+    def rjust(self, length: int, fill_char: str = " ") -> Expr:
+        """
+        Return the string right justified in a string of length ``length``.
+
+        .. deprecated:: 0.19.12
+            This method has been renamed to :func:`pad_start`.
+
+        Parameters
+        ----------
+        length
+            Justify right to this length.
+        fill_char
+            Fill with this ASCII character.
+
+        """
+        return self.pad_start(length, fill_char)
 
 
 def _validate_format_argument(format: str | None) -> None:
