@@ -81,7 +81,7 @@ fn shifts_elements(node: Node, expr_arena: &Arena<AExpr>) -> bool {
         matches!(
             e,
             AExpr::Function {
-                function: FunctionExpr::Shift(_) | FunctionExpr::ShiftAndFill { .. },
+                function: FunctionExpr::Shift | FunctionExpr::ShiftAndFill,
                 ..
             }
         )

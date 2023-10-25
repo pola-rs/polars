@@ -156,7 +156,7 @@ fn test_lazy_shift() {
     let df = get_df();
     let new = df
         .lazy()
-        .select([col("sepal.width").alias("foo").shift(2)])
+        .select([col("sepal.width").alias("foo").shift(lit(2))])
         .collect()
         .unwrap();
     assert_eq!(new.column("foo").unwrap().f64().unwrap().get(0), None);
@@ -168,7 +168,7 @@ fn test_shift_and_fill() -> PolarsResult<()> {
         "a" => [1, 2, 3]
     ]?
     .lazy()
-    .select([col("a").shift_and_fill(-1, lit(5))])
+    .select([col("a").shift_and_fill(lit(-1), lit(5))])
     .collect()?;
 
     let out = out.column("a")?;
@@ -488,8 +488,8 @@ fn test_lazy_query_7() {
     // this tests if predicate pushdown not interferes with the shift data.
     let out = df
         .lazy()
-        .with_column(col("data").shift(-1).alias("output"))
-        .with_column(col("output").shift(2).alias("shifted"))
+        .with_column(col("data").shift(lit(-1)).alias("output"))
+        .with_column(col("output").shift(lit(2)).alias("shifted"))
         .filter(col("date").gt(lit(NaiveDateTime::new(
             date,
             NaiveTime::from_hms_opt(12, 2, 0).unwrap(),
@@ -506,7 +506,7 @@ fn test_lazy_shift_and_fill_all() {
     let df = DataFrame::new(vec![Series::new("data", data)]).unwrap();
     let out = df
         .lazy()
-        .with_column(col("data").shift(1).fill_null(lit(0)).alias("output"))
+        .with_column(col("data").shift(lit(1)).fill_null(lit(0)).alias("output"))
         .collect()
         .unwrap();
     assert_eq!(
@@ -524,7 +524,7 @@ fn test_lazy_shift_operation_no_filter() {
     }
     .unwrap();
     df.lazy()
-        .with_column(col("b").shift(1).alias("output"))
+        .with_column(col("b").shift(lit(1)).alias("output"))
         .collect()
         .unwrap();
 }
@@ -715,7 +715,7 @@ fn test_lazy_shift_and_fill() {
     let out = df
         .clone()
         .lazy()
-        .with_column(col("A").shift_and_fill(2, col("B").mean()))
+        .with_column(col("A").shift_and_fill(lit(2), col("B").mean()))
         .collect()
         .unwrap();
     assert_eq!(out.column("A").unwrap().null_count(), 0);
@@ -724,14 +724,14 @@ fn test_lazy_shift_and_fill() {
     let out = df
         .clone()
         .lazy()
-        .with_column(col("A").shift_and_fill(-2, col("B").mean()))
+        .with_column(col("A").shift_and_fill(lit(-2), col("B").mean()))
         .collect()
         .unwrap();
     assert_eq!(out.column("A").unwrap().null_count(), 0);
 
     let out = df
         .lazy()
-        .shift_and_fill(-1, col("B").std(1))
+        .shift_and_fill(lit(-1), col("B").std(1))
         .collect()
         .unwrap();
     assert_eq!(out.column("A").unwrap().null_count(), 0);
@@ -1297,8 +1297,8 @@ fn test_filter_after_shift_in_groups() -> PolarsResult<()> {
         .select([
             col("fruits"),
             col("B")
-                .shift(1)
-                .filter(col("B").shift(1).gt(lit(4)))
+                .shift(lit(1))
+                .filter(col("B").shift(lit(1)).gt(lit(4)))
                 .over_with_options([col("fruits")], WindowMapping::Join.into())
                 .alias("filtered"),
         ])
@@ -1681,9 +1681,9 @@ fn empty_df() -> PolarsResult<()> {
 
     df.lazy()
         .select([
-            col("A").shift(1).alias("1"),
-            col("A").shift_and_fill(1, lit(1)).alias("2"),
-            col("A").shift_and_fill(-1, lit(1)).alias("3"),
+            col("A").shift(lit(1)).alias("1"),
+            col("A").shift_and_fill(lit(1), lit(1)).alias("2"),
+            col("A").shift_and_fill(lit(-1), lit(1)).alias("3"),
             col("A").fill_null(lit(1)).alias("4"),
             col("A").cumcount(false).alias("5"),
             col("A").diff(1, NullBehavior::Ignore).alias("6"),

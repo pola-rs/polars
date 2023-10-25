@@ -1,9 +1,5 @@
 use super::*;
 
-pub(super) fn shift(s: &Series, periods: i64) -> PolarsResult<Series> {
-    Ok(s.shift(periods))
-}
-
 pub(super) fn reverse(s: &Series) -> PolarsResult<Series> {
     Ok(s.reverse())
 }

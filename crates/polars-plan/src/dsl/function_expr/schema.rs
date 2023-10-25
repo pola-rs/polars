@@ -45,7 +45,7 @@ impl FunctionExpr {
             FillNull { super_type, .. } => mapper.with_dtype(super_type.clone()),
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingSkew { .. } => mapper.map_to_float_dtype(),
-            ShiftAndFill { .. } => mapper.with_same_dtype(),
+            ShiftAndFill => mapper.with_same_dtype(),
             DropNans => mapper.with_same_dtype(),
             DropNulls => mapper.with_same_dtype(),
             #[cfg(feature = "round_series")]
@@ -133,7 +133,7 @@ impl FunctionExpr {
             }),
             #[cfg(feature = "unique_counts")]
             UniqueCounts => mapper.with_dtype(IDX_DTYPE),
-            Shift(..) | Reverse => mapper.with_same_dtype(),
+            Shift | Reverse => mapper.with_same_dtype(),
             Boolean(func) => func.get_field(mapper),
             #[cfg(feature = "dtype-categorical")]
             Categorical(func) => func.get_field(mapper),

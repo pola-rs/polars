@@ -4228,7 +4228,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return self._from_pyldf(self._ldf.reverse())
 
     @deprecate_renamed_parameter("periods", "n", version="0.19.11")
-    def shift(self, n: int = 1, *, fill_value: IntoExpr | None = None) -> Self:
+    def shift(
+        self, n: int | IntoExprColumn = 1, *, fill_value: IntoExpr | None = None
+    ) -> Self:
         """
         Shift values by the given number of indices.
 
@@ -4302,6 +4304,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         if fill_value is not None:
             fill_value = parse_as_expression(fill_value, str_as_lit=True)
+        n = parse_as_expression(n)
         return self._from_pyldf(self._ldf.shift(n, fill_value))
 
     def slice(self, offset: int, length: int | None = None) -> Self:

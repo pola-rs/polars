@@ -134,10 +134,8 @@ pub enum FunctionExpr {
         window_size: usize,
         bias: bool,
     },
-    ShiftAndFill {
-        periods: i64,
-    },
-    Shift(i64),
+    ShiftAndFill,
+    Shift,
     DropNans,
     DropNulls,
     #[cfg(feature = "mode")]
@@ -345,16 +343,15 @@ impl Hash for FunctionExpr {
                 lib.hash(state);
                 symbol.hash(state);
             },
-            FunctionExpr::Shift(periods) | FunctionExpr::ShiftAndFill { periods } => {
-                periods.hash(state)
-            },
             FunctionExpr::SumHorizontal
             | FunctionExpr::MaxHorizontal
             | FunctionExpr::MinHorizontal
             | FunctionExpr::DropNans
             | FunctionExpr::DropNulls
             | FunctionExpr::Reverse
-            | FunctionExpr::ArgUnique => {},
+            | FunctionExpr::ArgUnique
+            | FunctionExpr::Shift
+            | FunctionExpr::ShiftAndFill => {},
             #[cfg(feature = "mode")]
             FunctionExpr::Mode => {},
             #[cfg(feature = "abs")]
@@ -525,7 +522,7 @@ impl Display for FunctionExpr {
             FillNull { .. } => "fill_null",
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingSkew { .. } => "rolling_skew",
-            ShiftAndFill { .. } => "shift_and_fill",
+            ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
             DropNulls => "drop_nulls",
             #[cfg(feature = "mode")]
@@ -557,7 +554,7 @@ impl Display for FunctionExpr {
                     "top_k"
                 }
             },
-            Shift(_) => "shift",
+            Shift => "shift",
             #[cfg(feature = "cum_agg")]
             Cumcount { .. } => "cumcount",
             #[cfg(feature = "cum_agg")]
@@ -787,8 +784,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             RollingSkew { window_size, bias } => {
                 map!(rolling::rolling_skew, window_size, bias)
             },
-            ShiftAndFill { periods } => {
-                map_as_slice!(shift_and_fill::shift_and_fill, periods)
+            ShiftAndFill => {
+                map_as_slice!(shift_and_fill::shift_and_fill)
             },
             DropNans => map_owned!(nan::drop_nans),
             DropNulls => map!(dispatch::drop_nulls),
@@ -881,7 +878,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             TopK(descending) => {
                 map_as_slice!(top_k, descending)
             },
-            Shift(periods) => map!(dispatch::shift, periods),
+            Shift => map_as_slice!(shift_and_fill::shift),
             #[cfg(feature = "cum_agg")]
             Cumcount { reverse } => map!(cum::cumcount, reverse),
             #[cfg(feature = "cum_agg")]

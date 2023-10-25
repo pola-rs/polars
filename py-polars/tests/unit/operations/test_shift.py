@@ -54,6 +54,28 @@ def test_shift_and_fill() -> None:
     assert out["a"].null_count() == 0
 
 
+def test_shift_expr() -> None:
+    ldf = pl.LazyFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
+
+    # use exprs
+    out = ldf.select(pl.col("a").shift(n=pl.col("b").min())).collect()
+    assert out.to_dict(False) == {"a": [None, 1, 2, 3, 4]}
+
+    out = ldf.select(
+        pl.col("a").shift(pl.col("b").min(), fill_value=pl.col("b").max())
+    ).collect()
+    assert out.to_dict(False) == {"a": [5, 1, 2, 3, 4]}
+
+    # use df method
+    out = ldf.shift(pl.lit(3)).collect()
+    assert out.to_dict(False) == {
+        "a": [None, None, None, 1, 2],
+        "b": [None, None, None, 1, 2],
+    }
+    out = ldf.shift(pl.lit(2), fill_value=pl.col("b").max()).collect()
+    assert out.to_dict(False) == {"a": [5, 5, 1, 2, 3], "b": [5, 5, 1, 2, 3]}
+
+
 def test_shift_categorical() -> None:
     df = pl.Series("a", ["a", "b"], dtype=pl.Categorical).to_frame()
 

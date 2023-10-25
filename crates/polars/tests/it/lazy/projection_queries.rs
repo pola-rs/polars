@@ -136,7 +136,7 @@ fn test_projection_5086() -> PolarsResult<()> {
         .select([
             col("a"),
             col("b")
-                .xor(col("b").shift(1).over([col("a")]))
+                .xor(col("b").shift(lit(1)).over([col("a")]))
                 .fill_null(lit(true))
                 .alias("keep"),
         ])

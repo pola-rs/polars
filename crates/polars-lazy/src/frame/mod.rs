@@ -442,16 +442,16 @@ impl LazyFrame {
     /// with `Nones`.
     ///
     /// See the method on [Series](polars_core::series::SeriesTrait::shift) for more info on the `shift` operation.
-    pub fn shift(self, periods: i64) -> Self {
-        self.select(vec![col("*").shift(periods)])
+    pub fn shift<E: Into<Expr>>(self, n: E) -> Self {
+        self.select(vec![col("*").shift(n.into())])
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
     /// with the result of the `fill_value` expression.
     ///
     /// See the method on [Series](polars_core::series::SeriesTrait::shift) for more info on the `shift` operation.
-    pub fn shift_and_fill<E: Into<Expr>>(self, periods: i64, fill_value: E) -> Self {
-        self.select(vec![col("*").shift_and_fill(periods, fill_value.into())])
+    pub fn shift_and_fill<E: Into<Expr>>(self, n: E, fill_value: E) -> Self {
+        self.select(vec![col("*").shift_and_fill(n.into(), fill_value.into())])
     }
 
     /// Fill None values in the DataFrame with an expression.
