@@ -1,12 +1,48 @@
 from __future__ import annotations
 
+from collections import OrderedDict
+from collections.abc import Mapping
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, Iterator
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+
+
+class CustomSchema(Mapping[str, Any]):
+    """Dummy schema object for testing compatibility with Mapping."""
+
+    _entries: dict[str, Any]
+
+    def __init__(self, **named_entries: Any) -> None:
+        self._items = OrderedDict(named_entries.items())
+
+    def __getitem__(self, key: str) -> Any:
+        return self._items[key]
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+    def __iter__(self) -> Iterator[str]:
+        yield from self._items
+
+
+def test_custom_schema() -> None:
+    schema = CustomSchema(bool=pl.Boolean, misc=pl.UInt8)
+
+    df = pl.DataFrame(
+        data={"bool": [True, False, None], "misc": [12, 34, 56]},
+        schema=schema,
+    )
+    assert df.schema == OrderedDict([("bool", pl.Boolean), ("misc", pl.UInt8)])
+
+    with pytest.raises(ValueError):
+        pl.DataFrame(
+            data={"bool": [True, False, None], "misc": [12, 34, 56]},
+            schema=CustomSchema(bool="boolean", misc="unsigned int"),
+        )
 
 
 def test_schema_on_agg() -> None:
