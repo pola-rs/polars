@@ -75,7 +75,11 @@ fn to_lowercase_helper(s: &str, buf: &mut Vec<u8>) {
     }
 
     fn case_ignoreable_then_cased<I: Iterator<Item = char>>(iter: I) -> bool {
+        #[cfg(feature = "nightly")]
         use core::unicode::{Case_Ignorable, Cased};
+
+        #[cfg(not(feature = "nightly"))]
+        use super::unicode_internals::{Case_Ignorable, Cased};
         #[allow(clippy::skip_while_next)]
         match iter.skip_while(|&c| Case_Ignorable(c)).next() {
             Some(c) => Cased(c),
