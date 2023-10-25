@@ -9,7 +9,7 @@ where
     ca.apply_values(|v| v.abs())
 }
 
-/// convert numerical values to their absolute value
+/// Convert numerical values to their absolute value.
 pub fn abs(s: &Series) -> PolarsResult<Series> {
     let physical_s = s.to_physical_repr();
     use DataType::*;

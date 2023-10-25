@@ -659,7 +659,7 @@ fn update_subgroups_idx(
 #[cfg(test)]
 mod test {
     use chrono::prelude::*;
-    use polars_ops::prelude::abs;
+    use polars_ops::prelude::*;
 
     use super::*;
 
