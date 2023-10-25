@@ -152,6 +152,7 @@ def get_person() -> pl.Expr:
 
 q = (
     dataset.lazy()
+    .with_columns(pl.col("first_name").cat.set_ordering("lexical"))
     .sort("birthday", descending=True)
     .group_by("state")
     .agg(
