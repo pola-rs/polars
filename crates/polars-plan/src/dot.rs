@@ -423,20 +423,20 @@ impl LogicalPlan {
             n_columns_fmt = format!("{}", columns.len());
         }
 
-        let fmt = if path.len() == 1 {
-            path[0].to_string_lossy()
-        } else {
-            Cow::Owned(format!(
+        let path_fmt = match path.len() {
+            1 => path[0].to_string_lossy(),
+            0 => "".into(),
+            _ => Cow::Owned(format!(
                 "{} files: first file: {}",
                 path.len(),
                 path[0].to_string_lossy()
-            ))
+            )),
         };
 
         let pred = fmt_predicate(predicate.as_ref());
         let fmt = format!(
             "{name} SCAN {};\nπ {}/{};\nσ {}",
-            fmt, n_columns_fmt, total_columns, pred,
+            path_fmt, n_columns_fmt, total_columns, pred,
         );
         let current_node = DotNode {
             branch,
