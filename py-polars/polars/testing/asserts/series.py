@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from polars.datatypes import (
     FLOAT_DTYPES,
     NESTED_DTYPES,
     NUMERIC_DTYPES,
     UNSIGNED_INTEGER_DTYPES,
+    Array,
     Categorical,
     Int64,
     List,
@@ -16,6 +19,9 @@ from polars.datatypes import (
 from polars.exceptions import ComputeError
 from polars.series import Series
 from polars.testing.asserts.utils import raise_assertion_error
+
+if TYPE_CHECKING:
+    from polars.type_aliases import PolarsDataType
 
 
 def assert_series_equal(
@@ -132,6 +138,14 @@ def _assert_series_values_equal(
         if right.dtype == Categorical:
             right = right.cast(Utf8)
 
+    # Handle arrays
+    # TODO: Remove this check when equality for Arrays is implemented
+    # https://github.com/pola-rs/polars/issues/12012
+    if left.dtype == Array:
+        left = left.cast(List(left.dtype.inner))
+    if right.dtype == Array:
+        right = right.cast(List(right.dtype.inner))
+
     # Determine unequal elements
     try:
         unequal = left.ne_missing(right)
@@ -145,7 +159,7 @@ def _assert_series_values_equal(
         )
 
     # Handle NaN values (which compare unequal to themselves)
-    comparing_floats = left.dtype in FLOAT_DTYPES and right.dtype in FLOAT_DTYPES
+    comparing_floats = _comparing_floats(left.dtype, right.dtype)
     if comparing_floats and nans_compare_equal:
         both_nan = (left.is_nan() & right.is_nan()).fill_null(False)
         unequal = unequal & ~both_nan
@@ -238,7 +252,7 @@ def _assert_series_nested(
     categorical_as_str: bool,
 ) -> bool:
     # compare nested lists element-wise
-    if left.dtype == List == right.dtype:
+    if _comparing_lists(left.dtype, right.dtype):
         for s1, s2 in zip(left, right):
             if (s1 is None and s2 is not None) or (s2 is None and s1 is not None):
                 raise_assertion_error("Series", "nested value mismatch", s1, s2)
@@ -255,7 +269,7 @@ def _assert_series_nested(
         return True
 
     # unnest structs as series and compare
-    elif left.dtype == Struct == right.dtype:
+    elif _comparing_structs(left.dtype, right.dtype):
         ls, rs = left.struct.unnest(), right.struct.unnest()
         for s1, s2 in zip(ls, rs):
             _assert_series_values_equal(
@@ -272,6 +286,18 @@ def _assert_series_nested(
         # fall-back to outer codepath (if mismatched dtypes we would expect
         # the equality check to fail - unless ALL series values are null)
         return False
+
+
+def _comparing_floats(left: PolarsDataType, right: PolarsDataType) -> bool:
+    return left in FLOAT_DTYPES and right in FLOAT_DTYPES
+
+
+def _comparing_lists(left: PolarsDataType, right: PolarsDataType) -> bool:
+    return left in (List, Array) and right in (List, Array)
+
+
+def _comparing_structs(left: PolarsDataType, right: PolarsDataType) -> bool:
+    return left == Struct and right == Struct
 
 
 def _assert_series_values_within_tolerance(
