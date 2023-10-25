@@ -120,5 +120,5 @@ __all__ = [
     "ShapeError",
     "StringCacheMismatchError",
     "StructFieldNotFoundError",
-    "TooManyRowsReturnedError"
+    "TooManyRowsReturnedError",
 ]
