@@ -72,7 +72,7 @@ pub enum PolarsError {
     StringCacheMismatch(ErrString),
     #[error("field not found: {0}")]
     StructFieldNotFound(ErrString),
-    #[error("File not found: {0}")]
+    #[error("file not found: {0}")]
     FileNotFound(ErrString),
 }
 

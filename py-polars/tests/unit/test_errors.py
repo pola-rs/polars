@@ -704,5 +704,5 @@ def test_non_existent_expr_inputs_in_lazy() -> None:
 
 
 def test_scan_csv_file_not_found_error() -> None:
-    with pytest.raises(pl.FileNotFoundError):
+    with pytest.raises(FileNotFoundError):
         pl.scan_csv("test.csv")

@@ -3,7 +3,7 @@ use std::io::Error;
 
 use polars::prelude::PolarsError;
 use pyo3::create_exception;
-use pyo3::exceptions::{PyException, PyIOError, PyRuntimeError};
+use pyo3::exceptions::{PyException, PyFileNotFoundError, PyIOError, PyRuntimeError};
 use pyo3::prelude::*;
 use thiserror::Error;
 
@@ -48,7 +48,7 @@ impl std::convert::From<PyPolarsErr> for PyErr {
                 PolarsError::StructFieldNotFound(name) => {
                     StructFieldNotFoundError::new_err(name.to_string())
                 },
-                PolarsError::FileNotFound(err) => FileNotFoundError::new_err(err.to_string()),
+                PolarsError::FileNotFound(err) => PyFileNotFoundError::new_err(err.to_string()),
             },
             _ => default(),
         }
