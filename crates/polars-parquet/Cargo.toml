@@ -1,0 +1,25 @@
+[package]
+name = "polars-parquet"
+version = { workspace = true }
+authors = [
+  "Jorge C. Leitao <jorgecarleitao@gmail.com>",
+  "Apache Arrow <dev@arrow.apache.org>",
+  "Ritchie Vink <ritchie46@gmail.com>",
+]
+edition = { workspace = true }
+homepage = { workspace = true }
+license-file = "./LICENSE"
+repository = { workspace = true }
+description = "polars parquet IO"
+
+[dependencies]
+ahash = { workspace = true }
+arrow = { workspace = true }
+base64 = { workspace = true, optional = true }
+ethnum = { workspace = true }
+fallible-streaming-iterator = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+num-traits = { workspace = true }
+parquet2 = { workspace = true, optional = true, default-features = true, features = ["async"] }
+polars-error = { workspace = true }
+simdutf8 = { workspace = true }
