@@ -30,7 +30,7 @@ jobs:
 
       - name: Lint Python
         run: |
-          ruff check --diff --exit-non-zero-on-fix .
+          ruff check --diff .
           ruff format --diff .
           blackdoc --diff .
 
