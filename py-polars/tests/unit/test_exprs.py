@@ -36,7 +36,7 @@ def test_arg_true() -> None:
 
 def test_suffix(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
-    out = df.select([pl.all().suffix("_reverse")])
+    out = df.select([pl.all().name.suffix("_reverse")])
     assert out.columns == ["A_reverse", "fruits_reverse", "B_reverse", "cars_reverse"]
 
 
@@ -57,7 +57,7 @@ def test_pipe() -> None:
 
 def test_prefix(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
-    out = df.select([pl.all().prefix("reverse_")])
+    out = df.select([pl.all().name.prefix("reverse_")])
     assert out.columns == ["reverse_A", "reverse_fruits", "reverse_B", "reverse_cars"]
 
 
@@ -99,7 +99,7 @@ def test_count_expr() -> None:
 
 def test_map_alias() -> None:
     out = pl.DataFrame({"foo": [1, 2, 3]}).select(
-        (pl.col("foo") * 2).map_alias(lambda name: f"{name}{name}")
+        (pl.col("foo") * 2).name.map(lambda name: f"{name}{name}")
     )
     expected = pl.DataFrame({"foofoo": [2, 4, 6]})
     assert_frame_equal(out, expected)
@@ -454,7 +454,7 @@ def test_ewm_with_multiple_chunks() -> None:
         schema=["a", "b", "c"],
     ).with_columns(
         [
-            pl.col(pl.Float64).log().diff().prefix("ld_"),
+            pl.col(pl.Float64).log().diff().name.prefix("ld_"),
         ]
     )
     assert df0.n_chunks() == 1
@@ -466,7 +466,7 @@ def test_ewm_with_multiple_chunks() -> None:
 
     ewm_std = df1.with_columns(
         [
-            pl.all().ewm_std(com=20).prefix("ewm_"),
+            pl.all().ewm_std(com=20).name.prefix("ewm_"),
         ]
     )
     assert ewm_std.null_count().sum(axis=1)[0] == 4

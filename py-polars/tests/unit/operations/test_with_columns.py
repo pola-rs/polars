@@ -99,7 +99,7 @@ def test_with_columns() -> None:
             .lazy()
             .with_columns(
                 pl.col(["x1", "x2"]).pct_change().alias("pct_change"),
-                maxes=pl.all().max().suffix("_max"),
+                maxes=pl.all().max().name.suffix("_max"),
                 xcols=pl.col("^x.*$"),
             )
         )

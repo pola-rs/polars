@@ -1484,7 +1484,7 @@ def last() -> SelectorType:
 
     Select everything  *except* for the last column:
 
-    >> df.select(~cs.last())
+    >>> df.select(~cs.last())
     shape: (2, 3)
     ┌─────┬─────┬─────┐
     │ foo ┆ bar ┆ baz │

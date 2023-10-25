@@ -371,7 +371,7 @@ impl Debug for Expr {
             } => write!(f, "{input:?}.slice(offset={offset:?}, length={length:?})",),
             Wildcard => write!(f, "*"),
             Exclude(column, names) => write!(f, "{column:?}.exclude({names:?})"),
-            KeepName(e) => write!(f, "{e:?}.keep_name()"),
+            KeepName(e) => write!(f, "{e:?}.name.keep()"),
             RenameAlias { expr, .. } => write!(f, ".rename_alias({expr:?})"),
             Columns(names) => write!(f, "cols({names:?})"),
             DtypeColumn(dt) => write!(f, "dtype_columns({dt:?})"),

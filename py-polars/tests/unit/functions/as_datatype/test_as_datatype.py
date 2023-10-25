@@ -486,7 +486,7 @@ def test_suffix_in_struct_creation() -> None:
                 "b": [3, 4],
                 "c": [5, 6],
             }
-        ).select(pl.struct(pl.col(["a", "c"]).suffix("_foo")).alias("bar"))
+        ).select(pl.struct(pl.col(["a", "c"]).name.suffix("_foo")).alias("bar"))
     ).unnest("bar").to_dict(False) == {"a_foo": [1, 2], "c_foo": [5, 6]}
 
 

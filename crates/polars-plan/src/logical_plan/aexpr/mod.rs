@@ -15,7 +15,7 @@ use crate::dsl::function_expr::FunctionExpr;
 #[cfg(feature = "cse")]
 use crate::logical_plan::visitor::AexprNode;
 use crate::logical_plan::Context;
-use crate::prelude::names::COUNT;
+use crate::prelude::consts::COUNT;
 use crate::prelude::*;
 
 #[derive(Clone, Debug, IntoStaticStr)]

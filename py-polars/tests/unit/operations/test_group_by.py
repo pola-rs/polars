@@ -399,7 +399,7 @@ def test_group_by_wildcard() -> None:
         }
     )
     assert df.group_by([pl.col("*")], maintain_order=True).agg(
-        [pl.col("a").first().suffix("_agg")]
+        [pl.col("a").first().name.suffix("_agg")]
     ).to_dict(False) == {"a": [1, 2], "b": [1, 2], "a_agg": [1, 2]}
 
 

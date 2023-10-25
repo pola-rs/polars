@@ -8,7 +8,7 @@ use smartstring::alias::String as SmartString;
 
 use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::Context;
-use crate::prelude::names::COUNT;
+use crate::prelude::consts::COUNT;
 use crate::prelude::*;
 
 /// Utility to write comma delimited strings

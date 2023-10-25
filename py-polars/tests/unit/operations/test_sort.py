@@ -143,8 +143,8 @@ def test_sort_aggregation_fast_paths() -> None:
 
     expected = df.select(
         [
-            pl.all().max().suffix("_max"),
-            pl.all().min().suffix("_min"),
+            pl.all().max().name.suffix("_max"),
+            pl.all().min().name.suffix("_min"),
         ]
     )
 
@@ -168,11 +168,11 @@ def test_sort_aggregation_fast_paths() -> None:
                     pl.all()
                     .sort(descending=descending, nulls_last=null_last)
                     .max()
-                    .suffix("_max"),
+                    .name.suffix("_max"),
                     pl.all()
                     .sort(descending=descending, nulls_last=null_last)
                     .min()
-                    .suffix("_min"),
+                    .name.suffix("_min"),
                 ]
             )
             assert_frame_equal(out, expected)

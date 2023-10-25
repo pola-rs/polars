@@ -519,7 +519,7 @@ def test_no_sorted_err() -> None:
         pl.InvalidOperationError,
         match=r"argument in operation 'group_by_dynamic' is not explicitly sorted",
     ):
-        df.group_by_dynamic("dt", every="1h").agg(pl.all().count().suffix("_foo"))
+        df.group_by_dynamic("dt", every="1h").agg(pl.all().count().name.suffix("_foo"))
 
 
 @pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])

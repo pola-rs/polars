@@ -107,8 +107,8 @@ print(array_df)
 
 # --8<-- [start:array_ops]
 out = array_df.select(
-    pl.col("Array_1").arr.min().suffix("_min"),
-    pl.col("Array_2").arr.sum().suffix("_sum"),
+    pl.col("Array_1").arr.min().name.suffix("_min"),
+    pl.col("Array_2").arr.sum().name.suffix("_sum"),
 )
 print(out)
 # --8<-- [end:array_ops]

@@ -103,8 +103,8 @@ class LazyGroupBy:
         Or use positional arguments to compute multiple aggregations in the same way.
 
         >>> ldf.group_by("a").agg(
-        ...     pl.sum("b").suffix("_sum"),
-        ...     (pl.col("c") ** 2).mean().suffix("_mean_squared"),
+        ...     pl.sum("b").name.suffix("_sum"),
+        ...     (pl.col("c") ** 2).mean().name.suffix("_mean_squared"),
         ... ).collect()  # doctest: +IGNORE_RESULT
         shape: (3, 3)
         ┌─────┬───────┬────────────────┐
