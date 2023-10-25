@@ -1355,6 +1355,11 @@ class StringNameSpace:
         --------
         pad_start
 
+        Notes
+        -----
+        This method is intended for padding numeric strings. If your data contains
+        non-ASCII characters, use :func:`pad_start` instead.
+
         Examples
         --------
         >>> s = pl.Series([-1, 123, 999999, None])
