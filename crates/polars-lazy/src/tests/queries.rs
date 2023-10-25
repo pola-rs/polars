@@ -259,7 +259,7 @@ fn test_lazy_query_4() {
             col("day").alias("day"),
             col("cumcases")
                 .apply(
-                    |s: Series| Ok(Some(&s - &(s.shift(lit(1))))),
+                    |s: Series| Ok(Some(&s - &(s.shift(1)))),
                     GetOutput::same_type(),
                 )
                 .alias("diff_cases"),
