@@ -128,7 +128,7 @@ impl<'a, I: Iterator<Item = Result<HybridEncoded<'a>, Error>>> Iterator
         };
 
         // one of three things can happen:
-        // * the start of the interval is not aligned wirh the start of the run => issue a `Skipped` and advance the run / next run
+        // * the start of the interval is not aligned with the start of the run => issue a `Skipped` and advance the run / next run
         // * the run contains this interval => consume the interval and keep the run
         // * the run contains part of this interval => consume the run and keep the interval
 
