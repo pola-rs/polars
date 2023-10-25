@@ -110,7 +110,7 @@ def max_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     ...         "c": ["x", "y", "z"],
     ...     }
     ... )
-    >>> df.with_columns(max = pl.max_horizontal("a", "b"))
+    >>> df.with_columns(max=pl.max_horizontal("a", "b"))
     shape: (3, 4)
     ┌─────┬──────┬─────┬─────┐
     │ a   ┆ b    ┆ c   ┆ max │
@@ -146,7 +146,7 @@ def min_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     ...         "c": ["x", "y", "z"],
     ...     }
     ... )
-    >>> df.with_columns(min = pl.min_horizontal("a", "b"))
+    >>> df.with_columns(min=pl.min_horizontal("a", "b"))
     shape: (3, 4)
     ┌─────┬──────┬─────┬─────┐
     │ a   ┆ b    ┆ c   ┆ min │
@@ -217,7 +217,7 @@ def mean_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     ...         "b": [None, 7, 8],
     ...     }
     ... )
-    >>> df.with_columns(mean = pl.mean_horizontal("a", "b"))
+    >>> df.with_columns(mean=pl.mean_horizontal("a", "b"))
     shape: (3, 3)
     ┌─────┬──────┬──────┐
     │ a   ┆ b    ┆ mean │
