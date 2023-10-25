@@ -43,6 +43,7 @@ from polars.datatypes import (
     Utf8,
     dtype_to_py_type,
     is_polars_dtype,
+    numpy_char_code_to_dtype,
     py_type_to_dtype,
 )
 from polars.datatypes.constructor import (
@@ -553,9 +554,17 @@ def sequence_to_pyseries(
             constructor = py_type_to_constructor(python_dtype)
             if constructor == PySeries.new_object:
                 try:
-                    return PySeries.new_from_anyvalues(name, values, strict)
-                # raised if we cannot convert to Wrap<AnyValue>
+                    srs = PySeries.new_from_anyvalues(name, values, strict)
+                    if _check_for_numpy(python_dtype, check_type=False) and isinstance(
+                        np.bool_(True), np.generic
+                    ):
+                        dtype = numpy_char_code_to_dtype(np.dtype(python_dtype).char)
+                        return srs.cast(dtype, strict=strict)
+                    else:
+                        return srs
+
                 except RuntimeError:
+                    # raised if we cannot convert to Wrap<AnyValue>
                     return sequence_from_anyvalue_or_object(name, values)
 
             return _construct_series_with_fallbacks(
