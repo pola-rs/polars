@@ -19,6 +19,9 @@ mod strip;
 #[cfg(feature = "strings")]
 mod substring;
 
+#[cfg(not(feature = "nightly"))]
+mod unicode_internals;
+
 #[cfg(feature = "strings")]
 pub use concat::*;
 #[cfg(feature = "extract_jsonpath")]
