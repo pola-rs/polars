@@ -106,6 +106,22 @@ def test_array_concat() -> None:
     }
 
 
+def test_array_equal_and_not_equal() -> None:
+    left = pl.Series([[1, 2], [3, 5]], dtype=pl.Array(width=2, inner=pl.Int64))
+    right = pl.Series([[1, 2], [3, 1]], dtype=pl.Array(width=2, inner=pl.Int64))
+    assert_series_equal(left == right, pl.Series([True, False]))
+    assert_series_equal(left.eq_missing(right), pl.Series([True, False]))
+    assert_series_equal(left != right, pl.Series([False, True]))
+    assert_series_equal(left.ne_missing(right), pl.Series([False, True]))
+
+    left = pl.Series([[1, None], [3, None]], dtype=pl.Array(width=2, inner=pl.Int64))
+    right = pl.Series([[1, None], [3, 4]], dtype=pl.Array(width=2, inner=pl.Int64))
+    assert_series_equal(left == right, pl.Series([False, False]))
+    assert_series_equal(left.eq_missing(right), pl.Series([True, False]))
+    assert_series_equal(left != right, pl.Series([True, True]))
+    assert_series_equal(left.ne_missing(right), pl.Series([False, True]))
+
+
 def test_array_init_deprecation() -> None:
     with pytest.deprecated_call():
         pl.Array(2)
