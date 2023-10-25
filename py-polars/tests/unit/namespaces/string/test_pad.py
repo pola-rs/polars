@@ -86,3 +86,30 @@ def test_str_rjust_deprecated() -> None:
 
     expected = pl.Series(["    a", "   bc", "  def"])
     assert_series_equal(result, expected)
+
+
+def test_pad_end_unicode() -> None:
+    lf = pl.LazyFrame({"a": ["Café", "345", "東京", None]})
+
+    result = lf.select(pl.col("a").str.pad_end(6, "日"))
+
+    expected = pl.LazyFrame({"a": ["Café日日", "345日日日", "東京日日日日", None]})
+    assert_frame_equal(result, expected)
+
+
+def test_pad_start_unicode() -> None:
+    lf = pl.LazyFrame({"a": ["Café", "345", "東京", None]})
+
+    result = lf.select(pl.col("a").str.pad_start(6, "日"))
+
+    expected = pl.LazyFrame({"a": ["日日Café", "日日日345", "日日日日東京", None]})
+    assert_frame_equal(result, expected)
+
+
+def test_str_zfill_unicode_not_respected() -> None:
+    lf = pl.LazyFrame({"a": ["Café", "345", "東京", None]})
+
+    result = lf.select(pl.col("a").str.zfill(6))
+
+    expected = pl.LazyFrame({"a": ["0Café", "000345", "東京", None]})
+    assert_frame_equal(result, expected)
