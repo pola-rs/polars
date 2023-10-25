@@ -1,6 +1,6 @@
-use arrow::io::parquet::read::statistics::{deserialize, Statistics};
-use arrow::io::parquet::read::RowGroupMetaData;
 use polars_core::prelude::*;
+use polars_parquet::read::statistics::{deserialize, Statistics};
+use polars_parquet::read::RowGroupMetaData;
 
 use crate::predicates::{BatchStats, ColumnStats, PhysicalIoExpr};
 

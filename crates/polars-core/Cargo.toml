@@ -117,8 +117,6 @@ dtype-u16 = []
 dtype-categorical = []
 dtype-struct = []
 
-parquet = ["arrow/io_parquet"]
-
 # scale to terabytes?
 bigidx = ["arrow/bigidx", "polars-utils/bigidx"]
 python = []

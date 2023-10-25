@@ -57,7 +57,7 @@ serde-lazy = [
   "polars-io/serde",
   "polars-ops/serde",
 ]
-parquet = ["polars-io", "polars-core/parquet", "polars-lazy?/parquet", "polars-io/parquet", "polars-sql?/parquet"]
+parquet = ["polars-io", "polars-lazy?/parquet", "polars-io/parquet", "polars-sql?/parquet"]
 async = ["polars-lazy?/async"]
 cloud = ["polars-lazy?/cloud", "polars-io/cloud"]
 cloud_write = ["cloud", "polars-lazy?/cloud_write"]

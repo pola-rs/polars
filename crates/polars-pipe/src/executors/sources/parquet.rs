@@ -3,10 +3,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars_core::error::*;
-use polars_core::utils::arrow::io::parquet::read::FileMetaData;
 use polars_core::POOL;
 use polars_io::cloud::CloudOptions;
-use polars_io::parquet::{BatchedParquetReader, ParquetReader};
+use polars_io::parquet::{BatchedParquetReader, FileMetaData, ParquetReader};
 use polars_io::pl_async::get_runtime;
 use polars_io::prelude::materialize_projection;
 #[cfg(feature = "async")]

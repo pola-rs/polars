@@ -1,5 +1,5 @@
 #[cfg(feature = "parquet")]
-use arrow::io::parquet::write::FileMetaData;
+use polars_parquet::write::FileMetaData;
 
 use super::*;
 

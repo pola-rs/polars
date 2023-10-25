@@ -5,11 +5,11 @@ use std::ops::{Deref, Range};
 use std::sync::Arc;
 
 use arrow::array::new_empty_array;
-use arrow::io::parquet::read;
-use arrow::io::parquet::read::{ArrayIter, FileMetaData, RowGroupMetaData};
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use polars_core::POOL;
+use polars_parquet::read;
+use polars_parquet::read::{ArrayIter, FileMetaData, RowGroupMetaData};
 use rayon::prelude::*;
 
 use super::mmap::ColumnStore;
