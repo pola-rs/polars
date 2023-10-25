@@ -1,9 +1,9 @@
 use arrow::array::*;
-use parquet2::encoding::hybrid_rle::bitpacked_encode;
-use parquet2::encoding::Encoding;
-use parquet2::page::DataPage;
-use parquet2::schema::types::PrimitiveType;
-use parquet2::statistics::{
+use crate::parquet::encoding::hybrid_rle::bitpacked_encode;
+use crate::parquet::encoding::Encoding;
+use crate::parquet::page::DataPage;
+use crate::parquet::schema::types::PrimitiveType;
+use crate::parquet::statistics::{
     serialize_statistics, BooleanStatistics, ParquetStatistics, Statistics,
 };
 use polars_error::PolarsResult;

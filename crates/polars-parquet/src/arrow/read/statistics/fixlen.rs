@@ -1,7 +1,7 @@
 use arrow::array::*;
 use arrow::types::{days_ms, i256};
 use ethnum::I256;
-use parquet2::statistics::{FixedLenStatistics, Statistics as ParquetStatistics};
+use crate::parquet::statistics::{FixedLenStatistics, Statistics as ParquetStatistics};
 use polars_error::PolarsResult;
 
 use super::super::{convert_days_ms, convert_i128};

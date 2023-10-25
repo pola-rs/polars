@@ -5,10 +5,10 @@ use arrow::array::{Array, BinaryArray, Utf8Array};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::{DataType, PhysicalType};
 use arrow::offset::Offset;
-use parquet2::deserialize::SliceFilteredIter;
-use parquet2::encoding::{delta_length_byte_array, hybrid_rle, Encoding};
-use parquet2::page::{split_buffer, DataPage, DictPage};
-use parquet2::schema::Repetition;
+use crate::parquet::deserialize::SliceFilteredIter;
+use crate::parquet::encoding::{delta_length_byte_array, hybrid_rle, Encoding};
+use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::parquet::schema::Repetition;
 use polars_error::{to_compute_err, PolarsResult};
 
 use super::super::utils::{

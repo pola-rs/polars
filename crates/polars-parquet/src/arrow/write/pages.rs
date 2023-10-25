@@ -4,9 +4,9 @@ use arrow::array::{Array, ListArray, MapArray, StructArray};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::PhysicalType;
 use arrow::offset::{Offset, OffsetsBuffer};
-use parquet2::page::Page;
-use parquet2::schema::types::{ParquetType, PrimitiveType as ParquetPrimitiveType};
-use parquet2::write::DynIter;
+use crate::parquet::page::Page;
+use crate::parquet::schema::types::{ParquetType, PrimitiveType as ParquetPrimitiveType};
+use crate::parquet::write::DynIter;
 use polars_error::{polars_bail, PolarsResult};
 
 use super::{array_to_pages, Encoding, WriteOptions};
@@ -259,8 +259,8 @@ mod tests {
     use arrow::array::*;
     use arrow::bitmap::Bitmap;
     use arrow::datatypes::*;
-    use parquet2::schema::types::{GroupLogicalType, PrimitiveConvertedType, PrimitiveLogicalType};
-    use parquet2::schema::Repetition;
+    use crate::parquet::schema::types::{GroupLogicalType, PrimitiveConvertedType, PrimitiveLogicalType};
+    use crate::parquet::schema::Repetition;
 
     use super::super::{FieldInfo, ParquetPhysicalType, ParquetPrimitiveType};
     use super::*;

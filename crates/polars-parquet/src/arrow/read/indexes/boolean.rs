@@ -1,5 +1,5 @@
 use arrow::array::{BooleanArray, PrimitiveArray};
-use parquet2::indexes::PageIndex;
+use crate::parquet::indexes::PageIndex;
 
 use super::ColumnPageStatistics;
 

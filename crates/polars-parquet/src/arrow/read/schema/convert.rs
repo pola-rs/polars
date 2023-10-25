@@ -1,10 +1,10 @@
 //! This module has entry points, [`parquet_to_arrow_schema`] and the more configurable [`parquet_to_arrow_schema_with_options`].
 use arrow::datatypes::{DataType, Field, IntervalUnit, TimeUnit};
-use parquet2::schema::types::{
+use crate::parquet::schema::types::{
     FieldInfo, GroupConvertedType, GroupLogicalType, IntegerType, ParquetType, PhysicalType,
     PrimitiveConvertedType, PrimitiveLogicalType, PrimitiveType, TimeUnit as ParquetTimeUnit,
 };
-use parquet2::schema::Repetition;
+use crate::parquet::schema::Repetition;
 
 use crate::arrow::read::schema::SchemaInferenceOptions;
 
@@ -399,7 +399,7 @@ pub(crate) fn to_data_type(
 #[cfg(test)]
 mod tests {
     use arrow::datatypes::{DataType, Field, TimeUnit};
-    use parquet2::metadata::SchemaDescriptor;
+    use crate::parquet::metadata::SchemaDescriptor;
     use polars_error::*;
 
     use super::*;

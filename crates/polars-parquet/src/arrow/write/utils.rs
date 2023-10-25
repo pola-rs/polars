@@ -1,11 +1,11 @@
 use arrow::bitmap::Bitmap;
-use parquet2::compression::CompressionOptions;
-use parquet2::encoding::hybrid_rle::encode_bool;
-use parquet2::encoding::Encoding;
-use parquet2::metadata::Descriptor;
-use parquet2::page::{DataPage, DataPageHeader, DataPageHeaderV1, DataPageHeaderV2};
-use parquet2::schema::types::PrimitiveType;
-use parquet2::statistics::ParquetStatistics;
+use crate::parquet::compression::CompressionOptions;
+use crate::parquet::encoding::hybrid_rle::encode_bool;
+use crate::parquet::encoding::Encoding;
+use crate::parquet::metadata::Descriptor;
+use crate::parquet::page::{DataPage, DataPageHeader, DataPageHeaderV1, DataPageHeaderV2};
+use crate::parquet::schema::types::PrimitiveType;
+use crate::parquet::statistics::ParquetStatistics;
 use polars_error::PolarsResult;
 
 use super::{Version, WriteOptions};

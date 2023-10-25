@@ -14,8 +14,8 @@ mod utils;
 use arrow::array::{Array, DictionaryKey, FixedSizeListArray, ListArray, MapArray};
 use arrow::datatypes::{DataType, Field, IntervalUnit};
 use arrow::offset::Offsets;
-use parquet2::read::get_page_iterator as _get_page_iterator;
-use parquet2::schema::types::PrimitiveType;
+use crate::parquet::read::get_page_iterator as _get_page_iterator;
+use crate::parquet::schema::types::PrimitiveType;
 use simple::page_iter_to_arrays;
 
 pub use self::nested_utils::{init_nested, InitNested, NestedArrayIter, NestedState};

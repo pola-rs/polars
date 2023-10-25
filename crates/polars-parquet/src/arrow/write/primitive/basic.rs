@@ -1,11 +1,11 @@
 use arrow::array::{Array, PrimitiveArray};
 use arrow::types::NativeType;
-use parquet2::encoding::delta_bitpacked::encode;
-use parquet2::encoding::Encoding;
-use parquet2::page::DataPage;
-use parquet2::schema::types::PrimitiveType;
-use parquet2::statistics::{serialize_statistics, PrimitiveStatistics};
-use parquet2::types::NativeType as ParquetNativeType;
+use crate::parquet::encoding::delta_bitpacked::encode;
+use crate::parquet::encoding::Encoding;
+use crate::parquet::page::DataPage;
+use crate::parquet::schema::types::PrimitiveType;
+use crate::parquet::statistics::{serialize_statistics, PrimitiveStatistics};
+use crate::parquet::types::NativeType as ParquetNativeType;
 use polars_error::{polars_bail, PolarsResult};
 
 use super::super::{utils, WriteOptions};

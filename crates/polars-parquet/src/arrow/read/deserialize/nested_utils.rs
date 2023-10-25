@@ -2,9 +2,9 @@ use std::collections::VecDeque;
 
 use arrow::array::Array;
 use arrow::bitmap::MutableBitmap;
-use parquet2::encoding::hybrid_rle::HybridRleDecoder;
-use parquet2::page::{split_buffer, DataPage, DictPage, Page};
-use parquet2::read::levels::get_bit_width;
+use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
+use crate::parquet::page::{split_buffer, DataPage, DictPage, Page};
+use crate::parquet::read::levels::get_bit_width;
 use polars_error::PolarsResult;
 
 use super::super::Pages;

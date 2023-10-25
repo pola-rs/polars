@@ -2,12 +2,12 @@ use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
 use arrow::io::ipc::write::{default_ipc_fields, schema_to_bytes};
 use base64::engine::general_purpose;
 use base64::Engine as _;
-use parquet2::metadata::KeyValue;
-use parquet2::schema::types::{
+use crate::parquet::metadata::KeyValue;
+use crate::parquet::schema::types::{
     GroupConvertedType, GroupLogicalType, IntegerType, ParquetType, PhysicalType,
     PrimitiveConvertedType, PrimitiveLogicalType, TimeUnit as ParquetTimeUnit,
 };
-use parquet2::schema::Repetition;
+use crate::parquet::schema::Repetition;
 use polars_error::{polars_bail, PolarsResult};
 
 use super::super::ARROW_SCHEMA_META_KEY;

@@ -1,10 +1,10 @@
 use arrow::array::{Array, PrimitiveArray};
 use arrow::types::NativeType as ArrowNativeType;
-use parquet2::encoding::Encoding;
-use parquet2::page::DataPage;
-use parquet2::schema::types::PrimitiveType;
-use parquet2::statistics::serialize_statistics;
-use parquet2::types::NativeType;
+use crate::parquet::encoding::Encoding;
+use crate::parquet::page::DataPage;
+use crate::parquet::schema::types::PrimitiveType;
+use crate::parquet::statistics::serialize_statistics;
+use crate::parquet::types::NativeType;
 use polars_error::PolarsResult;
 
 use super::super::{nested, utils, WriteOptions};

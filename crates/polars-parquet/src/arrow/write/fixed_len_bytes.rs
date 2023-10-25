@@ -1,9 +1,9 @@
 use arrow::array::{Array, FixedSizeBinaryArray, PrimitiveArray};
 use arrow::types::i256;
-use parquet2::encoding::Encoding;
-use parquet2::page::DataPage;
-use parquet2::schema::types::PrimitiveType;
-use parquet2::statistics::{serialize_statistics, FixedLenStatistics};
+use crate::parquet::encoding::Encoding;
+use crate::parquet::page::DataPage;
+use crate::parquet::schema::types::PrimitiveType;
+use crate::parquet::statistics::{serialize_statistics, FixedLenStatistics};
 use polars_error::PolarsResult;
 
 use super::binary::ord_binary;

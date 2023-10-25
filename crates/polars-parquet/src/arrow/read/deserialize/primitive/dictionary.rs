@@ -4,8 +4,8 @@ use arrow::array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
 use arrow::types::NativeType;
-use parquet2::page::DictPage;
-use parquet2::types::NativeType as ParquetNativeType;
+use crate::parquet::page::DictPage;
+use crate::parquet::types::NativeType as ParquetNativeType;
 use polars_error::PolarsResult;
 
 use super::super::dictionary::{nested_next_dict, *};

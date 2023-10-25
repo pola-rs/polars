@@ -1,8 +1,8 @@
 use std::io::Write;
 
 use arrow::datatypes::Schema;
-use parquet2::metadata::{KeyValue, SchemaDescriptor};
-use parquet2::write::{RowGroupIter, WriteOptions as FileWriteOptions};
+use crate::parquet::metadata::{KeyValue, SchemaDescriptor};
+use crate::parquet::write::{RowGroupIter, WriteOptions as FileWriteOptions};
 use polars_error::{PolarsError, PolarsResult};
 
 use super::schema::schema_to_metadata_key;
@@ -23,7 +23,7 @@ pub fn add_arrow_schema(
 
 /// An interface to write a parquet to a [`Write`]
 pub struct FileWriter<W: Write> {
-    writer: parquet2::write::FileWriter<W>,
+    writer: crate::parquet::write::FileWriter<W>,
     schema: Schema,
     options: WriteOptions,
 }
@@ -56,7 +56,7 @@ impl<W: Write> FileWriter<W> {
         let created_by = Some("Arrow2 - Native Rust implementation of Arrow".to_string());
 
         Ok(Self {
-            writer: parquet2::write::FileWriter::new(
+            writer: crate::parquet::write::FileWriter::new(
                 writer,
                 parquet_schema,
                 FileWriteOptions {

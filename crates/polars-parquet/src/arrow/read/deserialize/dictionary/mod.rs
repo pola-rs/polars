@@ -5,11 +5,11 @@ use std::collections::VecDeque;
 use arrow::array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
-use parquet2::deserialize::SliceFilteredIter;
-use parquet2::encoding::hybrid_rle::HybridRleDecoder;
-use parquet2::encoding::Encoding;
-use parquet2::page::{DataPage, DictPage, Page};
-use parquet2::schema::Repetition;
+use crate::parquet::deserialize::SliceFilteredIter;
+use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
+use crate::parquet::encoding::Encoding;
+use crate::parquet::page::{DataPage, DictPage, Page};
+use crate::parquet::schema::Repetition;
 
 use super::utils::{
     self, dict_indices_decoder, extend_from_decoder, get_selected_rows, DecodedState, Decoder,

@@ -2,9 +2,9 @@ mod def;
 mod rep;
 
 use arrow::offset::Offset;
-use parquet2::encoding::hybrid_rle::encode_u32;
-use parquet2::read::levels::get_bit_width;
-use parquet2::write::Version;
+use crate::parquet::encoding::hybrid_rle::encode_u32;
+use crate::parquet::read::levels::get_bit_width;
+use crate::parquet::write::Version;
 use polars_error::PolarsResult;
 pub use rep::num_values;
 

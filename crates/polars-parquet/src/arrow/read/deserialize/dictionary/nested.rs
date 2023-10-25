@@ -3,10 +3,10 @@ use std::collections::VecDeque;
 use arrow::array::{Array, DictionaryArray, DictionaryKey};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
-use parquet2::encoding::hybrid_rle::HybridRleDecoder;
-use parquet2::encoding::Encoding;
-use parquet2::page::{DataPage, DictPage, Page};
-use parquet2::schema::Repetition;
+use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
+use crate::parquet::encoding::Encoding;
+use crate::parquet::page::{DataPage, DictPage, Page};
+use crate::parquet::schema::Repetition;
 use polars_error::{polars_err, PolarsResult};
 
 use super::super::super::Pages;

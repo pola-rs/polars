@@ -1,12 +1,12 @@
 //! API to perform page-level filtering (also known as indexes)
-use parquet2::error::Error as ParquetError;
-use parquet2::indexes::{
+use crate::parquet::error::Error as ParquetError;
+use crate::parquet::indexes::{
     select_pages, BooleanIndex, ByteIndex, FixedLenByteIndex, Index as ParquetIndex, NativeIndex,
     PageLocation,
 };
-use parquet2::metadata::{ColumnChunkMetaData, RowGroupMetaData};
-use parquet2::read::{read_columns_indexes as _read_columns_indexes, read_pages_locations};
-use parquet2::schema::types::PhysicalType as ParquetPhysicalType;
+use crate::parquet::metadata::{ColumnChunkMetaData, RowGroupMetaData};
+use crate::parquet::read::{read_columns_indexes as _read_columns_indexes, read_pages_locations};
+use crate::parquet::schema::types::PhysicalType as ParquetPhysicalType;
 
 mod binary;
 mod boolean;
@@ -18,7 +18,7 @@ use std::io::{Read, Seek};
 
 use arrow::array::{Array, UInt64Array};
 use arrow::datatypes::{DataType, Field, PhysicalType, PrimitiveType};
-pub use parquet2::indexes::{FilteredPage, Interval};
+pub use crate::parquet::indexes::{FilteredPage, Interval};
 use polars_error::{polars_bail, PolarsResult};
 
 use super::get_field_pages;
@@ -83,7 +83,7 @@ fn deserialize(
                     let index = index.as_any().downcast_ref::<NativeIndex<i32>>().unwrap();
                     Ok(primitive::deserialize_i32(&index.indexes, data_type).into())
                 },
-                parquet2::schema::types::PhysicalType::Int64 => {
+                crate::parquet::schema::types::PhysicalType::Int64 => {
                     let index = index.as_any().downcast_ref::<NativeIndex<i64>>().unwrap();
                     Ok(
                         primitive::deserialize_i64(
@@ -94,7 +94,7 @@ fn deserialize(
                         .into(),
                     )
                 },
-                parquet2::schema::types::PhysicalType::FixedLenByteArray(_) => {
+                crate::parquet::schema::types::PhysicalType::FixedLenByteArray(_) => {
                     let index = index.as_any().downcast_ref::<FixedLenByteIndex>().unwrap();
                     Ok(fixed_len_binary::deserialize(&index.indexes, data_type).into())
                 },
@@ -108,7 +108,7 @@ fn deserialize(
                     let index = index.as_any().downcast_ref::<NativeIndex<i32>>().unwrap();
                     Ok(primitive::deserialize_i32(&index.indexes, data_type).into())
                 },
-                parquet2::schema::types::PhysicalType::Int64 => {
+                crate::parquet::schema::types::PhysicalType::Int64 => {
                     let index = index.as_any().downcast_ref::<NativeIndex<i64>>().unwrap();
                     Ok(
                         primitive::deserialize_i64(
@@ -119,7 +119,7 @@ fn deserialize(
                         .into(),
                     )
                 },
-                parquet2::schema::types::PhysicalType::FixedLenByteArray(_) => {
+                crate::parquet::schema::types::PhysicalType::FixedLenByteArray(_) => {
                     let index = index.as_any().downcast_ref::<FixedLenByteIndex>().unwrap();
                     Ok(fixed_len_binary::deserialize(&index.indexes, data_type).into())
                 },
@@ -153,7 +153,7 @@ fn deserialize(
                         .into(),
                     )
                 },
-                parquet2::schema::types::PhysicalType::Int96 => {
+                crate::parquet::schema::types::PhysicalType::Int96 => {
                     let index = index
                         .as_any()
                         .downcast_ref::<NativeIndex<[u32; 3]>>()

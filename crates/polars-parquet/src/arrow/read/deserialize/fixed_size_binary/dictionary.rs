@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use arrow::array::{Array, DictionaryArray, DictionaryKey, FixedSizeBinaryArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
-use parquet2::page::DictPage;
+use crate::parquet::page::DictPage;
 use polars_error::PolarsResult;
 
 use super::super::dictionary::*;

@@ -3,9 +3,9 @@ use std::io::{Read, Seek};
 use arrow::array::Array;
 use arrow::chunk::Chunk;
 use arrow::datatypes::Field;
-use parquet2::indexes::FilteredPage;
-use parquet2::metadata::ColumnChunkMetaData;
-use parquet2::read::{BasicDecompressor, IndexedPageReader, PageMetaData, PageReader};
+use crate::parquet::indexes::FilteredPage;
+use crate::parquet::metadata::ColumnChunkMetaData;
+use crate::parquet::read::{BasicDecompressor, IndexedPageReader, PageMetaData, PageReader};
 use polars_error::PolarsResult;
 
 use super::{ArrayIter, RowGroupMetaData};
@@ -132,7 +132,7 @@ where
 }
 
 type Pages = Box<
-    dyn Iterator<Item = std::result::Result<parquet2::page::CompressedPage, parquet2::error::Error>>
+    dyn Iterator<Item = std::result::Result<crate::parquet::page::CompressedPage, crate::parquet::error::Error>>
         + Sync
         + Send,
 >;

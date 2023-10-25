@@ -32,19 +32,19 @@ use arrow::datatypes::*;
 use arrow::types::{days_ms, i256, NativeType};
 pub use nested::{num_values, write_rep_and_def};
 pub use pages::{to_leaves, to_nested, to_parquet_leaves};
-pub use parquet2::compression::{BrotliLevel, CompressionOptions, GzipLevel, ZstdLevel};
-pub use parquet2::encoding::Encoding;
-pub use parquet2::metadata::{
+pub use crate::parquet::compression::{BrotliLevel, CompressionOptions, GzipLevel, ZstdLevel};
+pub use crate::parquet::encoding::Encoding;
+pub use crate::parquet::metadata::{
     Descriptor, FileMetaData, KeyValue, SchemaDescriptor, ThriftFileMetaData,
 };
-pub use parquet2::page::{CompressedDataPage, CompressedPage, Page};
-use parquet2::schema::types::PrimitiveType as ParquetPrimitiveType;
-pub use parquet2::schema::types::{FieldInfo, ParquetType, PhysicalType as ParquetPhysicalType};
-pub use parquet2::write::{
+pub use crate::parquet::page::{CompressedDataPage, CompressedPage, Page};
+use crate::parquet::schema::types::PrimitiveType as ParquetPrimitiveType;
+pub use crate::parquet::schema::types::{FieldInfo, ParquetType, PhysicalType as ParquetPhysicalType};
+pub use crate::parquet::write::{
     compress, write_metadata_sidecar, Compressor, DynIter, DynStreamingIterator, RowGroupIter,
     Version,
 };
-pub use parquet2::{fallible_streaming_iterator, FallibleStreamingIterator};
+pub use crate::parquet::{fallible_streaming_iterator, FallibleStreamingIterator};
 pub use utils::write_def_levels;
 
 /// Currently supported options to write to parquet

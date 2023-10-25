@@ -4,9 +4,9 @@ use arrow::array::Array;
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
 use arrow::offset::Offset;
-use parquet2::encoding::Encoding;
-use parquet2::page::{split_buffer, DataPage, DictPage};
-use parquet2::schema::Repetition;
+use crate::parquet::encoding::Encoding;
+use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::parquet::schema::Repetition;
 use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;

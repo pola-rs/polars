@@ -1,6 +1,6 @@
 use arrow::array::{MutableArray, MutableBinaryArray};
 use arrow::offset::Offset;
-use parquet2::statistics::{BinaryStatistics, Statistics as ParquetStatistics};
+use crate::parquet::statistics::{BinaryStatistics, Statistics as ParquetStatistics};
 use polars_error::PolarsResult;
 
 pub(super) fn push<O: Offset>(

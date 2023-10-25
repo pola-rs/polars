@@ -2,13 +2,13 @@ use std::collections::VecDeque;
 
 use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::MutableBitmap;
-use parquet2::deserialize::{
+use crate::parquet::deserialize::{
     FilteredHybridEncoded, FilteredHybridRleDecoderIter, HybridDecoderBitmapIter, HybridEncoded,
 };
-use parquet2::encoding::hybrid_rle;
-use parquet2::indexes::Interval;
-use parquet2::page::{split_buffer, DataPage, DictPage, Page};
-use parquet2::schema::Repetition;
+use crate::parquet::encoding::hybrid_rle;
+use crate::parquet::indexes::Interval;
+use crate::parquet::page::{split_buffer, DataPage, DictPage, Page};
+use crate::parquet::schema::Repetition;
 use polars_error::{polars_err, to_compute_err, PolarsError, PolarsResult};
 
 use super::super::Pages;

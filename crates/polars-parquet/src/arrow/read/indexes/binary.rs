@@ -1,7 +1,7 @@
 use arrow::array::{Array, BinaryArray, PrimitiveArray, Utf8Array};
 use arrow::datatypes::{DataType, PhysicalType};
 use arrow::trusted_len::TrustedLen;
-use parquet2::indexes::PageIndex;
+use crate::parquet::indexes::PageIndex;
 use polars_error::{to_compute_err, PolarsResult};
 
 use super::ColumnPageStatistics;

@@ -3,9 +3,9 @@ use std::collections::VecDeque;
 use arrow::array::FixedSizeBinaryArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
-use parquet2::encoding::Encoding;
-use parquet2::page::{DataPage, DictPage};
-use parquet2::schema::Repetition;
+use crate::parquet::encoding::Encoding;
+use crate::parquet::page::{DataPage, DictPage};
+use crate::parquet::schema::Repetition;
 use polars_error::PolarsResult;
 
 use super::super::utils::{not_implemented, MaybeNext, PageState};

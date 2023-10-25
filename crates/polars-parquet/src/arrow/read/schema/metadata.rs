@@ -2,7 +2,7 @@ use arrow::datatypes::{Metadata, Schema};
 use arrow::io::ipc::read::deserialize_schema;
 use base64::engine::general_purpose;
 use base64::Engine as _;
-pub use parquet2::metadata::KeyValue;
+pub use crate::parquet::metadata::KeyValue;
 use polars_error::{polars_bail, PolarsResult};
 
 use super::super::super::ARROW_SCHEMA_META_KEY;

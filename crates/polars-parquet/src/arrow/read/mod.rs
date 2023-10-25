@@ -19,8 +19,8 @@ pub use deserialize::{
 pub use file::{FileReader, RowGroupReader};
 #[cfg(feature = "async")]
 use futures::{AsyncRead, AsyncSeek};
-// re-exports of parquet2's relevant APIs
-pub use parquet2::{
+// re-exports of crate::parquet's relevant APIs
+pub use crate::parquet::{
     error::Error as ParquetError,
     fallible_streaming_iterator,
     metadata::{ColumnChunkMetaData, ColumnDescriptor, RowGroupMetaData},

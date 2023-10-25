@@ -3,7 +3,7 @@ use std::io::{Read, Seek};
 use arrow::array::Array;
 use arrow::chunk::Chunk;
 use arrow::datatypes::Schema;
-use parquet2::indexes::FilteredPage;
+use crate::parquet::indexes::FilteredPage;
 use polars_error::PolarsResult;
 
 use super::{RowGroupDeserializer, RowGroupMetaData};

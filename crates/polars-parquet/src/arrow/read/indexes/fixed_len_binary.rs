@@ -2,7 +2,7 @@ use arrow::array::{Array, FixedSizeBinaryArray, MutableFixedSizeBinaryArray, Pri
 use arrow::datatypes::{DataType, PhysicalType, PrimitiveType};
 use arrow::trusted_len::TrustedLen;
 use arrow::types::{i256, NativeType};
-use parquet2::indexes::PageIndex;
+use crate::parquet::indexes::PageIndex;
 
 use super::ColumnPageStatistics;
 

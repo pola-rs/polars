@@ -1,7 +1,7 @@
 use arrow::array::{Array, BooleanArray};
-use parquet2::encoding::Encoding;
-use parquet2::page::DataPage;
-use parquet2::schema::types::PrimitiveType;
+use crate::parquet::encoding::Encoding;
+use crate::parquet::page::DataPage;
+use crate::parquet::schema::types::PrimitiveType;
 use polars_error::PolarsResult;
 
 use super::super::{nested, utils, WriteOptions};

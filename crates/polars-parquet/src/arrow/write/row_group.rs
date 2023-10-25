@@ -1,10 +1,10 @@
 use arrow::array::Array;
 use arrow::chunk::Chunk;
 use arrow::datatypes::Schema;
-use parquet2::error::Error as ParquetError;
-use parquet2::schema::types::ParquetType;
-use parquet2::write::Compressor;
-use parquet2::FallibleStreamingIterator;
+use crate::parquet::error::Error as ParquetError;
+use crate::parquet::schema::types::ParquetType;
+use crate::parquet::write::Compressor;
+use crate::parquet::FallibleStreamingIterator;
 use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
 
 use super::{

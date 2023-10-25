@@ -2,7 +2,7 @@ use arrow::array::PrimitiveArray;
 use arrow::datatypes::{DataType, Field};
 use arrow::match_integer_type;
 use ethnum::I256;
-use parquet2::schema::types::PrimitiveType;
+use crate::parquet::schema::types::PrimitiveType;
 use polars_error::polars_bail;
 
 use super::nested_utils::{InitNested, NestedArrayIter};

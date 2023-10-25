@@ -1,5 +1,5 @@
 use arrow::array::{MutableArray, MutableBooleanArray};
-use parquet2::statistics::{BooleanStatistics, Statistics as ParquetStatistics};
+use crate::parquet::statistics::{BooleanStatistics, Statistics as ParquetStatistics};
 use polars_error::PolarsResult;
 
 pub(super) fn push(
