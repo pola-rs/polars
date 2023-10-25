@@ -3,7 +3,6 @@ try:
         ColumnNotFoundError,
         ComputeError,
         DuplicateError,
-        FileNotFoundError,
         InvalidOperationError,
         NoDataError,
         OutOfBoundsError,
@@ -53,9 +52,6 @@ except ImportError:
 
     class StructFieldNotFoundError(Exception):  # type: ignore[no-redef]
         """Exception raised when a specified schema field is not found."""
-
-    class FileNotFoundError(Exception):  # type: ignore[no-redef]
-        """Exception raised when a specified file is not found."""
 
 
 class ChronoFormatWarning(Warning):
@@ -124,6 +120,5 @@ __all__ = [
     "ShapeError",
     "StringCacheMismatchError",
     "StructFieldNotFoundError",
-    "TooManyRowsReturnedError",
-    "FileNotFoundError",
+    "TooManyRowsReturnedError"
 ]

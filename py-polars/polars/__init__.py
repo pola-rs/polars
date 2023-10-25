@@ -66,7 +66,6 @@ from polars.exceptions import (
     ColumnNotFoundError,
     ComputeError,
     DuplicateError,
-    FileNotFoundError,
     InvalidOperationError,
     NoDataError,
     OutOfBoundsError,
@@ -217,7 +216,6 @@ __all__ = [
     "SchemaFieldNotFoundError",
     "ShapeError",
     "StructFieldNotFoundError",
-    "FileNotFoundError",
     # core classes
     "DataFrame",
     "Expr",
