@@ -6,7 +6,7 @@ pub(super) fn pad_end<'a>(ca: &'a Utf8Chunked, length: usize, fill_char: char) -
     // amortize allocation
     let mut buf = String::new();
     let f = |s: &'a str| {
-        let padding = length.saturating_sub(s.len());
+        let padding = length.saturating_sub(s.chars().count());
         if padding == 0 {
             s
         } else {
@@ -28,7 +28,7 @@ pub(super) fn pad_start<'a>(ca: &'a Utf8Chunked, length: usize, fill_char: char)
     // amortize allocation
     let mut buf = String::new();
     let f = |s: &'a str| {
-        let padding = length.saturating_sub(s.len());
+        let padding = length.saturating_sub(s.chars().count());
         if padding == 0 {
             s
         } else {
