@@ -141,9 +141,9 @@ def _assert_series_values_equal(
     # TODO: Remove this check when equality for Arrays is implemented
     # https://github.com/pola-rs/polars/issues/12012
     if left.dtype == Array:
-        left = left.cast(List(left.dtype.inner))
+        left = left.cast(List(left.dtype.inner))  # type: ignore[union-attr]
     if right.dtype == Array:
-        right = right.cast(List(right.dtype.inner))
+        right = right.cast(List(right.dtype.inner))  # type: ignore[union-attr]
 
     # Determine unequal elements
     try:
@@ -299,7 +299,7 @@ def _comparing_nested_floats(left: PolarsDataType, right: PolarsDataType) -> boo
     if not (_comparing_lists(left, right) or _comparing_structs(left, right)):
         return False
 
-    return FLOAT_DTYPES & unpack_dtypes(left, right)
+    return bool(FLOAT_DTYPES & unpack_dtypes(left, right))
 
 
 def _assert_series_values_within_tolerance(
