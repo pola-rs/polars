@@ -28,7 +28,7 @@ pub fn read_ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
 #[cfg(feature = "parquet")]
 #[pyfunction]
 pub fn read_parquet_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
-    use polars_core::export::arrow::io::parquet::read::{infer_schema, read_metadata};
+    use polars_parquet::read::{infer_schema, read_metadata};
 
     let metadata = match get_either_file(py_f, false)? {
         EitherRustPythonFile::Rust(mut r) => read_metadata(&mut r).map_err(PyPolarsErr::from)?,

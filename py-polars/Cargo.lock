@@ -1605,14 +1605,12 @@ dependencies = [
  "arrow-format",
  "atoi",
  "avro-schema",
- "base64",
  "bytemuck",
  "chrono",
  "chrono-tz",
  "dyn-clone",
  "either",
  "ethnum",
- "fallible-streaming-iterator",
  "foreign_vec",
  "futures",
  "getrandom",
@@ -1621,7 +1619,6 @@ dependencies = [
  "lz4",
  "multiversion",
  "num-traits",
- "parquet2",
  "polars-error",
  "rustc_version",
  "serde",
@@ -1711,6 +1708,7 @@ dependencies = [
  "polars-core",
  "polars-error",
  "polars-json",
+ "polars-parquet",
  "polars-time",
  "polars-utils",
  "rayon",
@@ -1804,6 +1802,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-parquet"
+version = "0.34.2"
+dependencies = [
+ "ahash",
+ "base64",
+ "ethnum",
+ "futures",
+ "num-traits",
+ "parquet2",
+ "polars-arrow",
+ "polars-error",
+ "simdutf8",
+]
+
+[[package]]
 name = "polars-pipe"
 version = "0.34.2"
 dependencies = [
@@ -1842,6 +1855,7 @@ dependencies = [
  "polars-ffi",
  "polars-io",
  "polars-ops",
+ "polars-parquet",
  "polars-time",
  "polars-utils",
  "pyo3",
@@ -1948,6 +1962,7 @@ dependencies = [
  "polars-error",
  "polars-lazy",
  "polars-ops",
+ "polars-parquet",
  "polars-plan",
  "pyo3",
  "pyo3-built",

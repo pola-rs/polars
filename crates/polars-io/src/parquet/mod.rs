@@ -22,7 +22,7 @@ mod read;
 mod read_impl;
 mod write;
 
-use arrow::io::parquet::write::FileMetaData;
+pub use polars_parquet::write::FileMetaData;
 pub use read::*;
 pub use write::{BrotliLevel, GzipLevel, ZstdLevel, *};
 

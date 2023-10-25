@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 
 use polars_core::config::{concurrent_download_limit, verbose};
 use polars_core::utils::accumulate_dataframes_vertical;
-use polars_core::utils::arrow::io::parquet::read::FileMetaData;
 use polars_io::cloud::CloudOptions;
+use polars_io::parquet::FileMetaData;
 use polars_io::{is_cloud_url, RowCount};
 
 use super::*;

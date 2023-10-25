@@ -17,6 +17,7 @@ polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-ffi = { workspace = true, optional = true }
 polars-io = { workspace = true, features = ["lazy"] }
 polars-ops = { workspace = true, features = ["zip_with"] }
+polars-parquet = { workspace = true, optional = true }
 polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
 
@@ -51,7 +52,7 @@ serde = [
   "polars-ops/serde",
 ]
 streaming = []
-parquet = ["polars-core/parquet", "polars-io/parquet"]
+parquet = ["polars-io/parquet", "polars-parquet"]
 async = ["polars-io/async"]
 cloud = ["async", "polars-io/cloud"]
 ipc = ["polars-io/ipc"]

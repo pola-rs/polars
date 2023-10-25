@@ -38,7 +38,7 @@ version_check = { workspace = true }
 [features]
 nightly = ["polars-core/nightly", "polars-pipe?/nightly", "polars-plan/nightly"]
 streaming = ["chunked_ids", "polars-pipe", "polars-plan/streaming", "polars-ops/chunked_ids"]
-parquet = ["polars-core/parquet", "polars-io/parquet", "polars-plan/parquet", "polars-pipe?/parquet"]
+parquet = ["polars-io/parquet", "polars-plan/parquet", "polars-pipe?/parquet"]
 async = [
   "polars-plan/async",
   "polars-io/cloud",

@@ -14,12 +14,31 @@ description = "polars parquet IO"
 
 [dependencies]
 ahash = { workspace = true }
-arrow = { workspace = true }
-base64 = { workspace = true, optional = true }
+arrow = { workspace = true, features = ["io_ipc"] }
+base64 = { workspace = true }
 ethnum = { workspace = true }
 fallible-streaming-iterator = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 num-traits = { workspace = true }
 parquet2 = { workspace = true, optional = true, default-features = true, features = ["async"] }
-polars-error = { workspace = true }
+polars-error = { workspace = true, features = ["parquet2"] }
 simdutf8 = { workspace = true }
+
+[features]
+bloom_filter = ["parquet2/bloom_filter"]
+async = ["futures"]
+
+compression = [
+  "zstd",
+  "gzip",
+  "snappy",
+  "lz4",
+  "brotli",
+]
+
+# compression backends
+zstd = ["parquet2/zstd"]
+snappy = ["parquet2/snappy"]
+gzip = ["parquet2/gzip"]
+lz4 = ["parquet2/lz4"]
+brotli = ["parquet2/brotli"]

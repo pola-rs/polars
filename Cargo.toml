@@ -68,6 +68,7 @@ polars-core = { version = "0.34.2", path = "crates/polars-core", default-feature
 polars-plan = { version = "0.34.2", path = "crates/polars-plan", default-features = false }
 polars-lazy = { version = "0.34.2", path = "crates/polars-lazy", default-features = false }
 polars-pipe = { version = "0.34.2", path = "crates/polars-pipe", default-features = false }
+polars-parquet = { version = "0.34.2", path = "crates/polars-parquet", default-features = false }
 polars-row = { version = "0.34.2", path = "crates/polars-row", default-features = false }
 polars-ffi = { version = "0.34.2", path = "crates/polars-ffi", default-features = false }
 polars-ops = { version = "0.34.2", path = "crates/polars-ops", default-features = false }

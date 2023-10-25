@@ -3,8 +3,6 @@ use std::borrow::Cow;
 use std::ops::Range;
 use std::sync::Arc;
 
-use arrow::io::parquet::read::{self as parquet2_read, RowGroupMetaData};
-use arrow::io::parquet::write::FileMetaData;
 use bytes::Bytes;
 use futures::future::try_join_all;
 use object_store::path::Path as ObjectPath;
@@ -14,6 +12,8 @@ use polars_core::datatypes::PlHashMap;
 use polars_core::error::{to_compute_err, PolarsResult};
 use polars_core::prelude::*;
 use polars_core::schema::Schema;
+use polars_parquet::read::{self as parquet2_read, RowGroupMetaData};
+use polars_parquet::write::FileMetaData;
 use smartstring::alias::String as SmartString;
 
 use super::cloud::{build_object_store, CloudLocation, CloudReader};

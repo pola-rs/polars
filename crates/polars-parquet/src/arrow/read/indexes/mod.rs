@@ -63,7 +63,7 @@ pub struct ColumnPageStatistics {
 /// # Error
 /// This function errors iff the value is not deserializable to arrow (e.g. invalid utf-8)
 fn deserialize(
-    indexes: &mut VecDeque<&Box<dyn ParquetIndex>>,
+    indexes: &mut VecDeque<&dyn ParquetIndex>,
     data_type: DataType,
 ) -> PolarsResult<FieldPageStatistics> {
     match data_type.to_physical_type() {
@@ -278,7 +278,7 @@ pub fn read_columns_indexes<R: Read + Seek>(
         .iter()
         .map(|field| {
             let indexes = get_field_pages(chunks, &indexes, &field.name);
-            let mut indexes = indexes.into_iter().collect();
+            let mut indexes = indexes.into_iter().map(|boxed| boxed.as_ref()).collect();
 
             deserialize(&mut indexes, field.data_type.clone())
         })

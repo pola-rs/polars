@@ -1,10 +1,10 @@
 use std::io::{Read, Seek};
 use std::sync::Arc;
 
-use arrow::io::parquet::read;
-use arrow::io::parquet::write::FileMetaData;
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+use polars_parquet::read;
+use polars_parquet::write::FileMetaData;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
