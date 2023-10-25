@@ -90,7 +90,7 @@ pub struct PageReader<R: Read> {
 impl<R: Read> PageReader<R> {
     /// Returns a new [`PageReader`].
     ///
-    /// It assumes that the reader has been `seeked` to the beginning of `column`.
+    /// It assumes that the reader has been `sought` (`seek`) to the beginning of `column`.
     /// The parameter `max_header_size`
     pub fn new(
         reader: R,
@@ -104,7 +104,7 @@ impl<R: Read> PageReader<R> {
 
     /// Create a a new [`PageReader`] with [`PageMetaData`].
     ///
-    /// It assumes that the reader has been `seeked` to the beginning of `column`.
+    /// It assumes that the reader has been `sought` (`seek`) to the beginning of `column`.
     pub fn new_with_page_meta(
         reader: R,
         reader_meta: PageMetaData,

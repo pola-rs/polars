@@ -150,7 +150,7 @@ impl ParquetType {
     }
 
     /// # Error
-    /// Errors iff the combination of physical, logical and coverted type is not valid.
+    /// Errors iff the combination of physical, logical and converted type is not valid.
     pub fn try_from_primitive(
         name: String,
         physical_type: PhysicalType,

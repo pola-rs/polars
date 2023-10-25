@@ -15,7 +15,7 @@ pub struct Interval {
 }
 
 impl Interval {
-    /// Create a new interal
+    /// Create a new interval
     pub fn new(start: usize, length: usize) -> Self {
         Self { start, length }
     }

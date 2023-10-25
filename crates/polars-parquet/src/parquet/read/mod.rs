@@ -40,7 +40,7 @@ pub fn filter_row_groups(
     metadata
 }
 
-/// Returns a new [`PageReader`] by seeking `reader` to the begining of `column_chunk`.
+/// Returns a new [`PageReader`] by seeking `reader` to the beginning of `column_chunk`.
 pub fn get_page_iterator<R: Read + Seek>(
     column_chunk: &ColumnChunkMetaData,
     mut reader: R,

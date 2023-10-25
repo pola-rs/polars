@@ -31,7 +31,7 @@ pub async fn read_metadata<R: AsyncRead + AsyncSeek + Send + std::marker::Unpin>
 
     if file_size < HEADER_SIZE + FOOTER_SIZE {
         return Err(Error::oos(
-            "A parquet file must containt a header and footer with at least 12 bytes",
+            "A parquet file must contain a header and footer with at least 12 bytes",
         ));
     }
 
