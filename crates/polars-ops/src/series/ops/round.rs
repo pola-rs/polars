@@ -107,15 +107,12 @@ pub trait RoundSeries: SeriesSealed {
 
 impl RoundSeries for Series {}
 
-fn get_magnitude(value: f64, significant_figures: u32) -> f64 {
-    10.0.pow(significant_figures as f64 - 1.0 - ((value).log10().floor()))
-}
 fn round_sf(value: f64, significant_figures: u32) -> f64 {
     if value == 0.0 {
         return value;
     }
-    (value * get_magnitude(value.abs(), significant_figures)).round()
-        / get_magnitude(value.abs(), significant_figures)
+    let magnitiude = 10.0.pow(significant_figures as f64 - 1.0 - ((value.abs()).log10().floor()));
+    (value * magnitiude).round() / magnitiude
 }
 
 #[cfg(test)]
