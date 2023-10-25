@@ -4,15 +4,15 @@ use arrow::array::MutablePrimitiveArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
 use arrow::types::NativeType;
+use polars_error::PolarsResult;
+
+use super::super::utils::{get_selected_rows, FilteredOptionalPageValidity, OptionalPageValidity};
+use super::super::{utils, Pages};
 use crate::parquet::deserialize::SliceFilteredIter;
 use crate::parquet::encoding::{hybrid_rle, Encoding};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::schema::Repetition;
 use crate::parquet::types::{decode, NativeType as ParquetNativeType};
-use polars_error::PolarsResult;
-
-use super::super::utils::{get_selected_rows, FilteredOptionalPageValidity, OptionalPageValidity};
-use super::super::{utils, Pages};
 
 #[derive(Debug)]
 pub(super) struct FilteredRequiredValues<'a> {

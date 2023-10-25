@@ -1,9 +1,6 @@
-use crate::encoding::ceil8;
-use crate::error::Error;
-
-use super::super::bitpacked;
-use super::super::uleb128;
-use super::super::zigzag_leb128;
+use super::super::{bitpacked, uleb128, zigzag_leb128};
+use crate::parquet::encoding::ceil8;
+use crate::parquet::error::Error;
 
 /// An [`Iterator`] of [`i64`]
 #[derive(Debug)]
@@ -206,7 +203,7 @@ impl<'a> Decoder<'a> {
                         .ok_or_else(|| Error::oos("Missing block"))?;
                     self.current_block = Some(next_block);
                     delta
-                }
+                },
                 Err(e) => Err(e),
             }
         }

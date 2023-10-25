@@ -1,6 +1,7 @@
-use crate::schema::types::{ParquetType, PrimitiveType};
 #[cfg(feature = "serde_types")]
 use serde::{Deserialize, Serialize};
+
+use crate::parquet::schema::types::{ParquetType, PrimitiveType};
 
 /// A descriptor of a parquet column. It contains the necessary information to deserialize
 /// a parquet column.

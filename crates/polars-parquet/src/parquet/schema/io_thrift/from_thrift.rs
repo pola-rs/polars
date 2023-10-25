@@ -1,11 +1,8 @@
 use parquet_format_safe::SchemaElement;
 
-use crate::{
-    error::{Error, Result},
-    schema::types::FieldInfo,
-};
-
 use super::super::types::ParquetType;
+use crate::parquet::error::{Error, Result};
+use crate::parquet::schema::types::FieldInfo;
 
 impl ParquetType {
     /// Method to convert from Thrift.
@@ -69,7 +66,7 @@ fn from_thrift_helper(elements: &[SchemaElement], index: usize) -> Result<(usize
                             return Err(Error::oos(
                                 "When precision or scale are defined, both must be defined",
                             ))
-                        }
+                        },
                     };
                     (converted_type, maybe_decimal).try_into()
                 })
@@ -91,7 +88,7 @@ fn from_thrift_helper(elements: &[SchemaElement], index: usize) -> Result<(usize
             )?;
 
             Ok((index + 1, tp))
-        }
+        },
         Some(n) => {
             let mut fields = vec![];
             let mut next_index = index + 1;
@@ -132,6 +129,6 @@ fn from_thrift_helper(elements: &[SchemaElement], index: usize) -> Result<(usize
                 }
             };
             Ok((next_index, tp))
-        }
+        },
     }
 }

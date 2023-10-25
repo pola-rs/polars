@@ -1,9 +1,9 @@
-use parquet_format_safe::{thrift::protocol::TCompactInputProtocol, ColumnIndex};
+use parquet_format_safe::thrift::protocol::TCompactInputProtocol;
+use parquet_format_safe::ColumnIndex;
 
-use crate::error::Error;
-use crate::schema::types::{PhysicalType, PrimitiveType};
-
-use crate::indexes::{BooleanIndex, ByteIndex, FixedLenByteIndex, Index, NativeIndex};
+use crate::parquet::error::Error;
+use crate::parquet::indexes::{BooleanIndex, ByteIndex, FixedLenByteIndex, Index, NativeIndex};
+use crate::parquet::schema::types::{PhysicalType, PrimitiveType};
 
 pub fn deserialize(data: &[u8], primitive_type: PrimitiveType) -> Result<Box<dyn Index>, Error> {
     let mut prot = TCompactInputProtocol::new(data, data.len() * 2 + 1024);
@@ -20,7 +20,7 @@ pub fn deserialize(data: &[u8], primitive_type: PrimitiveType) -> Result<Box<dyn
         PhysicalType::ByteArray => Box::new(ByteIndex::try_new(index, primitive_type)?),
         PhysicalType::FixedLenByteArray(_) => {
             Box::new(FixedLenByteIndex::try_new(index, primitive_type)?)
-        }
+        },
     };
 
     Ok(index)

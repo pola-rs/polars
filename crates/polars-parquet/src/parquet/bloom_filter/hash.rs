@@ -1,6 +1,6 @@
 use xxhash_rust::xxh64::xxh64;
 
-use crate::types::NativeType;
+use crate::parquet::types::NativeType;
 
 const SEED: u64 = 0;
 

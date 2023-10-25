@@ -9,7 +9,7 @@ pub mod plain_byte_array;
 pub mod uleb128;
 pub mod zigzag_leb128;
 
-pub use crate::parquet_bridge::Encoding;
+pub use crate::parquet::parquet_bridge::Encoding;
 
 /// # Panics
 /// This function panics iff `values.len() < 4`.

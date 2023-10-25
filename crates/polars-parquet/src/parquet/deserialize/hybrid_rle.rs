@@ -1,6 +1,5 @@
-use crate::error::Error;
-
-use crate::encoding::hybrid_rle::{self, BitmapIter};
+use crate::parquet::encoding::hybrid_rle::{self, BitmapIter};
+use crate::parquet::error::Error;
 
 /// The decoding state of the hybrid-RLE decoder with a maximum definition level of 1
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,7 +101,7 @@ where
 
                 self.consumed += additional;
                 HybridEncoded::Bitmap(pack, additional)
-            }
+            },
             hybrid_rle::HybridEncoded::Rle(value, length) => {
                 let is_set = value[0] == 1;
 
@@ -110,7 +109,7 @@ where
 
                 self.consumed += additional;
                 HybridEncoded::Repeated(is_set, additional)
-            }
+            },
         }))
     }
 
@@ -177,16 +176,16 @@ where
             let run = run.map(|run| match run {
                 HybridEncoded::Bitmap(bitmap, length) => {
                     HybridBooleanState::Bitmap(BitmapIter::new(bitmap, 0, length))
-                }
+                },
                 HybridEncoded::Repeated(value, length) => {
                     HybridBooleanState::Repeated(value, length)
-                }
+                },
             });
             match run {
                 Ok(run) => {
                     self.current_run = Some(run);
                     self.next()
-                }
+                },
                 Err(e) => Some(Err(e)),
             }
         } else {

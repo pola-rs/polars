@@ -1,11 +1,13 @@
 use std::io::{Read, Seek, SeekFrom};
 
+use parquet_format_safe::thrift::protocol::TCompactInputProtocol;
 use parquet_format_safe::{
-    thrift::protocol::TCompactInputProtocol, BloomFilterAlgorithm, BloomFilterCompression,
-    BloomFilterHeader, SplitBlockAlgorithm, Uncompressed,
+    BloomFilterAlgorithm, BloomFilterCompression, BloomFilterHeader, SplitBlockAlgorithm,
+    Uncompressed,
 };
 
-use crate::{error::Error, metadata::ColumnChunkMetaData};
+use crate::parquet::error::Error;
+use crate::parquet::metadata::ColumnChunkMetaData;
 
 /// Reads the bloom filter associated to [`ColumnChunkMetaData`] into `bitset`.
 /// Results in an empty `bitset` if there is no associated bloom filter or the algorithm is not supported.

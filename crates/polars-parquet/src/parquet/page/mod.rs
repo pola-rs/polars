@@ -1,18 +1,15 @@
 use std::sync::Arc;
 
-pub use crate::thrift_format::{
+use crate::parquet::compression::Compression;
+use crate::parquet::encoding::{get_length, Encoding};
+use crate::parquet::error::{Error, Result};
+use crate::parquet::indexes::Interval;
+use crate::parquet::metadata::Descriptor;
+pub use crate::parquet::parquet_bridge::{DataPageHeaderExt, PageType};
+use crate::parquet::statistics::{deserialize_statistics, Statistics};
+pub use crate::parquet::thrift_format::{
     DataPageHeader as DataPageHeaderV1, DataPageHeaderV2, PageHeader as ParquetPageHeader,
 };
-
-use crate::indexes::Interval;
-pub use crate::parquet_bridge::{DataPageHeaderExt, PageType};
-
-use crate::compression::Compression;
-use crate::encoding::{get_length, Encoding};
-use crate::error::{Error, Result};
-use crate::metadata::Descriptor;
-
-use crate::statistics::{deserialize_statistics, Statistics};
 
 /// A [`CompressedDataPage`] is compressed, encoded representation of a Parquet data page.
 /// It holds actual data and thus cloning it is expensive.
@@ -426,6 +423,6 @@ pub fn split_buffer(page: &DataPage) -> Result<(&[u8], &[u8], &[u8])> {
                 rep_level_buffer_length,
                 def_level_buffer_length,
             )
-        }
+        },
     }
 }

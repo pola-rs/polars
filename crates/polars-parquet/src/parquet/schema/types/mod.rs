@@ -12,4 +12,6 @@ pub use converted_type::*;
 mod parquet_type;
 pub use parquet_type::*;
 
-pub use crate::parquet_bridge::{GroupLogicalType, IntegerType, PrimitiveLogicalType, TimeUnit};
+pub use crate::parquet::parquet_bridge::{
+    GroupLogicalType, IntegerType, PrimitiveLogicalType, TimeUnit,
+};

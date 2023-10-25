@@ -1,12 +1,9 @@
-use crate::{
-    encoding::hybrid_rle,
-    error::Error,
-    page::{split_buffer, DataPage},
-    parquet_bridge::{Encoding, Repetition},
-    schema::types::PhysicalType,
-};
-
 use super::utils;
+use crate::parquet::encoding::hybrid_rle;
+use crate::parquet::error::Error;
+use crate::parquet::page::{split_buffer, DataPage};
+use crate::parquet::parquet_bridge::{Encoding, Repetition};
+use crate::parquet::schema::types::PhysicalType;
 
 #[derive(Debug)]
 pub struct FixexBinaryIter<'a> {
@@ -80,13 +77,13 @@ impl<'a, P> FixedLenBinaryPageState<'a, P> {
         match (page.encoding(), dict, is_optional) {
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false) => {
                 Dictionary::try_new(page, dict).map(Self::RequiredDictionary)
-            }
+            },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), true) => {
                 Ok(Self::OptionalDictionary(
                     utils::DefLevelsDecoder::try_new(page)?,
                     Dictionary::try_new(page, dict)?,
                 ))
-            }
+            },
             (Encoding::Plain, _, true) => {
                 let (_, _, values) = split_buffer(page)?;
 
@@ -94,13 +91,13 @@ impl<'a, P> FixedLenBinaryPageState<'a, P> {
                 let values = FixexBinaryIter::new(values, size);
 
                 Ok(Self::Optional(validity, values))
-            }
+            },
             (Encoding::Plain, _, false) => {
                 let (_, _, values) = split_buffer(page)?;
                 let values = FixexBinaryIter::new(values, size);
 
                 Ok(Self::Required(values))
-            }
+            },
             _ => Err(Error::FeatureNotSupported(format!(
                 "Viewing page for encoding {:?} for binary type",
                 page.encoding(),

@@ -1,11 +1,11 @@
 use arrow::array::*;
 use arrow::types::{days_ms, i256};
 use ethnum::I256;
-use crate::parquet::statistics::{FixedLenStatistics, Statistics as ParquetStatistics};
 use polars_error::PolarsResult;
 
 use super::super::{convert_days_ms, convert_i128};
 use crate::arrow::read::convert_i256;
+use crate::parquet::statistics::{FixedLenStatistics, Statistics as ParquetStatistics};
 
 pub(super) fn push_i128(
     from: Option<&dyn ParquetStatistics>,

@@ -1,3 +1,5 @@
+// TODO! fix and/or prune?
+#![allow(ambiguous_glob_reexports)]
 mod binary;
 mod boolean;
 mod filtered_rle;

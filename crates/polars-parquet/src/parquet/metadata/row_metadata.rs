@@ -1,12 +1,11 @@
 use parquet_format_safe::RowGroup;
-
-use super::{column_chunk_metadata::ColumnChunkMetaData, schema_descriptor::SchemaDescriptor};
-use crate::{
-    error::{Error, Result},
-    write::ColumnOffsetsMetadata,
-};
 #[cfg(feature = "serde_types")]
 use serde::{Deserialize, Serialize};
+
+use super::column_chunk_metadata::ColumnChunkMetaData;
+use super::schema_descriptor::SchemaDescriptor;
+use crate::parquet::error::{Error, Result};
+use crate::parquet::write::ColumnOffsetsMetadata;
 
 /// Metadata for a row group.
 #[derive(Debug, Clone)]

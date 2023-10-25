@@ -1,36 +1,31 @@
-use std::collections::HashSet;
 use std::io::Write;
-
-use parquet_format_safe::thrift::protocol::TCompactOutputProtocol;
-use parquet_format_safe::{ColumnChunk, ColumnMetaData, Type};
 
 #[cfg(feature = "async")]
 use futures::AsyncWrite;
+use parquet_format_safe::thrift::protocol::TCompactOutputProtocol;
 #[cfg(feature = "async")]
 use parquet_format_safe::thrift::protocol::TCompactOutputStreamProtocol;
-
-use crate::statistics::serialize_statistics;
-use crate::FallibleStreamingIterator;
-use crate::{
-    compression::Compression,
-    encoding::Encoding,
-    error::{Error, Result},
-    metadata::ColumnDescriptor,
-    page::{CompressedPage, PageType},
-};
+use parquet_format_safe::{ColumnChunk, ColumnMetaData, Type};
+use polars_utils::aliases::PlHashSet;
 
 #[cfg(feature = "async")]
 use super::page::write_page_async;
-
 use super::page::{write_page, PageWriteSpec};
 use super::statistics::reduce;
 use super::DynStreamingIterator;
+use crate::parquet::compression::Compression;
+use crate::parquet::encoding::Encoding;
+use crate::parquet::error::{Error, Result};
+use crate::parquet::metadata::ColumnDescriptor;
+use crate::parquet::page::{CompressedPage, PageType};
+use crate::parquet::statistics::serialize_statistics;
+use crate::parquet::FallibleStreamingIterator;
 
-pub fn write_column_chunk<'a, W, E>(
+pub fn write_column_chunk<W, E>(
     writer: &mut W,
     mut offset: u64,
     descriptor: &ColumnDescriptor,
-    mut compressed_pages: DynStreamingIterator<'a, CompressedPage, E>,
+    mut compressed_pages: DynStreamingIterator<'_, CompressedPage, E>,
 ) -> Result<(ColumnChunk, Vec<PageWriteSpec>, u64)>
 where
     W: Write,
@@ -108,9 +103,9 @@ fn build_column_chunk(
     let compression = specs
         .iter()
         .map(|spec| spec.compression)
-        .collect::<HashSet<_>>();
+        .collect::<PlHashSet<_>>();
     if compression.len() > 1 {
-        return Err(crate::error::Error::oos(
+        return Err(crate::parquet::error::Error::oos(
             "All pages within a column chunk must be compressed with the same codec",
         ));
     }
@@ -137,10 +132,10 @@ fn build_column_chunk(
             match type_ {
                 PageType::DataPage => {
                     spec.header.data_page_header.as_ref().unwrap().num_values as i64
-                }
+                },
                 PageType::DataPageV2 => {
                     spec.header.data_page_header_v2.as_ref().unwrap().num_values as i64
-                }
+                },
                 _ => 0, // only data pages contribute
             }
         })
@@ -159,7 +154,7 @@ fn build_column_chunk(
                         spec.header.data_page_header_v2.as_ref().unwrap().encoding,
                         Encoding::Rle.into(),
                     ]
-                }
+                },
                 PageType::DictionaryPage => vec![
                     spec.header
                         .dictionary_page_header
@@ -169,7 +164,7 @@ fn build_column_chunk(
                 ],
             }
         })
-        .collect::<HashSet<_>>() // unique
+        .collect::<PlHashSet<_>>() // unique
         .into_iter() // to vec
         .collect::<Vec<_>>();
 

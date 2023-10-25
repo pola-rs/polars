@@ -1,12 +1,11 @@
 use parquet_format_safe::DataPageHeaderV2;
 use streaming_decompression;
 
-use crate::compression::{self, Compression};
-use crate::error::{Error, Result};
-use crate::page::{CompressedPage, DataPage, DataPageHeader, DictPage, Page};
-use crate::FallibleStreamingIterator;
-
 use super::page::PageIterator;
+use crate::parquet::compression::{self, Compression};
+use crate::parquet::error::{Error, Result};
+use crate::parquet::page::{CompressedPage, DataPage, DataPageHeader, DictPage, Page};
+use crate::parquet::FallibleStreamingIterator;
 
 fn decompress_v1(compressed: &[u8], compression: Compression, buffer: &mut [u8]) -> Result<()> {
     compression::decompress(compression, compressed, buffer)
@@ -76,7 +75,7 @@ pub fn decompress_buffer(
             CompressedPage::Data(compressed_page) => match compressed_page.header() {
                 DataPageHeader::V1(_) => {
                     decompress_v1(&compressed_page.buffer, compressed_page.compression, buffer)?
-                }
+                },
                 DataPageHeader::V2(header) => decompress_v2(
                     &compressed_page.buffer,
                     header,

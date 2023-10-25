@@ -1,10 +1,10 @@
 use arrow::array::{Array, BinaryArray, PrimitiveArray, Utf8Array};
 use arrow::datatypes::{DataType, PhysicalType};
 use arrow::trusted_len::TrustedLen;
-use crate::parquet::indexes::PageIndex;
 use polars_error::{to_compute_err, PolarsResult};
 
 use super::ColumnPageStatistics;
+use crate::parquet::indexes::PageIndex;
 
 pub fn deserialize(
     indexes: &[PageIndex<Vec<u8>>],

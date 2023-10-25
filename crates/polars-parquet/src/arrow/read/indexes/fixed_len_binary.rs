@@ -2,9 +2,9 @@ use arrow::array::{Array, FixedSizeBinaryArray, MutableFixedSizeBinaryArray, Pri
 use arrow::datatypes::{DataType, PhysicalType, PrimitiveType};
 use arrow::trusted_len::TrustedLen;
 use arrow::types::{i256, NativeType};
-use crate::parquet::indexes::PageIndex;
 
 use super::ColumnPageStatistics;
+use crate::parquet::indexes::PageIndex;
 
 pub fn deserialize(indexes: &[PageIndex<Vec<u8>>], data_type: DataType) -> ColumnPageStatistics {
     ColumnPageStatistics {

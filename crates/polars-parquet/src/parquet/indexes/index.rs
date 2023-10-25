@@ -2,9 +2,10 @@ use std::any::Any;
 
 use parquet_format_safe::ColumnIndex;
 
-use crate::parquet_bridge::BoundaryOrder;
-use crate::schema::types::PrimitiveType;
-use crate::{error::Error, schema::types::PhysicalType, types::NativeType};
+use crate::parquet::error::Error;
+use crate::parquet::parquet_bridge::BoundaryOrder;
+use crate::parquet::schema::types::{PhysicalType, PrimitiveType};
+use crate::parquet::types::NativeType;
 
 /// Trait object representing a [`ColumnIndex`] in Rust's native format.
 ///
@@ -32,15 +33,15 @@ fn equal(lhs: &dyn Index, rhs: &dyn Index) -> bool {
         PhysicalType::Boolean => {
             lhs.as_any().downcast_ref::<BooleanIndex>().unwrap()
                 == rhs.as_any().downcast_ref::<BooleanIndex>().unwrap()
-        }
+        },
         PhysicalType::Int32 => {
             lhs.as_any().downcast_ref::<NativeIndex<i32>>().unwrap()
                 == rhs.as_any().downcast_ref::<NativeIndex<i32>>().unwrap()
-        }
+        },
         PhysicalType::Int64 => {
             lhs.as_any().downcast_ref::<NativeIndex<i64>>().unwrap()
                 == rhs.as_any().downcast_ref::<NativeIndex<i64>>().unwrap()
-        }
+        },
         PhysicalType::Int96 => {
             lhs.as_any()
                 .downcast_ref::<NativeIndex<[u32; 3]>>()
@@ -49,23 +50,23 @@ fn equal(lhs: &dyn Index, rhs: &dyn Index) -> bool {
                     .as_any()
                     .downcast_ref::<NativeIndex<[u32; 3]>>()
                     .unwrap()
-        }
+        },
         PhysicalType::Float => {
             lhs.as_any().downcast_ref::<NativeIndex<f32>>().unwrap()
                 == rhs.as_any().downcast_ref::<NativeIndex<f32>>().unwrap()
-        }
+        },
         PhysicalType::Double => {
             lhs.as_any().downcast_ref::<NativeIndex<f64>>().unwrap()
                 == rhs.as_any().downcast_ref::<NativeIndex<f64>>().unwrap()
-        }
+        },
         PhysicalType::ByteArray => {
             lhs.as_any().downcast_ref::<ByteIndex>().unwrap()
                 == rhs.as_any().downcast_ref::<ByteIndex>().unwrap()
-        }
+        },
         PhysicalType::FixedLenByteArray(_) => {
             lhs.as_any().downcast_ref::<FixedLenByteIndex>().unwrap()
                 == rhs.as_any().downcast_ref::<FixedLenByteIndex>().unwrap()
-        }
+        },
     }
 }
 

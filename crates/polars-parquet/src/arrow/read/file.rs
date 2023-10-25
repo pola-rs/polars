@@ -3,11 +3,11 @@ use std::io::{Read, Seek};
 use arrow::array::Array;
 use arrow::chunk::Chunk;
 use arrow::datatypes::Schema;
-use crate::parquet::indexes::FilteredPage;
 use polars_error::PolarsResult;
 
 use super::{RowGroupDeserializer, RowGroupMetaData};
 use crate::arrow::read::read_columns_many;
+use crate::parquet::indexes::FilteredPage;
 
 /// An iterator of [`Chunk`]s coming from row groups of a parquet file.
 ///

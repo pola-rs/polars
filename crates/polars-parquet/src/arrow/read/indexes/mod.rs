@@ -18,10 +18,10 @@ use std::io::{Read, Seek};
 
 use arrow::array::{Array, UInt64Array};
 use arrow::datatypes::{DataType, Field, PhysicalType, PrimitiveType};
-pub use crate::parquet::indexes::{FilteredPage, Interval};
 use polars_error::{polars_bail, PolarsResult};
 
 use super::get_field_pages;
+pub use crate::parquet::indexes::{FilteredPage, Interval};
 
 /// Page statistics of an Arrow field.
 #[derive(Debug, PartialEq)]

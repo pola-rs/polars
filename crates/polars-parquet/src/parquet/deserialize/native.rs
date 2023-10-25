@@ -1,12 +1,9 @@
-use crate::{
-    encoding::hybrid_rle,
-    error::Error,
-    page::{split_buffer, DataPage},
-    parquet_bridge::{Encoding, Repetition},
-    types::{decode, NativeType},
-};
-
 use super::utils;
+use crate::parquet::encoding::hybrid_rle;
+use crate::parquet::error::Error;
+use crate::parquet::page::{split_buffer, DataPage};
+use crate::parquet::parquet_bridge::{Encoding, Repetition};
+use crate::parquet::types::{decode, NativeType};
 
 /// Typedef of an iterator over PLAIN page values
 pub type Casted<'a, T> = std::iter::Map<std::slice::ChunksExact<'a, u8>, fn(&'a [u8]) -> T>;
@@ -76,19 +73,19 @@ impl<'a, T: NativeType, P> NativePageState<'a, T, P> {
         match (page.encoding(), dict, is_optional) {
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false) => {
                 Dictionary::try_new(page, dict).map(Self::RequiredDictionary)
-            }
+            },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), true) => {
                 Ok(Self::OptionalDictionary(
                     utils::DefLevelsDecoder::try_new(page)?,
                     Dictionary::try_new(page, dict)?,
                 ))
-            }
+            },
             (Encoding::Plain, _, true) => {
                 let validity = utils::DefLevelsDecoder::try_new(page)?;
                 let values = native_cast(page)?;
 
                 Ok(Self::Optional(validity, values))
-            }
+            },
             (Encoding::Plain, _, false) => native_cast(page).map(Self::Required),
             _ => Err(Error::FeatureNotSupported(format!(
                 "Viewing page for encoding {:?} for native type {}",

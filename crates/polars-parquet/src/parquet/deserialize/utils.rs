@@ -1,14 +1,11 @@
 use std::collections::VecDeque;
 
-use crate::{
-    encoding::hybrid_rle::{self, HybridRleDecoder},
-    error::Error,
-    indexes::Interval,
-    page::{split_buffer, DataPage},
-    read::levels::get_bit_width,
-};
-
 use super::hybrid_rle::{HybridDecoderBitmapIter, HybridRleIter};
+use crate::parquet::encoding::hybrid_rle::{self, HybridRleDecoder};
+use crate::parquet::error::Error;
+use crate::parquet::indexes::Interval;
+use crate::parquet::page::{split_buffer, DataPage};
+use crate::parquet::read::levels::get_bit_width;
 
 pub(super) fn dict_indices_decoder(page: &DataPage) -> Result<hybrid_rle::HybridRleDecoder, Error> {
     let (_, _, indices_buffer) = split_buffer(page)?;

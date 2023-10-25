@@ -1,17 +1,12 @@
-use std::{
-    collections::VecDeque,
-    io::{Cursor, Read, Seek, SeekFrom},
-};
-
-use crate::{
-    error::Error,
-    indexes::{FilteredPage, Interval},
-    metadata::{ColumnChunkMetaData, Descriptor},
-    page::{CompressedDictPage, CompressedPage, ParquetPageHeader},
-    parquet_bridge::Compression,
-};
+use std::collections::VecDeque;
+use std::io::{Cursor, Read, Seek, SeekFrom};
 
 use super::reader::{finish_page, read_page_header, PageMetaData};
+use crate::parquet::error::Error;
+use crate::parquet::indexes::{FilteredPage, Interval};
+use crate::parquet::metadata::{ColumnChunkMetaData, Descriptor};
+use crate::parquet::page::{CompressedDictPage, CompressedPage, ParquetPageHeader};
+use crate::parquet::parquet_bridge::Compression;
 
 #[derive(Debug, Clone, Copy)]
 enum State {
@@ -21,7 +16,7 @@ enum State {
 
 /// A fallible [`Iterator`] of [`CompressedPage`]. This iterator leverages page indexes
 /// to skip pages that are not needed. Consequently, the pages from this
-/// iterator always have [`Some`] [`crate::page::CompressedDataPage::selected_rows()`]
+/// iterator always have [`Some`] [`crate::parquet::page::CompressedDataPage::selected_rows()`]
 pub struct IndexedPageReader<R: Read + Seek> {
     // The source
     reader: R,
@@ -61,7 +56,7 @@ fn read_page<R: Read + Seek>(
     // deserialize [header]
     let mut reader = Cursor::new(buffer);
     let page_header = read_page_header(&mut reader, 1024 * 1024)?;
-    let header_size = reader.seek(SeekFrom::Current(0)).unwrap() as usize;
+    let header_size = reader.stream_position().unwrap() as usize;
     let buffer = reader.into_inner();
 
     // copy [data]
@@ -160,7 +155,7 @@ impl<R: Read + Seek> IndexedPageReader<R> {
                 } else {
                     return None;
                 }
-            }
+            },
             None => return None,
         };
 
@@ -192,7 +187,7 @@ impl<R: Read + Seek> Iterator for IndexedPageReader<R> {
                 } else {
                     self.next()
                 }
-            }
+            },
             State::Data => {
                 if let Some(page) = self.pages.pop_front() {
                     if page.selected_rows.is_empty() {
@@ -203,7 +198,7 @@ impl<R: Read + Seek> Iterator for IndexedPageReader<R> {
                 } else {
                     None
                 }
-            }
+            },
         }
     }
 }

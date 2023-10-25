@@ -1,4 +1,4 @@
-use crate::FallibleStreamingIterator;
+use crate::parquet::FallibleStreamingIterator;
 
 /// [`DynIter`] is an implementation of a single-threaded, dynamically-typed iterator.
 ///

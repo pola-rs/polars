@@ -1,13 +1,9 @@
-use parquet_format_safe::BoundaryOrder;
-use parquet_format_safe::ColumnIndex;
-use parquet_format_safe::OffsetIndex;
-use parquet_format_safe::PageLocation;
+use parquet_format_safe::{BoundaryOrder, ColumnIndex, OffsetIndex, PageLocation};
 
-use crate::error::{Error, Result};
-pub use crate::metadata::KeyValue;
-use crate::statistics::serialize_statistics;
-
-use crate::write::page::{is_data_page, PageWriteSpec};
+use crate::parquet::error::{Error, Result};
+pub use crate::parquet::metadata::KeyValue;
+use crate::parquet::statistics::serialize_statistics;
+use crate::parquet::write::page::{is_data_page, PageWriteSpec};
 
 pub fn serialize_column_index(pages: &[PageWriteSpec]) -> Result<ColumnIndex> {
     let mut null_pages = Vec::with_capacity(pages.len());

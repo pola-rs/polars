@@ -4,7 +4,7 @@ mod file;
 mod indexes;
 pub(crate) mod page;
 mod row_group;
-pub(self) mod statistics;
+mod statistics;
 
 #[cfg(feature = "async")]
 mod stream;
@@ -13,15 +13,12 @@ mod stream;
 pub use stream::FileStreamer;
 
 mod dyn_iter;
-pub use dyn_iter::{DynIter, DynStreamingIterator};
-
 pub use compression::{compress, Compressor};
-
+pub use dyn_iter::{DynIter, DynStreamingIterator};
 pub use file::{write_metadata_sidecar, FileWriter};
-
 pub use row_group::ColumnOffsetsMetadata;
 
-use crate::page::CompressedPage;
+use crate::parquet::page::CompressedPage;
 
 pub type RowGroupIter<'a, E> =
     DynIter<'a, std::result::Result<DynStreamingIterator<'a, CompressedPage, E>, E>>;

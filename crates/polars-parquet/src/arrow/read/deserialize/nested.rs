@@ -2,11 +2,11 @@ use arrow::array::PrimitiveArray;
 use arrow::datatypes::{DataType, Field};
 use arrow::match_integer_type;
 use ethnum::I256;
-use crate::parquet::schema::types::PrimitiveType;
 use polars_error::polars_bail;
 
 use super::nested_utils::{InitNested, NestedArrayIter};
 use super::*;
+use crate::parquet::schema::types::PrimitiveType;
 
 /// Converts an iterator of arrays to a trait object returning trait objects
 #[inline]

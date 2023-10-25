@@ -4,14 +4,14 @@ use arrow::array::BooleanArray;
 use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
-use crate::parquet::encoding::Encoding;
-use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::parquet::schema::Repetition;
 use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
 use super::super::utils::MaybeNext;
 use super::super::{utils, Pages};
+use crate::parquet::encoding::Encoding;
+use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::parquet::schema::Repetition;
 
 // The state of a `DataPage` of `Boolean` parquet boolean type
 #[allow(clippy::large_enum_variant)]

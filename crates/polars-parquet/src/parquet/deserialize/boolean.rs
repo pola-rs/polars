@@ -1,11 +1,8 @@
-use crate::{
-    encoding::hybrid_rle::BitmapIter,
-    error::Error,
-    page::{split_buffer, DataPage},
-    parquet_bridge::{Encoding, Repetition},
-};
-
 use super::utils;
+use crate::parquet::encoding::hybrid_rle::BitmapIter;
+use crate::parquet::error::Error;
+use crate::parquet::page::{split_buffer, DataPage};
+use crate::parquet::parquet_bridge::{Encoding, Repetition};
 
 // The state of a `DataPage` of `Boolean` parquet boolean type
 #[derive(Debug)]
@@ -28,11 +25,11 @@ impl<'a> BooleanPageState<'a> {
                 let values = BitmapIter::new(values, 0, values.len() * 8);
 
                 Ok(Self::Optional(validity, values))
-            }
+            },
             (Encoding::Plain, false) => {
                 let (_, _, values) = split_buffer(page)?;
                 Ok(Self::Required(values, page.num_values()))
-            }
+            },
             _ => Err(Error::InvalidParameter(format!(
                 "Viewing page for encoding {:?} for boolean type not supported",
                 page.encoding(),

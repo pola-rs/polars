@@ -1,6 +1,5 @@
-use crate::error::Error;
-
 use super::uleb128;
+use crate::parquet::error::Error;
 
 pub fn decode(values: &[u8]) -> Result<(i64, usize), Error> {
     let (u, consumed) = uleb128::decode(values)?;

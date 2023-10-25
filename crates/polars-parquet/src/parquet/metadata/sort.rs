@@ -1,9 +1,9 @@
-use crate::schema::types::{
-    IntegerType, PhysicalType, PrimitiveConvertedType, PrimitiveLogicalType,
-};
-
 #[cfg(feature = "serde_types")]
 use serde::{Deserialize, Serialize};
+
+use crate::parquet::schema::types::{
+    IntegerType, PhysicalType, PrimitiveConvertedType, PrimitiveLogicalType,
+};
 
 /// Sort order for page and column statistics.
 ///
@@ -47,7 +47,7 @@ fn get_logical_sort_order(logical_type: &PrimitiveLogicalType) -> SortOrder {
         Integer(t) => match t {
             IntegerType::Int8 | IntegerType::Int16 | IntegerType::Int32 | IntegerType::Int64 => {
                 SortOrder::Signed
-            }
+            },
             _ => SortOrder::Unsigned,
         },
         Decimal(_, _) => SortOrder::Signed,

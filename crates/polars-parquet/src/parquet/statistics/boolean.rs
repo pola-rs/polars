@@ -3,10 +3,8 @@ use std::sync::Arc;
 use parquet_format_safe::Statistics as ParquetStatistics;
 
 use super::Statistics;
-use crate::{
-    error::{Error, Result},
-    schema::types::PhysicalType,
-};
+use crate::parquet::error::{Error, Result};
+use crate::parquet::schema::types::PhysicalType;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BooleanStatistics {

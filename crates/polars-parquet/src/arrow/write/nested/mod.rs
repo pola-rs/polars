@@ -2,13 +2,13 @@ mod def;
 mod rep;
 
 use arrow::offset::Offset;
-use crate::parquet::encoding::hybrid_rle::encode_u32;
-use crate::parquet::read::levels::get_bit_width;
-use crate::parquet::write::Version;
 use polars_error::PolarsResult;
 pub use rep::num_values;
 
 use super::Nested;
+use crate::parquet::encoding::hybrid_rle::encode_u32;
+use crate::parquet::read::levels::get_bit_width;
+use crate::parquet::write::Version;
 
 fn write_levels_v1<F: FnOnce(&mut Vec<u8>) -> PolarsResult<()>>(
     buffer: &mut Vec<u8>,

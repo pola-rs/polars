@@ -1,7 +1,5 @@
-use crate::error::Error;
-
-use super::super::delta_bitpacked;
-use super::super::delta_length_byte_array;
+use super::super::{delta_bitpacked, delta_length_byte_array};
+use crate::parquet::error::Error;
 
 /// Decodes according to [Delta strings](https://github.com/apache/parquet-format/blob/master/Encodings.md#delta-strings-delta_byte_array--7),
 /// prefixes, lengths and values

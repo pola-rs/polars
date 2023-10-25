@@ -1,17 +1,16 @@
 mod index;
 mod intervals;
 
-pub use crate::parquet_bridge::BoundaryOrder;
-pub use crate::thrift_format::PageLocation;
+pub use intervals::{compute_rows, select_pages, FilteredPage, Interval};
 
 pub use self::index::{BooleanIndex, ByteIndex, FixedLenByteIndex, Index, NativeIndex, PageIndex};
-pub use intervals::{compute_rows, select_pages, FilteredPage, Interval};
+pub use crate::parquet::parquet_bridge::BoundaryOrder;
+pub use crate::parquet::thrift_format::PageLocation;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use crate::schema::types::{PhysicalType, PrimitiveType};
+    use crate::parquet::schema::types::{PhysicalType, PrimitiveType};
 
     #[test]
     fn test_basic() {

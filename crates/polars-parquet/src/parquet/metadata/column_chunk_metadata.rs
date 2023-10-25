@@ -3,20 +3,21 @@ use std::sync::Arc;
 use parquet_format_safe::{ColumnChunk, ColumnMetaData, Encoding};
 
 use super::column_descriptor::ColumnDescriptor;
-use crate::compression::Compression;
-use crate::error::{Error, Result};
-use crate::schema::types::PhysicalType;
-use crate::statistics::{deserialize_statistics, Statistics};
+use crate::parquet::compression::Compression;
+use crate::parquet::error::{Error, Result};
+use crate::parquet::schema::types::PhysicalType;
+use crate::parquet::statistics::{deserialize_statistics, Statistics};
 
 #[cfg(feature = "serde_types")]
 mod serde_types {
+    pub use std::io::Cursor;
+
     pub use parquet_format_safe::thrift::protocol::{
         TCompactInputProtocol, TCompactOutputProtocol,
     };
     pub use serde::de::Error as DeserializeError;
     pub use serde::ser::Error as SerializeError;
     pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    pub use std::io::Cursor;
 }
 #[cfg(feature = "serde_types")]
 use serde_types::*;

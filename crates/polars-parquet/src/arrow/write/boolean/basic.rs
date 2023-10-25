@@ -1,4 +1,8 @@
 use arrow::array::*;
+use polars_error::PolarsResult;
+
+use super::super::{utils, WriteOptions};
+use crate::arrow::read::schema::is_nullable;
 use crate::parquet::encoding::hybrid_rle::bitpacked_encode;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::DataPage;
@@ -6,10 +10,6 @@ use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::{
     serialize_statistics, BooleanStatistics, ParquetStatistics, Statistics,
 };
-use polars_error::PolarsResult;
-
-use super::super::{utils, WriteOptions};
-use crate::arrow::read::schema::is_nullable;
 
 fn encode(iterator: impl Iterator<Item = bool>, buffer: &mut Vec<u8>) -> PolarsResult<()> {
     // encode values using bitpacking

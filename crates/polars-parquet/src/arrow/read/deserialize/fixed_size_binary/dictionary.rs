@@ -3,13 +3,13 @@ use std::collections::VecDeque;
 use arrow::array::{Array, DictionaryArray, DictionaryKey, FixedSizeBinaryArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
-use crate::parquet::page::DictPage;
 use polars_error::PolarsResult;
 
 use super::super::dictionary::*;
 use super::super::utils::MaybeNext;
 use super::super::Pages;
 use crate::arrow::read::deserialize::nested_utils::{InitNested, NestedState};
+use crate::parquet::page::DictPage;
 
 /// An iterator adapter over [`Pages`] assumed to be encoded as parquet's dictionary-encoded binary representation
 #[derive(Debug)]

@@ -2,7 +2,7 @@
 /// prefixes, lengths and values
 /// # Implementation
 /// This struct does not allocate on the heap.
-use crate::error::Error;
+use crate::parquet::error::Error;
 
 #[derive(Debug)]
 pub struct BinaryIter<'a> {

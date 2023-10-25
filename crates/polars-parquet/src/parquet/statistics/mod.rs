@@ -3,17 +3,17 @@ mod boolean;
 mod fixed_len_binary;
 mod primitive;
 
-use std::{any::Any, sync::Arc};
-
-pub use crate::thrift_format::Statistics as ParquetStatistics;
-
-use crate::error::Result;
-use crate::schema::types::{PhysicalType, PrimitiveType};
+use std::any::Any;
+use std::sync::Arc;
 
 pub use binary::BinaryStatistics;
 pub use boolean::BooleanStatistics;
 pub use fixed_len_binary::FixedLenStatistics;
 pub use primitive::PrimitiveStatistics;
+
+use crate::parquet::error::Result;
+use crate::parquet::schema::types::{PhysicalType, PrimitiveType};
+pub use crate::parquet::thrift_format::Statistics as ParquetStatistics;
 
 /// A trait used to describe specific statistics. Each physical type has its own struct.
 /// Match the [`Statistics::physical_type`] to each type and downcast accordingly.
@@ -32,7 +32,7 @@ impl PartialEq for &dyn Statistics {
                 PhysicalType::Boolean => {
                     self.as_any().downcast_ref::<BooleanStatistics>().unwrap()
                         == other.as_any().downcast_ref::<BooleanStatistics>().unwrap()
-                }
+                },
                 PhysicalType::Int32 => {
                     self.as_any()
                         .downcast_ref::<PrimitiveStatistics<i32>>()
@@ -41,7 +41,7 @@ impl PartialEq for &dyn Statistics {
                             .as_any()
                             .downcast_ref::<PrimitiveStatistics<i32>>()
                             .unwrap()
-                }
+                },
                 PhysicalType::Int64 => {
                     self.as_any()
                         .downcast_ref::<PrimitiveStatistics<i64>>()
@@ -50,7 +50,7 @@ impl PartialEq for &dyn Statistics {
                             .as_any()
                             .downcast_ref::<PrimitiveStatistics<i64>>()
                             .unwrap()
-                }
+                },
                 PhysicalType::Int96 => {
                     self.as_any()
                         .downcast_ref::<PrimitiveStatistics<[u32; 3]>>()
@@ -59,7 +59,7 @@ impl PartialEq for &dyn Statistics {
                             .as_any()
                             .downcast_ref::<PrimitiveStatistics<[u32; 3]>>()
                             .unwrap()
-                }
+                },
                 PhysicalType::Float => {
                     self.as_any()
                         .downcast_ref::<PrimitiveStatistics<f32>>()
@@ -68,7 +68,7 @@ impl PartialEq for &dyn Statistics {
                             .as_any()
                             .downcast_ref::<PrimitiveStatistics<f32>>()
                             .unwrap()
-                }
+                },
                 PhysicalType::Double => {
                     self.as_any()
                         .downcast_ref::<PrimitiveStatistics<f64>>()
@@ -77,15 +77,15 @@ impl PartialEq for &dyn Statistics {
                             .as_any()
                             .downcast_ref::<PrimitiveStatistics<f64>>()
                             .unwrap()
-                }
+                },
                 PhysicalType::ByteArray => {
                     self.as_any().downcast_ref::<BinaryStatistics>().unwrap()
                         == other.as_any().downcast_ref::<BinaryStatistics>().unwrap()
-                }
+                },
                 PhysicalType::FixedLenByteArray(_) => {
                     self.as_any().downcast_ref::<FixedLenStatistics>().unwrap()
                         == other.as_any().downcast_ref::<FixedLenStatistics>().unwrap()
-                }
+                },
             }
         }
     }
@@ -109,7 +109,7 @@ pub fn deserialize_statistics(
         PhysicalType::ByteArray => binary::read(statistics, primitive_type),
         PhysicalType::FixedLenByteArray(size) => {
             fixed_len_binary::read(statistics, size, primitive_type)
-        }
+        },
     }
 }
 
@@ -121,14 +121,14 @@ pub fn serialize_statistics(statistics: &dyn Statistics) -> ParquetStatistics {
         PhysicalType::Int64 => primitive::write::<i64>(statistics.as_any().downcast_ref().unwrap()),
         PhysicalType::Int96 => {
             primitive::write::<[u32; 3]>(statistics.as_any().downcast_ref().unwrap())
-        }
+        },
         PhysicalType::Float => primitive::write::<f32>(statistics.as_any().downcast_ref().unwrap()),
         PhysicalType::Double => {
             primitive::write::<f64>(statistics.as_any().downcast_ref().unwrap())
-        }
+        },
         PhysicalType::ByteArray => binary::write(statistics.as_any().downcast_ref().unwrap()),
         PhysicalType::FixedLenByteArray(_) => {
             fixed_len_binary::write(statistics.as_any().downcast_ref().unwrap())
-        }
+        },
     }
 }

@@ -1,19 +1,17 @@
 use std::io::Write;
 
 use futures::{AsyncWrite, AsyncWriteExt};
+use parquet_format_safe::thrift::protocol::TCompactOutputStreamProtocol;
+use parquet_format_safe::{FileMetaData, RowGroup};
 
-use parquet_format_safe::{thrift::protocol::TCompactOutputStreamProtocol, FileMetaData, RowGroup};
-
-use crate::write::indexes::{write_column_index_async, write_offset_index_async};
-use crate::write::page::PageWriteSpec;
-use crate::write::State;
-use crate::{
-    error::{Error, Result},
-    metadata::{KeyValue, SchemaDescriptor},
-    FOOTER_SIZE, PARQUET_MAGIC,
-};
-
-use super::{row_group::write_row_group_async, RowGroupIter, WriteOptions};
+use super::row_group::write_row_group_async;
+use super::{RowGroupIter, WriteOptions};
+use crate::parquet::error::{Error, Result};
+use crate::parquet::metadata::{KeyValue, SchemaDescriptor};
+use crate::parquet::write::indexes::{write_column_index_async, write_offset_index_async};
+use crate::parquet::write::page::PageWriteSpec;
+use crate::parquet::write::State;
+use crate::parquet::{FOOTER_SIZE, PARQUET_MAGIC};
 
 async fn start_file<W: AsyncWrite + Unpin>(writer: &mut W) -> Result<u64> {
     writer.write_all(&PARQUET_MAGIC).await?;

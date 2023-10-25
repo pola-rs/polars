@@ -1,6 +1,7 @@
 use arrow::array::{MutableArray, MutableBooleanArray};
-use crate::parquet::statistics::{BooleanStatistics, Statistics as ParquetStatistics};
 use polars_error::PolarsResult;
+
+use crate::parquet::statistics::{BooleanStatistics, Statistics as ParquetStatistics};
 
 pub(super) fn push(
     from: Option<&dyn ParquetStatistics>,

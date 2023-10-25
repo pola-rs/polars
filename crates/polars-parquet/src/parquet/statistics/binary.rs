@@ -3,10 +3,8 @@ use std::sync::Arc;
 use parquet_format_safe::Statistics as ParquetStatistics;
 
 use super::Statistics;
-use crate::{
-    error::Result,
-    schema::types::{PhysicalType, PrimitiveType},
-};
+use crate::parquet::error::Result;
+use crate::parquet::schema::types::{PhysicalType, PrimitiveType};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BinaryStatistics {

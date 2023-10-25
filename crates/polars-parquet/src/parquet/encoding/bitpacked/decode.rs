@@ -1,6 +1,5 @@
-use crate::error::Error;
-
 use super::{Packed, Unpackable, Unpacked};
+use crate::parquet::error::Error;
 
 /// An [`Iterator`] of [`Unpackable`] unpacked from a bitpacked slice of bytes.
 /// # Implementation

@@ -1,7 +1,6 @@
 // see https://github.com/apache/parquet-format/blob/master/LogicalTypes.md
-use crate::error::{Error, Result};
-
 use super::{IntegerType, PhysicalType, PrimitiveConvertedType, PrimitiveLogicalType, TimeUnit};
+use crate::parquet::error::{Error, Result};
 
 fn check_decimal_invariants(
     physical_type: &PhysicalType,
@@ -30,7 +29,7 @@ fn check_decimal_invariants(
                     precision
                 )));
             }
-        }
+        },
         PhysicalType::Int64 => {
             if !(1..=18).contains(&precision) {
                 return Err(Error::oos(format!(
@@ -38,7 +37,7 @@ fn check_decimal_invariants(
                     precision
                 )));
             }
-        }
+        },
         PhysicalType::FixedLenByteArray(length) => {
             let oos_error = || Error::oos(format!("Byte Array length {} out of spec", length));
             let max_precision = (2f64.powi(
@@ -58,14 +57,14 @@ fn check_decimal_invariants(
                     length, precision, max_precision
                 )));
             }
-        }
-        PhysicalType::ByteArray => {}
+        },
+        PhysicalType::ByteArray => {},
         _ => {
             return Err(Error::oos(
                 "DECIMAL can only annotate INT32, INT64, BYTE_ARRAY and FIXED_LEN_BYTE_ARRAY"
                     .to_string(),
             ))
-        }
+        },
     };
     Ok(())
 }
@@ -88,10 +87,10 @@ pub fn check_converted_invariants(
                     converted_type
                 )));
             }
-        }
+        },
         Decimal(precision, scale) => {
             check_decimal_invariants(physical_type, *precision, *scale)?;
-        }
+        },
         Date | TimeMillis | Uint8 | Uint16 | Uint32 | Int8 | Int16 | Int32 => {
             if physical_type != &PhysicalType::Int32 {
                 return Err(Error::oos(format!(
@@ -99,7 +98,7 @@ pub fn check_converted_invariants(
                     converted_type
                 )));
             }
-        }
+        },
         TimeMicros | TimestampMillis | TimestampMicros | Uint64 | Int64 => {
             if physical_type != &PhysicalType::Int64 {
                 return Err(Error::oos(format!(
@@ -107,21 +106,21 @@ pub fn check_converted_invariants(
                     converted_type
                 )));
             }
-        }
+        },
         Interval => {
             if physical_type != &PhysicalType::FixedLenByteArray(12) {
                 return Err(Error::oos(
                     "INTERVAL can only annotate FIXED_LEN_BYTE_ARRAY(12)".to_string(),
                 ));
             }
-        }
+        },
         Enum => {
             if physical_type != &PhysicalType::ByteArray {
                 return Err(Error::oos(
                     "ENUM can only annotate BYTE_ARRAY fields".to_string(),
                 ));
             }
-        }
+        },
     };
     Ok(())
 }
@@ -138,45 +137,45 @@ pub fn check_logical_invariants(
     // Check that logical type and physical type are compatible
     use PrimitiveLogicalType::*;
     match (logical_type, physical_type) {
-        (Enum, PhysicalType::ByteArray) => {}
+        (Enum, PhysicalType::ByteArray) => {},
         (Decimal(precision, scale), _) => {
             check_decimal_invariants(physical_type, precision, scale)?;
-        }
-        (Date, PhysicalType::Int32) => {}
+        },
+        (Date, PhysicalType::Int32) => {},
         (
             Time {
                 unit: TimeUnit::Milliseconds,
                 ..
             },
             PhysicalType::Int32,
-        ) => {}
+        ) => {},
         (Time { unit, .. }, PhysicalType::Int64) => {
             if unit == TimeUnit::Milliseconds {
                 return Err(Error::oos(
                     "Cannot use millisecond unit on INT64 type".to_string(),
                 ));
             }
-        }
-        (Timestamp { .. }, PhysicalType::Int64) => {}
-        (Integer(IntegerType::Int8), PhysicalType::Int32) => {}
-        (Integer(IntegerType::Int16), PhysicalType::Int32) => {}
-        (Integer(IntegerType::Int32), PhysicalType::Int32) => {}
-        (Integer(IntegerType::UInt8), PhysicalType::Int32) => {}
-        (Integer(IntegerType::UInt16), PhysicalType::Int32) => {}
-        (Integer(IntegerType::UInt32), PhysicalType::Int32) => {}
-        (Integer(IntegerType::UInt64), PhysicalType::Int64) => {}
-        (Integer(IntegerType::Int64), PhysicalType::Int64) => {}
+        },
+        (Timestamp { .. }, PhysicalType::Int64) => {},
+        (Integer(IntegerType::Int8), PhysicalType::Int32) => {},
+        (Integer(IntegerType::Int16), PhysicalType::Int32) => {},
+        (Integer(IntegerType::Int32), PhysicalType::Int32) => {},
+        (Integer(IntegerType::UInt8), PhysicalType::Int32) => {},
+        (Integer(IntegerType::UInt16), PhysicalType::Int32) => {},
+        (Integer(IntegerType::UInt32), PhysicalType::Int32) => {},
+        (Integer(IntegerType::UInt64), PhysicalType::Int64) => {},
+        (Integer(IntegerType::Int64), PhysicalType::Int64) => {},
         // Null type
-        (Unknown, PhysicalType::Int32) => {}
-        (String | Json | Bson, PhysicalType::ByteArray) => {}
+        (Unknown, PhysicalType::Int32) => {},
+        (String | Json | Bson, PhysicalType::ByteArray) => {},
         // https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#uuid
-        (Uuid, PhysicalType::FixedLenByteArray(16)) => {}
+        (Uuid, PhysicalType::FixedLenByteArray(16)) => {},
         (a, b) => {
             return Err(Error::oos(format!(
                 "Cannot annotate {:?} from {:?} fields",
                 a, b
             )))
-        }
+        },
     };
     Ok(())
 }

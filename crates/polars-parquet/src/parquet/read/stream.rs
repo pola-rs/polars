@@ -2,10 +2,11 @@ use std::io::SeekFrom;
 
 use futures::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-use super::super::{metadata::FileMetaData, DEFAULT_FOOTER_READ_SIZE, FOOTER_SIZE, PARQUET_MAGIC};
+use super::super::metadata::FileMetaData;
+use super::super::{DEFAULT_FOOTER_READ_SIZE, FOOTER_SIZE, PARQUET_MAGIC};
 use super::metadata::{deserialize_metadata, metadata_len};
-use crate::error::{Error, Result};
-use crate::HEADER_SIZE;
+use crate::parquet::error::{Error, Result};
+use crate::parquet::HEADER_SIZE;
 
 async fn stream_len(
     seek: &mut (impl AsyncSeek + std::marker::Unpin),

@@ -7,6 +7,8 @@ use arrow::datatypes::{DataType, Field, IntervalUnit, PhysicalType};
 use arrow::types::i256;
 use arrow::with_match_primitive_type;
 use ethnum::I256;
+use polars_error::{polars_bail, PolarsResult};
+
 use crate::parquet::metadata::RowGroupMetaData;
 use crate::parquet::schema::types::{
     PhysicalType as ParquetPhysicalType, PrimitiveType as ParquetPrimitiveType,
@@ -16,7 +18,6 @@ use crate::parquet::statistics::{
     Statistics as ParquetStatistics,
 };
 use crate::parquet::types::int96_to_i64_ns;
-use polars_error::{polars_bail, PolarsResult};
 
 mod binary;
 mod boolean;

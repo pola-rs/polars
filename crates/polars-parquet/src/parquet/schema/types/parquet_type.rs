@@ -1,14 +1,14 @@
 // see https://github.com/apache/parquet-format/blob/master/LogicalTypes.md
-use crate::error::Result;
-use std::collections::HashMap;
+use polars_utils::aliases::*;
+#[cfg(feature = "serde_types")]
+use serde::{Deserialize, Serialize};
 
 use super::super::Repetition;
 use super::{
     spec, FieldInfo, GroupConvertedType, GroupLogicalType, PhysicalType, PrimitiveConvertedType,
     PrimitiveLogicalType,
 };
-#[cfg(feature = "serde_types")]
-use serde::{Deserialize, Serialize};
+use crate::parquet::error::Result;
 
 /// The complete description of a parquet column
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -91,7 +91,7 @@ impl ParquetType {
                 },
             ) => {
                 // build hashmap of name -> Type
-                let mut field_map = HashMap::new();
+                let mut field_map = PlHashMap::new();
                 for field in fields {
                     field_map.insert(field.name(), field);
                 }
@@ -106,7 +106,7 @@ impl ParquetType {
                     }
                 }
                 true
-            }
+            },
             _ => false,
         }
     }

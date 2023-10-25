@@ -1,15 +1,12 @@
 use parquet_format_safe::SchemaElement;
-
-use crate::{
-    error::Error,
-    schema::{io_message::from_message, types::ParquetType, Repetition},
-};
-use crate::{error::Result, schema::types::FieldInfo};
-
-use super::column_descriptor::{ColumnDescriptor, Descriptor};
-
 #[cfg(feature = "serde_types")]
 use serde::{Deserialize, Serialize};
+
+use super::column_descriptor::{ColumnDescriptor, Descriptor};
+use crate::parquet::error::{Error, Result};
+use crate::parquet::schema::io_message::from_message;
+use crate::parquet::schema::types::{FieldInfo, ParquetType};
+use crate::parquet::schema::Repetition;
 
 /// A schema descriptor. This encapsulates the top-level schemas for all the columns,
 /// as well as all descriptors for all the primitive columns.
@@ -106,12 +103,12 @@ fn build_tree<'a>(
     match tp.get_field_info().repetition {
         Repetition::Optional => {
             max_def_level += 1;
-        }
+        },
         Repetition::Repeated => {
             max_def_level += 1;
             max_rep_level += 1;
-        }
-        _ => {}
+        },
+        _ => {},
     }
 
     match tp {
@@ -126,7 +123,7 @@ fn build_tree<'a>(
                 path_in_schema,
                 base_tp.clone(),
             ));
-        }
+        },
         ParquetType::GroupType { ref fields, .. } => {
             for f in fields {
                 build_tree(
@@ -139,6 +136,6 @@ fn build_tree<'a>(
                 );
                 path_so_far.pop();
             }
-        }
+        },
     }
 }

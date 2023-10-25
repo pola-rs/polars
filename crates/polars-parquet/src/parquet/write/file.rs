@@ -3,19 +3,15 @@ use std::io::Write;
 use parquet_format_safe::thrift::protocol::TCompactOutputProtocol;
 use parquet_format_safe::RowGroup;
 
-use crate::metadata::ThriftFileMetaData;
-use crate::{
-    error::{Error, Result},
-    metadata::SchemaDescriptor,
-    FOOTER_SIZE, PARQUET_MAGIC,
-};
-
 use super::indexes::{write_column_index, write_offset_index};
 use super::page::PageWriteSpec;
-use super::{row_group::write_row_group, RowGroupIter, WriteOptions};
-
-pub use crate::metadata::KeyValue;
-use crate::write::State;
+use super::row_group::write_row_group;
+use super::{RowGroupIter, WriteOptions};
+use crate::parquet::error::{Error, Result};
+pub use crate::parquet::metadata::KeyValue;
+use crate::parquet::metadata::{SchemaDescriptor, ThriftFileMetaData};
+use crate::parquet::write::State;
+use crate::parquet::{FOOTER_SIZE, PARQUET_MAGIC};
 
 pub(super) fn start_file<W: Write>(writer: &mut W) -> Result<u64> {
     writer.write_all(&PARQUET_MAGIC)?;
@@ -246,13 +242,13 @@ impl<W: Write> FileWriter<W> {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, io::Cursor};
+    use std::fs::File;
+    use std::io::Cursor;
 
     use super::*;
-
-    use crate::error::Result;
-    use crate::read::read_metadata;
-    use crate::tests::get_path;
+    use crate::parquet::error::Result;
+    use crate::parquet::read::read_metadata;
+    use crate::parquet::tests::get_path;
 
     #[test]
     fn empty_file() -> Result<()> {

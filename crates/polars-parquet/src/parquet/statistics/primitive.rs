@@ -3,9 +3,9 @@ use std::sync::Arc;
 use parquet_format_safe::Statistics as ParquetStatistics;
 
 use super::Statistics;
-use crate::error::{Error, Result};
-use crate::schema::types::{PhysicalType, PrimitiveType};
-use crate::types;
+use crate::parquet::error::{Error, Result};
+use crate::parquet::schema::types::{PhysicalType, PrimitiveType};
+use crate::parquet::types;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PrimitiveStatistics<T: types::NativeType> {

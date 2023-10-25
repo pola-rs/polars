@@ -7,7 +7,7 @@ pub use encoder::encode;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::Error;
+    use crate::parquet::error::Error;
 
     #[test]
     fn basic() -> Result<(), Error> {

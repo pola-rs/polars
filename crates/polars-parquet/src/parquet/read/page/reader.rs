@@ -1,20 +1,19 @@
 use std::convert::TryInto;
-use std::{io::Read, sync::Arc};
+use std::io::Read;
+use std::sync::Arc;
 
 use parquet_format_safe::thrift::protocol::TCompactInputProtocol;
 
-use crate::compression::Compression;
-use crate::error::{Error, Result};
-use crate::indexes::Interval;
-use crate::metadata::{ColumnChunkMetaData, Descriptor};
-
-use crate::page::{
+use super::PageIterator;
+use crate::parquet::compression::Compression;
+use crate::parquet::error::{Error, Result};
+use crate::parquet::indexes::Interval;
+use crate::parquet::metadata::{ColumnChunkMetaData, Descriptor};
+use crate::parquet::page::{
     CompressedDataPage, CompressedDictPage, CompressedPage, DataPageHeader, PageType,
     ParquetPageHeader,
 };
-use crate::parquet_bridge::Encoding;
-
-use super::PageIterator;
+use crate::parquet::parquet_bridge::Encoding;
 
 /// This meta is a small part of [`ColumnChunkMetaData`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,7 +61,7 @@ pub type PageFilter = Arc<dyn Fn(&Descriptor, &DataPageHeader) -> bool + Send + 
 
 /// A fallible [`Iterator`] of [`CompressedDataPage`]. This iterator reads pages back
 /// to back until all pages have been consumed.
-/// The pages from this iterator always have [`None`] [`crate::page::CompressedDataPage::selected_rows()`] since
+/// The pages from this iterator always have [`None`] [`crate::parquet::page::CompressedDataPage::selected_rows()`] since
 /// filter pushdown is not supported without a
 /// pre-computed [page index](https://github.com/apache/parquet-format/blob/master/PageIndex.md).
 pub struct PageReader<R: Read> {
@@ -250,7 +249,7 @@ pub(super) fn finish_page(
             );
 
             Ok(CompressedPage::Dict(page))
-        }
+        },
         PageType::DataPage => {
             let header = page_header.data_page_header.ok_or_else(|| {
                 Error::oos("The page header type is a v1 data page but the v1 data header is empty")
@@ -264,7 +263,7 @@ pub(super) fn finish_page(
                 descriptor.clone(),
                 selected_rows,
             )))
-        }
+        },
         PageType::DataPageV2 => {
             let header = page_header.data_page_header_v2.ok_or_else(|| {
                 Error::oos("The page header type is a v2 data page but the v2 data header is empty")
@@ -278,7 +277,7 @@ pub(super) fn finish_page(
                 descriptor.clone(),
                 selected_rows,
             )))
-        }
+        },
     }
 }
 
@@ -294,14 +293,14 @@ pub(super) fn get_page_header(header: &ParquetPageHeader) -> Result<Option<DataP
             let _: Encoding = header.definition_level_encoding.try_into()?;
 
             Some(DataPageHeader::V1(header))
-        }
+        },
         PageType::DataPageV2 => {
             let header = header.data_page_header_v2.clone().ok_or_else(|| {
                 Error::oos("The page header type is a v1 data page but the v1 header is empty")
             })?;
             let _: Encoding = header.encoding.try_into()?;
             Some(DataPageHeader::V2(header))
-        }
+        },
         _ => None,
     })
 }

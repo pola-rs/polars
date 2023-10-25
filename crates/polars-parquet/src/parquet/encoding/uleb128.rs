@@ -1,4 +1,4 @@
-use crate::error::Error;
+use crate::parquet::error::Error;
 
 pub fn decode(values: &[u8]) -> Result<(u64, usize), Error> {
     let mut result = 0;

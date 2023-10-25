@@ -2,8 +2,7 @@
 pub use super::parquet_bridge::{
     BrotliLevel, Compression, CompressionOptions, GzipLevel, ZstdLevel,
 };
-
-use crate::error::{Error, Result};
+use crate::parquet::error::{Error, Result};
 
 fn inner_compress<G: Fn(usize) -> Result<usize>, F: Fn(&[u8], &mut [u8]) -> Result<usize>>(
     input: &[u8],
@@ -46,10 +45,10 @@ pub fn compress(
             );
             encoder.write_all(input_buf)?;
             encoder.flush().map_err(|e| e.into())
-        }
+        },
         #[cfg(not(feature = "brotli"))]
         CompressionOptions::Brotli(_) => Err(Error::FeatureNotActive(
-            crate::error::Feature::Brotli,
+            crate::parquet::error::Feature::Brotli,
             "compress to brotli".to_string(),
         )),
         #[cfg(feature = "gzip")]
@@ -59,10 +58,10 @@ pub fn compress(
             let mut encoder = flate2::write::GzEncoder::new(output_buf, level.into());
             encoder.write_all(input_buf)?;
             encoder.try_finish().map_err(|e| e.into())
-        }
+        },
         #[cfg(not(feature = "gzip"))]
         CompressionOptions::Gzip(_) => Err(Error::FeatureNotActive(
-            crate::error::Feature::Gzip,
+            crate::parquet::error::Feature::Gzip,
             "compress to gzip".to_string(),
         )),
         #[cfg(feature = "snappy")]
@@ -74,19 +73,9 @@ pub fn compress(
         ),
         #[cfg(not(feature = "snappy"))]
         CompressionOptions::Snappy => Err(Error::FeatureNotActive(
-            crate::error::Feature::Snappy,
+            crate::parquet::error::Feature::Snappy,
             "compress to snappy".to_string(),
         )),
-        #[cfg(all(feature = "lz4_flex", not(feature = "lz4")))]
-        CompressionOptions::Lz4Raw => inner_compress(
-            input_buf,
-            output_buf,
-            |len| Ok(lz4_flex::block::get_maximum_output_size(len)),
-            |input, output| {
-                let compressed_size = lz4_flex::block::compress_into(input, output)?;
-                Ok(compressed_size)
-            },
-        ),
         #[cfg(feature = "lz4")]
         CompressionOptions::Lz4Raw => inner_compress(
             input_buf,
@@ -99,7 +88,7 @@ pub fn compress(
         ),
         #[cfg(all(not(feature = "lz4"), not(feature = "lz4_flex")))]
         CompressionOptions::Lz4Raw => Err(Error::FeatureNotActive(
-            crate::error::Feature::Lz4,
+            crate::parquet::error::Feature::Lz4,
             "compress to lz4".to_string(),
         )),
         #[cfg(feature = "zstd")]
@@ -113,10 +102,10 @@ pub fn compress(
                 Ok(_) => Ok(()),
                 Err(e) => Err(e.into()),
             }
-        }
+        },
         #[cfg(not(feature = "zstd"))]
         CompressionOptions::Zstd(_) => Err(Error::FeatureNotActive(
-            crate::error::Feature::Zstd,
+            crate::parquet::error::Feature::Zstd,
             "compress to zstd".to_string(),
         )),
         CompressionOptions::Uncompressed => Err(Error::InvalidParameter(
@@ -140,10 +129,10 @@ pub fn decompress(compression: Compression, input_buf: &[u8], output_buf: &mut [
             brotli::Decompressor::new(input_buf, BROTLI_DEFAULT_BUFFER_SIZE)
                 .read_exact(output_buf)
                 .map_err(|e| e.into())
-        }
+        },
         #[cfg(not(feature = "brotli"))]
         Compression::Brotli => Err(Error::FeatureNotActive(
-            crate::error::Feature::Brotli,
+            crate::parquet::error::Feature::Brotli,
             "decompress with brotli".to_string(),
         )),
         #[cfg(feature = "gzip")]
@@ -151,10 +140,10 @@ pub fn decompress(compression: Compression, input_buf: &[u8], output_buf: &mut [
             use std::io::Read;
             let mut decoder = flate2::read::GzDecoder::new(input_buf);
             decoder.read_exact(output_buf).map_err(|e| e.into())
-        }
+        },
         #[cfg(not(feature = "gzip"))]
         Compression::Gzip => Err(Error::FeatureNotActive(
-            crate::error::Feature::Gzip,
+            crate::parquet::error::Feature::Gzip,
             "decompress with gzip".to_string(),
         )),
         #[cfg(feature = "snappy")]
@@ -169,10 +158,10 @@ pub fn decompress(compression: Compression, input_buf: &[u8], output_buf: &mut [
                 .decompress(input_buf, output_buf)
                 .map_err(|e| e.into())
                 .map(|_| ())
-        }
+        },
         #[cfg(not(feature = "snappy"))]
         Compression::Snappy => Err(Error::FeatureNotActive(
-            crate::error::Feature::Snappy,
+            crate::parquet::error::Feature::Snappy,
             "decompress with snappy".to_string(),
         )),
         #[cfg(all(feature = "lz4_flex", not(feature = "lz4")))]
@@ -184,10 +173,10 @@ pub fn decompress(compression: Compression, input_buf: &[u8], output_buf: &mut [
             lz4::block::decompress_to_buffer(input_buf, Some(output_buf.len() as i32), output_buf)
                 .map(|_| {})
                 .map_err(|e| e.into())
-        }
+        },
         #[cfg(all(not(feature = "lz4"), not(feature = "lz4_flex")))]
         Compression::Lz4Raw => Err(Error::FeatureNotActive(
-            crate::error::Feature::Lz4,
+            crate::parquet::error::Feature::Lz4,
             "decompress with lz4".to_string(),
         )),
 
@@ -199,7 +188,7 @@ pub fn decompress(compression: Compression, input_buf: &[u8], output_buf: &mut [
 
         #[cfg(all(not(feature = "lz4_flex"), not(feature = "lz4")))]
         Compression::Lz4 => Err(Error::FeatureNotActive(
-            crate::error::Feature::Lz4,
+            crate::parquet::error::Feature::Lz4,
             "decompress with legacy lz4".to_string(),
         )),
 
@@ -208,10 +197,10 @@ pub fn decompress(compression: Compression, input_buf: &[u8], output_buf: &mut [
             use std::io::Read;
             let mut decoder = zstd::Decoder::new(input_buf)?;
             decoder.read_exact(output_buf).map_err(|e| e.into())
-        }
+        },
         #[cfg(not(feature = "zstd"))]
         Compression::Zstd => Err(Error::FeatureNotActive(
-            crate::error::Feature::Zstd,
+            crate::parquet::error::Feature::Zstd,
             "decompress with zstd".to_string(),
         )),
         Compression::Uncompressed => Err(Error::InvalidParameter(
@@ -286,7 +275,7 @@ fn try_decompress_hadoop(input_buf: &[u8], output_buf: &mut [u8]) -> Result<()> 
     }
 }
 
-#[cfg(all(feature = "lz4", not(feature = "lz4_flex")))]
+#[cfg(feature = "lz4")]
 #[inline]
 fn lz4_decompress_to_buffer(
     src: &[u8],
@@ -294,17 +283,6 @@ fn lz4_decompress_to_buffer(
     buffer: &mut [u8],
 ) -> Result<usize> {
     let size = lz4::block::decompress_to_buffer(src, uncompressed_size, buffer)?;
-    Ok(size)
-}
-
-#[cfg(all(feature = "lz4_flex", not(feature = "lz4")))]
-#[inline]
-fn lz4_decompress_to_buffer(
-    src: &[u8],
-    _uncompressed_size: Option<i32>,
-    buffer: &mut [u8],
-) -> Result<usize> {
-    let size = lz4_flex::block::decompress_into(src, buffer)?;
     Ok(size)
 }
 

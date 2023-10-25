@@ -5,12 +5,6 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
 use arrow::types::NativeType;
 use num_traits::AsPrimitive;
-use crate::parquet::deserialize::SliceFilteredIter;
-use crate::parquet::encoding::delta_bitpacked::Decoder;
-use crate::parquet::encoding::Encoding;
-use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::parquet::schema::Repetition;
-use crate::parquet::types::NativeType as ParquetNativeType;
 use polars_error::{to_compute_err, PolarsResult};
 
 use super::super::{utils, Pages};
@@ -18,6 +12,12 @@ use super::basic::{finish, PrimitiveDecoder, State as PrimitiveState};
 use crate::arrow::read::deserialize::utils::{
     get_selected_rows, FilteredOptionalPageValidity, OptionalPageValidity,
 };
+use crate::parquet::deserialize::SliceFilteredIter;
+use crate::parquet::encoding::delta_bitpacked::Decoder;
+use crate::parquet::encoding::Encoding;
+use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::parquet::schema::Repetition;
+use crate::parquet::types::NativeType as ParquetNativeType;
 
 /// The state of a [`DataPage`] of an integer parquet type (i32 or i64)
 #[derive(Debug)]

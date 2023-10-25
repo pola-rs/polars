@@ -12,20 +12,16 @@ use std::sync::Arc;
 
 pub use column::*;
 pub use compression::{decompress, BasicDecompressor, Decompressor};
+pub use indexes::{read_columns_indexes, read_pages_locations};
 pub use metadata::{deserialize_metadata, read_metadata, read_metadata_with_size};
 #[cfg(feature = "async")]
-#[cfg_attr(docsrs, doc(cfg(feature = "async")))]
 pub use page::{get_page_stream, get_page_stream_from_column_start};
 pub use page::{IndexedPageReader, PageFilter, PageIterator, PageMetaData, PageReader};
-
 #[cfg(feature = "async")]
-#[cfg_attr(docsrs, doc(cfg(feature = "async")))]
 pub use stream::read_metadata as read_metadata_async;
 
-use crate::metadata::{ColumnChunkMetaData, RowGroupMetaData};
-use crate::{error::Result, metadata::FileMetaData};
-
-pub use indexes::{read_columns_indexes, read_pages_locations};
+use crate::parquet::error::Result;
+use crate::parquet::metadata::{ColumnChunkMetaData, FileMetaData, RowGroupMetaData};
 
 /// Filters row group metadata to only those row groups,
 /// for which the predicate function returns true
@@ -80,11 +76,9 @@ pub fn get_field_columns<'a>(
 mod tests {
     use std::fs::File;
 
-    use crate::FallibleStreamingIterator;
-
     use super::*;
-
-    use crate::tests::get_path;
+    use crate::parquet::tests::get_path;
+    use crate::parquet::FallibleStreamingIterator;
 
     #[test]
     fn basic() -> Result<()> {
@@ -194,11 +188,11 @@ mod tests {
                         let _internal_buffer = iterator.into_inner();
                     }
                     iter = new_iter;
-                }
+                },
                 State::Finished(_buffer) => {
                     assert!(_buffer.is_empty()); // data is uncompressed => buffer is always moved
                     break;
-                }
+                },
             }
         }
         Ok(())
@@ -231,11 +225,11 @@ mod tests {
                         let _internal_buffer = iterator.into_inner();
                     }
                     iter = new_iter;
-                }
+                },
                 State::Finished(_buffer) => {
                     assert!(_buffer.is_empty()); // data is uncompressed => buffer is always moved
                     break;
-                }
+                },
             }
         }
         Ok(())

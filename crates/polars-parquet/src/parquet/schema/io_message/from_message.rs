@@ -17,12 +17,12 @@
 
 //! Parquet schema parser.
 //! Provides methods to parse and validate string message type into Parquet
-//! [`ParquetType`](crate::schema::types::ParquetType).
+//! [`ParquetType`](crate::parquet::schema::types::ParquetType).
 //!
 //! # Example
 //!
 //! ```rust
-//! use crate::parquet::schema::io_message::from_message;
+//! use crate::parquet::parquet::schema::io_message::from_message;
 //!
 //! let message_type = "
 //!   message spark_schema {
@@ -47,8 +47,8 @@ use types::PrimitiveLogicalType;
 
 use super::super::types::{ParquetType, TimeUnit};
 use super::super::*;
-use crate::error::{Error, Result};
-use crate::schema::types::{GroupConvertedType, PrimitiveConvertedType};
+use crate::parquet::error::{Error, Result};
+use crate::parquet::schema::types::{GroupConvertedType, PrimitiveConvertedType};
 
 fn is_logical_type(s: &str) -> bool {
     matches!(
@@ -153,7 +153,7 @@ fn type_from_str(s: &str) -> Result<Type> {
     }
 }
 
-/// Parses message type as string into a Parquet [`ParquetType`](crate::schema::types::ParquetType)
+/// Parses message type as string into a Parquet [`ParquetType`](crate::parquet::schema::types::ParquetType)
 /// which, for example, could be used to extract individual columns. Returns Parquet
 /// general error when parsing or validation fails.
 pub fn from_message(message_type: &str) -> Result<ParquetType> {
@@ -300,7 +300,7 @@ impl<'a> Parser<'a> {
                     .ok_or_else(|| Error::oos("Expected name, found None"))?;
                 let fields = self.parse_child_types()?;
                 Ok(ParquetType::new_root(name.to_string(), fields))
-            }
+            },
             _ => Err(Error::oos("Message type does not start with 'message'")),
         }
     }
@@ -334,7 +334,7 @@ impl<'a> Parser<'a> {
             Some(type_string) => {
                 let physical_type = type_from_str(&type_string.to_uppercase())?;
                 self.add_primitive_type(repetition, physical_type)
-            }
+            },
             None => Err(Error::oos("Invalid type, could not extract next token")),
         }
     }
@@ -434,7 +434,7 @@ impl<'a> Parser<'a> {
             let converted_type = match converted_type {
                 Some(PrimitiveConvertedType::Decimal(_, _)) => {
                     Some(self.parse_converted_decimal()?)
-                }
+                },
                 other => other,
             };
 
@@ -521,7 +521,7 @@ impl<'a> Parser<'a> {
                     (0, 0)
                 };
                 PrimitiveLogicalType::Decimal(precision.try_into()?, scale.try_into()?)
-            }
+            },
             "TIME" => {
                 let (unit, is_adjusted_to_utc) = if let Some("(") = self.tokenizer.next() {
                     let unit = parse_timeunit(
@@ -549,7 +549,7 @@ impl<'a> Parser<'a> {
                     is_adjusted_to_utc,
                     unit,
                 }
-            }
+            },
             "TIMESTAMP" => {
                 let (unit, is_adjusted_to_utc) = if let Some("(") = self.tokenizer.next() {
                     let unit = parse_timeunit(
@@ -578,7 +578,7 @@ impl<'a> Parser<'a> {
                     is_adjusted_to_utc,
                     unit,
                 }
-            }
+            },
             "INTEGER" => {
                 let (bit_width, is_signed) = if let Some("(") = self.tokenizer.next() {
                     let bit_width = parse_i32(
@@ -605,7 +605,7 @@ impl<'a> Parser<'a> {
                     return Err(Error::oos("INTEGER requires width and sign"));
                 };
                 PrimitiveLogicalType::Integer((bit_width, is_signed).into())
-            }
+            },
             "STRING" => PrimitiveLogicalType::String,
             "JSON" => PrimitiveLogicalType::Json,
             "BSON" => PrimitiveLogicalType::Bson,
@@ -622,7 +622,7 @@ mod tests {
     use types::{IntegerType, PrimitiveLogicalType};
 
     use super::*;
-    use crate::schema::types::{GroupConvertedType, PhysicalType, PrimitiveConvertedType};
+    use crate::parquet::schema::types::{GroupConvertedType, PhysicalType, PrimitiveConvertedType};
 
     #[test]
     fn test_tokenize_empty_string() {

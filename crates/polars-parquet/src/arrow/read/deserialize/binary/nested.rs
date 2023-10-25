@@ -4,9 +4,6 @@ use arrow::array::Array;
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
 use arrow::offset::Offset;
-use crate::parquet::encoding::Encoding;
-use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::parquet::schema::Repetition;
 use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
@@ -15,6 +12,9 @@ use super::super::utils::MaybeNext;
 use super::basic::{deserialize_plain, finish, Dict, ValuesDictionary};
 use super::utils::*;
 use crate::arrow::read::Pages;
+use crate::parquet::encoding::Encoding;
+use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::parquet::schema::Repetition;
 
 #[derive(Debug)]
 enum State<'a> {

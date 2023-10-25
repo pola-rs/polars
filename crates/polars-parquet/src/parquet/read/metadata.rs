@@ -1,17 +1,13 @@
+use std::cmp::min;
 use std::convert::TryInto;
-use std::{
-    cmp::min,
-    io::{Read, Seek, SeekFrom},
-};
+use std::io::{Read, Seek, SeekFrom};
 
 use parquet_format_safe::thrift::protocol::TCompactInputProtocol;
 use parquet_format_safe::FileMetaData as TFileMetaData;
 
-use super::super::{
-    metadata::FileMetaData, DEFAULT_FOOTER_READ_SIZE, FOOTER_SIZE, HEADER_SIZE, PARQUET_MAGIC,
-};
-
-use crate::error::{Error, Result};
+use super::super::metadata::FileMetaData;
+use super::super::{DEFAULT_FOOTER_READ_SIZE, FOOTER_SIZE, HEADER_SIZE, PARQUET_MAGIC};
+use crate::parquet::error::{Error, Result};
 
 pub(super) fn metadata_len(buffer: &[u8], len: usize) -> i32 {
     i32::from_le_bytes(buffer[len - 8..len - 4].try_into().unwrap())
@@ -19,7 +15,7 @@ pub(super) fn metadata_len(buffer: &[u8], len: usize) -> i32 {
 
 // see (unstable) Seek::stream_len
 fn stream_len(seek: &mut impl Seek) -> std::result::Result<u64, std::io::Error> {
-    let old_pos = seek.seek(SeekFrom::Current(0))?;
+    let old_pos = seek.stream_position()?;
     let len = seek.seek(SeekFrom::End(0))?;
 
     // Avoid seeking a third time when we were already at the end of the

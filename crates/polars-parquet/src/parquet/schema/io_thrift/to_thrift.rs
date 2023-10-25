@@ -1,8 +1,7 @@
 use parquet_format_safe::{ConvertedType, SchemaElement};
 
-use crate::schema::types::PrimitiveType;
-
 use super::super::types::ParquetType;
+use crate::parquet::schema::types::PrimitiveType;
 
 impl ParquetType {
     /// Method to convert to Thrift.
@@ -43,7 +42,7 @@ fn to_thrift_helper(schema: &ParquetType, elements: &mut Vec<SchemaElement>, is_
             };
 
             elements.push(element);
-        }
+        },
         ParquetType::GroupType {
             field_info,
             fields,
@@ -78,6 +77,6 @@ fn to_thrift_helper(schema: &ParquetType, elements: &mut Vec<SchemaElement>, is_
             for field in fields {
                 to_thrift_helper(field, elements, false);
             }
-        }
+        },
     }
 }

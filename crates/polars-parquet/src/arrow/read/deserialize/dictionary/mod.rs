@@ -5,17 +5,17 @@ use std::collections::VecDeque;
 use arrow::array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
-use crate::parquet::deserialize::SliceFilteredIter;
-use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
-use crate::parquet::encoding::Encoding;
-use crate::parquet::page::{DataPage, DictPage, Page};
-use crate::parquet::schema::Repetition;
 
 use super::utils::{
     self, dict_indices_decoder, extend_from_decoder, get_selected_rows, DecodedState, Decoder,
     FilteredOptionalPageValidity, MaybeNext, OptionalPageValidity,
 };
 use super::Pages;
+use crate::parquet::deserialize::SliceFilteredIter;
+use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
+use crate::parquet::encoding::Encoding;
+use crate::parquet::page::{DataPage, DictPage, Page};
+use crate::parquet::schema::Repetition;
 
 // The state of a `DataPage` of `Primitive` parquet primitive type
 #[derive(Debug)]

@@ -16,9 +16,7 @@ pub mod types;
 pub mod write;
 
 use parquet_format_safe as thrift_format;
-
-pub use streaming_decompression::fallible_streaming_iterator;
-pub use streaming_decompression::FallibleStreamingIterator;
+pub use streaming_decompression::{fallible_streaming_iterator, FallibleStreamingIterator};
 
 const HEADER_SIZE: u64 = PARQUET_MAGIC.len() as u64;
 const FOOTER_SIZE: u64 = 8;

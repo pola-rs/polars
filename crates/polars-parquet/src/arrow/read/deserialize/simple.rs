@@ -3,14 +3,14 @@ use arrow::datatypes::{DataType, IntervalUnit, TimeUnit};
 use arrow::match_integer_type;
 use arrow::types::{days_ms, i256, NativeType};
 use ethnum::I256;
-use crate::parquet::schema::types::{
-    PhysicalType, PrimitiveLogicalType, PrimitiveType, TimeUnit as ParquetTimeUnit,
-};
-use crate::parquet::types::int96_to_i64_ns;
 use polars_error::{polars_bail, PolarsResult};
 
 use super::super::{ArrayIter, Pages};
 use super::{binary, boolean, fixed_size_binary, null, primitive};
+use crate::parquet::schema::types::{
+    PhysicalType, PrimitiveLogicalType, PrimitiveType, TimeUnit as ParquetTimeUnit,
+};
+use crate::parquet::types::int96_to_i64_ns;
 
 /// Converts an iterator of arrays to a trait object returning trait objects
 #[inline]

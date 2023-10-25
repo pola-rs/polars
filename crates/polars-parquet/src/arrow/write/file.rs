@@ -1,12 +1,12 @@
 use std::io::Write;
 
 use arrow::datatypes::Schema;
-use crate::parquet::metadata::{KeyValue, SchemaDescriptor};
-use crate::parquet::write::{RowGroupIter, WriteOptions as FileWriteOptions};
 use polars_error::{PolarsError, PolarsResult};
 
 use super::schema::schema_to_metadata_key;
 use super::{to_parquet_schema, ThriftFileMetaData, WriteOptions};
+use crate::parquet::metadata::{KeyValue, SchemaDescriptor};
+use crate::parquet::write::{RowGroupIter, WriteOptions as FileWriteOptions};
 
 /// Attaches [`Schema`] to `key_value_metadata`
 pub fn add_arrow_schema(

@@ -1,9 +1,8 @@
 use parquet_format_safe::PageLocation;
-
-use crate::error::Error;
-
 #[cfg(feature = "serde_types")]
 use serde::{Deserialize, Serialize};
+
+use crate::parquet::error::Error;
 
 /// An interval
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

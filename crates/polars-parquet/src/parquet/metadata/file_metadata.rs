@@ -1,9 +1,11 @@
-use crate::{error::Error, metadata::get_sort_order};
-
-use super::{column_order::ColumnOrder, schema_descriptor::SchemaDescriptor, RowGroupMetaData};
 use parquet_format_safe::ColumnOrder as TColumnOrder;
 
-pub use crate::thrift_format::KeyValue;
+use super::column_order::ColumnOrder;
+use super::schema_descriptor::SchemaDescriptor;
+use super::RowGroupMetaData;
+use crate::parquet::error::Error;
+use crate::parquet::metadata::get_sort_order;
+pub use crate::parquet::thrift_format::KeyValue;
 
 /// Metadata for a Parquet file.
 // This is almost equal to [`parquet_format_safe::FileMetaData`] but contains the descriptors,
@@ -59,7 +61,7 @@ impl FileMetaData {
             .unwrap_or(ColumnOrder::Undefined)
     }
 
-    /// Deserializes [`crate::thrift_format::FileMetaData`] into this struct
+    /// Deserializes [`crate::parquet::thrift_format::FileMetaData`] into this struct
     pub fn try_from_thrift(metadata: parquet_format_safe::FileMetaData) -> Result<Self, Error> {
         let schema_descr = SchemaDescriptor::try_from_thrift(&metadata.schema)?;
 
@@ -121,7 +123,7 @@ fn parse_column_orders(
                     &column.descriptor.primitive_type.physical_type,
                 );
                 ColumnOrder::TypeDefinedOrder(sort_order)
-            }
+            },
         })
         .collect()
 }

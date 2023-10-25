@@ -1,16 +1,16 @@
 use arrow::array::Array;
 use arrow::chunk::Chunk;
 use arrow::datatypes::Schema;
-use crate::parquet::error::Error as ParquetError;
-use crate::parquet::schema::types::ParquetType;
-use crate::parquet::write::Compressor;
-use crate::parquet::FallibleStreamingIterator;
 use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
 
 use super::{
     array_to_columns, to_parquet_schema, DynIter, DynStreamingIterator, Encoding, RowGroupIter,
     SchemaDescriptor, WriteOptions,
 };
+use crate::parquet::error::Error as ParquetError;
+use crate::parquet::schema::types::ParquetType;
+use crate::parquet::write::Compressor;
+use crate::parquet::FallibleStreamingIterator;
 
 /// Maps a [`Chunk`] and parquet-specific options to an [`RowGroupIter`] used to
 /// write to parquet

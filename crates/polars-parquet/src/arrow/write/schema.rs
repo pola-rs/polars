@@ -2,16 +2,16 @@ use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
 use arrow::io::ipc::write::{default_ipc_fields, schema_to_bytes};
 use base64::engine::general_purpose;
 use base64::Engine as _;
+use polars_error::{polars_bail, PolarsResult};
+
+use super::super::ARROW_SCHEMA_META_KEY;
+use crate::arrow::write::decimal_length_from_precision;
 use crate::parquet::metadata::KeyValue;
 use crate::parquet::schema::types::{
     GroupConvertedType, GroupLogicalType, IntegerType, ParquetType, PhysicalType,
     PrimitiveConvertedType, PrimitiveLogicalType, TimeUnit as ParquetTimeUnit,
 };
 use crate::parquet::schema::Repetition;
-use polars_error::{polars_bail, PolarsResult};
-
-use super::super::ARROW_SCHEMA_META_KEY;
-use crate::arrow::write::decimal_length_from_precision;
 
 pub fn schema_to_metadata_key(schema: &Schema) -> KeyValue {
     let serialized_schema = schema_to_bytes(schema, &default_ipc_fields(&schema.fields));

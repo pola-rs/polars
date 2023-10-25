@@ -1,8 +1,8 @@
 use parquet_format_safe::Type;
-
-use crate::error::Error;
 #[cfg(feature = "serde_types")]
 use serde::{Deserialize, Serialize};
+
+use crate::parquet::error::Error;
 
 /// The set of all physical types representable in Parquet
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -34,7 +34,7 @@ impl TryFrom<(Type, Option<i32>)> for PhysicalType {
                 let length = length
                     .ok_or_else(|| Error::oos("Length must be defined for FixedLenByteArray"))?;
                 PhysicalType::FixedLenByteArray(length.try_into()?)
-            }
+            },
             _ => return Err(Error::oos("Unknown type")),
         })
     }
@@ -52,7 +52,7 @@ impl From<PhysicalType> for (Type, Option<i32>) {
             PhysicalType::ByteArray => (Type::BYTE_ARRAY, None),
             PhysicalType::FixedLenByteArray(length) => {
                 (Type::FIXED_LEN_BYTE_ARRAY, Some(length as i32))
-            }
+            },
         }
     }
 }

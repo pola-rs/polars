@@ -1,7 +1,8 @@
-use crate::error::Error;
 use parquet_format_safe::ConvertedType;
 #[cfg(feature = "serde_types")]
 use serde::{Deserialize, Serialize};
+
+use crate::parquet::error::Error;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
@@ -119,7 +120,7 @@ impl TryFrom<(ConvertedType, Option<(i32, i32)>)> for PrimitiveConvertedType {
                 } else {
                     return Err(Error::oos("Decimal requires a precision and scale"));
                 }
-            }
+            },
             ConvertedType::DATE => Date,
             ConvertedType::TIME_MILLIS => TimeMillis,
             ConvertedType::TIME_MICROS => TimeMicros,
@@ -141,7 +142,7 @@ impl TryFrom<(ConvertedType, Option<(i32, i32)>)> for PrimitiveConvertedType {
                     "Converted type \"{:?}\" cannot be applied to a primitive type",
                     ty
                 )))
-            }
+            },
         })
     }
 }

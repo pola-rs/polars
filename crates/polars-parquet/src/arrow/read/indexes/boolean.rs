@@ -1,7 +1,7 @@
 use arrow::array::{BooleanArray, PrimitiveArray};
-use crate::parquet::indexes::PageIndex;
 
 use super::ColumnPageStatistics;
+use crate::parquet::indexes::PageIndex;
 
 pub fn deserialize(indexes: &[PageIndex<bool>]) -> ColumnPageStatistics {
     ColumnPageStatistics {

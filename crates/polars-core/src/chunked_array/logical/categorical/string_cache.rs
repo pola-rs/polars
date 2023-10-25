@@ -7,9 +7,8 @@ use hashbrown::hash_map::RawEntryMut;
 use once_cell::sync::Lazy;
 use smartstring::{LazyCompact, SmartString};
 
-use crate::datatypes::PlIdHashMap;
+use crate::datatypes::{InitHashMaps2, PlIdHashMap};
 use crate::hashing::_HASHMAP_INIT_SIZE;
-use crate::prelude::InitHashMaps;
 
 /// We use atomic reference counting to determine how many threads use the
 /// string cache. If the refcount is zero, we may clear the string cache.

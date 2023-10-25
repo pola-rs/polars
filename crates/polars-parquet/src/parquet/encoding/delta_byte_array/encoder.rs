@@ -1,6 +1,5 @@
-use crate::encoding::delta_length_byte_array;
-
 use super::super::delta_bitpacked;
+use crate::parquet::encoding::delta_length_byte_array;
 
 /// Encodes an iterator of according to DELTA_BYTE_ARRAY
 pub fn encode<'a, I: Iterator<Item = &'a [u8]> + Clone>(iterator: I, buffer: &mut Vec<u8>) {

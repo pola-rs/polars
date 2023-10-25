@@ -1,9 +1,9 @@
 use std::collections::VecDeque;
 
-use crate::error::Error;
-use crate::{encoding::hybrid_rle::BitmapIter, indexes::Interval};
-
 use super::{HybridDecoderBitmapIter, HybridEncoded};
+use crate::parquet::encoding::hybrid_rle::BitmapIter;
+use crate::parquet::error::Error;
+use crate::parquet::indexes::Interval;
 
 /// Type definition of a [`FilteredHybridBitmapIter`] of [`HybridDecoderBitmapIter`].
 pub type FilteredHybridRleDecoderIter<'a> =
@@ -121,7 +121,7 @@ impl<'a, I: Iterator<Item = Result<HybridEncoded<'a>, Error>>> Iterator
             match run {
                 Ok(run) => {
                     self.current = Some((run, 0));
-                }
+                },
                 Err(e) => return Some(Err(e)),
             }
             return self.next();
@@ -198,7 +198,7 @@ impl<'a, I: Iterator<Item = Result<HybridEncoded<'a>, Error>>> Iterator
                     };
                     Some(Ok(FilteredHybridEncoded::Repeated { is_set, length }))
                 }
-            }
+            },
             HybridEncoded::Bitmap(values, full_run_length) => {
                 let run_length = full_run_length - offset;
                 // interval.start is from the start of the first run; discount `current_items_in_runs`
@@ -268,7 +268,7 @@ impl<'a, I: Iterator<Item = Result<HybridEncoded<'a>, Error>>> Iterator
                         length,
                     }))
                 }
-            }
+            },
         }
     }
 }

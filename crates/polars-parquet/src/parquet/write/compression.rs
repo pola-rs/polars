@@ -1,11 +1,10 @@
-use crate::compression::CompressionOptions;
-use crate::error::{Error, Result};
-use crate::page::{CompressedDictPage, CompressedPage, DataPageHeader, DictPage};
-use crate::FallibleStreamingIterator;
-use crate::{
-    compression,
-    page::{CompressedDataPage, DataPage, Page},
+use crate::parquet::compression::CompressionOptions;
+use crate::parquet::error::{Error, Result};
+use crate::parquet::page::{
+    CompressedDataPage, CompressedDictPage, CompressedPage, DataPage, DataPageHeader, DictPage,
+    Page,
 };
+use crate::parquet::{compression, FallibleStreamingIterator};
 
 /// Compresses a [`DataPage`] into a [`CompressedDataPage`].
 fn compress_data(
@@ -24,7 +23,7 @@ fn compress_data(
         match &header {
             DataPageHeader::V1(_) => {
                 compression::compress(compression, &buffer, &mut compressed_buffer)?;
-            }
+            },
             DataPageHeader::V2(header) => {
                 let levels_byte_length = (header.repetition_levels_byte_length
                     + header.definition_levels_byte_length)
@@ -35,7 +34,7 @@ fn compress_data(
                     &buffer[levels_byte_length..],
                     &mut compressed_buffer,
                 )?;
-            }
+            },
         };
     } else {
         std::mem::swap(&mut buffer, &mut compressed_buffer);
@@ -90,10 +89,10 @@ pub fn compress(
     match page {
         Page::Data(page) => {
             compress_data(page, compressed_buffer, compression).map(CompressedPage::Data)
-        }
+        },
         Page::Dict(page) => {
             compress_dict(page, compressed_buffer, compression).map(CompressedPage::Dict)
-        }
+        },
     }
 }
 

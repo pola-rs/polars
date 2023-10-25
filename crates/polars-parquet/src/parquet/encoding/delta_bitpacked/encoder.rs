@@ -1,8 +1,5 @@
-use crate::encoding::ceil8;
-
-use super::super::bitpacked;
-use super::super::uleb128;
-use super::super::zigzag_leb128;
+use super::super::{bitpacked, uleb128, zigzag_leb128};
+use crate::parquet::encoding::ceil8;
 
 /// Encodes an iterator of `i64` according to parquet's `DELTA_BINARY_PACKED`.
 /// # Implementation

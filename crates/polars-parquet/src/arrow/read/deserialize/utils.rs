@@ -2,6 +2,9 @@ use std::collections::VecDeque;
 
 use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::MutableBitmap;
+use polars_error::{polars_err, to_compute_err, PolarsError, PolarsResult};
+
+use super::super::Pages;
 use crate::parquet::deserialize::{
     FilteredHybridEncoded, FilteredHybridRleDecoderIter, HybridDecoderBitmapIter, HybridEncoded,
 };
@@ -9,9 +12,6 @@ use crate::parquet::encoding::hybrid_rle;
 use crate::parquet::indexes::Interval;
 use crate::parquet::page::{split_buffer, DataPage, DictPage, Page};
 use crate::parquet::schema::Repetition;
-use polars_error::{polars_err, to_compute_err, PolarsError, PolarsResult};
-
-use super::super::Pages;
 
 pub fn not_implemented(page: &DataPage) -> PolarsError {
     let is_optional = page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;

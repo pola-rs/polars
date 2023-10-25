@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
 
-use crate::schema::types::PhysicalType;
+use crate::parquet::schema::types::PhysicalType;
 
 /// A physical native representation of a Parquet fixed-sized type.
 pub trait NativeType: std::fmt::Debug + Send + Sync + 'static + Copy + Clone {
@@ -119,7 +119,7 @@ pub fn ord_binary<'a>(a: &'a [u8], b: &'a [u8]) -> std::cmp::Ordering {
         (true, true) => return Equal,
         (true, false) => return Less,
         (false, true) => return Greater,
-        (false, false) => {}
+        (false, false) => {},
     }
 
     for (v1, v2) in a.iter().zip(b.iter()) {

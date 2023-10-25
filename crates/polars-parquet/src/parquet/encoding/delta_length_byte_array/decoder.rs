@@ -1,6 +1,5 @@
-use crate::error::Error;
-
 use super::super::delta_bitpacked;
+use crate::parquet::error::Error;
 
 /// Decodes [Delta-length byte array](https://github.com/apache/parquet-format/blob/master/Encodings.md#delta-length-byte-array-delta_length_byte_array--6)
 /// lengths and values.
@@ -8,7 +7,7 @@ use super::super::delta_bitpacked;
 /// This struct does not allocate on the heap.
 /// # Example
 /// ```
-/// use crate::parquet::encoding::delta_length_byte_array::Decoder;
+/// use crate::parquet::parquet::encoding::delta_length_byte_array::Decoder;
 ///
 /// let expected = &["Hello", "World"];
 /// let expected_lengths = expected.iter().map(|x| x.len() as i32).collect::<Vec<_>>();
@@ -73,7 +72,7 @@ impl<'a> Iterator for Decoder<'a> {
             Some(Ok(v)) => {
                 self.total_length += v as u32;
                 Some(Ok(v as i32))
-            }
+            },
             Some(Err(error)) => Some(Err(error)),
             None => None,
         }

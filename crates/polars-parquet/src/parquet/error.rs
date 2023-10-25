@@ -46,23 +46,23 @@ impl std::fmt::Display for Error {
         match self {
             Error::OutOfSpec(message) => {
                 write!(fmt, "File out of specification: {}", message)
-            }
+            },
             Error::FeatureNotActive(feature, reason) => {
                 write!(
                     fmt,
                     "The feature \"{:?}\" needs to be active to {}",
                     feature, reason
                 )
-            }
+            },
             Error::FeatureNotSupported(reason) => {
                 write!(fmt, "Not yet supported: {}", reason)
-            }
+            },
             Error::InvalidParameter(message) => {
                 write!(fmt, "Invalid parameter: {}", message)
-            }
+            },
             Error::WouldOverAllocate => {
                 write!(fmt, "Operation would exceed memory use threshold")
-            }
+            },
         }
     }
 }
@@ -120,3 +120,15 @@ impl From<std::array::TryFromSliceError> for Error {
 
 /// A specialized `Result` for Parquet errors.
 pub type Result<T> = std::result::Result<T, Error>;
+
+impl From<Error> for polars_error::PolarsError {
+    fn from(e: Error) -> polars_error::PolarsError {
+        polars_error::PolarsError::ComputeError(format!("parquet: {}", e).into())
+    }
+}
+
+impl From<polars_error::PolarsError> for Error {
+    fn from(e: polars_error::PolarsError) -> Error {
+        Error::OutOfSpec(format!("OOM: {}", e))
+    }
+}

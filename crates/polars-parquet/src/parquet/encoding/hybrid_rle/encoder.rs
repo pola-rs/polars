@@ -1,9 +1,7 @@
-use crate::encoding::bitpacked;
-use crate::encoding::{ceil8, uleb128};
-
 use std::io::Write;
 
 use super::bitpacked_encode;
+use crate::parquet::encoding::{bitpacked, ceil8, uleb128};
 
 /// RLE-hybrid encoding of `u32`. This currently only yields bitpacked values.
 pub fn encode_u32<W: Write, I: Iterator<Item = u32>>(

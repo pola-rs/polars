@@ -6,9 +6,9 @@ pub use to_thrift::*;
 
 #[cfg(test)]
 mod tests {
-    use crate::error::Result;
-    use crate::schema::io_message::from_message;
-    use crate::schema::types::ParquetType;
+    use crate::parquet::error::Result;
+    use crate::parquet::schema::io_message::from_message;
+    use crate::parquet::schema::types::ParquetType;
 
     fn test_round_trip(message: &str) -> Result<()> {
         let expected_schema = from_message(message)?;

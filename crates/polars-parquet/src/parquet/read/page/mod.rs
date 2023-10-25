@@ -3,10 +3,11 @@ mod reader;
 #[cfg(feature = "async")]
 mod stream;
 
-use crate::{error::Error, page::CompressedPage};
-
 pub use indexed_reader::IndexedPageReader;
 pub use reader::{PageFilter, PageMetaData, PageReader};
+
+use crate::parquet::error::Error;
+use crate::parquet::page::CompressedPage;
 
 pub trait PageIterator: Iterator<Item = Result<CompressedPage, Error>> {
     fn swap_buffer(&mut self, buffer: &mut Vec<u8>);

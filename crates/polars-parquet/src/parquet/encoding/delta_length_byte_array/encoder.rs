@@ -1,4 +1,4 @@
-use crate::encoding::delta_bitpacked;
+use crate::parquet::encoding::delta_bitpacked;
 
 /// Encodes a clonable iterator of `&[u8]` into `buffer`. This does not allocated on the heap.
 /// # Implementation

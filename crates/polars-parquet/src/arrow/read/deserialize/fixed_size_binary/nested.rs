@@ -3,9 +3,6 @@ use std::collections::VecDeque;
 use arrow::array::FixedSizeBinaryArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
-use crate::parquet::encoding::Encoding;
-use crate::parquet::page::{DataPage, DictPage};
-use crate::parquet::schema::Repetition;
 use polars_error::PolarsResult;
 
 use super::super::utils::{not_implemented, MaybeNext, PageState};
@@ -16,6 +13,9 @@ use crate::arrow::read::deserialize::fixed_size_binary::basic::{
 use crate::arrow::read::deserialize::nested_utils::{next, NestedDecoder};
 use crate::arrow::read::deserialize::utils::Pushable;
 use crate::arrow::read::{InitNested, NestedState, Pages};
+use crate::parquet::encoding::Encoding;
+use crate::parquet::page::{DataPage, DictPage};
+use crate::parquet::schema::Repetition;
 
 #[derive(Debug)]
 enum State<'a> {

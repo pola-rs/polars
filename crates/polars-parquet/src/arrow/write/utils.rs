@@ -1,4 +1,7 @@
 use arrow::bitmap::Bitmap;
+use polars_error::PolarsResult;
+
+use super::{Version, WriteOptions};
 use crate::parquet::compression::CompressionOptions;
 use crate::parquet::encoding::hybrid_rle::encode_bool;
 use crate::parquet::encoding::Encoding;
@@ -6,9 +9,6 @@ use crate::parquet::metadata::Descriptor;
 use crate::parquet::page::{DataPage, DataPageHeader, DataPageHeaderV1, DataPageHeaderV2};
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::ParquetStatistics;
-use polars_error::PolarsResult;
-
-use super::{Version, WriteOptions};
 
 fn encode_iter_v1<I: Iterator<Item = bool>>(buffer: &mut Vec<u8>, iter: I) -> PolarsResult<()> {
     buffer.extend_from_slice(&[0; 4]);

@@ -3,13 +3,13 @@ use std::io::{Read, Seek};
 use arrow::array::Array;
 use arrow::chunk::Chunk;
 use arrow::datatypes::Field;
-use crate::parquet::indexes::FilteredPage;
-use crate::parquet::metadata::ColumnChunkMetaData;
-use crate::parquet::read::{BasicDecompressor, IndexedPageReader, PageMetaData, PageReader};
 use polars_error::PolarsResult;
 
 use super::{ArrayIter, RowGroupMetaData};
 use crate::arrow::read::column_iter_to_arrays;
+use crate::parquet::indexes::FilteredPage;
+use crate::parquet::metadata::ColumnChunkMetaData;
+use crate::parquet::read::{BasicDecompressor, IndexedPageReader, PageMetaData, PageReader};
 
 /// An [`Iterator`] of [`Chunk`] that (dynamically) adapts a vector of iterators of [`Array`] into
 /// an iterator of [`Chunk`].
@@ -132,8 +132,12 @@ where
 }
 
 type Pages = Box<
-    dyn Iterator<Item = std::result::Result<crate::parquet::page::CompressedPage, crate::parquet::error::Error>>
-        + Sync
+    dyn Iterator<
+            Item = std::result::Result<
+                crate::parquet::page::CompressedPage,
+                crate::parquet::error::Error,
+            >,
+        > + Sync
         + Send,
 >;
 

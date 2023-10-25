@@ -1,7 +1,6 @@
-use crate::error::Error;
-
-use super::super::uleb128;
-use super::{super::ceil8, HybridEncoded};
+use super::super::{ceil8, uleb128};
+use super::HybridEncoded;
+use crate::parquet::error::Error;
 
 /// An [`Iterator`] of [`HybridEncoded`].
 #[derive(Debug, Clone)]
@@ -66,9 +65,8 @@ impl<'a> Iterator for Decoder<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use super::super::super::bitpacked;
+    use super::*;
 
     #[test]
     fn basics_1() {

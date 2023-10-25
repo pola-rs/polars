@@ -4,18 +4,17 @@ use std::sync::Arc;
 
 #[cfg(feature = "async")]
 use futures::{AsyncWrite, AsyncWriteExt};
+use parquet_format_safe::thrift::protocol::TCompactOutputProtocol;
 #[cfg(feature = "async")]
 use parquet_format_safe::thrift::protocol::TCompactOutputStreamProtocol;
-
-use parquet_format_safe::thrift::protocol::TCompactOutputProtocol;
 use parquet_format_safe::{DictionaryPageHeader, Encoding, PageType};
 
-use crate::compression::Compression;
-use crate::error::{Error, Result};
-use crate::page::{
+use crate::parquet::compression::Compression;
+use crate::parquet::error::{Error, Result};
+use crate::parquet::page::{
     CompressedDataPage, CompressedDictPage, CompressedPage, DataPageHeader, ParquetPageHeader,
 };
-use crate::statistics::Statistics;
+use crate::parquet::statistics::Statistics;
 
 pub(crate) fn is_data_page(page: &PageWriteSpec) -> bool {
     page.header.type_ == PageType::DATA_PAGE || page.header.type_ == PageType::DATA_PAGE_V2
@@ -71,11 +70,11 @@ pub fn write_page<W: Write>(
         CompressedPage::Data(compressed_page) => {
             writer.write_all(&compressed_page.buffer)?;
             compressed_page.buffer.len() as u64
-        }
+        },
         CompressedPage::Dict(compressed_page) => {
             writer.write_all(&compressed_page.buffer)?;
             compressed_page.buffer.len() as u64
-        }
+        },
     };
 
     let statistics = match &compressed_page {
@@ -117,11 +116,11 @@ pub async fn write_page_async<W: AsyncWrite + Unpin + Send>(
         CompressedPage::Data(compressed_page) => {
             writer.write_all(&compressed_page.buffer).await?;
             compressed_page.buffer.len() as u64
-        }
+        },
         CompressedPage::Dict(compressed_page) => {
             writer.write_all(&compressed_page.buffer).await?;
             compressed_page.buffer.len() as u64
-        }
+        },
     };
 
     let statistics = match &compressed_page {
@@ -162,10 +161,10 @@ fn assemble_data_page_header(page: &CompressedDataPage) -> Result<ParquetPageHea
     match page.header() {
         DataPageHeader::V1(header) => {
             page_header.data_page_header = Some(header.clone());
-        }
+        },
         DataPageHeader::V2(header) => {
             page_header.data_page_header_v2 = Some(header.clone());
-        }
+        },
     }
     Ok(page_header)
 }

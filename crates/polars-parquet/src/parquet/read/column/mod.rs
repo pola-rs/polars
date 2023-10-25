@@ -1,12 +1,11 @@
 use std::io::{Read, Seek};
 use std::vec::IntoIter;
 
-use crate::error::Error;
-use crate::metadata::{ColumnChunkMetaData, RowGroupMetaData};
-use crate::page::CompressedPage;
-use crate::schema::types::ParquetType;
-
 use super::{get_field_columns, get_page_iterator, PageFilter, PageReader};
+use crate::parquet::error::Error;
+use crate::parquet::metadata::{ColumnChunkMetaData, RowGroupMetaData};
+use crate::parquet::page::CompressedPage;
+use crate::parquet::schema::types::ParquetType;
 
 #[cfg(feature = "async")]
 #[cfg_attr(docsrs, doc(cfg(feature = "async")))]

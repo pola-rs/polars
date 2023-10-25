@@ -1,7 +1,7 @@
-use super::super::Repetition;
-
 #[cfg(feature = "serde_types")]
 use serde::{Deserialize, Serialize};
+
+use super::super::Repetition;
 
 /// Common type information.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

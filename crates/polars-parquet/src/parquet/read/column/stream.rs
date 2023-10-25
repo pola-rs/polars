@@ -1,9 +1,9 @@
 use futures::future::{try_join_all, BoxFuture};
 use futures::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-use crate::error::Error;
-use crate::metadata::ColumnChunkMetaData;
-use crate::read::get_field_columns;
+use crate::parquet::error::Error;
+use crate::parquet::metadata::ColumnChunkMetaData;
+use crate::parquet::read::get_field_columns;
 
 /// Reads a single column chunk into memory asynchronously
 pub async fn read_column_async<'b, R, F>(
@@ -20,7 +20,7 @@ where
 
     let mut chunk = vec![];
     chunk.try_reserve(length as usize)?;
-    reader.take(length as u64).read_to_end(&mut chunk).await?;
+    reader.take(length).read_to_end(&mut chunk).await?;
     Result::Ok(chunk)
 }
 

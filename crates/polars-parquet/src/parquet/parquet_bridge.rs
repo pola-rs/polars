@@ -1,16 +1,16 @@
 // Bridges structs from thrift-generated code to rust enums.
 use std::convert::TryFrom;
 
+#[cfg(feature = "serde_types")]
+use serde::{Deserialize, Serialize};
+
 use super::thrift_format::{
     BoundaryOrder as ParquetBoundaryOrder, CompressionCodec, DataPageHeader, DataPageHeaderV2,
     DecimalType, Encoding as ParquetEncoding, FieldRepetitionType, IntType,
     LogicalType as ParquetLogicalType, PageType as ParquetPageType, TimeType,
     TimeUnit as ParquetTimeUnit, TimestampType,
 };
-
-use crate::error::Error;
-#[cfg(feature = "serde_types")]
-use serde::{Deserialize, Serialize};
+use crate::parquet::error::Error;
 
 /// The repetition of a parquet field
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
@@ -571,7 +571,7 @@ impl TryFrom<ParquetLogicalType> for PrimitiveLogicalType {
             },
             ParquetLogicalType::INTEGER(int) => {
                 PrimitiveLogicalType::Integer((int.bit_width as i32, int.is_signed).into())
-            }
+            },
             ParquetLogicalType::UNKNOWN(_) => PrimitiveLogicalType::Unknown,
             ParquetLogicalType::JSON(_) => PrimitiveLogicalType::Json,
             ParquetLogicalType::BSON(_) => PrimitiveLogicalType::Bson,
@@ -603,7 +603,7 @@ impl From<PrimitiveLogicalType> for ParquetLogicalType {
                     precision: precision as i32,
                     scale: scale as i32,
                 })
-            }
+            },
             PrimitiveLogicalType::Date => ParquetLogicalType::DATE(Default::default()),
             PrimitiveLogicalType::Time {
                 unit,
@@ -625,7 +625,7 @@ impl From<PrimitiveLogicalType> for ParquetLogicalType {
                     bit_width: bit_width as i8,
                     is_signed,
                 })
-            }
+            },
             PrimitiveLogicalType::Unknown => ParquetLogicalType::UNKNOWN(Default::default()),
             PrimitiveLogicalType::Json => ParquetLogicalType::JSON(Default::default()),
             PrimitiveLogicalType::Bson => ParquetLogicalType::BSON(Default::default()),

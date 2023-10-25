@@ -5,13 +5,12 @@ use futures::io::{copy, sink};
 use futures::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, Stream};
 use parquet_format_safe::thrift::protocol::TCompactInputStreamProtocol;
 
-use crate::compression::Compression;
-use crate::error::{Error, Result};
-use crate::metadata::{ColumnChunkMetaData, Descriptor};
-use crate::page::{CompressedPage, ParquetPageHeader};
-
 use super::reader::{finish_page, get_page_header, PageMetaData};
 use super::PageFilter;
+use crate::parquet::compression::Compression;
+use crate::parquet::error::{Error, Result};
+use crate::parquet::metadata::{ColumnChunkMetaData, Descriptor};
+use crate::parquet::page::{CompressedPage, ParquetPageHeader};
 
 /// Returns a stream of compressed data pages
 pub async fn get_page_stream<'a, RR: AsyncRead + Unpin + Send + AsyncSeek>(

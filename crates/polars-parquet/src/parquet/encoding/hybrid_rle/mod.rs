@@ -6,9 +6,8 @@ pub use bitmap::{encode_bool as bitpacked_encode, BitmapIter};
 pub use decoder::Decoder;
 pub use encoder::{encode_bool, encode_u32};
 
-use crate::error::Error;
-
 use super::bitpacked;
+use crate::parquet::error::Error;
 
 /// The two possible states of an RLE-encoded run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,14 +38,14 @@ pub struct HybridRleDecoder<'a> {
 }
 
 #[inline]
-fn read_next<'a, 'b>(decoder: &'b mut Decoder<'a>, remaining: usize) -> Result<State<'a>, Error> {
+fn read_next<'a>(decoder: &mut Decoder<'a>, remaining: usize) -> Result<State<'a>, Error> {
     Ok(match decoder.next().transpose()? {
         Some(HybridEncoded::Bitpacked(packed)) => {
             let num_bits = decoder.num_bits();
             let length = std::cmp::min(packed.len() * 8 / num_bits, remaining);
             let decoder = bitpacked::Decoder::<u32>::try_new(packed, num_bits, length)?;
             State::Bitpacked(decoder)
-        }
+        },
         Some(HybridEncoded::Rle(pack, additional)) => {
             let mut bytes = [0u8; std::mem::size_of::<u32>()];
             pack.iter().zip(bytes.iter_mut()).for_each(|(src, dst)| {
@@ -58,7 +57,7 @@ fn read_next<'a, 'b>(decoder: &'b mut Decoder<'a>, remaining: usize) -> Result<S
             } else {
                 State::Rle(std::iter::repeat(value).take(additional))
             }
-        }
+        },
         None => State::None,
     })
 }
@@ -89,7 +88,7 @@ impl<'a> Iterator for HybridRleDecoder<'a> {
                 // make sure to take so that next calls will return 'None'
                 // indicating that the iterator is finished.
                 opt_val.take()
-            }
+            },
             State::Bitpacked(decoder) => decoder.next(),
             State::Rle(iter) => iter.next(),
             State::None => Some(0),
@@ -102,7 +101,7 @@ impl<'a> Iterator for HybridRleDecoder<'a> {
                 Ok(state) => {
                     self.state = state;
                     self.next()
-                }
+                },
                 Err(e) => Some(Err(e)),
             }
         }

@@ -3,10 +3,6 @@ use std::collections::VecDeque;
 use arrow::array::FixedSizeBinaryArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
-use crate::parquet::deserialize::SliceFilteredIter;
-use crate::parquet::encoding::{hybrid_rle, Encoding};
-use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::parquet::schema::Repetition;
 use polars_error::PolarsResult;
 
 use super::super::utils::{
@@ -16,6 +12,10 @@ use super::super::utils::{
 };
 use super::super::Pages;
 use super::utils::FixedSizeBinary;
+use crate::parquet::deserialize::SliceFilteredIter;
+use crate::parquet::encoding::{hybrid_rle, Encoding};
+use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::parquet::schema::Repetition;
 
 pub(super) type Dict = Vec<u8>;
 

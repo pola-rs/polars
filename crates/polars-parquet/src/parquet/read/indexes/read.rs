@@ -1,14 +1,13 @@
 use std::convert::TryInto;
 use std::io::{Cursor, Read, Seek, SeekFrom};
 
-use parquet_format_safe::ColumnChunk;
-use parquet_format_safe::{thrift::protocol::TCompactInputProtocol, OffsetIndex, PageLocation};
-
-use crate::error::Error;
-use crate::indexes::Index;
-use crate::metadata::ColumnChunkMetaData;
+use parquet_format_safe::thrift::protocol::TCompactInputProtocol;
+use parquet_format_safe::{ColumnChunk, OffsetIndex, PageLocation};
 
 use super::deserialize::deserialize;
+use crate::parquet::error::Error;
+use crate::parquet::indexes::Index;
+use crate::parquet::metadata::ColumnChunkMetaData;
 
 fn prepare_read<F: Fn(&ColumnChunk) -> Option<i64>, G: Fn(&ColumnChunk) -> Option<i32>>(
     chunks: &[ColumnChunkMetaData],

@@ -2,17 +2,14 @@ use std::io::Write;
 
 #[cfg(feature = "async")]
 use futures::AsyncWrite;
+use parquet_format_safe::thrift::protocol::TCompactOutputProtocol;
 #[cfg(feature = "async")]
 use parquet_format_safe::thrift::protocol::TCompactOutputStreamProtocol;
 
-use parquet_format_safe::thrift::protocol::TCompactOutputProtocol;
-
-use crate::error::Result;
-pub use crate::metadata::KeyValue;
-
-use crate::write::page::PageWriteSpec;
-
 use super::serialize::{serialize_column_index, serialize_offset_index};
+use crate::parquet::error::Result;
+pub use crate::parquet::metadata::KeyValue;
+use crate::parquet::write::page::PageWriteSpec;
 
 pub fn write_column_index<W: Write>(writer: &mut W, pages: &[PageWriteSpec]) -> Result<u64> {
     let index = serialize_column_index(pages)?;

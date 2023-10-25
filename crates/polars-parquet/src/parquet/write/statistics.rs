@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use crate::error::{Error, Result};
-use crate::schema::types::PhysicalType;
-use crate::statistics::*;
-use crate::types::NativeType;
+use crate::parquet::error::{Error, Result};
+use crate::parquet::schema::types::PhysicalType;
+use crate::parquet::statistics::*;
+use crate::parquet::types::NativeType;
 
 #[inline]
 fn reduce_single<T, F: Fn(T, T) -> T>(lhs: Option<T>, rhs: Option<T>, op: F) -> Option<T> {
@@ -49,31 +49,31 @@ pub fn reduce(stats: &[&Option<Arc<dyn Statistics>>]) -> Result<Option<Arc<dyn S
         PhysicalType::Boolean => {
             let stats = stats.iter().map(|x| x.as_any().downcast_ref().unwrap());
             Some(Arc::new(reduce_boolean(stats)))
-        }
+        },
         PhysicalType::Int32 => {
             let stats = stats.iter().map(|x| x.as_any().downcast_ref().unwrap());
             Some(Arc::new(reduce_primitive::<i32, _>(stats)))
-        }
+        },
         PhysicalType::Int64 => {
             let stats = stats.iter().map(|x| x.as_any().downcast_ref().unwrap());
             Some(Arc::new(reduce_primitive::<i64, _>(stats)))
-        }
+        },
         PhysicalType::Float => {
             let stats = stats.iter().map(|x| x.as_any().downcast_ref().unwrap());
             Some(Arc::new(reduce_primitive::<f32, _>(stats)))
-        }
+        },
         PhysicalType::Double => {
             let stats = stats.iter().map(|x| x.as_any().downcast_ref().unwrap());
             Some(Arc::new(reduce_primitive::<f64, _>(stats)))
-        }
+        },
         PhysicalType::ByteArray => {
             let stats = stats.iter().map(|x| x.as_any().downcast_ref().unwrap());
             Some(Arc::new(reduce_binary(stats)))
-        }
+        },
         PhysicalType::FixedLenByteArray(_) => {
             let stats = stats.iter().map(|x| x.as_any().downcast_ref().unwrap());
             Some(Arc::new(reduce_fix_len_binary(stats)))
-        }
+        },
         _ => todo!(),
     })
 }
@@ -111,15 +111,15 @@ fn ord_binary(a: Vec<u8>, b: Vec<u8>, max: bool) -> Vec<u8> {
                 } else {
                     return b;
                 }
-            }
+            },
             std::cmp::Ordering::Less => {
                 if max {
                     return b;
                 } else {
                     return a;
                 }
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
     a
@@ -173,9 +173,8 @@ fn reduce_primitive<
 
 #[cfg(test)]
 mod tests {
-    use crate::schema::types::PrimitiveType;
-
     use super::*;
+    use crate::parquet::schema::types::PrimitiveType;
 
     #[test]
     fn binary() -> Result<()> {

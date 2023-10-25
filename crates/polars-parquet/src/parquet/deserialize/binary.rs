@@ -1,11 +1,9 @@
-use crate::{
-    encoding::{hybrid_rle, plain_byte_array::BinaryIter},
-    error::Error,
-    page::{split_buffer, DataPage},
-    parquet_bridge::{Encoding, Repetition},
-};
-
 use super::utils;
+use crate::parquet::encoding::hybrid_rle;
+use crate::parquet::encoding::plain_byte_array::BinaryIter;
+use crate::parquet::error::Error;
+use crate::parquet::page::{split_buffer, DataPage};
+use crate::parquet::parquet_bridge::{Encoding, Repetition};
 
 #[derive(Debug)]
 pub struct Dictionary<'a, P> {
@@ -42,13 +40,13 @@ impl<'a, P> BinaryPageState<'a, P> {
         match (page.encoding(), dict, is_optional) {
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false) => {
                 Dictionary::try_new(page, dict).map(Self::RequiredDictionary)
-            }
+            },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), true) => {
                 Ok(Self::OptionalDictionary(
                     utils::DefLevelsDecoder::try_new(page)?,
                     Dictionary::try_new(page, dict)?,
                 ))
-            }
+            },
             (Encoding::Plain, _, true) => {
                 let (_, _, values) = split_buffer(page)?;
 
@@ -56,13 +54,13 @@ impl<'a, P> BinaryPageState<'a, P> {
                 let values = BinaryIter::new(values, None);
 
                 Ok(Self::Optional(validity, values))
-            }
+            },
             (Encoding::Plain, _, false) => {
                 let (_, _, values) = split_buffer(page)?;
                 let values = BinaryIter::new(values, Some(page.num_values()));
 
                 Ok(Self::Required(values))
-            }
+            },
             _ => Err(Error::FeatureNotSupported(format!(
                 "Viewing page for encoding {:?} for binary type",
                 page.encoding(),
