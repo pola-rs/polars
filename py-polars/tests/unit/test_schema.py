@@ -29,19 +29,11 @@ class CustomSchema(Mapping[str, Any]):
 
 
 def test_custom_schema() -> None:
-    schema = CustomSchema(bool=pl.Boolean, misc=pl.UInt8)
-
-    df = pl.DataFrame(
-        data={"bool": [True, False, None], "misc": [12, 34, 56]},
-        schema=schema,
-    )
+    df = pl.DataFrame(schema=CustomSchema(bool=pl.Boolean, misc=pl.UInt8))
     assert df.schema == OrderedDict([("bool", pl.Boolean), ("misc", pl.UInt8)])
 
     with pytest.raises(ValueError):
-        pl.DataFrame(
-            data={"bool": [True, False, None], "misc": [12, 34, 56]},
-            schema=CustomSchema(bool="boolean", misc="unsigned int"),
-        )
+        pl.DataFrame(schema=CustomSchema(bool="boolean", misc="unsigned int"))
 
 
 def test_schema_on_agg() -> None:
