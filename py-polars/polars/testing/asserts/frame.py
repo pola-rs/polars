@@ -7,6 +7,7 @@ from polars.exceptions import ComputeError, InvalidAssert
 from polars.lazyframe import LazyFrame
 from polars.testing.asserts.series import _assert_series_values_equal
 from polars.testing.asserts.utils import raise_assertion_error
+from polars.utils.deprecation import issue_deprecation_warning
 
 
 def assert_frame_equal(
@@ -19,8 +20,8 @@ def assert_frame_equal(
     check_exact: bool = False,
     rtol: float = 1e-5,
     atol: float = 1e-8,
-    nans_compare_equal: bool = True,
     categorical_as_str: bool = False,
+    nans_compare_equal: bool | None = None,
 ) -> None:
     """
     Assert that the left and right frame are equal.
@@ -52,11 +53,15 @@ def assert_frame_equal(
         Relative tolerance for inexact checking. Fraction of values in ``right``.
     atol
         Absolute tolerance for inexact checking.
-    nans_compare_equal
-        Consider NaN values to be equal.
     categorical_as_str
         Cast categorical columns to string before comparing. Enabling this helps
         compare columns that do not share the same string cache.
+    nans_compare_equal
+        Consider NaN values to be equal.
+
+        .. deprecated: 0.19.12
+            This parameter will be removed. Default behaviour will remain as though it
+            were set to ``True``.
 
     See Also
     --------
@@ -89,6 +94,15 @@ def assert_frame_equal(
     AssertionError: values for column 'a' are different
 
     """
+    if nans_compare_equal is not None:
+        issue_deprecation_warning(
+            "The `nans_compare_equal` parameter for `assert_frame_equal` is deprecated."
+            " Default behaviour will remain as though it were set to `True`.",
+            version="0.19.12",
+        )
+    else:
+        nans_compare_equal = True
+
     lazy = _assert_correct_input_type(left, right)
     objects = "LazyFrames" if lazy else "DataFrames"
 
@@ -202,8 +216,8 @@ def assert_frame_not_equal(
     check_exact: bool = False,
     rtol: float = 1e-5,
     atol: float = 1e-8,
-    nans_compare_equal: bool = True,
     categorical_as_str: bool = False,
+    nans_compare_equal: bool | None = None,
 ) -> None:
     """
     Assert that the left and right frame are **not** equal.
@@ -234,11 +248,15 @@ def assert_frame_not_equal(
         Relative tolerance for inexact checking. Fraction of values in ``right``.
     atol
         Absolute tolerance for inexact checking.
-    nans_compare_equal
-        Consider NaN values to be equal.
     categorical_as_str
         Cast categorical columns to string before comparing. Enabling this helps
         compare columns that do not share the same string cache.
+    nans_compare_equal
+        Consider NaN values to be equal.
+
+        .. deprecated: 0.19.12
+            This parameter will be removed. Default behaviour will remain as though it
+            were set to ``True``.
 
     See Also
     --------
