@@ -1,5 +1,5 @@
 Some of the code in this crate is subject to the Apache 2 license below, as it
-was taken from the arrow2 Rust crate in October 2023. Later changes are subject
+was taken from the arrow2 and parquet2 Rust crate in October 2023. Later changes are subject
 to the MIT license in ../../LICENSE.
 
 
