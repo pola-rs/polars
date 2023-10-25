@@ -134,4 +134,4 @@ def test_anonymous_scan_explain(io_files_path: Path) -> None:
     file = io_files_path / "foods1.ndjson"
     q = pl.scan_ndjson(source=file)
     assert "Anonymous" in q.explain()
-    assert "Anonymous" in q.show_graph(raw_output=True)
+    assert "Anonymous" in q.show_graph(raw_output=True)  # type: ignore[operator]
