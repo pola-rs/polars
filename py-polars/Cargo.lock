@@ -1476,25 +1476,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "parquet2"
-version = "0.17.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "579fe5745f02cef3d5f236bfed216fd4693e49e4e920a13475c6132233283bce"
-dependencies = [
- "async-stream",
- "brotli",
- "flate2",
- "futures",
- "lz4",
- "parquet-format-safe",
- "seq-macro",
- "snap",
- "streaming-decompression",
- "xxhash-rust",
- "zstd 0.12.4",
-]
-
-[[package]]
 name = "parse-zoneinfo"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1668,7 +1649,6 @@ dependencies = [
  "arrow-format",
  "avro-schema",
  "object_store",
- "parquet2",
  "regex",
  "simdutf8",
  "thiserror",
@@ -1806,14 +1786,23 @@ name = "polars-parquet"
 version = "0.34.2"
 dependencies = [
  "ahash",
+ "async-stream",
  "base64",
+ "brotli",
  "ethnum",
+ "flate2",
  "futures",
+ "lz4",
  "num-traits",
- "parquet2",
+ "parquet-format-safe",
  "polars-arrow",
  "polars-error",
+ "polars-utils",
+ "seq-macro",
  "simdutf8",
+ "snap",
+ "streaming-decompression",
+ "zstd 0.12.4",
 ]
 
 [[package]]
@@ -1917,6 +1906,7 @@ dependencies = [
  "ahash",
  "bytemuck",
  "hashbrown 0.14.0",
+ "indexmap 2.0.0",
  "num-traits",
  "once_cell",
  "polars-error",
