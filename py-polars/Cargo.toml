@@ -13,8 +13,8 @@ polars-core = { path = "../crates/polars-core", default-features = false, featur
 polars-error = { path = "../crates/polars-error" }
 polars-lazy = { path = "../crates/polars-lazy", default-features = false, features = ["python"] }
 polars-ops = { path = "../crates/polars-ops", default-features = false, features = ["convert_index"] }
-polars-plan = { path = "../crates/polars-plan", default-features = false }
 polars-parquet = { path = "../crates/polars-parquet", default-features = false, optional = true }
+polars-plan = { path = "../crates/polars-plan", default-features = false }
 
 ahash = ">=0.8.5"
 ciborium = "0.2"

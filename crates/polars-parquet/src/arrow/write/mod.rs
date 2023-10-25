@@ -22,6 +22,7 @@ mod pages;
 mod primitive;
 mod row_group;
 mod schema;
+#[cfg(feature = "async")]
 mod sink;
 mod utf8;
 mod utils;
@@ -66,6 +67,7 @@ pub use pages::{array_to_columns, Nested};
 use polars_error::{polars_bail, PolarsResult};
 pub use row_group::{row_group_iter, RowGroupIterator};
 pub use schema::to_parquet_type;
+#[cfg(feature = "async")]
 pub use sink::FileSink;
 
 /// returns offset and length to slice the leaf values

@@ -17,6 +17,7 @@ pub use deserialize::{
     InitNested, NestedArrayIter, NestedState, StructIterator,
 };
 pub use file::{FileReader, RowGroupReader};
+#[cfg(feature = "async")]
 use futures::{AsyncRead, AsyncSeek};
 // re-exports of parquet2's relevant APIs
 pub use parquet2::{
@@ -58,6 +59,7 @@ pub fn read_metadata<R: Read + Seek>(reader: &mut R) -> PolarsResult<FileMetaDat
 }
 
 /// Reads parquets' metadata asynchronously.
+#[cfg(feature = "async")]
 pub async fn read_metadata_async<R: AsyncRead + AsyncSeek + Send + Unpin>(
     reader: &mut R,
 ) -> PolarsResult<FileMetaData> {
