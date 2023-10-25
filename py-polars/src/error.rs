@@ -76,7 +76,6 @@ create_exception!(polars.exceptions, SchemaFieldNotFoundError, PyException);
 create_exception!(polars.exceptions, ShapeError, PyException);
 create_exception!(polars.exceptions, StringCacheMismatchError, PyException);
 create_exception!(polars.exceptions, StructFieldNotFoundError, PyException);
-create_exception!(polars.exceptions, FileNotFoundError, PyException);
 
 #[macro_export]
 macro_rules! raise_err(
