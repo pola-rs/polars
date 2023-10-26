@@ -355,7 +355,7 @@ impl Hash for FunctionExpr {
                 symbol.hash(state);
             },
             SumHorizontal | MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse
-            | ArgUnique | Shift | ShiftAndFill => {},
+            | ArgUnique | Shift | ShiftAndFill | MeanHorizontal => {},
             #[cfg(feature = "mode")]
             Mode => {},
             #[cfg(feature = "abs")]

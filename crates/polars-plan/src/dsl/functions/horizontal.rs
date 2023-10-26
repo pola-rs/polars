@@ -303,9 +303,9 @@ pub fn mean_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
         input: exprs,
         function: FunctionExpr::MeanHorizontal,
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyFlat,
+            collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
-            auto_explode: true,
+            returns_scalar: false,
             cast_to_supertypes: false,
             allow_rename: true,
             ..Default::default()
