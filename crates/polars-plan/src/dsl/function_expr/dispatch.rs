@@ -75,8 +75,8 @@ pub(super) fn forward_fill(s: &Series, limit: FillNullLimit) -> PolarsResult<Ser
     s.fill_null(FillNullStrategy::Forward(limit))
 }
 
-pub(super) fn sum_horizontal(s: &[Series]) -> PolarsResult<Series> {
-    polars_ops::prelude::sum_horizontal(s)
+pub(super) fn sum_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
+    polars_ops::prelude::sum_horizontal(s, NullStrategy::Ignore)
 }
 
 pub(super) fn max_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
