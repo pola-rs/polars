@@ -98,7 +98,7 @@ def assert_series_equal(
     """
     if nans_compare_equal is not None:
         issue_deprecation_warning(
-            "The `nans_compare_equal` parameter for `assert_frame_equal` is deprecated."
+            "The `nans_compare_equal` parameter for `assert_series_equal` is deprecated."
             " Default behaviour will remain as though it were set to `True`.",
             version="0.19.12",
         )
