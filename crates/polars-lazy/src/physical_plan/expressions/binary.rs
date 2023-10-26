@@ -102,6 +102,24 @@ impl BinaryExpr {
         Ok(ac_l)
     }
 
+    fn apply_all_literal<'a>(
+        &self,
+        mut ac_l: AggregationContext<'a>,
+        mut ac_r: AggregationContext<'a>,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        let name = ac_l.series().name().to_string();
+        ac_l.groups();
+        ac_r.groups();
+        polars_ensure!(ac_l.groups.len() == ac_r.groups.len(), ComputeError: "lhs and rhs should have same group length");
+        let left_s = ac_l.series().rechunk();
+        let right_s = ac_r.series().rechunk();
+        let res_s = apply_operator(&left_s, &right_s, self.op)?;
+        let ca = ListChunked::full(&name, &res_s, ac_l.groups.len());
+        ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
+        ac_l.with_series(ca.into_series(), true, Some(&self.expr))?;
+        Ok(ac_l)
+    }
+
     fn apply_group_aware<'a>(
         &self,
         mut ac_l: AggregationContext<'a>,
@@ -207,7 +225,7 @@ impl PhysicalExpr for BinaryExpr {
                 1 => self.apply_elementwise(ac_l, ac_r, false),
                 _ => self.apply_group_aware(ac_l, ac_r),
             },
-            (AggState::Literal(_), AggState::Literal(_)) => self.apply_group_aware(ac_l, ac_r),
+            (AggState::Literal(_), AggState::Literal(_)) => self.apply_all_literal(ac_l, ac_r),
             (AggState::NotAggregated(_), AggState::NotAggregated(_)) => {
                 self.apply_elementwise(ac_l, ac_r, false)
             },
