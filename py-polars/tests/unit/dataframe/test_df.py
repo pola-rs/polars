@@ -4,6 +4,7 @@ import contextlib
 import sys
 import textwrap
 import typing
+from collections import OrderedDict
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
@@ -1422,6 +1423,49 @@ def test_from_rows_of_dicts() -> None:
         df3 = df_init(records, schema=overrides)
         assert df3.rows() == [(1, 100), (2, 101)]
         assert df3.schema == {"id": pl.Int16, "value": pl.Int32}
+
+
+def test_from_records_with_schema_overrides_12032() -> None:
+    # the 'id' fields contains an int value that exceeds Int64 and doesn't have an exact
+    # Float64 representation; confirm that the override is applied *during* inference,
+    # not as a post-inference cast, so we maintain the accuracy of the original value.
+    rec = [
+        {"id": 9187643043065364490, "x": 333, "y": None},
+        {"id": 9223671840084328467, "x": 666.5, "y": 1698177261953686},
+        {"id": 9187643043065364505, "x": 999, "y": 9223372036854775807},
+    ]
+    df = pl.from_records(rec, schema_overrides={"x": pl.Float32, "id": pl.UInt64})
+    assert df.schema == OrderedDict(
+        [
+            ("id", pl.UInt64),
+            ("x", pl.Float32),
+            ("y", pl.Int64),
+        ]
+    )
+    assert rec == df.rows(named=True)
+
+
+def test_from_large_uint64_misc() -> None:
+    uint_data = [[9187643043065364490, 9223671840084328467, 9187643043065364505]]
+
+    df = pl.DataFrame(uint_data, orient="col", schema_overrides={"column_0": pl.UInt64})
+    assert df["column_0"].dtype == pl.UInt64
+    assert df["column_0"].to_list() == uint_data[0]
+
+    for overrides in ({}, {"column_1": pl.UInt64}):
+        df = pl.DataFrame(
+            uint_data,
+            orient="row",
+            schema_overrides=overrides,  # type: ignore[arg-type]
+        )
+        assert df.schema == OrderedDict(
+            [
+                ("column_0", pl.Int64),
+                ("column_1", pl.UInt64),
+                ("column_2", pl.Int64),
+            ]
+        )
+        assert df.row(0) == tuple(uint_data[0])
 
 
 def test_repeat_by_unequal_lengths_panic() -> None:

@@ -1148,7 +1148,9 @@ def _sequence_of_dict_to_pydf(
         if column_names
         else None
     )
-    pydf = PyDataFrame.read_dicts(data, infer_schema_length, dicts_schema)
+    pydf = PyDataFrame.read_dicts(
+        data, infer_schema_length, dicts_schema, schema_overrides
+    )
 
     # TODO: we can remove this `schema_overrides` block completely
     #  once https://github.com/pola-rs/polars/issues/11044 is fixed
