@@ -175,8 +175,8 @@ impl BatchStats {
         self.schema.try_index_of(column).map(|i| &self.stats[i])
     }
 
-    pub fn schema(&self) -> &Schema {
-        self.schema.as_ref()
+    pub fn schema(&self) -> &SchemaRef {
+        &self.schema
     }
 
     pub fn column_stats(&self) -> &[ColumnStats] {

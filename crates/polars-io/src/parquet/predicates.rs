@@ -1,3 +1,4 @@
+use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
 use polars_parquet::read::statistics::{deserialize, Statistics};
 use polars_parquet::read::RowGroupMetaData;
@@ -18,31 +19,30 @@ impl ColumnStats {
 /// Collect the statistics in a column chunk.
 pub(crate) fn collect_statistics(
     md: &RowGroupMetaData,
-    schema: SchemaRef,
+    schema: &ArrowSchema,
 ) -> PolarsResult<Option<BatchStats>> {
     let mut stats = vec![];
 
-    for (name, dt) in schema.iter() {
-        let fld = ArrowField::new(name.as_str(), dt.to_arrow(), true);
-        let st = deserialize(&fld, md)?;
-        stats.push(ColumnStats::from_arrow_stats(st, &fld));
+    for field in schema.fields.iter() {
+        let st = deserialize(field, md)?;
+        stats.push(ColumnStats::from_arrow_stats(st, field));
     }
 
     Ok(if stats.is_empty() {
         None
     } else {
-        Some(BatchStats::new(schema, stats))
+        Some(BatchStats::new(Arc::new(schema.into()), stats))
     })
 }
 
 pub(super) fn read_this_row_group(
     predicate: Option<&dyn PhysicalIoExpr>,
     md: &RowGroupMetaData,
-    schema: &SchemaRef,
+    schema: &ArrowSchemaRef,
 ) -> PolarsResult<bool> {
     if let Some(pred) = predicate {
         if let Some(pred) = pred.as_stats_evaluator() {
-            if let Some(stats) = collect_statistics(md, schema.clone())? {
+            if let Some(stats) = collect_statistics(md, schema)? {
                 let should_read = pred.should_read(&stats);
                 // a parquet file may not have statistics of all columns
                 if matches!(should_read, Ok(false)) {

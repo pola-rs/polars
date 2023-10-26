@@ -87,7 +87,7 @@ impl ParquetExec {
 
                     let file = file?;
                     let mut reader = ParquetReader::new(file)
-                        .with_schema(Some(self.file_info.reader_schema.clone()))
+                        .with_schema(self.file_info.reader_schema.clone())
                         .read_parallel(parallel)
                         .set_low_memory(self.options.low_memory)
                         .use_statistics(self.options.use_statistics)
@@ -156,7 +156,11 @@ impl ParquetExec {
     #[cfg(feature = "cloud")]
     async fn read_async(&mut self) -> PolarsResult<Vec<DataFrame>> {
         let verbose = verbose();
-        let first_schema = &self.file_info.reader_schema;
+        let first_schema = self
+            .file_info
+            .reader_schema
+            .as_ref()
+            .expect("should be set");
         let first_metadata = &self.metadata;
         let cloud_options = self.cloud_options.as_ref();
 
@@ -200,7 +204,7 @@ impl ParquetExec {
             let iter = paths.iter().enumerate().map(|(i, path)| async move {
                 let first_file = batch_idx == 0 && i == 0;
                 // use the cached one as this saves a cloud call
-                let (metadata, schema) = if first_file { (first_metadata.clone(), Some(first_schema.clone())) } else { (None, None) };
+                let (metadata, schema) = if first_file { (first_metadata.clone(), Some((*first_schema).clone())) } else { (None, None) };
                 let mut reader = ParquetAsyncReader::from_uri(
                     &path.to_string_lossy(),
                     cloud_options,

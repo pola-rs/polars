@@ -75,25 +75,6 @@ pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> Ar
     ArrowSchema::from(fields)
 }
 
-#[cfg(feature = "parquet")]
-pub(crate) fn apply_projection_pl_schema(schema: &Schema, projection: &[usize]) -> Schema {
-    Schema::from_iter(projection.iter().map(|idx| {
-        let (name, dt) = schema.get_at_index(*idx).unwrap();
-        Field::new(name.as_str(), dt.clone())
-    }))
-}
-
-#[cfg(feature = "parquet")]
-pub(crate) fn columns_to_projection_pl_schema(
-    columns: &[String],
-    schema: &Schema,
-) -> PolarsResult<Vec<usize>> {
-    columns
-        .iter()
-        .map(|name| schema.try_get_full(name).map(|(idx, _, _)| idx))
-        .collect()
-}
-
 #[cfg(any(
     feature = "ipc",
     feature = "ipc_streaming",

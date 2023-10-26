@@ -2,7 +2,7 @@ use std::io::{Read, Seek};
 
 use arrow::array::Array;
 use arrow::chunk::Chunk;
-use arrow::datatypes::Schema;
+use arrow::datatypes::ArrowSchema;
 use polars_error::PolarsResult;
 
 use super::{RowGroupDeserializer, RowGroupMetaData};
@@ -27,7 +27,7 @@ impl<R: Read + Seek> FileReader<R> {
     pub fn new(
         reader: R,
         row_groups: Vec<RowGroupMetaData>,
-        schema: Schema,
+        schema: ArrowSchema,
         chunk_size: Option<usize>,
         limit: Option<usize>,
         page_indexes: Option<Vec<Vec<Vec<Vec<FilteredPage>>>>>,
@@ -57,8 +57,8 @@ impl<R: Read + Seek> FileReader<R> {
         Ok(result)
     }
 
-    /// Returns the [`Schema`] associated to this file.
-    pub fn schema(&self) -> &Schema {
+    /// Returns the [`ArrowSchema`] associated to this file.
+    pub fn schema(&self) -> &ArrowSchema {
         &self.row_groups.schema
     }
 }
@@ -112,7 +112,7 @@ impl<R: Read + Seek> Iterator for FileReader<R> {
 /// to memory and attaches [`RowGroupDeserializer`] to them so that they can be iterated in chunks.
 pub struct RowGroupReader<R: Read + Seek> {
     reader: R,
-    schema: Schema,
+    schema: ArrowSchema,
     row_groups: std::vec::IntoIter<RowGroupMetaData>,
     chunk_size: Option<usize>,
     remaining_rows: usize,
@@ -123,7 +123,7 @@ impl<R: Read + Seek> RowGroupReader<R> {
     /// Returns a new [`RowGroupReader`]
     pub fn new(
         reader: R,
-        schema: Schema,
+        schema: ArrowSchema,
         row_groups: Vec<RowGroupMetaData>,
         chunk_size: Option<usize>,
         limit: Option<usize>,

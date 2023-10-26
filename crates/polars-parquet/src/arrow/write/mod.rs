@@ -108,8 +108,8 @@ fn decimal_length_from_precision(precision: usize) -> usize {
     (((10.0_f64.powi(precision as i32) + 1.0).log2() + 1.0) / 8.0).ceil() as usize
 }
 
-/// Creates a parquet [`SchemaDescriptor`] from a [`Schema`].
-pub fn to_parquet_schema(schema: &Schema) -> PolarsResult<SchemaDescriptor> {
+/// Creates a parquet [`SchemaDescriptor`] from a [`ArrowSchema`].
+pub fn to_parquet_schema(schema: &ArrowSchema) -> PolarsResult<SchemaDescriptor> {
     let parquet_types = schema
         .fields
         .iter()

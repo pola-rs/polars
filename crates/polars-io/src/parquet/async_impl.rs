@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use std::ops::Range;
 use std::sync::Arc;
 
+use arrow::datatypes::ArrowSchemaRef;
 use bytes::Bytes;
 use futures::future::try_join_all;
 use object_store::path::Path as ObjectPath;
@@ -11,7 +12,6 @@ use polars_core::config::verbose;
 use polars_core::datatypes::PlHashMap;
 use polars_core::error::{to_compute_err, PolarsResult};
 use polars_core::prelude::*;
-use polars_core::schema::Schema;
 use polars_parquet::read::{self as parquet2_read, RowGroupMetaData};
 use polars_parquet::write::FileMetaData;
 use smartstring::alias::String as SmartString;
@@ -61,12 +61,12 @@ impl ParquetObjectStore {
         Ok(())
     }
 
-    pub async fn schema(&mut self) -> PolarsResult<Schema> {
+    pub async fn schema(&mut self) -> PolarsResult<ArrowSchemaRef> {
         let metadata = self.get_metadata().await?;
 
         let arrow_schema = parquet2_read::infer_schema(metadata)?;
 
-        Ok(Schema::from_iter(&arrow_schema.fields))
+        Ok(Arc::new(arrow_schema))
     }
 
     /// Number of rows in the parquet file.
@@ -159,7 +159,7 @@ pub struct FetchRowGroupsFromObjectStore {
     row_groups_metadata: Vec<RowGroupMetaData>,
     projected_fields: Vec<SmartString>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    schema: SchemaRef,
+    schema: ArrowSchemaRef,
     logging: bool,
 }
 
@@ -167,7 +167,7 @@ impl FetchRowGroupsFromObjectStore {
     pub fn new(
         reader: ParquetObjectStore,
         metadata: &FileMetaData,
-        schema: SchemaRef,
+        schema: ArrowSchemaRef,
         projection: Option<&[usize]>,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
     ) -> PolarsResult<Self> {
@@ -177,10 +177,16 @@ impl FetchRowGroupsFromObjectStore {
             .map(|projection| {
                 projection
                     .iter()
-                    .map(|i| schema.get_at_index(*i).unwrap().0.clone())
+                    .map(|i| SmartString::from(schema.fields[*i].name.as_str()))
                     .collect::<Vec<_>>()
             })
-            .unwrap_or_else(|| schema.iter().map(|tpl| tpl.0).cloned().collect());
+            .unwrap_or_else(|| {
+                schema
+                    .fields
+                    .iter()
+                    .map(|fld| SmartString::from(fld.name.as_str()))
+                    .collect()
+            });
 
         Ok(FetchRowGroupsFromObjectStore {
             reader: Arc::new(reader),

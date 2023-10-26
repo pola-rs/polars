@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import io
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -512,3 +512,12 @@ def test_nested_list_page_reads_to_end_11548() -> None:
 
     result = pl.read_parquet(f).select(pl.col("x").list.len())
     assert result.to_series().to_list() == [2048, 2048]
+
+
+def test_parquet_nano_second_schema() -> None:
+    value = time(9, 0, 0)
+    f = io.BytesIO()
+    df = pd.DataFrame({"Time": [value]})
+    df.to_parquet(f)
+    f.seek(0)
+    assert pl.read_parquet(f).item() == value

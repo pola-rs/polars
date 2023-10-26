@@ -2,7 +2,7 @@
 pub use std::sync::Arc;
 
 pub(crate) use arrow::array::*;
-pub use arrow::datatypes::{Field as ArrowField, Schema as ArrowSchema};
+pub use arrow::datatypes::{ArrowSchema, Field as ArrowField};
 #[cfg(feature = "ewma")]
 pub use arrow::legacy::kernels::ewm::EWMOptions;
 pub use arrow::legacy::prelude::*;

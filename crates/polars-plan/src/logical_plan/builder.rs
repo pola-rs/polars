@@ -85,12 +85,11 @@ macro_rules! try_delayed {
 }
 
 #[cfg(any(feature = "parquet", feature = "parquet_async",))]
-fn prepare_schema(mut schema: SchemaRef, row_count: Option<&RowCount>) -> SchemaRef {
-    let schema_mut = Arc::make_mut(&mut schema);
+fn prepare_schema(mut schema: Schema, row_count: Option<&RowCount>) -> SchemaRef {
     if let Some(rc) = row_count {
-        let _ = schema_mut.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
+        let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
     }
-    schema
+    Arc::new(schema)
 }
 
 impl LogicalPlanBuilder {
@@ -107,7 +106,7 @@ impl LogicalPlanBuilder {
             None => function.schema(infer_schema_length)?,
         };
 
-        let file_info = FileInfo::new(schema.clone(), (n_rows, n_rows.unwrap_or(usize::MAX)));
+        let file_info = FileInfo::new(schema.clone(), None, (n_rows, n_rows.unwrap_or(usize::MAX)));
         let file_options = FileScanOptions {
             n_rows,
             with_columns: None,
@@ -156,7 +155,7 @@ impl LogicalPlanBuilder {
         // Use first path to get schema.
         let path = &paths[0];
 
-        let (schema, num_rows, metadata) = if is_cloud_url(path) {
+        let (schema, reader_schema, num_rows, metadata) = if is_cloud_url(path) {
             #[cfg(not(feature = "cloud"))]
             panic!(
                 "One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled."
@@ -169,24 +168,32 @@ impl LogicalPlanBuilder {
                     let mut reader =
                         ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref(), None, None)
                             .await?;
-                    let schema = reader.schema().await?;
+                    let reader_schema = reader.schema().await?;
                     let num_rows = reader.num_rows().await?;
                     let metadata = reader.get_metadata().await?.clone();
 
-                    PolarsResult::Ok((schema, Some(num_rows), Some(metadata)))
+                    let schema = prepare_schema((&reader_schema).into(), row_count.as_ref());
+                    PolarsResult::Ok((schema, reader_schema, Some(num_rows), Some(metadata)))
                 })?
             }
         } else {
             let file = polars_utils::open_file(path)?;
             let mut reader = ParquetReader::new(file);
+            let reader_schema = reader.schema()?;
+            let schema = prepare_schema((&reader_schema).into(), row_count.as_ref());
             (
-                prepare_schema(reader.schema()?, row_count.as_ref()),
+                schema,
+                reader_schema,
                 Some(reader.num_rows()?),
                 Some(reader.get_metadata()?.clone()),
             )
         };
 
-        let mut file_info = FileInfo::new(schema, (num_rows, num_rows.unwrap_or(0)));
+        let mut file_info = FileInfo::new(
+            schema,
+            Some(reader_schema),
+            (num_rows, num_rows.unwrap_or(0)),
+        );
 
         // We set the hive partitions of the first path to determine the schema.
         // On iteration the partition values will be re-set per file.
@@ -236,14 +243,14 @@ impl LogicalPlanBuilder {
         let file = polars_utils::open_file(&path)?;
         let mut reader = IpcReader::new(file);
 
-        let mut schema = reader.schema()?;
+        let reader_schema = reader.schema()?;
+        let mut schema: Schema = (&reader_schema).into();
         if let Some(rc) = &row_count {
             let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
         }
-        let schema = Arc::new(schema);
 
         let num_rows = reader._num_rows()?;
-        let file_info = FileInfo::new(schema, (None, num_rows));
+        let file_info = FileInfo::new(Arc::new(schema), Some(reader_schema), (None, num_rows));
 
         let file_options = FileScanOptions {
             with_columns: None,
@@ -354,7 +361,7 @@ impl LogicalPlanBuilder {
         let estimated_n_rows = (rows_read as f64 / bytes_read as f64 * n_bytes as f64) as usize;
 
         skip_rows += skip_rows_after_header;
-        let file_info = FileInfo::new(schema, (None, estimated_n_rows));
+        let file_info = FileInfo::new(schema, None, (None, estimated_n_rows));
 
         let options = FileScanOptions {
             with_columns: None,

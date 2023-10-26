@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::path::Path;
 
+use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
 use polars_utils::format_smartstring;
 #[cfg(feature = "serde")]
@@ -47,7 +48,7 @@ pub struct FileInfo {
     pub schema: SchemaRef,
     /// Stores the schema used for the reader, as the main schema can contain
     /// extra hive columns.
-    pub reader_schema: SchemaRef,
+    pub reader_schema: Option<ArrowSchemaRef>,
     /// - known size
     /// - estimated size
     pub row_estimation: (Option<usize>, usize),
@@ -55,10 +56,14 @@ pub struct FileInfo {
 }
 
 impl FileInfo {
-    pub fn new(schema: SchemaRef, row_estimation: (Option<usize>, usize)) -> Self {
+    pub fn new(
+        schema: SchemaRef,
+        reader_schema: Option<ArrowSchemaRef>,
+        row_estimation: (Option<usize>, usize),
+    ) -> Self {
         Self {
             schema: schema.clone(),
-            reader_schema: schema.clone(),
+            reader_schema,
             row_estimation,
             hive_parts: None,
         }
@@ -71,7 +76,7 @@ impl FileInfo {
             let expected_len = self.schema.len() + hive_schema.len();
 
             let schema = Arc::make_mut(&mut self.schema);
-            schema.merge(hive_schema);
+            schema.merge((**hive_parts.get_statistics().schema()).clone());
 
             polars_ensure!(schema.len() == expected_len, ComputeError: "invalid hive partitions\n\n\
             Extending the schema with the hive partitioned columns creates duplicate fields.");

@@ -44,7 +44,7 @@ impl<W: Write> IpcWriter<W> {
     pub fn batched(self, schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
         let mut writer = write::FileWriter::new(
             self.writer,
-            schema.to_arrow(),
+            Arc::new(schema.to_arrow()),
             None,
             WriteOptions {
                 compression: self.compression.map(|c| c.into()),
@@ -70,7 +70,7 @@ where
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
         let mut ipc_writer = write::FileWriter::try_new(
             &mut self.writer,
-            df.schema().to_arrow(),
+            Arc::new(df.schema().to_arrow()),
             None,
             WriteOptions {
                 compression: self.compression.map(|c| c.into()),

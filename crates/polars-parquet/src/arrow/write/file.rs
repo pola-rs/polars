@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use arrow::datatypes::Schema;
+use arrow::datatypes::ArrowSchema;
 use polars_error::{PolarsError, PolarsResult};
 
 use super::schema::schema_to_metadata_key;
@@ -8,9 +8,9 @@ use super::{to_parquet_schema, ThriftFileMetaData, WriteOptions};
 use crate::parquet::metadata::{KeyValue, SchemaDescriptor};
 use crate::parquet::write::{RowGroupIter, WriteOptions as FileWriteOptions};
 
-/// Attaches [`Schema`] to `key_value_metadata`
+/// Attaches [`ArrowSchema`] to `key_value_metadata`
 pub fn add_arrow_schema(
-    schema: &Schema,
+    schema: &ArrowSchema,
     key_value_metadata: Option<Vec<KeyValue>>,
 ) -> Option<Vec<KeyValue>> {
     key_value_metadata
@@ -24,7 +24,7 @@ pub fn add_arrow_schema(
 /// An interface to write a parquet to a [`Write`]
 pub struct FileWriter<W: Write> {
     writer: crate::parquet::write::FileWriter<W>,
-    schema: Schema,
+    schema: ArrowSchema,
     options: WriteOptions,
 }
 
@@ -40,8 +40,8 @@ impl<W: Write> FileWriter<W> {
         self.writer.schema()
     }
 
-    /// The [`Schema`] assigned to this file
-    pub fn schema(&self) -> &Schema {
+    /// The [`ArrowSchema`] assigned to this file
+    pub fn schema(&self) -> &ArrowSchema {
         &self.schema
     }
 }
@@ -49,8 +49,8 @@ impl<W: Write> FileWriter<W> {
 impl<W: Write> FileWriter<W> {
     /// Returns a new [`FileWriter`].
     /// # Error
-    /// If it is unable to derive a parquet schema from [`Schema`].
-    pub fn try_new(writer: W, schema: Schema, options: WriteOptions) -> PolarsResult<Self> {
+    /// If it is unable to derive a parquet schema from [`ArrowSchema`].
+    pub fn try_new(writer: W, schema: ArrowSchema, options: WriteOptions) -> PolarsResult<Self> {
         let parquet_schema = to_parquet_schema(&schema)?;
 
         let created_by = Some("Arrow2 - Native Rust implementation of Arrow".to_string());

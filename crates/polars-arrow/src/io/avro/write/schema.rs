@@ -6,8 +6,8 @@ use polars_error::{polars_bail, PolarsResult};
 
 use crate::datatypes::*;
 
-/// Converts a [`Schema`] to an Avro [`Record`].
-pub fn to_record(schema: &Schema) -> PolarsResult<Record> {
+/// Converts a [`ArrowSchema`] to an Avro [`Record`].
+pub fn to_record(schema: &ArrowSchema) -> PolarsResult<Record> {
     let mut name_counter: i32 = 0;
     let fields = schema
         .fields

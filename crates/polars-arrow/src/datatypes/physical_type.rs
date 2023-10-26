@@ -1,5 +1,5 @@
-#[cfg(feature = "serde_types")]
-use serde_derive::{Deserialize, Serialize};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 pub use crate::types::PrimitiveType;
 
@@ -55,7 +55,7 @@ impl PhysicalType {
 /// the set of valid indices types of a dictionary-encoded Array.
 /// Each type corresponds to a variant of [`crate::array::DictionaryArray`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum IntegerType {
     /// A signed 8-bit integer.
     Int8,
