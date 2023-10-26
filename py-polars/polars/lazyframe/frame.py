@@ -549,6 +549,7 @@ class LazyFrame:
         else:
             sources = [normalize_filepath(source) for source in source]
             source = None  # type: ignore[assignment]
+
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_ndjson(
             source,
@@ -566,13 +567,13 @@ class LazyFrame:
     @classmethod
     def _scan_python_function(
         cls,
-        schema: pa.schema | dict[str, PolarsDataType],
+        schema: pa.schema | Mapping[str, PolarsDataType],
         scan_fn: Any,
         *,
         pyarrow: bool = False,
     ) -> Self:
         self = cls.__new__(cls)
-        if isinstance(schema, dict):
+        if isinstance(schema, Mapping):
             self._ldf = PyLazyFrame.scan_from_python_function_pl_schema(
                 list(schema.items()), scan_fn, pyarrow
             )
