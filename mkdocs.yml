@@ -63,6 +63,7 @@ nav:
       - user-guide/lazy/streaming.md
     - IO:
       - user-guide/io/csv.md
+      - user-guide/io/excel.md
       - user-guide/io/parquet.md
       - user-guide/io/json.md
       - user-guide/io/multiple.md
