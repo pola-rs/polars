@@ -124,3 +124,14 @@ def test_hive_partitioned_projection_pushdown(
         actual = q.select("category").collect()
 
         assert expect.frame_equal(actual)
+
+
+@pytest.mark.write_disk()
+def test_hive_partitioned_err(io_files_path: Path, tmp_path: Path) -> None:
+    df = pl.read_ipc(io_files_path / "*.ipc")
+    root = tmp_path / "sugars_g=10"
+    root.mkdir()
+    df.write_parquet(root / "file.parquet")
+
+    with pytest.raises(pl.ComputeError, match="invalid hive partitions"):
+        pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
