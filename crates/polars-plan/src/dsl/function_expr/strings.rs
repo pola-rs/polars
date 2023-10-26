@@ -190,9 +190,9 @@ impl Display for StringFunction {
             #[cfg(feature = "dtype-struct")]
             StringFunction::SplitExact { inclusive, .. } => {
                 if *inclusive {
-                    "split_exact"
-                } else {
                     "split_exact_inclusive"
+                } else {
+                    "split_exact"
                 }
             },
             #[cfg(feature = "dtype-struct")]
@@ -201,9 +201,9 @@ impl Display for StringFunction {
             StringFunction::Strptime(_, _) => "strptime",
             StringFunction::Split(inclusive) => {
                 if *inclusive {
-                    "split"
-                } else {
                     "split_inclusive"
+                } else {
+                    "split"
                 }
             },
             #[cfg(feature = "nightly")]
