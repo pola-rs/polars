@@ -4,7 +4,6 @@ use arrow::array::{Array, BinaryArray, DictionaryArray, DictionaryKey, Utf8Array
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::{DataType, PhysicalType};
 use arrow::offset::Offset;
-use parquet2::page::DictPage;
 use polars_error::PolarsResult;
 
 use super::super::dictionary::*;
@@ -12,6 +11,7 @@ use super::super::utils::MaybeNext;
 use super::super::Pages;
 use super::utils::{Binary, SizedBinaryIter};
 use crate::arrow::read::deserialize::nested_utils::{InitNested, NestedState};
+use crate::parquet::page::DictPage;
 
 /// An iterator adapter over [`Pages`] assumed to be encoded as parquet's dictionary-encoded binary representation
 #[derive(Debug)]

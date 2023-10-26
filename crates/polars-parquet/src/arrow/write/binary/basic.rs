@@ -1,14 +1,16 @@
 use arrow::array::{Array, BinaryArray};
 use arrow::bitmap::Bitmap;
 use arrow::offset::Offset;
-use parquet2::encoding::{delta_bitpacked, Encoding};
-use parquet2::page::DataPage;
-use parquet2::schema::types::PrimitiveType;
-use parquet2::statistics::{serialize_statistics, BinaryStatistics, ParquetStatistics, Statistics};
 use polars_error::{polars_bail, PolarsResult};
 
 use super::super::{utils, WriteOptions};
 use crate::arrow::read::schema::is_nullable;
+use crate::parquet::encoding::{delta_bitpacked, Encoding};
+use crate::parquet::page::DataPage;
+use crate::parquet::schema::types::PrimitiveType;
+use crate::parquet::statistics::{
+    serialize_statistics, BinaryStatistics, ParquetStatistics, Statistics,
+};
 
 pub(crate) fn encode_plain<O: Offset>(
     array: &BinaryArray<O>,

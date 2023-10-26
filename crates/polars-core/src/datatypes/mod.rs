@@ -21,7 +21,6 @@ use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub, SubAssign};
 
-use ahash::RandomState;
 pub use aliases::*;
 pub use any_value::*;
 use arrow::compute::comparison::Simd8;

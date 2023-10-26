@@ -4,15 +4,15 @@ use arrow::array::PrimitiveArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
 use arrow::types::NativeType;
-use parquet2::encoding::Encoding;
-use parquet2::page::{DataPage, DictPage};
-use parquet2::schema::Repetition;
-use parquet2::types::{decode, NativeType as ParquetNativeType};
 use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
 use super::super::{utils, Pages};
 use super::basic::{deserialize_plain, Values, ValuesDictionary};
+use crate::parquet::encoding::Encoding;
+use crate::parquet::page::{DataPage, DictPage};
+use crate::parquet::schema::Repetition;
+use crate::parquet::types::{decode, NativeType as ParquetNativeType};
 
 // The state of a `DataPage` of `Primitive` parquet primitive type
 #[allow(clippy::large_enum_variant)]

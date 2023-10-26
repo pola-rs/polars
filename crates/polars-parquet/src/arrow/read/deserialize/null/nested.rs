@@ -2,12 +2,12 @@ use std::collections::VecDeque;
 
 use arrow::array::NullArray;
 use arrow::datatypes::DataType;
-use parquet2::page::{DataPage, DictPage};
 use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
 use super::super::{utils, Pages};
 use crate::arrow::read::deserialize::utils::DecodedState;
+use crate::parquet::page::{DataPage, DictPage};
 
 impl<'a> utils::PageState<'a> for usize {
     fn len(&self) -> usize {

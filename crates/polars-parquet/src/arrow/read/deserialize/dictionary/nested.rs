@@ -3,16 +3,16 @@ use std::collections::VecDeque;
 use arrow::array::{Array, DictionaryArray, DictionaryKey};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
-use parquet2::encoding::hybrid_rle::HybridRleDecoder;
-use parquet2::encoding::Encoding;
-use parquet2::page::{DataPage, DictPage, Page};
-use parquet2::schema::Repetition;
 use polars_error::{polars_err, PolarsResult};
 
 use super::super::super::Pages;
 use super::super::nested_utils::*;
 use super::super::utils::{dict_indices_decoder, not_implemented, MaybeNext, PageState};
 use super::finish_key;
+use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
+use crate::parquet::encoding::Encoding;
+use crate::parquet::page::{DataPage, DictPage, Page};
+use crate::parquet::schema::Repetition;
 
 // The state of a required DataPage with a boolean physical type
 #[derive(Debug)]

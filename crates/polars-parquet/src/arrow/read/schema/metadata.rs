@@ -2,10 +2,10 @@ use arrow::datatypes::{Metadata, Schema};
 use arrow::io::ipc::read::deserialize_schema;
 use base64::engine::general_purpose;
 use base64::Engine as _;
-pub use parquet2::metadata::KeyValue;
 use polars_error::{polars_bail, PolarsResult};
 
 use super::super::super::ARROW_SCHEMA_META_KEY;
+pub use crate::parquet::metadata::KeyValue;
 
 /// Reads an arrow schema from Parquet's file metadata. Returns `None` if no schema was found.
 /// # Errors

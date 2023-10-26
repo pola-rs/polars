@@ -4,10 +4,6 @@ use arrow::array::BooleanArray;
 use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
-use parquet2::deserialize::SliceFilteredIter;
-use parquet2::encoding::Encoding;
-use parquet2::page::{split_buffer, DataPage, DictPage};
-use parquet2::schema::Repetition;
 use polars_error::PolarsResult;
 
 use super::super::utils::{
@@ -15,6 +11,10 @@ use super::super::utils::{
     FilteredOptionalPageValidity, MaybeNext, OptionalPageValidity,
 };
 use super::super::{utils, Pages};
+use crate::parquet::deserialize::SliceFilteredIter;
+use crate::parquet::encoding::Encoding;
+use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::parquet::schema::Repetition;
 
 #[derive(Debug)]
 struct Values<'a>(BitmapIter<'a>);

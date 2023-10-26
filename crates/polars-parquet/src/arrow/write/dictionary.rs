@@ -1,12 +1,6 @@
 use arrow::array::{Array, DictionaryArray, DictionaryKey};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::DataType;
-use parquet2::encoding::hybrid_rle::encode_u32;
-use parquet2::encoding::Encoding;
-use parquet2::page::{DictPage, Page};
-use parquet2::schema::types::PrimitiveType;
-use parquet2::statistics::{serialize_statistics, ParquetStatistics};
-use parquet2::write::DynIter;
 use polars_error::{polars_bail, PolarsResult};
 
 use super::binary::{
@@ -22,6 +16,12 @@ use super::utf8::{build_statistics as utf8_build_statistics, encode_plain as utf
 use super::{nested, Nested, WriteOptions};
 use crate::arrow::read::schema::is_nullable;
 use crate::arrow::write::{slice_nested_leaf, utils};
+use crate::parquet::encoding::hybrid_rle::encode_u32;
+use crate::parquet::encoding::Encoding;
+use crate::parquet::page::{DictPage, Page};
+use crate::parquet::schema::types::PrimitiveType;
+use crate::parquet::statistics::{serialize_statistics, ParquetStatistics};
+use crate::parquet::write::DynIter;
 
 fn serialize_def_levels_simple(
     validity: Option<&Bitmap>,

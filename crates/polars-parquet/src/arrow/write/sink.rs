@@ -7,12 +7,12 @@ use arrow::chunk::Chunk;
 use arrow::datatypes::Schema;
 use futures::future::BoxFuture;
 use futures::{AsyncWrite, AsyncWriteExt, FutureExt, Sink, TryFutureExt};
-use parquet2::metadata::KeyValue;
-use parquet2::write::{FileStreamer, WriteOptions as ParquetWriteOptions};
 use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
 
 use super::file::add_arrow_schema;
 use super::{Encoding, SchemaDescriptor, WriteOptions};
+use crate::parquet::metadata::KeyValue;
+use crate::parquet::write::{FileStreamer, WriteOptions as ParquetWriteOptions};
 
 /// Sink that writes array [`chunks`](Chunk) as a Parquet file.
 ///

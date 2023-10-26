@@ -3,11 +3,13 @@ use arrow::datatypes::{DataType, TimeUnit};
 use arrow::trusted_len::TrustedLen;
 use arrow::types::{i256, NativeType};
 use ethnum::I256;
-use parquet2::indexes::PageIndex;
-use parquet2::schema::types::{PrimitiveLogicalType, PrimitiveType, TimeUnit as ParquetTimeUnit};
-use parquet2::types::int96_to_i64_ns;
 
 use super::ColumnPageStatistics;
+use crate::parquet::indexes::PageIndex;
+use crate::parquet::schema::types::{
+    PrimitiveLogicalType, PrimitiveType, TimeUnit as ParquetTimeUnit,
+};
+use crate::parquet::types::int96_to_i64_ns;
 
 #[inline]
 fn deserialize_int32<I: TrustedLen<Item = Option<i32>>>(

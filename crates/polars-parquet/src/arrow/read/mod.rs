@@ -19,17 +19,22 @@ pub use deserialize::{
 pub use file::{FileReader, RowGroupReader};
 #[cfg(feature = "async")]
 use futures::{AsyncRead, AsyncSeek};
-// re-exports of parquet2's relevant APIs
-pub use parquet2::{
+use polars_error::PolarsResult;
+pub use row_group::*;
+pub use schema::{infer_schema, FileMetaData};
+
+#[cfg(feature = "async")]
+pub use crate::parquet::read::{get_page_stream, read_metadata_async as _read_metadata_async};
+// re-exports of crate::parquet's relevant APIs
+pub use crate::parquet::{
     error::Error as ParquetError,
     fallible_streaming_iterator,
     metadata::{ColumnChunkMetaData, ColumnDescriptor, RowGroupMetaData},
     page::{CompressedDataPage, DataPageHeader, Page},
     read::{
-        decompress, get_column_iterator, get_page_stream,
-        read_columns_indexes as _read_columns_indexes, read_metadata as _read_metadata,
-        read_metadata_async as _read_metadata_async, read_pages_locations, BasicDecompressor,
-        Decompressor, MutStreamingIterator, PageFilter, PageReader, ReadColumnIterator, State,
+        decompress, get_column_iterator, read_columns_indexes as _read_columns_indexes,
+        read_metadata as _read_metadata, read_pages_locations, BasicDecompressor, Decompressor,
+        MutStreamingIterator, PageFilter, PageReader, ReadColumnIterator, State,
     },
     schema::types::{
         GroupLogicalType, ParquetType, PhysicalType, PrimitiveConvertedType, PrimitiveLogicalType,
@@ -38,9 +43,6 @@ pub use parquet2::{
     types::int96_to_i64_ns,
     FallibleStreamingIterator,
 };
-use polars_error::PolarsResult;
-pub use row_group::*;
-pub use schema::{infer_schema, FileMetaData};
 
 /// Trait describing a [`FallibleStreamingIterator`] of [`Page`]
 pub trait Pages:

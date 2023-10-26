@@ -4,8 +4,6 @@ use arrow::array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
 use arrow::types::NativeType;
-use parquet2::page::DictPage;
-use parquet2::types::NativeType as ParquetNativeType;
 use polars_error::PolarsResult;
 
 use super::super::dictionary::{nested_next_dict, *};
@@ -13,6 +11,8 @@ use super::super::nested_utils::{InitNested, NestedState};
 use super::super::utils::MaybeNext;
 use super::super::Pages;
 use super::basic::deserialize_plain;
+use crate::parquet::page::DictPage;
+use crate::parquet::types::NativeType as ParquetNativeType;
 
 fn read_dict<P, T, F>(data_type: DataType, op: F, dict: &DictPage) -> Box<dyn Array>
 where

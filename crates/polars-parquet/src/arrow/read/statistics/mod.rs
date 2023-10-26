@@ -1,4 +1,4 @@
-//! APIs exposing `parquet2`'s statistics as arrow's statistics.
+//! APIs exposing `crate::parquet`'s statistics as arrow's statistics.
 use std::collections::VecDeque;
 use std::sync::Arc;
 
@@ -7,16 +7,17 @@ use arrow::datatypes::{DataType, Field, IntervalUnit, PhysicalType};
 use arrow::types::i256;
 use arrow::with_match_primitive_type;
 use ethnum::I256;
-use parquet2::metadata::RowGroupMetaData;
-use parquet2::schema::types::{
+use polars_error::{polars_bail, PolarsResult};
+
+use crate::parquet::metadata::RowGroupMetaData;
+use crate::parquet::schema::types::{
     PhysicalType as ParquetPhysicalType, PrimitiveType as ParquetPrimitiveType,
 };
-use parquet2::statistics::{
+use crate::parquet::statistics::{
     BinaryStatistics, BooleanStatistics, FixedLenStatistics, PrimitiveStatistics,
     Statistics as ParquetStatistics,
 };
-use parquet2::types::int96_to_i64_ns;
-use polars_error::{polars_bail, PolarsResult};
+use crate::parquet::types::int96_to_i64_ns;
 
 mod binary;
 mod boolean;

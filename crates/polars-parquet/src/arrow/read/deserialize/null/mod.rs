@@ -3,9 +3,9 @@ mod nested;
 use arrow::array::NullArray;
 use arrow::datatypes::DataType;
 pub(super) use nested::NestedIter;
-use parquet2::page::Page;
 
 use super::super::{ArrayIter, Pages};
+use crate::parquet::page::Page;
 
 /// Converts [`Pages`] to an [`ArrayIter`]
 pub fn iter_to_arrays<'a, I>(
@@ -56,14 +56,14 @@ where
 mod tests {
     use arrow::array::NullArray;
     use arrow::datatypes::DataType;
-    use parquet2::encoding::Encoding;
-    use parquet2::error::Error as ParquetError;
-    use parquet2::metadata::Descriptor;
-    use parquet2::page::{DataPage, DataPageHeader, DataPageHeaderV1, Page};
-    use parquet2::schema::types::{PhysicalType, PrimitiveType};
     use polars_error::*;
 
     use super::iter_to_arrays;
+    use crate::parquet::encoding::Encoding;
+    use crate::parquet::error::Error as ParquetError;
+    use crate::parquet::metadata::Descriptor;
+    use crate::parquet::page::{DataPage, DataPageHeader, DataPageHeaderV1, Page};
+    use crate::parquet::schema::types::{PhysicalType, PrimitiveType};
 
     #[test]
     fn limit() {

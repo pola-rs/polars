@@ -1,10 +1,11 @@
 use arrow::array::*;
 use arrow::datatypes::TimeUnit;
 use arrow::types::NativeType;
-use parquet2::schema::types::{PrimitiveLogicalType, TimeUnit as ParquetTimeUnit};
-use parquet2::statistics::{PrimitiveStatistics, Statistics as ParquetStatistics};
-use parquet2::types::NativeType as ParquetNativeType;
 use polars_error::PolarsResult;
+
+use crate::parquet::schema::types::{PrimitiveLogicalType, TimeUnit as ParquetTimeUnit};
+use crate::parquet::statistics::{PrimitiveStatistics, Statistics as ParquetStatistics};
+use crate::parquet::types::NativeType as ParquetNativeType;
 
 pub fn timestamp(logical_type: Option<&PrimitiveLogicalType>, time_unit: TimeUnit, x: i64) -> i64 {
     let unit = if let Some(PrimitiveLogicalType::Timestamp { unit, .. }) = logical_type {

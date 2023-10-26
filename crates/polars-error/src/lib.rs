@@ -91,13 +91,6 @@ impl From<object_store::Error> for PolarsError {
     }
 }
 
-#[cfg(feature = "parquet2")]
-impl From<parquet2::error::Error> for PolarsError {
-    fn from(err: parquet2::error::Error) -> Self {
-        polars_err!(ComputeError: "parquet error: {err:?}")
-    }
-}
-
 #[cfg(feature = "avro-schema")]
 impl From<avro_schema::error::Error> for PolarsError {
     fn from(value: avro_schema::error::Error) -> Self {
