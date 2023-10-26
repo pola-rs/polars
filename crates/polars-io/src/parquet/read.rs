@@ -1,13 +1,13 @@
 use std::io::{Read, Seek};
 use std::sync::Arc;
 
+use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_parquet::read;
 use polars_parquet::write::FileMetaData;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use arrow::datatypes::ArrowSchemaRef;
 
 use super::read_impl::FetchRowGroupsFromMmapReader;
 #[cfg(feature = "cloud")]
@@ -140,9 +140,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
             Some(schema) => Ok(schema.clone()),
             None => {
                 let metadata = self.get_metadata()?;
-                Ok(
-                    Arc::new(read::infer_schema(metadata)?)
-                )
+                Ok(Arc::new(read::infer_schema(metadata)?))
             },
         }
     }

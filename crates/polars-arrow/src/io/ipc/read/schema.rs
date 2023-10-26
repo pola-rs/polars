@@ -5,7 +5,7 @@ use polars_error::{polars_bail, polars_err, PolarsResult};
 use super::super::{IpcField, IpcSchema};
 use super::{OutOfSpecKind, StreamMetadata};
 use crate::datatypes::{
-    get_extension, DataType, Extension, Field, IntegerType, IntervalUnit, Metadata, ArrowSchema,
+    get_extension, ArrowSchema, DataType, Extension, Field, IntegerType, IntervalUnit, Metadata,
     TimeUnit, UnionMode,
 };
 

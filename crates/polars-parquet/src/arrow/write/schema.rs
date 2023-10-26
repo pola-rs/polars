@@ -1,4 +1,4 @@
-use arrow::datatypes::{DataType, Field, ArrowSchema, TimeUnit};
+use arrow::datatypes::{ArrowSchema, DataType, Field, TimeUnit};
 use arrow::io::ipc::write::{default_ipc_fields, schema_to_bytes};
 use base64::engine::general_purpose;
 use base64::Engine as _;

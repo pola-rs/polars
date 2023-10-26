@@ -1,4 +1,3 @@
-use arrow_array::Array;
 use arrow::array::StructArray;
 
 use crate::prelude::*;
@@ -37,9 +36,10 @@ impl From<&Schema> for DataFrame {
 
 impl From<&ArrowSchema> for DataFrame {
     fn from(schema: &ArrowSchema) -> Self {
-        let cols = schema.fields
+        let cols = schema
+            .fields
             .iter()
-            .map(|(fld)| Series::new_empty(fld.name.as_str(), &(fld.data_type().into())))
+            .map(|fld| Series::new_empty(fld.name.as_str(), &(fld.data_type().into())))
             .collect();
         DataFrame::new_no_checks(cols)
     }

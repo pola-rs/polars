@@ -19,7 +19,7 @@ impl ColumnStats {
 /// Collect the statistics in a column chunk.
 pub(crate) fn collect_statistics(
     md: &RowGroupMetaData,
-    schema: ArrowSchemaRef,
+    schema: &ArrowSchema,
 ) -> PolarsResult<Option<BatchStats>> {
     let mut stats = vec![];
 
@@ -31,7 +31,7 @@ pub(crate) fn collect_statistics(
     Ok(if stats.is_empty() {
         None
     } else {
-        Some(BatchStats::new(schema, stats))
+        Some(BatchStats::new(Arc::new(schema.into()), stats))
     })
 }
 
@@ -42,7 +42,7 @@ pub(super) fn read_this_row_group(
 ) -> PolarsResult<bool> {
     if let Some(pred) = predicate {
         if let Some(pred) = pred.as_stats_evaluator() {
-            if let Some(stats) = collect_statistics(md, schema.clone())? {
+            if let Some(stats) = collect_statistics(md, schema)? {
                 let should_read = pred.should_read(&stats);
                 // a parquet file may not have statistics of all columns
                 if matches!(should_read, Ok(false)) {

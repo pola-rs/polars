@@ -1,6 +1,6 @@
 use std::borrow::Borrow;
 
-use arrow::datatypes::{DataType, Field, ArrowSchema};
+use arrow::datatypes::{ArrowSchema, DataType, Field};
 use indexmap::map::Entry;
 use indexmap::IndexMap;
 use simd_json::borrowed::Object;

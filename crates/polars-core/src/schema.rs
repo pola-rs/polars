@@ -1,11 +1,11 @@
 use std::fmt::{Debug, Formatter};
 
+use arrow::datatypes::ArrowSchemaRef;
 use indexmap::map::MutableKeys;
 use indexmap::IndexMap;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
-use arrow::datatypes::ArrowSchemaRef;
 
 use crate::prelude::*;
 use crate::utils::try_get_supertype;

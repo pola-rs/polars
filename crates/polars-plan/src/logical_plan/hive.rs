@@ -74,7 +74,7 @@ impl HivePartitions {
         if partitions.is_empty() {
             None
         } else {
-            let schema = ArrowSchema::from(partitions.iter().map(|s| ArrowField::new(s.name(), s.dtype().to_arrow(), true)).collect::<Vec<_>>());
+            let schema: Schema = partitions.as_slice().into();
             let stats = BatchStats::new(
                 Arc::new(schema),
                 partitions
@@ -87,7 +87,7 @@ impl HivePartitions {
         }
     }
 
-    pub(crate) fn schema(&self) -> &ArrowSchema {
+    pub(crate) fn schema(&self) -> &SchemaRef {
         self.get_statistics().schema()
     }
 

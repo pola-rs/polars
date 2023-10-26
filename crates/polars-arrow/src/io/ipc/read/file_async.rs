@@ -13,7 +13,7 @@ use super::file::{deserialize_footer, get_record_batch};
 use super::{Dictionaries, FileMetadata, OutOfSpecKind};
 use crate::array::*;
 use crate::chunk::Chunk;
-use crate::datatypes::{Field, ArrowSchema};
+use crate::datatypes::{ArrowSchema, Field};
 use crate::io::ipc::{IpcSchema, ARROW_MAGIC_V2, CONTINUATION_MARKER};
 
 /// Async reader for Arrow IPC files

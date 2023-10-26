@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 use std::path::Path;
 
+use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
 use polars_utils::format_smartstring;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use arrow::datatypes::ArrowSchemaRef;
 
 use crate::prelude::*;
 
@@ -56,7 +56,11 @@ pub struct FileInfo {
 }
 
 impl FileInfo {
-    pub fn new(schema: SchemaRef, reader_schema: Option<ArrowSchemaRef>, row_estimation: (Option<usize>, usize)) -> Self {
+    pub fn new(
+        schema: SchemaRef,
+        reader_schema: Option<ArrowSchemaRef>,
+        row_estimation: (Option<usize>, usize),
+    ) -> Self {
         Self {
             schema: schema.clone(),
             reader_schema,
@@ -69,7 +73,7 @@ impl FileInfo {
     pub fn init_hive_partitions(&mut self, url: &Path) {
         self.hive_parts = hive::HivePartitions::parse_url(url).map(|hive_parts| {
             let schema = Arc::make_mut(&mut self.schema);
-            schema.merge(hive_parts.get_statistics().schema().into());
+            schema.merge((**hive_parts.get_statistics().schema()).clone());
 
             Arc::new(hive_parts)
         });

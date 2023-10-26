@@ -75,7 +75,6 @@ pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> Ar
     ArrowSchema::from(fields)
 }
 
-
 #[cfg(any(
     feature = "ipc",
     feature = "ipc_streaming",

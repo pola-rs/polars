@@ -9,9 +9,7 @@ use std::sync::Arc;
 
 pub use field::Field;
 pub use physical_type::*;
-pub use schema::{
-    ArrowSchema, ArrowSchemaRef
-};
+pub use schema::{ArrowSchema, ArrowSchemaRef};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 

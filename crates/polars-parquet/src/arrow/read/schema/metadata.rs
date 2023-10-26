@@ -1,4 +1,4 @@
-use arrow::datatypes::{Metadata, ArrowSchema};
+use arrow::datatypes::{ArrowSchema, Metadata};
 use arrow::io::ipc::read::deserialize_schema;
 use base64::engine::general_purpose;
 use base64::Engine as _;

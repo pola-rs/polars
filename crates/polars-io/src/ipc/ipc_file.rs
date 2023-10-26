@@ -34,7 +34,6 @@
 //! ```
 use std::io::{Read, Seek};
 use std::sync::Arc;
-use arrow::datatypes::ArrowSchemaRef;
 
 use arrow::io::ipc::read;
 use polars_core::frame::ArrowChunk;

@@ -2,7 +2,7 @@ use arrow_format::ipc::planus::Builder;
 
 use super::super::IpcField;
 use crate::datatypes::{
-    DataType, Field, IntegerType, IntervalUnit, Metadata, ArrowSchema, TimeUnit, UnionMode,
+    ArrowSchema, DataType, Field, IntegerType, IntervalUnit, Metadata, TimeUnit, UnionMode,
 };
 use crate::io::ipc::endianness::is_native_little_endian;
 
@@ -21,7 +21,10 @@ pub fn schema_to_bytes(schema: &ArrowSchema, ipc_fields: &[IpcField]) -> Vec<u8>
     footer_data.to_vec()
 }
 
-pub fn serialize_schema(schema: &ArrowSchema, ipc_fields: &[IpcField]) -> arrow_format::ipc::Schema {
+pub fn serialize_schema(
+    schema: &ArrowSchema,
+    ipc_fields: &[IpcField],
+) -> arrow_format::ipc::Schema {
     let endianness = if is_native_little_endian() {
         arrow_format::ipc::Endianness::Little
     } else {

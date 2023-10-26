@@ -156,7 +156,11 @@ impl ParquetExec {
     #[cfg(feature = "cloud")]
     async fn read_async(&mut self) -> PolarsResult<Vec<DataFrame>> {
         let verbose = verbose();
-        let first_schema = self.file_info.reader_schema.as_ref().expect("should be set");
+        let first_schema = self
+            .file_info
+            .reader_schema
+            .as_ref()
+            .expect("should be set");
         let first_metadata = &self.metadata;
         let cloud_options = self.cloud_options.as_ref();
 
