@@ -856,6 +856,9 @@ impl ChunkCompare<&StructChunked> for StructChunked {
 impl ChunkCompare<&ArrayChunked> for ArrayChunked {
     type Item = BooleanChunked;
     fn equal(&self, rhs: &ArrayChunked) -> BooleanChunked {
+        if self.width() != rhs.width() {
+            return BooleanChunked::full("", false, self.len());
+        }
         arity::binary_mut_with_options(
             self,
             rhs,
@@ -865,11 +868,21 @@ impl ChunkCompare<&ArrayChunked> for ArrayChunked {
     }
 
     fn equal_missing(&self, rhs: &ArrayChunked) -> BooleanChunked {
-        // TODO!: maybe do something else here
-        self.equal(rhs)
+        if self.width() != rhs.width() {
+            return BooleanChunked::full("", false, self.len());
+        }
+        arity::binary_mut_with_options(
+            self,
+            rhs,
+            arrow::legacy::kernels::comparison::fixed_size_list_eq_missing,
+            "",
+        )
     }
 
     fn not_equal(&self, rhs: &ArrayChunked) -> BooleanChunked {
+        if self.width() != rhs.width() {
+            return BooleanChunked::full("", true, self.len());
+        }
         arity::binary_mut_with_options(
             self,
             rhs,
@@ -879,8 +892,15 @@ impl ChunkCompare<&ArrayChunked> for ArrayChunked {
     }
 
     fn not_equal_missing(&self, rhs: &ArrayChunked) -> Self::Item {
-        // TODO!: maybe do something else here
-        self.not_equal(rhs)
+        if self.width() != rhs.width() {
+            return BooleanChunked::full("", true, self.len());
+        }
+        arity::binary_mut_with_options(
+            self,
+            rhs,
+            arrow::legacy::kernels::comparison::fixed_size_list_neq_missing,
+            "",
+        )
     }
 
     // following are not implemented because gt, lt comparison of series don't make sense

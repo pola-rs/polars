@@ -28,6 +28,8 @@ macro_rules! impl_compare {
             DataType::Float32 => lhs.f32().unwrap().$method(rhs.f32().unwrap()),
             DataType::Float64 => lhs.f64().unwrap().$method(rhs.f64().unwrap()),
             DataType::List(_) => lhs.list().unwrap().$method(rhs.list().unwrap()),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(_, _) => lhs.array().unwrap().$method(rhs.array().unwrap()),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(_) => lhs
                 .struct_()
