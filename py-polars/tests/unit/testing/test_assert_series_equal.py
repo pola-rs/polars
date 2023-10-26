@@ -601,6 +601,15 @@ def test_assert_series_equal_array_equal(check_exact: bool) -> None:
         assert_series_equal(s1, s2, check_exact=check_exact)
 
 
+def test_assert_series_equal_nested_int() -> None:
+    s1 = pl.Series([[1, 2], [3, 4]])
+    s2 = pl.Series([[1, 2], [3, 5]])
+
+    assert_series_equal(s1, s2, atol=1)
+    with pytest.raises(AssertionError):
+        assert_series_equal(s1, s2, check_exact=True)
+
+
 def test_compare_series_nans_assert_equal_deprecated() -> None:
     srs1 = pl.Series([1.0, 2.0, nan, 4.0, None, 6.0])
     srs2 = pl.Series([1.0, nan, 3.0, 4.0, None, 6.0])
