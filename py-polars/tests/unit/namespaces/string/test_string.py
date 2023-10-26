@@ -893,6 +893,30 @@ def test_split() -> None:
     assert_frame_equal(out, expected)
     assert_frame_equal(df["x"].str.split("_", inclusive=True).to_frame(), expected)
 
+    plan = (
+        df.lazy()
+        .select(
+            a=pl.col("x").str.split(" ", inclusive=False),
+            b=pl.col("x").str.split_exact(" ", 1, inclusive=False),
+        )
+        .explain()
+    )
+
+    assert "str.split(" in plan
+    assert "str.split_exact(" in plan
+
+    plan = (
+        df.lazy()
+        .select(
+            a=pl.col("x").str.split(" ", inclusive=True),
+            b=pl.col("x").str.split_exact(" ", 1, inclusive=True),
+        )
+        .explain()
+    )
+
+    assert "str.split_inclusive(" in plan
+    assert "str.split_exact_inclusive(" in plan
+
 
 def test_split_expr() -> None:
     df = pl.DataFrame({"x": ["a_a", None, "b", "c*c*c"], "by": ["_", "#", "^", "*"]})
