@@ -198,7 +198,7 @@ impl LogicalPlanBuilder {
         // We set the hive partitions of the first path to determine the schema.
         // On iteration the partition values will be re-set per file.
         if hive_partitioning {
-            file_info.init_hive_partitions(path.as_path());
+            file_info.init_hive_partitions(path.as_path())?;
         }
 
         let options = FileScanOptions {

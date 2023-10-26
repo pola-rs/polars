@@ -70,13 +70,20 @@ impl FileInfo {
     }
 
     /// Updates the statistics and merges the hive partitions schema with the file one.
-    pub fn init_hive_partitions(&mut self, url: &Path) {
+    pub fn init_hive_partitions(&mut self, url: &Path) -> PolarsResult<()> {
         self.hive_parts = hive::HivePartitions::parse_url(url).map(|hive_parts| {
+            let hive_schema = hive_parts.get_statistics().schema().clone();
+            let expected_len = self.schema.len() + hive_schema.len();
+
             let schema = Arc::make_mut(&mut self.schema);
             schema.merge((**hive_parts.get_statistics().schema()).clone());
 
-            Arc::new(hive_parts)
-        });
+            polars_ensure!(schema.len() == expected_len, ComputeError: "invalid hive partitions\n\n\
+            Extending the schema with the hive partitioned columns creates duplicate fields.");
+
+            Ok(Arc::new(hive_parts))
+        }).transpose()?;
+        Ok(())
     }
 
     /// Updates the statistics, but not the schema.
