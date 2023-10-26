@@ -451,7 +451,9 @@ def test_struct_lit_cast() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     schema = {"a": pl.Int64, "b": pl.List(pl.Int64)}
 
-    out = df.select(pl.struct([pl.col("a"), pl.lit(None).alias("b")], schema=schema))["a"]  # type: ignore[arg-type]
+    out = df.select(
+        pl.struct(pl.col("a"), pl.lit(None).alias("b"), schema=schema)  # type: ignore[arg-type]
+    ).get_column("a")
 
     expected = pl.Series(
         "a",
@@ -464,7 +466,9 @@ def test_struct_lit_cast() -> None:
     )
     assert_series_equal(out, expected)
 
-    out = df.select(pl.struct([pl.col("a"), pl.lit(pl.Series([[]])).alias("b")], schema=schema))["a"]  # type: ignore[arg-type]
+    out = df.select(
+        pl.struct([pl.col("a"), pl.lit(pl.Series([[]])).alias("b")], schema=schema)  # type: ignore[arg-type]
+    ).get_column("a")
 
     expected = pl.Series(
         "a",

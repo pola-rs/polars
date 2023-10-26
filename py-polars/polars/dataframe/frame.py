@@ -23,6 +23,7 @@ from typing import (
     NoReturn,
     Sequence,
     TypeVar,
+    Union,
     cast,
     overload,
 )
@@ -174,10 +175,10 @@ if TYPE_CHECKING:
     # MultiColSelector indexes into the horizontal axis
     # NOTE: wrapping these as strings is necessary for Python <3.10
 
-    MultiRowSelector: TypeAlias = "slice | range | list[int] | Series"
-    MultiColSelector: TypeAlias = (
-        "slice | range | list[int] | list[str] | list[bool] | Series"
-    )
+    MultiRowSelector: TypeAlias = Union[slice, range, "list[int]", "Series"]
+    MultiColSelector: TypeAlias = Union[
+        slice, range, "list[int]", "list[str]", "list[bool]", "Series"
+    ]
 
     T = TypeVar("T")
     P = ParamSpec("P")
@@ -1276,7 +1277,9 @@ class DataFrame:
             return self.to_numpy().__array__()
 
     def __dataframe__(
-        self, nan_as_null: bool = False, allow_copy: bool = True  # noqa: FBT001
+        self,
+        nan_as_null: bool = False,  # noqa: FBT001
+        allow_copy: bool = True,  # noqa: FBT001
     ) -> PolarsDataFrame:
         """
         Convert to a dataframe object implementing the dataframe interchange protocol.
@@ -1911,13 +1914,15 @@ class DataFrame:
 
     @overload
     def to_dict(
-        self, as_series: bool  # noqa: FBT001
+        self,
+        as_series: bool,  # noqa: FBT001
     ) -> dict[str, Series] | dict[str, list[Any]]:
         ...
 
     # TODO: Make `as_series` keyword-only
     def to_dict(
-        self, as_series: bool = True  # noqa: FBT001
+        self,
+        as_series: bool = True,  # noqa: FBT001
     ) -> dict[str, Series] | dict[str, list[Any]]:
         """
         Convert DataFrame to a dictionary mapping column name to values.
@@ -2029,7 +2034,10 @@ class DataFrame:
 
     @deprecate_nonkeyword_arguments(version="0.19.3")
     def to_numpy(
-        self, structured: bool = False, *, order: IndexOrder = "fortran"  # noqa: FBT001
+        self,
+        structured: bool = False,  # noqa: FBT001
+        *,
+        order: IndexOrder = "fortran",
     ) -> np.ndarray[Any, Any]:
         """
         Convert DataFrame to a 2D NumPy array.
@@ -3094,7 +3102,11 @@ class DataFrame:
                 options = {"hidden": True}
             if column in column_widths:  # type: ignore[operator]
                 ws.set_column_pixels(
-                    col_idx, col_idx, column_widths[column], None, options  # type: ignore[index]
+                    col_idx,
+                    col_idx,
+                    column_widths[column],  # type: ignore[index]
+                    None,
+                    options,
                 )
             elif options:
                 ws.set_column(col_idx, col_idx, None, None, options)

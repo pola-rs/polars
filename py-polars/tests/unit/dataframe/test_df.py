@@ -2641,9 +2641,7 @@ def test_fill_null_limits() -> None:
             pl.all().fill_null(strategy="forward", limit=2),
             pl.all().fill_null(strategy="backward", limit=2).name.suffix("_backward"),
         ]
-    ).to_dict(
-        False
-    ) == {
+    ).to_dict(False) == {
         "a": [1, 1, 1, None, 5, 6, 6, 6, None, 10],
         "b": ["a", "a", "a", None, "b", "c", "c", "c", None, "d"],
         "c": [True, True, True, None, False, True, True, True, None, False],
@@ -2774,15 +2772,17 @@ def test_selection_regex_and_multicol() -> None:
         ]
 
 
-def test_unique_on_sorted() -> None:
+@pytest.mark.parametrize("subset", ["a", cs.starts_with("x", "a")])
+def test_unique_on_sorted(subset: Any) -> None:
     df = pl.DataFrame(data={"a": [1, 1, 3], "b": [1, 2, 3]})
-    for subset in ("a", cs.starts_with("x", "a")):
-        assert df.with_columns([pl.col("a").set_sorted()]).unique(
-            subset=subset, keep="last"  # type: ignore[arg-type]
-        ).to_dict(False) == {
-            "a": [1, 3],
-            "b": [2, 3],
-        }
+
+    result = df.with_columns([pl.col("a").set_sorted()]).unique(
+        subset=subset,
+        keep="last",
+    )
+
+    expected = pl.DataFrame({"a": [1, 3], "b": [2, 3]})
+    assert_frame_equal(result, expected)
 
 
 def test_len_compute(df: pl.DataFrame) -> None:

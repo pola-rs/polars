@@ -227,6 +227,8 @@ def test_decimal_aggregations() -> None:
         sum=pl.sum("a"),
         min=pl.min("a"),
         max=pl.max("a"),
-    ).to_dict(
-        False
-    ) == {"sum": [D("9110.33")], "min": [D("0.10")], "max": [D("9000.12")]}
+    ).to_dict(False) == {
+        "sum": [D("9110.33")],
+        "min": [D("0.10")],
+        "max": [D("9000.12")],
+    }

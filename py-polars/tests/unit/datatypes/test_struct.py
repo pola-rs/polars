@@ -317,9 +317,7 @@ def test_struct_list_head_tail() -> None:
             pl.col("list_of_struct").list.head(1).alias("head"),
             pl.col("list_of_struct").list.tail(1).alias("tail"),
         ]
-    ).to_dict(
-        False
-    ) == {
+    ).to_dict(False) == {
         "list_of_struct": [
             [{"a": 1, "b": 4}, {"a": 3, "b": 6}],
             [{"a": 10, "b": 40}, {"a": 20, "b": 50}, {"a": 30, "b": 60}],
@@ -401,9 +399,7 @@ def test_struct_concat_list() -> None:
         }
     ).with_columns(
         [pl.col("list_struct1").list.concat("list_struct2").alias("result")]
-    )[
-        "result"
-    ].to_list() == [
+    )["result"].to_list() == [
         [{"a": 1, "b": 2}, {"a": 3, "b": 4}, {"a": 6, "b": 7}, {"a": 8, "b": 9}],
         [{"a": 1, "b": 2}, {"a": 6, "b": 7}],
     ]

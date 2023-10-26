@@ -1263,11 +1263,7 @@ def test_unique_counts_on_dates() -> None:
             pl.col("dt_ns").dt.cast_time_unit("ms").alias("dt_ms"),
             pl.col("dt_ns").cast(pl.Date).alias("date"),
         ]
-    ).select(
-        pl.all().unique_counts().sum()
-    ).to_dict(
-        False
-    ) == {
+    ).select(pl.all().unique_counts().sum()).to_dict(False) == {
         "dt_ns": [3],
         "dt_us": [3],
         "dt_ms": [3],
@@ -1304,9 +1300,7 @@ def test_rolling_by_ordering() -> None:
         [
             pl.col("val").sum().alias("sum val"),
         ]
-    ).to_dict(
-        False
-    ) == {
+    ).to_dict(False) == {
         "key": ["A", "A", "A", "A", "B", "B", "B"],
         "dt": [
             datetime(2022, 1, 1, 0, 1),
@@ -1402,9 +1396,7 @@ def test_sum_duration() -> None:
         ]
     ).select(
         [pl.col("duration").sum(), pl.col("duration").dt.seconds().alias("sec").sum()]
-    ).to_dict(
-        False
-    ) == {
+    ).to_dict(False) == {
         "duration": [timedelta(seconds=150)],
         "sec": [150],
     }
