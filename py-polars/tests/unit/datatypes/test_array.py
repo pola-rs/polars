@@ -131,3 +131,13 @@ def test_array_init_deprecation() -> None:
         pl.Array(2, inner=pl.Utf8)
     with pytest.deprecated_call():
         pl.Array(width=2)
+
+
+def test_array_list_supertype() -> None:
+    s1 = pl.Series([[1, 2], [3, 4]], dtype=pl.Array(width=2, inner=pl.Int64))
+    s2 = pl.Series([[1.0, 2.0], [3.0, 4.5]], dtype=pl.List(inner=pl.Float64))
+
+    result = s1 == s2
+
+    expected = pl.Series([True, False])
+    assert_series_equal(result, expected)
