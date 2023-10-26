@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 from typing import Any
 
 import pytest
@@ -227,3 +228,19 @@ def test_cumsum_fold() -> None:
     )
     result = df.select(pl.cumsum_horizontal("a", "c"))
     assert result.to_dict(False) == {"cumsum": [{"a": 1, "c": 6}, {"a": 2, "c": 8}]}
+
+
+def test_sum_dtype_12028() -> None:
+    result = pl.select(
+        pl.sum_horizontal([pl.duration(seconds=10)]).alias("sum_duration")
+    )
+    expected = pl.DataFrame(
+        [
+            pl.Series(
+                "sum_duration",
+                [datetime.timedelta(seconds=10)],
+                dtype=pl.Duration(time_unit="us"),
+            ),
+        ]
+    )
+    assert_frame_equal(expected, result)
