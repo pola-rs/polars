@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from collections import namedtuple
+from collections import OrderedDict, namedtuple
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
@@ -609,6 +609,21 @@ def test_init_ndarray(monkeypatch: Any) -> None:
     )
     assert_frame_equal(df0, df1)
     assert df2.rows() == [(1.0, 4.0), (2.5, None), (None, 6.5)]
+
+
+def test_init_numpy_scalars() -> None:
+    df = pl.DataFrame(
+        {
+            "bool": [np.bool_(True), np.bool_(False)],
+            "i8": [np.int8(16), np.int8(64)],
+            "u32": [np.uint32(1234), np.uint32(9876)],
+        }
+    )
+    df_expected = pl.from_records(
+        data=[(True, 16, 1234), (False, 64, 9876)],
+        schema=OrderedDict([("bool", pl.Boolean), ("i8", pl.Int8), ("u32", pl.UInt32)]),
+    )
+    assert_frame_equal(df, df_expected)
 
 
 def test_null_array_print_format() -> None:

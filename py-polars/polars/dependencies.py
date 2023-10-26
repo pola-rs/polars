@@ -207,20 +207,28 @@ def _might_be(cls: type, type_: str) -> bool:
         return False
 
 
-def _check_for_numpy(obj: Any) -> bool:
-    return _NUMPY_AVAILABLE and _might_be(cast(Hashable, type(obj)), "numpy")
+def _check_for_numpy(obj: Any, *, check_type: bool = True) -> bool:
+    return _NUMPY_AVAILABLE and _might_be(
+        cast(Hashable, type(obj) if check_type else obj), "numpy"
+    )
 
 
-def _check_for_pandas(obj: Any) -> bool:
-    return _PANDAS_AVAILABLE and _might_be(cast(Hashable, type(obj)), "pandas")
+def _check_for_pandas(obj: Any, *, check_type: bool = True) -> bool:
+    return _PANDAS_AVAILABLE and _might_be(
+        cast(Hashable, type(obj) if check_type else obj), "pandas"
+    )
 
 
-def _check_for_pyarrow(obj: Any) -> bool:
-    return _PYARROW_AVAILABLE and _might_be(cast(Hashable, type(obj)), "pyarrow")
+def _check_for_pyarrow(obj: Any, *, check_type: bool = True) -> bool:
+    return _PYARROW_AVAILABLE and _might_be(
+        cast(Hashable, type(obj) if check_type else obj), "pyarrow"
+    )
 
 
-def _check_for_pydantic(obj: Any) -> bool:
-    return _PYDANTIC_AVAILABLE and _might_be(cast(Hashable, type(obj)), "pydantic")
+def _check_for_pydantic(obj: Any, *, check_type: bool = True) -> bool:
+    return _PYDANTIC_AVAILABLE and _might_be(
+        cast(Hashable, type(obj) if check_type else obj), "pydantic"
+    )
 
 
 __all__ = [

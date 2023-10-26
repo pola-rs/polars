@@ -297,6 +297,7 @@ class _DataTypeMappings:
     def NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE(self) -> dict[tuple[str, int], PolarsDataType]:
         return {
             # (np.dtype().kind, np.dtype().itemsize)
+            ("b", 1): Boolean,
             ("i", 1): Int8,
             ("i", 2): Int16,
             ("i", 4): Int32,
