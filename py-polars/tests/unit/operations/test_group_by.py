@@ -443,6 +443,29 @@ def test_group_by_when_then_with_binary_and_agg_in_pred_6202() -> None:
     }
 
 
+def test_group_by_binary_agg_with_literal() -> None:
+    df = pl.DataFrame({"id": ["a", "a", "b", "b"], "value": [1, 2, 3, 4]})
+
+    out = df.group_by("id", maintain_order=True).agg(
+        pl.col("value") + pl.Series([1, 3])
+    )
+    assert out.to_dict(False) == {"id": ["a", "b"], "value": [[2, 5], [4, 7]]}
+
+    out = df.group_by("id", maintain_order=True).agg(pl.col("value") + pl.lit(1))
+    assert out.to_dict(False) == {"id": ["a", "b"], "value": [[2, 3], [4, 5]]}
+
+    out = df.group_by("id", maintain_order=True).agg(pl.lit(1) + pl.lit(2))
+    assert out.to_dict(False) == {"id": ["a", "b"], "literal": [3, 3]}
+
+    out = df.group_by("id", maintain_order=True).agg(pl.lit(1) + pl.Series([2, 3]))
+    assert out.to_dict(False) == {"id": ["a", "b"], "literal": [[3, 4], [3, 4]]}
+
+    out = df.group_by("id", maintain_order=True).agg(
+        value=pl.lit(pl.Series([1, 2])) + pl.lit(pl.Series([3, 4]))
+    )
+    assert out.to_dict(False) == {"id": ["a", "b"], "value": [[4, 6], [4, 6]]}
+
+
 @pytest.mark.slow()
 @pytest.mark.parametrize("dtype", [pl.Int32, pl.UInt32])
 def test_overflow_mean_partitioned_group_by_5194(dtype: pl.PolarsDataType) -> None:

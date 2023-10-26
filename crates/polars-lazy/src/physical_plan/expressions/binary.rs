@@ -202,10 +202,15 @@ impl PhysicalExpr for BinaryExpr {
         let ac_r = result_b?;
 
         match (ac_l.agg_state(), ac_r.agg_state()) {
-            (
-                AggState::Literal(_) | AggState::NotAggregated(_),
-                AggState::Literal(_) | AggState::NotAggregated(_),
-            ) => self.apply_elementwise(ac_l, ac_r, false),
+            (AggState::Literal(s), AggState::NotAggregated(_))
+            | (AggState::NotAggregated(_), AggState::Literal(s)) => match s.len() {
+                1 => self.apply_elementwise(ac_l, ac_r, false),
+                _ => self.apply_group_aware(ac_l, ac_r),
+            },
+            (AggState::Literal(_), AggState::Literal(_)) => self.apply_group_aware(ac_l, ac_r),
+            (AggState::NotAggregated(_), AggState::NotAggregated(_)) => {
+                self.apply_elementwise(ac_l, ac_r, false)
+            },
             (
                 AggState::AggregatedScalar(_) | AggState::Literal(_),
                 AggState::AggregatedScalar(_) | AggState::Literal(_),
