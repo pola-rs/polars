@@ -177,7 +177,7 @@ def _assert_series_values_equal(
         unequal = unequal & ~both_nan
 
     # Check nested dtypes in separate function
-    if _comparing_nested_floats(left.dtype, right.dtype):
+    if _comparing_nested_numerics(left.dtype, right.dtype):
         if _assert_series_nested(
             left=left.filter(unequal),
             right=right.filter(unequal),
@@ -309,11 +309,11 @@ def _comparing_structs(left: PolarsDataType, right: PolarsDataType) -> bool:
     return left == Struct and right == Struct
 
 
-def _comparing_nested_floats(left: PolarsDataType, right: PolarsDataType) -> bool:
+def _comparing_nested_numerics(left: PolarsDataType, right: PolarsDataType) -> bool:
     if not (_comparing_lists(left, right) or _comparing_structs(left, right)):
         return False
 
-    return bool(FLOAT_DTYPES & unpack_dtypes(left, right))
+    return bool(NUMERIC_DTYPES & unpack_dtypes(left, right))
 
 
 def _assert_series_values_within_tolerance(
