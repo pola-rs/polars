@@ -26,7 +26,7 @@ pub struct FileWriter<W: Write> {
     /// IPC write options
     pub(crate) options: WriteOptions,
     /// A reference to the schema, used in validating record batches
-    pub(crate) schema: ArrowSchema,
+    pub(crate) schema: ArrowSchemaRef,
     pub(crate) ipc_fields: Vec<IpcField>,
     /// The number of bytes between each block of bytes, as an offset for random access
     pub(crate) block_offsets: usize,
@@ -46,7 +46,7 @@ impl<W: Write> FileWriter<W> {
     /// Creates a new [`FileWriter`] and writes the header to `writer`
     pub fn try_new(
         writer: W,
-        schema: ArrowSchema,
+        schema: ArrowSchemaRef,
         ipc_fields: Option<Vec<IpcField>>,
         options: WriteOptions,
     ) -> PolarsResult<Self> {
@@ -59,7 +59,7 @@ impl<W: Write> FileWriter<W> {
     /// Creates a new [`FileWriter`].
     pub fn new(
         writer: W,
-        schema: ArrowSchema,
+        schema: ArrowSchemaRef,
         ipc_fields: Option<Vec<IpcField>>,
         options: WriteOptions,
     ) -> Self {

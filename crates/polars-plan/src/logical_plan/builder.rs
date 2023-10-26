@@ -250,11 +250,7 @@ impl LogicalPlanBuilder {
         }
 
         let num_rows = reader._num_rows()?;
-        let file_info = FileInfo::new(
-            Arc::new(schema),
-            Some(Arc::new(reader_schema)),
-            (None, num_rows),
-        );
+        let file_info = FileInfo::new(Arc::new(schema), Some(reader_schema), (None, num_rows));
 
         let file_options = FileScanOptions {
             with_columns: None,
