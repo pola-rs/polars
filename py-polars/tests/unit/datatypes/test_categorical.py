@@ -419,6 +419,7 @@ def test_categorical_update_lengths() -> None:
     assert s.len() == 5
 
 
+<<<<<<< HEAD
 def test_categorical_zip_append_local_different_rev_map() -> None:
     s1 = pl.Series(["cat1", "cat2", "cat1"], dtype=pl.Categorical)
     s2 = pl.Series(["cat2", "cat2", "cat3"], dtype=pl.Categorical)
@@ -464,3 +465,16 @@ def test_categorical_vstack_with_local_different_rev_map() -> None:
         "f",
     ]
     assert df3.get_column("a").cast(pl.UInt32).to_list() == [0, 1, 2, 3, 4, 5]
+
+def test_categorical_fixed_categories() -> None:
+    s = pl.Series([None, "a", "b"], dtype=pl.Categorical(categories=["a", "b"]))
+    assert s.null_count() == 1
+    assert s.len() == 3
+
+
+def test_categorical_fixed_categories_non_existent_value() -> None:
+    with pytest.raises(
+        pl.OutOfBoundsError,
+        match=("in string column not found in fixed set of categories"),
+    ):
+        pl.Series([None, "a", "b", "c"], dtype=pl.Categorical(categories=["a", "b"]))

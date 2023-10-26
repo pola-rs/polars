@@ -326,7 +326,7 @@ impl Series {
             },
             DataType::Null => Series::full_null(name, av.len(), &DataType::Null),
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => {
+            DataType::Categorical(rev_map) => {
                 let ca = if let Some(single_av) = av.first() {
                     match single_av {
                         AnyValue::Utf8(_) | AnyValue::Utf8Owned(_) | AnyValue::Null => {
@@ -342,7 +342,7 @@ impl Series {
                     Utf8Chunked::full("", "", 0)
                 };
 
-                ca.cast(&DataType::Categorical(None)).unwrap()
+                ca.cast(&DataType::Categorical(rev_map.clone())).unwrap()
             },
             dt => panic!("{dt:?} not supported"),
         };

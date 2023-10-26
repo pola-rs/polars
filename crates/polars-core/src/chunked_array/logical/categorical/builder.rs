@@ -525,6 +525,8 @@ impl CategoricalChunked {
         values: &Utf8Chunked,
         categories: &Utf8Array<i64>,
     ) -> PolarsResult<CategoricalChunked> {
+        polars_ensure!(categories.null_count()  == 0, ComputeError: "categories can not contain null values");
+
         // Build a mapping string -> idx
         let mut map = PlHashMap::with_capacity(categories.len());
         for (idx, cat) in categories.iter().flatten().enumerate() {
@@ -537,13 +539,12 @@ impl CategoricalChunked {
                 opt_s
                     .map(|s| {
                         map.get(s).copied().ok_or_else(
-                            || polars_err!(OutOfBounds: "Value {} in string column not found in fixed set of categories {:?}",s,categories),
+                            || polars_err!(OutOfBounds: "value {} in string column not found in fixed set of categories {:?}",s,categories),
                         )
                     })
                     .transpose()
             })
             .collect::<Result<UInt32Chunked, PolarsError>>()?;
-
         let rev_map = RevMapping::from_fixed_categories(categories.clone());
         unsafe {
             Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
