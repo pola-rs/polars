@@ -607,7 +607,7 @@ def test_init_ndarray(monkeypatch: Any) -> None:
         data={"x": np.array([1.0, 2.5, np.nan]), "y": np.array([4.0, np.nan, 6.5])},
         nan_to_null=True,
     )
-    assert_frame_equal(df0, df1, nans_compare_equal=True)
+    assert_frame_equal(df0, df1)
     assert df2.rows() == [(1.0, 4.0), (2.5, None), (None, 6.5)]
 
 
@@ -714,7 +714,7 @@ def test_init_series() -> None:
     s1 = pl.Series("n", np.array([1.0, 2.5, float("nan")]))
     s2 = pl.Series("n", np.array([1.0, 2.5, float("nan")]), nan_to_null=True)
 
-    assert_series_equal(s0, s1, nans_compare_equal=True)
+    assert_series_equal(s0, s1)
     assert s2.to_list() == [1.0, 2.5, None]
 
 
