@@ -7,6 +7,7 @@ use polars_parquet::read;
 use polars_parquet::write::FileMetaData;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use arrow::datatypes::ArrowSchemaRef;
 
 use super::read_impl::FetchRowGroupsFromMmapReader;
 #[cfg(feature = "cloud")]
@@ -46,7 +47,7 @@ pub struct ParquetReader<R: Read + Seek> {
     columns: Option<Vec<String>>,
     projection: Option<Vec<usize>>,
     parallel: ParallelStrategy,
-    schema: Option<SchemaRef>,
+    schema: Option<ArrowSchemaRef>,
     row_count: Option<RowCount>,
     low_memory: bool,
     metadata: Option<Arc<FileMetaData>>,
@@ -128,20 +129,20 @@ impl<R: MmapBytesReader> ParquetReader<R> {
 
     /// Set the [`Schema`] if already known. This must be exactly the same as
     /// the schema in the file itself.
-    pub fn with_schema(mut self, schema: Option<SchemaRef>) -> Self {
+    pub fn with_schema(mut self, schema: Option<ArrowSchemaRef>) -> Self {
         self.schema = schema;
         self
     }
 
     /// [`Schema`] of the file.
-    pub fn schema(&mut self) -> PolarsResult<SchemaRef> {
+    pub fn schema(&mut self) -> PolarsResult<ArrowSchemaRef> {
         match &self.schema {
             Some(schema) => Ok(schema.clone()),
             None => {
                 let metadata = self.get_metadata()?;
-                Ok(Arc::new(Schema::from_iter(
-                    &read::infer_schema(metadata)?.fields,
-                )))
+                Ok(
+                    Arc::new(read::infer_schema(metadata)?)
+                )
             },
         }
     }
@@ -222,7 +223,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
         let metadata = self.get_metadata()?.clone();
 
         if let Some(cols) = &self.columns {
-            self.projection = Some(columns_to_projection_pl_schema(cols, schema.as_ref())?);
+            self.projection = Some(columns_to_projection(cols, schema.as_ref())?);
         }
 
         read_parquet(
@@ -258,7 +259,7 @@ pub struct ParquetAsyncReader {
     row_count: Option<RowCount>,
     use_statistics: bool,
     hive_partition_columns: Option<Vec<Series>>,
-    schema: Option<SchemaRef>,
+    schema: Option<ArrowSchemaRef>,
 }
 
 #[cfg(feature = "cloud")]
@@ -266,7 +267,7 @@ impl ParquetAsyncReader {
     pub async fn from_uri(
         uri: &str,
         cloud_options: Option<&CloudOptions>,
-        schema: Option<SchemaRef>,
+        schema: Option<ArrowSchemaRef>,
         metadata: Option<Arc<FileMetaData>>,
     ) -> PolarsResult<ParquetAsyncReader> {
         Ok(ParquetAsyncReader {
@@ -282,10 +283,10 @@ impl ParquetAsyncReader {
         })
     }
 
-    pub async fn schema(&mut self) -> PolarsResult<SchemaRef> {
+    pub async fn schema(&mut self) -> PolarsResult<ArrowSchemaRef> {
         match &self.schema {
             Some(schema) => Ok(schema.clone()),
-            None => self.reader.schema().await.map(Arc::new),
+            None => self.reader.schema().await,
         }
     }
     pub async fn num_rows(&mut self) -> PolarsResult<usize> {

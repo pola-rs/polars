@@ -1,4 +1,4 @@
-use arrow::datatypes::{Metadata, Schema};
+use arrow::datatypes::{Metadata, ArrowSchema};
 use arrow::io::ipc::read::deserialize_schema;
 use base64::engine::general_purpose;
 use base64::Engine as _;
@@ -10,7 +10,7 @@ pub use crate::parquet::metadata::KeyValue;
 /// Reads an arrow schema from Parquet's file metadata. Returns `None` if no schema was found.
 /// # Errors
 /// Errors iff the schema cannot be correctly parsed.
-pub fn read_schema_from_metadata(metadata: &mut Metadata) -> PolarsResult<Option<Schema>> {
+pub fn read_schema_from_metadata(metadata: &mut Metadata) -> PolarsResult<Option<ArrowSchema>> {
     metadata
         .remove(ARROW_SCHEMA_META_KEY)
         .map(|encoded| get_arrow_schema_from_metadata(&encoded))
@@ -18,7 +18,7 @@ pub fn read_schema_from_metadata(metadata: &mut Metadata) -> PolarsResult<Option
 }
 
 /// Try to convert Arrow schema metadata into a schema
-fn get_arrow_schema_from_metadata(encoded_meta: &str) -> PolarsResult<Schema> {
+fn get_arrow_schema_from_metadata(encoded_meta: &str) -> PolarsResult<ArrowSchema> {
     let decoded = general_purpose::STANDARD.decode(encoded_meta);
     match decoded {
         Ok(bytes) => {

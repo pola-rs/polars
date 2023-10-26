@@ -13,13 +13,13 @@ use super::file::{deserialize_footer, get_record_batch};
 use super::{Dictionaries, FileMetadata, OutOfSpecKind};
 use crate::array::*;
 use crate::chunk::Chunk;
-use crate::datatypes::{Field, Schema};
+use crate::datatypes::{Field, ArrowSchema};
 use crate::io::ipc::{IpcSchema, ARROW_MAGIC_V2, CONTINUATION_MARKER};
 
 /// Async reader for Arrow IPC files
 pub struct FileStream<'a> {
     stream: BoxStream<'a, PolarsResult<Chunk<Box<dyn Array>>>>,
-    schema: Option<Schema>,
+    schema: Option<ArrowSchema>,
     metadata: FileMetadata,
 }
 
@@ -39,7 +39,7 @@ impl<'a> FileStream<'a> {
     {
         let (projection, schema) = if let Some(projection) = projection {
             let (p, h, fields) = prepare_projection(&metadata.schema.fields, projection);
-            let schema = Schema {
+            let schema = ArrowSchema {
                 fields,
                 metadata: metadata.schema.metadata.clone(),
             };
@@ -62,7 +62,7 @@ impl<'a> FileStream<'a> {
     }
 
     /// Get the projected schema from the IPC file.
-    pub fn schema(&self) -> &Schema {
+    pub fn schema(&self) -> &ArrowSchema {
         self.schema.as_ref().unwrap_or(&self.metadata.schema)
     }
 

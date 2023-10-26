@@ -1,6 +1,7 @@
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use arrow::datatypes::ArrowSchemaRef;
 
 pub trait PhysicalIoExpr: Send + Sync {
     /// Take a [`DataFrame`] and produces a boolean [`Series`] that serves
@@ -162,12 +163,12 @@ impl ColumnStats {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug)]
 pub struct BatchStats {
-    schema: SchemaRef,
+    schema: ArrowSchemaRef,
     stats: Vec<ColumnStats>,
 }
 
 impl BatchStats {
-    pub fn new(schema: SchemaRef, stats: Vec<ColumnStats>) -> Self {
+    pub fn new(schema: ArrowSchemaRef, stats: Vec<ColumnStats>) -> Self {
         Self { schema, stats }
     }
 
@@ -175,8 +176,8 @@ impl BatchStats {
         self.schema.try_index_of(column).map(|i| &self.stats[i])
     }
 
-    pub fn schema(&self) -> &Schema {
-        self.schema.as_ref()
+    pub fn schema(&self) -> &ArrowSchemaRef {
+        &self.schema
     }
 
     pub fn column_stats(&self) -> &[ColumnStats] {

@@ -2,12 +2,12 @@ use arrow_format::ipc::planus::Builder;
 
 use super::super::IpcField;
 use crate::datatypes::{
-    DataType, Field, IntegerType, IntervalUnit, Metadata, Schema, TimeUnit, UnionMode,
+    DataType, Field, IntegerType, IntervalUnit, Metadata, ArrowSchema, TimeUnit, UnionMode,
 };
 use crate::io::ipc::endianness::is_native_little_endian;
 
-/// Converts a [Schema] and [IpcField]s to a flatbuffers-encoded [arrow_format::ipc::Message].
-pub fn schema_to_bytes(schema: &Schema, ipc_fields: &[IpcField]) -> Vec<u8> {
+/// Converts a [ArrowSchema] and [IpcField]s to a flatbuffers-encoded [arrow_format::ipc::Message].
+pub fn schema_to_bytes(schema: &ArrowSchema, ipc_fields: &[IpcField]) -> Vec<u8> {
     let schema = serialize_schema(schema, ipc_fields);
 
     let message = arrow_format::ipc::Message {
@@ -21,7 +21,7 @@ pub fn schema_to_bytes(schema: &Schema, ipc_fields: &[IpcField]) -> Vec<u8> {
     footer_data.to_vec()
 }
 
-pub fn serialize_schema(schema: &Schema, ipc_fields: &[IpcField]) -> arrow_format::ipc::Schema {
+pub fn serialize_schema(schema: &ArrowSchema, ipc_fields: &[IpcField]) -> arrow_format::ipc::Schema {
     let endianness = if is_native_little_endian() {
         arrow_format::ipc::Endianness::Little
     } else {

@@ -1,4 +1,4 @@
-use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
+use arrow::datatypes::{DataType, Field, ArrowSchema, TimeUnit};
 use arrow::io::ipc::write::{default_ipc_fields, schema_to_bytes};
 use base64::engine::general_purpose;
 use base64::Engine as _;
@@ -13,7 +13,7 @@ use crate::parquet::schema::types::{
 };
 use crate::parquet::schema::Repetition;
 
-pub fn schema_to_metadata_key(schema: &Schema) -> KeyValue {
+pub fn schema_to_metadata_key(schema: &ArrowSchema) -> KeyValue {
     let serialized_schema = schema_to_bytes(schema, &default_ipc_fields(&schema.fields));
 
     // manually prepending the length to the schema as arrow uses the legacy IPC format

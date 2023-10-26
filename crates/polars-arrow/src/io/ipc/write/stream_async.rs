@@ -32,7 +32,7 @@ where
     /// Create a new [`StreamSink`].
     pub fn new(
         writer: W,
-        schema: &Schema,
+        schema: &ArrowSchema,
         ipc_fields: Option<Vec<IpcField>>,
         write_options: WriteOptions,
     ) -> Self {
@@ -52,7 +52,7 @@ where
 
     fn start(
         mut writer: W,
-        schema: &Schema,
+        schema: &ArrowSchema,
         ipc_fields: &[IpcField],
     ) -> BoxFuture<'a, PolarsResult<Option<W>>> {
         let message = EncodedData {

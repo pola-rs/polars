@@ -11,14 +11,14 @@ use super::schema::fb_to_schema;
 use super::{Dictionaries, OutOfSpecKind};
 use crate::array::Array;
 use crate::chunk::Chunk;
-use crate::datatypes::Schema;
+use crate::datatypes::ArrowSchema;
 use crate::io::ipc::IpcSchema;
 
 /// Metadata of an Arrow IPC file, written in the footer of the file.
 #[derive(Debug, Clone)]
 pub struct FileMetadata {
     /// The schema that is read from the file footer
-    pub schema: Schema,
+    pub schema: ArrowSchema,
 
     /// The files' [`IpcSchema`]
     pub ipc_schema: IpcSchema,

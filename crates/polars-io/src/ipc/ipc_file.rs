@@ -34,6 +34,7 @@
 //! ```
 use std::io::{Read, Seek};
 use std::sync::Arc;
+use arrow::datatypes::ArrowSchemaRef;
 
 use arrow::io::ipc::read;
 use polars_core::frame::ArrowChunk;
@@ -106,14 +107,8 @@ impl<R: MmapBytesReader> IpcReader<R> {
         Ok(self.metadata.as_ref().unwrap())
     }
 
-    /// Get schema of the Ipc File
-    pub fn schema(&mut self) -> PolarsResult<Schema> {
-        let metadata = self.get_metadata()?;
-        Ok(Schema::from_iter(&metadata.schema.fields))
-    }
-
-    /// Get arrow schema of the Ipc File, this is faster than creating a polars schema.
-    pub fn arrow_schema(&mut self) -> PolarsResult<ArrowSchema> {
+    /// Get arrow schema of the Ipc File.
+    pub fn schema(&mut self) -> PolarsResult<ArrowSchema> {
         let metadata = read::read_file_metadata(&mut self.reader)?;
         Ok(metadata.schema)
     }

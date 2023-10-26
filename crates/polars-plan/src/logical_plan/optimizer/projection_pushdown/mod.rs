@@ -410,9 +410,9 @@ impl ProjectionPushDown {
                         // parts are added at the proper place in the schema, which is at the end.
                         if let Some(parts) = file_info.hive_parts.as_deref() {
                             let partition_schema = parts.schema();
-                            for (name, _) in partition_schema.iter() {
-                                if let Some(dt) = schema.shift_remove(name) {
-                                    schema.with_column(name.clone(), dt);
+                            for field in partition_schema.fields.iter() {
+                                if let Some(dt) = schema.shift_remove(field.name.as_str()) {
+                                    schema.with_column((&field.name).into(), dt);
                                 }
                             }
                         }

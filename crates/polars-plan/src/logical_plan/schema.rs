@@ -5,6 +5,7 @@ use polars_core::prelude::*;
 use polars_utils::format_smartstring;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use arrow::datatypes::ArrowSchemaRef;
 
 use crate::prelude::*;
 
@@ -47,7 +48,7 @@ pub struct FileInfo {
     pub schema: SchemaRef,
     /// Stores the schema used for the reader, as the main schema can contain
     /// extra hive columns.
-    pub reader_schema: SchemaRef,
+    pub reader_schema: Option<ArrowSchemaRef>,
     /// - known size
     /// - estimated size
     pub row_estimation: (Option<usize>, usize),
@@ -55,10 +56,10 @@ pub struct FileInfo {
 }
 
 impl FileInfo {
-    pub fn new(schema: SchemaRef, row_estimation: (Option<usize>, usize)) -> Self {
+    pub fn new(schema: SchemaRef, reader_schema: Option<ArrowSchemaRef>, row_estimation: (Option<usize>, usize)) -> Self {
         Self {
             schema: schema.clone(),
-            reader_schema: schema.clone(),
+            reader_schema,
             row_estimation,
             hive_parts: None,
         }
@@ -68,7 +69,7 @@ impl FileInfo {
     pub fn init_hive_partitions(&mut self, url: &Path) {
         self.hive_parts = hive::HivePartitions::parse_url(url).map(|hive_parts| {
             let schema = Arc::make_mut(&mut self.schema);
-            schema.merge(hive_parts.get_statistics().schema().clone());
+            schema.merge(hive_parts.get_statistics().schema().into());
 
             Arc::new(hive_parts)
         });

@@ -6,7 +6,7 @@ use std::io::Write;
 
 use arrow::array::Array;
 use arrow::chunk::Chunk;
-use arrow::datatypes::Schema;
+use arrow::datatypes::ArrowSchema;
 use arrow::io::iterator::StreamingIterator;
 pub use fallible_streaming_iterator::*;
 use polars_error::{PolarsError, PolarsResult};
@@ -70,7 +70,7 @@ where
 /// # Implementation
 /// Advancing this iterator is CPU-bounded.
 pub struct RecordSerializer<'a> {
-    schema: Schema,
+    schema: ArrowSchema,
     index: usize,
     end: usize,
     iterators: Vec<Box<dyn StreamingIterator<Item = [u8]> + Send + Sync + 'a>>,
@@ -79,7 +79,7 @@ pub struct RecordSerializer<'a> {
 
 impl<'a> RecordSerializer<'a> {
     /// Creates a new [`RecordSerializer`].
-    pub fn new<A>(schema: Schema, chunk: &'a Chunk<A>, buffer: Vec<u8>) -> Self
+    pub fn new<A>(schema: ArrowSchema, chunk: &'a Chunk<A>, buffer: Vec<u8>) -> Self
     where
         A: AsRef<dyn Array>,
     {

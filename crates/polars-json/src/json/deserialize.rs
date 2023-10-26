@@ -4,7 +4,7 @@ use std::fmt::Write;
 use arrow::array::*;
 use arrow::bitmap::MutableBitmap;
 use arrow::chunk::Chunk;
-use arrow::datatypes::{DataType, Field, IntervalUnit, Schema};
+use arrow::datatypes::{DataType, Field, IntervalUnit, ArrowSchema};
 use arrow::legacy::prelude::*;
 use arrow::offset::{Offset, Offsets};
 use arrow::temporal_conversions;
@@ -438,7 +438,7 @@ fn allocate_array(f: &Field) -> Box<dyn MutableArray> {
 ///   * [`DataType::Struct`]
 ///   * [`DataType::Dictionary`]
 ///   * [`DataType::LargeList`]
-pub fn deserialize_records(json: &BorrowedValue, schema: &Schema) -> PolarsResult<Chunk<ArrayRef>> {
+pub fn deserialize_records(json: &BorrowedValue, schema: &ArrowSchema) -> PolarsResult<Chunk<ArrayRef>> {
     let mut results = schema
         .fields
         .iter()

@@ -1,5 +1,4 @@
-#![forbid(unsafe_code)]
-//! Contains all metadata, such as [`PhysicalType`], [`DataType`], [`Field`] and [`Schema`].
+//! Contains all metadata, such as [`PhysicalType`], [`DataType`], [`Field`] and [`ArrowSchema`].
 
 mod field;
 mod physical_type;
@@ -10,11 +9,13 @@ use std::sync::Arc;
 
 pub use field::Field;
 pub use physical_type::*;
-pub use schema::Schema;
-#[cfg(feature = "serde_types")]
-use serde_derive::{Deserialize, Serialize};
+pub use schema::{
+    ArrowSchema, ArrowSchemaRef
+};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
-/// typedef for [BTreeMap<String, String>] denoting [`Field`]'s and [`Schema`]'s metadata.
+/// typedef for [BTreeMap<String, String>] denoting [`Field`]'s and [`ArrowSchema`]'s metadata.
 pub type Metadata = BTreeMap<String, String>;
 /// typedef for [Option<(String, Option<String>)>] descr
 pub(crate) type Extension = Option<(String, Option<String>)>;
@@ -28,7 +29,7 @@ pub(crate) type Extension = Option<(String, Option<String>)>;
 /// The [`DataType::Extension`] is special in that it augments a [`DataType`] with metadata to support custom types.
 /// Use `to_logical_type` to desugar such type and return its corresponding logical type.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum DataType {
     /// Null type
     Null,
@@ -108,6 +109,7 @@ pub enum DataType {
     Struct(Vec<Field>),
     /// A nested datatype that can represent slots of differing types.
     /// Third argument represents mode
+    #[cfg_attr(feature = "serde", serde(skip))]
     Union(Vec<Field>, Option<Vec<i32>>, UnionMode),
     /// A nested type that is represented as
     ///
@@ -337,7 +339,7 @@ impl UnionMode {
 
 /// The time units defined in Arrow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum TimeUnit {
     /// Time in seconds.
     Second,
@@ -375,7 +377,7 @@ impl From<arrow_schema::TimeUnit> for TimeUnit {
 
 /// Interval units defined in Arrow
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum IntervalUnit {
     /// The number of elapsed whole months.
     YearMonth,
@@ -501,8 +503,8 @@ impl From<PrimitiveType> for DataType {
     }
 }
 
-/// typedef for [`Arc<Schema>`].
-pub type SchemaRef = Arc<Schema>;
+/// typedef for [`Arc<ArrowSchema>`].
+pub type SchemaRef = Arc<ArrowSchema>;
 
 /// support get extension for metadata
 pub fn get_extension(metadata: &Metadata) -> Extension {

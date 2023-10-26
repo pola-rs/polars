@@ -1,6 +1,6 @@
 use arrow::array::Array;
 use arrow::chunk::Chunk;
-use arrow::datatypes::Schema;
+use arrow::datatypes::ArrowSchema;
 use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
 
 use super::{
@@ -78,7 +78,7 @@ impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<Chunk<A>>>>
     /// * the length of the encodings is different from the number of fields in schema
     pub fn try_new(
         iter: I,
-        schema: &Schema,
+        schema: &ArrowSchema,
         options: WriteOptions,
         encodings: Vec<Vec<Encoding>>,
     ) -> PolarsResult<Self> {

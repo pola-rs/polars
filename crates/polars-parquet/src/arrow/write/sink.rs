@@ -4,7 +4,7 @@ use std::task::Poll;
 use ahash::AHashMap;
 use arrow::array::Array;
 use arrow::chunk::Chunk;
-use arrow::datatypes::Schema;
+use arrow::datatypes::ArrowSchema;
 use futures::future::BoxFuture;
 use futures::{AsyncWrite, AsyncWriteExt, FutureExt, Sink, TryFutureExt};
 use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
@@ -23,7 +23,7 @@ pub struct FileSink<'a, W: AsyncWrite + Send + Unpin> {
     task: Option<BoxFuture<'a, PolarsResult<Option<FileStreamer<W>>>>>,
     options: WriteOptions,
     encodings: Vec<Vec<Encoding>>,
-    schema: Schema,
+    schema: ArrowSchema,
     parquet_schema: SchemaDescriptor,
     /// Key-value metadata that will be written to the file on close.
     pub metadata: AHashMap<String, Option<String>>,
@@ -41,7 +41,7 @@ where
     /// * the length of the encodings is different from the number of fields in schema
     pub fn try_new(
         writer: W,
-        schema: Schema,
+        schema: ArrowSchema,
         encodings: Vec<Vec<Encoding>>,
         options: WriteOptions,
     ) -> PolarsResult<Self> {
@@ -73,8 +73,8 @@ where
         })
     }
 
-    /// The Arrow [`Schema`] for the file.
-    pub fn schema(&self) -> &Schema {
+    /// The Arrow [`ArrowSchema`] for the file.
+    pub fn schema(&self) -> &ArrowSchema {
         &self.schema
     }
 

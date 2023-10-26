@@ -11,6 +11,7 @@ use polars_core::POOL;
 use polars_parquet::read;
 use polars_parquet::read::{ArrayIter, FileMetaData, RowGroupMetaData};
 use rayon::prelude::*;
+use arrow::datatypes::ArrowSchemaRef;
 
 use super::mmap::ColumnStore;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
@@ -20,7 +21,7 @@ use crate::parquet::mmap::mmap_columns;
 use crate::parquet::predicates::read_this_row_group;
 use crate::parquet::{mmap, FileMetaDataRef, ParallelStrategy};
 use crate::predicates::{apply_predicate, PhysicalIoExpr};
-use crate::utils::{apply_projection_pl_schema, get_reader_bytes};
+use crate::utils::{apply_projection, get_reader_bytes};
 use crate::RowCount;
 
 fn enlarge_data_type(mut data_type: ArrowDataType) -> ArrowDataType {
@@ -44,13 +45,11 @@ fn column_idx_to_series(
     column_i: usize,
     md: &RowGroupMetaData,
     remaining_rows: usize,
-    schema: &Schema,
+    file_schema: &ArrowSchema,
     store: &mmap::ColumnStore,
     chunk_size: usize,
 ) -> PolarsResult<Series> {
-    let (name, dt) = schema.get_at_index(column_i).unwrap();
-    let mut field = ArrowField::new(name.as_str(), dt.to_arrow(), true);
-
+    let mut field = file_schema.fields[column_i].clone();
     field.data_type = enlarge_data_type(field.data_type);
 
     let columns = mmap_columns(store, md.columns(), &field.name);
@@ -119,7 +118,7 @@ fn rg_to_dfs(
     row_group_end: usize,
     remaining_rows: &mut usize,
     file_metadata: &FileMetaData,
-    schema: &SchemaRef,
+    schema: &ArrowSchemaRef,
     predicate: Option<&dyn PhysicalIoExpr>,
     row_count: Option<RowCount>,
     parallel: ParallelStrategy,
@@ -170,7 +169,7 @@ fn rg_to_dfs_optionally_par_over_columns(
     row_group_end: usize,
     remaining_rows: &mut usize,
     file_metadata: &FileMetaData,
-    schema: &SchemaRef,
+    schema: &ArrowSchemaRef,
     predicate: Option<&dyn PhysicalIoExpr>,
     row_count: Option<RowCount>,
     parallel: ParallelStrategy,
@@ -259,7 +258,7 @@ fn rg_to_dfs_par_over_rg(
     previous_row_count: &mut IdxSize,
     remaining_rows: &mut usize,
     file_metadata: &FileMetaData,
-    schema: &SchemaRef,
+    schema: &ArrowSchemaRef,
     predicate: Option<&dyn PhysicalIoExpr>,
     row_count: Option<RowCount>,
     projection: &[usize],
@@ -331,11 +330,11 @@ fn rg_to_dfs_par_over_rg(
 
 fn materialize_empty_df(
     projection: Option<&[usize]>,
-    reader_schema: &Schema,
+    reader_schema: &ArrowSchema,
     hive_partition_columns: Option<&[Series]>,
 ) -> DataFrame {
     let schema = if let Some(projection) = projection {
-        Cow::Owned(apply_projection_pl_schema(reader_schema, projection))
+        Cow::Owned(apply_projection(reader_schema, projection))
     } else {
         Cow::Borrowed(reader_schema)
     };
@@ -349,7 +348,7 @@ pub fn read_parquet<R: MmapBytesReader>(
     mut reader: R,
     mut limit: usize,
     projection: Option<&[usize]>,
-    reader_schema: &SchemaRef,
+    reader_schema: &ArrowSchemaRef,
     metadata: Option<FileMetaDataRef>,
     predicate: Option<&dyn PhysicalIoExpr>,
     mut parallel: ParallelStrategy,
@@ -492,7 +491,7 @@ pub struct BatchedParquetReader {
     row_group_fetcher: RowGroupFetcher,
     limit: usize,
     projection: Vec<usize>,
-    schema: SchemaRef,
+    schema: ArrowSchemaRef,
     metadata: FileMetaDataRef,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     row_count: Option<RowCount>,
@@ -513,7 +512,7 @@ impl BatchedParquetReader {
     pub fn new(
         row_group_fetcher: RowGroupFetcher,
         metadata: FileMetaDataRef,
-        schema: SchemaRef,
+        schema: ArrowSchemaRef,
         limit: usize,
         projection: Option<Vec<usize>>,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
@@ -556,7 +555,7 @@ impl BatchedParquetReader {
         self.limit == 0
     }
 
-    pub fn schema(&self) -> &SchemaRef {
+    pub fn schema(&self) -> &ArrowSchemaRef {
         &self.schema
     }
 

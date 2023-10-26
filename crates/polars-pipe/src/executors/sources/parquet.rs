@@ -71,7 +71,7 @@ impl ParquetSource {
         }
 
         let reader_schema = if self.processed_paths == 0 {
-            Some(self.file_info.reader_schema.clone())
+            self.file_info.reader_schema.clone()
         } else {
             None
         };
@@ -116,7 +116,7 @@ impl ParquetSource {
                 .batched(chunk_size)?
         };
         if self.processed_paths >= 1 {
-            polars_ensure!(batched_reader.schema().as_ref() == self.file_info.reader_schema.as_ref(), ComputeError: "schema of all files in a single scan_parquet must be equal");
+            polars_ensure!(batched_reader.schema().as_ref() == self.file_info.reader_schema.as_ref().unwrap().as_ref(), ComputeError: "schema of all files in a single scan_parquet must be equal");
         }
         self.batched_reader = Some(batched_reader);
         self.processed_paths += 1;

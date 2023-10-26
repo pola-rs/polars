@@ -122,7 +122,7 @@ bigidx = ["arrow/bigidx", "polars-utils/bigidx"]
 python = []
 
 serde = ["dep:serde", "smartstring/serde", "bitflags/serde"]
-serde-lazy = ["serde", "arrow/serde", "indexmap/serde", "smartstring/serde", "chrono/serde"]
+serde-lazy = ["serde", "arrow/serde", "indexmap/serde", "smartstring/serde", "chrono/serde", "arrow/serde"]
 
 docs-selection = [
   "ndarray",

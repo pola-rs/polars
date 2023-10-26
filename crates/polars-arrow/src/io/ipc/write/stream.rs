@@ -53,7 +53,7 @@ impl<W: Write> StreamWriter<W> {
     /// Use `ipc_fields` to declare dictionary ids in the schema, for dictionary-reuse
     pub fn start(
         &mut self,
-        schema: &Schema,
+        schema: &ArrowSchema,
         ipc_fields: Option<Vec<IpcField>>,
     ) -> PolarsResult<()> {
         self.ipc_fields = Some(if let Some(ipc_fields) = ipc_fields {
