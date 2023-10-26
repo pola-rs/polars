@@ -25,8 +25,8 @@ def test_all_any_horizontally() -> None:
         schema=["var1", "var2", "var3"],
     )
     result = df.select(
-        pl.any_horizontal(pl.col("var2"), pl.col("var3")),
-        pl.all_horizontal(pl.col("var2"), pl.col("var3")),
+        any=pl.any_horizontal(pl.col("var2"), pl.col("var3")),
+        all=pl.all_horizontal(pl.col("var2"), pl.col("var3")),
     )
     expected = pl.DataFrame(
         {

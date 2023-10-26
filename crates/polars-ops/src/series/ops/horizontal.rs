@@ -33,38 +33,34 @@ pub fn sum_horizontal(s: &[Series]) -> PolarsResult<Series> {
 }
 
 pub fn any_horizontal(s: &[Series]) -> PolarsResult<Series> {
-    let out = POOL
-        .install(|| {
-            s.par_iter()
-                .try_fold(
-                    || BooleanChunked::new("", &[false]),
-                    |acc, b| {
-                        let b = b.cast(&DataType::Boolean)?;
-                        let b = b.bool()?;
-                        PolarsResult::Ok((&acc).bitor(b))
-                    },
-                )
-                .try_reduce(|| BooleanChunked::new("", [false]), |a, b| Ok(a.bitor(b)))
-        })?
-        .with_name("any");
+    let out = POOL.install(|| {
+        s.par_iter()
+            .try_fold(
+                || BooleanChunked::new("", &[false]),
+                |acc, b| {
+                    let b = b.cast(&DataType::Boolean)?;
+                    let b = b.bool()?;
+                    PolarsResult::Ok((&acc).bitor(b))
+                },
+            )
+            .try_reduce(|| BooleanChunked::new("", [false]), |a, b| Ok(a.bitor(b)))
+    })?;
     Ok(out.into_series())
 }
 
 pub fn all_horizontal(s: &[Series]) -> PolarsResult<Series> {
-    let out = POOL
-        .install(|| {
-            s.par_iter()
-                .try_fold(
-                    || BooleanChunked::new("", &[true]),
-                    |acc, b| {
-                        let b = b.cast(&DataType::Boolean)?;
-                        let b = b.bool()?;
-                        PolarsResult::Ok((&acc).bitand(b))
-                    },
-                )
-                .try_reduce(|| BooleanChunked::new("", [true]), |a, b| Ok(a.bitand(b)))
-        })?
-        .with_name("all");
+    let out = POOL.install(|| {
+        s.par_iter()
+            .try_fold(
+                || BooleanChunked::new("", &[true]),
+                |acc, b| {
+                    let b = b.cast(&DataType::Boolean)?;
+                    let b = b.bool()?;
+                    PolarsResult::Ok((&acc).bitand(b))
+                },
+            )
+            .try_reduce(|| BooleanChunked::new("", [true]), |a, b| Ok(a.bitand(b)))
+    })?;
     Ok(out.into_series())
 }
 
