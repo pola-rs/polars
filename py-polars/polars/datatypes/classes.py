@@ -541,11 +541,27 @@ class Categorical(DataType):
 
         Parameters
         ----------
-        categories : ['a','b','c']
-            Categories in the data set
+        categories :
+            Categories in the dataset
 
         """
         self.categories = categories
+
+    def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
+        # allow comparing object instances to class
+        if type(other) is DataTypeClass and issubclass(other, Categorical):
+            return True
+        elif isinstance(other, Categorical):
+            return self.categories == other.categories
+        else:
+            return False
+
+    def __hash__(self) -> int:
+        return hash((self.__class__, self.categories))
+
+    def __repr__(self) -> str:
+        class_name = self.__class__.__name__
+        return f"{class_name}(categories={self.categories!r})"
 
 
 class Object(DataType):
