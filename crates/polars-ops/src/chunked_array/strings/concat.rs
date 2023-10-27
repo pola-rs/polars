@@ -4,7 +4,11 @@ use polars_core::prelude::*;
 
 // Vertically concatenate all strings in a Utf8Chunked.
 pub fn str_concat(ca: &Utf8Chunked, delimiter: &str) -> Utf8Chunked {
-    if ca.len() <= 1 {
+    if ca.is_empty() {
+        return Utf8Chunked::new(ca.name(), &[""]);
+    }
+
+    if ca.len() == 1 {
         return ca.clone();
     }
 
