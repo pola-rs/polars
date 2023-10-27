@@ -59,7 +59,7 @@ cloud = ["async", "polars-io/cloud"]
 ipc = ["polars-io/ipc"]
 json = ["polars-io/json", "polars-json"]
 csv = ["polars-io/csv"]
-temporal = ["polars-core/temporal", "dtype-date", "dtype-datetime", "dtype-time"]
+temporal = ["polars-core/temporal", "dtype-date", "dtype-datetime", "dtype-time", "dtype-i8", "dtype-i16"]
 # debugging purposes
 fmt = ["polars-core/fmt"]
 strings = ["polars-core/strings", "polars-ops/strings"]
