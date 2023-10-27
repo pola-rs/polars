@@ -1,27 +1,25 @@
 //! Read parquet files in parallel from the Object Store without a third party crate.
-use std::borrow::Cow;
 use std::ops::Range;
-use std::sync::Arc;
+use std::sync::mpsc::{sync_channel, Receiver};
+use std::sync::{Arc, Mutex};
 
 use arrow::datatypes::ArrowSchemaRef;
 use bytes::Bytes;
 use futures::future::try_join_all;
 use object_store::path::Path as ObjectPath;
 use object_store::ObjectStore;
-use polars_core::config::verbose;
 use polars_core::datatypes::PlHashMap;
 use polars_core::error::{to_compute_err, PolarsResult};
 use polars_core::prelude::*;
 use polars_parquet::read::{self as parquet2_read, RowGroupMetaData};
 use polars_parquet::write::FileMetaData;
 use smartstring::alias::String as SmartString;
-use tokio::sync::mpsc::channel;
 
 use super::cloud::{build_object_store, CloudLocation, CloudReader};
-use super::mmap;
 use super::mmap::ColumnStore;
 use crate::cloud::CloudOptions;
 use crate::parquet::read_impl::compute_row_group_range;
+use crate::pl_async::get_runtime;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::predicates::read_this_row_group;
 
@@ -135,7 +133,8 @@ async fn download_projection(
     let product_futures = fields
         .iter()
         .flat_map(|name| row_groups.iter().map(move |r| (name.clone(), r)))
-        .map(|(name, row_group)| async move {
+        .enumerate()
+        .map(|(i, (name, row_group))| async move {
             let columns = row_group.columns();
             let ranges = columns
                 .iter()
@@ -148,28 +147,30 @@ async fn download_projection(
                 })
                 .collect::<Vec<_>>();
             let async_reader = async_reader.clone();
-            let handle =
-                tokio::spawn(async move { read_columns_async(&async_reader, &ranges).await });
-            handle.await.unwrap()
+
+            if i < 10 {
+                let handle =
+                    tokio::spawn(async move { read_columns_async(&async_reader, &ranges).await });
+                handle.await.unwrap()
+            } else {
+                read_columns_async(&async_reader, &ranges).await
+            }
         });
 
     // Download concurrently
     futures::future::try_join_all(product_futures).await
 }
 
-struct DownloadedRowGroup {
-    idx: usize,
-    fetched: PlHashMap<u64, Bytes>,
-}
+
+type DownloadedRowGroup = Vec<Vec<(u64, Bytes)>>;
 
 pub struct FetchRowGroupsFromObjectStore {
-    row_groups: tokio::sync::mpsc::Receiver<PolarsResult<DownloadedRowGroup>>,
+    row_groups: Arc<Mutex<Receiver<PolarsResult<DownloadedRowGroup>>>>,
 }
 
 impl FetchRowGroupsFromObjectStore {
     pub fn new(
         reader: ParquetObjectStore,
-        metadata: &FileMetaData,
         schema: ArrowSchemaRef,
         projection: Option<&[usize]>,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
@@ -197,60 +198,63 @@ impl FetchRowGroupsFromObjectStore {
         let row_groups = if let Some(pred) = predicate.as_deref() {
             row_groups
                 .iter()
-                .enumerate()
-                .filter(|(_, rg)| matches!(read_this_row_group(Some(pred), rg, &schema), Ok(true)))
-                .map(|(i, rg)| (i, rg.clone()))
+                .filter(|rg| matches!(read_this_row_group(Some(pred), rg, &schema), Ok(true)))
+                .cloned()
                 .collect::<Vec<_>>()
         } else {
-            row_groups.into_iter().cloned().enumerate().collect()
+            row_groups.to_vec()
         };
         let reader = Arc::new(reader);
 
-        let (snd, rcv) = channel(5);
+        let (snd, rcv) = sync_channel(5);
 
-        let _ = tokio::spawn(async move {
-            'loop_rg: for (rg_idx, rg) in row_groups {
-                let downloaded = download_projection(&projected_fields, &[rg], &reader).await;
+        let _ = std::thread::spawn(move || {
+            get_runtime().block_on(async {
+                'loop_rg: for rg in row_groups {
+                    let fetched = download_projection(&projected_fields, &[rg], &reader).await;
 
-                match downloaded {
-                    Ok(downloaded) => {
-                        let downloaded_per_filepos = downloaded
-                            .into_iter()
-                            .flat_map(|rg| rg.into_iter())
-                            .collect::<PlHashMap<_, _>>();
-
-                        let payload = PolarsResult::Ok(DownloadedRowGroup {
-                            idx: rg_idx,
-                            fetched: downloaded_per_filepos,
-                        });
-                        if let Err(_) = snd.send(payload).await {
+                    match fetched {
+                        Ok(fetched) => {
+                            let payload = PolarsResult::Ok(fetched);
+                            if snd.send(payload).is_err() {
+                                break 'loop_rg;
+                            }
+                        },
+                        Err(err) => {
+                            let payload = Err(err);
+                            let _ = snd.send(payload);
                             break 'loop_rg;
-                        }
-                    },
-                    Err(err) => {
-                        let payload = Err(err);
-                        let _ = snd.send(payload).await;
-                        break 'loop_rg;
-                    },
+                        },
+                    }
                 }
-            }
+            })
         });
 
-        Ok(FetchRowGroupsFromObjectStore { row_groups: rcv })
+        Ok(FetchRowGroupsFromObjectStore {
+            row_groups: Arc::new(Mutex::new(rcv)),
+        })
     }
 
-    pub(crate) async fn fetch_row_groups(
+    pub(crate) fn fetch_row_groups(
         &mut self,
         row_groups: Range<usize>,
     ) -> PolarsResult<ColumnStore> {
         let mut received = PlHashMap::new();
+        let guard = self.row_groups.lock().unwrap();
         for _ in row_groups {
-            let downloaded = self.row_groups.recv().await.unwrap()?;
+            let downloaded = guard.recv().unwrap()?;
 
             if received.is_empty() {
-                received = downloaded.fetched
+                let downloaded_per_filepos = downloaded
+                    .into_iter()
+                    .flat_map(|rg| rg.into_iter())
+                    .collect::<PlHashMap<_, _>>();
+                received = downloaded_per_filepos
             } else {
-                received.extend(downloaded.fetched)
+                let downloaded_per_filepos =
+                    downloaded.into_iter().flat_map(|rg| rg.into_iter());
+
+                received.extend(downloaded_per_filepos)
             }
         }
         Ok(ColumnStore::Fetched(received))

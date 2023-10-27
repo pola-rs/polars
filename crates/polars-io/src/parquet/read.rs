@@ -337,7 +337,6 @@ impl ParquetAsyncReader {
         // row group fetched deals with projection
         let row_group_fetcher = FetchRowGroupsFromObjectStore::new(
             self.reader,
-            &metadata,
             schema.clone(),
             self.projection.as_deref(),
             self.predicate.clone(),

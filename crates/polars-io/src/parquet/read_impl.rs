@@ -449,7 +449,7 @@ impl FetchRowGroupsFromMmapReader {
         let reader_bytes = get_reader_bytes(reader_ptr)?;
         Ok(FetchRowGroupsFromMmapReader(reader_bytes))
     }
-    async fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
+    fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
         Ok(mmap::ColumnStore::Local(self.0.deref()))
     }
 }
@@ -478,9 +478,9 @@ impl From<FetchRowGroupsFromMmapReader> for RowGroupFetcher {
 impl RowGroupFetcher {
     async fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
         match self {
-            RowGroupFetcher::Local(f) => f.fetch_row_groups(_row_groups).await,
+            RowGroupFetcher::Local(f) => f.fetch_row_groups(_row_groups),
             #[cfg(feature = "cloud")]
-            RowGroupFetcher::ObjectStore(f) => f.fetch_row_groups(_row_groups).await,
+            RowGroupFetcher::ObjectStore(f) => f.fetch_row_groups(_row_groups),
         }
     }
 }
