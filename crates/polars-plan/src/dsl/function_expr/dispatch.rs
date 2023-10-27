@@ -53,6 +53,18 @@ pub(super) fn unique_counts(s: &Series) -> PolarsResult<Series> {
     polars_ops::prelude::unique_counts(s)
 }
 
+pub(super) fn reshape(s: &Series, dims: Vec<i64>) -> PolarsResult<Series> {
+    s.reshape(&dims)
+}
+
+#[cfg(feature = "repeat_by")]
+pub(super) fn repeat_by(s: &[Series]) -> PolarsResult<Series> {
+    let by = &s[1];
+    let s = &s[0];
+    let by = by.cast(&IDX_DTYPE)?;
+    polars_ops::chunked_array::repeat_by(s, by.idx()?).map(|ok| ok.into_series())
+}
+
 pub(super) fn backward_fill(s: &Series, limit: FillNullLimit) -> PolarsResult<Series> {
     s.fill_null(FillNullStrategy::Backward(limit))
 }
