@@ -54,33 +54,26 @@ impl PyDataFrame {
         schema_overrides_by_idx: Option<Vec<(usize, DataType)>>,
     ) -> PyResult<Self> {
         // Object builder must be registered, this is done on import.
-        let inferred_schema =
+        let mut final_schema =
             rows_to_schema_supertypes(&rows, infer_schema_length.map(|n| std::cmp::max(1, n)))
                 .map_err(PyPolarsErr::from)?;
 
         // Replace inferred nulls with boolean and erase scale from inferred decimals.
-        let mut final_schema =
-            Schema::from_iter(
-                inferred_schema
-                    .iter_fields()
-                    .map(|mut fld| match fld.data_type() {
-                        DataType::Null => {
-                            fld.coerce(DataType::Boolean);
-                            fld
-                        },
-                        DataType::Decimal(_, _) => {
-                            fld.coerce(DataType::Decimal(None, None));
-                            fld
-                        },
-                        _ => fld,
-                    }),
-            );
+        for dtype in final_schema.iter_dtypes_mut() {
+            match dtype {
+                DataType::Null => *dtype = DataType::Boolean,
+                DataType::Decimal(_, _) => *dtype = DataType::Decimal(None, None),
+                _ => (),
+            }
+        }
+
+        // Integrate explicit/inferred schema.
         if let Some(schema) = schema {
             for (i, (name, dtype)) in schema.into_iter().enumerate() {
                 if let Some((name_, dtype_)) = final_schema.get_at_index_mut(i) {
                     *name_ = name;
 
-                    // If user sets dtype unknown, we use the inferred datatype.
+                    // If schema dtype is Unknown, overwrite with inferred datatype.
                     if !matches!(dtype, DataType::Unknown) {
                         *dtype_ = dtype;
                     }
@@ -89,7 +82,8 @@ impl PyDataFrame {
                 }
             }
         }
-        // Optional per-field overrides; supersede default/inferred dtypes.
+
+        // Optional per-field overrides; these supersede default/inferred dtypes.
         if let Some(overrides) = schema_overrides_by_idx {
             for (i, dtype) in overrides {
                 if let Some((_, dtype_)) = final_schema.get_at_index_mut(i) {
