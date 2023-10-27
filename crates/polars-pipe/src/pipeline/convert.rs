@@ -114,7 +114,7 @@ where
                     )?;
                     Ok(Box::new(src) as Box<dyn Source>)
                 },
-                _ => todo!(),
+                _ => todo!("scan_ipc_files not supported yet"),
             }
         },
         _ => unreachable!(),
