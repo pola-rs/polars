@@ -15,6 +15,20 @@ def test_str_slice() -> None:
     assert df.select([pl.col("a").str.slice(2, 4)])["a"].to_list() == ["obar", "rfoo"]
 
 
+def test_str_slice_expressions() -> None:
+    df = pl.DataFrame({"a": ["foobar", "barfoo"], "offset": [1, 3], "length": [3, 4]})
+
+    out = df.select(pl.col("a").str.slice("offset", "length"))
+
+    expected = pl.DataFrame({"a": ["oob", "foo"]})
+    assert out.frame_equal(expected)
+
+    out = df.select(pl.col("a").str.slice(-3, "length"))
+
+    expected = pl.DataFrame({"a": ["bar", "foo"]})
+    assert out.frame_equal(expected)
+
+
 def test_str_concat() -> None:
     s = pl.Series(["1", None, "2"])
     result = s.str.concat()

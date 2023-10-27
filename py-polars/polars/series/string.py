@@ -1426,7 +1426,7 @@ class StringNameSpace:
 
         """
 
-    def slice(self, offset: int, length: int | None = None) -> Series:
+    def slice(self, offset: IntoExpr, length: IntoExpr | None = None) -> Series:
         """
         Create subslices of the string values of a Utf8 Series.
 

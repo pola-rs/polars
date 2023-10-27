@@ -69,7 +69,7 @@ pub enum StringFunction {
         length: usize,
         fill_char: char,
     },
-    Slice(i64, Option<u64>),
+    Slice,
     StartsWith,
     StripChars,
     StripCharsStart,
@@ -125,14 +125,8 @@ impl StringFunction {
             Titlecase => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-decimal")]
             ToDecimal(_) => mapper.with_dtype(DataType::Decimal(None, None)),
-            Uppercase
-            | Lowercase
-            | StripChars
-            | StripCharsStart
-            | StripCharsEnd
-            | StripPrefix
-            | StripSuffix
-            | Slice(_, _) => mapper.with_same_dtype(),
+            Uppercase | Lowercase | StripChars | StripCharsStart | StripCharsEnd | StripPrefix
+            | StripSuffix | Slice => mapper.with_same_dtype(),
             #[cfg(feature = "string_pad")]
             PadStart { .. } | PadEnd { .. } | ZFill { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-struct")]
@@ -180,7 +174,7 @@ impl Display for StringFunction {
             StringFunction::PadStart { .. } => "pad_start",
             #[cfg(feature = "regex")]
             StringFunction::Replace { .. } => "replace",
-            StringFunction::Slice(_, _) => "slice",
+            StringFunction::Slice => "slice",
             StringFunction::StartsWith { .. } => "starts_with",
             StringFunction::StripChars => "strip_chars",
             StringFunction::StripCharsStart => "strip_chars_start",
@@ -732,9 +726,50 @@ pub(super) fn from_radix(s: &Series, radix: u32, strict: bool) -> PolarsResult<S
     let ca = s.utf8()?;
     ca.parse_int(radix, strict).map(|ok| ok.into_series())
 }
-pub(super) fn str_slice(s: &Series, start: i64, length: Option<u64>) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
-    Ok(ca.str_slice(start, length).into_series())
+
+pub(super) fn str_slice(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].utf8()?;
+
+    let s1 = &s[1];
+    let s2 = &s[2];
+
+    polars_ensure!(
+        s1.len() <= ca.len(),
+        ComputeError:
+        "too many `offset` values ({}) for column length ({})",
+        s1.len(), ca.len(),
+    );
+
+    polars_ensure!(
+        s2.len() <= ca.len(),
+        ComputeError:
+        "too many `length` values ({}) for column length ({})",
+        s2.len(), ca.len(),
+    );
+
+    let offset = match s1.len() {
+        1 => {
+            let offset = s1.get(0).unwrap();
+            s1.clear().extend_constant(offset, ca.len()).unwrap()
+        },
+        _ => s1.clone(),
+    };
+
+    let offset = offset.cast(&DataType::Int64)?;
+    let offset = offset.i64()?;
+
+    let length = match s2.len() {
+        1 => {
+            let length = s2.get(0).unwrap();
+            s2.clear().extend_constant(length, ca.len()).unwrap()
+        },
+        _ => s2.clone(),
+    };
+
+    let length = length.cast(&DataType::UInt64)?;
+    let length = length.u64()?;
+
+    Ok(ca.str_slice(offset, length).into_series())
 }
 
 pub(super) fn explode(s: &Series) -> PolarsResult<Series> {

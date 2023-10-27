@@ -1,51 +1,62 @@
-use arrow::array::Utf8Array;
+use polars_core::prelude::arity::ternary_elementwise;
+
+use crate::chunked_array::{Int64Chunked, UInt64Chunked, Utf8Chunked};
 
 /// Returns a Utf8Array<O> with a substring starting from `start` and with optional length `length` of each of the elements in `array`.
-/// `start` can be negative, in which case the start counts from the end of the string.
-pub(super) fn utf8_substring(
-    array: &Utf8Array<i64>,
-    start: i64,
-    length: &Option<u64>,
-) -> Utf8Array<i64> {
-    let length = length.map(|v| v as usize);
+/// `offset` can be negative, in which case the offset counts from the end of the string.
+fn utf8_substring_ternary<'a>(
+    opt_str_val: Option<&'a str>,
+    opt_offset: Option<i64>,
+    opt_length: Option<u64>,
+) -> Option<&'a str> {
+    match (opt_str_val, opt_offset) {
+        (Some(str_val), Some(offset)) => {
+            // compute where we should offset slicing this entry.
+            let offset = if offset >= 0 {
+                offset as usize
+            } else {
+                let offset = (0i64 - offset) as usize;
+                str_val
+                    .char_indices()
+                    .rev()
+                    .nth(offset)
+                    .map(|(idx, _)| idx + 1)
+                    .unwrap_or(0)
+            };
 
-    let iter = array.values_iter().map(|str_val| {
-        // compute where we should start slicing this entry.
-        let start = if start >= 0 {
-            start as usize
-        } else {
-            let start = (0i64 - start) as usize;
-            str_val
-                .char_indices()
-                .rev()
-                .nth(start)
-                .map(|(idx, _)| idx + 1)
-                .unwrap_or(0)
-        };
+            let mut iter_chars = str_val.char_indices();
+            if let Some((offset_idx, _)) = iter_chars.nth(offset) {
+                // length of the str
+                let len_end = str_val.len() - offset_idx;
 
-        let mut iter_chars = str_val.char_indices();
-        if let Some((start_idx, _)) = iter_chars.nth(start) {
-            // length of the str
-            let len_end = str_val.len() - start_idx;
+                // slice to end of str if no length given
+                let length = match opt_length {
+                    Some(length) => length as usize,
+                    _ => len_end,
+                };
 
-            // length to slice
-            let length = length.unwrap_or(len_end);
+                if length == 0 {
+                    return Some("");
+                }
+                // compute
+                let end_idx = iter_chars
+                    .nth(length.saturating_sub(1))
+                    .map(|(idx, _)| idx)
+                    .unwrap_or(str_val.len());
 
-            if length == 0 {
-                return "";
+                Some(&str_val[offset_idx..end_idx])
+            } else {
+                Some("")
             }
-            // compute
-            let end_idx = iter_chars
-                .nth(length.saturating_sub(1))
-                .map(|(idx, _)| idx)
-                .unwrap_or(str_val.len());
+        },
+        _ => None,
+    }
+}
 
-            &str_val[start_idx..end_idx]
-        } else {
-            ""
-        }
-    });
-
-    let new = Utf8Array::<i64>::from_trusted_len_values_iter(iter);
-    new.with_validity(array.validity().cloned())
+pub(super) fn utf8_substring(
+    ca: &Utf8Chunked,
+    offset: &Int64Chunked,
+    length: &UInt64Chunked,
+) -> Utf8Chunked {
+    ternary_elementwise(ca, offset, length, utf8_substring_ternary)
 }

@@ -1078,7 +1078,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             StripSuffix => map_as_slice!(strings::strip_suffix),
             #[cfg(feature = "string_from_radix")]
             FromRadix(radix, strict) => map!(strings::from_radix, radix, strict),
-            Slice(start, length) => map!(strings::str_slice, start, length),
+            Slice => map_as_slice!(strings::str_slice),
             Explode => map!(strings::explode),
             #[cfg(feature = "dtype-decimal")]
             ToDecimal(infer_len) => map!(strings::to_decimal, infer_len),

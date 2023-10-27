@@ -1852,7 +1852,7 @@ class ExprStringNameSpace:
         value = parse_as_expression(value, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_replace_all(pattern, value, literal))
 
-    def slice(self, offset: int, length: int | None = None) -> Expr:
+    def slice(self, offset: IntoExpr, length: IntoExpr | None = None) -> Expr:
         """
         Create subslices of the string values of a Utf8 Series.
 
@@ -1905,6 +1905,8 @@ class ExprStringNameSpace:
         └─────────────┴──────────┘
 
         """
+        offset = parse_as_expression(offset)
+        length = parse_as_expression(length)
         return wrap_expr(self._pyexpr.str_slice(offset, length))
 
     def explode(self) -> Expr:

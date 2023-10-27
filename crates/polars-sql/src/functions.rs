@@ -702,12 +702,14 @@ impl SqlFunctionVisitor<'_> {
             #[cfg(feature = "nightly")]
             InitCap => self.visit_unary(|e| e.str().to_titlecase()),
             Left => self.try_visit_binary(|e, length| {
-                Ok(e.str().slice(0, match length {
-                    Expr::Literal(LiteralValue::Int64(n)) => Some(n as u64),
+                Ok(match length {
+                    Expr::Literal(LiteralValue::Int64(_n)) => {
+                        e.str().slice(lit(0), length)
+                    },
                     _ => {
-                        polars_bail!(InvalidOperation: "Invalid 'length' for Left: {}", function.args[1]);
+                        polars_bail!(InvalidOperation: "Invalid 'length' for Left: {}", function.args[1])
                     }
-                }))
+                })
             }),
             Length => self.visit_unary(|e| e.str().len_chars()),
             Lower => self.visit_unary(|e| e.str().to_lowercase()),
@@ -756,26 +758,23 @@ impl SqlFunctionVisitor<'_> {
             StartsWith => self.visit_binary(|e, s| e.str().starts_with(s)),
             Substring => match function.args.len() {
                 2 => self.try_visit_binary(|e, start| {
-                    Ok(e.str().slice(match start {
-                        Expr::Literal(LiteralValue::Int64(n)) => n,
+                    Ok(match start {
+                        Expr::Literal(LiteralValue::Int64(_)) => {
+                            e.str().slice(start, lit(Null))
+                        },
                         _ => {
-                            polars_bail!(InvalidOperation: "Invalid 'start' for Substring: {}", function.args[1]);
+                            polars_bail!(InvalidOperation: "Invalid 'start' for Substring: {}", function.args[1])
                         }
-                    }, None))
+                    })
                 }),
                 3 => self.try_visit_ternary(|e, start, length| {
-                    Ok(e.str().slice(
-                        match start {
-                            Expr::Literal(LiteralValue::Int64(n)) => n,
-                            _ => {
-                                polars_bail!(InvalidOperation: "Invalid 'start' for Substring: {}", function.args[1]);
-                            }
-                        }, match length {
-                            Expr::Literal(LiteralValue::Int64(n)) => Some(n as u64),
-                            _ => {
-                                polars_bail!(InvalidOperation: "Invalid 'length' for Substring: {}", function.args[2]);
-                            }
-                        }))
+                    if !matches!(start, Expr::Literal(LiteralValue::Int64(_))) {
+                        polars_bail!(InvalidOperation: "Invalid 'start' for Substring: {}", function.args[1]);
+                    }
+                    if !matches!(length, Expr::Literal(LiteralValue::Int64(_))) {
+                        polars_bail!(InvalidOperation: "Invalid 'length' for Substring: {}", function.args[2]);
+                    }
+                    Ok(e.str().slice(start, length))
                 }),
                 _ => polars_bail!(InvalidOperation:
                     "Invalid number of arguments for Substring: {}",
