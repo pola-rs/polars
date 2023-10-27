@@ -43,7 +43,7 @@ serde_json = { version = "1", default-features = false, features = ["alloc", "ra
 simd-json = { workspace = true, optional = true }
 simdutf8 = { workspace = true, optional = true }
 smartstring = { workspace = true }
-tokio = { workspace = true, features = ["net", "rt-multi-thread", "time"], optional = true }
+tokio = { workspace = true, features = ["net", "rt-multi-thread", "time", "sync"], optional = true }
 tokio-util = { workspace = true, features = ["io", "io-util"], optional = true }
 url = { workspace = true, optional = true }
 

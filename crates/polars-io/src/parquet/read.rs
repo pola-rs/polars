@@ -341,6 +341,8 @@ impl ParquetAsyncReader {
             schema.clone(),
             self.projection.as_deref(),
             self.predicate.clone(),
+            &metadata.row_groups,
+            self.n_rows.unwrap_or(usize::MAX),
         )?
         .into();
         BatchedParquetReader::new(

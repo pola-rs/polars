@@ -15,11 +15,13 @@ use polars_core::prelude::*;
 use polars_parquet::read::{self as parquet2_read, RowGroupMetaData};
 use polars_parquet::write::FileMetaData;
 use smartstring::alias::String as SmartString;
+use tokio::sync::mpsc::channel;
 
 use super::cloud::{build_object_store, CloudLocation, CloudReader};
 use super::mmap;
 use super::mmap::ColumnStore;
 use crate::cloud::CloudOptions;
+use crate::parquet::read_impl::compute_row_group_range;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::predicates::read_this_row_group;
 
@@ -102,6 +104,7 @@ async fn read_single_column_async(
     start: usize,
     length: usize,
 ) -> PolarsResult<(u64, Bytes)> {
+    dbg!("download");
     let chunk = async_reader
         .store
         .get_range(&async_reader.path, start..start + length)
@@ -154,13 +157,13 @@ async fn download_projection(
     futures::future::try_join_all(product_futures).await
 }
 
+struct DownloadedRowGroup {
+    idx: usize,
+    fetched: PlHashMap<u64, Bytes>,
+}
+
 pub struct FetchRowGroupsFromObjectStore {
-    reader: Arc<ParquetObjectStore>,
-    row_groups_metadata: Vec<RowGroupMetaData>,
-    projected_fields: Vec<SmartString>,
-    predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    schema: ArrowSchemaRef,
-    logging: bool,
+    row_groups: tokio::sync::mpsc::Receiver<PolarsResult<DownloadedRowGroup>>,
 }
 
 impl FetchRowGroupsFromObjectStore {
@@ -170,9 +173,9 @@ impl FetchRowGroupsFromObjectStore {
         schema: ArrowSchemaRef,
         projection: Option<&[usize]>,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
+        row_groups: &[RowGroupMetaData],
+        limit: usize,
     ) -> PolarsResult<Self> {
-        let logging = verbose();
-
         let projected_fields = projection
             .map(|projection| {
                 projection
@@ -188,76 +191,68 @@ impl FetchRowGroupsFromObjectStore {
                     .collect()
             });
 
-        Ok(FetchRowGroupsFromObjectStore {
-            reader: Arc::new(reader),
-            row_groups_metadata: metadata.row_groups.to_owned(),
-            projected_fields,
-            predicate,
-            schema,
-            logging,
-        })
+        let row_groups_end = compute_row_group_range(0, row_groups.len(), limit, row_groups);
+        let row_groups = &row_groups[0..row_groups_end];
+
+        let row_groups = if let Some(pred) = predicate.as_deref() {
+            row_groups
+                .iter()
+                .enumerate()
+                .filter(|(_, rg)| matches!(read_this_row_group(Some(pred), rg, &schema), Ok(true)))
+                .map(|(i, rg)| (i, rg.clone()))
+                .collect::<Vec<_>>()
+        } else {
+            row_groups.into_iter().cloned().enumerate().collect()
+        };
+        let reader = Arc::new(reader);
+
+        let (snd, rcv) = channel(5);
+
+        let _ = tokio::spawn(async move {
+            'loop_rg: for (rg_idx, rg) in row_groups {
+                let downloaded = download_projection(&projected_fields, &[rg], &reader).await;
+
+                match downloaded {
+                    Ok(downloaded) => {
+                        let downloaded_per_filepos = downloaded
+                            .into_iter()
+                            .flat_map(|rg| rg.into_iter())
+                            .collect::<PlHashMap<_, _>>();
+
+                        let payload = PolarsResult::Ok(DownloadedRowGroup {
+                            idx: rg_idx,
+                            fetched: downloaded_per_filepos,
+                        });
+                        if let Err(_) = snd.send(payload).await {
+                            break 'loop_rg;
+                        }
+                    },
+                    Err(err) => {
+                        let payload = Err(err);
+                        let _ = snd.send(payload).await;
+                        break 'loop_rg;
+                    },
+                }
+            }
+        });
+
+        Ok(FetchRowGroupsFromObjectStore { row_groups: rcv })
     }
 
     pub(crate) async fn fetch_row_groups(
         &mut self,
         row_groups: Range<usize>,
     ) -> PolarsResult<ColumnStore> {
-        if row_groups.start == row_groups.end {
-            return Ok(ColumnStore::Fetched(Default::default()));
+        let mut received = PlHashMap::new();
+        for _ in row_groups {
+            let downloaded = self.row_groups.recv().await.unwrap()?;
+
+            if received.is_empty() {
+                received = downloaded.fetched
+            } else {
+                received.extend(downloaded.fetched)
+            }
         }
-        // Fetch the required row groups.
-        let row_groups = self
-            .row_groups_metadata
-            .get(row_groups.clone())
-            .map_or_else(
-                || Err(polars_err!(
-                    ComputeError: "cannot access slice {0}..{1}", row_groups.start, row_groups.end,
-                )),
-                Ok,
-            )?;
-
-        let row_groups = if let Some(pred) = self.predicate.as_deref() {
-            Cow::Owned(
-                row_groups
-                    .iter()
-                    .filter(|rg| {
-                        matches!(read_this_row_group(Some(pred), rg, &self.schema), Ok(true))
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>(),
-            )
-        } else {
-            Cow::Borrowed(row_groups)
-        };
-
-        // Package in the format required by ColumnStore.
-        let downloaded =
-            download_projection(&self.projected_fields, &row_groups, &self.reader).await?;
-
-        if self.logging {
-            eprintln!(
-                "BatchedParquetReader: fetched {} row_groups for {} fields, yielding {} column chunks.",
-                row_groups.len(),
-                self.projected_fields.len(),
-                downloaded.len(),
-            );
-        }
-        let downloaded_per_filepos = downloaded
-            .into_iter()
-            .flat_map(|rg| rg.into_iter())
-            .collect::<PlHashMap<_, _>>();
-
-        if self.logging {
-            eprintln!(
-                "BatchedParquetReader: column chunks start & len: {}.",
-                downloaded_per_filepos
-                    .iter()
-                    .map(|(pos, data)| format!("({}, {})", pos, data.len()))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            );
-        }
-
-        Ok(mmap::ColumnStore::Fetched(downloaded_per_filepos))
+        Ok(ColumnStore::Fetched(received))
     }
 }

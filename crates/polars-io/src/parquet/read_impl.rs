@@ -485,6 +485,24 @@ impl RowGroupFetcher {
     }
 }
 
+pub(super) fn compute_row_group_range(
+    row_group_start: usize,
+    row_group_end: usize,
+    limit: usize,
+    row_groups: &[RowGroupMetaData],
+) -> usize {
+    let mut row_group_end_truncated = row_group_start;
+    let mut acc_row_count = 0;
+    for rg_i in row_group_start..(std::cmp::min(row_group_end, row_groups.len())) {
+        if acc_row_count >= limit {
+            break;
+        }
+        row_group_end_truncated = rg_i + 1;
+        acc_row_count += row_groups[rg_i].num_rows();
+    }
+    row_group_end_truncated
+}
+
 pub struct BatchedParquetReader {
     // use to keep ownership
     #[allow(dead_code)]
@@ -568,17 +586,12 @@ impl BatchedParquetReader {
         if self.row_group_offset <= self.n_row_groups && self.chunks_fifo.len() < n {
             // Ensure we apply the limit on the metadata, before we download the row-groups.
             let row_group_start = self.row_group_offset;
-            let mut row_group_end = row_group_start;
-            let mut acc_row_count = 0;
-            for rg_i in
-                row_group_start..(std::cmp::min(self.row_group_offset + n, self.n_row_groups))
-            {
-                if acc_row_count >= self.limit {
-                    break;
-                }
-                row_group_end = rg_i + 1;
-                acc_row_count += self.metadata.row_groups[rg_i].num_rows();
-            }
+            let row_group_end = compute_row_group_range(
+                row_group_start,
+                row_group_start + n,
+                self.limit,
+                &self.metadata.row_groups,
+            );
 
             let store = self
                 .row_group_fetcher

@@ -28,7 +28,8 @@ bytemuck = { version = "1", features = ["derive", "extern_crate_alloc"] }
 chrono = { version = "0.4.31", default-features = false, features = ["std"] }
 chrono-tz = "0.8.1"
 ciborium = "0.2"
-crossbeam-channel = "0.5.1"
+crossbeam-channel = "0.5.8"
+crossbeam-queue = "0.3"
 either = "1.9"
 ethnum = "1.3.2"
 futures = "0.3.25"
