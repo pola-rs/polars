@@ -28,6 +28,31 @@ def test_str_concat2() -> None:
     assert cast(str, df.item()) == "1-null-2"
 
 
+def test_str_concat_empty_list() -> None:
+    s = pl.Series([], dtype=pl.Utf8)
+    result = s.str.concat()
+    expected = pl.Series([""])
+    assert_series_equal(result, expected)
+
+
+def test_str_concat_empty_list2() -> None:
+    s = pl.Series([], dtype=pl.Utf8)
+    df = pl.DataFrame({"foo": s})
+    result = df.select(pl.col("foo").str.concat()).item()
+    expected = ""
+    assert result == expected
+
+
+def test_str_concat_empty_list_agg_context() -> None:
+    df = pl.DataFrame(
+        data={"i": [1], "v": [None]},
+        schema_overrides={"v": pl.Utf8}
+    )
+    result = df.group_by("i").agg(pl.col("v").drop_nulls().str.concat())["v"].item()
+    expected = ""
+    assert result == expected
+
+
 def test_str_concat_datetime() -> None:
     df = pl.DataFrame({"d": [datetime(2020, 1, 1), None, datetime(2022, 1, 1)]})
     df = df.select(pl.col("d").str.concat("|"))
