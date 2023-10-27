@@ -703,7 +703,7 @@ impl SqlFunctionVisitor<'_> {
             InitCap => self.visit_unary(|e| e.str().to_titlecase()),
             Left => self.try_visit_binary(|e, length| {
                 Ok(match length {
-                    Expr::Literal(LiteralValue::Int64(_n)) => {
+                    Expr::Literal(LiteralValue::Int64(_)) => {
                         e.str().slice(lit(0), length)
                     },
                     _ => {
