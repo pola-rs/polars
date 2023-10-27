@@ -44,10 +44,7 @@ def test_str_concat_empty_list2() -> None:
 
 
 def test_str_concat_empty_list_agg_context() -> None:
-    df = pl.DataFrame(
-        data={"i": [1], "v": [None]},
-        schema_overrides={"v": pl.Utf8}
-    )
+    df = pl.DataFrame(data={"i": [1], "v": [None]}, schema_overrides={"v": pl.Utf8})
     result = df.group_by("i").agg(pl.col("v").drop_nulls().str.concat())["v"].item()
     expected = ""
     assert result == expected
