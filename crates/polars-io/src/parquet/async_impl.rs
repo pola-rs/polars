@@ -102,7 +102,6 @@ async fn read_single_column_async(
     start: usize,
     length: usize,
 ) -> PolarsResult<(u64, Bytes)> {
-    dbg!("download");
     let chunk = async_reader
         .store
         .get_range(&async_reader.path, start..start + length)
@@ -160,7 +159,6 @@ async fn download_projection(
     // Download concurrently
     futures::future::try_join_all(product_futures).await
 }
-
 
 type DownloadedRowGroup = Vec<Vec<(u64, Bytes)>>;
 
@@ -251,8 +249,7 @@ impl FetchRowGroupsFromObjectStore {
                     .collect::<PlHashMap<_, _>>();
                 received = downloaded_per_filepos
             } else {
-                let downloaded_per_filepos =
-                    downloaded.into_iter().flat_map(|rg| rg.into_iter());
+                let downloaded_per_filepos = downloaded.into_iter().flat_map(|rg| rg.into_iter());
 
                 received.extend(downloaded_per_filepos)
             }

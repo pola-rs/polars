@@ -493,6 +493,8 @@ pub(super) fn compute_row_group_range(
 ) -> usize {
     let mut row_group_end_truncated = row_group_start;
     let mut acc_row_count = 0;
+
+    #[allow(clippy::needless_range_loop)]
     for rg_i in row_group_start..(std::cmp::min(row_group_end, row_groups.len())) {
         if acc_row_count >= limit {
             break;
