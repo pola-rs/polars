@@ -4,11 +4,11 @@ use crate::chunked_array::{Int64Chunked, UInt64Chunked, Utf8Chunked};
 
 /// Returns a Utf8Array<O> with a substring starting from `start` and with optional length `length` of each of the elements in `array`.
 /// `offset` can be negative, in which case the offset counts from the end of the string.
-fn utf8_substring_ternary<'a>(
-    opt_str_val: Option<&'a str>,
+fn utf8_substring_ternary(
+    opt_str_val: Option<&str>,
     opt_offset: Option<i64>,
     opt_length: Option<u64>,
-) -> Option<&'a str> {
+) -> Option<&str> {
     match (opt_str_val, opt_offset) {
         (Some(str_val), Some(offset)) => {
             // compute where we should offset slicing this entry.
