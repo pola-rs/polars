@@ -585,7 +585,9 @@ pub fn cast(
             LargeUtf8 => Ok(Box::new(utf8_to_large_utf8(
                 array.as_any().downcast_ref().unwrap(),
             ))),
-            Timestamp(time_unit, None) => utf8_to_naive_timestamp_dyn::<i32>(array, time_unit.to_owned()),
+            Timestamp(time_unit, None) => {
+                utf8_to_naive_timestamp_dyn::<i32>(array, time_unit.to_owned())
+            },
             Timestamp(time_unit, Some(time_zone)) => {
                 utf8_to_timestamp_dyn::<i32>(array, time_zone.clone(), time_unit.to_owned())
             },
@@ -612,7 +614,9 @@ pub fn cast(
                 to_type.clone(),
             )
             .boxed()),
-            Timestamp(time_unit, None) => utf8_to_naive_timestamp_dyn::<i64>(array, time_unit.to_owned()),
+            Timestamp(time_unit, None) => {
+                utf8_to_naive_timestamp_dyn::<i64>(array, time_unit.to_owned())
+            },
             Timestamp(time_unit, Some(time_zone)) => {
                 utf8_to_timestamp_dyn::<i64>(array, time_zone.clone(), time_unit.to_owned())
             },
