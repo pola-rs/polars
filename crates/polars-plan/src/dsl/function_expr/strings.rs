@@ -730,43 +730,24 @@ pub(super) fn from_radix(s: &Series, radix: u32, strict: bool) -> PolarsResult<S
 pub(super) fn str_slice(s: &[Series]) -> PolarsResult<Series> {
     let ca = s[0].utf8()?;
 
-    let s1 = &s[1];
-    let s2 = &s[2];
-
     polars_ensure!(
-        s1.len() <= ca.len(),
+        s[1].len() <= ca.len(),
         ComputeError:
         "too many `offset` values ({}) for column length ({})",
-        s1.len(), ca.len(),
+        s[1].len(), ca.len(),
     );
 
     polars_ensure!(
-        s2.len() <= ca.len(),
+        s[2].len() <= ca.len(),
         ComputeError:
         "too many `length` values ({}) for column length ({})",
-        s2.len(), ca.len(),
+        s[2].len(), ca.len(),
     );
 
-    let offset = match s1.len() {
-        1 => {
-            let offset = s1.get(0).unwrap();
-            s1.clear().extend_constant(offset, ca.len()).unwrap()
-        },
-        _ => s1.clone(),
-    };
-
-    let offset = offset.cast(&DataType::Int64)?;
+    let offset = s[1].cast(&DataType::Int64)?;
     let offset = offset.i64()?;
 
-    let length = match s2.len() {
-        1 => {
-            let length = s2.get(0).unwrap();
-            s2.clear().extend_constant(length, ca.len()).unwrap()
-        },
-        _ => s2.clone(),
-    };
-
-    let length = length.cast(&DataType::UInt64)?;
+    let length = s[2].cast(&DataType::UInt64)?;
     let length = length.u64()?;
 
     Ok(ca.str_slice(offset, length).into_series())

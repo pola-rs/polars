@@ -526,7 +526,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     /// `start` can be negative, in which case the start counts from the end of the string.
     fn str_slice(&self, start: &Int64Chunked, length: &UInt64Chunked) -> Utf8Chunked {
         let ca = self.as_utf8();
-        super::substring::utf8_substring(ca, start, length)
+        substring::utf8_substring(ca, start, length)
     }
 }
 

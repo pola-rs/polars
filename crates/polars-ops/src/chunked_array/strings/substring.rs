@@ -1,14 +1,14 @@
-use polars_core::prelude::arity::ternary_elementwise;
+use polars_core::prelude::arity::{binary_elementwise, ternary_elementwise};
 
 use crate::chunked_array::{Int64Chunked, UInt64Chunked, Utf8Chunked};
 
 /// Returns a Utf8Array<O> with a substring starting from `start` and with optional length `length` of each of the elements in `array`.
 /// `offset` can be negative, in which case the offset counts from the end of the string.
-fn utf8_substring_ternary(
-    opt_str_val: Option<&str>,
+fn utf8_substring_ternary<'a>(
+    opt_str_val: Option<&'a str>,
     opt_offset: Option<i64>,
     opt_length: Option<u64>,
-) -> Option<&str> {
+) -> Option<&'a str> {
     match (opt_str_val, opt_offset) {
         (Some(str_val), Some(offset)) => {
             // compute where we should offset slicing this entry.
@@ -58,5 +58,12 @@ pub(super) fn utf8_substring(
     offset: &Int64Chunked,
     length: &UInt64Chunked,
 ) -> Utf8Chunked {
-    ternary_elementwise(ca, offset, length, utf8_substring_ternary)
+    match (offset.len(), length.len()) {
+        (1, 1) => ca.apply_generic(|opt_str_val| {
+            utf8_substring_ternary(opt_str_val, offset.get(0), length.get(0))
+        }),
+        //(1, _) => binary_elementwise(ca, length, |opt_str_val, opt_length| utf8_substring_ternary(opt_str_val, offset.get(0), opt_length)),
+        //(_, 1) => binary_elementwise(ca, offset, |opt_str_val, opt_offset| utf8_substring_ternary(opt_str_val, opt_offset, length.get(0))),
+        _ => ternary_elementwise(ca, offset, length, utf8_substring_ternary),
+    }
 }
