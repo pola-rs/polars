@@ -12,7 +12,6 @@ use crate::{PyExpr, PySeries};
 #[pymethods]
 impl PyExpr {
     #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, warn_if_unsorted))]
-    #[allow(clippy::too_many_arguments)]
     fn rolling_sum(
         &self,
         window_size: &str,
@@ -37,7 +36,6 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, warn_if_unsorted))]
-    #[allow(clippy::too_many_arguments)]
     fn rolling_min(
         &self,
         window_size: &str,
@@ -62,7 +60,6 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, warn_if_unsorted))]
-    #[allow(clippy::too_many_arguments)]
     fn rolling_max(
         &self,
         window_size: &str,
@@ -87,7 +84,6 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, warn_if_unsorted))]
-    #[allow(clippy::too_many_arguments)]
     fn rolling_mean(
         &self,
         window_size: &str,
@@ -165,7 +161,6 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, warn_if_unsorted))]
-    #[allow(clippy::too_many_arguments)]
     fn rolling_median(
         &self,
         window_size: &str,

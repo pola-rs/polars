@@ -83,9 +83,9 @@ def test_rolling(
 
 
 @given(
-    window_size=st.timedeltas(min_value=timedelta(microseconds=0)).map(
-        _timedelta_to_pl_duration
-    ),
+    window_size=st.timedeltas(
+        min_value=timedelta(microseconds=0), max_value=timedelta(days=2)
+    ).map(_timedelta_to_pl_duration),
     closed=strategy_closed,
     data=st.data(),
     time_unit=strategy_time_unit,
@@ -114,33 +114,29 @@ def test_rolling_aggs(
     # - that even if polars temporarily sorts the data under-the-hood, the
     #   order that the user passed the data in is restored
     assume(window_size != "")
-    dataframe = data.draw(
+    df = data.draw(
         dataframes(
             [
-                column("ts", dtype=pl.Datetime(time_unit)),
-                column("value", dtype=pl.Int64),
+                column(
+                    "ts",
+                    strategy=st.datetimes(
+                        min_value=dt.datetime(2000, 1, 1),
+                        max_value=dt.datetime(2001, 1, 1),
+                    ),
+                    dtype=pl.Datetime(time_unit),
+                ),
+                column(
+                    "value",
+                    strategy=st.integers(min_value=-100, max_value=100),
+                    dtype=pl.Int64,
+                ),
             ],
         )
     )
-    # take unique because of https://github.com/pola-rs/polars/issues/11150
-    df = dataframe.unique("ts")
     func = f"rolling_{aggregation}"
-    try:
-        result = df.with_columns(
-            getattr(pl.col("value"), func)(
-                window_size=window_size, by="ts", closed=closed, warn_if_unsorted=False
-            )
-        )
-    except pl.exceptions.PolarsPanicError as exc:
-        assert any(  # noqa: PT017
-            msg in str(exc)
-            for msg in (
-                "attempt to multiply with overflow",
-                "attempt to add with overflow",
-            )
-        )
-        reject()
-
+    result = df.with_columns(
+        getattr(pl.col("value"), func)(window_size=window_size, by="ts", closed=closed)
+    )
     expected = (
         df.with_row_count("index")
         .sort("ts")
