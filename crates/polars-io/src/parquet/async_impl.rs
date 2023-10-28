@@ -161,9 +161,11 @@ async fn download_projection(
 }
 
 type DownloadedRowGroup = Vec<Vec<(u64, Bytes)>>;
+type QueuePayload = (usize, DownloadedRowGroup);
 
 pub struct FetchRowGroupsFromObjectStore {
-    row_groups: Arc<Mutex<Receiver<PolarsResult<DownloadedRowGroup>>>>,
+    rg_q: Arc<Mutex<Receiver<PolarsResult<QueuePayload>>>>,
+    prefetched_rg: PlHashMap<usize, DownloadedRowGroup>,
 }
 
 impl FetchRowGroupsFromObjectStore {
@@ -193,14 +195,26 @@ impl FetchRowGroupsFromObjectStore {
         let row_groups_end = compute_row_group_range(0, row_groups.len(), limit, row_groups);
         let row_groups = &row_groups[0..row_groups_end];
 
+        let mut prefetched: PlHashMap<usize, DownloadedRowGroup> = PlHashMap::new();
+
         let row_groups = if let Some(pred) = predicate.as_deref() {
             row_groups
                 .iter()
-                .filter(|rg| matches!(read_this_row_group(Some(pred), rg, &schema), Ok(true)))
-                .cloned()
+                .enumerate()
+                .filter(|(i, rg)| {
+                    let should_be_read =
+                        matches!(read_this_row_group(Some(pred), rg, &schema), Ok(true));
+
+                    // Already add the row groups that will be skipped to the prefetched data.
+                    if !should_be_read {
+                        prefetched.insert(*i, Default::default());
+                    }
+                    should_be_read
+                })
+                .map(|(i, rg)| (i, rg.clone()))
                 .collect::<Vec<_>>()
         } else {
-            row_groups.to_vec()
+            row_groups.iter().cloned().enumerate().collect()
         };
         let reader = Arc::new(reader);
 
@@ -208,12 +222,12 @@ impl FetchRowGroupsFromObjectStore {
 
         let _ = std::thread::spawn(move || {
             get_runtime().block_on(async {
-                'loop_rg: for rg in row_groups {
+                'loop_rg: for (i, rg) in row_groups {
                     let fetched = download_projection(&projected_fields, &[rg], &reader).await;
 
                     match fetched {
                         Ok(fetched) => {
-                            let payload = PolarsResult::Ok(fetched);
+                            let payload = PolarsResult::Ok((i, fetched));
                             if snd.send(payload).is_err() {
                                 break 'loop_rg;
                             }
@@ -229,7 +243,8 @@ impl FetchRowGroupsFromObjectStore {
         });
 
         Ok(FetchRowGroupsFromObjectStore {
-            row_groups: Arc::new(Mutex::new(rcv)),
+            rg_q: Arc::new(Mutex::new(rcv)),
+            prefetched_rg: Default::default(),
         })
     }
 
@@ -237,23 +252,24 @@ impl FetchRowGroupsFromObjectStore {
         &mut self,
         row_groups: Range<usize>,
     ) -> PolarsResult<ColumnStore> {
-        let mut received = PlHashMap::new();
-        let guard = self.row_groups.lock().unwrap();
-        for _ in row_groups {
-            let downloaded = guard.recv().unwrap()?;
+        let guard = self.rg_q.lock().unwrap();
 
-            if received.is_empty() {
-                let downloaded_per_filepos = downloaded
-                    .into_iter()
-                    .flat_map(|rg| rg.into_iter())
-                    .collect::<PlHashMap<_, _>>();
-                received = downloaded_per_filepos
-            } else {
-                let downloaded_per_filepos = downloaded.into_iter().flat_map(|rg| rg.into_iter());
+        while !row_groups
+            .clone()
+            .all(|i| self.prefetched_rg.contains_key(&i))
+        {
+            let Ok(fetched) = guard.recv() else { break };
+            let (rg_i, payload) = fetched?;
 
-                received.extend(downloaded_per_filepos)
-            }
+            self.prefetched_rg.insert(rg_i, payload);
         }
+
+        let received = row_groups
+            .flat_map(|i| self.prefetched_rg.remove(&i))
+            .flat_map(|rg| rg.into_iter())
+            .flat_map(|v| v.into_iter())
+            .collect::<PlHashMap<_, _>>();
+
         Ok(ColumnStore::Fetched(received))
     }
 }

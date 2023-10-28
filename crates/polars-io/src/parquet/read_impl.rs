@@ -476,7 +476,7 @@ impl From<FetchRowGroupsFromMmapReader> for RowGroupFetcher {
 }
 
 impl RowGroupFetcher {
-    async fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
+    fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
         match self {
             RowGroupFetcher::Local(f) => f.fetch_row_groups(_row_groups),
             #[cfg(feature = "cloud")]
@@ -597,8 +597,7 @@ impl BatchedParquetReader {
 
             let store = self
                 .row_group_fetcher
-                .fetch_row_groups(row_group_start..row_group_end)
-                .await?;
+                .fetch_row_groups(row_group_start..row_group_end)?;
 
             let dfs = rg_to_dfs(
                 &store,
@@ -617,6 +616,7 @@ impl BatchedParquetReader {
             )?;
 
             self.row_group_offset += n;
+
             // case where there is no data in the file
             // the streaming engine needs at least a single chunk
             if self.rows_read == 0 && dfs.is_empty() {
