@@ -287,7 +287,7 @@ impl FetchRowGroupsFromObjectStore {
                     }
 
                     // Wait n - 3 tasks, so we already start the next downloads earlier.
-                    for task in handles.drain(..handles.len() - 3) {
+                    for task in handles.drain(..handles.len().saturating_sub(3)) {
                         let succeeded = task.await.unwrap();
                         if !succeeded {
                             return;
