@@ -1254,12 +1254,6 @@ def test_round() -> None:
         pytest.param(
             pl.Series([0.0]), 2, pl.Series([0.0]), id="0 should remain the same"
         ),
-        pytest.param(
-            pl.Series([1.234, 0.1234]),
-            0,
-            pl.Series([1.0, 0.1]),
-            id="Significant figures set to 0 reverts to 1 sf",
-        ),
     ],
 )
 def test_round_sig_figs(
@@ -1267,6 +1261,11 @@ def test_round_sig_figs(
 ) -> None:
     result = series.round_sig_figs(digits=digits)
     assert_series_equal(result, expected_result)
+
+
+def test_round_sig_figs_raises_exc() -> None:
+    with pytest.raises(polars.exceptions.InvalidOperationError):
+        pl.Series([1.234, 0.1234]).round_sig_figs(digits=0)
 
 
 def test_apply_list_out() -> None:
