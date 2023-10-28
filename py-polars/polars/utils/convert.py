@@ -97,7 +97,7 @@ def _negate_duration(duration: str) -> str:
     return f"-{duration}"
 
 
-def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit) -> int:
+def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
     """Convert a python datetime to a timestamp in given time unit."""
     if dt.tzinfo is None:
         # Make sure to use UTC rather than system time zone.
