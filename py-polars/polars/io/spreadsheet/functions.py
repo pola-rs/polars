@@ -222,7 +222,7 @@ def read_excel(
     The ``openpyxl`` package can also be used to parse Excel data; it has slightly
     better default type detection, but is slower than ``xlsx2csv``. If you have a sheet
     that is better read using this package you can set the engine as "openpyxl" (if you
-    use this engine then both `xlsx2csv_options` and `read_csv_options` cannot be set).
+    use this engine then neither `xlsx2csv_options` nor `read_csv_options` can be set).
 
     >>> pl.read_excel(
     ...     source="test.xlsx",
@@ -231,13 +231,15 @@ def read_excel(
     ... )  # doctest: +SKIP
 
     """
-    if xlsx2csv_options is None:
-        xlsx2csv_options = {}
-
-    if read_csv_options is None:
-        read_csv_options = {"truncate_ragged_lines": True}
-    elif "truncate_ragged_lines" not in read_csv_options:
-        read_csv_options["truncate_ragged_lines"] = True
+    if engine and engine != "xlsx2csv":
+        if xlsx2csv_options:
+            raise ValueError(
+                f"cannot specify `xlsx2csv_options` when engine={engine!r}"
+            )
+        if read_csv_options:
+            raise ValueError(
+                f"cannot specify `read_csv_options` when engine={engine!r}"
+            )
 
     return _read_spreadsheet(
         sheet_id,
@@ -406,6 +408,15 @@ def _read_spreadsheet(
             f"cannot specify both `sheet_name` ({sheet_name!r}) and `sheet_id` ({sheet_id!r})"
         )
 
+    if isinstance(source, (str, Path)):
+        source = normalize_filepath(source)
+
+    if engine is None:
+        if (src := str(source).lower()).endswith(".ods"):
+            engine = "ods"
+        else:
+            engine = "pyxlsb" if src.endswith(".xlsb") else "xlsx2csv"
+
     # establish the reading function, parser, and available worksheets
     reader_fn, parser, worksheets = _initialise_spreadsheet_parser(
         engine, source, engine_options or {}
@@ -455,26 +466,28 @@ def _read_spreadsheet(
 
 
 def _initialise_spreadsheet_parser(
-    engine: Literal["xlsx2csv", "openpyxl", "pyxlsb", "ods"] | None,
+    engine: Literal["xlsx2csv", "openpyxl", "pyxlsb", "ods"],
     source: str | BytesIO | Path | BinaryIO | bytes,
     engine_options: dict[str, Any],
 ) -> tuple[Callable[..., pl.DataFrame], Any, list[dict[str, Any]]]:
     """Instantiate the indicated spreadsheet parser and establish related properties."""
-    if isinstance(source, (str, Path)):
-        source = normalize_filepath(source)
-    if engine is None:
-        if (src := str(source).lower()).endswith(".ods"):
-            engine = "ods"
-        elif src.endswith(".xlsb"):
-            engine = "pyxlsb"
-
-    if engine == "xlsx2csv" or engine is None:  # default
+    if engine == "xlsx2csv":  # default
         try:
             import xlsx2csv
         except ImportError:
             raise ModuleNotFoundError(
                 "required package not installed" "\n\nPlease run: pip install xlsx2csv"
             ) from None
+
+        # establish sensible defaults for unset options
+        for option, value in {
+            "exclude_hidden_sheets": False,
+            "skip_empty_lines": False,
+            "skip_hidden_rows": False,
+            "floatformat": "%f",
+        }.items():
+            engine_options.setdefault(option, value)
+
         parser = xlsx2csv.Xlsx2csv(source, **engine_options)
         sheets = parser.workbook.sheets
         return _read_spreadsheet_xlsx2csv, parser, sheets
@@ -758,6 +771,10 @@ def _read_spreadsheet_xlsx2csv(
         outfile=csv_buffer,
         sheetname=sheet_name,
     )
+    if read_csv_options is None:
+        read_csv_options = {}
+    read_csv_options.setdefault("truncate_ragged_lines", True)
+
     return _csv_buffer_to_frame(
         csv_buffer,
         separator=",",
