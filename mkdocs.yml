@@ -82,8 +82,9 @@ nav:
     - Misc:
       - user-guide/misc/multiprocessing.md
       - user-guide/misc/alternatives.md
-      - user-guide/misc/reference-guides.md
       - user-guide/misc/contributing.md
+
+  - API reference: api/reference.md
 
   - Development:
     - development/contributing.md
