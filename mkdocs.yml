@@ -83,7 +83,7 @@ nav:
       - user-guide/misc/multiprocessing.md
       - user-guide/misc/alternatives.md
 
-  - API reference: api/reference.md
+  - API reference: api/index.md
 
   - Development:
     - development/contributing.md
@@ -92,6 +92,7 @@ nav:
   - Releases:
     - releases/changelog.md
     - Upgrade guide:
+      - releases/upgrade/index.md
       - releases/upgrade/0.19.md
 
 not_in_nav: |
