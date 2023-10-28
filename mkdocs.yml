@@ -91,7 +91,7 @@ nav:
 
   - Releases:
     - releases/changelog.md
-    - Upgrade guide:
+    - Upgrade guides:
       - releases/upgrade/index.md
       - releases/upgrade/0.19.md
 
