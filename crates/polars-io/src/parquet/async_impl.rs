@@ -46,7 +46,7 @@ impl ParquetObjectStore {
         })
     }
 
-    async fn get_range(&self, start: usize, length: usize) -> PolarsResult<Bytes>{
+    async fn get_range(&self, start: usize, length: usize) -> PolarsResult<Bytes> {
         self.store
             .get_range(&self.path, start..start + length)
             .await
@@ -128,53 +128,52 @@ async fn read_columns_async(
 /// We concurrently download the columns for each field.
 async fn download_projection(
     fields: &[SmartString],
-    row_groups: &[RowGroupMetaData],
+    row_group: &RowGroupMetaData,
     async_reader: &Arc<ParquetObjectStore>,
-) -> PolarsResult<Vec<Vec<(u64, Bytes)>>> {
-    // Build the cartesian product of the fields and the row groups.
-    let product_futures = fields
-        .iter()
-        .flat_map(|name| row_groups.iter().map(move |r| (name.clone(), r)))
-        .enumerate()
-        .map(|(i, (name, row_group))| async move {
-            let columns = row_group.columns();
-            let ranges = columns
-                .iter()
-                .filter_map(|meta| {
-                    if meta.descriptor().path_in_schema[0] == name.as_str() {
-                        Some(meta.byte_range())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>();
-            let async_reader = async_reader.clone();
-
-            if i < 10 {
-                let handle =
-                    tokio::spawn(async move { read_columns_async(&async_reader, &ranges).await });
-                handle.await.unwrap()
-            } else {
-                read_columns_async(&async_reader, &ranges).await
-            }
-        });
+) -> PolarsResult<Vec<(u64, Bytes)>> {
+    let fut = fields.iter().map(|name| async move {
+        let columns = row_group.columns();
+        let range = columns
+            .iter()
+            .filter_map(|meta| {
+                if meta.descriptor().path_in_schema[0] == name.as_str() {
+                    Some(meta.byte_range())
+                } else {
+                    None
+                }
+            })
+            .next()
+            .unwrap();
+        let async_reader = async_reader.clone();
+        read_single_column_async(&async_reader, range.0 as usize, range.1 as usize).await
+    });
 
     // Download concurrently
-    futures::future::try_join_all(product_futures).await
+    futures::future::try_join_all(fut).await
 }
 
-async fn download_row_group(rg: &RowGroupMetaData, async_reader: &Arc<ParquetObjectStore>) -> PolarsResult<Bytes> {
+async fn download_row_group(
+    rg: &RowGroupMetaData,
+    async_reader: &Arc<ParquetObjectStore>,
+) -> PolarsResult<Bytes> {
     if rg.columns().is_empty() {
-        return Ok(Bytes::new())
+        return Ok(Bytes::new());
     }
 
     let offset = rg.columns().iter().map(|c| c.byte_range().0).min().unwrap();
-    let (max_offset, len) = rg.columns().iter().map(|c| c.byte_range()).max_by_key(|k| k.0).unwrap();
+    let (max_offset, len) = rg
+        .columns()
+        .iter()
+        .map(|c| c.byte_range())
+        .max_by_key(|k| k.0)
+        .unwrap();
 
-    async_reader.get_range(offset as usize, (max_offset + len) as usize).await
+    async_reader
+        .get_range(offset as usize, (max_offset + len) as usize)
+        .await
 }
 
-type DownloadedRowGroup = Vec<Vec<(u64, Bytes)>>;
+type DownloadedRowGroup = Vec<(u64, Bytes)>;
 type QueuePayload = (usize, DownloadedRowGroup);
 
 pub struct FetchRowGroupsFromObjectStore {
@@ -237,7 +236,7 @@ impl FetchRowGroupsFromObjectStore {
         let _ = std::thread::spawn(move || {
             get_runtime().block_on(async {
                 'loop_rg: for (i, rg) in row_groups {
-                    let fetched = download_projection(&projected_fields, &[rg], &reader).await;
+                    let fetched = download_projection(&projected_fields, &rg, &reader).await;
 
                     match fetched {
                         Ok(fetched) => {
@@ -281,7 +280,6 @@ impl FetchRowGroupsFromObjectStore {
         let received = row_groups
             .flat_map(|i| self.prefetched_rg.remove(&i))
             .flat_map(|rg| rg.into_iter())
-            .flat_map(|v| v.into_iter())
             .collect::<PlHashMap<_, _>>();
 
         Ok(ColumnStore::Fetched(received))
