@@ -165,17 +165,20 @@ impl PySeries {
             Err(e) => return Err(PyPolarsErr::from(e).into()),
         };
 
-        if let AnyValue::List(s) = av {
-            let pyseries = PySeries::new(s);
-            let out = POLARS
-                .getattr(py, "wrap_s")
-                .unwrap()
-                .call1(py, (pyseries,))
-                .unwrap();
-            return Ok(out.into_py(py));
-        }
+        let out = match av {
+            AnyValue::List(s) | AnyValue::Array(s, _) => {
+                let pyseries = PySeries::new(s);
+                let out = POLARS
+                    .getattr(py, "wrap_s")
+                    .unwrap()
+                    .call1(py, (pyseries,))
+                    .unwrap();
+                out.into_py(py)
+            },
+            _ => Wrap(av).into_py(py),
+        };
 
-        Ok(Wrap(av).into_py(py))
+        Ok(out)
     }
 
     /// Get index but allow negative indices

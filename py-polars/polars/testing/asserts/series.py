@@ -151,14 +151,6 @@ def _assert_series_values_equal(
         if right.dtype == Categorical:
             right = right.cast(Utf8)
 
-    # Handle arrays
-    # TODO: Remove this check when equality for Arrays is implemented
-    # https://github.com/pola-rs/polars/issues/12012
-    if left.dtype == Array:
-        left = left.cast(List(left.dtype.inner))  # type: ignore[union-attr]
-    if right.dtype == Array:
-        right = right.cast(List(right.dtype.inner))  # type: ignore[union-attr]
-
     # Determine unequal elements
     try:
         unequal = left.ne_missing(right)
