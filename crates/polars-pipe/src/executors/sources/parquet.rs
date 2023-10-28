@@ -164,15 +164,32 @@ impl Source for ParquetSource {
         }
         let reader = self.batched_reader.as_mut().unwrap();
 
-        let batches = get_runtime().block_on(reader.next_batches(self.n_threads))?;
+        // We branch, because if we know the reader finishes after this batch we already want to start downloading the new batches.
+        // We can only do that if we don't have to update the row_count/limit with the result of this iteration.
+        let (reset, limit_reached, batches) =
+            if reader.finishes_this_batch(self.n_threads) && self.file_options.n_rows.is_none() {
+                // Take the reader, and immediately start the new download, before we await this one.
+                let mut reader = self.batched_reader.take().unwrap();
+                // Already ensure the new downloads are started
+                self.init_reader()?;
+                let batches = get_runtime().block_on(reader.next_batches(self.n_threads))?;
+
+                (false, reader.limit_reached(), batches)
+            } else {
+                let batches = get_runtime().block_on(reader.next_batches(self.n_threads))?;
+
+                (reader.is_finished(), reader.limit_reached(), batches)
+            };
 
         Ok(match batches {
             None => {
-                if reader.limit_reached() {
+                if limit_reached {
                     return Ok(SourceResult::Finished);
                 }
-                // Set the new the reader.
-                self.init_reader()?;
+                if reset {
+                    // Set the new the reader.
+                    self.init_reader()?;
+                }
                 return self.get_batches(_context);
             },
             Some(batches) => {
@@ -193,7 +210,7 @@ impl Source for ParquetSource {
                 );
 
                 // Already start downloading the new files before we push the data into the engine.
-                if reader.is_finished() {
+                if reset {
                     self.init_reader()?
                 }
                 source_result

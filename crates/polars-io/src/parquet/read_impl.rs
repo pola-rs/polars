@@ -583,6 +583,10 @@ impl BatchedParquetReader {
         self.row_group_offset >= self.n_row_groups
     }
 
+    pub fn finishes_this_batch(&self, n: usize) -> bool {
+        self.row_group_offset + n > self.n_row_groups
+    }
+
     pub async fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
         if self.limit == 0 && self.has_returned {
             return Ok(None);
