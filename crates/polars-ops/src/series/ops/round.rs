@@ -41,7 +41,7 @@ pub trait RoundSeries: SeriesSealed {
         let s = self.as_series();
         if digits < 1 {
             polars_bail!(
-                InvalidOperation: "Significant figures must be a positive integer."
+                InvalidOperation: "Digits must be a positive integer."
             )
         };
 
