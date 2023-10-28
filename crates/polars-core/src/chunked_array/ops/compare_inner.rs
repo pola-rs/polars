@@ -159,6 +159,7 @@ impl<'a> IntoPartialOrdInner<'a> for &'a CategoricalChunked {
         match &**self.get_rev_map() {
             RevMapping::Global(p1, p2, _) => Box::new(GlobalCategorical { p1, p2, cats }),
             RevMapping::Local(rev_map, _) => Box::new(LocalCategorical { rev_map, cats }),
+            RevMapping::UserDefined(rev_map) => Box::new(LocalCategorical { rev_map, cats }),
         }
     }
 }

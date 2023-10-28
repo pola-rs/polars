@@ -9,6 +9,12 @@ pub fn create_categorical_chunked_listbuilder(
     rev_map: Arc<RevMapping>,
 ) -> Box<dyn ListBuilderTrait> {
     match &*rev_map {
+        RevMapping::UserDefined(_) => Box::new(ListLocalCategoricalChunkedBuilder::new(
+            name,
+            capacity,
+            values_capacity,
+            0,
+        )),
         RevMapping::Local(_, h) => Box::new(ListLocalCategoricalChunkedBuilder::new(
             name,
             capacity,

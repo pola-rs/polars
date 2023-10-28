@@ -10,8 +10,6 @@ use crate::chunked_array::temporal::validate_time_zone;
 #[cfg(feature = "dtype-datetime")]
 use crate::prelude::DataType::Datetime;
 use crate::prelude::*;
-#[cfg(feature = "dtype-categorical")]
-use crate::using_string_cache;
 
 pub(crate) fn cast_chunks(
     chunks: &[ArrayRef],
@@ -185,8 +183,8 @@ impl ChunkCast for Utf8Chunked {
                     Ok(ca.into_series())
                 },
                 Some(rev_map) => {
-                    polars_ensure!(!using_string_cache(), InvalidOperation: "Can not cast to categorical with fixed categories while global string cache is active");
-                    CategoricalChunked::from_string_with_fixed_categories(
+                    polars_ensure!(rev_map.is_user_defined(), InvalidOperation: "casting to a categorical with a non-user defined mapping is not supported");
+                    CategoricalChunked::from_utf_with_user_defined_categories(
                         self,
                         rev_map.get_categories(),
                     )

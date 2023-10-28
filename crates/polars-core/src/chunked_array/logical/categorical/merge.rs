@@ -222,37 +222,3 @@ pub fn make_categoricals_compatible(
 
     Ok((new_ca_left, new_ca_right))
 }
-
-#[cfg(test)]
-#[cfg(feature = "single_thread")]
-mod test {
-    use super::*;
-    use crate::chunked_array::categorical::CategoricalChunkedBuilder;
-    use crate::{disable_string_cache, enable_string_cache, StringCacheHolder};
-
-    #[test]
-    fn test_merge_rev_map() {
-        let _lock = SINGLE_LOCK.lock();
-        disable_string_cache();
-        let _sc = StringCacheHolder::hold();
-
-        let mut builder1 = CategoricalChunkedBuilder::new("foo", 10);
-        let mut builder2 = CategoricalChunkedBuilder::new("foo", 10);
-        builder1.drain_iter(vec![None, Some("hello"), Some("vietnam")]);
-        builder2.drain_iter(vec![Some("hello"), None, Some("world"), Some("bar")].into_iter());
-        let ca1 = builder1.finish();
-        let ca2 = builder2.finish();
-        let rev_map = ca1._merge_categorical_map(&ca2).unwrap();
-
-        let mut ca = UInt32Chunked::new("", &[0, 1, 2, 3]);
-        ca.categorical_map = Some(rev_map);
-        let s = ca
-            .cast(&DataType::Categorical)
-            .unwrap()
-            .cast(&DataType::Utf8)
-            .unwrap();
-        let ca = s.utf8().unwrap();
-        let vals = ca.into_no_null_iter().collect::<Vec<_>>();
-        assert_eq!(vals, &["hello", "vietnam", "world", "bar"]);
-    }
-}

@@ -869,7 +869,9 @@ impl Series {
         match self.dtype() {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(Some(rv)) => match &**rv {
-                RevMapping::Local(arr, _) => size += estimated_bytes_size(arr),
+                RevMapping::Local(arr, _) | RevMapping::UserDefined(arr) => {
+                    size += estimated_bytes_size(arr)
+                },
                 RevMapping::Global(map, arr, _) => {
                     size +=
                         map.capacity() * std::mem::size_of::<u32>() * 2 + estimated_bytes_size(arr);

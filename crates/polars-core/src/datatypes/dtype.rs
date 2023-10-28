@@ -417,6 +417,6 @@ pub(crate) fn can_extend_dtype(left: &DataType, right: &DataType) -> PolarsResul
 
 #[cfg(feature = "dtype-categorical")]
 pub fn create_categorical_data_type(categories: Utf8Array<i64>) -> DataType {
-    let rev_map = RevMapping::from_fixed_categories(categories.clone());
+    let rev_map = RevMapping::from_user_defined(categories.clone());
     DataType::Categorical(Some(Arc::new(rev_map)))
 }
