@@ -1111,19 +1111,7 @@ impl Expr {
 
     #[cfg(feature = "repeat_by")]
     fn repeat_by_impl(self, by: Expr) -> Expr {
-        let function = |s: &mut [Series]| {
-            let by = &s[1];
-            let s = &s[0];
-            let by = by.cast(&IDX_DTYPE)?;
-            Ok(Some(repeat_by(s, by.idx()?)?.into_series()))
-        };
-
-        self.apply_many(
-            function,
-            &[by],
-            GetOutput::map_dtype(|dt| DataType::List(dt.clone().into())),
-        )
-        .with_fmt("repeat_by")
+        self.apply_many_private(FunctionExpr::RepeatBy, &[by], false, false)
     }
 
     #[cfg(feature = "repeat_by")]
@@ -1574,29 +1562,7 @@ impl Expr {
 
     pub fn reshape(self, dims: &[i64]) -> Self {
         let dims = dims.to_vec();
-        let output_type = if dims.len() == 1 {
-            GetOutput::map_field(|fld| {
-                Field::new(
-                    fld.name(),
-                    fld.data_type()
-                        .inner_dtype()
-                        .unwrap_or_else(|| fld.data_type())
-                        .clone(),
-                )
-            })
-        } else {
-            GetOutput::map_field(|fld| {
-                let dtype = fld
-                    .data_type()
-                    .inner_dtype()
-                    .unwrap_or_else(|| fld.data_type())
-                    .clone();
-
-                Field::new(fld.name(), DataType::List(Box::new(dtype)))
-            })
-        };
-        self.apply(move |s| s.reshape(&dims).map(Some), output_type)
-            .with_fmt("reshape")
+        self.apply_private(FunctionExpr::Reshape(dims))
     }
 
     #[cfg(feature = "ewma")]

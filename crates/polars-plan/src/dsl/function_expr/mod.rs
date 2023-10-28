@@ -144,6 +144,9 @@ pub enum FunctionExpr {
     Skew(bool),
     #[cfg(feature = "moment")]
     Kurtosis(bool, bool),
+    Reshape(Vec<i64>),
+    #[cfg(feature = "repeat_by")]
+    RepeatBy,
     ArgUnique,
     #[cfg(feature = "rank")]
     Rank {
@@ -455,6 +458,11 @@ impl Hash for FunctionExpr {
                 left_closed.hash(state);
                 include_breaks.hash(state);
             },
+            FunctionExpr::Reshape(dims) => {
+                dims.hash(state);
+            },
+            #[cfg(feature = "repeat_by")]
+            FunctionExpr::RepeatBy => {},
             #[cfg(feature = "cutqcut")]
             FunctionExpr::QCut {
                 probs,
@@ -620,6 +628,9 @@ impl Display for FunctionExpr {
             Cut { .. } => "cut",
             #[cfg(feature = "cutqcut")]
             QCut { .. } => "qcut",
+            Reshape(_) => "reshape",
+            #[cfg(feature = "repeat_by")]
+            RepeatBy => "repeat_by",
             #[cfg(feature = "rle")]
             RLE => "rle",
             #[cfg(feature = "rle")]
@@ -934,6 +945,9 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             PeakMin => map!(peaks::peak_min),
             #[cfg(feature = "peaks")]
             PeakMax => map!(peaks::peak_max),
+            #[cfg(feature = "repeat_by")]
+            RepeatBy => map_as_slice!(dispatch::repeat_by),
+            Reshape(dims) => map!(dispatch::reshape, dims.clone()),
             #[cfg(feature = "cutqcut")]
             Cut {
                 breaks,

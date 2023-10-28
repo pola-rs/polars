@@ -227,6 +227,16 @@ impl FunctionExpr {
                 ]);
                 mapper.with_dtype(struct_dt)
             },
+            #[cfg(feature = "repeat_by")]
+            RepeatBy => mapper.map_dtype(|dt| DataType::List(dt.clone().into())),
+            Reshape(dims) => mapper.map_dtype(|dt| {
+                let dtype = dt.inner_dtype().unwrap_or(dt).clone();
+                if dims.len() == 1 {
+                    dtype
+                } else {
+                    DataType::List(Box::new(dtype))
+                }
+            }),
             #[cfg(feature = "cutqcut")]
             QCut {
                 include_breaks: false,
