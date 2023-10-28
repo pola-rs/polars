@@ -555,8 +555,8 @@ macro_rules! df {
 pub fn get_time_units(tu_l: &TimeUnit, tu_r: &TimeUnit) -> TimeUnit {
     use TimeUnit::*;
     match (tu_l, tu_r) {
-        (Nanoseconds, Microseconds) => Microseconds,
-        (_, Milliseconds) => Milliseconds,
+        (_, Nanoseconds) => Nanoseconds,
+        (Milliseconds, Microseconds) => Microseconds,
         _ => *tu_l,
     }
 }

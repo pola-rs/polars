@@ -145,6 +145,49 @@ def test_add_duration_3786() -> None:
     }
 
 
+def test_datetime_ms_add_duration_us() -> None:
+    duration_us = pl.duration(microseconds=15)
+    df_datetimes = pl.DataFrame(
+        {
+            "datetime": [
+                datetime(2000, 1, 1, 1, second=30),
+                datetime(2000, 1, 1, 1, second=35),
+                datetime(2000, 1, 1, 1, second=40),
+            ]
+        },
+        schema={"datetime": pl.Datetime(time_unit="ms")},
+    )
+
+    df_add_us = df_datetimes.select(pl.col("datetime") + duration_us)
+
+    assert df_add_us["datetime"].dt.microsecond().to_list() == [15, 15, 15]
+
+    assert df_add_us["datetime"].dtype.time_unit == "us"
+
+
+def test_datetime_us_add_duration_ns() -> None:
+    duration_ns = pl.duration(nanoseconds=15, time_unit="ns")
+    df_datetimes = pl.DataFrame(
+        {
+            "datetime": [
+                datetime(2000, 1, 1, 1, microsecond=30),
+                datetime(2000, 1, 1, 1, microsecond=35),
+                datetime(2000, 1, 1, 1, microsecond=40),
+            ]
+        }
+    )
+
+    df_add_ns = df_datetimes.select(pl.col("datetime") + duration_ns)
+
+    assert df_add_ns["datetime"].dt.nanosecond().to_list() == [
+        15 + 30 * 1000,
+        15 + 35 * 1000,
+        15 + 40 * 1000,
+    ]
+
+    assert df_add_ns["datetime"].dtype.time_unit == "ns"
+
+
 @pytest.mark.parametrize(
     ("time_unit", "ms", "us", "ns"),
     [

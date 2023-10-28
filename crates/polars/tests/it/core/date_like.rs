@@ -136,6 +136,57 @@ fn test_duration() -> PolarsResult<()> {
             .into_duration(TimeUnit::Nanoseconds)
             .into_series()
     );
+
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "dtype-duration")]
+fn test_duration_arithmetic_cross_timeunit() -> PolarsResult<()> {
+    let datetime_ns = Int64Chunked::new("", &[2, 3, 4])
+        .into_datetime(TimeUnit::Nanoseconds, None)
+        .into_series();
+
+    let datetime_us = Int64Chunked::new("", &[2, 3, 4])
+        .into_datetime(TimeUnit::Microseconds, None)
+        .into_series();
+
+    let datetime_ms = Int64Chunked::new("", &[2, 3, 4])
+        .into_datetime(TimeUnit::Milliseconds, None)
+        .into_series();
+
+    let duration_ns = Int64Chunked::new("", &[1, 1, 1])
+        .into_duration(TimeUnit::Nanoseconds)
+        .into_series();
+
+    let duration_us = Int64Chunked::new("", &[1, 1, 1])
+        .into_duration(TimeUnit::Microseconds)
+        .into_series();
+
+    let duration_ms = Int64Chunked::new("", &[1, 1, 1])
+        .into_duration(TimeUnit::Milliseconds)
+        .into_series();
+
+    assert_eq!(
+        *(datetime_ns.clone() + duration_us).dtype(),
+        DataType::Datetime(TimeUnit::Nanoseconds, None)
+    );
+
+    assert_eq!(
+        *(datetime_ns + duration_ms.clone()).dtype(),
+        DataType::Datetime(TimeUnit::Nanoseconds, None)
+    );
+
+    assert_eq!(
+        *(datetime_us + duration_ms).dtype(),
+        DataType::Datetime(TimeUnit::Microseconds, None)
+    );
+
+    assert_eq!(
+        *(datetime_ms + duration_ns).dtype(),
+        DataType::Datetime(TimeUnit::Nanoseconds, None)
+    );
+
     Ok(())
 }
 
