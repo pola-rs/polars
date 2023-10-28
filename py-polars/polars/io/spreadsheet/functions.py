@@ -231,6 +231,16 @@ def read_excel(
     ... )  # doctest: +SKIP
 
     """
+    if engine and engine != "xlsx2csv":
+        if xlsx2csv_options:
+            raise ValueError(
+                f"cannot specify `xlsx2csv_options` when engine={engine!r}"
+            )
+        if read_csv_options:
+            raise ValueError(
+                f"cannot specify `read_csv_options` when engine={engine!r}"
+            )
+
     return _read_spreadsheet(
         sheet_id,
         sheet_name,

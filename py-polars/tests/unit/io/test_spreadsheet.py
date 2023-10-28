@@ -681,3 +681,19 @@ def test_excel_hidden_columns(
 
     read_df = pl.read_excel(xls)
     assert_frame_equal(df, read_df)
+
+
+def test_invalid_engine_options() -> None:
+    with pytest.raises(ValueError, match="cannot specify `read_csv_options`"):
+        pl.read_excel(
+            "",
+            engine="openpyxl",
+            read_csv_options={"sep": "\t"},
+        )
+
+    with pytest.raises(ValueError, match="cannot specify `xlsx2csv_options`"):
+        pl.read_excel(
+            "",
+            engine="openpyxl",
+            xlsx2csv_options={"skip_empty_lines": True},
+        )
