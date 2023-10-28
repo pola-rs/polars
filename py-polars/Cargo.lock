@@ -25,14 +25,15 @@ checksum = "aae1277d39aeec15cb388266ecc24b11c80469deae6067e17a1a7aa9e5c1f234"
 
 [[package]]
 name = "ahash"
-version = "0.8.3"
+version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c99f64d1e06488f620f932677e24bc6e2897582980441ae90a671415bd7ec2f"
+checksum = "cd7d5a2cecb58716e47d67d5703a249964b14c7be1ec3cad3affc295b2d1c35d"
 dependencies = [
  "cfg-if",
  "getrandom",
  "once_cell",
  "version_check",
+ "zerocopy",
 ]
 
 [[package]]
@@ -1475,25 +1476,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "parquet2"
-version = "0.17.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "579fe5745f02cef3d5f236bfed216fd4693e49e4e920a13475c6132233283bce"
-dependencies = [
- "async-stream",
- "brotli",
- "flate2",
- "futures",
- "lz4",
- "parquet-format-safe",
- "seq-macro",
- "snap",
- "streaming-decompression",
- "xxhash-rust",
- "zstd",
-]
-
-[[package]]
 name = "parse-zoneinfo"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1575,7 +1557,7 @@ dependencies = [
 
 [[package]]
 name = "polars"
-version = "0.33.2"
+version = "0.34.2"
 dependencies = [
  "getrandom",
  "polars-core",
@@ -1589,7 +1571,7 @@ dependencies = [
 
 [[package]]
 name = "polars-algo"
-version = "0.33.2"
+version = "0.34.2"
 dependencies = [
  "polars-core",
  "polars-lazy",
@@ -1598,20 +1580,18 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.33.2"
+version = "0.34.2"
 dependencies = [
  "ahash",
  "arrow-format",
  "atoi",
  "avro-schema",
- "base64",
  "bytemuck",
  "chrono",
  "chrono-tz",
  "dyn-clone",
  "either",
  "ethnum",
- "fallible-streaming-iterator",
  "foreign_vec",
  "futures",
  "getrandom",
@@ -1620,7 +1600,6 @@ dependencies = [
  "lz4",
  "multiversion",
  "num-traits",
- "parquet2",
  "polars-error",
  "rustc_version",
  "serde",
@@ -1632,7 +1611,7 @@ dependencies = [
 
 [[package]]
 name = "polars-core"
-version = "0.33.2"
+version = "0.34.2"
 dependencies = [
  "ahash",
  "bitflags 2.4.0",
@@ -1665,12 +1644,11 @@ dependencies = [
 
 [[package]]
 name = "polars-error"
-version = "0.33.2"
+version = "0.34.2"
 dependencies = [
  "arrow-format",
  "avro-schema",
  "object_store",
- "parquet2",
  "regex",
  "simdutf8",
  "thiserror",
@@ -1678,7 +1656,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ffi"
-version = "0.33.2"
+version = "0.34.2"
 dependencies = [
  "polars-arrow",
  "polars-core",
@@ -1686,7 +1664,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.33.2"
+version = "0.34.2"
 dependencies = [
  "ahash",
  "async-trait",
@@ -1710,6 +1688,7 @@ dependencies = [
  "polars-core",
  "polars-error",
  "polars-json",
+ "polars-parquet",
  "polars-time",
  "polars-utils",
  "rayon",
@@ -1728,7 +1707,7 @@ dependencies = [
 
 [[package]]
 name = "polars-json"
-version = "0.33.2"
+version = "0.34.2"
 dependencies = [
  "ahash",
  "chrono",
@@ -1747,10 +1726,11 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.33.2"
+version = "0.34.2"
 dependencies = [
  "ahash",
  "bitflags 2.4.0",
+ "futures",
  "glob",
  "once_cell",
  "polars-arrow",
@@ -1771,7 +1751,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ops"
-version = "0.33.2"
+version = "0.34.2"
 dependencies = [
  "ahash",
  "argminmax",
@@ -1802,8 +1782,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-parquet"
+version = "0.34.2"
+dependencies = [
+ "ahash",
+ "async-stream",
+ "base64",
+ "brotli",
+ "ethnum",
+ "flate2",
+ "futures",
+ "lz4",
+ "num-traits",
+ "parquet-format-safe",
+ "polars-arrow",
+ "polars-error",
+ "polars-utils",
+ "seq-macro",
+ "simdutf8",
+ "snap",
+ "streaming-decompression",
+ "zstd",
+]
+
+[[package]]
 name = "polars-pipe"
-version = "0.33.2"
+version = "0.34.2"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-queue",
@@ -1825,9 +1829,10 @@ dependencies = [
 
 [[package]]
 name = "polars-plan"
-version = "0.33.2"
+version = "0.34.2"
 dependencies = [
  "ahash",
+ "bytemuck",
  "chrono",
  "chrono-tz",
  "ciborium",
@@ -1839,6 +1844,7 @@ dependencies = [
  "polars-ffi",
  "polars-io",
  "polars-ops",
+ "polars-parquet",
  "polars-time",
  "polars-utils",
  "pyo3",
@@ -1852,7 +1858,7 @@ dependencies = [
 
 [[package]]
 name = "polars-row"
-version = "0.33.2"
+version = "0.34.2"
 dependencies = [
  "polars-arrow",
  "polars-error",
@@ -1861,7 +1867,7 @@ dependencies = [
 
 [[package]]
 name = "polars-sql"
-version = "0.33.2"
+version = "0.34.2"
 dependencies = [
  "polars-arrow",
  "polars-core",
@@ -1876,7 +1882,7 @@ dependencies = [
 
 [[package]]
 name = "polars-time"
-version = "0.33.2"
+version = "0.34.2"
 dependencies = [
  "atoi",
  "chrono",
@@ -1895,11 +1901,12 @@ dependencies = [
 
 [[package]]
 name = "polars-utils"
-version = "0.33.2"
+version = "0.34.2"
 dependencies = [
  "ahash",
  "bytemuck",
  "hashbrown 0.14.0",
+ "indexmap 2.0.0",
  "num-traits",
  "once_cell",
  "polars-error",
@@ -1926,7 +1933,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.19.8"
+version = "0.19.12-rc.1"
 dependencies = [
  "ahash",
  "built",
@@ -1945,6 +1952,7 @@ dependencies = [
  "polars-error",
  "polars-lazy",
  "polars-ops",
+ "polars-parquet",
  "polars-plan",
  "pyo3",
  "pyo3-built",
@@ -2395,9 +2403,9 @@ dependencies = [
 
 [[package]]
 name = "simd-json"
-version = "0.11.1"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "474b451aaac1828ed12f6454a80fe58b940ae2998d10389d41533940a6f641bf"
+checksum = "f0f07a84c7456b901b8dd2c1d44caca8b0fd2c2616206ee5acc9d9da61e8d9ec"
 dependencies = [
  "ahash",
  "getrandom",
@@ -3110,21 +3118,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9828b178da53440fa9c766a3d2f73f7cf5d0ac1fe3980c1e5018d899fd19e07b"
 
 [[package]]
-name = "zstd"
-version = "0.12.4"
+name = "zerocopy"
+version = "0.7.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a27595e173641171fc74a1232b7b1c7a7cb6e18222c11e9dfb9888fa424c53c"
+checksum = "4c19fae0c8a9efc6a8281f2e623db8af1db9e57852e04cde3e754dd2dc29340f"
+dependencies = [
+ "zerocopy-derive",
+]
+
+[[package]]
+name = "zerocopy-derive"
+version = "0.7.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc56589e9ddd1f1c28d4b4b5c773ce232910a6bb67a70133d61c9e347585efe9"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.36",
+]
+
+[[package]]
+name = "zstd"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bffb3309596d527cfcba7dfc6ed6052f1d39dfbd7c867aa2e865e4a449c10110"
 dependencies = [
  "zstd-safe",
 ]
 
 [[package]]
 name = "zstd-safe"
-version = "6.0.6"
+version = "7.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee98ffd0b48ee95e6c5168188e44a54550b1564d9d530ee21d5f0eaed1069581"
+checksum = "43747c7422e2924c11144d5229878b98180ef8b06cca4ab5af37afc8a8d8ea3e"
 dependencies = [
- "libc",
  "zstd-sys",
 ]
 

@@ -34,6 +34,7 @@ The following methods are available under the `expr.list` attribute.
     Expr.list.mean
     Expr.list.min
     Expr.list.reverse
+    Expr.list.sample
     Expr.list.set_difference
     Expr.list.set_intersection
     Expr.list.set_symmetric_difference

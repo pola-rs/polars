@@ -26,7 +26,6 @@ from polars.datatypes import (
 )
 from polars.series import Series
 from polars.string_cache import StringCache
-from polars.testing.asserts import is_categorical_dtype
 from polars.testing.parametric.strategies import (
     _flexhash,
     all_strategies,
@@ -431,7 +430,7 @@ def series(
                 dtype=series_dtype,
                 values=series_values,
             )
-            if is_categorical_dtype(dtype):
+            if dtype == Categorical:
                 s = s.cast(Categorical)
             if series_size and (chunked or (chunked is None and draw(booleans()))):
                 split_at = series_size // 2
@@ -719,9 +718,7 @@ def dataframes(
                         schema={repr(schema).replace("', ","', pl.")},
                         orient={orient!r},
                     )
-                    """.replace(
-                        "datetime.", ""
-                    )
+                    """.replace("datetime.", "")
                 )
                 # note: this avoids printing the repro twice
                 if failed_frame_init not in _failed_frame_init_msgs_:

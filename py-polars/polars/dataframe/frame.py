@@ -23,6 +23,7 @@ from typing import (
     NoReturn,
     Sequence,
     TypeVar,
+    Union,
     cast,
     overload,
 )
@@ -174,10 +175,10 @@ if TYPE_CHECKING:
     # MultiColSelector indexes into the horizontal axis
     # NOTE: wrapping these as strings is necessary for Python <3.10
 
-    MultiRowSelector: TypeAlias = "slice | range | list[int] | Series"
-    MultiColSelector: TypeAlias = (
-        "slice | range | list[int] | list[str] | list[bool] | Series"
-    )
+    MultiRowSelector: TypeAlias = Union[slice, range, "list[int]", "Series"]
+    MultiColSelector: TypeAlias = Union[
+        slice, range, "list[int]", "list[str]", "list[bool]", "Series"
+    ]
 
     T = TypeVar("T")
     P = ParamSpec("P")
@@ -1037,6 +1038,7 @@ class DataFrame:
         cls,
         source: str | Path | IOBase | bytes,
         *,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
         schema: SchemaDefinition | None = None,
         schema_overrides: SchemaDefinition | None = None,
     ) -> Self:
@@ -1057,7 +1059,10 @@ class DataFrame:
 
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_json(
-            source, schema=schema, schema_overrides=schema_overrides
+            source,
+            infer_schema_length=infer_schema_length,
+            schema=schema,
+            schema_overrides=schema_overrides,
         )
         return self
 
@@ -1272,7 +1277,9 @@ class DataFrame:
             return self.to_numpy().__array__()
 
     def __dataframe__(
-        self, nan_as_null: bool = False, allow_copy: bool = True  # noqa: FBT001
+        self,
+        nan_as_null: bool = False,  # noqa: FBT001
+        allow_copy: bool = True,  # noqa: FBT001
     ) -> PolarsDataFrame:
         """
         Convert to a dataframe object implementing the dataframe interchange protocol.
@@ -1351,7 +1358,7 @@ class DataFrame:
             raise ValueError("DataFrame dimensions do not match")
 
         suffix = "__POLARS_CMP_OTHER"
-        other_renamed = other.select(F.all().suffix(suffix))
+        other_renamed = other.select(F.all().name.suffix(suffix))
         combined = F.concat([self, other_renamed], how="horizontal")
 
         if op == "eq":
@@ -1485,7 +1492,7 @@ class DataFrame:
         self, other: DataFrame | Series | int | float | bool | str
     ) -> DataFrame:
         if isinstance(other, str):
-            return self.select((lit(other) + F.col("*")).keep_name())
+            return self.select((lit(other) + F.col("*")).name.keep())
         return self + other
 
     def __sub__(self, other: DataFrame | Series | int | float) -> Self:
@@ -1631,13 +1638,11 @@ class DataFrame:
                 ):
                     df = self[:, col_selection]
                     return df.slice(row_selection, 1)
-                # df[2, "a"]
-                if isinstance(col_selection, str):
-                    return self[col_selection][row_selection]
 
-            # column selection can be "a" and ["a", "b"]
+            # df[:, "a"]
             if isinstance(col_selection, str):
-                col_selection = [col_selection]
+                series = self.get_column(col_selection)
+                return series[row_selection]
 
             # df[:, 1]
             if isinstance(col_selection, int):
@@ -1666,7 +1671,7 @@ class DataFrame:
         # select single column
         # df["foo"]
         if isinstance(item, str):
-            return wrap_s(self._df.column(item))
+            return self.get_column(item)
 
         # df[idx]
         if isinstance(item, int):
@@ -1864,7 +1869,7 @@ class DataFrame:
         s = (
             self._df.select_at_idx(column)
             if isinstance(column, int)
-            else self._df.column(column)
+            else self._df.get_column(column)
         )
         if s is None:
             raise IndexError(f"column index {column!r} is out of bounds")
@@ -1909,13 +1914,15 @@ class DataFrame:
 
     @overload
     def to_dict(
-        self, as_series: bool  # noqa: FBT001
+        self,
+        as_series: bool,  # noqa: FBT001
     ) -> dict[str, Series] | dict[str, list[Any]]:
         ...
 
     # TODO: Make `as_series` keyword-only
     def to_dict(
-        self, as_series: bool = True  # noqa: FBT001
+        self,
+        as_series: bool = True,  # noqa: FBT001
     ) -> dict[str, Series] | dict[str, list[Any]]:
         """
         Convert DataFrame to a dictionary mapping column name to values.
@@ -2027,7 +2034,10 @@ class DataFrame:
 
     @deprecate_nonkeyword_arguments(version="0.19.3")
     def to_numpy(
-        self, structured: bool = False, *, order: IndexOrder = "fortran"  # noqa: FBT001
+        self,
+        structured: bool = False,  # noqa: FBT001
+        *,
+        order: IndexOrder = "fortran",
     ) -> np.ndarray[Any, Any]:
         """
         Convert DataFrame to a 2D NumPy array.
@@ -3092,7 +3102,11 @@ class DataFrame:
                 options = {"hidden": True}
             if column in column_widths:  # type: ignore[operator]
                 ws.set_column_pixels(
-                    col_idx, col_idx, column_widths[column], None, options  # type: ignore[index]
+                    col_idx,
+                    col_idx,
+                    column_widths[column],  # type: ignore[index]
+                    None,
+                    options,
                 )
             elif options:
                 ws.set_column(col_idx, col_idx, None, None, options)
@@ -3970,8 +3984,8 @@ class DataFrame:
         Provide multiple filters using `*args` syntax:
 
         >>> df.filter(
-        ...     pl.col("foo") == 1,
-        ...     pl.col("ham") == "a",
+        ...     pl.col("foo") <= 2,
+        ...     ~pl.col("ham").is_in(["b", "c"]),
         ... )
         shape: (1, 3)
         ┌─────┬─────┬─────┐
@@ -3984,14 +3998,14 @@ class DataFrame:
 
         Provide multiple filters using `**kwargs` syntax:
 
-        >>> df.filter(foo=1, ham="a")
+        >>> df.filter(foo=2, ham="b")
         shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
         │ i64 ┆ i64 ┆ str │
         ╞═════╪═════╪═════╡
-        │ 1   ┆ 6   ┆ a   │
+        │ 2   ┆ 7   ┆ b   │
         └─────┴─────┴─────┘
 
         """
@@ -4164,19 +4178,19 @@ class DataFrame:
         metrics = ["count", "null_count", "mean", "std", "min"]
         percentile_exprs = []
         for p in parse_percentiles(percentiles):
-            percentile_exprs.append(F.all().quantile(p).prefix(f"{p}:"))
+            percentile_exprs.append(F.all().quantile(p).name.prefix(f"{p}:"))
             metrics.append(f"{p:.0%}")
         metrics.append("max")
 
         # execute metrics in parallel
         df_metrics = self.select(
-            F.all().count().prefix("count:"),
-            F.all().null_count().prefix("null_count:"),
-            F.all().mean().prefix("mean:"),
-            F.all().std().prefix("std:"),
-            F.all().min().prefix("min:"),
+            F.all().count().name.prefix("count:"),
+            F.all().null_count().name.prefix("null_count:"),
+            F.all().mean().name.prefix("mean:"),
+            F.all().std().name.prefix("std:"),
+            F.all().min().name.prefix("min:"),
             *percentile_exprs,
-            F.all().max().prefix("max:"),
+            F.all().max().name.prefix("max:"),
         ).row(0)
 
         # reshape wide result
@@ -6650,12 +6664,16 @@ class DataFrame:
 
     def get_column(self, name: str) -> Series:
         """
-        Get a single column as Series by name.
+        Get a single column by name.
 
         Parameters
         ----------
         name : str
             Name of the column to retrieve.
+
+        Returns
+        -------
+        Series
 
         See Also
         --------
@@ -6674,11 +6692,7 @@ class DataFrame:
         ]
 
         """
-        if not isinstance(name, str):
-            raise TypeError(
-                f"column name {name!r} should be be a string, but is {type(name).__name__!r}"
-            )
-        return self[name]
+        return wrap_s(self._df.get_column(name))
 
     def fill_null(
         self,
@@ -7458,97 +7472,80 @@ class DataFrame:
 
         return partitions
 
-    def shift(self, periods: int) -> Self:
+    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
+    def shift(self, n: int = 1, *, fill_value: IntoExpr | None = None) -> DataFrame:
         """
-        Shift values by the given period.
+        Shift values by the given number of indices.
 
         Parameters
         ----------
-        periods
-            Number of places to shift (may be negative).
-
-        See Also
-        --------
-        shift_and_fill
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "foo": [1, 2, 3],
-        ...         "bar": [6, 7, 8],
-        ...         "ham": ["a", "b", "c"],
-        ...     }
-        ... )
-        >>> df.shift(periods=1)
-        shape: (3, 3)
-        ┌──────┬──────┬──────┐
-        │ foo  ┆ bar  ┆ ham  │
-        │ ---  ┆ ---  ┆ ---  │
-        │ i64  ┆ i64  ┆ str  │
-        ╞══════╪══════╪══════╡
-        │ null ┆ null ┆ null │
-        │ 1    ┆ 6    ┆ a    │
-        │ 2    ┆ 7    ┆ b    │
-        └──────┴──────┴──────┘
-        >>> df.shift(periods=-1)
-        shape: (3, 3)
-        ┌──────┬──────┬──────┐
-        │ foo  ┆ bar  ┆ ham  │
-        │ ---  ┆ ---  ┆ ---  │
-        │ i64  ┆ i64  ┆ str  │
-        ╞══════╪══════╪══════╡
-        │ 2    ┆ 7    ┆ b    │
-        │ 3    ┆ 8    ┆ c    │
-        │ null ┆ null ┆ null │
-        └──────┴──────┴──────┘
-
-        """
-        return self._from_pydf(self._df.shift(periods))
-
-    def shift_and_fill(
-        self,
-        fill_value: int | str | float,
-        *,
-        periods: int = 1,
-    ) -> DataFrame:
-        """
-        Shift the values by a given period and fill the resulting null values.
-
-        Parameters
-        ----------
+        n
+            Number of indices to shift forward. If a negative value is passed, values
+            are shifted in the opposite direction instead.
         fill_value
-            fill None values with this value.
-        periods
-            Number of places to shift (may be negative).
+            Fill the resulting null values with this value. Accepts expression input.
+            Non-expression inputs are parsed as literals.
+
+        Notes
+        -----
+        This method is similar to the ``LAG`` operation in SQL when the value for ``n``
+        is positive. With a negative value for ``n``, it is similar to ``LEAD``.
 
         Examples
         --------
+        By default, values are shifted forward by one index.
+
         >>> df = pl.DataFrame(
         ...     {
-        ...         "foo": [1, 2, 3],
-        ...         "bar": [6, 7, 8],
-        ...         "ham": ["a", "b", "c"],
+        ...         "a": [1, 2, 3, 4],
+        ...         "b": [5, 6, 7, 8],
         ...     }
         ... )
-        >>> df.shift_and_fill(periods=1, fill_value=0)
-        shape: (3, 3)
-        ┌─────┬─────┬─────┐
-        │ foo ┆ bar ┆ ham │
-        │ --- ┆ --- ┆ --- │
-        │ i64 ┆ i64 ┆ str │
-        ╞═════╪═════╪═════╡
-        │ 0   ┆ 0   ┆ 0   │
-        │ 1   ┆ 6   ┆ a   │
-        │ 2   ┆ 7   ┆ b   │
-        └─────┴─────┴─────┘
+        >>> df.shift()
+        shape: (4, 2)
+        ┌──────┬──────┐
+        │ a    ┆ b    │
+        │ ---  ┆ ---  │
+        │ i64  ┆ i64  │
+        ╞══════╪══════╡
+        │ null ┆ null │
+        │ 1    ┆ 5    │
+        │ 2    ┆ 6    │
+        │ 3    ┆ 7    │
+        └──────┴──────┘
+
+        Pass a negative value to shift in the opposite direction instead.
+
+        >>> df.shift(-2)
+        shape: (4, 2)
+        ┌──────┬──────┐
+        │ a    ┆ b    │
+        │ ---  ┆ ---  │
+        │ i64  ┆ i64  │
+        ╞══════╪══════╡
+        │ 3    ┆ 7    │
+        │ 4    ┆ 8    │
+        │ null ┆ null │
+        │ null ┆ null │
+        └──────┴──────┘
+
+        Specify ``fill_value`` to fill the resulting null values.
+
+        >>> df.shift(-2, fill_value=100)
+        shape: (4, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 3   ┆ 7   │
+        │ 4   ┆ 8   │
+        │ 100 ┆ 100 │
+        │ 100 ┆ 100 │
+        └─────┴─────┘
 
         """
-        return (
-            self.lazy()
-            .shift_and_fill(fill_value=fill_value, periods=periods)
-            .collect(_eager=True)
-        )
+        return self.lazy().shift(n, fill_value=fill_value).collect(_eager=True)
 
     def is_duplicated(self) -> Series:
         """
@@ -7751,7 +7748,7 @@ class DataFrame:
 
         >>> with pl.Config(auto_structify=True):
         ...     df.select(
-        ...         is_odd=(pl.col(pl.INTEGER_DTYPES) % 2).suffix("_is_odd"),
+        ...         is_odd=(pl.col(pl.INTEGER_DTYPES) % 2).name.suffix("_is_odd"),
         ...     )
         ...
         shape: (3, 1)
@@ -7926,7 +7923,7 @@ class DataFrame:
 
         >>> with pl.Config(auto_structify=True):
         ...     df.drop("c").with_columns(
-        ...         diffs=pl.col(["a", "b"]).diff().suffix("_diff"),
+        ...         diffs=pl.col(["a", "b"]).diff().name.suffix("_diff"),
         ...     )
         ...
         shape: (4, 3)
@@ -8746,7 +8743,7 @@ class DataFrame:
         self,
         n: int | Series | None = None,
         *,
-        fraction: float | None = None,
+        fraction: float | Series | None = None,
         with_replacement: bool = False,
         shuffle: bool = False,
         seed: int | None = None,
@@ -8799,8 +8796,11 @@ class DataFrame:
             seed = random.randint(0, 10000)
 
         if n is None and fraction is not None:
+            if not isinstance(fraction, pl.Series):
+                fraction = pl.Series("frac", [fraction])
+
             return self._from_pydf(
-                self._df.sample_frac(fraction, with_replacement, shuffle, seed)
+                self._df.sample_frac(fraction._s, with_replacement, shuffle, seed)
             )
 
         if n is None:
@@ -9756,13 +9756,19 @@ class DataFrame:
         left_on: str | Sequence[str] | None = None,
         right_on: str | Sequence[str] | None = None,
         how: Literal["left", "inner", "outer"] = "left",
+        include_nulls: bool | None = False,
     ) -> DataFrame:
         """
-        Update the values in this `DataFrame` with the non-null values in `other`.
+        Update the values in this `DataFrame` with the values in `other`.
+
+        By default, null values in the right dataframe are ignored. Use
+        `ignore_nulls=False` to overwrite values in this frame with null values in other
+        frame.
 
         Notes
         -----
-        This is syntactic sugar for a left/inner join + coalesce
+        This is syntactic sugar for a left/inner join, with an optional coalesce when
+        `include_nulls = False`.
 
         Warnings
         --------
@@ -9786,6 +9792,9 @@ class DataFrame:
             * 'inner' keeps only those rows where the key exists in both frames.
             * 'outer' will update existing rows where the key matches while also
               adding any new rows contained in the given frame.
+        include_nulls
+            If True, null values from the right dataframe will be used to update the
+            left dataframe.
 
         Examples
         --------
@@ -9861,10 +9870,29 @@ class DataFrame:
         │ 5   ┆ -66 │
         └─────┴─────┘
 
+        Update `df` values including null values in `new_df`, using an outer join
+        strategy that defines explicit join columns in each frame:
+
+        >>> df.update(
+        ...     new_df, left_on="A", right_on="C", how="outer", include_nulls=True
+        ... )
+        shape: (5, 2)
+        ┌─────┬──────┐
+        │ A   ┆ B    │
+        │ --- ┆ ---  │
+        │ i64 ┆ i64  │
+        ╞═════╪══════╡
+        │ 1   ┆ -99  │
+        │ 2   ┆ 500  │
+        │ 3   ┆ null │
+        │ 4   ┆ 700  │
+        │ 5   ┆ -66  │
+        └─────┴──────┘
+
         """
         return (
             self.lazy()
-            .update(other.lazy(), on, left_on, right_on, how)
+            .update(other.lazy(), on, left_on, right_on, how, include_nulls)
             .collect(_eager=True)
         )
 
@@ -10128,6 +10156,30 @@ class DataFrame:
 
         """
         return self.map_rows(function, return_dtype, inference_size=inference_size)
+
+    @deprecate_function("Use `shift` instead.", version="0.19.12")
+    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
+    def shift_and_fill(
+        self,
+        fill_value: int | str | float,
+        *,
+        n: int = 1,
+    ) -> DataFrame:
+        """
+        Shift values by the given number of places and fill the resulting null values.
+
+        .. deprecated:: 0.19.12
+            Use :func:`shift` instead.
+
+        Parameters
+        ----------
+        fill_value
+            fill None values with this value.
+        n
+            Number of places to shift (may be negative).
+
+        """
+        return self.shift(n, fill_value=fill_value)
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:

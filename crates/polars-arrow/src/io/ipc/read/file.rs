@@ -1,5 +1,6 @@
 use std::convert::TryInto;
 use std::io::{Read, Seek, SeekFrom};
+use std::sync::Arc;
 
 use ahash::AHashMap;
 use arrow_format::ipc::planus::ReadAsRoot;
@@ -11,14 +12,14 @@ use super::schema::fb_to_schema;
 use super::{Dictionaries, OutOfSpecKind};
 use crate::array::Array;
 use crate::chunk::Chunk;
-use crate::datatypes::Schema;
+use crate::datatypes::ArrowSchemaRef;
 use crate::io::ipc::IpcSchema;
 
 /// Metadata of an Arrow IPC file, written in the footer of the file.
 #[derive(Debug, Clone)]
 pub struct FileMetadata {
     /// The schema that is read from the file footer
-    pub schema: Schema,
+    pub schema: ArrowSchemaRef,
 
     /// The files' [`IpcSchema`]
     pub ipc_schema: IpcSchema,
@@ -200,7 +201,7 @@ pub(super) fn deserialize_footer(footer_data: &[u8], size: u64) -> PolarsResult<
         .transpose()?;
 
     Ok(FileMetadata {
-        schema,
+        schema: Arc::new(schema),
         ipc_schema,
         blocks,
         dictionaries,

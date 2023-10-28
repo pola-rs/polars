@@ -15,7 +15,7 @@ use crate::dsl::function_expr::FunctionExpr;
 #[cfg(feature = "cse")]
 use crate::logical_plan::visitor::AexprNode;
 use crate::logical_plan::Context;
-use crate::prelude::names::COUNT;
+use crate::prelude::consts::COUNT;
 use crate::prelude::*;
 
 #[derive(Clone, Debug, IntoStaticStr)]
@@ -146,6 +146,7 @@ pub enum AExpr {
     Take {
         expr: Node,
         idx: Node,
+        returns_scalar: bool,
     },
     SortBy {
         expr: Node,
@@ -267,7 +268,7 @@ impl AExpr {
             },
             Cast { expr, .. } => container.push(*expr),
             Sort { expr, .. } => container.push(*expr),
-            Take { expr, idx } => {
+            Take { expr, idx, .. } => {
                 container.push(*idx);
                 // latest, so that it is popped first
                 container.push(*expr);
@@ -346,7 +347,7 @@ impl AExpr {
                 *left = inputs[1];
                 return self;
             },
-            Take { expr, idx } => {
+            Take { expr, idx, .. } => {
                 *idx = inputs[0];
                 *expr = inputs[1];
                 return self;

@@ -75,25 +75,6 @@ pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> Ar
     ArrowSchema::from(fields)
 }
 
-#[cfg(feature = "parquet")]
-pub(crate) fn apply_projection_pl_schema(schema: &Schema, projection: &[usize]) -> Schema {
-    Schema::from_iter(projection.iter().map(|idx| {
-        let (name, dt) = schema.get_at_index(*idx).unwrap();
-        Field::new(name.as_str(), dt.clone())
-    }))
-}
-
-#[cfg(feature = "parquet")]
-pub(crate) fn columns_to_projection_pl_schema(
-    columns: &[String],
-    schema: &Schema,
-) -> PolarsResult<Vec<usize>> {
-    columns
-        .iter()
-        .map(|name| schema.try_get_full(name).map(|(idx, _, _)| idx))
-        .collect()
-}
-
 #[cfg(any(
     feature = "ipc",
     feature = "ipc_streaming",
@@ -157,6 +138,30 @@ pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
             previous += n_read;
         }
     }
+}
+
+/// Compute `remaining_rows_to_read` to be taken per file up front, so we can actually read
+/// concurrently/parallel
+///
+/// This takes an iterator over the number of rows per file.
+pub fn get_sequential_row_statistics<I>(
+    iter: I,
+    mut total_rows_to_read: usize,
+) -> Vec<(usize, usize)>
+where
+    I: Iterator<Item = usize>,
+{
+    let mut cumulative_read = 0;
+    iter.map(|rows_this_file| {
+        let remaining_rows_to_read = total_rows_to_read;
+        total_rows_to_read = total_rows_to_read.saturating_sub(rows_this_file);
+
+        let current_cumulative_read = cumulative_read;
+        cumulative_read += rows_this_file;
+
+        (remaining_rows_to_read, current_cumulative_read)
+    })
+    .collect()
 }
 
 #[cfg(feature = "json")]

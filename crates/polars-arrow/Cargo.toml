@@ -8,7 +8,7 @@ authors = [
 ]
 edition = { workspace = true }
 homepage = { workspace = true }
-license = "Apache 2.0 AND MIT"
+license-file = "./LICENSE"
 repository = { workspace = true }
 description = "Minimal implementation of the Arrow specification forked from arrow2."
 
@@ -34,9 +34,8 @@ ethnum = { workspace = true }
 # To efficiently cast numbers to strings
 lexical-core = { workspace = true, optional = true }
 
-fallible-streaming-iterator = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
-regex-syntax = { version = "0.7", optional = true }
+regex-syntax = { version = "0.8", optional = true }
 streaming-iterator = { workspace = true }
 
 indexmap = { workspace = true, optional = true }
@@ -47,9 +46,7 @@ hex = { workspace = true, optional = true }
 
 # for IPC compression
 lz4 = { version = "1.24", optional = true }
-zstd = { version = "0.12", optional = true }
-
-base64 = { workspace = true, optional = true }
+zstd = { version = "0.13", optional = true }
 
 # to write to parquet as a stream
 futures = { workspace = true, optional = true }
@@ -74,7 +71,6 @@ arrow-array = { workspace = true, optional = true }
 arrow-buffer = { workspace = true, optional = true }
 arrow-data = { workspace = true, optional = true }
 arrow-schema = { workspace = true, optional = true }
-parquet2 = { workspace = true, optional = true, features = ["async"] }
 
 [dev-dependencies]
 avro-rs = { version = "0.13", features = ["snappy"] }
@@ -109,8 +105,6 @@ full = [
   "io_ipc_write_async",
   "io_ipc_read_async",
   "io_ipc_compression",
-  "io_parquet",
-  "io_parquet_compression",
   "io_avro",
   "io_avro_compression",
   "io_avro_async",
@@ -125,38 +119,6 @@ io_ipc_write_async = ["io_ipc", "futures"]
 io_ipc_read_async = ["io_ipc", "futures", "async-stream"]
 io_ipc_compression = ["lz4", "zstd"]
 io_flight = ["io_ipc", "arrow-format/flight-data"]
-
-# base64 + io_ipc because arrow schemas are stored as base64-encoded ipc format.
-io_parquet = [
-  "parquet2",
-  "parquet2/async",
-  "polars-error/parquet2",
-  "io_ipc",
-  "base64",
-  "futures",
-  "fallible-streaming-iterator",
-]
-
-io_parquet_compression = [
-  "io_parquet_zstd",
-  "io_parquet_gzip",
-  "io_parquet_snappy",
-  "io_parquet_lz4",
-  "io_parquet_brotli",
-]
-
-# sample testing of generated arrow data
-io_parquet_sample_test = ["io_parquet"]
-
-# compression backends
-io_parquet_zstd = ["parquet2/zstd"]
-io_parquet_snappy = ["parquet2/snappy"]
-io_parquet_gzip = ["parquet2/gzip"]
-io_parquet_lz4 = ["parquet2/lz4"]
-io_parquet_brotli = ["parquet2/brotli"]
-
-# parquet bloom filter functions
-io_parquet_bloom_filter = ["parquet2/bloom_filter"]
 
 io_avro = ["avro-schema", "polars-error/avro-schema"]
 io_avro_compression = [

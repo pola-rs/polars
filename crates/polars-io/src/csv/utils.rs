@@ -306,6 +306,10 @@ pub fn infer_file_schema_inner(
         // keep track so that we can determine the amount of bytes read
         end_ptr = line.as_ptr() as usize + line.len();
 
+        if line.is_empty() {
+            continue;
+        }
+
         if let Some(c) = comment_char {
             // line is a comment -> skip
             if line[0] == c {

@@ -215,7 +215,7 @@ impl FixedSizeBinaryArray {
         }
     }
 
-    pub(crate) fn get_size(data_type: &DataType) -> usize {
+    pub fn get_size(data_type: &DataType) -> usize {
         Self::maybe_get_size(data_type).unwrap()
     }
 }

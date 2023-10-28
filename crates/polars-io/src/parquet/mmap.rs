@@ -1,11 +1,11 @@
 use arrow::datatypes::Field;
-use arrow::io::parquet::read::{
-    column_iter_to_arrays, get_field_columns, ArrayIter, BasicDecompressor, ColumnChunkMetaData,
-    PageReader,
-};
 use bytes::Bytes;
 #[cfg(feature = "async")]
 use polars_core::datatypes::PlHashMap;
+use polars_parquet::read::{
+    column_iter_to_arrays, get_field_columns, ArrayIter, BasicDecompressor, ColumnChunkMetaData,
+    PageReader,
+};
 
 use super::*;
 

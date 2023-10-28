@@ -124,7 +124,7 @@ def test_selection() -> None:
 
     # select columns by mask
     assert df[:2, :1].rows() == [(1,), (2,)]
-    assert df[:2, "a"].rows() == [(1,), (2,)]  # type: ignore[attr-defined]
+    assert df[:2, ["a"]].rows() == [(1,), (2,)]
 
     # column selection by string(s) in first dimension
     assert df["a"].to_list() == [1, 2, 3]
@@ -136,7 +136,7 @@ def test_selection() -> None:
     assert_frame_equal(df[-1], pl.DataFrame({"a": [3], "b": [3.0], "c": ["c"]}))
 
     # row, column selection when using two dimensions
-    assert df[:, 0].to_list() == [1, 2, 3]
+    assert df[:, "a"].to_list() == [1, 2, 3]
     assert df[:, 1].to_list() == [1.0, 2.0, 3.0]
     assert df[:2, 2].to_list() == ["a", "b"]
 
@@ -155,7 +155,6 @@ def test_selection() -> None:
     assert typing.cast(float, df[1, 1]) == 2.0
     assert typing.cast(int, df[2, 0]) == 3
 
-    assert df[[0, 1], "b"].rows() == [(1.0,), (2.0,)]  # type: ignore[attr-defined]
     assert df[[2], ["a", "b"]].rows() == [(3, 3.0)]
     assert df.to_series(0).name == "a"
     assert (df["a"] == df["a"]).sum() == 3
@@ -421,7 +420,7 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
         assert out[4, "B"].to_list() == [1, 4]
 
     out = df.sort("fruits").select(
-        [pl.col("B").reverse().take(pl.lit(1)).over("fruits"), "fruits"]
+        [pl.col("B").reverse().get(pl.lit(1)).over("fruits"), "fruits"]
     )
     assert out[0, "B"] == 3
     assert out[4, "B"] == 4
@@ -796,7 +795,7 @@ def test_head_group_by() -> None:
     out = (
         df.sort(by="price", descending=True)
         .group_by(keys, maintain_order=True)
-        .agg([pl.col("*").exclude(keys).head(2).keep_name()])
+        .agg([pl.col("*").exclude(keys).head(2).name.keep()])
         .explode(pl.col("*").exclude(keys))
     )
 
@@ -1984,8 +1983,8 @@ def test_fill_null() -> None:
 
     assert df.select(
         [
-            pl.all().forward_fill().suffix("_forward"),
-            pl.all().backward_fill().suffix("_backward"),
+            pl.all().forward_fill().name.suffix("_forward"),
+            pl.all().backward_fill().name.suffix("_backward"),
         ]
     ).to_dict(False) == {
         "c_forward": [
@@ -2038,25 +2037,6 @@ def test_backward_fill() -> None:
     df = pl.DataFrame({"a": [1.0, None, 3.0]})
     col_a_backward_fill = df.select([pl.col("a").backward_fill()])["a"]
     assert_series_equal(col_a_backward_fill, pl.Series("a", [1, 3, 3]).cast(pl.Float64))
-
-
-def test_shift_and_fill() -> None:
-    df = pl.DataFrame(
-        {
-            "foo": [1, 2, 3],
-            "bar": [6, 7, 8],
-            "ham": ["a", "b", "c"],
-        }
-    )
-    result = df.shift_and_fill(fill_value=0, periods=1)
-    expected = pl.DataFrame(
-        {
-            "foo": [0, 1, 2],
-            "bar": [0, 6, 7],
-            "ham": ["0", "a", "b"],
-        }
-    )
-    assert_frame_equal(result, expected)
 
 
 def test_is_duplicated() -> None:
@@ -2659,11 +2639,9 @@ def test_fill_null_limits() -> None:
     ).select(
         [
             pl.all().fill_null(strategy="forward", limit=2),
-            pl.all().fill_null(strategy="backward", limit=2).suffix("_backward"),
+            pl.all().fill_null(strategy="backward", limit=2).name.suffix("_backward"),
         ]
-    ).to_dict(
-        False
-    ) == {
+    ).to_dict(False) == {
         "a": [1, 1, 1, None, 5, 6, 6, 6, None, 10],
         "b": ["a", "a", "a", None, "b", "c", "c", "c", None, "d"],
         "c": [True, True, True, None, False, True, True, True, None, False],
@@ -2724,9 +2702,9 @@ def test_selection_regex_and_multicol() -> None:
     # Selection only
     test_df.select(
         [
-            pl.col(["a", "b", "c"]).suffix("_list"),
-            pl.all().exclude("foo").suffix("_wild"),
-            pl.col("^\\w$").suffix("_regex"),
+            pl.col(["a", "b", "c"]).name.suffix("_list"),
+            pl.all().exclude("foo").name.suffix("_wild"),
+            pl.col("^\\w$").name.suffix("_regex"),
         ]
     )
 
@@ -2769,8 +2747,8 @@ def test_selection_regex_and_multicol() -> None:
 
         df = test_df.select(
             pl.col("^\\w$").alias("re"),
-            odd=(pl.col(INTEGER_DTYPES) % 2).suffix("_is_odd"),
-            maxes=pl.all().max().suffix("_max"),
+            odd=(pl.col(INTEGER_DTYPES) % 2).name.suffix("_is_odd"),
+            maxes=pl.all().max().name.suffix("_max"),
         ).head(2)
         # ┌───────────┬───────────┬─────────────┐
         # │ re        ┆ odd       ┆ maxes       │
@@ -2794,15 +2772,17 @@ def test_selection_regex_and_multicol() -> None:
         ]
 
 
-def test_unique_on_sorted() -> None:
+@pytest.mark.parametrize("subset", ["a", cs.starts_with("x", "a")])
+def test_unique_on_sorted(subset: Any) -> None:
     df = pl.DataFrame(data={"a": [1, 1, 3], "b": [1, 2, 3]})
-    for subset in ("a", cs.starts_with("x", "a")):
-        assert df.with_columns([pl.col("a").set_sorted()]).unique(
-            subset=subset, keep="last"  # type: ignore[arg-type]
-        ).to_dict(False) == {
-            "a": [1, 3],
-            "b": [2, 3],
-        }
+
+    result = df.with_columns([pl.col("a").set_sorted()]).unique(
+        subset=subset,
+        keep="last",
+    )
+
+    expected = pl.DataFrame({"a": [1, 3], "b": [2, 3]})
+    assert_frame_equal(result, expected)
 
 
 def test_len_compute(df: pl.DataFrame) -> None:
@@ -3327,98 +3307,6 @@ def test_deadlocks_3409() -> None:
         )
         .to_dict(False)
     ) == {"col1": [0, 0, 0]}
-
-
-def test_clip() -> None:
-    clip_exprs = [
-        pl.col("a").clip(pl.col("min"), pl.col("max")).alias("clip"),
-        pl.col("a").clip_min(pl.col("min")).alias("clip_min"),
-        pl.col("a").clip_max(pl.col("max")).alias("clip_max"),
-    ]
-
-    df = pl.DataFrame(
-        {
-            "a": [1, 2, 3, 4, 5],
-            "min": [0, -1, 4, None, 4],
-            "max": [2, 1, 8, 5, None],
-        }
-    )
-
-    assert df.select(clip_exprs).to_dict(False) == {
-        "clip": [1, 1, 4, None, None],
-        "clip_min": [1, 2, 4, None, 5],
-        "clip_max": [1, 1, 3, 4, None],
-    }
-
-    df = pl.DataFrame(
-        {
-            "a": [1.0, 2.0, 3.0, 4.0, 5.0],
-            "min": [0, -1.0, 4.0, None, 4.0],
-            "max": [2.0, 1.0, 8.0, 5.0, None],
-        }
-    )
-
-    assert df.select(clip_exprs).to_dict(False) == {
-        "clip": [1.0, 1.0, 4.0, None, None],
-        "clip_min": [1.0, 2.0, 4.0, None, 5.0],
-        "clip_max": [1.0, 1.0, 3.0, 4.0, None],
-    }
-
-    df = pl.DataFrame(
-        {
-            "a": [
-                datetime(1995, 6, 5, 10, 30),
-                datetime(1995, 6, 5),
-                datetime(2023, 10, 20, 18, 30, 6),
-                None,
-                datetime(2023, 9, 24),
-                datetime(2000, 1, 10),
-            ],
-            "min": [
-                datetime(1995, 6, 5, 10, 29),
-                datetime(1996, 6, 5),
-                datetime(2020, 9, 24),
-                datetime(2020, 1, 1),
-                None,
-                datetime(2000, 1, 1),
-            ],
-            "max": [
-                datetime(1995, 7, 21, 10, 30),
-                datetime(2000, 1, 1),
-                datetime(2023, 9, 20, 18, 30, 6),
-                datetime(2000, 1, 1),
-                datetime(1993, 3, 13),
-                None,
-            ],
-        }
-    )
-
-    assert df.select(clip_exprs).to_dict(False) == {
-        "clip": [
-            datetime(1995, 6, 5, 10, 30),
-            datetime(1996, 6, 5),
-            datetime(2023, 9, 20, 18, 30, 6),
-            None,
-            None,
-            None,
-        ],
-        "clip_min": [
-            datetime(1995, 6, 5, 10, 30),
-            datetime(1996, 6, 5),
-            datetime(2023, 10, 20, 18, 30, 6),
-            None,
-            None,
-            datetime(2000, 1, 10),
-        ],
-        "clip_max": [
-            datetime(1995, 6, 5, 10, 30),
-            datetime(1995, 6, 5),
-            datetime(2023, 9, 20, 18, 30, 6),
-            None,
-            datetime(1993, 3, 13),
-            None,
-        ],
-    }
 
 
 def test_cum_agg() -> None:

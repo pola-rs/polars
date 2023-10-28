@@ -28,7 +28,7 @@ def read_excel(
     engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"] | None = ...,
     xlsx2csv_options: dict[str, Any] | None = ...,
     read_csv_options: dict[str, Any] | None = ...,
-    schema_overrides: SchemaDict | None = None,
+    schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
 ) -> pl.DataFrame:
     ...
@@ -43,7 +43,7 @@ def read_excel(
     engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"] | None = ...,
     xlsx2csv_options: dict[str, Any] | None = ...,
     read_csv_options: dict[str, Any] | None = ...,
-    schema_overrides: SchemaDict | None = None,
+    schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
 ) -> pl.DataFrame:
     ...
@@ -58,7 +58,7 @@ def read_excel(
     engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"] | None = ...,
     xlsx2csv_options: dict[str, Any] | None = ...,
     read_csv_options: dict[str, Any] | None = ...,
-    schema_overrides: SchemaDict | None = None,
+    schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
 ) -> NoReturn:
     ...
@@ -75,7 +75,7 @@ def read_excel(
     engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"] | None = ...,
     xlsx2csv_options: dict[str, Any] | None = ...,
     read_csv_options: dict[str, Any] | None = ...,
-    schema_overrides: SchemaDict | None = None,
+    schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
 ) -> dict[str, pl.DataFrame]:
     ...
@@ -90,7 +90,7 @@ def read_excel(
     engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"] | None = ...,
     xlsx2csv_options: dict[str, Any] | None = ...,
     read_csv_options: dict[str, Any] | None = ...,
-    schema_overrides: SchemaDict | None = None,
+    schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
 ) -> pl.DataFrame:
     ...
@@ -105,7 +105,7 @@ def read_excel(
     engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"] | None = ...,
     xlsx2csv_options: dict[str, Any] | None = ...,
     read_csv_options: dict[str, Any] | None = ...,
-    schema_overrides: SchemaDict | None = None,
+    schema_overrides: SchemaDict | None = ...,
     raise_if_empty: bool = ...,
 ) -> dict[str, pl.DataFrame]:
     ...
@@ -152,7 +152,7 @@ def read_excel(
         * "openpyxl": this engine is significantly slower than ``xlsx2csv`` but supports
           additional automatic type inference; potentially useful if you are otherwise
           unable to parse your sheet with the (default) ``xlsx2csv`` engine in
-          ocnjunction with the ``schema_overrides`` parameter.
+          conjunction with the ``schema_overrides`` parameter.
         * "pyxlsb": this engine is used for Excel Binary Workbooks (`.xlsb` files).
           Note that you have to use ``schema_overrides`` to correctly load date/datetime
           columns (or these will be read as floats representing offset Julian values).
@@ -445,6 +445,10 @@ def _read_spreadsheet(
         if hasattr(parser, "close"):
             parser.close()
 
+    if not parsed_sheets:
+        param, value = ("id", sheet_id) if sheet_name is None else ("name", sheet_name)
+        raise ValueError(f"no matching sheets found when `sheet_{param}` is {value!r}")
+
     if return_multi:
         return parsed_sheets
     return next(iter(parsed_sheets.values()))
@@ -548,6 +552,7 @@ def _csv_buffer_to_frame(
             raise ParameterCollisionError(
                 "cannot specify columns in both `schema_overrides` and `read_csv_options['dtypes']`"
             )
+        read_csv_options = read_csv_options.copy()
         read_csv_options["dtypes"] = {**csv_dtypes, **schema_overrides}
 
     # otherwise rewind the buffer and parse as csv

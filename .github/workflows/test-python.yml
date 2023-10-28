@@ -72,6 +72,10 @@ jobs:
         if: github.ref_name != 'main'
         run: pytest --cov -n auto --dist loadgroup -m "not benchmark and not docs"
 
+      - name: Run tests async reader tests
+        if: github.ref_name != 'main'
+        run: POLARS_FORCE_ASYNC=1 pytest -m "not benchmark and not docs" tests/unit/io/
+
       - name: Run doctests
         if: github.ref_name != 'main'
         run: |

@@ -441,7 +441,7 @@ def test_selector_expr_dispatch() -> None:
     assert_frame_equal(
         expected,
         df.with_columns(
-            pl.when(cs.float().is_finite()).then(cs.float()).otherwise(0.0).keep_name()
+            pl.when(cs.float().is_finite()).then(cs.float()).otherwise(0.0).name.keep()
         ),
     )
 
@@ -449,7 +449,7 @@ def test_selector_expr_dispatch() -> None:
     assert_frame_equal(
         expected,
         df.with_columns(
-            pl.when(~cs.float().is_finite()).then(0.0).otherwise(cs.float()).keep_name()
+            pl.when(~cs.float().is_finite()).then(0.0).otherwise(cs.float()).name.keep()
         ),
     )
 
@@ -462,7 +462,7 @@ def test_selector_expr_dispatch() -> None:
         assert_frame_equal(
             expected,
             df.with_columns(
-                pl.when(nan_or_inf).then(0.0).otherwise(cs.float()).keep_name()
+                pl.when(nan_or_inf).then(0.0).otherwise(cs.float()).name.keep()
             ).fill_null(0),
         )
 

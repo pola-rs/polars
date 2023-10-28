@@ -659,6 +659,7 @@ fn update_subgroups_idx(
 #[cfg(test)]
 mod test {
     use chrono::prelude::*;
+    use polars_ops::prelude::*;
 
     use super::*;
 
@@ -777,11 +778,11 @@ mod test {
             "",
             [0.0, 8.0, 4.000000000000002, 6.666666666666667, 24.5, 0.0],
         );
-        assert!((var - expected).abs().unwrap().lt(1e-12).unwrap().all());
+        assert!(abs(&(var - expected)).unwrap().lt(1e-12).unwrap().all());
 
         let var = unsafe { nulls.agg_var(&groups, 1) };
         let expected = Series::new("", [0.0, 8.0, 8.0, 9.333333333333343, 24.5, 0.0]);
-        assert!((var - expected).abs().unwrap().lt(1e-12).unwrap().all());
+        assert!(abs(&(var - expected)).unwrap().lt(1e-12).unwrap().all());
 
         let quantile = unsafe { a.agg_quantile(&groups, 0.5, QuantileInterpolOptions::Linear) };
         let expected = Series::new("", [3.0, 5.0, 5.0, 6.0, 5.5, 1.0]);

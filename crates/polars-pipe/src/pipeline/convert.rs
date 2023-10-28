@@ -68,7 +68,7 @@ where
             Ok(Box::new(sources::DataFrameSource::from_df(df)) as Box<dyn Source>)
         },
         Scan {
-            path,
+            paths,
             file_info,
             file_options,
             predicate,
@@ -87,8 +87,9 @@ where
                 FileScan::Csv {
                     options: csv_options,
                 } => {
+                    assert_eq!(paths.len(), 1);
                     let src = sources::CsvSource::new(
-                        path,
+                        paths[0].clone(),
                         file_info.schema,
                         csv_options,
                         file_options,
@@ -103,7 +104,7 @@ where
                     metadata,
                 } => {
                     let src = sources::ParquetSource::new(
-                        path,
+                        paths,
                         parquet_options,
                         cloud_options,
                         metadata,
@@ -269,7 +270,7 @@ where
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                let sort_sink = SortSinkMultiple::new(args.clone(), input_schema, sort_idx);
+                let sort_sink = SortSinkMultiple::new(args.clone(), input_schema, sort_idx)?;
                 Box::new(sort_sink) as Box<dyn SinkTrait>
             }
         },

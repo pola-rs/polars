@@ -312,7 +312,10 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Array(inner, size) => {
                 let inner = Wrap(*inner.clone()).to_object(py);
                 let list_class = pl.getattr(intern!(py, "Array")).unwrap();
-                list_class.call1((*size, inner)).unwrap().into()
+                let kwargs = PyDict::new(py);
+                kwargs.set_item("inner", inner).unwrap();
+                kwargs.set_item("width", size).unwrap();
+                list_class.call((), Some(kwargs)).unwrap().into()
             },
             DataType::List(inner) => {
                 let inner = Wrap(*inner.clone()).to_object(py);

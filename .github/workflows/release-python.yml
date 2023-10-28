@@ -230,7 +230,7 @@ jobs:
           tag: py-${{ steps.version.outputs.version }}
           version: ${{ steps.version.outputs.version }}
           prerelease: ${{ steps.version.outputs.is_prerelease }}
-          commitish: ${{ inputs.sha }}
+          commitish: ${{ inputs.sha || github.sha }}
           disable-autolabeler: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

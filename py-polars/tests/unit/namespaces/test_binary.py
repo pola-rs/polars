@@ -85,9 +85,7 @@ def test_starts_ends_with() -> None:
             pl.col("a").bin.ends_with(pl.lit(None)).alias("start_none"),
             pl.col("a").bin.starts_with(pl.col("start")).alias("start_expr"),
         ]
-    ).to_dict(
-        False
-    ) == {
+    ).to_dict(False) == {
         "end_lit": [False, False, True, None],
         "end_none": [None, None, None, None],
         "end_expr": [True, False, None, None],

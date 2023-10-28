@@ -53,9 +53,9 @@ impl From<EncodedData> for FlightData {
     }
 }
 
-/// Serializes a [`Schema`] to [`SchemaResult`].
+/// Serializes a [`ArrowSchema`] to [`SchemaResult`].
 pub fn serialize_schema_to_result(
-    schema: &Schema,
+    schema: &ArrowSchema,
     ipc_fields: Option<&[IpcField]>,
 ) -> SchemaResult {
     SchemaResult {
@@ -63,17 +63,17 @@ pub fn serialize_schema_to_result(
     }
 }
 
-/// Serializes a [`Schema`] to [`FlightData`].
-pub fn serialize_schema(schema: &Schema, ipc_fields: Option<&[IpcField]>) -> FlightData {
+/// Serializes a [`ArrowSchema`] to [`FlightData`].
+pub fn serialize_schema(schema: &ArrowSchema, ipc_fields: Option<&[IpcField]>) -> FlightData {
     FlightData {
         data_header: _serialize_schema(schema, ipc_fields),
         ..Default::default()
     }
 }
 
-/// Convert a [`Schema`] to bytes in the format expected in [`arrow_format::flight::data::FlightInfo`].
+/// Convert a [`ArrowSchema`] to bytes in the format expected in [`arrow_format::flight::data::FlightInfo`].
 pub fn serialize_schema_to_info(
-    schema: &Schema,
+    schema: &ArrowSchema,
     ipc_fields: Option<&[IpcField]>,
 ) -> PolarsResult<Vec<u8>> {
     let encoded_data = if let Some(ipc_fields) = ipc_fields {
@@ -88,7 +88,7 @@ pub fn serialize_schema_to_info(
     Ok(schema)
 }
 
-fn _serialize_schema(schema: &Schema, ipc_fields: Option<&[IpcField]>) -> Vec<u8> {
+fn _serialize_schema(schema: &ArrowSchema, ipc_fields: Option<&[IpcField]>) -> Vec<u8> {
     if let Some(ipc_fields) = ipc_fields {
         write::schema_to_bytes(schema, ipc_fields)
     } else {
@@ -97,16 +97,16 @@ fn _serialize_schema(schema: &Schema, ipc_fields: Option<&[IpcField]>) -> Vec<u8
     }
 }
 
-fn schema_as_encoded_data(schema: &Schema, ipc_fields: &[IpcField]) -> EncodedData {
+fn schema_as_encoded_data(schema: &ArrowSchema, ipc_fields: &[IpcField]) -> EncodedData {
     EncodedData {
         ipc_message: write::schema_to_bytes(schema, ipc_fields),
         arrow_data: vec![],
     }
 }
 
-/// Deserialize an IPC message into [`Schema`], [`IpcSchema`].
+/// Deserialize an IPC message into [`ArrowSchema`], [`IpcSchema`].
 /// Use to deserialize [`FlightData::data_header`] and [`SchemaResult::schema`].
-pub fn deserialize_schemas(bytes: &[u8]) -> PolarsResult<(Schema, IpcSchema)> {
+pub fn deserialize_schemas(bytes: &[u8]) -> PolarsResult<(ArrowSchema, IpcSchema)> {
     read::deserialize_schema(bytes)
 }
 

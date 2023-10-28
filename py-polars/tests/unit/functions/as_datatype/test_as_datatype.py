@@ -451,7 +451,9 @@ def test_struct_lit_cast() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     schema = {"a": pl.Int64, "b": pl.List(pl.Int64)}
 
-    out = df.select(pl.struct([pl.col("a"), pl.lit(None).alias("b")], schema=schema))["a"]  # type: ignore[arg-type]
+    out = df.select(
+        pl.struct(pl.col("a"), pl.lit(None).alias("b"), schema=schema)  # type: ignore[arg-type]
+    ).get_column("a")
 
     expected = pl.Series(
         "a",
@@ -464,7 +466,9 @@ def test_struct_lit_cast() -> None:
     )
     assert_series_equal(out, expected)
 
-    out = df.select(pl.struct([pl.col("a"), pl.lit(pl.Series([[]])).alias("b")], schema=schema))["a"]  # type: ignore[arg-type]
+    out = df.select(
+        pl.struct([pl.col("a"), pl.lit(pl.Series([[]])).alias("b")], schema=schema)  # type: ignore[arg-type]
+    ).get_column("a")
 
     expected = pl.Series(
         "a",
@@ -486,7 +490,7 @@ def test_suffix_in_struct_creation() -> None:
                 "b": [3, 4],
                 "c": [5, 6],
             }
-        ).select(pl.struct(pl.col(["a", "c"]).suffix("_foo")).alias("bar"))
+        ).select(pl.struct(pl.col(["a", "c"]).name.suffix("_foo")).alias("bar"))
     ).unnest("bar").to_dict(False) == {"a_foo": [1, 2], "c_foo": [5, 6]}
 
 

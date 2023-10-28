@@ -1,6 +1,7 @@
 use polars_core::prelude::*;
 #[cfg(feature = "moment")]
 use {
+    crate::series::ops::moment::MomentSeries,
     polars_core::export::num::{self, Float, FromPrimitive},
     polars_core::utils::with_unstable_series,
     std::ops::SubAssign,

@@ -10,7 +10,8 @@ description = "Lazy query engine for the Polars DataFrame library"
 
 [dependencies]
 arrow = { workspace = true }
-polars-core = { workspace = true, features = ["lazy", "zip_with", "random"], default-features = false }
+futures = { workspace = true, optional = true }
+polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-io = { workspace = true, features = ["lazy"] }
 polars-json = { workspace = true, optional = true }
 polars-ops = { workspace = true }
@@ -37,13 +38,13 @@ version_check = { workspace = true }
 [features]
 nightly = ["polars-core/nightly", "polars-pipe?/nightly", "polars-plan/nightly"]
 streaming = ["chunked_ids", "polars-pipe", "polars-plan/streaming", "polars-ops/chunked_ids"]
-parquet = ["polars-core/parquet", "polars-io/parquet", "polars-plan/parquet", "polars-pipe?/parquet"]
+parquet = ["polars-io/parquet", "polars-plan/parquet", "polars-pipe?/parquet"]
 async = [
   "polars-plan/async",
   "polars-io/cloud",
   "polars-pipe?/async",
 ]
-cloud = ["async", "polars-pipe?/cloud", "polars-plan/cloud", "tokio"]
+cloud = ["async", "polars-pipe?/cloud", "polars-plan/cloud", "tokio", "futures"]
 cloud_write = ["cloud"]
 ipc = ["polars-io/ipc", "polars-plan/ipc", "polars-pipe?/ipc"]
 json = ["polars-io/json", "polars-plan/json", "polars-json"]
@@ -113,7 +114,7 @@ chunked_ids = ["polars-plan/chunked_ids", "polars-core/chunked_ids", "polars-ops
 list_to_struct = ["polars-plan/list_to_struct"]
 python = ["pyo3", "polars-plan/python", "polars-core/python", "polars-io/python"]
 row_hash = ["polars-plan/row_hash"]
-string_justify = ["polars-plan/string_justify"]
+string_pad = ["polars-plan/string_pad"]
 string_from_radix = ["polars-plan/string_from_radix"]
 arg_where = ["polars-plan/arg_where"]
 search_sorted = ["polars-plan/search_sorted"]
@@ -138,6 +139,7 @@ fused = ["polars-plan/fused", "polars-ops/fused"]
 list_sets = ["polars-plan/list_sets", "polars-ops/list_sets"]
 list_any_all = ["polars-ops/list_any_all", "polars-plan/list_any_all"]
 list_drop_nulls = ["polars-ops/list_drop_nulls", "polars-plan/list_drop_nulls"]
+list_sample = ["polars-ops/list_sample", "polars-plan/list_sample"]
 cutqcut = ["polars-plan/cutqcut", "polars-ops/cutqcut"]
 rle = ["polars-plan/rle", "polars-ops/rle"]
 extract_groups = ["polars-plan/extract_groups"]
@@ -173,7 +175,7 @@ test_all = [
   "regex",
   "ipc",
   "row_hash",
-  "string_justify",
+  "string_pad",
   "string_from_radix",
   "search_sorted",
   "top_k",

@@ -333,7 +333,9 @@ class Config(contextlib.ContextDecorator):
     @classmethod
     @deprecate_nonkeyword_arguments(version="0.19.3")
     def state(
-        cls, if_set: bool = False, env_only: bool = False  # noqa: FBT001
+        cls,
+        if_set: bool = False,  # noqa: FBT001
+        env_only: bool = False,  # noqa: FBT001
     ) -> dict[str, str | None]:
         """
         Show the current state of all Config variables as a dict.
@@ -588,7 +590,9 @@ class Config(contextlib.ContextDecorator):
         """
         Set the number of elements to display for List values.
 
-        Values less than 0 will result in all values being printed.
+        Empty lists will always print "[]". Negative values will result in all values
+        being printed. A value of 0 will always "[…]" for lists with contents. A value
+        of 1 will print only the final item in the list.
 
         Parameters
         ----------

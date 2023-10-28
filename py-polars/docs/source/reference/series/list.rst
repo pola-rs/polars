@@ -34,6 +34,7 @@ The following methods are available under the `Series.list` attribute.
     Series.list.mean
     Series.list.min
     Series.list.reverse
+    Series.list.sample
     Series.list.set_difference
     Series.list.set_intersection
     Series.list.set_symmetric_difference

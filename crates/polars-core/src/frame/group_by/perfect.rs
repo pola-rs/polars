@@ -196,7 +196,7 @@ impl CategoricalChunked {
         if self.is_empty() {
             return GroupsProxy::Idx(GroupsIdx::new(vec![], vec![], true));
         }
-        let cats = self.logical();
+        let cats = self.physical();
 
         let mut out = match &**rev_map {
             RevMapping::Local(cached) => {
@@ -208,7 +208,7 @@ impl CategoricalChunked {
                     // but on huge tables, this can be > 2x faster
                     cats.group_tuples_perfect(cached.len() - 1, multithreaded, 0)
                 } else {
-                    self.logical().group_tuples(multithreaded, sorted).unwrap()
+                    self.physical().group_tuples(multithreaded, sorted).unwrap()
                 }
             },
             RevMapping::Global(_mapping, _cached, _) => {
@@ -216,7 +216,7 @@ impl CategoricalChunked {
                 // the problem is that the global categories are not guaranteed packed together
                 // so we might need to deref them first to local ones, but that might be more
                 // expensive than just hashing (benchmark first)
-                self.logical().group_tuples(multithreaded, sorted).unwrap()
+                self.physical().group_tuples(multithreaded, sorted).unwrap()
             },
         };
         if sorted {

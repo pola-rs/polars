@@ -22,12 +22,16 @@ pub(crate) const DECIMAL_ACTIVE: &str = "POLARS_ACTIVATE_DECIMAL";
 
 #[cfg(feature = "dtype-decimal")]
 pub(crate) fn decimal_is_active() -> bool {
-    match std::env::var(DECIMAL_ACTIVE) {
-        Ok(val) => val == "1",
-        _ => false,
-    }
+    std::env::var(DECIMAL_ACTIVE).as_deref().unwrap_or("") == "1"
 }
 
 pub fn verbose() -> bool {
-    std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("0") == "1"
+    std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("") == "1"
+}
+
+pub fn concurrent_download_limit() -> usize {
+    std::env::var("POLARS_CONC_DOWNLOAD_LIMIT")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(64)
 }

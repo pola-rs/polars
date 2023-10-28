@@ -6,10 +6,10 @@ mod concat;
 mod extract;
 #[cfg(feature = "extract_jsonpath")]
 mod json_path;
-#[cfg(feature = "string_justify")]
-mod justify;
 #[cfg(feature = "strings")]
 mod namespace;
+#[cfg(feature = "string_pad")]
+mod pad;
 #[cfg(feature = "strings")]
 mod replace;
 #[cfg(feature = "strings")]
@@ -18,6 +18,9 @@ mod split;
 mod strip;
 #[cfg(feature = "strings")]
 mod substring;
+
+#[cfg(all(not(feature = "nightly"), feature = "strings"))]
+mod unicode_internals;
 
 #[cfg(feature = "strings")]
 pub use concat::*;

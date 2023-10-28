@@ -115,6 +115,36 @@ impl PyExpr {
         self.inner.clone().list().drop_nulls().into()
     }
 
+    #[cfg(feature = "list_sample")]
+    fn list_sample_n(
+        &self,
+        n: PyExpr,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> Self {
+        self.inner
+            .clone()
+            .list()
+            .sample_n(n.inner, with_replacement, shuffle, seed)
+            .into()
+    }
+
+    #[cfg(feature = "list_sample")]
+    fn list_sample_fraction(
+        &self,
+        fraction: PyExpr,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> Self {
+        self.inner
+            .clone()
+            .list()
+            .sample_fraction(fraction.inner, with_replacement, shuffle, seed)
+            .into()
+    }
+
     #[cfg(feature = "list_take")]
     fn list_take(&self, index: PyExpr, null_on_oob: bool) -> Self {
         self.inner

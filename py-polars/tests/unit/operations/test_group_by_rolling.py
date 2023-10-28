@@ -38,9 +38,7 @@ def test_rolling_group_by_overlapping_groups() -> None:
             )
             .agg(
                 # trigger the apply on the expression engine
-                pl.col("a")
-                .map_elements(lambda x: x)
-                .sum()
+                pl.col("a").map_elements(lambda x: x).sum()
             )
         )["a"],
         df["a"].rolling_sum(window_size=5, min_periods=1),

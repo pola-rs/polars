@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import io
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -406,7 +406,9 @@ def test_fetch_union(tmp_path: Path) -> None:
     expected = pl.DataFrame({"a": [0], "b": [1]})
     assert_frame_equal(result_one, expected)
 
-    expected = pl.DataFrame({"a": [0, 3], "b": [1, 4]})
+    # Both fetch 1 per file or 1 per dataset would be ok, as we don't guarantee anything
+    # currently we have one per dataset.
+    expected = pl.DataFrame({"a": [0], "b": [1]})
     assert_frame_equal(result_glob, expected)
 
 
@@ -510,3 +512,12 @@ def test_nested_list_page_reads_to_end_11548() -> None:
 
     result = pl.read_parquet(f).select(pl.col("x").list.len())
     assert result.to_series().to_list() == [2048, 2048]
+
+
+def test_parquet_nano_second_schema() -> None:
+    value = time(9, 0, 0)
+    f = io.BytesIO()
+    df = pd.DataFrame({"Time": [value]})
+    df.to_parquet(f)
+    f.seek(0)
+    assert pl.read_parquet(f).item() == value

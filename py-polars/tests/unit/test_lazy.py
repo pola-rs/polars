@@ -82,7 +82,9 @@ def test_apply() -> None:
         for strategy in ["thread_local", "threading"]:
             ldf = pl.LazyFrame({"a": [1, 2, 3] * 20, "b": [1.0, 2.0, 3.0] * 20})
             new = ldf.with_columns(
-                pl.col("a").map_elements(lambda s: s * 2, strategy=strategy).alias("foo")  # type: ignore[arg-type]
+                pl.col("a")
+                .map_elements(lambda s: s * 2, strategy=strategy)  # type: ignore[arg-type]
+                .alias("foo")
             )
             expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
             assert_frame_equal(new.collect(), expected.collect())
@@ -130,7 +132,9 @@ def test_count_suffix_10783() -> None:
         }
     )
     df_with_cnt = df.with_columns(
-        pl.count().over(pl.col("a").list.sort().list.join("").hash()).suffix("_suffix")
+        pl.count()
+        .over(pl.col("a").list.sort().list.join("").hash())
+        .name.suffix("_suffix")
     )
     df_expect = df.with_columns(pl.Series("count_suffix", [3, 3, 1, 3]))
     assert_frame_equal(df_with_cnt, df_expect, check_dtype=False)
@@ -258,44 +262,6 @@ def test_group_by() -> None:
     # refer to column via pl.Expr
     out = ldf.group_by(pl.col("groups")).agg(pl.mean("a")).collect()
     assert_frame_equal(out.sort(by="groups"), expected)
-
-
-def test_shift(fruits_cars: pl.DataFrame) -> None:
-    df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
-    out = df.select(pl.col("a").shift(1))
-    assert_series_equal(out["a"], pl.Series("a", [None, 1, 2, 3, 4]))
-
-    res = fruits_cars.lazy().shift(2).collect()
-
-    expected = pl.DataFrame(
-        {
-            "A": [None, None, 1, 2, 3],
-            "fruits": [None, None, "banana", "banana", "apple"],
-            "B": [None, None, 5, 4, 3],
-            "cars": [None, None, "beetle", "audi", "beetle"],
-        }
-    )
-    assert_frame_equal(res, expected)
-
-    # negative value
-    res = fruits_cars.lazy().shift(-2).collect()
-    for rows in [3, 4]:
-        for cols in range(4):
-            assert res[rows, cols] is None
-
-
-def test_shift_and_fill() -> None:
-    ldf = pl.LazyFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
-
-    # use exprs
-    out = ldf.with_columns(
-        pl.col("a").shift_and_fill(pl.col("b").mean(), periods=-2)
-    ).collect()
-    assert out["a"].null_count() == 0
-
-    # use df method
-    out = ldf.shift_and_fill(pl.col("b").std(), periods=2).collect()
-    assert out["a"].null_count() == 0
 
 
 def test_arg_unique() -> None:
@@ -448,7 +414,7 @@ def test_head_group_by() -> None:
     out = (
         ldf.sort(by="price", descending=True)
         .group_by(keys, maintain_order=True)
-        .agg([pl.col("*").exclude(keys).head(2).keep_name()])
+        .agg([pl.col("*").exclude(keys).head(2).name.keep()])
         .explode(pl.col("*").exclude(keys))
     )
 

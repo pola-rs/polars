@@ -269,7 +269,7 @@ def test_apply_after_take_in_group_by_3869() -> None:
         )
         .group_by("k", maintain_order=True)
         .agg(
-            pl.col("v").take(pl.col("t").arg_max()).sqrt()
+            pl.col("v").get(pl.col("t").arg_max()).sqrt()
         )  # <- fails for sqrt, exp, log, pow, etc.
     ).to_dict(False) == {"k": ["a", "b"], "v": [1.4142135623730951, 2.0]}
 
@@ -387,7 +387,7 @@ def test_group_by_dynamic_overlapping_groups_flat_apply_multiple_5038(
 def test_take_in_group_by() -> None:
     df = pl.DataFrame({"group": [1, 1, 1, 2, 2, 2], "values": [10, 200, 3, 40, 500, 6]})
     assert df.group_by("group").agg(
-        pl.col("values").take(1) - pl.col("values").take(2)
+        pl.col("values").get(1) - pl.col("values").get(2)
     ).sort("group").to_dict(False) == {"group": [1, 2], "values": [197, 494]}
 
 
@@ -399,7 +399,7 @@ def test_group_by_wildcard() -> None:
         }
     )
     assert df.group_by([pl.col("*")], maintain_order=True).agg(
-        [pl.col("a").first().suffix("_agg")]
+        [pl.col("a").first().name.suffix("_agg")]
     ).to_dict(False) == {"a": [1, 2], "b": [1, 2], "a_agg": [1, 2]}
 
 
@@ -441,6 +441,29 @@ def test_group_by_when_then_with_binary_and_agg_in_pred_6202() -> None:
         "code": ["a", "b"],
         "literal": [[False, True], [True, True, False]],
     }
+
+
+def test_group_by_binary_agg_with_literal() -> None:
+    df = pl.DataFrame({"id": ["a", "a", "b", "b"], "value": [1, 2, 3, 4]})
+
+    out = df.group_by("id", maintain_order=True).agg(
+        pl.col("value") + pl.Series([1, 3])
+    )
+    assert out.to_dict(False) == {"id": ["a", "b"], "value": [[2, 5], [4, 7]]}
+
+    out = df.group_by("id", maintain_order=True).agg(pl.col("value") + pl.lit(1))
+    assert out.to_dict(False) == {"id": ["a", "b"], "value": [[2, 3], [4, 5]]}
+
+    out = df.group_by("id", maintain_order=True).agg(pl.lit(1) + pl.lit(2))
+    assert out.to_dict(False) == {"id": ["a", "b"], "literal": [3, 3]}
+
+    out = df.group_by("id", maintain_order=True).agg(pl.lit(1) + pl.Series([2, 3]))
+    assert out.to_dict(False) == {"id": ["a", "b"], "literal": [[3, 4], [3, 4]]}
+
+    out = df.group_by("id", maintain_order=True).agg(
+        value=pl.lit(pl.Series([1, 2])) + pl.lit(pl.Series([3, 4]))
+    )
+    assert out.to_dict(False) == {"id": ["a", "b"], "value": [[4, 6], [4, 6]]}
 
 
 @pytest.mark.slow()
@@ -822,3 +845,10 @@ def test_group_by_with_expr_as_key() -> None:
     # tests: 11766
     assert gb.head(0).frame_equal(gb.agg(pl.col("x").head(0)).explode("x"))
     assert gb.tail(0).frame_equal(gb.agg(pl.col("x").tail(0)).explode("x"))
+
+
+def test_lazy_group_by_reuse_11767() -> None:
+    lgb = pl.select(x=1).lazy().group_by("x")
+    a = lgb.count()
+    b = lgb.count()
+    assert a.collect().frame_equal(b.collect())

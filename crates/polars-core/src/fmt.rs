@@ -964,36 +964,46 @@ fn fmt_struct(f: &mut Formatter<'_>, vals: &[AnyValue]) -> fmt::Result {
 
 impl Series {
     pub fn fmt_list(&self) -> String {
-        match self.len() {
-            0 => "[]".to_string(),
-            1 => format!("[{}]", self.get(0).unwrap()),
-            2 => format!("[{}, {}]", self.get(0).unwrap(), self.get(1).unwrap()),
-            3 => format!(
-                "[{}, {}, {}]",
-                self.get(0).unwrap(),
-                self.get(1).unwrap(),
-                self.get(2).unwrap()
-            ),
-            _ => {
-                let max_items = std::env::var(FMT_TABLE_CELL_LIST_LEN)
-                    .as_deref()
-                    .unwrap_or("")
-                    .parse()
-                    .map_or(3, |n: i64| if n < 0 { self.len() } else { n as usize });
+        if self.is_empty() {
+            return "[]".to_owned();
+        }
 
+        let max_items = std::env::var(FMT_TABLE_CELL_LIST_LEN)
+            .as_deref()
+            .unwrap_or("")
+            .parse()
+            .map_or(3, |n: i64| if n < 0 { self.len() } else { n as usize });
+
+        match max_items {
+            0 => "[…]".to_owned(),
+            _ if max_items >= self.len() => {
+                let mut result = "[".to_owned();
+
+                for i in 0..self.len() {
+                    let item = self.get(i).unwrap();
+                    write!(result, "{item}").unwrap();
+                    // this will always leave a trailing ", " after the last item
+                    // but for long lists, this is faster than checking against the length each time
+                    result.push_str(", ");
+                }
+                // remove trailing ", " and replace with closing brace
+                result.pop();
+                result.pop();
+                result.push(']');
+
+                result
+            },
+            _ => {
                 let mut result = "[".to_owned();
 
                 for (i, item) in self.iter().enumerate() {
-                    write!(result, "{item}").unwrap();
-
-                    if i != self.len() - 1 {
-                        result.push_str(", ");
-                    }
-
-                    if i == max_items - 2 {
+                    if i == max_items.saturating_sub(1) {
                         result.push_str("… ");
                         write!(result, "{}", self.get(self.len() - 1).unwrap()).unwrap();
                         break;
+                    } else {
+                        write!(result, "{item}").unwrap();
+                        result.push_str(", ");
                     }
                 }
                 result.push(']');
@@ -1136,7 +1146,7 @@ mod test {
             ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
         builder.append_opt_slice(Some(&[1, 2, 3, 4, 5, 6]));
         builder.append_opt_slice(None);
-        let list = builder.finish().into_series();
+        let list_long = builder.finish().into_series();
 
         assert_eq!(
             r#"shape: (2,)
@@ -1145,7 +1155,7 @@ Series: 'a' [list[i32]]
 	[1, 2, … 6]
 	null
 ]"#,
-            format!("{:?}", list)
+            format!("{:?}", list_long)
         );
 
         std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "10");
@@ -1157,8 +1167,116 @@ Series: 'a' [list[i32]]
 	[1, 2, 3, 4, 5, 6]
 	null
 ]"#,
-            format!("{:?}", list)
-        )
+            format!("{:?}", list_long)
+        );
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "-1");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[1, 2, 3, 4, 5, 6]
+	null
+]"#,
+            format!("{:?}", list_long)
+        );
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "0");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[…]
+	null
+]"#,
+            format!("{:?}", list_long)
+        );
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "1");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[… 6]
+	null
+]"#,
+            format!("{:?}", list_long)
+        );
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "4");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[1, 2, 3, … 6]
+	null
+]"#,
+            format!("{:?}", list_long)
+        );
+
+        let mut builder =
+            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
+        builder.append_opt_slice(Some(&[1]));
+        builder.append_opt_slice(None);
+        let list_short = builder.finish().into_series();
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[1]
+	null
+]"#,
+            format!("{:?}", list_short)
+        );
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "0");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[…]
+	null
+]"#,
+            format!("{:?}", list_short)
+        );
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "-1");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[1]
+	null
+]"#,
+            format!("{:?}", list_short)
+        );
+
+        let mut builder =
+            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
+        builder.append_opt_slice(Some(&[]));
+        builder.append_opt_slice(None);
+        let list_empty = builder.finish().into_series();
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[]
+	null
+]"#,
+            format!("{:?}", list_empty)
+        );
     }
 
     #[test]

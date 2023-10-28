@@ -213,6 +213,17 @@ def test_json_deserialize_9687() -> None:
     assert result.to_dict(False) == {k: [v] for k, v in response.items()}
 
 
+def test_json_infer_schema_length_11148() -> None:
+    response = [{"col1": 1}] * 2 + [{"col1": 1, "col2": 2}] * 1
+    result = pl.read_json(json.dumps(response).encode(), infer_schema_length=2)
+    with pytest.raises(AssertionError):
+        assert set(result.columns) == {"col1", "col2"}
+
+    response = [{"col1": 1}] * 2 + [{"col1": 1, "col2": 2}] * 1
+    result = pl.read_json(json.dumps(response).encode(), infer_schema_length=3)
+    assert set(result.columns) == {"col1", "col2"}
+
+
 def test_ndjson_ignore_errors() -> None:
     # this schema is inconsistent as "value" is string and object
     jsonl = r"""{"Type":"insert","Key":[1],"SeqNo":1,"Timestamp":1,"Fields":[{"Name":"added_id","Value":2},{"Name":"body","Value":{"a": 1}}]}

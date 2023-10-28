@@ -137,16 +137,16 @@ impl PyExpr {
             .into()
     }
 
-    fn str_zfill(&self, alignment: usize) -> Self {
-        self.clone().inner.str().zfill(alignment).into()
+    fn str_pad_start(&self, length: usize, fill_char: char) -> Self {
+        self.inner.clone().str().pad_start(length, fill_char).into()
     }
 
-    fn str_ljust(&self, width: usize, fillchar: char) -> Self {
-        self.clone().inner.str().ljust(width, fillchar).into()
+    fn str_pad_end(&self, length: usize, fill_char: char) -> Self {
+        self.inner.clone().str().pad_end(length, fill_char).into()
     }
 
-    fn str_rjust(&self, width: usize, fillchar: char) -> Self {
-        self.clone().inner.str().rjust(width, fillchar).into()
+    fn str_zfill(&self, length: usize) -> Self {
+        self.inner.clone().str().zfill(length).into()
     }
 
     #[pyo3(signature = (pat, literal, strict))]
@@ -167,8 +167,8 @@ impl PyExpr {
     }
 
     fn str_hex_encode(&self) -> Self {
-        self.clone()
-            .inner
+        self.inner
+            .clone()
             .map(
                 move |s| s.utf8().map(|s| Some(s.hex_encode().into_series())),
                 GetOutput::same_type(),
@@ -179,8 +179,8 @@ impl PyExpr {
 
     #[cfg(feature = "binary_encoding")]
     fn str_hex_decode(&self, strict: bool) -> Self {
-        self.clone()
-            .inner
+        self.inner
+            .clone()
             .map(
                 move |s| s.utf8()?.hex_decode(strict).map(|s| Some(s.into_series())),
                 GetOutput::from_type(DataType::Binary),
@@ -190,8 +190,8 @@ impl PyExpr {
     }
 
     fn str_base64_encode(&self) -> Self {
-        self.clone()
-            .inner
+        self.inner
+            .clone()
             .map(
                 move |s| s.utf8().map(|s| Some(s.base64_encode().into_series())),
                 GetOutput::same_type(),
@@ -202,8 +202,8 @@ impl PyExpr {
 
     #[cfg(feature = "binary_encoding")]
     fn str_base64_decode(&self, strict: bool) -> Self {
-        self.clone()
-            .inner
+        self.inner
+            .clone()
             .map(
                 move |s| {
                     s.utf8()?
@@ -248,8 +248,8 @@ impl PyExpr {
                 Err(e) => Err(PolarsError::ComputeError(format!("{e:?}").into())),
             }
         };
-        self.clone()
-            .inner
+        self.inner
+            .clone()
             .map(function, GetOutput::from_type(DataType::Utf8))
             .with_fmt("str.json_path_match")
             .into()

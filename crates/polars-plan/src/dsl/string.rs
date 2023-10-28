@@ -13,7 +13,7 @@ impl StringNameSpace {
                 strict: false,
             }),
             &[pat],
-            true,
+            false,
             true,
         )
     }
@@ -28,7 +28,7 @@ impl StringNameSpace {
                 strict,
             }),
             &[pat],
-            true,
+            false,
             true,
         )
     }
@@ -38,7 +38,7 @@ impl StringNameSpace {
         self.0.map_many_private(
             FunctionExpr::StringExpr(StringFunction::EndsWith),
             &[sub],
-            true,
+            false,
             true,
         )
     }
@@ -48,7 +48,7 @@ impl StringNameSpace {
         self.0.map_many_private(
             FunctionExpr::StringExpr(StringFunction::StartsWith),
             &[sub],
-            true,
+            false,
             true,
         )
     }
@@ -93,31 +93,37 @@ impl StringNameSpace {
         ))
     }
 
-    /// Return a copy of the string left filled with ASCII '0' digits to make a string of length width.
-    /// A leading sign prefix ('+'/'-') is handled by inserting the padding after the sign character
-    /// rather than before.
-    /// The original string is returned if width is less than or equal to `s.len()`.
-    #[cfg(feature = "string_justify")]
-    pub fn zfill(self, alignment: usize) -> Expr {
-        self.0.map_private(StringFunction::Zfill(alignment).into())
+    /// Pad the start of the string until it reaches the given length.
+    ///
+    /// Padding is done using the specified `fill_char`.
+    /// Strings with length equal to or greater than the given length are
+    /// returned as-is.
+    #[cfg(feature = "string_pad")]
+    pub fn pad_start(self, length: usize, fill_char: char) -> Expr {
+        self.0
+            .map_private(StringFunction::PadStart { length, fill_char }.into())
     }
 
-    /// Return the string left justified in a string of length width.
-    /// Padding is done using the specified `fillchar`,
-    /// The original string is returned if width is less than or equal to `s.len()`.
-    #[cfg(feature = "string_justify")]
-    pub fn ljust(self, width: usize, fillchar: char) -> Expr {
+    /// Pad the end of the string until it reaches the given length.
+    ///
+    /// Padding is done using the specified `fill_char`.
+    /// Strings with length equal to or greater than the given length are
+    /// returned as-is.
+    #[cfg(feature = "string_pad")]
+    pub fn pad_end(self, length: usize, fill_char: char) -> Expr {
         self.0
-            .map_private(StringFunction::LJust { width, fillchar }.into())
+            .map_private(StringFunction::PadEnd { length, fill_char }.into())
     }
 
-    /// Return the string right justified in a string of length width.
-    /// Padding is done using the specified `fillchar`,
-    /// The original string is returned if width is less than or equal to `s.len()`.
-    #[cfg(feature = "string_justify")]
-    pub fn rjust(self, width: usize, fillchar: char) -> Expr {
-        self.0
-            .map_private(StringFunction::RJust { width, fillchar }.into())
+    /// Pad the start of the string with zeros until it reaches the given length.
+    ///
+    /// A sign prefix (`-`) is handled by inserting the padding after the sign
+    /// character rather than before.
+    /// Strings with length equal to or greater than the given length are
+    /// returned as-is.
+    #[cfg(feature = "string_pad")]
+    pub fn zfill(self, length: usize) -> Expr {
+        self.0.map_private(StringFunction::ZFill(length).into())
     }
 
     /// Extract each successive non-overlapping match in an individual string as an array
@@ -131,7 +137,7 @@ impl StringNameSpace {
         self.0.map_many_private(
             StringFunction::CountMatches(literal).into(),
             &[pat],
-            true,
+            false,
             false,
         )
     }
@@ -142,7 +148,7 @@ impl StringNameSpace {
         self.0.map_many_private(
             StringFunction::Strptime(dtype, options).into(),
             &[ambiguous],
-            true,
+            false,
             false,
         )
     }
@@ -206,7 +212,8 @@ impl StringNameSpace {
         self.0
             .apply_private(StringFunction::ConcatVertical(delimiter.to_owned()).into())
             .with_function_options(|mut options| {
-                options.auto_explode = true;
+                options.returns_scalar = true;
+                options.collect_groups = ApplyOptions::GroupWise;
                 options
             })
     }

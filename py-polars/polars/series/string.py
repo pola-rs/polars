@@ -3,7 +3,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars.series.utils import expr_dispatch
-from polars.utils.deprecation import deprecate_renamed_function
+from polars.utils.deprecation import (
+    deprecate_renamed_function,
+    deprecate_renamed_parameter,
+)
 
 if TYPE_CHECKING:
     from polars import Expr, Series
@@ -1271,78 +1274,103 @@ class StringNameSpace:
         ]
         """
 
-    def zfill(self, alignment: int) -> Series:
+    def pad_start(self, length: int, fill_char: str = " ") -> Series:
         """
-        Fills the string with zeroes.
-
-        Return a copy of the string left filled with ASCII '0' digits to make a string
-        of length width.
-
-        A leading sign prefix ('+'/'-') is handled by inserting the padding after the
-        sign character rather than before. The original string is returned if width is
-        less than or equal to ``len(s)``.
+        Pad the start of the string until it reaches the given length.
 
         Parameters
         ----------
-        alignment
-            Fill the value up to this length.
-
-        """
-
-    def ljust(self, width: int, fill_char: str = " ") -> Series:
-        """
-        Return the string left justified in a string of length ``width``.
-
-        Padding is done using the specified ``fill_char``. The original string is
-        returned if ``width`` is less than or equal to``len(s)``.
-
-        Parameters
-        ----------
-        width
-            Justify left to this length.
+        length
+            Pad the string until it reaches this length. Strings with length equal to
+            or greater than this value are returned as-is.
         fill_char
-            Fill with this ASCII character.
+            The character to pad the string with.
+
+        See Also
+        --------
+        pad_end
+        zfill
 
         Examples
         --------
-        >>> s = pl.Series("a", ["cow", "monkey", None, "hippopotamus"])
-        >>> s.str.ljust(8, "*")
-        shape: (4,)
-        Series: 'a' [str]
-        [
-            "cow*****"
-            "monkey**"
-            null
-            "hippopotamus"
-        ]
-
-        """
-
-    def rjust(self, width: int, fill_char: str = " ") -> Series:
-        """
-        Return the string right justified in a string of length ``width``.
-
-        Padding is done using the specified ``fill_char``. The original string is
-        returned if ``width`` is less than or equal to ``len(s)``.
-
-        Parameters
-        ----------
-        width
-            Justify right to this length.
-        fill_char
-            Fill with this ASCII character.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", ["cow", "monkey", None, "hippopotamus"])
-        >>> s.str.rjust(8, "*")
+        >>> s = pl.Series("a", ["cow", "monkey", "hippopotamus", None])
+        >>> s.str.pad_start(8, "*")
         shape: (4,)
         Series: 'a' [str]
         [
             "*****cow"
             "**monkey"
-            null
             "hippopotamus"
+            null
+        ]
+
+        """
+
+    def pad_end(self, length: int, fill_char: str = " ") -> Series:
+        """
+        Pad the end of the string until it reaches the given length.
+
+        Parameters
+        ----------
+        length
+            Pad the string until it reaches this length. Strings with length equal to
+            or greater than this value are returned as-is.
+        fill_char
+            The character to pad the string with.
+
+        See Also
+        --------
+        pad_start
+
+        Examples
+        --------
+        >>> s = pl.Series(["cow", "monkey", "hippopotamus", None])
+        >>> s.str.pad_end(8, "*")
+        shape: (4,)
+        Series: '' [str]
+        [
+            "cow*****"
+            "monkey**"
+            "hippopotamus"
+            null
+        ]
+
+        """
+
+    @deprecate_renamed_parameter("alignment", "length", version="0.19.12")
+    def zfill(self, length: int) -> Series:
+        """
+        Pad the start of the string with zeros until it reaches the given length.
+
+        A sign prefix (``-``) is handled by inserting the padding after the sign
+        character rather than before.
+
+        Parameters
+        ----------
+        length
+            Pad the string until it reaches this length. Strings with length equal to
+            or greater than this value are returned as-is.
+
+        See Also
+        --------
+        pad_start
+
+        Notes
+        -----
+        This method is intended for padding numeric strings. If your data contains
+        non-ASCII characters, use :func:`pad_start` instead.
+
+        Examples
+        --------
+        >>> s = pl.Series([-1, 123, 999999, None])
+        >>> s.cast(pl.Utf8).str.zfill(4)
+        shape: (4,)
+        Series: '' [str]
+        [
+                "-001"
+                "0123"
+                "999999"
+                null
         ]
 
         """
@@ -1604,5 +1632,41 @@ class StringNameSpace:
 
         .. deprecated:: 0.19.8
             This method has been renamed to :func:`len_chars`.
+
+        """
+
+    @deprecate_renamed_function("pad_end", version="0.19.12")
+    @deprecate_renamed_parameter("width", "length", version="0.19.12")
+    def ljust(self, length: int, fill_char: str = " ") -> Series:
+        """
+        Return the string left justified in a string of length ``length``.
+
+        .. deprecated:: 0.19.12
+            This method has been renamed to :func:`pad_end`.
+
+        Parameters
+        ----------
+        length
+            Justify left to this length.
+        fill_char
+            Fill with this ASCII character.
+
+        """
+
+    @deprecate_renamed_function("pad_start", version="0.19.12")
+    @deprecate_renamed_parameter("width", "length", version="0.19.12")
+    def rjust(self, length: int, fill_char: str = " ") -> Series:
+        """
+        Return the string right justified in a string of length ``length``.
+
+        .. deprecated:: 0.19.12
+            This method has been renamed to :func:`pad_start`.
+
+        Parameters
+        ----------
+        length
+            Justify right to this length.
+        fill_char
+            Fill with this ASCII character.
 
         """

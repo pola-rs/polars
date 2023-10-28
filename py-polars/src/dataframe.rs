@@ -403,6 +403,7 @@ impl PyDataFrame {
     #[cfg(feature = "json")]
     pub fn read_json(
         py_f: &PyAny,
+        infer_schema_length: Option<usize>,
         schema: Option<Wrap<Schema>>,
         schema_overrides: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
@@ -421,8 +422,9 @@ impl PyDataFrame {
                     let e = PyPolarsErr::from(PolarsError::ComputeError(msg.into()));
                     Err(PyErr::from(e))
                 } else {
-                    let mut builder =
-                        JsonReader::new(mmap_bytes_r).with_json_format(JsonFormat::Json);
+                    let mut builder = JsonReader::new(mmap_bytes_r)
+                        .with_json_format(JsonFormat::Json)
+                        .infer_schema_len(infer_schema_length);
 
                     if let Some(schema) = schema {
                         builder = builder.with_schema(Arc::new(schema.0));
@@ -926,14 +928,14 @@ impl PyDataFrame {
 
     pub fn sample_frac(
         &self,
-        frac: f64,
+        frac: &PySeries,
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
         let df = self
             .df
-            .sample_frac(frac, with_replacement, shuffle, seed)
+            .sample_frac(&frac.series, with_replacement, shuffle, seed)
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
@@ -1030,7 +1032,7 @@ impl PyDataFrame {
         self.df.find_idx_by_name(name)
     }
 
-    pub fn column(&self, name: &str) -> PyResult<PySeries> {
+    pub fn get_column(&self, name: &str) -> PyResult<PySeries> {
         let series = self
             .df
             .column(name)
@@ -1227,10 +1229,6 @@ impl PyDataFrame {
 
         // SAFETY: PyDataFrame is a repr(transparent) DataFrame.
         Ok(unsafe { std::mem::transmute::<Vec<DataFrame>, Vec<PyDataFrame>>(out) })
-    }
-
-    pub fn shift(&self, periods: i64) -> Self {
-        self.df.shift(periods).into()
     }
 
     pub fn lazy(&self) -> PyLazyFrame {

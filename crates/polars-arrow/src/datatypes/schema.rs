@@ -1,24 +1,28 @@
-#[cfg(feature = "serde_types")]
-use serde_derive::{Deserialize, Serialize};
+use std::sync::Arc;
+
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 use super::{Field, Metadata};
 
 /// An ordered sequence of [`Field`]s with associated [`Metadata`].
 ///
-/// [`Schema`] is an abstraction used to read from, and write to, Arrow IPC format,
+/// [`ArrowSchema`] is an abstraction used to read from, and write to, Arrow IPC format,
 /// Apache Parquet, and Apache Avro. All these formats have a concept of a schema
 /// with fields and metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-#[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
-pub struct Schema {
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct ArrowSchema {
     /// The fields composing this schema.
     pub fields: Vec<Field>,
     /// Optional metadata.
     pub metadata: Metadata,
 }
 
-impl Schema {
-    /// Attaches a [`Metadata`] to [`Schema`]
+pub type ArrowSchemaRef = Arc<ArrowSchema>;
+
+impl ArrowSchema {
+    /// Attaches a [`Metadata`] to [`ArrowSchema`]
     #[inline]
     pub fn with_metadata(self, metadata: Metadata) -> Self {
         Self {
@@ -27,7 +31,17 @@ impl Schema {
         }
     }
 
-    /// Returns a new [`Schema`] with a subset of all fields whose `predicate`
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.fields.len()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.fields.is_empty()
+    }
+
+    /// Returns a new [`ArrowSchema`] with a subset of all fields whose `predicate`
     /// evaluates to true.
     pub fn filter<F: Fn(usize, &Field) -> bool>(self, predicate: F) -> Self {
         let fields = self
@@ -43,14 +57,14 @@ impl Schema {
             })
             .collect();
 
-        Schema {
+        ArrowSchema {
             fields,
             metadata: self.metadata,
         }
     }
 }
 
-impl From<Vec<Field>> for Schema {
+impl From<Vec<Field>> for ArrowSchema {
     fn from(fields: Vec<Field>) -> Self {
         Self {
             fields,

@@ -520,7 +520,12 @@ pub fn cast(
             // Safety: offsets _are_ monotonically increasing
             let offsets = unsafe { Offsets::new_unchecked(offsets) };
 
-            let list_array = ListArray::<i64>::new(to_type.clone(), offsets.into(), values, None);
+            let list_array = ListArray::<i64>::new(
+                to_type.clone(),
+                offsets.into(),
+                values,
+                array.validity().cloned(),
+            );
 
             Ok(Box::new(list_array))
         },

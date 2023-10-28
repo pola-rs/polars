@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.19.8"
+version = "0.19.12-rc.1"
 edition = "2021"
 
 [lib]
@@ -13,9 +13,10 @@ polars-core = { path = "../crates/polars-core", default-features = false, featur
 polars-error = { path = "../crates/polars-error" }
 polars-lazy = { path = "../crates/polars-lazy", default-features = false, features = ["python"] }
 polars-ops = { path = "../crates/polars-ops", default-features = false, features = ["convert_index"] }
+polars-parquet = { path = "../crates/polars-parquet", default-features = false, optional = true }
 polars-plan = { path = "../crates/polars-plan", default-features = false }
 
-ahash = "0.8"
+ahash = ">=0.8.5"
 ciborium = "0.2"
 either = "1.8"
 lexical-core = "0.8"
@@ -76,7 +77,7 @@ features = [
   "serde-lazy",
   "string_encoding",
   "string_from_radix",
-  "string_justify",
+  "string_pad",
   "strings",
   "temporal",
   "to_dummies",
@@ -102,7 +103,7 @@ dtype-i16 = []
 dtype-u8 = []
 dtype-u16 = []
 avro = ["polars/avro"]
-parquet = ["polars/parquet"]
+parquet = ["polars/parquet", "polars-parquet"]
 ipc = ["polars/ipc"]
 ipc_streaming = ["polars/ipc_streaming"]
 is_in = ["polars/is_in"]
@@ -138,6 +139,7 @@ binary_encoding = ["polars/binary_encoding"]
 list_sets = ["polars-lazy/list_sets"]
 list_any_all = ["polars/list_any_all"]
 list_drop_nulls = ["polars/list_drop_nulls"]
+list_sample = ["polars/list_sample"]
 cutqcut = ["polars/cutqcut"]
 rle = ["polars/rle"]
 extract_groups = ["polars/extract_groups"]
@@ -165,6 +167,7 @@ operations = [
   "list_sets",
   "list_any_all",
   "list_drop_nulls",
+  "list_sample",
   "cutqcut",
   "rle",
   "extract_groups",

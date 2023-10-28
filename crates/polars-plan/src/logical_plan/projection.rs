@@ -55,7 +55,7 @@ fn rewrite_special_aliases(expr: Expr) -> PolarsResult<Expr> {
                 let name = function.call(&name)?;
                 Ok(Expr::Alias(expr, Arc::from(name)))
             },
-            _ => panic!("`keep_name`, `suffix`, `prefix` should be last expression"),
+            _ => panic!("`keep`, `suffix`, `prefix` should be last expression"),
         }
     } else {
         Ok(expr)

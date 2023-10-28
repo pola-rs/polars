@@ -59,36 +59,41 @@ impl ListChunked {
         // generated Series will have wrong length otherwise.
         let ca = self.rechunk();
         let inner_dtype = self.inner_dtype().to_arrow();
+        let arr = ca.downcast_iter().next().unwrap();
 
-        let chunks = ca.downcast_iter().map(|arr| {
-            let elements = unsafe {
-                Series::_try_from_arrow_unchecked(
-                    self.name(),
-                    vec![(*arr.values()).clone()],
-                    &inner_dtype,
-                )
-                .unwrap()
-            };
+        let elements = unsafe {
+            Series::_try_from_arrow_unchecked(
+                self.name(),
+                vec![(*arr.values()).clone()],
+                &inner_dtype,
+            )
+            .unwrap()
+        };
 
-            let expected_len = elements.len();
-            let out: Series = func(elements)?;
-            polars_ensure!(
-                out.len() == expected_len,
-                ComputeError: "the function should apply element-wise, it removed elements instead"
-            );
-            let out = out.rechunk();
-            let values = out.chunks()[0].clone();
+        let expected_len = elements.len();
+        let out: Series = func(elements)?;
+        polars_ensure!(
+            out.len() == expected_len,
+            ComputeError: "the function should apply element-wise, it removed elements instead"
+        );
+        let out = out.rechunk();
+        let values = out.chunks()[0].clone();
 
-            let inner_dtype = LargeListArray::default_datatype(out.dtype().to_arrow());
-            let arr = LargeListArray::new(
-                inner_dtype,
-                (*arr.offsets()).clone(),
-                values,
-                arr.validity().cloned(),
-            );
-            Ok(arr)
-        });
+        let inner_dtype = LargeListArray::default_datatype(values.data_type().clone());
+        let arr = LargeListArray::new(
+            inner_dtype,
+            (*arr.offsets()).clone(),
+            values,
+            arr.validity().cloned(),
+        );
 
-        ListChunked::try_from_chunk_iter(self.name(), chunks)
+        // safety: arr's inner dtype is derived from out dtype.
+        Ok(unsafe {
+            ListChunked::from_chunks_and_dtype_unchecked(
+                ca.name(),
+                vec![Box::new(arr)],
+                DataType::List(Box::new(out.dtype().clone())),
+            )
+        })
     }
 }

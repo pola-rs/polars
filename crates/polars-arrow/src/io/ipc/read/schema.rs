@@ -5,7 +5,7 @@ use polars_error::{polars_bail, polars_err, PolarsResult};
 use super::super::{IpcField, IpcSchema};
 use super::{OutOfSpecKind, StreamMetadata};
 use crate::datatypes::{
-    get_extension, DataType, Extension, Field, IntegerType, IntervalUnit, Metadata, Schema,
+    get_extension, ArrowSchema, DataType, Extension, Field, IntegerType, IntervalUnit, Metadata,
     TimeUnit, UnionMode,
 };
 
@@ -352,8 +352,8 @@ fn get_data_type(
     })
 }
 
-/// Deserialize an flatbuffers-encoded Schema message into [`Schema`] and [`IpcSchema`].
-pub fn deserialize_schema(message: &[u8]) -> PolarsResult<(Schema, IpcSchema)> {
+/// Deserialize an flatbuffers-encoded Schema message into [`ArrowSchema`] and [`IpcSchema`].
+pub fn deserialize_schema(message: &[u8]) -> PolarsResult<(ArrowSchema, IpcSchema)> {
     let message = arrow_format::ipc::MessageRef::read_as_root(message)
         .map_err(|_err| polars_err!(oos = "Unable deserialize message: {err:?}"))?;
 
@@ -371,7 +371,7 @@ pub fn deserialize_schema(message: &[u8]) -> PolarsResult<(Schema, IpcSchema)> {
 /// Deserialize the raw Schema table from IPC format to Schema data type
 pub(super) fn fb_to_schema(
     schema: arrow_format::ipc::SchemaRef,
-) -> PolarsResult<(Schema, IpcSchema)> {
+) -> PolarsResult<(ArrowSchema, IpcSchema)> {
     let fields = schema
         .fields()?
         .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingFields))?;
@@ -400,7 +400,7 @@ pub(super) fn fb_to_schema(
     }
 
     Ok((
-        Schema { fields, metadata },
+        ArrowSchema { fields, metadata },
         IpcSchema {
             fields: ipc_fields,
             is_little_endian,

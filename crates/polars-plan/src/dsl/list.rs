@@ -34,6 +34,48 @@ impl ListNameSpace {
             .map_private(FunctionExpr::ListExpr(ListFunction::DropNulls))
     }
 
+    #[cfg(feature = "list_sample")]
+    pub fn sample_n(
+        self,
+        n: Expr,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::ListExpr(ListFunction::Sample {
+                is_fraction: false,
+                with_replacement,
+                shuffle,
+                seed,
+            }),
+            &[n],
+            false,
+            false,
+        )
+    }
+
+    #[cfg(feature = "list_sample")]
+    pub fn sample_fraction(
+        self,
+        fraction: Expr,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::ListExpr(ListFunction::Sample {
+                is_fraction: true,
+                with_replacement,
+                shuffle,
+                seed,
+            }),
+            &[fraction],
+            false,
+            false,
+        )
+    }
+
     /// Return the number of elements in each list.
     ///
     /// Null values are treated like regular elements in this context.
@@ -95,7 +137,7 @@ impl ListNameSpace {
         self.0.map_many_private(
             FunctionExpr::ListExpr(ListFunction::Get),
             &[index],
-            true,
+            false,
             false,
         )
     }
@@ -110,7 +152,7 @@ impl ListNameSpace {
         self.0.map_many_private(
             FunctionExpr::ListExpr(ListFunction::Take(null_on_oob)),
             &[index],
-            true,
+            false,
             false,
         )
     }
@@ -174,7 +216,7 @@ impl ListNameSpace {
         self.0.map_many_private(
             FunctionExpr::ListExpr(ListFunction::Slice),
             &[offset, length],
-            true,
+            false,
             false,
         )
     }
@@ -254,7 +296,7 @@ impl ListNameSpace {
             .map_many_private(
                 FunctionExpr::ListExpr(ListFunction::Contains),
                 &[other],
-                true,
+                false,
                 false,
             )
             .with_function_options(|mut options| {
@@ -271,7 +313,7 @@ impl ListNameSpace {
             .map_many_private(
                 FunctionExpr::ListExpr(ListFunction::CountMatches),
                 &[other],
-                true,
+                false,
                 false,
             )
             .with_function_options(|mut options| {

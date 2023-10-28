@@ -152,7 +152,7 @@ def test_struct_unnest_multiple() -> None:
     # List input
     result = df_structs.unnest(["s1", "s2"])
     assert_frame_equal(result, df)
-    assert all(tp.is_nested for tp in df_structs.dtypes)
+    assert all(tp in pl.NESTED_DTYPES for tp in df_structs.dtypes)
 
     # Positional input
     result = df_structs.unnest("s1", "s2")
@@ -317,9 +317,7 @@ def test_struct_list_head_tail() -> None:
             pl.col("list_of_struct").list.head(1).alias("head"),
             pl.col("list_of_struct").list.tail(1).alias("tail"),
         ]
-    ).to_dict(
-        False
-    ) == {
+    ).to_dict(False) == {
         "list_of_struct": [
             [{"a": 1, "b": 4}, {"a": 3, "b": 6}],
             [{"a": 10, "b": 40}, {"a": 20, "b": 50}, {"a": 30, "b": 60}],
@@ -401,9 +399,7 @@ def test_struct_concat_list() -> None:
         }
     ).with_columns(
         [pl.col("list_struct1").list.concat("list_struct2").alias("result")]
-    )[
-        "result"
-    ].to_list() == [
+    )["result"].to_list() == [
         [{"a": 1, "b": 2}, {"a": 3, "b": 4}, {"a": 6, "b": 7}, {"a": 8, "b": 9}],
         [{"a": 1, "b": 2}, {"a": 6, "b": 7}],
     ]
@@ -645,8 +641,8 @@ def test_empty_struct() -> None:
         pl.List,
         pl.List(pl.Null),
         pl.List(pl.Utf8),
-        pl.Array(32),
-        pl.Array(16, inner=pl.UInt8),
+        pl.Array(inner=pl.Null, width=32),
+        pl.Array(inner=pl.UInt8, width=16),
         pl.Struct,
         pl.Struct([pl.Field("", pl.Null)]),
         pl.Struct([pl.Field("x", pl.UInt32), pl.Field("y", pl.Float64)]),

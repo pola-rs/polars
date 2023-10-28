@@ -25,6 +25,7 @@ pub struct SQLContext {
     pub(crate) table_map: PlHashMap<String, LazyFrame>,
     pub(crate) function_registry: Arc<dyn FunctionRegistry>,
     cte_map: RefCell<PlHashMap<String, LazyFrame>>,
+    aliases: RefCell<PlHashMap<String, String>>,
 }
 
 impl Default for SQLContext {
@@ -33,6 +34,7 @@ impl Default for SQLContext {
             function_registry: Arc::new(DefaultFunctionRegistry {}),
             table_map: Default::default(),
             cte_map: Default::default(),
+            aliases: Default::default(),
         }
     }
 }
@@ -113,6 +115,7 @@ impl SQLContext {
         let res = self.execute_statement(ast.get(0).unwrap());
         // Every execution should clear the CTE map.
         self.cte_map.borrow_mut().clear();
+        self.aliases.borrow_mut().clear();
         res
     }
 
@@ -139,9 +142,16 @@ impl SQLContext {
         self.cte_map.borrow_mut().insert(name.to_owned(), lf);
     }
 
-    fn get_table_from_current_scope(&self, name: &str) -> Option<LazyFrame> {
+    pub(super) fn get_table_from_current_scope(&self, name: &str) -> Option<LazyFrame> {
         let table_name = self.table_map.get(name).cloned();
-        table_name.or_else(|| self.cte_map.borrow().get(name).cloned())
+        table_name
+            .or_else(|| self.cte_map.borrow().get(name).cloned())
+            .or_else(|| {
+                self.aliases
+                    .borrow()
+                    .get(name)
+                    .and_then(|alias| self.table_map.get(alias).cloned())
+            })
     }
 
     pub(crate) fn execute_statement(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
@@ -574,7 +584,12 @@ impl SQLContext {
                 let tbl_name = name.0.get(0).unwrap().value.as_str();
                 if let Some(lf) = self.get_table_from_current_scope(tbl_name) {
                     match alias {
-                        Some(alias) => Ok((alias.to_string(), lf)),
+                        Some(alias) => {
+                            self.aliases
+                                .borrow_mut()
+                                .insert(alias.name.value.clone(), tbl_name.to_string());
+                            Ok((alias.to_string(), lf))
+                        },
                         None => Ok((tbl_name.to_string(), lf)),
                     }
                 } else {

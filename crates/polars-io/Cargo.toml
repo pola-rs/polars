@@ -10,8 +10,9 @@ description = "IO related logic for the Polars DataFrame library"
 
 [dependencies]
 polars-core = { workspace = true }
-polars-error = { workspace = true, default-features = false }
+polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
+polars-parquet = { workspace = true, optional = true }
 polars-time = { workspace = true, features = [], optional = true }
 polars-utils = { workspace = true }
 
@@ -92,8 +93,16 @@ dtype-struct = ["polars-core/dtype-struct"]
 dtype-decimal = ["polars-core/dtype-decimal"]
 fmt = ["polars-core/fmt"]
 lazy = []
-parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression"]
-async = ["async-trait", "futures", "tokio", "tokio-util", "arrow/io_ipc_write_async", "polars-error/regex"]
+parquet = ["polars-parquet", "polars-parquet/compression"]
+async = [
+  "async-trait",
+  "futures",
+  "tokio",
+  "tokio-util",
+  "arrow/io_ipc_write_async",
+  "polars-error/regex",
+  "polars-parquet?/async",
+]
 cloud = ["object_store", "async", "polars-error/object_store", "url"]
 aws = ["object_store/aws", "cloud", "reqwest"]
 azure = ["object_store/azure", "cloud"]

@@ -30,6 +30,7 @@ impl<T: PolarsDataType> Default for ChunkedArray<T> {
             phantom: PhantomData,
             bit_settings: Default::default(),
             length: 0,
+            null_count: 0,
         }
     }
 }
@@ -330,6 +331,7 @@ impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
             phantom: PhantomData,
             bit_settings: Default::default(),
             length: 0,
+            null_count: 0,
         };
         out.compute_len();
         out
