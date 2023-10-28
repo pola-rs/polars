@@ -1341,7 +1341,7 @@ def test_quadratic_behavior_4736() -> None:
     ldf.select(reduce(add, (pl.col(fld) for fld in ldf.columns)))
 
 
-@pytest.mark.parametrize("input_dtype", [pl.Utf8, pl.Int64, pl.Float64])
+@pytest.mark.parametrize("input_dtype", [pl.Int64, pl.Float64])
 def test_from_epoch(input_dtype: pl.PolarsDataType) -> None:
     ldf = pl.LazyFrame(
         [
@@ -1379,6 +1379,23 @@ def test_from_epoch(input_dtype: pl.PolarsDataType) -> None:
     ts_col = pl.col("timestamp_s")
     with pytest.raises(ValueError):
         _ = ldf.select(pl.from_epoch(ts_col, time_unit="s2"))  # type: ignore[call-overload]
+
+
+def test_from_epoch_str() -> None:
+    ldf = pl.LazyFrame(
+        [
+            pl.Series("timestamp_ms", [1147880044 * 1_000]).cast(pl.Utf8),
+            pl.Series("timestamp_us", [1147880044 * 1_000_000]).cast(pl.Utf8),
+        ]
+    )
+
+    with pytest.raises(ComputeError):
+        ldf.select(
+            [
+                pl.from_epoch(pl.col("timestamp_ms"), time_unit="ms"),
+                pl.from_epoch(pl.col("timestamp_us"), time_unit="us"),
+            ]
+        ).collect()
 
 
 def test_cumagg_types() -> None:
