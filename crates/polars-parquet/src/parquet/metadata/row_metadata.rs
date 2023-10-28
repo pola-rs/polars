@@ -8,7 +8,7 @@ use crate::parquet::error::{Error, Result};
 use crate::parquet::write::ColumnOffsetsMetadata;
 
 /// Metadata for a row group.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde_types", derive(Deserialize, Serialize))]
 pub struct RowGroupMetaData {
     columns: Vec<ColumnChunkMetaData>,

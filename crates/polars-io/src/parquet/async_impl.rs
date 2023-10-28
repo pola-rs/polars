@@ -1,11 +1,10 @@
 //! Read parquet files in parallel from the Object Store without a third party crate.
 use std::ops::Range;
-use std::sync::mpsc::{sync_channel, Receiver};
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 
 use arrow::datatypes::ArrowSchemaRef;
 use bytes::Bytes;
-use futures::future::try_join_all;
 use object_store::path::Path as ObjectPath;
 use object_store::ObjectStore;
 use polars_core::datatypes::PlHashMap;
@@ -22,6 +21,10 @@ use crate::parquet::read_impl::compute_row_group_range;
 use crate::pl_async::get_runtime;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::predicates::read_this_row_group;
+
+type DownloadedRowGroup = Vec<(u64, Bytes)>;
+type QueuePayload = (usize, DownloadedRowGroup);
+type QueueSend = Arc<SyncSender<PolarsResult<QueuePayload>>>;
 
 pub struct ParquetObjectStore {
     store: Arc<dyn ObjectStore>,
@@ -113,24 +116,18 @@ async fn read_single_column_async(
     Ok((start as u64, chunk))
 }
 
-async fn read_columns_async(
-    async_reader: &ParquetObjectStore,
-    ranges: &[(u64, u64)],
-) -> PolarsResult<Vec<(u64, Bytes)>> {
-    let futures = ranges.iter().map(|(start, length)| async {
-        read_single_column_async(async_reader, *start as usize, *length as usize).await
-    });
-
-    try_join_all(futures).await
-}
-
 /// Download rowgroups for the column whose indexes are given in `projection`.
 /// We concurrently download the columns for each field.
 async fn download_projection(
-    fields: &[SmartString],
-    row_group: &RowGroupMetaData,
-    async_reader: &Arc<ParquetObjectStore>,
-) -> PolarsResult<Vec<(u64, Bytes)>> {
+    fields: Arc<[SmartString]>,
+    row_group: RowGroupMetaData,
+    async_reader: Arc<ParquetObjectStore>,
+    sender: QueueSend,
+    rg_index: usize,
+) -> bool {
+    let async_reader = &async_reader;
+    let row_group = &row_group;
+    let fields = fields.as_ref();
     let fut = fields.iter().map(|name| async move {
         let columns = row_group.columns();
         let range = columns
@@ -149,17 +146,21 @@ async fn download_projection(
     });
 
     // Download concurrently
-    futures::future::try_join_all(fut).await
+    let result = futures::future::try_join_all(fut)
+        .await
+        .map(|bytes| (rg_index, bytes));
+    sender.send(result).is_ok()
 }
 
 async fn download_row_group(
-    rg: &RowGroupMetaData,
-    async_reader: &Arc<ParquetObjectStore>,
-) -> PolarsResult<Bytes> {
+    rg: RowGroupMetaData,
+    async_reader: Arc<ParquetObjectStore>,
+    sender: QueueSend,
+    rg_index: usize,
+) -> bool {
     if rg.columns().is_empty() {
-        return Ok(Bytes::new());
+        return true;
     }
-
     let offset = rg.columns().iter().map(|c| c.byte_range().0).min().unwrap();
     let (max_offset, len) = rg
         .columns()
@@ -168,13 +169,30 @@ async fn download_row_group(
         .max_by_key(|k| k.0)
         .unwrap();
 
-    async_reader
+    let result = async_reader
         .get_range(offset as usize, (max_offset + len) as usize)
         .await
-}
+        .map(|bytes| {
+            let base_offset = offset;
+            (
+                rg_index,
+                rg.columns()
+                    .iter()
+                    .map(|c| {
+                        let (offset, len) = c.byte_range();
+                        let slice_offset = offset - base_offset;
 
-type DownloadedRowGroup = Vec<(u64, Bytes)>;
-type QueuePayload = (usize, DownloadedRowGroup);
+                        (
+                            offset,
+                            bytes.slice(slice_offset as usize..(slice_offset + len) as usize),
+                        )
+                    })
+                    .collect::<DownloadedRowGroup>(),
+            )
+        });
+
+    sender.send(result).is_ok()
+}
 
 pub struct FetchRowGroupsFromObjectStore {
     rg_q: Arc<Mutex<Receiver<PolarsResult<QueuePayload>>>>,
@@ -190,27 +208,19 @@ impl FetchRowGroupsFromObjectStore {
         row_groups: &[RowGroupMetaData],
         limit: usize,
     ) -> PolarsResult<Self> {
-        let projected_fields = projection
-            .map(|projection| {
-                projection
-                    .iter()
-                    .map(|i| SmartString::from(schema.fields[*i].name.as_str()))
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_else(|| {
-                schema
-                    .fields
-                    .iter()
-                    .map(|fld| SmartString::from(fld.name.as_str()))
-                    .collect()
-            });
+        let projected_fields: Option<Arc<[SmartString]>> = projection.map(|projection| {
+            projection
+                .iter()
+                .map(|i| SmartString::from(schema.fields[*i].name.as_str()))
+                .collect()
+        });
 
         let row_groups_end = compute_row_group_range(0, row_groups.len(), limit, row_groups);
         let row_groups = &row_groups[0..row_groups_end];
 
         let mut prefetched: PlHashMap<usize, DownloadedRowGroup> = PlHashMap::new();
 
-        let row_groups = if let Some(pred) = predicate.as_deref() {
+        let mut row_groups = if let Some(pred) = predicate.as_deref() {
             row_groups
                 .iter()
                 .enumerate()
@@ -230,26 +240,57 @@ impl FetchRowGroupsFromObjectStore {
             row_groups.iter().cloned().enumerate().collect()
         };
         let reader = Arc::new(reader);
+        let msg_limit = 5;
 
-        let (snd, rcv) = sync_channel(5);
+        let (snd, rcv) = sync_channel(msg_limit);
+        let snd = Arc::new(snd);
 
         let _ = std::thread::spawn(move || {
             get_runtime().block_on(async {
-                'loop_rg: for (i, rg) in row_groups {
-                    let fetched = download_projection(&projected_fields, &rg, &reader).await;
+                let chunk_len = msg_limit;
+                let mut handles = Vec::with_capacity(chunk_len);
+                for chunk in row_groups.chunks_mut(chunk_len) {
+                    // Start downloads concurrently
+                    for (i, rg) in chunk {
+                        let rg = std::mem::take(rg);
 
-                    match fetched {
-                        Ok(fetched) => {
-                            let payload = PolarsResult::Ok((i, fetched));
-                            if snd.send(payload).is_err() {
-                                break 'loop_rg;
-                            }
-                        },
-                        Err(err) => {
-                            let payload = Err(err);
-                            let _ = snd.send(payload);
-                            break 'loop_rg;
-                        },
+                        match &projected_fields {
+                            Some(projected_fields) => {
+                                let handle = tokio::spawn(download_projection(
+                                    projected_fields.clone(),
+                                    rg,
+                                    reader.clone(),
+                                    snd.clone(),
+                                    *i,
+                                ));
+                                handles.push(handle)
+                            },
+                            None => {
+                                let handle = tokio::spawn(download_row_group(
+                                    rg,
+                                    reader.clone(),
+                                    snd.clone(),
+                                    *i,
+                                ));
+                                handles.push(handle)
+                            },
+                        }
+                    }
+
+                    // Wait n - 3 tasks, so we already start the next downloads earlier.
+                    for task in handles.drain(..handles.len() - 3) {
+                        let succeeded = task.await.unwrap();
+                        if !succeeded {
+                            return;
+                        }
+                    }
+                }
+
+                // Drain remaining tasks.
+                for task in handles.drain(..) {
+                    let succeeded = task.await.unwrap();
+                    if !succeeded {
+                        return;
                     }
                 }
             })
