@@ -56,6 +56,13 @@ impl ParquetObjectStore {
             .map_err(to_compute_err)
     }
 
+    async fn get_ranges(&self, ranges: &[Range<usize>]) -> PolarsResult<Vec<Bytes>> {
+        self.store
+            .get_ranges(&self.path, ranges)
+            .await
+            .map_err(to_compute_err)
+    }
+
     /// Initialize the length property of the object, unless it has already been fetched.
     async fn initialize_length(&mut self) -> PolarsResult<()> {
         if self.length.is_some() {
@@ -107,15 +114,6 @@ impl ParquetObjectStore {
     }
 }
 
-async fn read_single_column_async(
-    async_reader: &ParquetObjectStore,
-    start: usize,
-    length: usize,
-) -> PolarsResult<(u64, Bytes)> {
-    let chunk = async_reader.get_range(start, length).await?;
-    Ok((start as u64, chunk))
-}
-
 /// Download rowgroups for the column whose indexes are given in `projection`.
 /// We concurrently download the columns for each field.
 async fn download_projection(
@@ -128,27 +126,38 @@ async fn download_projection(
     let async_reader = &async_reader;
     let row_group = &row_group;
     let fields = fields.as_ref();
-    let fut = fields.iter().map(|name| async move {
+
+    let mut ranges = Vec::with_capacity(fields.len());
+    let mut offsets = Vec::with_capacity(fields.len());
+    fields.iter().for_each(|name| {
         let columns = row_group.columns();
-        let range = columns
+        let (offset, range) = columns
             .iter()
             .filter_map(|meta| {
                 if meta.descriptor().path_in_schema[0] == name.as_str() {
-                    Some(meta.byte_range())
+                    let (offset, len) = meta.byte_range();
+                    Some((offset, offset as usize..(offset + len) as usize))
                 } else {
                     None
                 }
             })
             .next()
             .unwrap();
-        let async_reader = async_reader.clone();
-        read_single_column_async(&async_reader, range.0 as usize, range.1 as usize).await
+
+        offsets.push(offset);
+        ranges.push(range);
     });
 
-    // Download concurrently
-    let result = futures::future::try_join_all(fut)
-        .await
-        .map(|bytes| (rg_index, bytes));
+    let result = async_reader.get_ranges(&ranges).await.map(|bytes| {
+        (
+            rg_index,
+            bytes
+                .into_iter()
+                .zip(offsets)
+                .map(|(bytes, offset)| (offset, bytes))
+                .collect::<Vec<_>>(),
+        )
+    });
     sender.send(result).is_ok()
 }
 
