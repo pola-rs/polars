@@ -9,12 +9,12 @@ repository = { workspace = true }
 description = "Time related code for the Polars DataFrame library"
 
 [dependencies]
-polars-arrow = { workspace = true, features = ["compute", "temporal"] }
-polars-core = { workspace = true, default-features = false, features = ["dtype-datetime", "dtype-duration", "dtype-time", "dtype-date"] }
+arrow = { workspace = true, features = ["compute", "temporal"] }
+polars-core = { workspace = true, features = ["dtype-datetime", "dtype-duration", "dtype-time", "dtype-date"] }
+polars-error = { workspace = true }
 polars-ops = { workspace = true }
 polars-utils = { workspace = true }
 
-arrow = { workspace = true }
 atoi = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true, optional = true }
@@ -31,7 +31,7 @@ dtype-time = ["polars-core/dtype-time", "polars-core/temporal"]
 dtype-duration = ["polars-core/dtype-duration", "polars-core/temporal"]
 rolling_window = ["polars-core/rolling_window", "dtype-duration"]
 fmt = ["polars-core/fmt"]
-timezones = ["chrono-tz", "dtype-datetime", "polars-core/timezones", "polars-arrow/timezones", "polars-ops/timezones"]
+timezones = ["chrono-tz", "dtype-datetime", "polars-core/timezones", "arrow/timezones", "polars-ops/timezones"]
 
 test = ["dtype-date", "dtype-datetime", "polars-core/fmt"]
 

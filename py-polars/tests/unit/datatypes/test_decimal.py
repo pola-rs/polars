@@ -5,10 +5,13 @@ from dataclasses import dataclass
 from decimal import Decimal as D
 from typing import Any, NamedTuple
 
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
 
+@pytest.fixture(scope="module")
 def permutations_int_dec_none() -> list[tuple[D | int | None, ...]]:
     return list(
         itertools.permutations(
@@ -23,9 +26,12 @@ def permutations_int_dec_none() -> list[tuple[D | int | None, ...]]:
     )
 
 
-def test_series_from_pydecimal_and_ints() -> None:
+@pytest.mark.slow()
+def test_series_from_pydecimal_and_ints(
+    permutations_int_dec_none: list[tuple[D | int | None, ...]]
+) -> None:
     # TODO: check what happens if there are strings, floats arrow scalars in the list
-    for data in permutations_int_dec_none():
+    for data in permutations_int_dec_none:
         s = pl.Series("name", data)
         assert s.dtype == pl.Decimal(7)  # inferred scale = 7, precision = None
         assert s.name == "name"
@@ -35,7 +41,10 @@ def test_series_from_pydecimal_and_ints() -> None:
         assert s.to_list() == [D(x) if x is not None else None for x in data]
 
 
-def test_frame_from_pydecimal_and_ints(monkeypatch: Any) -> None:
+@pytest.mark.slow()
+def test_frame_from_pydecimal_and_ints(
+    permutations_int_dec_none: list[tuple[D | int | None, ...]], monkeypatch: Any
+) -> None:
     monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
 
     class X(NamedTuple):
@@ -45,7 +54,7 @@ def test_frame_from_pydecimal_and_ints(monkeypatch: Any) -> None:
     class Y:
         a: int | D | None
 
-    for data in permutations_int_dec_none():
+    for data in permutations_int_dec_none:
         row_data = [(d,) for d in data]
         for cls in (X, Y):
             for ctor in (pl.DataFrame, pl.from_records):
@@ -218,6 +227,8 @@ def test_decimal_aggregations() -> None:
         sum=pl.sum("a"),
         min=pl.min("a"),
         max=pl.max("a"),
-    ).to_dict(
-        False
-    ) == {"sum": [D("9110.33")], "min": [D("0.10")], "max": [D("9000.12")]}
+    ).to_dict(False) == {
+        "sum": [D("9110.33")],
+        "min": [D("0.10")],
+        "max": [D("9000.12")],
+    }

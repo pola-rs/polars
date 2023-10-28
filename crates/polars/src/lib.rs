@@ -188,7 +188,7 @@
 //! * `ndarray`- Convert from [`DataFrame`] to [ndarray](https://docs.rs/ndarray/)
 //! * `temporal` - Conversions between [Chrono](https://docs.rs/chrono/) and Polars for temporal data types
 //! * `timezones` - Activate timezone support.
-//! * `strings` - Extra string utilities for [`Utf8Chunked`] //!     - `string_justify` - `zfill`, `ljust`, `rjust`
+//! * `strings` - Extra string utilities for [`Utf8Chunked`] //!     - `string_pad` - `zfill`, `ljust`, `rjust`
 //!     - `string_from_radix` - `parse_int`
 //! * `object` - Support for generic ChunkedArrays called [`ObjectChunked<T>`] (generic over `T`).
 //!              These are downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
@@ -245,7 +245,7 @@
 //!     - `concat_str` - Concat string data in linear time.
 //!     - `reinterpret` - Utility to reinterpret bits to signed/unsigned
 //!     - `take_opt_iter` - Take from a [`Series`] with [`Iterator<Item=Option<usize>>`](std::iter::Iterator).
-//!     - `mode` - [Return the most occurring value(s)](crate::chunked_array::ops::ChunkUnique::mode)
+//!     - `mode` - [Return the most occurring value(s)](polars_ops::chunked_array::mode)
 //!     - `cum_agg` - [`cumsum`], [`cummin`], [`cummax`] aggregation.
 //!     - `rolling_window` - rolling window functions, like [`rolling_mean`]
 //!     - `interpolate` [interpolate None values](polars_ops::chunked_array::interpolate)
@@ -278,11 +278,11 @@
 //!     - `fmt` - Activate [`DataFrame`] formatting
 //!
 //! [`UInt64Chunked`]: crate::datatypes::UInt64Chunked
-//! [`cumsum`]: crate::series::Series::cumsum
-//! [`cummin`]: crate::series::Series::cummin
-//! [`cummax`]: crate::series::Series::cummax
+//! [`cumsum`]: polars_ops::prelude::cumsum
+//! [`cummin`]: polars_ops::prelude::cummin
+//! [`cummax`]: polars_ops::prelude::cummax
 //! [`rolling_mean`]: crate::series::Series#method.rolling_mean
-//! [`diff`]: crate::series::Series::diff
+//! [`diff`]: polars_ops::prelude::diff
 //! [`List`]: crate::datatypes::DataType::List
 //! [`Struct`]: crate::datatypes::DataType::Struct
 //!

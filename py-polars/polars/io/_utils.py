@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import glob
+import re
 from contextlib import contextmanager
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -13,6 +14,10 @@ from polars.utils.various import normalize_filepath
 
 def _is_glob_pattern(file: str) -> bool:
     return any(char in file for char in ["*", "?", "["])
+
+
+def _is_supported_cloud(file: str) -> bool:
+    return bool(re.match("^(s3a?|gs|gcs|file|abfss?|azure|az|adl)://", file))
 
 
 def _is_local_file(file: str) -> bool:
@@ -162,19 +167,8 @@ def _prepare_file_arg(
                         context=f"{file!r}",
                         raise_if_empty=raise_if_empty,
                     )
-            # non-local file
-            if "*" in file:
-                raise ValueError(
-                    "globbing patterns not supported when scanning non-local files"
-                )
             kwargs["encoding"] = encoding
             return fsspec.open(file, **kwargs)
-
-        # TODO: add azure/ gcp/ ?
-        if file.startswith("s3://"):
-            raise ModuleNotFoundError(
-                "fsspec needs to be installed to read files from S3"
-            )
 
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
         if _FSSPEC_AVAILABLE:

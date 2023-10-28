@@ -9,10 +9,10 @@ repository = { workspace = true }
 description = "IO related logic for the Polars DataFrame library"
 
 [dependencies]
-polars-arrow = { workspace = true }
 polars-core = { workspace = true }
-polars-error = { workspace = true, default-features = false }
+polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
+polars-parquet = { workspace = true, optional = true }
 polars-time = { workspace = true, features = [], optional = true }
 polars-utils = { workspace = true }
 
@@ -25,21 +25,26 @@ chrono-tz = { workspace = true, optional = true }
 fast-float = { version = "0.2", optional = true }
 flate2 = { version = "1", optional = true, default-features = false }
 futures = { workspace = true, optional = true }
+itoa = { workspace = true, optional = true }
 lexical = { version = "6", optional = true, default-features = false, features = ["std", "parse-integers"] }
-lexical-core = { version = "0.8", optional = true }
+lexical-core = { workspace = true, optional = true }
 memchr = { workspace = true }
 memmap = { package = "memmap2", version = "0.7" }
 num-traits = { workspace = true }
 object_store = { workspace = true, optional = true }
 once_cell = { workspace = true }
+percent-encoding = { workspace = true }
 rayon = { workspace = true }
 regex = { workspace = true }
-serde = { workspace = true, features = ["derive"], optional = true }
+reqwest = { workspace = true, optional = true }
+ryu = { workspace = true, optional = true }
+serde = { workspace = true, features = ["derive", "rc"], optional = true }
 serde_json = { version = "1", default-features = false, features = ["alloc", "raw_value"], optional = true }
 simd-json = { workspace = true, optional = true }
-simdutf8 = { version = "0.1", optional = true }
-tokio = { version = "1.26", features = ["net"], optional = true }
-tokio-util = { version = "0.7.8", features = ["io", "io-util"], optional = true }
+simdutf8 = { workspace = true, optional = true }
+smartstring = { workspace = true }
+tokio = { workspace = true, features = ["net", "rt-multi-thread", "time"], optional = true }
+tokio-util = { workspace = true, features = ["io", "io-util"], optional = true }
 url = { workspace = true, optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
@@ -52,7 +57,6 @@ tempdir = "0.3.7"
 default = ["decompress"]
 # support for arrows json parsing
 json = [
-  "arrow/io_json_write",
   "polars-json",
   "simd-json",
   "lexical",
@@ -61,13 +65,14 @@ json = [
   "dtype-struct",
   "csv",
 ]
+serde = ["dep:serde", "polars-core/serde-lazy"]
 # support for arrows ipc file parsing
 ipc = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # support for arrows streaming ipc file parsing
 ipc_streaming = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # support for arrow avro parsing
 avro = ["arrow/io_avro", "arrow/io_avro_compression"]
-csv = ["lexical", "polars-core/rows", "lexical-core", "fast-float", "simdutf8"]
+csv = ["lexical", "polars-core/rows", "itoa", "ryu", "fast-float", "simdutf8"]
 decompress = ["flate2/rust_backend"]
 decompress-fast = ["flate2/zlib-ng"]
 dtype-categorical = ["polars-core/dtype-categorical"]
@@ -88,12 +93,20 @@ dtype-struct = ["polars-core/dtype-struct"]
 dtype-decimal = ["polars-core/dtype-decimal"]
 fmt = ["polars-core/fmt"]
 lazy = []
-parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression"]
-async = ["async-trait", "futures", "tokio", "tokio-util", "arrow/io_ipc_write_async", "polars-error/regex"]
-cloud = ["object_store", "async", "polars-core/async", "polars-error/object_store", "url"]
-aws = ["object_store/aws", "cloud", "polars-core/aws"]
-azure = ["object_store/azure", "cloud", "polars-core/azure"]
-gcp = ["object_store/gcp", "cloud", "polars-core/gcp"]
+parquet = ["polars-parquet", "polars-parquet/compression"]
+async = [
+  "async-trait",
+  "futures",
+  "tokio",
+  "tokio-util",
+  "arrow/io_ipc_write_async",
+  "polars-error/regex",
+  "polars-parquet?/async",
+]
+cloud = ["object_store", "async", "polars-error/object_store", "url"]
+aws = ["object_store/aws", "cloud", "reqwest"]
+azure = ["object_store/azure", "cloud"]
+gcp = ["object_store/gcp", "cloud"]
 partition = ["polars-core/partition_by"]
 temporal = ["dtype-datetime", "dtype-date", "dtype-time"]
 simd = []

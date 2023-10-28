@@ -7,7 +7,7 @@ from polars.utils._wrap import wrap_expr
 
 if TYPE_CHECKING:
     from polars import Expr
-    from polars.type_aliases import TransferEncoding
+    from polars.type_aliases import IntoExpr, TransferEncoding
 
 
 class ExprBinaryNameSpace:
@@ -18,7 +18,7 @@ class ExprBinaryNameSpace:
     def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
 
-    def contains(self, literal: bytes | Expr) -> Expr:
+    def contains(self, literal: IntoExpr) -> Expr:
         r"""
         Check if binaries in Series contain a binary substring.
 
@@ -65,7 +65,7 @@ class ExprBinaryNameSpace:
         literal = parse_as_expression(literal, str_as_lit=True)
         return wrap_expr(self._pyexpr.bin_contains(literal))
 
-    def ends_with(self, suffix: bytes | Expr) -> Expr:
+    def ends_with(self, suffix: IntoExpr) -> Expr:
         r"""
         Check if string values end with a binary substring.
 
@@ -112,7 +112,7 @@ class ExprBinaryNameSpace:
         suffix = parse_as_expression(suffix, str_as_lit=True)
         return wrap_expr(self._pyexpr.bin_ends_with(suffix))
 
-    def starts_with(self, prefix: bytes | Expr) -> Expr:
+    def starts_with(self, prefix: IntoExpr) -> Expr:
         r"""
         Check if values start with a binary substring.
 
@@ -180,7 +180,7 @@ class ExprBinaryNameSpace:
             return wrap_expr(self._pyexpr.bin_base64_decode(strict))
         else:
             raise ValueError(
-                f"encoding must be one of {{'hex', 'base64'}}, got {encoding!r}"
+                f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
             )
 
     def encode(self, encoding: TransferEncoding) -> Expr:
@@ -227,5 +227,5 @@ class ExprBinaryNameSpace:
             return wrap_expr(self._pyexpr.bin_base64_encode())
         else:
             raise ValueError(
-                f"encoding must be one of {{'hex', 'base64'}}, got {encoding!r}"
+                f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
             )

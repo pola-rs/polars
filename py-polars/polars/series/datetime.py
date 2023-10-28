@@ -24,7 +24,7 @@ class DateTimeNameSpace:
     def __init__(self, series: Series):
         self._s: PySeries = series._s
 
-    def __getitem__(self, item: int) -> dt.date | dt.datetime:
+    def __getitem__(self, item: int) -> dt.date | dt.datetime | dt.timedelta:
         s = wrap_s(self._s)
         return s[item]
 
@@ -1435,7 +1435,7 @@ class DateTimeNameSpace:
 
     def truncate(
         self,
-        every: str | dt.timedelta,
+        every: str | dt.timedelta | Expr,
         offset: str | dt.timedelta | None = None,
         *,
         use_earliest: bool | None = None,
@@ -1617,6 +1617,8 @@ class DateTimeNameSpace:
         self,
         every: str | dt.timedelta,
         offset: str | dt.timedelta | None = None,
+        *,
+        ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
         Divide the date/ datetime range into buckets.
@@ -1659,6 +1661,12 @@ class DateTimeNameSpace:
             Every interval start and period length
         offset
             Offset the window
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
 
         Returns
         -------

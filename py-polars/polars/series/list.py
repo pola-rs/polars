@@ -5,14 +5,22 @@ from typing import TYPE_CHECKING, Any, Callable, Sequence
 from polars import functions as F
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
-from polars.utils.deprecation import deprecate_renamed_function
+from polars.utils.deprecation import (
+    deprecate_renamed_function,
+    deprecate_renamed_parameter,
+)
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
 
     from polars import Expr, Series
     from polars.polars import PySeries
-    from polars.type_aliases import NullBehavior, ToStructStrategy
+    from polars.type_aliases import (
+        IntoExpr,
+        IntoExprColumn,
+        NullBehavior,
+        ToStructStrategy,
+    )
 
 
 @expr_dispatch
@@ -76,19 +84,86 @@ class ListNameSpace:
 
         """
 
-    def lengths(self) -> Series:
+    def len(self) -> Series:
         """
-        Get the length of the arrays as UInt32.
+        Return the number of elements in each list.
+
+        Null values are treated like regular elements in this context.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`UInt32`.
 
         Examples
         --------
-        >>> s = pl.Series([[1, 2, 3], [5]])
-        >>> s.list.lengths()
+        >>> s = pl.Series([[1, 2, None], [5]])
+        >>> s.list.len()
         shape: (2,)
         Series: '' [u32]
         [
             3
             1
+        ]
+
+        """
+
+    def drop_nulls(self) -> Series:
+        """
+        Drop all null values in the list.
+
+        The original order of the remaining elements is preserved.
+
+        Examples
+        --------
+        >>> s = pl.Series("values", [[None, 1, None, 2], [None], [3, 4]])
+        >>> s.list.drop_nulls()
+        shape: (3,)
+        Series: 'values' [list[i64]]
+        [
+            [1, 2]
+            []
+            [3, 4]
+        ]
+
+        """
+
+    def sample(
+        self,
+        n: int | IntoExprColumn | None = None,
+        *,
+        fraction: float | IntoExprColumn | None = None,
+        with_replacement: bool = False,
+        shuffle: bool = False,
+        seed: int | None = None,
+    ) -> Series:
+        """
+        Sample from this list.
+
+        Parameters
+        ----------
+        n
+            Number of items to return. Cannot be used with `fraction`. Defaults to 1 if
+            `fraction` is None.
+        fraction
+            Fraction of items to return. Cannot be used with `n`.
+        with_replacement
+            Allow values to be sampled more than once.
+        shuffle
+            Shuffle the order of sampled data points.
+        seed
+            Seed for the random number generator. If set to None (default), a
+            random seed is generated for each sample operation.
+
+        Examples
+        --------
+        >>> s = pl.Series("values", [[1, 2, 3], [4, 5]])
+        >>> s.list.sample(n=pl.Series("n", [2, 1]), seed=1)
+        shape: (2,)
+        Series: 'values' [list[i64]]
+        [
+            [2, 1]
+            [5]
         ]
 
         """
@@ -198,7 +273,7 @@ class ListNameSpace:
     def __getitem__(self, item: int) -> Series:
         return self.get(item)
 
-    def join(self, separator: str) -> Series:
+    def join(self, separator: IntoExpr) -> Series:
         """
         Join all string items in a sublist and place a separator between them.
 
@@ -275,7 +350,7 @@ class ListNameSpace:
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Series:
         """
-        Calculate the n-th discrete difference of every sublist.
+        Calculate the first discrete difference between shifted items of every sublist.
 
         Parameters
         ----------
@@ -313,24 +388,43 @@ class ListNameSpace:
 
         """
 
-    def shift(self, periods: int = 1) -> Series:
+    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
+    def shift(self, n: int | IntoExprColumn = 1) -> Series:
         """
-        Shift values by the given period.
+        Shift list values by the given number of indices.
 
         Parameters
         ----------
-        periods
-            Number of places to shift (may be negative).
+        n
+            Number of indices to shift forward. If a negative value is passed, values
+            are shifted in the opposite direction instead.
+
+        Notes
+        -----
+        This method is similar to the ``LAG`` operation in SQL when the value for ``n``
+        is positive. With a negative value for ``n``, it is similar to ``LEAD``.
 
         Examples
         --------
-        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        By default, list values are shifted forward by one index.
+
+        >>> s = pl.Series([[1, 2, 3], [4, 5]])
         >>> s.list.shift()
         shape: (2,)
-        Series: 'a' [list[i64]]
+        Series: '' [list[i64]]
         [
-            [null, 1, … 3]
-            [null, 10, 2]
+                [null, 1, 2]
+                [null, 4]
+        ]
+
+        Pass a negative value to shift in the opposite direction instead.
+
+        >>> s.list.shift(-2)
+        shape: (2,)
+        Series: '' [list[i64]]
+        [
+                [3, null, null]
+                [null, null]
         ]
 
         """
@@ -703,5 +797,15 @@ class ListNameSpace:
         ----------
         element
             An expression that produces a single value
+
+        """
+
+    @deprecate_renamed_function("len", version="0.19.8")
+    def lengths(self) -> Series:
+        """
+        Return the number of elements in each list.
+
+        .. deprecated:: 0.19.8
+            This method has been renamed to :func:`len`.
 
         """

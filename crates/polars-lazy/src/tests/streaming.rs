@@ -173,7 +173,7 @@ fn test_streaming_cross_join() -> PolarsResult<()> {
         .cross_join(q.clone())
         .filter(col("calories").gt(col("calories_right")));
     let q2 = q1
-        .select([all().suffix("_second")])
+        .select([all().name().suffix("_second")])
         .cross_join(q)
         .filter(col("calories_right_second").lt(col("calories")))
         .select([
@@ -297,7 +297,7 @@ fn test_streaming_partial() -> PolarsResult<()> {
         .finish();
 
     let q = q.left_join(
-        lf_left.select([all().suffix("_foo")]),
+        lf_left.select([all().name().suffix("_foo")]),
         col("a"),
         col("a_foo"),
     );

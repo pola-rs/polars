@@ -9,14 +9,15 @@ repository = { workspace = true }
 description = "Core of the Polars DataFrame library"
 
 [dependencies]
-polars-arrow = { workspace = true, features = ["compute"] }
 polars-error = { workspace = true }
 polars-row = { workspace = true }
 polars-utils = { workspace = true }
 
 ahash = { workspace = true }
 arrow = { workspace = true }
+arrow-array = { workspace = true, optional = true }
 bitflags = { workspace = true }
+bytemuck = { workspace = true }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
 comfy-table = { version = "7.0.1", default_features = false, optional = true }
@@ -26,10 +27,9 @@ indexmap = { workspace = true }
 itoap = { version = "1", optional = true, features = ["simd"] }
 ndarray = { version = "0.15", optional = true, default_features = false }
 num-traits = { workspace = true }
-object_store = { workspace = true, optional = true }
 once_cell = { workspace = true }
 rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
-rand_distr = { version = "0.4", optional = true }
+rand_distr = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true, optional = true }
 # activate if you want serde support for Series and DataFrames
@@ -37,7 +37,6 @@ serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { workspace = true, optional = true }
 smartstring = { workspace = true }
 thiserror = { workspace = true }
-url = { workspace = true, optional = true }
 xxhash-rust = { workspace = true }
 
 [dev-dependencies]
@@ -48,23 +47,22 @@ serde_json = { workspace = true }
 version_check = { workspace = true }
 
 [features]
-simd = ["arrow/simd", "polars-arrow/simd"]
-nightly = ["simd", "hashbrown/nightly", "polars-utils/nightly", "polars-arrow/nightly"]
+simd = ["arrow/simd"]
+nightly = ["simd", "hashbrown/nightly", "polars-utils/nightly", "arrow/nightly"]
 avx512 = []
 docs = []
 temporal = ["regex", "chrono", "polars-error/regex"]
 random = ["rand", "rand_distr"]
-algorithm_join = []
 algorithm_group_by = []
-default = ["algorithm_join", "algorithm_group_by"]
+default = ["algorithm_group_by"]
 lazy = []
 
 # ~40% faster collect, needed until trustedlength iter stabilizes
 # more fast paths, slower compilation
-performant = ["polars-arrow/performant", "reinterpret"]
+performant = ["arrow/performant", "reinterpret"]
 
 # extra utilities for Utf8Chunked
-strings = ["regex", "polars-arrow/strings", "arrow/compute_substring", "polars-error/regex"]
+strings = ["regex", "arrow/strings", "polars-error/regex"]
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json"]
 
@@ -82,63 +80,49 @@ rows = []
 zip_with = []
 round_series = []
 checked_arithmetic = []
-repeat_by = []
 is_first_distinct = []
 is_last_distinct = []
-asof_join = ["algorithm_join"]
-cross_join = ["algorithm_join"]
+asof_join = []
 dot_product = []
-concat_str = []
 row_hash = []
 reinterpret = []
 take_opt_iter = []
-mode = []
 # allow group_by operation on list type
 group_by_list = []
-# cumsum, cummin, etc.
-cum_agg = []
 # rolling window functions
 rolling_window = []
-rank = ["rand"]
-diff = []
-pct_change = ["diff"]
-moment = []
 diagonal_concat = []
 horizontal_concat = []
-abs = []
-ewma = []
 dataframe_arithmetic = []
 product = []
 unique_counts = []
 partition_by = []
-semi_anti_join = ["algorithm_join"]
 chunked_ids = []
 describe = []
-timezones = ["chrono-tz", "arrow/chrono-tz", "polars-arrow/timezones"]
+timezones = ["chrono-tz", "arrow/chrono-tz", "arrow/timezones"]
 dynamic_group_by = ["dtype-datetime", "dtype-date"]
+arrow_rs = ["arrow-array", "arrow/arrow_rs"]
 
 # opt-in datatypes for Series
 dtype-date = ["temporal"]
 dtype-datetime = ["temporal"]
 dtype-duration = ["temporal"]
 dtype-time = ["temporal"]
-dtype-array = ["polars-arrow/dtype-array"]
+dtype-array = ["arrow/dtype-array"]
 dtype-i8 = []
 dtype-i16 = []
-dtype-decimal = ["dep:itoap", "polars-arrow/dtype-decimal"]
+dtype-decimal = ["dep:itoap", "arrow/dtype-decimal"]
 dtype-u8 = []
 dtype-u16 = []
 dtype-categorical = []
 dtype-struct = []
 
-parquet = ["arrow/io_parquet"]
-
 # scale to terabytes?
-bigidx = ["polars-arrow/bigidx", "polars-utils/bigidx"]
+bigidx = ["arrow/bigidx", "polars-utils/bigidx"]
 python = []
 
 serde = ["dep:serde", "smartstring/serde", "bitflags/serde"]
-serde-lazy = ["serde", "polars-arrow/serde", "indexmap/serde", "smartstring/serde", "chrono/serde"]
+serde-lazy = ["serde", "arrow/serde", "indexmap/serde", "smartstring/serde", "chrono/serde"]
 
 docs-selection = [
   "ndarray",
@@ -150,43 +134,24 @@ docs-selection = [
   "temporal",
   "random",
   "zip_with",
-  "round_series",
   "checked_arithmetic",
-  "repeat_by",
   "is_first_distinct",
   "is_last_distinct",
   "asof_join",
-  "cross_join",
   "dot_product",
-  "concat_str",
   "row_hash",
-  "mode",
-  "cum_agg",
   "rolling_window",
-  "diff",
-  "moment",
   "dtype-categorical",
   "dtype-decimal",
-  "rank",
   "diagonal_concat",
   "horizontal_concat",
-  "abs",
   "dataframe_arithmetic",
   "product",
-  "unique_counts",
   "describe",
   "chunked_ids",
-  "semi_anti_join",
   "partition_by",
-  "algorithm_join",
   "algorithm_group_by",
 ]
-
-# Cloud support.
-"async" = ["url", "object_store"]
-"aws" = ["async", "object_store/aws"]
-"azure" = ["async", "object_store/azure"]
-"gcp" = ["async", "object_store/gcp"]
 
 [package.metadata.docs.rs]
 # not all because arrow 4.3 does not compile with simd

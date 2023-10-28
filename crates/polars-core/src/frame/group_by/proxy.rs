@@ -1,7 +1,7 @@
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
 
-use polars_arrow::utils::CustomIterTools;
+use arrow::legacy::utils::CustomIterTools;
 use polars_utils::sync::SyncPtr;
 use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::prelude::*;
@@ -367,19 +367,16 @@ impl GroupsProxy {
         }
     }
 
-    pub fn take_group_lasts(self) -> Vec<IdxSize> {
+    /// # Safety
+    /// This will not do any bounds checks. The caller must ensure
+    /// all groups have members.
+    pub unsafe fn take_group_lasts(self) -> Vec<IdxSize> {
         match self {
-            GroupsProxy::Idx(groups) => {
-                groups
-                    .all
-                    .iter()
-                    .map(|idx| {
-                        // safety:
-                        // idx has at least one eletment, so -1 is always in bounds
-                        unsafe { *idx.get_unchecked(idx.len() - 1) }
-                    })
-                    .collect()
-            },
+            GroupsProxy::Idx(groups) => groups
+                .all
+                .iter()
+                .map(|idx| *idx.get_unchecked(idx.len() - 1))
+                .collect(),
             GroupsProxy::Slice { groups, .. } => groups
                 .into_iter()
                 .map(|[first, len]| first + len - 1)

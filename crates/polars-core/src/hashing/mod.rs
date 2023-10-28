@@ -23,7 +23,7 @@ pub fn _boost_hash_combine(l: u64, r: u64) -> u64 {
 
 // We must strike a balance between cache
 // Overallocation seems a lot more expensive than resizing so we start reasonable small.
-pub(crate) const HASHMAP_INIT_SIZE: usize = 512;
+pub const _HASHMAP_INIT_SIZE: usize = 512;
 
 /// Utility function used as comparison function in the hashmap.
 /// The rationale is that equality is an AND operation and therefore its probability of success
@@ -48,7 +48,7 @@ pub(crate) unsafe fn compare_df_rows(keys: &DataFrame, idx_a: usize, idx_b: usiz
 /// To check if a row is equal the original DataFrame is also passed as ref.
 /// When a hash collision occurs the indexes are ptrs to the rows and the rows are compared
 /// on equality.
-pub(crate) fn populate_multiple_key_hashmap<V, H, F, G>(
+pub fn populate_multiple_key_hashmap<V, H, F, G>(
     hash_tbl: &mut HashMap<IdxHash, V, H>,
     // row index
     idx: IdxSize,

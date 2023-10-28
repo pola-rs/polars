@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_arrow::is_valid::IsValid;
+use arrow::legacy::is_valid::IsValid;
 use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
@@ -73,7 +73,7 @@ impl PhysicalExpr for FilterExpr {
             let predicate = predicate_s.bool()?;
 
             // All values true - don't do anything.
-            if predicate.all() {
+            if let Some(true) = predicate.all_kleene() {
                 return Ok(ac_s);
             }
             // All values false - create empty groups.

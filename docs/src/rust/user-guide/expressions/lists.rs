@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = weather
         .clone()
         .lazy()
-        .with_columns([col("temperatures").str().split(" ")])
+        .with_columns([col("temperatures").str().split(lit(" "))])
         .collect()?;
     println!("{}", &out);
     // --8<-- [end:string_to_list]
@@ -30,7 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = weather
         .clone()
         .lazy()
-        .with_columns([col("temperatures").str().split(" ")])
+        .with_columns([col("temperatures").str().split(lit(" "))])
         .explode(["temperatures"])
         .collect()?;
     println!("{}", &out);
@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = weather
         .clone()
         .lazy()
-        .with_columns([col("temperatures").str().split(" ")])
+        .with_columns([col("temperatures").str().split(lit(" "))])
         .with_columns([
             col("temperatures").list().head(lit(3)).alias("top3"),
             col("temperatures")
@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .with_columns([col("temperatures")
             .str()
-            .split(" ")
+            .split(lit(" "))
             .list()
             .eval(col("").cast(DataType::Int64).is_null(), false)
             .list()
@@ -75,7 +75,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .with_columns([col("temperatures")
             .str()
-            .split(" ")
+            .split(lit(" "))
             .list()
             .eval(col("").str().contains(lit("(?i)[a-z]"), false), false)
             .list()
@@ -151,8 +151,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .select([
-            col("Array_1").list().min().suffix("_min"),
-            col("Array_2").list().sum().suffix("_sum"),
+            col("Array_1").list().min().name().suffix("_min"),
+            col("Array_2").list().sum().name().suffix("_sum"),
         ])
         .collect()?;
     println!("{}", &out);

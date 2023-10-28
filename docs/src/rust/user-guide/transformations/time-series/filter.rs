@@ -45,7 +45,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .with_column(
         col("ts")
             .str()
-            .strptime(DataType::Date, StrptimeOptions::default()),
+            .to_date(StrptimeOptions::default(), lit("raise")),
     )
     .collect()?;
 

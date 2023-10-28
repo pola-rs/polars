@@ -1,4 +1,4 @@
-use polars_core::prelude::{JoinArgs, JoinType};
+use polars_ops::prelude::*;
 use polars_plan::prelude::*;
 
 pub(super) fn is_streamable_sort(args: &SortArguments) -> bool {
@@ -29,9 +29,9 @@ pub(super) fn is_streamable(node: Node, expr_arena: &Arena<AExpr>, context: Cont
         {
             Context::Default => matches!(
                 options.collect_groups,
-                ApplyOptions::ApplyFlat | ApplyOptions::ApplyList
+                ApplyOptions::ElementWise | ApplyOptions::ApplyList
             ),
-            Context::Aggregation => matches!(options.collect_groups, ApplyOptions::ApplyFlat),
+            Context::Aggregation => matches!(options.collect_groups, ApplyOptions::ElementWise),
         },
         AExpr::Column(_) => {
             seen_column = true;

@@ -154,6 +154,7 @@ impl AexprNode {
                 | (Filter { .. }, Filter { .. })
                 | (Ternary { .. }, Ternary { .. })
                 | (Count, Count)
+                | (Slice { .. }, Slice { .. })
                 | (Explode(_), Explode(_)) => true,
                 (SortBy { descending: l, .. }, SortBy { descending: r, .. }) => l == r,
                 (Agg(l), Agg(r)) => l.equal_nodes(r),

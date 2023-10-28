@@ -29,17 +29,11 @@ df = (
     .to_frame()
 )
 
-out = (
-    df.group_by_dynamic("time", every="1mo", period="1mo", closed="left")
-    .agg(
-        [
-            pl.col("time").cumcount().reverse().head(3).alias("day/eom"),
-            ((pl.col("time") - pl.col("time").first()).last().dt.days() + 1).alias(
-                "days_in_month"
-            ),
-        ]
-    )
-    .explode("day/eom")
+out = df.group_by_dynamic("time", every="1mo", period="1mo", closed="left").agg(
+    pl.col("time").cumcount().reverse().head(3).alias("day/eom"),
+    ((pl.col("time") - pl.col("time").first()).last().dt.days() + 1).alias(
+        "days_in_month"
+    ),
 )
 print(out)
 # --8<-- [end:group_by_dyn]

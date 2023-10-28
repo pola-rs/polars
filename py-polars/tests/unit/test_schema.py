@@ -1,12 +1,39 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, Iterator, Mapping
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+
+
+class CustomSchema(Mapping[str, Any]):
+    """Dummy schema object for testing compatibility with Mapping."""
+
+    _entries: dict[str, Any]
+
+    def __init__(self, **named_entries: Any) -> None:
+        self._items = OrderedDict(named_entries.items())
+
+    def __getitem__(self, key: str) -> Any:
+        return self._items[key]
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+    def __iter__(self) -> Iterator[str]:
+        yield from self._items
+
+
+def test_custom_schema() -> None:
+    df = pl.DataFrame(schema=CustomSchema(bool=pl.Boolean, misc=pl.UInt8))
+    assert df.schema == OrderedDict([("bool", pl.Boolean), ("misc", pl.UInt8)])
+
+    with pytest.raises(ValueError):
+        pl.DataFrame(schema=CustomSchema(bool="boolean", misc="unsigned int"))
 
 
 def test_schema_on_agg() -> None:
@@ -251,15 +278,13 @@ def test_shrink_dtype() -> None:
 
 
 def test_diff_duration_dtype() -> None:
-    dates = ["2022-01-01", "2022-01-02", "2022-01-03", "2022-01-03"]
-    df = pl.DataFrame({"date": pl.Series(dates).str.strptime(pl.Date, "%Y-%m-%d")})
+    data = ["2022-01-01", "2022-01-02", "2022-01-03", "2022-01-03"]
+    df = pl.Series("date", data).str.to_date("%Y-%m-%d").to_frame()
 
-    assert df.select(pl.col("date").diff() < pl.duration(days=1))["date"].to_list() == [
-        None,
-        False,
-        False,
-        True,
-    ]
+    result = df.select(pl.col("date").diff() < pl.duration(days=1))
+
+    expected = pl.Series("date", [None, False, False, True]).to_frame()
+    assert_frame_equal(result, expected)
 
 
 def test_schema_owned_arithmetic_5669() -> None:
@@ -270,7 +295,8 @@ def test_schema_owned_arithmetic_5669() -> None:
         .with_columns(-pl.col("A").alias("B"))
         .collect()
     )
-    assert df.columns == ["A", "literal"], df.columns
+    assert df.columns == ["A", "B"]
+    assert df.rows() == [(3, -3)]
 
 
 def test_fill_null_f32_with_lit() -> None:

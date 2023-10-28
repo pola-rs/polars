@@ -3,13 +3,18 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars.series.utils import expr_dispatch
-from polars.utils.deprecation import deprecate_renamed_function
+from polars.utils.deprecation import (
+    deprecate_renamed_function,
+    deprecate_renamed_parameter,
+)
 
 if TYPE_CHECKING:
     from polars import Expr, Series
     from polars.polars import PySeries
     from polars.type_aliases import (
         Ambiguous,
+        IntoExpr,
+        IntoExprColumn,
         PolarsDataType,
         PolarsTemporalType,
         TimeUnit,
@@ -316,60 +321,71 @@ class StringNameSpace:
 
         """
 
-    def lengths(self) -> Series:
+    def len_bytes(self) -> Series:
         """
-        Get length of the string values in the Series (as number of bytes).
-
-        Notes
-        -----
-        The returned lengths are equal to the number of bytes in the UTF8 string. If you
-        need the length in terms of the number of characters, use ``n_chars`` instead.
+        Return the length of each string as the number of bytes.
 
         Returns
         -------
         Series
             Series of data type :class:`UInt32`.
 
+        See Also
+        --------
+        len_chars
+
+        Notes
+        -----
+        When working with non-ASCII text, the length in bytes is not the same as the
+        length in characters. You may want to use :func:`len_chars` instead.
+        Note that :func:`len_bytes` is much more performant (_O(1)_) than
+        :func:`len_chars` (_O(n)_).
+
         Examples
         --------
-        >>> s = pl.Series(["Café", None, "345", "東京"])
-        >>> s.str.lengths()
+        >>> s = pl.Series(["Café", "345", "東京", None])
+        >>> s.str.len_bytes()
         shape: (4,)
         Series: '' [u32]
         [
             5
-            null
             3
             6
+            null
         ]
 
         """
 
-    def n_chars(self) -> Series:
+    def len_chars(self) -> Series:
         """
-        Get length of the string values in the Series (as number of chars).
+        Return the length of each string as the number of characters.
 
         Returns
         -------
         Series
             Series of data type :class:`UInt32`.
 
+        See Also
+        --------
+        len_bytes
+
         Notes
         -----
-        If you know that you are working with ASCII text, ``lengths`` will be
-        equivalent, and faster (returns length in terms of the number of bytes).
+        When working with ASCII text, use :func:`len_bytes` instead to achieve
+        equivalent output with much better performance:
+        :func:`len_bytes` runs in _O(1)_, while :func:`len_chars` runs in (_O(n)_).
 
         Examples
         --------
-        >>> s = pl.Series(["Café", None, "345", "東京"])
-        >>> s.str.n_chars()
+        >>> s = pl.Series(["Café", "345", "東京", None])
+        >>> s.str.len_chars()
         shape: (4,)
         Series: '' [u32]
         [
             4
-            null
             3
             2
+            null
         ]
 
         """
@@ -872,7 +888,7 @@ class StringNameSpace:
 
         """
 
-    def split(self, by: str, *, inclusive: bool = False) -> Series:
+    def split(self, by: IntoExpr, *, inclusive: bool = False) -> Series:
         """
         Split the string by a substring.
 
@@ -890,7 +906,7 @@ class StringNameSpace:
 
         """
 
-    def split_exact(self, by: str, n: int, *, inclusive: bool = False) -> Series:
+    def split_exact(self, by: IntoExpr, n: int, *, inclusive: bool = False) -> Series:
         """
         Split the string by a substring using ``n`` splits.
 
@@ -950,7 +966,7 @@ class StringNameSpace:
 
         """
 
-    def splitn(self, by: str, n: int) -> Series:
+    def splitn(self, by: IntoExpr, n: int) -> Series:
         """
         Split the string by a substring, restricted to returning at most ``n`` items.
 
@@ -1101,7 +1117,7 @@ class StringNameSpace:
 
         """
 
-    def strip_chars(self, characters: str | None = None) -> Series:
+    def strip_chars(self, characters: IntoExprColumn | None = None) -> Series:
         r"""
         Remove leading and trailing characters.
 
@@ -1137,7 +1153,7 @@ class StringNameSpace:
 
         """
 
-    def strip_chars_start(self, characters: str | None = None) -> Series:
+    def strip_chars_start(self, characters: IntoExprColumn | None = None) -> Series:
         r"""
         Remove leading characters.
 
@@ -1172,7 +1188,7 @@ class StringNameSpace:
 
         """
 
-    def strip_chars_end(self, characters: str | None = None) -> Series:
+    def strip_chars_end(self, characters: IntoExprColumn | None = None) -> Series:
         r"""
         Remove trailing characters.
 
@@ -1207,7 +1223,7 @@ class StringNameSpace:
 
         """
 
-    def strip_prefix(self, prefix: str) -> Series:
+    def strip_prefix(self, prefix: IntoExpr) -> Series:
         """
         Remove prefix.
 
@@ -1233,7 +1249,7 @@ class StringNameSpace:
 
         """
 
-    def strip_suffix(self, suffix: str) -> Series:
+    def strip_suffix(self, suffix: IntoExpr) -> Series:
         """
         Remove suffix.
 
@@ -1258,78 +1274,103 @@ class StringNameSpace:
         ]
         """
 
-    def zfill(self, alignment: int) -> Series:
+    def pad_start(self, length: int, fill_char: str = " ") -> Series:
         """
-        Fills the string with zeroes.
-
-        Return a copy of the string left filled with ASCII '0' digits to make a string
-        of length width.
-
-        A leading sign prefix ('+'/'-') is handled by inserting the padding after the
-        sign character rather than before. The original string is returned if width is
-        less than or equal to ``len(s)``.
+        Pad the start of the string until it reaches the given length.
 
         Parameters
         ----------
-        alignment
-            Fill the value up to this length.
-
-        """
-
-    def ljust(self, width: int, fill_char: str = " ") -> Series:
-        """
-        Return the string left justified in a string of length ``width``.
-
-        Padding is done using the specified ``fill_char``. The original string is
-        returned if ``width`` is less than or equal to``len(s)``.
-
-        Parameters
-        ----------
-        width
-            Justify left to this length.
+        length
+            Pad the string until it reaches this length. Strings with length equal to
+            or greater than this value are returned as-is.
         fill_char
-            Fill with this ASCII character.
+            The character to pad the string with.
+
+        See Also
+        --------
+        pad_end
+        zfill
 
         Examples
         --------
-        >>> s = pl.Series("a", ["cow", "monkey", None, "hippopotamus"])
-        >>> s.str.ljust(8, "*")
-        shape: (4,)
-        Series: 'a' [str]
-        [
-            "cow*****"
-            "monkey**"
-            null
-            "hippopotamus"
-        ]
-
-        """
-
-    def rjust(self, width: int, fill_char: str = " ") -> Series:
-        """
-        Return the string right justified in a string of length ``width``.
-
-        Padding is done using the specified ``fill_char``. The original string is
-        returned if ``width`` is less than or equal to ``len(s)``.
-
-        Parameters
-        ----------
-        width
-            Justify right to this length.
-        fill_char
-            Fill with this ASCII character.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", ["cow", "monkey", None, "hippopotamus"])
-        >>> s.str.rjust(8, "*")
+        >>> s = pl.Series("a", ["cow", "monkey", "hippopotamus", None])
+        >>> s.str.pad_start(8, "*")
         shape: (4,)
         Series: 'a' [str]
         [
             "*****cow"
             "**monkey"
-            null
             "hippopotamus"
+            null
+        ]
+
+        """
+
+    def pad_end(self, length: int, fill_char: str = " ") -> Series:
+        """
+        Pad the end of the string until it reaches the given length.
+
+        Parameters
+        ----------
+        length
+            Pad the string until it reaches this length. Strings with length equal to
+            or greater than this value are returned as-is.
+        fill_char
+            The character to pad the string with.
+
+        See Also
+        --------
+        pad_start
+
+        Examples
+        --------
+        >>> s = pl.Series(["cow", "monkey", "hippopotamus", None])
+        >>> s.str.pad_end(8, "*")
+        shape: (4,)
+        Series: '' [str]
+        [
+            "cow*****"
+            "monkey**"
+            "hippopotamus"
+            null
+        ]
+
+        """
+
+    @deprecate_renamed_parameter("alignment", "length", version="0.19.12")
+    def zfill(self, length: int) -> Series:
+        """
+        Pad the start of the string with zeros until it reaches the given length.
+
+        A sign prefix (``-``) is handled by inserting the padding after the sign
+        character rather than before.
+
+        Parameters
+        ----------
+        length
+            Pad the string until it reaches this length. Strings with length equal to
+            or greater than this value are returned as-is.
+
+        See Also
+        --------
+        pad_start
+
+        Notes
+        -----
+        This method is intended for padding numeric strings. If your data contains
+        non-ASCII characters, use :func:`pad_start` instead.
+
+        Examples
+        --------
+        >>> s = pl.Series([-1, 123, 999999, None])
+        >>> s.cast(pl.Utf8).str.zfill(4)
+        shape: (4,)
+        Series: '' [str]
+        [
+                "-001"
+                "0123"
+                "999999"
+                null
         ]
 
         """
@@ -1455,18 +1496,16 @@ class StringNameSpace:
 
         """
 
-    def parse_int(self, radix: int = 2, *, strict: bool = True) -> Series:
-        r"""
+    def parse_int(self, radix: int | None = None, *, strict: bool = True) -> Series:
+        """
         Parse integers with base radix from strings.
 
-        By default base 2. ParseError/Overflows become Nulls.
+        ParseError/Overflows become Nulls.
 
         Parameters
         ----------
         radix
             Positive integer which is the base of the string we are parsing.
-            Default: 2
-
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
             False silently convert to Null.
@@ -1573,5 +1612,61 @@ class StringNameSpace:
         Series
             Series of data type :class:`UInt32`. Returns null if the original
             value is null.
+
+        """
+
+    @deprecate_renamed_function("len_bytes", version="0.19.8")
+    def lengths(self) -> Series:
+        """
+        Return the number of bytes in each string.
+
+        .. deprecated:: 0.19.8
+            This method has been renamed to :func:`len_bytes`.
+
+        """
+
+    @deprecate_renamed_function("len_chars", version="0.19.8")
+    def n_chars(self) -> Series:
+        """
+        Return the length of each string as the number of characters.
+
+        .. deprecated:: 0.19.8
+            This method has been renamed to :func:`len_chars`.
+
+        """
+
+    @deprecate_renamed_function("pad_end", version="0.19.12")
+    @deprecate_renamed_parameter("width", "length", version="0.19.12")
+    def ljust(self, length: int, fill_char: str = " ") -> Series:
+        """
+        Return the string left justified in a string of length ``length``.
+
+        .. deprecated:: 0.19.12
+            This method has been renamed to :func:`pad_end`.
+
+        Parameters
+        ----------
+        length
+            Justify left to this length.
+        fill_char
+            Fill with this ASCII character.
+
+        """
+
+    @deprecate_renamed_function("pad_start", version="0.19.12")
+    @deprecate_renamed_parameter("width", "length", version="0.19.12")
+    def rjust(self, length: int, fill_char: str = " ") -> Series:
+        """
+        Return the string right justified in a string of length ``length``.
+
+        .. deprecated:: 0.19.12
+            This method has been renamed to :func:`pad_start`.
+
+        Parameters
+        ----------
+        length
+            Justify right to this length.
+        fill_char
+            Fill with this ASCII character.
 
         """

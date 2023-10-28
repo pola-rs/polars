@@ -1,5 +1,5 @@
+use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use arrow::offset::Offsets;
-use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::*;
@@ -157,7 +157,7 @@ impl AggList for BooleanChunked {
                 let mut builder =
                     ListBooleanChunkedBuilder::new(self.name(), groups.len(), self.len());
                 for idx in groups.all().iter() {
-                    let ca = { self.take_unchecked(idx.into()) };
+                    let ca = { self.take_unchecked(idx) };
                     builder.append(&ca)
                 }
                 builder.finish().into_series()
@@ -183,7 +183,7 @@ impl AggList for Utf8Chunked {
                 let mut builder =
                     ListUtf8ChunkedBuilder::new(self.name(), groups.len(), self.len());
                 for idx in groups.all().iter() {
-                    let ca = { self.take_unchecked(idx.into()) };
+                    let ca = { self.take_unchecked(idx) };
                     builder.append(&ca)
                 }
                 builder.finish().into_series()
@@ -208,7 +208,7 @@ impl AggList for BinaryChunked {
                 let mut builder =
                     ListBinaryChunkedBuilder::new(self.name(), groups.len(), self.len());
                 for idx in groups.all().iter() {
-                    let ca = { self.take_unchecked(idx.into()) };
+                    let ca = { self.take_unchecked(idx) };
                     builder.append(&ca)
                 }
                 builder.finish().into_series()
@@ -292,7 +292,7 @@ impl AggList for ListChunked {
                         // SAFETY:
                         // group tuples are in bounds
                         {
-                            let mut s = ca.take_unchecked(idx.into());
+                            let mut s = ca.take_unchecked(idx);
                             let arr = s.chunks.pop().unwrap_unchecked_release();
                             list_values.push_unchecked(arr);
 
@@ -362,7 +362,7 @@ impl AggList for ArrayChunked {
 
                         // SAFETY: group tuples are in bounds
                         {
-                            let mut s = ca.take_unchecked(idx.into());
+                            let mut s = ca.take_unchecked(idx);
                             let arr = s.chunks.pop().unwrap_unchecked_release();
                             list_values.push_unchecked(arr);
                         }
@@ -419,7 +419,7 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
                         GroupsIndicator::Idx((_first, idx)) => {
                             // SAFETY:
                             // group tuples always in bounds
-                            let group_vals = self.take_unchecked(idx.into());
+                            let group_vals = self.take_unchecked(idx);
 
                             (group_vals, idx.len() as IdxSize)
                         },
@@ -481,7 +481,7 @@ impl AggList for StructChunked {
                     Some(self.dtype().clone()),
                 );
                 for idx in groups.all().iter() {
-                    let taken = s.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize));
+                    let taken = s.take_slice_unchecked(idx);
                     builder.append_series(&taken).unwrap();
                 }
                 builder.finish().into_series()

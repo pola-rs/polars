@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
@@ -443,6 +443,94 @@ def test_semi_join_projection_pushdown_6455() -> None:
 
 
 def test_update() -> None:
+    df1 = pl.DataFrame(
+        {
+            "key1": [1, 2, 3, 4],
+            "key2": [1, 2, 3, 4],
+            "a": [1, 2, 3, 4],
+            "b": [1, 2, 3, 4],
+            "c": ["1", "2", "3", "4"],
+            "d": [
+                date(2023, 1, 1),
+                date(2023, 1, 2),
+                date(2023, 1, 3),
+                date(2023, 1, 4),
+            ],
+        }
+    )
+
+    df2 = pl.DataFrame(
+        {
+            "key1": [1, 2, 3, 4],
+            "key2": [1, 2, 3, 5],
+            "a": [1, 1, 1, 1],
+            "b": [2, 2, 2, 2],
+            "c": ["3", "3", "3", "3"],
+            "d": [
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+            ],
+        }
+    )
+
+    # update only on key1
+    expected = pl.DataFrame(
+        {
+            "key1": [1, 2, 3, 4],
+            "key2": [1, 2, 3, 5],
+            "a": [1, 1, 1, 1],
+            "b": [2, 2, 2, 2],
+            "c": ["3", "3", "3", "3"],
+            "d": [
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+            ],
+        }
+    )
+    assert_frame_equal(df1.update(df2, on="key1"), expected)
+
+    # update on key1 using different left/right names
+    assert_frame_equal(
+        df1.update(
+            df2.rename({"key1": "key1b"}),
+            left_on="key1",
+            right_on="key1b",
+        ),
+        expected,
+    )
+
+    # update on key1 and key2. This should fail to match the last item.
+    expected = pl.DataFrame(
+        {
+            "key1": [1, 2, 3, 4],
+            "key2": [1, 2, 3, 4],
+            "a": [1, 1, 1, 4],
+            "b": [2, 2, 2, 4],
+            "c": ["3", "3", "3", "4"],
+            "d": [
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+                date(2023, 1, 4),
+            ],
+        }
+    )
+    assert_frame_equal(df1.update(df2, on=["key1", "key2"]), expected)
+
+    # update on key1 and key2 using different left/right names
+    assert_frame_equal(
+        df1.update(
+            df2.rename({"key1": "key1b", "key2": "key2b"}),
+            left_on=["key1", "key2"],
+            right_on=["key1b", "key2b"],
+        ),
+        expected,
+    )
+
     df = pl.DataFrame({"A": [1, 2, 3, 4], "B": [400, 500, 600, 700]})
 
     new_df = pl.DataFrame({"B": [4, None, 6], "C": [7, 8, 9]})
@@ -456,11 +544,57 @@ def test_update() -> None:
 
     assert df1.update(df2, on="a").to_dict(False) == {"a": [1, 2, 3], "b": [4, 8, 9]}
 
-    a = pl.DataFrame({"a": [1, 2, 3]})
-    b = pl.DataFrame({"b": [4, 5]})
+    a = pl.LazyFrame({"a": [1, 2, 3]})
+    b = pl.LazyFrame({"b": [4, 5], "c": [3, 1]})
     c = a.update(b)
 
-    assert c.rows() == a.rows()
+    assert_frame_equal(a, c)
+
+    # check behaviour of 'how' param
+    assert [1, 2, 3] == list(
+        a.update(b, left_on="a", right_on="c").collect().to_series()
+    )
+    assert [1, 3] == list(
+        a.update(b, how="inner", left_on="a", right_on="c").collect().to_series()
+    )
+    assert [1, 2, 3, 4, 5] == sorted(
+        a.update(b.rename({"b": "a"}), how="outer", on="a").collect().to_series()
+    )
+
+    # check behavior of include_nulls=True
+    df = pl.DataFrame(
+        {
+            "A": [1, 2, 3, 4],
+            "B": [400, 500, 600, 700],
+        }
+    )
+    new_df = pl.DataFrame(
+        {
+            "B": [-66, None, -99],
+            "C": [5, 3, 1],
+        }
+    )
+    out = df.update(new_df, left_on="A", right_on="C", how="outer", include_nulls=True)
+    expected = pl.DataFrame(
+        {
+            "A": [1, 2, 3, 4, 5],
+            "B": [-99, 500, None, 700, -66],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+    # edge-case #11684
+    x = pl.DataFrame({"a": [0, 1]})
+    y = pl.DataFrame({"a": [2, 3]})
+    assert [0, 1, 2, 3] == sorted(x.update(y, on="a", how="outer")["a"].to_list())
+
+    # disallowed join strategies
+    for join_strategy in ("cross", "anti", "semi"):
+        with pytest.raises(
+            ValueError,
+            match=f"`how` must be one of {{'left', 'inner', 'outer'}}; found '{join_strategy}'",
+        ):
+            a.update(b, how=join_strategy)  # type: ignore[arg-type]
 
 
 def test_join_frame_consistency() -> None:
@@ -585,3 +719,13 @@ def test_join_validation() -> None:
 
         # right longer
         test_each_join_validation(short_unique, long_duplicate, how)
+
+
+def test_outer_join_bool() -> None:
+    df1 = pl.DataFrame({"id": [True, False], "val": [1, 2]})
+    df2 = pl.DataFrame({"id": [True, False], "val": [0, -1]})
+    assert df1.join(df2, on="id", how="outer").to_dict(False) == {
+        "id": [True, False],
+        "val": [1, 2],
+        "val_right": [0, -1],
+    }

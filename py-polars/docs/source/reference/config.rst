@@ -13,6 +13,7 @@ Config options
     Config.set_ascii_tables
     Config.set_fmt_float
     Config.set_fmt_str_lengths
+    Config.set_fmt_table_cell_list_len
     Config.set_streaming_chunk_size
     Config.set_tbl_cell_alignment
     Config.set_tbl_cols
@@ -33,7 +34,9 @@ Config load, save, and current state
    :toctree: api/
 
     Config.load
+    Config.load_from_file
     Config.save
+    Config.save_to_file
     Config.state
     Config.restore_defaults
 

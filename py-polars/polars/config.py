@@ -11,15 +11,23 @@ from polars.utils.deprecation import deprecate_nonkeyword_arguments
 from polars.utils.various import normalize_filepath
 
 
-# dummy func required (so docs build)
+# dummy funcs required here (so that docs build)
 def _get_float_fmt() -> str:  # pragma: no cover
     return "n/a"
+
+
+def _get_float_precision() -> int:
+    return -1
 
 
 # note: module not available when building docs
 with contextlib.suppress(ImportError):
     from polars.polars import get_float_fmt as _get_float_fmt  # type: ignore[no-redef]
+    from polars.polars import (  # type: ignore[no-redef]
+        get_float_precision as _get_float_precision,
+    )
     from polars.polars import set_float_fmt as _set_float_fmt
+    from polars.polars import set_float_precision as _set_float_precision
 
 
 if sys.version_info >= (3, 10):
@@ -60,7 +68,9 @@ _POLARS_CFG_ENV_VARS = {
     "POLARS_FMT_MAX_COLS",
     "POLARS_FMT_MAX_ROWS",
     "POLARS_FMT_STR_LEN",
+    "POLARS_FMT_NUM_LEN",
     "POLARS_FMT_TABLE_CELL_ALIGNMENT",
+    "POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT",
     "POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW",
     "POLARS_FMT_TABLE_FORMATTING",
     "POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES",
@@ -69,6 +79,7 @@ _POLARS_CFG_ENV_VARS = {
     "POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION",
     "POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE",
     "POLARS_FMT_TABLE_ROUNDED_CORNERS",
+    "POLARS_FMT_TABLE_CELL_LIST_LEN",
     "POLARS_STREAMING_CHUNK_SIZE",
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
@@ -76,7 +87,10 @@ _POLARS_CFG_ENV_VARS = {
 
 # vars that set the rust env directly should declare themselves here as the Config
 # method name paired with a callable that returns the current state of that value:
-_POLARS_CFG_DIRECT_VARS = {"set_fmt_float": _get_float_fmt}
+_POLARS_CFG_DIRECT_VARS = {
+    "set_fmt_float": _get_float_fmt,
+    "set_float_precision": _get_float_precision,
+}
 
 
 class Config(contextlib.ContextDecorator):
@@ -178,26 +192,58 @@ class Config(contextlib.ContextDecorator):
         self._original_state = ""
 
     @classmethod
-    def load(cls, cfg: Path | str) -> type[Config]:
+    def load(cls, cfg: str) -> type[Config]:
         """
-        Load and set previously saved (or shared) Config options from json/file.
+        Load (and set) previously saved Config options from a JSON string.
 
         Parameters
         ----------
         cfg : str
-            json string produced by ``Config.save()``, or a filepath to the same.
+            JSON string produced by ``Config.save()``.
+
+        See Also
+        --------
+        load_from_file : Load (and set) Config options from a JSON file.
+        save: Save the current set of Config options as a JSON string or file.
 
         """
-        options = json.loads(
-            Path(normalize_filepath(cfg)).read_text()
-            if isinstance(cfg, Path) or Path(cfg).exists()
-            else cfg
-        )
+        try:
+            options = json.loads(cfg)
+        except json.JSONDecodeError as err:
+            raise ValueError(
+                "invalid Config string (did you mean to use `load_from_file`?)"
+            ) from err
+
         os.environ.update(options.get("environment", {}))
         for cfg_methodname, value in options.get("direct", {}).items():
             if hasattr(cls, cfg_methodname):
                 getattr(cls, cfg_methodname)(value)
         return cls
+
+    @classmethod
+    def load_from_file(cls, file: Path | str) -> type[Config]:
+        """
+        Load (and set) previously saved Config options from file.
+
+        Parameters
+        ----------
+        file : Path | str
+            File path to a JSON string produced by ``Config.save()``.
+
+        See Also
+        --------
+        load : Load (and set) Config options from a JSON string.
+        save: Save the current set of Config options as a JSON string or file.
+
+        """
+        try:
+            options = Path(normalize_filepath(file)).read_text()
+        except OSError as err:
+            raise ValueError(
+                f"invalid Config file (did you mean to use `load`?)\n{err}"
+            ) from err
+
+        return cls.load(options)
 
     @classmethod
     def restore_defaults(cls) -> type[Config]:
@@ -220,27 +266,28 @@ class Config(contextlib.ContextDecorator):
 
         # apply any 'direct' setting values
         cls.set_fmt_float()
+        cls.set_float_precision()
         return cls
 
     @classmethod
-    def save(cls, file: Path | str | None = None) -> str:
+    def save(cls) -> str:
         """
-        Save the current set of Config options as a json string or file.
+        Save the current set of Config options as a JSON string.
 
-        Parameters
-        ----------
-        file
-            optional path to a file into which the json string will be written.
+        See Also
+        --------
+        load : Load (and set) Config options from a JSON string.
+        load_from_file : Load (and set) Config options from a JSON file.
+        save_to_file : Save the current set of Config options as a JSON file.
 
         Examples
         --------
-        >>> cfg = pl.Config.save()
+        >>> json_str = pl.Config.save()
 
         Returns
         -------
         str
-            JSON string containing current Config options, or the path to the file where
-            the options are saved.
+            JSON string containing current Config options.
 
         """
         environment_vars = {
@@ -256,17 +303,39 @@ class Config(contextlib.ContextDecorator):
             {"environment": environment_vars, "direct": direct_vars},
             separators=(",", ":"),
         )
-        if isinstance(file, (str, Path)):
-            file = Path(normalize_filepath(file)).resolve()
-            file.write_text(options)
-            return str(file)
-
         return options
+
+    @classmethod
+    def save_to_file(cls, file: Path | str) -> None:
+        """
+        Save the current set of Config options as a JSON file.
+
+        Parameters
+        ----------
+        file
+            Optional path to a file into which the JSON string will be written.
+            Leave as ``None`` to return the JSON string directly.
+
+        See Also
+        --------
+        load : Load (and set) Config options from a JSON string.
+        load_from_file : Load (and set) Config options from a JSON file.
+        save : Save the current set of Config options as a JSON string.
+
+        Examples
+        --------
+        >>> json_file = pl.Config().save("~/polars/config.json")  # doctest: +SKIP
+
+        """
+        file = Path(normalize_filepath(file)).resolve()
+        file.write_text(cls.save())
 
     @classmethod
     @deprecate_nonkeyword_arguments(version="0.19.3")
     def state(
-        cls, if_set: bool = False, env_only: bool = False  # noqa: FBT001
+        cls,
+        if_set: bool = False,  # noqa: FBT001
+        env_only: bool = False,  # noqa: FBT001
     ) -> dict[str, str | None]:
         """
         Show the current state of all Config variables as a dict.
@@ -274,12 +343,12 @@ class Config(contextlib.ContextDecorator):
         Parameters
         ----------
         if_set : bool
-            by default this will show the state of all ``Config`` environment variables.
+            By default this will show the state of all ``Config`` environment variables.
             change this to ``True`` to restrict the returned dictionary to include only
             those that have been set to a specific value.
 
         env_only : bool
-            include only Config environment variables in the output; some options (such
+            Include only Config environment variables in the output; some options (such
             as "set_fmt_float") are set directly, not via an environment variable.
 
         Examples
@@ -295,7 +364,7 @@ class Config(contextlib.ContextDecorator):
         }
         if not env_only:
             for cfg_methodname, get_value in _POLARS_CFG_DIRECT_VARS.items():
-                config_state[cfg_methodname] = get_value()
+                config_state[cfg_methodname] = get_value()  # type: ignore[assignment]
 
         return config_state
 
@@ -347,7 +416,28 @@ class Config(contextlib.ContextDecorator):
 
     @classmethod
     def set_auto_structify(cls, active: bool | None = False) -> type[Config]:
-        """Allow multi-output expressions to be automatically turned into Structs."""
+        """
+        Allow multi-output expressions to be automatically turned into Structs.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"v": [1, 2, 3], "v2": [4, 5, 6]})
+        >>> with pl.Config(set_auto_structify=True):
+        ...     out = df.select(pl.all())
+        ...
+        >>> out
+        shape: (3, 1)
+        ┌───────────┐
+        │ v         │
+        │ ---       │
+        │ struct[2] │
+        ╞═══════════╡
+        │ {1,4}     │
+        │ {2,5}     │
+        │ {3,6}     │
+        └───────────┘
+
+        """
         if active is None:
             os.environ.pop("POLARS_AUTO_STRUCTIFY", None)
         else:
@@ -355,14 +445,88 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
+    def set_float_precision(cls, precision: int | None = None) -> type[Config]:
+        """
+        Control the number of decimal places displayed for floating point values.
+
+        Parameters
+        ----------
+        precision : int
+            Number of decimal places to display; set to ``None`` to revert to the
+            default/standard behaviour.
+
+        Notes
+        -----
+        When setting this to a larger value you should ensure that you are aware of both
+        the limitations of floating point representations, and of the precision of the
+        data that you are looking at.
+
+        This setting only applies to Float32 and Float64 dtypes; it does not cover
+        Decimal dtype values (which are displayed at their native level of precision).
+
+        Examples
+        --------
+        >>> from math import pi, e
+        >>> df = pl.DataFrame({"const": ["pi", "e"], "value": [pi, e]})
+        >>> with pl.Config(float_precision=15):
+        ...     print(repr(df))
+        ...
+        shape: (2, 2)
+        ┌───────┬───────────────────┐
+        │ const ┆ value             │
+        │ ---   ┆ ---               │
+        │ str   ┆ f64               │
+        ╞═══════╪═══════════════════╡
+        │ pi    ┆ 3.141592653589793 │
+        │ e     ┆ 2.718281828459045 │
+        └───────┴───────────────────┘
+
+        """
+        _set_float_precision(precision)
+        return cls
+
+    @classmethod
     def set_fmt_float(cls, fmt: FloatFmt | None = "mixed") -> type[Config]:
         """
-        Control how floating  point values are displayed.
+        Control how floating point values are displayed.
 
         Parameters
         ----------
         fmt : {"mixed", "full"}
-            How to format floating point numbers
+            How to format floating point numbers:
+
+            - "mixed": Limit the number of decimal places and use scientific
+                notation for large/small values.
+            - "full": Print the full precision of the floating point number.
+
+        Examples
+        --------
+        "mixed" float formatting:
+
+        >>> s = pl.Series([1.2304980958725870923, 1e6, 1e-8])
+        >>> with pl.Config(set_fmt_float="mixed"):
+        ...     print(s)
+        ...
+        shape: (3,)
+        Series: '' [f64]
+        [
+            1.230498
+            1e6
+            1.0000e-8
+        ]
+
+        "full" float formatting:
+
+        >>> with pl.Config(set_fmt_float="full"):
+        ...     print(s)
+        ...
+        shape: (3,)
+        Series: '' [f64]
+        [
+            1.230498095872587
+            1000000
+            0.00000001
+        ]
 
         """
         _set_float_fmt(fmt="mixed" if fmt is None else fmt)
@@ -376,7 +540,7 @@ class Config(contextlib.ContextDecorator):
         Parameters
         ----------
         n : int
-            number of characters to display
+            Number of characters to display.
 
         Examples
         --------
@@ -388,7 +552,7 @@ class Config(contextlib.ContextDecorator):
         ...         ]
         ...     }
         ... )
-        >>> df.with_columns(pl.col("txt").str.lengths().alias("len"))
+        >>> df.with_columns(pl.col("txt").str.len_bytes().alias("len"))
         shape: (2, 2)
         ┌───────────────────────────────────┬─────┐
         │ txt                               ┆ len │
@@ -419,6 +583,56 @@ class Config(contextlib.ContextDecorator):
                 raise ValueError("number of characters must be > 0")
 
             os.environ["POLARS_FMT_STR_LEN"] = str(n)
+        return cls
+
+    @classmethod
+    def set_fmt_table_cell_list_len(cls, n: int | None) -> type[Config]:
+        """
+        Set the number of elements to display for List values.
+
+        Empty lists will always print "[]". Negative values will result in all values
+        being printed. A value of 0 will always "[…]" for lists with contents. A value
+        of 1 will print only the final item in the list.
+
+        Parameters
+        ----------
+        n : int
+            Number of values to display.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "nums": [
+        ...             [1, 2, 3, 4, 5, 6],
+        ...         ]
+        ...     }
+        ... )
+        >>> df
+        shape: (1, 1)
+        ┌─────────────┐
+        │ nums        │
+        │ ---         │
+        │ list[i64]   │
+        ╞═════════════╡
+        │ [1, 2, … 6] │
+        └─────────────┘
+        >>> with pl.Config(fmt_table_cell_list_len=10):
+        ...     print(df)
+        ...
+        shape: (1, 1)
+        ┌────────────────────┐
+        │ nums               │
+        │ ---                │
+        │ list[i64]          │
+        ╞════════════════════╡
+        │ [1, 2, 3, 4, 5, 6] │
+        └────────────────────┘
+        """
+        if n is None:
+            os.environ.pop("POLARS_FMT_TABLE_CELL_LIST_LEN", None)
+        else:
+            os.environ["POLARS_FMT_TABLE_CELL_LIST_LEN"] = str(n)
         return cls
 
     @classmethod
@@ -493,6 +707,56 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
+    def set_tbl_cell_numeric_alignment(
+        cls, format: Literal["LEFT", "CENTER", "RIGHT"] | None
+    ) -> type[Config]:
+        """
+        Set table cell alignment for numeric columns.
+
+        Parameters
+        ----------
+        format : str
+            * "LEFT": left aligned
+            * "CENTER": center aligned
+            * "RIGHT": right aligned
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "abc": [11, 2, 333],
+        ...         "mno": [date.today(), None, date.today()],
+        ...         "xyz": [True, False, None],
+        ...     }
+        ... )
+        >>> pl.Config.set_tbl_cell_numeric_alignment("RIGHT")  # doctest: +SKIP
+        # ...
+        # shape: (3, 3)
+        # ┌─────┬────────────┬───────┐
+        # │ abc ┆ mno        ┆ xyz   │
+        # │ --- ┆ ---        ┆ ---   │
+        # │ i64 ┆ date       ┆ bool  │
+        # ╞═════╪════════════╪═══════╡
+        # │  11 ┆ 2023-09-05 ┆ true  │
+        # │   2 ┆ null       ┆ false │
+        # │ 333 ┆ 2023-09-05 ┆ null  │
+        # └─────┴────────────┴───────┘
+
+        Raises
+        ------
+        KeyError: if alignment string not recognised.
+
+        """
+        if format is None:
+            os.environ.pop("POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT", None)
+        elif format not in {"LEFT", "CENTER", "RIGHT"}:
+            raise ValueError(f"invalid alignment: {format!r}")
+        else:
+            os.environ["POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT"] = format
+        return cls
+
+    @classmethod
     def set_tbl_cols(cls, n: int | None) -> type[Config]:
         """
         Set the number of columns that are visible when displaying tables.
@@ -500,7 +764,7 @@ class Config(contextlib.ContextDecorator):
         Parameters
         ----------
         n : int
-            number of columns to display; if ``n < 0`` (eg: -1), display all columns.
+            Number of columns to display; if ``n < 0`` (eg: -1), display all columns.
 
         Examples
         --------
@@ -625,7 +889,7 @@ class Config(contextlib.ContextDecorator):
             * "NOTHING": No borders or other lines.
 
         rounded_corners : bool
-            apply rounded corners to UTF8-styled tables (no-op for ASCII formats).
+            Apply rounded corners to UTF8-styled tables (no-op for ASCII formats).
 
         Notes
         -----
@@ -799,7 +1063,7 @@ class Config(contextlib.ContextDecorator):
         Parameters
         ----------
         n : int
-            number of rows to display; if ``n < 0`` (eg: -1), display all
+            Number of rows to display; if ``n < 0`` (eg: -1), display all
             rows (DataFrame) and all elements (Series).
 
         Examples
@@ -831,12 +1095,12 @@ class Config(contextlib.ContextDecorator):
     @classmethod
     def set_tbl_width_chars(cls, width: int | None) -> type[Config]:
         """
-        Set the number of characters used to draw the table.
+        Set the maximum width of a table in characters.
 
         Parameters
         ----------
         width : int
-            number of chars
+            Maximum table width in characters.
 
         """
         if width is None:
@@ -847,7 +1111,16 @@ class Config(contextlib.ContextDecorator):
 
     @classmethod
     def set_verbose(cls, active: bool | None = True) -> type[Config]:
-        """Enable additional verbose/debug logging."""
+        """
+        Enable additional verbose/debug logging.
+
+        Examples
+        --------
+        >>> pl.Config.set_verbose(True)  # doctest: +SKIP
+        >>> with pl.Config(verbose=True):  # doctest: +SKIP
+        ...     do_polars_operations()
+        ...
+        """
         if active is None:
             os.environ.pop("POLARS_VERBOSE", None)
         else:

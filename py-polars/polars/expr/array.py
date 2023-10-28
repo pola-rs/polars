@@ -24,7 +24,7 @@ class ExprArrayNameSpace:
         --------
         >>> df = pl.DataFrame(
         ...     data={"a": [[1, 2], [4, 3]]},
-        ...     schema={"a": pl.Array(width=2, inner=pl.Int64)},
+        ...     schema={"a": pl.Array(inner=pl.Int64, width=2)},
         ... )
         >>> df.select(pl.col("a").arr.min())
         shape: (2, 1)
@@ -48,7 +48,7 @@ class ExprArrayNameSpace:
         --------
         >>> df = pl.DataFrame(
         ...     data={"a": [[1, 2], [4, 3]]},
-        ...     schema={"a": pl.Array(width=2, inner=pl.Int64)},
+        ...     schema={"a": pl.Array(inner=pl.Int64, width=2)},
         ... )
         >>> df.select(pl.col("a").arr.max())
         shape: (2, 1)
@@ -72,7 +72,7 @@ class ExprArrayNameSpace:
         --------
         >>> df = pl.DataFrame(
         ...     data={"a": [[1, 2], [4, 3]]},
-        ...     schema={"a": pl.Array(width=2, inner=pl.Int64)},
+        ...     schema={"a": pl.Array(inner=pl.Int64, width=2)},
         ... )
         >>> df.select(pl.col("a").arr.sum())
         shape: (2, 1)
@@ -103,7 +103,7 @@ class ExprArrayNameSpace:
         ...     {
         ...         "a": [[1, 1, 2]],
         ...     },
-        ...     schema_overrides={"a": pl.Array(width=3, inner=pl.Int64)},
+        ...     schema_overrides={"a": pl.Array(inner=pl.Int64, width=3)},
         ... )
         >>> df.select(pl.col("a").arr.unique())
         shape: (1, 1)

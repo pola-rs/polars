@@ -33,7 +33,7 @@ class BatchedCsvReader:
         columns: Sequence[int] | Sequence[str] | None = None,
         separator: str = ",",
         comment_char: str | None = None,
-        quote_char: str | None = r'"',
+        quote_char: str | None = '"',
         skip_rows: int = 0,
         dtypes: None | (SchemaDict | Sequence[PolarsDataType]) = None,
         null_values: str | Sequence[str] | dict[str, str] | None = None,

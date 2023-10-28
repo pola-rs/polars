@@ -81,7 +81,7 @@ fn shifts_elements(node: Node, expr_arena: &Arena<AExpr>) -> bool {
         matches!(
             e,
             AExpr::Function {
-                function: FunctionExpr::Shift(_) | FunctionExpr::ShiftAndFill { .. },
+                function: FunctionExpr::Shift | FunctionExpr::ShiftAndFill,
                 ..
             }
         )
@@ -97,7 +97,7 @@ pub(super) fn predicate_is_sort_boundary(node: Node, expr_arena: &Arena<AExpr>) 
             // group sensitive and doesn't auto-explode (e.g. is a reduction/aggregation
             // like sum, min, etc).
             // function that match this are `cumsum`, `shift`, `sort`, etc.
-            options.is_groups_sensitive() && !options.auto_explode
+            options.is_groups_sensitive() && !options.returns_scalar
         },
         _ => false,
     };
@@ -120,8 +120,8 @@ pub(super) fn predicate_is_pushdown_boundary(node: Node, expr_arena: &Arena<AExp
             | AExpr::Agg(_) // an aggregation needs all rows
             // Apply groups can be something like shift, sort, or an aggregation like skew
             // both need all values
-            | AExpr::AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
-            | AExpr::Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
+            | AExpr::AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::GroupWise, .. }, ..}
+            | AExpr::Function {options: FunctionOptions { collect_groups: ApplyOptions::GroupWise, .. }, ..}
             | AExpr::Explode {..}
             // A group_by needs all rows for aggregation
             | AExpr::Window {..}
@@ -150,8 +150,8 @@ pub(super) fn projection_is_definite_pushdown_boundary(
              Agg(_) // an aggregation needs all rows
             // Apply groups can be something like shift, sort, or an aggregation like skew
             // both need all values
-            | AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
-            | Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
+            | AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::GroupWise, .. }, ..}
+            | Function {options: FunctionOptions { collect_groups: ApplyOptions::GroupWise, .. }, ..}
             // still need to investigate this one
             | Explode {..}
             | Count
@@ -213,7 +213,7 @@ fn rename_predicate_columns_due_to_aliased_projection(
 ) -> LoopBehavior {
     let projection_aexpr = expr_arena.get(projection_node);
     if let AExpr::Alias(_, alias_name) = projection_aexpr {
-        let alias_name = alias_name.as_ref();
+        let alias_name = alias_name.clone();
         let projection_leaves = aexpr_to_leaf_names(projection_node, expr_arena);
 
         // this means the leaf is a literal
@@ -223,9 +223,10 @@ fn rename_predicate_columns_due_to_aliased_projection(
 
         // if this alias refers to one of the predicates in the upper nodes
         // we rename the column of the predicate before we push it downwards.
-        if let Some(predicate) = acc_predicates.remove(alias_name) {
+        if let Some(predicate) = acc_predicates.remove(&alias_name) {
             if projection_maybe_boundary {
                 local_predicates.push(predicate);
+                remove_predicate_refers_to_alias(acc_predicates, local_predicates, &alias_name);
                 return LoopBehavior::Continue;
             }
             if projection_leaves.len() == 1 {
@@ -240,26 +241,34 @@ fn rename_predicate_columns_due_to_aliased_projection(
                 // on this projected column so we do filter locally.
                 local_predicates.push(predicate)
             }
-        } else {
-            // we could not find the alias name
-            // that could still mean that a predicate that is a complicated binary expression
-            // refers to the aliased name. If we find it, we remove it for now
-            // TODO! rename the expression.
-            let mut remove_names = vec![];
-            for (composed_name, _) in acc_predicates.iter() {
-                if key_has_name(composed_name, alias_name) {
-                    remove_names.push(composed_name.clone());
-                    break;
-                }
-            }
-
-            for composed_name in remove_names {
-                let predicate = acc_predicates.remove(&composed_name).unwrap();
-                local_predicates.push(predicate)
-            }
         }
+
+        remove_predicate_refers_to_alias(acc_predicates, local_predicates, &alias_name);
     }
     LoopBehavior::Nothing
+}
+
+/// we could not find the alias name
+/// that could still mean that a predicate that is a complicated binary expression
+/// refers to the aliased name. If we find it, we remove it for now
+/// TODO! rename the expression.
+fn remove_predicate_refers_to_alias(
+    acc_predicates: &mut PlHashMap<Arc<str>, Node>,
+    local_predicates: &mut Vec<Node>,
+    alias_name: &str,
+) {
+    let mut remove_names = vec![];
+    for (composed_name, _) in acc_predicates.iter() {
+        if key_has_name(composed_name, alias_name) {
+            remove_names.push(composed_name.clone());
+            break;
+        }
+    }
+
+    for composed_name in remove_names {
+        let predicate = acc_predicates.remove(&composed_name).unwrap();
+        local_predicates.push(predicate)
+    }
 }
 
 /// Implementation for both Hstack and Projection

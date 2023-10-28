@@ -75,6 +75,13 @@ Spreadsheet
    read_ods
    DataFrame.write_excel
 
+Apache Iceberg
+~~~~~~~~~~~~~~
+.. autosummary::
+   :toctree: api/
+
+   scan_iceberg
+
 Delta Lake
 ~~~~~~~~~~
 .. autosummary::

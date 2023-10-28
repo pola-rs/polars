@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars.datatypes import N_INFER_DEFAULT
-from polars.utils.various import normalize_filepath
 
 if TYPE_CHECKING:
     from io import IOBase
+    from pathlib import Path
 
     from polars import DataFrame, LazyFrame
     from polars.type_aliases import SchemaDefinition
@@ -57,7 +56,7 @@ def read_ndjson(
 
 
 def scan_ndjson(
-    source: str | Path,
+    source: str | Path | list[str] | list[Path],
     *,
     infer_schema_length: int | None = N_INFER_DEFAULT,
     batch_size: int | None = 1024,
@@ -66,6 +65,7 @@ def scan_ndjson(
     rechunk: bool = True,
     row_count_name: str | None = None,
     row_count_offset: int = 0,
+    schema: SchemaDefinition | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a newline delimited JSON file or multiple files via glob patterns.
@@ -92,14 +92,22 @@ def scan_ndjson(
         DataFrame
     row_count_offset
         Offset to start the row_count column (only use if the name is set)
+    schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+        The DataFrame schema may be declared in several ways:
+
+        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a list of column names; in this case types are automatically inferred.
+        * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+
+        If you supply a list of column names that does not match the names in the
+        underlying data, the names given here will overwrite them. The number
+        of names given in the schema should match the underlying data dimensions.
 
     """
-    if isinstance(source, (str, Path)):
-        source = normalize_filepath(source)
-
     return pl.LazyFrame._scan_ndjson(
         source,
         infer_schema_length=infer_schema_length,
+        schema=schema,
         batch_size=batch_size,
         n_rows=n_rows,
         low_memory=low_memory,

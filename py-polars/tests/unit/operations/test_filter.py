@@ -15,6 +15,11 @@ def test_simplify_expression_lit_true_4376() -> None:
     ).rows() == [(1, 2, 3), (4, 5, 6), (7, 8, 9)]
 
 
+def test_filter_contains_nth_11205() -> None:
+    df = pl.DataFrame({"x": [False]})
+    assert df.filter(pl.first()).is_empty()
+
+
 def test_melt_values_predicate_pushdown() -> None:
     lf = pl.DataFrame(
         {
@@ -30,6 +35,22 @@ def test_melt_values_predicate_pushdown() -> None:
         .filter(pl.col("value") == pl.lit("123"))
         .collect()
     ).to_dict(False) == {"id": [1], "variable": ["asset_key_1"], "value": ["123"]}
+
+
+def test_group_by_filter_all_true() -> None:
+    df = pl.DataFrame(
+        {
+            "name": ["a", "a", "b", "b"],
+            "type": [None, 1, 1, None],
+            "order": [1, 2, 3, 4],
+        }
+    )
+    out = (
+        df.group_by("name")
+        .agg([pl.col("order").filter(pl.col("type") == 1).n_unique().alias("n_unique")])
+        .select("n_unique")
+    )
+    assert out.to_dict(False) == {"n_unique": [1, 1]}
 
 
 def test_filter_is_in_4572() -> None:

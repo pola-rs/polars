@@ -12,7 +12,7 @@
 
 use std::sync::Arc;
 
-use polars_arrow::trusted_len::TrustedLen;
+use arrow::legacy::trusted_len::TrustedLen;
 
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::{

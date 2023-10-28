@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -8,16 +7,8 @@ import numpy as np
 import pytest
 from numpy import nan
 
-from polars.exceptions import ComputeError
-
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-else:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
-
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -45,7 +36,7 @@ def example_df() -> pl.DataFrame:
     ["1d", "2d", "3d", timedelta(days=1), timedelta(days=2), timedelta(days=3)],
 )
 @pytest.mark.parametrize("closed", ["left", "right", "none", "both"])
-def test_rolling_kernels_and_group_by_rolling(
+def test_rolling_kernels_and_rolling(
     example_df: pl.DataFrame, period: str | timedelta, closed: ClosedInterval
 ) -> None:
     out1 = example_df.set_sorted("dt").select(
@@ -65,7 +56,7 @@ def test_rolling_kernels_and_group_by_rolling(
     )
     out2 = (
         example_df.set_sorted("dt")
-        .group_by_rolling("dt", period=period, closed=closed)
+        .rolling("dt", period=period, closed=closed)
         .agg(
             [
                 pl.col("values").sum().alias("sum"),
@@ -154,7 +145,7 @@ def test_rolling_negative_offset(
             "value": [1, 2, 3, 4],
         }
     )
-    result = df.group_by_rolling("ts", period="2d", offset=offset, closed=closed).agg(
+    result = df.rolling("ts", period="2d", offset=offset, closed=closed).agg(
         pl.col("value")
     )
     expected = pl.DataFrame(
@@ -235,7 +226,7 @@ def test_rolling_extrema() -> None:
             pl.when(pl.int_range(0, pl.count(), eager=False) < 2)
             .then(None)
             .otherwise(pl.all())
-            .suffix("_nulls")
+            .name.suffix("_nulls")
         ]
     )
 
@@ -280,15 +271,15 @@ def test_rolling_group_by_extrema() -> None:
     ).with_columns(pl.col("col1").reverse().alias("row_nr"))
 
     assert (
-        df.group_by_rolling(
+        df.rolling(
             index_column="row_nr",
             period="3i",
         )
         .agg(
             [
-                pl.col("col1").suffix("_list"),
-                pl.col("col1").min().suffix("_min"),
-                pl.col("col1").max().suffix("_max"),
+                pl.col("col1").name.suffix("_list"),
+                pl.col("col1").min().name.suffix("_min"),
+                pl.col("col1").max().name.suffix("_max"),
                 pl.col("col1").first().alias("col1_first"),
                 pl.col("col1").last().alias("col1_last"),
             ]
@@ -319,15 +310,15 @@ def test_rolling_group_by_extrema() -> None:
     ).with_columns(pl.col("col1").alias("row_nr"))
 
     assert (
-        df.group_by_rolling(
+        df.rolling(
             index_column="row_nr",
             period="3i",
         )
         .agg(
             [
-                pl.col("col1").suffix("_list"),
-                pl.col("col1").min().suffix("_min"),
-                pl.col("col1").max().suffix("_max"),
+                pl.col("col1").name.suffix("_list"),
+                pl.col("col1").min().name.suffix("_min"),
+                pl.col("col1").max().name.suffix("_max"),
                 pl.col("col1").first().alias("col1_first"),
                 pl.col("col1").last().alias("col1_last"),
             ]
@@ -357,15 +348,15 @@ def test_rolling_group_by_extrema() -> None:
     ).with_columns(pl.col("col1").sort().alias("row_nr"))
 
     assert (
-        df.group_by_rolling(
+        df.rolling(
             index_column="row_nr",
             period="3i",
         )
         .agg(
             [
-                pl.col("col1").min().suffix("_min"),
-                pl.col("col1").max().suffix("_max"),
-                pl.col("col1").suffix("_list"),
+                pl.col("col1").min().name.suffix("_min"),
+                pl.col("col1").max().name.suffix("_max"),
+                pl.col("col1").name.suffix("_list"),
             ]
         )
         .select(["col1_list", "col1_min", "col1_max"])
@@ -388,46 +379,16 @@ def test_rolling_slice_pushdown() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "a", "b"], "c": [1, 3, 5]}).lazy()
     df = (
         df.sort("a")
-        .group_by_rolling(
+        .rolling(
             "a",
             by="b",
             period="2i",
         )
-        .agg(
-            [
-                (pl.col("c") - pl.col("c").shift_and_fill(fill_value=0, periods=1))
-                .sum()
-                .alias("c")
-            ]
-        )
+        .agg([(pl.col("c") - pl.col("c").shift(fill_value=0)).sum().alias("c")])
     )
     assert df.head(2).collect().to_dict(False) == {
         "b": ["a", "a"],
         "a": [1, 2],
-        "c": [1, 3],
-    }
-
-
-def test_group_by_dynamic_slice_pushdown() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "a", "b"], "c": [1, 3, 5]}).lazy()
-    df = (
-        df.sort("a")
-        .group_by_dynamic(
-            "a",
-            by="b",
-            every="2i",
-        )
-        .agg(
-            [
-                (pl.col("c") - pl.col("c").shift_and_fill(fill_value=0, periods=1))
-                .sum()
-                .alias("c")
-            ]
-        )
-    )
-    assert df.head(2).collect().to_dict(False) == {
-        "b": ["a", "a"],
-        "a": [0, 2],
         "c": [1, 3],
     }
 
@@ -440,7 +401,7 @@ def test_overlapping_groups_4628() -> None:
         }
     )
     assert (
-        df.group_by_rolling(index_column=pl.col("index").set_sorted(), period="3i").agg(
+        df.rolling(index_column=pl.col("index").set_sorted(), period="3i").agg(
             [
                 pl.col("val").diff(n=1).alias("val.diff"),
                 (pl.col("val") - pl.col("val").shift(1)).alias("val - val.shift"),
@@ -506,187 +467,7 @@ def test_rolling_var_numerical_stability_5197() -> None:
     assert res[:4] == [None] * 4
 
 
-@pytest.mark.parametrize(
-    ("every", "offset"),
-    [
-        ("3d", "-1d"),
-        (timedelta(days=3), timedelta(days=-1)),
-    ],
-)
-def test_dynamic_group_by_timezone_awareness(
-    every: str | timedelta, offset: str | timedelta
-) -> None:
-    df = pl.DataFrame(
-        (
-            pl.datetime_range(
-                datetime(2020, 1, 1),
-                datetime(2020, 1, 10),
-                timedelta(days=1),
-                time_unit="ns",
-                eager=True,
-            )
-            .alias("datetime")
-            .dt.replace_time_zone("UTC"),
-            pl.arange(1, 11, eager=True).alias("value"),
-        )
-    )
-
-    assert (
-        df.group_by_dynamic(
-            "datetime",
-            every=every,
-            offset=offset,
-            closed="right",
-            include_boundaries=True,
-            truncate=False,
-        ).agg(pl.col("value").last())
-    ).dtypes == [pl.Datetime("ns", "UTC")] * 3 + [pl.Int64]
-
-
-@pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
-def test_group_by_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
-    # start by datapoint
-    start = datetime(2022, 12, 16, tzinfo=tzinfo)
-    stop = datetime(2022, 12, 16, hour=3, tzinfo=tzinfo)
-    df = pl.DataFrame({"date": pl.datetime_range(start, stop, "30m", eager=True)})
-
-    assert df.group_by_dynamic(
-        "date",
-        every="31m",
-        include_boundaries=True,
-        truncate=False,
-        start_by="datapoint",
-    ).agg(pl.count()).to_dict(False) == {
-        "_lower_boundary": [
-            datetime(2022, 12, 16, 0, 0, tzinfo=tzinfo),
-            datetime(2022, 12, 16, 0, 31, tzinfo=tzinfo),
-            datetime(2022, 12, 16, 1, 2, tzinfo=tzinfo),
-            datetime(2022, 12, 16, 1, 33, tzinfo=tzinfo),
-            datetime(2022, 12, 16, 2, 4, tzinfo=tzinfo),
-            datetime(2022, 12, 16, 2, 35, tzinfo=tzinfo),
-        ],
-        "_upper_boundary": [
-            datetime(2022, 12, 16, 0, 31, tzinfo=tzinfo),
-            datetime(2022, 12, 16, 1, 2, tzinfo=tzinfo),
-            datetime(2022, 12, 16, 1, 33, tzinfo=tzinfo),
-            datetime(2022, 12, 16, 2, 4, tzinfo=tzinfo),
-            datetime(2022, 12, 16, 2, 35, tzinfo=tzinfo),
-            datetime(2022, 12, 16, 3, 6, tzinfo=tzinfo),
-        ],
-        "date": [
-            datetime(2022, 12, 16, 0, 0, tzinfo=tzinfo),
-            datetime(2022, 12, 16, 1, 0, tzinfo=tzinfo),
-            datetime(2022, 12, 16, 1, 30, tzinfo=tzinfo),
-            datetime(2022, 12, 16, 2, 0, tzinfo=tzinfo),
-            datetime(2022, 12, 16, 2, 30, tzinfo=tzinfo),
-            datetime(2022, 12, 16, 3, 0, tzinfo=tzinfo),
-        ],
-        "count": [2, 1, 1, 1, 1, 1],
-    }
-
-    # start by monday
-    start = datetime(2022, 1, 1, tzinfo=tzinfo)
-    stop = datetime(2022, 1, 12, 7, tzinfo=tzinfo)
-
-    df = pl.DataFrame(
-        {"date": pl.datetime_range(start, stop, "12h", eager=True)}
-    ).with_columns(pl.col("date").dt.weekday().alias("day"))
-
-    result = df.group_by_dynamic(
-        "date",
-        every="1w",
-        period="3d",
-        include_boundaries=True,
-        start_by="monday",
-        truncate=False,
-    ).agg([pl.count(), pl.col("day").first().alias("data_day")])
-    assert result.to_dict(False) == {
-        "_lower_boundary": [
-            datetime(2022, 1, 3, 0, 0, tzinfo=tzinfo),
-            datetime(2022, 1, 10, 0, 0, tzinfo=tzinfo),
-        ],
-        "_upper_boundary": [
-            datetime(2022, 1, 6, 0, 0, tzinfo=tzinfo),
-            datetime(2022, 1, 13, 0, 0, tzinfo=tzinfo),
-        ],
-        "date": [
-            datetime(2022, 1, 3, 0, 0, tzinfo=tzinfo),
-            datetime(2022, 1, 10, 0, 0, tzinfo=tzinfo),
-        ],
-        "count": [6, 5],
-        "data_day": [1, 1],
-    }
-    # start by saturday
-    result = df.group_by_dynamic(
-        "date",
-        every="1w",
-        period="3d",
-        include_boundaries=True,
-        start_by="saturday",
-        truncate=False,
-    ).agg([pl.count(), pl.col("day").first().alias("data_day")])
-    assert result.to_dict(False) == {
-        "_lower_boundary": [
-            datetime(2022, 1, 1, 0, 0, tzinfo=tzinfo),
-            datetime(2022, 1, 8, 0, 0, tzinfo=tzinfo),
-        ],
-        "_upper_boundary": [
-            datetime(2022, 1, 4, 0, 0, tzinfo=tzinfo),
-            datetime(2022, 1, 11, 0, 0, tzinfo=tzinfo),
-        ],
-        "date": [
-            datetime(2022, 1, 1, 0, 0, tzinfo=tzinfo),
-            datetime(2022, 1, 8, 0, 0, tzinfo=tzinfo),
-        ],
-        "count": [6, 6],
-        "data_day": [6, 6],
-    }
-
-
-def test_group_by_dynamic_by_monday_and_offset_5444() -> None:
-    df = pl.DataFrame(
-        {
-            "date": [
-                "2022-11-01",
-                "2022-11-02",
-                "2022-11-05",
-                "2022-11-08",
-                "2022-11-08",
-                "2022-11-09",
-                "2022-11-10",
-            ],
-            "label": ["a", "b", "a", "a", "b", "a", "b"],
-            "value": [1, 2, 3, 4, 5, 6, 7],
-        }
-    ).with_columns(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d").set_sorted())
-
-    result = df.group_by_dynamic(
-        "date", every="1w", offset="1d", by="label", start_by="monday"
-    ).agg(pl.col("value").sum())
-
-    assert result.to_dict(False) == {
-        "label": ["a", "a", "b", "b"],
-        "date": [
-            date(2022, 11, 1),
-            date(2022, 11, 8),
-            date(2022, 11, 1),
-            date(2022, 11, 8),
-        ],
-        "value": [4, 10, 2, 12],
-    }
-
-    # test empty
-    result_empty = (
-        df.filter(pl.col("date") == date(1, 1, 1))
-        .group_by_dynamic(
-            "date", every="1w", offset="1d", by="label", start_by="monday"
-        )
-        .agg(pl.col("value").sum())
-    )
-    assert result_empty.schema == result.schema
-
-
-def test_group_by_rolling_iter() -> None:
+def test_rolling_iter() -> None:
     df = pl.DataFrame(
         {
             "date": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 5)],
@@ -698,7 +479,7 @@ def test_group_by_rolling_iter() -> None:
     # Without 'by' argument
     result1 = [
         (name, data.shape)
-        for name, data in df.group_by_rolling(index_column="date", period="2d")
+        for name, data in df.rolling(index_column="date", period="2d")
     ]
     expected1 = [
         (date(2020, 1, 1), (1, 3)),
@@ -710,7 +491,7 @@ def test_group_by_rolling_iter() -> None:
     # With 'by' argument
     result2 = [
         (name, data.shape)
-        for name, data in df.group_by_rolling(index_column="date", period="2d", by="a")
+        for name, data in df.rolling(index_column="date", period="2d", by="a")
     ]
     expected2 = [
         ((1, date(2020, 1, 1)), (1, 3)),
@@ -720,18 +501,18 @@ def test_group_by_rolling_iter() -> None:
     assert result2 == expected2
 
 
-def test_group_by_rolling_negative_period() -> None:
+def test_rolling_negative_period() -> None:
     df = pl.DataFrame({"ts": [datetime(2020, 1, 1)], "value": [1]}).with_columns(
         pl.col("ts").set_sorted()
     )
     with pytest.raises(
         ComputeError, match="rolling window period should be strictly positive"
     ):
-        df.group_by_rolling("ts", period="-1d", offset="-1d").agg(pl.col("value"))
+        df.rolling("ts", period="-1d", offset="-1d").agg(pl.col("value"))
     with pytest.raises(
         ComputeError, match="rolling window period should be strictly positive"
     ):
-        df.lazy().group_by_rolling("ts", period="-1d", offset="-1d").agg(
+        df.lazy().rolling("ts", period="-1d", offset="-1d").agg(
             pl.col("value")
         ).collect()
     with pytest.raises(ComputeError, match="window size should be strictly positive"):
@@ -748,25 +529,6 @@ def test_rolling_skew_window_offset() -> None:
     assert (pl.arange(0, 20, eager=True) ** 2).rolling_skew(20)[
         -1
     ] == 0.6612545648596286
-
-
-def test_rolling_kernels_group_by_dynamic_7548() -> None:
-    assert pl.DataFrame(
-        {"time": pl.arange(0, 4, eager=True), "value": pl.arange(0, 4, eager=True)}
-    ).group_by_dynamic("time", every="1i", period="3i").agg(
-        pl.col("value"),
-        pl.col("value").min().alias("min_value"),
-        pl.col("value").max().alias("max_value"),
-        pl.col("value").sum().alias("sum_value"),
-    ).to_dict(
-        False
-    ) == {
-        "time": [0, 1, 2, 3],
-        "value": [[0, 1, 2], [1, 2, 3], [2, 3], [3]],
-        "min_value": [0, 1, 2, 3],
-        "max_value": [2, 3, 3, 3],
-        "sum_value": [3, 6, 5, 3],
-    }
 
 
 def test_rolling_cov_corr() -> None:
@@ -915,6 +677,21 @@ def test_rolling() -> None:
         a.rolling_sum(3),
         pl.Series("a", [None, None, 22.0, nan, nan]),
     )
+
+
+def test_rolling_by_date() -> None:
+    df = pl.DataFrame(
+        {
+            "dt": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)],
+            "val": [1, 2, 3],
+        }
+    ).sort("dt")
+
+    result = df.with_columns(
+        roll=pl.col("val").rolling_sum("2d", by="dt", closed="right")
+    )
+    expected = df.with_columns(roll=pl.Series([1, 3, 5]))
+    assert_frame_equal(result, expected)
 
 
 def test_rolling_nanoseconds_11003() -> None:

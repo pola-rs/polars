@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import warnings
+from collections import OrderedDict
 from datetime import date, datetime
 from io import BytesIO
 from typing import TYPE_CHECKING, Any, Callable, Literal
@@ -9,7 +10,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import NoDataError
+from polars.exceptions import NoDataError, ParameterCollisionError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -17,57 +18,77 @@ if TYPE_CHECKING:
 
     from polars.type_aliases import SchemaDict, SelectorType
 
+pytestmark = pytest.mark.slow()
+
 
 @pytest.fixture()
-def excel_file_path(io_files_path: Path) -> Path:
+def path_xlsx(io_files_path: Path) -> Path:
     return io_files_path / "example.xlsx"
 
 
 @pytest.fixture()
-def empty_excel_file_path(io_files_path: Path) -> Path:
+def path_xlsx_empty(io_files_path: Path) -> Path:
     return io_files_path / "empty.xlsx"
 
 
 @pytest.fixture()
-def openoffice_file_path(io_files_path: Path) -> Path:
+def path_xlsb(io_files_path: Path) -> Path:
+    return io_files_path / "example.xlsb"
+
+
+@pytest.fixture()
+def path_xlsb_empty(io_files_path: Path) -> Path:
+    return io_files_path / "empty.xlsb"
+
+
+@pytest.fixture()
+def path_ods(io_files_path: Path) -> Path:
     return io_files_path / "example.ods"
 
 
 @pytest.fixture()
-def empty_openoffice_file_path(io_files_path: Path) -> Path:
+def path_ods_empty(io_files_path: Path) -> Path:
     return io_files_path / "empty.ods"
 
 
 @pytest.mark.parametrize(
-    ("read_spreadsheet", "source", "params"),
+    ("read_spreadsheet", "source", "engine_params"),
     [
-        (pl.read_excel, "excel_file_path", {"engine": "xlsx2csv"}),
-        (pl.read_excel, "excel_file_path", {"engine": "openpyxl"}),
-        (pl.read_ods, "openoffice_file_path", {}),
+        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
+        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsb", {"engine": "pyxlsb"}),
+        (pl.read_ods, "path_ods", {}),
     ],
 )
 def test_read_spreadsheet(
     read_spreadsheet: Callable[..., pl.DataFrame],
     source: str,
-    params: dict[str, str],
+    engine_params: dict[str, str],
     request: pytest.FixtureRequest,
 ) -> None:
-    df = read_spreadsheet(
-        source=request.getfixturevalue(source),
-        sheet_name="test1",
-        sheet_id=None,
-        **params,
-    )
-    expected = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
-    assert_frame_equal(df, expected)
+    sheet_params: dict[str, Any]
+
+    for sheet_params in (  # type: ignore[assignment]
+        {"sheet_name": None, "sheet_id": None},
+        {"sheet_name": "test1"},
+        {"sheet_id": 1},
+    ):
+        df = read_spreadsheet(
+            source=request.getfixturevalue(source),
+            **engine_params,
+            **sheet_params,
+        )
+        expected = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
+        assert_frame_equal(df, expected)
 
 
 @pytest.mark.parametrize(
     ("read_spreadsheet", "source", "params"),
     [
-        (pl.read_excel, "excel_file_path", {"engine": "xlsx2csv"}),
-        (pl.read_excel, "excel_file_path", {"engine": "openpyxl"}),
-        (pl.read_ods, "openoffice_file_path", {}),
+        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
+        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsb", {"engine": "pyxlsb"}),
+        (pl.read_ods, "path_ods", {}),
     ],
 )
 def test_read_excel_multi_sheets(
@@ -102,9 +123,10 @@ def test_read_excel_multi_sheets(
 @pytest.mark.parametrize(
     ("read_spreadsheet", "source", "params"),
     [
-        (pl.read_excel, "excel_file_path", {"engine": "xlsx2csv"}),
-        (pl.read_excel, "excel_file_path", {"engine": "openpyxl"}),
-        (pl.read_ods, "openoffice_file_path", {}),
+        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
+        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsb", {"engine": "pyxlsb"}),
+        (pl.read_ods, "path_ods", {}),
     ],
 )
 def test_read_excel_all_sheets(
@@ -119,7 +141,7 @@ def test_read_excel_all_sheets(
         sheet_id=0,
         **params,
     )
-    assert len(frames) == (3 if str(spreadsheet_path).endswith("ods") else 4)
+    assert len(frames) == (4 if str(spreadsheet_path).endswith("ods") else 5)
 
     expected1 = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
     expected2 = pl.DataFrame({"world": ["Row 3", "Row 4"]})
@@ -145,8 +167,9 @@ def test_read_excel_all_sheets(
         ("openpyxl", None),
     ],
 )
-def test_basic_datatypes_read_excel(
-    engine: Literal["xlsx2csv", "openpyxl"], schema_overrides: SchemaDict | None
+def test_read_excel_basic_datatypes(
+    engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"],
+    schema_overrides: SchemaDict | None,
 ) -> None:
     df = pl.DataFrame(
         {
@@ -172,8 +195,38 @@ def test_basic_datatypes_read_excel(
         assert_frame_equal(df, df)
 
 
+@pytest.mark.parametrize(
+    ("read_spreadsheet", "source", "params"),
+    [
+        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
+        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsb", {"engine": "pyxlsb"}),
+        (pl.read_ods, "path_ods", {}),
+    ],
+)
+def test_read_invalid_worksheet(
+    read_spreadsheet: Callable[..., dict[str, pl.DataFrame]],
+    source: str,
+    params: dict[str, str],
+    request: pytest.FixtureRequest,
+) -> None:
+    spreadsheet_path = request.getfixturevalue(source)
+    for param, sheet_id, sheet_name in (
+        ("id", 999, None),
+        ("name", None, "not_a_sheet_name"),
+    ):
+        value = sheet_id if param == "id" else sheet_name
+        with pytest.raises(
+            ValueError,
+            match=f"no matching sheets found when `sheet_{param}` is {value!r}",
+        ):
+            read_spreadsheet(
+                spreadsheet_path, sheet_id=sheet_id, sheet_name=sheet_name, **params
+            )
+
+
 @pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl"])
-def test_write_excel_bytes(engine: Literal["xlsx2csv", "openpyxl"]) -> None:
+def test_write_excel_bytes(engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"]) -> None:
     df = pl.DataFrame({"A": [1, 2, 3, 4, 5]})
 
     excel_bytes = BytesIO()
@@ -183,21 +236,114 @@ def test_write_excel_bytes(engine: Literal["xlsx2csv", "openpyxl"]) -> None:
     assert_frame_equal(df, df_read)
 
 
+def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> None:
+    df1 = pl.read_excel(
+        path_xlsx,
+        sheet_name="test4",
+        schema_overrides={"cardinality": pl.UInt16},
+    ).drop_nulls()
+    assert df1.schema == {
+        "cardinality": pl.UInt16,
+        "rows_by_key": pl.Float64,
+        "iter_groups": pl.Float64,
+    }
+
+    df2 = pl.read_excel(
+        path_xlsx,
+        sheet_name="test4",
+        read_csv_options={"dtypes": {"cardinality": pl.UInt16}},
+    ).drop_nulls()
+    assert df2.schema == {
+        "cardinality": pl.UInt16,
+        "rows_by_key": pl.Float64,
+        "iter_groups": pl.Float64,
+    }
+
+    df3 = pl.read_excel(
+        path_xlsx,
+        sheet_name="test4",
+        schema_overrides={"cardinality": pl.UInt16},
+        read_csv_options={
+            "dtypes": {
+                "rows_by_key": pl.Float32,
+                "iter_groups": pl.Float32,
+            },
+        },
+    ).drop_nulls()
+    assert df3.schema == {
+        "cardinality": pl.UInt16,
+        "rows_by_key": pl.Float32,
+        "iter_groups": pl.Float32,
+    }
+
+    for workbook_path in (path_xlsx, path_xlsb, path_ods):
+        df4 = pl.read_excel(
+            workbook_path,
+            sheet_name="test5",
+            schema_overrides={"dtm": pl.Datetime("ns"), "dt": pl.Date},
+        )
+        assert_frame_equal(
+            df4,
+            pl.DataFrame(
+                {
+                    "dtm": [
+                        datetime(1999, 12, 31, 10, 30, 45),
+                        datetime(2010, 10, 11, 12, 13, 14),
+                    ],
+                    "dt": [date(2024, 1, 1), date(2018, 8, 7)],
+                    "val": [1.5, -0.5],
+                },
+                schema={"dtm": pl.Datetime("ns"), "dt": pl.Date, "val": pl.Float64},
+            ),
+        )
+
+    with pytest.raises(ParameterCollisionError):
+        # cannot specify 'cardinality' in both schema_overrides and read_csv_options
+        pl.read_excel(
+            path_xlsx,
+            sheet_name="test4",
+            schema_overrides={"cardinality": pl.UInt16},
+            read_csv_options={"dtypes": {"cardinality": pl.Int32}},
+        )
+
+    # read multiple sheets in conjunction with 'schema_overrides'
+    # (note: reading the same sheet twice simulates the issue in #11850)
+    overrides = OrderedDict(
+        [
+            ("cardinality", pl.UInt32),
+            ("rows_by_key", pl.Float32),
+            ("iter_groups", pl.Float64),
+        ]
+    )
+    df = pl.read_excel(  # type: ignore[call-overload]
+        path_xlsx,
+        sheet_name=["test4", "test4"],
+        schema_overrides=overrides,
+    )
+    assert df["test4"].schema == overrides
+
+
 def test_unsupported_engine() -> None:
     with pytest.raises(NotImplementedError):
         pl.read_excel(None, engine="foo")  # type: ignore[call-overload]
 
 
+def test_unsupported_binary_workbook(path_xlsx: Path, path_xlsb: Path) -> None:
+    with pytest.raises(Exception, match="invalid Excel Binary Workbook"):
+        pl.read_excel(path_xlsx, engine="pyxlsb")
+
+    with pytest.raises(Exception, match="does not support binary format"):
+        pl.read_excel(path_xlsb, engine="openpyxl")
+
+
 @pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl"])
-def test_read_excel_all_sheets_with_sheet_name(
-    excel_file_path: Path, engine: str
-) -> None:
+def test_read_excel_all_sheets_with_sheet_name(path_xlsx: Path, engine: str) -> None:
     with pytest.raises(
         ValueError,
         match=r"cannot specify both `sheet_name` \('Sheet1'\) and `sheet_id` \(1\)",
     ):
         pl.read_excel(  # type: ignore[call-overload]
-            excel_file_path,
+            path_xlsx,
             sheet_id=1,
             sheet_name="Sheet1",
             engine=engine,
@@ -336,7 +482,9 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
 
 
 @pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl"])
-def test_excel_compound_types(engine: Literal["xlsx2csv", "openpyxl"]) -> None:
+def test_excel_compound_types(
+    engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"]
+) -> None:
     df = pl.DataFrame(
         {"x": [[1, 2], [3, 4], [5, 6]], "y": ["a", "b", "c"], "z": [9, 8, 7]}
     ).select("x", pl.struct(["y", "z"]))
@@ -353,7 +501,7 @@ def test_excel_compound_types(engine: Literal["xlsx2csv", "openpyxl"]) -> None:
 
 
 @pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl"])
-def test_excel_sparklines(engine: Literal["xlsx2csv", "openpyxl"]) -> None:
+def test_excel_sparklines(engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"]) -> None:
     from xlsxwriter import Workbook
 
     # note that we don't (quite) expect sparkline export to round-trip as we
@@ -495,8 +643,9 @@ def test_excel_freeze_panes() -> None:
 @pytest.mark.parametrize(
     ("read_spreadsheet", "source"),
     [
-        (pl.read_excel, "empty_excel_file_path"),
-        (pl.read_ods, "empty_openoffice_file_path"),
+        (pl.read_excel, "path_xlsx_empty"),
+        (pl.read_excel, "path_xlsb_empty"),
+        (pl.read_ods, "path_ods_empty"),
     ],
 )
 def test_excel_empty_sheet(
@@ -505,7 +654,7 @@ def test_excel_empty_sheet(
     request: pytest.FixtureRequest,
 ) -> None:
     empty_spreadsheet_path = request.getfixturevalue(source)
-    with pytest.raises(NoDataError, match="Empty Excel sheet"):
+    with pytest.raises(NoDataError, match="empty Excel sheet"):
         pl.read_excel(empty_spreadsheet_path)
 
     df = pl.read_excel(empty_spreadsheet_path, raise_if_empty=False)
@@ -523,7 +672,7 @@ def test_excel_empty_sheet(
 )
 def test_excel_hidden_columns(
     hidden_columns: list[str] | SelectorType,
-    engine: Literal["xlsx2csv", "openpyxl"],
+    engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"],
 ) -> None:
     df = pl.DataFrame({"a": [1, 2], "b": ["x", "y"]})
 
@@ -532,3 +681,19 @@ def test_excel_hidden_columns(
 
     read_df = pl.read_excel(xls)
     assert_frame_equal(df, read_df)
+
+
+def test_invalid_engine_options() -> None:
+    with pytest.raises(ValueError, match="cannot specify `read_csv_options`"):
+        pl.read_excel(
+            "",
+            engine="openpyxl",
+            read_csv_options={"sep": "\t"},
+        )
+
+    with pytest.raises(ValueError, match="cannot specify `xlsx2csv_options`"):
+        pl.read_excel(
+            "",
+            engine="openpyxl",
+            xlsx2csv_options={"skip_empty_lines": True},
+        )

@@ -49,12 +49,12 @@ impl PyExpr {
         self.inner.clone().list().get(index.inner).into()
     }
 
-    fn list_join(&self, separator: &str) -> Self {
-        self.inner.clone().list().join(separator).into()
+    fn list_join(&self, separator: PyExpr) -> Self {
+        self.inner.clone().list().join(separator.inner).into()
     }
 
-    fn list_lengths(&self) -> Self {
-        self.inner.clone().list().lengths().into()
+    fn list_len(&self) -> Self {
+        self.inner.clone().list().len().into()
     }
 
     fn list_max(&self) -> Self {
@@ -78,8 +78,8 @@ impl PyExpr {
         self.inner.clone().list().reverse().into()
     }
 
-    fn list_shift(&self, periods: i64) -> Self {
-        self.inner.clone().list().shift(periods).into()
+    fn list_shift(&self, periods: PyExpr) -> Self {
+        self.inner.clone().list().shift(periods.inner).into()
     }
 
     fn list_slice(&self, offset: PyExpr, length: Option<PyExpr>) -> Self {
@@ -108,6 +108,41 @@ impl PyExpr {
 
     fn list_sum(&self) -> Self {
         self.inner.clone().list().sum().with_fmt("list.sum").into()
+    }
+
+    #[cfg(feature = "list_drop_nulls")]
+    fn list_drop_nulls(&self) -> Self {
+        self.inner.clone().list().drop_nulls().into()
+    }
+
+    #[cfg(feature = "list_sample")]
+    fn list_sample_n(
+        &self,
+        n: PyExpr,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> Self {
+        self.inner
+            .clone()
+            .list()
+            .sample_n(n.inner, with_replacement, shuffle, seed)
+            .into()
+    }
+
+    #[cfg(feature = "list_sample")]
+    fn list_sample_fraction(
+        &self,
+        fraction: PyExpr,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> Self {
+        self.inner
+            .clone()
+            .list()
+            .sample_fraction(fraction.inner, with_replacement, shuffle, seed)
+            .into()
     }
 
     #[cfg(feature = "list_take")]

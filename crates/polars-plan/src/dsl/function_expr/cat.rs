@@ -25,7 +25,7 @@ impl Display for CategoricalFunction {
             SetOrdering { .. } => "set_ordering",
             GetCategories => "get_categories",
         };
-        write!(f, "{s}")
+        write!(f, "cat.{s}")
     }
 }
 

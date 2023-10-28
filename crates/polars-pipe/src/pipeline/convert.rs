@@ -5,6 +5,7 @@ use std::sync::Arc;
 use hashbrown::hash_map::Entry;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
+use polars_ops::prelude::JoinType;
 use polars_plan::prelude::*;
 
 use crate::executors::operators::HstackOperator;
@@ -67,7 +68,7 @@ where
             Ok(Box::new(sources::DataFrameSource::from_df(df)) as Box<dyn Source>)
         },
         Scan {
-            path,
+            paths,
             file_info,
             file_options,
             predicate,
@@ -86,8 +87,9 @@ where
                 FileScan::Csv {
                     options: csv_options,
                 } => {
+                    assert_eq!(paths.len(), 1);
                     let src = sources::CsvSource::new(
-                        path,
+                        paths[0].clone(),
                         file_info.schema,
                         csv_options,
                         file_options,
@@ -99,13 +101,15 @@ where
                 FileScan::Parquet {
                     options: parquet_options,
                     cloud_options,
+                    metadata,
                 } => {
                     let src = sources::ParquetSource::new(
-                        path,
+                        paths,
                         parquet_options,
                         cloud_options,
+                        metadata,
                         file_options,
-                        file_info.schema,
+                        file_info,
                         verbose,
                     )?;
                     Ok(Box::new(src) as Box<dyn Source>)
@@ -266,7 +270,7 @@ where
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                let sort_sink = SortSinkMultiple::new(args.clone(), input_schema, sort_idx);
+                let sort_sink = SortSinkMultiple::new(args.clone(), input_schema, sort_idx)?;
                 Box::new(sort_sink) as Box<dyn SinkTrait>
             }
         },

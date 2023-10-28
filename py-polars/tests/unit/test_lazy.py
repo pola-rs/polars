@@ -69,8 +69,9 @@ def test_lazyframe_membership_operator() -> None:
 
 def test_apply() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    new = ldf.with_columns_seq(pl.col("a").map_batches(lambda s: s * 2).alias("foo"))
-
+    new = ldf.with_columns_seq(
+        pl.col("a").map_batches(lambda s: s * 2, return_dtype=pl.Int64).alias("foo")
+    )
     expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
     assert_frame_equal(new, expected)
     assert_frame_equal(new.collect(), expected.collect())
@@ -81,7 +82,9 @@ def test_apply() -> None:
         for strategy in ["thread_local", "threading"]:
             ldf = pl.LazyFrame({"a": [1, 2, 3] * 20, "b": [1.0, 2.0, 3.0] * 20})
             new = ldf.with_columns(
-                pl.col("a").map_elements(lambda s: s * 2, strategy=strategy).alias("foo")  # type: ignore[arg-type]
+                pl.col("a")
+                .map_elements(lambda s: s * 2, strategy=strategy)  # type: ignore[arg-type]
+                .alias("foo")
             )
             expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
             assert_frame_equal(new.collect(), expected.collect())
@@ -113,31 +116,6 @@ def test_take_every() -> None:
     assert_frame_equal(expected_df, ldf.take_every(2).collect())
 
 
-def test_slice() -> None:
-    ldf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": ["a", "b", "c", "d"]})
-    expected = pl.LazyFrame({"a": [3, 4], "b": ["c", "d"]})
-    for slice_params in (
-        [2, 10],  # slice > len(df)
-        [2, 4],  # slice == len(df)
-        [2],  # optional len
-    ):
-        assert_frame_equal(ldf.slice(*slice_params), expected)
-
-    for py_slice in (
-        slice(1, 2),
-        slice(0, 3, 2),
-        slice(-3, None),
-        slice(None, 2, 2),
-        slice(3, None, -1),
-        slice(1, None, -2),
-    ):
-        # confirm frame slice matches python slice
-        assert ldf[py_slice].collect().rows() == ldf.collect().rows()[py_slice]
-
-    assert_frame_equal(ldf[::-1], ldf.reverse())
-    assert_frame_equal(ldf[::-2], ldf.reverse().take_every(2))
-
-
 def test_agg() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     ldf = df.lazy().min()
@@ -154,7 +132,9 @@ def test_count_suffix_10783() -> None:
         }
     )
     df_with_cnt = df.with_columns(
-        pl.count().over(pl.col("a").list.sort().list.join("").hash()).suffix("_suffix")
+        pl.count()
+        .over(pl.col("a").list.sort().list.join("").hash())
+        .name.suffix("_suffix")
     )
     df_expect = df.with_columns(pl.Series("count_suffix", [3, 3, 1, 3]))
     assert_frame_equal(df_with_cnt, df_expect, check_dtype=False)
@@ -183,6 +163,53 @@ def test_filter_str() -> None:
     # last row based on a filter
     result = ldf.filter("bools").select(pl.last("*")).collect()
     assert_frame_equal(result, expected)
+
+
+def test_filter_multiple_predicates() -> None:
+    ldf = pl.LazyFrame(
+        {
+            "a": [1, 1, 1, 2, 2],
+            "b": [1, 1, 2, 2, 2],
+            "c": [1, 1, 2, 3, 4],
+        }
+    )
+
+    # using multiple predicates
+    # multiple predicates
+    expected = pl.DataFrame({"a": [1, 1, 1], "b": [1, 1, 2], "c": [1, 1, 2]})
+    for out in (
+        ldf.filter(pl.col("a") == 1, pl.col("b") <= 2),  # positional/splat
+        ldf.filter([pl.col("a") == 1, pl.col("b") <= 2]),  # as list
+    ):
+        assert_frame_equal(out.collect(), expected)
+
+    # multiple kwargs
+    assert_frame_equal(
+        ldf.filter(a=1, b=2).collect(),
+        pl.DataFrame({"a": [1], "b": [2], "c": [2]}),
+    )
+
+    # both positional and keyword args
+    assert_frame_equal(
+        ldf.filter(pl.col("c") < 4, a=2, b=2).collect(),
+        pl.DataFrame({"a": [2], "b": [2], "c": [3]}),
+    )
+
+    # check 'predicate' keyword deprecation:
+    # note: can disambiguate new/old usage - only expect warning on old-style usage
+    with pytest.warns(
+        DeprecationWarning,
+        match="`filter` no longer takes a 'predicate' parameter",
+    ):
+        ldf.filter(predicate=pl.col("a").ge(1)).collect()
+
+    ldf = pl.LazyFrame(
+        {
+            "description": ["eq", "gt", "ge"],
+            "predicate": ["==", ">", ">="],
+        },
+    )
+    assert ldf.filter(predicate="==").select("description").collect().item() == "eq"
 
 
 def test_apply_custom_function() -> None:
@@ -235,44 +262,6 @@ def test_group_by() -> None:
     # refer to column via pl.Expr
     out = ldf.group_by(pl.col("groups")).agg(pl.mean("a")).collect()
     assert_frame_equal(out.sort(by="groups"), expected)
-
-
-def test_shift(fruits_cars: pl.DataFrame) -> None:
-    df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
-    out = df.select(pl.col("a").shift(1))
-    assert_series_equal(out["a"], pl.Series("a", [None, 1, 2, 3, 4]))
-
-    res = fruits_cars.lazy().shift(2).collect()
-
-    expected = pl.DataFrame(
-        {
-            "A": [None, None, 1, 2, 3],
-            "fruits": [None, None, "banana", "banana", "apple"],
-            "B": [None, None, 5, 4, 3],
-            "cars": [None, None, "beetle", "audi", "beetle"],
-        }
-    )
-    assert_frame_equal(res, expected)
-
-    # negative value
-    res = fruits_cars.lazy().shift(-2).collect()
-    for rows in [3, 4]:
-        for cols in range(4):
-            assert res[rows, cols] is None
-
-
-def test_shift_and_fill() -> None:
-    ldf = pl.LazyFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
-
-    # use exprs
-    out = ldf.with_columns(
-        pl.col("a").shift_and_fill(pl.col("b").mean(), periods=-2)
-    ).collect()
-    assert out["a"].null_count() == 0
-
-    # use df method
-    out = ldf.shift_and_fill(pl.col("b").std(), periods=2).collect()
-    assert out["a"].null_count() == 0
 
 
 def test_arg_unique() -> None:
@@ -425,7 +414,7 @@ def test_head_group_by() -> None:
     out = (
         ldf.sort(by="price", descending=True)
         .group_by(keys, maintain_order=True)
-        .agg([pl.col("*").exclude(keys).head(2).keep_name()])
+        .agg([pl.col("*").exclude(keys).head(2).name.keep()])
         .explode(pl.col("*").exclude(keys))
     )
 
@@ -1352,7 +1341,7 @@ def test_quadratic_behavior_4736() -> None:
     ldf.select(reduce(add, (pl.col(fld) for fld in ldf.columns)))
 
 
-@pytest.mark.parametrize("input_dtype", [pl.Utf8, pl.Int64, pl.Float64])
+@pytest.mark.parametrize("input_dtype", [pl.Int64, pl.Float64])
 def test_from_epoch(input_dtype: pl.PolarsDataType) -> None:
     ldf = pl.LazyFrame(
         [
@@ -1390,6 +1379,23 @@ def test_from_epoch(input_dtype: pl.PolarsDataType) -> None:
     ts_col = pl.col("timestamp_s")
     with pytest.raises(ValueError):
         _ = ldf.select(pl.from_epoch(ts_col, time_unit="s2"))  # type: ignore[call-overload]
+
+
+def test_from_epoch_str() -> None:
+    ldf = pl.LazyFrame(
+        [
+            pl.Series("timestamp_ms", [1147880044 * 1_000]).cast(pl.Utf8),
+            pl.Series("timestamp_us", [1147880044 * 1_000_000]).cast(pl.Utf8),
+        ]
+    )
+
+    with pytest.raises(ComputeError):
+        ldf.select(
+            [
+                pl.from_epoch(pl.col("timestamp_ms"), time_unit="ms"),
+                pl.from_epoch(pl.col("timestamp_us"), time_unit="us"),
+            ]
+        ).collect()
 
 
 def test_cumagg_types() -> None:

@@ -1,9 +1,9 @@
+use arrow::legacy::time_zone::Tz;
+use arrow::temporal_conversions::*;
 use chrono::NaiveDateTime;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
 use now::DateTimeNow;
-use polars_arrow::export::arrow::temporal_conversions::*;
-use polars_arrow::time_zone::Tz;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::timeunit_scale;
 
@@ -61,23 +61,23 @@ impl Window {
     }
 
     /// Round the given ns timestamp by the window boundary.
-    pub fn round_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+    pub fn round_ns(&self, t: i64, tz: Option<&Tz>, ambiguous: &str) -> PolarsResult<i64> {
         let t = t + self.every.duration_ns() / 2_i64;
-        self.truncate_ns(t, tz, "raise")
+        self.truncate_ns(t, tz, ambiguous)
     }
 
     /// Round the given us timestamp by the window boundary.
-    pub fn round_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+    pub fn round_us(&self, t: i64, tz: Option<&Tz>, ambiguous: &str) -> PolarsResult<i64> {
         let t = t + self.every.duration_ns()
             / (2 * timeunit_scale(ArrowTimeUnit::Nanosecond, ArrowTimeUnit::Microsecond) as i64);
-        self.truncate_us(t, tz, "raise")
+        self.truncate_us(t, tz, ambiguous)
     }
 
     /// Round the given ms timestamp by the window boundary.
-    pub fn round_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+    pub fn round_ms(&self, t: i64, tz: Option<&Tz>, ambiguous: &str) -> PolarsResult<i64> {
         let t = t + self.every.duration_ns()
             / (2 * timeunit_scale(ArrowTimeUnit::Nanosecond, ArrowTimeUnit::Millisecond) as i64);
-        self.truncate_ms(t, tz, "raise")
+        self.truncate_ms(t, tz, ambiguous)
     }
 
     /// returns the bounds for the earliest window bounds

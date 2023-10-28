@@ -1,7 +1,7 @@
 #[cfg(feature = "date_offset")]
-use polars_arrow::time_zone::Tz;
+use arrow::legacy::time_zone::Tz;
 #[cfg(feature = "date_offset")]
-use polars_core::chunked_array::ops::arity::try_binary_elementwise_values;
+use polars_core::chunked_array::ops::arity::try_binary_elementwise;
 #[cfg(feature = "date_offset")]
 use polars_time::prelude::*;
 
@@ -139,9 +139,13 @@ fn apply_offsets_to_datetime(
                 .try_apply(|v| offset_fn(&Duration::parse(offset), v, time_zone)),
             _ => Ok(datetime.0.apply(|_| None)),
         },
-        _ => try_binary_elementwise_values(datetime, offsets, |timestamp: i64, offset: &str| {
-            let offset = Duration::parse(offset);
-            offset_fn(&offset, timestamp, time_zone)
+        _ => try_binary_elementwise(datetime, offsets, |timestamp_opt, offset_opt| {
+            match (timestamp_opt, offset_opt) {
+                (Some(timestamp), Some(offset)) => {
+                    offset_fn(&Duration::parse(offset), timestamp, time_zone).map(Some)
+                },
+                _ => Ok(None),
+            }
         }),
     }
 }

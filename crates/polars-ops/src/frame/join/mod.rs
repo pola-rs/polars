@@ -1,34 +1,49 @@
+mod args;
+#[cfg(feature = "asof_join")]
+mod asof;
+#[cfg(feature = "dtype-categorical")]
+mod checks;
+mod cross_join;
+mod general;
+mod hash_join;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
+
 #[cfg(feature = "chunked_ids")]
 use std::borrow::Cow;
+use std::fmt::{Debug, Display, Formatter};
+use std::hash::Hash;
 
+use ahash::RandomState;
+pub use args::*;
+use arrow::legacy::trusted_len::TrustedLen;
+#[cfg(feature = "asof_join")]
+use asof::AsofJoinBy;
+#[cfg(feature = "asof_join")]
+pub use asof::{AsOfOptions, AsofJoin, AsofStrategy};
+#[cfg(feature = "dtype-categorical")]
+pub(crate) use checks::*;
+pub use cross_join::CrossJoin;
+#[cfg(feature = "chunked_ids")]
+use either::Either;
+#[cfg(feature = "chunked_ids")]
+use general::create_chunked_index_mapping;
+pub use general::{_finish_join, _join_suffix_name};
+pub use hash_join::*;
+use hashbrown::hash_map::{Entry, RawEntryMut};
+use hashbrown::HashMap;
 #[cfg(feature = "merge_sorted")]
 pub use merge_sorted::_merge_sorted_dfs;
-use polars_core::frame::hash_join::*;
+use polars_core::hashing::partition::{this_partition, AsU64};
+use polars_core::hashing::{BytesHash, _df_rows_to_hashes_threaded_vertical, _HASHMAP_INIT_SIZE};
 use polars_core::prelude::*;
+pub(super) use polars_core::series::IsSorted;
 use polars_core::utils::{_to_physical_and_bit_repr, slice_slice};
 use polars_core::POOL;
+use rayon::prelude::*;
 
-use super::*;
-
-macro_rules! det_hash_prone_order {
-    ($self:expr, $other:expr) => {{
-        // The shortest relation will be used to create a hash table.
-        let left_first = $self.len() > $other.len();
-        let a;
-        let b;
-        if left_first {
-            a = $self;
-            b = $other;
-        } else {
-            b = $self;
-            a = $other;
-        }
-
-        (a, b, !left_first)
-    }};
-}
+use super::hashing::{create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded};
+use super::IntoDf;
 
 pub trait DataFrameJoinOps: IntoDf {
     /// Generic join method. Can be used to join on multiple columns.
@@ -37,12 +52,13 @@ pub trait DataFrameJoinOps: IntoDf {
     ///
     /// ```no_run
     /// # use polars_core::prelude::*;
+    /// # use polars_ops::prelude::*;
     /// let df1: DataFrame = df!("Fruit" => &["Apple", "Banana", "Pear"],
     ///                          "Phosphorus (mg/100g)" => &[11, 22, 12])?;
     /// let df2: DataFrame = df!("Name" => &["Apple", "Banana", "Pear"],
     ///                          "Potassium (mg/100g)" => &[107, 358, 115])?;
     ///
-    /// let df3: DataFrame = df1.join(&df2, ["Fruit"], ["Name"], JoinType::Inner, None)?;
+    /// let df3: DataFrame = df1.join(&df2, ["Fruit"], ["Name"], JoinArgs::new(JoinType::Inner))?;
     /// assert_eq!(df3.shape(), (3, 3));
     /// println!("{}", df3);
     /// # Ok::<(), PolarsError>(())
@@ -173,7 +189,7 @@ pub trait DataFrameJoinOps: IntoDf {
             _check_categorical_src(l.dtype(), r.dtype())?
         }
 
-        // Single keys
+        // Single keys.
         if selected_left.len() == 1 {
             let s_left = left_df.column(selected_left[0].name())?;
             let s_right = other.column(selected_right[0].name())?;
@@ -240,12 +256,13 @@ pub trait DataFrameJoinOps: IntoDf {
             }
             new.unwrap()
         }
-        // make sure that we don't have logical types.
-        // we don't overwrite the original selected as that might be used to create a column in the new df
+
+        // Make sure that we don't have logical types.
+        // We don't overwrite the original selected as that might be used to create a column in the new df.
         let selected_left_physical = _to_physical_and_bit_repr(&selected_left);
         let selected_right_physical = _to_physical_and_bit_repr(&selected_right);
 
-        // multiple keys
+        // Multiple keys.
         match args.how {
             JoinType::Inner => {
                 let left = DataFrame::new_no_checks(selected_left_physical);
@@ -275,8 +292,11 @@ pub trait DataFrameJoinOps: IntoDf {
             JoinType::Left => {
                 let mut left = DataFrame::new_no_checks(selected_left_physical);
                 let mut right = DataFrame::new_no_checks(selected_right_physical);
-                let ids = _left_join_multiple_keys(&mut left, &mut right, None, None);
 
+                if let Some((offset, len)) = args.slice {
+                    left = left.slice(offset, len);
+                }
+                let ids = _left_join_multiple_keys(&mut left, &mut right, None, None);
                 left_df._finish_left_join(ids, &remove_selected(other, &selected_right), args)
             },
             JoinType::Outer => {
@@ -295,17 +315,19 @@ pub trait DataFrameJoinOps: IntoDf {
                 // Take the left and right dataframes by join tuples
                 let (df_left, df_right) = POOL.join(
                     || unsafe {
-                        remove_selected(left_df, &selected_left).take_opt_iter_unchecked(
-                            opt_join_tuples
+                        remove_selected(left_df, &selected_left).take_unchecked(
+                            &opt_join_tuples
                                 .iter()
-                                .map(|(left, _right)| left.map(|i| i as usize)),
+                                .map(|(left, _right)| *left)
+                                .collect_ca(""),
                         )
                     },
                     || unsafe {
-                        remove_selected(other, &selected_right).take_opt_iter_unchecked(
-                            opt_join_tuples
+                        remove_selected(other, &selected_right).take_unchecked(
+                            &opt_join_tuples
                                 .iter()
-                                .map(|(_left, right)| right.map(|i| i as usize)),
+                                .map(|(_left, right)| *right)
+                                .collect_ca(""),
                         )
                     },
                 );
@@ -313,8 +335,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 let mut keys = Vec::with_capacity(selected_left.len() + df_left.width());
                 for (s_left, s_right) in selected_left.iter().zip(&selected_right) {
                     let s = unsafe {
-                        s_left
-                            .zip_outer_join_column(s_right, opt_join_tuples)
+                        zip_outer_join_column(s_left, s_right, opt_join_tuples)
                             .with_name(s_left.name())
                     };
                     keys.push(s)
@@ -353,6 +374,7 @@ pub trait DataFrameJoinOps: IntoDf {
     ///
     /// ```
     /// # use polars_core::prelude::*;
+    /// # use polars_ops::prelude::*;
     /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> PolarsResult<DataFrame> {
     ///     left.inner_join(right, ["join_column_left"], ["join_column_right"])
     /// }
@@ -375,6 +397,7 @@ pub trait DataFrameJoinOps: IntoDf {
     ///
     /// ```no_run
     /// # use polars_core::prelude::*;
+    /// # use polars_ops::prelude::*;
     /// let df1: DataFrame = df!("Wavelength (nm)" => &[480.0, 650.0, 577.0, 1201.0, 100.0])?;
     /// let df2: DataFrame = df!("Color" => &["Blue", "Yellow", "Red"],
     ///                          "Wavelength nm" => &[480.0, 577.0, 650.0])?;
@@ -417,6 +440,7 @@ pub trait DataFrameJoinOps: IntoDf {
     ///
     /// ```
     /// # use polars_core::prelude::*;
+    /// # use polars_ops::prelude::*;
     /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> PolarsResult<DataFrame> {
     ///     left.outer_join(right, ["join_column_left"], ["join_column_right"])
     /// }

@@ -7,13 +7,21 @@ import polars._reexport as pl
 from polars import functions as F
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import deprecate_renamed_function
+from polars.utils.deprecation import (
+    deprecate_renamed_function,
+    deprecate_renamed_parameter,
+)
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
 
     from polars import Expr, Series
-    from polars.type_aliases import IntoExpr, NullBehavior, ToStructStrategy
+    from polars.type_aliases import (
+        IntoExpr,
+        IntoExprColumn,
+        NullBehavior,
+        ToStructStrategy,
+    )
 
 
 class ExprListNameSpace:
@@ -81,26 +89,115 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_any())
 
-    def lengths(self) -> Expr:
+    def len(self) -> Expr:
         """
-        Get the length of the arrays as UInt32.
+        Return the number of elements in each list.
+
+        Null values are treated like regular elements in this context.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`UInt32`.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [1, 2], "bar": [["a", "b"], ["c"]]})
-        >>> df.select(pl.col("bar").list.lengths())
+        >>> df = pl.DataFrame({"a": [[1, 2, None], [5]]})
+        >>> df.select(pl.col("a").list.len())
         shape: (2, 1)
         ┌─────┐
-        │ bar │
+        │ a   │
         │ --- │
         │ u32 │
         ╞═════╡
-        │ 2   │
+        │ 3   │
         │ 1   │
         └─────┘
 
         """
-        return wrap_expr(self._pyexpr.list_lengths())
+        return wrap_expr(self._pyexpr.list_len())
+
+    def drop_nulls(self) -> Expr:
+        """
+        Drop all null values in the list.
+
+        The original order of the remaining elements is preserved.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[None, 1, None, 2], [None], [3, 4]]})
+        >>> df.select(pl.col("values").list.drop_nulls())
+        shape: (3, 1)
+        ┌───────────┐
+        │ values    │
+        │ ---       │
+        │ list[i64] │
+        ╞═══════════╡
+        │ [1, 2]    │
+        │ []        │
+        │ [3, 4]    │
+        └───────────┘
+
+        """
+        return wrap_expr(self._pyexpr.list_drop_nulls())
+
+    def sample(
+        self,
+        n: int | IntoExprColumn | None = None,
+        *,
+        fraction: float | IntoExprColumn | None = None,
+        with_replacement: bool = False,
+        shuffle: bool = False,
+        seed: int | None = None,
+    ) -> Expr:
+        """
+        Sample from this list.
+
+        Parameters
+        ----------
+        n
+            Number of items to return. Cannot be used with `fraction`. Defaults to 1 if
+            `fraction` is None.
+        fraction
+            Fraction of items to return. Cannot be used with `n`.
+        with_replacement
+            Allow values to be sampled more than once.
+        shuffle
+            Shuffle the order of sampled data points.
+        seed
+            Seed for the random number generator. If set to None (default), a
+            random seed is generated for each sample operation.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[1, 2, 3], [4, 5]], "n": [2, 1]})
+        >>> df.select(pl.col("values").list.sample(n=pl.col("n"), seed=1))
+        shape: (2, 1)
+        ┌───────────┐
+        │ values    │
+        │ ---       │
+        │ list[i64] │
+        ╞═══════════╡
+        │ [2, 1]    │
+        │ [5]       │
+        └───────────┘
+
+        """
+        if n is not None and fraction is not None:
+            raise ValueError("cannot specify both `n` and `fraction`")
+
+        if fraction is not None:
+            fraction = parse_as_expression(fraction)
+            return wrap_expr(
+                self._pyexpr.list_sample_fraction(
+                    fraction, with_replacement, shuffle, seed
+                )
+            )
+
+        if n is None:
+            n = 1
+        n = parse_as_expression(n)
+        return wrap_expr(self._pyexpr.list_sample_n(n, with_replacement, shuffle, seed))
 
     def sum(self) -> Expr:
         """
@@ -188,7 +285,7 @@ class ExprListNameSpace:
 
     def sort(self, *, descending: bool = False) -> Expr:
         """
-        Sort the arrays in this column.
+        Sort the lists in this column.
 
         Parameters
         ----------
@@ -459,7 +556,7 @@ class ExprListNameSpace:
         item = parse_as_expression(item, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_contains(item))
 
-    def join(self, separator: str) -> Expr:
+    def join(self, separator: IntoExpr) -> Expr:
         """
         Join all string items in a sublist and place a separator between them.
 
@@ -489,7 +586,21 @@ class ExprListNameSpace:
         │ x y   │
         └───────┘
 
+        >>> df = pl.DataFrame(
+        ...     {"s": [["a", "b", "c"], ["x", "y"]], "separator": ["*", "_"]}
+        ... )
+        >>> df.select(pl.col("s").list.join(pl.col("separator")))
+        shape: (2, 1)
+        ┌───────┐
+        │ s     │
+        │ ---   │
+        │ str   │
+        ╞═══════╡
+        │ a*b*c │
+        │ x_y   │
+        └───────┘
         """
+        separator = parse_as_expression(separator, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_join(separator))
 
     def arg_min(self) -> Expr:
@@ -556,7 +667,7 @@ class ExprListNameSpace:
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Expr:
         """
-        Calculate the n-th discrete difference of every sublist.
+        Calculate the first discrete difference between shifted items of every sublist.
 
         Parameters
         ----------
@@ -604,28 +715,54 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_diff(n, null_behavior))
 
-    def shift(self, periods: int = 1) -> Expr:
+    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
+    def shift(self, n: int | IntoExprColumn = 1) -> Expr:
         """
-        Shift values by the given period.
+        Shift list values by the given number of indices.
 
         Parameters
         ----------
-        periods
-            Number of places to shift (may be negative).
+        n
+            Number of indices to shift forward. If a negative value is passed, values
+            are shifted in the opposite direction instead.
+
+        Notes
+        -----
+        This method is similar to the ``LAG`` operation in SQL when the value for ``n``
+        is positive. With a negative value for ``n``, it is similar to ``LEAD``.
 
         Examples
         --------
-        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
-        >>> s.list.shift()
-        shape: (2,)
-        Series: 'a' [list[i64]]
-        [
-            [null, 1, … 3]
-            [null, 10, 2]
-        ]
+        By default, list values are shifted forward by one index.
+
+        >>> df = pl.DataFrame({"a": [[1, 2, 3], [4, 5]]})
+        >>> df.with_columns(shift=pl.col("a").list.shift())
+        shape: (2, 2)
+        ┌───────────┬──────────────┐
+        │ a         ┆ shift        │
+        │ ---       ┆ ---          │
+        │ list[i64] ┆ list[i64]    │
+        ╞═══════════╪══════════════╡
+        │ [1, 2, 3] ┆ [null, 1, 2] │
+        │ [4, 5]    ┆ [null, 4]    │
+        └───────────┴──────────────┘
+
+        Pass a negative value to shift in the opposite direction instead.
+
+        >>> df.with_columns(shift=pl.col("a").list.shift(-2))
+        shape: (2, 2)
+        ┌───────────┬─────────────────┐
+        │ a         ┆ shift           │
+        │ ---       ┆ ---             │
+        │ list[i64] ┆ list[i64]       │
+        ╞═══════════╪═════════════════╡
+        │ [1, 2, 3] ┆ [3, null, null] │
+        │ [4, 5]    ┆ [null, null]    │
+        └───────────┴─────────────────┘
 
         """
-        return wrap_expr(self._pyexpr.list_shift(periods))
+        n = parse_as_expression(n)
+        return wrap_expr(self._pyexpr.list_shift(n))
 
     def slice(
         self, offset: int | str | Expr, length: int | str | Expr | None = None
@@ -1084,3 +1221,14 @@ class ExprListNameSpace:
 
         """
         return self.count_matches(element)
+
+    @deprecate_renamed_function("len", version="0.19.8")
+    def lengths(self) -> Expr:
+        """
+        Return the number of elements in each list.
+
+        .. deprecated:: 0.19.8
+            This method has been renamed to :func:`len`.
+
+        """
+        return self.len()

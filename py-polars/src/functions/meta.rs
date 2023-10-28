@@ -24,16 +24,6 @@ pub fn threadpool_size() -> usize {
 }
 
 #[pyfunction]
-pub fn enable_string_cache(toggle: bool) {
-    polars_core::enable_string_cache(toggle)
-}
-
-#[pyfunction]
-pub fn using_string_cache() -> bool {
-    polars_core::using_string_cache()
-}
-
-#[pyfunction]
 pub fn set_float_fmt(fmt: &str) -> PyResult<()> {
     let fmt = match fmt {
         "full" => FloatFmt::Full,
@@ -55,4 +45,17 @@ pub fn get_float_fmt() -> PyResult<String> {
         FloatFmt::Mixed => "mixed",
     };
     Ok(strfmt.to_string())
+}
+
+#[pyfunction]
+pub fn set_float_precision(precision: Option<usize>) -> PyResult<()> {
+    use polars_core::fmt::set_float_precision;
+    set_float_precision(precision);
+    Ok(())
+}
+
+#[pyfunction]
+pub fn get_float_precision() -> PyResult<Option<usize>> {
+    use polars_core::fmt::get_float_precision;
+    Ok(get_float_precision())
 }

@@ -1,5 +1,7 @@
 use std::borrow::Cow;
+use std::path::Path;
 
+use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
 use polars_utils::format_smartstring;
 #[cfg(feature = "serde")]
@@ -18,7 +20,6 @@ impl LogicalPlan {
             Cache { input, .. } => input.schema(),
             Sort { input, .. } => input.schema(),
             DataFrameScan { schema, .. } => Ok(Cow::Borrowed(schema)),
-            AnonymousScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
             Selection { input, .. } => input.schema(),
             Projection { schema, .. } => Ok(Cow::Borrowed(schema)),
             Aggregate { schema, .. } => Ok(Cow::Borrowed(schema)),
@@ -41,13 +42,66 @@ impl LogicalPlan {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FileInfo {
     pub schema: SchemaRef,
-    // - known size
-    // - estimated size
+    /// Stores the schema used for the reader, as the main schema can contain
+    /// extra hive columns.
+    pub reader_schema: Option<ArrowSchemaRef>,
+    /// - known size
+    /// - estimated size
     pub row_estimation: (Option<usize>, usize),
+    pub hive_parts: Option<Arc<hive::HivePartitions>>,
+}
+
+impl FileInfo {
+    pub fn new(
+        schema: SchemaRef,
+        reader_schema: Option<ArrowSchemaRef>,
+        row_estimation: (Option<usize>, usize),
+    ) -> Self {
+        Self {
+            schema: schema.clone(),
+            reader_schema,
+            row_estimation,
+            hive_parts: None,
+        }
+    }
+
+    /// Updates the statistics and merges the hive partitions schema with the file one.
+    pub fn init_hive_partitions(&mut self, url: &Path) -> PolarsResult<()> {
+        self.hive_parts = hive::HivePartitions::parse_url(url).map(|hive_parts| {
+            let hive_schema = hive_parts.get_statistics().schema().clone();
+            let expected_len = self.schema.len() + hive_schema.len();
+
+            let schema = Arc::make_mut(&mut self.schema);
+            schema.merge((**hive_parts.get_statistics().schema()).clone());
+
+            polars_ensure!(schema.len() == expected_len, ComputeError: "invalid hive partitions\n\n\
+            Extending the schema with the hive partitioned columns creates duplicate fields.");
+
+            Ok(Arc::new(hive_parts))
+        }).transpose()?;
+        Ok(())
+    }
+
+    /// Updates the statistics, but not the schema.
+    pub fn update_hive_partitions(&mut self, url: &Path) {
+        let new = hive::HivePartitions::parse_url(url);
+
+        match (&mut self.hive_parts, new) {
+            (Some(current), Some(new)) => match Arc::get_mut(current) {
+                Some(current) => {
+                    *current = new;
+                },
+                _ => {
+                    *current = Arc::new(new);
+                },
+            },
+            (_, new) => self.hive_parts = new.map(Arc::new),
+        }
+    }
 }
 
 #[cfg(feature = "streaming")]
@@ -72,6 +126,7 @@ pub fn set_estimated_row_counts(
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &Arena<AExpr>,
     mut _filter_count: usize,
+    scratch: &mut Vec<Node>,
 ) -> (Option<usize>, usize, usize) {
     use ALogicalPlan::*;
 
@@ -89,11 +144,12 @@ pub fn set_estimated_row_counts(
                 .filter(|(_, ae)| matches!(ae, AExpr::BinaryExpr { .. }))
                 .count()
                 + 1;
-            set_estimated_row_counts(*input, lp_arena, expr_arena, _filter_count)
+            set_estimated_row_counts(*input, lp_arena, expr_arena, _filter_count, scratch)
         },
         Slice { input, len, .. } => {
             let len = *len as usize;
-            let mut out = set_estimated_row_counts(*input, lp_arena, expr_arena, _filter_count);
+            let mut out =
+                set_estimated_row_counts(*input, lp_arena, expr_arena, _filter_count, scratch);
             apply_slice(&mut out, Some((0, len)));
             out
         },
@@ -105,7 +161,8 @@ pub fn set_estimated_row_counts(
             {
                 let mut sum_output = (None, 0);
                 for input in &inputs {
-                    let mut out = set_estimated_row_counts(*input, lp_arena, expr_arena, 0);
+                    let mut out =
+                        set_estimated_row_counts(*input, lp_arena, expr_arena, 0, scratch);
                     if let Some((_offset, len)) = options.slice {
                         apply_slice(&mut out, Some((0, len)))
                     }
@@ -132,11 +189,11 @@ pub fn set_estimated_row_counts(
             {
                 let mut_options = Arc::make_mut(&mut options);
                 let (known_size, estimated_size, filter_count_left) =
-                    set_estimated_row_counts(input_left, lp_arena, expr_arena, 0);
+                    set_estimated_row_counts(input_left, lp_arena, expr_arena, 0, scratch);
                 mut_options.rows_left =
                     estimate_sizes(known_size, estimated_size, filter_count_left);
                 let (known_size, estimated_size, filter_count_right) =
-                    set_estimated_row_counts(input_right, lp_arena, expr_arena, 0);
+                    set_estimated_row_counts(input_right, lp_arena, expr_arena, 0, scratch);
                 mut_options.rows_right =
                     estimate_sizes(known_size, estimated_size, filter_count_right);
 
@@ -195,13 +252,20 @@ pub fn set_estimated_row_counts(
             // TODO! get row estimation.
             (None, usize::MAX, _filter_count)
         },
-        AnonymousScan { options, .. } => {
-            let size = options.n_rows;
-            (size, size.unwrap_or(usize::MAX), _filter_count)
-        },
         lp => {
-            let input = lp.get_input().unwrap();
-            set_estimated_row_counts(input, lp_arena, expr_arena, _filter_count)
+            lp.copy_inputs(scratch);
+            let mut sum_output = (None, 0, 0);
+            while let Some(input) = scratch.pop() {
+                let out =
+                    set_estimated_row_counts(input, lp_arena, expr_arena, _filter_count, scratch);
+                sum_output.1 += out.1;
+                sum_output.2 += out.2;
+                sum_output.0 = match sum_output.0 {
+                    None => out.0,
+                    p => p,
+                };
+            }
+            sum_output
         },
     }
 }
@@ -251,7 +315,6 @@ pub(crate) fn det_join_schema(
                         right_on.to_field_amortized(schema_right, Context::Default, &mut arena)?;
                     if field_left.name != field_right.name {
                         if schema_left.contains(&field_right.name) {
-                            use polars_core::frame::hash_join::_join_suffix_name;
                             new_schema.with_column(
                                 _join_suffix_name(&field_right.name, options.args.suffix()).into(),
                                 field_right.dtype,

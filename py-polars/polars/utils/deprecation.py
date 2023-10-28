@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     import sys
     from typing import Mapping
 
+    from polars import Expr
     from polars.type_aliases import Ambiguous
 
     if sys.version_info >= (3, 10):
@@ -20,8 +21,7 @@ if TYPE_CHECKING:
 
     P = ParamSpec("P")
     T = TypeVar("T")
-if TYPE_CHECKING:
-    from polars import Expr
+
 
 USE_EARLIEST_TO_AMBIGUOUS: Mapping[bool, Ambiguous] = {
     True: "earliest",
@@ -60,16 +60,21 @@ def deprecate_function(
             )
             return function(*args, **kwargs)
 
+        wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
         return wrapper
 
     return decorate
 
 
 def deprecate_renamed_function(
-    new_name: str, *, version: str
+    new_name: str, *, version: str, moved: bool = False
 ) -> Callable[[Callable[P, T]], Callable[P, T]]:
-    """Decorator to mark a function as deprecated due to being renamed."""
-    return deprecate_function(f"It has been renamed to `{new_name}`.", version=version)
+    """Decorator to mark a function as deprecated due to being renamed (or moved)."""
+    moved_or_renamed = "moved" if moved else "renamed"
+    return deprecate_function(
+        f"It has been {moved_or_renamed} to `{new_name}`.",
+        version=version,
+    )
 
 
 def deprecate_renamed_parameter(
@@ -94,6 +99,7 @@ def deprecate_renamed_parameter(
             )
             return function(*args, **kwargs)
 
+        wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
         return wrapper
 
     return decorate
@@ -110,7 +116,7 @@ def _rename_keyword_argument(
     if old_name in kwargs:
         if new_name in kwargs:
             raise TypeError(
-                f"`{func_name!r}` received both `{old_name!r}` and `{new_name!r}` as arguments."
+                f"`{func_name!r}` received both `{old_name!r}` and `{new_name!r}` as arguments;"
                 f" `{old_name!r}` is deprecated, use `{new_name!r}` instead"
             )
         issue_deprecation_warning(
@@ -232,6 +238,7 @@ def warn_closed_future_change() -> Callable[[Callable[P, T]], Callable[P, T]]:
                 )
             return function(*args, **kwargs)
 
+        wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
         return wrapper
 
     return decorate

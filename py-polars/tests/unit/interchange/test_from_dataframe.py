@@ -56,11 +56,11 @@ def test_from_dataframe_pyarrow_recordbatch_zero_copy() -> None:
     a = pa.array([1, 2])
     b = pa.array([3.0, 4.0])
     c = pa.array(["foo", "bar"])
+
     batch = pa.record_batch([a, b, c], names=["a", "b", "c"])
-
     result = pl.from_dataframe(batch, allow_copy=False)
-
     expected = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]})
+
     assert_frame_equal(result, expected)
 
 

@@ -99,7 +99,13 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     #[inline]
     pub(crate) fn index_to_chunked_index(&self, index: usize) -> (usize, usize) {
         if self.chunks.len() == 1 {
-            return (0, index);
+            // SAFETY: chunks.len() == 1 guarantees this is correct.
+            let len = unsafe { self.chunks.get_unchecked(0).len() };
+            return if index < len {
+                (0, index)
+            } else {
+                (1, index - len)
+            };
         }
         index_to_chunked_index(self.downcast_iter().map(|arr| arr.len()), index)
     }

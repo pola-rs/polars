@@ -9,8 +9,6 @@ use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
-#[cfg(feature = "algorithm_join")]
-use crate::frame::hash_join::*;
 use crate::prelude::*;
 
 unsafe impl IntoSeries for DurationChunked {
@@ -42,22 +40,6 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         self.0
             .explode_by_offsets(offsets)
-            .into_duration(self.0.time_unit())
-            .into_series()
-    }
-
-    #[cfg(feature = "cum_agg")]
-    fn _cummax(&self, reverse: bool) -> Series {
-        self.0
-            .cummax(reverse)
-            .into_duration(self.0.time_unit())
-            .into_series()
-    }
-
-    #[cfg(feature = "cum_agg")]
-    fn _cummin(&self, reverse: bool) -> Series {
-        self.0
-            .cummin(reverse)
             .into_duration(self.0.time_unit())
             .into_series()
     }
@@ -146,18 +128,6 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .unwrap()
     }
 
-    #[cfg(feature = "algorithm_join")]
-    unsafe fn zip_outer_join_column(
-        &self,
-        right_column: &Series,
-        opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
-    ) -> Series {
-        let right_column = right_column.to_physical_repr().into_owned();
-        self.0
-            .zip_outer_join_column(&right_column, opt_join_tuples)
-            .into_duration(self.0.time_unit())
-            .into_series()
-    }
     fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
         match (self.dtype(), rhs.dtype()) {
             (DataType::Duration(tu), DataType::Duration(tur)) => {
@@ -176,6 +146,24 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                 let lhs = self.cast(&DataType::Int64).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs.add_to(&rhs)?.into_duration(*tu).into_series())
+            },
+            (DataType::Duration(tu), DataType::Date) => {
+                let one_day_in_tu: i64 = match tu {
+                    TimeUnit::Milliseconds => 86_400_000,
+                    TimeUnit::Microseconds => 86_400_000_000,
+                    TimeUnit::Nanoseconds => 86_400_000_000_000,
+                };
+                let lhs = self.cast(&DataType::Int64).unwrap() / one_day_in_tu;
+                let rhs = rhs
+                    .cast(&DataType::Int32)
+                    .unwrap()
+                    .cast(&DataType::Int64)
+                    .unwrap();
+                Ok(lhs
+                    .add_to(&rhs)?
+                    .cast(&DataType::Int32)?
+                    .into_date()
+                    .into_series())
             },
             (DataType::Duration(tu), DataType::Datetime(tur, tz)) => {
                 polars_ensure!(tu == tur, InvalidOperation: "units are different");
@@ -287,41 +275,33 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-        let ca = self.0.deref().take(indices.into())?;
-        Ok(ca.into_duration(self.0.time_unit()).into_series())
+        Ok(self
+            .0
+            .take(indices)?
+            .into_duration(self.0.time_unit())
+            .into_series())
     }
 
-    fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
-        let ca = self.0.deref().take(iter.into())?;
-        Ok(ca.into_duration(self.0.time_unit()).into_series())
+    unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
+        self.0
+            .take_unchecked(indices)
+            .into_duration(self.0.time_unit())
+            .into_series()
     }
 
-    unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-        let ca = self.0.deref().take_unchecked(iter.into());
-        ca.into_duration(self.0.time_unit()).into_series()
+    fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
+        Ok(self
+            .0
+            .take(indices)?
+            .into_duration(self.0.time_unit())
+            .into_series())
     }
 
-    unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
-        let mut out = self.0.deref().take_unchecked(idx.into());
-
-        if self.0.is_sorted_ascending_flag()
-            && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
-        {
-            out.set_sorted_flag(idx.is_sorted_flag())
-        }
-
-        Ok(out.into_duration(self.0.time_unit()).into_series())
-    }
-
-    unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-        let ca = self.0.deref().take_unchecked(iter.into());
-        ca.into_duration(self.0.time_unit()).into_series()
-    }
-
-    #[cfg(feature = "take_opt_iter")]
-    fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
-        let ca = self.0.deref().take(iter.into())?;
-        Ok(ca.into_duration(self.0.time_unit()).into_series())
+    unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
+        self.0
+            .take_unchecked(indices)
+            .into_duration(self.0.time_unit())
+            .into_series()
     }
 
     fn len(&self) -> usize {
@@ -449,32 +429,5 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
-    }
-
-    fn peak_max(&self) -> BooleanChunked {
-        self.0.peak_max()
-    }
-
-    fn peak_min(&self) -> BooleanChunked {
-        self.0.peak_min()
-    }
-    #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
-        Ok(self
-            .0
-            .repeat_by(by)?
-            .cast(&DataType::List(Box::new(DataType::Duration(
-                self.0.time_unit(),
-            ))))
-            .unwrap()
-            .list()
-            .unwrap()
-            .clone())
-    }
-    #[cfg(feature = "mode")]
-    fn mode(&self) -> PolarsResult<Series> {
-        self.0
-            .mode()
-            .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
     }
 }

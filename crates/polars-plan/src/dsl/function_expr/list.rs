@@ -1,4 +1,4 @@
-use polars_arrow::utils::CustomIterTools;
+use arrow::legacy::utils::CustomIterTools;
 use polars_ops::chunked_array::list::*;
 
 use super::*;
@@ -9,19 +9,44 @@ pub enum ListFunction {
     Concat,
     #[cfg(feature = "is_in")]
     Contains,
+    #[cfg(feature = "list_drop_nulls")]
+    DropNulls,
+    #[cfg(feature = "list_sample")]
+    Sample {
+        is_fraction: bool,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    },
     Slice,
+    Shift,
     Get,
     #[cfg(feature = "list_take")]
     Take(bool),
     #[cfg(feature = "list_count")]
     CountMatches,
     Sum,
+    Length,
+    Max,
+    Min,
+    Mean,
+    ArgMin,
+    ArgMax,
+    #[cfg(feature = "diff")]
+    Diff {
+        n: i64,
+        null_behavior: NullBehavior,
+    },
+    Sort(SortOptions),
+    Reverse,
+    Unique(bool),
     #[cfg(feature = "list_sets")]
     SetOperation(SetOperation),
     #[cfg(feature = "list_any_all")]
     Any,
     #[cfg(feature = "list_any_all")]
     All,
+    Join,
 }
 
 impl Display for ListFunction {
@@ -32,33 +57,95 @@ impl Display for ListFunction {
             Concat => "concat",
             #[cfg(feature = "is_in")]
             Contains => "contains",
+            #[cfg(feature = "list_drop_nulls")]
+            DropNulls => "drop_nulls",
+            #[cfg(feature = "list_sample")]
+            Sample { is_fraction, .. } => {
+                if *is_fraction {
+                    "sample_fraction"
+                } else {
+                    "sample_n"
+                }
+            },
             Slice => "slice",
+            Shift => "shift",
             Get => "get",
             #[cfg(feature = "list_take")]
             Take(_) => "take",
             #[cfg(feature = "list_count")]
             CountMatches => "count",
             Sum => "sum",
+            Min => "min",
+            Max => "max",
+            Mean => "mean",
+            ArgMin => "arg_min",
+            ArgMax => "arg_max",
+            #[cfg(feature = "diff")]
+            Diff { .. } => "diff",
+            Length => "length",
+            Sort(_) => "sort",
+            Reverse => "reverse",
+            Unique(is_stable) => {
+                if *is_stable {
+                    "unique_stable"
+                } else {
+                    "unique"
+                }
+            },
             #[cfg(feature = "list_sets")]
-            SetOperation(s) => return write!(f, "{s}"),
+            SetOperation(s) => return write!(f, "list.{s}"),
             #[cfg(feature = "list_any_all")]
             Any => "any",
             #[cfg(feature = "list_any_all")]
             All => "all",
+            Join => "join",
         };
-        write!(f, "{name}")
+        write!(f, "list.{name}")
     }
 }
 
 #[cfg(feature = "is_in")]
 pub(super) fn contains(args: &mut [Series]) -> PolarsResult<Option<Series>> {
     let list = &args[0];
-    let is_in = &args[1];
+    let item = &args[1];
 
-    polars_ops::prelude::is_in(is_in, list).map(|mut ca| {
+    polars_ops::prelude::is_in(item, list).map(|mut ca| {
         ca.rename(list.name());
         Some(ca.into_series())
     })
+}
+
+#[cfg(feature = "list_drop_nulls")]
+pub(super) fn drop_nulls(s: &Series) -> PolarsResult<Series> {
+    let list = s.list()?;
+
+    Ok(list.lst_drop_nulls().into_series())
+}
+
+#[cfg(feature = "list_sample")]
+pub(super) fn sample_n(
+    s: &[Series],
+    with_replacement: bool,
+    shuffle: bool,
+    seed: Option<u64>,
+) -> PolarsResult<Series> {
+    let list = s[0].list()?;
+    let n = &s[1];
+    list.lst_sample_n(n, with_replacement, shuffle, seed)
+        .map(|ok| ok.into_series())
+}
+
+#[cfg(feature = "list_sample")]
+pub(super) fn sample_fraction(
+    s: &[Series],
+    with_replacement: bool,
+    shuffle: bool,
+    seed: Option<u64>,
+) -> PolarsResult<Series> {
+    let list = s[0].list()?;
+    let fraction = &s[1];
+    list.lst_sample_fraction(fraction, with_replacement, shuffle, seed)
+        .map(|ok| ok.into_series())
 }
 
 fn check_slice_arg_shape(slice_len: usize, ca_len: usize, name: &str) -> PolarsResult<()> {
@@ -69,6 +156,13 @@ fn check_slice_arg_shape(slice_len: usize, ca_len: usize, name: &str) -> PolarsR
         name, slice_len, ca_len
     );
     Ok(())
+}
+
+pub(super) fn shift(s: &[Series]) -> PolarsResult<Series> {
+    let list = s[0].list()?;
+    let periods = &s[1];
+
+    list.lst_shift(periods).map(|ok| ok.into_series())
 }
 
 pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Option<Series>> {
@@ -219,7 +313,7 @@ pub(super) fn get(s: &mut [Series]) -> PolarsResult<Option<Series>> {
                 })
                 .collect::<IdxCa>();
             let s = Series::try_from((ca.name(), arr.values().clone())).unwrap();
-            unsafe { s.take_unchecked(&take_by) }.map(Some)
+            unsafe { Ok(Some(s.take_unchecked(&take_by))) }
         },
         len => polars_bail!(
             ComputeError:
@@ -263,6 +357,51 @@ pub(super) fn sum(s: &Series) -> PolarsResult<Series> {
     Ok(s.list()?.lst_sum())
 }
 
+pub(super) fn length(s: &Series) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_lengths().into_series())
+}
+
+pub(super) fn max(s: &Series) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_max())
+}
+
+pub(super) fn min(s: &Series) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_min())
+}
+
+pub(super) fn mean(s: &Series) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_mean())
+}
+
+pub(super) fn arg_min(s: &Series) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_arg_min().into_series())
+}
+
+pub(super) fn arg_max(s: &Series) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_arg_max().into_series())
+}
+
+#[cfg(feature = "diff")]
+pub(super) fn diff(s: &Series, n: i64, null_behavior: NullBehavior) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_diff(n, null_behavior)?.into_series())
+}
+
+pub(super) fn sort(s: &Series, options: SortOptions) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_sort(options).into_series())
+}
+
+pub(super) fn reverse(s: &Series) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_reverse().into_series())
+}
+
+pub(super) fn unique(s: &Series, is_stable: bool) -> PolarsResult<Series> {
+    if is_stable {
+        Ok(s.list()?.lst_unique_stable()?.into_series())
+    } else {
+        Ok(s.list()?.lst_unique()?.into_series())
+    }
+}
+
 #[cfg(feature = "list_sets")]
 pub(super) fn set_operation(s: &[Series], set_type: SetOperation) -> PolarsResult<Series> {
     let s0 = &s[0];
@@ -278,4 +417,10 @@ pub(super) fn lst_any(s: &Series) -> PolarsResult<Series> {
 #[cfg(feature = "list_any_all")]
 pub(super) fn lst_all(s: &Series) -> PolarsResult<Series> {
     s.list()?.lst_all()
+}
+
+pub(super) fn join(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].list()?;
+    let separator = s[1].utf8()?;
+    Ok(ca.lst_join(separator)?.into_series())
 }

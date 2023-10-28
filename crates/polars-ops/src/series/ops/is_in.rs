@@ -216,7 +216,7 @@ fn is_in_boolean(ca_in: &BooleanChunked, other: &Series) -> PolarsResult<Boolean
                 let has_false = if nc == 0 {
                     !other.all()
                 } else {
-                    !(other.sum().unwrap() as usize + nc) == other.len()
+                    (other.sum().unwrap() as usize + nc) != other.len()
                 };
                 Ok(ca_in.apply_values(|v| if v { has_true } else { has_false }))
             }
@@ -340,10 +340,10 @@ pub fn is_in(s: &Series, other: &Series) -> PolarsResult<BooleanChunked> {
     match s.dtype() {
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(_) => {
-            use polars_core::frame::hash_join::_check_categorical_src;
+            use crate::frame::join::_check_categorical_src;
             _check_categorical_src(s.dtype(), other.dtype())?;
             let ca = s.categorical().unwrap();
-            let ca = ca.logical();
+            let ca = ca.physical();
             is_in_numeric(ca, &other.to_physical_repr())
         },
         #[cfg(feature = "dtype-struct")]
@@ -404,6 +404,11 @@ pub fn is_in(s: &Series, other: &Series) -> PolarsResult<BooleanChunked> {
                 is_in_numeric(ca, other)
             })
         },
-        dt => polars_bail!(opq = is_int, dt),
+        DataType::Null => {
+            let series_bool = s.cast(&DataType::Boolean)?;
+            let ca = series_bool.bool().unwrap();
+            Ok(ca.clone())
+        },
+        dt => polars_bail!(opq = is_in, dt),
     }
 }

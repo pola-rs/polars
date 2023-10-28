@@ -1,0 +1,14 @@
+import polars as pl
+
+
+def test_streaming_nested_categorical() -> None:
+    assert (
+        pl.LazyFrame({"numbers": [1, 1, 2], "cat": [["str"], ["foo"], ["bar"]]})
+        .with_columns(pl.col("cat").cast(pl.List(pl.Categorical)))
+        .group_by("numbers")
+        .agg(pl.col("cat").first())
+        .sort("numbers")
+    ).collect(streaming=True).to_dict(False) == {
+        "numbers": [1, 2],
+        "cat": [["str"], ["bar"]],
+    }

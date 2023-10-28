@@ -1,33 +1,23 @@
 use super::*;
 
 pub(super) fn cumcount(s: &Series, reverse: bool) -> PolarsResult<Series> {
-    if reverse {
-        let ca: NoNull<UInt32Chunked> = (0u32..s.len() as u32).rev().collect();
-        let mut ca = ca.into_inner();
-        ca.rename(s.name());
-        Ok(ca.into_series())
-    } else {
-        let ca: NoNull<UInt32Chunked> = (0u32..s.len() as u32).collect();
-        let mut ca = ca.into_inner();
-        ca.rename(s.name());
-        Ok(ca.into_series())
-    }
+    polars_ops::prelude::cumcount(s, reverse)
 }
 
 pub(super) fn cumsum(s: &Series, reverse: bool) -> PolarsResult<Series> {
-    Ok(s.cumsum(reverse))
+    polars_ops::prelude::cumsum(s, reverse)
 }
 
 pub(super) fn cumprod(s: &Series, reverse: bool) -> PolarsResult<Series> {
-    Ok(s.cumprod(reverse))
+    polars_ops::prelude::cumprod(s, reverse)
 }
 
 pub(super) fn cummin(s: &Series, reverse: bool) -> PolarsResult<Series> {
-    Ok(s.cummin(reverse))
+    polars_ops::prelude::cummin(s, reverse)
 }
 
 pub(super) fn cummax(s: &Series, reverse: bool) -> PolarsResult<Series> {
-    Ok(s.cummax(reverse))
+    polars_ops::prelude::cummax(s, reverse)
 }
 
 pub(super) mod dtypes {

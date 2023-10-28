@@ -187,10 +187,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .select([
-            col("date").dt().strftime("%Y-%m-%d"),
-            col("string").str().strptime(
-                DataType::Datetime(TimeUnit::Microseconds, None),
+            col("date").dt().to_string("%Y-%m-%d"),
+            col("string").str().to_datetime(
+                TimeUnit::Microseconds,
+                None,
                 StrptimeOptions::default(),
+                lit("raise"),
             ),
         ])
         .collect()?;

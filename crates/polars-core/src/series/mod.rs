@@ -28,8 +28,6 @@ use rayon::prelude::*;
 pub use series_trait::{IsSorted, *};
 
 use crate::chunked_array::Settings;
-#[cfg(feature = "rank")]
-use crate::prelude::unique::rank::rank;
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
 use crate::utils::{_split_offsets, get_casting_failures, split_ca, split_series, Wrap};
@@ -183,6 +181,7 @@ impl Series {
 
     /// # Safety
     /// The caller must ensure the length and the data types of `ArrayRef` does not change.
+    /// And that the null_count is updated (e.g. with a `compute_len()`)
     pub unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
         #[allow(unused_mut)]
         let mut ca = self._get_inner_mut();
@@ -234,6 +233,15 @@ impl Series {
         self
     }
 
+    pub fn from_arrow(name: &str, array: ArrayRef) -> PolarsResult<Series> {
+        Self::try_from((name, array))
+    }
+
+    #[cfg(feature = "arrow_rs")]
+    pub fn from_arrow_rs(name: &str, array: &dyn arrow_array::Array) -> PolarsResult<Series> {
+        Self::from_arrow(name, array.into())
+    }
+
     /// Shrink the capacity of this array to fit its length.
     pub fn shrink_to_fit(&mut self) {
         self._get_inner_mut().shrink_to_fit()
@@ -245,6 +253,11 @@ impl Series {
     pub fn append(&mut self, other: &Series) -> PolarsResult<&mut Self> {
         self._get_inner_mut().append(other)?;
         Ok(self)
+    }
+
+    /// Redo a length and null_count compute
+    pub fn compute_len(&mut self) {
+        self._get_inner_mut().compute_len()
     }
 
     /// Extend the memory backed by this array with the values from `other`.
@@ -298,6 +311,14 @@ impl Series {
             },
             DataType::Binary => self.binary().unwrap().cast_unchecked(dtype),
             _ => self.cast(dtype),
+        }
+    }
+
+    /// Cast numerical types to f64, and keep floats as is.
+    pub fn to_float(&self) -> PolarsResult<Series> {
+        match self.dtype() {
+            DataType::Float32 | DataType::Float64 => Ok(self.clone()),
+            _ => self.cast(&DataType::Float64),
         }
     }
 
@@ -480,24 +501,31 @@ impl Series {
     ///
     /// # Safety
     /// This doesn't check any bounds. Null validity is checked.
-    pub unsafe fn take_unchecked_from_slice(&self, idx: &[IdxSize]) -> PolarsResult<Series> {
-        let idx = IdxCa::mmap_slice("", idx);
-        self.take_unchecked(&idx)
+    pub unsafe fn take_unchecked_from_slice(&self, idx: &[IdxSize]) -> Series {
+        self.take_slice_unchecked(idx)
     }
 
     /// Take by index if ChunkedArray contains a single chunk.
     ///
     /// # Safety
     /// This doesn't check any bounds. Null validity is checked.
-    pub unsafe fn take_unchecked_threaded(
-        &self,
-        idx: &IdxCa,
-        rechunk: bool,
-    ) -> PolarsResult<Series> {
+    pub unsafe fn take_unchecked_threaded(&self, idx: &IdxCa, rechunk: bool) -> Series {
         self.threaded_op(rechunk, idx.len(), &|offset, len| {
             let idx = idx.slice(offset as i64, len);
-            self.take_unchecked(&idx)
+            Ok(self.take_unchecked(&idx))
         })
+        .unwrap()
+    }
+
+    /// Take by index if ChunkedArray contains a single chunk.
+    ///
+    /// # Safety
+    /// This doesn't check any bounds. Null validity is checked.
+    pub unsafe fn take_slice_unchecked_threaded(&self, idx: &[IdxSize], rechunk: bool) -> Series {
+        self.threaded_op(rechunk, idx.len(), &|offset, len| {
+            Ok(self.take_slice_unchecked(&idx[offset..offset + len]))
+        })
+        .unwrap()
     }
 
     /// # Safety
@@ -540,6 +568,13 @@ impl Series {
             let idx = idx.slice(offset as i64, len);
             self.take(&idx)
         })
+    }
+
+    /// Traverse and collect every nth element in a new array.
+    pub fn take_every(&self, n: usize) -> Series {
+        let idx = (0..self.len() as IdxSize).step_by(n).collect_ca("");
+        // SAFETY: we stay in-bounds.
+        unsafe { self.take_unchecked(&idx) }
     }
 
     /// Filter by boolean mask. This operation clones data.
@@ -589,94 +624,6 @@ impl Series {
         }
     }
 
-    /// Get an array with the cumulative max computed at every element.
-    pub fn cummax(&self, _reverse: bool) -> Series {
-        #[cfg(feature = "cum_agg")]
-        {
-            self._cummax(_reverse)
-        }
-        #[cfg(not(feature = "cum_agg"))]
-        {
-            panic!("activate 'cum_agg' feature")
-        }
-    }
-
-    /// Get an array with the cumulative min computed at every element.
-    pub fn cummin(&self, _reverse: bool) -> Series {
-        #[cfg(feature = "cum_agg")]
-        {
-            self._cummin(_reverse)
-        }
-        #[cfg(not(feature = "cum_agg"))]
-        {
-            panic!("activate 'cum_agg' feature")
-        }
-    }
-
-    /// Get an array with the cumulative sum computed at every element
-    ///
-    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
-    /// first cast to `Int64` to prevent overflow issues.
-    #[allow(unused_variables)]
-    pub fn cumsum(&self, reverse: bool) -> Series {
-        #[cfg(feature = "cum_agg")]
-        {
-            use DataType::*;
-            match self.dtype() {
-                Boolean => self.cast(&DataType::UInt32).unwrap().cumsum(reverse),
-                Int8 | UInt8 | Int16 | UInt16 => {
-                    let s = self.cast(&Int64).unwrap();
-                    s.cumsum(reverse)
-                },
-                Int32 => self.i32().unwrap().cumsum(reverse).into_series(),
-                UInt32 => self.u32().unwrap().cumsum(reverse).into_series(),
-                UInt64 => self.u64().unwrap().cumsum(reverse).into_series(),
-                Int64 => self.i64().unwrap().cumsum(reverse).into_series(),
-                Float32 => self.f32().unwrap().cumsum(reverse).into_series(),
-                Float64 => self.f64().unwrap().cumsum(reverse).into_series(),
-                #[cfg(feature = "dtype-duration")]
-                Duration(tu) => {
-                    let ca = self.to_physical_repr();
-                    let ca = ca.i64().unwrap();
-                    ca.cumsum(reverse).cast(&Duration(*tu)).unwrap()
-                },
-                dt => panic!("cumsum not supported for dtype: {dt:?}"),
-            }
-        }
-        #[cfg(not(feature = "cum_agg"))]
-        {
-            panic!("activate 'cum_agg' feature")
-        }
-    }
-
-    /// Get an array with the cumulative product computed at every element.
-    ///
-    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16, Int32, UInt32}` the `Series` is
-    /// first cast to `Int64` to prevent overflow issues.
-    #[allow(unused_variables)]
-    pub fn cumprod(&self, reverse: bool) -> Series {
-        #[cfg(feature = "cum_agg")]
-        {
-            use DataType::*;
-            match self.dtype() {
-                Boolean => self.cast(&DataType::Int64).unwrap().cumprod(reverse),
-                Int8 | UInt8 | Int16 | UInt16 | Int32 | UInt32 => {
-                    let s = self.cast(&Int64).unwrap();
-                    s.cumprod(reverse)
-                },
-                Int64 => self.i64().unwrap().cumprod(reverse).into_series(),
-                UInt64 => self.u64().unwrap().cumprod(reverse).into_series(),
-                Float32 => self.f32().unwrap().cumprod(reverse).into_series(),
-                Float64 => self.f64().unwrap().cumprod(reverse).into_series(),
-                dt => panic!("cumprod not supported for dtype: {dt:?}"),
-            }
-        }
-        #[cfg(not(feature = "cum_agg"))]
-        {
-            panic!("activate 'cum_agg' feature")
-        }
-    }
-
     /// Get the product of an array.
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
@@ -702,11 +649,6 @@ impl Series {
         {
             panic!("activate 'product' feature")
         }
-    }
-
-    #[cfg(feature = "rank")]
-    pub fn rank(&self, options: RankOptions, seed: Option<u64>) -> Series {
-        rank(self, options.method, options.descending, seed)
     }
 
     /// Cast throws an error if conversion had overflows
@@ -823,26 +765,6 @@ impl Series {
         }
     }
 
-    #[cfg(feature = "abs")]
-    /// convert numerical values to their absolute value
-    pub fn abs(&self) -> PolarsResult<Series> {
-        let a = self.to_physical_repr();
-        use DataType::*;
-        let out = match a.dtype() {
-            #[cfg(feature = "dtype-i8")]
-            Int8 => a.i8().unwrap().abs().into_series(),
-            #[cfg(feature = "dtype-i16")]
-            Int16 => a.i16().unwrap().abs().into_series(),
-            Int32 => a.i32().unwrap().abs().into_series(),
-            Int64 => a.i64().unwrap().abs().into_series(),
-            UInt8 | UInt16 | UInt32 | UInt64 => self.clone(),
-            Float32 => a.f32().unwrap().abs().into_series(),
-            Float64 => a.f64().unwrap().abs().into_series(),
-            dt => polars_bail!(opq = abs, dt),
-        };
-        out.cast(self.dtype())
-    }
-
     // used for formatting
     pub fn str_value(&self, index: usize) -> PolarsResult<Cow<str>> {
         let out = match self.0.get(index)? {
@@ -901,7 +823,7 @@ impl Series {
     pub fn unique_stable(&self) -> PolarsResult<Series> {
         let idx = self.arg_unique()?;
         // SAFETY: Indices are in bounds.
-        unsafe { self.take_unchecked(&idx) }
+        unsafe { Ok(self.take_unchecked(&idx)) }
     }
 
     pub fn idx(&self) -> PolarsResult<&IdxCa> {
@@ -952,7 +874,8 @@ impl Series {
     /// Packs every element into a list.
     pub fn as_list(&self) -> ListChunked {
         let s = self.rechunk();
-        let values = s.to_arrow(0);
+        // don't  use `to_arrow` as we need the physical types
+        let values = s.chunks()[0].clone();
         let offsets = (0i64..(s.len() as i64 + 1)).collect::<Vec<_>>();
         let offsets = unsafe { Offsets::new_unchecked(offsets) };
 
@@ -1106,14 +1029,5 @@ mod test {
         let _ = series.slice(-3, 4);
         let _ = series.slice(-6, 2);
         let _ = series.slice(4, 2);
-    }
-
-    #[test]
-    #[cfg(feature = "round_series")]
-    fn test_round_series() {
-        let series = Series::new("a", &[1.003, 2.23222, 3.4352]);
-        let out = series.round(2).unwrap();
-        let ca = out.f64().unwrap();
-        assert_eq!(ca.get(0), Some(1.0));
     }
 }

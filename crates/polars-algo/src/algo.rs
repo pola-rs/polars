@@ -63,7 +63,7 @@ pub fn hist(s: &Series, bins: Option<&Series>, bin_count: Option<usize>) -> Resu
             format_str(
                 "({}, {}]",
                 [
-                    col(breakpoint_str).shift_and_fill(1, min_value),
+                    col(breakpoint_str).shift_and_fill(lit(1), min_value),
                     col(breakpoint_str),
                 ],
             )?

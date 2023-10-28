@@ -90,6 +90,7 @@ from polars.utils.convert import (
     _time_to_pl_time,
 )
 from polars.utils.deprecation import (
+    deprecate_function,
     deprecate_nonkeyword_arguments,
     deprecate_renamed_function,
     deprecate_renamed_parameter,
@@ -121,7 +122,9 @@ if TYPE_CHECKING:
         FillNullStrategy,
         InterpolationMethod,
         IntoExpr,
+        IntoExprColumn,
         NullBehavior,
+        NumericLiteral,
         OneOrMoreDataTypes,
         PolarsDataType,
         PythonLiteral,
@@ -129,6 +132,7 @@ if TYPE_CHECKING:
         RollingInterpolationMethod,
         SearchSortedSide,
         SizeUnit,
+        TemporalLiteral,
     )
 
     if sys.version_info >= (3, 11):
@@ -289,9 +293,9 @@ class Series:
             self._s = numpy_to_pyseries(
                 name, values, strict=strict, nan_to_null=nan_to_null
             )
-            if values.dtype.type == np.datetime64:
+            if values.dtype.type in [np.datetime64, np.timedelta64]:
                 # cast to appropriate dtype, handling NaT values
-                dtype = _resolve_datetime_dtype(dtype, values.dtype)
+                dtype = _resolve_temporal_dtype(dtype, values.dtype)
                 if dtype is not None:
                     self._s = (
                         self.cast(dtype)
@@ -478,9 +482,30 @@ class Series:
                 return self.clone()
             elif (other is False and op == "eq") or (other is True and op == "neq"):
                 return ~self
-
-        if isinstance(other, datetime) and self.dtype == Datetime:
-            ts = _datetime_to_pl_timestamp(other, self.dtype.time_unit)  # type: ignore[union-attr]
+        elif isinstance(other, float) and self.dtype in INTEGER_DTYPES:
+            # require upcast when comparing int series to float value
+            self = self.cast(Float64)
+            f = get_ffi_func(op + "_<>", Float64, self._s)
+            assert f is not None
+            return self._from_pyseries(f(other))
+        elif isinstance(other, datetime):
+            if self.dtype == Date:
+                # require upcast when comparing date series to datetime
+                self = self.cast(Datetime("us"))
+                time_unit = "us"
+            elif self.dtype == Datetime:
+                # Use local time zone info
+                time_zone = self.dtype.time_zone  # type: ignore[union-attr]
+                if str(other.tzinfo) != str(time_zone):
+                    raise TypeError(
+                        f"Datetime time zone {other.tzinfo!r} does not match Series timezone {time_zone!r}"
+                    )
+                time_unit = self.dtype.time_unit  # type: ignore[union-attr]
+            else:
+                raise ValueError(
+                    f"cannot compare datetime.datetime to series of type {self.dtype}"
+                )
+            ts = _datetime_to_pl_timestamp(other, time_unit)  # type: ignore[arg-type]
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(ts))
@@ -489,14 +514,13 @@ class Series:
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(d))
+        elif self.dtype == Categorical and not isinstance(other, Series):
+            other = Series([other])
         elif isinstance(other, date) and self.dtype == Date:
             d = _date_to_pl_date(other)
             f = get_ffi_func(op + "_<>", Int32, self._s)
             assert f is not None
             return self._from_pyseries(f(d))
-        elif self.dtype == Categorical and not isinstance(other, Series):
-            other = Series([other])
-
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, dtype_if_empty=self.dtype)
         if isinstance(other, Series):
@@ -610,7 +634,7 @@ class Series:
 
     def eq_missing(self, other: Any) -> Self | Expr:
         """
-        Method equivalent of equality operator ``series == other`` where `None` == None`.
+        Method equivalent of equality operator ``series == other`` where ``None == None``.
 
         This differs from the standard ``ne`` where null values are propagated.
 
@@ -661,7 +685,7 @@ class Series:
 
     def ne_missing(self, other: Any) -> Self | Expr:
         """
-        Method equivalent of equality operator ``series != other`` where `None` == None`.
+        Method equivalent of equality operator ``series != other`` where ``None == None``.
 
         This differs from the standard ``ne`` where null values are propagated.
 
@@ -728,7 +752,7 @@ class Series:
             f = get_ffi_func(op_ffi, self.dtype, self._s)
         if f is None:
             raise TypeError(
-                f"cannot do arithmetic with series of dtype: {self.dtype} and argument"
+                f"cannot do arithmetic with series of dtype: {self.dtype!r} and argument"
                 f" of type: {type(other).__name__!r}"
             )
         return self._from_pyseries(f(other))
@@ -924,14 +948,12 @@ class Series:
         return self.clone()
 
     def __contains__(self, item: Any) -> bool:
-        # TODO: optimize via `is_in` and `SORTED` flags
-        try:
-            return (self == item).any()
-        except ValueError:
-            return False
+        if item is None:
+            return self.null_count() > 0
+        return self.implode().list.contains(item).item()
 
     def __iter__(self) -> Generator[Any, None, None]:
-        if self.dtype == List:
+        if self.dtype in (List, Array):
             # TODO: either make a change and return py-native list data here, or find
             #  a faster way to return nested/List series; sequential 'get_index' calls
             #  make this path a lot slower (~10x) than it needs to be.
@@ -959,7 +981,7 @@ class Series:
             return self
 
         if self.dtype not in INTEGER_DTYPES:
-            raise NotImplementedError("unsupported idxs datatype.")
+            raise NotImplementedError("unsupported idxs datatype")
 
         if self.len() == 0:
             return Series(self.name, [], dtype=idx_type)
@@ -1095,7 +1117,7 @@ class Series:
         Ensures that `np.asarray(pl.Series(..))` works as expected, see
         https://numpy.org/devdocs/user/basics.interoperability.html#the-array-method.
         """
-        if not dtype and self.dtype == Utf8 and not self.has_validity():
+        if not dtype and self.dtype == Utf8 and not self.null_count():
             dtype = np.dtype("U")
         if dtype:
             return self.to_numpy().__array__(dtype)
@@ -1495,7 +1517,7 @@ class Series:
         return wrap_df(PyDataFrame([self._s]))
 
     def describe(
-        self, percentiles: Sequence[float] | float | None = (0.25, 0.75)
+        self, percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75)
     ) -> DataFrame:
         """
         Quick summary statistics of a series.
@@ -1508,6 +1530,10 @@ class Series:
         percentiles
             One or more percentiles to include in the summary statistics (if the
             series has a numeric dtype). All values must be in the range `[0, 1]`.
+
+        Notes
+        -----
+        The median is included by default as the 50% percentile.
 
         Returns
         -------
@@ -3049,7 +3075,7 @@ class Series:
         else:
             return self._from_pyseries(self._s.sort(descending))
 
-    def top_k(self, k: int = 5) -> Series:
+    def top_k(self, k: int | IntoExprColumn = 5) -> Series:
         r"""
         Return the `k` largest elements.
 
@@ -3080,7 +3106,7 @@ class Series:
 
         """
 
-    def bottom_k(self, k: int = 5) -> Series:
+    def bottom_k(self, k: int | IntoExprColumn = 5) -> Series:
         r"""
         Return the `k` smallest elements.
 
@@ -3286,8 +3312,16 @@ class Series:
         """
         Return True if the Series has a validity bitmask.
 
-        If there is none, it means that there are no null values.
-        Use this to swiftly assert a Series does not have null values.
+        If there is no mask, it means that there are no ``null`` values.
+
+        Notes
+        -----
+        While the *absence* of a validity bitmask guarantees that a Series does not
+        have ``null`` values, the converse is not true, eg: the *presence* of a
+        bitmask does not mean that there are null values, as every value of the
+        bitmask could be ``false``.
+
+        To confirm that a column has ``null`` values use :func:`null_count`.
 
         """
         return self._s.has_validity()
@@ -3705,11 +3739,13 @@ class Series:
 
     def len(self) -> int:
         """
-        Length of this Series.
+        Return the number of elements in this Series.
+
+        Null values are treated like regular elements in this context.
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s = pl.Series("a", [1, 2, None])
         >>> s.len()
         3
 
@@ -3791,7 +3827,7 @@ class Series:
 
         """
 
-    def to_list(self, *, use_pyarrow: bool = False) -> list[Any]:
+    def to_list(self, *, use_pyarrow: bool | None = None) -> list[Any]:
         """
         Convert this Series to a Python List. This operation clones data.
 
@@ -3809,8 +3845,15 @@ class Series:
         <class 'list'>
 
         """
-        if use_pyarrow:
-            return self.to_arrow().to_pylist()
+        if use_pyarrow is not None:
+            issue_deprecation_warning(
+                "The parameter `use_pyarrow` for `Series.to_list` is deprecated."
+                " Call the method without `use_pyarrow` to silence this warning.",
+                version="0.19.9",
+            )
+            if use_pyarrow:
+                return self.to_arrow().to_pylist()
+
         return self._s.to_list()
 
     def rechunk(self, *, in_place: bool = False) -> Self:
@@ -4048,7 +4091,7 @@ class Series:
 
         """
         if not ignore_nulls:
-            assert not self.has_validity()
+            assert not self.null_count()
 
         from polars.series._numpy import SeriesView, _ptr_to_numpy
 
@@ -4146,7 +4189,7 @@ class Series:
             # note: there is no native numpy "time" dtype
             return np.array(self.to_list(), dtype="object")
         else:
-            if not self.has_validity():
+            if not self.null_count():
                 if self.is_temporal():
                     np_array = convert_to_date(self.view(ignore_nulls=True))
                 elif self.is_numeric():
@@ -4483,7 +4526,9 @@ class Series:
 
     def clone(self) -> Self:
         """
-        Very cheap deepcopy/clone.
+        Create a copy of this Series.
+
+        This is a cheap operation that does not copy data.
 
         See Also
         --------
@@ -4771,6 +4816,25 @@ class Series:
 
         """
 
+    def cot(self) -> Series:
+        """
+        Compute the element-wise value for the cotangent.
+
+        Examples
+        --------
+        >>> import math
+        >>> s = pl.Series("a", [0.0, math.pi / 2.0, math.pi])
+        >>> s.cot()
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+            inf
+            6.1232e-17
+            -8.1656e15
+        ]
+
+        """
+
     def arcsin(self) -> Series:
         """
         Compute the element-wise value for the inverse sine.
@@ -5019,52 +5083,63 @@ class Series:
             self._s.apply_lambda(function, pl_return_dtype, skip_nulls)
         )
 
-    def shift(self, periods: int = 1) -> Series:
+    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
+    def shift(self, n: int = 1, *, fill_value: IntoExpr | None = None) -> Series:
         """
-        Shift the values by a given period.
+        Shift values by the given number of indices.
+
+        Parameters
+        ----------
+        n
+            Number of indices to shift forward. If a negative value is passed, values
+            are shifted in the opposite direction instead.
+        fill_value
+            Fill the resulting null values with this value. Accepts expression input.
+            Non-expression inputs are parsed as literals.
+
+        Notes
+        -----
+        This method is similar to the ``LAG`` operation in SQL when the value for ``n``
+        is positive. With a negative value for ``n``, it is similar to ``LEAD``.
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.shift(periods=1)
-        shape: (3,)
-        Series: 'a' [i64]
+        By default, values are shifted forward by one index.
+
+        >>> s = pl.Series([1, 2, 3, 4])
+        >>> s.shift()
+        shape: (4,)
+        Series: '' [i64]
         [
                 null
                 1
                 2
-        ]
-        >>> s.shift(periods=-1)
-        shape: (3,)
-        Series: 'a' [i64]
-        [
-                2
                 3
+        ]
+
+        Pass a negative value to shift in the opposite direction instead.
+
+        >>> s.shift(-2)
+        shape: (4,)
+        Series: '' [i64]
+        [
+                3
+                4
+                null
                 null
         ]
 
-        Parameters
-        ----------
-        periods
-            Number of places to shift (may be negative).
+        Specify ``fill_value`` to fill the resulting null values.
 
-        """
-
-    def shift_and_fill(
-        self,
-        fill_value: int | Expr,
-        *,
-        periods: int = 1,
-    ) -> Series:
-        """
-        Shift the values by a given period and fill the resulting null values.
-
-        Parameters
-        ----------
-        fill_value
-            Fill None values with the result of this expression.
-        periods
-            Number of places to shift (may be negative).
+        >>> s.shift(-2, fill_value=100)
+        shape: (4,)
+        Series: '' [i64]
+        [
+                3
+                4
+                100
+                100
+        ]
 
         """
 
@@ -5728,7 +5803,7 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3, 4, 5])
         >>> s.peak_max()
         shape: (5,)
-        Series: '' [bool]
+        Series: 'a' [bool]
         [
                 false
                 false
@@ -5738,7 +5813,6 @@ class Series:
         ]
 
         """
-        return self._from_pyseries(self._s.peak_max())
 
     def peak_min(self) -> Self:
         """
@@ -5749,7 +5823,7 @@ class Series:
         >>> s = pl.Series("a", [4, 1, 3, 2, 5])
         >>> s.peak_min()
         shape: (5,)
-        Series: '' [bool]
+        Series: 'a' [bool]
         [
             false
             true
@@ -5759,7 +5833,6 @@ class Series:
         ]
 
         """
-        return self._from_pyseries(self._s.peak_min())
 
     def n_unique(self) -> int:
         """
@@ -5855,13 +5928,13 @@ class Series:
         >>> s = pl.Series("a", [1, 2, None, None, 5])
         >>> s.interpolate()
         shape: (5,)
-        Series: 'a' [i64]
+        Series: 'a' [f64]
         [
-            1
-            2
-            3
-            4
-            5
+            1.0
+            2.0
+            3.0
+            4.0
+            5.0
         ]
 
         """
@@ -5942,7 +6015,7 @@ class Series:
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Series:
         """
-        Calculate the n-th discrete difference.
+        Calculate the first discrete difference between shifted items.
 
         Parameters
         ----------
@@ -5987,7 +6060,7 @@ class Series:
 
         """
 
-    def pct_change(self, n: int = 1) -> Series:
+    def pct_change(self, n: int | IntoExprColumn = 1) -> Series:
         """
         Computes percentage change between values.
 
@@ -6101,66 +6174,60 @@ class Series:
         """
         return self._s.kurtosis(fisher, bias)
 
-    def clip(self, lower_bound: int | float, upper_bound: int | float) -> Series:
+    def clip(
+        self,
+        lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn | None = None,
+        upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn | None = None,
+    ) -> Series:
         """
-        Clip (limit) the values in an array to a `min` and `max` boundary.
-
-        Only works for numerical types.
-
-        If you want to clip other dtypes, consider writing a "when, then, otherwise"
-        expression. See :func:`when` for more information.
+        Set values outside the given boundaries to the boundary value.
 
         Parameters
         ----------
         lower_bound
-            Minimum value.
+            Lower bound. Accepts expression input.
+            Non-expression inputs are parsed as literals.
+            If set to ``None`` (default), no lower bound is applied.
         upper_bound
-            Maximum value.
+            Upper bound. Accepts expression input.
+            Non-expression inputs are parsed as literals.
+            If set to ``None`` (default), no upper bound is applied.
+
+        See Also
+        --------
+        when
+
+        Notes
+        -----
+        This method only works for numeric and temporal columns. To clip other data
+        types, consider writing a `when-then-otherwise` expression. See :func:`when`.
 
         Examples
         --------
-        >>> s = pl.Series("foo", [-50, 5, None, 50])
+        Specifying both a lower and upper bound:
+
+        >>> s = pl.Series([-50, 5, 50, None])
         >>> s.clip(1, 10)
         shape: (4,)
-        Series: 'foo' [i64]
+        Series: '' [i64]
         [
-            1
-            5
-            null
-            10
+                1
+                5
+                10
+                null
         ]
 
-        """
+        Specifying only a single bound:
 
-    def clip_min(self, lower_bound: int | float) -> Series:
-        """
-        Clip (limit) the values in an array to a `min` boundary.
-
-        Only works for numerical types.
-
-        If you want to clip other dtypes, consider writing a "when, then, otherwise"
-        expression. See :func:`when` for more information.
-
-        Parameters
-        ----------
-        lower_bound
-            Lower bound.
-
-        """
-
-    def clip_max(self, upper_bound: int | float) -> Series:
-        """
-        Clip (limit) the values in an array to a `max` boundary.
-
-        Only works for numerical types.
-
-        If you want to clip other dtypes, consider writing a "when, then, otherwise"
-        expression. See :func:`when` for more information.
-
-        Parameters
-        ----------
-        upper_bound
-            Upper bound.
+        >>> s.clip(upper_bound=10)
+        shape: (4,)
+        Series: '' [i64]
+        [
+                -50
+                5
+                10
+                null
+        ]
 
         """
 
@@ -6359,6 +6426,7 @@ class Series:
 
         """
 
+    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_mean(
         self,
         com: float | None = None,
@@ -6426,8 +6494,21 @@ class Series:
                   :math:`1-\alpha` and :math:`1` if ``adjust=True``,
                   and :math:`1-\alpha` and :math:`\alpha` if ``adjust=False``.
 
+        Examples
+        --------
+        >>> s = pl.Series([1, 2, 3])
+        >>> s.ewm_mean(com=1)
+        shape: (3,)
+        Series: '' [f64]
+        [
+                1.0
+                1.666667
+                2.428571
+        ]
+
         """
 
+    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_std(
         self,
         com: float | None = None,
@@ -6513,6 +6594,7 @@ class Series:
 
         """
 
+    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_var(
         self,
         com: float | None = None,
@@ -6762,6 +6844,63 @@ class Series:
 
         """
 
+    @deprecate_function("Use `clip` instead.", version="0.19.12")
+    def clip_min(
+        self, lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
+    ) -> Series:
+        """
+        Clip (limit) the values in an array to a `min` boundary.
+
+        .. deprecated:: 0.19.12
+            Use :func:`clip` instead.
+
+        Parameters
+        ----------
+        lower_bound
+            Lower bound.
+
+        """
+
+    @deprecate_function("Use `clip` instead.", version="0.19.12")
+    def clip_max(
+        self, upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
+    ) -> Series:
+        """
+        Clip (limit) the values in an array to a `max` boundary.
+
+        .. deprecated:: 0.19.12
+            Use :func:`clip` instead.
+
+        Parameters
+        ----------
+        upper_bound
+            Upper bound.
+
+        """
+
+    @deprecate_function("Use `shift` instead.", version="0.19.12")
+    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
+    def shift_and_fill(
+        self,
+        fill_value: int | Expr,
+        *,
+        n: int = 1,
+    ) -> Series:
+        """
+        Shift values by the given number of places and fill the resulting null values.
+
+        .. deprecated:: 0.19.12
+            Use :func:`shift` instead.
+
+        Parameters
+        ----------
+        fill_value
+            Fill None values with the result of this expression.
+        n
+            Number of places to shift (may be negative).
+
+        """
+
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`
 
@@ -6801,20 +6940,22 @@ class Series:
         return StructNameSpace(self)
 
 
-def _resolve_datetime_dtype(
-    dtype: PolarsDataType | None, ndtype: np.datetime64
+def _resolve_temporal_dtype(
+    dtype: PolarsDataType | None,
+    ndtype: np.dtype[np.datetime64] | np.dtype[np.timedelta64],
 ) -> PolarsDataType | None:
-    """Given polars/numpy datetime dtypes, resolve to an explicit unit."""
+    """Given polars/numpy temporal dtypes, resolve to an explicit unit."""
+    PolarsType = Duration if ndtype.type == np.timedelta64 else Datetime
     if dtype is None or (dtype == Datetime and not getattr(dtype, "time_unit", None)):
         time_unit = getattr(dtype, "time_unit", None) or np.datetime_data(ndtype)[0]
         # explicit formulation is verbose, but keeps mypy happy
         # (and avoids unsupported timeunits such as "s")
         if time_unit == "ns":
-            dtype = Datetime("ns")
+            dtype = PolarsType("ns")
         elif time_unit == "us":
-            dtype = Datetime("us")
+            dtype = PolarsType("us")
         elif time_unit == "ms":
-            dtype = Datetime("ms")
-        elif time_unit == "D":
+            dtype = PolarsType("ms")
+        elif time_unit == "D" and ndtype.type == np.datetime64:
             dtype = Date
     return dtype

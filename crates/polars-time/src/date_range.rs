@@ -1,5 +1,5 @@
+use arrow::legacy::time_zone::Tz;
 use chrono::{Datelike, NaiveDateTime, NaiveTime};
-use polars_arrow::time_zone::Tz;
 use polars_core::chunked_array::temporal::time_to_time64ns;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;

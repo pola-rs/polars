@@ -1,177 +1,250 @@
 name: Release Python
 
 on:
-  push:
-    tags:
-      - py-*
+  workflow_dispatch:
+    inputs:
+      # Latest commit to include with the release. If omitted, use the latest commit on the main branch.
+      sha:
+        description: Commit SHA
+        type: string
+      # Create the sdist and build the wheels, but do not publish to PyPI / GitHub.
+      dry-run:
+        description: Dry run
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
-  RUST_TOOLCHAIN: nightly-2023-08-26
   PYTHON_VERSION: '3.8'
-  MATURIN_VERSION: '1.2.1'
-  MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUSTUP_MAX_RETRIES: 10
 
 defaults:
   run:
     shell: bash
 
 jobs:
-  manylinux-x64_64:
+  create-sdist:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [polars, polars-lts-cpu, polars-u64-idx]
+
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          ref: ${{ inputs.sha }}
 
-      - name: Fix README symlink
-        run: |
-          rm py-polars/README.md
-          cp README.md py-polars/README.md
-
-      - name: Publish wheel
-        uses: PyO3/maturin-action@v1
-        env:
-          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
-        with:
-          command: publish
-          args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
-          maturin-version: ${{ env.MATURIN_VERSION }}
-          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
-
-  # Needed for Docker on Apple M1
-  manylinux-aarch64:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      # Needed to avoid out-of-memory error
-      - name: Set Swap Space
+      # Avoid potential out-of-memory errors
+      - name: Set swap space for Linux
         uses: pierotofy/set-swap-space@master
         with:
           swap-size-gb: 10
 
-      - name: Fix README symlink
-        run: |
-          rm py-polars/README.md
-          cp README.md py-polars/README.md
-
-      - name: Publish wheel
-        uses: PyO3/maturin-action@v1
-        env:
-          JEMALLOC_SYS_WITH_LG_PAGE: 16
-        with:
-          command: publish
-          args: -m py-polars/Cargo.toml --skip-existing --no-sdist -o wheels -i python -u ritchie46
-          target: aarch64-unknown-linux-gnu
-          maturin-version: ${{ env.MATURIN_VERSION }}
-          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
-
-  manylinux-bigidx:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Fix README symlink
-        run: |
-          rm py-polars/README.md
-          cp README.md py-polars/README.md
+        run: rm py-polars/README.md && cp README.md py-polars/README.md
 
-      - name: Prepare bigidx
-        run: |
-          sed -i 's/name = "polars"/name = "polars-u64-idx"/' py-polars/pyproject.toml
-          # A brittle hack to insert the 'bigidx' feature
-          sed -i 's/"dynamic_group_by",/"dynamic_group_by",\n"bigidx",/' py-polars/Cargo.toml
+      - name: Install yq
+        if: matrix.package != 'polars'
+        run: pip install yq
+      - name: Update package name
+        if: matrix.package != 'polars'
+        run: tomlq -i -t ".project.name = \"${{ matrix.package }}\"" py-polars/pyproject.toml
+      - name: Add bigidx feature
+        if: matrix.package == 'polars-u64-idx'
+        run: tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
 
-      - name: Publish wheel
+      - name: Create source distribution
         uses: PyO3/maturin-action@v1
-        env:
-          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
         with:
-          command: publish
-          args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
-          maturin-version: ${{ env.MATURIN_VERSION }}
-          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
+          command: sdist
+          args: >
+            --manifest-path py-polars/Cargo.toml
+            --out dist
 
-  manylinux-x64_64-lts-cpu:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Fix README symlink
+      - name: Test sdist
         run: |
-          rm py-polars/README.md
-          cp README.md py-polars/README.md
+          TOOLCHAIN=$(grep -oP 'channel = "\K[^"]+' rust-toolchain.toml)
+          rustup default $TOOLCHAIN
+          pip install --force-reinstall --verbose dist/*.tar.gz
+          python -c 'import polars'
 
-      - name: Prepare lts-cpu
-        run: sed -i 's/name = "polars"/name = "polars-lts-cpu"/' py-polars/pyproject.toml
-
-      - name: Publish wheel
-        uses: PyO3/maturin-action@v1
-        env:
-          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt --cfg use_mimalloc
+      - name: Upload sdist
+        uses: actions/upload-artifact@v3
         with:
-          command: publish
-          args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
-          maturin-version: ${{ env.MATURIN_VERSION }}
-          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
+          name: sdist
+          path: dist/*.tar.gz
 
-  win-macos:
+  build-wheels:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        package: [polars, polars-lts-cpu, polars-u64-idx]
+        os: [ubuntu-latest, macos-latest, windows-32gb-ram]
+        architecture: [x86-64, aarch64]
+        exclude:
+          - os: windows-32gb-ram
+            architecture: aarch64
 
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+
+      # Avoid potential out-of-memory errors
+      - name: Set swap space for Linux
+        if: matrix.os == 'ubuntu-latest'
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Fix README symlink
-        run: |
-          rm py-polars/README.md
-          cp README.md py-polars/README.md
+        run: rm py-polars/README.md && cp README.md py-polars/README.md
 
-      - name: Publish wheel
+      - name: Install yq
+        if: matrix.package != 'polars'
+        run: pip install yq
+      - name: Update package name
+        if: matrix.package != 'polars'
+        run: tomlq -i -t ".project.name = \"${{ matrix.package }}\"" py-polars/pyproject.toml
+      - name: Add bigidx feature
+        if: matrix.package == 'polars-u64-idx'
+        run: tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
+
+      - name: Set RUSTFLAGS for x86-64
+        if: matrix.architecture == 'x86-64' && matrix.package != 'polars-lts-cpu' && matrix.os != 'macos-latest'
+        run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt" >> $GITHUB_ENV
+      - name: Set RUSTFLAGS for x86-64 MacOS
+        if: matrix.architecture == 'x86-64' && matrix.package != 'polars-lts-cpu' && matrix.os == 'macos-latest'
+        run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma" >> $GITHUB_ENV
+      - name: Set RUSTFLAGS for x86-64 LTS CPU
+        if: matrix.architecture == 'x86-64' && matrix.package == 'polars-lts-cpu'
+        run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt --cfg use_mimalloc" >> $GITHUB_ENV
+
+      - name: Set Rust target for aarch64
+        if: matrix.architecture == 'aarch64'
+        id: target
+        run: |
+          TARGET=${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin' || 'aarch64-unknown-linux-gnu'}}
+          echo "target=$TARGET" >> $GITHUB_OUTPUT
+
+      - name: Set jemalloc for aarch64 Linux
+        if: matrix.architecture == 'aarch64' && matrix.os == 'ubuntu-latest'
+        run: |
+          echo "JEMALLOC_SYS_WITH_LG_PAGE=16" >> $GITHUB_ENV
+
+      - name: Build wheel
         uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          target: ${{ steps.target.outputs.target }}
+          args: >
+            --release
+            --manifest-path py-polars/Cargo.toml
+            --out dist
+          manylinux: auto
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v3
+        with:
+          name: wheels
+          path: dist/*.whl
+
+  publish-to-pypi:
+    needs: [create-sdist, build-wheels]
+    environment:
+      name: release-python
+      url: https://pypi.org/project/polars
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download sdist
+        uses: actions/download-artifact@v3
+        with:
+          name: sdist
+          path: dist
+
+      - name: Download wheels
+        uses: actions/download-artifact@v3
+        with:
+          name: wheels
+          path: dist
+
+      - name: Publish to PyPI
+        if: inputs.dry-run == false
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          verbose: true
+
+  publish-to-github:
+    needs: publish-to-pypi
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+
+      - name: Download sdist
+        uses: actions/download-artifact@v3
+        with:
+          name: sdist
+          path: dist
+
+      - name: Get version from Cargo.toml
+        id: version
+        working-directory: py-polars
+        run: |
+          VERSION=$(grep -m 1 -oP 'version = "\K[^"]+' Cargo.toml)
+          if [[ "$VERSION" == *"-"* ]]; then
+            IS_PRERELEASE=true
+          else
+            IS_PRERELEASE=false
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub release
+        id: github-release
+        uses: release-drafter/release-drafter@v5
+        with:
+          config-name: release-drafter-python.yml
+          name: Python Polars ${{ steps.version.outputs.version }}
+          tag: py-${{ steps.version.outputs.version }}
+          version: ${{ steps.version.outputs.version }}
+          prerelease: ${{ steps.version.outputs.is_prerelease }}
+          commitish: ${{ inputs.sha || github.sha }}
+          disable-autolabeler: true
         env:
-          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+sse4.1,+sse4.2
-        with:
-          command: publish
-          args: -m py-polars/Cargo.toml --no-sdist --skip-existing -o wheels -i python -u ritchie46
-          maturin-version: ${{ env.MATURIN_VERSION }}
-          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  macos-aarch64:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Upload sdist to GitHub release
+        run: gh release upload $TAG $FILES --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.github-release.outputs.tag_name }}
+          FILES: dist/polars-*.tar.gz
 
-      - name: Fix README symlink
-        run: |
-          rm py-polars/README.md
-          cp README.md py-polars/README.md
-
-      - name: Set up Rust targets
-        run: rustup target add aarch64-apple-darwin
-
-      - name: Publish wheel
-        uses: PyO3/maturin-action@v1
-        with:
-          command: publish
-          args: -m py-polars/Cargo.toml --target aarch64-apple-darwin --no-sdist -o wheels -i python -u ritchie46
-          maturin-version: ${{ env.MATURIN_VERSION }}
+      - name: Publish GitHub release
+        if: inputs.dry-run == false
+        run: gh release edit $TAG --draft=false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.github-release.outputs.tag_name }}

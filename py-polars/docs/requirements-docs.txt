@@ -4,14 +4,14 @@ numpy
 pandas
 pyarrow
 
-hypothesis==6.82.6
+hypothesis==6.88.1
 
 sphinx==7.2.4
 
 # Third-party Sphinx extensions
 autodocsumm==0.2.11
-numpydoc==1.5.0
-pydata-sphinx-theme==0.13.3
+numpydoc==1.6.0
+pydata-sphinx-theme==0.14.1
 sphinx-autosummary-accessors==2023.4.0
 sphinx-copybutton==0.5.2
 sphinx-design==0.5.0

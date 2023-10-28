@@ -1,28 +1,42 @@
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 
-use polars_arrow::error::to_compute_err;
 use polars_core::prelude::*;
+use polars_error::to_compute_err;
 use polars_lazy::prelude::*;
 use polars_plan::prelude::*;
 use polars_plan::utils::expressions_to_schema;
 use sqlparser::ast::{
-    Distinct, ExcludeSelectItem, Expr as SqlExpr, FunctionArg, JoinOperator, ObjectName,
-    ObjectType, Offset, OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator,
+    Distinct, ExcludeSelectItem, Expr as SqlExpr, FunctionArg, GroupByExpr, JoinOperator,
+    ObjectName, ObjectType, Offset, OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator,
     SetQuantifier, Statement, TableAlias, TableFactor, TableWithJoins, Value as SQLValue,
     WildcardAdditionalOptions,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
-use crate::sql_expr::{parse_sql_expr, process_join_constraint};
+use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
+use crate::sql_expr::{parse_sql_expr, process_join};
 use crate::table_functions::PolarsTableFunctions;
 
 /// The SQLContext is the main entry point for executing SQL queries.
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct SQLContext {
     pub(crate) table_map: PlHashMap<String, LazyFrame>,
+    pub(crate) function_registry: Arc<dyn FunctionRegistry>,
     cte_map: RefCell<PlHashMap<String, LazyFrame>>,
+    aliases: RefCell<PlHashMap<String, String>>,
+}
+
+impl Default for SQLContext {
+    fn default() -> Self {
+        Self {
+            function_registry: Arc::new(DefaultFunctionRegistry {}),
+            table_map: Default::default(),
+            cte_map: Default::default(),
+            aliases: Default::default(),
+        }
+    }
 }
 
 impl SQLContext {
@@ -34,12 +48,8 @@ impl SQLContext {
     /// # }
     /// ```
     pub fn new() -> Self {
-        Self {
-            table_map: PlHashMap::new(),
-            cte_map: RefCell::new(PlHashMap::new()),
-        }
+        Self::default()
     }
-
     /// Get the names of all registered tables, in sorted order.
     pub fn get_tables(&self) -> Vec<String> {
         let mut tables = Vec::from_iter(self.table_map.keys().cloned());
@@ -105,7 +115,25 @@ impl SQLContext {
         let res = self.execute_statement(ast.get(0).unwrap());
         // Every execution should clear the CTE map.
         self.cte_map.borrow_mut().clear();
+        self.aliases.borrow_mut().clear();
         res
+    }
+
+    /// add a function registry to the SQLContext
+    /// the registry provides the ability to add custom functions to the SQLContext
+    pub fn with_function_registry(mut self, function_registry: Arc<dyn FunctionRegistry>) -> Self {
+        self.function_registry = function_registry;
+        self
+    }
+
+    /// Get the function registry of the SQLContext
+    pub fn registry(&self) -> &Arc<dyn FunctionRegistry> {
+        &self.function_registry
+    }
+
+    /// Get a mutable reference to the function registry of the SQLContext
+    pub fn registry_mut(&mut self) -> &mut dyn FunctionRegistry {
+        Arc::get_mut(&mut self.function_registry).unwrap()
     }
 }
 
@@ -114,9 +142,16 @@ impl SQLContext {
         self.cte_map.borrow_mut().insert(name.to_owned(), lf);
     }
 
-    fn get_table_from_current_scope(&mut self, name: &str) -> Option<LazyFrame> {
+    pub(super) fn get_table_from_current_scope(&self, name: &str) -> Option<LazyFrame> {
         let table_name = self.table_map.get(name).cloned();
-        table_name.or_else(|| self.cte_map.borrow().get(name).cloned())
+        table_name
+            .or_else(|| self.cte_map.borrow().get(name).cloned())
+            .or_else(|| {
+                self.aliases
+                    .borrow()
+                    .get(name)
+                    .and_then(|alias| self.table_map.get(alias).cloned())
+            })
     }
 
     pub(crate) fn execute_statement(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
@@ -138,14 +173,20 @@ impl SQLContext {
 
     pub(crate) fn execute_query(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
         self.register_ctes(query)?;
+
+        self.execute_query_no_ctes(query)
+    }
+
+    pub(crate) fn execute_query_no_ctes(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
         let lf = self.process_set_expr(&query.body, query)?;
+
         self.process_limit_offset(lf, &query.limit, &query.offset)
     }
 
     fn process_set_expr(&mut self, expr: &SetExpr, query: &Query) -> PolarsResult<LazyFrame> {
         match expr {
             SetExpr::Select(select_stmt) => self.execute_select(select_stmt, query),
-            SetExpr::Query(query) => self.execute_query(query),
+            SetExpr::Query(query) => self.execute_query_no_ctes(query),
             SetExpr::SetOperation {
                 op: SetOperator::Union,
                 set_quantifier,
@@ -168,18 +209,32 @@ impl SQLContext {
     ) -> PolarsResult<LazyFrame> {
         let left = self.process_set_expr(left, query)?;
         let right = self.process_set_expr(right, query)?;
-        let concatenated = polars_lazy::dsl::concat(
-            vec![left, right],
-            UnionArgs {
-                parallel: true,
-                ..Default::default()
-            },
-        );
+        let opts = UnionArgs {
+            parallel: true,
+            to_supertypes: true,
+            ..Default::default()
+        };
         match quantifier {
             // UNION ALL
-            SetQuantifier::All => concatenated,
-            // UNION DISTINCT | UNION
-            _ => concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any)),
+            SetQuantifier::All => polars_lazy::dsl::concat(vec![left, right], opts),
+            // UNION [DISTINCT]
+            SetQuantifier::Distinct | SetQuantifier::None => {
+                let concatenated = polars_lazy::dsl::concat(vec![left, right], opts);
+                concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any))
+            },
+            // UNION ALL BY NAME
+            // TODO: add recognition for SetQuantifier::DistinctByName
+            //  when "https://github.com/sqlparser-rs/sqlparser-rs/pull/997" is available
+            #[cfg(feature = "diagonal_concat")]
+            SetQuantifier::AllByName => concat_lf_diagonal(vec![left, right], opts),
+            // UNION [DISTINCT] BY NAME
+            #[cfg(feature = "diagonal_concat")]
+            SetQuantifier::ByName => {
+                let concatenated = concat_lf_diagonal(vec![left, right], opts);
+                concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any))
+            },
+            #[allow(unreachable_patterns)]
+            _ => polars_bail!(InvalidOperation: "UNION {} is not yet supported", quantifier),
         }
     }
 
@@ -235,27 +290,37 @@ impl SQLContext {
 
     /// execute the 'FROM' part of the query
     fn execute_from_statement(&mut self, tbl_expr: &TableWithJoins) -> PolarsResult<LazyFrame> {
-        let (tbl_name, mut lf) = self.get_table(&tbl_expr.relation)?;
+        let (l_name, mut lf) = self.get_table(&tbl_expr.relation)?;
         if !tbl_expr.joins.is_empty() {
             for tbl in &tbl_expr.joins {
-                let (join_tbl_name, join_tbl) = self.get_table(&tbl.relation)?;
-                match &tbl.join_operator {
+                let (r_name, rf) = self.get_table(&tbl.relation)?;
+                lf = match &tbl.join_operator {
+                    JoinOperator::CrossJoin => lf.cross_join(rf),
+                    JoinOperator::FullOuter(constraint) => {
+                        process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Outer)?
+                    },
                     JoinOperator::Inner(constraint) => {
-                        let (left_on, right_on) =
-                            process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
-                        lf = lf.inner_join(join_tbl, left_on, right_on)
+                        process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Inner)?
                     },
                     JoinOperator::LeftOuter(constraint) => {
-                        let (left_on, right_on) =
-                            process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
-                        lf = lf.left_join(join_tbl, left_on, right_on)
+                        process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Left)?
                     },
-                    JoinOperator::FullOuter(constraint) => {
-                        let (left_on, right_on) =
-                            process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
-                        lf = lf.outer_join(join_tbl, left_on, right_on)
+                    #[cfg(feature = "semi_anti_join")]
+                    JoinOperator::LeftAnti(constraint) => {
+                        process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Anti)?
                     },
-                    JoinOperator::CrossJoin => lf = lf.cross_join(join_tbl),
+                    #[cfg(feature = "semi_anti_join")]
+                    JoinOperator::LeftSemi(constraint) => {
+                        process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Semi)?
+                    },
+                    #[cfg(feature = "semi_anti_join")]
+                    JoinOperator::RightAnti(constraint) => {
+                        process_join(rf, lf, constraint, &l_name, &r_name, JoinType::Anti)?
+                    },
+                    #[cfg(feature = "semi_anti_join")]
+                    JoinOperator::RightSemi(constraint) => {
+                        process_join(rf, lf, constraint, &l_name, &r_name, JoinType::Semi)?
+                    },
                     join_type => {
                         polars_bail!(
                             InvalidOperation:
@@ -265,7 +330,6 @@ impl SQLContext {
                 }
             }
         };
-
         Ok(lf)
     }
 
@@ -284,8 +348,9 @@ impl SQLContext {
 
         // Filter expression.
         if let Some(expr) = select_stmt.selection.as_ref() {
-            let filter_expression = parse_sql_expr(expr, self)?;
-            lf = lf.filter(filter_expression)
+            let mut filter_expression = parse_sql_expr(expr, self)?;
+            lf = self.process_subqueries(lf, vec![&mut filter_expression]);
+            lf = lf.filter(filter_expression);
         }
 
         // Column projections.
@@ -319,28 +384,31 @@ impl SQLContext {
             .collect::<PolarsResult<_>>()?;
 
         // Check for group by (after projections since there might be numbers).
-        let group_by_keys: Vec<Expr> = select_stmt
-            .group_by
-            .iter()
-            .map(|e| match e {
-                SqlExpr::Value(SQLValue::Number(idx, _)) => {
-                    let idx = match idx.parse::<usize>() {
-                        Ok(0) | Err(_) => Err(polars_err!(
-                            ComputeError:
-                            "group_by error: a positive number or an expression expected, got {}",
-                            idx
-                        )),
-                        Ok(idx) => Ok(idx),
-                    }?;
-                    Ok(projections[idx].clone())
-                },
-                SqlExpr::Value(_) => Err(polars_err!(
-                    ComputeError:
-                    "group_by error: a positive number or an expression expected",
-                )),
-                _ => parse_sql_expr(e, self),
-            })
-            .collect::<PolarsResult<_>>()?;
+        let group_by_keys: Vec<Expr>;
+        if let GroupByExpr::Expressions(group_by_exprs) = &select_stmt.group_by {
+            group_by_keys = group_by_exprs.iter()
+                .map(|e| match e {
+                    SqlExpr::Value(SQLValue::Number(idx, _)) => {
+                        let idx = match idx.parse::<usize>() {
+                            Ok(0) | Err(_) => Err(polars_err!(
+                                ComputeError:
+                                "group_by error: a positive number or an expression expected, got {}",
+                                idx
+                            )),
+                            Ok(idx) => Ok(idx),
+                        }?;
+                        Ok(projections[idx].clone())
+                    },
+                    SqlExpr::Value(_) => Err(polars_err!(
+                        ComputeError:
+                        "group_by error: a positive number or an expression expected",
+                    )),
+                    _ => parse_sql_expr(e, self),
+                })
+                .collect::<PolarsResult<_>>()?
+        } else {
+            polars_bail!(ComputeError: "not implemented");
+        };
 
         lf = if group_by_keys.is_empty() {
             if query.order_by.is_empty() {
@@ -452,6 +520,28 @@ impl SQLContext {
         Ok(lf)
     }
 
+    fn process_subqueries(&self, lf: LazyFrame, exprs: Vec<&mut Expr>) -> LazyFrame {
+        let mut contexts = vec![];
+        for expr in exprs {
+            expr.mutate().apply(|e| {
+                if let Expr::SubPlan(lp, names) = e {
+                    contexts.push(<LazyFrame>::from((***lp).clone()));
+
+                    if names.len() == 1 {
+                        *e = Expr::Column(names[0].as_str().into());
+                    }
+                };
+                true
+            })
+        }
+
+        if contexts.is_empty() {
+            lf
+        } else {
+            lf.with_context(contexts)
+        }
+    }
+
     fn execute_create_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
         if let Statement::CreateTable {
             if_not_exists,
@@ -494,7 +584,12 @@ impl SQLContext {
                 let tbl_name = name.0.get(0).unwrap().value.as_str();
                 if let Some(lf) = self.get_table_from_current_scope(tbl_name) {
                     match alias {
-                        Some(alias) => Ok((alias.to_string(), lf)),
+                        Some(alias) => {
+                            self.aliases
+                                .borrow_mut()
+                                .insert(alias.name.value.clone(), tbl_name.to_string());
+                            Ok((alias.to_string(), lf))
+                        },
                         None => Ok((tbl_name.to_string(), lf)),
                     }
                 } else {
@@ -599,7 +694,7 @@ impl SQLContext {
     }
 
     fn process_limit_offset(
-        &mut self,
+        &self,
         lf: LazyFrame,
         limit: &Option<SqlExpr>,
         offset: &Option<Offset>,
@@ -702,7 +797,7 @@ impl SQLContext {
     pub fn new_from_table_map(table_map: PlHashMap<String, LazyFrame>) -> Self {
         Self {
             table_map,
-            cte_map: RefCell::new(PlHashMap::new()),
+            ..Default::default()
         }
     }
 }

@@ -215,7 +215,7 @@ def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None
     df1.write_parquet(p1)
 
     lf0 = pl.scan_parquet(p0)
-    lf1 = pl.scan_parquet(p1).select(pl.all().suffix("_r"))
+    lf1 = pl.scan_parquet(p1).select(pl.all().name.suffix("_r"))
 
     join_strategies: list[JoinStrategy] = ["left", "inner"]
     for how in join_strategies:
@@ -314,3 +314,13 @@ def test_boolean_agg_schema() -> None:
             == agg_df.schema
             == {"x": pl.Int64, "max_y": pl.Boolean}
         )
+
+
+def test_streaming_11219() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": ["a", "c", None]})
+    lf_other = pl.LazyFrame({"c": ["foo", "ham"]})
+    lf_other2 = pl.LazyFrame({"c": ["foo", "ham"]})
+
+    assert lf.with_context([lf_other, lf_other2]).select(
+        pl.col("b") + pl.col("c").first()
+    ).collect(streaming=True).to_dict(False) == {"b": ["afoo", "cfoo", None]}

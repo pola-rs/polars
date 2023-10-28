@@ -91,9 +91,9 @@ Temporal data types such as `Date` or `Datetime` are represented as the number o
 --8<-- "python/user-guide/expressions/casting.py:dates"
 ```
 
-To perform casting operations between strings and `Dates`/`Datetimes`, `strftime` and `strptime` are utilized. Polars adopts the [chrono format syntax](https://docs.rs/chrono/latest/chrono/format/strftime/index.html) for when formatting. It's worth noting that `strptime` features additional options that support timezone functionality. Refer to the API documentation for further information.
+To convert between strings and `Dates`/`Datetimes`, `dt.to_string` and `str.to_datetime` are utilized. Polars adopts the [chrono format syntax](https://docs.rs/chrono/latest/chrono/format/strftime/index.html) for formatting. It's worth noting that `str.to_datetime` features additional options that support timezone functionality. Refer to the API documentation for further information.
 
-{{code_block('user-guide/expressions/casting','dates2',['strftime','strptime'])}}
+{{code_block('user-guide/expressions/casting','dates2',['dt.to_string','str.to_date'])}}
 
 ```python exec="on" result="text" session="user-guide/cast"
 --8<-- "python/user-guide/expressions/casting.py:dates2"

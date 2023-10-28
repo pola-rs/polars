@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import io
 import re
-from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING
+from datetime import date, datetime, time
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.datatypes.convert import dtype_to_py_type
+from polars.exceptions import InvalidOperationError
 
 if TYPE_CHECKING:
     from polars.type_aliases import ConcatMethod
@@ -103,7 +105,7 @@ def test_string_numeric_comp_err() -> None:
 def test_panic_error() -> None:
     with pytest.raises(
         pl.PolarsPanicError,
-        match="""dimensions cannot be empty""",
+        match="dimensions cannot be empty",
     ):
         pl.Series("a", [1, 2, 3]).reshape(())
 
@@ -219,40 +221,6 @@ def test_filter_not_of_type_bool() -> None:
         df.filter(pl.col("json_val").str.json_path_match("$.a"))
 
 
-def test_err_asof_join_null_values() -> None:
-    n = 5
-    start_time = datetime(2021, 9, 30)
-
-    df_coor = pl.DataFrame(
-        {
-            "vessel_id": [1] * n + [2] * n,
-            "timestamp": [start_time + timedelta(hours=h) for h in range(n)]
-            + [start_time + timedelta(hours=h) for h in range(n)],
-        }
-    )
-
-    df_voyages = pl.DataFrame(
-        {
-            "vessel_id": [1, None],
-            "voyage_id": [1, None],
-            "voyage_start": [datetime(2022, 1, 1), None],
-            "voyage_end": [datetime(2022, 1, 20), None],
-        }
-    )
-    with pytest.raises(
-        pl.ComputeError, match=".sof join must not have null values in 'on' argument"
-    ):
-        (
-            df_coor.sort("timestamp").join_asof(
-                df_voyages.sort("voyage_start"),
-                right_on="voyage_start",
-                left_on="timestamp",
-                by="vessel_id",
-                strategy="backward",
-            )
-        )
-
-
 def test_is_nan_on_non_boolean() -> None:
     with pytest.raises(pl.InvalidOperationError):
         pl.Series(["1", "2", "3"]).fill_nan("2")  # type: ignore[arg-type]
@@ -274,25 +242,23 @@ def test_window_expression_different_group_length() -> None:
 
 
 def test_lazy_concat_err() -> None:
-    df1 = pl.DataFrame(
+    df = pl.DataFrame(
         {
             "foo": [1, 2],
             "bar": [6, 7],
             "ham": ["a", "b"],
         }
     )
-    df2 = pl.DataFrame(
-        {
-            "foo": [3, 4],
-            "ham": ["c", "d"],
-            "bar": [8, 9],
-        }
-    )
     with pytest.raises(
         ValueError,
-        match="'LazyFrame' only allows {'vertical','vertical_relaxed','diagonal','align'} concat strategies",
+        match="DataFrame `how` must be one of {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'align'}, got 'sausage'",
     ):
-        pl.concat([df1.lazy(), df2.lazy()], how="horizontal").collect()
+        pl.concat([df, df], how="sausage")  # type: ignore[arg-type]
+    with pytest.raises(
+        ValueError,
+        match="LazyFrame `how` must be one of {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'align'}, got 'horizontal'",
+    ):
+        pl.concat([df.lazy(), df.lazy()], how="horizontal").collect()
 
 
 @pytest.mark.parametrize("how", ["horizontal", "diagonal"])
@@ -300,7 +266,7 @@ def test_series_concat_err(how: ConcatMethod) -> None:
     s = pl.Series([1, 2, 3])
     with pytest.raises(
         ValueError,
-        match="Series only allows {'vertical'} concat strategy",
+        match="Series only supports 'vertical' concat strategy",
     ):
         pl.concat([s, s], how=how)
 
@@ -560,31 +526,6 @@ def test_invalid_inner_type_cast_list() -> None:
         s.cast(pl.List(pl.Categorical))
 
 
-@pytest.mark.parametrize(
-    ("every", "match"),
-    [
-        ("-1i", r"'every' argument must be positive"),
-        (
-            "2h",
-            r"you cannot combine time durations like '2h' with integer durations like '3i'",
-        ),
-    ],
-)
-def test_group_by_dynamic_validation(every: str, match: str) -> None:
-    df = pl.DataFrame(
-        {
-            "index": [0, 0, 1, 1],
-            "group": ["banana", "pear", "banana", "pear"],
-            "weight": [2, 3, 5, 7],
-        }
-    )
-
-    with pytest.raises(pl.ComputeError, match=match):
-        df.group_by_dynamic("index", by="group", every=every, period="2i").agg(
-            pl.col("weight")
-        )
-
-
 def test_lit_agg_err() -> None:
     with pytest.raises(pl.ComputeError, match=r"cannot aggregate a literal"):
         pl.DataFrame({"y": [1]}).with_columns(pl.lit(1).sum().over("y"))
@@ -610,19 +551,6 @@ def test_invalid_group_by_arg() -> None:
         TypeError, match="specifying aggregations as a dictionary is not supported"
     ):
         df.group_by(1).agg({"a": "sum"})
-
-
-def test_no_sorted_err() -> None:
-    df = pl.DataFrame(
-        {
-            "dt": [datetime(2001, 1, 1), datetime(2001, 1, 2)],
-        }
-    )
-    with pytest.raises(
-        pl.InvalidOperationError,
-        match=r"argument in operation 'group_by_dynamic' is not explicitly sorted",
-    ):
-        df.group_by_dynamic("dt", every="1h").agg(pl.all().count().suffix("_foo"))
 
 
 def test_serde_validation() -> None:
@@ -688,6 +616,72 @@ def test_sort_by_err_9259() -> None:
 def test_empty_inputs_error() -> None:
     df = pl.DataFrame({"col1": [1]})
     with pytest.raises(
-        pl.ComputeError, match="expression: 'fold' didn't get any inputs"
+        pl.ComputeError, match="expression: 'sum_horizontal' didn't get any inputs"
     ):
         df.select(pl.sum_horizontal(pl.exclude("col1")))
+
+
+@pytest.mark.parametrize(
+    ("colname", "values", "expected"),
+    [
+        ("a", [2], [False, True, False]),
+        ("a", [True, False], None),
+        ("a", ["2", "3", "4"], None),
+        ("b", [Decimal("3.14")], None),
+        ("c", [-2, -1, 0, 1, 2], None),
+        (
+            "d",
+            pl.datetime_range(
+                datetime.now(),
+                datetime.now(),
+                interval="2345ns",
+                time_unit="ns",
+                eager=True,
+            ),
+            None,
+        ),
+        ("d", [time(10, 30)], None),
+        ("e", [datetime(1999, 12, 31, 10, 30)], None),
+        ("f", ["xx", "zz"], None),
+    ],
+)
+def test_invalid_is_in_dtypes(
+    colname: str, values: list[Any], expected: list[Any] | None
+) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [-2.5, 0.0, 2.5],
+            "c": [True, None, False],
+            "d": [datetime(2001, 10, 30), None, datetime(2009, 7, 5)],
+            "e": [date(2029, 12, 31), date(1999, 12, 31), None],
+            "f": [b"xx", b"yy", b"zz"],
+        }
+    )
+    if expected is None:
+        with pytest.raises(
+            InvalidOperationError,
+            match="`is_in` cannot check for .*? values in .*? data",
+        ):
+            df.select(pl.col(colname).is_in(values))
+    else:
+        assert df.select(pl.col(colname).is_in(values))[colname].to_list() == expected
+
+
+def test_sort_by_error() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [1, 1, 1, 2, 2, 3, 3, 3],
+            "number": [1, 3, 2, 1, 2, 2, 1, 3],
+            "type": ["A", "B", "A", "B", "B", "A", "B", "C"],
+            "cost": [10, 25, 20, 25, 30, 30, 50, 100],
+        }
+    )
+
+    with pytest.raises(
+        pl.ComputeError,
+        match="expressions in 'sort_by' produced a different number of groups",
+    ):
+        df.group_by("id", maintain_order=True).agg(
+            pl.col("cost").filter(pl.col("type") == "A").sort_by("number")
+        )

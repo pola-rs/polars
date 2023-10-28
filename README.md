@@ -208,6 +208,7 @@ You can also install the dependencies directly.
 | xlsx2csv   | Support for reading from Excel files                                         |
 | openpyxl   | Support for reading from Excel files with native types                       |
 | deltalake  | Support for reading from Delta Lake Tables                                   |
+| pyiceberg  | Support for reading from Apache Iceberg tables                               |
 | timezone   | Timezone support, only needed if are on Python<3.9 or you are on Windows     |
 
 Releases happen quite often (weekly / every few days) at the moment, so updating polars regularly to get the latest bugfixes / features might not be a bad idea.
@@ -221,7 +222,7 @@ point to the `main` branch of this repo.
 polars = { git = "https://github.com/pola-rs/polars", rev = "<optional git tag>" }
 ```
 
-Required Rust version `>=1.65`.
+Required Rust version `>=1.71`.
 
 ## Contributing
 
@@ -263,15 +264,11 @@ Don't use this unless you hit the row boundary as the default polars is faster a
 
 ## Legacy
 
-Do you want polars to run on an old CPU (e.g. dating from before 2011)? Install `pip install polars-lts-cpu`. This polars project is
-compiled without [avx](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) target features.
-
-## Acknowledgements
-
-Development of Polars is proudly powered by
-
-[![Xomnia](https://raw.githubusercontent.com/pola-rs/polars-static/master/sponsors/xomnia.png)](https://www.xomnia.com/)
+Do you want polars to run on an old CPU (e.g. dating from before 2011), or on an `x86-64` build
+of Python on Apple Silicon under Rosetta? Install `pip install polars-lts-cpu`. This version of
+polars is compiled without [AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) target
+features.
 
 ## Sponsors
 
-[<img src="https://raw.githubusercontent.com/pola-rs/polars-static/master/sponsors/xomnia.png" height="40" />](https://www.xomnia.com/) &emsp; [<img src="https://www.jetbrains.com/company/brand/img/jetbrains_logo.png" height="50" />](https://www.jetbrains.com)
+[<img src="https://www.jetbrains.com/company/brand/img/jetbrains_logo.png" height="50" />](https://www.jetbrains.com)

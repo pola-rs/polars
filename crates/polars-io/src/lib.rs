@@ -4,7 +4,6 @@
 
 #[cfg(feature = "avro")]
 pub mod avro;
-#[cfg(feature = "cloud")]
 pub mod cloud;
 #[cfg(any(feature = "csv", feature = "json"))]
 pub mod csv;
@@ -28,16 +27,19 @@ pub mod prelude;
 #[cfg(all(test, feature = "csv"))]
 mod tests;
 pub mod utils;
+use once_cell::sync::Lazy;
+use regex::Regex;
 
 #[cfg(feature = "partition")]
 pub mod partition;
+#[cfg(feature = "async")]
+pub mod pl_async;
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 #[allow(unused)] // remove when updating to rust nightly >= 1.61
 use arrow::array::new_empty_array;
-use arrow::error::Result as ArrowResult;
 pub use options::*;
 use polars_core::frame::ArrowChunk;
 use polars_core::prelude::*;
@@ -87,7 +89,7 @@ pub trait WriterFactory {
 }
 
 pub trait ArrowReader {
-    fn next_record_batch(&mut self) -> ArrowResult<Option<ArrowChunk>>;
+    fn next_record_batch(&mut self) -> PolarsResult<Option<ArrowChunk>>;
 }
 
 #[cfg(any(
@@ -163,9 +165,13 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     }
 }
 
+static CLOUD_URL: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^(s3a?|gs|gcs|file|abfss?|azure|az|adl)://").unwrap());
+
 /// Check if the path is a cloud url.
 pub fn is_cloud_url<P: AsRef<Path>>(p: P) -> bool {
-    p.as_ref().starts_with("s3://")
-        || p.as_ref().starts_with("file://")
-        || p.as_ref().starts_with("gcs://")
+    match p.as_ref().as_os_str().to_str() {
+        Some(s) => CLOUD_URL.is_match(s),
+        _ => false,
+    }
 }

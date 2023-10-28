@@ -1,7 +1,6 @@
 //! Common Subplan Elimination
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::hash::{BuildHasher, Hash, Hasher};
 
 use polars_core::prelude::*;
 
@@ -118,13 +117,13 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
         ) => Arc::ptr_eq(left_df, right_df),
         (
             Scan {
-                path: path_left,
+                paths: path_left,
                 predicate: predicate_left,
                 scan_type: scan_type_left,
                 ..
             },
             Scan {
-                path: path_right,
+                paths: path_right,
                 predicate: predicate_right,
                 scan_type: scan_type_right,
                 ..
@@ -310,9 +309,7 @@ pub(crate) fn elim_cmn_subplans(
             (Some(h), _) => *h,
             (_, Some(h)) => *h,
             _ => {
-                let mut h = hb.build_hasher();
-                node1.hash(&mut h);
-                let hash = h.finish();
+                let hash = hb.hash_one(node1);
                 let mut cache_id = lp_cache.wrapping_add(hash as usize);
                 // this ensures we can still add branch ids without overflowing
                 // during the dot representation

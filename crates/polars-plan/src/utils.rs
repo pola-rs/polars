@@ -8,7 +8,7 @@ use smartstring::alias::String as SmartString;
 
 use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::Context;
-use crate::prelude::names::COUNT;
+use crate::prelude::consts::COUNT;
 use crate::prelude::*;
 
 /// Utility to write comma delimited strings
@@ -73,9 +73,7 @@ impl PushNode for [Option<Node>; 1] {
 pub(crate) fn is_scan(plan: &ALogicalPlan) -> bool {
     matches!(
         plan,
-        ALogicalPlan::Scan { .. }
-            | ALogicalPlan::DataFrameScan { .. }
-            | ALogicalPlan::AnonymousScan { .. }
+        ALogicalPlan::Scan { .. } | ALogicalPlan::DataFrameScan { .. }
     )
 }
 
@@ -101,7 +99,7 @@ pub(crate) fn aexpr_is_elementwise(current_node: Node, arena: &Arena<AExpr>) -> 
         use AExpr::*;
         match e {
             AnonymousFunction { options, .. } | Function { options, .. } => {
-                !matches!(options.collect_groups, ApplyOptions::ApplyGroups)
+                !matches!(options.collect_groups, ApplyOptions::GroupWise)
             },
             Column(_)
             | Alias(_, _)
@@ -146,6 +144,17 @@ pub(crate) fn has_leaf_literal(e: &Expr) -> bool {
         _ => {
             let roots = expr_to_root_column_exprs(e);
             roots.iter().any(|e| matches!(e, Expr::Literal(_)))
+        },
+    }
+}
+/// Check if leaf expression is a literal
+#[cfg(feature = "is_in")]
+pub(crate) fn all_leaf_literal(e: &Expr) -> bool {
+    match e {
+        Expr::Literal(_) => true,
+        _ => {
+            let roots = expr_to_root_column_exprs(e);
+            roots.iter().all(|e| matches!(e, Expr::Literal(_)))
         },
     }
 }

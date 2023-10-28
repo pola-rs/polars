@@ -4,7 +4,7 @@ use std::convert::TryFrom;
 
 use arrow::array::{BooleanArray, PrimitiveArray};
 use arrow::bitmap::utils::{get_bit_unchecked, set_bit_unchecked};
-use polars_arrow::bitmap::unary_mut;
+use arrow::legacy::bitmap::unary_mut;
 
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -14,30 +14,96 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
 {
-    pub fn apply_values_generic<'a, U, K, F>(&'a self, op: F) -> ChunkedArray<U>
+    // Applies a function to all elements , regardless of whether they
+    // are null or not, after which the null mask is copied from the
+    // original array.
+    pub fn apply_values_generic<'a, U, K, F>(&'a self, mut op: F) -> ChunkedArray<U>
     where
         U: PolarsDataType,
-        F: FnMut(T::Physical<'a>) -> K + Copy,
+        F: FnMut(T::Physical<'a>) -> K,
         U::Array: ArrayFromIter<K>,
     {
         let iter = self.downcast_iter().map(|arr| {
-            let out: U::Array = arr.values_iter().map(op).collect_arr();
+            let out: U::Array = arr.values_iter().map(&mut op).collect_arr();
             out.with_validity_typed(arr.validity().cloned())
         });
 
         ChunkedArray::from_chunk_iter(self.name(), iter)
     }
 
-    pub fn try_apply_values_generic<'a, U, K, F, E>(&'a self, op: F) -> Result<ChunkedArray<U>, E>
+    /// Applies a function to all elements, regardless of whether they
+    /// are null or not, after which the null mask is copied from the
+    /// original array.
+    pub fn try_apply_values_generic<'a, U, K, F, E>(
+        &'a self,
+        mut op: F,
+    ) -> Result<ChunkedArray<U>, E>
     where
         U: PolarsDataType,
-        F: FnMut(T::Physical<'a>) -> Result<K, E> + Copy,
+        F: FnMut(T::Physical<'a>) -> Result<K, E>,
         U::Array: ArrayFromIter<K>,
     {
         let iter = self.downcast_iter().map(|arr| {
-            let element_iter = arr.values_iter().map(op);
+            let element_iter = arr.values_iter().map(&mut op);
             let array: U::Array = element_iter.try_collect_arr()?;
             Ok(array.with_validity_typed(arr.validity().cloned()))
+        });
+
+        ChunkedArray::try_from_chunk_iter(self.name(), iter)
+    }
+
+    /// Applies a function only to the non-null elements, propagating nulls.
+    pub fn apply_nonnull_values_generic<'a, U, K, F>(
+        &'a self,
+        dtype: DataType,
+        mut op: F,
+    ) -> ChunkedArray<U>
+    where
+        U: PolarsDataType,
+        F: FnMut(T::Physical<'a>) -> K,
+        U::Array: ArrayFromIterDtype<K> + ArrayFromIterDtype<Option<K>>,
+    {
+        let iter = self.downcast_iter().map(|arr| {
+            if arr.null_count() == 0 {
+                let out: U::Array = arr
+                    .values_iter()
+                    .map(&mut op)
+                    .collect_arr_with_dtype(dtype.clone());
+                out.with_validity_typed(arr.validity().cloned())
+            } else {
+                let out: U::Array = arr
+                    .iter()
+                    .map(|opt| opt.map(&mut op))
+                    .collect_arr_with_dtype(dtype.clone());
+                out.with_validity_typed(arr.validity().cloned())
+            }
+        });
+
+        ChunkedArray::from_chunk_iter(self.name(), iter)
+    }
+
+    /// Applies a function only to the non-null elements, propagating nulls.
+    pub fn try_apply_nonnull_values_generic<'a, U, K, F, E>(
+        &'a self,
+        mut op: F,
+    ) -> Result<ChunkedArray<U>, E>
+    where
+        U: PolarsDataType,
+        F: FnMut(T::Physical<'a>) -> Result<K, E>,
+        U::Array: ArrayFromIter<K> + ArrayFromIter<Option<K>>,
+    {
+        let iter = self.downcast_iter().map(|arr| {
+            let arr = if arr.null_count() == 0 {
+                let out: U::Array = arr.values_iter().map(&mut op).try_collect_arr()?;
+                out.with_validity_typed(arr.validity().cloned())
+            } else {
+                let out: U::Array = arr
+                    .iter()
+                    .map(|opt| opt.map(&mut op).transpose())
+                    .try_collect_arr()?;
+                out.with_validity_typed(arr.validity().cloned())
+            };
+            Ok(arr)
         });
 
         ChunkedArray::try_from_chunk_iter(self.name(), iter)
@@ -154,6 +220,7 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
                 .for_each(|arr| arrow::compute::arity_assign::unary(arr, f))
         };
         // can be in any order now
+        self.compute_len();
         self.set_sorted_flag(IsSorted::Not);
     }
 }
@@ -319,7 +386,7 @@ impl Utf8Chunked {
     where
         F: FnMut(&'a str) -> &'a str,
     {
-        use polars_arrow::array::utf8::Utf8FromIter;
+        use arrow::legacy::array::utf8::Utf8FromIter;
         let chunks = self.downcast_iter().map(|arr| {
             let iter = arr.values_iter().map(&mut f);
             let value_size = (arr.get_values_size() as f64 * 1.3) as usize;
@@ -350,7 +417,7 @@ impl BinaryChunked {
     where
         F: FnMut(&'a [u8]) -> &'a [u8],
     {
-        use polars_arrow::array::utf8::BinaryFromIter;
+        use arrow::legacy::array::utf8::BinaryFromIter;
         let chunks = self.downcast_iter().map(|arr| {
             let iter = arr.values_iter().map(&mut f);
             let value_size = (arr.get_values_size() as f64 * 1.3) as usize;

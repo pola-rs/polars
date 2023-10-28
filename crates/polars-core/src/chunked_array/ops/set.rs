@@ -1,7 +1,7 @@
 use arrow::bitmap::MutableBitmap;
-use polars_arrow::array::ValueSize;
-use polars_arrow::kernels::set::{set_at_idx_no_null, set_with_mask};
-use polars_arrow::prelude::FromData;
+use arrow::legacy::array::ValueSize;
+use arrow::legacy::kernels::set::{set_at_idx_no_null, set_with_mask};
+use arrow::legacy::prelude::FromData;
 
 use crate::prelude::*;
 use crate::utils::{align_chunks_binary, CustomIterTools};

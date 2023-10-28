@@ -1,5 +1,5 @@
 [build-system]
-requires = ["maturin~=1.2.1"]
+requires = ["maturin>=1.2.1,<2"]
 build-backend = "maturin"
 
 [project]
@@ -38,24 +38,26 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 
 [project.optional-dependencies]
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
-pyarrow = ["pyarrow >= 7.0.0"]
-pandas = ["pyarrow >= 7.0.0", "pandas"]
-numpy = ["numpy >= 1.16.0"]
-fsspec = ["fsspec"]
-connectorx = ["connectorx"]
-xlsx2csv = ["xlsx2csv >= 0.8.0"]
-openpyxl = ["openpyxl >= 3.0.0"]
-deltalake = ["deltalake >= 0.10.0"]
-timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
-matplotlib = ["matplotlib"]
-pydantic = ["pydantic"]
-sqlalchemy = ["sqlalchemy", "pandas"]
-xlsxwriter = ["xlsxwriter"]
 adbc = ["adbc_driver_sqlite"]
 cloudpickle = ["cloudpickle"]
+connectorx = ["connectorx"]
+deltalake = ["deltalake >= 0.10.0"]
+fsspec = ["fsspec"]
 gevent = ["gevent"]
+matplotlib = ["matplotlib"]
+numpy = ["numpy >= 1.16.0"]
+openpyxl = ["openpyxl >= 3.0.0"]
+pandas = ["pyarrow >= 7.0.0", "pandas"]
+pyarrow = ["pyarrow >= 7.0.0"]
+pydantic = ["pydantic"]
+pyiceberg = ["pyiceberg >= 0.5.0"]
+pyxlsb = ["pyxlsb >= 1.0"]
+sqlalchemy = ["sqlalchemy", "pandas"]
+timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
+xlsx2csv = ["xlsx2csv >= 0.8.0"]
+xlsxwriter = ["xlsxwriter"]
 all = [
-  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,pydantic,sqlalchemy,xlsxwriter,adbc,cloudpickle,gevent]",
+  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,pydantic,pyiceberg,sqlalchemy,xlsxwriter,adbc,cloudpickle,gevent]",
 ]
 
 [tool.mypy]
@@ -75,6 +77,7 @@ module = [
   "IPython.*",
   "adbc_driver_postgresql.*",
   "adbc_driver_sqlite.*",
+  "arrow_odbc",
   "backports",
   "connectorx",
   "deltalake.*",
@@ -87,6 +90,7 @@ module = [
   "polars.polars",
   "pyarrow.*",
   "pydantic",
+  "pyxlsb",
   "sqlalchemy.*",
   "xlsx2csv",
   "xlsxwriter.*",
@@ -98,6 +102,7 @@ ignore_missing_imports = true
 module = [
   "IPython.*",
   "matplotlib.*",
+  "dataframe_api_compat.*",
 ]
 follow_imports = "skip"
 
@@ -125,7 +130,6 @@ select = [
   "SIM", # flake8-simplify
   "TCH", # flake8-type-checking
   "TID", # flake8-tidy-imports
-  "Q", # flake8-quotes
   "UP", # pyupgrade
   "PT", # flake8-pytest-style
   "RUF", # Ruff-specific rules
@@ -167,13 +171,13 @@ ignore = [
   "TD003", # Missing issue link on the line following this TODO
   # tryceratops
   "TRY003", # Avoid specifying long messages outside the exception class
+  # Lints below are turned off because of conflicts with the ruff formatter
+  "D206",
+  "W191",
 ]
 
 [tool.ruff.pycodestyle]
 max-doc-length = 88
-
-[tool.ruff.isort]
-split-on-trailing-comma = false
 
 [tool.ruff.flake8-tidy-imports]
 ban-relative-imports = "all"
@@ -186,6 +190,7 @@ strict = true
 
 [tool.pytest.ini_options]
 addopts = [
+  "--tb=short",
   "--strict-config",
   "--strict-markers",
   "--import-mode=importlib",

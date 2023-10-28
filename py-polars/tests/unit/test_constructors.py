@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from collections import OrderedDict, namedtuple
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
@@ -10,7 +11,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field
 
 import polars as pl
 from polars.dependencies import _ZONEINFO_AVAILABLE, dataclasses, pydantic
@@ -267,37 +268,43 @@ def test_init_structured_objects(monkeypatch: Any) -> None:
 
 
 def test_init_pydantic_2x() -> None:
-    class PageView(BaseModel):
-        user_id: str
-        ts: datetime = Field(alias=["ts", "$date"])  # type: ignore[literal-required, arg-type]
-        path: str = Field("?", alias=["url", "path"])  # type: ignore[literal-required, arg-type]
-        referer: str = Field("?", alias="referer")
-        event: Literal["leave", "enter"] = Field("enter")
-        time_on_page: int = Field(0, serialization_alias="top")
+    try:
+        # don't fail if manually testing with pydantic 1.x
+        from pydantic import TypeAdapter
 
-    data_json = """
-    [{
-        "user_id": "x",
-        "ts": {"$date": "2021-01-01T00:00:00.000Z"},
-        "url": "/latest/foobar",
-        "referer": "https://google.com",
-        "event": "enter",
-        "top": 123
-    }]
-    """
-    adapter: TypeAdapter[Any] = TypeAdapter(List[PageView])
-    models = adapter.validate_json(data_json)
+        class PageView(BaseModel):
+            user_id: str
+            ts: datetime = Field(alias=["ts", "$date"])  # type: ignore[literal-required, arg-type]
+            path: str = Field("?", alias=["url", "path"])  # type: ignore[literal-required, arg-type]
+            referer: str = Field("?", alias="referer")
+            event: Literal["leave", "enter"] = Field("enter")
+            time_on_page: int = Field(0, serialization_alias="top")
 
-    result = pl.DataFrame(models)
+        data_json = """
+        [{
+            "user_id": "x",
+            "ts": {"$date": "2021-01-01T00:00:00.000Z"},
+            "url": "/latest/foobar",
+            "referer": "https://google.com",
+            "event": "enter",
+            "top": 123
+        }]
+        """
+        adapter: TypeAdapter[Any] = TypeAdapter(List[PageView])
+        models = adapter.validate_json(data_json)
 
-    assert result.to_dict(False) == {
-        "user_id": ["x"],
-        "ts": [datetime(2021, 1, 1, 0, 0)],
-        "path": ["?"],
-        "referer": ["https://google.com"],
-        "event": ["enter"],
-        "time_on_page": [0],
-    }
+        result = pl.DataFrame(models)
+
+        assert result.to_dict(False) == {
+            "user_id": ["x"],
+            "ts": [datetime(2021, 1, 1, 0, 0)],
+            "path": ["?"],
+            "referer": ["https://google.com"],
+            "event": ["enter"],
+            "time_on_page": [0],
+        }
+    except ImportError:
+        pass
 
 
 def test_init_structured_objects_unhashable() -> None:
@@ -456,6 +463,24 @@ def test_dataclasses_initvar_typing() -> None:
     assert dataclasses.asdict(abc) == df.rows(named=True)[0]
 
 
+def test_collections_namedtuple() -> None:
+    TestData = namedtuple("TestData", ["id", "info"])
+    nt_data = [TestData(1, "a"), TestData(2, "b"), TestData(3, "c")]
+
+    df1 = pl.DataFrame(nt_data)
+    assert df1.to_dict(False) == {"id": [1, 2, 3], "info": ["a", "b", "c"]}
+
+    df2 = pl.DataFrame({"data": nt_data, "misc": ["x", "y", "z"]})
+    assert df2.to_dict(False) == {
+        "data": [
+            {"id": 1, "info": "a"},
+            {"id": 2, "info": "b"},
+            {"id": 3, "info": "c"},
+        ],
+        "misc": ["x", "y", "z"],
+    }
+
+
 def test_init_ndarray(monkeypatch: Any) -> None:
     # Empty array
     df = pl.DataFrame(np.array([]))
@@ -567,6 +592,10 @@ def test_init_ndarray(monkeypatch: Any) -> None:
     assert df.shape == (2, 1)
     assert df.rows() == [([0, 1, 2, 3, 4],), ([5, 6, 7, 8, 9],)]
 
+    test_rows = [(1, 2), (3, 4)]
+    df = pl.DataFrame([np.array(test_rows[0]), np.array(test_rows[1])], orient="row")
+    assert_frame_equal(df, pl.DataFrame(test_rows, orient="row"))
+
     # numpy arrays containing NaN
     df0 = pl.DataFrame(
         data={"x": [1.0, 2.5, float("nan")], "y": [4.0, float("nan"), 6.5]},
@@ -578,8 +607,43 @@ def test_init_ndarray(monkeypatch: Any) -> None:
         data={"x": np.array([1.0, 2.5, np.nan]), "y": np.array([4.0, np.nan, 6.5])},
         nan_to_null=True,
     )
-    assert_frame_equal(df0, df1, nans_compare_equal=True)
+    assert_frame_equal(df0, df1)
     assert df2.rows() == [(1.0, 4.0), (2.5, None), (None, 6.5)]
+
+
+def test_init_numpy_scalars() -> None:
+    df = pl.DataFrame(
+        {
+            "bool": [np.bool_(True), np.bool_(False)],
+            "i8": [np.int8(16), np.int8(64)],
+            "u32": [np.uint32(1234), np.uint32(9876)],
+        }
+    )
+    df_expected = pl.from_records(
+        data=[(True, 16, 1234), (False, 64, 9876)],
+        schema=OrderedDict([("bool", pl.Boolean), ("i8", pl.Int8), ("u32", pl.UInt32)]),
+    )
+    assert_frame_equal(df, df_expected)
+
+
+def test_null_array_print_format() -> None:
+    pa_tbl_null = pa.table({"a": [None, None]})
+    df_null = pl.from_arrow(pa_tbl_null)
+    assert df_null.shape == (2, 1)
+    assert df_null.dtypes == [pl.Null]  # type: ignore[union-attr]
+    assert df_null.rows() == [(None,), (None,)]  # type: ignore[union-attr]
+
+    assert (
+        str(df_null) == "shape: (2, 1)\n"
+        "┌──────┐\n"
+        "│ a    │\n"
+        "│ ---  │\n"
+        "│ null │\n"
+        "╞══════╡\n"
+        "│ null │\n"
+        "│ null │\n"
+        "└──────┘"
+    )
 
 
 def test_init_arrow() -> None:
@@ -665,7 +729,7 @@ def test_init_series() -> None:
     s1 = pl.Series("n", np.array([1.0, 2.5, float("nan")]))
     s2 = pl.Series("n", np.array([1.0, 2.5, float("nan")]), nan_to_null=True)
 
-    assert_series_equal(s0, s1, nans_compare_equal=True)
+    assert_series_equal(s0, s1)
     assert s2.to_list() == [1.0, 2.5, None]
 
 

@@ -63,7 +63,7 @@ pub fn concat_series(series: &PyAny) -> PyResult<PySeries> {
 }
 
 #[pyfunction]
-pub fn diag_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
+pub fn concat_df_diagonal(dfs: &PyAny) -> PyResult<PyDataFrame> {
     let iter = dfs.iter()?;
 
     let dfs = iter
@@ -73,12 +73,12 @@ pub fn diag_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
         })
         .collect::<PyResult<Vec<_>>>()?;
 
-    let df = functions::diag_concat_df(&dfs).map_err(PyPolarsErr::from)?;
+    let df = functions::concat_df_diagonal(&dfs).map_err(PyPolarsErr::from)?;
     Ok(df.into())
 }
 
 #[pyfunction]
-pub fn hor_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
+pub fn concat_df_horizontal(dfs: &PyAny) -> PyResult<PyDataFrame> {
     let iter = dfs.iter()?;
 
     let dfs = iter
@@ -88,6 +88,6 @@ pub fn hor_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
         })
         .collect::<PyResult<Vec<_>>>()?;
 
-    let df = functions::hor_concat_df(&dfs).map_err(PyPolarsErr::from)?;
+    let df = functions::concat_df_horizontal(&dfs).map_err(PyPolarsErr::from)?;
     Ok(df.into())
 }

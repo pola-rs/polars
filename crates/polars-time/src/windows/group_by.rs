@@ -1,10 +1,11 @@
-use polars_arrow::time_zone::Tz;
-use polars_arrow::trusted_len::TrustedLen;
+use arrow::legacy::time_zone::Tz;
+use arrow::legacy::trusted_len::TrustedLen;
 use polars_core::export::rayon::prelude::*;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
 use polars_core::utils::flatten::flatten_par;
 use polars_core::POOL;
+use polars_utils::slice::GetSaferUnchecked;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +18,14 @@ pub enum ClosedWindow {
     Right,
     Both,
     None,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum Label {
+    Left,
+    Right,
+    DataPoint,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -58,7 +67,7 @@ impl StartBy {
 #[allow(clippy::too_many_arguments)]
 fn update_groups_and_bounds(
     bounds_iter: BoundsIter<'_>,
-    mut start_offset: usize,
+    mut start: usize,
     time: &[i64],
     closed_window: ClosedWindow,
     include_lower_bound: bool,
@@ -67,38 +76,25 @@ fn update_groups_and_bounds(
     upper_bound: &mut Vec<i64>,
     groups: &mut Vec<[IdxSize; 2]>,
 ) {
-    for bi in bounds_iter {
-        let mut skip_window = false;
+    'bounds: for bi in bounds_iter {
         // find starting point of window
-        while start_offset < time.len() {
-            let t = time[start_offset];
+        for &t in &time[start..time.len().saturating_sub(1)] {
+            // the window is behind the time values.
             if bi.is_future(t, closed_window) {
-                // the window is behind the time values.
-                skip_window = true;
+                continue 'bounds;
+            }
+            if bi.is_member_entry(t, closed_window) {
                 break;
             }
-            if bi.is_member(t, closed_window) {
-                break;
-            }
-            start_offset += 1;
-        }
-        if skip_window {
-            start_offset = start_offset.saturating_sub(1);
-            continue;
-        }
-        if start_offset == time.len() {
-            start_offset = start_offset.saturating_sub(1);
+            start += 1;
         }
 
         // find members of this window
-        let mut i = start_offset;
-        // start next iteration 1 index back because of boundary conditions.
-        // e.g. "closed left" could match the next iteration, but did not this one.
-        start_offset = start_offset.saturating_sub(1);
+        let mut end = start;
 
-        // last value
-        if i == time.len() - 1 {
-            let t = time[i];
+        // last value isn't always added
+        if end == time.len() - 1 {
+            let t = time[end];
             if bi.is_member(t, closed_window) {
                 if include_lower_bound {
                     lower_bound.push(bi.start);
@@ -106,21 +102,17 @@ fn update_groups_and_bounds(
                 if include_upper_bound {
                     upper_bound.push(bi.stop);
                 }
-                groups.push([i as IdxSize, 1])
+                groups.push([end as IdxSize, 1])
             }
             continue;
         }
-
-        let first = i as IdxSize;
-
-        while i < time.len() {
-            let t = time[i];
-            if !bi.is_member(t, closed_window) {
+        for &t in &time[end..] {
+            if !bi.is_member_exit(t, closed_window) {
                 break;
             }
-            i += 1;
+            end += 1;
         }
-        let len = (i as IdxSize) - first;
+        let len = end - start;
 
         if include_lower_bound {
             lower_bound.push(bi.start);
@@ -128,7 +120,7 @@ fn update_groups_and_bounds(
         if include_upper_bound {
             upper_bound.push(bi.stop);
         }
-        groups.push([first, len])
+        groups.push([start as IdxSize, len as IdxSize])
     }
 }
 
@@ -223,7 +215,11 @@ pub fn group_by_windows(
     (groups, lower_bound, upper_bound)
 }
 
-// this assumes that the given time point is the right endpoint of the window
+// t is right at the end of the window
+// ------t---
+// [------]
+#[inline]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn group_by_values_iter_lookbehind(
     period: Duration,
     offset: Duration,
@@ -232,6 +228,7 @@ pub(crate) fn group_by_values_iter_lookbehind(
     tu: TimeUnit,
     tz: Option<Tz>,
     start_offset: usize,
+    upper_bound: Option<usize>,
 ) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_ {
     debug_assert!(offset.duration_ns() == period.duration_ns());
     debug_assert!(offset.negative);
@@ -241,46 +238,60 @@ pub(crate) fn group_by_values_iter_lookbehind(
         TimeUnit::Milliseconds => Duration::add_ms,
     };
 
-    let mut last_lookbehind_i = 0;
-    time[start_offset..]
+    let upper_bound = upper_bound.unwrap_or(time.len());
+    // Use binary search to find the initial start as that is behind.
+    let mut start = if let Some(&t) = time.get(start_offset) {
+        let lower = add(&offset, t, tz.as_ref()).unwrap();
+        let upper = add(&period, lower, tz.as_ref()).unwrap();
+        let b = Bounds::new(lower, upper);
+        let slice = &time[..start_offset];
+        slice.partition_point(|v| !b.is_member(*v, closed_window))
+    } else {
+        0
+    };
+    let mut end = start;
+    time[start_offset..upper_bound]
         .iter()
         .enumerate()
-        .map(move |(mut i, lower)| {
+        .map(move |(mut i, t)| {
             i += start_offset;
-            let lower = add(&offset, *lower, tz.as_ref())?;
+            let lower = add(&offset, *t, tz.as_ref())?;
             let upper = add(&period, lower, tz.as_ref())?;
 
             let b = Bounds::new(lower, upper);
 
-            // we have a complete lookbehind so we know that `i` is the upper bound.
-            // Safety
-            // we are in bounds
-            let slice = {
-                #[cfg(debug_assertions)]
-                {
-                    &time[last_lookbehind_i..i]
+            for &t in unsafe { time.get_unchecked_release(start..i) } {
+                if b.is_member_entry(t, closed_window) {
+                    break;
                 }
-                #[cfg(not(debug_assertions))]
-                {
-                    unsafe { time.get_unchecked(last_lookbehind_i..i) }
-                }
-            };
-            let offset = slice.partition_point(|v| !b.is_member(*v, closed_window));
-
-            let lookbehind_i = offset + last_lookbehind_i;
-            // -1 for window boundary effects
-            last_lookbehind_i = lookbehind_i.saturating_sub(1);
-
-            let mut len = i - lookbehind_i;
-            if matches!(closed_window, ClosedWindow::Right | ClosedWindow::Both) {
-                len += 1;
+                start += 1;
             }
 
-            Ok((lookbehind_i as IdxSize, len as IdxSize))
+            // faster path, check if `i` is member.
+            if b.is_member_exit(*t, closed_window) {
+                end = i;
+            } else {
+                end = std::cmp::max(end, start);
+            }
+            // we still must loop to consume duplicates
+            for &t in unsafe { time.get_unchecked_release(end..) } {
+                if !b.is_member_exit(t, closed_window) {
+                    break;
+                }
+                end += 1;
+            }
+
+            let len = end - start;
+            let offset = start as IdxSize;
+
+            Ok((offset, len as IdxSize))
         })
 }
 
 // this one is correct for all lookbehind/lookaheads, but is slower
+// window is completely behind t and t itself is not a member
+// ---------------t---
+//  [---]
 pub(crate) fn group_by_values_iter_window_behind_t(
     period: Duration,
     offset: Duration,
@@ -295,8 +306,9 @@ pub(crate) fn group_by_values_iter_window_behind_t(
         TimeUnit::Milliseconds => Duration::add_ms,
     };
 
-    let mut lagging_offset = 0;
-    time.iter().enumerate().map(move |(i, lower)| {
+    let mut start = 0;
+    let mut end = start;
+    time.iter().map(move |lower| {
         let lower = add(&offset, *lower, tz.as_ref())?;
         let upper = add(&period, lower, tz.as_ref())?;
 
@@ -304,33 +316,32 @@ pub(crate) fn group_by_values_iter_window_behind_t(
         if b.is_future(time[0], closed_window) {
             Ok((0, 0))
         } else {
-            // find starting point of window
-            // we can start searching from lagging offset as that is the minimum boundary because data is sorted
-            // and every iteration this boundary shifts right
-            // we cannot use binary search as a window is not binary,
-            // it is false left from the window, true inside, and false right of the window
-            let mut count = 0;
-            for &t in &time[lagging_offset..] {
-                if b.is_member(t, closed_window) || lagging_offset + count == i {
+            for &t in &time[start..] {
+                if b.is_member_entry(t, closed_window) {
                     break;
                 }
-                count += 1
-            }
-            if lagging_offset + count != i {
-                lagging_offset += count;
+                start += 1;
             }
 
-            // Safety
-            // we just iterated over value i.
-            let slice = unsafe { time.get_unchecked(lagging_offset..) };
-            let len = slice.partition_point(|v| b.is_member(*v, closed_window));
+            end = std::cmp::max(start, end);
+            for &t in &time[end..] {
+                if !b.is_member_exit(t, closed_window) {
+                    break;
+                }
+                end += 1;
+            }
 
-            Ok((lagging_offset as IdxSize, len as IdxSize))
+            let len = end - start;
+            let offset = start as IdxSize;
+
+            Ok((offset, len as IdxSize))
         }
     })
 }
 
-// this one is correct for all lookbehind/lookaheads, but is slower
+// window is with -1 periods of t
+// ----t---
+//  [---]
 pub(crate) fn group_by_values_iter_partial_lookbehind(
     period: Duration,
     offset: Duration,
@@ -345,31 +356,41 @@ pub(crate) fn group_by_values_iter_partial_lookbehind(
         TimeUnit::Milliseconds => Duration::add_ms,
     };
 
-    let mut lagging_offset = 0;
+    let mut start = 0;
+    let mut end = start;
     time.iter().enumerate().map(move |(i, lower)| {
         let lower = add(&offset, *lower, tz.as_ref())?;
         let upper = add(&period, lower, tz.as_ref())?;
 
         let b = Bounds::new(lower, upper);
 
-        for &t in &time[lagging_offset..] {
-            if b.is_member(t, closed_window) || lagging_offset == i {
+        for &t in &time[start..] {
+            if b.is_member_entry(t, closed_window) || start == i {
                 break;
             }
-            lagging_offset += 1;
+            start += 1;
         }
 
-        // Safety
-        // we just iterated over value i.
-        let slice = unsafe { time.get_unchecked(lagging_offset..) };
-        let len = slice.partition_point(|v| b.is_member(*v, closed_window));
+        end = std::cmp::max(start, end);
+        for &t in &time[end..] {
+            if !b.is_member_exit(t, closed_window) {
+                break;
+            }
+            end += 1;
+        }
 
-        Ok((lagging_offset as IdxSize, len as IdxSize))
+        let len = end - start;
+        let offset = start as IdxSize;
+
+        Ok((offset, len as IdxSize))
     })
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn group_by_values_iter_partial_lookahead(
+// window is completely ahead of t and t itself is not a member
+// --t-----------
+//        [---]
+pub(crate) fn group_by_values_iter_lookahead(
     period: Duration,
     offset: Duration,
     time: &[i64],
@@ -380,92 +401,71 @@ pub(crate) fn group_by_values_iter_partial_lookahead(
     upper_bound: Option<usize>,
 ) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_ {
     let upper_bound = upper_bound.unwrap_or(time.len());
-    debug_assert!(!offset.negative);
 
     let add = match tu {
         TimeUnit::Nanoseconds => Duration::add_ns,
         TimeUnit::Microseconds => Duration::add_us,
         TimeUnit::Milliseconds => Duration::add_ms,
     };
+    let mut start = start_offset;
+    let mut end = start;
 
-    time[start_offset..upper_bound]
-        .iter()
-        .enumerate()
-        .map(move |(mut i, lower)| {
-            i += start_offset;
-            let lower = add(&offset, *lower, tz.as_ref())?;
-            let upper = add(&period, lower, tz.as_ref())?;
+    time[start_offset..upper_bound].iter().map(move |lower| {
+        let lower = add(&offset, *lower, tz.as_ref())?;
+        let upper = add(&period, lower, tz.as_ref())?;
 
-            let b = Bounds::new(lower, upper);
+        let b = Bounds::new(lower, upper);
 
-            debug_assert!(i < time.len());
-            let slice = unsafe { time.get_unchecked(i..) };
-            let len = slice.partition_point(|v| b.is_member(*v, closed_window));
-
-            Ok((i as IdxSize, len as IdxSize))
-        })
-}
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn group_by_values_iter_full_lookahead(
-    period: Duration,
-    offset: Duration,
-    time: &[i64],
-    closed_window: ClosedWindow,
-    tu: TimeUnit,
-    tz: Option<Tz>,
-    start_offset: usize,
-    upper_bound: Option<usize>,
-) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_ {
-    let upper_bound = upper_bound.unwrap_or(time.len());
-    debug_assert!(!offset.negative);
-
-    let add = match tu {
-        TimeUnit::Nanoseconds => Duration::add_ns,
-        TimeUnit::Microseconds => Duration::add_us,
-        TimeUnit::Milliseconds => Duration::add_ms,
-    };
-
-    time[start_offset..upper_bound]
-        .iter()
-        .enumerate()
-        .map(move |(mut i, lower)| {
-            i += start_offset;
-            let lower = add(&offset, *lower, tz.as_ref())?;
-            let upper = add(&period, lower, tz.as_ref())?;
-
-            let b = Bounds::new(lower, upper);
-
-            // find starting point of window
-            for &t in &time[i..] {
-                if b.is_member(t, closed_window) {
-                    break;
-                }
-                i += 1;
+        for &t in &time[start..] {
+            if b.is_member_entry(t, closed_window) {
+                break;
             }
-            if i >= time.len() {
-                return Ok((i as IdxSize, 0));
+            start += 1;
+        }
+
+        end = std::cmp::max(start, end);
+        for &t in &time[end..] {
+            if !b.is_member_exit(t, closed_window) {
+                break;
             }
+            end += 1;
+        }
 
-            let slice = unsafe { time.get_unchecked(i..) };
-            let len = slice.partition_point(|v| b.is_member(*v, closed_window));
+        let len = end - start;
+        let offset = start as IdxSize;
 
-            Ok((i as IdxSize, len as IdxSize))
-        })
+        Ok((offset, len as IdxSize))
+    })
 }
 
 #[cfg(feature = "rolling_window")]
-pub(crate) fn group_by_values_iter<'a>(
+#[inline]
+pub(crate) fn group_by_values_iter(
     period: Duration,
-    time: &'a [i64],
+    time: &[i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<Tz>,
-) -> Box<dyn TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + 'a> {
+) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_ {
     let mut offset = period;
     offset.negative = true;
     // t is at the right endpoint of the window
-    let iter = group_by_values_iter_lookbehind(period, offset, time, closed_window, tu, tz, 0);
-    Box::new(iter)
+    group_by_values_iter_lookbehind(period, offset, time, closed_window, tu, tz, 0, None)
+}
+
+/// Checks if the boundary elements don't split on duplicates
+fn check_splits(time: &[i64], thread_offsets: &[(usize, usize)]) -> bool {
+    if time.is_empty() {
+        return true;
+    }
+    let mut valid = true;
+    for window in thread_offsets.windows(2) {
+        let left_block_end = window[0].0 + window[0].1;
+        let right_block_start = window[1].0;
+
+        valid &= time[left_block_end] != time[right_block_start];
+    }
+    valid
 }
 
 /// Different from `group_by_windows`, where define window buckets and search which values fit that
@@ -481,7 +481,11 @@ pub fn group_by_values(
     tu: TimeUnit,
     tz: Option<Tz>,
 ) -> PolarsResult<GroupsSlice> {
-    let thread_offsets = _split_offsets(time.len(), POOL.current_num_threads());
+    let mut thread_offsets = _split_offsets(time.len(), POOL.current_num_threads());
+    // there are duplicates in the splits, so we opt for a single partition
+    if !check_splits(time, &thread_offsets) {
+        thread_offsets = _split_offsets(time.len(), 1)
+    }
 
     // we have a (partial) lookbehind window
     if offset.negative {
@@ -499,11 +503,12 @@ pub fn group_by_values(
                         let iter = group_by_values_iter_lookbehind(
                             period,
                             offset,
-                            &time[..upper_bound],
+                            time,
                             closed_window,
                             tu,
                             tz,
                             base_offset,
+                            Some(upper_bound),
                         );
                         iter.map(|result| result.map(|(offset, len)| [offset, len]))
                             .collect::<PolarsResult<Vec<_>>>()
@@ -556,7 +561,7 @@ pub fn group_by_values(
                 .map(|(base_offset, len)| {
                     let lower_bound = base_offset;
                     let upper_bound = base_offset + len;
-                    let iter = group_by_values_iter_full_lookahead(
+                    let iter = group_by_values_iter_lookahead(
                         period,
                         offset,
                         time,
@@ -584,7 +589,7 @@ pub fn group_by_values(
                 .map(|(base_offset, len)| {
                     let lower_bound = base_offset;
                     let upper_bound = base_offset + len;
-                    let iter = group_by_values_iter_partial_lookahead(
+                    let iter = group_by_values_iter_lookahead(
                         period,
                         offset,
                         time,

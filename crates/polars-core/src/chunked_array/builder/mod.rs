@@ -241,8 +241,8 @@ mod test {
 
         // Test list collect.
         let out = [&s1, &s2].iter().copied().collect::<ListChunked>();
-        assert_eq!(out.get(0).unwrap().len(), 6);
-        assert_eq!(out.get(1).unwrap().len(), 3);
+        assert_eq!(out.get_as_series(0).unwrap().len(), 6);
+        assert_eq!(out.get_as_series(1).unwrap().len(), 3);
 
         let mut builder =
             ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 5, DataType::Int32);

@@ -71,9 +71,11 @@ pub(crate) fn insert_streaming_nodes(
     // to streaming
     allow_partial: bool,
 ) -> PolarsResult<bool> {
+    scratch.clear();
+
     // this is needed to determine which side of the joins should be
     // traversed first
-    set_estimated_row_counts(root, lp_arena, expr_arena, 0);
+    set_estimated_row_counts(root, lp_arena, expr_arena, 0, scratch);
 
     scratch.clear();
 
@@ -355,6 +357,11 @@ pub(crate) fn insert_streaming_nodes(
                         DataType::Object(_) => false,
                         #[cfg(feature = "dtype-categorical")]
                         DataType::Categorical(_) => string_cache,
+                        DataType::List(inner) => allowed_dtype(inner, string_cache),
+                        #[cfg(feature = "dtype-struct")]
+                        DataType::Struct(fields) => fields
+                            .iter()
+                            .all(|fld| allowed_dtype(fld.data_type(), string_cache)),
                         _ => true,
                     }
                 }

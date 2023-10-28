@@ -51,4 +51,5 @@ and a decorator, in order to explicitly scope cache lifetime.
 
     StringCache
     enable_string_cache
+    disable_string_cache
     using_string_cache

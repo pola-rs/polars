@@ -4,6 +4,7 @@ use arrow::array::{BooleanArray, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::DataType;
 use arrow::types::NativeType;
+use arrow::util::total_ord::{canonical_f32, canonical_f64};
 use polars_utils::slice::*;
 
 use crate::row::{RowsEncoded, SortField};
@@ -107,7 +108,7 @@ impl FixedLengthEncoding for f32 {
 
     fn encode(self) -> [u8; 4] {
         // https://github.com/rust-lang/rust/blob/9c20b2a8cc7588decb6de25ac6a7912dcef24d65/library/core/src/num/f32.rs#L1176-L1260
-        let s = self.to_bits() as i32;
+        let s = canonical_f32(self).to_bits() as i32;
         let val = s ^ (((s >> 31) as u32) >> 1) as i32;
         val.encode()
     }
@@ -124,7 +125,7 @@ impl FixedLengthEncoding for f64 {
 
     fn encode(self) -> [u8; 8] {
         // https://github.com/rust-lang/rust/blob/9c20b2a8cc7588decb6de25ac6a7912dcef24d65/library/core/src/num/f32.rs#L1176-L1260
-        let s = self.to_bits() as i64;
+        let s = canonical_f64(self).to_bits() as i64;
         let val = s ^ (((s >> 63) as u64) >> 1) as i64;
         val.encode()
     }

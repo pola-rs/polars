@@ -188,9 +188,7 @@ def test_map_elements_object_dtypes() -> None:
                 .map_elements(lambda x: isinstance(x, (int, float)))
                 .alias("is_numeric_infer"),
             ]
-        ).to_dict(
-            False
-        ) == {
+        ).to_dict(False) == {
             "a": [2, 4, "aa", 8, 10],
             "is_numeric1": [True, True, False, True, True],
             "is_numeric_infer": [True, True, False, True, True],

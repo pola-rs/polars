@@ -205,6 +205,6 @@ class LazyPolarsSlice:
             return obj if (step == 1) else obj.take_every(step)
 
         raise ValueError(
-            f"the given slice {s!r} is not supported by lazy computation; consider a"
-            " more efficient approach, or construct explicitly with other methods"
+            f"the given slice {s!r} is not supported by lazy computation"
+            "\n\nConsider a more efficient approach, or construct explicitly with other methods."
         )

@@ -1,8 +1,11 @@
 from datetime import date, datetime, timedelta
+from typing import Any
 
 import numpy as np
+import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_predicate_4906() -> None:
@@ -179,3 +182,50 @@ def test_is_in_join_blocked() -> None:
     assert df_all.filter(~pl.col("Groups").is_in(["A", "B", "F"])).collect().to_dict(
         False
     ) == {"values22": [None, 4, 5], "values20": [3, 4, 5], "Groups": ["C", "D", "E"]}
+
+
+def test_predicate_pushdown_group_by_keys() -> None:
+    df = pl.LazyFrame(
+        {"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]}
+    ).lazy()
+    assert (
+        'SELECTION: "None"'
+        not in df.group_by("group")
+        .agg([pl.count().alias("str_list")])
+        .filter(pl.col("group") == 1)
+        .explain()
+    )
+
+
+def test_no_predicate_push_down_with_cast_and_alias_11883() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    out = (
+        df.lazy()
+        .select(pl.col("a").cast(pl.Int64).alias("b"))
+        .filter(pl.col("b") == 1)
+        .filter((pl.col("b") >= 1) & (pl.col("b") < 1))
+    )
+    assert 'SELECTION: "None"' in out.explain(predicate_pushdown=True)
+
+
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        0,
+        "x",
+        [2, 3],
+        {"x": 1},
+        pl.Series([1, 2, 3]),
+        None,
+    ],
+)
+def test_invalid_filter_predicates(predicate: Any) -> None:
+    df = pl.DataFrame({"colx": ["aa", "bb", "cc", "dd"]})
+    with pytest.raises(ValueError, match="invalid predicate"):
+        df.filter(predicate)
+
+
+def test_fast_path_boolean_filter_predicates() -> None:
+    df = pl.DataFrame({"colx": ["aa", "bb", "cc", "dd"]})
+    assert_frame_equal(df.filter(False), pl.DataFrame(schema={"colx": pl.Utf8}))
+    assert_frame_equal(df.filter(True), df)

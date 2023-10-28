@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:string]
 
     // --8<-- [start:dt]
-    // This operation is not directly available on the Series object yet, only on the DataFrame
+    // This operation is not directly available on the Series object yet, only as an Expression
     // --8<-- [end:dt]
 
     // --8<-- [start:dataframe]

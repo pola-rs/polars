@@ -1,6 +1,6 @@
 use arrow::array::{Array, PrimitiveArray};
+use arrow::legacy::utils::combine_validities_and;
 use num::NumCast;
-use polars_arrow::utils::combine_validities_and;
 use polars_core::datatypes::PolarsNumericType;
 use polars_core::export::num;
 use polars_core::prelude::*;

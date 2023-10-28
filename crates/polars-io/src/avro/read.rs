@@ -4,7 +4,7 @@ use arrow::io::avro::{self, read};
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 
-use super::{finish_reader, ArrowChunk, ArrowReader, ArrowResult};
+use super::{finish_reader, ArrowChunk, ArrowReader};
 use crate::prelude::*;
 
 /// Read [Apache Avro] format into a [`DataFrame`]
@@ -73,7 +73,7 @@ impl<R> ArrowReader for read::Reader<R>
 where
     R: Read + Seek,
 {
-    fn next_record_batch(&mut self) -> ArrowResult<Option<ArrowChunk>> {
+    fn next_record_batch(&mut self) -> PolarsResult<Option<ArrowChunk>> {
         self.next().map_or(Ok(None), |v| v.map(Some))
     }
 }

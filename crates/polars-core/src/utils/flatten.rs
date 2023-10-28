@@ -37,7 +37,7 @@ pub fn flatten_series(s: &Series) -> Vec<Series> {
     }
 }
 
-pub(crate) fn cap_and_offsets<I>(v: &[Vec<I>]) -> (usize, Vec<usize>) {
+pub fn cap_and_offsets<I>(v: &[Vec<I>]) -> (usize, Vec<usize>) {
     let cap = v.iter().map(|v| v.len()).sum::<usize>();
     let offsets = v
         .iter()

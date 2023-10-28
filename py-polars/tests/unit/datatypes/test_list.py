@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pickle
 from datetime import date, datetime, time
 from typing import TYPE_CHECKING, Any
 
@@ -7,7 +8,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars import PolarsDataType
@@ -42,7 +43,7 @@ def test_dtype() -> None:
         "dt": pl.List(pl.Date),
         "dtm": pl.List(pl.Datetime),
     }
-    assert all(tp.is_nested for tp in df.dtypes)
+    assert all(tp in pl.NESTED_DTYPES for tp in df.dtypes)
     assert df.schema["i"].inner == pl.Int8  # type: ignore[union-attr]
     assert df.rows() == [
         (
@@ -68,17 +69,15 @@ def test_categorical() -> None:
     out = (
         df.group_by(["a", "b"])
         .agg(
-            [
-                pl.col("c").count().alias("num_different_c"),
-                pl.col("c").alias("c_values"),
-            ]
+            pl.col("c").count().alias("num_different_c"),
+            pl.col("c").alias("c_values"),
         )
         .filter(pl.col("num_different_c") >= 2)
         .to_series(3)
     )
 
     assert out.inner_dtype == pl.Categorical
-    assert not out.inner_dtype.is_nested
+    assert out.inner_dtype not in pl.NESTED_DTYPES
 
 
 def test_cast_inner() -> None:
@@ -132,7 +131,7 @@ def test_list_fill_null() -> None:
     df = pl.DataFrame({"C": [["a", "b", "c"], [], [], ["d", "e"]]})
     assert df.with_columns(
         [
-            pl.when(pl.col("C").list.lengths() == 0)
+            pl.when(pl.col("C").list.len() == 0)
             .then(None)
             .otherwise(pl.col("C"))
             .alias("C")
@@ -143,7 +142,7 @@ def test_list_fill_null() -> None:
 def test_list_fill_list() -> None:
     assert pl.DataFrame({"a": [[1, 2, 3], []]}).select(
         [
-            pl.when(pl.col("a").list.lengths() == 0)
+            pl.when(pl.col("a").list.len() == 0)
             .then([5])
             .otherwise(pl.col("a"))
             .alias("filled")
@@ -287,9 +286,7 @@ def test_list_count_matches_deprecated() -> None:
             {"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}
         ).select(pl.col("listcol").list.count_match(2).alias("number_of_twos")).to_dict(
             False
-        ) == {
-            "number_of_twos": [0, 0, 2, 1, 0]
-        }
+        ) == {"number_of_twos": [0, 0, 2, 1, 0]}
 
 
 def test_list_count_matches() -> None:
@@ -467,10 +464,10 @@ def test_list_recursive_categorical_cast() -> None:
 @pytest.mark.parametrize(
     ("data", "expected_data", "dtype"),
     [
-        ([1, 2], [[1], [2]], pl.Int64),
-        ([1.0, 2.0], [[1.0], [2.0]], pl.Float64),
-        (["x", "y"], [["x"], ["y"]], pl.Utf8),
-        ([True, False], [[True], [False]], pl.Boolean),
+        ([None, 1, 2], [None, [1], [2]], pl.Int64),
+        ([None, 1.0, 2.0], [None, [1.0], [2.0]], pl.Float64),
+        ([None, "x", "y"], [None, ["x"], ["y"]], pl.Utf8),
+        ([None, True, False], [None, [True], [False]], pl.Boolean),
     ],
 )
 def test_non_nested_cast_to_list(
@@ -515,6 +512,11 @@ def test_list_null_list_categorical_cast() -> None:
     assert s.to_list() == [[]]
 
 
+def test_list_null_pickle() -> None:
+    df = pl.DataFrame([{"a": None}], schema={"a": pl.List(pl.Int64)})
+    assert_frame_equal(df, pickle.loads(pickle.dumps(df)))
+
+
 def test_struct_with_nulls_as_list() -> None:
     df = pl.DataFrame([[{"a": 1, "b": 2}], [{"c": 3, "d": None}]])
     assert df.select(pl.concat_list(pl.all()).alias("as_list")).to_dict(False) == {
@@ -538,3 +540,52 @@ def test_list_amortized_iter_clear_settings_10126() -> None:
     )
 
     assert out.to_dict(False) == {"a": [1, 2], "b": [[1, 2, 3], [4]]}
+
+
+def test_list_inner_cast_physical_11513() -> None:
+    df = pl.DataFrame(
+        {
+            "date": ["foo"],
+            "struct": [[]],
+        },
+        schema_overrides={
+            "struct": pl.List(
+                pl.Struct(
+                    {
+                        "field": pl.Struct(
+                            {"subfield": pl.List(pl.Struct({"subsubfield": pl.Date}))}
+                        )
+                    }
+                )
+            )
+        },
+    )
+    assert df.select(pl.col("struct").take(0)).to_dict(False) == {"struct": [[]]}
+
+
+@pytest.mark.parametrize(
+    ("dtype", "expected"), [(pl.List, True), (pl.Struct, True), (pl.Utf8, False)]
+)
+def test_list_is_nested_deprecated(dtype: PolarsDataType, expected: bool) -> None:
+    with pytest.deprecated_call():
+        assert dtype.is_nested is expected
+
+
+def test_list_series_construction_with_dtype_11849_11878() -> None:
+    s = pl.Series([[1, 2], [3.3, 4.9]], dtype=pl.List(pl.Float64))
+    assert s.to_list() == [[1, 2], [3.3, 4.9]]
+
+    s1 = pl.Series([[1, 2], [3.0, 4.0]], dtype=pl.List(pl.Float64))
+    s2 = pl.Series([[1, 2], [3.0, 4.9]], dtype=pl.List(pl.Float64))
+    assert_series_equal(s1 == s2, pl.Series([True, False]))
+
+    s = pl.Series(
+        "groups",
+        [[{"1": "A", "2": None}], [{"1": "B", "2": "C"}, {"1": "D", "2": "E"}]],
+        dtype=pl.List(pl.Struct([pl.Field("1", pl.Utf8), pl.Field("2", pl.Utf8)])),
+    )
+
+    assert s.to_list() == [
+        [{"1": "A", "2": None}],
+        [{"1": "B", "2": "C"}, {"1": "D", "2": "E"}],
+    ]

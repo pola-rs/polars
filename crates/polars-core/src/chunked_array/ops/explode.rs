@@ -2,13 +2,13 @@ use std::convert::TryFrom;
 
 use arrow::array::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use polars_arrow::array::list::AnonymousBuilder;
-use polars_arrow::array::PolarsArray;
-use polars_arrow::bit_util::unset_bit_raw;
+use arrow::legacy::array::list::AnonymousBuilder;
+use arrow::legacy::array::PolarsArray;
+use arrow::legacy::bit_util::unset_bit_raw;
 #[cfg(feature = "dtype-array")]
-use polars_arrow::is_valid::IsValid;
-use polars_arrow::prelude::*;
-use polars_arrow::trusted_len::TrustedLenPush;
+use arrow::legacy::is_valid::IsValid;
+use arrow::legacy::prelude::*;
+use arrow::legacy::trusted_len::TrustedLenPush;
 
 #[cfg(feature = "dtype-array")]
 use crate::chunked_array::builder::get_fixed_size_list_builder;
@@ -238,7 +238,7 @@ impl ExplodeByOffsets for ListChunked {
         let cap = get_capacity(offsets);
         let inner_type = self.inner_dtype();
 
-        let mut builder = polars_arrow::array::list::AnonymousBuilder::new(cap);
+        let mut builder = arrow::legacy::array::list::AnonymousBuilder::new(cap);
         let mut owned = Vec::with_capacity(cap);
         let mut start = offsets[0] as usize;
         let mut last = start;

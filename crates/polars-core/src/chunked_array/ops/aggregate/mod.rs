@@ -6,10 +6,10 @@ use std::cmp::Ordering;
 use std::ops::Add;
 
 use arrow::compute;
+use arrow::legacy::kernels::rolling::{compare_fn_nan_max, compare_fn_nan_min};
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num_traits::{Float, One, ToPrimitive, Zero};
-use polars_arrow::kernels::rolling::{compare_fn_nan_max, compare_fn_nan_min};
 pub use quantile::*;
 pub use var::*;
 
@@ -18,7 +18,6 @@ use crate::datatypes::{BooleanChunked, PolarsNumericType};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::IsSorted;
-use crate::utils::CustomIterTools;
 
 mod float_sum;
 
@@ -117,7 +116,7 @@ where
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::min_primitive)
-                .fold_first_(|acc, v| {
+                .reduce(|acc, v| {
                     if matches!(compare_fn_nan_max(&acc, &v), Ordering::Less) {
                         acc
                     } else {
@@ -149,7 +148,7 @@ where
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::max_primitive)
-                .fold_first_(|acc, v| {
+                .reduce(|acc, v| {
                     if matches!(compare_fn_nan_min(&acc, &v), Ordering::Greater) {
                         acc
                     } else {
@@ -180,7 +179,7 @@ where
                         // similar to sum
                         let mut sum = 0.0;
                         for arr in self.downcast_iter() {
-                            sum += polars_arrow::kernels::agg_mean::sum_as_f64(arr);
+                            sum += arrow::legacy::kernels::agg_mean::sum_as_f64(arr);
                         }
                         Some(sum / (len - null_count) as f64)
                     },
@@ -457,7 +456,7 @@ impl Utf8Chunked {
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::max_string)
-                .fold_first_(|acc, v| if acc > v { acc } else { v }),
+                .reduce(|acc, v| if acc > v { acc } else { v }),
         }
     }
     pub(crate) fn min_str(&self) -> Option<&str> {
@@ -482,7 +481,7 @@ impl Utf8Chunked {
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::min_string)
-                .fold_first_(|acc, v| if acc < v { acc } else { v }),
+                .reduce(|acc, v| if acc < v { acc } else { v }),
         }
     }
 }
@@ -520,7 +519,7 @@ impl BinaryChunked {
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::max_binary)
-                .fold_first_(|acc, v| if acc > v { acc } else { v }),
+                .reduce(|acc, v| if acc > v { acc } else { v }),
         }
     }
 
@@ -544,7 +543,7 @@ impl BinaryChunked {
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::min_binary)
-                .fold_first_(|acc, v| if acc < v { acc } else { v }),
+                .reduce(|acc, v| if acc < v { acc } else { v }),
         }
     }
 }
@@ -594,7 +593,7 @@ impl<T: PolarsObject> ChunkAggSeries for ObjectChunked<T> {}
 
 #[cfg(test)]
 mod test {
-    use polars_arrow::prelude::QuantileInterpolOptions;
+    use arrow::legacy::prelude::QuantileInterpolOptions;
 
     use crate::prelude::*;
 

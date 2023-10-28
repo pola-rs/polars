@@ -17,6 +17,26 @@ pub(crate) struct GroupByRollingExec {
     pub(crate) apply: Option<Arc<dyn DataFrameUdf>>,
 }
 
+unsafe fn update_keys(keys: &mut [Series], groups: &GroupsProxy) {
+    match groups {
+        GroupsProxy::Idx(groups) => {
+            let first = groups.first();
+            // we don't use agg_first here, because the group
+            // can be empty, but we still want to know the first value
+            // of that group
+            for key in keys.iter_mut() {
+                *key = key.take_unchecked_from_slice(first);
+            }
+        },
+        GroupsProxy::Slice { groups, .. } => {
+            for key in keys.iter_mut() {
+                let indices = groups.iter().map(|[first, _len]| *first).collect_ca("");
+                *key = key.take_unchecked(&indices);
+            }
+        },
+    }
+}
+
 impl GroupByRollingExec {
     #[cfg(feature = "dynamic_group_by")]
     fn execute_impl(
@@ -58,26 +78,7 @@ impl GroupByRollingExec {
 
         // the ordering has changed due to the group_by
         if !keys.is_empty() {
-            unsafe {
-                match groups {
-                    GroupsProxy::Idx(groups) => {
-                        let first = groups.first();
-                        // we don't use agg_first here, because the group
-                        // can be empty, but we still want to know the first value
-                        // of that group
-                        for key in keys.iter_mut() {
-                            *key = key.take_unchecked_from_slice(first).unwrap();
-                        }
-                    },
-                    GroupsProxy::Slice { groups, .. } => {
-                        for key in keys.iter_mut() {
-                            let iter = &mut groups.iter().map(|[first, _len]| *first as usize)
-                                as &mut dyn TakeIterator<Item = usize>;
-                            *key = key.take_iter_unchecked(iter);
-                        }
-                    },
-                }
-            }
+            unsafe { update_keys(&mut keys, groups) }
         };
 
         let agg_columns = evaluate_aggs(&df, &self.aggs, groups, state)?;

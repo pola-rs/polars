@@ -28,7 +28,7 @@ class ExprDateTimeNameSpace:
 
     def truncate(
         self,
-        every: str | timedelta,
+        every: str | timedelta | Expr,
         offset: str | timedelta | None = None,
         *,
         use_earliest: bool | None = None,
@@ -221,12 +221,17 @@ class ExprDateTimeNameSpace:
         ambiguous = rename_use_earliest_to_ambiguous(use_earliest, ambiguous)
         if not isinstance(ambiguous, pl.Expr):
             ambiguous = F.lit(ambiguous)
+
+        if not isinstance(every, pl.Expr):
+            every = _timedelta_to_pl_duration(every)
+        every = parse_as_expression(every, str_as_lit=True)
+
         if offset is None:
             offset = "0ns"
 
         return wrap_expr(
             self._pyexpr.dt_truncate(
-                _timedelta_to_pl_duration(every),
+                every,
                 _timedelta_to_pl_duration(offset),
                 ambiguous._pyexpr,
             )
@@ -236,6 +241,8 @@ class ExprDateTimeNameSpace:
         self,
         every: str | timedelta,
         offset: str | timedelta | None = None,
+        *,
+        ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
         Divide the date/datetime range into buckets.
@@ -251,6 +258,12 @@ class ExprDateTimeNameSpace:
             Every interval start and period length
         offset
             Offset the window
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
 
         Notes
         -----
@@ -337,10 +350,14 @@ class ExprDateTimeNameSpace:
         if offset is None:
             offset = "0ns"
 
+        if not isinstance(ambiguous, pl.Expr):
+            ambiguous = F.lit(ambiguous)
+
         return wrap_expr(
             self._pyexpr.dt_round(
                 _timedelta_to_pl_duration(every),
                 _timedelta_to_pl_duration(offset),
+                ambiguous._pyexpr,
             )
         )
 
@@ -1164,7 +1181,7 @@ class ExprDateTimeNameSpace:
             return wrap_expr(self._pyexpr).cast(Date).cast(Int32)
         else:
             raise ValueError(
-                f"time_unit must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}"
+                f"`time_unit` must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}"
             )
 
     def timestamp(self, time_unit: TimeUnit = "us") -> Expr:

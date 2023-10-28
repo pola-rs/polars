@@ -9,9 +9,9 @@ use arrow::array::{
 };
 use arrow::bitmap::Bitmap;
 #[cfg(feature = "dtype-array")]
-use polars_arrow::prelude::fixed_size_list::AnonymousBuilder as AnonymousFixedSizeListArrayBuilder;
-use polars_arrow::prelude::list::AnonymousBuilder as AnonymousListArrayBuilder;
-use polars_arrow::trusted_len::{TrustedLen, TrustedLenPush};
+use arrow::legacy::prelude::fixed_size_list::AnonymousBuilder as AnonymousFixedSizeListArrayBuilder;
+use arrow::legacy::prelude::list::AnonymousBuilder as AnonymousListArrayBuilder;
+use arrow::legacy::trusted_len::{TrustedLen, TrustedLenPush};
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::{ObjectArray, PolarsObject};
@@ -83,7 +83,7 @@ impl<T, A: ParameterFreeDtypeStaticArray + ArrayFromIter<T>> ArrayFromIterDtype<
         I::IntoIter: TrustedLen,
     {
         debug_assert!(std::mem::discriminant(&dtype) == std::mem::discriminant(&A::get_dtype()));
-        Self::arr_from_iter_with_dtype(dtype, iter)
+        Self::arr_from_iter_trusted(iter)
     }
 
     #[inline(always)]
@@ -102,7 +102,7 @@ impl<T, A: ParameterFreeDtypeStaticArray + ArrayFromIter<T>> ArrayFromIterDtype<
         I::IntoIter: TrustedLen,
     {
         debug_assert!(std::mem::discriminant(&dtype) == std::mem::discriminant(&A::get_dtype()));
-        Self::try_arr_from_iter_with_dtype(dtype, iter)
+        Self::try_arr_from_iter_trusted(iter)
     }
 }
 
@@ -298,10 +298,12 @@ macro_rules! impl_trusted_collect_vec_validity {
 }
 
 impl<T: NumericNative> ArrayFromIter<T> for PrimitiveArray<T> {
+    #[inline]
     fn arr_from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         PrimitiveArray::from_vec(iter.into_iter().collect())
     }
 
+    #[inline]
     fn arr_from_iter_trusted<I>(iter: I) -> Self
     where
         I: IntoIterator<Item = T>,
@@ -310,11 +312,13 @@ impl<T: NumericNative> ArrayFromIter<T> for PrimitiveArray<T> {
         PrimitiveArray::from_vec(Vec::from_trusted_len_iter(iter))
     }
 
+    #[inline]
     fn try_arr_from_iter<E, I: IntoIterator<Item = Result<T, E>>>(iter: I) -> Result<Self, E> {
         let v: Result<Vec<T>, E> = iter.into_iter().collect();
         Ok(PrimitiveArray::from_vec(v?))
     }
 
+    #[inline]
     fn try_arr_from_iter_trusted<E, I>(iter: I) -> Result<Self, E>
     where
         I: IntoIterator<Item = Result<T, E>>,
@@ -703,7 +707,12 @@ impl<T: AsArray> ArrayFromIterDtype<T> for ListArray<i64> {
         for arr in &iter_values {
             builder.push(arr.as_array());
         }
-        builder.finish(Some(&dtype.to_arrow())).unwrap()
+        let inner = dtype
+            .inner_dtype()
+            .expect("expected nested type in ListArray collect");
+        builder
+            .finish(Some(&inner.to_physical().to_arrow()))
+            .unwrap()
     }
 
     fn try_arr_from_iter_with_dtype<E, I: IntoIterator<Item = Result<T, E>>>(
@@ -725,7 +734,12 @@ impl<T: AsArray> ArrayFromIterDtype<Option<T>> for ListArray<i64> {
         for arr in &iter_values {
             builder.push_opt(arr.as_ref().map(|a| a.as_array()));
         }
-        builder.finish(Some(&dtype.to_arrow())).unwrap()
+        let inner = dtype
+            .inner_dtype()
+            .expect("expected nested type in ListArray collect");
+        builder
+            .finish(Some(&inner.to_physical().to_arrow()))
+            .unwrap()
     }
 
     fn try_arr_from_iter_with_dtype<E, I: IntoIterator<Item = Result<Option<T>, E>>>(
@@ -751,7 +765,12 @@ impl ArrayFromIterDtype<Box<dyn Array>> for FixedSizeListArray {
         for arr in iter_values {
             builder.push(arr.into_boxed_array());
         }
-        builder.finish(Some(&dtype.to_arrow())).unwrap()
+        let inner = dtype
+            .inner_dtype()
+            .expect("expected nested type in ListArray collect");
+        builder
+            .finish(Some(&inner.to_physical().to_arrow()))
+            .unwrap()
     }
 
     fn try_arr_from_iter_with_dtype<E, I: IntoIterator<Item = Result<Box<dyn Array>, E>>>(
@@ -780,7 +799,12 @@ impl ArrayFromIterDtype<Option<Box<dyn Array>>> for FixedSizeListArray {
                 None => builder.push_null(),
             }
         }
-        builder.finish(Some(&dtype.to_arrow())).unwrap()
+        let inner = dtype
+            .inner_dtype()
+            .expect("expected nested type in ListArray collect");
+        builder
+            .finish(Some(&inner.to_physical().to_arrow()))
+            .unwrap()
     }
 
     fn try_arr_from_iter_with_dtype<

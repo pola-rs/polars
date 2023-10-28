@@ -132,7 +132,6 @@ def test_quantile_vs_numpy(tp: type, n: int) -> None:
         np_result = np.quantile(a, q)
     except IndexError:
         np_result = None
-        pass
     if np_result:
         # nan check
         if np_result != np_result:
@@ -182,29 +181,32 @@ def test_duration_function_literal() -> None:
     df = pl.DataFrame(
         {
             "A": ["x", "x", "y", "y", "y"],
-            "T": [date(2022, m, 1) for m in range(1, 6)],
+            "T": pl.datetime_range(
+                date(2022, 1, 1), date(2022, 5, 1), interval="1mo", eager=True
+            ),
             "S": [1, 2, 4, 8, 16],
         }
-    ).with_columns(
-        [
-            pl.col("T").cast(pl.Datetime),
-        ]
+    )
+
+    result = df.group_by("A", maintain_order=True).agg(
+        (pl.col("T").max() + pl.duration(seconds=1)) - pl.col("T")
     )
 
     # this checks if the `pl.duration` is flagged as AggState::Literal
-    assert df.group_by("A", maintain_order=True).agg(
-        [((pl.col("T").max() + pl.duration(seconds=1)) - pl.col("T"))]
-    ).to_dict(False) == {
-        "A": ["x", "y"],
-        "T": [
-            [timedelta(days=31, seconds=1), timedelta(seconds=1)],
-            [
-                timedelta(days=61, seconds=1),
-                timedelta(days=30, seconds=1),
-                timedelta(seconds=1),
+    expected = pl.DataFrame(
+        {
+            "A": ["x", "y"],
+            "T": [
+                [timedelta(days=31, seconds=1), timedelta(seconds=1)],
+                [
+                    timedelta(days=61, seconds=1),
+                    timedelta(days=30, seconds=1),
+                    timedelta(seconds=1),
+                ],
             ],
-        ],
-    }
+        }
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_string_par_materialize_8207() -> None:
@@ -253,7 +255,7 @@ def test_err_on_implode_and_agg() -> None:
         pl.col("type").implode().list.head().alias("foo")
     ).to_dict(False) == {
         "type": ["water", "fire", "earth"],
-        "foo": [["water", "water"], ["fire"], ["earth"]],
+        "foo": [[["water", "water"]], [["fire"]], [["earth"]]],
     }
 
     # but not during a window function as the groups cannot be mapped back
@@ -281,3 +283,9 @@ def test_sum_empty_and_null_set() -> None:
     df = pl.DataFrame({"a": [None, None, None], "b": [1, 1, 1]})
     assert df.select(pl.sum("a")).item() == 0.0
     assert df.group_by("b").agg(pl.sum("a"))["a"].item() == 0.0
+
+
+def test_horizontal_sum_null_to_identity() -> None:
+    assert pl.DataFrame({"a": [1, 5], "b": [10, None]}).select(
+        [pl.sum_horizontal(["a", "b"])]
+    ).to_series().to_list() == [11, 5]

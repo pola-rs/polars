@@ -32,7 +32,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Rust
         run: rustup show
@@ -45,29 +45,29 @@ jobs:
       - name: Compile tests
         run: >
           cargo test --all-features --no-run
-          -p polars-lazy
-          -p polars-plan
-          -p polars-io
           -p polars-core
-          -p polars-arrow
-          -p polars-time
-          -p polars-utils
+          -p polars-io
+          -p polars-lazy
+          -p polars-ops
+          -p polars-plan
           -p polars-row
           -p polars-sql
+          -p polars-time
+          -p polars-utils
 
       - name: Run tests
         if: github.ref_name != 'main'
         run: >
           cargo test --all-features
-          -p polars-lazy
-          -p polars-plan
-          -p polars-io
           -p polars-core
-          -p polars-arrow
-          -p polars-time
-          -p polars-utils
+          -p polars-io
+          -p polars-lazy
+          -p polars-ops
+          -p polars-plan
           -p polars-row
           -p polars-sql
+          -p polars-time
+          -p polars-utils
 
   integration-test:
     runs-on: ${{ matrix.os }}
@@ -77,7 +77,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Rust
         run: rustup show
@@ -97,7 +97,7 @@ jobs:
   check-features:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Rust
         run: rustup show
@@ -118,7 +118,7 @@ jobs:
   check-wasm:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Rust
         run: |

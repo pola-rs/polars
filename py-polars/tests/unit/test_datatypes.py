@@ -50,10 +50,10 @@ def test_dtype_temporal_units() -> None:
         assert inferred_dtype == expected_dtype
         assert inferred_dtype.time_unit == "us"  # type: ignore[union-attr]
 
-    with pytest.raises(ValueError, match="invalid time_unit"):
+    with pytest.raises(ValueError, match="invalid `time_unit`"):
         pl.Datetime("?")  # type: ignore[arg-type]
 
-    with pytest.raises(ValueError, match="invalid time_unit"):
+    with pytest.raises(ValueError, match="invalid `time_unit`"):
         pl.Duration("?")  # type: ignore[arg-type]
 
 

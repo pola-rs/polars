@@ -4,6 +4,7 @@ use std::thread::JoinHandle;
 
 use crossbeam_channel::{bounded, Receiver, Sender};
 use polars_core::prelude::*;
+#[cfg(feature = "csv")]
 use polars_io::csv::CsvWriter;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetWriter;
@@ -103,13 +104,14 @@ pub struct ParquetCloudSink {}
 #[cfg(all(feature = "parquet", feature = "cloud"))]
 impl ParquetCloudSink {
     #[allow(clippy::new_ret_no_self)]
-    pub fn new(
+    #[tokio::main(flavor = "current_thread")]
+    pub async fn new(
         uri: &str,
-        cloud_options: Option<&polars_core::cloud::CloudOptions>,
+        cloud_options: Option<&polars_io::cloud::CloudOptions>,
         parquet_options: ParquetWriteOptions,
         schema: &Schema,
     ) -> PolarsResult<FilesSink> {
-        let cloud_writer = polars_io::cloud::CloudWriter::new(uri, cloud_options)?;
+        let cloud_writer = polars_io::cloud::CloudWriter::new(uri, cloud_options).await?;
         let writer = ParquetWriter::new(cloud_writer)
             .with_compression(parquet_options.compression)
             .with_data_pagesize_limit(parquet_options.data_pagesize_limit)
@@ -180,9 +182,9 @@ impl CsvSink {
         let file = std::fs::File::create(path)?;
         let writer = CsvWriter::new(file)
             .has_header(options.has_header)
-            .with_delimiter(options.serialize_options.delimiter)
+            .with_separator(options.serialize_options.separator)
             .with_line_terminator(options.serialize_options.line_terminator)
-            .with_quoting_char(options.serialize_options.quote)
+            .with_quote_char(options.serialize_options.quote_char)
             .with_batch_size(options.batch_size)
             .with_datetime_format(options.serialize_options.datetime_format)
             .with_date_format(options.serialize_options.date_format)

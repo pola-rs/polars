@@ -11,6 +11,8 @@ from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.deprecation import (
     deprecate_renamed_function,
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
     rename_use_earliest_to_ambiguous,
 )
 from polars.utils.various import find_stacklevel
@@ -19,6 +21,8 @@ if TYPE_CHECKING:
     from polars import Expr
     from polars.type_aliases import (
         Ambiguous,
+        IntoExpr,
+        IntoExprColumn,
         PolarsDataType,
         PolarsTemporalType,
         TimeUnit,
@@ -366,71 +370,88 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_to_decimal(inference_length))
 
-    def lengths(self) -> Expr:
+    def len_bytes(self) -> Expr:
         """
-        Get length of the strings as UInt32 (as number of bytes).
+        Return the length of each string as the number of bytes.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`UInt32`.
+
+        See Also
+        --------
+        len_chars
 
         Notes
         -----
-        The returned lengths are equal to the number of bytes in the UTF8 string. If you
-        need the length in terms of the number of characters, use ``n_chars`` instead.
+        When working with non-ASCII text, the length in bytes is not the same as the
+        length in characters. You may want to use :func:`len_chars` instead.
+        Note that :func:`len_bytes` is much more performant (_O(1)_) than
+        :func:`len_chars` (_O(n)_).
 
         Examples
         --------
-        >>> df = pl.DataFrame({"s": ["Café", None, "345", "東京"]}).with_columns(
-        ...     [
-        ...         pl.col("s").str.lengths().alias("length"),
-        ...         pl.col("s").str.n_chars().alias("nchars"),
-        ...     ]
+        >>> df = pl.DataFrame({"a": ["Café", "345", "東京", None]})
+        >>> df.with_columns(
+        ...     pl.col("a").str.len_bytes().alias("n_bytes"),
+        ...     pl.col("a").str.len_chars().alias("n_chars"),
         ... )
-        >>> df
         shape: (4, 3)
-        ┌──────┬────────┬────────┐
-        │ s    ┆ length ┆ nchars │
-        │ ---  ┆ ---    ┆ ---    │
-        │ str  ┆ u32    ┆ u32    │
-        ╞══════╪════════╪════════╡
-        │ Café ┆ 5      ┆ 4      │
-        │ null ┆ null   ┆ null   │
-        │ 345  ┆ 3      ┆ 3      │
-        │ 東京  ┆ 6      ┆ 2      │
-        └──────┴────────┴────────┘
+        ┌──────┬─────────┬─────────┐
+        │ a    ┆ n_bytes ┆ n_chars │
+        │ ---  ┆ ---     ┆ ---     │
+        │ str  ┆ u32     ┆ u32     │
+        ╞══════╪═════════╪═════════╡
+        │ Café ┆ 5       ┆ 4       │
+        │ 345  ┆ 3       ┆ 3       │
+        │ 東京 ┆ 6       ┆ 2       │
+        │ null ┆ null    ┆ null    │
+        └──────┴─────────┴─────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_lengths())
+        return wrap_expr(self._pyexpr.str_len_bytes())
 
-    def n_chars(self) -> Expr:
+    def len_chars(self) -> Expr:
         """
-        Get length of the strings as UInt32 (as number of chars).
+        Return the length of each string as the number of characters.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`UInt32`.
+
+        See Also
+        --------
+        len_bytes
 
         Notes
         -----
-        If you know that you are working with ASCII text, ``lengths`` will be
-        equivalent, and faster (returns length in terms of the number of bytes).
+        When working with ASCII text, use :func:`len_bytes` instead to achieve
+        equivalent output with much better performance:
+        :func:`len_bytes` runs in _O(1)_, while :func:`len_chars` runs in (_O(n)_).
 
         Examples
         --------
-        >>> df = pl.DataFrame({"s": ["Café", None, "345", "東京"]}).with_columns(
-        ...     [
-        ...         pl.col("s").str.n_chars().alias("nchars"),
-        ...         pl.col("s").str.lengths().alias("length"),
-        ...     ]
+        >>> df = pl.DataFrame({"a": ["Café", "345", "東京", None]})
+        >>> df.with_columns(
+        ...     pl.col("a").str.len_chars().alias("n_chars"),
+        ...     pl.col("a").str.len_bytes().alias("n_bytes"),
         ... )
-        >>> df
         shape: (4, 3)
-        ┌──────┬────────┬────────┐
-        │ s    ┆ nchars ┆ length │
-        │ ---  ┆ ---    ┆ ---    │
-        │ str  ┆ u32    ┆ u32    │
-        ╞══════╪════════╪════════╡
-        │ Café ┆ 4      ┆ 5      │
-        │ null ┆ null   ┆ null   │
-        │ 345  ┆ 3      ┆ 3      │
-        │ 東京  ┆ 2      ┆ 6      │
-        └──────┴────────┴────────┘
+        ┌──────┬─────────┬─────────┐
+        │ a    ┆ n_chars ┆ n_bytes │
+        │ ---  ┆ ---     ┆ ---     │
+        │ str  ┆ u32     ┆ u32     │
+        ╞══════╪═════════╪═════════╡
+        │ Café ┆ 4       ┆ 5       │
+        │ 345  ┆ 3       ┆ 3       │
+        │ 東京 ┆ 2       ┆ 6       │
+        │ null ┆ null    ┆ null    │
+        └──────┴─────────┴─────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_n_chars())
+        return wrap_expr(self._pyexpr.str_len_chars())
 
     def concat(self, delimiter: str = "-") -> Expr:
         """
@@ -527,7 +548,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_to_titlecase())
 
-    def strip_chars(self, characters: str | None = None) -> Expr:
+    def strip_chars(self, characters: IntoExprColumn | None = None) -> Expr:
         r"""
         Remove leading and trailing characters.
 
@@ -580,9 +601,10 @@ class ExprStringNameSpace:
         └───────┘
 
         """
+        characters = parse_as_expression(characters, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_chars(characters))
 
-    def strip_chars_start(self, characters: str | None = None) -> Expr:
+    def strip_chars_start(self, characters: IntoExprColumn | None = None) -> Expr:
         r"""
         Remove leading characters.
 
@@ -622,9 +644,10 @@ class ExprStringNameSpace:
         └─────────┘
 
         """
+        characters = parse_as_expression(characters, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_chars_start(characters))
 
-    def strip_chars_end(self, characters: str | None = None) -> Expr:
+    def strip_chars_end(self, characters: IntoExprColumn | None = None) -> Expr:
         r"""
         Remove trailing characters.
 
@@ -677,9 +700,10 @@ class ExprStringNameSpace:
         └───────┘
 
         """
+        characters = parse_as_expression(characters, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_chars_end(characters))
 
-    def strip_prefix(self, prefix: str) -> Expr:
+    def strip_prefix(self, prefix: IntoExpr) -> Expr:
         """
         Remove prefix.
 
@@ -707,9 +731,10 @@ class ExprStringNameSpace:
         └───────────┴──────────┘
 
         """
+        prefix = parse_as_expression(prefix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_prefix(prefix))
 
-    def strip_suffix(self, suffix: str) -> Expr:
+    def strip_suffix(self, suffix: IntoExpr) -> Expr:
         """
         Remove suffix.
 
@@ -737,119 +762,121 @@ class ExprStringNameSpace:
         └───────────┴──────────┘
 
         """
+        suffix = parse_as_expression(suffix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_suffix(suffix))
 
-    def zfill(self, alignment: int) -> Expr:
+    def pad_start(self, length: int, fill_char: str = " ") -> Expr:
         """
-        Fills the string with zeroes.
-
-        Return a copy of the string left filled with ASCII '0' digits to make a string
-        of length width.
-
-        A leading sign prefix ('+'/'-') is handled by inserting the padding after the
-        sign character rather than before. The original string is returned if width is
-        less than or equal to ``len(s)``.
+        Pad the start of the string until it reaches the given length.
 
         Parameters
         ----------
-        alignment
-            Fill the value up to this length
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "num": [-10, -1, 0, 1, 10, 100, 1000, 10000, 100000, 1000000, None],
-        ...     }
-        ... )
-        >>> df.with_columns(pl.col("num").cast(str).str.zfill(5))
-        shape: (11, 1)
-        ┌─────────┐
-        │ num     │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │ -0010   │
-        │ -0001   │
-        │ 00000   │
-        │ 00001   │
-        │ …       │
-        │ 10000   │
-        │ 100000  │
-        │ 1000000 │
-        │ null    │
-        └─────────┘
-
-        """
-        return wrap_expr(self._pyexpr.str_zfill(alignment))
-
-    def ljust(self, width: int, fill_char: str = " ") -> Expr:
-        """
-        Return the string left justified in a string of length ``width``.
-
-        Padding is done using the specified ``fill_char``.
-        The original string is returned if ``width`` is less than or equal to
-        ``len(s)``.
-
-        Parameters
-        ----------
-        width
-            Justify left to this length.
+        length
+            Pad the string until it reaches this length. Strings with length equal to
+            or greater than this value are returned as-is.
         fill_char
-            Fill with this ASCII character.
+            The character to pad the string with.
+
+        See Also
+        --------
+        pad_end
+        zfill
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": ["cow", "monkey", None, "hippopotamus"]})
-        >>> df.select(pl.col("a").str.ljust(8, "*"))
-        shape: (4, 1)
-        ┌──────────────┐
-        │ a            │
-        │ ---          │
-        │ str          │
-        ╞══════════════╡
-        │ cow*****     │
-        │ monkey**     │
-        │ null         │
-        │ hippopotamus │
-        └──────────────┘
+        >>> df = pl.DataFrame({"a": ["cow", "monkey", "hippopotamus", None]})
+        >>> df.with_columns(padded=pl.col("a").str.pad_start(8, "*"))
+        shape: (4, 2)
+        ┌──────────────┬──────────────┐
+        │ a            ┆ padded       │
+        │ ---          ┆ ---          │
+        │ str          ┆ str          │
+        ╞══════════════╪══════════════╡
+        │ cow          ┆ *****cow     │
+        │ monkey       ┆ **monkey     │
+        │ hippopotamus ┆ hippopotamus │
+        │ null         ┆ null         │
+        └──────────────┴──────────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_ljust(width, fill_char))
+        return wrap_expr(self._pyexpr.str_pad_start(length, fill_char))
 
-    def rjust(self, width: int, fill_char: str = " ") -> Expr:
+    def pad_end(self, length: int, fill_char: str = " ") -> Expr:
         """
-        Return the string right justified in a string of length ``width``.
-
-        Padding is done using the specified ``fill_char``.
-        The original string is returned if ``width`` is less than or equal to
-        ``len(s)``.
+        Pad the end of the string until it reaches the given length.
 
         Parameters
         ----------
-        width
-            Justify right to this length.
+        length
+            Pad the string until it reaches this length. Strings with length equal to
+            or greater than this value are returned as-is.
         fill_char
-            Fill with this ASCII character.
+            The character to pad the string with.
+
+        See Also
+        --------
+        pad_start
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": ["cow", "monkey", None, "hippopotamus"]})
-        >>> df.select(pl.col("a").str.rjust(8, "*"))
-        shape: (4, 1)
-        ┌──────────────┐
-        │ a            │
-        │ ---          │
-        │ str          │
-        ╞══════════════╡
-        │ *****cow     │
-        │ **monkey     │
-        │ null         │
-        │ hippopotamus │
-        └──────────────┘
+        >>> df = pl.DataFrame({"a": ["cow", "monkey", "hippopotamus", None]})
+        >>> df.with_columns(padded=pl.col("a").str.pad_end(8, "*"))
+        shape: (4, 2)
+        ┌──────────────┬──────────────┐
+        │ a            ┆ padded       │
+        │ ---          ┆ ---          │
+        │ str          ┆ str          │
+        ╞══════════════╪══════════════╡
+        │ cow          ┆ cow*****     │
+        │ monkey       ┆ monkey**     │
+        │ hippopotamus ┆ hippopotamus │
+        │ null         ┆ null         │
+        └──────────────┴──────────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_rjust(width, fill_char))
+        return wrap_expr(self._pyexpr.str_pad_end(length, fill_char))
+
+    @deprecate_renamed_parameter("alignment", "length", version="0.19.12")
+    def zfill(self, length: int) -> Expr:
+        """
+        Pad the start of the string with zeros until it reaches the given length.
+
+        A sign prefix (``-``) is handled by inserting the padding after the sign
+        character rather than before.
+
+        Parameters
+        ----------
+        length
+            Pad the string until it reaches this length. Strings with length equal to
+            or greater than this value are returned as-is.
+
+        See Also
+        --------
+        pad_start
+
+        Notes
+        -----
+        This method is intended for padding numeric strings. If your data contains
+        non-ASCII characters, use :func:`pad_start` instead.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [-1, 123, 999999, None]})
+        >>> df.with_columns(zfill=pl.col("a").cast(pl.Utf8).str.zfill(4))
+        shape: (4, 2)
+        ┌────────┬────────┐
+        │ a      ┆ zfill  │
+        │ ---    ┆ ---    │
+        │ i64    ┆ str    │
+        ╞════════╪════════╡
+        │ -1     ┆ -001   │
+        │ 123    ┆ 0123   │
+        │ 999999 ┆ 999999 │
+        │ null   ┆ null   │
+        └────────┴────────┘
+
+        """
+        return wrap_expr(self._pyexpr.str_zfill(length))
 
     def contains(
         self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
@@ -1157,7 +1184,7 @@ class ExprStringNameSpace:
             return wrap_expr(self._pyexpr.str_base64_decode(strict))
         else:
             raise ValueError(
-                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
+                f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
             )
 
     def encode(self, encoding: TransferEncoding) -> Expr:
@@ -1196,7 +1223,7 @@ class ExprStringNameSpace:
             return wrap_expr(self._pyexpr.str_base64_encode())
         else:
             raise ValueError(
-                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
+                f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
             )
 
     def extract(self, pattern: str, group_index: int = 1) -> Expr:
@@ -1511,7 +1538,7 @@ class ExprStringNameSpace:
         pattern = parse_as_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_count_matches(pattern, literal))
 
-    def split(self, by: str | Expr, *, inclusive: bool = False) -> Expr:
+    def split(self, by: IntoExpr, *, inclusive: bool = False) -> Expr:
         """
         Split the string by a substring.
 
@@ -1571,7 +1598,7 @@ class ExprStringNameSpace:
             return wrap_expr(self._pyexpr.str_split_inclusive(by))
         return wrap_expr(self._pyexpr.str_split(by))
 
-    def split_exact(self, by: str, n: int, *, inclusive: bool = False) -> Expr:
+    def split_exact(self, by: IntoExpr, n: int, *, inclusive: bool = False) -> Expr:
         """
         Split the string by a substring using ``n`` splits.
 
@@ -1637,11 +1664,12 @@ class ExprStringNameSpace:
         └──────┴────────────┴─────────────┘
 
         """
+        by = parse_as_expression(by, str_as_lit=True)
         if inclusive:
             return wrap_expr(self._pyexpr.str_split_exact_inclusive(by, n))
         return wrap_expr(self._pyexpr.str_split_exact(by, n))
 
-    def splitn(self, by: str, n: int) -> Expr:
+    def splitn(self, by: IntoExpr, n: int) -> Expr:
         """
         Split the string by a substring, restricted to returning at most ``n`` items.
 
@@ -1702,6 +1730,7 @@ class ExprStringNameSpace:
         └─────────────┴────────────┴─────────────┘
 
         """
+        by = parse_as_expression(by, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_splitn(by, n))
 
     def replace(
@@ -1908,18 +1937,16 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_explode())
 
-    def parse_int(self, radix: int = 2, *, strict: bool = True) -> Expr:
+    def parse_int(self, radix: int | None = None, *, strict: bool = True) -> Expr:
         """
         Parse integers with base radix from strings.
 
-        By default base 2. ParseError/Overflows become Nulls.
+        ParseError/Overflows become Nulls.
 
         Parameters
         ----------
         radix
             Positive integer which is the base of the string we are parsing.
-            Default: 2.
-
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
             False silently convert to Null.
@@ -1960,6 +1987,14 @@ class ExprStringNameSpace:
         └───────┘
 
         """
+        if radix is None:
+            issue_deprecation_warning(
+                "The default value for the `radix` parameter of `parse_int` will be removed in a future version."
+                " Call `parse_int(radix=2)` to keep current behavior and silence this warning.",
+                version="0.19.8",
+            )
+            radix = 2
+
         return wrap_expr(self._pyexpr.str_parse_int(radix, strict))
 
     @deprecate_renamed_function("strip_chars", version="0.19.3")
@@ -2039,6 +2074,66 @@ class ExprStringNameSpace:
         """
         return self.count_matches(pattern)
 
+    @deprecate_renamed_function("len_bytes", version="0.19.8")
+    def lengths(self) -> Expr:
+        """
+        Return the length of each string as the number of bytes.
+
+        .. deprecated:: 0.19.8
+            This method has been renamed to :func:`len_bytes`.
+
+        """
+        return self.len_bytes()
+
+    @deprecate_renamed_function("len_chars", version="0.19.8")
+    def n_chars(self) -> Expr:
+        """
+        Return the length of each string as the number of characters.
+
+        .. deprecated:: 0.19.8
+            This method has been renamed to :func:`len_chars`.
+
+        """
+        return self.len_chars()
+
+    @deprecate_renamed_function("pad_end", version="0.19.12")
+    @deprecate_renamed_parameter("width", "length", version="0.19.12")
+    def ljust(self, length: int, fill_char: str = " ") -> Expr:
+        """
+        Return the string left justified in a string of length ``length``.
+
+        .. deprecated:: 0.19.12
+            This method has been renamed to :func:`pad_end`.
+
+        Parameters
+        ----------
+        length
+            Justify left to this length.
+        fill_char
+            Fill with this ASCII character.
+
+        """
+        return self.pad_end(length, fill_char)
+
+    @deprecate_renamed_function("pad_start", version="0.19.12")
+    @deprecate_renamed_parameter("width", "length", version="0.19.12")
+    def rjust(self, length: int, fill_char: str = " ") -> Expr:
+        """
+        Return the string right justified in a string of length ``length``.
+
+        .. deprecated:: 0.19.12
+            This method has been renamed to :func:`pad_start`.
+
+        Parameters
+        ----------
+        length
+            Justify right to this length.
+        fill_char
+            Fill with this ASCII character.
+
+        """
+        return self.pad_start(length, fill_char)
+
 
 def _validate_format_argument(format: str | None) -> None:
     if format is not None and ".%f" in format:
@@ -2048,6 +2143,4 @@ def _validate_format_argument(format: str | None) -> None:
             " Use `%.f` instead."
             " See the full specification: https://docs.rs/chrono/latest/chrono/format/strftime"
         )
-        warnings.warn(
-            message, category=ChronoFormatWarning, stacklevel=find_stacklevel()
-        )
+        warnings.warn(message, ChronoFormatWarning, stacklevel=find_stacklevel())

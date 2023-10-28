@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
@@ -91,9 +91,13 @@ def lit(
             raise TypeError(
                 f"time zone of dtype ({dtype.time_zone!r}) differs from time zone of value ({value.tzinfo!r})"  # type: ignore[union-attr]
             )
-        e = lit(_datetime_to_pl_timestamp(value, time_unit)).cast(Datetime(time_unit))
+        e = lit(
+            _datetime_to_pl_timestamp(value.replace(tzinfo=timezone.utc), time_unit)
+        ).cast(Datetime(time_unit))
         if time_zone is not None:
-            return e.dt.replace_time_zone(str(time_zone))
+            return e.dt.replace_time_zone(
+                str(time_zone), ambiguous="earliest" if value.fold == 0 else "latest"
+            )
         else:
             return e
 
@@ -143,13 +147,12 @@ def lit(
         # handle 'ns' units
         if isinstance(item, int) and hasattr(value, "dtype"):
             dtype_name = value.dtype.name
-            if dtype_name.startswith(("datetime64[", "timedelta64[")):
-                time_unit = dtype_name[11:-1]
-                return lit(item).cast(
-                    Datetime(time_unit)
-                    if dtype_name.startswith("date")
-                    else Duration(time_unit)
-                )
+            if dtype_name.startswith("datetime64["):
+                time_unit = dtype_name[len("datetime64[") : -1]
+                return lit(item).cast(Datetime(time_unit))
+            if dtype_name.startswith("timedelta64["):
+                time_unit = dtype_name[len("timedelta64[") : -1]
+                return lit(item).cast(Duration(time_unit))
 
     except AttributeError:
         item = value

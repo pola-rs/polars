@@ -23,12 +23,15 @@ build: .venv  ## Compile and install Polars for development
 	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop
 
 .PHONY: build-debug-opt
-build-debug-opt: .venv  ## Compile and install Polars for development, with minimal optimizations turned on
+build-debug-opt: .venv  ## Compile and install Polars with minimal optimizations turned on
 	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --profile opt-dev
 
+.PHONY: build-debug-opt-subset
+build-debug-opt-subset: .venv  ## Compile and install Polars with minimal optimizations turned on and no default features
+	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --no-default-features --profile opt-dev
+
 .PHONY: build-opt
-build-opt: .venv  ## Compile and install Polars for performance-sensitive development, with nearly \
-	                 full optimization on and debug assertions turned off, but with debug symbols on
+build-opt: .venv  ## Compile and install Polars with nearly full optimization on and debug assertions turned off, but with debug symbols on
 	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --profile debug-release
 
 .PHONY: build-release
@@ -53,11 +56,10 @@ build-release-native: .venv  ## Same as build-release, except with native CPU op
 
 .PHONY: fmt
 fmt: .venv  ## Run autoformatting and linting
-	$(VENV_BIN)/ruff .
-	$(VENV_BIN)/black .
+	$(VENV_BIN)/ruff check .
+	$(VENV_BIN)/ruff format .
 	$(VENV_BIN)/blackdoc .
 	$(VENV_BIN)/typos ..
-	$(VENV_BIN)/python scripts/check_stacklevels.py
 	cargo fmt --all
 	-dprint fmt
 	-$(VENV_BIN)/mypy
@@ -105,4 +107,4 @@ clean:  ## Clean up caches and build artifacts
 .PHONY: help
 help:  ## Display this help screen
 	@echo -e "\033[1mAvailable commands:\033[0m"
-	@grep -E '^[a-z.A-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' | sort
+	@grep -E '^[a-z.A-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}' | sort

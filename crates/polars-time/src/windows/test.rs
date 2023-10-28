@@ -1,5 +1,5 @@
+use arrow::temporal_conversions::timestamp_ns_to_datetime;
 use chrono::prelude::*;
-use polars_arrow::export::arrow::temporal_conversions::timestamp_ns_to_datetime;
 use polars_core::prelude::*;
 
 use crate::date_range::datetime_range_i64;
@@ -754,10 +754,18 @@ fn test_rolling_lookback() {
         ClosedWindow::None,
     ] {
         let offset = Duration::parse("-2h");
-        let g0 =
-            group_by_values_iter_lookbehind(period, offset, &dates, closed_window, tu, None, 0)
-                .collect::<PolarsResult<Vec<_>>>()
-                .unwrap();
+        let g0 = group_by_values_iter_lookbehind(
+            period,
+            offset,
+            &dates,
+            closed_window,
+            tu,
+            None,
+            0,
+            None,
+        )
+        .collect::<PolarsResult<Vec<_>>>()
+        .unwrap();
         let g1 = group_by_values_iter_partial_lookbehind(
             period,
             offset,

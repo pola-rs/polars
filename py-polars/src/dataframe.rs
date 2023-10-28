@@ -1,4 +1,4 @@
-use std::io::BufWriter;
+use std::io::{BufWriter, Cursor};
 use std::ops::Deref;
 
 use either::Either;
@@ -20,7 +20,7 @@ use polars_core::utils::try_get_supertype;
 #[cfg(feature = "pivot")]
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PyTuple};
+use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
 
 #[cfg(feature = "parquet")]
 use crate::conversion::parse_parquet_compression;
@@ -88,6 +88,35 @@ impl PyDataFrame {
         let df = DataFrame::from_rows_and_schema(&rows, &schema).map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
+
+    #[cfg(feature = "ipc_streaming")]
+    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        // Used in pickle/pickling
+        let mut buf: Vec<u8> = vec![];
+        IpcStreamWriter::new(&mut buf)
+            .finish(&mut self.df.clone())
+            .expect("ipc writer");
+        Ok(PyBytes::new(py, &buf).to_object(py))
+    }
+
+    #[cfg(feature = "ipc_streaming")]
+    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        // Used in pickle/pickling
+        match state.extract::<&PyBytes>(py) {
+            Ok(s) => {
+                let c = Cursor::new(s.as_bytes());
+                let reader = IpcStreamReader::new(c);
+
+                reader
+                    .finish()
+                    .map(|df| {
+                        self.df = df;
+                    })
+                    .map_err(|e| PyPolarsErr::from(e).into())
+            },
+            Err(e) => Err(e),
+        }
+    }
 }
 
 impl From<DataFrame> for PyDataFrame {
@@ -132,7 +161,6 @@ impl PyDataFrame {
     }
 
     #[staticmethod]
-    #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv")]
     #[pyo3(signature = (
         py_f, infer_schema_length, chunk_size, has_header, ignore_errors, n_rows,
@@ -200,7 +228,7 @@ impl PyDataFrame {
             .infer_schema(infer_schema_length)
             .has_header(has_header)
             .with_n_rows(n_rows)
-            .with_delimiter(separator.as_bytes()[0])
+            .with_separator(separator.as_bytes()[0])
             .with_skip_rows(skip_rows)
             .with_ignore_errors(ignore_errors)
             .with_projection(projection)
@@ -233,7 +261,6 @@ impl PyDataFrame {
     #[staticmethod]
     #[cfg(feature = "parquet")]
     #[pyo3(signature = (py_f, columns, projection, n_rows, parallel, row_count, low_memory, use_statistics, rechunk))]
-    #[allow(clippy::too_many_arguments)]
     pub fn read_parquet(
         py_f: PyObject,
         columns: Option<Vec<String>>,
@@ -376,6 +403,7 @@ impl PyDataFrame {
     #[cfg(feature = "json")]
     pub fn read_json(
         py_f: &PyAny,
+        infer_schema_length: Option<usize>,
         schema: Option<Wrap<Schema>>,
         schema_overrides: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
@@ -394,8 +422,9 @@ impl PyDataFrame {
                     let e = PyPolarsErr::from(PolarsError::ComputeError(msg.into()));
                     Err(PyErr::from(e))
                 } else {
-                    let mut builder =
-                        JsonReader::new(mmap_bytes_r).with_json_format(JsonFormat::Json);
+                    let mut builder = JsonReader::new(mmap_bytes_r)
+                        .with_json_format(JsonFormat::Json)
+                        .infer_schema_len(infer_schema_length);
 
                     if let Some(schema) = schema {
                         builder = builder.with_schema(Arc::new(schema.0));
@@ -551,7 +580,7 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[cfg(feature = "csv")]
     pub fn write_csv(
         &mut self,
         py: Python,
@@ -559,7 +588,7 @@ impl PyDataFrame {
         has_header: bool,
         separator: u8,
         line_terminator: String,
-        quote: u8,
+        quote_char: u8,
         batch_size: usize,
         datetime_format: Option<String>,
         date_format: Option<String>,
@@ -576,9 +605,9 @@ impl PyDataFrame {
                 // No need for a buffered writer, because the csv writer does internal buffering.
                 CsvWriter::new(f)
                     .has_header(has_header)
-                    .with_delimiter(separator)
+                    .with_separator(separator)
                     .with_line_terminator(line_terminator)
-                    .with_quoting_char(quote)
+                    .with_quote_char(quote_char)
                     .with_batch_size(batch_size)
                     .with_datetime_format(datetime_format)
                     .with_date_format(date_format)
@@ -593,9 +622,9 @@ impl PyDataFrame {
             let mut buf = get_file_like(py_f, true)?;
             CsvWriter::new(&mut buf)
                 .has_header(has_header)
-                .with_delimiter(separator)
+                .with_separator(separator)
                 .with_line_terminator(line_terminator)
-                .with_quoting_char(quote)
+                .with_quote_char(quote_char)
                 .with_batch_size(batch_size)
                 .with_datetime_format(datetime_format)
                 .with_date_format(date_format)
@@ -885,28 +914,28 @@ impl PyDataFrame {
 
     pub fn sample_n(
         &self,
-        n: usize,
+        n: &PySeries,
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
         let df = self
             .df
-            .sample_n(n, with_replacement, shuffle, seed)
+            .sample_n(&n.series, with_replacement, shuffle, seed)
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
     pub fn sample_frac(
         &self,
-        frac: f64,
+        frac: &PySeries,
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
         let df = self
             .df
-            .sample_frac(frac, with_replacement, shuffle, seed)
+            .sample_frac(&frac.series, with_replacement, shuffle, seed)
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
@@ -1003,7 +1032,7 @@ impl PyDataFrame {
         self.df.find_idx_by_name(name)
     }
 
-    pub fn column(&self, name: &str) -> PyResult<PySeries> {
+    pub fn get_column(&self, name: &str) -> PyResult<PySeries> {
         let series = self
             .df
             .column(name)
@@ -1160,7 +1189,6 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "pivot")]
-    #[allow(clippy::too_many_arguments)]
     pub fn pivot_expr(
         &self,
         values: Vec<String>,
@@ -1201,10 +1229,6 @@ impl PyDataFrame {
 
         // SAFETY: PyDataFrame is a repr(transparent) DataFrame.
         Ok(unsafe { std::mem::transmute::<Vec<DataFrame>, Vec<PyDataFrame>>(out) })
-    }
-
-    pub fn shift(&self, periods: i64) -> Self {
-        self.df.shift(periods).into()
     }
 
     pub fn lazy(&self) -> PyLazyFrame {

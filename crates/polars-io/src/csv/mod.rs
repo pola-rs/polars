@@ -18,7 +18,7 @@
 //!
 //!     CsvWriter::new(&mut file)
 //!     .has_header(true)
-//!     .with_delimiter(b',')
+//!     .with_separator(b',')
 //!     .finish(df)
 //! }
 //! ```

@@ -1,10 +1,7 @@
-use std::ops::{BitAnd, BitOr, Not};
-
-use polars_core::POOL;
-use rayon::prelude::*;
+use std::ops::Not;
 
 use super::*;
-use crate::{map, wrap};
+use crate::{map, map_as_slice, wrap};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
@@ -99,8 +96,8 @@ impl From<BooleanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             IsDuplicated => map!(is_duplicated),
             #[cfg(feature = "is_in")]
             IsIn => wrap!(is_in),
-            AllHorizontal => wrap!(all_horizontal),
-            AnyHorizontal => wrap!(any_horizontal),
+            AllHorizontal => map_as_slice!(all_horizontal),
+            AnyHorizontal => map_as_slice!(any_horizontal),
             Not => map!(not_),
         }
     }
@@ -181,38 +178,12 @@ fn is_in(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     polars_ops::prelude::is_in(left, other).map(|ca| Some(ca.into_series()))
 }
 
-fn any_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
-    let mut out = POOL.install(|| {
-        s.par_iter()
-            .try_fold(
-                || BooleanChunked::new("", &[false]),
-                |acc, b| {
-                    let b = b.cast(&DataType::Boolean)?;
-                    let b = b.bool()?;
-                    PolarsResult::Ok((&acc).bitor(b))
-                },
-            )
-            .try_reduce(|| BooleanChunked::new("", [false]), |a, b| Ok(a.bitor(b)))
-    })?;
-    out.rename("any");
-    Ok(Some(out.into_series()))
+fn any_horizontal(s: &[Series]) -> PolarsResult<Series> {
+    polars_ops::prelude::any_horizontal(s)
 }
 
-fn all_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
-    let mut out = POOL.install(|| {
-        s.par_iter()
-            .try_fold(
-                || BooleanChunked::new("", &[true]),
-                |acc, b| {
-                    let b = b.cast(&DataType::Boolean)?;
-                    let b = b.bool()?;
-                    PolarsResult::Ok((&acc).bitand(b))
-                },
-            )
-            .try_reduce(|| BooleanChunked::new("", [true]), |a, b| Ok(a.bitand(b)))
-    })?;
-    out.rename("all");
-    Ok(Some(out.into_series()))
+fn all_horizontal(s: &[Series]) -> PolarsResult<Series> {
+    polars_ops::prelude::all_horizontal(s)
 }
 
 fn not_(s: &Series) -> PolarsResult<Series> {

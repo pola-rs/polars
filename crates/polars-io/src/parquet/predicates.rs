@@ -1,157 +1,48 @@
-use arrow::compute::concatenate::concatenate;
-use arrow::io::parquet::read::statistics::{deserialize, Statistics};
-use arrow::io::parquet::read::RowGroupMetaData;
+use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
+use polars_parquet::read::statistics::{deserialize, Statistics};
+use polars_parquet::read::RowGroupMetaData;
 
-use crate::predicates::PhysicalIoExpr;
-use crate::ArrowResult;
-
-/// The statistics for a column in a Parquet file
-/// they typically hold
-/// - max value
-/// - min value
-/// - null_count
-#[cfg_attr(debug_assertions, derive(Debug))]
-pub struct ColumnStats(Statistics, Field);
+use crate::predicates::{BatchStats, ColumnStats, PhysicalIoExpr};
 
 impl ColumnStats {
-    pub fn dtype(&self) -> DataType {
-        self.1.data_type().clone()
-    }
-
-    pub fn null_count(&self) -> Option<usize> {
-        match self.1.data_type() {
-            #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => None,
-            _ => {
-                // the array holds the null count for every row group
-                // so we sum them to get them of the whole file.
-                let s = Series::try_from(("", self.0.null_count.clone())).unwrap();
-
-                // if all null, there are no statistics.
-                if s.null_count() != s.len() {
-                    s.sum()
-                } else {
-                    None
-                }
-            },
-        }
-    }
-
-    pub fn to_min_max(&self) -> Option<Series> {
-        let max_val = &*self.0.max_value;
-        let min_val = &*self.0.min_value;
-
-        let dtype = DataType::from(min_val.data_type());
-
-        if Self::use_min_max(dtype) {
-            let arr = concatenate(&[min_val, max_val]).unwrap();
-            let s = Series::try_from(("", arr)).unwrap();
-            if s.null_count() > 0 {
-                None
-            } else {
-                Some(s)
-            }
-        } else {
-            None
-        }
-    }
-
-    pub fn to_min(&self) -> Option<Series> {
-        let min_val = self.0.min_value.clone();
-        let dtype = DataType::from(min_val.data_type());
-
-        if !Self::use_min_max(dtype) || min_val.len() != 1 {
-            return None;
-        }
-
-        let s = Series::try_from(("", min_val)).unwrap();
-        if s.null_count() > 0 {
-            None
-        } else {
-            Some(s)
-        }
-    }
-
-    pub fn to_max(&self) -> Option<Series> {
-        let max_val = self.0.max_value.clone();
-        let dtype = DataType::from(max_val.data_type());
-
-        if !Self::use_min_max(dtype) || max_val.len() != 1 {
-            return None;
-        }
-
-        let s = Series::try_from(("", max_val)).unwrap();
-        if s.null_count() > 0 {
-            None
-        } else {
-            Some(s)
-        }
-    }
-
-    #[cfg(feature = "dtype-binary")]
-    fn use_min_max(dtype: DataType) -> bool {
-        dtype.is_numeric() || matches!(dtype, DataType::Utf8) || matches!(dtype, DataType::Binary)
-    }
-
-    #[cfg(not(feature = "dtype-binary"))]
-    fn use_min_max(dtype: DataType) -> bool {
-        dtype.is_numeric() || matches!(dtype, DataType::Utf8)
-    }
-}
-
-/// A collection of column stats with a known schema.
-pub struct BatchStats {
-    schema: Schema,
-    stats: Vec<ColumnStats>,
-}
-
-impl BatchStats {
-    pub fn get_stats(&self, column: &str) -> polars_core::error::PolarsResult<&ColumnStats> {
-        self.schema.try_index_of(column).map(|i| &self.stats[i])
-    }
-
-    pub fn schema(&self) -> &Schema {
-        &self.schema
+    fn from_arrow_stats(stats: Statistics, field: &ArrowField) -> Self {
+        Self::new(
+            field.into(),
+            Some(Series::try_from(("", stats.null_count)).unwrap()),
+            Some(Series::try_from(("", stats.min_value)).unwrap()),
+            Some(Series::try_from(("", stats.max_value)).unwrap()),
+        )
     }
 }
 
 /// Collect the statistics in a column chunk.
 pub(crate) fn collect_statistics(
-    md: &[RowGroupMetaData],
-    arrow_schema: &ArrowSchema,
-    rg: Option<usize>,
-) -> ArrowResult<Option<BatchStats>> {
-    let mut schema = Schema::with_capacity(arrow_schema.fields.len());
+    md: &RowGroupMetaData,
+    schema: &ArrowSchema,
+) -> PolarsResult<Option<BatchStats>> {
     let mut stats = vec![];
 
-    for fld in &arrow_schema.fields {
-        // note that we only select a single row group.
-        let st = match rg {
-            None => deserialize(fld, md)?,
-            // we select a single row group and collect only those stats
-            Some(rg) => deserialize(fld, &md[rg..rg + 1])?,
-        };
-        schema.with_column((&fld.name).into(), (&fld.data_type).into());
-        stats.push(ColumnStats(st, fld.into()));
+    for field in schema.fields.iter() {
+        let st = deserialize(field, md)?;
+        stats.push(ColumnStats::from_arrow_stats(st, field));
     }
 
     Ok(if stats.is_empty() {
         None
     } else {
-        Some(BatchStats { schema, stats })
+        Some(BatchStats::new(Arc::new(schema.into()), stats))
     })
 }
 
 pub(super) fn read_this_row_group(
-    predicate: Option<&Arc<dyn PhysicalIoExpr>>,
-    file_metadata: &arrow::io::parquet::read::FileMetaData,
-    schema: &ArrowSchema,
-    rg: usize,
+    predicate: Option<&dyn PhysicalIoExpr>,
+    md: &RowGroupMetaData,
+    schema: &ArrowSchemaRef,
 ) -> PolarsResult<bool> {
-    if let Some(pred) = &predicate {
+    if let Some(pred) = predicate {
         if let Some(pred) = pred.as_stats_evaluator() {
-            if let Some(stats) = collect_statistics(&file_metadata.row_groups, schema, Some(rg))? {
+            if let Some(stats) = collect_statistics(md, schema)? {
                 let should_read = pred.should_read(&stats);
                 // a parquet file may not have statistics of all columns
                 if matches!(should_read, Ok(false)) {

@@ -27,6 +27,7 @@ Manipulation/selection
     Expr.flatten
     Expr.floor
     Expr.forward_fill
+    Expr.get
     Expr.head
     Expr.inspect
     Expr.interpolate

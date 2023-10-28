@@ -1,43 +1,65 @@
-use arrow::array::{Array, BooleanArray, PrimitiveArray};
-use arrow::bitmap::{Bitmap, MutableBitmap};
-
-use super::bitmap::take_bitmap_unchecked;
-use crate::index::IdxSize;
+use super::Index;
+use crate::array::{Array, BooleanArray, PrimitiveArray};
+use crate::bitmap::{Bitmap, MutableBitmap};
 
 // take implementation when neither values nor indices contain nulls
-unsafe fn take_no_validity(values: &Bitmap, indices: &[IdxSize]) -> (Bitmap, Option<Bitmap>) {
-    (take_bitmap_unchecked(values, indices), None)
+fn take_no_validity<I: Index>(values: &Bitmap, indices: &[I]) -> (Bitmap, Option<Bitmap>) {
+    let values = indices.iter().map(|index| values.get_bit(index.to_usize()));
+    let buffer = Bitmap::from_trusted_len_iter(values);
+
+    (buffer, None)
 }
 
 // take implementation when only values contain nulls
-unsafe fn take_values_validity(
+fn take_values_validity<I: Index>(
     values: &BooleanArray,
-    indices: &[IdxSize],
+    indices: &[I],
 ) -> (Bitmap, Option<Bitmap>) {
     let validity_values = values.validity().unwrap();
-    let validity = take_bitmap_unchecked(validity_values, indices);
+    let validity = indices
+        .iter()
+        .map(|index| validity_values.get_bit(index.to_usize()));
+    let validity = Bitmap::from_trusted_len_iter(validity);
 
     let values_values = values.values();
-    let buffer = take_bitmap_unchecked(values_values, indices);
+    let values = indices
+        .iter()
+        .map(|index| values_values.get_bit(index.to_usize()));
+    let buffer = Bitmap::from_trusted_len_iter(values);
 
     (buffer, validity.into())
 }
 
 // take implementation when only indices contain nulls
-unsafe fn take_indices_validity(
+fn take_indices_validity<I: Index>(
     values: &Bitmap,
-    indices: &PrimitiveArray<IdxSize>,
+    indices: &PrimitiveArray<I>,
 ) -> (Bitmap, Option<Bitmap>) {
-    // simply take all and copy the bitmap
-    let buffer = take_bitmap_unchecked(values, indices.values());
+    let validity = indices.validity().unwrap();
+
+    let values = indices.values().iter().enumerate().map(|(i, index)| {
+        let index = index.to_usize();
+        match values.get(index) {
+            Some(value) => value,
+            None => {
+                if !validity.get_bit(i) {
+                    false
+                } else {
+                    panic!("Out-of-bounds index {index}")
+                }
+            },
+        }
+    });
+
+    let buffer = Bitmap::from_trusted_len_iter(values);
 
     (buffer, indices.validity().cloned())
 }
 
 // take implementation when both values and indices contain nulls
-unsafe fn take_values_indices_validity(
+fn take_values_indices_validity<I: Index>(
     values: &BooleanArray,
-    indices: &PrimitiveArray<IdxSize>,
+    indices: &PrimitiveArray<I>,
 ) -> (Bitmap, Option<Bitmap>) {
     let mut validity = MutableBitmap::with_capacity(indices.len());
 
@@ -45,11 +67,10 @@ unsafe fn take_values_indices_validity(
 
     let values_values = values.values();
     let values = indices.iter().map(|index| match index {
-        Some(&index) => {
-            let index = index as usize;
-            debug_assert!(index < values.len());
-            validity.push(values_validity.get_bit_unchecked(index));
-            values_values.get_bit_unchecked(index)
+        Some(index) => {
+            let index = index.to_usize();
+            validity.push(values_validity.get_bit(index));
+            values_values.get_bit(index)
         },
         None => {
             validity.push(false);
@@ -61,10 +82,7 @@ unsafe fn take_values_indices_validity(
 }
 
 /// `take` implementation for boolean arrays
-pub unsafe fn take_unchecked(
-    values: &BooleanArray,
-    indices: &PrimitiveArray<IdxSize>,
-) -> BooleanArray {
+pub fn take<I: Index>(values: &BooleanArray, indices: &PrimitiveArray<I>) -> BooleanArray {
     let data_type = values.data_type().clone();
     let indices_has_validity = indices.null_count() > 0;
     let values_has_validity = values.null_count() > 0;
@@ -77,4 +95,44 @@ pub unsafe fn take_unchecked(
     };
 
     BooleanArray::new(data_type, values, validity)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::array::Int32Array;
+
+    fn _all_cases() -> Vec<(Int32Array, BooleanArray, BooleanArray)> {
+        vec![
+            (
+                Int32Array::from(&[Some(1), Some(0)]),
+                BooleanArray::from(vec![Some(true), Some(false)]),
+                BooleanArray::from(vec![Some(false), Some(true)]),
+            ),
+            (
+                Int32Array::from(&[Some(1), None]),
+                BooleanArray::from(vec![Some(true), Some(false)]),
+                BooleanArray::from(vec![Some(false), None]),
+            ),
+            (
+                Int32Array::from(&[Some(1), Some(0)]),
+                BooleanArray::from(vec![None, Some(false)]),
+                BooleanArray::from(vec![Some(false), None]),
+            ),
+            (
+                Int32Array::from(&[Some(1), None, Some(0)]),
+                BooleanArray::from(vec![None, Some(false)]),
+                BooleanArray::from(vec![Some(false), None, None]),
+            ),
+        ]
+    }
+
+    #[test]
+    fn all_cases() {
+        let cases = _all_cases();
+        for (indices, input, expected) in cases {
+            let output = take(&input, &indices);
+            assert_eq!(expected, output);
+        }
+    }
 }

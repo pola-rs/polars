@@ -31,7 +31,7 @@ use std::borrow::Cow;
 use std::ops::{BitAnd, BitOr, BitXor, Deref};
 
 use ahash::RandomState;
-use polars_arrow::prelude::QuantileInterpolOptions;
+use arrow::legacy::prelude::QuantileInterpolOptions;
 
 use super::{private, IntoSeries, SeriesTrait, *};
 use crate::chunked_array::comparison::*;
@@ -40,11 +40,11 @@ use crate::chunked_array::ops::compare_inner::{
     IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner,
 };
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
+#[cfg(feature = "chunked_ids")]
+use crate::chunked_array::ops::take::TakeChunked;
 use crate::chunked_array::AsSinglePtr;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
-#[cfg(feature = "algorithm_join")]
-use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
 #[cfg(feature = "checked_arithmetic")]
 use crate::series::arithmetic::checked::NumOpsDispatchChecked;
@@ -103,16 +103,6 @@ macro_rules! impl_dyn_series {
 
             fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
                 self.0.explode_by_offsets(offsets)
-            }
-
-            #[cfg(feature = "cum_agg")]
-            fn _cummax(&self, reverse: bool) -> Series {
-                self.0.cummax(reverse).into_series()
-            }
-
-            #[cfg(feature = "cum_agg")]
-            fn _cummin(&self, reverse: bool) -> Series {
-                self.0.cummin(reverse).into_series()
             }
 
             unsafe fn equal_element(
@@ -188,14 +178,6 @@ macro_rules! impl_dyn_series {
                 self.0.agg_list(groups)
             }
 
-            #[cfg(feature = "algorithm_join")]
-            unsafe fn zip_outer_join_column(
-                &self,
-                right_column: &Series,
-                opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
-            ) -> Series {
-                ZipOuterJoinColumn::zip_outer_join_column(&self.0, right_column, opt_join_tuples)
-            }
             fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
                 NumOpsDispatch::subtract(&self.0, rhs)
             }
@@ -321,44 +303,19 @@ macro_rules! impl_dyn_series {
             }
 
             fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-                let indices = if indices.chunks.len() > 1 {
-                    Cow::Owned(indices.rechunk())
-                } else {
-                    Cow::Borrowed(indices)
-                };
-                Ok(self.0.take((&*indices).into())?.into_series())
+                Ok(self.0.take(indices)?.into_series())
             }
 
-            fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
-                Ok(self.0.take(iter.into())?.into_series())
+            unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
+                self.0.take_unchecked(indices).into_series()
             }
 
-            unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-                self.0.take_unchecked(iter.into()).into_series()
+            fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
+                Ok(self.0.take(indices)?.into_series())
             }
 
-            unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
-                let idx = if idx.chunks.len() > 1 {
-                    Cow::Owned(idx.rechunk())
-                } else {
-                    Cow::Borrowed(idx)
-                };
-                let mut out = self.0.take_unchecked((&*idx).into());
-                if self.0.is_sorted_ascending_flag()
-                    && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
-                {
-                    out.set_sorted_flag(idx.is_sorted_flag())
-                }
-                Ok(out.into_series())
-            }
-
-            unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-                self.0.take_unchecked(iter.into()).into_series()
-            }
-
-            #[cfg(feature = "take_opt_iter")]
-            fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
-                Ok(self.0.take(iter.into())?.into_series())
+            unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
+                self.0.take_unchecked(indices).into_series()
             }
 
             fn len(&self) -> usize {
@@ -467,19 +424,6 @@ macro_rules! impl_dyn_series {
                 Arc::new(SeriesWrap(Clone::clone(&self.0)))
             }
 
-            fn peak_max(&self) -> BooleanChunked {
-                self.0.peak_max()
-            }
-
-            fn peak_min(&self) -> BooleanChunked {
-                self.0.peak_min()
-            }
-
-            #[cfg(feature = "repeat_by")]
-            fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
-                RepeatBy::repeat_by(&self.0, by)
-            }
-
             #[cfg(feature = "checked_arithmetic")]
             fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {
                 self.0.checked_div(rhs)
@@ -488,15 +432,6 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "object")]
             fn as_any(&self) -> &dyn Any {
                 &self.0
-            }
-            #[cfg(feature = "mode")]
-            fn mode(&self) -> PolarsResult<Series> {
-                Ok(self.0.mode()?.into_series())
-            }
-
-            #[cfg(feature = "concat_str")]
-            fn str_concat(&self, delimiter: &str) -> Utf8Chunked {
-                self.0.str_concat(delimiter)
             }
 
             fn tile(&self, n: usize) -> Series {

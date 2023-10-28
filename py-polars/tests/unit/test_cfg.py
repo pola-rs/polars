@@ -7,9 +7,7 @@ from typing import Any, Iterator
 import pytest
 
 import polars as pl
-from polars.config import _POLARS_CFG_ENV_VARS, _get_float_fmt
-from polars.exceptions import StringCacheMismatchError
-from polars.testing import assert_frame_equal
+from polars.config import _POLARS_CFG_ENV_VARS, _get_float_fmt, _get_float_precision
 
 
 @pytest.fixture(autouse=True)
@@ -382,7 +380,7 @@ def test_set_tbl_width_chars() -> None:
             "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
         },
         schema_overrides={"A": pl.Int64, "B": pl.Int64},
-    ).select(pl.all(), pl.all().suffix("_suffix!"))
+    ).select(pl.all(), pl.all().name.suffix("_suffix!"))
 
     with pl.Config(tbl_width_chars=87):
         assert max(len(line) for line in str(df).split("\n")) == 87
@@ -511,60 +509,171 @@ def test_shape_format_for_big_numbers() -> None:
     )
 
 
-def test_string_cache() -> None:
-    df1 = pl.DataFrame({"a": ["foo", "bar", "ham"], "b": [1, 2, 3]})
-    df2 = pl.DataFrame({"a": ["foo", "spam", "eggs"], "c": [3, 2, 2]})
+def test_numeric_right_alignment() -> None:
+    pl.Config.set_tbl_cell_numeric_alignment("RIGHT")
 
-    # ensure cache is off when casting to categorical; the join will fail
-    pl.enable_string_cache(False)
-    assert pl.using_string_cache() is False
-
-    df1a = df1.with_columns(pl.col("a").cast(pl.Categorical))
-    df2a = df2.with_columns(pl.col("a").cast(pl.Categorical))
-    with pytest.raises(StringCacheMismatchError):
-        _ = df1a.join(df2a, on="a", how="inner")
-
-    # now turn on the cache
-    pl.enable_string_cache(True)
-    assert pl.using_string_cache() is True
-
-    df1b = df1.with_columns(pl.col("a").cast(pl.Categorical))
-    df2b = df2.with_columns(pl.col("a").cast(pl.Categorical))
-    out = df1b.join(df2b, on="a", how="inner")
-
-    expected = pl.DataFrame(
-        {"a": ["foo"], "b": [1], "c": [3]}, schema_overrides={"a": pl.Categorical}
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
+    assert (
+        str(df) == "shape: (3, 3)\n"
+        "┌─────┬─────┬─────┐\n"
+        "│   a ┆   b ┆   c │\n"
+        "│ --- ┆ --- ┆ --- │\n"
+        "│ i64 ┆ i64 ┆ i64 │\n"
+        "╞═════╪═════╪═════╡\n"
+        "│   1 ┆   4 ┆   7 │\n"
+        "│   2 ┆   5 ┆   8 │\n"
+        "│   3 ┆   6 ┆   9 │\n"
+        "└─────┴─────┴─────┘"
     )
-    assert_frame_equal(out, expected)
+
+    df = pl.DataFrame(
+        {"a": [1.1, 2.22, 3.333], "b": [4.0, 5.0, 6.0], "c": [7.0, 8.0, 9.0]}
+    )
+    with pl.Config():
+        pl.Config.set_fmt_float("full")
+        assert (
+            str(df) == "shape: (3, 3)\n"
+            "┌───────┬─────┬─────┐\n"
+            "│     a ┆   b ┆   c │\n"
+            "│   --- ┆ --- ┆ --- │\n"
+            "│   f64 ┆ f64 ┆ f64 │\n"
+            "╞═══════╪═════╪═════╡\n"
+            "│   1.1 ┆   4 ┆   7 │\n"
+            "│  2.22 ┆   5 ┆   8 │\n"
+            "│ 3.333 ┆   6 ┆   9 │\n"
+            "└───────┴─────┴─────┘"
+        )
+
+    with pl.Config(fmt_float="mixed"):
+        assert (
+            str(df) == "shape: (3, 3)\n"
+            "┌───────┬─────┬─────┐\n"
+            "│     a ┆   b ┆   c │\n"
+            "│   --- ┆ --- ┆ --- │\n"
+            "│   f64 ┆ f64 ┆ f64 │\n"
+            "╞═══════╪═════╪═════╡\n"
+            "│   1.1 ┆ 4.0 ┆ 7.0 │\n"
+            "│  2.22 ┆ 5.0 ┆ 8.0 │\n"
+            "│ 3.333 ┆ 6.0 ┆ 9.0 │\n"
+            "└───────┴─────┴─────┘"
+        )
+
+    with pl.Config(float_precision=6):
+        assert str(df) == (
+            "shape: (3, 3)\n"
+            "┌──────────┬──────────┬──────────┐\n"
+            "│        a ┆        b ┆        c │\n"
+            "│      --- ┆      --- ┆      --- │\n"
+            "│      f64 ┆      f64 ┆      f64 │\n"
+            "╞══════════╪══════════╪══════════╡\n"
+            "│ 1.100000 ┆ 4.000000 ┆ 7.000000 │\n"
+            "│ 2.220000 ┆ 5.000000 ┆ 8.000000 │\n"
+            "│ 3.333000 ┆ 6.000000 ┆ 9.000000 │\n"
+            "└──────────┴──────────┴──────────┘"
+        )
+        with pl.Config(float_precision=None):
+            assert (
+                str(df) == "shape: (3, 3)\n"
+                "┌───────┬─────┬─────┐\n"
+                "│     a ┆   b ┆   c │\n"
+                "│   --- ┆ --- ┆ --- │\n"
+                "│   f64 ┆ f64 ┆ f64 │\n"
+                "╞═══════╪═════╪═════╡\n"
+                "│   1.1 ┆ 4.0 ┆ 7.0 │\n"
+                "│  2.22 ┆ 5.0 ┆ 8.0 │\n"
+                "│ 3.333 ┆ 6.0 ┆ 9.0 │\n"
+                "└───────┴─────┴─────┘"
+            )
+
+    df = pl.DataFrame(
+        {"a": [1.1, 22.2, 3.33], "b": [444, 55.5, 6.6], "c": [77.7, 8888, 9.9999]}
+    )
+    with pl.Config(fmt_float="full", float_precision=1):
+        assert (
+            str(df) == "shape: (3, 3)\n"
+            "┌──────┬───────┬────────┐\n"
+            "│    a ┆     b ┆      c │\n"
+            "│  --- ┆   --- ┆    --- │\n"
+            "│  f64 ┆   f64 ┆    f64 │\n"
+            "╞══════╪═══════╪════════╡\n"
+            "│  1.1 ┆ 444.0 ┆   77.7 │\n"
+            "│ 22.2 ┆  55.5 ┆ 8888.0 │\n"
+            "│  3.3 ┆   6.6 ┆   10.0 │\n"
+            "└──────┴───────┴────────┘"
+        )
+
+    df = pl.DataFrame(
+        {
+            "a": [1100000000000000000.1, 22200000000000000.2, 33330000000000000.33333],
+            "b": [40000000000000000000.0, 5, 600000000000000000.0],
+            "c": [700000.0, 80000000000000000.0, 900],
+        }
+    )
+    with pl.Config(float_precision=2):
+        assert (
+            str(df) == "shape: (3, 3)\n"
+            "┌─────────┬─────────┬───────────┐\n"
+            "│       a ┆       b ┆         c │\n"
+            "│     --- ┆     --- ┆       --- │\n"
+            "│     f64 ┆     f64 ┆       f64 │\n"
+            "╞═════════╪═════════╪═══════════╡\n"
+            "│ 1.10e18 ┆ 4.00e19 ┆ 700000.00 │\n"
+            "│ 2.22e16 ┆    5.00 ┆   8.00e16 │\n"
+            "│ 3.33e16 ┆ 6.00e17 ┆    900.00 │\n"
+            "└─────────┴─────────┴───────────┘"
+        )
 
 
 @pytest.mark.write_disk()
 def test_config_load_save(tmp_path: Path) -> None:
-    for file in (None, tmp_path / "polars.config", str(tmp_path / "polars.config")):
+    for file in (
+        None,
+        tmp_path / "polars.config",
+        str(tmp_path / "polars.config"),
+    ):
         # set some config options...
         pl.Config.set_tbl_cols(12)
         pl.Config.set_verbose(True)
         pl.Config.set_fmt_float("full")
+        pl.Config.set_float_precision(6)
         assert os.environ.get("POLARS_VERBOSE") == "1"
 
-        cfg = pl.Config.save(file)
-        assert isinstance(cfg, str)
+        if file is None:
+            cfg = pl.Config.save()
+            assert isinstance(cfg, str)
+        else:
+            assert pl.Config.save_to_file(file) is None
+
         assert "POLARS_VERBOSE" in pl.Config.state(if_set=True)
 
         # ...modify the same options...
         pl.Config.set_tbl_cols(10)
         pl.Config.set_verbose(False)
+        pl.Config.set_fmt_float("mixed")
+        pl.Config.set_float_precision(2)
         assert os.environ.get("POLARS_VERBOSE") == "0"
 
-        # ...load back from config...
-        if file is not None:
-            assert Path(cfg).is_file()
-        pl.Config.load(cfg)
+        # ...load back from config file/string...
+        if file is None:
+            pl.Config.load(cfg)
+        else:
+            with pytest.raises(ValueError, match="invalid Config file"):
+                pl.Config.load_from_file(cfg)
+
+            if isinstance(file, Path):
+                with pytest.raises(TypeError, match="the JSON object must be str"):
+                    pl.Config.load(file)  # type: ignore[arg-type]
+            else:
+                with pytest.raises(ValueError, match="invalid Config string"):
+                    pl.Config.load(file)
+
+            pl.Config.load_from_file(file)
 
         # ...and confirm the saved options were set.
         assert os.environ.get("POLARS_FMT_MAX_COLS") == "12"
         assert os.environ.get("POLARS_VERBOSE") == "1"
         assert _get_float_fmt() == "full"
+        assert _get_float_precision() == 6
 
         # restore all default options (unsets from env)
         pl.Config.restore_defaults()
@@ -575,6 +684,20 @@ def test_config_load_save(tmp_path: Path) -> None:
         assert os.environ.get("POLARS_FMT_MAX_COLS") is None
         assert os.environ.get("POLARS_VERBOSE") is None
         assert _get_float_fmt() == "mixed"
+        assert _get_float_precision() is None
+
+    # ref: #11094
+    with pl.Config(
+        streaming_chunk_size=100,
+        tbl_cols=2000,
+        tbl_formatting="UTF8_NO_BORDERS",
+        tbl_hide_column_data_types=True,
+        tbl_hide_dtype_separator=True,
+        tbl_rows=2000,
+        tbl_width_chars=2000,
+        verbose=True,
+    ):
+        assert isinstance(repr(pl.DataFrame({"xyz": [0]})), str)
 
 
 def test_config_scope() -> None:
@@ -656,6 +779,12 @@ def test_set_fmt_str_lengths_invalid_length() -> None:
         ("POLARS_FMT_MAX_ROWS", "set_tbl_rows", 3, "3"),
         ("POLARS_FMT_STR_LEN", "set_fmt_str_lengths", 42, "42"),
         ("POLARS_FMT_TABLE_CELL_ALIGNMENT", "set_tbl_cell_alignment", "RIGHT", "RIGHT"),
+        (
+            "POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT",
+            "set_tbl_cell_numeric_alignment",
+            "RIGHT",
+            "RIGHT",
+        ),
         ("POLARS_FMT_TABLE_HIDE_COLUMN_NAMES", "set_tbl_hide_column_names", True, "1"),
         (
             "POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW",

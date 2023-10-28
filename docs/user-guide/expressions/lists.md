@@ -39,7 +39,7 @@ However, in Polars, we often do not need to do this to operate on the `List` ele
 
 Polars provides several standard operations on `List` columns. If we want the first three measurements, we can do a `head(3)`. The last three can be obtained via a `tail(3)`, or alternately, via `slice` (negative indexing is supported). We can also identify the number of observations via `lengths`. Let's see them in action:
 
-{{code_block('user-guide/expressions/lists','list_ops',['Expr.List'])}}
+{{code_block('user-guide/expressions/lists','list_ops',['Expr.list'])}}
 
 ```python exec="on" result="text" session="user-guide/lists"
 --8<-- "python/user-guide/expressions/lists.py:list_ops"
@@ -60,7 +60,7 @@ If we need to identify the stations that are giving the most number of errors fr
 
 The third step requires a casting (or alternately, a regex pattern search) operation to be perform on each element of the list. We can do this using by applying the operation on each element by first referencing them in the `pl.element()` context, and then calling a suitable Polars expression on them. Let's see how:
 
-{{code_block('user-guide/expressions/lists','count_errors',['Expr.List', 'element'])}}
+{{code_block('user-guide/expressions/lists','count_errors',['Expr.list', 'element'])}}
 
 ```python exec="on" result="text" session="user-guide/lists"
 --8<-- "python/user-guide/expressions/lists.py:count_errors"
@@ -110,7 +110,7 @@ We can define `Array` columns in this manner:
 
 Basic operations are available on it:
 
-{{code_block('user-guide/expressions/lists','array_ops',['arr'])}}
+{{code_block('user-guide/expressions/lists','array_ops',['Series.arr'])}}
 
 ```python exec="on" result="text" session="user-guide/lists"
 --8<-- "python/user-guide/expressions/lists.py:array_ops"

@@ -1,6 +1,5 @@
 try:
     from polars.polars import (
-        ArrowError,
         ColumnNotFoundError,
         ComputeError,
         DuplicateError,
@@ -17,9 +16,6 @@ try:
 except ImportError:
     # They are only redefined for documentation purposes
     # when there is no binary yet
-
-    class ArrowError(Exception):  # type: ignore[no-redef]
-        """Exception raised the underlying Arrow library encounters an error."""
 
     class ColumnNotFoundError(Exception):  # type: ignore[no-redef]
         """Exception raised when a specified column is not found."""
@@ -82,6 +78,10 @@ class NoRowsReturnedError(RowsError):
     """Exception raised when no rows are returned, but at least one row is expected."""
 
 
+class ParameterCollisionError(RuntimeError):
+    """Exception raised when the same parameter occurs multiple times."""
+
+
 class PolarsInefficientMapWarning(Warning):
     """Warning raised when a potentially slow `apply` operation is performed."""
 
@@ -96,6 +96,10 @@ class TimeZoneAwareConstructorWarning(Warning):
 
 class UnsuitableSQLError(ValueError):
     """Exception raised when unsuitable SQL is given to a database method."""
+
+
+class ArrowError(Exception):
+    """deprecated will be removed."""
 
 
 __all__ = [

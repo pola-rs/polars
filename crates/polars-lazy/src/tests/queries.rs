@@ -156,7 +156,7 @@ fn test_lazy_shift() {
     let df = get_df();
     let new = df
         .lazy()
-        .select([col("sepal.width").alias("foo").shift(2)])
+        .select([col("sepal.width").alias("foo").shift(lit(2))])
         .collect()
         .unwrap();
     assert_eq!(new.column("foo").unwrap().f64().unwrap().get(0), None);
@@ -168,7 +168,7 @@ fn test_shift_and_fill() -> PolarsResult<()> {
         "a" => [1, 2, 3]
     ]?
     .lazy()
-    .select([col("a").shift_and_fill(-1, lit(5))])
+    .select([col("a").shift_and_fill(lit(-1), lit(5))])
     .collect()?;
 
     let out = out.column("a")?;
@@ -231,6 +231,7 @@ fn test_lazy_query_2() {
 }
 
 #[test]
+#[cfg(feature = "csv")]
 fn test_lazy_query_3() {
     // query checks if schema of scanning is not changed by aggregation
     let _ = scan_foods_csv()
@@ -299,7 +300,7 @@ fn test_lazy_query_5() {
         .unwrap()
         .list()
         .unwrap()
-        .get(0)
+        .get_as_series(0)
         .unwrap();
     assert_eq!(s.len(), 2);
     let s = out
@@ -307,7 +308,7 @@ fn test_lazy_query_5() {
         .unwrap()
         .list()
         .unwrap()
-        .get(0)
+        .get_as_series(0)
         .unwrap();
     assert_eq!(s.len(), 2);
 }
@@ -487,8 +488,8 @@ fn test_lazy_query_7() {
     // this tests if predicate pushdown not interferes with the shift data.
     let out = df
         .lazy()
-        .with_column(col("data").shift(-1).alias("output"))
-        .with_column(col("output").shift(2).alias("shifted"))
+        .with_column(col("data").shift(lit(-1)).alias("output"))
+        .with_column(col("output").shift(lit(2)).alias("shifted"))
         .filter(col("date").gt(lit(NaiveDateTime::new(
             date,
             NaiveTime::from_hms_opt(12, 2, 0).unwrap(),
@@ -505,7 +506,7 @@ fn test_lazy_shift_and_fill_all() {
     let df = DataFrame::new(vec![Series::new("data", data)]).unwrap();
     let out = df
         .lazy()
-        .with_column(col("data").shift(1).fill_null(lit(0)).alias("output"))
+        .with_column(col("data").shift(lit(1)).fill_null(lit(0)).alias("output"))
         .collect()
         .unwrap();
     assert_eq!(
@@ -523,7 +524,7 @@ fn test_lazy_shift_operation_no_filter() {
     }
     .unwrap();
     df.lazy()
-        .with_column(col("b").shift(1).alias("output"))
+        .with_column(col("b").shift(lit(1)).alias("output"))
         .collect()
         .unwrap();
 }
@@ -562,7 +563,10 @@ fn test_lazy_wildcard() {
     let new = df
         .lazy()
         .group_by([col("b")])
-        .agg([col("*").sum().suffix(""), col("*").first().suffix("_first")])
+        .agg([
+            col("*").sum().name().suffix(""),
+            col("*").first().name().suffix("_first"),
+        ])
         .collect()
         .unwrap();
     assert_eq!(new.shape(), (3, 5)); // Should exclude b from wildcard aggregations.
@@ -643,6 +647,7 @@ fn test_type_coercion() {
 }
 
 #[test]
+#[cfg(feature = "csv")]
 fn test_lazy_partition_agg() {
     let df = df! {
         "foo" => &[1, 1, 2, 2, 3],
@@ -670,7 +675,7 @@ fn test_lazy_partition_agg() {
         .collect()
         .unwrap();
     let cat_agg_list = out.select_at_idx(1).unwrap();
-    let fruit_series = cat_agg_list.list().unwrap().get(0).unwrap();
+    let fruit_series = cat_agg_list.list().unwrap().get_as_series(0).unwrap();
     let fruit_list = fruit_series.i64().unwrap();
     assert_eq!(
         Vec::from(fruit_list),
@@ -710,7 +715,7 @@ fn test_lazy_shift_and_fill() {
     let out = df
         .clone()
         .lazy()
-        .with_column(col("A").shift_and_fill(2, col("B").mean()))
+        .with_column(col("A").shift_and_fill(lit(2), col("B").mean()))
         .collect()
         .unwrap();
     assert_eq!(out.column("A").unwrap().null_count(), 0);
@@ -719,14 +724,14 @@ fn test_lazy_shift_and_fill() {
     let out = df
         .clone()
         .lazy()
-        .with_column(col("A").shift_and_fill(-2, col("B").mean()))
+        .with_column(col("A").shift_and_fill(lit(-2), col("B").mean()))
         .collect()
         .unwrap();
     assert_eq!(out.column("A").unwrap().null_count(), 0);
 
     let out = df
         .lazy()
-        .shift_and_fill(-1, col("B").std(1))
+        .shift_and_fill(lit(-1), col("B").std(1))
         .collect()
         .unwrap();
     assert_eq!(out.column("A").unwrap().null_count(), 0);
@@ -1132,20 +1137,17 @@ fn test_fill_forward() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .select([col("b").forward_fill(None).over_with_options(
-            [col("a")],
-            WindowOptions {
-                mapping: WindowMapping::Join,
-            },
-        )])
+        .select([col("b")
+            .forward_fill(None)
+            .over_with_options([col("a")], WindowMapping::Join.into())])
         .collect()?;
     let agg = out.column("b")?.list()?;
 
-    let a: Series = agg.get(0).unwrap();
+    let a: Series = agg.get_as_series(0).unwrap();
     assert!(a.series_equal(&Series::new("b", &[1, 1])));
-    let a: Series = agg.get(2).unwrap();
+    let a: Series = agg.get_as_series(2).unwrap();
     assert!(a.series_equal(&Series::new("b", &[1, 1])));
-    let a: Series = agg.get(1).unwrap();
+    let a: Series = agg.get_as_series(1).unwrap();
     assert_eq!(a.null_count(), 1);
     Ok(())
 }
@@ -1198,8 +1200,8 @@ fn test_keep_name() -> PolarsResult<()> {
     let out = df
         .lazy()
         .select([
-            col("a").alias("bar").keep_name(),
-            col("b").alias("bar").keep_name(),
+            col("a").alias("bar").name().keep(),
+            col("b").alias("bar").name().keep(),
         ])
         .collect()?;
 
@@ -1295,14 +1297,9 @@ fn test_filter_after_shift_in_groups() -> PolarsResult<()> {
         .select([
             col("fruits"),
             col("B")
-                .shift(1)
-                .filter(col("B").shift(1).gt(lit(4)))
-                .over_with_options(
-                    [col("fruits")],
-                    WindowOptions {
-                        mapping: WindowMapping::Join,
-                    },
-                )
+                .shift(lit(1))
+                .filter(col("B").shift(lit(1)).gt(lit(4)))
+                .over_with_options([col("fruits")], WindowMapping::Join.into())
                 .alias("filtered"),
         ])
         .collect()?;
@@ -1310,7 +1307,7 @@ fn test_filter_after_shift_in_groups() -> PolarsResult<()> {
     assert_eq!(
         out.column("filtered")?
             .list()?
-            .get(0)
+            .get_as_series(0)
             .unwrap()
             .i32()?
             .get(0)
@@ -1320,14 +1317,21 @@ fn test_filter_after_shift_in_groups() -> PolarsResult<()> {
     assert_eq!(
         out.column("filtered")?
             .list()?
-            .get(1)
+            .get_as_series(1)
             .unwrap()
             .i32()?
             .get(0)
             .unwrap(),
         5
     );
-    assert_eq!(out.column("filtered")?.list()?.get(2).unwrap().len(), 0);
+    assert_eq!(
+        out.column("filtered")?
+            .list()?
+            .get_as_series(2)
+            .unwrap()
+            .len(),
+        0
+    );
 
     Ok(())
 }
@@ -1355,6 +1359,7 @@ fn test_lazy_ternary_predicate_pushdown() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "dtype-categorical")]
 fn test_categorical_addition() -> PolarsResult<()> {
     let df = fruits_cars();
 
@@ -1463,6 +1468,7 @@ fn test_list_in_select_context() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "round_series")]
 fn test_round_after_agg() -> PolarsResult<()> {
     let df = fruits_cars();
 
@@ -1564,7 +1570,7 @@ fn test_group_by_rank() -> PolarsResult<()> {
         .collect()?;
 
     let out = out.column("B")?;
-    let out = out.list()?.get(1).unwrap();
+    let out = out.list()?.get_as_series(1).unwrap();
     let out = out.idx()?;
 
     assert_eq!(Vec::from(out), &[Some(1)]);
@@ -1654,12 +1660,7 @@ fn test_single_ranked_group() -> PolarsResult<()> {
                 },
                 None,
             )
-            .over_with_options(
-                [col("group")],
-                WindowOptions {
-                    mapping: WindowMapping::Join,
-                },
-            )])
+            .over_with_options([col("group")], WindowMapping::Join.into())])
         .collect()?;
 
     let out = out.column("value")?.explode()?;
@@ -1680,9 +1681,9 @@ fn empty_df() -> PolarsResult<()> {
 
     df.lazy()
         .select([
-            col("A").shift(1).alias("1"),
-            col("A").shift_and_fill(1, lit(1)).alias("2"),
-            col("A").shift_and_fill(-1, lit(1)).alias("3"),
+            col("A").shift(lit(1)).alias("1"),
+            col("A").shift_and_fill(lit(1), lit(1)).alias("2"),
+            col("A").shift_and_fill(lit(-1), lit(1)).alias("3"),
             col("A").fill_null(lit(1)).alias("4"),
             col("A").cumcount(false).alias("5"),
             col("A").diff(1, NullBehavior::Ignore).alias("6"),
@@ -1695,6 +1696,7 @@ fn empty_df() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "abs")]
 fn test_apply_flatten() -> PolarsResult<()> {
     let df = df![
          "A"=> [1.1435, 2.223456, 3.44732, -1.5234, -2.1238, -3.2923],

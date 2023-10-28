@@ -404,15 +404,10 @@ def from_repr(tbl: str) -> DataFrame | Series:
     │ 123456780       ┆ 9876543210        ┆ a:b:c ┆ 2023-03-25 10:56:59.663053 JST │
     │ 803065983       ┆ 2055938745        ┆ x:y:z ┆ 2023-03-25 12:38:18.050545 JST │
     └─────────────────┴───────────────────┴───────┴────────────────────────────────┘
-    >>> df.schema
-    {'source_actor_id': Int32,
-     'source_channel_id': Int64,
-     'ident': Utf8,
-     'timestamp': Datetime(time_unit='us', time_zone='Asia/Tokyo')}
 
     From Series repr:
 
-    >>> srs = pl.from_repr(
+    >>> s = pl.from_repr(
     ...     '''
     ...     shape: (3,)
     ...     Series: 's' [bool]
@@ -423,7 +418,7 @@ def from_repr(tbl: str) -> DataFrame | Series:
     ...     ]
     ...     '''
     ... )
-    >>> srs.to_list()
+    >>> s.to_list()
     [True, False, True]
 
     """

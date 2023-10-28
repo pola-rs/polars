@@ -1,5 +1,5 @@
 use arrow::compute::if_then_else::if_then_else;
-use polars_arrow::array::default_arrays::FromData;
+use arrow::legacy::array::default_arrays::FromData;
 
 use crate::prelude::*;
 use crate::utils::{align_chunks_ternary, CustomIterTools};

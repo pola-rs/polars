@@ -1,5 +1,5 @@
+use arrow::legacy::time_zone::Tz;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
-use polars_arrow::time_zone::Tz;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
@@ -30,16 +30,18 @@ pub(crate) fn roll_backward(
         ts.second(),
         ts.timestamp_subsec_nanos(),
     )
-    .ok_or(polars_err!(
-        ComputeError:
-            format!(
-                "Could not construct time {}:{}:{}.{}",
-                ts.hour(),
-                ts.minute(),
-                ts.second(),
-                ts.timestamp_subsec_nanos()
-            )
-    ))?;
+    .ok_or_else(|| {
+        polars_err!(
+            ComputeError:
+                format!(
+                    "Could not construct time {}:{}:{}.{}",
+                    ts.hour(),
+                    ts.minute(),
+                    ts.second(),
+                    ts.timestamp_subsec_nanos()
+                )
+        )
+    })?;
     let ndt = NaiveDateTime::new(date, time);
     let t = match tz {
         #[cfg(feature = "timezones")]

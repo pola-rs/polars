@@ -4,13 +4,12 @@ use std::fmt::Write;
 use arrow::array::*;
 use arrow::bitmap::MutableBitmap;
 use arrow::chunk::Chunk;
-use arrow::datatypes::{DataType, Field, IntervalUnit, Schema};
-use arrow::error::Error;
+use arrow::datatypes::{ArrowSchema, DataType, Field, IntervalUnit};
+use arrow::legacy::prelude::*;
 use arrow::offset::{Offset, Offsets};
 use arrow::temporal_conversions;
 use arrow::types::{f16, NativeType};
 use num_traits::NumCast;
-use polars_arrow::prelude::*;
 use simd_json::{BorrowedValue, StaticNode};
 
 use super::*;
@@ -85,7 +84,7 @@ fn deserialize_list<'a, A: Borrow<BorrowedValue<'a>>>(
             inner.extend(value.iter());
             validity.push(true);
             offsets
-                .try_push_usize(value.len())
+                .try_push(value.len())
                 .expect("List offset is too large :/");
         },
         BorrowedValue::Static(StaticNode::Null) => {
@@ -95,9 +94,7 @@ fn deserialize_list<'a, A: Borrow<BorrowedValue<'a>>>(
         value @ (BorrowedValue::Static(_) | BorrowedValue::String(_)) => {
             inner.push(value);
             validity.push(true);
-            offsets
-                .try_push_usize(1)
-                .expect("List offset is too large :/");
+            offsets.try_push(1).expect("List offset is too large :/");
         },
         _ => {
             validity.push(false);
@@ -389,7 +386,7 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
     }
 }
 
-pub fn deserialize(json: &BorrowedValue, data_type: DataType) -> Result<Box<dyn Array>, Error> {
+pub fn deserialize(json: &BorrowedValue, data_type: DataType) -> PolarsResult<Box<dyn Array>> {
     match json {
         BorrowedValue::Array(rows) => match data_type {
             DataType::LargeList(inner) => Ok(_deserialize(rows, inner.data_type)),
@@ -441,7 +438,10 @@ fn allocate_array(f: &Field) -> Box<dyn MutableArray> {
 ///   * [`DataType::Struct`]
 ///   * [`DataType::Dictionary`]
 ///   * [`DataType::LargeList`]
-pub fn deserialize_records(json: &BorrowedValue, schema: &Schema) -> PolarsResult<Chunk<ArrayRef>> {
+pub fn deserialize_records(
+    json: &BorrowedValue,
+    schema: &ArrowSchema,
+) -> PolarsResult<Chunk<ArrayRef>> {
     let mut results = schema
         .fields
         .iter()

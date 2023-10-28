@@ -41,7 +41,7 @@ Say you are working with an archeologist and are dealing in negative dates.
 Polars can parse and store them just fine, but the Python `datetime` library
 does not. So for filtering, you should use attributes in the `.dt` namespace:
 
-{{code_block('user-guide/transformations/time-series/filter','negative',['strptime'])}}
+{{code_block('user-guide/transformations/time-series/filter','negative',['str.to_date'])}}
 
 ```python exec="on" result="text" session="user-guide/transformations/ts/filter"
 --8<-- "python/user-guide/transformations/time-series/filter.py:negative"

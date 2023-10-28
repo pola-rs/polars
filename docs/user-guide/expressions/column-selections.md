@@ -37,7 +37,7 @@ Often, we don't just want to include all columns, but include all _while_ exclud
 
 Specifying multiple strings allows expressions to _expand_ to all matching columns:
 
-{{code_block('user-guide/expressions/column-selections','expansion_by_names',['dt_to_string'])}}
+{{code_block('user-guide/expressions/column-selections','expansion_by_names',['dt.to_string'])}}
 
 ```python exec="on" result="text" session="user-guide/column-selections"
 --8<-- "python/user-guide/expressions/column-selections.py:expansion_by_names"
@@ -47,7 +47,7 @@ Specifying multiple strings allows expressions to _expand_ to all matching colum
 
 Multiple column selection is possible by regular expressions also, by making sure to wrap the regex by `^` and `$` to let `pl.col` know that a regex selection is expected:
 
-{{code_block('user-guide/expressions/column-selections','expansion_by_regex',[''])}}
+{{code_block('user-guide/expressions/column-selections','expansion_by_regex',[])}}
 
 ```python exec="on" result="text" session="user-guide/column-selections"
 --8<-- "python/user-guide/expressions/column-selections.py:expansion_by_regex"
@@ -81,7 +81,7 @@ To select just the integer and string columns, we can do:
 
 These _selectors_ also allow for set based selection operations. For instance, to select the **numeric** columns **except** the **first** column that indicates row numbers:
 
-{{code_block('user-guide/expressions/column-selections','selectors_diff',['cs_first', 'cs_numeric'])}}
+{{code_block('user-guide/expressions/column-selections','selectors_diff',['cs.first', 'cs.numeric'])}}
 
 ```python exec="on" result="text" session="user-guide/column-selections"
 --8<-- "python/user-guide/expressions/column-selections.py:selectors_diff"
@@ -89,7 +89,7 @@ These _selectors_ also allow for set based selection operations. For instance, t
 
 We can also select the row number by name **and** any **non**-numeric columns:
 
-{{code_block('user-guide/expressions/column-selections','selectors_union',['cs_by_name', 'cs_numeric'])}}
+{{code_block('user-guide/expressions/column-selections','selectors_union',['cs.by_name', 'cs.numeric'])}}
 
 ```python exec="on" result="text" session="user-guide/column-selections"
 --8<-- "python/user-guide/expressions/column-selections.py:selectors_union"
@@ -99,7 +99,7 @@ We can also select the row number by name **and** any **non**-numeric columns:
 
 _Selectors_ can also be matched by substring and regex patterns:
 
-{{code_block('user-guide/expressions/column-selections','selectors_by_name',['cs_contains', 'cs_matches'])}}
+{{code_block('user-guide/expressions/column-selections','selectors_by_name',['cs.contains', 'cs.matches'])}}
 
 ```python exec="on" result="text" session="user-guide/column-selections"
 --8<-- "python/user-guide/expressions/column-selections.py:selectors_by_name"
@@ -109,7 +109,7 @@ _Selectors_ can also be matched by substring and regex patterns:
 
 What if we want to apply a specific operation on the selected columns (i.e. get back to representing them as **expressions** to operate upon)? We can simply convert them using `as_expr` and then proceed as normal:
 
-{{code_block('user-guide/expressions/column-selections','selectors_to_expr',['cs_temporal'])}}
+{{code_block('user-guide/expressions/column-selections','selectors_to_expr',['cs.temporal'])}}
 
 ```python exec="on" result="text" session="user-guide/column-selections"
 --8<-- "python/user-guide/expressions/column-selections.py:selectors_to_expr"
@@ -117,7 +117,7 @@ What if we want to apply a specific operation on the selected columns (i.e. get 
 
 ### Debugging `selectors`
 
-Polars also provides two helpful utility functions to aid with using selectors: `is_selector` and `selector_column_names`:
+Polars also provides two helpful utility functions to aid with using selectors: `is_selector` and `expand_selector`:
 
 {{code_block('user-guide/expressions/column-selections','selectors_is_selector_utility',['is_selector'])}}
 
@@ -127,7 +127,7 @@ Polars also provides two helpful utility functions to aid with using selectors: 
 
 To predetermine the column names that are selected, which is especially useful for a LazyFrame object:
 
-{{code_block('user-guide/expressions/column-selections','selectors_colnames_utility',['selector_column_names'])}}
+{{code_block('user-guide/expressions/column-selections','selectors_colnames_utility',['expand_selector'])}}
 
 ```python exec="on" result="text" session="user-guide/column-selections"
 --8<-- "python/user-guide/expressions/column-selections.py:selectors_colnames_utility"

@@ -23,8 +23,8 @@ impl PyExpr {
 
     #[cfg(feature = "binary_encoding")]
     fn bin_hex_decode(&self, strict: bool) -> Self {
-        self.clone()
-            .inner
+        self.inner
+            .clone()
             .map(
                 move |s| {
                     s.binary()?
@@ -39,8 +39,8 @@ impl PyExpr {
 
     #[cfg(feature = "binary_encoding")]
     fn bin_base64_decode(&self, strict: bool) -> Self {
-        self.clone()
-            .inner
+        self.inner
+            .clone()
             .map(
                 move |s| {
                     s.binary()?
@@ -55,8 +55,8 @@ impl PyExpr {
 
     #[cfg(feature = "binary_encoding")]
     fn bin_hex_encode(&self) -> Self {
-        self.clone()
-            .inner
+        self.inner
+            .clone()
             .map(
                 move |s| s.binary().map(|s| Some(s.hex_encode().into_series())),
                 GetOutput::from_type(DataType::Utf8),
@@ -67,8 +67,8 @@ impl PyExpr {
 
     #[cfg(feature = "binary_encoding")]
     fn bin_base64_encode(&self) -> Self {
-        self.clone()
-            .inner
+        self.inner
+            .clone()
             .map(
                 move |s| s.binary().map(|s| Some(s.base64_encode().into_series())),
                 GetOutput::from_type(DataType::Utf8),

@@ -1,4 +1,4 @@
-use polars_arrow::compute::tile;
+use arrow::legacy::compute::tile;
 
 use crate::datatypes::PolarsNumericType;
 use crate::prelude::ChunkedArray;

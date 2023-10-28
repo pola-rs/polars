@@ -39,9 +39,7 @@ def test_list_arr_get() -> None:
         {"a": [[1], [2], [3], [4, 5, 6], [7, 8, 9], [None, 11]]}
     ).with_columns(
         [pl.col("a").list.get(i).alias(f"get_{i}") for i in range(4)]
-    ).to_dict(
-        False
-    ) == {
+    ).to_dict(False) == {
         "a": [[1], [2], [3], [4, 5, 6], [7, 8, 9], [None, 11]],
         "get_0": [1, 2, 3, 4, 7, None],
         "get_1": [None, None, None, 5, 8, 11],
@@ -94,6 +92,19 @@ def test_list_concat() -> None:
     assert out_s[0].to_list() == [1, 2, 4, 1]
 
 
+def test_list_join() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [["ab", "c", "d"], ["e", "f"], ["g"], [], None],
+            "separator": ["&", None, "*", "_", "*"],
+        }
+    )
+    out = df.select(pl.col("a").list.join("-"))
+    assert out.to_dict(False) == {"a": ["ab-c-d", "e-f", "g", "", None]}
+    out = df.select(pl.col("a").list.join(pl.col("separator")))
+    assert out.to_dict(False) == {"a": ["ab&c&d", None, "g", "", None]}
+
+
 def test_list_arr_empty() -> None:
     df = pl.DataFrame({"cars": [[1, 2, 3], [2, 3], [4], []]})
 
@@ -127,6 +138,74 @@ def test_list_shift() -> None:
     s = pl.Series("a", [[1, 2], [3, 2, 1]])
     expected = pl.Series("a", [[None, 1], [None, 3, 2]])
     assert s.list.shift().to_list() == expected.to_list()
+
+    df = pl.DataFrame(
+        {
+            "values": [
+                [1, 2, None],
+                [1, 2, 3],
+                [None, 1, 2],
+                [None, None, None],
+                [1, 2],
+            ],
+            "shift": [1, -2, 3, 2, None],
+        }
+    )
+    df = df.select(pl.col("values").list.shift(pl.col("shift")))
+    expected_df = pl.DataFrame(
+        {
+            "values": [
+                [None, 1, 2],
+                [3, None, None],
+                [None, None, None],
+                [None, None, None],
+                None,
+            ]
+        }
+    )
+    assert_frame_equal(df, expected_df)
+
+
+def test_list_drop_nulls() -> None:
+    s = pl.Series("values", [[1, None, 2, None], [None, None], [1, 2], None])
+    expected = pl.Series("values", [[1, 2], [], [1, 2], None])
+    assert_series_equal(s.list.drop_nulls(), expected)
+
+    df = pl.DataFrame({"values": [[None, 1, None, 2], [None], [3, 4]]})
+    df = df.select(pl.col("values").list.drop_nulls())
+    expected_df = pl.DataFrame({"values": [[1, 2], [], [3, 4]]})
+    assert_frame_equal(df, expected_df)
+
+
+def test_list_sample() -> None:
+    s = pl.Series("values", [[1, 2, 3, None], [None, None], [1, 2], None])
+
+    expected_sample_n = pl.Series("values", [[3, 1], [None], [2], None])
+    assert_series_equal(
+        s.list.sample(n=pl.Series([2, 1, 1, 1]), seed=1), expected_sample_n
+    )
+
+    expected_sample_frac = pl.Series("values", [[3, 1], [None], [1, 2], None])
+    assert_series_equal(
+        s.list.sample(fraction=pl.Series([0.5, 0.5, 1.0, 0.3]), seed=1),
+        expected_sample_frac,
+    )
+
+    df = pl.DataFrame(
+        {
+            "values": [[1, 2, 3, None], [None, None], [3, 4]],
+            "n": [2, 1, 2],
+            "frac": [0.5, 0.5, 1.0],
+        }
+    )
+    df = df.select(
+        sample_n=pl.col("values").list.sample(n=pl.col("n"), seed=1),
+        sample_frac=pl.col("values").list.sample(fraction=pl.col("frac"), seed=1),
+    )
+    expected_df = pl.DataFrame(
+        {"sample_n": [[3, 1], [None], [3, 4]], "sample_frac": [[3, 1], [None], [3, 4]]}
+    )
+    assert_frame_equal(df, expected_df)
 
 
 def test_list_diff() -> None:
@@ -366,15 +445,19 @@ def test_list_function_group_awareness() -> None:
 
     assert df.group_by("group").agg(
         [
-            pl.col("a").implode().list.get(0).alias("get"),
-            pl.col("a").implode().list.take([0]).alias("take"),
-            pl.col("a").implode().list.slice(0, 3).alias("slice"),
+            pl.col("a").get(0).alias("get_scalar"),
+            pl.col("a").take([0]).alias("take_no_implode"),
+            pl.col("a").implode().list.get(0).alias("implode_get"),
+            pl.col("a").implode().list.take([0]).alias("implode_take"),
+            pl.col("a").implode().list.slice(0, 3).alias("implode_slice"),
         ]
     ).sort("group").to_dict(False) == {
         "group": [0, 1, 2],
-        "get": [100, 105, 100],
-        "take": [[100], [105], [100]],
-        "slice": [[100, 103], [105, 106, 105], [100, 102]],
+        "get_scalar": [100, 105, 100],
+        "take_no_implode": [[100], [105], [100]],
+        "implode_get": [[100], [105], [100]],
+        "implode_take": [[[100]], [[105]], [[100]]],
+        "implode_slice": [[[100, 103]], [[105, 106, 105]], [[100, 102]]],
     }
 
 
@@ -386,7 +469,7 @@ def test_list_get_logical_types() -> None:
         }
     )
 
-    assert df.select(pl.all().list.get(1).suffix("_element_1")).to_dict(False) == {
+    assert df.select(pl.all().list.get(1).name.suffix("_element_1")).to_dict(False) == {
         "date_col_element_1": [date(2023, 2, 2)],
         "datetime_col_element_1": [datetime(2023, 2, 2, 0, 0)],
     }
@@ -562,3 +645,18 @@ def test_utf8_empty_series_arg_min_max_10703() -> None:
         "arg_min": [0, None],
         "arg_max": [0, None],
     }
+
+
+def test_list_len() -> None:
+    s = pl.Series([[1, 2, None], [5]])
+    result = s.list.len()
+    expected = pl.Series([3, 1], dtype=pl.UInt32)
+    assert_series_equal(result, expected)
+
+
+def test_list_lengths_deprecated() -> None:
+    s = pl.Series([[1, 2, None], [5]])
+    with pytest.deprecated_call():
+        result = s.list.lengths()
+    expected = pl.Series([3, 1], dtype=pl.UInt32)
+    assert_series_equal(result, expected)

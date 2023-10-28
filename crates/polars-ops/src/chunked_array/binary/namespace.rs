@@ -6,7 +6,7 @@ use base64::engine::general_purpose;
 #[cfg(feature = "binary_encoding")]
 use base64::Engine as _;
 use memchr::memmem::find;
-use polars_core::prelude::arity::{binary_elementwise, binary_elementwise_values};
+use polars_core::prelude::arity::binary_elementwise_values;
 
 use super::*;
 
@@ -52,12 +52,9 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         match prefix.len() {
             1 => match prefix.get(0) {
                 Some(s) => self.starts_with(s),
-                None => BooleanChunked::full(ca.name(), false, ca.len()),
+                None => BooleanChunked::full_null(ca.name(), ca.len()),
             },
-            _ => binary_elementwise(ca, prefix, |opt_s, opt_sub| match (opt_s, opt_sub) {
-                (Some(s), Some(sub)) => Some(s.starts_with(sub)),
-                _ => Some(false),
-            }),
+            _ => binary_elementwise_values(ca, prefix, |s, sub| s.starts_with(sub)),
         }
     }
 
@@ -66,14 +63,9 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         match suffix.len() {
             1 => match suffix.get(0) {
                 Some(s) => self.ends_with(s),
-                None => BooleanChunked::full(ca.name(), false, ca.len()),
+                None => BooleanChunked::full_null(ca.name(), ca.len()),
             },
-            _ => binary_elementwise(self.as_binary(), suffix, |opt_s, opt_sub| {
-                match (opt_s, opt_sub) {
-                    (Some(s), Some(sub)) => Some(s.ends_with(sub)),
-                    _ => Some(false),
-                }
-            }),
+            _ => binary_elementwise_values(ca, suffix, |s, sub| s.ends_with(sub)),
         }
     }
 

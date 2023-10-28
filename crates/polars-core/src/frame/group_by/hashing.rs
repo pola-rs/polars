@@ -10,7 +10,7 @@ use super::GroupsProxy;
 use crate::datatypes::PlHashMap;
 use crate::frame::group_by::{GroupsIdx, IdxItem};
 use crate::hashing::{
-    df_rows_to_hashes_threaded_vertical, series_to_hashes, this_partition, AsU64, IdBuildHasher,
+    _df_rows_to_hashes_threaded_vertical, series_to_hashes, this_partition, AsU64, IdBuildHasher,
     IdxHash, *,
 };
 use crate::prelude::compare_inner::PartialEqInner;
@@ -23,7 +23,7 @@ fn get_init_size() -> usize {
     // we don't want to pre-allocate this much if executed
     // group_tuples in a parallel iterator as that explodes allocation
     if POOL.current_thread_index().is_none() {
-        HASHMAP_INIT_SIZE
+        _HASHMAP_INIT_SIZE
     } else {
         0
     }
@@ -383,7 +383,7 @@ pub(crate) fn group_by_threaded_multiple_keys_flat(
     sorted: bool,
 ) -> PolarsResult<GroupsProxy> {
     let dfs = split_df(&mut keys, n_partitions).unwrap();
-    let (hashes, _random_state) = df_rows_to_hashes_threaded_vertical(&dfs, None)?;
+    let (hashes, _random_state) = _df_rows_to_hashes_threaded_vertical(&dfs, None)?;
     let n_partitions = n_partitions as u64;
 
     let init_size = get_init_size();

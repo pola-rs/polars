@@ -27,7 +27,7 @@ jobs:
   clippy-nightly:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Rust
         run: rustup component add clippy
@@ -38,13 +38,13 @@ jobs:
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Run cargo clippy with all features enabled
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy -p polars --all-features -- -D warnings
 
   # Default feature set should compile on the stable toolchain
   clippy-stable:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Rust
         run: rustup override set stable && rustup update
@@ -58,13 +58,13 @@ jobs:
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Run cargo clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy -p polars -- -D warnings
 
   rustfmt:
     if: github.ref_name != 'main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Rust
         run: rustup component add rustfmt
@@ -76,7 +76,7 @@ jobs:
     if: github.ref_name != 'main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Rust
         run: rustup component add miri
@@ -92,4 +92,4 @@ jobs:
           cargo miri test
           --features object
           -p polars-core
-          -p polars-arrow
+#          -p polars-arrow

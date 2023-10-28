@@ -1,5 +1,6 @@
 use std::fmt::{Debug, Formatter};
 
+use arrow::datatypes::ArrowSchemaRef;
 use indexmap::map::MutableKeys;
 use indexmap::IndexMap;
 #[cfg(feature = "serde-lazy")]
@@ -31,6 +32,12 @@ impl Debug for Schema {
             writeln!(f, "name: {name}, data type: {dtype:?}")?;
         }
         Ok(())
+    }
+}
+
+impl From<&[Series]> for Schema {
+    fn from(value: &[Series]) -> Self {
+        value.iter().map(|s| s.field().into_owned()).collect()
     }
 }
 
@@ -449,5 +456,28 @@ impl IndexOfSchema for ArrowSchema {
 
     fn get_names(&self) -> Vec<&str> {
         self.fields.iter().map(|f| f.name.as_str()).collect()
+    }
+}
+
+impl From<&ArrowSchema> for Schema {
+    fn from(value: &ArrowSchema) -> Self {
+        Self::from_iter(value.fields.iter())
+    }
+}
+impl From<ArrowSchema> for Schema {
+    fn from(value: ArrowSchema) -> Self {
+        Self::from(&value)
+    }
+}
+
+impl From<ArrowSchemaRef> for Schema {
+    fn from(value: ArrowSchemaRef) -> Self {
+        Self::from(value.as_ref())
+    }
+}
+
+impl From<&ArrowSchemaRef> for Schema {
+    fn from(value: &ArrowSchemaRef) -> Self {
+        Self::from(value.as_ref())
     }
 }

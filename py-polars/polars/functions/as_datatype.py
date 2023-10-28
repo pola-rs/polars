@@ -177,17 +177,39 @@ def time_(
 
 def duration(
     *,
-    days: Expr | str | int | None = None,
-    seconds: Expr | str | int | None = None,
-    nanoseconds: Expr | str | int | None = None,
-    microseconds: Expr | str | int | None = None,
-    milliseconds: Expr | str | int | None = None,
-    minutes: Expr | str | int | None = None,
-    hours: Expr | str | int | None = None,
     weeks: Expr | str | int | None = None,
+    days: Expr | str | int | None = None,
+    hours: Expr | str | int | None = None,
+    minutes: Expr | str | int | None = None,
+    seconds: Expr | str | int | None = None,
+    milliseconds: Expr | str | int | None = None,
+    microseconds: Expr | str | int | None = None,
+    nanoseconds: Expr | str | int | None = None,
+    time_unit: TimeUnit = "us",
 ) -> Expr:
     """
     Create polars `Duration` from distinct time components.
+
+    Parameters
+    ----------
+    weeks
+        Number of weeks.
+    days
+        Number of days.
+    hours
+        Number of hours.
+    minutes
+        Number of minutes.
+    seconds
+        Number of seconds.
+    milliseconds
+        Number of milliseconds.
+    microseconds
+        Number of microseconds.
+    nanoseconds
+        Number of nanoseconds.
+    time_unit : {'us', 'ms', 'ns'}
+        Time unit of the resulting expression.
 
     Returns
     -------
@@ -267,6 +289,10 @@ def duration(
     └─────────────────────┴─────────────────────┴─────────────────────┘
 
     """  # noqa: W505
+    if weeks is not None:
+        weeks = parse_as_expression(weeks)
+    if days is not None:
+        days = parse_as_expression(days)
     if hours is not None:
         hours = parse_as_expression(hours)
     if minutes is not None:
@@ -279,21 +305,18 @@ def duration(
         microseconds = parse_as_expression(microseconds)
     if nanoseconds is not None:
         nanoseconds = parse_as_expression(nanoseconds)
-    if days is not None:
-        days = parse_as_expression(days)
-    if weeks is not None:
-        weeks = parse_as_expression(weeks)
 
     return wrap_expr(
         plr.duration(
-            days,
-            seconds,
-            nanoseconds,
-            microseconds,
-            milliseconds,
-            minutes,
-            hours,
             weeks,
+            days,
+            hours,
+            minutes,
+            seconds,
+            milliseconds,
+            microseconds,
+            nanoseconds,
+            time_unit,
         )
     )
 
@@ -436,7 +459,7 @@ def struct(
     Use keyword arguments to easily name each struct field.
 
     >>> df.select(pl.struct(p="int", q="bool").alias("my_struct")).schema
-    {'my_struct': Struct([Field('p', Int64), Field('q', Boolean)])}
+    OrderedDict([('my_struct', Struct([Field('p', Int64), Field('q', Boolean)]))])
 
     """
     pyexprs = parse_as_list_of_expressions(*exprs, **named_exprs)

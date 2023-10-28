@@ -16,7 +16,7 @@ dtypes = {
 }
 
 dataset = pl.read_csv(url, dtypes=dtypes).with_columns(
-    pl.col("birthday").str.strptime(pl.Date, strict=False)
+    pl.col("birthday").str.to_date(strict=False)
 )
 # --8<-- [end:dataframe]
 

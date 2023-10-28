@@ -1,5 +1,6 @@
 use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_plan::global::_set_n_rows_for_scan;
 
 use super::super::executors::{self, Executor};
 use super::*;
@@ -93,7 +94,7 @@ fn partitionable_gb(
                                         )
                         },
                         Function {input, options, ..} => {
-                            matches!(options.collect_groups, ApplyOptions::ApplyFlat) && input.len() == 1 &&
+                            matches!(options.collect_groups, ApplyOptions::ElementWise) && input.len() == 1 &&
                                 !has_aggregation(input[0])
                         }
                         BinaryExpr {left, right, ..} => {
@@ -150,16 +151,20 @@ pub fn create_physical_plan(
     match logical_plan {
         #[cfg(feature = "python")]
         PythonScan { options, .. } => Ok(Box::new(executors::PythonScanExec { options })),
-        Sink { payload, .. } => {
-            match payload {
-                SinkType::Memory => panic!("Memory Sink not supported in the standard engine."),
-                SinkType::File{file_type, ..} => panic!(
+        Sink { payload, .. } => match payload {
+            SinkType::Memory => {
+                polars_bail!(InvalidOperation: "memory sink not supported in the standard engine")
+            },
+            SinkType::File { file_type, .. } => {
+                polars_bail!(InvalidOperation:
                     "sink_{file_type:?} not yet supported in standard engine. Use 'collect().write_parquet()'"
-                ),
-                #[cfg(feature = "cloud")]
-                SinkType::Cloud{..} => panic!("Cloud Sink not supported in standard engine.")
-            }
-        }
+                )
+            },
+            #[cfg(feature = "cloud")]
+            SinkType::Cloud { .. } => {
+                polars_bail!(InvalidOperation: "cloud sink not supported in standard engine.")
+            },
+        },
         Union { inputs, options } => {
             let inputs = inputs
                 .into_iter()
@@ -189,13 +194,15 @@ pub fn create_physical_plan(
             )))
         },
         Scan {
-            path,
+            paths,
             file_info,
             output_schema,
             scan_type,
             predicate,
-            file_options,
+            mut file_options,
         } => {
+            file_options.n_rows = _set_n_rows_for_scan(file_options.n_rows);
+            let mut state = ExpressionConversionState::default();
             let predicate = predicate
                 .map(|pred| {
                     create_physical_expr(
@@ -203,7 +210,7 @@ pub fn create_physical_plan(
                         Context::Default,
                         expr_arena,
                         output_schema.as_ref(),
-                        &mut Default::default(),
+                        &mut state,
                     )
                 })
                 .map_or(Ok(None), |v| v.map(Some))?;
@@ -212,33 +219,53 @@ pub fn create_physical_plan(
                 #[cfg(feature = "csv")]
                 FileScan::Csv {
                     options: csv_options,
-                } => Ok(Box::new(executors::CsvExec {
-                    path,
-                    schema: file_info.schema,
-                    options: csv_options,
-                    predicate,
-                    file_options,
-                })),
+                } => {
+                    assert_eq!(paths.len(), 1);
+                    let path = paths[0].clone();
+                    Ok(Box::new(executors::CsvExec {
+                        path,
+                        schema: file_info.schema,
+                        options: csv_options,
+                        predicate,
+                        file_options,
+                    }))
+                },
                 #[cfg(feature = "ipc")]
-                FileScan::Ipc { options } => Ok(Box::new(executors::IpcExec {
-                    path,
-                    schema: file_info.schema,
-                    predicate,
-                    options,
-                    file_options,
-                })),
+                FileScan::Ipc { options } => {
+                    assert_eq!(paths.len(), 1);
+                    let path = paths[0].clone();
+                    Ok(Box::new(executors::IpcExec {
+                        path,
+                        schema: file_info.schema,
+                        predicate,
+                        options,
+                        file_options,
+                    }))
+                },
                 #[cfg(feature = "parquet")]
                 FileScan::Parquet {
                     options,
                     cloud_options,
+                    metadata,
                 } => Ok(Box::new(executors::ParquetExec::new(
-                    path,
-                    file_info.schema,
+                    paths,
+                    file_info,
                     predicate,
                     options,
                     cloud_options,
                     file_options,
+                    metadata,
                 ))),
+                FileScan::Anonymous { function, .. } => {
+                    Ok(Box::new(executors::AnonymousScanExec {
+                        function,
+                        predicate,
+                        file_options,
+                        file_info,
+                        output_schema,
+                        predicate_has_windows: state.has_windows,
+                    }))
+                },
             }
         },
         Projection {
@@ -299,33 +326,6 @@ pub fn create_physical_plan(
                 df,
                 projection,
                 selection,
-                predicate_has_windows: state.has_windows,
-            }))
-        },
-        AnonymousScan {
-            function,
-            predicate,
-            options,
-            output_schema,
-            ..
-        } => {
-            let mut state = ExpressionConversionState::default();
-            let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
-            let predicate = predicate
-                .map(|pred| {
-                    create_physical_expr(
-                        pred,
-                        Context::Default,
-                        expr_arena,
-                        output_schema.as_ref(),
-                        &mut state,
-                    )
-                })
-                .map_or(Ok(None), |v| v.map(Some))?;
-            Ok(Box::new(executors::AnonymousScanExec {
-                function,
-                predicate,
-                options,
                 predicate_has_windows: state.has_windows,
             }))
         },

@@ -1,6 +1,6 @@
 use arrow::array::Utf8Array;
 use arrow::bitmap::MutableBitmap;
-use polars_arrow::prelude::FromDataUtf8;
+use arrow::legacy::prelude::FromDataUtf8;
 use polars_core::prelude::*;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 use polars_time::chunkedarray::utf8::Pattern;

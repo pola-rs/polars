@@ -78,7 +78,6 @@ The opt-in features are:
   - `dtype-u16`
   - `dtype-categorical`
   - `dtype-struct`
-- `performant` - Longer compile times more fast paths.
 - `lazy` - Lazy API
   - `lazy_regex` - Use regexes in [column selection](crate::lazy::dsl::col)
   - `dot_diagram` - Create dot diagrams from lazy logical plans.
@@ -89,7 +88,7 @@ The opt-in features are:
 - `temporal` - Conversions between [Chrono](https://docs.rs/chrono/) and Polars for temporal data types
 - `timezones` - Activate timezone support.
 - `strings` - Extra string utilities for `Utf8Chunked`
-  - `string_justify` - `zfill`, `ljust`, `rjust`
+  - `string_pad` - `pad_start`, `pad_end`, `zfill`
   - `string_from_radix` - `parse_int`
 - `object` - Support for generic ChunkedArrays called `ObjectChunked<T>` (generic over `T`).
   These are downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.

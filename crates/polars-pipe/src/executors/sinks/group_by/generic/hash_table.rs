@@ -1,4 +1,4 @@
-use polars_arrow::trusted_len::TrustedLenPush;
+use arrow::legacy::trusted_len::TrustedLenPush;
 use polars_core::hashing::partition::this_partition;
 
 use super::*;

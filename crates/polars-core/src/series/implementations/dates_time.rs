@@ -11,7 +11,7 @@ use std::borrow::Cow;
 use std::ops::Deref;
 
 use ahash::RandomState;
-use polars_arrow::prelude::QuantileInterpolOptions;
+use arrow::legacy::prelude::QuantileInterpolOptions;
 
 use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
@@ -19,8 +19,6 @@ use crate::chunked_array::ops::ToBitRepr;
 use crate::chunked_array::AsSinglePtr;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
-#[cfg(feature = "algorithm_join")]
-use crate::frame::hash_join::*;
 use crate::prelude::*;
 
 macro_rules! impl_dyn_series {
@@ -54,17 +52,6 @@ macro_rules! impl_dyn_series {
                     .$into_logical()
                     .into_series()
             }
-
-            #[cfg(feature = "cum_agg")]
-            fn _cummax(&self, reverse: bool) -> Series {
-                self.0.cummax(reverse).$into_logical().into_series()
-            }
-
-            #[cfg(feature = "cum_agg")]
-            fn _cummin(&self, reverse: bool) -> Series {
-                self.0.cummin(reverse).$into_logical().into_series()
-            }
-
 
             #[cfg(feature = "zip_with")]
             fn zip_with_same_type(
@@ -109,19 +96,6 @@ macro_rules! impl_dyn_series {
                     .agg_list(groups)
                     .cast(&DataType::List(Box::new(self.dtype().clone())))
                     .unwrap()
-            }
-
-#[cfg(feature = "algorithm_join")]
-            unsafe fn zip_outer_join_column(
-                &self,
-                right_column: &Series,
-                opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
-            ) -> Series {
-                let right_column = right_column.to_physical_repr().into_owned();
-                self.0
-                    .zip_outer_join_column(&right_column, opt_join_tuples)
-                    .$into_logical()
-                    .into_series()
             }
 
             fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
@@ -245,43 +219,19 @@ macro_rules! impl_dyn_series {
             }
 
             fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-                self.0.deref().take(indices.into())
-                    .map(|ca| ca.$into_logical().into_series())
+                Ok(self.0.take(indices)?.$into_logical().into_series())
             }
 
-            fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
-                self.0.deref().take(iter.into())
-                    .map(|ca| ca.$into_logical().into_series())
+            unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
+                self.0.take_unchecked(indices).$into_logical().into_series()
             }
 
-            unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-                self.0.deref().take_unchecked(iter.into())
-                    .$into_logical()
-                    .into_series()
+            fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
+                Ok(self.0.take(indices)?.$into_logical().into_series())
             }
 
-            unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
-                let mut out = self.0.deref().take_unchecked(idx.into());
-
-                if self.0.is_sorted_ascending_flag()
-                    && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
-                {
-                    out.set_sorted_flag(idx.is_sorted_flag())
-                }
-
-                Ok(out.$into_logical().into_series())
-            }
-
-            unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-                self.0.deref().take_unchecked(iter.into())
-                    .$into_logical()
-                    .into_series()
-            }
-
-            #[cfg(feature = "take_opt_iter")]
-            fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
-                self.0.deref().take(iter.into())
-                    .map(|ca| ca.$into_logical().into_series())
+            unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
+                self.0.take_unchecked(indices).$into_logical().into_series()
             }
 
             fn len(&self) -> usize {
@@ -439,40 +389,6 @@ macro_rules! impl_dyn_series {
 
             fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
                 Arc::new(SeriesWrap(Clone::clone(&self.0)))
-            }
-
-            fn peak_max(&self) -> BooleanChunked {
-                self.0.peak_max()
-            }
-
-            fn peak_min(&self) -> BooleanChunked {
-                self.0.peak_min()
-            }
-            #[cfg(feature = "repeat_by")]
-            fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
-                match self.0.dtype() {
-                    DataType::Date => Ok(self
-                        .0
-                        .repeat_by(by)?
-                        .cast(&DataType::List(Box::new(DataType::Date)))
-                        .unwrap()
-                        .list()
-                        .unwrap()
-                        .clone()),
-                    DataType::Time => Ok(self
-                        .0
-                        .repeat_by(by)?
-                        .cast(&DataType::List(Box::new(DataType::Time)))
-                        .unwrap()
-                        .list()
-                        .unwrap()
-                        .clone()),
-                    _ => unreachable!(),
-                }
-            }
-            #[cfg(feature = "mode")]
-            fn mode(&self) -> PolarsResult<Series> {
-                self.0.mode().map(|ca| ca.$into_logical().into_series())
             }
         }
     };

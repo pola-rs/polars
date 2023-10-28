@@ -12,7 +12,8 @@ pub use crate::ndjson::core::*;
 #[cfg(feature = "parquet")]
 pub use crate::parquet::*;
 pub use crate::utils::*;
-pub use crate::{SerReader, SerWriter};
+pub use crate::{cloud, SerReader, SerWriter};
+
 #[cfg(test)]
 pub(crate) fn create_df() -> DataFrame {
     let s0 = Series::new("days", [0, 1, 2, 3, 4].as_ref());

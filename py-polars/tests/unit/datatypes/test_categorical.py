@@ -141,16 +141,6 @@ def test_cast_null_to_categorical() -> None:
     ).dtypes == [pl.Categorical]
 
 
-def test_shift_and_fill() -> None:
-    df = pl.DataFrame({"a": ["a", "b"]}).with_columns(
-        [pl.col("a").cast(pl.Categorical)]
-    )
-
-    s = df.with_columns(pl.col("a").shift_and_fill("c", periods=1))["a"]
-    assert s.dtype == pl.Categorical
-    assert s.to_list() == ["c", "a"]
-
-
 @StringCache()
 def test_merge_lit_under_global_cache_4491() -> None:
     df = pl.DataFrame(
@@ -309,15 +299,9 @@ def test_nested_categorical_aggregation_7848() -> None:
         }
     ).with_columns([pl.col("letter").cast(pl.Categorical)]).group_by(
         maintain_order=True, by=["group"]
-    ).all().with_columns(
-        [pl.col("letter").list.lengths().alias("c_group")]
-    ).group_by(
+    ).all().with_columns(pl.col("letter").list.len().alias("c_group")).group_by(
         by=["c_group"], maintain_order=True
-    ).agg(
-        pl.col("letter")
-    ).to_dict(
-        False
-    ) == {
+    ).agg(pl.col("letter")).to_dict(False) == {
         "c_group": [2, 3],
         "letter": [[["a", "b"], ["f", "g"]], [["c", "d", "e"]]],
     }
@@ -408,3 +392,32 @@ def test_list_builder_different_categorical_rev_maps() -> None:
     assert pl.DataFrame({"c": [s1, s2]}).to_dict(False) == {
         "c": [["a", "b"], ["c", "d"]]
     }
+
+
+def test_categorical_collect_11408() -> None:
+    df = pl.DataFrame(
+        data={"groups": ["a", "b", "c"], "cats": ["a", "b", "c"], "amount": [1, 2, 3]},
+        schema={"groups": pl.Utf8, "cats": pl.Categorical, "amount": pl.Int8},
+    )
+
+    assert df.group_by("groups").agg(
+        pl.col("cats").filter(pl.col("amount") == pl.col("amount").min()).first()
+    ).sort("groups").to_dict(False) == {
+        "groups": ["a", "b", "c"],
+        "cats": ["a", "b", "c"],
+    }
+
+
+def test_categorical_nested_cast_unchecked() -> None:
+    s = pl.Series("cat", [["cat"]]).cast(pl.List(pl.Categorical))
+    assert pl.Series([s]).to_list() == [[["cat"]]]
+
+
+def test_categorical_update_lengths() -> None:
+    with pl.StringCache():
+        s1 = pl.Series(["", ""], dtype=pl.Categorical)
+        s2 = pl.Series([None, "", ""], dtype=pl.Categorical)
+
+    s = pl.concat([s1, s2], rechunk=False)
+    assert s.null_count() == 1
+    assert s.len() == 5

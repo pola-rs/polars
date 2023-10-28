@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from polars.type_aliases import (
         ClosedInterval,
         IntoExpr,
+        Label,
         RollingInterpolationMethod,
         SchemaDict,
         StartBy,
@@ -204,8 +205,8 @@ class GroupBy:
         Or use positional arguments to compute multiple aggregations in the same way.
 
         >>> df.group_by("a").agg(
-        ...     pl.sum("b").suffix("_sum"),
-        ...     (pl.col("c") ** 2).mean().suffix("_mean_squared"),
+        ...     pl.sum("b").name.suffix("_sum"),
+        ...     (pl.col("c") ** 2).mean().name.suffix("_mean_squared"),
         ... )  # doctest: +IGNORE_RESULT
         shape: (3, 3)
         ┌─────┬───────┬────────────────┐
@@ -799,7 +800,7 @@ class RollingGroupBy:
         groups_df = (
             self.df.lazy()
             .with_row_count(name=temp_col)
-            .group_by_rolling(
+            .rolling(
                 index_column=self.time_column,
                 period=self.period,
                 offset=self.offset,
@@ -858,7 +859,7 @@ class RollingGroupBy:
         """
         return (
             self.df.lazy()
-            .group_by_rolling(
+            .rolling(
                 index_column=self.time_column,
                 period=self.period,
                 offset=self.offset,
@@ -902,7 +903,7 @@ class RollingGroupBy:
         """
         return (
             self.df.lazy()
-            .group_by_rolling(
+            .rolling(
                 index_column=self.time_column,
                 period=self.period,
                 offset=self.offset,
@@ -955,9 +956,10 @@ class DynamicGroupBy:
         every: str | timedelta,
         period: str | timedelta | None,
         offset: str | timedelta | None,
-        truncate: bool,
+        truncate: bool | None,
         include_boundaries: bool,
         closed: ClosedInterval,
+        label: Label,
         by: IntoExpr | Iterable[IntoExpr] | None,
         start_by: StartBy,
         check_sorted: bool,
@@ -972,6 +974,7 @@ class DynamicGroupBy:
         self.period = period
         self.offset = offset
         self.truncate = truncate
+        self.label = label
         self.include_boundaries = include_boundaries
         self.closed = closed
         self.by = by
@@ -989,6 +992,7 @@ class DynamicGroupBy:
                 period=self.period,
                 offset=self.offset,
                 truncate=self.truncate,
+                label=self.label,
                 include_boundaries=self.include_boundaries,
                 closed=self.closed,
                 by=self.by,
@@ -1052,6 +1056,7 @@ class DynamicGroupBy:
                 period=self.period,
                 offset=self.offset,
                 truncate=self.truncate,
+                label=self.label,
                 include_boundaries=self.include_boundaries,
                 closed=self.closed,
                 by=self.by,

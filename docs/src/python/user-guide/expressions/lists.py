@@ -35,7 +35,7 @@ print(out)
 out = weather.with_columns(pl.col("temperatures").str.split(" ")).with_columns(
     pl.col("temperatures").list.head(3).alias("top3"),
     pl.col("temperatures").list.slice(-3, 3).alias("bottom_3"),
-    pl.col("temperatures").list.lengths().alias("obs"),
+    pl.col("temperatures").list.len().alias("obs"),
 )
 print(out)
 # --8<-- [end:list_ops]
@@ -97,15 +97,18 @@ array_df = pl.DataFrame(
         pl.Series("Array_1", [[1, 3], [2, 5]]),
         pl.Series("Array_2", [[1, 7, 3], [8, 1, 0]]),
     ],
-    schema={"Array_1": pl.Array(2, pl.Int64), "Array_2": pl.Array(3, pl.Int64)},
+    schema={
+        "Array_1": pl.Array(inner=pl.Int64, width=2),
+        "Array_2": pl.Array(inner=pl.Int64, width=3),
+    },
 )
 print(array_df)
 # --8<-- [end:array_df]
 
 # --8<-- [start:array_ops]
 out = array_df.select(
-    pl.col("Array_1").arr.min().suffix("_min"),
-    pl.col("Array_2").arr.sum().suffix("_sum"),
+    pl.col("Array_1").arr.min().name.suffix("_min"),
+    pl.col("Array_2").arr.sum().name.suffix("_sum"),
 )
 print(out)
 # --8<-- [end:array_ops]

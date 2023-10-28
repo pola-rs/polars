@@ -116,7 +116,7 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "dtype-categorical")]
 fn test_when_then_otherwise_cats() -> PolarsResult<()> {
-    polars::enable_string_cache(true);
+    polars::enable_string_cache();
 
     let lf = df!["book" => [Some("bookA"),
         None,
@@ -260,7 +260,7 @@ fn test_binary_over_3930() -> PolarsResult<()> {
     ]?;
 
     let ss = col("score").pow(2);
-    let mdiff = (ss.clone().shift(-1) - ss.shift(1)) / lit(2);
+    let mdiff = (ss.clone().shift(lit(-1)) - ss.shift(lit(1))) / lit(2);
     let out = df.lazy().select([mdiff.over([col("class")])]).collect()?;
 
     let out = out.column("score")?;

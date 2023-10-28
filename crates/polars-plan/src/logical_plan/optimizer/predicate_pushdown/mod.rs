@@ -1,8 +1,10 @@
+mod group_by;
 mod join;
 mod keys;
 mod rename;
 mod utils;
 
+use polars_core::config::verbose;
 use polars_core::datatypes::PlHashMap;
 use polars_core::prelude::*;
 use utils::*;
@@ -10,14 +12,26 @@ use utils::*;
 use super::*;
 use crate::dsl::function_expr::FunctionExpr;
 use crate::logical_plan::optimizer;
+use crate::prelude::optimizer::predicate_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::predicate_pushdown::join::process_join;
 use crate::prelude::optimizer::predicate_pushdown::rename::process_rename;
 use crate::utils::{check_input_node, has_aexpr};
 
-#[derive(Default)]
-pub struct PredicatePushDown {}
+pub type HiveEval<'a> = Option<&'a dyn Fn(Node, &Arena<AExpr>) -> Option<Arc<dyn PhysicalIoExpr>>>;
 
-impl PredicatePushDown {
+pub struct PredicatePushDown<'a> {
+    hive_partition_eval: HiveEval<'a>,
+    verbose: bool,
+}
+
+impl<'a> PredicatePushDown<'a> {
+    pub fn new(hive_partition_eval: HiveEval<'a>) -> Self {
+        Self {
+            hive_partition_eval,
+            verbose: verbose(),
+        }
+    }
+
     fn optional_apply_predicate(
         &self,
         lp: ALogicalPlan,
@@ -211,78 +225,95 @@ impl PredicatePushDown {
                 Ok(lp)
             }
             Scan {
-                path,
-                file_info,
+                mut paths,
+                mut file_info,
                 predicate,
-                scan_type,
+                mut scan_type,
                 file_options: options,
                 output_schema
             } => {
                 let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
                 let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
-                let lp = match (predicate, &scan_type) {
+                if let (true, Some(predicate)) = (file_info.hive_parts.is_some(), predicate) {
+                    if let Some(io_expr) = self.hive_partition_eval.unwrap()(predicate, expr_arena) {
+                        if let Some(stats_evaluator) = io_expr.as_stats_evaluator() {
+                            let mut new_paths = Vec::with_capacity(paths.len());
+
+
+                            for path in paths.as_ref().iter() {
+                                file_info.update_hive_partitions(path);
+                                let hive_part_stats = file_info.hive_parts.as_deref().ok_or_else(|| polars_err!(ComputeError: "cannot combine hive partitioned directories with non-hive partitioned ones"))?;
+
+                                if stats_evaluator.should_read(hive_part_stats.get_statistics())? {
+                                    new_paths.push(path.clone());
+                                }
+                            }
+
+                            if paths.len() != new_paths.len() {
+                                if self.verbose {
+                                    eprintln!("hive partitioning: skipped {} files, first file : {}", paths.len() - new_paths.len(), paths[0].display())
+                                }
+                                scan_type.remove_metadata();
+                            }
+                            if paths.is_empty() {
+                                let schema = output_schema.as_ref().unwrap_or(&file_info.schema);
+                                let df = DataFrame::from(schema.as_ref());
+
+                                return Ok(DataFrameScan {
+                                    df: Arc::new(df),
+                                    schema: schema.clone(),
+                                    output_schema: None,
+                                    projection: None,
+                                    selection: None
+                                })
+                            } else {
+                                paths = Arc::from(new_paths)
+                            }
+                        }
+                    }
+                }
+
+                let mut do_optimization = match &scan_type {
                     #[cfg(feature = "csv")]
-                    (Some(predicate), FileScan::Csv {..}) => {
-                        let lp = Scan {
-                            path,
-                            file_info,
-                            predicate: None,
-                            file_options: options,
-                            output_schema,
-                            scan_type
-                        };
+                    FileScan::Csv {..} => options.n_rows.is_none(),
+                    FileScan::Anonymous {function, ..} => function.allows_predicate_pushdown(),
+                    _ => true
+                };
+                do_optimization &= predicate.is_some();
+
+                let lp = if do_optimization {
+                    Scan {
+                        paths,
+                        file_info,
+                        predicate,
+                        file_options: options,
+                        output_schema,
+                        scan_type
+                    }
+                } else {
+                    let lp = Scan {
+                        paths,
+                        file_info,
+                        predicate: None,
+                        file_options: options,
+                        output_schema,
+                        scan_type
+                    };
+                    if let Some(predicate) = predicate {
                         let input = lp_arena.add(lp);
                         Selection {
                             input,
                             predicate
                         }
-                    },
-                    _ => {
-                        Scan {
-                            path,
-                            file_info,
-                            predicate,
-                            file_options: options,
-                            output_schema,
-                            scan_type
-                        }
+                    } else {
+                        lp
                     }
                 };
 
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
 
             }
-            AnonymousScan {
-                function,
-                file_info,
-                output_schema,
-                options,
-                predicate,
-            } => {
-                if function.allows_predicate_pushdown() {
-                    let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
-                    let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
-                    let lp = AnonymousScan {
-                        function,
-                        file_info,
-                        output_schema,
-                        options,
-                        predicate,
-                    };
-                    Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
-                } else {
-                    let lp = AnonymousScan {
-                        function,
-                        file_info,
-                        output_schema,
-                        options,
-                        predicate,
-                    };
-                    self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
-                }
-            }
-
             Distinct {
                 input,
                 options
@@ -409,6 +440,10 @@ impl PredicatePushDown {
                     self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
                 }
             }
+            Aggregate {input, keys, aggs, schema, apply, maintain_order, options, } => {
+                process_group_by(self, lp_arena, expr_arena, input, keys, aggs, schema, maintain_order, apply, options, acc_predicates)
+
+            },
             lp @ Union {..} => {
                 let mut local_predicates = vec![];
 
@@ -450,8 +485,7 @@ impl PredicatePushDown {
             lp @ Slice { .. }
             // caches will be different
             | lp @ Cache { .. }
-            // dont push down predicates. An aggregation needs all rows
-            | lp @ Aggregate {..} => {
+             => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             }
             #[cfg(feature = "python")]

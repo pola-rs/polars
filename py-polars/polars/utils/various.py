@@ -22,12 +22,13 @@ from polars.datatypes import (
     Utf8,
     unpack_dtypes,
 )
-from polars.dependencies import _PYARROW_AVAILABLE
+from polars.dependencies import _PYARROW_AVAILABLE, _check_for_numpy
+from polars.dependencies import numpy as np
 
 if TYPE_CHECKING:
     from collections.abc import Reversible
 
-    from polars import DataFrame, Series
+    from polars import DataFrame
     from polars.type_aliases import PolarsDataType, PolarsIntegerType, SizeUnit
 
     if sys.version_info >= (3, 10):
@@ -66,18 +67,41 @@ def _is_iterable_of(val: Iterable[object], eltype: type | tuple[type, ...]) -> b
     return all(isinstance(x, eltype) for x in val)
 
 
-def is_bool_sequence(val: object) -> TypeGuard[Sequence[bool]]:
+def is_bool_sequence(
+    val: object, *, include_series: bool = False
+) -> TypeGuard[Sequence[bool]]:
     """Check whether the given sequence is a sequence of booleans."""
+    if _check_for_numpy(val) and isinstance(val, np.ndarray):
+        return val.dtype == np.bool_
+    elif include_series and isinstance(val, pl.Series):
+        return val.dtype == pl.Boolean
     return isinstance(val, Sequence) and _is_iterable_of(val, bool)
 
 
-def is_int_sequence(val: object) -> TypeGuard[Sequence[int]]:
+def is_int_sequence(
+    val: object, *, include_series: bool = False
+) -> TypeGuard[Sequence[int]]:
     """Check whether the given sequence is a sequence of integers."""
+    if _check_for_numpy(val) and isinstance(val, np.ndarray):
+        return np.issubdtype(val.dtype, np.integer)
+    elif include_series and isinstance(val, pl.Series):
+        return val.dtype in pl.INTEGER_DTYPES
     return isinstance(val, Sequence) and _is_iterable_of(val, int)
 
 
+def is_sequence(
+    val: object, *, include_series: bool = False
+) -> TypeGuard[Sequence[Any]]:
+    """Check whether the given input is a numpy array or python sequence."""
+    return (
+        (_check_for_numpy(val) and isinstance(val, np.ndarray))
+        or isinstance(val, (pl.Series, Sequence) if include_series else Sequence)
+        and not isinstance(val, str)
+    )
+
+
 def is_str_sequence(
-    val: object, *, allow_str: bool = False
+    val: object, *, allow_str: bool = False, include_series: bool = False
 ) -> TypeGuard[Sequence[str]]:
     """
     Check that `val` is a sequence of strings.
@@ -87,12 +111,16 @@ def is_str_sequence(
     """
     if allow_str is False and isinstance(val, str):
         return False
+    elif _check_for_numpy(val) and isinstance(val, np.ndarray):
+        return np.issubdtype(val.dtype, np.str_)
+    elif include_series and isinstance(val, pl.Series):
+        return val.dtype == pl.Utf8
     return isinstance(val, Sequence) and _is_iterable_of(val, str)
 
 
 def range_to_series(
     name: str, rng: range, dtype: PolarsIntegerType | None = None
-) -> Series:
+) -> pl.Series:
     """Fast conversion of the given range to a Series."""
     dtype = dtype or Int64
     return F.int_range(
@@ -122,17 +150,17 @@ def handle_projection_columns(
             projection = list(columns)
         elif not is_str_sequence(columns):
             raise TypeError(
-                "'columns' arg should contain a list of all integers or all strings values"
+                "`columns` arg should contain a list of all integers or all strings values"
             )
         else:
             new_columns = columns
         if columns and len(set(columns)) != len(columns):
             raise ValueError(
-                f"`columns` arg should only have unique values. Got {columns!r}"
+                f"`columns` arg should only have unique values, got {columns!r}"
             )
         if projection and len(set(projection)) != len(projection):
             raise ValueError(
-                f"`columns` arg should only have unique values. Got {projection!r}"
+                f"`columns` arg should only have unique values, got {projection!r}"
             )
     return projection, new_columns
 
@@ -221,7 +249,7 @@ def scale_bytes(sz: int, unit: SizeUnit) -> int | float:
         return sz / 1024**4
     else:
         raise ValueError(
-            f"unit must be one of {{'b', 'kb', 'mb', 'gb', 'tb'}}, got {unit!r}"
+            f"`unit` must be one of {{'b', 'kb', 'mb', 'gb', 'tb'}}, got {unit!r}"
         )
 
 
@@ -284,7 +312,7 @@ def _cast_repr_strings_with_schema(
                 tp_base = Datetime(tp.time_unit)  # type: ignore[union-attr]
                 d = F.col(c).str.replace(r"[A-Z ]+$", "")
                 cast_cols[c] = (
-                    F.when(d.str.lengths() == 19)
+                    F.when(d.str.len_bytes() == 19)
                     .then(d + ".000000000")
                     .otherwise(d + "000000000")
                     .str.slice(0, 29)
@@ -296,7 +324,7 @@ def _cast_repr_strings_with_schema(
                 cast_cols[c] = F.col(c).str.strptime(tp, "%Y-%m-%d")  # type: ignore[arg-type]
             elif tp == Time:
                 cast_cols[c] = (
-                    F.when(F.col(c).str.lengths() == 8)
+                    F.when(F.col(c).str.len_bytes() == 8)
                     .then(F.col(c) + ".000000000")
                     .otherwise(F.col(c) + "000000000")
                     .str.slice(0, 18)
@@ -362,7 +390,7 @@ def find_stacklevel() -> int:
     Taken from:
     https://github.com/pandas-dev/pandas/blob/ab89c53f48df67709a533b6a95ce3d911871a0a8/pandas/util/_exceptions.py#L30-L51
     """
-    pkg_dir = Path(pl.__file__).parent
+    pkg_dir = str(Path(pl.__file__).parent)
 
     # https://stackoverflow.com/questions/17407119/python-inspect-stack-is-slow
     frame = inspect.currentframe()
@@ -370,7 +398,11 @@ def find_stacklevel() -> int:
     try:
         while frame:
             fname = inspect.getfile(frame)
-            if fname.startswith(str(pkg_dir)):
+            if fname.startswith(pkg_dir) or (
+                (qualname := getattr(frame.f_code, "co_qualname", None))
+                # ignore @singledispatch wrappers
+                and qualname.startswith("singledispatch.")
+            ):
                 frame = frame.f_back
                 n += 1
             else:
@@ -469,7 +501,9 @@ def in_terminal_that_supports_colour() -> bool:
     return False
 
 
-def parse_percentiles(percentiles: Sequence[float] | float | None) -> Sequence[float]:
+def parse_percentiles(
+    percentiles: Sequence[float] | float | None, *, inject_median: bool = False
+) -> Sequence[float]:
     """
     Transforms raw percentiles into our preferred format, adding the 50th percentile.
 
@@ -481,12 +515,14 @@ def parse_percentiles(percentiles: Sequence[float] | float | None) -> Sequence[f
     elif percentiles is None:
         percentiles = []
     if not all((0 <= p <= 1) for p in percentiles):
-        raise ValueError("percentiles must all be in the range [0, 1]")
+        raise ValueError("`percentiles` must all be in the range [0, 1]")
 
     sub_50_percentiles = sorted(p for p in percentiles if p < 0.5)
     at_or_above_50_percentiles = sorted(p for p in percentiles if p >= 0.5)
 
-    if not at_or_above_50_percentiles or at_or_above_50_percentiles[0] != 0.5:
+    if inject_median and (
+        not at_or_above_50_percentiles or at_or_above_50_percentiles[0] != 0.5
+    ):
         at_or_above_50_percentiles = [0.5, *at_or_above_50_percentiles]
 
     return [*sub_50_percentiles, *at_or_above_50_percentiles]

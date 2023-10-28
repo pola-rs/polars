@@ -122,8 +122,8 @@ df = pl.DataFrame(
 )
 
 out = df.select(
-    pl.col("date").dt.strftime("%Y-%m-%d"),
-    pl.col("string").str.strptime(pl.Datetime, "%Y-%m-%d"),
+    pl.col("date").dt.to_string("%Y-%m-%d"),
+    pl.col("string").str.to_datetime("%Y-%m-%d"),
 )
 print(out)
 # --8<-- [end:dates2]

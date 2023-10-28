@@ -363,11 +363,11 @@ def test_cse_quantile_10815() -> None:
     cols = ["a", "b"]
     q = df.lazy().select(
         *(
-            pl.col(c).quantile(0.75, interpolation="midpoint").suffix("_3")
+            pl.col(c).quantile(0.75, interpolation="midpoint").name.suffix("_3")
             for c in cols
         ),
         *(
-            pl.col(c).quantile(0.25, interpolation="midpoint").suffix("_1")
+            pl.col(c).quantile(0.25, interpolation="midpoint").name.suffix("_1")
             for c in cols
         ),
     )
@@ -480,4 +480,77 @@ def test_no_cse_in_with_context() -> None:
             datetime(2023, 1, 2, 0, 0),
         ],
         "label": [0, 1, 1],
+    }
+
+
+def test_cse_slice_11594() -> None:
+    df = pl.LazyFrame({"a": [1, 2, 1, 2, 1, 2]})
+
+    q = df.select(
+        pl.col("a").slice(offset=1, length=pl.count() - 1).alias("1"),
+        pl.col("a").slice(offset=1, length=pl.count() - 1).alias("2"),
+    )
+
+    assert "__POLARS_CSE" in q.explain(comm_subexpr_elim=True)
+
+    assert q.collect(comm_subexpr_elim=True).to_dict(False) == {
+        "1": [2, 1, 2, 1, 2],
+        "2": [2, 1, 2, 1, 2],
+    }
+
+    q = df.select(
+        pl.col("a").slice(offset=1, length=pl.count() - 1).alias("1"),
+        pl.col("a").slice(offset=0, length=pl.count() - 1).alias("2"),
+    )
+
+    assert "__POLARS_CSE" in q.explain(comm_subexpr_elim=True)
+
+    assert q.collect(comm_subexpr_elim=True).to_dict(False) == {
+        "1": [2, 1, 2, 1, 2],
+        "2": [1, 2, 1, 2, 1],
+    }
+
+
+def test_cse_is_in_11489() -> None:
+    df = pl.DataFrame(
+        {"cond": [1, 2, 3, 2, 1], "x": [1.0, 0.20, 3.0, 4.0, 0.50]}
+    ).lazy()
+    any_cond = (
+        pl.when(pl.col("cond").is_in([2, 3]))
+        .then(True)
+        .when(pl.col("cond").is_in([1]))
+        .then(False)
+        .otherwise(None)
+        .alias("any_cond")
+    )
+    val = (
+        pl.when(any_cond)
+        .then(1.0)
+        .when(~any_cond)
+        .then(0.0)
+        .otherwise(None)
+        .alias("val")
+    )
+    assert df.select("cond", any_cond, val).collect().to_dict(False) == {
+        "cond": [1, 2, 3, 2, 1],
+        "any_cond": [False, True, True, True, False],
+        "val": [0.0, 1.0, 1.0, 1.0, 0.0],
+    }
+
+
+def test_cse_11958() -> None:
+    df = pl.LazyFrame({"a": [1, 2, 3, 4, 5]})
+    vector_losses = []
+    for lag in range(1, 5):
+        difference = pl.col("a") - pl.col("a").shift(lag)
+        component_loss = pl.when(difference >= 0).then(difference * 10)
+        vector_losses.append(component_loss.alias(f"diff{lag}"))
+
+    q = df.select(vector_losses)
+    assert "__POLARS_CSE" in q.explain(comm_subexpr_elim=True)
+    assert q.collect(comm_subexpr_elim=True).to_dict(False) == {
+        "diff1": [None, 10, 10, 10, 10],
+        "diff2": [None, None, 20, 20, 20],
+        "diff3": [None, None, None, 30, 30],
+        "diff4": [None, None, None, None, 40],
     }

@@ -46,7 +46,7 @@ class PolarsBuffer(Buffer):
         dtype = polars_dtype_to_dtype(self._data.dtype)
 
         if dtype[0] == DtypeKind.STRING:
-            return self._data.str.lengths().sum()  # type: ignore[return-value]
+            return self._data.str.len_bytes().sum()  # type: ignore[return-value]
 
         n_bits = self._data.len() * dtype[1]
 

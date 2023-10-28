@@ -10,10 +10,10 @@ use std::any::Any;
 use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
 
+use arrow::array::BinaryArray;
 use eval::Eval;
 use hash_table::AggHashTable;
 use hashbrown::hash_map::{RawEntryMut, RawVacantEntryMut};
-use polars_arrow::export::arrow::array::BinaryArray;
 use polars_core::frame::row::AnyValueBufferTrusted;
 use polars_core::series::SeriesPhysIter;
 use polars_core::IdBuildHasher;

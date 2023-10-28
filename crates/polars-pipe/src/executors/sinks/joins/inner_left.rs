@@ -1,13 +1,14 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use polars_arrow::export::arrow::array::BinaryArray;
+use arrow::array::BinaryArray;
 use polars_core::datatypes::ChunkId;
 use polars_core::error::PolarsResult;
 use polars_core::export::ahash::RandomState;
-use polars_core::frame::hash_join::_finish_join;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
+use polars_ops::frame::join::_finish_join;
+use polars_ops::prelude::JoinType;
 use polars_row::RowsEncoded;
 use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;

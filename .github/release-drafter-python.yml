@@ -13,3 +13,24 @@ version-resolver:
       - breaking
       - breaking python
   default: patch
+
+categories:
+  - title: 🏆 Highlights
+    labels: highlight
+  - title: 💥 Breaking changes
+    labels:
+      - breaking
+      - breaking python
+  - title: ⚠️ Deprecations
+    labels: deprecation
+  - title: 🚀 Performance improvements
+    labels: performance
+  - title: ✨ Enhancements
+    labels: enhancement
+  - title: 🐞 Bug fixes
+    labels: fix
+  - title: 🛠️ Other improvements
+    labels:
+      - build
+      - documentation
+      - internal

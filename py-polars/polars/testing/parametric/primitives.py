@@ -26,7 +26,6 @@ from polars.datatypes import (
 )
 from polars.series import Series
 from polars.string_cache import StringCache
-from polars.testing.asserts import is_categorical_dtype
 from polars.testing.parametric.strategies import (
     _flexhash,
     all_strategies,
@@ -115,8 +114,7 @@ class column:
             self.null_probability < 0 or self.null_probability > 1
         ):
             raise InvalidArgument(
-                "null_probability should be between 0.0 and 1.0, or None; found"
-                f" {self.null_probability!r}"
+                f"`null_probability` should be between 0.0 and 1.0, or None; found {self.null_probability!r}"
             )
 
         if self.dtype is None:
@@ -365,8 +363,7 @@ def series(
     ]
     if null_probability and not (0 <= null_probability <= 1):
         raise InvalidArgument(
-            "null_probability should be between 0.0 and 1.0; found"
-            f" {null_probability}"
+            f"`null_probability` should be between 0.0 and 1.0, or None; found {null_probability}"
         )
     null_probability = float(null_probability or 0.0)
 
@@ -433,7 +430,7 @@ def series(
                 dtype=series_dtype,
                 values=series_values,
             )
-            if is_categorical_dtype(dtype):
+            if dtype == Categorical:
                 s = s.cast(Categorical)
             if series_size and (chunked or (chunked is None and draw(booleans()))):
                 split_at = series_size // 2
@@ -721,9 +718,7 @@ def dataframes(
                         schema={repr(schema).replace("', ","', pl.")},
                         orient={orient!r},
                     )
-                    """.replace(
-                        "datetime.", ""
-                    )
+                    """.replace("datetime.", "")
                 )
                 # note: this avoids printing the repro twice
                 if failed_frame_init not in _failed_frame_init_msgs_:

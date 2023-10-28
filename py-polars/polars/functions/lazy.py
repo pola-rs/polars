@@ -1639,7 +1639,7 @@ def collect_all(
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
-            eager=False,
+            _eager=False,
         )
         prepared.append(ldf)
 
@@ -1777,7 +1777,7 @@ def collect_all_async(
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
-            eager=False,
+            _eager=False,
         )
         prepared.append(ldf)
 
@@ -2008,7 +2008,7 @@ def from_epoch(
         return column.cast(Datetime(time_unit))
     else:
         raise ValueError(
-            f"'time_unit' must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}"
+            f"`time_unit` must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}"
         )
 
 

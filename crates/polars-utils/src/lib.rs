@@ -1,4 +1,5 @@
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
+pub mod abs_diff;
 pub mod arena;
 pub mod atomic;
 pub mod cache;
@@ -29,5 +30,7 @@ pub mod vec;
 #[cfg(target_family = "wasm")]
 pub mod wasm;
 
+pub mod index;
 pub mod io;
+
 pub use io::open_file;

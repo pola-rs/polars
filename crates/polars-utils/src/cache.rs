@@ -53,6 +53,12 @@ pub struct FastFixedCache<K, V> {
     hash_builder: RandomState,
 }
 
+impl<K: Hash + Eq, V> Default for FastFixedCache<K, V> {
+    fn default() -> Self {
+        Self::new(MIN_FAST_FIXED_CACHE_SIZE)
+    }
+}
+
 impl<K: Hash + Eq, V> FastFixedCache<K, V> {
     pub fn new(n: usize) -> Self {
         let n = (n.max(MIN_FAST_FIXED_CACHE_SIZE)).next_power_of_two();
@@ -108,6 +114,25 @@ impl<K: Hash + Eq, V> FastFixedCache<K, V> {
             let key = key.to_owned();
             let val = f(&key);
             self.raw_insert(h, key, val)
+        }
+    }
+
+    pub fn try_get_or_insert_with<Q, F, E>(&mut self, key: &Q, f: F) -> Result<&mut V, E>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+        F: FnOnce(&K) -> Result<V, E>,
+    {
+        unsafe {
+            let h = self.hash(key);
+            if let Some(slot_idx) = self.raw_get(self.hash(&key), key) {
+                let slot = self.slots.get_unchecked_mut(slot_idx);
+                return Ok(slot.value.assume_init_mut());
+            }
+
+            let key = key.to_owned();
+            let val = f(&key)?;
+            Ok(self.raw_insert(h, key, val))
         }
     }
 

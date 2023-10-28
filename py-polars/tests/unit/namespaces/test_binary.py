@@ -72,24 +72,26 @@ def test_contains_with_expr() -> None:
 def test_starts_ends_with() -> None:
     assert pl.DataFrame(
         {
-            "a": [b"hamburger", b"nuts", b"lollypop"],
-            "end": [b"ger", b"tg", None],
-            "start": [b"ha", b"nga", None],
+            "a": [b"hamburger", b"nuts", b"lollypop", None],
+            "end": [b"ger", b"tg", None, b"anything"],
+            "start": [b"ha", b"nga", None, b"anything"],
         }
     ).select(
         [
             pl.col("a").bin.ends_with(b"pop").alias("end_lit"),
+            pl.col("a").bin.ends_with(pl.lit(None)).alias("end_none"),
             pl.col("a").bin.ends_with(pl.col("end")).alias("end_expr"),
             pl.col("a").bin.starts_with(b"ham").alias("start_lit"),
+            pl.col("a").bin.ends_with(pl.lit(None)).alias("start_none"),
             pl.col("a").bin.starts_with(pl.col("start")).alias("start_expr"),
         ]
-    ).to_dict(
-        False
-    ) == {
-        "end_lit": [False, False, True],
-        "end_expr": [True, False, False],
-        "start_lit": [True, False, False],
-        "start_expr": [True, False, False],
+    ).to_dict(False) == {
+        "end_lit": [False, False, True, None],
+        "end_none": [None, None, None, None],
+        "end_expr": [True, False, None, None],
+        "start_lit": [True, False, False, None],
+        "start_none": [None, None, None, None],
+        "start_expr": [True, False, None, None],
     }
 
 

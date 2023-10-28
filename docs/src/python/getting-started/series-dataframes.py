@@ -23,8 +23,7 @@ from datetime import date
 start = date(2001, 1, 1)
 stop = date(2001, 1, 9)
 s = pl.date_range(start, stop, interval="2d", eager=True)
-s.dt.day()
-print(s)
+print(s.dt.day())
 # --8<-- [end:dt]
 
 # --8<-- [start:dataframe]

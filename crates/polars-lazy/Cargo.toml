@@ -9,8 +9,9 @@ repository = { workspace = true }
 description = "Lazy query engine for the Polars DataFrame library"
 
 [dependencies]
-polars-arrow = { workspace = true }
-polars-core = { workspace = true, features = ["lazy", "zip_with", "random"], default-features = false }
+arrow = { workspace = true }
+futures = { workspace = true, optional = true }
+polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-io = { workspace = true, features = ["lazy"] }
 polars-json = { workspace = true, optional = true }
 polars-ops = { workspace = true }
@@ -26,6 +27,7 @@ once_cell = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
 smartstring = { workspace = true }
+tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
@@ -34,16 +36,15 @@ serde_json = { workspace = true }
 version_check = { workspace = true }
 
 [features]
-nightly = ["polars-core/nightly", "polars-pipe/nightly", "polars-plan/nightly"]
-streaming = ["chunked_ids", "polars-pipe", "polars-plan/streaming"]
-parquet = ["polars-core/parquet", "polars-io/parquet", "polars-plan/parquet", "polars-pipe?/parquet"]
+nightly = ["polars-core/nightly", "polars-pipe?/nightly", "polars-plan/nightly"]
+streaming = ["chunked_ids", "polars-pipe", "polars-plan/streaming", "polars-ops/chunked_ids"]
+parquet = ["polars-io/parquet", "polars-plan/parquet", "polars-pipe?/parquet"]
 async = [
   "polars-plan/async",
   "polars-io/cloud",
   "polars-pipe?/async",
-  "streaming",
 ]
-cloud = ["async", "polars-pipe?/cloud"]
+cloud = ["async", "polars-pipe?/cloud", "polars-plan/cloud", "tokio", "futures"]
 cloud_write = ["cloud"]
 ipc = ["polars-io/ipc", "polars-plan/ipc", "polars-pipe?/ipc"]
 json = ["polars-io/json", "polars-plan/json", "polars-json"]
@@ -85,7 +86,7 @@ is_first_distinct = ["polars-plan/is_first_distinct"]
 is_last_distinct = ["polars-plan/is_last_distinct"]
 is_unique = ["polars-plan/is_unique"]
 cross_join = ["polars-plan/cross_join", "polars-pipe?/cross_join", "polars-ops/cross_join"]
-asof_join = ["polars-plan/asof_join", "polars-time"]
+asof_join = ["polars-plan/asof_join", "polars-time", "polars-ops/asof_join"]
 concat_str = ["polars-plan/concat_str"]
 range = ["polars-plan/range"]
 mode = ["polars-plan/mode"]
@@ -109,11 +110,11 @@ unique_counts = ["polars-plan/unique_counts"]
 log = ["polars-plan/log"]
 list_eval = []
 cumulative_eval = []
-chunked_ids = ["polars-plan/chunked_ids", "polars-core/chunked_ids"]
+chunked_ids = ["polars-plan/chunked_ids", "polars-core/chunked_ids", "polars-ops/chunked_ids"]
 list_to_struct = ["polars-plan/list_to_struct"]
 python = ["pyo3", "polars-plan/python", "polars-core/python", "polars-io/python"]
 row_hash = ["polars-plan/row_hash"]
-string_justify = ["polars-plan/string_justify"]
+string_pad = ["polars-plan/string_pad"]
 string_from_radix = ["polars-plan/string_from_radix"]
 arg_where = ["polars-plan/arg_where"]
 search_sorted = ["polars-plan/search_sorted"]
@@ -128,7 +129,7 @@ coalesce = ["polars-plan/coalesce"]
 regex = ["polars-plan/regex"]
 serde = [
   "polars-plan/serde",
-  "polars-arrow/serde",
+  "arrow/serde",
   "polars-core/serde-lazy",
   "polars-time?/serde",
   "polars-io/serde",
@@ -137,9 +138,12 @@ serde = [
 fused = ["polars-plan/fused", "polars-ops/fused"]
 list_sets = ["polars-plan/list_sets", "polars-ops/list_sets"]
 list_any_all = ["polars-ops/list_any_all", "polars-plan/list_any_all"]
+list_drop_nulls = ["polars-ops/list_drop_nulls", "polars-plan/list_drop_nulls"]
+list_sample = ["polars-ops/list_sample", "polars-plan/list_sample"]
 cutqcut = ["polars-plan/cutqcut", "polars-ops/cutqcut"]
 rle = ["polars-plan/rle", "polars-ops/rle"]
 extract_groups = ["polars-plan/extract_groups"]
+peaks = ["polars-plan/peaks"]
 
 binary_encoding = ["polars-plan/binary_encoding"]
 
@@ -171,7 +175,7 @@ test_all = [
   "regex",
   "ipc",
   "row_hash",
-  "string_justify",
+  "string_pad",
   "string_from_radix",
   "search_sorted",
   "top_k",

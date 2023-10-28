@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - py-polars/**
+      - docs/src/python/**
       - crates/**
       - .github/workflows/test-python.yml
   push:
@@ -11,6 +12,7 @@ on:
       - main
     paths:
       - crates/**
+      - docs/src/python/**
       - py-polars/**
       - .github/workflows/test-python.yml
 
@@ -34,7 +36,7 @@ jobs:
         python-version: ['3.8', '3.11']
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -70,6 +72,10 @@ jobs:
         if: github.ref_name != 'main'
         run: pytest --cov -n auto --dist loadgroup -m "not benchmark and not docs"
 
+      - name: Run tests async reader tests
+        if: github.ref_name != 'main'
+        run: POLARS_FORCE_ASYNC=1 pytest -m "not benchmark and not docs" tests/unit/io/
+
       - name: Run doctests
         if: github.ref_name != 'main'
         run: |
@@ -85,6 +91,7 @@ jobs:
           "matplotlib"
           "backports.zoneinfo"
           "connectorx"
+          "pyiceberg"
           "deltalake"
           "xlsx2csv"
           )
@@ -103,7 +110,7 @@ jobs:
         python-version: ['3.11']
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v4

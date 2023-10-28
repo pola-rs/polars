@@ -1,7 +1,4 @@
-use polars_time::prelude::TemporalMethods;
-
 use super::*;
-use crate::prelude::function_expr::TemporalFunction;
 
 /// Specialized expressions for [`Series`] with dates/datetimes.
 pub struct DateLikeNameSpace(pub(crate) Expr);
@@ -11,10 +8,10 @@ impl DateLikeNameSpace {
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn to_string(self, format: &str) -> Expr {
         let format = format.to_string();
-        let function = move |s: Series| TemporalMethods::to_string(&s, &format).map(Some);
         self.0
-            .map(function, GetOutput::from_type(DataType::Utf8))
-            .with_fmt("to_string")
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::ToString(
+                format,
+            )))
     }
 
     /// Convert from Date/Time/Datetime into Utf8 with the given format.
@@ -27,70 +24,26 @@ impl DateLikeNameSpace {
 
     /// Change the underlying [`TimeUnit`]. And update the data accordingly.
     pub fn cast_time_unit(self, tu: TimeUnit) -> Expr {
-        self.0.map(
-            move |s| match s.dtype() {
-                DataType::Datetime(_, _) => {
-                    let ca = s.datetime().unwrap();
-                    Ok(Some(ca.cast_time_unit(tu).into_series()))
-                },
-                #[cfg(feature = "dtype-duration")]
-                DataType::Duration(_) => {
-                    let ca = s.duration().unwrap();
-                    Ok(Some(ca.cast_time_unit(tu).into_series()))
-                },
-                dt => polars_bail!(ComputeError: "dtype `{}` has no time unit", dt),
-            },
-            GetOutput::map_dtype(move |dtype| match dtype {
-                DataType::Duration(_) => DataType::Duration(tu),
-                DataType::Datetime(_, tz) => DataType::Datetime(tu, tz.clone()),
-                _ => panic!("expected duration or datetime"),
-            }),
-        )
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::CastTimeUnit(
+                tu,
+            )))
     }
 
     /// Change the underlying [`TimeUnit`] of the [`Series`]. This does not modify the data.
     pub fn with_time_unit(self, tu: TimeUnit) -> Expr {
-        self.0.map(
-            move |s| match s.dtype() {
-                DataType::Datetime(_, _) => {
-                    let mut ca = s.datetime().unwrap().clone();
-                    ca.set_time_unit(tu);
-                    Ok(Some(ca.into_series()))
-                },
-                #[cfg(feature = "dtype-duration")]
-                DataType::Duration(_) => {
-                    let mut ca = s.duration().unwrap().clone();
-                    ca.set_time_unit(tu);
-                    Ok(Some(ca.into_series()))
-                },
-                dt => polars_bail!(ComputeError: "dtype `{}` has no time unit", dt),
-            },
-            GetOutput::same_type(),
-        )
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::WithTimeUnit(
+                tu,
+            )))
     }
 
     /// Change the underlying [`TimeZone`] of the [`Series`]. This does not modify the data.
     #[cfg(feature = "timezones")]
     pub fn convert_time_zone(self, time_zone: TimeZone) -> Expr {
-        let time_zone_clone = time_zone.clone();
-        self.0.map(
-            move |s| match s.dtype() {
-                DataType::Datetime(_, Some(_)) => {
-                    let mut ca = s.datetime().unwrap().clone();
-                    ca.set_time_zone(time_zone.clone())?;
-                    Ok(Some(ca.into_series()))
-                },
-                _ => polars_bail!(
-                    ComputeError:
-                    "cannot call `convert_time_zone` on tz-naive; set a time zone first \
-                    with `replace_time_zone`"
-                ),
-            },
-            GetOutput::map_dtype(move |dtype| match dtype {
-                DataType::Datetime(tu, _) => DataType::Datetime(*tu, Some(time_zone_clone.clone())),
-                _ => panic!("expected datetime"),
-            }),
-        )
+        self.0.map_private(FunctionExpr::TemporalExpr(
+            TemporalFunction::ConvertTimeZone(time_zone),
+        ))
     }
 
     /// Get the year of a Date/Datetime
@@ -215,10 +168,11 @@ impl DateLikeNameSpace {
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::TimeStamp(tu)))
     }
 
-    pub fn truncate(self, options: TruncateOptions, ambiguous: Expr) -> Expr {
+    pub fn truncate(self, every: Expr, offset: String, ambiguous: Expr) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::TemporalExpr(TemporalFunction::Truncate(options)),
-            &[ambiguous],
+            FunctionExpr::TemporalExpr(TemporalFunction::Truncate(offset)),
+            &[every, ambiguous],
+            false,
             false,
         )
     }
@@ -251,13 +205,15 @@ impl DateLikeNameSpace {
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::DSTOffset))
     }
 
-    pub fn round<S: AsRef<str>>(self, every: S, offset: S) -> Expr {
+    pub fn round<S: AsRef<str>>(self, every: S, offset: S, ambiguous: Expr) -> Expr {
         let every = every.as_ref().into();
         let offset = offset.as_ref().into();
-        self.0
-            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Round(
-                every, offset,
-            )))
+        self.0.map_many_private(
+            FunctionExpr::TemporalExpr(TemporalFunction::Round(every, offset)),
+            &[ambiguous],
+            false,
+            false,
+        )
     }
 
     /// Offset this `Date/Datetime` by a given offset [`Duration`].
@@ -265,7 +221,7 @@ impl DateLikeNameSpace {
     #[cfg(feature = "date_offset")]
     pub fn offset_by(self, by: Expr) -> Expr {
         self.0
-            .map_many_private(FunctionExpr::DateOffset, &[by], false)
+            .map_many_private(FunctionExpr::DateOffset, &[by], false, false)
     }
 
     #[cfg(feature = "timezones")]
@@ -274,6 +230,7 @@ impl DateLikeNameSpace {
             FunctionExpr::TemporalExpr(TemporalFunction::ReplaceTimeZone(time_zone)),
             &[ambiguous],
             false,
+            false,
         )
     }
 
@@ -281,6 +238,7 @@ impl DateLikeNameSpace {
         self.0.map_many_private(
             FunctionExpr::TemporalExpr(TemporalFunction::Combine(tu)),
             &[time],
+            false,
             false,
         )
     }

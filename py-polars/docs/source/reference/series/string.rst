@@ -22,10 +22,14 @@ The following methods are available under the `Series.str` attribute.
     Series.str.extract_groups
     Series.str.json_extract
     Series.str.json_path_match
+    Series.str.len_bytes
+    Series.str.len_chars
     Series.str.lengths
     Series.str.ljust
     Series.str.lstrip
     Series.str.n_chars
+    Series.str.pad_end
+    Series.str.pad_start
     Series.str.replace
     Series.str.replace_all
     Series.str.rjust

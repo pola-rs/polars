@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import timezone
-from typing import TYPE_CHECKING, Any, Collection, Mapping, TypeVar
+from typing import TYPE_CHECKING, Any, Collection, Literal, Mapping, overload
 
 from polars import functions as F
 from polars.datatypes import (
@@ -31,12 +31,22 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, LazyFrame
     from polars.datatypes import PolarsDataType
-    from polars.type_aliases import TimeUnit
+    from polars.type_aliases import SelectorType, TimeUnit
 
     if sys.version_info >= (3, 11):
         from typing import Self
     else:
         from typing_extensions import Self
+
+
+@overload
+def is_selector(obj: _selector_proxy_) -> Literal[True]:  # type: ignore[misc]
+    ...
+
+
+@overload
+def is_selector(obj: Any) -> Literal[False]:
+    ...
 
 
 def is_selector(obj: Any) -> bool:
@@ -322,9 +332,6 @@ def _re_string(string: str | Collection[str]) -> str:
                 strings.append(st)
         rx = "|".join(re.escape(x) for x in strings)
     return f"({rx})"
-
-
-SelectorType = TypeVar("SelectorType", Expr, _selector_proxy_)
 
 
 def all() -> SelectorType:
@@ -1477,7 +1484,7 @@ def last() -> SelectorType:
 
     Select everything  *except* for the last column:
 
-    >> df.select(~cs.last())
+    >>> df.select(~cs.last())
     shape: (2, 3)
     ┌─────┬─────┬─────┐
     │ foo ┆ bar ┆ baz │
@@ -1964,5 +1971,4 @@ __all__ = [
     "string",
     "is_selector",
     "expand_selector",
-    "SelectorType",
 ]

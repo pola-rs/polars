@@ -5,9 +5,7 @@ use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
 #[cfg(feature = "parquet")]
-use polars_io::parquet::predicates::BatchStats;
-#[cfg(feature = "parquet")]
-use polars_io::predicates::StatsEvaluator;
+use polars_io::predicates::{BatchStats, StatsEvaluator};
 #[cfg(feature = "parquet")]
 use polars_plan::dsl::FunctionExpr;
 use rayon::prelude::*;
@@ -16,20 +14,48 @@ use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
 pub struct ApplyExpr {
-    pub inputs: Vec<Arc<dyn PhysicalExpr>>,
-    pub function: SpecialEq<Arc<dyn SeriesUdf>>,
-    pub expr: Expr,
-    pub collect_groups: ApplyOptions,
-    pub auto_explode: bool,
-    pub allow_rename: bool,
-    pub pass_name_to_apply: bool,
-    pub input_schema: Option<SchemaRef>,
-    pub allow_threading: bool,
-    pub check_lengths: bool,
-    pub allow_group_aware: bool,
+    inputs: Vec<Arc<dyn PhysicalExpr>>,
+    function: SpecialEq<Arc<dyn SeriesUdf>>,
+    expr: Expr,
+    collect_groups: ApplyOptions,
+    returns_scalar: bool,
+    allow_rename: bool,
+    pass_name_to_apply: bool,
+    input_schema: Option<SchemaRef>,
+    allow_threading: bool,
+    check_lengths: bool,
+    allow_group_aware: bool,
 }
 
 impl ApplyExpr {
+    pub(crate) fn new(
+        inputs: Vec<Arc<dyn PhysicalExpr>>,
+        function: SpecialEq<Arc<dyn SeriesUdf>>,
+        expr: Expr,
+        options: FunctionOptions,
+        allow_threading: bool,
+        input_schema: Option<SchemaRef>,
+    ) -> Self {
+        #[cfg(debug_assertions)]
+        if matches!(options.collect_groups, ApplyOptions::ElementWise) && options.returns_scalar {
+            panic!("expr {} is not implemented correctly. 'returns_scalar' and 'elementwise' are mutually exclusive", expr)
+        }
+
+        Self {
+            inputs,
+            function,
+            expr,
+            collect_groups: options.collect_groups,
+            returns_scalar: options.returns_scalar,
+            allow_rename: options.allow_rename,
+            pass_name_to_apply: options.pass_name_to_apply,
+            input_schema,
+            allow_threading,
+            check_lengths: options.check_lengths(),
+            allow_group_aware: options.allow_group_aware,
+        }
+    }
+
     pub(crate) fn new_minimal(
         inputs: Vec<Arc<dyn PhysicalExpr>>,
         function: SpecialEq<Arc<dyn SeriesUdf>>,
@@ -41,7 +67,7 @@ impl ApplyExpr {
             function,
             expr,
             collect_groups,
-            auto_explode: false,
+            returns_scalar: false,
             allow_rename: false,
             pass_name_to_apply: false,
             input_schema: None,
@@ -72,7 +98,7 @@ impl ApplyExpr {
         ca: ListChunked,
     ) -> PolarsResult<AggregationContext<'a>> {
         let all_unit_len = all_unit_length(&ca);
-        if all_unit_len && self.auto_explode {
+        if all_unit_len && self.returns_scalar {
             ac.with_series(ca.explode().unwrap().into_series(), true, Some(&self.expr))?;
             ac.update_groups = UpdateGroups::No;
         } else {
@@ -105,7 +131,7 @@ impl ApplyExpr {
         let s = ac.series();
 
         polars_ensure!(
-            !matches!(ac.agg_state(), AggState::AggregatedFlat(_)),
+            !matches!(ac.agg_state(), AggState::AggregatedScalar(_)),
             expr = self.expr,
             ComputeError: "cannot aggregate, the column is already aggregated",
         );
@@ -164,7 +190,7 @@ impl ApplyExpr {
                 let out = ca.apply_to_inner(&|s| self.eval_and_flatten(&mut [s]))?;
                 (out.into_series(), true)
             },
-            AggState::AggregatedFlat(s) => (self.eval_and_flatten(&mut [s.clone()])?, true),
+            AggState::AggregatedScalar(s) => (self.eval_and_flatten(&mut [s.clone()])?, true),
             AggState::NotAggregated(s) | AggState::Literal(s) => {
                 let (out, aggregated) = (self.eval_and_flatten(&mut [s.clone()])?, false);
                 check_map_output_len(s.len(), out.len(), &self.expr)?;
@@ -291,8 +317,8 @@ impl PhysicalExpr for ApplyExpr {
                     ac.with_series(s, true, Some(&self.expr))?;
                     Ok(ac)
                 },
-                ApplyOptions::ApplyGroups => self.apply_single_group_aware(ac),
-                ApplyOptions::ApplyFlat => self.apply_single_elementwise(ac),
+                ApplyOptions::GroupWise => self.apply_single_group_aware(ac),
+                ApplyOptions::ElementWise => self.apply_single_elementwise(ac),
             }
         } else {
             let mut acs = self.prepare_multiple_inputs(df, groups, state)?;
@@ -307,8 +333,8 @@ impl PhysicalExpr for ApplyExpr {
                     ac.with_series(s, true, Some(&self.expr))?;
                     Ok(ac)
                 },
-                ApplyOptions::ApplyGroups => self.apply_multiple_group_aware(acs, df),
-                ApplyOptions::ApplyFlat => {
+                ApplyOptions::GroupWise => self.apply_multiple_group_aware(acs, df),
+                ApplyOptions::ElementWise => {
                     if acs
                         .iter()
                         .any(|ac| matches!(ac.agg_state(), AggState::AggregatedList(_)))
@@ -330,7 +356,7 @@ impl PhysicalExpr for ApplyExpr {
         self.expr.to_field(input_schema, Context::Default)
     }
     fn is_valid_aggregation(&self) -> bool {
-        matches!(self.collect_groups, ApplyOptions::ApplyGroups)
+        matches!(self.collect_groups, ApplyOptions::GroupWise)
     }
     #[cfg(feature = "parquet")]
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
@@ -347,7 +373,7 @@ impl PhysicalExpr for ApplyExpr {
         }
     }
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        if self.inputs.len() == 1 && matches!(self.collect_groups, ApplyOptions::ApplyFlat) {
+        if self.inputs.len() == 1 && matches!(self.collect_groups, ApplyOptions::ElementWise) {
             Some(self)
         } else {
             None
@@ -467,8 +493,8 @@ impl ApplyExpr {
                     let min = st.to_min()?;
                     let max = st.to_max()?;
 
-                    let all_smaller = || Some(ChunkCompare::lt(input, &min).ok()?.all());
-                    let all_bigger = || Some(ChunkCompare::gt(input, &max).ok()?.all());
+                    let all_smaller = || Some(ChunkCompare::lt(input, min).ok()?.all());
+                    let all_bigger = || Some(ChunkCompare::gt(input, max).ok()?.all());
                     Some(!all_smaller()? && !all_bigger()?)
                 };
 

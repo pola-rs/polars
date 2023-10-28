@@ -2,18 +2,30 @@
 
 ## Read from a database
 
-We can read from a database with Polars using the `pl.read_database` function. To use this function you need an SQL query string and a connection string called a `connection_uri`.
+Polars can read from a database using the `pl.read_database_uri` and `pl.read_database` functions.
 
-For example, the following snippet shows the general patterns for reading all columns from the `foo` table in a Postgres database:
+### Difference between `read_database_uri` and `read_database`
 
-{{code_block('user-guide/io/database','read',['read_database_connectorx'])}}
+Use `pl.read_database_uri` if you want to specify the database connection with a connection string called a `uri`. For example, the following snippet shows a query to read all columns from the `foo` table in a Postgres database where we use the `uri` to connect:
+
+{{code_block('user-guide/io/database','read_uri',['read_database_uri'])}}
+
+On the other hand, use `pl.read_database` if you want to connect via a connection engine created with a library like SQLAlchemy.
+
+{{code_block('user-guide/io/database','read_cursor',['read_database'])}}
+
+Note that `pl.read_database_uri` is likely to be faster than `pl.read_database` if you are using a SQLAlchemy or DBAPI2 connection as these connections may load the data row-wise into Python before copying the data again to the column-wise Apache Arrow format.
 
 ### Engines
 
-Polars doesn't manage connections and data transfer from databases by itself. Instead external libraries (known as _engines_) handle this. At present Polars can use two engines to read from databases:
+Polars doesn't manage connections and data transfer from databases by itself. Instead, external libraries (known as _engines_) handle this.
+
+When using `pl.read_database`, you specify the engine when you create the connection object. When using `pl.read_database_uri`, you can specify one of two engines to read from the database:
 
 - [ConnectorX](https://github.com/sfu-db/connector-x) and
 - [ADBC](https://arrow.apache.org/docs/format/ADBC.html)
+
+Both engines have native support for Apache Arrow and so can read data directly into a Polars `DataFrame` without copying the data.
 
 #### ConnectorX
 
@@ -35,9 +47,9 @@ It is still early days for ADBC so support for different databases is still limi
 $ pip install adbc-driver-sqlite
 ```
 
-As ADBC is not the default engine you must specify the engine as an argument to `pl.read_database`
+As ADBC is not the default engine you must specify the engine as an argument to `pl.read_database_uri`
 
-{{code_block('user-guide/io/database','adbc',['read_database'])}}
+{{code_block('user-guide/io/database','adbc',['read_database_uri'])}}
 
 ## Write to a database
 
@@ -62,9 +74,10 @@ In this example, we write the `DataFrame` to a table called `records` in the dat
 
 {{code_block('user-guide/io/database','write',['write_database'])}}
 
-In the SQLAlchemy approach Polars converts the `DataFrame` to a Pandas `DataFrame` backed by PyArrow and then uses SQLAlchemy methods on a Pandas `DataFrame` to write to the database.
+In the SQLAlchemy approach, Polars converts the `DataFrame` to a Pandas `DataFrame` backed by PyArrow and then uses SQLAlchemy methods on a Pandas `DataFrame` to write to the database.
 
 #### ADBC
 
-As with reading from a database you can also use ADBC to write to a SQLite or Posgres database. As shown above you need to install the appropriate ADBC driver for your database.
+As with reading from a database, you can also use ADBC to write to a SQLite or Posgres database. As shown above, you need to install the appropriate ADBC driver for your database.
+
 {{code_block('user-guide/io/database','write_adbc',['write_database'])}}

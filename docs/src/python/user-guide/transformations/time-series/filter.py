@@ -21,7 +21,7 @@ print(filtered_range_df)
 # --8<-- [end:range]
 
 # --8<-- [start:negative]
-ts = pl.Series(["-1300-05-23", "-1400-03-02"]).str.strptime(pl.Date)
+ts = pl.Series(["-1300-05-23", "-1400-03-02"]).str.to_date()
 
 negative_dates_df = pl.DataFrame({"ts": ts, "values": [3, 4]})
 

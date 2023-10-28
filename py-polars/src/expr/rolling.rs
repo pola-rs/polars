@@ -113,7 +113,6 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, ddof, warn_if_unsorted))]
-    #[allow(clippy::too_many_arguments)]
     fn rolling_std(
         &self,
         window_size: &str,
@@ -140,7 +139,6 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, ddof, warn_if_unsorted))]
-    #[allow(clippy::too_many_arguments)]
     fn rolling_var(
         &self,
         window_size: &str,
@@ -195,7 +193,6 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (quantile, interpolation, window_size, weights, min_periods, center, by, closed, warn_if_unsorted))]
-    #[allow(clippy::too_many_arguments)]
     fn rolling_quantile(
         &self,
         quantile: f64,
@@ -353,8 +350,8 @@ impl PyExpr {
                 }
             })
         };
-        self.clone()
-            .inner
+        self.inner
+            .clone()
             .rolling_map(Arc::new(function), GetOutput::same_type(), options)
             .with_fmt("rolling_map")
             .into()

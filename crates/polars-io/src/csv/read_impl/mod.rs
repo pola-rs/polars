@@ -6,9 +6,9 @@ use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use arrow::legacy::array::*;
 pub use batched_mmap::*;
 pub use batched_read::*;
-use polars_arrow::array::*;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, get_casting_failures};
@@ -110,7 +110,7 @@ pub(crate) struct CoreReader<'a> {
     encoding: CsvEncoding,
     n_threads: Option<usize>,
     has_header: bool,
-    delimiter: u8,
+    separator: u8,
     sample_size: usize,
     chunk_size: usize,
     low_memory: bool,
@@ -191,7 +191,7 @@ impl<'a> CoreReader<'a> {
         mut skip_rows: usize,
         mut projection: Option<Vec<usize>>,
         max_records: Option<usize>,
-        delimiter: Option<u8>,
+        separator: Option<u8>,
         has_header: bool,
         ignore_errors: bool,
         schema: Option<SchemaRef>,
@@ -228,7 +228,7 @@ impl<'a> CoreReader<'a> {
         }
 
         // check if schema should be inferred
-        let delimiter = delimiter.unwrap_or(b',');
+        let separator = separator.unwrap_or(b',');
 
         let mut schema = match schema {
             Some(schema) => schema,
@@ -239,14 +239,14 @@ impl<'a> CoreReader<'a> {
                     // again after decompression.
                     #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
                     if let Some(b) =
-                        decompress(&reader_bytes, n_rows, delimiter, quote_char, eol_char)
+                        decompress(&reader_bytes, n_rows, separator, quote_char, eol_char)
                     {
                         reader_bytes = ReaderBytes::Owned(b);
                     }
 
                     let (inferred_schema, _, _) = infer_file_schema(
                         &reader_bytes,
-                        delimiter,
+                        separator,
                         max_records,
                         has_header,
                         schema_overwrite.as_deref(),
@@ -300,7 +300,7 @@ impl<'a> CoreReader<'a> {
             encoding,
             n_threads,
             has_header,
-            delimiter,
+            separator,
             sample_size,
             chunk_size,
             low_memory,
@@ -325,7 +325,7 @@ impl<'a> CoreReader<'a> {
         let starting_point_offset = bytes.as_ptr() as usize;
 
         // Skip all leading white space and the occasional utf8-bom
-        bytes = skip_whitespace_exclude(skip_bom(bytes), self.delimiter);
+        bytes = skip_whitespace_exclude(skip_bom(bytes), self.separator);
         // \n\n can be a empty string row of a single column
         // in other cases we skip it.
         if self.schema.len() > 1 {
@@ -354,7 +354,7 @@ impl<'a> CoreReader<'a> {
                     // we don't pass expected fields
                     // as we want to skip all rows
                     // no matter the no. of fields
-                    _ => next_line_position(bytes, None, self.delimiter, self.quote_char, eol_char),
+                    _ => next_line_position(bytes, None, self.separator, self.quote_char, eol_char),
                 }
                 .ok_or_else(|| polars_err!(NoData: "not enough lines to skip"))?;
 
@@ -391,7 +391,7 @@ impl<'a> CoreReader<'a> {
             self.sample_size,
             self.eol_char,
             self.schema.len(),
-            self.delimiter,
+            self.separator,
             self.quote_char,
         ) {
             if logging {
@@ -415,7 +415,7 @@ impl<'a> CoreReader<'a> {
                     if let Some(pos) = next_line_position(
                         &bytes[n_bytes..],
                         Some(self.schema.len()),
-                        self.delimiter,
+                        self.separator,
                         self.quote_char,
                         self.eol_char,
                     ) {
@@ -471,7 +471,7 @@ impl<'a> CoreReader<'a> {
             bytes,
             n_file_chunks,
             self.schema.len(),
-            self.delimiter,
+            self.separator,
             self.quote_char,
             self.eol_char,
         );
@@ -557,23 +557,7 @@ impl<'a> CoreReader<'a> {
 
         // An empty file with a schema should return an empty DataFrame with that schema
         if bytes.is_empty() {
-            // TODO! add DataFrame::new_from_schema
-            let buffers = init_buffers(
-                &projection,
-                0,
-                &self.schema,
-                &self.init_string_size_stats(&str_columns, 0),
-                self.quote_char,
-                self.encoding,
-                self.ignore_errors,
-            )?;
-            let df = DataFrame::new_no_checks(
-                buffers
-                    .into_iter()
-                    .map(|buf| buf.into_series())
-                    .collect::<PolarsResult<_>>()?,
-            );
-            return Ok(df);
+            return Ok(DataFrame::from(self.schema.as_ref()));
         }
 
         // all the buffers returned from the threads
@@ -585,7 +569,6 @@ impl<'a> CoreReader<'a> {
                 file_chunks
                     .into_par_iter()
                     .map(|(bytes_offset_thread, stop_at_nbytes)| {
-                        let delimiter = self.delimiter;
                         let schema = self.schema.as_ref();
                         let ignore_errors = self.ignore_errors;
                         let projection = &projection;
@@ -615,7 +598,7 @@ impl<'a> CoreReader<'a> {
                             read += parse_lines(
                                 local_bytes,
                                 offset,
-                                delimiter,
+                                self.separator,
                                 self.comment_char,
                                 self.quote_char,
                                 self.eol_char,
@@ -681,7 +664,7 @@ impl<'a> CoreReader<'a> {
                     .map(|(bytes_offset_thread, stop_at_nbytes)| {
                         let mut df = read_chunk(
                             bytes,
-                            self.delimiter,
+                            self.separator,
                             self.schema.as_ref(),
                             self.ignore_errors,
                             &projection,
@@ -733,7 +716,7 @@ impl<'a> CoreReader<'a> {
                             parse_lines(
                                 remaining_bytes,
                                 0,
-                                self.delimiter,
+                                self.separator,
                                 self.comment_char,
                                 self.quote_char,
                                 self.eol_char,
@@ -811,7 +794,7 @@ fn update_string_stats(
 #[allow(clippy::too_many_arguments)]
 fn read_chunk(
     bytes: &[u8],
-    delimiter: u8,
+    separator: u8,
     schema: &Schema,
     ignore_errors: bool,
     projection: &[usize],
@@ -852,7 +835,7 @@ fn read_chunk(
         read += parse_lines(
             local_bytes,
             offset,
-            delimiter,
+            separator,
             comment_char,
             quote_char,
             eol_char,
