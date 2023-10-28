@@ -46,6 +46,13 @@ impl ParquetObjectStore {
         })
     }
 
+    async fn get_range(&self, start: usize, length: usize) -> PolarsResult<Bytes>{
+        self.store
+            .get_range(&self.path, start..start + length)
+            .await
+            .map_err(to_compute_err)
+    }
+
     /// Initialize the length property of the object, unless it has already been fetched.
     async fn initialize_length(&mut self) -> PolarsResult<()> {
         if self.length.is_some() {
@@ -102,11 +109,7 @@ async fn read_single_column_async(
     start: usize,
     length: usize,
 ) -> PolarsResult<(u64, Bytes)> {
-    let chunk = async_reader
-        .store
-        .get_range(&async_reader.path, start..start + length)
-        .await
-        .map_err(to_compute_err)?;
+    let chunk = async_reader.get_range(start, length).await?;
     Ok((start as u64, chunk))
 }
 
@@ -158,6 +161,17 @@ async fn download_projection(
 
     // Download concurrently
     futures::future::try_join_all(product_futures).await
+}
+
+async fn download_row_group(rg: &RowGroupMetaData, async_reader: &Arc<ParquetObjectStore>) -> PolarsResult<Bytes> {
+    if rg.columns().is_empty() {
+        return Ok(Bytes::new())
+    }
+
+    let offset = rg.columns().iter().map(|c| c.byte_range().0).min().unwrap();
+    let (max_offset, len) = rg.columns().iter().map(|c| c.byte_range()).max_by_key(|k| k.0).unwrap();
+
+    async_reader.get_range(offset as usize, (max_offset + len) as usize).await
 }
 
 type DownloadedRowGroup = Vec<Vec<(u64, Bytes)>>;
