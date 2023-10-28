@@ -4696,14 +4696,14 @@ class Series:
 
         """
 
-    def round_sf(self, significant_figures: int = 1) -> Series:
+    def round_sig_figs(self, digits: int = 1) -> Series:
         """
         Round underlying floating point data by `significant` figures.
 
         Examples
         --------
         >>> s = pl.Series("a", [0.12345, 2.56789, 39.01234])
-        >>> s.round_sf(2)
+        >>> s.round_sig_figs(2)
         shape: (3,)
         Series: 'a' [f64]
         [
@@ -4714,7 +4714,7 @@ class Series:
 
         Parameters
         ----------
-        significant_figures
+        digits
             number of significant figures to round by.
 
         """

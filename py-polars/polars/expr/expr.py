@@ -1786,7 +1786,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.round(decimals))
 
-    def round_sf(self, significant_figures: int = 1) -> Self:
+    def round_sig_figs(self, digits: int = 1) -> Self:
         """
         Round underlying floating point data by `decimals` digits.
 
@@ -1798,7 +1798,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [0.33, 0.52, 1.02, 1.17]})
-        >>> df.select(pl.col("a").round_sf(2))
+        >>> df.select(pl.col("a").round_sig_figs(2))
         shape: (4, 1)
         ┌──────┐
         │ a    │
@@ -1812,7 +1812,7 @@ class Expr:
         └──────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.round_sf(significant_figures))
+        return self._from_pyexpr(self._pyexpr.round_sig_figs(digits))
 
     def dot(self, other: Expr | str) -> Self:
         """

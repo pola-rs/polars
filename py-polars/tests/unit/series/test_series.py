@@ -1235,7 +1235,7 @@ def test_round() -> None:
 
 
 @pytest.mark.parametrize(
-    ("series", "significant_figures", "expected_result"),
+    ("series", "digits", "expected_result"),
     [
         pytest.param(pl.Series([1.234, 0.1234]), 2, pl.Series([1.2, 0.12]), id="f64"),
         pytest.param(
@@ -1262,10 +1262,10 @@ def test_round() -> None:
         ),
     ],
 )
-def test_round_sf(
-    series: pl.Series, significant_figures: int, expected_result: pl.Series
+def test_round_sig_figs(
+    series: pl.Series, digits: int, expected_result: pl.Series
 ) -> None:
-    result = series.round_sf(significant_figures=significant_figures)
+    result = series.round_sig_figs(digits=digits)
     assert_series_equal(result, expected_result)
 
 

@@ -37,7 +37,7 @@ pub trait RoundSeries: SeriesSealed {
         polars_bail!(opq = round, s.dtype());
     }
 
-    fn round_sf(&self, significant_figures: u32) -> PolarsResult<Series> {
+    fn round_sig_figs(&self, significant_figures: u32) -> PolarsResult<Series> {
         let s = self.as_series();
         let significant_figures = if significant_figures == 0 {
             1
@@ -47,7 +47,7 @@ pub trait RoundSeries: SeriesSealed {
 
         if let Ok(ca) = s.f64() {
             let s = ca
-                .apply_values(|val| round_sf(val, significant_figures))
+                .apply_values(|val| round_sig_figs(val, significant_figures))
                 .into_series();
             return Ok(s);
         }
@@ -55,23 +55,23 @@ pub trait RoundSeries: SeriesSealed {
         // when the computation is done we cast back
         if let Ok(ca) = s.f32() {
             let s = ca
-                .apply_values(|val| round_sf(val as f64, significant_figures) as f32)
+                .apply_values(|val| round_sig_figs(val as f64, significant_figures) as f32)
                 .into_series();
             return Ok(s);
         }
         if let Ok(ca) = s.i32() {
             let s = ca
-                .apply_values(|val| round_sf(val as f64, significant_figures) as i32)
+                .apply_values(|val| round_sig_figs(val as f64, significant_figures) as i32)
                 .into_series();
             return Ok(s);
         }
         if let Ok(ca) = s.i64() {
             let s = ca
-                .apply_values(|val| round_sf(val as f64, significant_figures) as i64)
+                .apply_values(|val| round_sig_figs(val as f64, significant_figures) as i64)
                 .into_series();
             return Ok(s);
         }
-        polars_bail!(opq = round_sf, s.dtype());
+        polars_bail!(opq = round_sig_figs, s.dtype());
     }
 
     /// Floor underlying floating point array to the lowest integers smaller or equal to the float value.
@@ -107,7 +107,7 @@ pub trait RoundSeries: SeriesSealed {
 
 impl RoundSeries for Series {}
 
-fn round_sf(value: f64, significant_figures: u32) -> f64 {
+fn round_sig_figs(value: f64, significant_figures: u32) -> f64 {
     if value == 0.0 {
         return value;
     }

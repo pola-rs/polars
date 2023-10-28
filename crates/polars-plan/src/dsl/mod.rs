@@ -818,10 +818,8 @@ impl Expr {
 
     /// Round underlying floating point array to given significant figures.
     #[cfg(feature = "round_series")]
-    pub fn round_sf(self, significant_figures: u32) -> Self {
-        self.map_private(FunctionExpr::RoundSF {
-            significant_figures,
-        })
+    pub fn round_sig_figs(self, digits: u32) -> Self {
+        self.map_private(FunctionExpr::RoundSF { digits })
     }
 
     /// Floor underlying floating point array to the lowest integers smaller or equal to the float value.
