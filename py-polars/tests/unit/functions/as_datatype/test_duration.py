@@ -162,6 +162,7 @@ def test_datetime_ms_add_duration_us() -> None:
 
     assert df_add_us["datetime"].dt.microsecond().to_list() == [15, 15, 15]
 
+    assert isinstance(df_add_us["datetime"].dtype, pl.Datetime)
     assert df_add_us["datetime"].dtype.time_unit == "us"
 
 
@@ -185,6 +186,7 @@ def test_datetime_us_add_duration_ns() -> None:
         15 + 40 * 1000,
     ]
 
+    assert isinstance(df_add_ns["datetime"].dtype, pl.Datetime)
     assert df_add_ns["datetime"].dtype.time_unit == "ns"
 
 
