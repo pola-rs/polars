@@ -34,19 +34,19 @@ Polars is a highly performant DataFrame library for manipulating structured data
 
 ## About this guide
 
-The `Polars` user guide is intended to live alongside the API documentation. Its purpose is to explain (new) users how to use `Polars` and to provide meaningful examples. The guide is split into two parts:
+The Polars user guide is intended to live alongside the API documentation. Its purpose is to explain (new) users how to use `Polars` and to provide meaningful examples. The guide is split into two parts:
 
-- [Getting Started](getting-started/intro.md): A 10 minute helicopter view of the library and its primary function.
-- [User Guide](user-guide/index.md): A detailed explanation of how the library is setup and how to use it most effectively.
+- [Getting started](getting-started/intro.md): A 10 minute helicopter view of the library and its primary function.
+- [User guide](user-guide/index.md): A detailed explanation of how the library is setup and how to use it most effectively.
 
 If you are looking for details on a specific level / object, it is probably best to go the API documentation: [Python](https://pola-rs.github.io/polars/py-polars/html/reference/index.html) | [Rust](https://docs.rs/polars/latest/polars/).
 
 ## Performance :rocket: :rocket:
 
-`Polars` is very fast, and in fact is one of the best performing solutions available.
+Polars is very fast, and in fact is one of the best performing solutions available.
 See the results in h2oai's [db-benchmark](https://duckdblabs.github.io/db-benchmark/), revived by the DuckDB project.
 
-`Polars` [TPCH Benchmark results](https://www.pola.rs/benchmarks.html) are now available on the official website.
+Polars [TPC-H Benchmark results](https://www.pola.rs/benchmarks.html) are now available on the official website.
 
 ## Example
 
@@ -54,7 +54,7 @@ See the results in h2oai's [db-benchmark](https://duckdblabs.github.io/db-benchm
 
 ## Community
 
-`Polars` has a very active community with frequent releases (approximately weekly). Below are some of the top contributors to the project:
+Polars has a very active community with frequent releases (approximately weekly). Below are some of the top contributors to the project:
 
 --8<-- "docs/people.md"
 
@@ -64,4 +64,4 @@ We appreciate all contributions, from reporting bugs to implementing new feature
 
 ## License
 
-This project is licensed under the terms of the MIT license.
+This project is licensed under the terms of the [MIT license](https://github.com/pola-rs/polars/blob/main/LICENSE).
