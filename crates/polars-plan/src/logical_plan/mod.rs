@@ -79,7 +79,12 @@ impl std::fmt::Display for ErrorState {
         match self {
             ErrorState::NotYetEncountered { err } => write!(f, "NotYetEncountered({err})")?,
             ErrorState::AlreadyEncountered { prev_err_msg } => {
-                write!(f, "AlreadyEncountered({prev_err_msg})")?
+                if prev_err_msg.contains("AlreadyEncountered") {
+                    // Recursively formatting error messages leads to N! memory usage
+                    write!(f, "Multiple AlreadyEncountered")?
+                } else {
+                    write!(f, "AlreadyEncountered({prev_err_msg})")?
+                }
             },
         };
 
