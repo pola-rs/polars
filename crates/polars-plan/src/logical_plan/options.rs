@@ -75,13 +75,25 @@ pub struct IpcWriterOptions {
 }
 
 #[cfg(feature = "csv")]
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CsvWriterOptions {
     pub has_header: bool,
     pub batch_size: usize,
     pub maintain_order: bool,
     pub serialize_options: SerializeOptions,
+}
+
+#[cfg(feature = "csv")]
+impl Default for CsvWriterOptions {
+    fn default() -> Self {
+        Self {
+            has_header: false,
+            batch_size: 1024, // same as CsvWriter default.
+            maintain_order: false,
+            serialize_options: SerializeOptions::default(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

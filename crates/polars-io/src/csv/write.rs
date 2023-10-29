@@ -76,7 +76,14 @@ where
     }
 
     /// Set the batch size to use while writing the CSV.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `batch_size` is zero.
     pub fn with_batch_size(mut self, batch_size: usize) -> Self {
+        if batch_size == 0 {
+            panic!("csv write batch size must not be greater than zero");
+        }
         self.batch_size = batch_size;
         self
     }
