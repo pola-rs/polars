@@ -7,6 +7,7 @@ from typing import Any, Iterator, Mapping
 import pytest
 
 import polars as pl
+import polars.exceptions
 from polars.testing import assert_frame_equal
 
 
@@ -546,5 +547,5 @@ def test_lit_iter_schema() -> None:
 
 
 def test_non_existent_expr_inputs_in_lazy() -> None:
-    with pytest.raises(Exception):
+    with pytest.raises(polars.exceptions.ColumnNotFoundError):
         pl.LazyFrame().filter(pl.col("x") == 1).explain()
