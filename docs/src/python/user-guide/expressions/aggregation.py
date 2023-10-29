@@ -152,14 +152,15 @@ def get_person() -> pl.Expr:
 
 q = (
     dataset.lazy()
-    .with_columns(pl.col("first_name").cat.set_ordering("lexical"))
     .sort("birthday", descending=True)
     .group_by("state")
     .agg(
         get_person().first().alias("youngest"),
         get_person().last().alias("oldest"),
         get_person().sort().first().alias("alphabetical_first"),
-        pl.col("gender").sort_by("first_name").first().alias("gender"),
+        pl.col("gender")
+        .sort_by(pl.col("first_name").cat.set_ordering("lexical"))
+        .first(),
     )
     .sort("state")
     .limit(5)
