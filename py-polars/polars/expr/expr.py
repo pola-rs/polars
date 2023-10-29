@@ -1150,7 +1150,7 @@ class Expr:
 
         Notes
         -----
-        Floating point ``NaN` (Not A Number) should not be confused
+        Floating point `NaN` (Not A Number) should not be confused
         with missing data represented as `Null/None`.
 
         Examples
@@ -1184,7 +1184,7 @@ class Expr:
 
         Notes
         -----
-        Floating point ``NaN` (Not A Number) should not be confused
+        Floating point `NaN` (Not A Number) should not be confused
         with missing data represented as `Null/None`.
 
         Examples

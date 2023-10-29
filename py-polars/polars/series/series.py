@@ -1992,7 +1992,7 @@ class Series:
         if not as_series:
             issue_deprecation_warning(
                 "The `as_series` parameter for `Series.cut` will be removed."
-                " The same behavior can be achieved by setting ``include_breaks=True`,"
+                " The same behavior can be achieved by setting `include_breaks=True`,"
                 " unnesting the resulting struct Series,"
                 " and adding the result to the original Series.",
                 version="0.19.0",
@@ -2213,7 +2213,7 @@ class Series:
         if not as_series:
             issue_deprecation_warning(
                 "the `as_series` parameter for `Series.qcut` will be removed."
-                " The same behavior can be achieved by setting ``include_breaks=True`,"
+                " The same behavior can be achieved by setting `include_breaks=True`,"
                 " unnesting the resulting struct Series,"
                 " and adding the result to the original Series.",
                 version="0.18.14",
