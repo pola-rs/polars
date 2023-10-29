@@ -133,7 +133,10 @@ def test_join_lazy_on_df() -> None:
 
 
 def test_projection_update_schema_missing_column() -> None:
-    with pytest.raises(pl.ColumnNotFoundError, match="not found: colC"):
+    with pytest.raises(
+        pl.ColumnNotFoundError,
+        match='unable to find column "colC"',
+    ):
         (
             pl.DataFrame({"colA": ["a", "b", "c"], "colB": [1, 2, 3]})
             .lazy()

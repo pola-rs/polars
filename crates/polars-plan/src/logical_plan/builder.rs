@@ -630,9 +630,10 @@ impl LogicalPlanBuilder {
         // SELECT [col("x").alias("y")] FROM
         //   DF ["x"]; PROJECT 1/1 COLUMNS; SELECTION: "[(col(\"x\")) == (1)]"
         //                                             ^^^
-        // 'x' is incorrectly pushed down even though it didn't exist after selection
+        // "x" is incorrectly pushed down even though it didn't exist after SELECT
         try_delayed!(
-            expressions_to_schema(&[predicate.clone()], &schema, Context::Default),
+            expr_to_leaf_column_names_iter(&predicate)
+                .try_for_each(|c| schema.try_index_of(&c).and(Ok(()))),
             &self.0,
             into
         );
