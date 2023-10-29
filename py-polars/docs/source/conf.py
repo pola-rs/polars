@@ -46,6 +46,9 @@ extensions = [
     "sphinx_favicon",
 ]
 
+# Render docstring text in `single backticks` as code.
+default_role = "code"
+
 maximum_signature_line_length = 88
 
 # Below setting is used by
