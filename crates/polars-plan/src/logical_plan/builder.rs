@@ -35,14 +35,13 @@ use crate::logical_plan::schema::{det_join_schema, FileInfo};
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
 use crate::prelude::*;
-use crate::utils;
 
 pub(crate) fn prepare_projection(
     exprs: Vec<Expr>,
     schema: &Schema,
 ) -> PolarsResult<(Vec<Expr>, Schema)> {
     let exprs = rewrite_projections(exprs, schema, &[])?;
-    let schema = utils::expressions_to_schema(&exprs, schema, Context::Default)?;
+    let schema = expressions_to_schema(&exprs, schema, Context::Default)?;
     Ok((exprs, schema))
 }
 
@@ -566,6 +565,8 @@ impl LogicalPlanBuilder {
 
     /// Apply a filter
     pub fn filter(self, predicate: Expr) -> Self {
+        let schema = try_delayed!(self.0.schema(), &self.0, into);
+
         let predicate = if has_expr(&predicate, |e| match e {
             Expr::Column(name) => is_regex_projection(name),
             Expr::Wildcard
@@ -575,7 +576,6 @@ impl LogicalPlanBuilder {
             | Expr::Nth(_) => true,
             _ => false,
         }) {
-            let schema = try_delayed!(self.0.schema(), &self.0, into);
             let mut rewritten = try_delayed!(
                 rewrite_projections(vec![predicate], &schema, &[]),
                 &self.0,
@@ -616,6 +616,27 @@ impl LogicalPlanBuilder {
         } else {
             predicate
         };
+
+        // Check predicates refer to valid column names here, as this is not
+        // checked by predicate pushdown and may otherwise lead to incorrect
+        // optimizations. For example:
+        //
+        // (unoptimized)
+        // FILTER [(col("x")) == (1)] FROM
+        //   SELECT [col("x").alias("y")] FROM
+        //     DF ["x"]; PROJECT 1/1 COLUMNS; SELECTION: "None"
+        //
+        // (optimized)
+        // SELECT [col("x").alias("y")] FROM
+        //   DF ["x"]; PROJECT 1/1 COLUMNS; SELECTION: "[(col(\"x\")) == (1)]"
+        //                                             ^^^
+        // 'x' is incorrectly pushed down even though it didn't exist after selection
+        try_delayed!(
+            expressions_to_schema(&[predicate.clone()], &*schema, Context::Default),
+            &self.0,
+            into
+        );
+
         LogicalPlan::Selection {
             predicate,
             input: Box::new(self.0),
@@ -646,12 +667,12 @@ impl LogicalPlanBuilder {
         );
 
         let mut schema = try_delayed!(
-            utils::expressions_to_schema(&keys, current_schema, Context::Default),
+            expressions_to_schema(&keys, current_schema, Context::Default),
             &self.0,
             into
         );
         let other = try_delayed!(
-            utils::expressions_to_schema(&aggs, current_schema, Context::Aggregation),
+            expressions_to_schema(&aggs, current_schema, Context::Aggregation),
             &self.0,
             into
         );

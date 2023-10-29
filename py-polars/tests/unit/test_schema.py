@@ -543,3 +543,8 @@ def test_lit_iter_schema() -> None:
         "key": ["A"],
         "dates": [[date(1970, 1, 2), date(1970, 1, 3), date(1970, 1, 4)]],
     }
+
+
+def test_non_existent_expr_inputs_in_lazy() -> None:
+    with pytest.raises(Exception):
+        pl.LazyFrame().filter(pl.col("x") == 1).explain()
