@@ -691,3 +691,12 @@ def test_sort_by_error() -> None:
 def test_non_existent_expr_inputs_in_lazy() -> None:
     with pytest.raises(pl.ColumnNotFoundError):
         pl.LazyFrame().filter(pl.col("x") == 1).explain()  # tests: 12074
+
+    lf = pl.LazyFrame({"foo": [1, 1, -2, 3]})
+
+    with pytest.raises(pl.ColumnNotFoundError):
+        (
+            lf.select(pl.col("foo").cumsum().alias("bar"))
+            .filter(pl.col("bar") == pl.col("foo"))
+            .explain()
+        )
