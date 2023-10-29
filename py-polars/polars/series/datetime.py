@@ -114,7 +114,7 @@ class DateTimeNameSpace:
         """
         Convert a Date/Time/Datetime column into a Utf8 column with the given format.
 
-        Similar to ``cast(pl.Utf8)``, but this method allows you to customize the
+        Similar to `cast(pl.Utf8)`, but this method allows you to customize the
         formatting of the resulting string.
 
         Parameters
@@ -122,7 +122,7 @@ class DateTimeNameSpace:
         format
             Format to use, refer to the `chrono strftime documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for specification. Example: ``"%y-%m-%d"``.
+            for specification. Example: `"%y-%m-%d"`.
 
         Examples
         --------
@@ -146,7 +146,7 @@ class DateTimeNameSpace:
         """
         Convert a Date/Time/Datetime column into a Utf8 column with the given format.
 
-        Similar to ``cast(pl.Utf8)``, but this method allows you to customize the
+        Similar to `cast(pl.Utf8)`, but this method allows you to customize the
         formatting of the resulting string.
 
         Alias for :func:`to_string`.
@@ -156,11 +156,11 @@ class DateTimeNameSpace:
         format
             Format to use, refer to the `chrono strftime documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for specification. Example: ``"%y-%m-%d"``.
+            for specification. Example: `"%y-%m-%d"`.
 
         See Also
         --------
-        to_string : The identical Series method for which ``strftime`` is an alias.
+        to_string : The identical Series method for which `strftime` is an alias.
 
         Examples
         --------
@@ -632,7 +632,7 @@ class DateTimeNameSpace:
         Applies to Datetime columns.
 
         Returns the integer second number from 0 to 59, or a floating
-        point number from 0 < 60 if ``fractional=True`` that includes
+        point number from 0 < 60 if `fractional=True` that includes
         any milli/micro/nanosecond component.
 
         Parameters
@@ -899,7 +899,7 @@ class DateTimeNameSpace:
         Parameters
         ----------
         time_unit : {'ns', 'us', 'ms'}
-            Unit of time for the ``Datetime`` Series.
+            Unit of time for the `Datetime` Series.
 
         Examples
         --------
@@ -927,7 +927,7 @@ class DateTimeNameSpace:
         Parameters
         ----------
         time_unit : {'ns', 'us', 'ms'}
-            Unit of time for the ``Datetime`` Series.
+            Unit of time for the `Datetime` Series.
 
         Examples
         --------
@@ -1006,7 +1006,7 @@ class DateTimeNameSpace:
         """
         Replace time zone for a Series of type Datetime.
 
-        Different from ``convert_time_zone``, this will also modify
+        Different from `convert_time_zone`, this will also modify
         the underlying timestamp and will ignore the original time zone.
 
         Parameters
@@ -1016,18 +1016,18 @@ class DateTimeNameSpace:
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
-            - ``None`` (default): raise
-            - ``True``: use the earliest datetime
-            - ``False``: use the latest datetime
+            - `None` (default): raise
+            - `True`: use the earliest datetime
+            - `False`: use the latest datetime
 
             .. deprecated:: 0.19.0
                 Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
-            - ``'raise'`` (default): raise
-            - ``'earliest'``: use the earliest datetime
-            - ``'latest'``: use the latest datetime
+            - `'raise'` (default): raise
+            - `'earliest'`: use the earliest datetime
+            - `'latest'`: use the latest datetime
 
         Examples
         --------
@@ -1356,9 +1356,9 @@ class DateTimeNameSpace:
         """
         Offset this date by a relative time offset.
 
-        This differs from ``pl.col("foo") + timedelta`` in that it can
+        This differs from `pl.col("foo") + timedelta` in that it can
         take months and leap years into account. Note that only a single minus
-        sign is allowed in the ``by`` string, as the first character.
+        sign is allowed in the `by` string, as the first character.
 
         Parameters
         ----------
@@ -1456,22 +1456,22 @@ class DateTimeNameSpace:
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
-            - ``None`` (default): raise
-            - ``True``: use the earliest datetime
-            - ``False``: use the latest datetime
+            - `None` (default): raise
+            - `True`: use the earliest datetime
+            - `False`: use the latest datetime
 
             .. deprecated:: 0.19.0
                 Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
-            - ``'raise'`` (default): raise
-            - ``'earliest'``: use the earliest datetime
-            - ``'latest'``: use the latest datetime
+            - `'raise'` (default): raise
+            - `'earliest'`: use the earliest datetime
+            - `'latest'`: use the latest datetime
 
         Notes
         -----
-        The ``every`` and ``offset`` argument are created with the
+        The `every` and `offset` argument are created with the
         the following string language:
 
         - 1ns   (1 nanosecond)
@@ -1664,9 +1664,9 @@ class DateTimeNameSpace:
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
-            - ``'raise'`` (default): raise
-            - ``'earliest'``: use the earliest datetime
-            - ``'latest'``: use the latest datetime
+            - `'raise'` (default): raise
+            - `'earliest'`: use the earliest datetime
+            - `'latest'`: use the latest datetime
 
         Returns
         -------
@@ -1776,7 +1776,7 @@ class DateTimeNameSpace:
         Notes
         -----
         If you're coming from pandas, you can think of this as a vectorised version
-        of ``pandas.tseries.offsets.MonthBegin().rollback(datetime)``.
+        of `pandas.tseries.offsets.MonthBegin().rollback(datetime)`.
 
         Examples
         --------
@@ -1807,7 +1807,7 @@ class DateTimeNameSpace:
         Notes
         -----
         If you're coming from pandas, you can think of this as a vectorised version
-        of ``pandas.tseries.offsets.MonthEnd().rollforward(datetime)``.
+        of `pandas.tseries.offsets.MonthEnd().rollforward(datetime)`.
 
         Examples
         --------

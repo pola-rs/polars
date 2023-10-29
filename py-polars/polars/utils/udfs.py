@@ -832,18 +832,18 @@ def warn_on_inefficient_map(
     function: Callable[[Any], Any], columns: list[str], map_target: MapTarget
 ) -> None:
     """
-    Generate ``PolarsInefficientMapWarning`` on poor usage of a ``map`` function.
+    Generate `PolarsInefficientMapWarning` on poor usage of a `map` function.
 
     Parameters
     ----------
     function
-        The function passed to ``map``.
+        The function passed to `map`.
     columns
-        The column names of the original object; in the case of an ``Expr`` this
+        The column names of the original object; in the case of an `Expr` this
         will be a list of length 1 containing the expression's root name.
     map_target
-        The target of the ``map`` call. One of ``"expr"``, ``"frame"``,
-        or ``"series"``.
+        The target of the `map` call. One of `"expr"`, `"frame"`,
+        or `"series"`.
     """
     if map_target == "frame":
         raise NotImplementedError("TODO: 'frame' map-function parsing")

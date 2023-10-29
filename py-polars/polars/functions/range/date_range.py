@@ -92,7 +92,7 @@ def date_range(
     end
         Upper bound of the date range.
     interval
-        Interval of the range periods, specified as a Python ``timedelta`` object
+        Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
 
         To create a month-end date series, combine with :meth:`Expr.dt.month_end` (see
@@ -100,19 +100,19 @@ def date_range(
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     time_unit : {None, 'ns', 'us', 'ms'}
-        Time unit of the resulting ``Datetime`` data type.
-        Only takes effect if the output column is of type ``Datetime``.
+        Time unit of the resulting `Datetime` data type.
+        Only takes effect if the output column is of type `Datetime`.
     time_zone
-        Time zone of the resulting ``Datetime`` data type.
-        Only takes effect if the output column is of type ``Datetime``.
+        Time zone of the resulting `Datetime` data type.
+        Only takes effect if the output column is of type `Datetime`.
     eager
-        Evaluate immediately and return a ``Series``.
-        If set to ``False`` (default), return an expression instead.
+        Evaluate immediately and return a `Series`.
+        If set to `False` (default), return an expression instead.
     name
         Name of the output column.
 
         .. deprecated:: 0.18.0
-            This argument is deprecated. Use the ``alias`` method instead.
+            This argument is deprecated. Use the `alias` method instead.
 
     Returns
     -------
@@ -121,7 +121,7 @@ def date_range(
 
     Notes
     -----
-    1) If both ``start`` and ``end`` are passed as date types (not datetime), and the
+    1) If both `start` and `end` are passed as date types (not datetime), and the
        interval granularity is no finer than 1d, the returned range is also of
        type date. All other permutations return a datetime Series.
 
@@ -168,7 +168,7 @@ def date_range(
         2022-03-01
     ]
 
-    Using ``timedelta`` object to specify the interval:
+    Using `timedelta` object to specify the interval:
 
     >>> from datetime import timedelta
     >>> pl.date_range(
@@ -290,24 +290,24 @@ def date_ranges(
     end
         Upper bound of the date range.
     interval
-        Interval of the range periods, specified as a Python ``timedelta`` object
+        Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     time_unit : {None, 'ns', 'us', 'ms'}
-        Time unit of the resulting ``Datetime`` data type.
-        Only takes effect if the output column is of type ``Datetime``.
+        Time unit of the resulting `Datetime` data type.
+        Only takes effect if the output column is of type `Datetime`.
     time_zone
-        Time zone of the resulting ``Datetime`` data type.
-        Only takes effect if the output column is of type ``Datetime``.
+        Time zone of the resulting `Datetime` data type.
+        Only takes effect if the output column is of type `Datetime`.
     eager
-        Evaluate immediately and return a ``Series``.
-        If set to ``False`` (default), return an expression instead.
+        Evaluate immediately and return a `Series`.
+        If set to `False` (default), return an expression instead.
 
     Returns
     -------
     Expr or Series
-        Column of data type ``List(Date)`` or ``List(Datetime)``.
+        Column of data type `List(Date)` or `List(Datetime)`.
 
     Notes
     -----

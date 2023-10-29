@@ -68,15 +68,15 @@ def _prepare_file_arg(
     A local path is returned as a string.
     An http URL is read into a buffer and returned as a :class:`BytesIO`.
 
-    When ``encoding`` is not ``utf8`` or ``utf8-lossy``, the whole file is
+    When `encoding` is not `utf8` or `utf8-lossy`, the whole file is
     first read in python and decoded using the specified encoding and
-    returned as a :class:`BytesIO` (for usage with ``read_csv``).
+    returned as a :class:`BytesIO` (for usage with `read_csv`).
 
-    A `bytes` file is returned as a :class:`BytesIO` if ``use_pyarrow=True``.
+    A `bytes` file is returned as a :class:`BytesIO` if `use_pyarrow=True`.
 
     When fsspec is installed, remote file(s) is (are) opened with
     `fsspec.open(file, **kwargs)` or `fsspec.open_files(file, **kwargs)`.
-    If encoding is not ``utf8`` or ``utf8-lossy``, decoding is handled by
+    If encoding is not `utf8` or `utf8-lossy`, decoding is handled by
     fsspec too.
 
     """

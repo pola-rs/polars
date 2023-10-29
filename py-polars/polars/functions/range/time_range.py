@@ -76,23 +76,23 @@ def time_range(
     ----------
     start
         Lower bound of the time range.
-        If omitted, defaults to ``time(0,0,0,0)``.
+        If omitted, defaults to `time(0,0,0,0)`.
     end
         Upper bound of the time range.
-        If omitted, defaults to ``time(23,59,59,999999)``.
+        If omitted, defaults to `time(23,59,59,999999)`.
     interval
-        Interval of the range periods, specified as a Python ``timedelta`` object
+        Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     eager
-        Evaluate immediately and return a ``Series``.
-        If set to ``False`` (default), return an expression instead.
+        Evaluate immediately and return a `Series`.
+        If set to `False` (default), return an expression instead.
     name
         Name of the output column.
 
         .. deprecated:: 0.18.0
-            This argument is deprecated. Use the ``alias`` method instead.
+            This argument is deprecated. Use the `alias` method instead.
 
     Returns
     -------
@@ -229,23 +229,23 @@ def time_ranges(
     ----------
     start
         Lower bound of the time range.
-        If omitted, defaults to ``time(0, 0, 0, 0)``.
+        If omitted, defaults to `time(0, 0, 0, 0)`.
     end
         Upper bound of the time range.
-        If omitted, defaults to ``time(23, 59, 59, 999999)``.
+        If omitted, defaults to `time(23, 59, 59, 999999)`.
     interval
-        Interval of the range periods, specified as a Python ``timedelta`` object
+        Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     eager
-        Evaluate immediately and return a ``Series``.
-        If set to ``False`` (default), return an expression instead.
+        Evaluate immediately and return a `Series`.
+        If set to `False` (default), return an expression instead.
 
     Returns
     -------
     Expr or Series
-        Column of data type ``List(Time)``.
+        Column of data type `List(Time)`.
 
     Notes
     -----

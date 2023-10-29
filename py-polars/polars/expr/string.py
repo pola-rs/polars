@@ -54,7 +54,7 @@ class ExprStringNameSpace:
         format
             Format to use for conversion. Refer to the `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for the full specification. Example: ``"%Y-%m-%d"``.
+            for the full specification. Example: `"%Y-%m-%d"`.
             If set to None (default), the format is inferred from the data.
         strict
             Raise an error if any conversion fails.
@@ -63,7 +63,7 @@ class ExprStringNameSpace:
             in the target string.
 
             .. note::
-                Using ``exact=False`` introduces a performance penalty - cleaning your
+                Using `exact=False` introduces a performance penalty - cleaning your
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the conversion.
@@ -104,13 +104,13 @@ class ExprStringNameSpace:
         format
             Format to use for conversion. Refer to the `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for the full specification. Example: ``"%Y-%m-%d %H:%M:%S"``.
+            for the full specification. Example: `"%Y-%m-%d %H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
         time_unit : {None, 'us', 'ns', 'ms'}
             Unit of time for the resulting Datetime column. If set to None (default),
             the time unit is inferred from the format string if given, eg:
-            ``"%F %T%.3f"`` => ``Datetime("ms")``. If no fractional second component is
-            found, the default is ``"us"``.
+            `"%F %T%.3f"` => `Datetime("ms")`. If no fractional second component is
+            found, the default is `"us"`.
         time_zone
             Time zone for the resulting Datetime column.
         strict
@@ -120,25 +120,25 @@ class ExprStringNameSpace:
             in the target string.
 
             .. note::
-                Using ``exact=False`` introduces a performance penalty - cleaning your
+                Using `exact=False` introduces a performance penalty - cleaning your
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted datetimes to apply the conversion.
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
-            - ``None`` (default): raise
-            - ``True``: use the earliest datetime
-            - ``False``: use the latest datetime
+            - `None` (default): raise
+            - `True`: use the earliest datetime
+            - `False`: use the latest datetime
 
             .. deprecated:: 0.19.0
                 Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
-            - ``'raise'`` (default): raise
-            - ``'earliest'``: use the earliest datetime
-            - ``'latest'``: use the latest datetime
+            - `'raise'` (default): raise
+            - `'earliest'`: use the earliest datetime
+            - `'latest'`: use the latest datetime
 
         Examples
         --------
@@ -182,7 +182,7 @@ class ExprStringNameSpace:
         format
             Format to use for conversion. Refer to the `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for the full specification. Example: ``"%H:%M:%S"``.
+            for the full specification. Example: `"%H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
         strict
             Raise an error if any conversion fails.
@@ -226,7 +226,7 @@ class ExprStringNameSpace:
         format
             Format to use for conversion. Refer to the `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for the full specification. Example: ``"%Y-%m-%d %H:%M:%S"``.
+            for the full specification. Example: `"%Y-%m-%d %H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
         strict
             Raise an error if any conversion fails.
@@ -235,31 +235,31 @@ class ExprStringNameSpace:
             in the target string. Conversion to the Time type is always exact.
 
             .. note::
-                Using ``exact=False`` introduces a performance penalty - cleaning your
+                Using `exact=False` introduces a performance penalty - cleaning your
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
-            - ``None`` (default): raise
-            - ``True``: use the earliest datetime
-            - ``False``: use the latest datetime
+            - `None` (default): raise
+            - `True`: use the earliest datetime
+            - `False`: use the latest datetime
 
             .. deprecated:: 0.19.0
                 Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
-            - ``'raise'`` (default): raise
-            - ``'earliest'``: use the earliest datetime
-            - ``'latest'``: use the latest datetime
+            - `'raise'` (default): raise
+            - `'earliest'`: use the earliest datetime
+            - `'latest'`: use the latest datetime
 
         Notes
         -----
         When converting to a Datetime type, the time unit is inferred from the format
-        string if given, eg: ``"%F %T%.3f"`` => ``Datetime("ms")``. If no fractional
-        second component is found, the default is ``"us"``.
+        string if given, eg: `"%F %T%.3f"` => `Datetime("ms")`. If no fractional
+        second component is found, the default is `"us"`.
 
         Examples
         --------
@@ -329,7 +329,7 @@ class ExprStringNameSpace:
         """
         Convert a Utf8 column into a Decimal column.
 
-        This method infers the needed parameters ``precision`` and ``scale``.
+        This method infers the needed parameters `precision` and `scale`.
 
         Parameters
         ----------
@@ -841,7 +841,7 @@ class ExprStringNameSpace:
         """
         Pad the start of the string with zeros until it reaches the given length.
 
-        A sign prefix (``-``) is handled by inserting the padding after the sign
+        A sign prefix (`-`) is handled by inserting the padding after the sign
         character rather than before.
 
         Parameters
@@ -890,7 +890,7 @@ class ExprStringNameSpace:
             A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
         literal
-            Treat ``pattern`` as a literal string, not as a regular expression.
+            Treat `pattern` as a literal string, not as a regular expression.
         strict
             Raise an error if the underlying pattern is not a valid regex,
             otherwise mask out with a null value.
@@ -898,7 +898,7 @@ class ExprStringNameSpace:
         Notes
         -----
         To modify regular expression behaviour (such as case-sensitivity) with
-        flags, use the inline ``(?iLmsuxU)`` syntax. For example:
+        flags, use the inline `(?iLmsuxU)` syntax. For example:
 
         >>> pl.DataFrame({"s": ["AAA", "aAa", "aaa"]}).with_columns(
         ...     default_match=pl.col("s").str.contains("AA"),
@@ -996,7 +996,7 @@ class ExprStringNameSpace:
         │ banana ┆ nu     ┆ false      │
         └────────┴────────┴────────────┘
 
-        Using ``ends_with`` as a filter condition:
+        Using `ends_with` as a filter condition:
 
         >>> df.filter(pl.col("fruits").str.ends_with("go"))
         shape: (1, 2)
@@ -1060,7 +1060,7 @@ class ExprStringNameSpace:
         │ banana ┆ ba     ┆ true       │
         └────────┴────────┴────────────┘
 
-        Using ``starts_with`` as a filter condition:
+        Using `starts_with` as a filter condition:
 
         >>> df.filter(pl.col("fruits").str.starts_with("app"))
         shape: (1, 2)
@@ -1091,7 +1091,7 @@ class ExprStringNameSpace:
             inferred from the JSON value.
         infer_schema_length
             How many rows to parse to determine the schema.
-            If ``None`` all rows are used.
+            If `None` all rows are used.
 
         See Also
         --------
@@ -1243,7 +1243,7 @@ class ExprStringNameSpace:
         Notes
         -----
         To modify regular expression behaviour (such as multi-line matching)
-        with flags, use the inline ``(?iLmsuxU)`` syntax. For example:
+        with flags, use the inline `(?iLmsuxU)` syntax. For example:
 
         >>> df = pl.DataFrame(
         ...     data={
@@ -1311,7 +1311,7 @@ class ExprStringNameSpace:
         Extract all matches for the given regex pattern.
 
         Extract each successive non-overlapping regex match in an individual string
-        as a list. If the haystack string is ``null``, ``null`` is returned.
+        as a list. If the haystack string is `null`, `null` is returned.
 
         Parameters
         ----------
@@ -1322,7 +1322,7 @@ class ExprStringNameSpace:
         Notes
         -----
         To modify regular expression behaviour (such as "verbose" mode and/or
-        case-sensitive matching) with flags, use the inline ``(?iLmsuxU)`` syntax.
+        case-sensitive matching) with flags, use the inline `(?iLmsuxU)` syntax.
         For example:
 
         >>> df = pl.DataFrame(
@@ -1368,7 +1368,7 @@ class ExprStringNameSpace:
         Returns
         -------
         Expr
-            Expression of data type ``List(Utf8)``.
+            Expression of data type `List(Utf8)`.
 
         Examples
         --------
@@ -1490,7 +1490,7 @@ class ExprStringNameSpace:
             A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
         literal
-            Treat ``pattern`` as a literal string, not as a regular expression.
+            Treat `pattern` as a literal string, not as a regular expression.
 
         Returns
         -------
@@ -1600,11 +1600,11 @@ class ExprStringNameSpace:
 
     def split_exact(self, by: IntoExpr, n: int, *, inclusive: bool = False) -> Expr:
         """
-        Split the string by a substring using ``n`` splits.
+        Split the string by a substring using `n` splits.
 
-        Results in a struct of ``n+1`` fields.
+        Results in a struct of `n+1` fields.
 
-        If it cannot make ``n`` splits, the remaining field elements will be null.
+        If it cannot make `n` splits, the remaining field elements will be null.
 
         Parameters
         ----------
@@ -1671,10 +1671,10 @@ class ExprStringNameSpace:
 
     def splitn(self, by: IntoExpr, n: int) -> Expr:
         """
-        Split the string by a substring, restricted to returning at most ``n`` items.
+        Split the string by a substring, restricted to returning at most `n` items.
 
-        If the number of possible splits is less than ``n-1``, the remaining field
-        elements will be null. If the number of possible splits is ``n-1`` or greater,
+        If the number of possible splits is less than `n-1`, the remaining field
+        elements will be null. If the number of possible splits is `n-1` or greater,
         the last (nth) substring will contain the remainder of the string.
 
         Parameters
@@ -1759,7 +1759,7 @@ class ExprStringNameSpace:
         Notes
         -----
         To modify regular expression behaviour (such as case-sensitivity) with flags,
-        use the inline ``(?iLmsuxU)`` syntax. For example:
+        use the inline `(?iLmsuxU)` syntax. For example:
 
         >>> df = pl.DataFrame(
         ...     {
@@ -1861,7 +1861,7 @@ class ExprStringNameSpace:
         offset
             Start index. Negative indexing is supported.
         length
-            Length of the slice. If set to ``None`` (default), the slice is taken to the
+            Length of the slice. If set to `None` (default), the slice is taken to the
             end of the string.
 
         Returns
@@ -2100,7 +2100,7 @@ class ExprStringNameSpace:
     @deprecate_renamed_parameter("width", "length", version="0.19.12")
     def ljust(self, length: int, fill_char: str = " ") -> Expr:
         """
-        Return the string left justified in a string of length ``length``.
+        Return the string left justified in a string of length `length`.
 
         .. deprecated:: 0.19.12
             This method has been renamed to :func:`pad_end`.
@@ -2119,7 +2119,7 @@ class ExprStringNameSpace:
     @deprecate_renamed_parameter("width", "length", version="0.19.12")
     def rjust(self, length: int, fill_char: str = " ") -> Expr:
         """
-        Return the string right justified in a string of length ``length``.
+        Return the string right justified in a string of length `length`.
 
         .. deprecated:: 0.19.12
             This method has been renamed to :func:`pad_start`.
