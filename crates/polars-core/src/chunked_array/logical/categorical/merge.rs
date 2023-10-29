@@ -4,6 +4,7 @@ use arrow::bitmap::MutableBitmap;
 use arrow::offset::Offsets;
 
 use super::*;
+use crate::prelude::DataType::Utf8;
 
 fn slots_to_mut(slots: &Utf8Array<i64>) -> MutableUtf8Array<i64> {
     // safety: invariants don't change, just the type
