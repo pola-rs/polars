@@ -160,7 +160,7 @@ class GroupBy:
         ...         "c": [5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> df.group_by("a").agg([pl.col("b"), pl.col("c")])  # doctest: +IGNORE_RESULT
+        >>> df.group_by("a").agg(pl.col("b"), pl.col("c"))  # doctest: +IGNORE_RESULT
         shape: (3, 3)
         ┌─────┬───────────┬───────────┐
         │ a   ┆ b         ┆ c         │

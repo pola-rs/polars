@@ -3867,10 +3867,8 @@ class Expr:
         ...     }
         ... )
         >>> df.group_by("group_col").agg(
-        ...     [
-        ...         pl.col("b").filter(pl.col("b") < 2).sum().alias("lt"),
-        ...         pl.col("b").filter(pl.col("b") >= 2).sum().alias("gte"),
-        ...     ]
+        ...     lt=pl.col("b").filter(pl.col("b") < 2).sum().alias("lt"),
+        ...     gte=pl.col("b").filter(pl.col("b") >= 2).sum().alias("gte"),
         ... ).sort("group_col")
         shape: (2, 3)
         ┌───────────┬─────┬─────┐
@@ -5151,7 +5149,7 @@ class Expr:
         >>> df = pl.DataFrame(
         ...     {"sets": [[1, 2, 3], [1, 2], [9, 10]], "optional_members": [1, 2, 3]}
         ... )
-        >>> df.select([pl.col("optional_members").is_in("sets").alias("contains")])
+        >>> df.select(pl.col("optional_members").is_in("sets").alias("contains"))
         shape: (3, 1)
         ┌──────────┐
         │ contains │

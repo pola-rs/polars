@@ -22,7 +22,7 @@ print(
 )
 ```
 
-You can also specify the specific columns that you want to return. There are two ways to do this. The first option is to create a `list` of column names, as seen below.
+You can also specify the specific columns that you want to return. There are two ways to do this. The first option is to pass the column names, as seen below.
 
 {{code_block('getting-started/expressions','select2',['select'])}}
 
@@ -32,7 +32,7 @@ print(
 )
 ```
 
-The second option is to specify each column within a `list` in the `select` statement. This option is shown below.
+The second option is to specify each column using `pl.col`. This option is shown below.
 
 {{code_block('getting-started/expressions','select3',['select'])}}
 
