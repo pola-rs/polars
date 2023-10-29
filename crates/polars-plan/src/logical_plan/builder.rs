@@ -632,7 +632,7 @@ impl LogicalPlanBuilder {
         //                                             ^^^
         // 'x' is incorrectly pushed down even though it didn't exist after selection
         try_delayed!(
-            expressions_to_schema(&[predicate.clone()], &*schema, Context::Default),
+            expressions_to_schema(&[predicate.clone()], &schema, Context::Default),
             &self.0,
             into
         );
