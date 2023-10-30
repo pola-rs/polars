@@ -25,7 +25,7 @@ For it to work well for the Polars code base, add the following settings to your
 The Ruff extension will help you conform to the formatting requirements of the Python code.
 We use both the Ruff linter and formatter.
 
-## PyCharm / CLion
+## PyCharm / RustRover / CLion
 
 !!! info
 
