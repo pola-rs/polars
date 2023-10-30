@@ -31,12 +31,14 @@ def test_hist() -> None:
 
 def test_median_quantile_duration() -> None:
     df = pl.DataFrame({"A": [timedelta(days=0), timedelta(days=1)]})
-    assert df.select(pl.col("A").median()).to_dict(False) == {
-        "A": [timedelta(seconds=43200)]
-    }
-    assert df.select(pl.col("A").quantile(0.5, interpolation="linear")).to_dict(
-        False
-    ) == {"A": [timedelta(seconds=43200)]}
+
+    result = df.select(pl.col("A").median())
+    expected = pl.DataFrame({"A": [timedelta(seconds=43200)]})
+    assert_frame_equal(result, expected)
+
+    result = df.select(pl.col("A").quantile(0.5, interpolation="linear"))
+    expected = pl.DataFrame({"A": [timedelta(seconds=43200)]})
+    assert_frame_equal(result, expected)
 
 
 def test_correlation_cast_supertype() -> None:

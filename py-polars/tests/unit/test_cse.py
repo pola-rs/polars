@@ -85,15 +85,18 @@ def test_cse_schema_6081() -> None:
         pl.col("value").min().alias("min_value")
     )
 
-    result = df.join(min_value_by_group, on=["date", "id"], how="left")
-    assert result.collect(comm_subplan_elim=True, projection_pushdown=True).to_dict(
-        False
-    ) == {
-        "date": [date(2022, 12, 12), date(2022, 12, 12), date(2022, 12, 13)],
-        "id": [1, 1, 5],
-        "value": [1, 2, 2],
-        "min_value": [1, 1, 2],
-    }
+    result = df.join(min_value_by_group, on=["date", "id"], how="left").collect(
+        comm_subplan_elim=True, projection_pushdown=True
+    )
+    expected = pl.DataFrame(
+        {
+            "date": [date(2022, 12, 12), date(2022, 12, 12), date(2022, 12, 13)],
+            "id": [1, 1, 5],
+            "value": [1, 2, 2],
+            "min_value": [1, 1, 2],
+        }
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_cse_9630() -> None:

@@ -26,17 +26,21 @@ def test_streaming_sort_multiple_columns_logical_types() -> None:
             datetime(2023, 5, 1, 14, 45),
         ],
     }
-    assert pl.DataFrame(data).lazy().sort("foo", "baz").collect(streaming=True).to_dict(
-        False
-    ) == {
-        "foo": [1, 2, 3],
-        "bar": ["c", "b", "a"],
-        "baz": [
-            datetime(2023, 5, 1, 14, 45),
-            datetime(2023, 5, 1, 13, 45),
-            datetime(2023, 5, 1, 15, 45),
-        ],
-    }
+
+    result = pl.LazyFrame(data).sort("foo", "baz").collect(streaming=True)
+
+    expected = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": ["c", "b", "a"],
+            "baz": [
+                datetime(2023, 5, 1, 14, 45),
+                datetime(2023, 5, 1, 13, 45),
+                datetime(2023, 5, 1, 15, 45),
+            ],
+        }
+    )
+    assert_frame_equal(result, expected)
 
 
 @pytest.mark.write_disk()

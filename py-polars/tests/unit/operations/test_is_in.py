@@ -6,6 +6,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_series_equal
+from polars.testing.asserts.frame import assert_frame_equal
 
 
 def test_struct_logical_is_in() -> None:
@@ -50,9 +51,9 @@ def test_is_in_empty_list_4639() -> None:
     df = pl.DataFrame({"a": [1, None]})
     empty_list: list[int] = []
 
-    assert df.with_columns([pl.col("a").is_in(empty_list).alias("a_in_list")]).to_dict(
-        False
-    ) == {"a": [1, None], "a_in_list": [False, None]}
+    result = df.with_columns([pl.col("a").is_in(empty_list).alias("a_in_list")])
+    expected = pl.DataFrame({"a": [1, None], "a_in_list": [False, None]})
+    assert_frame_equal(result, expected)
 
 
 def test_is_in_struct() -> None:
@@ -112,11 +113,7 @@ def test_is_in_float_list_10764() -> None:
 
 def test_is_in_df() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
-    assert df.select(pl.col("a").is_in([1, 2]))["a"].to_list() == [
-        True,
-        True,
-        False,
-    ]
+    assert df.select(pl.col("a").is_in([1, 2]))["a"].to_list() == [True, True, False]
 
 
 def test_is_in_series() -> None:

@@ -136,7 +136,9 @@ def test_pickle_udf_expression() -> None:
     b = pickle.dumps(e)
     e = pickle.loads(b)
 
-    assert df.select(e).to_dict(False) == {"a": [2, 4, 6]}
+    result = df.select(e)
+    expected = pl.DataFrame({"a": [2, 4, 6]})
+    assert_frame_equal(result, expected)
 
     e = pl.col("a").map_batches(times2, return_dtype=pl.Utf8)
     b = pickle.dumps(e)

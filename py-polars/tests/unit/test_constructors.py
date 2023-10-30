@@ -909,8 +909,8 @@ def test_init_records() -> None:
 
     for colname in ("c", "b", "a"):
         result = pl.from_dicts([data], schema=[colname])
-        expected = {colname: [data[colname]]}
-        assert result.to_dict(as_series=False) == expected
+        expected_values = {colname: [data[colname]]}
+        assert result.to_dict(as_series=False) == expected_values
 
 
 def test_init_records_schema_order() -> None:
@@ -1008,7 +1008,8 @@ def test_from_dicts_list_struct_without_inner_dtype() -> None:
     }
     assert df.to_dict(as_series=False) == expected
 
-    # 5611
+
+def test_from_dicts_list_struct_without_inner_dtype_5611() -> None:
     result = pl.from_dicts(
         [
             {"a": []},

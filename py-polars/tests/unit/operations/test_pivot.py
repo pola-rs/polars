@@ -87,13 +87,17 @@ def test_pivot_categorical_3968() -> None:
         }
     )
 
-    assert df.with_columns(pl.col("baz").cast(str).cast(pl.Categorical)).to_dict(
-        False
-    ) == {
-        "foo": ["one", "one", "one", "two", "two", "two"],
-        "bar": ["A", "B", "C", "A", "B", "C"],
-        "baz": ["1", "2", "3", "4", "5", "6"],
-    }
+    result = df.with_columns(pl.col("baz").cast(str).cast(pl.Categorical))
+
+    expected = pl.DataFrame(
+        {
+            "foo": ["one", "one", "one", "two", "two", "two"],
+            "bar": ["A", "B", "C", "A", "B", "C"],
+            "baz": ["1", "2", "3", "4", "5", "6"],
+        },
+        schema_overrides={"baz": pl.Categorical},
+    )
+    assert_frame_equal(result, expected, categorical_as_str=True)
 
 
 def test_pivot_categorical_index() -> None:

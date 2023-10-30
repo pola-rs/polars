@@ -591,12 +591,16 @@ def test_cast_frame() -> None:
     ]
 
     # cast all fields to a single type
-    assert lf.cast(pl.Utf8).collect().to_dict(False) == {
-        "a": ["1.0", "2.5", "3.0"],
-        "b": ["4", "5", None],
-        "c": ["true", "false", "true"],
-        "d": ["2020-01-02", "2021-03-04", "2022-05-06"],
-    }
+    result = lf.cast(pl.Utf8)
+    expected = pl.LazyFrame(
+        {
+            "a": ["1.0", "2.5", "3.0"],
+            "b": ["4", "5", None],
+            "c": ["true", "false", "true"],
+            "d": ["2020-01-02", "2021-03-04", "2022-05-06"],
+        }
+    )
+    assert_frame_equal(result, expected)
 
     # test 'strict' mode
     lf = pl.LazyFrame({"a": [1000, 2000, 3000]})
@@ -1259,9 +1263,11 @@ def test_lazy_cache_same_key() -> None:
         [(pl.col("a") * pl.col("b")).alias("a"), pl.col("c")]
     ).cache()
 
-    assert mult_node.join(add_node, on="c", suffix="_mult").select(
+    result = mult_node.join(add_node, on="c", suffix="_mult").select(
         [(pl.col("a") - pl.col("a_mult")).alias("a"), pl.col("c")]
-    ).collect().to_dict(False) == {"a": [-1, 2, 7], "c": ["x", "y", "z"]}
+    )
+    expected = pl.LazyFrame({"a": [-1, 2, 7], "c": ["x", "y", "z"]})
+    assert_frame_equal(result, expected)
 
 
 def test_lazy_cache_hit(monkeypatch: Any, capfd: Any) -> None:
@@ -1269,9 +1275,12 @@ def test_lazy_cache_hit(monkeypatch: Any, capfd: Any) -> None:
 
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": ["x", "y", "z"]})
     add_node = ldf.select([(pl.col("a") + pl.col("b")).alias("a"), pl.col("c")]).cache()
-    assert add_node.join(add_node, on="c", suffix="_mult").select(
+
+    result = add_node.join(add_node, on="c", suffix="_mult").select(
         [(pl.col("a") - pl.col("a_mult")).alias("a"), pl.col("c")]
-    ).collect().to_dict(False) == {"a": [0, 0, 0], "c": ["x", "y", "z"]}
+    )
+    expected = pl.LazyFrame({"a": [0, 0, 0], "c": ["x", "y", "z"]})
+    assert_frame_equal(result, expected)
 
     (out, _) = capfd.readouterr()
     assert "CACHE HIT" in out
