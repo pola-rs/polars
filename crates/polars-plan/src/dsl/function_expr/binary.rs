@@ -9,6 +9,28 @@ pub enum BinaryFunction {
     Contains,
     StartsWith,
     EndsWith,
+    #[cfg(feature = "binary_encoding")]
+    HexDecode(bool),
+    #[cfg(feature = "binary_encoding")]
+    HexEncode,
+    #[cfg(feature = "binary_encoding")]
+    Base64Decode(bool),
+    #[cfg(feature = "binary_encoding")]
+    Base64Encode,
+}
+
+impl BinaryFunction {
+    pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
+        use BinaryFunction::*;
+        match self {
+            Contains { .. } => mapper.with_dtype(DataType::Boolean),
+            EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
+            #[cfg(feature = "binary_encoding")]
+            HexDecode(_) | Base64Decode(_) => mapper.with_same_dtype(),
+            #[cfg(feature = "binary_encoding")]
+            HexEncode | Base64Encode => mapper.with_dtype(DataType::Utf8),
+        }
+    }
 }
 
 impl Display for BinaryFunction {
@@ -18,6 +40,14 @@ impl Display for BinaryFunction {
             Contains { .. } => "contains",
             StartsWith => "starts_with",
             EndsWith => "ends_with",
+            #[cfg(feature = "binary_encoding")]
+            HexDecode(_) => "hex_decode",
+            #[cfg(feature = "binary_encoding")]
+            HexEncode => "hex_encode",
+            #[cfg(feature = "binary_encoding")]
+            Base64Decode(_) => "base64_decode",
+            #[cfg(feature = "binary_encoding")]
+            Base64Encode => "base64_encode",
         };
         write!(f, "bin.{s}")
     }
@@ -38,6 +68,7 @@ pub(super) fn ends_with(s: &[Series]) -> PolarsResult<Series> {
         .with_name(ca.name())
         .into_series())
 }
+
 pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
     let ca = s[0].binary()?;
     let prefix = s[1].binary()?;
@@ -46,6 +77,30 @@ pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
         .starts_with_chunked(prefix)
         .with_name(ca.name())
         .into_series())
+}
+
+#[cfg(feature = "binary_encoding")]
+pub(super) fn hex_decode(s: &Series, strict: bool) -> PolarsResult<Series> {
+    let ca = s.binary()?;
+    ca.hex_decode(strict).map(|ok| ok.into_series())
+}
+
+#[cfg(feature = "binary_encoding")]
+pub(super) fn hex_encode(s: &Series) -> PolarsResult<Series> {
+    let ca = s.binary()?;
+    Ok(ca.hex_encode())
+}
+
+#[cfg(feature = "binary_encoding")]
+pub(super) fn base64_decode(s: &Series, strict: bool) -> PolarsResult<Series> {
+    let ca = s.binary()?;
+    ca.base64_decode(strict).map(|ok| ok.into_series())
+}
+
+#[cfg(feature = "binary_encoding")]
+pub(super) fn base64_encode(s: &Series) -> PolarsResult<Series> {
+    let ca = s.binary()?;
+    Ok(ca.base64_encode())
 }
 
 impl From<BinaryFunction> for FunctionExpr {
