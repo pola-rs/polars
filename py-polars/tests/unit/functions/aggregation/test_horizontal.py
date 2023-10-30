@@ -94,6 +94,20 @@ def test_nested_min_max() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_empty_inputs_raise() -> None:
+    with pytest.raises(
+        pl.ComputeError,
+        match="cannot return empty fold because the number of output rows is unknown",
+    ):
+        pl.select(pl.any_horizontal())
+
+    with pytest.raises(
+        pl.ComputeError,
+        match="cannot return empty fold because the number of output rows is unknown",
+    ):
+        pl.select(pl.all_horizontal())
+
+
 def test_max_min_wildcard_columns(fruits_cars: pl.DataFrame) -> None:
     result = fruits_cars.select(pl.col(pl.datatypes.Int64)).select(
         pl.min_horizontal("*")
