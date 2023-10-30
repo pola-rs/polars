@@ -339,7 +339,7 @@ impl<'a> PredicatePushDown<'a> {
                             true
                         }
                     };
-                    let mut local_predicates =
+                    let local_predicates =
                         transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
 
                     self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
