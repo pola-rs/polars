@@ -1,6 +1,6 @@
-# Continuous integration setup
+# Continuous integration
 
-Polars uses GitHub Actions as its continuous integration (CI) tool. The setup is reasonably complex, as far as CI setups go. This document explains some of the design choices.
+Polars uses GitHub Actions as its continuous integration (CI) tool. The setup is reasonably complex, as far as CI setups go. This page explains some of the design choices.
 
 ## Goal
 
@@ -40,6 +40,7 @@ However, since GitHub Actions does not allow sharing caches between feature bran
 
 Care must also be taken not to exceed the maximum cache space of 10Gb allotted to open source GitHub repositories. Hence we do not do any caching on feature branches - we always use the cache available from the main branch. This also avoids any extra time that would be required to store the cache.
 
-# Releases
+## Releases
 
-The release jobs for Rust and Python get triggered when a new release is published. Release drafter is used to automatically draft these releases. Refer to the [contributing guide](/CONTRIBUTING.md#release-flow) for the full release process.
+The release jobs for Rust and Python are triggered manually.
+Refer to the [contributing guide](./index.md#release-flow) for the full release process.

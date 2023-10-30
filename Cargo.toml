@@ -2,7 +2,6 @@
 resolver = "2"
 members = [
   "crates/*",
-  "contribution/*",
   "examples/*",
 ]
 default-members = [
