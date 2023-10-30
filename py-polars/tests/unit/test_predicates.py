@@ -234,6 +234,7 @@ def test_fast_path_boolean_filter_predicates() -> None:
 def test_predicate_pushdown_boundary() -> None:
     df = pl.DataFrame({"x": [1, 2, 4]})
 
+    # tests: 12102
     lf = (
         df.lazy()
         .filter(pl.col("x") > 1)
