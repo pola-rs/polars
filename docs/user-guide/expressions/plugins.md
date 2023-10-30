@@ -45,7 +45,7 @@ serde = { version = "*", features = ["derive"] }
 ### Writing the expression
 
 In this library we create a helper function that converts a `&str` to pig-latin, and we create the function that we will
-expose as an expression. To expose a function we must add the `#[polars_expr(output=DataType)]` attribute and the function
+expose as an expression. To expose a function we must add the `#[polars_expr(output_type=DataType)]` attribute and the function
 must always accept `inputs: &[Series]` as its first argument.
 
 ```rust
