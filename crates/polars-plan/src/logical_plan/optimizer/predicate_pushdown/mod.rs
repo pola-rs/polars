@@ -202,10 +202,9 @@ impl<'a> PredicatePushDown<'a> {
                     .values()
                     .any(|node| predicate_is_pushdown_boundary(*node, expr_arena))
                 {
-                    acc_predicates
-                        .drain()
-                        .map(|(_, node)| node)
-                        .collect::<Vec<_>>()
+                    let local_predicates = acc_predicates.values().copied().collect::<Vec<_>>();
+                    acc_predicates.clear();
+                    local_predicates
                 } else {
                     vec![]
                 };

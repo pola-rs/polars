@@ -231,10 +231,9 @@ def test_fast_path_boolean_filter_predicates() -> None:
     assert_frame_equal(df.filter(True), df)
 
 
-def test_predicate_pushdown_boundary() -> None:
+def test_predicate_pushdown_boundary_12102() -> None:
     df = pl.DataFrame({"x": [1, 2, 4]})
 
-    # tests: 12102
     lf = (
         df.lazy()
         .filter(pl.col("x") > 1)
