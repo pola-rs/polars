@@ -397,7 +397,7 @@ impl<'a> PredicatePushDown<'a> {
                             let condition = |name: Arc<str>| columns.iter().any(|s| s.as_ref() == &*name);
 
                             // first columns that refer to the exploded columns should be done here
-                            let mut local_predicates =
+                            let local_predicates =
                                 transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
 
                             let lp = self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
