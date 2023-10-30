@@ -91,6 +91,7 @@ nav:
       - development/contributing/ide.md
       - development/contributing/test.md
       - development/contributing/ci.md
+      - development/contributing/code-style.md
     - development/versioning.md
 
   - Releases:

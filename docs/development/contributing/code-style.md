@@ -1,3 +1,29 @@
+# Code style
+
+This page contains some guidance on code style.
+
+!!! info
+
+    Additional information will be added to this page later.
+
+## Rust
+
+### Naming conventions
+
+Naming conventions for variables:
+
+```rust
+let s: Series = ...
+let ca: ChunkedArray = ...
+let arr: ArrayRef = ...
+let arr: PrimitiveArray = ...
+let dtype: DataType = ...
+let data_type: ArrowDataType = ...
+```
+
+### Code example
+
+```rust
 use std::ops::Add;
 
 use polars::export::arrow::array::*;
@@ -65,3 +91,4 @@ pub fn compute_expr_2_args(arg_1: &Series, arg_2: &Series) -> Series {
         compute_chunked_array_2_args(ca_1, ca_2).into_series()
     })
 }
+```
