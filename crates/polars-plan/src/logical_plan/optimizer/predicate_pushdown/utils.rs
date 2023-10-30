@@ -414,6 +414,10 @@ pub(super) fn partition_by_full_context(
     acc_predicates: &mut PlHashMap<Arc<str>, Node>,
     expr_arena: &Arena<AExpr>,
 ) -> Vec<Node> {
+    // TODO!
+    // Assert that acc_predicates does not contain a mix of groups sensitive and
+    // non-groups sensitive predicates, as this should have been handled
+    // earlier under push_down::match::Selection.
     if acc_predicates.values().any(|node| {
         has_aexpr(*node, expr_arena, |ae| match ae {
             AExpr::BinaryExpr { left, right, .. } => {

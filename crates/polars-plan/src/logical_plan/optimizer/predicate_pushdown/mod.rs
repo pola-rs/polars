@@ -210,6 +210,10 @@ impl<'a> PredicatePushDown<'a> {
                 // (correctly optimized)
                 // filter(y > 1) --> filter(x == min(x)) & filter(y > 2)
                 // pushdown of filter(y > 2) is correctly stopped at the boundary
+                //
+                // Performing this step here should guarantee that acc_predicates
+                // in all other contexts do not contain a mix of boundary and
+                // non-boundary predicates.
                 let local_predicates = if acc_predicates
                     .values()
                     .any(|node| predicate_is_pushdown_boundary(*node, expr_arena))
