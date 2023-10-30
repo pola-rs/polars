@@ -191,13 +191,25 @@ impl<'a> PredicatePushDown<'a> {
 
         match lp {
             Selection { predicate, input } => {
-                // Correctness: It is maintained that acc_predicates does not have
-                // boundary predicates at this point.
                 insert_and_combine_predicate(&mut acc_predicates, predicate, expr_arena);
 
-                // If a predicates result is influenced by predicates occurring
-                // before it, then it and all accumulated predicates must be
-                // blocked at this level.
+                // If the result of any predicate depends on the predicates that
+                // occur before it, then we must stop pushdown of all accumulated
+                // predicates at this level. Otherwise, if they are pushed past
+                // the boundary predicate, then the value of the boundary
+                // predicate itself will change and become incorrect.
+                // For example:
+                // (unoptimized)
+                // filter(y > 1) --> filter(x == min(x)) --> filter(y > 2)
+                //
+                // (incorrectly optimized)
+                // filter(y > 1) & filter(y > 2) --> filter(x == min(x))
+                // incorrect as min(x) in the subset where y > 2 may not be equal
+                // to min(x) in the subset where y > 1
+                //
+                // (correctly optimized)
+                // filter(y > 1) --> filter(x == min(x)) & filter(y > 2)
+                // pushdown of filter(y > 2) is correctly stopped at the boundary
                 let local_predicates = if acc_predicates
                     .values()
                     .any(|node| predicate_is_pushdown_boundary(*node, expr_arena))
