@@ -17,6 +17,7 @@ from polars.datatypes import (
     Struct,
     py_type_to_dtype,
 )
+from polars.testing.asserts.frame import assert_frame_equal
 
 
 def test_dtype_init_equivalence() -> None:
@@ -138,34 +139,35 @@ def test_conversion_dtype() -> None:
             }
         )
         .select(
-            [
-                pl.struct(
-                    [pl.col("id_column"), pl.col("some_column").cast(pl.Categorical)]
-                ).alias("struct"),
-                pl.col("some_partition_column"),
-            ]
+            pl.struct(
+                [pl.col("id_column"), pl.col("some_column").cast(pl.Categorical)]
+            ).alias("struct"),
+            pl.col("some_partition_column"),
         )
-        .group_by(["some_partition_column"], maintain_order=True)
-        .agg([pl.col(["struct"])])
+        .group_by("some_partition_column", maintain_order=True)
+        .agg("struct")
     )
 
     df = pl.from_arrow(df.to_arrow())  # type: ignore[assignment]
     # the assertion is not the real test
     # this tests if dtype has bubbled up correctly in conversion
     # if not we would UB
-    assert df.to_dict(False) == {
-        "some_partition_column": ["partition_1", "partition_2"],
-        "struct": [
-            [
-                {"id_column": 1, "some_column": "a"},
-                {"id_column": 3, "some_column": "c"},
+    expected = pl.DataFrame(
+        {
+            "some_partition_column": ["partition_1", "partition_2"],
+            "struct": [
+                [
+                    {"id_column": 1, "some_column": "a"},
+                    {"id_column": 3, "some_column": "c"},
+                ],
+                [
+                    {"id_column": 2, "some_column": "b"},
+                    {"id_column": 4, "some_column": "d"},
+                ],
             ],
-            [
-                {"id_column": 2, "some_column": "b"},
-                {"id_column": 4, "some_column": "d"},
-            ],
-        ],
-    }
+        }
+    )
+    assert_frame_equal(df, expected)
 
 
 def test_struct_field_iter() -> None:
