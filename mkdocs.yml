@@ -86,7 +86,9 @@ nav:
   - API reference: api/index.md
 
   - Development:
-    - development/contributing.md
+    - Contributing:
+      - development/contributing/index.md
+      - development/contributing/test-suite.md
     - development/versioning.md
 
   - Releases:
