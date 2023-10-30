@@ -232,13 +232,13 @@ def test_fast_path_boolean_filter_predicates() -> None:
 
 
 def test_predicate_pushdown_boundary_12102() -> None:
-    df = pl.DataFrame({"x": [1, 2, 4], "y": [False, True, True]})
+    df = pl.DataFrame({"x": [1, 2, 4], "y": [1, 2, 4]})
 
     lf = (
         df.lazy()
-        .filter(pl.col("y"))
+        .filter(pl.col("y") > 1)
         .filter(pl.col("x") == pl.min("x"))
-        .filter(pl.col("y"))
+        .filter(pl.col("y") > 2)
     )
 
     assert lf.collect().frame_equal(lf.collect(predicate_pushdown=False))
