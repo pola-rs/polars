@@ -286,21 +286,15 @@ def test_bitwise_ops() -> None:
     # Note that the type annotations only allow Series to be passed in, but there is
     # specific code to deal with non-Series inputs.
     assert_series_equal(
-        (
-            True & a  # type: ignore[operator]
-        ),
+        (True & a),  # type: ignore[operator]
         pl.Series([True, False, True]),
     )
     assert_series_equal(
-        (
-            True | a  # type: ignore[operator]
-        ),
+        (True | a),  # type: ignore[operator]
         pl.Series([True, True, True]),
     )
     assert_series_equal(
-        (
-            True ^ a  # type: ignore[operator]
-        ),
+        (True ^ a),  # type: ignore[operator]
         pl.Series([False, True, False]),
     )
 
@@ -437,7 +431,7 @@ def test_power() -> None:
     assert_series_equal(a**a, pl.Series([1.0, 4.0], dtype=Float64))
     assert_series_equal(b**b, pl.Series([None, 4.0], dtype=Float64))
     assert_series_equal(a**b, pl.Series([None, 4.0], dtype=Float64))
-    assert_series_equal(a ** None, pl.Series([None] * len(a), dtype=Float64))
+    assert_series_equal(a**None, pl.Series([None] * len(a), dtype=Float64))
     with pytest.raises(TypeError):
         c**2
     with pytest.raises(pl.ColumnNotFoundError):
