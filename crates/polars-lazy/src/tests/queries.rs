@@ -477,7 +477,7 @@ fn test_lazy_query_10() {
     assert!(out
         .column("z")
         .unwrap()
-        .equals(&z.cast(&DataType::Duration(TimeUnit::Milliseconds)).unwrap()));
+        .equals(&z.cast(&DataType::Duration(TimeUnit::Nanoseconds)).unwrap()));
 }
 
 #[test]
