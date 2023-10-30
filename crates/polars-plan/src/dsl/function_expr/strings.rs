@@ -23,7 +23,10 @@ pub enum StringFunction {
     #[cfg(feature = "concat_str")]
     ConcatHorizontal(String),
     #[cfg(feature = "concat_str")]
-    ConcatVertical(String),
+    ConcatVertical {
+        delimiter: String,
+        ignore_nulls: bool,
+    },
     #[cfg(feature = "regex")]
     Contains {
         literal: bool,
@@ -100,7 +103,7 @@ impl StringFunction {
         use StringFunction::*;
         match self {
             #[cfg(feature = "concat_str")]
-            ConcatVertical(_) | ConcatHorizontal(_) => mapper.with_dtype(DataType::Utf8),
+            ConcatVertical { .. } | ConcatHorizontal(_) => mapper.with_dtype(DataType::Utf8),
             #[cfg(feature = "regex")]
             Contains { .. } => mapper.with_dtype(DataType::Boolean),
             CountMatches(_) => mapper.with_dtype(DataType::UInt32),
@@ -162,7 +165,7 @@ impl Display for StringFunction {
             #[cfg(feature = "concat_str")]
             StringFunction::ConcatHorizontal(_) => "concat_horizontal",
             #[cfg(feature = "concat_str")]
-            StringFunction::ConcatVertical(_) => "concat_vertical",
+            StringFunction::ConcatVertical { .. } => "concat_vertical",
             StringFunction::Explode => "explode",
             StringFunction::ExtractAll => "extract_all",
             #[cfg(feature = "extract_groups")]
@@ -548,9 +551,9 @@ fn to_time(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
 }
 
 #[cfg(feature = "concat_str")]
-pub(super) fn concat(s: &Series, delimiter: &str) -> PolarsResult<Series> {
+pub(super) fn concat(s: &Series, delimiter: &str, ignore_nulls: bool) -> PolarsResult<Series> {
     let str_s = s.cast(&DataType::Utf8)?;
-    let concat = polars_ops::chunked_array::str_concat(str_s.utf8()?, delimiter);
+    let concat = polars_ops::chunked_array::str_concat(str_s.utf8()?, delimiter, ignore_nulls);
     Ok(concat.into_series())
 }
 

@@ -7,8 +7,12 @@ use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {
-    fn str_concat(&self, delimiter: &str) -> Self {
-        self.inner.clone().str().concat(delimiter).into()
+    fn str_concat(&self, delimiter: &str, ignore_nulls: bool) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .concat(delimiter, ignore_nulls)
+            .into()
     }
 
     #[pyo3(signature = (format, strict, exact, cache))]

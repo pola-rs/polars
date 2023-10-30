@@ -16,23 +16,42 @@ def test_str_slice() -> None:
 
 
 def test_str_concat() -> None:
-    s = pl.Series(["1", None, "2"])
-    result = s.str.concat()
-    expected = pl.Series(["1-null-2"])
-    assert_series_equal(result, expected)
+    s = pl.Series(["1", None, "2", None])
+    # propagate null
+    assert_series_equal(
+        s.str.concat(ignore_nulls=False), pl.Series([None], dtype=pl.Utf8)
+    )
+    # ignore null
+    assert_series_equal(s.str.concat(), pl.Series(["1-2"]))
+
+    # str None/null is ok
+    s = pl.Series(["1", "None", "2", "null"])
+    assert_series_equal(s.str.concat(ignore_nulls=False), pl.Series(["1-None-2-null"]))
+    assert_series_equal(s.str.concat(), pl.Series(["1-None-2-null"]))
 
 
 def test_str_concat2() -> None:
-    df = pl.DataFrame({"foo": [1, None, 2]})
-    df = df.select(pl.col("foo").str.concat("-"))
-    assert cast(str, df.item()) == "1-null-2"
+    df = pl.DataFrame({"foo": [1, None, 2, None]})
+
+    out = df.select(pl.col("foo").str.concat("-", ignore_nulls=False))
+    assert cast(str, out.item()) is None
+
+    out = df.select(pl.col("foo").str.concat("-"))
+    assert cast(str, out.item()) == "1-2"
+
+
+def test_str_concat_all_null() -> None:
+    s = pl.Series([None, None, None], dtype=pl.Utf8)
+    assert_series_equal(
+        s.str.concat(ignore_nulls=False), pl.Series([None], dtype=pl.Utf8)
+    )
+    assert_series_equal(s.str.concat(ignore_nulls=True), pl.Series([""]))
 
 
 def test_str_concat_empty_list() -> None:
     s = pl.Series([], dtype=pl.Utf8)
-    result = s.str.concat()
-    expected = pl.Series([""])
-    assert_series_equal(result, expected)
+    assert_series_equal(s.str.concat(ignore_nulls=False), pl.Series([""]))
+    assert_series_equal(s.str.concat(ignore_nulls=True), pl.Series([""]))
 
 
 def test_str_concat_empty_list2() -> None:
@@ -52,11 +71,12 @@ def test_str_concat_empty_list_agg_context() -> None:
 
 def test_str_concat_datetime() -> None:
     df = pl.DataFrame({"d": [datetime(2020, 1, 1), None, datetime(2022, 1, 1)]})
-    df = df.select(pl.col("d").str.concat("|"))
+    out = df.select(pl.col("d").str.concat("|", ignore_nulls=True))
     assert (
-        cast(str, df.item())
-        == "2020-01-01 00:00:00.000000|null|2022-01-01 00:00:00.000000"
+        cast(str, out.item()) == "2020-01-01 00:00:00.000000|2022-01-01 00:00:00.000000"
     )
+    out = df.select(pl.col("d").str.concat("|", ignore_nulls=False))
+    assert cast(str, out.item()) is None
 
 
 def test_str_len_bytes() -> None:

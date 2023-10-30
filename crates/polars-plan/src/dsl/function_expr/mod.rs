@@ -1076,7 +1076,10 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "dtype-struct")]
             SplitN(n) => map_as_slice!(strings::splitn, n),
             #[cfg(feature = "concat_str")]
-            ConcatVertical(delimiter) => map!(strings::concat, &delimiter),
+            ConcatVertical {
+                delimiter,
+                ignore_nulls,
+            } => map!(strings::concat, &delimiter, ignore_nulls),
             #[cfg(feature = "concat_str")]
             ConcatHorizontal(delimiter) => map_as_slice!(strings::concat_hor, &delimiter),
             #[cfg(feature = "regex")]
