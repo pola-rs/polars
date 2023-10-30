@@ -45,8 +45,8 @@ def scan_pyarrow_dataset(
 
     Notes
     -----
-    When using partitioning, the appropriate ``partitioning`` option must be set on
-    ``pyarrow.dataset.dataset`` before passing to Polars or the partitioned-on column(s)
+    When using partitioning, the appropriate `partitioning` option must be set on
+    `pyarrow.dataset.dataset` before passing to Polars or the partitioned-on column(s)
     may not get passed to Polars.
 
     Examples

@@ -29,7 +29,7 @@ def from_dict(
     """
     Construct a DataFrame from a dictionary of sequences.
 
-    This operation clones data, unless you pass a ``{str: pl.Series,}`` dict.
+    This operation clones data, unless you pass a `{str: pl.Series,}` dict.
 
     Parameters
     ----------
@@ -130,7 +130,7 @@ def from_dicts(
     │ 3   ┆ 6   │
     └─────┴─────┘
 
-    Declaring a partial ``schema`` will drop the omitted columns.
+    Declaring a partial `schema` will drop the omitted columns.
 
     >>> df = pl.from_dicts(data, schema={"a": pl.Int32})
     >>> df
@@ -145,7 +145,7 @@ def from_dicts(
     │ 3   │
     └─────┘
 
-    Can also use the ``schema`` param to extend the loaded columns with one
+    Can also use the `schema` param to extend the loaded columns with one
     or more additional (empty) columns that are not present in the input dicts:
 
     >>> pl.from_dicts(
@@ -667,7 +667,7 @@ def from_pandas(
     rechunk : bool, default True
         Make sure that all data is in contiguous memory.
     nan_to_null : bool, default True
-        If data contains `NaN` values PyArrow will convert the ``NaN`` to ``None``
+        If data contains `NaN` values PyArrow will convert the `NaN` to `None`
     include_index : bool, default False
         Load any non-default pandas indexes as columns.
 

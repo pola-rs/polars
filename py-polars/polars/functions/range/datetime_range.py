@@ -81,17 +81,17 @@ def datetime_range(
     end
         Upper bound of the datetime range.
     interval
-        Interval of the range periods, specified as a Python ``timedelta`` object
+        Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     time_unit : {None, 'ns', 'us', 'ms'}
-        Time unit of the resulting ``Datetime`` data type.
+        Time unit of the resulting `Datetime` data type.
     time_zone
-        Time zone of the resulting ``Datetime`` data type.
+        Time zone of the resulting `Datetime` data type.
     eager
-        Evaluate immediately and return a ``Series``.
-        If set to ``False`` (default), return an expression instead.
+        Evaluate immediately and return a `Series`.
+        If set to `False` (default), return an expression instead.
 
     Returns
     -------
@@ -139,7 +139,7 @@ def datetime_range(
         2022-03-01 00:00:00
     ]
 
-    Using ``timedelta`` object to specify the interval:
+    Using `timedelta` object to specify the interval:
 
     >>> from datetime import date, timedelta
     >>> pl.datetime_range(
@@ -259,17 +259,17 @@ def datetime_ranges(
     end
         Upper bound of the datetime range.
     interval
-        Interval of the range periods, specified as a Python ``timedelta`` object
+        Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     time_unit : {None, 'ns', 'us', 'ms'}
-        Time unit of the resulting ``Datetime`` data type.
+        Time unit of the resulting `Datetime` data type.
     time_zone
-        Time zone of the resulting ``Datetime`` data type.
+        Time zone of the resulting `Datetime` data type.
     eager
-        Evaluate immediately and return a ``Series``.
-        If set to ``False`` (default), return an expression instead.
+        Evaluate immediately and return a `Series`.
+        If set to `False` (default), return an expression instead.
 
     Notes
     -----
@@ -301,7 +301,7 @@ def datetime_ranges(
     Returns
     -------
     Expr or Series
-        Column of data type ``List(Datetime)``.
+        Column of data type `List(Datetime)`.
 
     """
     interval = parse_interval_argument(interval)

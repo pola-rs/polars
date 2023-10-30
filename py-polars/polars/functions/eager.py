@@ -41,13 +41,13 @@ def concat(
         * vertical_relaxed: Same as `vertical`, but additionally coerces columns to
           their common supertype *if* they are mismatched (eg: Int32 → Int64).
         * diagonal: Finds a union between the column schemas and fills missing column
-          values with ``null``.
+          values with `null`.
         * diagonal_relaxed: Same as `diagonal`, but additionally coerces columns to
           their common supertype *if* they are mismatched (eg: Int32 → Int64).
-        * horizontal: Stacks Series from DataFrames horizontally and fills with ``null``
+        * horizontal: Stacks Series from DataFrames horizontally and fills with `null`
           if the lengths don't match.
         * align: Combines frames horizontally, auto-determining the common key columns
-          and aligning rows using the same logic as ``align_frames``; this behaviour is
+          and aligning rows using the same logic as `align_frames`; this behaviour is
           patterned after a full outer join, but does not handle column-name collision.
           (If you need more control, you should use a suitable join method instead).
     rechunk
@@ -253,12 +253,12 @@ def align_frames(
     Frames that do not contain the given key values have rows injected (with nulls
     filling the non-key columns), and each resulting frame is sorted by the key.
 
-    The original column order of input frames is not changed unless ``select`` is
+    The original column order of input frames is not changed unless `select` is
     specified (in which case the final column order is determined from that). In the
     case where duplicate key values exist, the alignment behaviour is determined by
-    the given alignment strategy specified in the ``how`` parameter (by default this
+    the given alignment strategy specified in the `how` parameter (by default this
     is a full outer join, but if your data is suitable you can get a large speedup
-    by setting ``how="left"`` instead).
+    by setting `how="left"` instead).
 
     Note that this function does not result in a joined frame - you receive the same
     number of frames back that you passed in, but each is now aligned by key and has
@@ -275,11 +275,11 @@ def align_frames(
         the columns returned from the newly aligned frames.
     descending
         Sort the alignment column values in descending order; can be a single
-        boolean or a list of booleans associated with each column in ``on``.
+        boolean or a list of booleans associated with each column in `on`.
     how
         By default the row alignment values are determined using a full outer join
         strategy across all frames; if you know that the first frame contains all
-        required keys, you can set ``how="left"`` for a large performance increase.
+        required keys, you can set `how="left"` for a large performance increase.
 
     Examples
     --------

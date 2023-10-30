@@ -136,7 +136,7 @@ class LazyFrame:
     ----------
     data : dict, Sequence, ndarray, Series, or pandas.DataFrame
         Two-dimensional data in various forms; dict input must contain Sequences,
-        Generators, or a ``range``. Sequence may contain Series or other Sequences.
+        Generators, or a `range`. Sequence may contain Series or other Sequences.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
@@ -168,7 +168,7 @@ class LazyFrame:
 
     Notes
     -----
-    Initialising ``LazyFrame(...)`` directly is equivalent to ``DataFrame(...).lazy()``.
+    Initialising `LazyFrame(...)` directly is equivalent to `DataFrame(...).lazy()`.
 
     Examples
     --------
@@ -348,7 +348,7 @@ class LazyFrame:
         """
         Lazily read from a CSV file or multiple files via glob patterns.
 
-        Use ``pl.scan_csv`` to dispatch to this method.
+        Use `pl.scan_csv` to dispatch to this method.
 
         See Also
         --------
@@ -418,7 +418,7 @@ class LazyFrame:
         """
         Lazily read from a parquet file or multiple files via glob patterns.
 
-        Use ``pl.scan_parquet`` to dispatch to this method.
+        Use `pl.scan_parquet` to dispatch to this method.
 
         See Also
         --------
@@ -482,7 +482,7 @@ class LazyFrame:
         """
         Lazily read from an Arrow IPC (Feather v2) file.
 
-        Use ``pl.scan_ipc`` to dispatch to this method.
+        Use `pl.scan_ipc` to dispatch to this method.
 
         See Also
         --------
@@ -536,7 +536,7 @@ class LazyFrame:
         """
         Lazily read from a newline delimited JSON file.
 
-        Use ``pl.scan_ndjson`` to dispatch to this method.
+        Use `pl.scan_ndjson` to dispatch to this method.
 
         See Also
         --------
@@ -593,8 +593,8 @@ class LazyFrame:
         Read a logical plan from a JSON string to construct a LazyFrame.
 
         .. deprecated:: 0.18.12
-            This method is deprecated. Convert the JSON string to ``StringIO``
-            and then use ``LazyFrame.deserialize``.
+            This method is deprecated. Convert the JSON string to `StringIO`
+            and then use `LazyFrame.deserialize`.
 
         Parameters
         ----------
@@ -616,14 +616,14 @@ class LazyFrame:
         Read a logical plan from a JSON file to construct a LazyFrame.
 
         .. deprecated:: 0.18.12
-            This class method has been renamed to ``deserialize``.
+            This class method has been renamed to `deserialize`.
 
         Parameters
         ----------
         source
             Path to a file or a file-like object (by file-like object, we refer to
-            objects that have a ``read()`` method, such as a file handler (e.g.
-            via builtin ``open`` function) or ``BytesIO``).
+            objects that have a `read()` method, such as a file handler (e.g.
+            via builtin `open` function) or `BytesIO`).
 
         See Also
         --------
@@ -641,8 +641,8 @@ class LazyFrame:
         ----------
         source
             Path to a file or a file-like object (by file-like object, we refer to
-            objects that have a ``read()`` method, such as a file handler (e.g.
-            via builtin ``open`` function) or ``BytesIO``).
+            objects that have a `read()` method, such as a file handler (e.g.
+            via builtin `open` function) or `BytesIO`).
 
         See Also
         --------
@@ -866,7 +866,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         file
-            File path to which the result should be written. If set to ``None``
+            File path to which the result should be written. If set to `None`
             (default), the output is returned as a string instead.
 
         See Also
@@ -932,7 +932,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         file
-            File path to which the result should be written. If set to ``None``
+            File path to which the result should be written. If set to `None`
             (default), the output is returned as a string instead.
         """
         return self.serialize(file)
@@ -1034,8 +1034,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         optimized
-            Return an optimized query plan. Defaults to ``True``.
-            If this is set to ``True`` the subsequent
+            Return an optimized query plan. Defaults to `True`.
+            If this is set to `True` the subsequent
             optimization flags control which optimizations
             run.
         type_coercion
@@ -1681,7 +1681,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Materialize this LazyFrame into a DataFrame.
 
         By default, all query optimizations are enabled. Individual optimizations may
-        be disabled by setting the corresponding parameter to ``False``.
+        be disabled by setting the corresponding parameter to `False`.
 
         Parameters
         ----------
@@ -1703,7 +1703,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Turn off (certain) optimizations.
         streaming
             Process the query in batches to handle larger-than-memory data.
-            If set to ``False`` (default), the entire query is processed in a single
+            If set to `False` (default), the entire query is processed in a single
             batch.
 
             .. warning::
@@ -2161,8 +2161,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             Rust crate.
         float_precision
-            Number of decimal places to write, applied to both ``Float32`` and
-            ``Float64`` datatypes.
+            Number of decimal places to write, applied to both `Float32` and
+            `Float64` datatypes.
         null_value
             A string representing null values (defaulting to the empty string).
         quote_style : {'necessary', 'always', 'non_numeric', 'never'}
@@ -2310,11 +2310,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Notes
         -----
         This is similar to a :func:`collect` operation, but it overwrites the number of
-        rows read by *every* scan operation. Be aware that ``fetch`` does not guarantee
+        rows read by *every* scan operation. Be aware that `fetch` does not guarantee
         the final number of rows in the DataFrame. Filters, join operations and fewer
         rows being available in the scanned data will all influence the final number
         of rows (joins are especially susceptible to this, and may return no data
-        at all if ``n_rows`` is too small as the join keys may not be present).
+        at all if `n_rows` is too small as the join keys may not be present).
 
         Warnings
         --------
@@ -2813,7 +2813,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └───────────┘
 
         Expressions with multiple outputs can be automatically instantiated as Structs
-        by enabling the experimental setting ``Config.set_auto_structify(True)``:
+        by enabling the experimental setting `Config.set_auto_structify(True)`:
 
         >>> with pl.Config(auto_structify=True):
         ...     lf.select(
@@ -2889,12 +2889,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
-            Setting this to ``True`` blocks the possibility
+            Setting this to `True` blocks the possibility
             to run on the streaming engine.
 
         Examples
         --------
-        Group by one column and call ``agg`` to compute the grouped sum of another
+        Group by one column and call `agg` to compute the grouped sum of another
         column.
 
         >>> lf = pl.LazyFrame(
@@ -2916,7 +2916,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 3   │
         └─────┴─────┘
 
-        Set ``maintain_order=True`` to ensure the order of the groups is consistent with
+        Set `maintain_order=True` to ensure the order of the groups is consistent with
         the input.
 
         >>> lf.group_by("a", maintain_order=True).agg(pl.col("c")).collect()
@@ -2981,11 +2981,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Create rolling groups based on a time, Int32, or Int64 column.
 
-        Different from a ``dynamic_group_by`` the windows are now determined by the
+        Different from a `dynamic_group_by` the windows are now determined by the
         individual values and are not of constant intervals. For constant intervals
         use :func:`LazyFrame.group_by_dynamic`.
 
-        If you have a time series ``<t_0, t_1, ..., t_n>``, then by default the
+        If you have a time series `<t_0, t_1, ..., t_n>`, then by default the
         windows created will be
 
             * (t_0 - period, t_0]
@@ -3045,16 +3045,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by
             Also group by this column/these columns
         check_sorted
-            When the ``by`` argument is given, polars can not check sortedness
+            When the `by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to ``False``.
+            data within the by groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         Returns
         -------
         LazyGroupBy
-            Object you can call ``.agg`` on to aggregate by groups, the result
+            Object you can call `.agg` on to aggregate by groups, the result
             of which will be sorted by `index_column` (but note that if `by` columns are
             passed, it will only be sorted within each `by` group).
 
@@ -3193,23 +3193,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               `every`, and then adding `offset`.
               Note that weekly windows start on Monday.
             * 'datapoint': Start from the first encountered data point.
-            * a day of the week (only takes effect if `every` contains ``'w'``):
+            * a day of the week (only takes effect if `every` contains `'w'`):
 
               * 'monday': Start the window on the Monday before the first data point.
               * 'tuesday': Start the window on the Tuesday before the first data point.
               * ...
               * 'sunday': Start the window on the Sunday before the first data point.
         check_sorted
-            When the ``by`` argument is given, polars can not check sortedness
+            When the `by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to ``False``.
+            data within the by groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         Returns
         -------
         LazyGroupBy
-            Object you can call ``.agg`` on to aggregate by groups, the result
+            Object you can call `.agg` on to aggregate by groups, the result
             of which will be sorted by `index_column` (but note that if `by` columns are
             passed, it will only be sorted within each `by` group).
 
@@ -3963,7 +3963,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴──────┴───────┴──────┴───────┘
 
         Expressions with multiple outputs can be automatically instantiated as Structs
-        by enabling the experimental setting ``Config.set_auto_structify(True)``:
+        by enabling the experimental setting `Config.set_auto_structify(True)`:
 
         >>> with pl.Config(auto_structify=True):
         ...     lf.drop("c").with_columns(
@@ -4246,8 +4246,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Notes
         -----
-        This method is similar to the ``LAG`` operation in SQL when the value for ``n``
-        is positive. With a negative value for ``n``, it is similar to ``LEAD``.
+        This method is similar to the `LAG` operation in SQL when the value for `n`
+        is positive. With a negative value for `n`, it is similar to `LEAD`.
 
         Examples
         --------
@@ -4287,7 +4287,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ null ┆ null │
         └──────┴──────┘
 
-        Specify ``fill_value`` to fill the resulting null values.
+        Specify `fill_value` to fill the resulting null values.
 
         >>> lf.shift(-2, fill_value=100).collect()
         shape: (4, 2)
@@ -4317,7 +4317,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset
             Start index. Negative indexing is supported.
         length
-            Length of the slice. If set to ``None``, all rows starting at the offset
+            Length of the slice. If set to `None`, all rows starting at the offset
             will be selected.
 
         Examples
@@ -4667,7 +4667,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Number of consecutive null values to fill when using the 'forward' or
             'backward' strategy.
         matches_supertype
-            Fill all matching supertypes of the fill ``value`` literal.
+            Fill all matching supertypes of the fill `value` literal.
 
         Examples
         --------
@@ -5146,7 +5146,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         subset
             Column name(s) or selector(s), to consider when identifying
-            duplicate rows. If set to ``None`` (default), use all columns.
+            duplicate rows. If set to `None` (default), use all columns.
         keep : {'first', 'last', 'any', 'none'}
             Which of the duplicate rows to keep.
 
@@ -5158,7 +5158,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         maintain_order
             Keep the same order as the original DataFrame. This is more expensive to
             compute.
-            Settings this to ``True`` blocks the possibility
+            Settings this to `True` blocks the possibility
             to run on the streaming engine.
 
         Returns
@@ -5230,7 +5230,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         subset
             Column name(s) for which null values are considered.
-            If set to ``None`` (default), use all columns.
+            If set to `None` (default), use all columns.
 
         Examples
         --------
@@ -5413,12 +5413,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         no_optimizations
             Turn off all optimizations past this point.
         schema
-            Output schema of the function, if set to ``None`` we assume that the schema
+            Output schema of the function, if set to `None` we assume that the schema
             will remain unchanged by the applied function.
         validate_output_schema
             It is paramount that polars' schema is correct. This flag will ensure that
             the output schema of this function will be checked with the expected schema.
-            Setting this to ``False`` will not do this check, but may lead to hard to
+            Setting this to `False` will not do this check, but may lead to hard to
             debug bugs.
         streamable
             Whether the function that is given is eligible to be running with the
@@ -5428,11 +5428,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Warnings
         --------
-        The ``schema`` of a `LazyFrame` must always be correct. It is up to the caller
+        The `schema` of a `LazyFrame` must always be correct. It is up to the caller
         of this function to ensure that this invariant is upheld.
 
         It is important that the optimization flags are correct. If the custom function
-        for instance does an aggregation of a column, ``predicate_pushdown`` should not
+        for instance does an aggregation of a column, `predicate_pushdown` should not
         be allowed, as this prunes rows and will influence your aggregation results.
 
         Examples
@@ -5673,7 +5673,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         other
             LazyFrame that will be used to update the values
         on
-            Column names that will be joined on; if given ``None`` the implicit row
+            Column names that will be joined on; if given `None` the implicit row
             index is used as a join key instead.
         left_on
            Join column(s) of the left DataFrame.
@@ -5896,7 +5896,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
-            Settings this to ``True`` blocks the possibility
+            Settings this to `True` blocks the possibility
             to run on the streaming engine.
 
         """
@@ -5939,16 +5939,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by
             Also group by this column/these columns
         check_sorted
-            When the ``by`` argument is given, polars can not check sortedness
+            When the `by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to ``False``.
+            data within the by groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         Returns
         -------
         LazyGroupBy
-            Object you can call ``.agg`` on to aggregate by groups, the result
+            Object you can call `.agg` on to aggregate by groups, the result
             of which will be sorted by `index_column` (but note that if `by` columns are
             passed, it will only be sorted within each `by` group).
 
@@ -5999,16 +5999,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by
             Also group by this column/these columns
         check_sorted
-            When the ``by`` argument is given, polars can not check sortedness
+            When the `by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to ``False``.
+            data within the by groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         Returns
         -------
         LazyGroupBy
-            Object you can call ``.agg`` on to aggregate by groups, the result
+            Object you can call `.agg` on to aggregate by groups, the result
             of which will be sorted by `index_column` (but note that if `by` columns are
             passed, it will only be sorted within each `by` group).
 
@@ -6059,7 +6059,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         period
             length of the window, if None it will equal 'every'
         offset
-            offset of the window, only takes effect if `start_by` is ``'window'``.
+            offset of the window, only takes effect if `start_by` is `'window'`.
             Defaults to negative `every`.
         truncate
             truncate the time value to the window lower bound
@@ -6078,23 +6078,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               `every`, and then adding `offset`.
               Note that weekly windows start on Monday.
             * 'datapoint': Start from the first encountered data point.
-            * a day of the week (only takes effect if `every` contains ``'w'``):
+            * a day of the week (only takes effect if `every` contains `'w'`):
 
               * 'monday': Start the window on the Monday before the first data point.
               * 'tuesday': Start the window on the Tuesday before the first data point.
               * ...
               * 'sunday': Start the window on the Sunday before the first data point.
         check_sorted
-            When the ``by`` argument is given, polars can not check sortedness
+            When the `by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to ``False``.
+            data within the by groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         Returns
         -------
         LazyGroupBy
-            Object you can call ``.agg`` on to aggregate by groups, the result
+            Object you can call `.agg` on to aggregate by groups, the result
             of which will be sorted by `index_column` (but note that if `by` columns are
             passed, it will only be sorted within each `by` group).
 
@@ -6144,12 +6144,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         no_optimizations
             Turn off all optimizations past this point.
         schema
-            Output schema of the function, if set to ``None`` we assume that the schema
+            Output schema of the function, if set to `None` we assume that the schema
             will remain unchanged by the applied function.
         validate_output_schema
             It is paramount that polars' schema is correct. This flag will ensure that
             the output schema of this function will be checked with the expected schema.
-            Setting this to ``False`` will not do this check, but may lead to hard to
+            Setting this to `False` will not do this check, but may lead to hard to
             debug bugs.
         streamable
             Whether the function that is given is eligible to be running with the

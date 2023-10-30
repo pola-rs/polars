@@ -1,5 +1,5 @@
 """
-Module for testing ``.str.strptime`` of the string namespace.
+Module for testing `.str.strptime` of the string namespace.
 
 This method gets its own module due to its complexity.
 """

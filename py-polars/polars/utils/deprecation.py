@@ -200,7 +200,7 @@ def deprecate_nonkeyword_arguments(
 def _format_argument_list(allowed_args: list[str]) -> str:
     """
     Format allowed arguments list for use in the warning message of
-    ``deprecate_nonkeyword_arguments``.
+    `deprecate_nonkeyword_arguments`.
     """  # noqa: D205
     if "self" in allowed_args:
         allowed_args.remove("self")

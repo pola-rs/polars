@@ -311,9 +311,9 @@ class _selector_proxy_(Expr):
 
     def as_expr(self) -> Expr:
         """
-        Materialize the ``selector`` into a normal expression.
+        Materialize the `selector` into a normal expression.
 
-        This ensures that the operators ``|``, ``&``, ``~`` and ``-``
+        This ensures that the operators `|`, `&`, `~` and `-`
         are applied on the data and not on the selector sets.
         """
         return Expr._from_pyexpr(self._pyexpr)
@@ -829,8 +829,8 @@ def datetime(
         Omit to select columns with any valid timeunit.
     time_zone
         * One or more timezone strings, as defined in zoneinfo (to see valid options
-          run ``import zoneinfo; zoneinfo.available_timezones()`` for a full list).
-        * Set ``None`` to select Datetime columns that do not have a timezone.
+          run `import zoneinfo; zoneinfo.available_timezones()` for a full list).
+        * Set `None` to select Datetime columns that do not have a timezone.
         * Set "*" to select Datetime columns that have *any* timezone.
 
     See Also
