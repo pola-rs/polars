@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime, time, timedelta
+from decimal import Decimal as D
 from typing import Any
 
 import pytest
@@ -620,6 +621,34 @@ def test_assert_series_equal_nested_int() -> None:
         assert_series_equal(s1, s2, check_exact=True)
 
 
+def test_series_equal_nested_lengths_mismatch() -> None:
+    s1 = pl.Series([[1.0, 2.0], [3.0, 4.0]], dtype=pl.List(pl.Float64))
+    s2 = pl.Series([[1.0, 2.0, 3.0], [4.0]], dtype=pl.List(pl.Float64))
+
+    with pytest.raises(AssertionError, match="nested value mismatch"):
+        assert_series_equal(s1, s2)
+
+
+def test_series_equal_decimals_exact() -> None:
+    s1 = pl.Series([D("1.00000"), D("2.00000")], dtype=pl.Decimal)
+    s2 = pl.Series([D("1.00000"), D("2.00001")], dtype=pl.Decimal)
+    with pytest.raises(AssertionError, match="exact value mismatch"):
+        assert_series_equal(s1, s2, check_exact=True)
+
+
+def test_series_equal_decimals_inexact() -> None:
+    s1 = pl.Series([D("1.00000"), D("2.00000")], dtype=pl.Decimal)
+    s2 = pl.Series([D("1.00000"), D("2.00001")], dtype=pl.Decimal)
+    assert_series_equal(s1, s2, check_exact=False)
+
+
+def test_series_equal_decimals_inexact_fail() -> None:
+    s1 = pl.Series([D("1.00000"), D("2.00000")], dtype=pl.Decimal)
+    s2 = pl.Series([D("1.00000"), D("2.00001")], dtype=pl.Decimal)
+    with pytest.raises(AssertionError, match="value mismatch"):
+        assert_series_equal(s1, s2, check_exact=False, rtol=0)
+
+
 def test_compare_series_nans_assert_equal_deprecated() -> None:
     srs1 = pl.Series([1.0, 2.0, nan, 4.0, None, 6.0])
     srs2 = pl.Series([1.0, nan, 3.0, 4.0, None, 6.0])
@@ -765,11 +794,3 @@ def test_assert_series_equal_raises_assertion_error_deprecated_nans_compare_equa
         assert_series_equal(s1, s2, nans_compare_equal=False, **kwargs)
     with pytest.deprecated_call():
         assert_series_not_equal(s1, s2, nans_compare_equal=False, **kwargs)
-
-
-def test_series_equal_nested_lengths_mismatch():
-    s1 = pl.Series([[1.0, 2.0], [3.0, 4.0]], dtype=pl.List(pl.Float64))
-    s2 = pl.Series([[1.0, 2.0, 3.0], [4.0]], dtype=pl.List(pl.Float64))
-
-    with pytest.raises(AssertionError, match="nested value mismatch"):
-        assert_series_equal(s1, s2)
