@@ -160,7 +160,7 @@ def test_add_duration_3786() -> None:
     ],
 )
 def test_datetime_add_duration_subsecond(
-    dt_time_unit, duration_time_unit, expected_time_unit
+    dt_time_unit: TimeUnit, duration_time_unit: TimeUnit, expected_time_unit: TimeUnit
 ) -> None:
     dt_value = {
         "ms": 123,
