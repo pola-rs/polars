@@ -171,8 +171,8 @@ markdown_extensions:
       dedent_subsections: true
   - footnotes
 
-# hooks:
-#   - docs/_build/scripts/people.py
+hooks:
+  - docs/_build/scripts/people.py
 
 plugins:
   - search:
