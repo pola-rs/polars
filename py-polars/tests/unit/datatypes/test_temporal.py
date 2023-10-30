@@ -84,9 +84,7 @@ def test_fill_null_temporal() -> None:
 
     # fill literals
     dtm_us_fill = dtm_ns_fill = datetime(2023, 12, 31, 23, 59, 59, 999999)
-    dtm_ms_fill = datetime(2023, 12, 31, 23, 59, 59, 999000)
     td_us_fill = timedelta(days=7, seconds=45045, microseconds=123456)
-    td_ms_fill = timedelta(days=7, seconds=45045, microseconds=123000)
     dt_fill = date(2023, 12, 31)
     tm_fill = time(23, 59, 59)
 
@@ -100,13 +98,13 @@ def test_fill_null_temporal() -> None:
         (dtm, dtm_ms, dtm, dtm, dt, tm, td, td, td, td),  # first row (no null values)
         (  # second row (was composed entirely of nulls, now filled-in with literals)
             dtm_us_fill,
-            dtm_ms_fill,
             dtm_us_fill,
-            dtm_ns_fill,
+            dtm_us_fill,
+            dtm_us_fill,
             dt_fill,
             tm_fill,
             td_us_fill,
-            td_ms_fill,
+            td_us_fill,
             td_us_fill,
             td_us_fill,
         ),
