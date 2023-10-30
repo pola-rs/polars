@@ -8,6 +8,8 @@ from polars.datatypes import (
     UNSIGNED_INTEGER_DTYPES,
     Array,
     Categorical,
+    Decimal,
+    Float64,
     Int64,
     List,
     Struct,
@@ -151,6 +153,14 @@ def _assert_series_values_equal(
         if right.dtype == Categorical:
             right = right.cast(Utf8)
 
+    # Handle decimals
+    # TODO: Delete this branch when Decimal equality is implemented
+    # https://github.com/pola-rs/polars/issues/12118
+    if left.dtype == Decimal:
+        left = left.cast(Float64)
+    if right.dtype == Decimal:
+        right = right.cast(Float64)
+
     # Determine unequal elements
     try:
         unequal = left.ne_missing(right)
@@ -170,15 +180,25 @@ def _assert_series_values_equal(
 
     # Check nested dtypes in separate function
     if _comparing_nested_numerics(left.dtype, right.dtype):
-        if _assert_series_nested(
-            left=left.filter(unequal),
-            right=right.filter(unequal),
-            check_exact=check_exact,
-            rtol=rtol,
-            atol=atol,
-            nans_compare_equal=nans_compare_equal,
-            categorical_as_str=categorical_as_str,
-        ):
+        try:
+            _assert_series_nested_values_equal(
+                left=left.filter(unequal),
+                right=right.filter(unequal),
+                check_exact=check_exact,
+                rtol=rtol,
+                atol=atol,
+                nans_compare_equal=nans_compare_equal,
+                categorical_as_str=categorical_as_str,
+            )
+        except AssertionError as exc:
+            raise_assertion_error(
+                "Series",
+                "nested value mismatch",
+                left=left.to_list(),
+                right=right.to_list(),
+                cause=exc,
+            )
+        else:  # All nested values match
             return
 
     # If no differences found during exact checking, we're done
@@ -192,10 +212,7 @@ def _assert_series_values_equal(
         or right.dtype not in NUMERIC_DTYPES
     ):
         raise_assertion_error(
-            "Series",
-            "exact value mismatch",
-            left=left.to_list(),
-            right=right.to_list(),
+            "Series", "exact value mismatch", left=left.to_list(), right=right.to_list()
         )
 
     _assert_series_null_values_match(left, right)
@@ -207,6 +224,47 @@ def _assert_series_values_equal(
         rtol=rtol,
         atol=atol,
     )
+
+
+def _assert_series_nested_values_equal(
+    left: Series,
+    right: Series,
+    *,
+    check_exact: bool,
+    rtol: float,
+    atol: float,
+    nans_compare_equal: bool,
+    categorical_as_str: bool,
+) -> None:
+    # compare nested lists element-wise
+    if _comparing_lists(left.dtype, right.dtype):
+        for s1, s2 in zip(left, right):
+            if s1 is None or s2 is None:
+                raise_assertion_error("Series", "nested value mismatch", s1, s2)
+
+            _assert_series_values_equal(
+                s1,
+                s2,
+                check_exact=check_exact,
+                rtol=rtol,
+                atol=atol,
+                nans_compare_equal=nans_compare_equal,
+                categorical_as_str=categorical_as_str,
+            )
+
+    # unnest structs as series and compare
+    else:
+        ls, rs = left.struct.unnest(), right.struct.unnest()
+        for s1, s2 in zip(ls, rs):
+            _assert_series_values_equal(
+                s1,
+                s2,
+                check_exact=check_exact,
+                rtol=rtol,
+                atol=atol,
+                nans_compare_equal=nans_compare_equal,
+                categorical_as_str=categorical_as_str,
+            )
 
 
 def _assert_series_null_values_match(left: Series, right: Series) -> None:
@@ -240,53 +298,6 @@ def _assert_series_nan_values_match(
             left.to_list(),
             right.to_list(),
         )
-
-
-def _assert_series_nested(
-    left: Series,
-    right: Series,
-    *,
-    check_exact: bool,
-    rtol: float,
-    atol: float,
-    nans_compare_equal: bool,
-    categorical_as_str: bool,
-) -> bool:
-    # compare nested lists element-wise
-    if _comparing_lists(left.dtype, right.dtype):
-        for s1, s2 in zip(left, right):
-            if (s1 is None and s2 is not None) or (s2 is None and s1 is not None):
-                raise_assertion_error("Series", "nested value mismatch", s1, s2)
-
-            _assert_series_values_equal(
-                s1,
-                s2,
-                check_exact=check_exact,
-                rtol=rtol,
-                atol=atol,
-                nans_compare_equal=nans_compare_equal,
-                categorical_as_str=categorical_as_str,
-            )
-        return True
-
-    # unnest structs as series and compare
-    elif _comparing_structs(left.dtype, right.dtype):
-        ls, rs = left.struct.unnest(), right.struct.unnest()
-        for s1, s2 in zip(ls, rs):
-            _assert_series_values_equal(
-                s1,
-                s2,
-                check_exact=check_exact,
-                rtol=rtol,
-                atol=atol,
-                nans_compare_equal=nans_compare_equal,
-                categorical_as_str=categorical_as_str,
-            )
-        return True
-    else:
-        # fall-back to outer codepath (if mismatched dtypes we would expect
-        # the equality check to fail - unless ALL series values are null)
-        return False
 
 
 def _comparing_floats(left: PolarsDataType, right: PolarsDataType) -> bool:
