@@ -1310,7 +1310,35 @@ class Config(contextlib.ContextDecorator):
 
         Examples
         --------
-        >>>
+        >>> from decimal import Decimal as D
+        >>> df = pl.DataFrame(
+        ...     data={"d": [D("1.01"), D("-5.6789")]},
+        ...     schema={"d": pl.Decimal(5)},
+        ... )
+        >>> with pl.Config(trim_decimal_zeros=False):
+        ...     print(df)
+        ...
+        shape: (2, 1)
+        ┌────────────┐
+        │ d          │
+        │ ---        │
+        │ decimal[5] │
+        ╞════════════╡
+        │ 1.01000    │
+        │ -5.67890   │
+        └────────────┘
+        >>> with pl.Config(trim_decimal_zeros=True):
+        ...     print(df)
+        ...
+        shape: (2, 1)
+        ┌────────────┐
+        │ d          │
+        │ ---        │
+        │ decimal[5] │
+        ╞════════════╡
+        │ 1.01       │
+        │ -5.6789    │
+        └────────────┘
 
         """
         _set_trim_decimal_zeros(active)
