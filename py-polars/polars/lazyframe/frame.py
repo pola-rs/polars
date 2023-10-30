@@ -684,7 +684,7 @@ class LazyFrame:
         ...         "bar": [6, 7, 8],
         ...         "ham": ["a", "b", "c"],
         ...     }
-        ... ).select(["foo", "bar"])
+        ... ).select("foo", "bar")
         >>> lf.columns
         ['foo', 'bar']
 

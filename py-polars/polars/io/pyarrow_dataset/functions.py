@@ -56,7 +56,7 @@ def scan_pyarrow_dataset(
     >>> (
     ...     pl.scan_pyarrow_dataset(dset)
     ...     .filter("bools")
-    ...     .select(["bools", "floats", "date"])
+    ...     .select("bools", "floats", "date")
     ...     .collect()
     ... )  # doctest: +SKIP
     shape: (1, 3)
