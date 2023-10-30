@@ -88,6 +88,7 @@ nav:
   - Development:
     - Contributing:
       - development/contributing/index.md
+      - development/contributing/ide.md
       - development/contributing/test.md
       - development/contributing/ci.md
     - development/versioning.md
@@ -169,8 +170,8 @@ markdown_extensions:
       dedent_subsections: true
   - footnotes
 
-hooks:
-  - docs/_build/scripts/people.py
+# hooks:
+#   - docs/_build/scripts/people.py
 
 plugins:
   - search:

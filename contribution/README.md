@@ -12,17 +12,3 @@ let arr: PrimitiveArray = ...
 let dtype: DataType = ...
 let data_type: ArrowDataType = ...
 ```
-
-# Visual Studio Code settings
-
-In case you use Visual Studio Code, the following settings are recommended
-for rust-analyzer to detect all code:
-
-```json
-{
-    "rust-analyzer.cargo.features": "all",
-    "rust-analyzer.linkedProjects": ["py-polars/Cargo.toml"],
-}
-```
-
-You can place this in `.vscode/settings.json` in the repository root.
