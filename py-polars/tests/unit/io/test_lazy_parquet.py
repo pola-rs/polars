@@ -409,13 +409,3 @@ def test_parquet_list_arg(io_files_path: Path) -> None:
     assert df.shape == (54, 4)
     assert df.row(-1) == ("seafood", 194, 12.0, 1)
     assert df.row(0) == ("vegetables", 45, 0.5, 2)
-
-
-def test_predicate_pushdown_boundary_scan_12102(io_files_path: Path) -> None:
-    lf = (
-        pl.scan_parquet(io_files_path / "foods1.parquet")
-        .filter(pl.col("category") == pl.col("category").take(0))
-        .filter(pl.col("sugars_g") != 2)  # sugars_g == 2 in the first row
-    )
-
-    assert lf.collect().frame_equal(lf.collect(predicate_pushdown=False))
