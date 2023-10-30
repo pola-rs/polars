@@ -1118,3 +1118,62 @@ def test_agg_expr() -> None:
     )
 
     assert_frame_equal(df.select(pl.all().mean()), expected)
+
+
+@pytest.mark.parametrize(
+    ("left_time_unit", "right_time_unit", "expected_time_unit"),
+    [
+        ("ms", "ms", "ms"),
+        ("ms", "us", "us"),
+        ("us", "ms", "us"),
+        ("us", "us", "us"),
+        ("ms", "ns", "ns"),
+        ("us", "ns", "ns"),
+        ("ns", "ms", "ns"),
+        ("ns", "us", "ns"),
+        ("ns", "ns", "ns"),
+    ],
+)
+def test_subtract_datetimes_keep_subsecond_precision(
+    left_time_unit: TimeUnit,
+    right_time_unit: TimeUnit,
+    expected_time_unit: TimeUnit,
+) -> None:
+    values = {
+        "ms": 123,
+        "us": 123_456,
+        "ns": 123_456_789,
+    }
+    value_left = values[left_time_unit]
+    value_right = values[right_time_unit]
+
+    df_datetimes = pl.DataFrame(
+        {
+            "left": [f"2020-01-01T00:00:01.{value_left}"],
+            "right": [f"2020-01-01T00:00:00.{value_right}"],
+        }
+    ).select(
+        pl.col("left").str.to_datetime(time_unit=left_time_unit),
+        pl.col("right").str.to_datetime(time_unit=right_time_unit),
+    )
+
+    result = df_datetimes.select((pl.col("left") - pl.col("right")).alias("left-right"))
+
+    assert result["left-right"].dtype == pl.Duration(expected_time_unit)
+
+    multiplier = {
+        "ms": 1_000_000,
+        "us": 1_000,
+        "ns": 1,
+    }
+
+    expected = pl.select(
+        pl.duration(
+            seconds=1,
+            nanoseconds=multiplier[left_time_unit] * value_left
+            - multiplier[right_time_unit] * value_right,
+            time_unit=expected_time_unit,
+        ).alias("left-right")
+    )
+
+    assert_frame_equal(result, expected)
