@@ -127,10 +127,11 @@ def assert_frame_equal(
         left, right = _sort_dataframes(left, right)
 
     for c in left.columns:
+        s_left, s_right = left.get_column(c), right.get_column(c)
         try:
             _assert_series_values_equal(
-                left.get_column(c),
-                right.get_column(c),
+                s_left,
+                s_right,
                 check_exact=check_exact,
                 rtol=rtol,
                 atol=atol,
@@ -138,8 +139,13 @@ def assert_frame_equal(
                 categorical_as_str=categorical_as_str,
             )
         except AssertionError as exc:
-            msg = f"values for column {c!r} are different"
-            raise AssertionError(msg) from exc
+            raise_assertion_error(
+                objects,
+                f"value mismatch for column {c!r}",
+                s_left.to_list(),
+                s_right.to_list(),
+                cause=exc,
+            )
 
 
 def _assert_correct_input_type(

@@ -198,7 +198,7 @@ def test_compare_frame_equal_nans() -> None:
         schema=[("x", pl.Float32), ("y", pl.Float64)],
     )
     assert_frame_not_equal(df1, df2)
-    with pytest.raises(AssertionError, match="values for column 'y' are different"):
+    with pytest.raises(AssertionError, match="value mismatch for column 'y'"):
         assert_frame_equal(df1, df2, check_exact=True)
 
 
@@ -215,7 +215,7 @@ def test_compare_frame_equal_nested_nans() -> None:
         schema=[("x", pl.List(pl.Float32)), ("y", pl.List(pl.Float64))],
     )
     assert_frame_not_equal(df1, df2)
-    with pytest.raises(AssertionError, match="values for column 'y' are different"):
+    with pytest.raises(AssertionError, match="value mismatch for column 'y'"):
         assert_frame_equal(df1, df2, check_exact=True)
 
     # struct dtype
@@ -328,7 +328,7 @@ def test_assert_frame_equal_ignore_row_order() -> None:
     df1 = pl.DataFrame({"a": [1, 2], "b": [4, 3]})
     df2 = pl.DataFrame({"a": [2, 1], "b": [3, 4]})
     df3 = pl.DataFrame({"b": [3, 4], "a": [2, 1]})
-    with pytest.raises(AssertionError, match="values for column 'a' are different"):
+    with pytest.raises(AssertionError, match="value mismatch for column 'a'"):
         assert_frame_equal(df1, df2)
 
     assert_frame_equal(df1, df2, check_row_order=False)

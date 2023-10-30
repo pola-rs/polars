@@ -561,9 +561,26 @@ def test_assert_series_equal_nested_struct_float() -> None:
         assert_series_equal(s1, s2)
 
 
-def test_assert_series_equal_nested_list_full_null() -> None:
+def test_assert_series_equal_full_null_incompatible_dtypes_raises() -> None:
+    s1 = pl.Series([None, None], dtype=pl.Categorical)
+    s2 = pl.Series([None, None], dtype=pl.Int16)
+
+    # You could argue this should pass, but it's rare enough not to warrant the
+    # additional check
+    with pytest.raises(AssertionError, match="incompatible data types"):
+        assert_series_equal(s1, s2, check_dtype=False)
+
+
+def test_assert_series_equal_full_null_nested_list() -> None:
     s = pl.Series([None, None], dtype=pl.List(pl.Float64))
     assert_series_equal(s, s)
+
+
+def test_assert_series_equal_full_null_nested_not_nested() -> None:
+    s1 = pl.Series([None, None], dtype=pl.List(pl.Float64))
+    s2 = pl.Series([None, None], dtype=pl.Float64)
+
+    assert_series_equal(s1, s2, check_dtype=False)
 
 
 def test_assert_series_equal_nested_list_nan() -> None:
@@ -576,13 +593,6 @@ def test_assert_series_equal_nested_list_none() -> None:
     s2 = pl.Series([[1.0, 2.0], None], dtype=pl.List(pl.Float64))
 
     assert_series_equal(s1, s2)
-
-
-def test_assert_series_equal_full_none_nested_not_nested() -> None:
-    s1 = pl.Series([None, None], dtype=pl.List(pl.Float64))
-    s2 = pl.Series([None, None], dtype=pl.Float64)
-
-    assert_series_equal(s1, s2, check_dtype=False)
 
 
 def test_assert_series_equal_unsigned_ints_underflow() -> None:
@@ -755,3 +765,11 @@ def test_assert_series_equal_raises_assertion_error_deprecated_nans_compare_equa
         assert_series_equal(s1, s2, nans_compare_equal=False, **kwargs)
     with pytest.deprecated_call():
         assert_series_not_equal(s1, s2, nans_compare_equal=False, **kwargs)
+
+
+def test_series_equal_nested_lengths_mismatch():
+    s1 = pl.Series([[1.0, 2.0], [3.0, 4.0]], dtype=pl.List(pl.Float64))
+    s2 = pl.Series([[1.0, 2.0, 3.0], [4.0]], dtype=pl.List(pl.Float64))
+
+    with pytest.raises(AssertionError, match="nested value mismatch"):
+        assert_series_equal(s1, s2)
