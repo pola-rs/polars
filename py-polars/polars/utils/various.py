@@ -13,9 +13,12 @@ from typing import TYPE_CHECKING, Any, Generator, Iterable, Literal, Sequence, T
 import polars as pl
 from polars import functions as F
 from polars.datatypes import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
     Boolean,
     Date,
     Datetime,
+    Decimal,
     Duration,
     Int64,
     Time,
@@ -340,6 +343,26 @@ def _cast_repr_strings_with_schema(
             elif tp == Boolean:
                 cast_cols[c] = F.col(c).map_dict(
                     {"true": True, "false": False}, return_dtype=Boolean
+                )
+            elif tp in INTEGER_DTYPES:
+                cast_cols[c] = F.col(c).str.replace_all(r"[^\d+-]", "").cast(tp)
+            elif tp in FLOAT_DTYPES or tp.base_type() == Decimal:
+                # identify integer/fractional parts
+                integer_part = F.col(c).str.replace(r"^(.*)\D(\d*)$", "$1")
+                fractional_part = F.col(c).str.replace(r"^(.*)\D(\d*)$", "$2")
+                cast_cols[c] = (
+                    # check for scientific notation
+                    pl.when(F.col(c).str.contains("[eE]"))
+                    .then(F.col(c).str.replace(r"[^eE\d]", "."))
+                    .otherwise(
+                        # recombine sanitised integer/fractinoal components
+                        pl.concat_str(
+                            integer_part.str.replace_all(r"[^\d+-]", ""),
+                            fractional_part,
+                            separator=".",
+                        )
+                    )
+                    .cast(tp)
                 )
             elif tp != df.schema[c]:
                 cast_cols[c] = F.col(c).cast(tp)
