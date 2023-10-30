@@ -88,7 +88,8 @@ nav:
   - Development:
     - Contributing:
       - development/contributing/index.md
-      - development/contributing/test-suite.md
+      - development/contributing/test.md
+      - development/contributing/ci.md
     - development/versioning.md
 
   - Releases:
