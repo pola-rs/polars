@@ -1603,3 +1603,22 @@ def test_provide_schema() -> None:
         "B": [None, "ragged", None],
         "C": [None, None, None],
     }
+
+
+def test_custom_writeable_object() -> None:
+    df = pl.DataFrame({"a": [10, 20, 30], "b": ["x", "y", "z"]})
+
+    class CustomBuffer:
+        writes: list[bytes]
+
+        def __init__(self) -> None:
+            self.writes = []
+
+        def write(self, data: bytes) -> int:
+            self.writes.append(data)
+            return len(data)
+
+    buf = CustomBuffer()
+    df.write_csv(buf)  # type: ignore[call-overload]
+
+    assert b"".join(buf.writes) == b"a,b\n10,x\n20,y\n30,z\n"
