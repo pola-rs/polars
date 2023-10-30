@@ -307,6 +307,8 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
                 df.write_csv(file=buf)
                 df = read_csv(buf, new_columns=df.columns, try_parse_dates=True)
             return df
+    elif not data:
+        return df.cast(schema)
     else:
         return _cast_repr_strings_with_schema(df, schema)
 
