@@ -1211,11 +1211,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         >>> lf = pl.LazyFrame({"foo": [1, 1, -2, 3]})
         >>> (
-        ...     lf.select(pl.col("foo").cumsum().alias("bar"))
+        ...     lf.with_columns(pl.col("foo").cumsum().alias("bar"))
         ...     .inspect()  # print the node before the filter
         ...     .filter(pl.col("bar") == pl.col("foo"))
         ... )  # doctest: +ELLIPSIS
-        <LazyFrame [1 col, {"bar": Int64}] at ...>
+        <LazyFrame [2 cols, {"foo": Int64, "bar": Int64}] at ...>
 
         """
 
