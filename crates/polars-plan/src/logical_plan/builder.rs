@@ -29,7 +29,7 @@ use polars_io::{
 };
 
 use super::builder_functions::*;
-use crate::dsl::all_horizontal;
+use crate::dsl::functions::horizontal::all_horizontal;
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::projection::{is_regex_projection, rewrite_projections};
 use crate::logical_plan::schema::{det_join_schema, FileInfo};
