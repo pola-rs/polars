@@ -105,7 +105,7 @@ The benchmark is somewhat cumbersome to run locally. You must first generate the
 
 Make sure to install a release build of Polars before running the benchmark to guarantee the best results.
 
-Refer to the [benchmark workflow](/.github/workflows/benchmark.yml) for detailed steps.
+Refer to the [benchmark workflow](https://github.com/pola-rs/polars/blob/main/.github/workflows/benchmark.yml) for detailed steps.
 
 ### Running other benchmark tests
 
