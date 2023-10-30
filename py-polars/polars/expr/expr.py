@@ -3867,8 +3867,8 @@ class Expr:
         ...     }
         ... )
         >>> df.group_by("group_col").agg(
-        ...     lt=pl.col("b").filter(pl.col("b") < 2).sum().alias("lt"),
-        ...     gte=pl.col("b").filter(pl.col("b") >= 2).sum().alias("gte"),
+        ...     lt=pl.col("b").filter(pl.col("b") < 2).sum(),
+        ...     gte=pl.col("b").filter(pl.col("b") >= 2).sum(),
         ... ).sort("group_col")
         shape: (2, 3)
         ┌───────────┬─────┬─────┐
