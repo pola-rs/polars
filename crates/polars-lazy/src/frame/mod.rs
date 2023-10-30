@@ -25,7 +25,6 @@ pub use parquet::*;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_io::RowCount;
-use polars_plan::dsl::all_horizontal;
 pub use polars_plan::frame::{AllowedOptimizations, OptState};
 use polars_plan::global::FETCH_ROWS;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
@@ -1411,19 +1410,9 @@ impl LazyFrame {
     /// `subset` is an optional `Vec` of column names to consider for nulls; if None, all
     /// columns are considered.
     pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> LazyFrame {
-        match subset {
-            None => self.filter(all_horizontal([col("*").is_not_null()]).unwrap()),
-            Some(subset) => {
-                let predicate = all_horizontal(
-                    subset
-                        .into_iter()
-                        .map(|e| e.is_not_null())
-                        .collect::<Vec<_>>(),
-                )
-                .unwrap();
-                self.filter(predicate)
-            },
-        }
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().drop_nulls(subset).build();
+        Self::from_logical_plan(lp, opt_state)
     }
 
     /// Slice the DataFrame using an offset (starting row) and a length.
