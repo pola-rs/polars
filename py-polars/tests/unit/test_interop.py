@@ -912,8 +912,27 @@ def test_dataframe_from_repr() -> None:
         """
         ),
     )
-    assert df.rows() == []
-    assert df.schema == {"misc": pl.Utf8, "other": pl.Utf8}
+    assert_frame_equal(df, pl.DataFrame(schema={"misc": pl.Utf8, "other": pl.Utf8}))
+
+    # empty frame with non-standard/blank 'null'
+    df = cast(
+        pl.DataFrame,
+        pl.from_repr(
+            """
+            ┌─────┬─────┐
+            │ c1  ┆ c2  │
+            │ --- ┆ --- │
+            │ i32 ┆ f64 │
+            ╞═════╪═════╡
+            │     │     │
+            └─────┴─────┘
+            """
+        ),
+    )
+    assert_frame_equal(
+        df,
+        pl.DataFrame(data=[(None, None)], schema={"c1": pl.Int32, "c2": pl.Float64}),
+    )
 
     df = cast(
         pl.DataFrame,
