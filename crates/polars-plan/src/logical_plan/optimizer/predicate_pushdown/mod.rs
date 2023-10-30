@@ -191,15 +191,25 @@ impl<'a> PredicatePushDown<'a> {
 
         match lp {
             Selection { predicate, input } => {
+                // Correctness: It is maintained that acc_predicates does not have
+                // boundary predicates at this point.
+                insert_and_combine_predicate(&mut acc_predicates, predicate, expr_arena);
 
-                // Stop pushdown at boundary
-                let local_predicates = if acc_predicates.values().any(|node| predicate_is_pushdown_boundary(*node, expr_arena)) {
-                    acc_predicates.drain().map(|(_, node)| node).collect::<Vec<_>>()
+                // If a predicates result is influenced by predicates occurring
+                // before it, then it and all accumulated predicates must be
+                // blocked at this level.
+                let local_predicates = if acc_predicates
+                    .values()
+                    .any(|node| predicate_is_pushdown_boundary(*node, expr_arena))
+                {
+                    acc_predicates
+                        .drain()
+                        .map(|(_, node)| node)
+                        .collect::<Vec<_>>()
                 } else {
                     vec![]
                 };
 
-                insert_and_combine_predicate(&mut acc_predicates, predicate, expr_arena);
                 let alp = lp_arena.take(input);
                 let new_input = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
 
