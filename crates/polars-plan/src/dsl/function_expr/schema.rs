@@ -24,12 +24,7 @@ impl FunctionExpr {
             SearchSorted(_) => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "strings")]
             StringExpr(s) => s.get_field(mapper),
-            BinaryExpr(s) => {
-                use BinaryFunction::*;
-                match s {
-                    Contains { .. } | EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
-                }
-            },
+            BinaryExpr(s) => s.get_field(mapper),
             #[cfg(feature = "temporal")]
             TemporalExpr(fun) => fun.get_field(mapper),
             #[cfg(feature = "range")]
