@@ -2,11 +2,11 @@ use polars_core::prelude::arity::{binary_elementwise, ternary_elementwise};
 
 use crate::chunked_array::{Int64Chunked, UInt64Chunked, Utf8Chunked};
 
-fn utf8_substring_ternary<'a>(
-    opt_str_val: Option<&'a str>,
+fn utf8_substring_ternary(
+    opt_str_val: Option<&str>,
     opt_offset: Option<i64>,
     opt_length: Option<u64>,
-) -> Option<&'a str> {
+) -> Option<&str> {
     match (opt_str_val, opt_offset) {
         (Some(str_val), Some(offset)) => {
             // if `offset` is negative, it counts from the end of the string
