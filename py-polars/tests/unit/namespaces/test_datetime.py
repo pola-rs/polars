@@ -1139,38 +1139,31 @@ def test_subtract_datetimes_keep_subsecond_precision(
     right_time_unit: TimeUnit,
     expected_time_unit: TimeUnit,
 ) -> None:
-    values = {
-        "ms": 123,
-        "us": 123_456,
-        "ns": 123_456_789,
+    values_map = {
+        "ms": (123, 123 * 1_000_000),
+        "us": (123_456, 123_456 * 1_000),
+        "ns": (123_456_789, 123_456_789),
     }
-    value_left = values[left_time_unit]
-    value_right = values[right_time_unit]
+    literal_left, nanoseconds_left = values_map[left_time_unit]
+    literal_right, nanoseconds_right = values_map[right_time_unit]
 
     df_datetimes = pl.DataFrame(
         {
-            "left": [f"2020-01-01T00:00:01.{value_left}"],
-            "right": [f"2020-01-01T00:00:00.{value_right}"],
+            "left": [f"2020-01-01T00:00:01.{literal_left}"],
+            "right": [f"2020-01-01T00:00:00.{literal_right}"],
         }
     ).select(
         pl.col("left").str.to_datetime(time_unit=left_time_unit),
         pl.col("right").str.to_datetime(time_unit=right_time_unit),
     )
 
-    result = df_datetimes.select((pl.col("left") - pl.col("right")).alias("left-right"))
+    result_df = df_datetimes.select(
+        (pl.col("left") - pl.col("right")).alias("left-right")
+    )
 
-    assert result["left-right"].dtype == pl.Duration(expected_time_unit)
+    assert result_df["left-right"].dtype == pl.Duration(expected_time_unit)
 
-    multipliers = {
-        "ms": 1_000_000,
-        "us": 1_000,
-        "ns": 1,
-    }
-
-    nanoseconds_left = multipliers[left_time_unit] * value_left
-    nanoseconds_right = multipliers[right_time_unit] * value_right
-
-    expected = pl.select(
+    expected_df = pl.select(
         pl.duration(
             seconds=1,
             nanoseconds=nanoseconds_left - nanoseconds_right,
@@ -1178,4 +1171,4 @@ def test_subtract_datetimes_keep_subsecond_precision(
         ).alias("left-right")
     )
 
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result_df, expected_df)
