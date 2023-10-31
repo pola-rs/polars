@@ -88,6 +88,7 @@ from polars.utils.deprecation import (
     deprecate_nonkeyword_arguments,
     deprecate_renamed_function,
     deprecate_renamed_parameter,
+    issue_deprecation_warning,
 )
 from polars.utils.various import (
     _prepare_row_count_args,
@@ -1915,14 +1916,14 @@ class DataFrame:
     @overload
     def to_dict(
         self,
-        as_series: bool,  # noqa: FBT001
+        as_series: bool | None,
     ) -> dict[str, Series] | dict[str, list[Any]]:
         ...
 
     @deprecate_nonkeyword_arguments(version="0.19.13")
     def to_dict(
         self,
-        as_series: bool = True,  # noqa: FBT001
+        as_series: bool | None = None,
     ) -> dict[str, Series] | dict[str, list[Any]]:
         """
         Convert DataFrame to a dictionary mapping column name to values.
@@ -2007,6 +2008,14 @@ class DataFrame:
         ]}
 
         """
+        if as_series is None:
+            issue_deprecation_warning(
+                "The default value for the `as_series` parameter of `DataFrame.to_dict` will be changed to `False`."
+                " Pass `as_series=True` to keep current behavior and silence this warning.",
+                version="0.19.13",
+            )
+            as_series = True
+
         if as_series:
             return {s.name: s for s in self}
         else:
