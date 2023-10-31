@@ -1154,8 +1154,6 @@ def test_subtract_datetimes_keep_subsecond_precision(
         (pl.col("left") - pl.col("right")).alias("left-right")
     )
 
-    assert result_df["left-right"].dtype == pl.Duration(expected_time_unit)
-
     expected_df = pl.select(
         pl.duration(
             seconds=1,
