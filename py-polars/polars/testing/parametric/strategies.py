@@ -95,7 +95,7 @@ strategy_u64 = integers(min_value=0, max_value=(2**64) - 1)
 
 strategy_categorical = text(max_size=2, alphabet=ascii_uppercase)
 strategy_utf8 = text(
-    alphabet=characters(max_codepoint=1000, blacklist_categories=["Cs", "Cc"]),
+    alphabet=characters(max_codepoint=1000, exclude_categories=["Cs", "Cc"]),
     max_size=8,
 )
 strategy_binary = binary()
