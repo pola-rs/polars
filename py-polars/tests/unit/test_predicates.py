@@ -253,3 +253,15 @@ def test_predicate_pushdown_boundary_12102() -> None:
     )
 
     assert lf.collect().frame_equal(lf.collect(predicate_pushdown=False))
+
+
+def test_take_can_block_predicate_pushdown() -> None:
+    df = pl.DataFrame({"x": [1, 2, 4], "y": [False, True, True]})
+
+    lf = (
+        df.lazy()
+        .filter(pl.col("y"))
+        .filter(pl.col("x") == pl.col("x").take(0))
+        .filter(pl.col("y"))
+    )
+    assert lf.collect(predicate_pushdown=True).to_dict(False) == {"x": [2], "y": [True]}

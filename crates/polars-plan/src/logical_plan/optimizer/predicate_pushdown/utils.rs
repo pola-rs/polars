@@ -117,6 +117,7 @@ pub(super) fn predicate_is_pushdown_boundary(node: Node, expr_arena: &Arena<AExp
         matches!(
             e,
             AExpr::Sort { .. } | AExpr::SortBy { .. }
+            | AExpr::Take{..} // A take needs all rows
             | AExpr::Agg(_) // an aggregation needs all rows
             // Apply groups can be something like shift, sort, or an aggregation like skew
             // both need all values
