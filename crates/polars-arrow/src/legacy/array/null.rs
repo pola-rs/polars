@@ -4,7 +4,7 @@ use crate::array::{Array, MutableArray, NullArray};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct MutableNullArray {
     len: usize,
 }
@@ -48,6 +48,10 @@ impl MutableArray for MutableNullArray {
 }
 
 impl MutableNullArray {
+    pub fn new(len: usize) -> Self {
+        MutableNullArray { len }
+    }
+
     pub fn extend_nulls(&mut self, null_count: usize) {
         self.len += null_count;
     }

@@ -61,7 +61,6 @@ impl PyDataFrame {
         // Replace inferred nulls with boolean and erase scale from inferred decimals.
         for dtype in final_schema.iter_dtypes_mut() {
             match dtype {
-                DataType::Null => *dtype = DataType::Boolean,
                 DataType::Decimal(_, _) => *dtype = DataType::Decimal(None, None),
                 _ => (),
             }
