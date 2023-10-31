@@ -4,7 +4,7 @@ import os
 from datetime import datetime, timedelta
 from itertools import chain
 from random import choice, shuffle
-from string import ascii_letters, ascii_uppercase, digits, punctuation
+from string import ascii_uppercase
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -93,7 +93,6 @@ strategy_u16 = integers(min_value=0, max_value=(2**16) - 1)
 strategy_u32 = integers(min_value=0, max_value=(2**32) - 1)
 strategy_u64 = integers(min_value=0, max_value=(2**64) - 1)
 
-strategy_ascii = text(max_size=8, alphabet=ascii_letters + digits + punctuation)
 strategy_categorical = text(max_size=2, alphabet=ascii_uppercase)
 strategy_utf8 = text(
     alphabet=characters(max_codepoint=1000, blacklist_categories=["Cs", "Cc"]),
