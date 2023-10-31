@@ -445,7 +445,7 @@ fn handle_temporal_parsing_error(
     }
     polars_bail!(
         ComputeError:
-        "strict {} parsing failed for {} value(s) (first 3 failures: {})\n\
+        "strict {} parsing failed for {} value(s) (first few failures: {})\n\
         \n\
         You might want to try:\n\
         - setting `strict=False`\n\
