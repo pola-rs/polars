@@ -2,7 +2,7 @@
 render_macros: false
 ---
 
-# Contributing
+# Overview
 
 Thanks for taking the time to contribute! We appreciate all contributions, from reporting bugs to implementing new features.
 If you're unclear on how to proceed after reading this guide, please contact us on [Discord](https://discord.gg/4UfP5cfBE7).

@@ -2441,7 +2441,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Cast all frame columns to the specified dtype:
 
-        >>> lf.cast(pl.Utf8).collect().to_dict(False)
+        >>> lf.cast(pl.Utf8).collect().to_dict(as_series=False)
         {'foo': ['1', '2', '3'],
          'bar': ['6.0', '7.0', '8.0'],
          'ham': ['2020-01-02', '2021-03-04', '2022-05-06']}

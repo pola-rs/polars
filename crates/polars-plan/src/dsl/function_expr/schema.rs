@@ -24,12 +24,7 @@ impl FunctionExpr {
             SearchSorted(_) => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "strings")]
             StringExpr(s) => s.get_field(mapper),
-            BinaryExpr(s) => {
-                use BinaryFunction::*;
-                match s {
-                    Contains { .. } | EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
-                }
-            },
+            BinaryExpr(s) => s.get_field(mapper),
             #[cfg(feature = "temporal")]
             TemporalExpr(fun) => fun.get_field(mapper),
             #[cfg(feature = "range")]
@@ -74,14 +69,14 @@ impl FunctionExpr {
                     Sample { .. } => mapper.with_same_dtype(),
                     Slice => mapper.with_same_dtype(),
                     Shift => mapper.with_same_dtype(),
-                    Get => mapper.map_to_list_inner_dtype(),
+                    Get => mapper.map_to_list_and_array_inner_dtype(),
                     #[cfg(feature = "list_take")]
                     Take(_) => mapper.with_same_dtype(),
                     #[cfg(feature = "list_count")]
                     CountMatches => mapper.with_dtype(IDX_DTYPE),
                     Sum => mapper.nested_sum_type(),
-                    Min => mapper.map_to_list_inner_dtype(),
-                    Max => mapper.map_to_list_inner_dtype(),
+                    Min => mapper.map_to_list_and_array_inner_dtype(),
+                    Max => mapper.map_to_list_and_array_inner_dtype(),
                     Mean => mapper.with_dtype(DataType::Float64),
                     ArgMin => mapper.with_dtype(IDX_DTYPE),
                     ArgMax => mapper.with_dtype(IDX_DTYPE),
@@ -104,7 +99,7 @@ impl FunctionExpr {
             ArrayExpr(af) => {
                 use ArrayFunction::*;
                 match af {
-                    Min | Max => mapper.with_same_dtype(),
+                    Min | Max => mapper.map_to_list_and_array_inner_dtype(),
                     Sum => mapper.nested_sum_type(),
                     Unique(_) => mapper.try_map_dtype(|dt| {
                         if let DataType::Array(inner, _) = dt {
@@ -387,8 +382,8 @@ impl<'a> FieldsMapper<'a> {
         Ok(first)
     }
 
-    /// Map the dtype to the dtype of the list elements.
-    pub fn map_to_list_inner_dtype(&self) -> PolarsResult<Field> {
+    /// Map the dtype to the dtype of the list/array elements.
+    pub fn map_to_list_and_array_inner_dtype(&self) -> PolarsResult<Field> {
         let mut first = self.fields[0].clone();
         let dt = first
             .data_type()

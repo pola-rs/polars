@@ -410,12 +410,12 @@ def binary() -> SelectorType:
 
     Select binary columns and export as a dict:
 
-    >>> df.select(cs.binary()).to_dict(False)
+    >>> df.select(cs.binary()).to_dict(as_series=False)
     {'a': [b'hello'], 'c': [b'!']}
 
     Select all columns *except* for those that are binary:
 
-    >>> df.select(~cs.binary()).to_dict(False)
+    >>> df.select(~cs.binary()).to_dict(as_series=False)
     {'b': ['world'], 'd': [':)']}
 
     """
@@ -1663,7 +1663,7 @@ def object() -> SelectorType:
 
     Select object columns and export as a dict:
 
-    >>> df.select(cs.object()).to_dict(False)  # doctest: +IGNORE_RESULT
+    >>> df.select(cs.object()).to_dict(as_series=False)  # doctest: +IGNORE_RESULT
     {
         "uuid_obj": [
             UUID("6be063cf-c9c6-43be-878e-e446cfd42981"),

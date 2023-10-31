@@ -242,7 +242,7 @@ def test_list_eval_expression() -> None:
             pl.concat_list(["a", "b"])
             .list.eval(pl.first().rank(), parallel=parallel)
             .alias("rank")
-        ).to_dict(False) == {
+        ).to_dict(as_series=False) == {
             "a": [1, 8, 3],
             "b": [4, 5, 2],
             "rank": [[1.0, 2.0], [2.0, 1.0], [2.0, 1.0]],
@@ -256,7 +256,10 @@ def test_list_eval_expression() -> None:
 def test_null_count_expr() -> None:
     df = pl.DataFrame({"key": ["a", "b", "b", "a"], "val": [1, 2, None, 1]})
 
-    assert df.select([pl.all().null_count()]).to_dict(False) == {"key": [0], "val": [1]}
+    assert df.select([pl.all().null_count()]).to_dict(as_series=False) == {
+        "key": [0],
+        "val": [1],
+    }
 
 
 def test_pos_neg() -> None:
@@ -268,7 +271,7 @@ def test_pos_neg() -> None:
     ).with_columns(-pl.col("x"), +pl.col("y"), -pl.lit(1))
 
     # #11149: ensure that we preserve the output name (where available)
-    assert df.to_dict(False) == {
+    assert df.to_dict(as_series=False) == {
         "x": [-3, -2, -1],
         "y": [6, 7, 8],
         "literal": [-1, -1, -1],
@@ -331,7 +334,7 @@ def test_arr_contains() -> None:
     )
     assert df_groups.lazy().filter(
         pl.col("str_list").list.contains("cat")
-    ).collect().to_dict(False) == {
+    ).collect().to_dict(as_series=False) == {
         "str_list": [["cat", "mouse", "dog"], ["dog", "mouse", "cat"]]
     }
 
@@ -367,7 +370,7 @@ def test_rank_so_4109() -> None:
             pl.col("rank").rank(method="dense").alias("dense"),
             pl.col("rank").rank(method="average").alias("average"),
         ]
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "id": [1, 2, 3, 4],
         "original": [[None, 2, 3, 4], [1, 2, 3, 4], [None, 1, 3, 4], [None, 1, 3, 4]],
         "dense": [[None, 1, 2, 3], [1, 2, 3, 4], [None, 1, 2, 3], [None, 1, 2, 3]],
@@ -964,18 +967,26 @@ def test_operators_vs_expressions() -> None:
 
 def test_head() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
-    assert df.select(pl.col("a").head(0)).to_dict(False) == {"a": []}
-    assert df.select(pl.col("a").head(3)).to_dict(False) == {"a": [1, 2, 3]}
-    assert df.select(pl.col("a").head(10)).to_dict(False) == {"a": [1, 2, 3, 4, 5]}
-    assert df.select(pl.col("a").head(pl.count() / 2)).to_dict(False) == {"a": [1, 2]}
+    assert df.select(pl.col("a").head(0)).to_dict(as_series=False) == {"a": []}
+    assert df.select(pl.col("a").head(3)).to_dict(as_series=False) == {"a": [1, 2, 3]}
+    assert df.select(pl.col("a").head(10)).to_dict(as_series=False) == {
+        "a": [1, 2, 3, 4, 5]
+    }
+    assert df.select(pl.col("a").head(pl.count() / 2)).to_dict(as_series=False) == {
+        "a": [1, 2]
+    }
 
 
 def test_tail() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
-    assert df.select(pl.col("a").tail(0)).to_dict(False) == {"a": []}
-    assert df.select(pl.col("a").tail(3)).to_dict(False) == {"a": [3, 4, 5]}
-    assert df.select(pl.col("a").tail(10)).to_dict(False) == {"a": [1, 2, 3, 4, 5]}
-    assert df.select(pl.col("a").tail(pl.count() / 2)).to_dict(False) == {"a": [4, 5]}
+    assert df.select(pl.col("a").tail(0)).to_dict(as_series=False) == {"a": []}
+    assert df.select(pl.col("a").tail(3)).to_dict(as_series=False) == {"a": [3, 4, 5]}
+    assert df.select(pl.col("a").tail(10)).to_dict(as_series=False) == {
+        "a": [1, 2, 3, 4, 5]
+    }
+    assert df.select(pl.col("a").tail(pl.count() / 2)).to_dict(as_series=False) == {
+        "a": [4, 5]
+    }
 
 
 @pytest.mark.parametrize(

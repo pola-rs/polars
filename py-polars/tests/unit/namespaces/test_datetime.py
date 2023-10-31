@@ -565,7 +565,7 @@ def test_date_time_combine(tzinfo: ZoneInfo | None, time_zone: str | None) -> No
             datetime(2022, 7, 5, 4, 5, 6),
         ],
     }
-    assert df.to_dict(False) == expected_dict
+    assert df.to_dict(as_series=False) == expected_dict
 
     expected_schema = {
         "d1": pl.Datetime("us", time_zone),
@@ -735,7 +735,7 @@ def test_offset_by_broadcasting() -> None:
         ],
         "d5": [None, None, None, None],
     }
-    assert result.to_dict(False) == expected_dict
+    assert result.to_dict(as_series=False) == expected_dict
 
     # test broadcast rhs
     df = pl.DataFrame({"dt": [datetime(2020, 10, 25), datetime(2021, 1, 2), None]})
@@ -757,11 +757,11 @@ def test_offset_by_broadcasting() -> None:
         ],
         "d4": [datetime(2021, 11, 26).date(), datetime(2022, 2, 3).date(), None],
     }
-    assert result.to_dict(False) == expected_dict
+    assert result.to_dict(as_series=False) == expected_dict
 
     # test all literal
     result = df.select(d=pl.lit(datetime(2021, 11, 26)).dt.offset_by("1mo1d"))
-    assert result.to_dict(False) == {"d": [datetime(2021, 12, 27)]}
+    assert result.to_dict(as_series=False) == {"d": [datetime(2021, 12, 27)]}
 
 
 def test_offset_by_expressions() -> None:

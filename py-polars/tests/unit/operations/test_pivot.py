@@ -125,13 +125,17 @@ def test_pivot_categorical_3968() -> None:
         }
     )
 
-    assert df.with_columns(pl.col("baz").cast(str).cast(pl.Categorical)).to_dict(
-        False
-    ) == {
-        "foo": ["one", "one", "one", "two", "two", "two"],
-        "bar": ["A", "B", "C", "A", "B", "C"],
-        "baz": ["1", "2", "3", "4", "5", "6"],
-    }
+    result = df.with_columns(pl.col("baz").cast(str).cast(pl.Categorical))
+
+    expected = pl.DataFrame(
+        {
+            "foo": ["one", "one", "one", "two", "two", "two"],
+            "bar": ["A", "B", "C", "A", "B", "C"],
+            "baz": ["1", "2", "3", "4", "5", "6"],
+        },
+        schema_overrides={"baz": pl.Categorical},
+    )
+    assert_frame_equal(result, expected, categorical_as_str=True)
 
 
 def test_pivot_categorical_index() -> None:
@@ -142,13 +146,13 @@ def test_pivot_categorical_index() -> None:
 
     result = df.pivot(values="B", index=["A"], columns="B", aggregate_function="count")
     expected = {"A": ["Fire", "Water"], "Car": [1, 2], "Ship": [1, None]}
-    assert result.to_dict(False) == expected
+    assert result.to_dict(as_series=False) == expected
 
     # test expression dispatch
     result = df.pivot(
         index=["A"], columns="B", values="B", aggregate_function=pl.count()
     )
-    assert result.to_dict(False) == expected
+    assert result.to_dict(as_series=False) == expected
 
     df = pl.DataFrame(
         {
@@ -167,7 +171,7 @@ def test_pivot_categorical_index() -> None:
         "Car": [1, 2],
         "Ship": [1, None],
     }
-    assert result.to_dict(False) == expected
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_pivot_multiple_values_column_names_5116() -> None:
@@ -203,7 +207,7 @@ def test_pivot_multiple_values_column_names_5116() -> None:
         "x2|c2|C": [8, 7],
         "x2|c2|D": [6, 5],
     }
-    assert result.to_dict(False) == expected
+    assert result.to_dict(as_series=False) == expected
 
     # test using remaining columns as values by default
     result = df.pivot(
@@ -212,7 +216,7 @@ def test_pivot_multiple_values_column_names_5116() -> None:
         separator="|",
         aggregate_function="first",
     )
-    assert result.to_dict(False) == expected
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_pivot_duplicate_names_7731() -> None:
@@ -230,7 +234,7 @@ def test_pivot_duplicate_names_7731() -> None:
         columns=cs.string(),
         values=cs.integer(),
         aggregate_function="first",
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "b": [1.5, 2.5],
         "a_c_x": [1, 4],
         "d_c_x": [7, 8],
@@ -265,7 +269,7 @@ def test_pivot_floats() -> None:
         "5.0": [2.0, None, None],
         "7.5": [6.0, None, None],
     }
-    assert result.to_dict(False) == expected
+    assert result.to_dict(as_series=False) == expected
 
     result = df.pivot(
         index=["article", "weight"],
@@ -280,7 +284,7 @@ def test_pivot_floats() -> None:
         "5.0": [2.0, None, None, None],
         "7.5": [None, None, 6.0, None],
     }
-    assert result.to_dict(False) == expected
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_pivot_reinterpret_5907() -> None:
@@ -296,7 +300,7 @@ def test_pivot_reinterpret_5907() -> None:
         index=["A"], values=["C"], columns=["B"], aggregate_function=pl.element().sum()
     )
     expected = {"A": [3, -2], "x": [100, 50], "y": [500, -80]}
-    assert result.to_dict(False) == expected
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_pivot_subclassed_df() -> None:
@@ -320,7 +324,7 @@ def test_pivot_temporal_logical_types() -> None:
     )
     assert df.pivot(
         index="idx", columns="foo", values="value", aggregate_function=None
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "idx": [
             datetime(1977, 1, 1, 0, 0),
             datetime(1978, 1, 1, 0, 0),
@@ -345,7 +349,7 @@ def test_pivot_negative_duration() -> None:
     )
     assert df.pivot(
         index="delta", columns="root", values="value", aggregate_function=None
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "delta": [
             timedelta(days=-2),
             timedelta(days=-1),
@@ -376,7 +380,7 @@ def test_pivot_struct() -> None:
 
     assert df.pivot(
         index="id", columns="week", values="nums", aggregate_function="first"
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "id": ["a", "b", "c"],
         "1": [
             {"num1": 1, "num2": 4},

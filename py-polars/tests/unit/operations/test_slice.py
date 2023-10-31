@@ -13,7 +13,7 @@ def test_tail_union() -> None:
         )
         .tail(1)
         .collect()
-    ).to_dict(False) == {"a": [6]}
+    ).to_dict(as_series=False) == {"a": [6]}
 
 
 def test_python_slicing_data_frame() -> None:

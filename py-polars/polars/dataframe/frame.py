@@ -1919,7 +1919,7 @@ class DataFrame:
     ) -> dict[str, Series] | dict[str, list[Any]]:
         ...
 
-    # TODO: Make `as_series` keyword-only
+    @deprecate_nonkeyword_arguments(version="0.19.13")
     def to_dict(
         self,
         as_series: bool = True,  # noqa: FBT001
@@ -6489,7 +6489,7 @@ class DataFrame:
 
         Cast all frame columns to the specified dtype:
 
-        >>> df.cast(pl.Utf8).to_dict(False)
+        >>> df.cast(pl.Utf8).to_dict(as_series=False)
         {'foo': ['1', '2', '3'],
          'bar': ['6.0', '7.0', '8.0'],
          'ham': ['2020-01-02', '2021-03-04', '2022-05-06']}

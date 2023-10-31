@@ -373,7 +373,7 @@ def test_cached_windows_sync_8803() -> None:
             b=pl.col("is_valid").sum().gt(0).over("id"),
         )
         .sum()
-    ).to_dict(False) == {"id": [28], "is_valid": [1], "a": [3], "b": [3]}
+    ).to_dict(as_series=False) == {"id": [28], "is_valid": [1], "a": [3], "b": [3]}
 
 
 def test_window_filtered_aggregation() -> None:
@@ -423,4 +423,4 @@ def test_window_10417() -> None:
             pl.col("b") - pl.col("b").mean().over("a"),
             pl.col("c") - pl.col("c").mean().over("a"),
         ]
-    ).collect().to_dict(False) == {"a": [1], "b": [0.0], "c": [0.0]}
+    ).collect().to_dict(as_series=False) == {"a": [1], "b": [0.0], "c": [0.0]}

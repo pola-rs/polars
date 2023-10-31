@@ -10,6 +10,31 @@ def test_arr_min_max() -> None:
     assert s.arr.min().to_list() == [1, 3]
 
 
+def test_array_min_max_dtype_12123() -> None:
+    df = pl.LazyFrame(
+        [pl.Series("a", [[1.0, 3.0], [2.0, 5.0]]), pl.Series("b", [1.0, 2.0])],
+        schema_overrides={
+            "a": pl.Array(inner=pl.Float64, width=2),
+        },
+    )
+
+    df = df.with_columns(
+        max=pl.col("a").arr.max().alias("max"),
+        min=pl.col("a").arr.min().alias("min"),
+    )
+
+    assert df.schema == {
+        "a": pl.Array(inner=pl.Float64, width=2),
+        "b": pl.Float64,
+        "max": pl.Float64,
+        "min": pl.Float64,
+    }
+
+    out = df.select(pl.col("max") * pl.col("b"), pl.col("min") * pl.col("b")).collect()
+
+    assert_frame_equal(out, pl.DataFrame({"max": [3.0, 10.0], "min": [1.0, 4.0]}))
+
+
 def test_arr_sum() -> None:
     s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(inner=pl.Int64, width=2))
     assert s.arr.sum().to_list() == [3, 7]

@@ -101,7 +101,7 @@ def test_date_range_lazy_with_expressions(
 
     result_df = df.with_columns(pl.date_ranges(low, high, interval="1d").alias("dts"))
 
-    assert result_df.to_dict(False) == {
+    assert result_df.to_dict(as_series=False) == {
         "start": [date(2000, 1, 1), date(2022, 6, 1)],
         "stop": [date(2000, 1, 2), date(2022, 6, 2)],
         "dts": [
