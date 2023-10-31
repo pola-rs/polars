@@ -427,9 +427,8 @@ fn handle_temporal_parsing_error(
 ) -> PolarsResult<()> {
     let failure_mask = !ca.is_null() & out.is_null();
     let all_failures = ca.filter(&failure_mask)?;
-    let first_failures = all_failures.unique()?.slice(0, 10).sort(false);
+    let first_failures = all_failures.slice(0, 3);
     let n_failures = all_failures.len();
-    let n_failures_unique = all_failures.n_unique()?;
     let exact_addendum = if has_non_exact_option {
         "- setting `exact=False` (note: this is much slower!)\n"
     } else {
@@ -446,7 +445,7 @@ fn handle_temporal_parsing_error(
     }
     polars_bail!(
         ComputeError:
-        "strict {} parsing failed for {} value(s) ({} unique): {}\n\
+        "strict {} parsing failed for {} value(s) (first few failures: {})\n\
         \n\
         You might want to try:\n\
         - setting `strict=False`\n\
@@ -454,7 +453,6 @@ fn handle_temporal_parsing_error(
         {}",
         out.dtype(),
         n_failures,
-        n_failures_unique,
         first_failures.into_series().fmt_list(),
         exact_addendum,
         format_addendum,
