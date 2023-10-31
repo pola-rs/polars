@@ -494,5 +494,9 @@ def test_selector_or() -> None:
         }
     ).with_row_count("rn")
 
-    out = df.select(cs.by_name("rn") | ~cs.numeric())
-    assert out.to_dict(False) == {"rn": [0, 1, 2], "str": ["x", "y", "z"]}
+    result = df.select(cs.by_name("rn") | ~cs.numeric())
+
+    expected = pl.DataFrame(
+        {"rn": [0, 1, 2], "str": ["x", "y", "z"]}, schema_overrides={"rn": pl.UInt32}
+    )
+    assert_frame_equal(result, expected)
