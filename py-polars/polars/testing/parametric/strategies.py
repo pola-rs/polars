@@ -17,6 +17,7 @@ from typing import (
 
 from hypothesis.strategies import (
     SearchStrategy,
+    binary,
     booleans,
     characters,
     composite,
@@ -35,6 +36,7 @@ from hypothesis.strategies import (
 )
 
 from polars.datatypes import (
+    Binary,
     Boolean,
     Categorical,
     Date,
@@ -97,6 +99,7 @@ strategy_utf8 = text(
     alphabet=characters(max_codepoint=1000, blacklist_categories=["Cs", "Cc"]),
     max_size=8,
 )
+strategy_binary = binary()
 strategy_datetime_ns = datetimes(
     min_value=datetime(1677, 9, 22, 0, 12, 43, 145225),
     max_value=datetime(2262, 4, 11, 23, 47, 16, 854775),
@@ -272,6 +275,7 @@ scalar_strategies: StrategyLookup = StrategyLookup(
         Duration: strategy_duration,
         Categorical: strategy_categorical,
         Utf8: strategy_utf8,
+        Binary: strategy_binary,
     }
 )
 nested_strategies: StrategyLookup = StrategyLookup()
