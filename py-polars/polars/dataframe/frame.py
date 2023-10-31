@@ -1919,7 +1919,7 @@ class DataFrame:
     ) -> dict[str, Series] | dict[str, list[Any]]:
         ...
 
-    # TODO: Make `as_series` keyword-only
+    @deprecate_nonkeyword_arguments(version="0.19.13")
     def to_dict(
         self,
         as_series: bool = True,  # noqa: FBT001
