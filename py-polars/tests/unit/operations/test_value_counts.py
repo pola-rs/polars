@@ -47,7 +47,7 @@ def test_value_counts_expr() -> None:
 
     assert df.group_by("session").agg(
         pl.col("id").value_counts(sort=True).first()
-    ).to_dict(False) == {"session": [1], "id": [{"id": 2, "counts": 2}]}
+    ).to_dict(as_series=False) == {"session": [1], "id": [{"id": 2, "counts": 2}]}
 
 
 def test_value_counts_duplicate_name() -> None:

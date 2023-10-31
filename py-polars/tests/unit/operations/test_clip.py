@@ -23,7 +23,7 @@ def test_clip() -> None:
         }
     )
 
-    assert df.select(clip_exprs).to_dict(False) == {
+    assert df.select(clip_exprs).to_dict(as_series=False) == {
         "clip": [1, 1, 4, None, None],
         "clip_min": [1, 2, 4, None, 5],
         "clip_max": [1, 1, 3, 4, None],
@@ -37,7 +37,7 @@ def test_clip() -> None:
         }
     )
 
-    assert df.select(clip_exprs).to_dict(False) == {
+    assert df.select(clip_exprs).to_dict(as_series=False) == {
         "clip": [1.0, 1.0, 4.0, None, None],
         "clip_min": [1.0, 2.0, 4.0, None, 5.0],
         "clip_max": [1.0, 1.0, 3.0, 4.0, None],
@@ -72,7 +72,7 @@ def test_clip() -> None:
         }
     )
 
-    assert df.select(clip_exprs).to_dict(False) == {
+    assert df.select(clip_exprs).to_dict(as_series=False) == {
         "clip": [
             datetime(1995, 6, 5, 10, 30),
             datetime(1996, 6, 5),

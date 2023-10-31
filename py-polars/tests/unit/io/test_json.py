@@ -140,9 +140,9 @@ def test_write_ndjson_with_trailing_newline() -> None:
 
 
 def test_read_ndjson_empty_array() -> None:
-    assert pl.read_ndjson(io.StringIO("""{"foo": {"bar": []}}""")).to_dict(False) == {
-        "foo": [{"": None}]
-    }
+    assert pl.read_ndjson(io.StringIO("""{"foo": {"bar": []}}""")).to_dict(
+        as_series=False
+    ) == {"foo": [{"": None}]}
 
 
 def test_ndjson_nested_null() -> None:
@@ -152,12 +152,12 @@ def test_ndjson_nested_null() -> None:
     # 'bar' represents an empty list of structs; check the schema is correct (eg: picks
     # up that it IS a list of structs), but confirm that list is empty (ref: #11301)
     assert df.schema == {"foo": pl.Struct([pl.Field("bar", pl.List(pl.Struct([])))])}
-    assert df.to_dict(False) == {"foo": [{"bar": []}]}
+    assert df.to_dict(as_series=False) == {"foo": [{"bar": []}]}
 
 
 def test_ndjson_nested_utf8_int() -> None:
     ndjson = """{"Accumulables":[{"Value":32395888},{"Value":"539454"}]}"""
-    assert pl.read_ndjson(io.StringIO(ndjson)).to_dict(False) == {
+    assert pl.read_ndjson(io.StringIO(ndjson)).to_dict(as_series=False) == {
         "Accumulables": [[{"Value": "32395888"}, {"Value": "539454"}]]
     }
 
@@ -210,7 +210,7 @@ def test_json_deserialize_9687() -> None:
 
     result = pl.read_json(json.dumps(response).encode())
 
-    assert result.to_dict(False) == {k: [v] for k, v in response.items()}
+    assert result.to_dict(as_series=False) == {k: [v] for k, v in response.items()}
 
 
 def test_json_infer_schema_length_11148() -> None:
@@ -232,7 +232,7 @@ def test_ndjson_ignore_errors() -> None:
     buf = io.BytesIO(jsonl.encode())
 
     # check if we can replace with nulls
-    assert pl.read_ndjson(buf, ignore_errors=True).to_dict(False) == {
+    assert pl.read_ndjson(buf, ignore_errors=True).to_dict(as_series=False) == {
         "Type": ["insert", "insert"],
         "Key": [[1], [1]],
         "SeqNo": [1, 1],
@@ -249,7 +249,9 @@ def test_ndjson_ignore_errors() -> None:
         )
     }
     # schema argument only parses Fields
-    assert pl.read_ndjson(buf, schema=schema, ignore_errors=True).to_dict(False) == {
+    assert pl.read_ndjson(buf, schema=schema, ignore_errors=True).to_dict(
+        as_series=False
+    ) == {
         "Fields": [
             [{"Name": "added_id", "Value": 2}, {"Name": "body", "Value": None}],
             [{"Name": "added_id", "Value": 2}, {"Name": "body", "Value": None}],
@@ -257,9 +259,8 @@ def test_ndjson_ignore_errors() -> None:
     }
 
     # schema_overrides argument does schema inference, but overrides Fields
-    assert pl.read_ndjson(buf, schema_overrides=schema, ignore_errors=True).to_dict(
-        False
-    ) == {
+    result = pl.read_ndjson(buf, schema_overrides=schema, ignore_errors=True)
+    expected = {
         "Type": ["insert", "insert"],
         "Key": [[1], [1]],
         "SeqNo": [1, 1],
@@ -269,6 +270,7 @@ def test_ndjson_ignore_errors() -> None:
             [{"Name": "added_id", "Value": 2}, {"Name": "body", "Value": None}],
         ],
     }
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_write_json_duration() -> None:

@@ -1007,7 +1007,7 @@ def test_fill_null() -> None:
 
     assert df.fill_null(0, matches_supertype=False).fill_null("bar").fill_null(
         False
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "i32": [1, 2, None],
         "i64": [1, 2, 0],
         "f32": [1.0, 2.0, None],
@@ -1018,7 +1018,7 @@ def test_fill_null() -> None:
 
     assert df.fill_null(0, matches_supertype=True).fill_null("bar").fill_null(
         False
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "i32": [1, 2, 0],
         "i64": [1, 2, 0],
         "f32": [1.0, 2.0, 0.0],
@@ -1037,7 +1037,7 @@ def test_fill_null() -> None:
         ]
     ).fill_null(3)
 
-    assert out.to_dict(False) == {
+    assert out.to_dict(as_series=False) == {
         "a": [1, 3, 2, 3],
         "u8": [1, 3, 2, 3],
         "u16": [1, 3, 2, 3],

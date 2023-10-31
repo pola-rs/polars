@@ -27,14 +27,14 @@ def test_cumfold() -> None:
 
     assert df.select(
         [pl.cumfold(pl.lit(0), lambda a, b: a + b, pl.all()).alias("folded")]
-    ).unnest("folded").to_dict(False) == {
+    ).unnest("folded").to_dict(as_series=False) == {
         "a": [1, 2, 3, 4],
         "b": [6, 8, 10, 12],
         "c": [16, 28, 40, 52],
     }
     assert df.select(
         [pl.cumreduce(lambda a, b: a + b, pl.all()).alias("folded")]
-    ).unnest("folded").to_dict(False) == {
+    ).unnest("folded").to_dict(as_series=False) == {
         "a": [1, 2, 3, 4],
         "b": [6, 8, 10, 12],
         "c": [16, 28, 40, 52],

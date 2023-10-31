@@ -16,7 +16,7 @@ def test_projection_on_semi_join_4789() -> None:
 
     q = ab.join(intermediate_agg, on="a")
 
-    assert q.collect().to_dict(False) == {"a": [1], "p": [1], "seq": [[1]]}
+    assert q.collect().to_dict(as_series=False) == {"a": [1], "p": [1], "seq": [[1]]}
 
 
 def test_melt_projection_pd_block_4997() -> None:
@@ -28,7 +28,7 @@ def test_melt_projection_pd_block_4997() -> None:
         .group_by("row_nr")
         .agg(pl.col("variable").alias("result"))
         .collect()
-    ).to_dict(False) == {"row_nr": [0], "result": [["col1", "col2"]]}
+    ).to_dict(as_series=False) == {"row_nr": [0], "result": [["col1", "col2"]]}
 
 
 def test_double_projection_pushdown() -> None:
@@ -76,7 +76,7 @@ def test_unnest_projection_pushdown() -> None:
             pl.col("value"),
         ]
     )
-    out = mlf.collect().to_dict(False)
+    out = mlf.collect().to_dict(as_series=False)
     assert out == {
         "row": ["y", "y", "b", "b"],
         "col": ["z", "z", "c", "c"],
@@ -104,7 +104,7 @@ def test_unnest_columns_available() -> None:
     ).unnest("genres")
 
     out = q.collect()
-    assert out.to_dict(False) == {
+    assert out.to_dict(as_series=False) == {
         "title": ["Avatar", "spectre", "King Kong"],
         "content_rating": ["PG-13", "PG-13", "PG-13"],
         "genre1": ["Action", "Action", "Action"],
@@ -140,7 +140,7 @@ def test_double_projection_union() -> None:
     q = pl.concat([q, lf2])
 
     q = q.group_by("c", maintain_order=True).agg([pl.col("a")])
-    assert q.collect().to_dict(False) == {
+    assert q.collect().to_dict(as_series=False) == {
         "c": [1, 2, 3],
         "a": [[1, 2, 5, 7], [3, 4, 6], [8]],
     }
@@ -192,7 +192,7 @@ def test_asof_join_projection_() -> None:
     dirty_lf1 = lf1.select(expressions)
 
     concatted = pl.concat([joined, dirty_lf1])
-    assert concatted.select(["b", "a"]).collect().to_dict(False) == {
+    assert concatted.select(["b", "a"]).collect().to_dict(as_series=False) == {
         "b": [
             0.0,
             0.8333333333333334,
@@ -240,7 +240,7 @@ def test_merge_sorted_projection_pd() -> None:
 
     assert (
         lf.merge_sorted(lf2, key="foo").reverse().select(["bar"])
-    ).collect().to_dict(False) == {
+    ).collect().to_dict(as_series=False) == {
         "bar": ["false", "nice", "afk", "onion", "lukas", "patrick"]
     }
 
@@ -254,7 +254,7 @@ def test_distinct_projection_pd_7578() -> None:
     )
 
     q = df.lazy().unique().group_by("bar").agg(pl.count())
-    assert q.collect().sort("bar").to_dict(False) == {
+    assert q.collect().sort("bar").to_dict(as_series=False) == {
         "bar": ["a", "b"],
         "count": [3, 2],
     }
@@ -277,7 +277,7 @@ def test_join_suffix_collision_9562() -> None:
     df.join(other_df, on="ham")
     assert df.lazy().join(
         other_df.lazy(), how="inner", left_on="ham", right_on="ham", suffix="m"
-    ).select("ham").collect().to_dict(False) == {"ham": ["a", "b"]}
+    ).select("ham").collect().to_dict(as_series=False) == {"ham": ["a", "b"]}
 
 
 def test_projection_join_names_9955() -> None:

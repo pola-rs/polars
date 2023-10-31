@@ -412,7 +412,7 @@ def test_cse_quantile_10815() -> None:
         ),
     )
     assert "__POLARS_CSE" not in q.explain()
-    assert q.collect().to_dict(False) == {
+    assert q.collect().to_dict(as_series=False) == {
         "a_3": [0.40689473946662197],
         "b_3": [0.6145786693120769],
         "a_1": [0.16650805109739197],
@@ -435,7 +435,7 @@ def test_cse_nan_10824() -> None:
                 .lazy()
                 .select(magic)
                 .collect(comm_subexpr_elim=True)
-            ).to_dict(False)
+            ).to_dict(as_series=False)
         )
         == "{'literal': [nan]}"
     )
@@ -473,7 +473,7 @@ def test_cse_count_in_group_by() -> None:
     )
 
     assert "POLARS_CSER" not in q.explain()
-    assert q.collect().sort("a").to_dict(False) == {
+    assert q.collect().sort("a").to_dict(as_series=False) == {
         "a": [1, 2],
         "b": [[1], []],
         "c": [[40], []],
@@ -513,7 +513,7 @@ def test_no_cse_in_with_context() -> None:
                 pl.col("date_start").search_sorted("timestamp") - 1
             ),
         )
-    ).collect().to_dict(False) == {
+    ).collect().to_dict(as_series=False) == {
         "date_start": [
             datetime(2022, 12, 31, 0, 0),
             datetime(2023, 1, 2, 0, 0),
@@ -533,7 +533,7 @@ def test_cse_slice_11594() -> None:
 
     assert "__POLARS_CSE" in q.explain(comm_subexpr_elim=True)
 
-    assert q.collect(comm_subexpr_elim=True).to_dict(False) == {
+    assert q.collect(comm_subexpr_elim=True).to_dict(as_series=False) == {
         "1": [2, 1, 2, 1, 2],
         "2": [2, 1, 2, 1, 2],
     }
@@ -545,7 +545,7 @@ def test_cse_slice_11594() -> None:
 
     assert "__POLARS_CSE" in q.explain(comm_subexpr_elim=True)
 
-    assert q.collect(comm_subexpr_elim=True).to_dict(False) == {
+    assert q.collect(comm_subexpr_elim=True).to_dict(as_series=False) == {
         "1": [2, 1, 2, 1, 2],
         "2": [1, 2, 1, 2, 1],
     }
@@ -571,7 +571,7 @@ def test_cse_is_in_11489() -> None:
         .otherwise(None)
         .alias("val")
     )
-    assert df.select("cond", any_cond, val).collect().to_dict(False) == {
+    assert df.select("cond", any_cond, val).collect().to_dict(as_series=False) == {
         "cond": [1, 2, 3, 2, 1],
         "any_cond": [False, True, True, True, False],
         "val": [0.0, 1.0, 1.0, 1.0, 0.0],
@@ -588,7 +588,7 @@ def test_cse_11958() -> None:
 
     q = df.select(vector_losses)
     assert "__POLARS_CSE" in q.explain(comm_subexpr_elim=True)
-    assert q.collect(comm_subexpr_elim=True).to_dict(False) == {
+    assert q.collect(comm_subexpr_elim=True).to_dict(as_series=False) == {
         "diff1": [None, 10, 10, 10, 10],
         "diff2": [None, None, 20, 20, 20],
         "diff3": [None, None, None, 30, 30],

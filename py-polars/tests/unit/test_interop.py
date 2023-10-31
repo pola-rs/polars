@@ -191,16 +191,19 @@ def test_from_pandas_include_indexes() -> None:
     pd_df = pd.DataFrame(data)
 
     df = pl.from_pandas(pd_df.set_index(["dtm"]))
-    assert df.to_dict(False) == {"val": [100, 200, 300], "misc": ["x", "y", "z"]}
+    assert df.to_dict(as_series=False) == {
+        "val": [100, 200, 300],
+        "misc": ["x", "y", "z"],
+    }
 
     df = pl.from_pandas(pd_df.set_index(["dtm", "val"]))
-    assert df.to_dict(False) == {"misc": ["x", "y", "z"]}
+    assert df.to_dict(as_series=False) == {"misc": ["x", "y", "z"]}
 
     df = pl.from_pandas(pd_df.set_index(["dtm"]), include_index=True)
-    assert df.to_dict(False) == data
+    assert df.to_dict(as_series=False) == data
 
     df = pl.from_pandas(pd_df.set_index(["dtm", "val"]), include_index=True)
-    assert df.to_dict(False) == data
+    assert df.to_dict(as_series=False) == data
 
 
 def test_from_pandas_duplicated_columns() -> None:
@@ -390,11 +393,11 @@ def test_from_dicts_struct() -> None:
     assert df["a"][1] == {"b": 3, "c": 4}
 
     # 5649
-    assert pl.from_dicts([{"a": [{"x": 1}]}, {"a": [{"y": 1}]}]).to_dict(False) == {
-        "a": [[{"y": None, "x": 1}], [{"y": 1, "x": None}]]
-    }
+    assert pl.from_dicts([{"a": [{"x": 1}]}, {"a": [{"y": 1}]}]).to_dict(
+        as_series=False
+    ) == {"a": [[{"y": None, "x": 1}], [{"y": 1, "x": None}]]}
     assert pl.from_dicts([{"a": [{"x": 1}, {"y": 2}]}, {"a": [{"y": 1}]}]).to_dict(
-        False
+        as_series=False
     ) == {"a": [[{"y": None, "x": 1}, {"y": 2, "x": None}], [{"y": 1, "x": None}]]}
 
 
@@ -778,7 +781,9 @@ def test_from_pandas_null_struct_6412() -> None:
         {"a": None},
     ]
     df_pandas = pd.DataFrame(data)
-    assert pl.from_pandas(df_pandas).to_dict(False) == {"a": [{"b": None}, {"b": None}]}
+    assert pl.from_pandas(df_pandas).to_dict(as_series=False) == {
+        "a": [{"b": None}, {"b": None}]
+    }
 
 
 def test_from_pyarrow_map() -> None:
@@ -790,7 +795,7 @@ def test_from_pyarrow_map() -> None:
     )
 
     result = cast(pl.DataFrame, pl.from_arrow(pa_table))
-    assert result.to_dict(False) == {
+    assert result.to_dict(as_series=False) == {
         "idx": [1, 2],
         "mapping": [
             [{"key": "a", "value": "something"}],
@@ -1091,7 +1096,7 @@ def test_to_init_repr() -> None:
 
 def test_untrusted_categorical_input() -> None:
     df = pd.DataFrame({"x": pd.Categorical(["x"], ["x", "y"])})
-    assert pl.from_pandas(df).group_by("x").count().to_dict(False) == {
+    assert pl.from_pandas(df).group_by("x").count().to_dict(as_series=False) == {
         "x": ["x"],
         "count": [1],
     }
@@ -1115,12 +1120,12 @@ def test_sliced_struct_from_arrow() -> None:
     # slice the table
     # check if FFI correctly reads sliced
     result = cast(pl.DataFrame, pl.from_arrow(tbl.slice(1, 2)))
-    assert result.to_dict(False) == {
+    assert result.to_dict(as_series=False) == {
         "struct_col": [{"a": 2, "b": "bar"}, {"a": 3, "b": "baz"}]
     }
 
     result = cast(pl.DataFrame, pl.from_arrow(tbl.slice(1, 1)))
-    assert result.to_dict(False) == {"struct_col": [{"a": 2, "b": "bar"}]}
+    assert result.to_dict(as_series=False) == {"struct_col": [{"a": 2, "b": "bar"}]}
 
 
 def test_from_arrow_invalid_time_zone() -> None:

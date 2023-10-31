@@ -230,14 +230,14 @@ def test_rolling_extrema() -> None:
         ]
     )
 
-    assert df.select([pl.all().rolling_min(3)]).to_dict(False) == {
+    assert df.select([pl.all().rolling_min(3)]).to_dict(as_series=False) == {
         "col1": [None, None, 0, 1, 2, 3, 4],
         "col2": [None, None, 4, 3, 2, 1, 0],
         "col1_nulls": [None, None, None, None, 2, 3, 4],
         "col2_nulls": [None, None, None, None, 2, 1, 0],
     }
 
-    assert df.select([pl.all().rolling_max(3)]).to_dict(False) == {
+    assert df.select([pl.all().rolling_max(3)]).to_dict(as_series=False) == {
         "col1": [None, None, 2, 3, 4, 5, 6],
         "col2": [None, None, 6, 5, 4, 3, 2],
         "col1_nulls": [None, None, None, None, 4, 5, 6],
@@ -246,14 +246,14 @@ def test_rolling_extrema() -> None:
 
     # shuffled data triggers other kernels
     df = df.select([pl.all().shuffle(0)])
-    assert df.select([pl.all().rolling_min(3)]).to_dict(False) == {
+    assert df.select([pl.all().rolling_min(3)]).to_dict(as_series=False) == {
         "col1": [None, None, 0, 0, 1, 2, 2],
         "col2": [None, None, 0, 2, 1, 1, 1],
         "col1_nulls": [None, None, None, None, None, 2, 2],
         "col2_nulls": [None, None, None, None, None, 1, 1],
     }
 
-    assert df.select([pl.all().rolling_max(3)]).to_dict(False) == {
+    assert df.select([pl.all().rolling_max(3)]).to_dict(as_series=False) == {
         "col1": [None, None, 6, 4, 5, 5, 5],
         "col2": [None, None, 6, 6, 5, 4, 4],
         "col1_nulls": [None, None, None, None, None, 5, 5],
@@ -285,7 +285,7 @@ def test_rolling_group_by_extrema() -> None:
             ]
         )
         .select(["col1_list", "col1_min", "col1_max", "col1_first", "col1_last"])
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "col1_list": [
             [6],
             [6, 5],
@@ -324,7 +324,7 @@ def test_rolling_group_by_extrema() -> None:
             ]
         )
         .select(["col1_list", "col1_min", "col1_max", "col1_first", "col1_last"])
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "col1_list": [
             [0],
             [0, 1],
@@ -360,7 +360,7 @@ def test_rolling_group_by_extrema() -> None:
             ]
         )
         .select(["col1_list", "col1_min", "col1_max"])
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "col1_list": [
             [3],
             [3, 4],
@@ -386,7 +386,7 @@ def test_rolling_slice_pushdown() -> None:
         )
         .agg([(pl.col("c") - pl.col("c").shift(fill_value=0)).sum().alias("c")])
     )
-    assert df.head(2).collect().to_dict(False) == {
+    assert df.head(2).collect().to_dict(as_series=False) == {
         "b": ["a", "a"],
         "a": [1, 2],
         "c": [1, 3],
@@ -407,7 +407,7 @@ def test_overlapping_groups_4628() -> None:
                 (pl.col("val") - pl.col("val").shift(1)).alias("val - val.shift"),
             ]
         )
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "index": [1, 2, 3, 4, 5, 6],
         "val.diff": [
             [None],
@@ -539,7 +539,7 @@ def test_rolling_cov_corr() -> None:
             pl.rolling_cov("x", "y", window_size=3).alias("cov"),
             pl.rolling_corr("x", "y", window_size=3).alias("corr"),
         ]
-    ).to_dict(False)
+    ).to_dict(as_series=False)
     assert res["cov"][2:] == pytest.approx([0.0, 0.0, 5.333333333333336])
     assert res["corr"][2:] == pytest.approx([nan, nan, 0.9176629354822473], nan_ok=True)
     assert res["cov"][:2] == [None] * 2

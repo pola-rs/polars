@@ -123,7 +123,7 @@ def test_nested_when_then_and_wildcard_expansion_6284() -> None:
     )
 
     assert_frame_equal(out0, out1)
-    assert out0.to_dict(False) == {
+    assert out0.to_dict(as_series=False) == {
         "1": ["a", "b"],
         "2": ["c", "d"],
         "result": ["a", "d"],
@@ -196,7 +196,7 @@ def test_when_then_edge_cases_3994() -> None:
             .name.keep()
         )
         .collect()
-    ).to_dict(False) == {"id": [1], "type": [[2, 2]]}
+    ).to_dict(as_series=False) == {"id": [1], "type": [[2, 2]]}
 
     # this tests ternary with an empty argument
     assert (
@@ -209,7 +209,7 @@ def test_when_then_edge_cases_3994() -> None:
             .otherwise(pl.col("type"))
             .name.keep()
         )
-    ).to_dict(False) == {"id": [], "type": []}
+    ).to_dict(as_series=False) == {"id": [], "type": []}
 
 
 def test_object_when_then_4702() -> None:
@@ -221,7 +221,7 @@ def test_object_when_then_4702() -> None:
         .then(pl.lit(pl.UInt16, allow_object=True))
         .otherwise(pl.lit(pl.UInt8, allow_object=True))
         .alias("New_Type")
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "Row": [1, 2],
         "Type": [pl.Date, pl.UInt8],
         "New_Type": [pl.UInt16, pl.UInt8],
