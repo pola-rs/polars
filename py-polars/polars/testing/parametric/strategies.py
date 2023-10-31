@@ -385,14 +385,7 @@ def create_list_strategy(
         raise ValueError("if specifying `select_from`, must also specify `inner_dtype`")
 
     if inner_dtype is None:
-        strats = list(
-            # note: remove the restriction on nested Categoricals after
-            # https://github.com/pola-rs/polars/issues/8563 is fixed
-            _get_strategy_dtypes(
-                base_type=True,
-                excluding=Categorical,
-            )
-        )
+        strats = list(_get_strategy_dtypes(base_type=True))
         shuffle(strats)
         inner_dtype = choice(strats)
     if size:
