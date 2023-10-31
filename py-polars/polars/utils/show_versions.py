@@ -31,7 +31,7 @@ def show_versions() -> None:
     pandas:               2.1.0
     pyarrow:              13.0.0
     pydantic:             2.3.0
-    pyiceberg:            0.5.0
+    pyiceberg:            0.5.1
     pyxlsb:               <not installed>
     sqlalchemy:           2.0.21
     xlsx2csv:             0.8.1
