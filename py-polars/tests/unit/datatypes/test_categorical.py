@@ -331,14 +331,10 @@ def test_struct_categorical_nesting() -> None:
 
 def test_categorical_fill_null_existing_category() -> None:
     # ensure physical types align
-    assert pl.DataFrame(
-        {"col": ["a", None, "a"]}, schema={"col": pl.Categorical}
-    ).fill_null("a").with_columns(pl.col("col").to_physical().alias("code")).to_dict(
-        False
-    ) == {
-        "col": ["a", "a", "a"],
-        "code": [0, 0, 0],
-    }
+    df = pl.DataFrame({"col": ["a", None, "a"]}, schema={"col": pl.Categorical})
+    result = df.fill_null("a").with_columns(pl.col("col").to_physical().alias("code"))
+    expected = {"col": ["a", "a", "a"], "code": [0, 0, 0]}
+    assert result.to_dict(as_series=False) == expected
 
 
 @StringCache()

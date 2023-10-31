@@ -893,9 +893,8 @@ def test_glob_csv(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
 
 def test_csv_whitespace_separator_at_start_do_not_skip() -> None:
     csv = "\t\t\t\t0\t1"
-    assert pl.read_csv(csv.encode(), separator="\t", has_header=False).to_dict(
-        False
-    ) == {
+    result = pl.read_csv(csv.encode(), separator="\t", has_header=False)
+    expected = {
         "column_1": [None],
         "column_2": [None],
         "column_3": [None],
@@ -903,13 +902,13 @@ def test_csv_whitespace_separator_at_start_do_not_skip() -> None:
         "column_5": [0],
         "column_6": [1],
     }
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_csv_whitespace_separator_at_end_do_not_skip() -> None:
     csv = "0\t1\t\t\t\t"
-    assert pl.read_csv(csv.encode(), separator="\t", has_header=False).to_dict(
-        False
-    ) == {
+    result = pl.read_csv(csv.encode(), separator="\t", has_header=False)
+    expected = {
         "column_1": [0],
         "column_2": [1],
         "column_3": [None],
@@ -917,6 +916,7 @@ def test_csv_whitespace_separator_at_end_do_not_skip() -> None:
         "column_5": [None],
         "column_6": [None],
     }
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_csv_multiple_null_values() -> None:

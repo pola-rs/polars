@@ -122,9 +122,10 @@ def test_decimal_cast() -> None:
             "decimals": [D("2"), D("2"), D("-1.5")],
         }
     )
-    assert df.with_columns(pl.col("decimals").cast(pl.Float32).alias("b2")).to_dict(
-        False
-    ) == {"decimals": [D("2"), D("2"), D("-1.5")], "b2": [2.0, 2.0, -1.5]}
+
+    result = df.with_columns(pl.col("decimals").cast(pl.Float32).alias("b2"))
+    expected = {"decimals": [D("2"), D("2"), D("-1.5")], "b2": [2.0, 2.0, -1.5]}
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_decimal_scale_precision_roundtrip(monkeypatch: Any) -> None:

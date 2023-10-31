@@ -152,9 +152,10 @@ def test_list_fill_list() -> None:
 
 def test_empty_list_construction() -> None:
     assert pl.Series([[]]).to_list() == [[]]
-    assert pl.DataFrame([{"array": [], "not_array": 1234}], orient="row").to_dict(
-        False
-    ) == {"array": [[]], "not_array": [1234]}
+
+    df = pl.DataFrame([{"array": [], "not_array": 1234}], orient="row")
+    expected = {"array": [[]], "not_array": [1234]}
+    assert df.to_dict(as_series=False) == expected
 
     df = pl.DataFrame(schema=[("col", pl.List)])
     assert df.schema == {"col": pl.List}
@@ -282,13 +283,14 @@ def test_flat_aggregation_to_list_conversion_6918() -> None:
 
 
 def test_list_count_matches_deprecated() -> None:
+    df = pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]})
     with pytest.deprecated_call():
-        # Your test code here
-        assert pl.DataFrame(
-            {"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}
-        ).select(pl.col("listcol").list.count_match(2).alias("number_of_twos")).to_dict(
-            False
-        ) == {"number_of_twos": [0, 0, 2, 1, 0]}
+        result = df.select(
+            pl.col("listcol").list.count_match(2).alias("number_of_twos")
+        )
+
+    expected = {"number_of_twos": [0, 0, 2, 1, 0]}
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_list_count_matches() -> None:

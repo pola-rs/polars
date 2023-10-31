@@ -109,9 +109,10 @@ def test_maintain_order_after_sampling() -> None:
             "value": [1, 3, 2, 3, 4, 5, 3, 4],
         }
     )
-    assert df.group_by("type", maintain_order=True).agg(pl.col("value").sum()).to_dict(
-        False
-    ) == {"type": ["A", "B", "C", "D"], "value": [5, 8, 5, 7]}
+
+    result = df.group_by("type", maintain_order=True).agg(pl.col("value").sum())
+    expected = {"type": ["A", "B", "C", "D"], "value": [5, 8, 5, 7]}
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_sorted_group_by_optimization(monkeypatch: Any) -> None:

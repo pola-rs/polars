@@ -99,7 +99,7 @@ def test_regex_in_cols() -> None:
         "matched_val2": ["A", "B", "C"],
     }
     assert df.select(pl.col("^col.*$", "val1").name.prefix("matched_")).to_dict(
-        False
+        as_series=False
     ) == {
         "matched_col1": [1, 2, 3],
         "matched_col2": [4, 5, 6],

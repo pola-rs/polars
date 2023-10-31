@@ -539,9 +539,9 @@ def test_lit_iter_schema() -> None:
         }
     )
 
-    assert df.group_by("key").agg(pl.col("dates").unique() + timedelta(days=1)).to_dict(
-        False
-    ) == {
+    result = df.group_by("key").agg(pl.col("dates").unique() + timedelta(days=1))
+    expected = {
         "key": ["A"],
         "dates": [[date(1970, 1, 2), date(1970, 1, 3), date(1970, 1, 4)]],
     }
+    assert result.to_dict(as_series=False) == expected

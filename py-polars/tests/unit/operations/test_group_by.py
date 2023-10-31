@@ -485,9 +485,9 @@ def test_overflow_mean_partitioned_group_by_5194(dtype: pl.PolarsDataType) -> No
             pl.Series("group", [1, 2] * 50_000, dtype=dtype),
         ]
     )
-    assert df.group_by("group").agg(pl.col("data").mean()).sort(by="group").to_dict(
-        False
-    ) == {"group": [1, 2], "data": [10000000.0, 10000000.0]}
+    result = df.group_by("group").agg(pl.col("data").mean()).sort(by="group")
+    expected = {"group": [1, 2], "data": [10000000.0, 10000000.0]}
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_group_by_multiple_column_reference() -> None:
@@ -645,10 +645,8 @@ def test_perfect_hash_table_null_values_8663() -> None:
         ],
         dtype=pl.Categorical,
     )
-
-    assert s.to_frame("a").group_by("a").agg(pl.col("a").alias("agg")).to_dict(
-        False
-    ) == {
+    result = s.to_frame("a").group_by("a").agg(pl.col("a").alias("agg"))
+    expected = {
         "a": [
             "3",
             "41",
@@ -734,6 +732,7 @@ def test_perfect_hash_table_null_values_8663() -> None:
             [None, None, None],
         ],
     }
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_group_by_partitioned_ending_cast(monkeypatch: Any) -> None:

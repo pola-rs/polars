@@ -291,9 +291,10 @@ def test_arr_contains_categorical() -> None:
     ).lazy()
     df = df.with_columns(pl.col("str").cast(pl.Categorical))
     df_groups = df.group_by("group").agg([pl.col("str").alias("str_list")])
-    assert df_groups.filter(pl.col("str_list").list.contains("C")).collect().to_dict(
-        False
-    ) == {"group": [2], "str_list": [["A", "C"]]}
+
+    result = df_groups.filter(pl.col("str_list").list.contains("C")).collect()
+    expected = {"group": [2], "str_list": [["A", "C"]]}
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_list_eval_type_coercion() -> None:

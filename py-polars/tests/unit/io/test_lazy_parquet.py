@@ -396,9 +396,10 @@ def test_parquet_statistics_filter_11069(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "foo.parquet"
     pl.DataFrame({"x": [1, None]}).write_parquet(file_path, statistics=False)
-    assert pl.scan_parquet(file_path).filter(pl.col("x").is_null()).collect().to_dict(
-        False
-    ) == {"x": [None]}
+
+    result = pl.scan_parquet(file_path).filter(pl.col("x").is_null()).collect()
+    expected = {"x": [None]}
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_parquet_list_arg(io_files_path: Path) -> None:

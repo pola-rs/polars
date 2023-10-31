@@ -118,13 +118,13 @@ def test_list_concat() -> None:
 def test_concat_list_with_lit() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
-    assert df.select(pl.concat_list([pl.col("a"), pl.lit(1)]).alias("a")).to_dict(
-        False
-    ) == {"a": [[1, 1], [2, 1], [3, 1]]}
+    result = df.select(pl.concat_list([pl.col("a"), pl.lit(1)]).alias("a"))
+    expected = {"a": [[1, 1], [2, 1], [3, 1]]}
+    assert result.to_dict(as_series=False) == expected
 
-    assert df.select(pl.concat_list([pl.lit(1), pl.col("a")]).alias("a")).to_dict(
-        False
-    ) == {"a": [[1, 1], [1, 2], [1, 3]]}
+    result = df.select(pl.concat_list([pl.lit(1), pl.col("a")]).alias("a"))
+    expected = {"a": [[1, 1], [1, 2], [1, 3]]}
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_concat_list_empty_raises() -> None:

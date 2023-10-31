@@ -259,9 +259,8 @@ def test_ndjson_ignore_errors() -> None:
     }
 
     # schema_overrides argument does schema inference, but overrides Fields
-    assert pl.read_ndjson(buf, schema_overrides=schema, ignore_errors=True).to_dict(
-        False
-    ) == {
+    result = pl.read_ndjson(buf, schema_overrides=schema, ignore_errors=True)
+    expected = {
         "Type": ["insert", "insert"],
         "Key": [[1], [1]],
         "SeqNo": [1, 1],
@@ -271,6 +270,7 @@ def test_ndjson_ignore_errors() -> None:
             [{"Name": "added_id", "Value": 2}, {"Name": "body", "Value": None}],
         ],
     }
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_write_json_duration() -> None:

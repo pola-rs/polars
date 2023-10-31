@@ -459,9 +459,9 @@ def test_struct_comparison() -> None:
 
 
 def test_struct_order() -> None:
-    assert pl.DataFrame({"col1": [{"a": 1, "b": 2}, {"b": 4, "a": 3}]}).to_dict(
-        False
-    ) == {"col1": [{"a": 1, "b": 2}, {"a": 3, "b": 4}]}
+    df = pl.DataFrame({"col1": [{"a": 1, "b": 2}, {"b": 4, "a": 3}]})
+    expected = {"col1": [{"a": 1, "b": 2}, {"a": 3, "b": 4}]}
+    assert df.to_dict(as_series=False) == expected
 
     # null values should not trigger this
     assert (
@@ -575,9 +575,10 @@ def test_nested_struct_sliced_append() -> None:
 
 def test_struct_group_by_field_agg_4216() -> None:
     df = pl.DataFrame([{"a": {"b": 1}, "c": 0}])
-    assert df.group_by("c").agg(pl.col("a").struct.field("b").count()).to_dict(
-        False
-    ) == {"c": [0], "b": [1]}
+
+    result = df.group_by("c").agg(pl.col("a").struct.field("b").count())
+    expected = {"c": [0], "b": [1]}
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_struct_getitem() -> None:

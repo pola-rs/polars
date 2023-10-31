@@ -29,18 +29,13 @@ def test_semi_anti_join() -> None:
     }
 
     # lazy
-    assert df_a.lazy().join(df_b.lazy(), on="key", how="anti").collect().to_dict(
-        False
-    ) == {
-        "key": [1, 2],
-        "payload": ["f", "i"],
-    }
-    assert df_a.lazy().join(df_b.lazy(), on="key", how="semi").collect().to_dict(
-        False
-    ) == {
-        "key": [3],
-        "payload": [None],
-    }
+    result = df_a.lazy().join(df_b.lazy(), on="key", how="anti").collect()
+    expected_values = {"key": [1, 2], "payload": ["f", "i"]}
+    assert result.to_dict(as_series=False) == expected_values
+
+    result = df_a.lazy().join(df_b.lazy(), on="key", how="semi").collect()
+    expected_values = {"key": [3], "payload": [None]}
+    assert result.to_dict(as_series=False) == expected_values
 
     df_a = pl.DataFrame(
         {"a": [1, 2, 3, 1], "b": ["a", "b", "c", "a"], "payload": [10, 20, 30, 40]}

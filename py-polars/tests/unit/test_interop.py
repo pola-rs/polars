@@ -397,7 +397,7 @@ def test_from_dicts_struct() -> None:
         as_series=False
     ) == {"a": [[{"y": None, "x": 1}], [{"y": 1, "x": None}]]}
     assert pl.from_dicts([{"a": [{"x": 1}, {"y": 2}]}, {"a": [{"y": 1}]}]).to_dict(
-        False
+        as_series=False
     ) == {"a": [[{"y": None, "x": 1}, {"y": 2, "x": None}], [{"y": 1, "x": None}]]}
 
 

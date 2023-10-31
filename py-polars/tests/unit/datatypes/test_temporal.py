@@ -1945,7 +1945,7 @@ def test_unlocalize() -> None:
 
 
 def test_tz_aware_truncate() -> None:
-    test = pl.DataFrame(
+    df = pl.DataFrame(
         {
             "dt": pl.datetime_range(
                 start=datetime(2022, 11, 1),
@@ -1955,9 +1955,8 @@ def test_tz_aware_truncate() -> None:
             ).dt.replace_time_zone("America/New_York")
         }
     )
-    assert test.with_columns(pl.col("dt").dt.truncate("1d").alias("trunced")).to_dict(
-        False
-    ) == {
+    result = df.with_columns(pl.col("dt").dt.truncate("1d").alias("trunced"))
+    expected = {
         "dt": [
             datetime(2022, 11, 1, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
             datetime(2022, 11, 1, 12, 0, tzinfo=ZoneInfo(key="America/New_York")),
@@ -1977,6 +1976,7 @@ def test_tz_aware_truncate() -> None:
             datetime(2022, 11, 4, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
         ],
     }
+    assert result.to_dict(as_series=False) == expected
 
     # 5507
     lf = pl.DataFrame(
@@ -2057,9 +2057,8 @@ def test_tz_aware_to_string() -> None:
             ).dt.replace_time_zone("America/New_York")
         }
     )
-    assert df.with_columns(pl.col("dt").dt.to_string("%c").alias("fmt")).to_dict(
-        False
-    ) == {
+    result = df.with_columns(pl.col("dt").dt.to_string("%c").alias("fmt"))
+    expected = {
         "dt": [
             datetime(2022, 11, 1, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
             datetime(2022, 11, 2, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
@@ -2073,6 +2072,7 @@ def test_tz_aware_to_string() -> None:
             "Fri Nov  4 00:00:00 2022",
         ],
     }
+    assert result.to_dict(as_series=False) == expected
 
 
 @pytest.mark.parametrize(

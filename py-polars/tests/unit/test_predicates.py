@@ -185,9 +185,14 @@ def test_is_in_join_blocked() -> None:
     ).lazy()
 
     df_all = df2.join(df1, left_on="values20", right_on="values0", how="left")
-    assert df_all.filter(~pl.col("Groups").is_in(["A", "B", "F"])).collect().to_dict(
-        False
-    ) == {"values22": [None, 4, 5], "values20": [3, 4, 5], "Groups": ["C", "D", "E"]}
+
+    result = df_all.filter(~pl.col("Groups").is_in(["A", "B", "F"])).collect()
+    expected = {
+        "values22": [None, 4, 5],
+        "values20": [3, 4, 5],
+        "Groups": ["C", "D", "E"],
+    }
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_predicate_pushdown_group_by_keys() -> None:

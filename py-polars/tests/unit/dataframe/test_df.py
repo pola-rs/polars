@@ -607,9 +607,11 @@ def test_to_dummies() -> None:
         assert_frame_equal(result, expected)
 
     # test sorted fast path
-    assert pl.DataFrame({"x": pl.arange(0, 3, eager=True)}).to_dummies("x").to_dict(
-        False
-    ) == {"x_0": [1, 0, 0], "x_1": [0, 1, 0], "x_2": [0, 0, 1]}
+    result = pl.DataFrame({"x": pl.arange(0, 3, eager=True)}).to_dummies("x")
+    expected = pl.DataFrame(
+        {"x_0": [1, 0, 0], "x_1": [0, 1, 0], "x_2": [0, 0, 1]}
+    ).with_columns(pl.all().cast(pl.UInt8))
+    assert_frame_equal(result, expected)
 
 
 def test_to_dummies_drop_first() -> None:
@@ -2747,9 +2749,10 @@ def test_selection_regex_and_multicol() -> None:
     }
 
     # Multi * Multi
-    assert test_df.select(pl.col(["a", "b", "c"]) * pl.col(["a", "b", "c"])).to_dict(
-        False
-    ) == {"a": [1, 4, 9, 16], "b": [25, 36, 49, 64], "c": [81, 100, 121, 144]}
+    result = test_df.select(pl.col(["a", "b", "c"]) * pl.col(["a", "b", "c"]))
+    expected = {"a": [1, 4, 9, 16], "b": [25, 36, 49, 64], "c": [81, 100, 121, 144]}
+    assert result.to_dict(as_series=False) == expected
+
     assert test_df.select(pl.exclude("foo") * pl.exclude("foo")).to_dict(
         as_series=False
     ) == {

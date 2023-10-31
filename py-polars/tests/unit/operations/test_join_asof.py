@@ -164,13 +164,14 @@ def test_join_asof_mismatched_dtypes() -> None:
 def test_join_asof_floats() -> None:
     df1 = pl.DataFrame({"a": [1.0, 2.0, 3.0], "b": ["lrow1", "lrow2", "lrow3"]})
     df2 = pl.DataFrame({"a": [0.59, 1.49, 2.89], "b": ["rrow1", "rrow2", "rrow3"]})
-    assert df1.join_asof(df2, on=pl.col("a").set_sorted(), strategy="backward").to_dict(
-        False
-    ) == {
+
+    result = df1.join_asof(df2, on=pl.col("a").set_sorted(), strategy="backward")
+    expected = {
         "a": [1.0, 2.0, 3.0],
         "b": ["lrow1", "lrow2", "lrow3"],
         "b_right": ["rrow1", "rrow2", "rrow3"],
     }
+    assert result.to_dict(as_series=False) == expected
 
     # with by argument
     # 5740
@@ -376,9 +377,10 @@ def test_asof_join_by_logical_types() -> None:
         .head(9)
     )
     x = pl.DataFrame({"a": dates, "b": map(float, range(9)), "c": ["1", "2", "3"] * 3})
-    assert x.join_asof(x, on=pl.col("b").set_sorted(), by=["c", "a"]).to_dict(
-        False
-    ) == {
+
+    result = x.join_asof(x, on=pl.col("b").set_sorted(), by=["c", "a"])
+
+    expected = {
         "a": [
             datetime(2022, 1, 1, 0, 0),
             datetime(2022, 1, 1, 2, 0),
@@ -393,6 +395,7 @@ def test_asof_join_by_logical_types() -> None:
         "b": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
         "c": ["1", "2", "3", "1", "2", "3", "1", "2", "3"],
     }
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_join_asof_projection_7481() -> None:
