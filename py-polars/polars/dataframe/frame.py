@@ -6901,9 +6901,9 @@ class DataFrame:
 
     def pivot(
         self,
-        values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
         columns: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
+        values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         aggregate_function: PivotAgg | Expr | None = None,
         *,
         maintain_order: bool = True,
@@ -6918,14 +6918,15 @@ class DataFrame:
 
         Parameters
         ----------
-        values
-            Column values to aggregate. Can be multiple columns if the *columns*
-            arguments contains multiple columns as well.
         index
             One or multiple keys to group by.
         columns
             Name of the column(s) whose values will be used as the header of the output
             DataFrame.
+        values
+            Column values to aggregate. Can be multiple columns if the *columns*
+            arguments contains multiple columns as well. If None, all remaining columns
+            are used.
         aggregate_function
             Choose from:
 
@@ -6954,7 +6955,7 @@ class DataFrame:
         ...         "baz": [1, 2, 3, 4, 5, 6],
         ...     }
         ... )
-        >>> df.pivot(values="baz", index="foo", columns="bar", aggregate_function="sum")
+        >>> df.pivot(index="foo", columns="bar", values="baz", aggregate_function="sum")
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ y   ┆ x   │
@@ -6969,9 +6970,9 @@ class DataFrame:
 
         >>> import polars.selectors as cs
         >>> df.pivot(
-        ...     values=cs.numeric(),
         ...     index=cs.string(),
         ...     columns=cs.string(),
+        ...     values=cs.numeric(),
         ...     aggregate_function="sum",
         ...     sort_columns=True,
         ... ).sort(
@@ -7045,9 +7046,14 @@ class DataFrame:
         └──────┴──────────┴──────────┘
 
         """  # noqa: W505
-        values = _expand_selectors(self, values)
         index = _expand_selectors(self, index)
         columns = _expand_selectors(self, columns)
+
+        if values is None:
+            used = list(set(index).union(columns))
+            values = [x for x in self.columns if x not in used]
+        else:
+            values = _expand_selectors(self, values)
 
         if isinstance(aggregate_function, str):
             if aggregate_function == "first":
