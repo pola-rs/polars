@@ -1121,36 +1121,29 @@ def test_agg_expr() -> None:
 
 
 @pytest.mark.parametrize(
-    ("left_time_unit", "right_time_unit", "expected_time_unit"),
+    ("left_time_unit", "right_time_unit", "expected_time_unit", "expected_nanoseconds"),
     [
-        ("ms", "ms", "ms"),
-        ("ms", "us", "us"),
-        ("us", "ms", "us"),
-        ("us", "us", "us"),
-        ("ms", "ns", "ns"),
-        ("us", "ns", "ns"),
-        ("ns", "ms", "ns"),
-        ("ns", "us", "ns"),
-        ("ns", "ns", "ns"),
+        ("ms", "ms", "ms", 123_000_000 - 123_000_000),
+        ("ms", "us", "us", 123_000_000 - 123_456_000),
+        ("us", "ms", "us", 123_456_000 - 123_000_000),
+        ("us", "us", "us", 123_456_000 - 123_456_000),
+        ("ms", "ns", "ns", 123_000_000 - 123_456_789),
+        ("us", "ns", "ns", 123_456_000 - 123_456_789),
+        ("ns", "ms", "ns", 123_456_789 - 123_000_000),
+        ("ns", "us", "ns", 123_456_789 - 123_456_000),
+        ("ns", "ns", "ns", 123_456_789 - 123_456_789),
     ],
 )
 def test_subtract_datetimes_keep_subsecond_precision(
     left_time_unit: TimeUnit,
     right_time_unit: TimeUnit,
     expected_time_unit: TimeUnit,
+    expected_nanoseconds: int,
 ) -> None:
-    values_map = {
-        "ms": (123, 123 * 1_000_000),
-        "us": (123_456, 123_456 * 1_000),
-        "ns": (123_456_789, 123_456_789),
-    }
-    literal_left, nanoseconds_left = values_map[left_time_unit]
-    literal_right, nanoseconds_right = values_map[right_time_unit]
-
     df_datetimes = pl.DataFrame(
         {
-            "left": [f"2020-01-01T00:00:01.{literal_left}"],
-            "right": [f"2020-01-01T00:00:00.{literal_right}"],
+            "left": ["2020-01-01T00:00:01.123456789"],
+            "right": ["2020-01-01T00:00:00.123456789"],
         }
     ).select(
         pl.col("left").str.to_datetime(time_unit=left_time_unit),
@@ -1166,7 +1159,7 @@ def test_subtract_datetimes_keep_subsecond_precision(
     expected_df = pl.select(
         pl.duration(
             seconds=1,
-            nanoseconds=nanoseconds_left - nanoseconds_right,
+            nanoseconds=expected_nanoseconds,
             time_unit=expected_time_unit,
         ).alias("left-right")
     )
