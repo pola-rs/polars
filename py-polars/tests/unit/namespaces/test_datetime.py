@@ -1161,17 +1161,19 @@ def test_subtract_datetimes_keep_subsecond_precision(
 
     assert result["left-right"].dtype == pl.Duration(expected_time_unit)
 
-    multiplier = {
+    multipliers = {
         "ms": 1_000_000,
         "us": 1_000,
         "ns": 1,
     }
 
+    nanoseconds_left = multipliers[left_time_unit] * value_left
+    nanoseconds_right = multipliers[right_time_unit] * value_right
+
     expected = pl.select(
         pl.duration(
             seconds=1,
-            nanoseconds=multiplier[left_time_unit] * value_left
-            - multiplier[right_time_unit] * value_right,
+            nanoseconds=nanoseconds_left - nanoseconds_right,
             time_unit=expected_time_unit,
         ).alias("left-right")
     )

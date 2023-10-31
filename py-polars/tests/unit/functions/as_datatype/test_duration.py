@@ -159,16 +159,20 @@ def test_add_duration_3786() -> None:
         ("ns", "ns", "ns"),
     ],
 )
+@pytest.mark.parametrize("op", ["add-left", "add-right"])
 def test_datetime_add_duration_subsecond(
-    dt_time_unit: TimeUnit, duration_time_unit: TimeUnit, expected_time_unit: TimeUnit
+    dt_time_unit: TimeUnit,
+    duration_time_unit: TimeUnit,
+    expected_time_unit: TimeUnit,
+    op: str,
 ) -> None:
-    dt_value = {
-        "ms": 123,
-        "us": 123_456,
-        "ns": 123_456_789,
+    dt_literal, dt_nanoseconds = {
+        "ms": (123, 123 * 1_000_000),
+        "us": (123_456, 123_456 * 1_000),
+        "ns": (123_456_789, 123_456_789),
     }[dt_time_unit]
 
-    df_datetimes = pl.DataFrame({"ts": [f"2020-01-01T00:00:00.{dt_value}"]}).select(
+    df_datetimes = pl.DataFrame({"ts": [f"2020-01-01T00:00:00.{dt_literal}"]}).select(
         pl.col("ts").str.to_datetime(time_unit=dt_time_unit)
     )
 
@@ -182,29 +186,20 @@ def test_datetime_add_duration_subsecond(
         **{verbose_duration_unit: 1},
         time_unit=duration_time_unit,
     )
+    duration_nanoseconds = pl.select(duration.dt.nanoseconds()).item()
 
-    df_add_right = df_datetimes.select((pl.col("ts") + duration).alias("ts"))
-    df_add_left = df_datetimes.select((duration + pl.col("ts")).alias("ts"))
+    expected_nanoseconds = dt_nanoseconds + duration_nanoseconds
 
-    multipliers = {
-        "ms": 1_000_000,
-        "us": 1_000,
-        "ns": 1,
-    }
-    dt_multiplier = multipliers[dt_time_unit]
-    offset = multipliers[duration_time_unit]
+    if op == "add-left":
+        select_expr = duration + pl.col("ts")
+    elif op == "add-right":
+        select_expr = pl.col("ts") + duration
 
-    assert df_add_right["ts"].dt.nanosecond().to_list() == [
-        dt_value * dt_multiplier + offset
-    ]
-    assert isinstance(df_add_right["ts"].dtype, pl.Datetime)
-    assert df_add_right["ts"].dtype.time_unit == expected_time_unit
+    result_df = df_datetimes.select(select_expr.alias("ts"))
 
-    assert df_add_left["ts"].dt.nanosecond().to_list() == [
-        dt_value * dt_multiplier + offset
-    ]
-    assert isinstance(df_add_left["ts"].dtype, pl.Datetime)
-    assert df_add_left["ts"].dtype.time_unit == expected_time_unit
+    assert result_df["ts"].dt.nanosecond().to_list() == [expected_nanoseconds]
+    assert isinstance(result_df["ts"].dtype, pl.Datetime)
+    assert result_df["ts"].dtype.time_unit == expected_time_unit
 
 
 @pytest.mark.parametrize(
