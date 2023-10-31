@@ -17,7 +17,6 @@ from polars.datatypes import (
     Struct,
     py_type_to_dtype,
 )
-from polars.testing.asserts.frame import assert_frame_equal
 
 
 def test_dtype_init_equivalence() -> None:
@@ -140,7 +139,7 @@ def test_conversion_dtype() -> None:
         )
         .select(
             pl.struct(
-                [pl.col("id_column"), pl.col("some_column").cast(pl.Categorical)]
+                pl.col("id_column"), pl.col("some_column").cast(pl.Categorical)
             ).alias("struct"),
             pl.col("some_partition_column"),
         )
@@ -148,26 +147,24 @@ def test_conversion_dtype() -> None:
         .agg("struct")
     )
 
-    df = pl.from_arrow(df.to_arrow())  # type: ignore[assignment]
+    result: pl.DataFrame = pl.from_arrow(df.to_arrow())  # type: ignore[assignment]
     # the assertion is not the real test
     # this tests if dtype has bubbled up correctly in conversion
     # if not we would UB
-    expected = pl.DataFrame(
-        {
-            "some_partition_column": ["partition_1", "partition_2"],
-            "struct": [
-                [
-                    {"id_column": 1, "some_column": "a"},
-                    {"id_column": 3, "some_column": "c"},
-                ],
-                [
-                    {"id_column": 2, "some_column": "b"},
-                    {"id_column": 4, "some_column": "d"},
-                ],
+    expected = {
+        "some_partition_column": ["partition_1", "partition_2"],
+        "struct": [
+            [
+                {"id_column": 1, "some_column": "a"},
+                {"id_column": 3, "some_column": "c"},
             ],
-        }
-    )
-    assert_frame_equal(df, expected)
+            [
+                {"id_column": 2, "some_column": "b"},
+                {"id_column": 4, "some_column": "d"},
+            ],
+        ],
+    }
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_struct_field_iter() -> None:
