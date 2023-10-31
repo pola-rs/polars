@@ -182,7 +182,7 @@ def test_lazy_n_rows(foods_file_path: Path) -> None:
         .filter(pl.col("idx") > 2)
         .collect()
     )
-    assert df.to_dict(False) == {
+    assert df.to_dict(as_series=False) == {
         "idx": [3],
         "category": ["fruit"],
         "calories": [60],
@@ -208,7 +208,7 @@ foo,bar,baz
     """
         )
     file_path = tmp_path / "*.csv"
-    assert pl.read_csv(file_path, skip_rows=2).to_dict(False) == {
+    assert pl.read_csv(file_path, skip_rows=2).to_dict(as_series=False) == {
         "foo": [1, 4, 7, 1, 4, 7],
         "bar": [2, 5, 8, 2, 5, 8],
         "baz": [3, 6, 9, 3, 6, 9],
@@ -223,7 +223,7 @@ def test_glob_n_rows(io_files_path: Path) -> None:
     assert df.shape == (40, 4)
 
     # take first and last rows
-    assert df[[0, 39]].to_dict(False) == {
+    assert df[[0, 39]].to_dict(as_series=False) == {
         "category": ["vegetables", "seafood"],
         "calories": [45, 146],
         "fats_g": [0.5, 6.0],

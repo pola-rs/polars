@@ -47,7 +47,7 @@ def test_asof_join_inline_cast_6438() -> None:
 
     assert df_trades.join_asof(
         df_quotes, on=pl.col("time").cast(pl.Datetime("ns")).set_sorted(), by="stock"
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "time": [
             datetime(2020, 1, 1, 9, 1),
             datetime(2020, 1, 1, 9, 1),
@@ -183,7 +183,9 @@ def test_join_asof_floats() -> None:
             "c": ["x", "x", "x", "y", "y", "y", "y"],
         }
     ).with_columns(pl.col("val").alias("b"))
-    assert df1.join_asof(df2, on=pl.col("b").set_sorted(), by="c").to_dict(False) == {
+    assert df1.join_asof(df2, on=pl.col("b").set_sorted(), by="c").to_dict(
+        as_series=False
+    ) == {
         "b": [
             0.0,
             0.8333333333333334,
@@ -227,7 +229,7 @@ def test_join_asof_tolerance() -> None:
 
     assert df_trades.join_asof(
         df_quotes, on="time", by="stock", tolerance="2s"
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "time": [
             datetime(2020, 1, 1, 9, 0, 1),
             datetime(2020, 1, 1, 9, 0, 1),
@@ -241,7 +243,7 @@ def test_join_asof_tolerance() -> None:
 
     assert df_trades.join_asof(
         df_quotes, on="time", by="stock", tolerance="1s"
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "time": [
             datetime(2020, 1, 1, 9, 0, 1),
             datetime(2020, 1, 1, 9, 0, 1),
@@ -285,7 +287,7 @@ def test_join_asof_tolerance_forward() -> None:
 
     assert df_quotes.join_asof(
         df_trades, on="time", by="stock", tolerance="2s", strategy="forward"
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "time": [
             datetime(2020, 1, 1, 9, 0, 0),
             datetime(2020, 1, 1, 9, 0, 2),
@@ -300,7 +302,7 @@ def test_join_asof_tolerance_forward() -> None:
 
     assert df_quotes.join_asof(
         df_trades, on="time", by="stock", tolerance="1s", strategy="forward"
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "time": [
             datetime(2020, 1, 1, 9, 0, 0),
             datetime(2020, 1, 1, 9, 0, 2),
@@ -316,7 +318,7 @@ def test_join_asof_tolerance_forward() -> None:
     # Sanity check that this gives us equi-join
     assert df_quotes.join_asof(
         df_trades, on="time", by="stock", tolerance="0s", strategy="forward"
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "time": [
             datetime(2020, 1, 1, 9, 0, 0),
             datetime(2020, 1, 1, 9, 0, 2),
@@ -351,7 +353,7 @@ def test_join_asof_projection() -> None:
         (
             df1.lazy().join_asof(df2.lazy(), left_on="df1_date", right_on="df2_date")
         ).select([pl.col("df2_date"), "df1_date"])
-    ).collect().to_dict(False) == {
+    ).collect().to_dict(as_series=False) == {
         "df2_date": [None, 20221012, 20221012, 20221012, 20221015],
         "df1_date": [20221011, 20221012, 20221013, 20221014, 20221016],
     }
@@ -359,7 +361,7 @@ def test_join_asof_projection() -> None:
         df1.lazy().join_asof(
             df2.lazy(), by="key", left_on="df1_date", right_on="df2_date"
         )
-    ).select(["df2_date", "df1_date"]).collect().to_dict(False) == {
+    ).select(["df2_date", "df1_date"]).collect().to_dict(as_series=False) == {
         "df2_date": [None, None, None, 20221012, 20221015],
         "df1_date": [20221011, 20221012, 20221013, 20221014, 20221016],
     }
@@ -399,7 +401,10 @@ def test_join_asof_projection_7481() -> None:
 
     assert (
         ldf1.join_asof(ldf2, left_on="a", right_on="b").select("a", "b")
-    ).collect().to_dict(False) == {"a": [1, 2, 2], "b": ["bleft", "bleft", "bleft"]}
+    ).collect().to_dict(as_series=False) == {
+        "a": [1, 2, 2],
+        "b": ["bleft", "bleft", "bleft"],
+    }
 
 
 def test_asof_join_sorted_by_group(capsys: Any) -> None:

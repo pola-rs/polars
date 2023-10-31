@@ -32,7 +32,7 @@ def test_struct_logical_is_in() -> None:
 def test_is_in_bool() -> None:
     vals = [True, None]
     df = pl.DataFrame({"A": [True, False, None]})
-    assert df.select(pl.col("A").is_in(vals)).to_dict(False) == {
+    assert df.select(pl.col("A").is_in(vals)).to_dict(as_series=False) == {
         "A": [True, False, None]
     }
 
@@ -67,7 +67,9 @@ def test_is_in_struct() -> None:
         }
     )
 
-    assert df.filter(pl.col("struct_elem").is_in("struct_list")).to_dict(False) == {
+    assert df.filter(pl.col("struct_elem").is_in("struct_list")).to_dict(
+        as_series=False
+    ) == {
         "struct_elem": [{"a": 1, "b": 11}],
         "struct_list": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 3, "b": 13}]],
     }
@@ -106,9 +108,9 @@ def test_is_in_float_list_10764() -> None:
             "n": [3.0, 2.0],
         }
     )
-    assert df.select(pl.col("n").is_in("lst").alias("is_in")).to_dict(False) == {
-        "is_in": [True, False]
-    }
+    assert df.select(pl.col("n").is_in("lst").alias("is_in")).to_dict(
+        as_series=False
+    ) == {"is_in": [True, False]}
 
 
 def test_is_in_df() -> None:

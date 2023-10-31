@@ -227,7 +227,9 @@ def test_cumsum_fold() -> None:
         }
     )
     result = df.select(pl.cumsum_horizontal("a", "c"))
-    assert result.to_dict(False) == {"cumsum": [{"a": 1, "c": 6}, {"a": 2, "c": 8}]}
+    assert result.to_dict(as_series=False) == {
+        "cumsum": [{"a": 1, "c": 6}, {"a": 2, "c": 8}]
+    }
 
 
 def test_sum_dtype_12028() -> None:

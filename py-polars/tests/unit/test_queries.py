@@ -35,7 +35,7 @@ def test_repeat_expansion_in_group_by() -> None:
         pl.DataFrame({"g": [1, 2, 2, 3, 3, 3]})
         .group_by("g", maintain_order=True)
         .agg(pl.repeat(1, pl.count()).cumsum())
-        .to_dict(False)
+        .to_dict(as_series=False)
     )
     assert out == {"g": [1, 2, 3], "repeat": [[1], [1, 2], [1, 2, 3]]}
 
@@ -73,7 +73,7 @@ def test_overflow_uint16_agg_mean() -> None:
         )
         .group_by(["col1"])
         .agg(pl.col("col3").mean())
-        .to_dict(False)
+        .to_dict(as_series=False)
     ) == {"col1": ["A"], "col3": [64.0]}
 
 
@@ -96,7 +96,7 @@ def test_binary_on_list_agg_3345() -> None:
                 ).sum()
             ]
         )
-        .to_dict(False)
+        .to_dict(as_series=False)
     ) == {"group": ["A", "B"], "id": [0.6365141682948128, 1.0397207708399179]}
 
 
@@ -167,7 +167,7 @@ def test_group_by_agg_equals_zero_3535() -> None:
     # group by the key, aggregating the two numeric cols
     assert df.group_by(pl.col("key"), maintain_order=True).agg(
         [pl.col("val1").sum(), pl.col("val2").sum()]
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "key": ["aa", "bb", "cc"],
         "val1": [10, 0, -99],
         "val2": [0.0, 0.0, 10.5],
@@ -196,7 +196,7 @@ def test_arithmetic_in_aggregation_3739() -> None:
                 demean_dot(),
             ]
         )
-    ).to_dict(False) == {"key": ["a"], "demean_dot": [0.0]}
+    ).to_dict(as_series=False) == {"key": ["a"], "demean_dot": [0.0]}
 
 
 def test_dtype_concat_3735() -> None:
@@ -241,7 +241,10 @@ def test_opaque_filter_on_lists_3784() -> None:
                 and variant.to_list().index(pre) < variant.to_list().index(succ)
             )
         )
-    ).collect().to_dict(False) == {"group": [1], "str_list": [["A", "B", "B"]]}
+    ).collect().to_dict(as_series=False) == {
+        "group": [1],
+        "str_list": [["A", "B", "B"]],
+    }
 
 
 def test_ternary_none_struct() -> None:
@@ -265,7 +268,7 @@ def test_ternary_none_struct() -> None:
         pl.DataFrame({"groups": [1, 2, 3, 4], "values": [None, None, 1, 2]})
         .group_by("groups", maintain_order=True)
         .agg([map_expr("values")])
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "groups": [1, 2, 3, 4],
         "out": [
             {"sum": None, "count": None},
