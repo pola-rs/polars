@@ -37,7 +37,6 @@ def test_arr_to_list_nested_array_preserved() -> None:
     s = pl.Series(
         "a",
         [[[1, 2], [3, 4]], [[5, 6], [7, 8]]],
-        dtype=pl.List(pl.Array(inner=pl.Int8, width=2)),
-    )
+    ).cast(pl.List(pl.Array(inner=pl.Int8, width=2)))
     expected = s.to_frame().lazy()
     assert_frame_equal(result, expected)
