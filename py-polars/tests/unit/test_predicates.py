@@ -240,3 +240,16 @@ def test_fast_path_boolean_filter_predicates() -> None:
     df = pl.DataFrame({"colx": ["aa", "bb", "cc", "dd"]})
     assert_frame_equal(df.filter(False), pl.DataFrame(schema={"colx": pl.Utf8}))
     assert_frame_equal(df.filter(True), df)
+
+
+def test_predicate_pushdown_boundary_12102() -> None:
+    df = pl.DataFrame({"x": [1, 2, 4], "y": [1, 2, 4]})
+
+    lf = (
+        df.lazy()
+        .filter(pl.col("y") > 1)
+        .filter(pl.col("x") == pl.min("x"))
+        .filter(pl.col("y") > 2)
+    )
+
+    assert lf.collect().frame_equal(lf.collect(predicate_pushdown=False))
