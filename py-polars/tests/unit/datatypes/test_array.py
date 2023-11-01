@@ -144,3 +144,11 @@ def test_array_list_supertype() -> None:
 
     expected = pl.Series([True, False])
     assert_series_equal(result, expected)
+
+
+def test_array_in_list() -> None:
+    s = pl.Series(
+        [[[1, 2], [3, 4]], [[5, 6], [7, 8]]],
+        dtype=pl.List(pl.Array(inner=pl.Int8, width=2)),
+    )
+    assert s.dtype == pl.List(pl.Array(inner=pl.Int8, width=2))
