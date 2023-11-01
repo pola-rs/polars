@@ -1268,7 +1268,7 @@ impl Expr {
                     match by_flag {
                         IsSorted::Ascending => rolling_fn(&series, options).map(Some),
                         IsSorted::Descending => {
-                            Ok(rolling_fn(&series, options)?.reverse()).map(Some)
+                            Ok(Some(rolling_fn(&series, options)?.reverse()))
                         },
                         IsSorted::Not => {
                             let res = rolling_fn(&series, options)?;
