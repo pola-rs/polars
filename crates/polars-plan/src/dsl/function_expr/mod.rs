@@ -501,17 +501,17 @@ impl Display for FunctionExpr {
         let s = match self {
             // Namespaces
             #[cfg(feature = "dtype-array")]
-            ArrayExpr(af) => return Display::fmt(af, f),
-            BinaryExpr(b) => return write!(f, "{b}"),
+            ArrayExpr(func) => return write!(f, "{func}"),
+            BinaryExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "dtype-categorical")]
             Categorical(func) => return write!(f, "{func}"),
             ListExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "strings")]
-            StringExpr(s) => return write!(f, "{s}"),
+            StringExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "dtype-struct")]
             StructExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "temporal")]
-            TemporalExpr(fun) => return write!(f, "{fun}"),
+            TemporalExpr(func) => return write!(f, "{func}"),
 
             // Other expressions
             Boolean(func) => return write!(f, "{func}"),
@@ -738,21 +738,14 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             // Namespaces
             #[cfg(feature = "dtype-array")]
             ArrayExpr(func) => func.into(),
-            BinaryExpr(s) => s.into(),
+            BinaryExpr(func) => func.into(),
             #[cfg(feature = "dtype-categorical")]
             Categorical(func) => func.into(),
             ListExpr(func) => func.into(),
             #[cfg(feature = "strings")]
-            StringExpr(s) => s.into(),
+            StringExpr(func) => func.into(),
             #[cfg(feature = "dtype-struct")]
-            StructExpr(sf) => {
-                use StructFunction::*;
-                match sf {
-                    FieldByIndex(index) => map!(struct_::get_by_index, index),
-                    FieldByName(name) => map!(struct_::get_by_name, name.clone()),
-                    RenameFields(names) => map!(struct_::rename_fields, names.clone()),
-                }
-            },
+            StructExpr(func) => func.into(),
             #[cfg(feature = "temporal")]
             TemporalExpr(func) => func.into(),
 
