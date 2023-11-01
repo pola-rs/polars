@@ -17,7 +17,7 @@ The `str` namespace can be accessed through the `.str` attribute of a column wit
 
 #### String parsing
 
-`Polars` offers multiple methods for checking and parsing elements of a string. Firstly, we can use the `contains` method to check whether a given pattern exists within a substring. Subsequently, we can extract these patterns and replace them using other methods, which will be demonstrated in upcoming examples.
+Polars offers multiple methods for checking and parsing elements of a string. Firstly, we can use the `contains` method to check whether a given pattern exists within a substring. Subsequently, we can extract these patterns and replace them using other methods, which will be demonstrated in upcoming examples.
 
 ##### Check for existence of a pattern
 

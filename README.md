@@ -200,8 +200,8 @@ You can also install the dependencies directly.
 | Tag        | Description                                                                  |
 | ---------- | ---------------------------------------------------------------------------- |
 | **all**    | Install all optional dependencies (all of the following)                     |
-| pandas     | Install with Pandas for converting data to and from Pandas DataFrames/Series |
-| numpy      | Install with numpy for converting data to and from numpy arrays              |
+| pandas     | Install with pandas for converting data to and from pandas DataFrames/Series |
+| numpy      | Install with NumPy for converting data to and from NumPy arrays              |
 | pyarrow    | Reading data formats using PyArrow                                           |
 | fsspec     | Support for reading from remote file systems                                 |
 | connectorx | Support for reading from SQL databases                                       |

@@ -24,7 +24,7 @@ Polars can read an NDJSON file into a `DataFrame` using the `read_ndjson` functi
 
 ## Scan
 
-`Polars` allows you to _scan_ a JSON input **only for newline delimited json**. Scanning delays the actual parsing of the
+Polars allows you to _scan_ a JSON input **only for newline delimited json**. Scanning delays the actual parsing of the
 file and instead returns a lazy computation holder called a `LazyFrame`.
 
 {{code_block('user-guide/io/json','scan',['scan_ndjson'])}}

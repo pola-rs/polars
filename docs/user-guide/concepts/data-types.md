@@ -1,6 +1,6 @@
 # Data types
 
-`Polars` is entirely based on `Arrow` data types and backed by `Arrow` memory arrays. This makes data processing
+Polars is entirely based on `Arrow` data types and backed by `Arrow` memory arrays. This makes data processing
 cache-efficient and well-supported for Inter Process Communication. Most data types follow the exact implementation
 from `Arrow`, with the exception of `Utf8` (this is actually `LargeUtf8`), `Categorical`, and `Object` (support is limited). The data types are:
 
@@ -32,7 +32,7 @@ To learn more about the internal representation of these data types, check the [
 
 ## Floating Point
 
-`Polars` generally follows the IEEE 754 floating point standard for `Float32` and `Float64`, with some exceptions:
+Polars generally follows the IEEE 754 floating point standard for `Float32` and `Float64`, with some exceptions:
 
 - Any NaN compares equal to any other NaN, and greater than any non-NaN value.
 - Operations do not guarantee any particular behavior on the sign of zero or NaN,
@@ -40,6 +40,6 @@ To learn more about the internal representation of these data types, check the [
   e.g. a sort or group by operation may canonicalize all zeroes to +0 and all NaNs
   to a positive NaN without payload for efficient equality checks.
 
-`Polars` always attempts to provide reasonably accurate results for floating point computations, but does not provide guarantees
+Polars always attempts to provide reasonably accurate results for floating point computations, but does not provide guarantees
 on the error unless mentioned otherwise. Generally speaking 100% accurate results are infeasibly expensive to acquire (requiring
 much larger internal representations than 64-bit floats), and thus some error is always to be expected.

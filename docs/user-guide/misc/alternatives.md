@@ -16,7 +16,7 @@ These are some tools that share similar functionality to what polars does.
 
 - Dask
 
-  Parallelizes existing single-threaded libraries like `NumPy` and `Pandas`. As a consumer of those libraries Dask
+  Parallelizes existing single-threaded libraries like NumPy and pandas. As a consumer of those libraries Dask
   therefore has less control over low level performance and semantics.
   Those libraries are treated like a black box.
   On a single machine the parallelization effort can also be seriously stalled by pandas strings.
