@@ -6,6 +6,7 @@ from polars.datatypes import Date
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
 from polars.utils.convert import _to_python_date, _to_python_datetime
+from polars.utils.deprecation import deprecate_renamed_function
 
 if TYPE_CHECKING:
     import datetime as dt
@@ -1097,9 +1098,20 @@ class DateTimeNameSpace:
 
         """
 
+    @deprecate_renamed_function("total_days", version="0.19.3")
     def days(self) -> Series:
         """
-        Extract the days from a Duration type.
+        Extract the total days from a Duration type.
+
+        .. deprecated:: 0.19.3
+            Use :meth:`total_days` instead.
+
+        """
+        return self.total_days()
+
+    def total_days(self) -> Series:
+        """
+        Extract the total days from a Duration type.
 
         Returns
         -------
@@ -1120,7 +1132,7 @@ class DateTimeNameSpace:
                 2020-04-01 00:00:00
                 2020-05-01 00:00:00
         ]
-        >>> date.diff().dt.days()
+        >>> date.diff().dt.total_days()
         shape: (3,)
         Series: 'datetime' [i64]
         [
@@ -1131,9 +1143,20 @@ class DateTimeNameSpace:
 
         """
 
+    @deprecate_renamed_function("total_hours", version="0.19.3")
     def hours(self) -> Series:
         """
-        Extract the hours from a Duration type.
+        Extract the total hours from a Duration type.
+
+        .. deprecated:: 0.19.3
+            Use :meth:`total_hours` instead.
+
+        """
+        return self.total_hours()
+
+    def total_hours(self) -> Series:
+        """
+        Extract the total hours from a Duration type.
 
         Returns
         -------
@@ -1155,7 +1178,7 @@ class DateTimeNameSpace:
                 2020-01-03 00:00:00
                 2020-01-04 00:00:00
         ]
-        >>> date.diff().dt.hours()
+        >>> date.diff().dt.total_hours()
         shape: (4,)
         Series: 'datetime' [i64]
         [
@@ -1167,9 +1190,20 @@ class DateTimeNameSpace:
 
         """
 
+    @deprecate_renamed_function("total_minutes", version="0.19.3")
     def minutes(self) -> Series:
         """
-        Extract the minutes from a Duration type.
+        Extract the total minutes from a Duration type.
+
+        .. deprecated:: 0.19.3
+            Use :meth:`total_minutes` instead.
+
+        """
+        return self.total_minutes()
+
+    def total_minutes(self) -> Series:
+        """
+        Extract the total minutes from a Duration type.
 
         Returns
         -------
@@ -1191,7 +1225,7 @@ class DateTimeNameSpace:
                 2020-01-03 00:00:00
                 2020-01-04 00:00:00
         ]
-        >>> date.diff().dt.minutes()
+        >>> date.diff().dt.total_minutes()
         shape: (4,)
         Series: 'datetime' [i64]
         [
@@ -1203,9 +1237,20 @@ class DateTimeNameSpace:
 
         """
 
+    @deprecate_renamed_function("total_seconds", version="0.19.3")
     def seconds(self) -> Series:
         """
-        Extract the seconds from a Duration type.
+        Extract the total seconds from a Duration type.
+
+        .. deprecated:: 0.19.3
+            Use :meth:`total_seconds` instead.
+
+        """
+        return self.total_seconds()
+
+    def total_seconds(self) -> Series:
+        """
+        Extract the total seconds from a Duration type.
 
         Returns
         -------
@@ -1228,7 +1273,7 @@ class DateTimeNameSpace:
                 2020-01-01 00:03:00
                 2020-01-01 00:04:00
         ]
-        >>> date.diff().dt.seconds()
+        >>> date.diff().dt.total_seconds()
         shape: (5,)
         Series: 'datetime' [i64]
         [
@@ -1241,9 +1286,20 @@ class DateTimeNameSpace:
 
         """
 
+    @deprecate_renamed_function("total_milliseconds", version="0.19.3")
     def milliseconds(self) -> Series:
         """
-        Extract the milliseconds from a Duration type.
+        Extract the total milliseconds from a Duration type.
+
+        .. deprecated:: 0.19.3
+            Use :meth:`total_milliseconds` instead.
+
+        """
+        return self.total_milliseconds()
+
+    def total_milliseconds(self) -> Series:
+        """
+        Extract the total milliseconds from a Duration type.
 
         Returns
         -------
@@ -1267,7 +1323,7 @@ class DateTimeNameSpace:
                 2020-01-01 00:00:00.001
                 2020-01-01 00:00:00.002
         ]
-        >>> date.diff().dt.milliseconds()
+        >>> date.diff().dt.total_milliseconds()
         shape: (3,)
         Series: 'datetime' [i64]
         [
@@ -1278,9 +1334,20 @@ class DateTimeNameSpace:
 
         """
 
+    @deprecate_renamed_function("total_microseconds", version="0.19.3")
     def microseconds(self) -> Series:
         """
-        Extract the microseconds from a Duration type.
+        Extract the total microseconds from a Duration type.
+
+        .. deprecated:: 0.19.3
+            Use :meth:`total_microseconds` instead.
+
+        """
+        return self.total_microseconds()
+
+    def total_microseconds(self) -> Series:
+        """
+        Extract the total microseconds from a Duration type.
 
         Returns
         -------
@@ -1304,7 +1371,7 @@ class DateTimeNameSpace:
                 2020-01-01 00:00:00.001
                 2020-01-01 00:00:00.002
         ]
-        >>> date.diff().dt.microseconds()
+        >>> date.diff().dt.total_microseconds()
         shape: (3,)
         Series: 'datetime' [i64]
         [
@@ -1315,9 +1382,20 @@ class DateTimeNameSpace:
 
         """
 
+    @deprecate_renamed_function("total_nanoseconds", version="0.19.3")
     def nanoseconds(self) -> Series:
         """
-        Extract the nanoseconds from a Duration type.
+        Extract the total nanoseconds from a Duration type.
+
+        .. deprecated:: 0.19.3
+            Use :meth:`total_nanoseconds` instead.
+
+        """
+        return self.total_nanoseconds()
+
+    def total_nanoseconds(self) -> Series:
+        """
+        Extract the total nanoseconds from a Duration type.
 
         Returns
         -------
@@ -1341,7 +1419,7 @@ class DateTimeNameSpace:
                 2020-01-01 00:00:00.001
                 2020-01-01 00:00:00.002
         ]
-        >>> date.diff().dt.nanoseconds()
+        >>> date.diff().dt.total_nanoseconds()
         shape: (3,)
         Series: 'datetime' [i64]
         [

@@ -132,9 +132,9 @@ def test_series_datetime_timeunits(
 def test_series_duration_timeunits(
     s: pl.Series,
 ) -> None:
-    nanos = s.dt.nanoseconds().to_list()
-    micros = s.dt.microseconds().to_list()
-    millis = s.dt.milliseconds().to_list()
+    nanos = s.dt.total_nanoseconds().to_list()
+    micros = s.dt.total_microseconds().to_list()
+    millis = s.dt.total_milliseconds().to_list()
 
     scale = {
         "ns": 1,
@@ -147,14 +147,14 @@ def test_series_duration_timeunits(
 
     # special handling for ns timeunit (as we may generate a microsecs-based
     # timedelta that results in 64bit overflow on conversion to nanosecs)
-    micros = s.dt.microseconds().to_list()
+    micros = s.dt.total_microseconds().to_list()
     lower_bound, upper_bound = -(2**63), (2**63) - 1
     if all(
         (lower_bound <= (us * 1000) <= upper_bound)
         for us in micros
         if isinstance(us, int)
     ):
-        for ns, us in zip(s.dt.nanoseconds(), micros):
+        for ns, us in zip(s.dt.total_nanoseconds(), micros):
             assert ns == (us * 1000)
 
 

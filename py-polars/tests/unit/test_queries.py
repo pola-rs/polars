@@ -144,7 +144,7 @@ def test_median_on_shifted_col_3522() -> None:
             ]
         }
     )
-    diffs = df.select(pl.col("foo").diff().dt.seconds())
+    diffs = df.select(pl.col("foo").diff().dt.total_seconds())
     assert diffs.select(pl.col("foo").median()).to_series()[0] == 36828.5
 
 

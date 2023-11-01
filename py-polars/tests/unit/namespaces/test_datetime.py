@@ -400,13 +400,13 @@ def test_strptime_fractional_seconds(series_of_str_dates: pl.Series) -> None:
 @pytest.mark.parametrize(
     ("unit_attr", "expected"),
     [
-        ("days", pl.Series([1])),
-        ("hours", pl.Series([24])),
-        ("minutes", pl.Series([24 * 60])),
-        ("seconds", pl.Series([3600 * 24])),
-        ("milliseconds", pl.Series([3600 * 24 * int(1e3)])),
-        ("microseconds", pl.Series([3600 * 24 * int(1e6)])),
-        ("nanoseconds", pl.Series([3600 * 24 * int(1e9)])),
+        ("total_days", pl.Series([1])),
+        ("total_hours", pl.Series([24])),
+        ("total_minutes", pl.Series([24 * 60])),
+        ("total_seconds", pl.Series([3600 * 24])),
+        ("total_milliseconds", pl.Series([3600 * 24 * int(1e3)])),
+        ("total_microseconds", pl.Series([3600 * 24 * int(1e6)])),
+        ("total_nanoseconds", pl.Series([3600 * 24 * int(1e9)])),
     ],
 )
 def test_duration_extract_times(
@@ -416,6 +416,32 @@ def test_duration_extract_times(
     duration = pl.Series([datetime(2022, 1, 2)]) - pl.Series([datetime(2022, 1, 1)])
 
     assert_series_equal(getattr(duration.dt, unit_attr)(), expected)
+
+
+@pytest.mark.parametrize(
+    ("unit_attr", "expected"),
+    [
+        ("days", pl.Series([1])),
+        ("hours", pl.Series([24])),
+        ("minutes", pl.Series([24 * 60])),
+        ("seconds", pl.Series([3600 * 24])),
+        ("milliseconds", pl.Series([3600 * 24 * int(1e3)])),
+        ("microseconds", pl.Series([3600 * 24 * int(1e6)])),
+        ("nanoseconds", pl.Series([3600 * 24 * int(1e9)])),
+    ],
+)
+def test_duration_extract_times_deprecated_methods(
+    unit_attr: str,
+    expected: pl.Series,
+) -> None:
+    duration = pl.Series([datetime(2022, 1, 2)]) - pl.Series([datetime(2022, 1, 1)])
+
+    with pytest.deprecated_call():
+        assert_series_equal(getattr(duration.dt, unit_attr)(), expected)
+    with pytest.deprecated_call():
+        # Test Expr case too
+        result_df = pl.select(getattr(pl.lit(duration).dt, unit_attr)())
+        assert_series_equal(result_df[result_df.columns[0]], expected)
 
 
 @pytest.mark.parametrize(
