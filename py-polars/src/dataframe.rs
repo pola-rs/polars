@@ -58,11 +58,10 @@ impl PyDataFrame {
             rows_to_schema_supertypes(&rows, infer_schema_length.map(|n| std::cmp::max(1, n)))
                 .map_err(PyPolarsErr::from)?;
 
-        // Replace inferred nulls with boolean and erase scale from inferred decimals.
+        // Erase scale from inferred decimals.
         for dtype in final_schema.iter_dtypes_mut() {
-            match dtype {
-                DataType::Decimal(_, _) => *dtype = DataType::Decimal(None, None),
-                _ => (),
+            if let DataType::Decimal(_, _) = dtype {
+                *dtype = DataType::Decimal(None, None)
             }
         }
 
