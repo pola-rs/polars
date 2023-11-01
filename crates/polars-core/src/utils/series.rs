@@ -40,7 +40,33 @@ pub fn ensure_sorted_arg(s: &Series, operation: &str) -> PolarsResult<()> {
     Ok(())
 }
 
-pub fn get_casting_failures(input: &Series, output: &Series) -> PolarsResult<Series> {
+pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<()> {
     let failure_mask = !input.is_null() & output.is_null();
-    input.filter_threaded(&failure_mask, false)?.unique()
+    let failures = input.filter_threaded(&failure_mask, false)?;
+    let unique_failures = failures.unique()?;
+    let n_failures = failures.len();
+    let n_unique_failures = unique_failures.len();
+
+    let additional_info = match (input.dtype(), output.dtype()) {
+        (DataType::Utf8, DataType::Date | DataType::Datetime(_, _)) => {
+            "\n\nYou might want to try:\n\
+            - setting `strict=False\n\
+            - providing a format or checking the format string\n\
+            - setting `exact=False` (note: this is much slower!)"
+        },
+        _ => "",
+    };
+
+    polars_bail!(
+        ComputeError:
+        "Conversion from `{}` to `{}` failed in column '{}' for {} of {} values ({} unique failures): {}{}",
+        input.dtype(),
+        output.dtype(),
+        output.name(),
+        n_failures,
+        input.len(),
+        n_unique_failures,
+        unique_failures.fmt_list(),
+        additional_info,
+    )
 }

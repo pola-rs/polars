@@ -141,7 +141,7 @@ def test_to_date_non_exact_strptime() -> None:
     ],
 )
 def test_non_exact_short_elements_10223(value: str, attr: str) -> None:
-    with pytest.raises(pl.ComputeError, match="strict .* parsing failed"):
+    with pytest.raises(pl.ComputeError, match="Conversion .* failed"):
         getattr(pl.Series(["2019-01-01", value]).str, attr)(exact=False)
 
 
