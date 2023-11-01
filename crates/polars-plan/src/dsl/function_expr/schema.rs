@@ -11,6 +11,22 @@ impl FunctionExpr {
 
         let mapper = FieldsMapper { fields };
         match self {
+            // Namespaces
+            #[cfg(feature = "dtype-array")]
+            ArrayExpr(func) => func.get_field(mapper),
+            BinaryExpr(s) => s.get_field(mapper),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(func) => func.get_field(mapper),
+            ListExpr(func) => func.get_field(mapper),
+            #[cfg(feature = "strings")]
+            StringExpr(s) => s.get_field(mapper),
+            #[cfg(feature = "dtype-struct")]
+            StructExpr(s) => s.get_field(mapper),
+            #[cfg(feature = "temporal")]
+            TemporalExpr(fun) => fun.get_field(mapper),
+
+            // Other expressions
+            Boolean(func) => func.get_field(mapper),
             #[cfg(feature = "abs")]
             Abs => mapper.with_same_dtype(),
             NullCount => mapper.with_dtype(IDX_DTYPE),
@@ -22,11 +38,6 @@ impl FunctionExpr {
             ArgWhere => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "search_sorted")]
             SearchSorted(_) => mapper.with_dtype(IDX_DTYPE),
-            #[cfg(feature = "strings")]
-            StringExpr(s) => s.get_field(mapper),
-            BinaryExpr(s) => s.get_field(mapper),
-            #[cfg(feature = "temporal")]
-            TemporalExpr(fun) => fun.get_field(mapper),
             #[cfg(feature = "range")]
             Range(func) => func.get_field(mapper),
             #[cfg(feature = "date_offset")]
@@ -57,16 +68,11 @@ impl FunctionExpr {
                 RankMethod::Average => DataType::Float64,
                 _ => IDX_DTYPE,
             }),
-            ListExpr(func) => func.get_field(mapper),
-            #[cfg(feature = "dtype-array")]
-            ArrayExpr(func) => func.get_field(mapper),
             #[cfg(feature = "dtype-struct")]
             AsStruct => Ok(Field::new(
                 fields[0].name(),
                 DataType::Struct(fields.to_vec()),
             )),
-            #[cfg(feature = "dtype-struct")]
-            StructExpr(s) => s.get_field(mapper),
             #[cfg(feature = "top_k")]
             TopK(_) => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-struct")]
@@ -79,9 +85,6 @@ impl FunctionExpr {
             #[cfg(feature = "unique_counts")]
             UniqueCounts => mapper.with_dtype(IDX_DTYPE),
             Shift | Reverse => mapper.with_same_dtype(),
-            Boolean(func) => func.get_field(mapper),
-            #[cfg(feature = "dtype-categorical")]
-            Categorical(func) => func.get_field(mapper),
             #[cfg(feature = "cum_agg")]
             Cumcount { .. } => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "cum_agg")]
