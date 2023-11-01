@@ -74,7 +74,7 @@ What if we chose the regex route (i.e. recognizing the presence of _any_ alphabe
 --8<-- "python/user-guide/expressions/lists.py:count_errors_regex"
 ```
 
-If you're unfamiliar with the `(?i)`, it's a good time to look at the documentation for the `str.contains` function in Polars! The rust regex crate provides a lot of additional regex flags that might come in handy.
+If you're unfamiliar with the `(?i)`, it's a good time to look at the documentation for the `str.contains` function in Polars! The Rust regex crate provides a lot of additional regex flags that might come in handy.
 
 ## Row-wise computations
 

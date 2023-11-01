@@ -126,7 +126,7 @@ shape: (5, 8)
  └────────┴────────┘
 >>> ## OPTION 2
 >>> # Don't materialize the query, but return as LazyFrame
->>> # and continue in python
+>>> # and continue in Python
 >>> lf = context.execute(query)
 >>> (lf.join(other_table)
 ...      .group_by("foo")
@@ -249,7 +249,7 @@ Note that the Rust crate implementing the Python bindings is called `py-polars` 
 Rust crate `polars` itself. However, both the Python package and the Python module are named `polars`, so you
 can `pip install polars` and `import polars`.
 
-## Use custom Rust function in python?
+## Use custom Rust function in Python?
 
 Extending polars with UDFs compiled in Rust is easy. We expose pyo3 extensions for `DataFrame` and `Series`
 data structures. See more in https://github.com/pola-rs/pyo3-polars.
@@ -258,7 +258,7 @@ data structures. See more in https://github.com/pola-rs/pyo3-polars.
 
 Do you expect more than `2^32` ~4,2 billion rows? Compile polars with the `bigidx` feature flag.
 
-Or for python users install `pip install polars-u64-idx`.
+Or for Python users install `pip install polars-u64-idx`.
 
 Don't use this unless you hit the row boundary as the default polars is faster and consumes less memory.
 

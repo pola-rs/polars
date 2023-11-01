@@ -20,7 +20,7 @@ These are some tools that share similar functionality to what polars does.
   therefore has less control over low level performance and semantics.
   Those libraries are treated like a black box.
   On a single machine the parallelization effort can also be seriously stalled by pandas strings.
-  Pandas strings, by default, are stored as python objects in
+  Pandas strings, by default, are stored as Python objects in
   numpy arrays meaning that any operation on them is GIL bound and therefore single threaded. This can be circumvented
   by multi-processing but has a non-trivial cost.
 

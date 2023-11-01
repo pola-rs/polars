@@ -8,7 +8,7 @@ Polars has the following datetime datatypes:
 
 - `Date`: Date representation e.g. 2014-07-08. It is internally represented as days since UNIX epoch encoded by a 32-bit signed integer.
 - `Datetime`: Datetime representation e.g. 2014-07-08 07:00:00. It is internally represented as a 64 bit integer since the Unix epoch and can have different units such as ns, us, ms.
-- `Duration`: A time delta type that is created when subtracting `Date/Datetime`. Similar to `timedelta` in python.
+- `Duration`: A time delta type that is created when subtracting `Date/Datetime`. Similar to `timedelta` in Python.
 - `Time`: Time representation, internally represented as nanoseconds since midnight.
 
 ## Parsing dates from a file
