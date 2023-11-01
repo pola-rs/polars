@@ -45,10 +45,11 @@ serde = { version = "*", features = ["derive"] }
 ### Writing the expression
 
 In this library we create a helper function that converts a `&str` to pig-latin, and we create the function that we will
-expose as an expression. To expose a function we must add the `#[polars_expr(output=DataType)]` attribute and the function
+expose as an expression. To expose a function we must add the `#[polars_expr(output_type=DataType)]` attribute and the function
 must always accept `inputs: &[Series]` as its first argument.
 
 ```rust
+// src/expressions.rs
 use polars::prelude::*;
 use pyo3_polars::derive::polars_expr;
 use std::fmt::Write;
@@ -69,7 +70,19 @@ fn pig_latinnify(inputs: &[Series]) -> PolarsResult<Series> {
 
 This is all that is needed on the rust side. On the python side we must setup a folder with the same name as defined in
 the `Cargo.toml`, in this case "expression_lib". We will create a folder in the same directory as our rust `src` folder
-named `expression_lib` and we create an `expression_lib/init.py`.
+named `expression_lib` and we create an `expression_lib/__init__.py`. The resulting file structure should look something like this:
+
+```
+├── 📁 expression_lib/  # name must match "lib.name" in Cargo.toml
+|   └── __init__.py
+|
+├── 📁src/
+|   ├── lib.rs
+|   └── expressions.rs
+|
+├── Cargo.toml
+└── pyproject.toml
+```
 
 Then we create a new class `Language` that will hold the expressions for our new `expr.language` namespace. The function
 name of our expression can be registered. Note that it is important that this name is correct, otherwise the main polars
@@ -78,6 +91,7 @@ this expression behaves. In this case we tell polars that this function is eleme
 expression in batches. Whereas for other operations this would not be allowed, think for instance of a sort, or a slice.
 
 ```python
+# expression_lib/__init__.py
 import polars as pl
 from polars.type_aliases import IntoExpr
 from polars.utils.udfs import _get_shared_lib_location

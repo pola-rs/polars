@@ -33,4 +33,30 @@ impl BinaryNameSpace {
             true,
         )
     }
+
+    #[cfg(feature = "binary_encoding")]
+    pub fn hex_decode(self, strict: bool) -> Expr {
+        self.0
+            .map_private(FunctionExpr::BinaryExpr(BinaryFunction::HexDecode(strict)))
+    }
+
+    #[cfg(feature = "binary_encoding")]
+    pub fn hex_encode(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::BinaryExpr(BinaryFunction::HexEncode))
+    }
+
+    #[cfg(feature = "binary_encoding")]
+    pub fn base64_decode(self, strict: bool) -> Expr {
+        self.0
+            .map_private(FunctionExpr::BinaryExpr(BinaryFunction::Base64Decode(
+                strict,
+            )))
+    }
+
+    #[cfg(feature = "binary_encoding")]
+    pub fn base64_encode(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::BinaryExpr(BinaryFunction::Base64Encode))
+    }
 }

@@ -4,5 +4,5 @@
 /crates/  @ritchie46 @orlp
 /crates/polars-sql/  @ritchie46 @orlp @universalmind303
 /crates/polars-time/  @ritchie46 @orlp @MarcoGorelli
-/py-polars/  @ritchie46 @stinodego @alexander-beedie
-/docs/  @ritchie46 @c-peters @braaannigan
+/py-polars/  @ritchie46 @stinodego @alexander-beedie @MarcoGorelli
+/docs/  @ritchie46 @c-peters @stinodego

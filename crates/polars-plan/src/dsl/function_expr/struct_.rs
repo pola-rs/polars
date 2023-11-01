@@ -1,6 +1,7 @@
 use polars_core::utils::slice_offsets;
 
 use super::*;
+use crate::map;
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -68,6 +69,17 @@ impl Display for StructFunction {
             FieldByIndex(index) => write!(f, "struct.field_by_index({index})"),
             FieldByName(name) => write!(f, "struct.field_by_name({name})"),
             RenameFields(names) => write!(f, "struct.rename_fields({:?})", names),
+        }
+    }
+}
+
+impl From<StructFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+    fn from(func: StructFunction) -> Self {
+        use StructFunction::*;
+        match func {
+            FieldByIndex(index) => map!(struct_::get_by_index, index),
+            FieldByName(name) => map!(struct_::get_by_name, name.clone()),
+            RenameFields(names) => map!(struct_::rename_fields, names.clone()),
         }
     }
 }

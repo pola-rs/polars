@@ -192,7 +192,7 @@ class DataFrame:
     ----------
     data : dict, Sequence, ndarray, Series, or pandas.DataFrame
         Two-dimensional data in various forms; dict input must contain Sequences,
-        Generators, or a ``range``. Sequence may contain Series or other Sequences.
+        Generators, or a `range`. Sequence may contain Series or other Sequences.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
@@ -425,7 +425,9 @@ class DataFrame:
         schema_overrides: SchemaDict | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> Self:
-        pydf = PyDataFrame.read_dicts(data, infer_schema_length, schema)
+        pydf = PyDataFrame.read_dicts(
+            data, infer_schema_length, schema, schema_overrides
+        )
         if schema or schema_overrides:
             pydf = _post_apply_columns(
                 pydf, list(schema or pydf.columns()), schema_overrides=schema_overrides
@@ -686,7 +688,7 @@ class DataFrame:
         """
         Read a CSV file into a DataFrame.
 
-        Use ``pl.read_csv`` to dispatch to this method.
+        Use `pl.read_csv` to dispatch to this method.
 
         See Also
         --------
@@ -819,7 +821,7 @@ class DataFrame:
         """
         Read into a DataFrame from a parquet file.
 
-        Use ``pl.read_parquet`` to dispatch to this method.
+        Use `pl.read_parquet` to dispatch to this method.
 
         See Also
         --------
@@ -884,12 +886,12 @@ class DataFrame:
         ----------
         source
             Path to a file or a file-like object (by file-like object, we refer to
-            objects that have a ``read()`` method, such as a file handler (e.g.
-            via builtin ``open`` function) or ``BytesIO``).
+            objects that have a `read()` method, such as a file handler (e.g.
+            via builtin `open` function) or `BytesIO`).
         columns
             Columns.
         n_rows
-            Stop reading from Apache Avro file after reading ``n_rows``.
+            Stop reading from Apache Avro file after reading `n_rows`.
 
         """
         if isinstance(source, (str, Path)):
@@ -921,13 +923,13 @@ class DataFrame:
         ----------
         source
             Path to a file or a file-like object (by file-like object, we refer to
-            objects that have a ``read()`` method, such as a file handler (e.g.
-            via builtin ``open`` function) or ``BytesIO``).
+            objects that have a `read()` method, such as a file handler (e.g.
+            via builtin `open` function) or `BytesIO`).
         columns
             Columns to select. Accepts a list of column indices (starting at zero) or a
             list of column names.
         n_rows
-            Stop reading from IPC file after reading ``n_rows``.
+            Stop reading from IPC file after reading `n_rows`.
         row_count_name
             Row count name.
         row_count_offset
@@ -1001,13 +1003,13 @@ class DataFrame:
         ----------
         source
             Path to a file or a file-like object (by file-like object, we refer to
-            objects that have a ``read()`` method, such as a file handler (e.g.
-            via builtin ``open`` function) or ``BytesIO``).
+            objects that have a `read()` method, such as a file handler (e.g.
+            via builtin `open` function) or `BytesIO`).
         columns
             Columns to select. Accepts a list of column indices (starting at zero) or a
             list of column names.
         n_rows
-            Stop reading from IPC stream after reading ``n_rows``.
+            Stop reading from IPC stream after reading `n_rows`.
         row_count_name
             Row count name.
         row_count_offset
@@ -1045,7 +1047,7 @@ class DataFrame:
         """
         Read into a DataFrame from a JSON file.
 
-        Use ``pl.read_json`` to dispatch to this method.
+        Use `pl.read_json` to dispatch to this method.
 
         See Also
         --------
@@ -1078,7 +1080,7 @@ class DataFrame:
         """
         Read into a DataFrame from a newline delimited JSON file.
 
-        Use ``pl.read_ndjson`` to dispatch to this method.
+        Use `pl.read_ndjson` to dispatch to this method.
 
         See Also
         --------
@@ -1287,14 +1289,14 @@ class DataFrame:
         Parameters
         ----------
         nan_as_null
-            Overwrite null values in the data with ``NaN``.
+            Overwrite null values in the data with `NaN`.
 
             .. warning::
                 This functionality has not been implemented and the parameter will be
                 removed in a future version.
-                Setting this to ``True`` will raise a ``NotImplementedError``.
+                Setting this to `True` will raise a `NotImplementedError`.
         allow_copy
-            Allow memory to be copied to perform the conversion. If set to ``False``,
+            Allow memory to be copied to perform the conversion. If set to `False`,
             causes conversions that are not zero-copy to fail.
 
         Notes
@@ -1840,8 +1842,8 @@ class DataFrame:
 
         Notes
         -----
-        If row/col not provided, this is equivalent to ``df[0,0]``, with a check that
-        the shape is (1,1). With row/col, this is equivalent to ``df[row,col]``.
+        If row/col not provided, this is equivalent to `df[0,0]`, with a check that
+        the shape is (1,1). With row/col, this is equivalent to `df[row,col]`.
 
         Examples
         --------
@@ -1919,7 +1921,7 @@ class DataFrame:
     ) -> dict[str, Series] | dict[str, list[Any]]:
         ...
 
-    # TODO: Make `as_series` keyword-only
+    @deprecate_nonkeyword_arguments(version="0.19.13")
     def to_dict(
         self,
         as_series: bool = True,  # noqa: FBT001
@@ -2018,8 +2020,8 @@ class DataFrame:
 
         Notes
         -----
-        If you have ``ns``-precision temporal values you should be aware that Python
-        natively only supports up to ``μs``-precision; `ns`-precision values will be
+        If you have `ns`-precision temporal values you should be aware that Python
+        natively only supports up to `μs`-precision; `ns`-precision values will be
         truncated to microseconds on conversion to Python. If this matters to your
         use-case you should export to a different format (such as Arrow or NumPy).
 
@@ -2055,13 +2057,13 @@ class DataFrame:
             However, the C-like order might be more appropriate to use for downstream
             applications to prevent cloning data, e.g. when reshaping into a
             one-dimensional array. Note that this option only takes effect if
-            ``structured`` is set to ``False`` and the DataFrame dtypes allow for a
+            `structured` is set to `False` and the DataFrame dtypes allow for a
             global dtype for all columns.
 
         Notes
         -----
         If you're attempting to convert Utf8 to an array you'll need to install
-        ``pyarrow``.
+        `pyarrow`.
 
         Examples
         --------
@@ -2358,8 +2360,8 @@ class DataFrame:
         Parameters
         ----------
         file
-            File path to which the result should be written. If set to ``None``
-            (default), the output is returned as a string instead.
+            File path or writeable file-like object to which the result will be written.
+            If set to `None` (default), the output is returned as a string instead.
         pretty
             Pretty serialize json.
         row_oriented
@@ -2415,8 +2417,8 @@ class DataFrame:
         Parameters
         ----------
         file
-            File path to which the result should be written. If set to ``None``
-            (default), the output is returned as a string instead.
+            File path or writeable file-like object to which the result will be written.
+            If set to `None` (default), the output is returned as a string instead.
 
         Examples
         --------
@@ -2508,8 +2510,8 @@ class DataFrame:
         Parameters
         ----------
         file
-            File path to which the result should be written. If set to ``None``
-            (default), the output is returned as a string instead.
+            File path or writeable file-like object to which the result will be written.
+            If set to `None` (default), the output is returned as a string instead.
         has_header
             Whether to include header in the CSV output.
         separator
@@ -2535,8 +2537,8 @@ class DataFrame:
             `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             Rust crate.
         float_precision
-            Number of decimal places to write, applied to both ``Float32`` and
-            ``Float64`` datatypes.
+            Number of decimal places to write, applied to both `Float32` and
+            `Float64` datatypes.
         null_value
             A string representing null values (defaulting to the empty string).
         quote_style : {'necessary', 'always', 'non_numeric', 'never'}
@@ -2616,7 +2618,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            File path to which the file should be written.
+            File path or writeable file-like object to which the data will be written.
         compression : {'uncompressed', 'snappy', 'deflate'}
             Compression method. Defaults to "uncompressed".
 
@@ -2682,8 +2684,8 @@ class DataFrame:
         ----------
         workbook : Workbook
             String name or path of the workbook to create, BytesIO object to write
-            into, or an open ``xlsxwriter.Workbook`` object that has not been closed.
-            If None, writes to a ``dataframe.xlsx`` workbook in the working directory.
+            into, or an open `xlsxwriter.Workbook` object that has not been closed.
+            If None, writes to a `dataframe.xlsx` workbook in the working directory.
         worksheet : str
             Name of target worksheet; if None, writes to "Sheet1" when creating a new
             workbook (note that writing to an existing workbook requires a valid
@@ -2692,28 +2694,28 @@ class DataFrame:
             Table position in Excel notation (eg: "A1"), or a (row,col) integer tuple.
         table_style : {str, dict}
             A named Excel table style, such as "Table Style Medium 4", or a dictionary
-            of ``{"key":value,}`` options containing one or more of the following keys:
+            of `{"key":value,}` options containing one or more of the following keys:
             "style", "first_column", "last_column", "banded_columns, "banded_rows".
         table_name : str
             Name of the output table object in the worksheet; can then be referred to
-            in the sheet by formulae/charts, or by subsequent ``xlsxwriter`` operations.
+            in the sheet by formulae/charts, or by subsequent `xlsxwriter` operations.
         column_formats : dict
-            A ``{colname(s):str,}`` or ``{selector:str,}`` dictionary for applying an
+            A `{colname(s):str,}` or `{selector:str,}` dictionary for applying an
             Excel format string to the given columns. Formats defined here (such as
-            "dd/mm/yyyy", "0.00%", etc) will override any defined in ``dtype_formats``.
+            "dd/mm/yyyy", "0.00%", etc) will override any defined in `dtype_formats`.
         dtype_formats : dict
-            A ``{dtype:str,}`` dictionary that sets the default Excel format for the
+            A `{dtype:str,}` dictionary that sets the default Excel format for the
             given dtype. (This can be overridden on a per-column basis by the
-            ``column_formats`` param). It is also valid to use dtype groups such as
-            ``pl.FLOAT_DTYPES`` as the dtype/format key, to simplify setting uniform
+            `column_formats` param). It is also valid to use dtype groups such as
+            `pl.FLOAT_DTYPES` as the dtype/format key, to simplify setting uniform
             integer and float formats.
         conditional_formats : dict
             A dictionary of colname (or selector) keys to a format str, dict, or list
             that defines conditional formatting options for the specified columns.
 
-            * If supplying a string typename, should be one of the valid ``xlsxwriter``
+            * If supplying a string typename, should be one of the valid `xlsxwriter`
               types such as "3_color_scale", "data_bar", etc.
-            * If supplying a dictionary you can make use of any/all ``xlsxwriter``
+            * If supplying a dictionary you can make use of any/all `xlsxwriter`
               supported options, including icon sets, formulae, etc.
             * Supplying multiple columns as a tuple/key will apply a single format
               across all columns - this is effective in creating a heatmap, as the
@@ -2721,8 +2723,8 @@ class DataFrame:
             * Finally, you can also supply a list made up from the above options
               in order to apply *more* than one conditional format to the same range.
         header_format : dict
-            A ``{key:value,}`` dictionary of ``xlsxwriter`` format options to apply
-            to the table header row, such as ``{"bold":True, "font_color":"#702963"}``.
+            A `{key:value,}` dictionary of `xlsxwriter` format options to apply
+            to the table header row, such as `{"bold":True, "font_color":"#702963"}`.
         column_totals : {bool, list, dict}
             Add a column-total row to the exported table.
 
@@ -2730,12 +2732,12 @@ class DataFrame:
             * If passing a string, it must be one of the valid total function names
               and all numeric columns will have an associated total using that function.
             * If passing a list of colnames, only those given will have a total.
-            * For more control, pass a ``{colname:funcname,}`` dict.
+            * For more control, pass a `{colname:funcname,}` dict.
 
             Valid total function names are "average", "count_nums", "count", "max",
             "min", "std_dev", "sum", and "var".
         column_widths : {dict, int}
-            A ``{colname:int,}`` or ``{selector:int,}`` dict or a single integer that
+            A `{colname:int,}` or `{selector:int,}` dict or a single integer that
             sets (or overrides if autofitting) table column widths, in integer pixel
             units. If given as an integer the same value is used for all table columns.
         row_totals : {dict, bool}
@@ -2745,28 +2747,28 @@ class DataFrame:
               that applies a "sum" function row-wise across all numeric columns.
             * If passing a list/sequence of column names, only the matching columns
               will participate in the sum.
-            * Can also pass a ``{colname:columns,}`` dictionary to create one or
+            * Can also pass a `{colname:columns,}` dictionary to create one or
               more total columns with distinct names, referencing different columns.
         row_heights : {dict, int}
-            An int or ``{row_index:int,}`` dictionary that sets the height of the given
+            An int or `{row_index:int,}` dictionary that sets the height of the given
             rows (if providing a dictionary) or all rows (if providing an integer) that
             intersect with the table body (including any header and total row) in
-            integer pixel units. Note that ``row_index`` starts at zero and will be
-            the header row (unless ``has_headers`` is False).
+            integer pixel units. Note that `row_index` starts at zero and will be
+            the header row (unless `has_headers` is False).
         sparklines : dict
-            A ``{colname:list,}`` or ``{colname:dict,}`` dictionary defining one or more
+            A `{colname:list,}` or `{colname:dict,}` dictionary defining one or more
             sparklines to be written into a new column in the table.
 
             * If passing a list of colnames (used as the source of the sparkline data)
               the default sparkline settings are used (eg: line chart with no markers).
-            * For more control an ``xlsxwriter``-compliant options dict can be supplied,
+            * For more control an `xlsxwriter`-compliant options dict can be supplied,
               in which case three additional polars-specific keys are available:
               "columns", "insert_before", and "insert_after". These allow you to define
               the source columns and position the sparkline(s) with respect to other
               table columns. If no position directive is given, sparklines are added to
               the end of the table (eg: to the far right) in the order they are given.
         formulas : dict
-            A ``{colname:formula,}`` or ``{colname:dict,}`` dictionary defining one or
+            A `{colname:formula,}` or `{colname:dict,}` dictionary defining one or
             more formulas to be written into a new column in the table. Note that you
             are strongly advised to use structured references in your formulae wherever
             possible to make it simple to reference columns by name.
@@ -2810,7 +2812,7 @@ class DataFrame:
 
         Notes
         -----
-        * A list of compatible ``xlsxwriter`` format property names can be found here:
+        * A list of compatible `xlsxwriter` format property names can be found here:
           https://xlsxwriter.readthedocs.io/format.html#format-methods-and-format-properties
 
         * Conditional formatting dictionaries should provide xlsxwriter-compatible
@@ -3178,8 +3180,8 @@ class DataFrame:
         Parameters
         ----------
         file
-            Path to which the IPC data should be written. If set to
-            ``None``, the output is returned as a BytesIO object.
+            Path or writeable file-like object to which the IPC data will be
+            written. If set to `None`, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
 
@@ -3239,8 +3241,8 @@ class DataFrame:
         Parameters
         ----------
         file
-            Path to which the IPC record batch data should be written. If set to
-            ``None``, the output is returned as a BytesIO object.
+            Path or writeable file-like object to which the IPC record batch data will
+            be written. If set to `None`, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
 
@@ -3288,7 +3290,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            File path to which the file should be written.
+            File path or writeable file-like object to which the result will be written.
         compression : {'lz4', 'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'zstd'}
             Choose "zstd" for good compression performance.
             Choose "lz4" for fast compression/decompression.
@@ -3310,11 +3312,11 @@ class DataFrame:
             Use C++ parquet implementation vs Rust parquet implementation.
             At the moment C++ supports more features.
         pyarrow_options
-            Arguments passed to ``pyarrow.parquet.write_table``.
+            Arguments passed to `pyarrow.parquet.write_table`.
 
-            If you pass ``partition_cols`` here, the dataset will be written
-            using ``pyarrow.parquet.write_to_dataset``.
-            The ``partition_cols`` parameter leads to write the dataset to a directory.
+            If you pass `partition_cols` here, the dataset will be written
+            using `pyarrow.parquet.write_to_dataset`.
+            The `partition_cols` parameter leads to write the dataset to a directory.
             Similar to Spark's partitioned datasets.
 
         Examples
@@ -4634,7 +4636,7 @@ class DataFrame:
         offset
             Start index. Negative indexing is supported.
         length
-            Length of the slice. If set to ``None``, all rows starting at the offset
+            Length of the slice. If set to `None`, all rows starting at the offset
             will be selected.
 
         Examples
@@ -4670,7 +4672,7 @@ class DataFrame:
         ----------
         n
             Number of rows to return. If a negative value is passed, return all rows
-            except the last ``abs(n)``.
+            except the last `abs(n)`.
 
         See Also
         --------
@@ -4697,7 +4699,7 @@ class DataFrame:
         │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
 
-        Pass a negative value to get all rows `except` the last ``abs(n)``.
+        Pass a negative value to get all rows `except` the last `abs(n)`.
 
         >>> df.head(-3)
         shape: (2, 3)
@@ -4723,7 +4725,7 @@ class DataFrame:
         ----------
         n
             Number of rows to return. If a negative value is passed, return all rows
-            except the first ``abs(n)``.
+            except the first `abs(n)`.
 
         See Also
         --------
@@ -4750,7 +4752,7 @@ class DataFrame:
         │ 5   ┆ 10  ┆ e   │
         └─────┴─────┴─────┘
 
-        Pass a negative value to get all rows `except` the first ``abs(n)``.
+        Pass a negative value to get all rows `except` the first `abs(n)`.
 
         >>> df.tail(-3)
         shape: (2, 3)
@@ -4778,7 +4780,7 @@ class DataFrame:
         ----------
         n
             Number of rows to return. If a negative value is passed, return all rows
-            except the last ``abs(n)``.
+            except the last `abs(n)`.
 
         See Also
         --------
@@ -4800,7 +4802,7 @@ class DataFrame:
         ----------
         subset
             Column name(s) for which null values are considered.
-            If set to ``None`` (default), use all columns.
+            If set to `None` (default), use all columns.
 
         Examples
         --------
@@ -5018,7 +5020,7 @@ class DataFrame:
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
-            Settings this to ``True`` blocks the possibility
+            Settings this to `True` blocks the possibility
             to run on the streaming engine.
 
             .. note::
@@ -5032,7 +5034,7 @@ class DataFrame:
 
         Examples
         --------
-        Group by one column and call ``agg`` to compute the grouped sum of another
+        Group by one column and call `agg` to compute the grouped sum of another
         column.
 
         >>> df = pl.DataFrame(
@@ -5054,7 +5056,7 @@ class DataFrame:
         │ c   ┆ 3   │
         └─────┴─────┘
 
-        Set ``maintain_order=True`` to ensure the order of the groups is consistent with
+        Set `maintain_order=True` to ensure the order of the groups is consistent with
         the input.
 
         >>> df.group_by("a", maintain_order=True).agg(pl.col("c"))
@@ -5099,7 +5101,7 @@ class DataFrame:
         │ c   ┆ 1   ┆ 1.0 │
         └─────┴─────┴─────┘
 
-        The ``GroupBy`` object returned by this method is iterable, returning the name
+        The `GroupBy` object returned by this method is iterable, returning the name
         and data of each group.
 
         >>> for name, data in df.group_by("a"):  # doctest: +SKIP
@@ -5152,11 +5154,11 @@ class DataFrame:
         """
         Create rolling groups based on a time, Int32, or Int64 column.
 
-        Different from a ``group_by_dynamic`` the windows are now determined by the
+        Different from a `group_by_dynamic` the windows are now determined by the
         individual values and are not of constant intervals. For constant intervals use
         :func:`DataFrame.group_by_dynamic`.
 
-        If you have a time series ``<t_0, t_1, ..., t_n>``, then by default the
+        If you have a time series `<t_0, t_1, ..., t_n>`, then by default the
         windows created will be
 
             * (t_0 - period, t_0]
@@ -5216,16 +5218,16 @@ class DataFrame:
         by
             Also group by this column/these columns
         check_sorted
-            When the ``by`` argument is given, polars can not check sortedness
+            When the `by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to ``False``.
+            data within the by groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         Returns
         -------
         RollingGroupBy
-            Object you can call ``.agg`` on to aggregate by groups, the result
+            Object you can call `.agg` on to aggregate by groups, the result
             of which will be sorted by `index_column` (but note that if `by` columns are
             passed, it will only be sorted within each `by` group).
 
@@ -5332,7 +5334,7 @@ class DataFrame:
         period
             length of the window, if None it will equal 'every'
         offset
-            offset of the window, only takes effect if `start_by` is ``'window'``.
+            offset of the window, only takes effect if `start_by` is `'window'`.
             Defaults to negative `every`.
         truncate
             truncate the time value to the window lower bound
@@ -5362,23 +5364,23 @@ class DataFrame:
               `every`, and then adding `offset`.
               Note that weekly windows start on Monday.
             * 'datapoint': Start from the first encountered data point.
-            * a day of the week (only takes effect if `every` contains ``'w'``):
+            * a day of the week (only takes effect if `every` contains `'w'`):
 
               * 'monday': Start the window on the Monday before the first data point.
               * 'tuesday': Start the window on the Tuesday before the first data point.
               * ...
               * 'sunday': Start the window on the Sunday before the first data point.
         check_sorted
-            When the ``by`` argument is given, polars can not check sortedness
+            When the `by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to ``False``.
+            data within the by groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         Returns
         -------
         DynamicGroupBy
-            Object you can call ``.agg`` on to aggregate by groups, the result
+            Object you can call `.agg` on to aggregate by groups, the result
             of which will be sorted by `index_column` (but note that if `by` columns are
             passed, it will only be sorted within each `by` group).
 
@@ -6032,7 +6034,7 @@ class DataFrame:
 
         Notes
         -----
-        For joining on columns with categorical data, see ``pl.StringCache()``.
+        For joining on columns with categorical data, see `pl.StringCache()`.
 
         """
         if not isinstance(other, DataFrame):
@@ -6068,7 +6070,7 @@ class DataFrame:
             This method is much slower than the native expressions API.
             Only use it if you cannot implement your logic otherwise.
 
-        The UDF will receive each row as a tuple of values: ``udf(row)``.
+        The UDF will receive each row as a tuple of values: `udf(row)`.
 
         Implementing logic using a Python function is almost always _significantly_
         slower and more memory intensive than implementing the same logic using
@@ -6094,13 +6096,13 @@ class DataFrame:
 
         Notes
         -----
-        * The frame-level ``apply`` cannot track column names (as the UDF is a black-box
+        * The frame-level `apply` cannot track column names (as the UDF is a black-box
           that may arbitrarily drop, rearrange, transform, or add new columns); if you
           want to apply a UDF such that column names are preserved, you should use the
-          expression-level ``apply`` syntax instead.
+          expression-level `apply` syntax instead.
 
         * If your function is expensive and you don't want it to be called more than
-          once for a given input, consider applying an ``@lru_cache`` decorator to it.
+          once for a given input, consider applying an `@lru_cache` decorator to it.
           If your data is suitable you may achieve *significant* speedups.
 
         Examples
@@ -6265,21 +6267,21 @@ class DataFrame:
         """
         Extend the memory backed by this `DataFrame` with the values from `other`.
 
-        Different from ``vstack`` which adds the chunks from ``other`` to the chunks of
-        this ``DataFrame``, ``extend`` appends the data from `other` to the underlying
+        Different from `vstack` which adds the chunks from `other` to the chunks of
+        this `DataFrame`, `extend` appends the data from `other` to the underlying
         memory locations and thus may cause a reallocation.
 
         If this does not cause a reallocation, the resulting data structure will not
         have any extra chunks and thus will yield faster queries.
 
-        Prefer ``extend`` over ``vstack`` when you want to do a query after a single
+        Prefer `extend` over `vstack` when you want to do a query after a single
         append. For instance, during online operations where you add `n` rows and rerun
         a query.
 
-        Prefer ``vstack`` over ``extend`` when you want to append many times before
+        Prefer `vstack` over `extend` when you want to append many times before
         doing a query. For instance, when you read in multiple files and want to store
-        them in a single ``DataFrame``. In the latter case, finish the sequence of
-        ``vstack`` operations with a ``rechunk``.
+        them in a single `DataFrame`. In the latter case, finish the sequence of
+        `vstack` operations with a `rechunk`.
 
         Parameters
         ----------
@@ -6489,7 +6491,7 @@ class DataFrame:
 
         Cast all frame columns to the specified dtype:
 
-        >>> df.cast(pl.Utf8).to_dict(False)
+        >>> df.cast(pl.Utf8).to_dict(as_series=False)
         {'foo': ['1', '2', '3'],
          'bar': ['6.0', '7.0', '8.0'],
          'ham': ['2020-01-02', '2021-03-04', '2022-05-06']}
@@ -6715,7 +6717,7 @@ class DataFrame:
             Number of consecutive null values to fill when using the 'forward' or
             'backward' strategy.
         matches_supertype
-            Fill all matching supertype of the fill ``value``.
+            Fill all matching supertype of the fill `value`.
 
         Returns
         -------
@@ -7174,7 +7176,7 @@ class DataFrame:
             Direction of the unstack.
         columns
             Column name(s) or selector(s) to include in the operation.
-            If set to ``None`` (default), use all columns.
+            If set to `None` (default), use all columns.
         fill_values
             Fill values that don't fit the new size with this value.
 
@@ -7417,7 +7419,7 @@ class DataFrame:
         │ c   ┆ 3   ┆ 1   │
         └─────┴─────┴─────┘]
 
-        Return the partitions as a dictionary by specifying ``as_dict=True``.
+        Return the partitions as a dictionary by specifying `as_dict=True`.
 
         >>> import polars.selectors as cs
         >>> df.partition_by(cs.string(), as_dict=True)  # doctest: +IGNORE_RESULT
@@ -7488,8 +7490,8 @@ class DataFrame:
 
         Notes
         -----
-        This method is similar to the ``LAG`` operation in SQL when the value for ``n``
-        is positive. With a negative value for ``n``, it is similar to ``LEAD``.
+        This method is similar to the `LAG` operation in SQL when the value for `n`
+        is positive. With a negative value for `n`, it is similar to `LEAD`.
 
         Examples
         --------
@@ -7529,7 +7531,7 @@ class DataFrame:
         │ null ┆ null │
         └──────┴──────┘
 
-        Specify ``fill_value`` to fill the resulting null values.
+        Specify `fill_value` to fill the resulting null values.
 
         >>> df.shift(-2, fill_value=100)
         shape: (4, 2)
@@ -7744,7 +7746,7 @@ class DataFrame:
         └───────────┘
 
         Expressions with multiple outputs can be automatically instantiated as Structs
-        by enabling the experimental setting ``Config.set_auto_structify(True)``:
+        by enabling the experimental setting `Config.set_auto_structify(True)`:
 
         >>> with pl.Config(auto_structify=True):
         ...     df.select(
@@ -7919,7 +7921,7 @@ class DataFrame:
         └─────┴──────┴───────┴──────┴───────┘
 
         Expressions with multiple outputs can be automatically instantiated as Structs
-        by enabling the experimental setting ``Config.set_auto_structify(True)``:
+        by enabling the experimental setting `Config.set_auto_structify(True)`:
 
         >>> with pl.Config(auto_structify=True):
         ...     df.drop("c").with_columns(
@@ -8445,7 +8447,7 @@ class DataFrame:
         ----------
         columns
             Column name(s) or selector(s) that should be converted to dummy
-            variables. If set to ``None`` (default), convert all columns.
+            variables. If set to `None` (default), convert all columns.
         separator
             Separator/delimiter used when generating column names.
         drop_first
@@ -8524,7 +8526,7 @@ class DataFrame:
         ----------
         subset
             Column name(s) or selector(s), to consider when identifying
-            duplicate rows. If set to ``None`` (default), use all columns.
+            duplicate rows. If set to `None` (default), use all columns.
         keep : {'first', 'last', 'any', 'none'}
             Which of the duplicate rows to keep.
 
@@ -8536,7 +8538,7 @@ class DataFrame:
         maintain_order
             Keep the same order as the original DataFrame. This is more expensive to
             compute.
-            Settings this to ``True`` blocks the possibility
+            Settings this to `True` blocks the possibility
             to run on the streaming engine.
 
         Returns
@@ -8609,7 +8611,7 @@ class DataFrame:
 
         Notes
         -----
-        This method operates at the ``DataFrame`` level; to operate on subsets at the
+        This method operates at the `DataFrame` level; to operate on subsets at the
         expression level you can make use of struct-packing instead, for example:
 
         >>> expr_unique_subset = pl.struct(["a", "b"]).n_unique()
@@ -8822,9 +8824,9 @@ class DataFrame:
         An example of the supercast rules when applying an arithmetic operation on two
         DataTypes are for instance:
 
-        Int8 + Utf8 = Utf8
-        Float32 + Int64 = Float32
-        Float32 + Float64 = Float64
+        - Int8 + Utf8 = Utf8
+        - Float32 + Int64 = Float32
+        - Float32 + Float64 = Float64
 
         Examples
         --------
@@ -8952,17 +8954,17 @@ class DataFrame:
 
         Notes
         -----
-        The ``index`` and ``by_predicate`` params are mutually exclusive. Additionally,
+        The `index` and `by_predicate` params are mutually exclusive. Additionally,
         to ensure clarity, the `by_predicate` parameter must be supplied by keyword.
 
-        When using ``by_predicate`` it is an error condition if anything other than
-        one row is returned; more than one row raises ``TooManyRowsReturnedError``, and
-        zero rows will raise ``NoRowsReturnedError`` (both inherit from ``RowsError``).
+        When using `by_predicate` it is an error condition if anything other than
+        one row is returned; more than one row raises `TooManyRowsReturnedError`, and
+        zero rows will raise `NoRowsReturnedError` (both inherit from `RowsError`).
 
         Warnings
         --------
         You should NEVER use this method to iterate over a DataFrame; if you require
-        row-iteration you should strongly prefer use of ``iter_rows()`` instead.
+        row-iteration you should strongly prefer use of `iter_rows()` instead.
 
         See Also
         --------
@@ -8984,13 +8986,13 @@ class DataFrame:
         >>> df.row(2)
         (3, 8, 'c')
 
-        Specify ``named=True`` to get a dictionary instead with a mapping of column
+        Specify `named=True` to get a dictionary instead with a mapping of column
         names to row values.
 
         >>> df.row(2, named=True)
         {'foo': 3, 'bar': 8, 'ham': 'c'}
 
-        Use ``by_predicate`` to return the row that matches the given predicate.
+        Use `by_predicate` to return the row that matches the given predicate.
 
         >>> df.row(by_predicate=(pl.col("ham") == "b"))
         (2, 7, 'b')
@@ -9059,8 +9061,8 @@ class DataFrame:
 
         Notes
         -----
-        If you have ``ns``-precision temporal values you should be aware that Python
-        natively only supports up to ``μs``-precision; `ns`-precision values will be
+        If you have `ns`-precision temporal values you should be aware that Python
+        natively only supports up to `μs`-precision; `ns`-precision values will be
         truncated to microseconds on conversion to Python. If this matters to your
         use-case you should export to a different format (such as Arrow or NumPy).
 
@@ -9068,7 +9070,7 @@ class DataFrame:
         --------
         Row-iteration is not optimal as the underlying data is stored in columnar form;
         where possible, prefer export via one of the dedicated export/output methods.
-        Where possible you should also consider using ``iter_rows`` instead to avoid
+        Where possible you should also consider using `iter_rows` instead to avoid
         materialising all the data at once.
 
         Returns
@@ -9140,8 +9142,8 @@ class DataFrame:
 
         Notes
         -----
-        If you have ``ns``-precision temporal values you should be aware that Python
-        natively only supports up to ``μs``-precision; `ns`-precision values will be
+        If you have `ns`-precision temporal values you should be aware that Python
+        natively only supports up to `μs`-precision; `ns`-precision values will be
         truncated to microseconds on conversion to Python. If this matters to your
         use-case you should export to a different format (such as Arrow or NumPy).
 
@@ -9301,8 +9303,8 @@ class DataFrame:
 
         Notes
         -----
-        If you have ``ns``-precision temporal values you should be aware that Python
-        natively only supports up to ``μs``-precision; `ns`-precision values will be
+        If you have `ns`-precision temporal values you should be aware that Python
+        natively only supports up to `μs`-precision; `ns`-precision values will be
         truncated to microseconds on conversion to Python. If this matters to your
         use-case you should export to a different format (such as Arrow or NumPy).
 
@@ -9386,7 +9388,7 @@ class DataFrame:
         DataFrame:[0]:10000
         DataFrame:[1]:7500
 
-        Using ``iter_slices`` is an efficient way to chunk-iterate over DataFrames and
+        Using `iter_slices` is an efficient way to chunk-iterate over DataFrames and
         any supported frame export/conversion types; for example, as RecordBatches:
 
         >>> for frame in df.iter_slices(n_rows=15_000):
@@ -9541,7 +9543,7 @@ class DataFrame:
 
     def to_struct(self, name: str) -> Series:
         """
-        Convert a ``DataFrame`` to a ``Series`` of type ``Struct``.
+        Convert a `DataFrame` to a `Series` of type `Struct`.
 
         Parameters
         ----------
@@ -9629,7 +9631,7 @@ class DataFrame:
         """
         Return pairwise Pearson product-moment correlation coefficients between columns.
 
-        See numpy ``corrcoef`` for more information:
+        See numpy `corrcoef` for more information:
         https://numpy.org/doc/stable/reference/generated/numpy.corrcoef.html
 
         Notes
@@ -9639,7 +9641,7 @@ class DataFrame:
         Parameters
         ----------
         **kwargs
-            Keyword arguments are passed to numpy ``corrcoef``.
+            Keyword arguments are passed to numpy `corrcoef`.
 
         Examples
         --------
@@ -9919,7 +9921,7 @@ class DataFrame:
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
-            Settings this to ``True`` blocks the possibility
+            Settings this to `True` blocks the possibility
             to run on the streaming engine.
 
             .. note::
@@ -9971,10 +9973,10 @@ class DataFrame:
         by
             Also group by this column/these columns
         check_sorted
-            When the ``by`` argument is given, polars can not check sortedness
+            When the `by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to ``False``.
+            data within the by groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         """
@@ -10024,10 +10026,10 @@ class DataFrame:
         by
             Also group by this column/these columns
         check_sorted
-            When the ``by`` argument is given, polars can not check sortedness
+            When the `by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to ``False``.
+            data within the by groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         """
@@ -10077,7 +10079,7 @@ class DataFrame:
         period
             length of the window, if None it will equal 'every'
         offset
-            offset of the window, only takes effect if `start_by` is ``'window'``.
+            offset of the window, only takes effect if `start_by` is `'window'`.
             Defaults to negative `every`.
         truncate
             truncate the time value to the window lower bound
@@ -10096,23 +10098,23 @@ class DataFrame:
               `every`, and then adding `offset`.
               Note that weekly windows start on Monday.
             * 'datapoint': Start from the first encountered data point.
-            * a day of the week (only takes effect if `every` contains ``'w'``):
+            * a day of the week (only takes effect if `every` contains `'w'`):
 
               * 'monday': Start the window on the Monday before the first data point.
               * 'tuesday': Start the window on the Tuesday before the first data point.
               * ...
               * 'sunday': Start the window on the Sunday before the first data point.
         check_sorted
-            When the ``by`` argument is given, polars can not check sortedness
+            When the `by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to ``False``.
+            data within the by groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         Returns
         -------
         DynamicGroupBy
-            Object you can call ``.agg`` on to aggregate by groups, the result
+            Object you can call `.agg` on to aggregate by groups, the result
             of which will be sorted by `index_column` (but note that if `by` columns are
             passed, it will only be sorted within each `by` group).
 

@@ -1,5 +1,5 @@
 """
-Module for testing ``.str.strptime`` of the string namespace.
+Module for testing `.str.strptime` of the string namespace.
 
 This method gets its own module due to its complexity.
 """
@@ -103,7 +103,7 @@ def test_timezone_aware_strptime(tz_string: str, timedelta: timedelta) -> None:
     )
     assert times.with_columns(
         pl.col("delivery_datetime").str.to_datetime(format="%Y-%m-%d %H:%M:%S%z")
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "delivery_datetime": [
             datetime(2021, 12, 5, 6, 0, tzinfo=timezone(timedelta)),
             datetime(2021, 12, 5, 7, 0, tzinfo=timezone(timedelta)),

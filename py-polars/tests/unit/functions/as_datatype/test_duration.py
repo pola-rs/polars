@@ -109,7 +109,7 @@ def test_date_duration_offset() -> None:
         (pl.col("date") + pl.duration(weeks="offset")).alias("add_weeks"),
         (pl.col("date") - pl.duration(weeks="offset")).alias("sub_weeks"),
     )
-    assert out.to_dict(False) == {
+    assert out.to_dict(as_series=False) == {
         "add_days": [date(11, 1, 1), date(2000, 7, 12), date(9990, 11, 30)],
         "sub_days": [date(9, 1, 1), date(2000, 6, 28), date(9991, 1, 31)],
         "add_weeks": [date(16, 12, 30), date(2000, 8, 23), date(9990, 5, 28)],
@@ -132,7 +132,7 @@ def test_add_duration_3786() -> None:
             "add_milliseconds"
         ),
         (pl.col("datetime") + pl.duration(hours="add")).alias("add_hours"),
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "datetime": [datetime(2022, 1, 1, 0, 0)],
         "add": [1],
         "add_weeks": [datetime(2022, 1, 8, 0, 0)],

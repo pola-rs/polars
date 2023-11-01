@@ -256,7 +256,7 @@ class ListNameSpace:
         Take sublists by multiple indices.
 
         The indices may be defined in a single column, or by sublists in another
-        column of dtype ``List``.
+        column of dtype `List`.
 
         Parameters
         ----------
@@ -401,8 +401,8 @@ class ListNameSpace:
 
         Notes
         -----
-        This method is similar to the ``LAG`` operation in SQL when the value for ``n``
-        is positive. With a negative value for ``n``, it is similar to ``LEAD``.
+        This method is similar to the `LAG` operation in SQL when the value for `n`
+        is positive. With a negative value for `n`, it is similar to `LEAD`.
 
         Examples
         --------
@@ -438,7 +438,7 @@ class ListNameSpace:
         offset
             Start index. Negative indexing is supported.
         length
-            Length of the slice. If set to ``None`` (default), the slice is taken to the
+            Length of the slice. If set to `None` (default), the slice is taken to the
             end of the list.
 
         Examples
@@ -532,7 +532,7 @@ class ListNameSpace:
         self, element: float | str | bool | int | date | datetime | time | Expr
     ) -> Expr:
         """
-        Count how often the value produced by ``element`` occurs.
+        Count how often the value produced by `element` occurs.
 
         Parameters
         ----------
@@ -547,7 +547,7 @@ class ListNameSpace:
         fields: Callable[[int], str] | Sequence[str] | None = None,
     ) -> Series:
         """
-        Convert the series of type ``List`` to a series of type ``Struct``.
+        Convert the series of type `List` to a series of type `Struct`.
 
         Parameters
         ----------
@@ -651,7 +651,7 @@ class ListNameSpace:
 
     def set_union(self, other: Series) -> Series:
         """
-        Compute the SET UNION between the elements in this list and the elements of ``other``.
+        Compute the SET UNION between the elements in this list and the elements of `other`.
 
         Parameters
         ----------
@@ -676,7 +676,7 @@ class ListNameSpace:
 
     def set_difference(self, other: Series) -> Series:
         """
-        Compute the SET DIFFERENCE between the elements in this list and the elements of ``other``.
+        Compute the SET DIFFERENCE between the elements in this list and the elements of `other`.
 
         Parameters
         ----------
@@ -705,7 +705,7 @@ class ListNameSpace:
 
     def set_intersection(self, other: Series) -> Series:
         """
-        Compute the SET INTERSECTION between the elements in this list and the elements of ``other``.
+        Compute the SET INTERSECTION between the elements in this list and the elements of `other`.
 
         Parameters
         ----------
@@ -730,7 +730,7 @@ class ListNameSpace:
 
     def set_symmetric_difference(self, other: Series) -> Series:
         """
-        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of ``other``.
+        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of `other`.
 
         Parameters
         ----------
@@ -742,10 +742,10 @@ class ListNameSpace:
     @deprecate_renamed_function("set_union", version="0.18.10")
     def union(self, other: Series) -> Series:
         """
-        Compute the SET UNION between the elements in this list and the elements of ``other``.
+        Compute the SET UNION between the elements in this list and the elements of `other`.
 
         .. deprecated:: 0.18.10
-            This method has been renamed to ``Series.list.set_union``.
+            This method has been renamed to `Series.list.set_union`.
 
         """  # noqa: W505
         return self.set_union(other)
@@ -753,10 +753,10 @@ class ListNameSpace:
     @deprecate_renamed_function("set_difference", version="0.18.10")
     def difference(self, other: Series) -> Series:
         """
-        Compute the SET DIFFERENCE between the elements in this list and the elements of ``other``.
+        Compute the SET DIFFERENCE between the elements in this list and the elements of `other`.
 
         .. deprecated:: 0.18.10
-            This method has been renamed to ``Series.list.set_difference``.
+            This method has been renamed to `Series.list.set_difference`.
 
         """  # noqa: W505
         return self.set_difference(other)
@@ -764,10 +764,10 @@ class ListNameSpace:
     @deprecate_renamed_function("set_intersection", version="0.18.10")
     def intersection(self, other: Series) -> Series:
         """
-        Compute the SET INTERSECTION between the elements in this list and the elements of ``other``.
+        Compute the SET INTERSECTION between the elements in this list and the elements of `other`.
 
         .. deprecated:: 0.18.10
-            This method has been renamed to ``Series.list.set_intersection``.
+            This method has been renamed to `Series.list.set_intersection`.
 
         """  # noqa: W505
         return self.set_intersection(other)
@@ -775,10 +775,10 @@ class ListNameSpace:
     @deprecate_renamed_function("set_symmetric_difference", version="0.18.10")
     def symmetric_difference(self, other: Series) -> Series:
         """
-        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of ``other``.
+        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of `other`.
 
         .. deprecated:: 0.18.10
-            This method has been renamed to ``Series.list.set_symmetric_difference``.
+            This method has been renamed to `Series.list.set_symmetric_difference`.
 
         """  # noqa: W505
         return self.set_symmetric_difference(other)
@@ -788,7 +788,7 @@ class ListNameSpace:
         self, element: float | str | bool | int | date | datetime | time | Expr
     ) -> Expr:
         """
-        Count how often the value produced by ``element`` occurs.
+        Count how often the value produced by `element` occurs.
 
         .. deprecated:: 0.19.3
             This method has been renamed to :func:`count_matches`.

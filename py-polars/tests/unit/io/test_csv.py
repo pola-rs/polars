@@ -893,9 +893,8 @@ def test_glob_csv(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
 
 def test_csv_whitespace_separator_at_start_do_not_skip() -> None:
     csv = "\t\t\t\t0\t1"
-    assert pl.read_csv(csv.encode(), separator="\t", has_header=False).to_dict(
-        False
-    ) == {
+    result = pl.read_csv(csv.encode(), separator="\t", has_header=False)
+    expected = {
         "column_1": [None],
         "column_2": [None],
         "column_3": [None],
@@ -903,13 +902,13 @@ def test_csv_whitespace_separator_at_start_do_not_skip() -> None:
         "column_5": [0],
         "column_6": [1],
     }
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_csv_whitespace_separator_at_end_do_not_skip() -> None:
     csv = "0\t1\t\t\t\t"
-    assert pl.read_csv(csv.encode(), separator="\t", has_header=False).to_dict(
-        False
-    ) == {
+    result = pl.read_csv(csv.encode(), separator="\t", has_header=False)
+    expected = {
         "column_1": [0],
         "column_2": [1],
         "column_3": [None],
@@ -917,6 +916,7 @@ def test_csv_whitespace_separator_at_end_do_not_skip() -> None:
         "column_5": [None],
         "column_6": [None],
     }
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_csv_multiple_null_values() -> None:
@@ -987,7 +987,7 @@ def test_skip_new_line_embedded_lines() -> None:
             infer_schema_length=0,
             missing_utf8_is_empty_string=empty_string,
         )
-        assert df.to_dict(False) == {
+        assert df.to_dict(as_series=False) == {
             "a": ["4", "7"],
             "b": ["5", "8"],
             "c": ["6", missing_value],
@@ -1157,7 +1157,7 @@ def test_skip_rows_different_field_len() -> None:
         csv.seek(0)
         assert pl.read_csv(
             csv, skip_rows_after_header=2, missing_utf8_is_empty_string=empty_string
-        ).to_dict(False) == {
+        ).to_dict(as_series=False) == {
             "a": [3, 4],
             "b": ["B", missing_value],
         }
@@ -1197,7 +1197,7 @@ def test_csv_categorical_lifetime() -> None:
 
     df = pl.read_csv(csv.encode(), dtypes={"a": pl.Categorical, "b": pl.Categorical})
     assert df.dtypes == [pl.Categorical, pl.Categorical]
-    assert df.to_dict(False) == {
+    assert df.to_dict(as_series=False) == {
         "a": ["needs_escape", ' "needs escape foo', ' "needs escape foo'],
         "b": ["b", "b", None],
     }
@@ -1221,13 +1221,13 @@ def test_batched_csv_reader(foods_file_path: Path) -> None:
 
     assert batches is not None
     assert len(batches) == 5
-    assert batches[0].to_dict(False) == {
+    assert batches[0].to_dict(as_series=False) == {
         "category": ["vegetables", "seafood", "meat", "fruit", "seafood", "meat"],
         "calories": [45, 150, 100, 60, 140, 120],
         "fats_g": [0.5, 5.0, 5.0, 0.0, 5.0, 10.0],
         "sugars_g": [2, 0, 0, 11, 1, 1],
     }
-    assert batches[-1].to_dict(False) == {
+    assert batches[-1].to_dict(as_series=False) == {
         "category": ["fruit", "meat", "vegetables", "fruit"],
         "calories": [130, 100, 30, 50],
         "fats_g": [0.0, 7.0, 0.0, 0.0],
@@ -1296,7 +1296,7 @@ def test_csv_single_categorical_null() -> None:
     )
 
     assert df.dtypes == [pl.Utf8, pl.Categorical, pl.Utf8]
-    assert df.to_dict(False) == {"x": ["A"], "y": [None], "z": ["A"]}
+    assert df.to_dict(as_series=False) == {"x": ["A"], "y": [None], "z": ["A"]}
 
 
 def test_csv_quoted_missing() -> None:
@@ -1550,7 +1550,7 @@ def test_ignore_errors_casting_dtypes() -> None:
         source=io.StringIO(csv),
         dtypes={"inventory": pl.Int8},
         ignore_errors=True,
-    ).to_dict(False) == {"inventory": [10, None, None, 90]}
+    ).to_dict(as_series=False) == {"inventory": [10, None, None, 90]}
 
     with pytest.raises(pl.ComputeError):
         pl.read_csv(
@@ -1575,13 +1575,13 @@ def test_csv_ragged_lines() -> None:
     assert (
         pl.read_csv(
             io.StringIO("A\nB,ragged\nC"), has_header=False, truncate_ragged_lines=True
-        ).to_dict(False)
+        ).to_dict(as_series=False)
         == expected
     )
     assert (
         pl.read_csv(
             io.StringIO("A\nB\nC,ragged"), has_header=False, truncate_ragged_lines=True
-        ).to_dict(False)
+        ).to_dict(as_series=False)
         == expected
     )
 
@@ -1598,8 +1598,27 @@ def test_provide_schema() -> None:
         io.StringIO("A\nB,ragged\nC"),
         has_header=False,
         schema={"A": pl.Utf8, "B": pl.Utf8, "C": pl.Utf8},
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "A": ["A", "B", "C"],
         "B": [None, "ragged", None],
         "C": [None, None, None],
     }
+
+
+def test_custom_writeable_object() -> None:
+    df = pl.DataFrame({"a": [10, 20, 30], "b": ["x", "y", "z"]})
+
+    class CustomBuffer:
+        writes: list[bytes]
+
+        def __init__(self) -> None:
+            self.writes = []
+
+        def write(self, data: bytes) -> int:
+            self.writes.append(data)
+            return len(data)
+
+    buf = CustomBuffer()
+    df.write_csv(buf)  # type: ignore[call-overload]
+
+    assert b"".join(buf.writes) == b"a,b\n10,x\n20,y\n30,z\n"

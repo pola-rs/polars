@@ -122,7 +122,7 @@ class CategoricalDescription(TypedDict):
     is_ordered: bool
     # whether a dictionary-style mapping of categorical values to other objects exists
     is_dictionary: Literal[True]
-    # Python-level only (e.g. ``{int: str}``).
+    # Python-level only (e.g. `{int: str}`).
     # None if not a dictionary-style categorical.
     categories: PolarsColumn
 
@@ -255,4 +255,4 @@ class Endianness:
 
 
 class CopyNotAllowedError(RuntimeError):
-    """Exception raised when a copy is required, but ``allow_copy`` is set to ``False``."""  # noqa: W505
+    """Exception raised when a copy is required, but `allow_copy` is set to `False`."""

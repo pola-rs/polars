@@ -134,7 +134,8 @@ def test_join_lazy_on_df() -> None:
 
 def test_projection_update_schema_missing_column() -> None:
     with pytest.raises(
-        pl.ComputeError, match="column 'colC' not available in schema Schema:*"
+        pl.ColumnNotFoundError,
+        match='unable to find column "colC"',
     ):
         (
             pl.DataFrame({"colA": ["a", "b", "c"], "colB": [1, 2, 3]})
@@ -684,4 +685,18 @@ def test_sort_by_error() -> None:
     ):
         df.group_by("id", maintain_order=True).agg(
             pl.col("cost").filter(pl.col("type") == "A").sort_by("number")
+        )
+
+
+def test_non_existent_expr_inputs_in_lazy() -> None:
+    with pytest.raises(pl.ColumnNotFoundError):
+        pl.LazyFrame().filter(pl.col("x") == 1).explain()  # tests: 12074
+
+    lf = pl.LazyFrame({"foo": [1, 1, -2, 3]})
+
+    with pytest.raises(pl.ColumnNotFoundError):
+        (
+            lf.select(pl.col("foo").cumsum().alias("bar"))
+            .filter(pl.col("bar") == pl.col("foo"))
+            .explain()
         )

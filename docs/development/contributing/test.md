@@ -1,17 +1,17 @@
-# Polars test suite
+# Test suite
 
-This folder contains the main Polars test suite. This document contains some information on the various components of the test suite, as well as guidelines for writing new tests.
+!!! info
+
+    Additional information on the Rust test suite will be added to this page later.
+
+The `py-polars/tests` folder contains the main Polars test suite.
+This page contains some information on the various components of the test suite, as well as guidelines for writing new tests.
 
 The test suite contains four main components, each confined to their own folder: unit tests, parametric tests, benchmark tests, and doctests.
 
-Note that this test suite is indirectly responsible for testing Rust Polars as well. The Rust test suite is kept small to reduce compilation times. A lot of the Rust functionality is tested here instead.
-
-## Table of contents
-
-- [Unit tests](#unit-tests)
-- [Parametric tests](#parametric-tests)
-- [Doctests](#doctests)
-- [Benchmark tests](#benchmark-tests)
+Note that this test suite is indirectly responsible for testing Rust Polars as well.
+The Rust test suite is kept small to reduce compilation times.
+A lot of the Rust functionality is tested here instead.
 
 ## Unit tests
 
@@ -20,11 +20,13 @@ These tests are intended to make sure all Polars functionality works as intended
 
 ### Running unit tests
 
-Run unit tests by running `make test` from the `py-polars` folder. This will compile the Rust bindings and then run the unit tests.
+Run unit tests by running `make test` from the `py-polars` folder.
+This will compile the Rust bindings and then run the unit tests.
 
 If you're working in the Python code only, you can avoid recompiling every time by simply running `pytest` instead.
 
-By default, slow tests are skipped. Slow tests are marked as such using a [custom pytest marker](https://docs.pytest.org/en/latest/example/markers.html).
+By default, slow tests are skipped.
+Slow tests are marked as such using a [custom pytest marker](https://docs.pytest.org/en/latest/example/markers.html).
 If you wish to run slow tests, run `pytest -m slow`.
 Or run `pytest -m ""` to run _all_ tests, regardless of marker.
 
@@ -103,7 +105,7 @@ The benchmark is somewhat cumbersome to run locally. You must first generate the
 
 Make sure to install a release build of Polars before running the benchmark to guarantee the best results.
 
-Refer to the [benchmark workflow](/.github/workflows/benchmark.yml) for detailed steps.
+Refer to the [benchmark workflow](https://github.com/pola-rs/polars/blob/main/.github/workflows/benchmark.yml) for detailed steps.
 
 ### Running other benchmark tests
 

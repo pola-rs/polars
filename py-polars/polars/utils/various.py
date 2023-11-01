@@ -430,9 +430,9 @@ def _get_stack_locals(
     of_type
         Only return objects of this type.
     n_objects
-        If specified, return only the most recent ``n`` matching objects.
+        If specified, return only the most recent `n` matching objects.
     n_frames
-        If specified, look at objects in the last ``n`` stack frames only.
+        If specified, look at objects in the last `n` stack frames only.
     named
         If specified, only return objects matching the given name(s).
 

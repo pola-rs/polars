@@ -294,7 +294,7 @@ class Expr:
         - :func:`polars.datatypes.Time` -> :func:`polars.datatypes.Int64`
         - :func:`polars.datatypes.Duration` -> :func:`polars.datatypes.Int64`
         - :func:`polars.datatypes.Categorical` -> :func:`polars.datatypes.UInt32`
-        - ``List(inner)`` -> ``List(physical of inner)``
+        - `List(inner)` -> `List(physical of inner)`
 
         Other data types will be left unchanged.
 
@@ -332,7 +332,7 @@ class Expr:
     @deprecate_renamed_parameter("drop_nulls", "ignore_nulls", version="0.19.0")
     def any(self, *, ignore_nulls: bool = True) -> Self:
         """
-        Return whether any of the values in the column are ``True``.
+        Return whether any of the values in the column are `True`.
 
         Only works on columns of data type :class:`Boolean`.
 
@@ -341,8 +341,8 @@ class Expr:
         ignore_nulls
             Ignore null values (default).
 
-            If set to ``False``, `Kleene logic`_ is used to deal with nulls:
-            if the column contains any null values and no ``True`` values,
+            If set to `False`, `Kleene logic`_ is used to deal with nulls:
+            if the column contains any null values and no `True` values,
             the output is null.
 
             .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
@@ -371,7 +371,7 @@ class Expr:
         │ true ┆ false ┆ false │
         └──────┴───────┴───────┘
 
-        Enable Kleene logic by setting ``ignore_nulls=False``.
+        Enable Kleene logic by setting `ignore_nulls=False`.
 
         >>> df.select(pl.col("*").any(ignore_nulls=False))
         shape: (1, 3)
@@ -389,7 +389,7 @@ class Expr:
     @deprecate_renamed_parameter("drop_nulls", "ignore_nulls", version="0.19.0")
     def all(self, *, ignore_nulls: bool = True) -> Self:
         """
-        Return whether all values in the column are ``True``.
+        Return whether all values in the column are `True`.
 
         Only works on columns of data type :class:`Boolean`.
 
@@ -402,8 +402,8 @@ class Expr:
         ignore_nulls
             Ignore null values (default).
 
-            If set to ``False``, `Kleene logic`_ is used to deal with nulls:
-            if the column contains any null values and no ``True`` values,
+            If set to `False`, `Kleene logic`_ is used to deal with nulls:
+            if the column contains any null values and no `True` values,
             the output is null.
 
             .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
@@ -432,7 +432,7 @@ class Expr:
         │ true ┆ false ┆ true │
         └──────┴───────┴──────┘
 
-        Enable Kleene logic by setting ``ignore_nulls=False``.
+        Enable Kleene logic by setting `ignore_nulls=False`.
 
         >>> df.select(pl.col("*").all(ignore_nulls=False))
         shape: (1, 3)
@@ -824,7 +824,7 @@ class Expr:
         ----------
         columns
             The name or datatype of the column(s) to exclude. Accepts regular expression
-            input. Regular expressions should start with ``^`` and end with ``$``.
+            input. Regular expressions should start with `^` and end with `$`.
         *more_columns
             Additional names or datatypes of columns to exclude, specified as positional
             arguments.
@@ -1150,8 +1150,8 @@ class Expr:
 
         Notes
         -----
-        Floating point ```NaN`` (Not A Number) should not be confused
-        with missing data represented as ``Null/None``.
+        Floating point `NaN` (Not A Number) should not be confused
+        with missing data represented as `Null/None`.
 
         Examples
         --------
@@ -1184,8 +1184,8 @@ class Expr:
 
         Notes
         -----
-        Floating point ```NaN`` (Not A Number) should not be confused
-        with missing data represented as ``Null/None``.
+        Floating point `NaN` (Not A Number) should not be confused
+        with missing data represented as `Null/None`.
 
         Examples
         --------
@@ -1303,7 +1303,7 @@ class Expr:
         offset
             Start index. Negative indexing is supported.
         length
-            Length of the slice. If set to ``None``, all rows starting at the offset
+            Length of the slice. If set to `None`, all rows starting at the offset
             will be selected.
 
         Examples
@@ -1497,7 +1497,7 @@ class Expr:
         │ 10  ┆ 4         │
         └─────┴───────────┘
 
-        Null values are excluded, but can also be filled by calling ``forward_fill``.
+        Null values are excluded, but can also be filled by calling `forward_fill`.
 
         >>> df = pl.DataFrame({"values": [None, 10, None, 8, 9, None, 16, None]})
         >>> df.with_columns(
@@ -1629,7 +1629,7 @@ class Expr:
         │ 4   ┆ 4         │
         └─────┴───────────┘
 
-        Null values are excluded, but can also be filled by calling ``forward_fill``.
+        Null values are excluded, but can also be filled by calling `forward_fill`.
 
         >>> df = pl.DataFrame({"values": [None, 10, None, 8, 9, None, 16, None]})
         >>> df.with_columns(
@@ -2424,8 +2424,8 @@ class Expr:
 
         Notes
         -----
-        This method is similar to the ``LAG`` operation in SQL when the value for ``n``
-        is positive. With a negative value for ``n``, it is similar to ``LEAD``.
+        This method is similar to the `LAG` operation in SQL when the value for `n`
+        is positive. With a negative value for `n`, it is similar to `LEAD`.
 
         Examples
         --------
@@ -2460,7 +2460,7 @@ class Expr:
         │ 4   ┆ null  │
         └─────┴───────┘
 
-        Specify ``fill_value`` to fill the resulting null values.
+        Specify `fill_value` to fill the resulting null values.
 
         >>> df.with_columns(shift=pl.col("a").shift(-2, fill_value=100))
         shape: (4, 2)
@@ -3264,7 +3264,7 @@ class Expr:
         """
         Create rolling groups based on a time, Int32, or Int64 column.
 
-        If you have a time series ``<t_0, t_1, ..., t_n>``, then by default the
+        If you have a time series `<t_0, t_1, ..., t_n>`, then by default the
         windows created will be
 
             * (t_0 - period, t_0]
@@ -3320,10 +3320,10 @@ class Expr:
         closed : {'right', 'left', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
         check_sorted
-            When the ``by`` argument is given, polars can not check sortedness
+            When the `by` argument is given, polars can not check sortedness
             by the metadata and has to do a full scan on the index column to
             verify data is sorted. This is expensive. If you are sure the
-            data within the by groups is sorted, you can set this to ``False``.
+            data within the by groups is sorted, you can set this to `False`.
             Doing so incorrectly will lead to incorrect output
 
         Examples
@@ -3620,8 +3620,8 @@ class Expr:
         Returns
         -------
         Expr
-            Expression of data type :class:`Categorical` if ``include_breaks`` is set to
-            ``False`` (default), otherwise an expression of data type :class:`Struct`.
+            Expression of data type :class:`Categorical` if `include_breaks` is set to
+            `False` (default), otherwise an expression of data type :class:`Struct`.
 
         See Also
         --------
@@ -3696,7 +3696,7 @@ class Expr:
         left_closed
             Set the intervals to be left-closed instead of right-closed.
         allow_duplicates
-            If set to ``True``, duplicates in the resulting quantiles are dropped,
+            If set to `True`, duplicates in the resulting quantiles are dropped,
             rather than raising a `DuplicateError`. This can happen even with unique
             probabilities, depending on the data.
         include_breaks
@@ -3707,8 +3707,8 @@ class Expr:
         Returns
         -------
         Expr
-            Expression of data type :class:`Categorical` if ``include_breaks`` is set to
-            ``False`` (default), otherwise an expression of data type :class:`Struct`.
+            Expression of data type :class:`Categorical` if `include_breaks` is set to
+            `False` (default), otherwise an expression of data type :class:`Struct`.
 
         See Also
         --------
@@ -3867,10 +3867,8 @@ class Expr:
         ...     }
         ... )
         >>> df.group_by("group_col").agg(
-        ...     [
-        ...         pl.col("b").filter(pl.col("b") < 2).sum().alias("lt"),
-        ...         pl.col("b").filter(pl.col("b") >= 2).sum().alias("gte"),
-        ...     ]
+        ...     lt=pl.col("b").filter(pl.col("b") < 2).sum(),
+        ...     gte=pl.col("b").filter(pl.col("b") >= 2).sum(),
         ... ).sort("group_col")
         shape: (2, 3)
         ┌───────────┬─────┬─────┐
@@ -3935,7 +3933,7 @@ class Expr:
 
         The output of this custom function must be a Series. If you want to apply a
         custom function elementwise over single values, see :func:`map_elements`.
-        A reasonable use case for ``map`` functions is transforming the values
+        A reasonable use case for `map` functions is transforming the values
         represented by an expression using a third-party library.
 
         Read more in `the book
@@ -3957,7 +3955,7 @@ class Expr:
 
         Warnings
         --------
-        If ``return_dtype`` is not provided, this may lead to unexpected results.
+        If `return_dtype` is not provided, this may lead to unexpected results.
         We allow this, but it is considered a bug in the user's query.
 
         See Also
@@ -4012,10 +4010,10 @@ class Expr:
         requirements for `function` differ:
 
         * Selection
-            Expects `function` to be of type ``Callable[[Any], Any]``.
+            Expects `function` to be of type `Callable[[Any], Any]`.
             Applies a Python function to each individual value in the column.
         * GroupBy
-            Expects `function` to be of type ``Callable[[Series], Any]``.
+            Expects `function` to be of type `Callable[[Series], Any]`.
             For each group, applies a Python function to the slice of the column
             corresponding to that group.
 
@@ -4025,7 +4023,7 @@ class Expr:
             Lambda/function to map.
         return_dtype
             Dtype of the output Series.
-            If not set, the dtype will be ``pl.Unknown``.
+            If not set, the dtype will be `pl.Unknown`.
         skip_nulls
             Don't map the function over values that contain nulls (this is faster).
         pass_name
@@ -4042,20 +4040,20 @@ class Expr:
 
         Notes
         -----
-        * Using ``map_elements`` is strongly discouraged as you will be effectively
+        * Using `map_elements` is strongly discouraged as you will be effectively
           running python "for" loops, which will be very slow. Wherever possible you
           should prefer the native expression API to achieve the best performance.
 
         * If your function is expensive and you don't want it to be called more than
-          once for a given input, consider applying an ``@lru_cache`` decorator to it.
+          once for a given input, consider applying an `@lru_cache` decorator to it.
           If your data is suitable you may achieve *significant* speedups.
 
-        * Window function application using ``over`` is considered a GroupBy context
-          here, so ``map_elements`` can be used to map functions over window groups.
+        * Window function application using `over` is considered a GroupBy context
+          here, so `map_elements` can be used to map functions over window groups.
 
         Warnings
         --------
-        If ``return_dtype`` is not provided, this may lead to unexpected results.
+        If `return_dtype` is not provided, this may lead to unexpected results.
         We allow this, but it is considered a bug in the user's query.
 
         Examples
@@ -4134,7 +4132,7 @@ class Expr:
         ...     .collect()
         ... )  # doctest: +IGNORE_RESULT
 
-        Window function application using ``over`` will behave as a GroupBy
+        Window function application using `over` will behave as a GroupBy
         context, with your function receiving individual window groups:
 
         >>> df = pl.DataFrame(
@@ -4446,7 +4444,7 @@ class Expr:
 
     def and_(self, *others: Any) -> Self:
         """
-        Method equivalent of bitwise "and" operator ``expr & other & ...``.
+        Method equivalent of bitwise "and" operator `expr & other & ...`.
 
         Parameters
         ----------
@@ -4490,7 +4488,7 @@ class Expr:
 
     def or_(self, *others: Any) -> Self:
         """
-        Method equivalent of bitwise "or" operator ``expr | other | ...``.
+        Method equivalent of bitwise "or" operator `expr | other | ...`.
 
         Parameters
         ----------
@@ -4533,7 +4531,7 @@ class Expr:
 
     def eq(self, other: Any) -> Self:
         """
-        Method equivalent of equality operator ``expr == other``.
+        Method equivalent of equality operator `expr == other`.
 
         Parameters
         ----------
@@ -4568,9 +4566,9 @@ class Expr:
 
     def eq_missing(self, other: Any) -> Self:
         """
-        Method equivalent of equality operator ``expr == other`` where ``None == None``.
+        Method equivalent of equality operator `expr == other` where `None == None`.
 
-        This differs from default ``eq`` where null values are propagated.
+        This differs from default `eq` where null values are propagated.
 
         Parameters
         ----------
@@ -4608,7 +4606,7 @@ class Expr:
 
     def ge(self, other: Any) -> Self:
         """
-        Method equivalent of "greater than or equal" operator ``expr >= other``.
+        Method equivalent of "greater than or equal" operator `expr >= other`.
 
         Parameters
         ----------
@@ -4643,7 +4641,7 @@ class Expr:
 
     def gt(self, other: Any) -> Self:
         """
-        Method equivalent of "greater than" operator ``expr > other``.
+        Method equivalent of "greater than" operator `expr > other`.
 
         Parameters
         ----------
@@ -4678,7 +4676,7 @@ class Expr:
 
     def le(self, other: Any) -> Self:
         """
-        Method equivalent of "less than or equal" operator ``expr <= other``.
+        Method equivalent of "less than or equal" operator `expr <= other`.
 
         Parameters
         ----------
@@ -4713,7 +4711,7 @@ class Expr:
 
     def lt(self, other: Any) -> Self:
         """
-        Method equivalent of "less than" operator ``expr < other``.
+        Method equivalent of "less than" operator `expr < other`.
 
         Parameters
         ----------
@@ -4748,7 +4746,7 @@ class Expr:
 
     def ne(self, other: Any) -> Self:
         """
-        Method equivalent of inequality operator ``expr != other``.
+        Method equivalent of inequality operator `expr != other`.
 
         Parameters
         ----------
@@ -4783,9 +4781,9 @@ class Expr:
 
     def ne_missing(self, other: Any) -> Self:
         """
-        Method equivalent of equality operator ``expr != other`` where ``None == None``.
+        Method equivalent of equality operator `expr != other` where `None == None`.
 
-        This differs from default ``ne`` where null values are propagated.
+        This differs from default `ne` where null values are propagated.
 
         Parameters
         ----------
@@ -4823,7 +4821,7 @@ class Expr:
 
     def add(self, other: Any) -> Self:
         """
-        Method equivalent of addition operator ``expr + other``.
+        Method equivalent of addition operator `expr + other`.
 
         Parameters
         ----------
@@ -4870,7 +4868,7 @@ class Expr:
 
     def floordiv(self, other: Any) -> Self:
         """
-        Method equivalent of integer division operator ``expr // other``.
+        Method equivalent of integer division operator `expr // other`.
 
         Parameters
         ----------
@@ -4906,7 +4904,7 @@ class Expr:
 
     def mod(self, other: Any) -> Self:
         """
-        Method equivalent of modulus operator ``expr % other``.
+        Method equivalent of modulus operator `expr % other`.
 
         Parameters
         ----------
@@ -4935,7 +4933,7 @@ class Expr:
 
     def mul(self, other: Any) -> Self:
         """
-        Method equivalent of multiplication operator ``expr * other``.
+        Method equivalent of multiplication operator `expr * other`.
 
         Parameters
         ----------
@@ -4967,7 +4965,7 @@ class Expr:
 
     def sub(self, other: Any) -> Self:
         """
-        Method equivalent of subtraction operator ``expr - other``.
+        Method equivalent of subtraction operator `expr - other`.
 
         Parameters
         ----------
@@ -4999,7 +4997,7 @@ class Expr:
 
     def truediv(self, other: Any) -> Self:
         """
-        Method equivalent of float division operator ``expr / other``.
+        Method equivalent of float division operator `expr / other`.
 
         Parameters
         ----------
@@ -5044,7 +5042,7 @@ class Expr:
 
     def pow(self, exponent: int | float | None | Series | Expr) -> Self:
         """
-        Method equivalent of exponentiation operator ``expr ** exponent``.
+        Method equivalent of exponentiation operator `expr ** exponent`.
 
         Parameters
         ----------
@@ -5076,7 +5074,7 @@ class Expr:
 
     def xor(self, other: Any) -> Self:
         """
-        Method equivalent of bitwise exclusive-or operator ``expr ^ other``.
+        Method equivalent of bitwise exclusive-or operator `expr ^ other`.
 
         Parameters
         ----------
@@ -5151,7 +5149,7 @@ class Expr:
         >>> df = pl.DataFrame(
         ...     {"sets": [[1, 2, 3], [1, 2], [9, 10]], "optional_members": [1, 2, 3]}
         ... )
-        >>> df.select([pl.col("optional_members").is_in("sets").alias("contains")])
+        >>> df.select(pl.col("optional_members").is_in("sets").alias("contains"))
         shape: (3, 1)
         ┌──────────┐
         │ contains │
@@ -5258,7 +5256,7 @@ class Expr:
         │ 5   ┆ false      │
         └─────┴────────────┘
 
-        Use the ``closed`` argument to include or exclude the values at the bounds:
+        Use the `closed` argument to include or exclude the values at the bounds:
 
         >>> df.with_columns(
         ...     pl.col("num").is_between(2, 4, closed="left").alias("is_between")
@@ -5277,7 +5275,7 @@ class Expr:
         └─────┴────────────┘
 
         You can also use strings as well as numeric/temporal values (note: ensure that
-        string literals are wrapped with ``lit`` so as not to conflate them with
+        string literals are wrapped with `lit` so as not to conflate them with
         column names):
 
         >>> df = pl.DataFrame({"a": ["a", "b", "c", "d", "e"]})
@@ -5533,10 +5531,10 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
-        If ``by`` has not been specified (the default), the window at a given row will
+        If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"`
+        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="left"`
         means the windows will be:
 
             - [t_0 - window_size, t_0)
@@ -5746,10 +5744,10 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
-        If ``by`` has not been specified (the default), the window at a given row will
+        If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"`
+        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="left"`
         means the windows will be:
 
             - [t_0 - window_size, t_0)
@@ -5982,10 +5980,10 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their mean.
 
-        If ``by`` has not been specified (the default), the window at a given row will
+        If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"`
+        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="left"`
         means the windows will be:
 
             - [t_0 - window_size, t_0)
@@ -6228,10 +6226,10 @@ class Expr:
         this window will (optionally) be multiplied with the weights given by the
         `weight` vector. The resulting values will be aggregated to their sum.
 
-        If ``by`` has not been specified (the default), the window at a given row will
+        If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"`
+        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="left"`
         means the windows will be:
 
             - [t_0 - window_size, t_0)
@@ -6461,10 +6459,10 @@ class Expr:
         """
         Compute a rolling standard deviation.
 
-        If ``by`` has not been specified (the default), the window at a given row will
+        If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"` means
+        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="left"` means
         the windows will be:
 
             - [t_0 - window_size, t_0)
@@ -6707,10 +6705,10 @@ class Expr:
         """
         Compute a rolling variance.
 
-        If ``by`` has not been specified (the default), the window at a given row will
+        If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"`
+        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="left"`
         means the windows will be:
 
             - [t_0 - window_size, t_0)
@@ -6952,10 +6950,10 @@ class Expr:
         """
         Compute a rolling median.
 
-        If ``by`` has not been specified (the default), the window at a given row will
+        If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"` means
+        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="left"` means
         the windows will be:
 
             - [t_0 - window_size, t_0)
@@ -7116,10 +7114,10 @@ class Expr:
         """
         Compute a rolling quantile.
 
-        If ``by`` has not been specified (the default), the window at a given row will
+        If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
 
-        If you pass a ``by`` column ``<t_0, t_1, ..., t_n>``, then `closed="left"`
+        If you pass a `by` column `<t_0, t_1, ..., t_n>`, then `closed="left"`
         means the windows will be:
 
             - [t_0 - window_size, t_0)
@@ -7363,7 +7361,7 @@ class Expr:
             Custom aggregation function.
         window_size
             Size of the window. The window at a given row will include the row
-            itself and the ``window_size - 1`` elements before it.
+            itself and the `window_size - 1` elements before it.
         weights
             A list of weights with the same length as the window that will be multiplied
             elementwise with the values in the window.
@@ -7582,7 +7580,7 @@ class Expr:
         Computes percentage change between values.
 
         Percentage change (as fraction) between current element and most-recent
-        non-null element at least ``n`` period(s) before the current element.
+        non-null element at least `n` period(s) before the current element.
 
         Computes the change from the previous row by default.
 
@@ -7647,7 +7645,7 @@ class Expr:
 
         is the biased sample :math:`i\texttt{th}` central moment, and
         :math:`\bar{x}` is
-        the sample mean.  If ``bias`` is False, the calculations are
+        the sample mean.  If `bias` is False, the calculations are
         corrected for bias and the value computed is the adjusted
         Fisher-Pearson standardized moment coefficient, i.e.
 
@@ -8406,9 +8404,9 @@ class Expr:
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
 
-                - When ``adjust=True`` the EW function is calculated
+                - When `adjust=True` the EW function is calculated
                   using weights :math:`w_i = (1 - \alpha)^i`
-                - When ``adjust=False`` the EW function is calculated
+                - When `adjust=False` the EW function is calculated
                   recursively by
 
                   .. math::
@@ -8420,20 +8418,20 @@ class Expr:
         ignore_nulls
             Ignore missing values when calculating weights.
 
-                - When ``ignore_nulls=False`` (default), weights are based on absolute
+                - When `ignore_nulls=False` (default), weights are based on absolute
                   positions.
                   For example, the weights of :math:`x_0` and :math:`x_2` used in
                   calculating the final weighted average of
                   [:math:`x_0`, None, :math:`x_2`] are
-                  :math:`(1-\alpha)^2` and :math:`1` if ``adjust=True``, and
-                  :math:`(1-\alpha)^2` and :math:`\alpha` if ``adjust=False``.
+                  :math:`(1-\alpha)^2` and :math:`1` if `adjust=True`, and
+                  :math:`(1-\alpha)^2` and :math:`\alpha` if `adjust=False`.
 
-                - When ``ignore_nulls=True``, weights are based
+                - When `ignore_nulls=True`, weights are based
                   on relative positions. For example, the weights of
                   :math:`x_0` and :math:`x_2` used in calculating the final weighted
                   average of [:math:`x_0`, None, :math:`x_2`] are
-                  :math:`1-\alpha` and :math:`1` if ``adjust=True``,
-                  and :math:`1-\alpha` and :math:`\alpha` if ``adjust=False``.
+                  :math:`1-\alpha` and :math:`1` if `adjust=True`,
+                  and :math:`1-\alpha` and :math:`\alpha` if `adjust=False`.
 
         Examples
         --------
@@ -8496,16 +8494,16 @@ class Expr:
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
 
-                - When ``adjust=True`` the EW function is calculated
+                - When `adjust=True` the EW function is calculated
                   using weights :math:`w_i = (1 - \alpha)^i`
-                - When ``adjust=False`` the EW function is calculated
+                - When `adjust=False` the EW function is calculated
                   recursively by
 
                   .. math::
                     y_0 &= x_0 \\
                     y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
         bias
-            When ``bias=False``, apply a correction to make the estimate statistically
+            When `bias=False`, apply a correction to make the estimate statistically
             unbiased.
         min_periods
             Minimum number of observations in window required to have a value
@@ -8513,20 +8511,20 @@ class Expr:
         ignore_nulls
             Ignore missing values when calculating weights.
 
-                - When ``ignore_nulls=False`` (default), weights are based on absolute
+                - When `ignore_nulls=False` (default), weights are based on absolute
                   positions.
                   For example, the weights of :math:`x_0` and :math:`x_2` used in
                   calculating the final weighted average of
                   [:math:`x_0`, None, :math:`x_2`] are
-                  :math:`(1-\alpha)^2` and :math:`1` if ``adjust=True``, and
-                  :math:`(1-\alpha)^2` and :math:`\alpha` if ``adjust=False``.
+                  :math:`(1-\alpha)^2` and :math:`1` if `adjust=True`, and
+                  :math:`(1-\alpha)^2` and :math:`\alpha` if `adjust=False`.
 
-                - When ``ignore_nulls=True``, weights are based
+                - When `ignore_nulls=True`, weights are based
                   on relative positions. For example, the weights of
                   :math:`x_0` and :math:`x_2` used in calculating the final weighted
                   average of [:math:`x_0`, None, :math:`x_2`] are
-                  :math:`1-\alpha` and :math:`1` if ``adjust=True``,
-                  and :math:`1-\alpha` and :math:`\alpha` if ``adjust=False``.
+                  :math:`1-\alpha` and :math:`1` if `adjust=True`,
+                  and :math:`1-\alpha` and :math:`\alpha` if `adjust=False`.
 
         Examples
         --------
@@ -8589,16 +8587,16 @@ class Expr:
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
 
-                - When ``adjust=True`` the EW function is calculated
+                - When `adjust=True` the EW function is calculated
                   using weights :math:`w_i = (1 - \alpha)^i`
-                - When ``adjust=False`` the EW function is calculated
+                - When `adjust=False` the EW function is calculated
                   recursively by
 
                   .. math::
                     y_0 &= x_0 \\
                     y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
         bias
-            When ``bias=False``, apply a correction to make the estimate statistically
+            When `bias=False`, apply a correction to make the estimate statistically
             unbiased.
         min_periods
             Minimum number of observations in window required to have a value
@@ -8606,20 +8604,20 @@ class Expr:
         ignore_nulls
             Ignore missing values when calculating weights.
 
-                - When ``ignore_nulls=False`` (default), weights are based on absolute
+                - When `ignore_nulls=False` (default), weights are based on absolute
                   positions.
                   For example, the weights of :math:`x_0` and :math:`x_2` used in
                   calculating the final weighted average of
                   [:math:`x_0`, None, :math:`x_2`] are
-                  :math:`(1-\alpha)^2` and :math:`1` if ``adjust=True``, and
-                  :math:`(1-\alpha)^2` and :math:`\alpha` if ``adjust=False``.
+                  :math:`(1-\alpha)^2` and :math:`1` if `adjust=True`, and
+                  :math:`(1-\alpha)^2` and :math:`\alpha` if `adjust=False`.
 
-                - When ``ignore_nulls=True``, weights are based
+                - When `ignore_nulls=True`, weights are based
                   on relative positions. For example, the weights of
                   :math:`x_0` and :math:`x_2` used in calculating the final weighted
                   average of [:math:`x_0`, None, :math:`x_2`] are
-                  :math:`1-\alpha` and :math:`1` if ``adjust=True``,
-                  and :math:`1-\alpha` and :math:`\alpha` if ``adjust=False``.
+                  :math:`1-\alpha` and :math:`1` if `adjust=True`,
+                  and :math:`1-\alpha` and :math:`\alpha` if `adjust=False`.
 
         Examples
         --------
@@ -8686,7 +8684,7 @@ class Expr:
         ----------
         sort
             Sort the output by count in descending order.
-            If set to ``False`` (default), the order of the output is random.
+            If set to `False` (default), the order of the output is random.
         parallel
             Execute the computation in parallel.
 
@@ -8822,7 +8820,7 @@ class Expr:
         """
         Computes the entropy.
 
-        Uses the formula ``-sum(pk * log(pk)`` where ``pk`` are discrete probabilities.
+        Uses the formula `-sum(pk * log(pk)` where `pk` are discrete probabilities.
 
         Parameters
         ----------
@@ -9005,7 +9003,7 @@ class Expr:
         Replace values in column according to remapping dictionary.
 
         Needs a global string cache for lazily evaluated queries on columns of
-        type ``pl.Categorical``.
+        type `pl.Categorical`.
 
         Parameters
         ----------
@@ -9014,7 +9012,7 @@ class Expr:
         default
             Value to use when the remapping dict does not contain the lookup value.
             Accepts expression input. Non-expression inputs are parsed as literals.
-            Use ``pl.first()``, to keep the original value.
+            Use `pl.first()`, to keep the original value.
         return_dtype
             Set return dtype to override automatic return dtype determination.
 
@@ -9082,7 +9080,7 @@ class Expr:
         │ 3      ┆ DE           ┆ Germany       │
         └────────┴──────────────┴───────────────┘
 
-        ...or keep the original value, by making use of ``pl.first()``:
+        ...or keep the original value, by making use of `pl.first()`:
 
         >>> df.with_columns(
         ...     pl.col("country_code")
@@ -9481,7 +9479,7 @@ class Expr:
         return_dtype
             Dtype of the output Series.
             If not set, the dtype will be
-            ``polars.Unknown``.
+            `polars.Unknown`.
         skip_nulls
             Don't apply the function over values
             that contain nulls. This is faster.
@@ -9653,7 +9651,7 @@ class Expr:
 
         .. warning::
             This is highly unsafe as this will call the C function
-            loaded by ``lib::symbol``
+            loaded by `lib::symbol`
 
         .. note::
             This functionality is unstable and may change without it
@@ -9677,7 +9675,7 @@ class Expr:
             Expand expressions as input of this function.
         returns_scalar
             Automatically explode on unit length if it ran as final aggregation.
-            this is the case for aggregations like ``sum``, ``min``, ``covariance`` etc.
+            this is the case for aggregations like `sum`, `min`, `covariance` etc.
 
         cast_to_supertypes
             Cast the input datatypes to their supertype.

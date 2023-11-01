@@ -22,7 +22,7 @@ def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataF
     ----------
     df
         Object supporting the dataframe interchange protocol, i.e. must have implemented
-        the ``__dataframe__`` method.
+        the `__dataframe__` method.
     allow_copy
         Allow memory to be copied to perform the conversion. If set to False, causes
         conversions that are not zero-copy to fail.
@@ -39,7 +39,7 @@ def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataF
     protocol. Therefore, pyarrow>=11.0.0 is required for this function to work.
 
     Because Polars can not currently guarantee zero-copy conversion from Arrow for
-    categorical columns, ``allow_copy=False`` will not work if the dataframe contains
+    categorical columns, `allow_copy=False` will not work if the dataframe contains
     categorical data.
 
     Examples

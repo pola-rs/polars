@@ -54,22 +54,22 @@ def read_parquet(
     ----------
     source
         Path to a file, or a file-like object. If the path is a directory, files in that
-        directory will all be read. If ``fsspec`` is installed, it will be used to open
+        directory will all be read. If `fsspec` is installed, it will be used to open
         remote files.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
         of column names.
     n_rows
-        Stop reading from parquet file after reading ``n_rows``.
+        Stop reading from parquet file after reading `n_rows`.
         Only valid when `use_pyarrow=False`.
     use_pyarrow
         Use pyarrow instead of the Rust native parquet reader. The pyarrow reader is
         more stable.
     memory_map
         Memory map underlying file. This will likely increase performance.
-        Only used when ``use_pyarrow=True``.
+        Only used when `use_pyarrow=True`.
     storage_options
-        Extra options that make sense for ``fsspec.open()`` or a particular storage
+        Extra options that make sense for `fsspec.open()` or a particular storage
         connection, e.g. host, port, username, password, etc.
     parallel : {'auto', 'columns', 'row_groups', 'none'}
         This determines the direction of parallelism. 'auto' will try to determine the
@@ -151,8 +151,8 @@ def read_parquet_schema(
     ----------
     source
         Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a ``read()`` method, such as a file handler (e.g. via builtin ``open``
-        function) or ``BytesIO``).
+        that have a `read()` method, such as a file handler (e.g. via builtin `open`
+        function) or `BytesIO`).
 
     Returns
     -------
@@ -199,7 +199,7 @@ def scan_parquet(
         Path(s) to a file
         If a single path is given, it can be a globbing pattern.
     n_rows
-        Stop reading from parquet file after reading ``n_rows``.
+        Stop reading from parquet file after reading `n_rows`.
     cache
         Cache the result after reading.
     parallel : {'auto', 'columns', 'row_groups', 'none'}
@@ -216,7 +216,7 @@ def scan_parquet(
     storage_options
         Options that inform use how to connect to the cloud provider.
         If the cloud provider is not supported by us, the storage options
-        are passed to ``fsspec.open()``.
+        are passed to `fsspec.open()`.
         Currently supported providers are: {'aws', 'gcp', 'azure' }.
         See supported keys here:
 
@@ -224,7 +224,7 @@ def scan_parquet(
         * `gcp <https://docs.rs/object_store/0.7.0/object_store/gcp/enum.GoogleConfigKey.html>`_
         * `azure <https://docs.rs/object_store/0.7.0/object_store/azure/enum.AzureConfigKey.html>`_
 
-        If ``storage_options`` are not provided we will try to infer them from the
+        If `storage_options` are not provided we will try to infer them from the
         environment variables.
     low_memory
         Reduce memory pressure at the expense of performance.

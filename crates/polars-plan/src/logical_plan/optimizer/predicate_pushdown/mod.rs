@@ -191,12 +191,40 @@ impl<'a> PredicatePushDown<'a> {
 
         match lp {
             Selection { predicate, input } => {
-
-                // If a predicates result would be influenced by earlier applied filter
-                // we remove it and apply it locally
-                let local_predicates = transfer_to_local_by_node(&mut acc_predicates, |node| predicate_is_pushdown_boundary(node, expr_arena));
-
                 insert_and_combine_predicate(&mut acc_predicates, predicate, expr_arena);
+
+                // If the result of any predicate depends on the predicates that
+                // occur before it, then we must stop pushdown of all accumulated
+                // predicates at this level. Otherwise, if they are pushed past
+                // the boundary predicate, then the value of the boundary
+                // predicate itself will change and become incorrect.
+                // For example:
+                // (unoptimized)
+                // filter(y > 1) --> filter(x == min(x)) --> filter(y > 2)
+                //
+                // (incorrectly optimized)
+                // filter(y > 1) & filter(y > 2) --> filter(x == min(x))
+                // incorrect as min(x) in the subset where y > 2 may not be equal
+                // to min(x) in the subset where y > 1
+                //
+                // (correctly optimized)
+                // filter(y > 1) --> filter(x == min(x)) & filter(y > 2)
+                // pushdown of filter(y > 2) is correctly stopped at the boundary
+                //
+                // Performing this step here should guarantee that acc_predicates
+                // in all other contexts do not contain a mix of boundary and
+                // non-boundary predicates.
+                let local_predicates = if acc_predicates
+                    .values()
+                    .any(|node| predicate_is_pushdown_boundary(*node, expr_arena))
+                {
+                    let local_predicates = acc_predicates.values().copied().collect::<Vec<_>>();
+                    acc_predicates.clear();
+                    local_predicates
+                } else {
+                    vec![]
+                };
+
                 let alp = lp_arena.take(input);
                 let new_input = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
 
@@ -336,9 +364,8 @@ impl<'a> PredicatePushDown<'a> {
                             true
                         }
                     };
-                    let mut local_predicates =
+                    let local_predicates =
                         transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
-                    local_predicates.extend_from_slice(&transfer_to_local_by_node(&mut acc_predicates, |node| predicate_is_pushdown_boundary(node, expr_arena)));
 
                     self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
                     let lp = Distinct {
@@ -395,14 +422,8 @@ impl<'a> PredicatePushDown<'a> {
                             let condition = |name: Arc<str>| columns.iter().any(|s| s.as_ref() == &*name);
 
                             // first columns that refer to the exploded columns should be done here
-                            let mut local_predicates =
+                            let local_predicates =
                                 transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
-
-                            // if any predicate is a pushdown boundary, thus influenced by order of predicates e.g.: sum(), over(), sort
-                            // we do all here. #5950
-                            if acc_predicates.values().chain(local_predicates.iter()).any(|node| predicate_is_pushdown_boundary(*node, expr_arena)) {
-                                local_predicates.extend(acc_predicates.drain().map(|(_name, node)| node))
-                            }
 
                             let lp = self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
                             Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))

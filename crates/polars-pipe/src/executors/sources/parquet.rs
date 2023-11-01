@@ -3,6 +3,7 @@ use std::ops::{Deref, Range};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use polars_core::config::get_file_prefetch_size;
 use polars_core::error::*;
 use polars_core::POOL;
 use polars_io::cloud::CloudOptions;
@@ -33,6 +34,7 @@ pub struct ParquetSource {
     metadata: Option<Arc<FileMetaData>>,
     file_info: FileInfo,
     verbose: bool,
+    prefetch_size: usize,
 }
 
 impl ParquetSource {
@@ -141,6 +143,11 @@ impl ParquetSource {
 
         let iter = 0..paths.len();
 
+        let prefetch_size = get_file_prefetch_size();
+        if verbose {
+            eprintln!("POLARS PREFETCH_SIZE: {}", prefetch_size)
+        }
+
         let mut source = ParquetSource {
             batched_readers: VecDeque::new(),
             n_threads,
@@ -154,6 +161,7 @@ impl ParquetSource {
             metadata,
             file_info,
             verbose,
+            prefetch_size,
         };
         // Already start downloading when we deal with cloud urls.
         if !source.paths.first().unwrap().is_file() {
@@ -167,7 +175,7 @@ impl Source for ParquetSource {
     fn get_batches(&mut self, _context: &PExecutionContext) -> PolarsResult<SourceResult> {
         // We already start downloading the next file, we can only do that if we don't have a limit.
         // In the case of a limit we first must update the row count with the batch results.
-        if self.batched_readers.len() < 3 && self.file_options.n_rows.is_none()
+        if self.batched_readers.len() < self.prefetch_size && self.file_options.n_rows.is_none()
             || self.batched_readers.is_empty()
         {
             self.init_next_reader()?

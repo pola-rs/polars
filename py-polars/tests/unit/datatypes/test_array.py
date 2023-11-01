@@ -79,7 +79,10 @@ def test_array_in_group_by() -> None:
             "g": pl.Int64,
             "a": pl.List(pl.Array(inner=pl.Int64, width=2)),
         }
-        assert out.to_dict(False) == {"g": [1, 2], "a": [[[1, 2], [2, 2]], [[1, 4]]]}
+        assert out.to_dict(as_series=False) == {
+            "g": [1, 2],
+            "a": [[[1, 2], [2, 2]], [[1, 4]]],
+        }
 
 
 def test_array_invalid_operation() -> None:
@@ -101,7 +104,7 @@ def test_array_concat() -> None:
     b_df = pl.DataFrame({"a": [[1, 1], [0, 0]]}).select(
         pl.col("a").cast(pl.Array(inner=pl.Int32, width=2))
     )
-    assert pl.concat([a_df, b_df]).to_dict(False) == {
+    assert pl.concat([a_df, b_df]).to_dict(as_series=False) == {
         "a": [[0, 1], [1, 0], [1, 1], [0, 0]]
     }
 
@@ -141,3 +144,11 @@ def test_array_list_supertype() -> None:
 
     expected = pl.Series([True, False])
     assert_series_equal(result, expected)
+
+
+def test_array_in_list() -> None:
+    s = pl.Series(
+        [[[1, 2], [3, 4]], [[5, 6], [7, 8]]],
+        dtype=pl.List(pl.Array(inner=pl.Int8, width=2)),
+    )
+    assert s.dtype == pl.List(pl.Array(inner=pl.Int8, width=2))

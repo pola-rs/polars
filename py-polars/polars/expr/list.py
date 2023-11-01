@@ -459,7 +459,7 @@ class ExprListNameSpace:
         Take sublists by multiple indices.
 
         The indices may be defined in a single column, or by sublists in another
-        column of dtype ``List``.
+        column of dtype `List`.
 
         Parameters
         ----------
@@ -728,8 +728,8 @@ class ExprListNameSpace:
 
         Notes
         -----
-        This method is similar to the ``LAG`` operation in SQL when the value for ``n``
-        is positive. With a negative value for ``n``, it is similar to ``LEAD``.
+        This method is similar to the `LAG` operation in SQL when the value for `n`
+        is positive. With a negative value for `n`, it is similar to `LEAD`.
 
         Examples
         --------
@@ -775,7 +775,7 @@ class ExprListNameSpace:
         offset
             Start index. Negative indexing is supported.
         length
-            Length of the slice. If set to ``None`` (default), the slice is taken to the
+            Length of the slice. If set to `None` (default), the slice is taken to the
             end of the list.
 
         Examples
@@ -877,7 +877,7 @@ class ExprListNameSpace:
 
     def count_matches(self, element: IntoExpr) -> Expr:
         """
-        Count how often the value produced by ``element`` occurs.
+        Count how often the value produced by `element` occurs.
 
         Parameters
         ----------
@@ -912,7 +912,7 @@ class ExprListNameSpace:
         upper_bound: int = 0,
     ) -> Expr:
         """
-        Convert the series of type ``List`` to a series of type ``Struct``.
+        Convert the series of type `List` to a series of type `Struct`.
 
         Parameters
         ----------
@@ -928,13 +928,13 @@ class ExprListNameSpace:
             Otherwise, to dynamically assign field names, a custom function can be
             used; if neither are set, fields will be `field_0, field_1 .. field_n`.
         upper_bound
-            A polars ``LazyFrame`` needs to know the schema at all times, so the
+            A polars `LazyFrame` needs to know the schema at all times, so the
             caller must provide an upper bound of the number of struct fields that
             will be created; if set incorrectly, subsequent operations may fail.
-            (For example, an ``all().sum()`` expression will look in the current
+            (For example, an `all().sum()` expression will look in the current
             schema to determine which columns to select).
 
-            When operating on a ``DataFrame``, the schema does not need to be
+            When operating on a `DataFrame`, the schema does not need to be
             tracked or pre-determined, as the result will be eagerly evaluated,
             so you can leave this parameter unset.
 
@@ -1018,7 +1018,7 @@ class ExprListNameSpace:
 
     def set_union(self, other: IntoExpr) -> Expr:
         """
-        Compute the SET UNION between the elements in this list and the elements of ``other``.
+        Compute the SET UNION between the elements in this list and the elements of `other`.
 
         Parameters
         ----------
@@ -1054,7 +1054,7 @@ class ExprListNameSpace:
 
     def set_difference(self, other: IntoExpr) -> Expr:
         """
-        Compute the SET DIFFERENCE between the elements in this list and the elements of ``other``.
+        Compute the SET DIFFERENCE between the elements in this list and the elements of `other`.
 
         Parameters
         ----------
@@ -1092,7 +1092,7 @@ class ExprListNameSpace:
 
     def set_intersection(self, other: IntoExpr) -> Expr:
         """
-        Compute the SET INTERSECTION between the elements in this list and the elements of ``other``.
+        Compute the SET INTERSECTION between the elements in this list and the elements of `other`.
 
         Parameters
         ----------
@@ -1128,7 +1128,7 @@ class ExprListNameSpace:
 
     def set_symmetric_difference(self, other: IntoExpr) -> Expr:
         """
-        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of ``other``.
+        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of `other`.
 
         Parameters
         ----------
@@ -1165,10 +1165,10 @@ class ExprListNameSpace:
     @deprecate_renamed_function("set_union", version="0.18.10")
     def union(self, other: IntoExpr) -> Expr:
         """
-        Compute the SET UNION between the elements in this list and the elements of ``other``.
+        Compute the SET UNION between the elements in this list and the elements of `other`.
 
         .. deprecated:: 0.18.10
-            This method has been renamed to ``Expr.list.set_union``.
+            This method has been renamed to `Expr.list.set_union`.
 
         """  # noqa: W505
         return self.set_union(other)
@@ -1176,10 +1176,10 @@ class ExprListNameSpace:
     @deprecate_renamed_function("set_difference", version="0.18.10")
     def difference(self, other: IntoExpr) -> Expr:
         """
-        Compute the SET DIFFERENCE between the elements in this list and the elements of ``other``.
+        Compute the SET DIFFERENCE between the elements in this list and the elements of `other`.
 
         .. deprecated:: 0.18.10
-            This method has been renamed to ``Expr.list.set_difference``.
+            This method has been renamed to `Expr.list.set_difference`.
 
         """  # noqa: W505
         return self.set_difference(other)
@@ -1187,10 +1187,10 @@ class ExprListNameSpace:
     @deprecate_renamed_function("set_intersection", version="0.18.10")
     def intersection(self, other: IntoExpr) -> Expr:
         """
-        Compute the SET INTERSECTION between the elements in this list and the elements of ``other``.
+        Compute the SET INTERSECTION between the elements in this list and the elements of `other`.
 
         .. deprecated:: 0.18.10
-            This method has been renamed to ``Expr.list.set_intersection``.
+            This method has been renamed to `Expr.list.set_intersection`.
 
         """  # noqa: W505
         return self.set_intersection(other)
@@ -1198,10 +1198,10 @@ class ExprListNameSpace:
     @deprecate_renamed_function("set_symmetric_difference", version="0.18.10")
     def symmetric_difference(self, other: IntoExpr) -> Expr:
         """
-        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of ``other``.
+        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of `other`.
 
         .. deprecated:: 0.18.10
-            This method has been renamed to ``Expr.list.set_symmetric_difference``.
+            This method has been renamed to `Expr.list.set_symmetric_difference`.
 
         """  # noqa: W505
         return self.set_symmetric_difference(other)
@@ -1209,7 +1209,7 @@ class ExprListNameSpace:
     @deprecate_renamed_function("count_matches", version="0.19.3")
     def count_match(self, element: IntoExpr) -> Expr:
         """
-        Count how often the value produced by ``element`` occurs.
+        Count how often the value produced by `element` occurs.
 
         .. deprecated:: 0.19.3
             This method has been renamed to :func:`count_matches`.

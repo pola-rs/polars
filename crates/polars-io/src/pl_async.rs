@@ -1,11 +1,38 @@
 use std::collections::BTreeSet;
 use std::future::Future;
 use std::ops::Deref;
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::RwLock;
+use std::time::Duration;
 
 use once_cell::sync::Lazy;
 use polars_core::POOL;
 use tokio::runtime::{Builder, Runtime};
+
+static CONCURRENCY_BUDGET: AtomicI32 = AtomicI32::new(64);
+
+pub async fn with_concurrency_budget<F, Fut>(requested_budget: u16, callable: F) -> Fut::Output
+where
+    F: FnOnce() -> Fut,
+    Fut: Future,
+{
+    loop {
+        let requested_budget = requested_budget as i32;
+        let available_budget = CONCURRENCY_BUDGET.fetch_sub(requested_budget, Ordering::Relaxed);
+
+        // Bail out, there was no budget
+        if available_budget < 0 {
+            CONCURRENCY_BUDGET.fetch_add(requested_budget, Ordering::Relaxed);
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        } else {
+            let fut = callable();
+            let out = fut.await;
+            CONCURRENCY_BUDGET.fetch_add(requested_budget, Ordering::Relaxed);
+
+            return out;
+        }
+    }
+}
 
 pub struct RuntimeManager {
     rt: Runtime,

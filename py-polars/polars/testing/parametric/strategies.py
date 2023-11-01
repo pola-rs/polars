@@ -292,7 +292,7 @@ def _get_strategy_dtypes(
     Parameters
     ----------
     base_type
-        If True, return the base types for each dtype (eg:``List(Utf8)`` → ``List``).
+        If True, return the base types for each dtype (eg:`List(Utf8)` → `List`).
     excluding
         A dtype or sequence of dtypes to omit from the results.
 

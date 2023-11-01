@@ -1,4 +1,5 @@
 # Changelog
 
-This page is under construction.
-Please refer to our [GitHub releases](https://github.com/pola-rs/polars/releases) in the meantime.
+Polars uses GitHub to manage both Python and Rust releases.
+
+Refer to our [GitHub releases page](https://github.com/pola-rs/polars/releases) for the changelog associated with each new release.

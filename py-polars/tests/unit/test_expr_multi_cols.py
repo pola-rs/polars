@@ -23,7 +23,7 @@ def test_fold_regex_expand() -> None:
         pl.fold(
             acc=pl.lit(0), function=lambda acc, x: acc + x, exprs=pl.col("^y_.*$")
         ).alias("y_sum"),
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "x": [0, 1, 2],
         "y_1": [1.1, 2.2, 3.3],
         "y_2": [1.0, 2.5, 3.5],
@@ -41,13 +41,13 @@ def test_arg_sort_argument_expansion() -> None:
     )
     assert df.select(
         pl.col("col1").sort_by(pl.col("sort_order").arg_sort()).name.suffix("_suffix")
-    ).to_dict(False) == {"col1_suffix": [3, 2, 1]}
+    ).to_dict(as_series=False) == {"col1_suffix": [3, 2, 1]}
     assert df.select(
         pl.col("^col.*$").sort_by(pl.col("sort_order")).arg_sort()
-    ).to_dict(False) == {"col1": [2, 1, 0], "col2": [2, 1, 0]}
+    ).to_dict(as_series=False) == {"col1": [2, 1, 0], "col2": [2, 1, 0]}
     assert df.select(
         pl.all().exclude("sort_order").sort_by(pl.col("sort_order")).arg_sort()
-    ).to_dict(False) == {"col1": [2, 1, 0], "col2": [2, 1, 0]}
+    ).to_dict(as_series=False) == {"col1": [2, 1, 0], "col2": [2, 1, 0]}
 
 
 def test_multiple_columns_length_9137() -> None:
@@ -61,7 +61,9 @@ def test_multiple_columns_length_9137() -> None:
     # list is larger than groups
     cmp_list = ["a", "b", "c"]
 
-    assert df.group_by("a").agg(pl.col("b").is_in(cmp_list)).to_dict(False) == {
+    assert df.group_by("a").agg(pl.col("b").is_in(cmp_list)).to_dict(
+        as_series=False
+    ) == {
         "a": [1],
         "b": [[True, False]],
     }
@@ -77,14 +79,16 @@ def test_regex_in_cols() -> None:
         }
     )
 
-    assert df.select(pl.col("^col.*$").name.prefix("matched_")).to_dict(False) == {
+    assert df.select(pl.col("^col.*$").name.prefix("matched_")).to_dict(
+        as_series=False
+    ) == {
         "matched_col1": [1, 2, 3],
         "matched_col2": [4, 5, 6],
     }
 
     assert df.with_columns(
         pl.col("^col.*$", "^val.*$").name.prefix("matched_")
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "col1": [1, 2, 3],
         "col2": [4, 5, 6],
         "val1": ["a", "b", "c"],
@@ -95,14 +99,16 @@ def test_regex_in_cols() -> None:
         "matched_val2": ["A", "B", "C"],
     }
     assert df.select(pl.col("^col.*$", "val1").name.prefix("matched_")).to_dict(
-        False
+        as_series=False
     ) == {
         "matched_col1": [1, 2, 3],
         "matched_col2": [4, 5, 6],
         "matched_val1": ["a", "b", "c"],
     }
 
-    assert df.select(pl.col("^col.*$", "val1").exclude("col2")).to_dict(False) == {
+    assert df.select(pl.col("^col.*$", "val1").exclude("col2")).to_dict(
+        as_series=False
+    ) == {
         "col1": [1, 2, 3],
         "val1": ["a", "b", "c"],
     }

@@ -208,9 +208,15 @@ impl StringNameSpace {
     ///
     /// * `delimiter` - A string that will act as delimiter between values.
     #[cfg(feature = "concat_str")]
-    pub fn concat(self, delimiter: &str) -> Expr {
+    pub fn concat(self, delimiter: &str, ignore_nulls: bool) -> Expr {
         self.0
-            .apply_private(StringFunction::ConcatVertical(delimiter.to_owned()).into())
+            .apply_private(
+                StringFunction::ConcatVertical {
+                    delimiter: delimiter.to_owned(),
+                    ignore_nulls,
+                }
+                .into(),
+            )
             .with_function_options(|mut options| {
                 options.returns_scalar = true;
                 options.collect_groups = ApplyOptions::GroupWise;

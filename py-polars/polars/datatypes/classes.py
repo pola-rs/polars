@@ -101,7 +101,7 @@ class DataType(metaclass=DataTypeClass):
         """
         Check if this DataType is the same as another DataType.
 
-        This is a stricter check than ``self == other``, as it enforces an exact
+        This is a stricter check than `self == other`, as it enforces an exact
         match of all dtype attributes for nested and/or uninitialised dtypes.
 
         Parameters
@@ -124,7 +124,7 @@ class DataType(metaclass=DataTypeClass):
         """
         Check if this DataType is NOT the same as another DataType.
 
-        This is a stricter check than ``self != other``, as it enforces an exact
+        This is a stricter check than `self != other`, as it enforces an exact
         match of all dtype attributes for nested and/or uninitialised dtypes.
 
         Parameters
@@ -362,7 +362,7 @@ class Datetime(TemporalType):
             Unit of time / precision.
         time_zone
             Time zone string, as defined in zoneinfo (to see valid strings run
-            ``import zoneinfo; zoneinfo.available_timezones()`` for a full list).
+            `import zoneinfo; zoneinfo.available_timezones()` for a full list).
             When using to match dtypes, can use "*" to check for Datetime columns
             that have any timezone.
 
@@ -467,7 +467,7 @@ class List(NestedType):
         Parameters
         ----------
         inner
-            The ``DataType`` of the values within each list.
+            The `DataType` of the values within each list.
 
         Examples
         --------
@@ -537,7 +537,7 @@ class Array(NestedType):
         width
             The length of the arrays.
         inner
-            The ``DataType`` of the values within each array.
+            The `DataType` of the values within each array.
 
         Examples
         --------

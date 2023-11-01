@@ -2,7 +2,7 @@
 render_macros: false
 ---
 
-# Contributing
+# Overview
 
 Thanks for taking the time to contribute! We appreciate all contributions, from reporting bugs to implementing new features.
 If you're unclear on how to proceed after reading this guide, please contact us on [Discord](https://discord.gg/4UfP5cfBE7).
@@ -111,7 +111,7 @@ Create a new git branch from the `main` branch in your local repository, and sta
 The Rust code is located in the `crates` directory, while the Python codebase is located in the `py-polars` directory.
 Both directories contain a `Makefile` with helpful commands. Most notably:
 
-- `make test` to run the test suite (see the [test suite docs](https://github.com/pola-rs/polars/blob/main/py-polars/tests/README.md) for more info)
+- `make test` to run the test suite (see the [test suite docs](./test.md) for more info)
 - `make pre-commit` to run autoformatting and linting
 
 Note that your work cannot be merged if these checks fail!
@@ -132,7 +132,7 @@ Please adhere to the following guidelines:
 - In the pull request description, [link](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue) to the issue you were working on.
 - Add any relevant information to the description that you think may help the maintainers review your code.
 - Make sure your branch is [rebased](https://docs.github.com/en/get-started/using-git/about-git-rebase) against the latest version of the `main` branch.
-- Make sure all [GitHub Actions checks](https://github.com/pola-rs/polars/blob/main/.github/workflows/README.md) pass.
+- Make sure all [GitHub Actions checks](./ci.md) pass.
 
 After you have opened your pull request, a maintainer will review it and possibly leave some comments.
 Once all issues are resolved, the maintainer will merge your pull request, and your work will be part of the next Polars release!

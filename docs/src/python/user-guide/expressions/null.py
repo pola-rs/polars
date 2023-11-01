@@ -40,12 +40,8 @@ print(df)
 
 
 # --8<-- [start:fill]
-fill_literal_df = (
-    df.with_columns(
-        pl.col("col2").fill_null(
-            pl.lit(2),
-        ),
-    ),
+fill_literal_df = df.with_columns(
+    pl.col("col2").fill_null(pl.lit(2)),
 )
 print(fill_literal_df)
 # --8<-- [end:fill]

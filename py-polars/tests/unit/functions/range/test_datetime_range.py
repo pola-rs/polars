@@ -139,7 +139,7 @@ def test_datetime_range_lazy_with_expressions(
         pl.datetime_ranges(low, high, interval="1d").alias("dts")
     )
 
-    assert result_df.to_dict(False) == {
+    assert result_df.to_dict(as_series=False) == {
         "start": [datetime(2000, 1, 1, 0, 0), datetime(2022, 6, 1, 0, 0)],
         "stop": [datetime(2000, 1, 2, 0, 0), datetime(2022, 6, 2, 0, 0)],
         "dts": [

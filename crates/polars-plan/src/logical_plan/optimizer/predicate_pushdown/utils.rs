@@ -117,6 +117,7 @@ pub(super) fn predicate_is_pushdown_boundary(node: Node, expr_arena: &Arena<AExp
         matches!(
             e,
             AExpr::Sort { .. } | AExpr::SortBy { .. }
+            | AExpr::Take{..} // A take needs all rows
             | AExpr::Agg(_) // an aggregation needs all rows
             // Apply groups can be something like shift, sort, or an aggregation like skew
             // both need all values
@@ -408,45 +409,29 @@ where
     local_predicates
 }
 
-/// Transfer a predicate from `acc_predicates` that will be pushed down
-/// to a local_predicates vec based on a condition.
-pub(super) fn transfer_to_local_by_node<F>(
-    acc_predicates: &mut PlHashMap<Arc<str>, Node>,
-    mut condition: F,
-) -> Vec<Node>
-where
-    F: FnMut(Node) -> bool,
-{
-    let mut remove_keys = Vec::with_capacity(acc_predicates.len());
-
-    for (key, predicate) in &*acc_predicates {
-        if condition(*predicate) {
-            remove_keys.push(key.clone());
-            continue;
-        }
-    }
-    let mut local_predicates = Vec::with_capacity(remove_keys.len());
-    for key in remove_keys {
-        if let Some(pred) = acc_predicates.remove(&*key) {
-            local_predicates.push(pred)
-        }
-    }
-    local_predicates
-}
-
 /// predicates that need the full context should not be pushed down to the scans
 /// example: min(..) == null_count
 pub(super) fn partition_by_full_context(
     acc_predicates: &mut PlHashMap<Arc<str>, Node>,
     expr_arena: &Arena<AExpr>,
 ) -> Vec<Node> {
-    transfer_to_local_by_node(acc_predicates, |node| {
-        has_aexpr(node, expr_arena, |ae| match ae {
+    // TODO!
+    // Assert that acc_predicates does not contain a mix of groups sensitive and
+    // non-groups sensitive predicates, as this should have been handled
+    // earlier under push_down::match::Selection.
+    if acc_predicates.values().any(|node| {
+        has_aexpr(*node, expr_arena, |ae| match ae {
             AExpr::BinaryExpr { left, right, .. } => {
                 expr_arena.get(*left).groups_sensitive()
                     || expr_arena.get(*right).groups_sensitive()
             },
             ae => ae.groups_sensitive(),
         })
-    })
+    }) {
+        let local_predicates = acc_predicates.values().copied().collect::<Vec<_>>();
+        acc_predicates.clear();
+        local_predicates
+    } else {
+        vec![]
+    }
 }
