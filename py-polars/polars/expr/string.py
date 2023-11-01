@@ -623,12 +623,23 @@ class ExprStringNameSpace:
         r"""
         Remove leading characters.
 
+        .. note::
+            This method strips any characters present in `characters` from the
+            start of the input, no matter their order. To strip a prefix (i.e.
+            a "word" of characters in a certain order), use
+            :func:`strip_prefix` instead.
+
         Parameters
         ----------
         characters
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
+
+        See Also
+        --------
+        strip_prefix
+        strip_chars_end
 
         Examples
         --------
@@ -658,6 +669,20 @@ class ExprStringNameSpace:
         │ rld     │
         └─────────┘
 
+        The order of the provided characters does not matter, they behave like a set.
+
+        >>> pl.DataFrame({"foo": ["aabcdef"]}).select(
+        ...     pl.col("foo").str.strip_chars_start("cba")
+        ... )
+        shape: (1, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ def │
+        └─────┘
+
         """
         characters = parse_as_expression(characters, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_chars_start(characters))
@@ -666,12 +691,23 @@ class ExprStringNameSpace:
         r"""
         Remove trailing characters.
 
+        .. note::
+            This method strips any characters present in `characters` from the
+            end of the input, no matter their order. To strip a suffix (i.e.
+            a "word" of characters in a certain order), use
+            :func:`strip_suffix` instead.
+
         Parameters
         ----------
         characters
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
+
+        See Also
+        --------
+        strip_suffix
+        strip_chars_start
 
         Examples
         --------
@@ -714,6 +750,20 @@ class ExprStringNameSpace:
         │       │
         └───────┘
 
+        The order of the provided characters does not matter, they behave like a set.
+
+        >>> pl.DataFrame({"foo": ["abcdeff"]}).select(
+        ...     pl.col("foo").str.strip_chars_end("fed")
+        ... )
+        shape: (1, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ abc │
+        └─────┘
+
         """
         characters = parse_as_expression(characters, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_chars_end(characters))
@@ -724,10 +774,20 @@ class ExprStringNameSpace:
 
         The prefix will be removed from the string exactly once, if found.
 
+        .. note::
+            This method strips the exact character sequence provided in
+            `prefix` from the start of the input. To strip a set of characters
+            in any order, use :func:`strip_chars_start` instead.
+
         Parameters
         ----------
         prefix
             The prefix to be removed.
+
+        See Also
+        --------
+        strip_chars_start
+        strip_suffix
 
         Examples
         --------
@@ -755,10 +815,20 @@ class ExprStringNameSpace:
 
         The suffix will be removed from the string exactly once, if found.
 
+        .. note::
+            This method strips the exact character sequence provided in
+            `suffix` from the end of the input. To strip a set of characters
+            in any order, use :func:`strip_chars_end` instead.
+
         Parameters
         ----------
         suffix
             The suffix to be removed.
+
+        See Also
+        --------
+        strip_chars_end
+        strip_prefix
 
         Examples
         --------
