@@ -49,9 +49,8 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
     let additional_info = match (input.dtype(), output.dtype()) {
         (DataType::Utf8, DataType::Date | DataType::Datetime(_, _)) => {
             "\n\nYou might want to try:\n\
-            - setting `strict=False\n\
-            - providing a format or checking the format string\n\
-            - setting `exact=False` (note: this is much slower!)"
+            - setting `strict=False` to set values to `null` that cannot be converted\n\
+            - using `str.strptime`, `str.to_date` or `str.to_datetime` and provide a format string"
         },
         _ => "",
     };
