@@ -92,12 +92,6 @@ def test_roundtrip_pandas_boolean_subchunks() -> None:
     assert_frame_equal(result, df)
 
 
-# Remove xfail marker when support is implemented,
-# or we write our own `from_dataframe` implementation.
-# https://github.com/apache/arrow/issues/33982#issuecomment-1669278644
-@pytest.mark.xfail(
-    reason="Boolean support not yet implemented in pyarrow's implementation of `from_dataframe`."
-)
 def test_roundtrip_pyarrow_boolean() -> None:
     df = pl.Series("a", [True, False], dtype=pl.Boolean).to_frame()
     dfi = df.__dataframe__()
