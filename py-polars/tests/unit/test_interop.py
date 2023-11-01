@@ -538,7 +538,7 @@ def test_upcast_pyarrow_dicts() -> None:
         for i in range(128)
     ]
 
-    tbl = pa.concat_tables(tbls, promote=True)
+    tbl = pa.concat_tables(tbls, promote_options="default")
     out = cast(pl.DataFrame, pl.from_arrow(tbl))
     assert out.shape == (128, 1)
     assert out["col_name"][0] == "value_0"
