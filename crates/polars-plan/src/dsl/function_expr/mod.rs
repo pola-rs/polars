@@ -100,6 +100,22 @@ use super::*;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug)]
 pub enum FunctionExpr {
+    // Namespaces
+    #[cfg(feature = "dtype-array")]
+    ArrayExpr(ArrayFunction),
+    BinaryExpr(BinaryFunction),
+    #[cfg(feature = "dtype-categorical")]
+    Categorical(CategoricalFunction),
+    ListExpr(ListFunction),
+    #[cfg(feature = "strings")]
+    StringExpr(StringFunction),
+    #[cfg(feature = "dtype-struct")]
+    StructExpr(StructFunction),
+    #[cfg(feature = "temporal")]
+    TemporalExpr(TemporalFunction),
+
+    // Other expressions
+    Boolean(BooleanFunction),
     #[cfg(feature = "abs")]
     Abs,
     NullCount,
@@ -110,11 +126,6 @@ pub enum FunctionExpr {
     ArgWhere,
     #[cfg(feature = "search_sorted")]
     SearchSorted(SearchSortedSide),
-    #[cfg(feature = "strings")]
-    StringExpr(StringFunction),
-    BinaryExpr(BinaryFunction),
-    #[cfg(feature = "temporal")]
-    TemporalExpr(TemporalFunction),
     #[cfg(feature = "range")]
     Range(RangeFunction),
     #[cfg(feature = "date_offset")]
@@ -158,11 +169,6 @@ pub enum FunctionExpr {
         has_min: bool,
         has_max: bool,
     },
-    ListExpr(ListFunction),
-    #[cfg(feature = "dtype-array")]
-    ArrayExpr(ArrayFunction),
-    #[cfg(feature = "dtype-struct")]
-    StructExpr(StructFunction),
     #[cfg(feature = "dtype-struct")]
     AsStruct,
     #[cfg(feature = "top_k")]
@@ -195,11 +201,8 @@ pub enum FunctionExpr {
     },
     #[cfg(feature = "unique_counts")]
     UniqueCounts,
-    Boolean(BooleanFunction),
     #[cfg(feature = "approx_unique")]
     ApproxNUnique,
-    #[cfg(feature = "dtype-categorical")]
-    Categorical(CategoricalFunction),
     Coalesce,
     ShrinkType,
     #[cfg(feature = "diff")]
@@ -306,38 +309,42 @@ pub enum FunctionExpr {
 impl Hash for FunctionExpr {
     fn hash<H: Hasher>(&self, state: &mut H) {
         std::mem::discriminant(self).hash(state);
+        use FunctionExpr::*;
         match self {
-            FunctionExpr::Pow(f) => f.hash(state),
-            #[cfg(feature = "search_sorted")]
-            FunctionExpr::SearchSorted(f) => f.hash(state),
-            FunctionExpr::BinaryExpr(f) => f.hash(state),
-            FunctionExpr::Boolean(f) => f.hash(state),
-            #[cfg(feature = "strings")]
-            FunctionExpr::StringExpr(f) => f.hash(state),
-            FunctionExpr::ListExpr(f) => f.hash(state),
+            // Namespaces
             #[cfg(feature = "dtype-array")]
-            FunctionExpr::ArrayExpr(f) => f.hash(state),
-            #[cfg(feature = "dtype-struct")]
-            FunctionExpr::StructExpr(f) => f.hash(state),
-            #[cfg(feature = "random")]
-            FunctionExpr::Random { method, .. } => method.hash(state),
-            FunctionExpr::Correlation { method, .. } => method.hash(state),
-            #[cfg(feature = "range")]
-            FunctionExpr::Range(f) => f.hash(state),
-            #[cfg(feature = "temporal")]
-            FunctionExpr::TemporalExpr(f) => f.hash(state),
-            #[cfg(feature = "trigonometry")]
-            FunctionExpr::Trigonometry(f) => f.hash(state),
-            #[cfg(feature = "fused")]
-            FunctionExpr::Fused(f) => f.hash(state),
-            #[cfg(feature = "diff")]
-            FunctionExpr::Diff(_, null_behavior) => null_behavior.hash(state),
-            #[cfg(feature = "interpolate")]
-            FunctionExpr::Interpolate(f) => f.hash(state),
+            ArrayExpr(f) => f.hash(state),
+            BinaryExpr(f) => f.hash(state),
             #[cfg(feature = "dtype-categorical")]
-            FunctionExpr::Categorical(f) => f.hash(state),
+            Categorical(f) => f.hash(state),
+            ListExpr(f) => f.hash(state),
+            #[cfg(feature = "strings")]
+            StringExpr(f) => f.hash(state),
+            #[cfg(feature = "dtype-struct")]
+            StructExpr(f) => f.hash(state),
+            #[cfg(feature = "temporal")]
+            TemporalExpr(f) => f.hash(state),
+
+            // Other expressions
+            Boolean(f) => f.hash(state),
+            Pow(f) => f.hash(state),
+            #[cfg(feature = "search_sorted")]
+            SearchSorted(f) => f.hash(state),
+            #[cfg(feature = "random")]
+            Random { method, .. } => method.hash(state),
+            Correlation { method, .. } => method.hash(state),
+            #[cfg(feature = "range")]
+            Range(f) => f.hash(state),
+            #[cfg(feature = "trigonometry")]
+            Trigonometry(f) => f.hash(state),
+            #[cfg(feature = "fused")]
+            Fused(f) => f.hash(state),
+            #[cfg(feature = "diff")]
+            Diff(_, null_behavior) => null_behavior.hash(state),
+            #[cfg(feature = "interpolate")]
+            Interpolate(f) => f.hash(state),
             #[cfg(feature = "ffi_plugin")]
-            FunctionExpr::FfiPlugin {
+            FfiPlugin {
                 lib,
                 symbol,
                 kwargs,
@@ -346,107 +353,100 @@ impl Hash for FunctionExpr {
                 lib.hash(state);
                 symbol.hash(state);
             },
-            FunctionExpr::SumHorizontal
-            | FunctionExpr::MaxHorizontal
-            | FunctionExpr::MinHorizontal
-            | FunctionExpr::DropNans
-            | FunctionExpr::DropNulls
-            | FunctionExpr::Reverse
-            | FunctionExpr::ArgUnique
-            | FunctionExpr::Shift
-            | FunctionExpr::ShiftAndFill => {},
+            SumHorizontal | MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse
+            | ArgUnique | Shift | ShiftAndFill => {},
             #[cfg(feature = "mode")]
-            FunctionExpr::Mode => {},
+            Mode => {},
             #[cfg(feature = "abs")]
-            FunctionExpr::Abs => {},
-            FunctionExpr::NullCount => {},
+            Abs => {},
+            NullCount => {},
             #[cfg(feature = "date_offset")]
-            FunctionExpr::DateOffset => {},
+            DateOffset => {},
             #[cfg(feature = "arg_where")]
-            FunctionExpr::ArgWhere => {},
+            ArgWhere => {},
             #[cfg(feature = "trigonometry")]
-            FunctionExpr::Atan2 => {},
+            Atan2 => {},
             #[cfg(feature = "dtype-struct")]
-            FunctionExpr::AsStruct => {},
+            AsStruct => {},
             #[cfg(feature = "sign")]
-            FunctionExpr::Sign => {},
+            Sign => {},
             #[cfg(feature = "row_hash")]
-            FunctionExpr::Hash(a, b, c, d) => (a, b, c, d).hash(state),
-            FunctionExpr::FillNull { super_type } => super_type.hash(state),
+            Hash(a, b, c, d) => (a, b, c, d).hash(state),
+            FillNull { super_type } => super_type.hash(state),
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
-            FunctionExpr::RollingSkew { window_size, bias } => {
+            RollingSkew { window_size, bias } => {
                 window_size.hash(state);
                 bias.hash(state);
             },
             #[cfg(feature = "moment")]
-            FunctionExpr::Skew(a) => a.hash(state),
+            Skew(a) => a.hash(state),
             #[cfg(feature = "moment")]
-            FunctionExpr::Kurtosis(a, b) => {
+            Kurtosis(a, b) => {
                 a.hash(state);
                 b.hash(state);
             },
             #[cfg(feature = "rank")]
-            FunctionExpr::Rank { options, seed } => {
+            Rank { options, seed } => {
                 options.hash(state);
                 seed.hash(state);
             },
             #[cfg(feature = "round_series")]
-            FunctionExpr::Clip { has_min, has_max } => {
+            Clip { has_min, has_max } => {
                 has_min.hash(state);
                 has_max.hash(state);
             },
             #[cfg(feature = "top_k")]
-            FunctionExpr::TopK(a) => a.hash(state),
+            TopK(a) => a.hash(state),
             #[cfg(feature = "cum_agg")]
-            FunctionExpr::Cumcount { reverse } => reverse.hash(state),
+            Cumcount { reverse } => reverse.hash(state),
             #[cfg(feature = "cum_agg")]
-            FunctionExpr::Cumsum { reverse } => reverse.hash(state),
+            Cumsum { reverse } => reverse.hash(state),
             #[cfg(feature = "cum_agg")]
-            FunctionExpr::Cumprod { reverse } => reverse.hash(state),
+            Cumprod { reverse } => reverse.hash(state),
             #[cfg(feature = "cum_agg")]
-            FunctionExpr::Cummin { reverse } => reverse.hash(state),
+            Cummin { reverse } => reverse.hash(state),
             #[cfg(feature = "cum_agg")]
-            FunctionExpr::Cummax { reverse } => reverse.hash(state),
+            Cummax { reverse } => reverse.hash(state),
             #[cfg(feature = "dtype-struct")]
-            FunctionExpr::ValueCounts { sort, parallel } => {
+            ValueCounts { sort, parallel } => {
                 sort.hash(state);
                 parallel.hash(state);
             },
             #[cfg(feature = "unique_counts")]
-            FunctionExpr::UniqueCounts => {},
+            UniqueCounts => {},
             #[cfg(feature = "approx_unique")]
-            FunctionExpr::ApproxNUnique => {},
-            FunctionExpr::Coalesce => {},
-            FunctionExpr::ShrinkType => {},
+            ApproxNUnique => {},
+            Coalesce => {},
+            ShrinkType => {},
             #[cfg(feature = "pct_change")]
-            FunctionExpr::PctChange => {},
+            PctChange => {},
             #[cfg(feature = "log")]
-            FunctionExpr::Entropy { base, normalize } => {
+            Entropy { base, normalize } => {
                 base.to_bits().hash(state);
                 normalize.hash(state);
             },
             #[cfg(feature = "log")]
-            FunctionExpr::Log { base } => base.to_bits().hash(state),
+            Log { base } => base.to_bits().hash(state),
             #[cfg(feature = "log")]
-            FunctionExpr::Log1p => {},
+            Log1p => {},
             #[cfg(feature = "log")]
-            FunctionExpr::Exp => {},
-            FunctionExpr::Unique(a) => a.hash(state),
+            Exp => {},
+            Unique(a) => a.hash(state),
             #[cfg(feature = "round_series")]
-            FunctionExpr::Round { decimals } => decimals.hash(state),
+            Round { decimals } => decimals.hash(state),
             #[cfg(feature = "round_series")]
-            FunctionExpr::Floor => {},
+            Floor => {},
             #[cfg(feature = "round_series")]
-            FunctionExpr::Ceil => {},
-            FunctionExpr::UpperBound => {},
-            FunctionExpr::LowerBound => {},
-            FunctionExpr::ConcatExpr(a) => a.hash(state),
+            Ceil => {},
+            UpperBound => {},
+            LowerBound => {},
+            ConcatExpr(a) => a.hash(state),
             #[cfg(feature = "peaks")]
-            FunctionExpr::PeakMin => {},
+            PeakMin => {},
             #[cfg(feature = "peaks")]
-            FunctionExpr::PeakMax => {},
+            PeakMax => {},
             #[cfg(feature = "cutqcut")]
-            FunctionExpr::Cut {
+            Cut {
                 breaks,
                 labels,
                 left_closed,
@@ -458,13 +458,13 @@ impl Hash for FunctionExpr {
                 left_closed.hash(state);
                 include_breaks.hash(state);
             },
-            FunctionExpr::Reshape(dims) => {
+            Reshape(dims) => {
                 dims.hash(state);
             },
             #[cfg(feature = "repeat_by")]
-            FunctionExpr::RepeatBy => {},
+            RepeatBy => {},
             #[cfg(feature = "cutqcut")]
-            FunctionExpr::QCut {
+            QCut {
                 probs,
                 labels,
                 left_closed,
@@ -479,20 +479,18 @@ impl Hash for FunctionExpr {
                 include_breaks.hash(state);
             },
             #[cfg(feature = "rle")]
-            FunctionExpr::RLE => {},
+            RLE => {},
             #[cfg(feature = "rle")]
-            FunctionExpr::RLEID => {},
-            FunctionExpr::ToPhysical => {},
-            FunctionExpr::SetSortedFlag(is_sorted) => is_sorted.hash(state),
-            FunctionExpr::BackwardFill { limit } | FunctionExpr::ForwardFill { limit } => {
-                limit.hash(state)
-            },
+            RLEID => {},
+            ToPhysical => {},
+            SetSortedFlag(is_sorted) => is_sorted.hash(state),
+            BackwardFill { limit } | ForwardFill { limit } => limit.hash(state),
             #[cfg(feature = "ewma")]
-            FunctionExpr::EwmMean { options } => options.hash(state),
+            EwmMean { options } => options.hash(state),
             #[cfg(feature = "ewma")]
-            FunctionExpr::EwmStd { options } => options.hash(state),
+            EwmStd { options } => options.hash(state),
             #[cfg(feature = "ewma")]
-            FunctionExpr::EwmVar { options } => options.hash(state),
+            EwmVar { options } => options.hash(state),
         }
     }
 }
@@ -500,8 +498,23 @@ impl Hash for FunctionExpr {
 impl Display for FunctionExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use FunctionExpr::*;
-
         let s = match self {
+            // Namespaces
+            #[cfg(feature = "dtype-array")]
+            ArrayExpr(af) => return Display::fmt(af, f),
+            BinaryExpr(b) => return write!(f, "{b}"),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(func) => return write!(f, "{func}"),
+            ListExpr(func) => return write!(f, "{func}"),
+            #[cfg(feature = "strings")]
+            StringExpr(s) => return write!(f, "{s}"),
+            #[cfg(feature = "dtype-struct")]
+            StructExpr(func) => return write!(f, "{func}"),
+            #[cfg(feature = "temporal")]
+            TemporalExpr(fun) => return write!(f, "{fun}"),
+
+            // Other expressions
+            Boolean(func) => return write!(f, "{func}"),
             #[cfg(feature = "abs")]
             Abs => "abs",
             NullCount => "null_count",
@@ -512,11 +525,6 @@ impl Display for FunctionExpr {
             ArgWhere => "arg_where",
             #[cfg(feature = "search_sorted")]
             SearchSorted(_) => "search_sorted",
-            #[cfg(feature = "strings")]
-            StringExpr(s) => return write!(f, "{s}"),
-            BinaryExpr(b) => return write!(f, "{b}"),
-            #[cfg(feature = "temporal")]
-            TemporalExpr(fun) => return write!(f, "{fun}"),
             #[cfg(feature = "range")]
             Range(func) => return write!(f, "{func}"),
             #[cfg(feature = "date_offset")]
@@ -549,9 +557,6 @@ impl Display for FunctionExpr {
                 (true, false) => "clip_min",
                 _ => unreachable!(),
             },
-            ListExpr(func) => return write!(f, "{func}"),
-            #[cfg(feature = "dtype-struct")]
-            StructExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "dtype-struct")]
             AsStruct => "as_struct",
             #[cfg(feature = "top_k")]
@@ -578,11 +583,8 @@ impl Display for FunctionExpr {
             #[cfg(feature = "unique_counts")]
             UniqueCounts => "unique_counts",
             Reverse => "reverse",
-            Boolean(func) => return write!(f, "{func}"),
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => "approx_n_unique",
-            #[cfg(feature = "dtype-categorical")]
-            Categorical(func) => return write!(f, "{func}"),
             Coalesce => "coalesce",
             ShrinkType => "shrink_dtype",
             #[cfg(feature = "diff")]
@@ -616,8 +618,6 @@ impl Display for FunctionExpr {
             LowerBound => "lower_bound",
             #[cfg(feature = "fused")]
             Fused(fused) => return Display::fmt(fused, f),
-            #[cfg(feature = "dtype-array")]
-            ArrayExpr(af) => return Display::fmt(af, f),
             ConcatExpr(_) => "concat_expr",
             Correlation { method, .. } => return Display::fmt(method, f),
             #[cfg(feature = "peaks")]
@@ -735,6 +735,29 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: FunctionExpr) -> Self {
         use FunctionExpr::*;
         match func {
+            // Namespaces
+            #[cfg(feature = "dtype-array")]
+            ArrayExpr(func) => func.into(),
+            BinaryExpr(s) => s.into(),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(func) => func.into(),
+            ListExpr(func) => func.into(),
+            #[cfg(feature = "strings")]
+            StringExpr(s) => s.into(),
+            #[cfg(feature = "dtype-struct")]
+            StructExpr(sf) => {
+                use StructFunction::*;
+                match sf {
+                    FieldByIndex(index) => map!(struct_::get_by_index, index),
+                    FieldByName(name) => map!(struct_::get_by_name, name.clone()),
+                    RenameFields(names) => map!(struct_::rename_fields, names.clone()),
+                }
+            },
+            #[cfg(feature = "temporal")]
+            TemporalExpr(func) => func.into(),
+
+            // Other expressions
+            Boolean(func) => func.into(),
             #[cfg(feature = "abs")]
             Abs => map!(abs::abs),
             NullCount => {
@@ -761,11 +784,6 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             SearchSorted(side) => {
                 map_as_slice!(search_sorted::search_sorted_impl, side)
             },
-            #[cfg(feature = "strings")]
-            StringExpr(s) => s.into(),
-            BinaryExpr(s) => s.into(),
-            #[cfg(feature = "temporal")]
-            TemporalExpr(func) => func.into(),
             #[cfg(feature = "range")]
             Range(func) => func.into(),
 
@@ -813,18 +831,6 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             ArgUnique => map!(dispatch::arg_unique),
             #[cfg(feature = "rank")]
             Rank { options, seed } => map!(dispatch::rank, options, seed),
-            ListExpr(func) => func.into(),
-            #[cfg(feature = "dtype-array")]
-            ArrayExpr(func) => func.into(),
-            #[cfg(feature = "dtype-struct")]
-            StructExpr(sf) => {
-                use StructFunction::*;
-                match sf {
-                    FieldByIndex(index) => map!(struct_::get_by_index, index),
-                    FieldByName(name) => map!(struct_::get_by_name, name.clone()),
-                    RenameFields(names) => map!(struct_::rename_fields, names.clone()),
-                }
-            },
             #[cfg(feature = "dtype-struct")]
             AsStruct => {
                 map_as_slice!(coerce::as_struct)
@@ -849,11 +855,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "unique_counts")]
             UniqueCounts => map!(dispatch::unique_counts),
             Reverse => map!(dispatch::reverse),
-            Boolean(func) => func.into(),
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => map!(dispatch::approx_n_unique),
-            #[cfg(feature = "dtype-categorical")]
-            Categorical(func) => func.into(),
             Coalesce => map_as_slice!(fill_null::coalesce),
             ShrinkType => map_owned!(shrink_type::shrink),
             #[cfg(feature = "diff")]
