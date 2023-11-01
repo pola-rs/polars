@@ -117,6 +117,13 @@ def test_init_inputs(monkeypatch: Any) -> None:
     # lists
     assert pl.Series("a", [[1, 2], [3, 4]]).dtype == pl.List(pl.Int64)
 
+    # conversion of Date to Datetime
+    s = pl.Series([date(2023, 1, 1), date(2023, 1, 2)], dtype=pl.Datetime)
+    assert s.to_list() == [datetime(2023, 1, 1), datetime(2023, 1, 2)]
+    assert Datetime == s.dtype
+    assert s.dtype.time_unit == "us"  # type: ignore[union-attr]
+    assert s.dtype.time_zone is None  # type: ignore[union-attr]
+
     # datetime64: check timeunit (auto-detect, implicit/explicit) and NaT
     d64 = pd.date_range(date(2021, 8, 1), date(2021, 8, 3)).values
     d64[1] = None
