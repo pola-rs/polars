@@ -29,6 +29,7 @@ use polars_io::{
 };
 
 use super::builder_functions::*;
+use crate::dsl::functions::horizontal::all_horizontal;
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::projection::{is_regex_projection, rewrite_projections};
 use crate::logical_plan::schema::{det_join_schema, FileInfo};
@@ -476,6 +477,29 @@ impl LogicalPlanBuilder {
             .map(|name| col(name).fill_null(fill_value.clone()))
             .collect();
         self.project(exprs, Default::default())
+    }
+
+    pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> Self {
+        match subset {
+            None => {
+                let predicate =
+                    try_delayed!(all_horizontal([col("*").is_not_null()]), &self.0, into);
+                self.filter(predicate)
+            },
+            Some(subset) => {
+                let predicate = try_delayed!(
+                    all_horizontal(
+                        subset
+                            .into_iter()
+                            .map(|e| e.is_not_null())
+                            .collect::<Vec<_>>(),
+                    ),
+                    &self.0,
+                    into
+                );
+                self.filter(predicate)
+            },
+        }
     }
 
     pub fn fill_nan(self, fill_value: Expr) -> Self {
