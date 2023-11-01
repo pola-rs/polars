@@ -863,15 +863,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 }
             },
             #[cfg(feature = "dtype-array")]
-            ArrayExpr(lf) => {
-                use ArrayFunction::*;
-                match lf {
-                    Min => map!(array::min),
-                    Max => map!(array::max),
-                    Sum => map!(array::sum),
-                    Unique(stable) => map!(array::unique, stable),
-                }
-            },
+            ArrayExpr(func) => func.into(),
             #[cfg(feature = "dtype-struct")]
             StructExpr(sf) => {
                 use StructFunction::*;
