@@ -16,6 +16,7 @@ static TZ_AWARE_RE: Lazy<Regex> =
 use polars_utils::format_smartstring;
 
 use super::*;
+use crate::{map, map_as_slice};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
@@ -218,6 +219,85 @@ impl Display for StringFunction {
             StringFunction::ZFill(_) => "zfill",
         };
         write!(f, "str.{s}")
+    }
+}
+
+impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+    fn from(func: StringFunction) -> Self {
+        use StringFunction::*;
+        match func {
+            #[cfg(feature = "regex")]
+            Contains { literal, strict } => map_as_slice!(strings::contains, literal, strict),
+            CountMatches(literal) => {
+                map_as_slice!(strings::count_matches, literal)
+            },
+            EndsWith { .. } => map_as_slice!(strings::ends_with),
+            StartsWith { .. } => map_as_slice!(strings::starts_with),
+            Extract { pat, group_index } => {
+                map!(strings::extract, &pat, group_index)
+            },
+            ExtractAll => {
+                map_as_slice!(strings::extract_all)
+            },
+            #[cfg(feature = "extract_groups")]
+            ExtractGroups { pat, dtype } => {
+                map!(strings::extract_groups, &pat, &dtype)
+            },
+            LenBytes => map!(strings::len_bytes),
+            LenChars => map!(strings::len_chars),
+            #[cfg(feature = "string_pad")]
+            PadEnd { length, fill_char } => {
+                map!(strings::pad_end, length, fill_char)
+            },
+            #[cfg(feature = "string_pad")]
+            PadStart { length, fill_char } => {
+                map!(strings::pad_start, length, fill_char)
+            },
+            #[cfg(feature = "string_pad")]
+            ZFill(alignment) => {
+                map!(strings::zfill, alignment)
+            },
+            #[cfg(feature = "temporal")]
+            Strptime(dtype, options) => {
+                map_as_slice!(strings::strptime, dtype.clone(), &options)
+            },
+            Split(inclusive) => {
+                map_as_slice!(strings::split, inclusive)
+            },
+            #[cfg(feature = "dtype-struct")]
+            SplitExact { n, inclusive } => map_as_slice!(strings::split_exact, n, inclusive),
+            #[cfg(feature = "dtype-struct")]
+            SplitN(n) => map_as_slice!(strings::splitn, n),
+            #[cfg(feature = "concat_str")]
+            ConcatVertical {
+                delimiter,
+                ignore_nulls,
+            } => map!(strings::concat, &delimiter, ignore_nulls),
+            #[cfg(feature = "concat_str")]
+            ConcatHorizontal(delimiter) => map_as_slice!(strings::concat_hor, &delimiter),
+            #[cfg(feature = "regex")]
+            Replace { n, literal } => map_as_slice!(strings::replace, literal, n),
+            Uppercase => map!(strings::uppercase),
+            Lowercase => map!(strings::lowercase),
+            #[cfg(feature = "nightly")]
+            Titlecase => map!(strings::titlecase),
+            StripChars => map_as_slice!(strings::strip_chars),
+            StripCharsStart => map_as_slice!(strings::strip_chars_start),
+            StripCharsEnd => map_as_slice!(strings::strip_chars_end),
+            StripPrefix => map_as_slice!(strings::strip_prefix),
+            StripSuffix => map_as_slice!(strings::strip_suffix),
+            #[cfg(feature = "string_from_radix")]
+            FromRadix(radix, strict) => map!(strings::from_radix, radix, strict),
+            Slice(start, length) => map!(strings::str_slice, start, length),
+            Explode => map!(strings::explode),
+            #[cfg(feature = "dtype-decimal")]
+            ToDecimal(infer_len) => map!(strings::to_decimal, infer_len),
+            #[cfg(feature = "extract_jsonpath")]
+            JsonExtract {
+                dtype,
+                infer_schema_len,
+            } => map!(strings::json_extract, dtype.clone(), infer_schema_len),
+        }
     }
 }
 
