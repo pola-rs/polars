@@ -240,3 +240,30 @@ def test_fast_path_boolean_filter_predicates() -> None:
     df = pl.DataFrame({"colx": ["aa", "bb", "cc", "dd"]})
     assert_frame_equal(df.filter(False), pl.DataFrame(schema={"colx": pl.Utf8}))
     assert_frame_equal(df.filter(True), df)
+
+
+def test_predicate_pushdown_boundary_12102() -> None:
+    df = pl.DataFrame({"x": [1, 2, 4], "y": [1, 2, 4]})
+
+    lf = (
+        df.lazy()
+        .filter(pl.col("y") > 1)
+        .filter(pl.col("x") == pl.min("x"))
+        .filter(pl.col("y") > 2)
+    )
+
+    assert lf.collect().frame_equal(lf.collect(predicate_pushdown=False))
+
+
+def test_take_can_block_predicate_pushdown() -> None:
+    df = pl.DataFrame({"x": [1, 2, 4], "y": [False, True, True]})
+
+    lf = (
+        df.lazy()
+        .filter(pl.col("y"))
+        .filter(pl.col("x") == pl.col("x").take(0))
+        .filter(pl.col("y"))
+    )
+    result = lf.collect(predicate_pushdown=True)
+    expected = {"x": [2], "y": [True]}
+    assert result.to_dict(as_series=False) == expected

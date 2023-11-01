@@ -24,12 +24,7 @@ impl FunctionExpr {
             SearchSorted(_) => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "strings")]
             StringExpr(s) => s.get_field(mapper),
-            BinaryExpr(s) => {
-                use BinaryFunction::*;
-                match s {
-                    Contains { .. } | EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
-                }
-            },
+            BinaryExpr(s) => s.get_field(mapper),
             #[cfg(feature = "temporal")]
             TemporalExpr(fun) => fun.get_field(mapper),
             #[cfg(feature = "range")]
@@ -101,20 +96,7 @@ impl FunctionExpr {
                 }
             },
             #[cfg(feature = "dtype-array")]
-            ArrayExpr(af) => {
-                use ArrayFunction::*;
-                match af {
-                    Min | Max => mapper.map_to_list_and_array_inner_dtype(),
-                    Sum => mapper.nested_sum_type(),
-                    Unique(_) => mapper.try_map_dtype(|dt| {
-                        if let DataType::Array(inner, _) = dt {
-                            Ok(DataType::List(inner.clone()))
-                        } else {
-                            polars_bail!(ComputeError: "expected array dtype")
-                        }
-                    }),
-                }
-            },
+            ArrayExpr(func) => func.get_field(mapper),
             #[cfg(feature = "dtype-struct")]
             AsStruct => Ok(Field::new(
                 fields[0].name(),

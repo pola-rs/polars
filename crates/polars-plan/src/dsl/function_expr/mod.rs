@@ -863,15 +863,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 }
             },
             #[cfg(feature = "dtype-array")]
-            ArrayExpr(lf) => {
-                use ArrayFunction::*;
-                match lf {
-                    Min => map!(array::min),
-                    Max => map!(array::max),
-                    Sum => map!(array::sum),
-                    Unique(stable) => map!(array::unique, stable),
-                }
-            },
+            ArrayExpr(func) => func.into(),
             #[cfg(feature = "dtype-struct")]
             StructExpr(sf) => {
                 use StructFunction::*;
@@ -1121,6 +1113,14 @@ impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             StartsWith => {
                 map_as_slice!(binary::starts_with)
             },
+            #[cfg(feature = "binary_encoding")]
+            HexDecode(strict) => map!(binary::hex_decode, strict),
+            #[cfg(feature = "binary_encoding")]
+            HexEncode => map!(binary::hex_encode),
+            #[cfg(feature = "binary_encoding")]
+            Base64Decode(strict) => map!(binary::base64_decode, strict),
+            #[cfg(feature = "binary_encoding")]
+            Base64Encode => map!(binary::base64_encode),
         }
     }
 }

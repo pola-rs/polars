@@ -36,7 +36,7 @@ import pyarrow.dataset as ds
 dset = ds.dataset("s3://my-partitioned-folder/", format="parquet")  
 (
     pl.scan_pyarrow_dataset(dset)
-    .filter("foo" == "a")
+    .filter(pl.col("foo") == "a")
     .select(["foo", "bar"])
     .collect()
 )  

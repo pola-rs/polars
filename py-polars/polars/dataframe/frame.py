@@ -425,7 +425,9 @@ class DataFrame:
         schema_overrides: SchemaDict | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> Self:
-        pydf = PyDataFrame.read_dicts(data, infer_schema_length, schema)
+        pydf = PyDataFrame.read_dicts(
+            data, infer_schema_length, schema, schema_overrides
+        )
         if schema or schema_overrides:
             pydf = _post_apply_columns(
                 pydf, list(schema or pydf.columns()), schema_overrides=schema_overrides
@@ -8822,9 +8824,9 @@ class DataFrame:
         An example of the supercast rules when applying an arithmetic operation on two
         DataTypes are for instance:
 
-        Int8 + Utf8 = Utf8
-        Float32 + Int64 = Float32
-        Float32 + Float64 = Float64
+        - Int8 + Utf8 = Utf8
+        - Float32 + Int64 = Float32
+        - Float32 + Float64 = Float64
 
         Examples
         --------

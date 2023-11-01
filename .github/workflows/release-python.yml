@@ -248,3 +248,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.github-release.outputs.tag_name }}
+
+      - name: Trigger other workflows related to the release
+        if: inputs.dry-run == false && steps.version.outputs.is_prerelease == false
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          event-type: python-release
+          client-payload: >
+            {
+              "version": "${{ steps.version.outputs.version }}",
+              "tag": "${{ steps.github-release.outputs.tag_name }}",
+              "sha": "${{ inputs.sha || github.sha }}"
+            }
