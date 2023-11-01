@@ -264,4 +264,6 @@ def test_take_can_block_predicate_pushdown() -> None:
         .filter(pl.col("x") == pl.col("x").take(0))
         .filter(pl.col("y"))
     )
-    assert lf.collect(predicate_pushdown=True).to_dict(False) == {"x": [2], "y": [True]}
+    result = lf.collect(predicate_pushdown=True)
+    expected = {"x": [2], "y": [True]}
+    assert result.to_dict(as_series=False) == expected
