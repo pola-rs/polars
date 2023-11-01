@@ -1962,7 +1962,6 @@ dependencies = [
  "polars-plan",
  "pyo3",
  "pyo3-built",
- "ring 0.17.4",
  "serde_json",
  "smartstring",
  "thiserror",

@@ -96,6 +96,11 @@ jobs:
         exclude:
           - os: windows-32gb-ram
             architecture: aarch64
+          # Temporarily disable linux aarch64 cross compilation
+          # TODO: Renable this when issue is fixed
+          # https://github.com/pola-rs/polars/issues/12180
+          - os: ubuntu-latest
+            architecture: aarch64
 
     steps:
       - uses: actions/checkout@v4
