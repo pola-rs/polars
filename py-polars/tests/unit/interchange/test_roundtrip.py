@@ -4,7 +4,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.interchange
 import pytest
-from hypothesis import given, note
+from hypothesis import given
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -28,10 +28,9 @@ protocol_dtypes = [
 ]
 
 
-@given(dataframes(allowed_dtypes=protocol_dtypes, excluded_dtypes=[pl.Boolean]))
+@given(dataframes(allowed_dtypes=protocol_dtypes))
 def test_roundtrip_pyarrow_parametric(df: pl.DataFrame) -> None:
     dfi = df.__dataframe__()
-    note(f"n_chunks: {dfi.num_chunks()}")
     df_pa = pa.interchange.from_dataframe(dfi)
     with pl.StringCache():
         result: pl.DataFrame = pl.from_arrow(df_pa)  # type: ignore[assignment]
@@ -41,13 +40,12 @@ def test_roundtrip_pyarrow_parametric(df: pl.DataFrame) -> None:
 @given(
     dataframes(
         allowed_dtypes=protocol_dtypes,
-        excluded_dtypes=[pl.Boolean, pl.Categorical],
+        excluded_dtypes=[pl.Categorical],
         chunked=False,
     )
 )
 def test_roundtrip_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
     dfi = df.__dataframe__(allow_copy=False)
-    note(f"n_chunks: {dfi.num_chunks()}")
     df_pa = pa.interchange.from_dataframe(dfi, allow_copy=False)
     result: pl.DataFrame = pl.from_arrow(df_pa)  # type: ignore[assignment]
     assert_frame_equal(result, df, categorical_as_str=True)
@@ -94,6 +92,17 @@ def test_roundtrip_pandas_boolean_subchunks() -> None:
 
 def test_roundtrip_pyarrow_boolean() -> None:
     df = pl.Series("a", [True, False], dtype=pl.Boolean).to_frame()
+    dfi = df.__dataframe__()
+
+    df_pa = pa.interchange.from_dataframe(dfi)
+    result: pl.DataFrame = pl.from_arrow(df_pa)  # type: ignore[assignment]
+
+    assert_frame_equal(result, df)
+
+
+def test_roundtrip_pyarrow_boolean_midbyte_slice() -> None:
+    s = pl.Series("a", [False] * 9)[3:]
+    df = s.to_frame()
     dfi = df.__dataframe__()
 
     df_pa = pa.interchange.from_dataframe(dfi)
