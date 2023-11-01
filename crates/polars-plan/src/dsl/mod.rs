@@ -1223,7 +1223,7 @@ impl Expr {
                         },
                         IsSorted::Not => {
                             if options.warn_if_unsorted {
-                                eprintln!(
+                                polars_warn!(
                                     "PolarsPerformanceWarning: Series is not known to be \
                                     sorted by `by` column, so Polars is temporarily \
                                     sorting it for you.\n\
@@ -1235,13 +1235,13 @@ impl Expr {
                                 );
                             }
                             sorting_indices = by.arg_sort(Default::default());
-                            unsafe { by = by.take_unchecked(&sorting_indices)? };
-                            unsafe { series = s[0].take_unchecked(&sorting_indices)? };
+                            unsafe { by = by.take_unchecked(&sorting_indices) };
+                            unsafe { series = s[0].take_unchecked(&sorting_indices) };
                             let int_range =
                                 UInt32Chunked::from_iter_values("", 0..s[0].len() as u32)
                                     .into_series();
                             original_indices =
-                                unsafe { int_range.take_unchecked(&sorting_indices) }.ok()
+                                Some(unsafe { int_range.take_unchecked(&sorting_indices) })
                         },
                     };
                     let by = by.datetime().unwrap();
@@ -1273,7 +1273,7 @@ impl Expr {
                         IsSorted::Not => {
                             let res = rolling_fn(&series, options)?;
                             let indices = &original_indices.unwrap().arg_sort(Default::default());
-                            unsafe { res.take_unchecked(indices) }.map(Some)
+                            Ok(Some(unsafe { res.take_unchecked(indices) }))
                         },
                     }
                 },
