@@ -9,7 +9,7 @@ use once_cell::sync::Lazy;
 use polars_core::POOL;
 use tokio::runtime::{Builder, Runtime};
 
-static CONCURRENCY_BUDGET: AtomicI32 = AtomicI32::new(32);
+static CONCURRENCY_BUDGET: AtomicI32 = AtomicI32::new(64);
 
 pub async fn with_concurrency_budget<F, Fut>(requested_budget: u16, callable: F) -> Fut::Output
 where

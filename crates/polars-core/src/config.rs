@@ -28,3 +28,15 @@ pub(crate) fn decimal_is_active() -> bool {
 pub fn verbose() -> bool {
     std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("") == "1"
 }
+
+pub fn get_file_prefetch_size() -> usize {
+    std::env::var("POLARS_PREFETCH_SIZE")
+        .map(|s| s.parse::<usize>().expect("integer"))
+        .unwrap_or_else(|_| std::cmp::min(std::thread::available_parallelism().unwrap().get(), 64))
+}
+
+pub fn get_rg_prefetch_size() -> usize {
+    std::env::var("POLARS_ROW_GROUP_PREFETCH_SIZE")
+        .map(|s| s.parse::<usize>().expect("integer"))
+        .unwrap_or_else(|_| get_file_prefetch_size())
+}

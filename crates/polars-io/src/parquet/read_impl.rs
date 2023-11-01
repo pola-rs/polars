@@ -476,11 +476,11 @@ impl From<FetchRowGroupsFromMmapReader> for RowGroupFetcher {
 }
 
 impl RowGroupFetcher {
-    fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
+    async fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
         match self {
             RowGroupFetcher::Local(f) => f.fetch_row_groups(_row_groups),
             #[cfg(feature = "cloud")]
-            RowGroupFetcher::ObjectStore(f) => f.fetch_row_groups(_row_groups),
+            RowGroupFetcher::ObjectStore(f) => f.fetch_row_groups(_row_groups).await,
         }
     }
 }
@@ -605,7 +605,8 @@ impl BatchedParquetReader {
 
             let store = self
                 .row_group_fetcher
-                .fetch_row_groups(row_group_start..row_group_end)?;
+                .fetch_row_groups(row_group_start..row_group_end)
+                .await?;
 
             let dfs = rg_to_dfs(
                 &store,
