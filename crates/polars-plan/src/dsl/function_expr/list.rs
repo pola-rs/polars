@@ -2,6 +2,7 @@ use arrow::legacy::utils::CustomIterTools;
 use polars_ops::chunked_array::list::*;
 
 use super::*;
+use crate::{map, map_as_slice, wrap};
 
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -142,6 +143,58 @@ impl Display for ListFunction {
             Join => "join",
         };
         write!(f, "list.{name}")
+    }
+}
+
+impl From<ListFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+    fn from(func: ListFunction) -> Self {
+        use ListFunction::*;
+        match func {
+            Concat => wrap!(concat),
+            #[cfg(feature = "is_in")]
+            Contains => wrap!(contains),
+            #[cfg(feature = "list_drop_nulls")]
+            DropNulls => map!(drop_nulls),
+            #[cfg(feature = "list_sample")]
+            Sample {
+                is_fraction,
+                with_replacement,
+                shuffle,
+                seed,
+            } => {
+                if is_fraction {
+                    map_as_slice!(sample_fraction, with_replacement, shuffle, seed)
+                } else {
+                    map_as_slice!(sample_n, with_replacement, shuffle, seed)
+                }
+            },
+            Slice => wrap!(slice),
+            Shift => map_as_slice!(shift),
+            Get => wrap!(get),
+            #[cfg(feature = "list_take")]
+            Take(null_ob_oob) => map_as_slice!(take, null_ob_oob),
+            #[cfg(feature = "list_count")]
+            CountMatches => map_as_slice!(count_matches),
+            Sum => map!(sum),
+            Length => map!(length),
+            Max => map!(max),
+            Min => map!(min),
+            Mean => map!(mean),
+            ArgMin => map!(arg_min),
+            ArgMax => map!(arg_max),
+            #[cfg(feature = "diff")]
+            Diff { n, null_behavior } => map!(diff, n, null_behavior),
+            Sort(options) => map!(sort, options),
+            Reverse => map!(reverse),
+            Unique(is_stable) => map!(unique, is_stable),
+            #[cfg(feature = "list_sets")]
+            SetOperation(s) => map_as_slice!(set_operation, s),
+            #[cfg(feature = "list_any_all")]
+            Any => map!(lst_any),
+            #[cfg(feature = "list_any_all")]
+            All => map!(lst_all),
+            Join => map_as_slice!(join),
+        }
     }
 }
 

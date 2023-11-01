@@ -813,55 +813,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             ArgUnique => map!(dispatch::arg_unique),
             #[cfg(feature = "rank")]
             Rank { options, seed } => map!(dispatch::rank, options, seed),
-            ListExpr(lf) => {
-                use ListFunction::*;
-                match lf {
-                    Concat => wrap!(list::concat),
-                    #[cfg(feature = "is_in")]
-                    Contains => wrap!(list::contains),
-                    #[cfg(feature = "list_drop_nulls")]
-                    DropNulls => map!(list::drop_nulls),
-                    #[cfg(feature = "list_sample")]
-                    Sample {
-                        is_fraction,
-                        with_replacement,
-                        shuffle,
-                        seed,
-                    } => {
-                        if is_fraction {
-                            map_as_slice!(list::sample_fraction, with_replacement, shuffle, seed)
-                        } else {
-                            map_as_slice!(list::sample_n, with_replacement, shuffle, seed)
-                        }
-                    },
-                    Slice => wrap!(list::slice),
-                    Shift => map_as_slice!(list::shift),
-                    Get => wrap!(list::get),
-                    #[cfg(feature = "list_take")]
-                    Take(null_ob_oob) => map_as_slice!(list::take, null_ob_oob),
-                    #[cfg(feature = "list_count")]
-                    CountMatches => map_as_slice!(list::count_matches),
-                    Sum => map!(list::sum),
-                    Length => map!(list::length),
-                    Max => map!(list::max),
-                    Min => map!(list::min),
-                    Mean => map!(list::mean),
-                    ArgMin => map!(list::arg_min),
-                    ArgMax => map!(list::arg_max),
-                    #[cfg(feature = "diff")]
-                    Diff { n, null_behavior } => map!(list::diff, n, null_behavior),
-                    Sort(options) => map!(list::sort, options),
-                    Reverse => map!(list::reverse),
-                    Unique(is_stable) => map!(list::unique, is_stable),
-                    #[cfg(feature = "list_sets")]
-                    SetOperation(s) => map_as_slice!(list::set_operation, s),
-                    #[cfg(feature = "list_any_all")]
-                    Any => map!(list::lst_any),
-                    #[cfg(feature = "list_any_all")]
-                    All => map!(list::lst_all),
-                    Join => map_as_slice!(list::join),
-                }
-            },
+            ListExpr(func) => func.into(),
             #[cfg(feature = "dtype-array")]
             ArrayExpr(func) => func.into(),
             #[cfg(feature = "dtype-struct")]
