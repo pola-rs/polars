@@ -157,42 +157,43 @@ impl StringFunction {
 
 impl Display for StringFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use StringFunction::*;
         let s = match self {
             #[cfg(feature = "regex")]
-            StringFunction::Contains { .. } => "contains",
-            StringFunction::CountMatches(_) => "count_matches",
-            StringFunction::EndsWith { .. } => "ends_with",
-            StringFunction::Extract { .. } => "extract",
+            Contains { .. } => "contains",
+            CountMatches(_) => "count_matches",
+            EndsWith { .. } => "ends_with",
+            Extract { .. } => "extract",
             #[cfg(feature = "concat_str")]
-            StringFunction::ConcatHorizontal(_) => "concat_horizontal",
+            ConcatHorizontal(_) => "concat_horizontal",
             #[cfg(feature = "concat_str")]
-            StringFunction::ConcatVertical { .. } => "concat_vertical",
-            StringFunction::Explode => "explode",
-            StringFunction::ExtractAll => "extract_all",
+            ConcatVertical { .. } => "concat_vertical",
+            Explode => "explode",
+            ExtractAll => "extract_all",
             #[cfg(feature = "extract_groups")]
-            StringFunction::ExtractGroups { .. } => "extract_groups",
+            ExtractGroups { .. } => "extract_groups",
             #[cfg(feature = "string_from_radix")]
-            StringFunction::FromRadix { .. } => "from_radix",
+            FromRadix { .. } => "from_radix",
             #[cfg(feature = "extract_jsonpath")]
-            StringFunction::JsonExtract { .. } => "json_extract",
-            StringFunction::LenBytes => "len_bytes",
-            StringFunction::Lowercase => "lowercase",
-            StringFunction::LenChars => "len_chars",
+            JsonExtract { .. } => "json_extract",
+            LenBytes => "len_bytes",
+            Lowercase => "lowercase",
+            LenChars => "len_chars",
             #[cfg(feature = "string_pad")]
-            StringFunction::PadEnd { .. } => "pad_end",
+            PadEnd { .. } => "pad_end",
             #[cfg(feature = "string_pad")]
-            StringFunction::PadStart { .. } => "pad_start",
+            PadStart { .. } => "pad_start",
             #[cfg(feature = "regex")]
-            StringFunction::Replace { .. } => "replace",
-            StringFunction::Slice(_, _) => "slice",
-            StringFunction::StartsWith { .. } => "starts_with",
-            StringFunction::StripChars => "strip_chars",
-            StringFunction::StripCharsStart => "strip_chars_start",
-            StringFunction::StripCharsEnd => "strip_chars_end",
-            StringFunction::StripPrefix => "strip_prefix",
-            StringFunction::StripSuffix => "strip_suffix",
+            Replace { .. } => "replace",
+            Slice(_, _) => "slice",
+            StartsWith { .. } => "starts_with",
+            StripChars => "strip_chars",
+            StripCharsStart => "strip_chars_start",
+            StripCharsEnd => "strip_chars_end",
+            StripPrefix => "strip_prefix",
+            StripSuffix => "strip_suffix",
             #[cfg(feature = "dtype-struct")]
-            StringFunction::SplitExact { inclusive, .. } => {
+            SplitExact { inclusive, .. } => {
                 if *inclusive {
                     "split_exact_inclusive"
                 } else {
@@ -200,10 +201,10 @@ impl Display for StringFunction {
                 }
             },
             #[cfg(feature = "dtype-struct")]
-            StringFunction::SplitN(_) => "splitn",
+            SplitN(_) => "splitn",
             #[cfg(feature = "temporal")]
-            StringFunction::Strptime(_, _) => "strptime",
-            StringFunction::Split(inclusive) => {
+            Strptime(_, _) => "strptime",
+            Split(inclusive) => {
                 if *inclusive {
                     "split_inclusive"
                 } else {
@@ -211,12 +212,12 @@ impl Display for StringFunction {
                 }
             },
             #[cfg(feature = "nightly")]
-            StringFunction::Titlecase => "titlecase",
+            Titlecase => "titlecase",
             #[cfg(feature = "dtype-decimal")]
-            StringFunction::ToDecimal(_) => "to_decimal",
-            StringFunction::Uppercase => "uppercase",
+            ToDecimal(_) => "to_decimal",
+            Uppercase => "uppercase",
             #[cfg(feature = "string_pad")]
-            StringFunction::ZFill(_) => "zfill",
+            ZFill(_) => "zfill",
         };
         write!(f, "str.{s}")
     }

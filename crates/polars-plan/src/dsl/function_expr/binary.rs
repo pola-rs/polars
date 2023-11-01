@@ -59,22 +59,22 @@ impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
         use BinaryFunction::*;
         match func {
             Contains => {
-                map_as_slice!(binary::contains)
+                map_as_slice!(contains)
             },
             EndsWith => {
-                map_as_slice!(binary::ends_with)
+                map_as_slice!(ends_with)
             },
             StartsWith => {
-                map_as_slice!(binary::starts_with)
+                map_as_slice!(starts_with)
             },
             #[cfg(feature = "binary_encoding")]
-            HexDecode(strict) => map!(binary::hex_decode, strict),
+            HexDecode(strict) => map!(hex_decode, strict),
             #[cfg(feature = "binary_encoding")]
-            HexEncode => map!(binary::hex_encode),
+            HexEncode => map!(hex_encode),
             #[cfg(feature = "binary_encoding")]
-            Base64Decode(strict) => map!(binary::base64_decode, strict),
+            Base64Decode(strict) => map!(base64_decode, strict),
             #[cfg(feature = "binary_encoding")]
-            Base64Encode => map!(binary::base64_encode),
+            Base64Encode => map!(base64_encode),
         }
     }
 }
