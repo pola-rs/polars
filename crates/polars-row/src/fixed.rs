@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::mem::MaybeUninit;
 
 use arrow::array::{BooleanArray, PrimitiveArray};
@@ -26,7 +27,7 @@ impl<const N: usize> FromSlice for [u8; N] {
 }
 
 /// Encodes a value of a particular fixed width type into bytes
-pub trait FixedLengthEncoding: Copy {
+pub trait FixedLengthEncoding: Copy + Debug {
     // 1 is validity 0 or 1
     // bit repr of encoding
     const ENCODED_LEN: usize = 1 + std::mem::size_of::<Self::Encoded>();
@@ -36,6 +37,13 @@ pub trait FixedLengthEncoding: Copy {
     fn encode(self) -> Self::Encoded;
 
     fn decode(encoded: Self::Encoded) -> Self;
+
+    fn decode_reverse(mut encoded: Self::Encoded) -> Self {
+        for v in encoded.as_mut() {
+            *v = !*v
+        }
+        Self::decode(encoded)
+    }
 }
 
 impl FixedLengthEncoding for bool {
@@ -228,7 +236,12 @@ where
             let end = start + T::ENCODED_LEN - 1;
             let slice = row.get_unchecked_release(start..end);
             let bytes = T::Encoded::from_slice(slice);
-            T::decode(bytes)
+
+            if field.descending {
+                T::decode_reverse(bytes)
+            } else {
+                T::decode(bytes)
+            }
         })
         .collect::<Vec<_>>();
 
@@ -259,7 +272,12 @@ pub(super) unsafe fn decode_bool(rows: &mut [&[u8]], field: &SortField) -> Boole
             let end = start + bool::ENCODED_LEN - 1;
             let slice = row.get_unchecked_release(start..end);
             let bytes = <bool as FixedLengthEncoding>::Encoded::from_slice(slice);
-            bool::decode(bytes)
+
+            if field.descending {
+                bool::decode_reverse(bytes)
+            } else {
+                bool::decode(bytes)
+            }
         })
         .collect::<Bitmap>();
 

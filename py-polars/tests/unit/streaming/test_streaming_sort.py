@@ -181,3 +181,14 @@ def test_streaming_sort_varying_order_and_dtypes(
     q = pl.scan_parquet(io_files_path / "foods*.parquet")
     q = q.sort(sort_by)
     assert_frame_equal(q.collect(streaming=True), q.collect(streaming=False))
+
+
+def test_streaming_sort_fixed_reverse() -> None:
+    q = pl.LazyFrame(
+        {
+            "a": [1, 1, 2, 1, 2, 4, 1, 7],
+            "b": [1, 2, 2, 1, 2, 4, 8, 7],
+        }
+    ).sort(by=["a", "b"], descending=[True, False])
+
+    assert_frame_equal(q.collect(streaming=True), q.collect(streaming=False))
