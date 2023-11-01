@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use polars_core::config::verbose;
+use polars_core::config::{get_file_prefetch_size, verbose};
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::FileMetaData;
@@ -165,7 +165,12 @@ impl ParquetExec {
         let cloud_options = self.cloud_options.as_ref();
 
         let mut result = vec![];
-        let batch_size = 5;
+        let batch_size = get_file_prefetch_size();
+
+        if verbose {
+            eprintln!("POLARS PREFETCH_SIZE: {}", batch_size)
+        }
+
         let mut remaining_rows_to_read = self.file_options.n_rows.unwrap_or(usize::MAX);
         let mut base_row_count = self.file_options.row_count.take();
         let mut processed = 0;
