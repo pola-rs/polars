@@ -43,9 +43,8 @@ pub fn ensure_sorted_arg(s: &Series, operation: &str) -> PolarsResult<()> {
 pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<()> {
     let failure_mask = !input.is_null() & output.is_null();
     let failures = input.filter_threaded(&failure_mask, false)?;
-    let unique_failures = failures.unique()?;
+    let first_failures = failures.slice(0, 3);
     let n_failures = failures.len();
-    let n_unique_failures = unique_failures.len();
 
     let additional_info = match (input.dtype(), output.dtype()) {
         (DataType::Utf8, DataType::Date | DataType::Datetime(_, _)) => {
@@ -59,14 +58,13 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
 
     polars_bail!(
         ComputeError:
-        "Conversion from `{}` to `{}` failed in column '{}' for {} of {} values ({} unique failures): {}{}",
+        "Conversion from `{}` to `{}` failed in column '{}' for {} of {} values (first few failures: {}){}",
         input.dtype(),
         output.dtype(),
         output.name(),
         n_failures,
         input.len(),
-        n_unique_failures,
-        unique_failures.fmt_list(),
+        first_failures.fmt_list(),
         additional_info,
     )
 }
