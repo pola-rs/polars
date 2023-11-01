@@ -49,6 +49,47 @@ pub enum ListFunction {
     Join,
 }
 
+impl ListFunction {
+    pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
+        use ListFunction::*;
+        match self {
+            Concat => mapper.map_to_list_supertype(),
+            #[cfg(feature = "is_in")]
+            Contains => mapper.with_dtype(DataType::Boolean),
+            #[cfg(feature = "list_drop_nulls")]
+            DropNulls => mapper.with_same_dtype(),
+            #[cfg(feature = "list_sample")]
+            Sample { .. } => mapper.with_same_dtype(),
+            Slice => mapper.with_same_dtype(),
+            Shift => mapper.with_same_dtype(),
+            Get => mapper.map_to_list_and_array_inner_dtype(),
+            #[cfg(feature = "list_take")]
+            Take(_) => mapper.with_same_dtype(),
+            #[cfg(feature = "list_count")]
+            CountMatches => mapper.with_dtype(IDX_DTYPE),
+            Sum => mapper.nested_sum_type(),
+            Min => mapper.map_to_list_and_array_inner_dtype(),
+            Max => mapper.map_to_list_and_array_inner_dtype(),
+            Mean => mapper.with_dtype(DataType::Float64),
+            ArgMin => mapper.with_dtype(IDX_DTYPE),
+            ArgMax => mapper.with_dtype(IDX_DTYPE),
+            #[cfg(feature = "diff")]
+            Diff { .. } => mapper.with_same_dtype(),
+            Sort(_) => mapper.with_same_dtype(),
+            Reverse => mapper.with_same_dtype(),
+            Unique(_) => mapper.with_same_dtype(),
+            Length => mapper.with_dtype(IDX_DTYPE),
+            #[cfg(feature = "list_sets")]
+            SetOperation(_) => mapper.with_same_dtype(),
+            #[cfg(feature = "list_any_all")]
+            Any => mapper.with_dtype(DataType::Boolean),
+            #[cfg(feature = "list_any_all")]
+            All => mapper.with_dtype(DataType::Boolean),
+            Join => mapper.with_dtype(DataType::Utf8),
+        }
+    }
+}
+
 impl Display for ListFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use ListFunction::*;
