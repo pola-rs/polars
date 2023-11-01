@@ -26,6 +26,8 @@ numpy = { version = "0.20", default-features = false }
 once_cell = "1"
 pyo3 = { version = "0.20", features = ["abi3-py38", "extension-module", "multiple-pymethods"] }
 pyo3-built = { version = "0.4", optional = true }
+# Remove once release compiles without
+ring = { version = '=0.17.4' }
 serde_json = { version = "1", optional = true }
 smartstring = "1"
 thiserror = "1"
