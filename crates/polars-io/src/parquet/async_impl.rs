@@ -6,7 +6,7 @@ use arrow::datatypes::ArrowSchemaRef;
 use bytes::Bytes;
 use object_store::path::Path as ObjectPath;
 use object_store::ObjectStore;
-use polars_core::config::get_rg_prefetch_size;
+use polars_core::config::{get_rg_prefetch_size, verbose};
 use polars_core::datatypes::PlHashMap;
 use polars_core::error::{to_compute_err, PolarsResult};
 use polars_core::prelude::*;
@@ -258,6 +258,10 @@ impl FetchRowGroupsFromObjectStore {
         };
         let reader = Arc::new(reader);
         let msg_limit = get_rg_prefetch_size();
+
+        if verbose() {
+            eprintln!("POLARS ROW_GROUP PREFETCH_SIZE: {}", msg_limit)
+        }
 
         let (snd, rcv) = channel(msg_limit);
         let snd = Arc::new(snd);

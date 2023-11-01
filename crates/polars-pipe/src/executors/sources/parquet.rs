@@ -144,6 +144,9 @@ impl ParquetSource {
         let iter = 0..paths.len();
 
         let prefetch_size = get_file_prefetch_size();
+        if verbose {
+            eprintln!("POLARS PREFETCH_SIZE: {}", prefetch_size)
+        }
 
         let mut source = ParquetSource {
             batched_readers: VecDeque::new(),
