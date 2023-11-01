@@ -200,7 +200,7 @@ You can also install the dependencies directly.
 | Tag        | Description                                                                  |
 | ---------- | ---------------------------------------------------------------------------- |
 | **all**    | Install all optional dependencies (all of the following)                     |
-| pandas     | Install with Pandas for converting data to and from Pandas Dataframes/Series |
+| pandas     | Install with Pandas for converting data to and from Pandas DataFrames/Series |
 | numpy      | Install with numpy for converting data to and from numpy arrays              |
 | pyarrow    | Reading data formats using PyArrow                                           |
 | fsspec     | Support for reading from remote file systems                                 |
