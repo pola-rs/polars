@@ -21,6 +21,8 @@ ciborium = "0.2"
 either = "1.8"
 lexical-core = "0.8"
 libc = "0.2"
+# Remove once release compiles without
+ring = { version = '=0.17.4' }
 ndarray = { version = "0.15", default-features = false }
 numpy = { version = "0.20", default-features = false }
 once_cell = "1"
