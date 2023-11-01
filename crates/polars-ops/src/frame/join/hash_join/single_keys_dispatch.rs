@@ -194,6 +194,21 @@ where
     let splitted_b = split_ca(b, n_threads).unwrap();
     let splitted_a = get_arrays(&splitted_a);
     let splitted_b = get_arrays(&splitted_b);
+    
+    if a.null_count() == 0 && b.null_count() == 0 && !validate.needs_checks() {
+        let splitted_a = splitted_a
+            .iter()
+            .map(|arr| arr.as_slice().unwrap().iter().copied())
+            .collect::<Vec<_>>();
+        let arr = b.downcast_iter().next().unwrap().as_slice().unwrap();
+
+        let hash_tbls = build_tables_nonnull(arr);
+        // let hash_tbls = build_tables_nonnull(vec![arr.iter().copied()]);
+        return Ok((
+            probe_hash_join_tuples_inner(&hash_tbls, splitted_a, swapped, validate)?,
+            !swapped,
+        ));
+    }
 
     match (left.null_count(), right.null_count()) {
         (0, 0) => {
