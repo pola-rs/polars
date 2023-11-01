@@ -2,6 +2,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::*;
+use crate::{map, map_as_slice};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
@@ -50,6 +51,31 @@ impl Display for BinaryFunction {
             Base64Encode => "base64_encode",
         };
         write!(f, "bin.{s}")
+    }
+}
+
+impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+    fn from(func: BinaryFunction) -> Self {
+        use BinaryFunction::*;
+        match func {
+            Contains => {
+                map_as_slice!(binary::contains)
+            },
+            EndsWith => {
+                map_as_slice!(binary::ends_with)
+            },
+            StartsWith => {
+                map_as_slice!(binary::starts_with)
+            },
+            #[cfg(feature = "binary_encoding")]
+            HexDecode(strict) => map!(binary::hex_decode, strict),
+            #[cfg(feature = "binary_encoding")]
+            HexEncode => map!(binary::hex_encode),
+            #[cfg(feature = "binary_encoding")]
+            Base64Decode(strict) => map!(binary::base64_decode, strict),
+            #[cfg(feature = "binary_encoding")]
+            Base64Encode => map!(binary::base64_encode),
+        }
     }
 }
 
