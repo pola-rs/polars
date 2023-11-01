@@ -41,7 +41,7 @@ pub trait RoundSeries: SeriesSealed {
         let s = self.as_series();
         if digits < 1 {
             polars_bail!(
-                InvalidOperation: "Digits must be a positive integer."
+                InvalidOperation: "digits must be an integer >= 1"
             )
         };
 
@@ -111,8 +111,8 @@ fn round_sig_figs(value: f64, digits: u32) -> f64 {
     if value == 0.0 {
         return value;
     }
-    let magnitiude = 10.0.pow(digits as f64 - 1.0 - ((value.abs()).log10().floor()));
-    (value * magnitiude).round() / magnitiude
+    let magnitude = 10.0.pow(digits as f64 - 1.0 - ((value.abs()).log10().floor()));
+    (value * magnitude).round() / magnitude
 }
 
 #[cfg(test)]

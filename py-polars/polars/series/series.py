@@ -4696,7 +4696,7 @@ class Series:
 
         """
 
-    def round_sig_figs(self, digits: int = 1) -> Series:
+    def round_sig_figs(self, digits: int) -> Series:
         """
         Round underlying floating point data by `significant` figures.
 

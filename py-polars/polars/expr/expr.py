@@ -1786,7 +1786,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.round(decimals))
 
-    def round_sig_figs(self, digits: int = 1) -> Self:
+    def round_sig_figs(self, digits: int) -> Self:
         """
         Round underlying floating point data by `decimals` digits.
 
