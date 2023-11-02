@@ -1,3 +1,6 @@
+use std::str::FromStr;
+
+use arrow::legacy::kernels::Ambiguous;
 use arrow::legacy::time_zone::Tz;
 #[cfg(feature = "dtype-date")]
 use arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
@@ -40,8 +43,9 @@ impl PolarsTruncate for DatetimeChunked {
                 (Some(every), Some(ambiguous)) => {
                     let every = Duration::parse(every);
                     let w = Window::new(every, every, offset);
-                    self.0
-                        .try_apply(|timestamp| func(&w, timestamp, tz, ambiguous))
+                    self.0.try_apply(|timestamp| {
+                        func(&w, timestamp, tz, Ambiguous::from_str(ambiguous)?)
+                    })
                 },
                 _ => Ok(Int64Chunked::full_null(self.name(), self.len())),
             },
@@ -52,7 +56,7 @@ impl PolarsTruncate for DatetimeChunked {
                     try_binary_elementwise(self, ambiguous, |opt_timestamp, opt_ambiguous| {
                         match (opt_timestamp, opt_ambiguous) {
                             (Some(timestamp), Some(ambiguous)) => {
-                                func(&w, timestamp, tz, ambiguous).map(Some)
+                                func(&w, timestamp, tz, Ambiguous::from_str(ambiguous)?).map(Some)
                             },
                             _ => Ok(None),
                         }
@@ -68,7 +72,7 @@ impl PolarsTruncate for DatetimeChunked {
                             (Some(timestamp), Some(every)) => {
                                 let every = Duration::parse(every);
                                 let w = Window::new(every, every, offset);
-                                func(&w, timestamp, tz, ambiguous).map(Some)
+                                func(&w, timestamp, tz, Ambiguous::from_str(ambiguous)?).map(Some)
                             },
                             _ => Ok(None),
                         }
@@ -89,7 +93,7 @@ impl PolarsTruncate for DatetimeChunked {
                     (Some(timestamp), Some(every), Some(ambiguous)) => {
                         let every = Duration::parse(every);
                         let w = Window::new(every, every, offset);
-                        func(&w, timestamp, tz, ambiguous).map(Some)
+                        func(&w, timestamp, tz, Ambiguous::from_str(ambiguous)?).map(Some)
                     },
                     _ => Ok(None),
                 },
@@ -109,36 +113,37 @@ impl PolarsTruncate for DateChunked {
         _ambiguous: &Utf8Chunked,
     ) -> PolarsResult<Self> {
         let offset = Duration::parse(offset);
-        let out =
-            match every.len() {
-                1 => {
-                    if let Some(every) = every.get(0) {
+        let out = match every.len() {
+            1 => {
+                if let Some(every) = every.get(0) {
+                    let every = Duration::parse(every);
+                    let w = Window::new(every, every, offset);
+                    self.try_apply(|t| {
+                        const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
+                        Ok(
+                            (w.truncate_ms(MSECS_IN_DAY * t as i64, None, Ambiguous::Raise)?
+                                / MSECS_IN_DAY) as i32,
+                        )
+                    })
+                } else {
+                    Ok(Int32Chunked::full_null(self.name(), self.len()))
+                }
+            },
+            _ => try_binary_elementwise(&self.0, every, |opt_t, opt_every| {
+                match (opt_t, opt_every) {
+                    (Some(t), Some(every)) => {
+                        const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
                         let every = Duration::parse(every);
                         let w = Window::new(every, every, offset);
-                        self.try_apply(|t| {
-                            const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
-                            Ok((w.truncate_ms(MSECS_IN_DAY * t as i64, None, "raise")?
-                                / MSECS_IN_DAY) as i32)
-                        })
-                    } else {
-                        Ok(Int32Chunked::full_null(self.name(), self.len()))
-                    }
-                },
-                _ => try_binary_elementwise(&self.0, every, |opt_t, opt_every| {
-                    match (opt_t, opt_every) {
-                        (Some(t), Some(every)) => {
-                            const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
-                            let every = Duration::parse(every);
-                            let w = Window::new(every, every, offset);
-                            Ok(Some(
-                                (w.truncate_ms(MSECS_IN_DAY * t as i64, None, "raise")?
-                                    / MSECS_IN_DAY) as i32,
-                            ))
-                        },
-                        _ => Ok(None),
-                    }
-                }),
-            };
+                        Ok(Some(
+                            (w.truncate_ms(MSECS_IN_DAY * t as i64, None, Ambiguous::Raise)?
+                                / MSECS_IN_DAY) as i32,
+                        ))
+                    },
+                    _ => Ok(None),
+                }
+            }),
+        };
         Ok(out?.into_date())
     }
 }
