@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::ops::Mul;
 
+use arrow::legacy::kernels::Ambiguous;
 use arrow::legacy::time_zone::Tz;
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
@@ -446,7 +447,7 @@ impl Duration {
         nsecs_to_unit: F,
         timestamp_to_datetime: G,
         datetime_to_timestamp: J,
-        _ambiguous: &str,
+        _ambiguous: Ambiguous,
     ) -> PolarsResult<i64>
     where
         F: Fn(i64) -> i64,
@@ -562,7 +563,7 @@ impl Duration {
 
     // Truncate the given ns timestamp by the window boundary.
     #[inline]
-    pub fn truncate_ns(&self, t: i64, tz: Option<&Tz>, ambiguous: &str) -> PolarsResult<i64> {
+    pub fn truncate_ns(&self, t: i64, tz: Option<&Tz>, ambiguous: Ambiguous) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
             tz,
@@ -575,7 +576,7 @@ impl Duration {
 
     // Truncate the given ns timestamp by the window boundary.
     #[inline]
-    pub fn truncate_us(&self, t: i64, tz: Option<&Tz>, ambiguous: &str) -> PolarsResult<i64> {
+    pub fn truncate_us(&self, t: i64, tz: Option<&Tz>, ambiguous: Ambiguous) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
             tz,
@@ -588,7 +589,7 @@ impl Duration {
 
     // Truncate the given ms timestamp by the window boundary.
     #[inline]
-    pub fn truncate_ms(&self, t: i64, tz: Option<&Tz>, ambiguous: &str) -> PolarsResult<i64> {
+    pub fn truncate_ms(&self, t: i64, tz: Option<&Tz>, ambiguous: Ambiguous) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
             tz,
@@ -624,7 +625,7 @@ impl Duration {
             let dt = Self::add_month(ts, d.months, d.negative, d.saturating)?;
             new_t = match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => datetime_to_timestamp(localize_datetime(dt, tz, "raise")?),
+                Some(tz) => datetime_to_timestamp(localize_datetime(dt, tz, Ambiguous::Raise)?),
                 _ => datetime_to_timestamp(dt),
             };
         }
@@ -640,7 +641,7 @@ impl Duration {
                     new_t = datetime_to_timestamp(localize_datetime(
                         timestamp_to_datetime(new_t),
                         tz,
-                        "raise",
+                        Ambiguous::Raise,
                     )?);
                 },
                 _ => new_t += if d.negative { -t_weeks } else { t_weeks },
@@ -658,7 +659,7 @@ impl Duration {
                     new_t = datetime_to_timestamp(localize_datetime(
                         timestamp_to_datetime(new_t),
                         tz,
-                        "raise",
+                        Ambiguous::Raise,
                     )?);
                 },
                 _ => new_t += if d.negative { -t_days } else { t_days },

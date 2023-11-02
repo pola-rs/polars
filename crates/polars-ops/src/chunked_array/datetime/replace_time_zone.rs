@@ -1,4 +1,6 @@
-use arrow::legacy::kernels::convert_to_naive_local;
+use std::str::FromStr;
+
+use arrow::legacy::kernels::{convert_to_naive_local, Ambiguous};
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
@@ -46,7 +48,10 @@ pub fn replace_time_zone(
             Some(ambiguous) => datetime.0.try_apply(|timestamp| {
                 let ndt = timestamp_to_datetime(timestamp);
                 Ok(datetime_to_timestamp(convert_to_naive_local(
-                    &from_tz, &to_tz, ndt, ambiguous,
+                    &from_tz,
+                    &to_tz,
+                    ndt,
+                    Ambiguous::from_str(ambiguous)?,
                 )?))
             }),
             _ => Ok(datetime.0.apply(|_| None)),
@@ -56,7 +61,10 @@ pub fn replace_time_zone(
                 (Some(timestamp), Some(ambiguous)) => {
                     let ndt = timestamp_to_datetime(timestamp);
                     Ok(Some(datetime_to_timestamp(convert_to_naive_local(
-                        &from_tz, &to_tz, ndt, ambiguous,
+                        &from_tz,
+                        &to_tz,
+                        ndt,
+                        Ambiguous::from_str(ambiguous)?,
                     )?)))
                 },
                 _ => Ok(None),
