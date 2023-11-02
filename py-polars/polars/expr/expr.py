@@ -9616,7 +9616,7 @@ class Expr:
             This is highly unsafe as this will call the C function
             loaded by `lib::symbol`.
 
-            The parameters you give also dictate how polars' will deal
+            The parameters you give dictate how polars will deal
             with the function. Make sure they are correct!
 
         .. note::
