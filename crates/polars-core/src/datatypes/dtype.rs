@@ -168,7 +168,6 @@ impl DataType {
 
     /// Check if this [`DataType`] is a Decimal type (of any scale/precision).
     pub fn is_decimal(&self) -> bool {
-        #[allow(clippy::match_like_matches_macro)]
         match self {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(_, _) => true,

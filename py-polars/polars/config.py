@@ -74,6 +74,7 @@ _POLARS_CFG_ENV_VARS = {
 # vars that set the rust env directly should declare themselves here as the Config
 # method name paired with a callable that returns the current state of that value:
 with contextlib.suppress(NameError):
+    # note: 'plr' not available when building docs
     _POLARS_CFG_DIRECT_VARS = {
         "set_fmt_float": plr.get_float_fmt,
         "set_float_precision": plr.get_float_precision,
