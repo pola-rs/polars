@@ -175,8 +175,6 @@ where
     for a in &mut a_iter {
         current_a = a;
         if a <= current_b {
-            // safety
-            // we pre-allocated enough
             out.push(A_INDICATOR);
             continue;
         }
