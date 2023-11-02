@@ -529,38 +529,41 @@ def test_various() -> None:
 def test_series_dtype_is() -> None:
     s = pl.Series("s", [1, 2, 3])
 
-    assert s.is_numeric()
-    assert s.is_integer()
-    assert s.is_integer(signed=True)
-    assert not s.is_integer(signed=False)
+    assert s.dtype.is_numeric()
+    assert s.dtype.is_integer()
+    assert s.dtype.is_signed_integer()
+    assert not s.dtype.is_unsigned_integer()
     assert (s * 0.99).dtype.is_float()
 
     s = pl.Series("s", [1, 2, 3], dtype=pl.UInt8)
-    assert s.is_numeric()
-    assert s.is_integer()
-    assert not s.is_integer(signed=True)
-    assert s.is_integer(signed=False)
+    assert s.dtype.is_numeric()
+    assert s.dtype.is_integer()
+    assert not s.dtype.is_signed_integer()
+    assert s.dtype.is_unsigned_integer()
 
     s = pl.Series("bool", [True, None, False])
-    assert not s.is_numeric()
+    assert not s.dtype.is_numeric()
 
     s = pl.Series("s", ["testing..."])
     assert s.is_utf8()
 
     s = pl.Series("s", [], dtype=pl.Decimal(precision=20, scale=15))
     assert not s.dtype.is_float()
-    assert s.is_numeric()
+    assert s.dtype.is_numeric()
     assert s.is_empty()
 
     s = pl.Series("s", [], dtype=pl.Datetime("ms", time_zone="UTC"))
     assert s.dtype.is_temporal()
 
 
-def test_series_is_float_deprecated() -> None:
+def test_series_is_dtype_deprecated() -> None:
     s = pl.Series([1.0, 2.0])
     with pytest.deprecated_call():
-        result = s.is_float()
-    assert result is True
+        assert s.is_float() is True
+    with pytest.deprecated_call():
+        assert s.is_numeric() is True
+    with pytest.deprecated_call():
+        assert s.is_integer() is False
 
 
 def test_series_head_tail_limit() -> None:

@@ -22,7 +22,6 @@ from typing import (
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import (
-    NUMERIC_DTYPES,
     Array,
     Boolean,
     Categorical,
@@ -1074,7 +1073,7 @@ class Series:
             self.set_at_idx(key, value)
             return None
         elif isinstance(value, Sequence) and not isinstance(value, str):
-            if self.is_numeric() or self.dtype.is_temporal():
+            if self.dtype.is_numeric() or self.dtype.is_temporal():
                 self.set_at_idx(key, value)  # type: ignore[arg-type]
                 return None
             raise TypeError(
@@ -1582,7 +1581,7 @@ class Series:
         if self.len() == 0:
             raise ValueError("Series must contain at least one value")
 
-        elif self.is_numeric():
+        elif self.dtype.is_numeric():
             s = self.cast(Float64)
             stats = {
                 "count": s.len(),
@@ -1752,7 +1751,7 @@ class Series:
         1.0
 
         """
-        if not self.is_numeric():
+        if not self.dtype.is_numeric():
             return None
         return self.to_frame().select(F.col(self.name).std(ddof)).to_series().item()
 
@@ -1774,7 +1773,7 @@ class Series:
         1.0
 
         """
-        if not self.is_numeric():
+        if not self.dtype.is_numeric():
             return None
         return self.to_frame().select(F.col(self.name).var(ddof)).to_series().item()
 
@@ -3962,19 +3961,6 @@ class Series:
             .to_series()
         )
 
-    def is_numeric(self) -> bool:
-        """
-        Check if this Series datatype is numeric.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.is_numeric()
-        True
-
-        """
-        return self.dtype in NUMERIC_DTYPES
-
     def is_temporal(self, excluding: OneOrMoreDataTypes | None = None) -> bool:
         """
         Check if this Series datatype is temporal.
@@ -4150,7 +4136,7 @@ class Series:
             if not self.null_count():
                 if self.dtype.is_temporal():
                     np_array = convert_to_date(self.view(ignore_nulls=True))
-                elif self.is_numeric():
+                elif self.dtype.is_numeric():
                     np_array = self.view(ignore_nulls=True)
                 else:
                     raise_no_zero_copy()
@@ -6940,6 +6926,23 @@ class Series:
             return self.dtype.is_unsigned_integer()
 
         raise ValueError(f"`signed` must be None, True or False; got {signed!r}")
+
+    @deprecate_function("Use `Series.dtype.is_numeric()` instead.", version="0.19.13")
+    def is_numeric(self) -> bool:
+        """
+        Check if this Series datatype is numeric.
+
+        .. deprecated:: 0.19.13
+            Use `Series.dtype.is_float()` instead.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.is_numeric()  # doctest: +SKIP
+        True
+
+        """
+        return self.dtype.is_numeric()
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`

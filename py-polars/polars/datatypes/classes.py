@@ -64,6 +64,10 @@ class DataTypeClass(type):
         ...
 
     @classmethod
+    def is_numeric(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
     def is_integer(cls) -> bool:  # noqa: D102
         ...
 
@@ -182,6 +186,11 @@ class DataType(metaclass=DataTypeClass):
         return False
 
     @classmethod
+    def is_numeric(cls) -> bool:
+        """Check whether the data type is a numeric type."""
+        return cls.is_integer() or cls.is_float() or issubclass(cls, Decimal)
+
+    @classmethod
     def is_integer(cls) -> bool:
         """Check whether the data type is an integer type."""
         return cls.is_signed_integer() or cls.is_unsigned_integer()
@@ -270,11 +279,7 @@ class UnsignedIntegerType(NumericType):
     """Base class for unsigned integer data types."""
 
 
-class FractionalType(NumericType):
-    """Base class for fractional data types."""
-
-
-class FloatType(FractionalType):
+class FloatType(NumericType):
     """Base class for float data types."""
 
 
@@ -345,7 +350,7 @@ class Float64(FloatType):
     """64-bit floating point type."""
 
 
-class Decimal(FractionalType):
+class Decimal(NumericType):
     """
     Decimal 128-bit type with an optional precision and non-negative scale.
 
