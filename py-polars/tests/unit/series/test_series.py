@@ -9,7 +9,6 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 from numpy.testing import assert_array_equal
-from zoneinfo import ZoneInfo
 
 import polars
 import polars as pl
@@ -25,6 +24,7 @@ from polars.datatypes import (
     UInt64,
     Unknown,
 )
+from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 from polars.exceptions import PolarsInefficientMapWarning, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import iterable_to_pyseries
@@ -125,16 +125,17 @@ def test_init_inputs(monkeypatch: Any) -> None:
     assert s.dtype.time_unit == "us"  # type: ignore[union-attr]
     assert s.dtype.time_zone is None  # type: ignore[union-attr]
 
-    # conversion of Date to Datetime with specified timezone and units
-    tu: Final = "ms"
-    tz: Final = "America/Argentina/Rio_Gallegos"
-    s = pl.Series([date(2023, 1, 1), date(2023, 1, 2)], dtype=pl.Datetime(tu, tz))
-    d1 = datetime(2023, 1, 1, 0, 0, 0, 0, ZoneInfo(tz))
-    d2 = datetime(2023, 1, 2, 0, 0, 0, 0, ZoneInfo(tz))
-    assert s.to_list() == [d1, d2]
-    assert Datetime == s.dtype
-    assert s.dtype.time_unit == tu  # type: ignore[union-attr]
-    assert s.dtype.time_zone == tz  # type: ignore[union-attr]
+    if _ZONEINFO_AVAILABLE:
+        # conversion of Date to Datetime with specified timezone and units
+        tu: Final = "ms"
+        tz: Final = "America/Argentina/Rio_Gallegos"
+        s = pl.Series([date(2023, 1, 1), date(2023, 1, 2)], dtype=pl.Datetime(tu, tz))
+        d1 = datetime(2023, 1, 1, 0, 0, 0, 0, zoneinfo.ZoneInfo(tz))
+        d2 = datetime(2023, 1, 2, 0, 0, 0, 0, zoneinfo.ZoneInfo(tz))
+        assert s.to_list() == [d1, d2]
+        assert Datetime == s.dtype
+        assert s.dtype.time_unit == tu  # type: ignore[union-attr]
+        assert s.dtype.time_zone == tz  # type: ignore[union-attr]
 
     # datetime64: check timeunit (auto-detect, implicit/explicit) and NaT
     d64 = pd.date_range(date(2021, 8, 1), date(2021, 8, 3)).values
