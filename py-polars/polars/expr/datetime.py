@@ -1494,7 +1494,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴───────────┘
 
         """
-        return wrap_expr(self._pyexpr.duration_days())
+        return wrap_expr(self._pyexpr.dt_total_days())
 
     def total_hours(self) -> Expr:
         """
@@ -1534,7 +1534,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴────────────┘
 
         """
-        return wrap_expr(self._pyexpr.duration_hours())
+        return wrap_expr(self._pyexpr.dt_total_hours())
 
     def total_minutes(self) -> Expr:
         """
@@ -1574,7 +1574,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴──────────────┘
 
         """
-        return wrap_expr(self._pyexpr.duration_minutes())
+        return wrap_expr(self._pyexpr.dt_total_minutes())
 
     def total_seconds(self) -> Expr:
         """
@@ -1616,7 +1616,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴──────────────┘
 
         """
-        return wrap_expr(self._pyexpr.duration_seconds())
+        return wrap_expr(self._pyexpr.dt_total_seconds())
 
     def total_milliseconds(self) -> Expr:
         """
@@ -1662,7 +1662,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────────┴───────────────────┘
 
         """
-        return wrap_expr(self._pyexpr.duration_milliseconds())
+        return wrap_expr(self._pyexpr.dt_total_milliseconds())
 
     def total_microseconds(self) -> Expr:
         """
@@ -1708,7 +1708,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────────┴───────────────────┘
 
         """
-        return wrap_expr(self._pyexpr.duration_microseconds())
+        return wrap_expr(self._pyexpr.dt_total_microseconds())
 
     def total_nanoseconds(self) -> Expr:
         """
@@ -1754,7 +1754,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────────┴──────────────────┘
 
         """
-        return wrap_expr(self._pyexpr.duration_nanoseconds())
+        return wrap_expr(self._pyexpr.dt_total_nanoseconds())
 
     def offset_by(self, by: str | Expr) -> Expr:
         """
