@@ -178,7 +178,9 @@ impl Source for ParquetSource {
         if self.batched_readers.len() < self.prefetch_size && self.file_options.n_rows.is_none()
             || self.batched_readers.is_empty()
         {
-            self.init_next_reader()?
+            for _ in 0..self.prefetch_size - self.batched_readers.len() {
+                self.init_next_reader()?
+            }
         }
 
         let Some(mut reader) = self.batched_readers.pop_front() else {
