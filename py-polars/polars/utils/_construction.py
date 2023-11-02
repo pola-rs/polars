@@ -138,9 +138,7 @@ def include_unknowns(
 ) -> MutableMapping[str, PolarsDataType]:
     """Complete partial schema dict by including Unknown type."""
     return {
-        col: (
-            schema.get(col, Unknown) or Unknown  # type: ignore[truthy-bool]
-        )
+        col: (schema.get(col, Unknown) or Unknown)  # type: ignore[truthy-bool]
         for col in cols
     }
 
@@ -355,7 +353,8 @@ def _construct_series_with_fallbacks(
             if "'float'" in str_exc and (
                 # we do not accept float values as int/temporal, as it causes silent
                 # information loss; the caller should explicitly cast in this case.
-                target_dtype not in (INTEGER_DTYPES | TEMPORAL_DTYPES)
+                target_dtype
+                not in (INTEGER_DTYPES | TEMPORAL_DTYPES)
             ):
                 constructor = py_type_to_constructor(float)
 
@@ -491,14 +490,17 @@ def sequence_to_pyseries(
             # we store the values internally as UTC and set the timezone
             py_series = PySeries.new_from_anyvalues(name, values, strict)
             time_unit = getattr(dtype, "time_unit", None)
-            if time_unit is None:
+            if time_unit is None or values_dtype == Date:
                 s = wrap_s(py_series)
             else:
                 s = wrap_s(py_series).dt.cast_time_unit(time_unit)
             time_zone = getattr(dtype, "time_zone", None)
             if dtype == Datetime:
                 if values_dtype == Date:
-                    return s.cast(Datetime)._s
+                    # check for zone info
+                    return (
+                        s.cast(Datetime(time_unit)).dt.replace_time_zone(time_zone)._s
+                    )
                 elif value.tzinfo is not None or time_zone is not None:
                     values_tz = str(value.tzinfo) if value.tzinfo is not None else None
                     dtype_tz = dtype.time_zone  # type: ignore[union-attr]
@@ -752,7 +754,9 @@ def _unpack_schema(
         else None
     )
     column_dtypes: dict[str, PolarsDataType] = {
-        lookup.get((name := col[0]), name) if lookup else col[0]: dtype  # type: ignore[misc]
+        lookup.get((name := col[0]), name)
+        if lookup
+        else col[0]: dtype  # type: ignore[misc]
         if is_polars_dtype(dtype, include_unknown=True)
         else py_type_to_dtype(dtype)
         for col in schema
