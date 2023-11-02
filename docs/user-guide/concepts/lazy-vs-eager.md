@@ -1,6 +1,6 @@
 # Lazy / eager API
 
-`Polars` supports two modes of operation: lazy and eager. In the eager API the query is executed immediately while in the lazy API the query is only evaluated once it is 'needed'. Deferring the execution to the last minute can have significant performance advantages that is why the Lazy API is preferred in most cases. Let us demonstrate this with an example:
+Polars supports two modes of operation: lazy and eager. In the eager API the query is executed immediately while in the lazy API the query is only evaluated once it is 'needed'. Deferring the execution to the last minute can have significant performance advantages that is why the Lazy API is preferred in most cases. Let us demonstrate this with an example:
 
 {{code_block('user-guide/concepts/lazy-vs-eager','eager',['read_csv'])}}
 
@@ -17,7 +17,7 @@ Every step is executed immediately returning the intermediate results. This can 
 
 {{code_block('user-guide/concepts/lazy-vs-eager','lazy',['scan_csv'])}}
 
-These will significantly lower the load on memory & CPU thus allowing you to fit bigger datasets in memory and process faster. Once the query is defined you call `collect` to inform `Polars` that you want to execute it. In the section on Lazy API we will go into more details on its implementation.
+These will significantly lower the load on memory & CPU thus allowing you to fit bigger datasets in memory and process faster. Once the query is defined you call `collect` to inform Polars that you want to execute it. In the section on Lazy API we will go into more details on its implementation.
 
 !!! info "Eager API"
 

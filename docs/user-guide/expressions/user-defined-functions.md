@@ -113,7 +113,7 @@ And observe, a valid result! 🎉
 
 ## `apply` in the `select` context
 
-In the `select` context, the `apply` expression passes elements of the column to the python function.
+In the `select` context, the `apply` expression passes elements of the column to the Python function.
 
 _Note that you are now running Python, this will be slow._
 
@@ -148,7 +148,7 @@ type. This data type collects those columns as fields in the `struct`. So if we'
 ]
 ```
 
-In Python, those would be passed as `dict` to the calling python function and can thus be indexed by `field: str`. In rust, you'll get a `Series` with the `Struct` type. The fields of the struct can then be indexed and downcast.
+In Python, those would be passed as `dict` to the calling Python function and can thus be indexed by `field: str`. In Rust, you'll get a `Series` with the `Struct` type. The fields of the struct can then be indexed and downcast.
 
 {{code_block('user-guide/expressions/user-defined-functions','combine',['apply','struct'])}}
 
@@ -160,7 +160,7 @@ In Python, those would be passed as `dict` to the calling python function and ca
 
 ### Return types?
 
-Custom python functions are black boxes for polars. We really don't know what kind of black arts you are doing, so we have
+Custom Python functions are black boxes for Polars. We really don't know what kind of black arts you are doing, so we have
 to infer and try our best to understand what you meant.
 
 As a user it helps to understand what we do to better utilize custom functions.
@@ -168,7 +168,7 @@ As a user it helps to understand what we do to better utilize custom functions.
 The data type is automatically inferred. We do that by waiting for the first non-null value. That value will then be used
 to determine the type of the `Series`.
 
-The mapping of python types to polars data types is as follows:
+The mapping of Python types to Polars data types is as follows:
 
 - `int` -> `Int64`
 - `float` -> `Float64`

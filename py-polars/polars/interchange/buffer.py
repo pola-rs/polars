@@ -47,15 +47,17 @@ class PolarsBuffer(Buffer):
 
         if dtype[0] == DtypeKind.STRING:
             return self._data.str.len_bytes().sum()  # type: ignore[return-value]
+        elif dtype[0] == DtypeKind.BOOL:
+            offset, length, _pointer = self._data._s.get_ptr()
+            n_bits = offset + length
+            n_bytes, rest = divmod(n_bits, 8)
+            # Round up to the nearest byte
+            if rest:
+                return n_bytes + 1
+            else:
+                return n_bytes
 
-        n_bits = self._data.len() * dtype[1]
-
-        result, rest = divmod(n_bits, 8)
-        # Round up to the nearest byte
-        if rest:
-            return result + 1
-        else:
-            return result
+        return self._data.len() * (dtype[1] // 8)
 
     @property
     def ptr(self) -> int:

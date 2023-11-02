@@ -4,16 +4,16 @@ Polars has native support for parsing time series data and doing more sophistica
 
 ## Datatypes
 
-`Polars` has the following datetime datatypes:
+Polars has the following datetime datatypes:
 
 - `Date`: Date representation e.g. 2014-07-08. It is internally represented as days since UNIX epoch encoded by a 32-bit signed integer.
 - `Datetime`: Datetime representation e.g. 2014-07-08 07:00:00. It is internally represented as a 64 bit integer since the Unix epoch and can have different units such as ns, us, ms.
-- `Duration`: A time delta type that is created when subtracting `Date/Datetime`. Similar to `timedelta` in python.
+- `Duration`: A time delta type that is created when subtracting `Date/Datetime`. Similar to `timedelta` in Python.
 - `Time`: Time representation, internally represented as nanoseconds since midnight.
 
 ## Parsing dates from a file
 
-When loading from a CSV file `Polars` attempts to parse dates and times if the `try_parse_dates` flag is set to `True`:
+When loading from a CSV file Polars attempts to parse dates and times if the `try_parse_dates` flag is set to `True`:
 
 {{code_block('user-guide/transformations/time-series/parsing','df',['read_csv'])}}
 
@@ -22,7 +22,7 @@ When loading from a CSV file `Polars` attempts to parse dates and times if the `
 --8<-- "python/user-guide/transformations/time-series/parsing.py:df"
 ```
 
-On the other hand binary formats such as parquet have a schema that is respected by `Polars`.
+On the other hand binary formats such as parquet have a schema that is respected by Polars.
 
 ## Casting strings to dates
 

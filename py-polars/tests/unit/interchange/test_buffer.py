@@ -42,6 +42,7 @@ def test_init_invalid_input() -> None:
         (pl.Series(["a", "b", "a", "c", "a"], dtype=pl.Categorical), 20),
         (pl.Series([True, False], dtype=pl.Boolean), 1),
         (pl.Series([True] * 9, dtype=pl.Boolean), 2),
+        (pl.Series([True] * 9, dtype=pl.Boolean)[5:], 2),
     ],
 )
 def test_bufsize(data: pl.Series, expected: int) -> None:

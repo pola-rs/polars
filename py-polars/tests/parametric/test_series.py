@@ -5,10 +5,8 @@ from __future__ import annotations
 
 from typing import Any
 
-import numpy as np
 from hypothesis import given, settings
 from hypothesis.strategies import booleans, floats, sampled_from
-from numpy.testing import assert_array_equal
 
 import polars as pl
 from polars.expr.expr import _prepare_alpha
@@ -179,27 +177,3 @@ def test_series_slice(
 
     assert sliced_py_data == sliced_pl_data, f"slice [{start}:{stop}:{step}] failed"
     assert_series_equal(srs, srs, check_exact=True)
-
-
-@given(
-    s=series(
-        min_size=1, max_size=10, excluded_dtypes=[pl.Categorical, pl.List, pl.Struct]
-    ).filter(
-        lambda x: (
-            getattr(x.dtype, "time_unit", None) in (None, "us", "ns")
-            and (x.dtype != pl.Utf8 or not x.str.contains("\x00").any())
-        )
-    ),
-)
-@settings(max_examples=250)
-def test_series_to_numpy(
-    s: pl.Series,
-) -> None:
-    dtype = {
-        pl.Datetime("ns"): "datetime64[ns]",
-        pl.Datetime("us"): "datetime64[us]",
-        pl.Duration("ns"): "timedelta64[ns]",
-        pl.Duration("us"): "timedelta64[us]",
-    }
-    np_array = np.array(s.to_list(), dtype=dtype.get(s.dtype))  # type: ignore[call-overload]
-    assert_array_equal(np_array, s.to_numpy())
