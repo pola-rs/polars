@@ -5,6 +5,7 @@ from typing import Any, Iterator
 import pytest
 
 import polars as pl
+from polars import ComputeError
 
 
 @pytest.fixture(autouse=True)
@@ -136,6 +137,19 @@ def test_fmt_float_full() -> None:
         assert str(s) == fmt_float_full
 
     assert str(s) != fmt_float_full
+
+
+def test_fmt_list_12188() -> None:
+    # set max_items to 1 < 4(size of failed list) to touch the testing branch.
+    pl.Config.set_fmt_table_cell_list_len(1)
+    with pytest.raises(
+        ComputeError, match="strict conversion from `i64` to `u8` failed for column: x"
+    ):
+        pl.DataFrame(
+            {
+                "x": pl.int_range(250, 260, 1, eager=True),
+            }
+        ).with_columns(u8=pl.col("x").cast(pl.UInt8))
 
 
 def test_date_list_fmt() -> None:
