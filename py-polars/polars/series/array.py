@@ -114,7 +114,7 @@ class ArrayNameSpace:
 
         Returns
         -------
-        Expr
+        Series
             Series of data type :class:`List`.
 
         Examples
