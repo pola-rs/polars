@@ -73,14 +73,15 @@ _POLARS_CFG_ENV_VARS = {
 
 # vars that set the rust env directly should declare themselves here as the Config
 # method name paired with a callable that returns the current state of that value:
-_POLARS_CFG_DIRECT_VARS = {
-    "set_fmt_float": plr.get_float_fmt,
-    "set_float_precision": plr.get_float_precision,
-    "set_digit_group_separator": plr.get_digit_group_separator,
-    "set_digit_group_size": plr.get_digit_group_size,
-    "set_decimal_separator": plr.get_decimal_separator,
-    "set_trim_decimal_zeros": plr.get_trim_decimal_zeros,
-}
+with contextlib.suppress(NameError):
+    _POLARS_CFG_DIRECT_VARS = {
+        "set_fmt_float": plr.get_float_fmt,
+        "set_float_precision": plr.get_float_precision,
+        "set_digit_group_separator": plr.get_digit_group_separator,
+        "set_digit_group_size": plr.get_digit_group_size,
+        "set_decimal_separator": plr.get_decimal_separator,
+        "set_trim_decimal_zeros": plr.get_trim_decimal_zeros,
+    }
 
 
 class Config(contextlib.ContextDecorator):
@@ -355,7 +356,7 @@ class Config(contextlib.ContextDecorator):
         }
         if not env_only:
             for cfg_methodname, get_value in _POLARS_CFG_DIRECT_VARS.items():
-                config_state[cfg_methodname] = get_value()  # type: ignore[assignment]
+                config_state[cfg_methodname] = get_value()
 
         return config_state
 
