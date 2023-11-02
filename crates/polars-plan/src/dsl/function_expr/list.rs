@@ -48,6 +48,8 @@ pub enum ListFunction {
     #[cfg(feature = "list_any_all")]
     All,
     Join,
+    #[cfg(feature = "dtype-array")]
+    ToArray(usize),
 }
 
 impl ListFunction {
@@ -87,7 +89,18 @@ impl ListFunction {
             #[cfg(feature = "list_any_all")]
             All => mapper.with_dtype(DataType::Boolean),
             Join => mapper.with_dtype(DataType::Utf8),
+            #[cfg(feature = "dtype-array")]
+            ToArray(width) => mapper.try_map_dtype(|dt| map_list_dtype_to_array_dtype(dt, *width)),
         }
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+fn map_list_dtype_to_array_dtype(datatype: &DataType, width: usize) -> PolarsResult<DataType> {
+    if let DataType::List(inner) = datatype {
+        Ok(DataType::Array(inner.clone(), width))
+    } else {
+        polars_bail!(ComputeError: "expected List dtype")
     }
 }
 
@@ -141,6 +154,8 @@ impl Display for ListFunction {
             #[cfg(feature = "list_any_all")]
             All => "all",
             Join => "join",
+            #[cfg(feature = "dtype-array")]
+            ToArray(_) => "to_array",
         };
         write!(f, "list.{name}")
     }
@@ -194,6 +209,8 @@ impl From<ListFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "list_any_all")]
             All => map!(lst_all),
             Join => map_as_slice!(join),
+            #[cfg(feature = "dtype-array")]
+            ToArray(width) => map!(to_array, width),
         }
     }
 }
@@ -517,4 +534,10 @@ pub(super) fn join(s: &[Series]) -> PolarsResult<Series> {
     let ca = s[0].list()?;
     let separator = s[1].utf8()?;
     Ok(ca.lst_join(separator)?.into_series())
+}
+
+#[cfg(feature = "dtype-array")]
+pub(super) fn to_array(s: &Series, width: usize) -> PolarsResult<Series> {
+    let array_dtype = map_list_dtype_to_array_dtype(s.dtype(), width)?;
+    s.cast(&array_dtype)
 }

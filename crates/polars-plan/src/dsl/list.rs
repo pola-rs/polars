@@ -231,6 +231,13 @@ impl ListNameSpace {
         self.slice(lit(0i64) - n.clone().cast(DataType::Int64), n)
     }
 
+    #[cfg(feature = "dtype-array")]
+    /// Convert a List column into an Array column with the same inner data type.
+    pub fn to_array(self, width: usize) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ListExpr(ListFunction::ToArray(width)))
+    }
+
     #[cfg(feature = "list_to_struct")]
     #[allow(clippy::wrong_self_convention)]
     /// Convert this `List` to a `Series` of type `Struct`. The width will be determined according to

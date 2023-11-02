@@ -154,6 +154,10 @@ impl PyExpr {
             .into()
     }
 
+    fn list_to_array(&self, width: usize) -> Self {
+        self.inner.clone().list().to_array(width).into()
+    }
+
     #[pyo3(signature = (width_strat, name_gen, upper_bound))]
     fn list_to_struct(
         &self,
