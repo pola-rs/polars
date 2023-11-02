@@ -188,7 +188,8 @@ impl Source for ParquetSource {
             return Ok(SourceResult::Finished);
         };
 
-        let batches = get_runtime().block_on(reader.next_batches(self.n_threads))?;
+        let batches =
+            get_runtime().block_on_potential_spawn(reader.next_batches(self.n_threads))?;
         Ok(match batches {
             None => {
                 if reader.limit_reached() {
