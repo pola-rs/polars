@@ -846,6 +846,13 @@ def test_ufunc() -> None:
         pl.Series("a", [3.0, None, 9.0, 12.0, 15.0, None]),
     )
 
+    # Test if nulls propagate through ufuncs
+    a3 = pl.Series("a", [None, None, 3, 3])
+    b3 = pl.Series("b", [None, 3, None, 3])
+    assert_series_equal(
+        cast(pl.Series, np.maximum(a3, b3)), pl.Series("a", [None, None, None, 3])
+    )
+
 
 def test_numpy_string_array() -> None:
     s_utf8 = pl.Series("a", ["aa", "bb", "cc", "dd"], dtype=pl.Utf8)
@@ -894,7 +901,7 @@ def test_set() -> None:
     a = pl.Series("a", [True, False, True])
     mask = pl.Series("msk", [True, False, True])
     a[mask] = False
-    assert_series_equal(a, pl.Series("", [False] * 3))
+    assert_series_equal(a, pl.Series("a", [False] * 3))
 
 
 def test_set_value_as_list_fail() -> None:
