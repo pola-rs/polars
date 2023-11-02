@@ -191,6 +191,20 @@ def test_lazy_n_rows(foods_file_path: Path) -> None:
     }
 
 
+def test_lazy_row_count_no_push_down(foods_file_path: Path) -> None:
+    plan = (
+        pl.scan_csv(foods_file_path)
+        .with_row_count()
+        .filter(pl.col("row_nr") == 1)
+        .filter(pl.col("category") == pl.lit("vegetables"))
+        .explain(predicate_pushdown=True)
+    )
+    # related to row count is not pushed.
+    assert 'FILTER [(col("row_nr")) == (1)] FROM' in plan
+    # unrelated to row count is pushed.
+    assert 'SELECTION: [(col("category")) == (Utf8(vegetables))]' in plan
+
+
 @pytest.mark.write_disk()
 def test_glob_skip_rows(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
