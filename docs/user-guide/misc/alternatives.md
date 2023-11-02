@@ -1,6 +1,6 @@
 # Alternatives
 
-These are some tools that share similar functionality to what polars does.
+These are some tools that share similar functionality to what Polars does.
 
 - Pandas
 

@@ -160,7 +160,7 @@ In Python, those would be passed as `dict` to the calling Python function and ca
 
 ### Return types?
 
-Custom Python functions are black boxes for polars. We really don't know what kind of black arts you are doing, so we have
+Custom Python functions are black boxes for Polars. We really don't know what kind of black arts you are doing, so we have
 to infer and try our best to understand what you meant.
 
 As a user it helps to understand what we do to better utilize custom functions.
@@ -168,7 +168,7 @@ As a user it helps to understand what we do to better utilize custom functions.
 The data type is automatically inferred. We do that by waiting for the first non-null value. That value will then be used
 to determine the type of the `Series`.
 
-The mapping of Python types to polars data types is as follows:
+The mapping of Python types to Polars data types is as follows:
 
 - `int` -> `Int64`
 - `float` -> `Float64`

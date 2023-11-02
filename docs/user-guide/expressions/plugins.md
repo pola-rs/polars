@@ -1,7 +1,7 @@
 # Expression plugins
 
 Expression plugins are the preferred way to create user defined functions. They allow you to compile a Rust function
-and register that as an expression into the polars library. The polars engine will dynamically link your function at runtime
+and register that as an expression into the Polars library. The Polars engine will dynamically link your function at runtime
 and your expression will run almost as fast as native expressions. Note that this works without any interference of Python
 and thus no GIL contention.
 
@@ -85,9 +85,9 @@ named `expression_lib` and we create an `expression_lib/__init__.py`. The result
 ```
 
 Then we create a new class `Language` that will hold the expressions for our new `expr.language` namespace. The function
-name of our expression can be registered. Note that it is important that this name is correct, otherwise the main polars
-package cannot resolve the function name. Furthermore we can set additional keyword arguments that explain to polars how
-this expression behaves. In this case we tell polars that this function is elementwise. This allows polars to run this
+name of our expression can be registered. Note that it is important that this name is correct, otherwise the main Polars
+package cannot resolve the function name. Furthermore we can set additional keyword arguments that explain to Polars how
+this expression behaves. In this case we tell Polars that this function is elementwise. This allows Polars to run this
 expression in batches. Whereas for other operations this would not be allowed, think for instance of a sort, or a slice.
 
 ```python
@@ -96,7 +96,7 @@ import polars as pl
 from polars.type_aliases import IntoExpr
 from polars.utils.udfs import _get_shared_lib_location
 
-# boilerplate needed to inform polars of the location of binary wheel.
+# Boilerplate needed to inform Polars of the location of binary wheel.
 lib = _get_shared_lib_location(__file__)
 
 @pl.api.register_expr_namespace("language")

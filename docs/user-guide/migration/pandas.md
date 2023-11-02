@@ -21,7 +21,7 @@ Operations like resampling will be done by specialized functions or methods that
 stating the columns that that 'verb' operates on. As such, it is our conviction that not having indices make things simpler,
 more explicit, more readable and less error-prone.
 
-Note that an 'index' data structure as known in databases will be used by polars as an optimization technique.
+Note that an 'index' data structure as known in databases will be used by Polars as an optimization technique.
 
 ### Polars uses Apache Arrow arrays to represent data in memory while pandas uses NumPy arrays
 
