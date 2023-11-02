@@ -118,7 +118,7 @@ def test_strategy_dtypes(
 ) -> None:
     # dataframe, lazyframe
     assert all(tp.is_temporal() for tp in df.dtypes)
-    assert all(tp.is_temporal() for tp in lf.dtypes)
+    assert all(not tp.is_temporal() for tp in lf.dtypes)
 
     # series
     assert s1.dtype == pl.Boolean
