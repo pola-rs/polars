@@ -7,12 +7,8 @@ from typing import Any, Iterator
 import pytest
 
 import polars as pl
-from polars.config import (
-    _POLARS_CFG_ENV_VARS,
-    _get_digit_group_size,
-    _get_float_fmt,
-    _get_float_precision,
-)
+import polars.polars as plr
+from polars.config import _POLARS_CFG_ENV_VARS
 
 
 @pytest.fixture(autouse=True)
@@ -679,9 +675,9 @@ def test_config_load_save(tmp_path: Path) -> None:
         # ...and confirm the saved options were set.
         assert os.environ.get("POLARS_FMT_MAX_COLS") == "12"
         assert os.environ.get("POLARS_VERBOSE") == "1"
-        assert _get_float_fmt() == "full"
-        assert _get_float_precision() == 6
-        assert _get_digit_group_size() == 3
+        assert plr.get_float_fmt() == "full"
+        assert plr.get_float_precision() == 6
+        assert plr.get_digit_group_size() == 3
 
         # restore all default options (unsets from env)
         pl.Config.restore_defaults()
@@ -691,9 +687,9 @@ def test_config_load_save(tmp_path: Path) -> None:
 
         assert os.environ.get("POLARS_FMT_MAX_COLS") is None
         assert os.environ.get("POLARS_VERBOSE") is None
-        assert _get_float_fmt() == "mixed"
-        assert _get_float_precision() is None
-        assert _get_digit_group_size() == 0
+        assert plr.get_float_fmt() == "mixed"
+        assert plr.get_float_precision() is None
+        assert plr.get_digit_group_size() == 0
 
     # ref: #11094
     with pl.Config(

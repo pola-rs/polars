@@ -10,48 +10,8 @@ from polars.dependencies import json
 from polars.utils.deprecation import deprecate_nonkeyword_arguments
 from polars.utils.various import normalize_filepath
 
-
-# dummy funcs required here (so that docs build)
-def _get_float_fmt() -> str:  # pragma: no cover
-    return "n/a"
-
-
-def _get_float_precision() -> int:
-    return -1
-
-
-def _get_digit_group_separator() -> str:  # pragma: no cover
-    return ","
-
-
-def _get_digit_group_size() -> int:
-    return 3
-
-
-def _get_decimal_separator() -> str:
-    return "."
-
-
-def _get_trim_decimal_zeros() -> bool:
-    return False
-
-
-# note: module not available when building docs
-with contextlib.suppress(ImportError):
-    from polars.polars import (  # type: ignore[no-redef]  # noqa
-        get_float_fmt as _get_float_fmt,
-        set_float_fmt as _set_float_fmt,
-        get_float_precision as _get_float_precision,
-        set_float_precision as _set_float_precision,
-        set_digit_group_separator as _set_digit_group_separator,
-        get_digit_group_separator as _get_digit_group_separator,
-        set_digit_group_size as _set_digit_group_size,
-        get_digit_group_size as _get_digit_group_size,
-        set_decimal_separator as _set_decimal_separator,
-        get_decimal_separator as _get_decimal_separator,
-        get_trim_decimal_zeros as _get_trim_decimal_zeros,
-        set_trim_decimal_zeros as _set_trim_decimal_zeros,
-    )
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    import polars.polars as plr
 
 
 if sys.version_info >= (3, 10):
@@ -114,12 +74,12 @@ _POLARS_CFG_ENV_VARS = {
 # vars that set the rust env directly should declare themselves here as the Config
 # method name paired with a callable that returns the current state of that value:
 _POLARS_CFG_DIRECT_VARS = {
-    "set_fmt_float": _get_float_fmt,
-    "set_float_precision": _get_float_precision,
-    "set_digit_group_separator": _get_digit_group_separator,
-    "set_digit_group_size": _get_digit_group_size,
-    "set_decimal_separator": _get_decimal_separator,
-    "set_trim_decimal_zeros": _get_trim_decimal_zeros,
+    "set_fmt_float": plr.get_float_fmt,
+    "set_float_precision": plr.get_float_precision,
+    "set_digit_group_separator": plr.get_digit_group_separator,
+    "set_digit_group_size": plr.get_digit_group_size,
+    "set_decimal_separator": plr.get_decimal_separator,
+    "set_trim_decimal_zeros": plr.get_trim_decimal_zeros,
 }
 
 
@@ -513,7 +473,7 @@ class Config(contextlib.ContextDecorator):
             raise ValueError(
                 f"`separator` must be a single character; found {separator!r}"
             )
-        _set_decimal_separator(sep=separator)
+        plr.set_decimal_separator(sep=separator)
         return cls
 
     @classmethod
@@ -552,7 +512,7 @@ class Config(contextlib.ContextDecorator):
             raise ValueError(
                 f"`separator` must be a single character; found {separator!r}"
             )
-        _set_digit_group_separator(sep=separator)
+        plr.set_digit_group_separator(sep=separator)
         return cls
 
     @classmethod
@@ -602,7 +562,7 @@ class Config(contextlib.ContextDecorator):
         └─────────────┘
 
         """
-        _set_digit_group_size(n)
+        plr.set_digit_group_size(n)
         return cls
 
     @classmethod
@@ -671,7 +631,7 @@ class Config(contextlib.ContextDecorator):
         └─────┴────────────────┴─────────────────┘
 
         """
-        _set_float_precision(precision)
+        plr.set_float_precision(precision)
         return cls
 
     @classmethod
@@ -718,7 +678,7 @@ class Config(contextlib.ContextDecorator):
         ]
 
         """
-        _set_float_fmt(fmt="mixed" if fmt is None else fmt)
+        plr.set_float_fmt(fmt="mixed" if fmt is None else fmt)
         return cls
 
     @classmethod
@@ -1341,7 +1301,7 @@ class Config(contextlib.ContextDecorator):
         └────────────┘
 
         """
-        _set_trim_decimal_zeros(active)
+        plr.set_trim_decimal_zeros(active)
         return cls
 
     @classmethod
