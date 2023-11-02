@@ -755,7 +755,7 @@ def _unpack_schema(
         if is_polars_dtype(dtype, include_unknown=True)
         else py_type_to_dtype(dtype)
         for col in schema
-        if isinstance(col, tuple) and (dtype := col[1]) is not None
+        if isinstance(col, (list, tuple)) and (dtype := col[1]) is not None
     }
 
     # apply schema overrides

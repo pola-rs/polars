@@ -23,6 +23,7 @@ from polars.utils.various import (
     parse_percentiles,
     parse_version,
 )
+from polars.utils._construction import _unpack_schema
 
 if TYPE_CHECKING:
     from polars.type_aliases import TimeUnit
@@ -36,9 +37,7 @@ if TYPE_CHECKING:
         (datetime(2121, 1, 1), "ms", 4765132800000),
     ],
 )
-def test_datetime_to_pl_timestamp(
-    dt: datetime, time_unit: TimeUnit, expected: int
-) -> None:
+def test_datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit, expected: int) -> None:
     out = _datetime_to_pl_timestamp(dt, time_unit)
     assert out == expected
 
@@ -227,3 +226,17 @@ def test_is_str_sequence_check(
     assert is_str_sequence(sequence, include_series=include_series) == expected
     if expected:
         assert is_sequence(sequence, include_series=include_series)
+
+
+@pytest.mark.parametrize(
+    ("schema"),
+    [
+        ({"foo": pl.Utf8, "bar": pl.Int64}),
+        ([("foo", pl.Utf8), ("bar", pl.Int64)]),
+        ([["foo", pl.Utf8], ["bar", pl.Int64]]),
+    ],
+)
+def test_unpack_schema_with_dtypes(schema: Any):
+    schema = _unpack_schema(schema=schema)
+    expected = (["foo", "bar"], {"foo": pl.Utf8, "bar": pl.Int64})
+    assert schema == expected
