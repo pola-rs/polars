@@ -1,6 +1,6 @@
 # Optimizations
 
-If you use `Polars`' lazy API, `Polars` will run several optimizations on your query. Some of them are executed up front,
+If you use Polars' lazy API, Polars will run several optimizations on your query. Some of them are executed up front,
 others are determined just in time as the materialized data comes in.
 
 Here is a non-complete overview of optimizations done by polars, what they do and how often they run.

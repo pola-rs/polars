@@ -2,7 +2,7 @@
 
 ## Join strategies
 
-`Polars` supports the following join strategies by specifying the `strategy` argument:
+Polars supports the following join strategies by specifying the `strategy` argument:
 
 | Strategy | Description                                                                                                                                                                                                |
 | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -142,7 +142,7 @@ Continuing this example, an alternative question might be: which of the cars hav
 ### Asof join
 
 An `asof` join is like a left join except that we match on nearest key rather than equal keys.
-In `Polars` we can do an asof join with the `join` method and specifying `strategy="asof"`. However, for more flexibility we can use the `join_asof` method.
+In Polars we can do an asof join with the `join` method and specifying `strategy="asof"`. However, for more flexibility we can use the `join_asof` method.
 
 Consider the following scenario: a stock market broker has a `DataFrame` called `df_trades` showing transactions it has made for different stocks.
 
