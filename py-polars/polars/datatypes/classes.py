@@ -63,6 +63,18 @@ class DataTypeClass(type):
     def is_nested(self) -> bool:  # noqa: D102
         ...
 
+    @classmethod
+    def is_integer(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
+    def is_float(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
+    def is_temporal(cls) -> bool:  # noqa: D102
+        ...
+
 
 class DataType(metaclass=DataTypeClass):
     """Base class for all Polars data types."""
@@ -160,6 +172,21 @@ class DataType(metaclass=DataTypeClass):
         )
         issue_deprecation_warning(message, version="0.19.10")
         return False
+
+    @classmethod
+    def is_integer(cls) -> bool:
+        """Check whether the data type is an integer type."""
+        return issubclass(cls, IntegerType)
+
+    @classmethod
+    def is_float(cls) -> bool:
+        """Check whether the data type is a temporal type."""
+        return issubclass(cls, FloatType)
+
+    @classmethod
+    def is_temporal(cls) -> bool:
+        """Check whether the data type is a temporal type."""
+        return issubclass(cls, TemporalType)
 
 
 def _custom_reconstruct(
