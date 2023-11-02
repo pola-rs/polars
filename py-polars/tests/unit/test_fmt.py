@@ -141,8 +141,9 @@ def test_fmt_float_full() -> None:
 
 def test_fmt_list_12188() -> None:
     # set max_items to 1 < 4(size of failed list) to touch the testing branch.
-    pl.Config.set_fmt_table_cell_list_len(1)
-    with pytest.raises(ComputeError, match="from `i64` to `u8` failed"):
+    with pl.Config(fmt_table_cell_list_len=1), pytest.raises(
+        ComputeError, match="from `i64` to `u8` failed"
+    ):
         pl.DataFrame(
             {
                 "x": pl.int_range(250, 260, 1, eager=True),
