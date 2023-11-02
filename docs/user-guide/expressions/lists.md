@@ -1,6 +1,6 @@
 # Lists and Arrays
 
-Polars has first-class support for `List` columns: that is, columns where each row is a list of homogeneous elements, of varying lengths. Polars also has an `Array` datatype, which is analogous to `numpy`'s `ndarray` objects, where the length is identical across rows.
+Polars has first-class support for `List` columns: that is, columns where each row is a list of homogeneous elements, of varying lengths. Polars also has an `Array` datatype, which is analogous to NumPy's `ndarray` objects, where the length is identical across rows.
 
 Note: this is different from Python's `list` object, where the elements can be of any type. Polars can store these within columns, but as a generic `Object` datatype that doesn't have the special list manipulation features that we're about to discuss.
 
