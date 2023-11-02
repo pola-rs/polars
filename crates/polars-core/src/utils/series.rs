@@ -43,27 +43,25 @@ pub fn ensure_sorted_arg(s: &Series, operation: &str) -> PolarsResult<()> {
 pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<()> {
     let failure_mask = !input.is_null() & output.is_null();
     let failures = input.filter_threaded(&failure_mask, false)?;
-    let first_failures = failures.slice(0, 3);
-    let n_failures = failures.len();
 
     let additional_info = match (input.dtype(), output.dtype()) {
         (DataType::Utf8, DataType::Date | DataType::Datetime(_, _)) => {
             "\n\nYou might want to try:\n\
-            - setting `strict=False` to set values to `null` that cannot be converted\n\
-            - using `str.strptime`, `str.to_date` or `str.to_datetime` and provide a format string"
+            - setting `strict=False` to set values that cannot be converted to `null`\n\
+            - using `str.strptime`, `str.to_date`, or `str.to_datetime` and providing a format string"
         },
         _ => "",
     };
 
     polars_bail!(
         ComputeError:
-        "Conversion from `{}` to `{}` failed in column '{}' for {} of {} values (first few failures: {}){}",
+        "Conversion from `{}` to `{}` failed in column '{}' for {} out of {} values: {}{}",
         input.dtype(),
         output.dtype(),
         output.name(),
-        n_failures,
+        failures.len(),
         input.len(),
-        first_failures.fmt_list(),
+        failures.fmt_list(),
         additional_info,
     )
 }
