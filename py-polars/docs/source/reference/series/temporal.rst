@@ -16,38 +16,45 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.date
     Series.dt.datetime
     Series.dt.day
-    Series.dt.total_days
+    Series.dt.days
     Series.dt.dst_offset
     Series.dt.epoch
     Series.dt.hour
-    Series.dt.total_hours
+    Series.dt.hours
     Series.dt.is_leap_year
     Series.dt.iso_year
     Series.dt.max
     Series.dt.mean
     Series.dt.median
     Series.dt.microsecond
-    Series.dt.total_microseconds
+    Series.dt.microseconds
     Series.dt.millisecond
-    Series.dt.total_milliseconds
+    Series.dt.milliseconds
     Series.dt.min
     Series.dt.minute
-    Series.dt.total_minutes
+    Series.dt.minutes
     Series.dt.month
     Series.dt.month_start
     Series.dt.month_end
     Series.dt.nanosecond
-    Series.dt.total_nanoseconds
+    Series.dt.nanoseconds
     Series.dt.offset_by
     Series.dt.ordinal_day
     Series.dt.quarter
     Series.dt.round
     Series.dt.second
-    Series.dt.total_seconds
+    Series.dt.seconds
     Series.dt.strftime
     Series.dt.time
     Series.dt.timestamp
     Series.dt.to_string
+    Series.dt.total_days
+    Series.dt.total_hours
+    Series.dt.total_microseconds
+    Series.dt.total_milliseconds
+    Series.dt.total_minutes
+    Series.dt.total_nanoseconds
+    Series.dt.total_seconds
     Series.dt.truncate
     Series.dt.week
     Series.dt.weekday
