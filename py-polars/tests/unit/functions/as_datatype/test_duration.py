@@ -41,7 +41,9 @@ def test_duration_time_units(time_unit: TimeUnit, expected: timedelta) -> None:
     assert result.schema["duration"] == pl.Duration(time_unit)
     assert result.collect()["duration"].item() == expected
     if time_unit == "ns":
-        assert result.collect()["duration"].dt.nanoseconds().item() == 86523004005006
+        assert (
+            result.collect()["duration"].dt.total_nanoseconds().item() == 86523004005006
+        )
 
 
 def test_datetime_duration_offset() -> None:

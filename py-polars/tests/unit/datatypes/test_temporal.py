@@ -245,7 +245,9 @@ def test_int_to_python_datetime() -> None:
     assert df.select(
         [pl.col(col).dt.timestamp() for col in ("c", "d", "e")]
         + [
-            getattr(pl.col("b").cast(pl.Duration).dt, unit)().alias(f"u[{unit}]")
+            getattr(pl.col("b").cast(pl.Duration).dt, f"total_{unit}")().alias(
+                f"u[{unit}]"
+            )
             for unit in ("milliseconds", "microseconds", "nanoseconds")
         ]
     ).rows() == [
@@ -1395,7 +1397,10 @@ def test_sum_duration() -> None:
             {"name": "Jen", "duration": timedelta(seconds=60)},
         ]
     ).select(
-        [pl.col("duration").sum(), pl.col("duration").dt.seconds().alias("sec").sum()]
+        [
+            pl.col("duration").sum(),
+            pl.col("duration").dt.total_seconds().alias("sec").sum(),
+        ]
     ).to_dict(as_series=False) == {
         "duration": [timedelta(seconds=150)],
         "sec": [150],
