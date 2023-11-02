@@ -22,11 +22,8 @@ from typing import (
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import (
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
     NUMERIC_DTYPES,
     SIGNED_INTEGER_DTYPES,
-    TEMPORAL_DTYPES,
     UNSIGNED_INTEGER_DTYPES,
     Array,
     Boolean,
@@ -482,7 +479,7 @@ class Series:
                 return self.clone()
             elif (other is False and op == "eq") or (other is True and op == "neq"):
                 return ~self
-        elif isinstance(other, float) and self.dtype in INTEGER_DTYPES:
+        elif isinstance(other, float) and self.dtype.is_integer():
             # require upcast when comparing int series to float value
             self = self.cast(Float64)
             f = get_ffi_func(op + "_<>", Float64, self._s)
@@ -980,7 +977,7 @@ class Series:
         if self.dtype == idx_type:
             return self
 
-        if self.dtype not in INTEGER_DTYPES:
+        if not self.dtype.is_integer():
             raise NotImplementedError("unsupported idxs datatype")
 
         if self.len() == 0:
@@ -1035,7 +1032,7 @@ class Series:
         self,
         item: (int | Series | range | slice | np.ndarray[Any, Any] | list[int]),
     ) -> Any:
-        if isinstance(item, Series) and item.dtype in INTEGER_DTYPES:
+        if isinstance(item, Series) and item.dtype.is_integer():
             return self._take_with_series(item._pos_idxs(self.len()))
 
         elif _check_for_numpy(item) and isinstance(item, np.ndarray):
@@ -4003,7 +4000,7 @@ class Series:
 
         """
         if signed is None:
-            return self.dtype in INTEGER_DTYPES
+            return self.dtype.is_integer()
         elif signed is True:
             return self.dtype in SIGNED_INTEGER_DTYPES
         elif signed is False:
@@ -4036,7 +4033,7 @@ class Series:
             if self.dtype in excluding:
                 return False
 
-        return self.dtype in TEMPORAL_DTYPES
+        return self.dtype.is_temporal()
 
     def is_float(self) -> bool:
         """
@@ -4049,7 +4046,7 @@ class Series:
         True
 
         """
-        return self.dtype in FLOAT_DTYPES
+        return self.dtype.is_float()
 
     def is_boolean(self) -> bool:
         """

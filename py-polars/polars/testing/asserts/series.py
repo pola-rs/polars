@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars.datatypes import (
-    FLOAT_DTYPES,
     NUMERIC_DTYPES,
     UNSIGNED_INTEGER_DTYPES,
     Array,
@@ -301,7 +300,7 @@ def _assert_series_nan_values_match(
 
 
 def _comparing_floats(left: PolarsDataType, right: PolarsDataType) -> bool:
-    return left in FLOAT_DTYPES and right in FLOAT_DTYPES
+    return left.is_float() and right.is_float()
 
 
 def _comparing_lists(left: PolarsDataType, right: PolarsDataType) -> bool:

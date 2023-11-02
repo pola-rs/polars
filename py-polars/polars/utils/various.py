@@ -88,7 +88,7 @@ def is_int_sequence(
     if _check_for_numpy(val) and isinstance(val, np.ndarray):
         return np.issubdtype(val.dtype, np.integer)
     elif include_series and isinstance(val, pl.Series):
-        return val.dtype in pl.INTEGER_DTYPES
+        return val.dtype.is_integer()
     return isinstance(val, Sequence) and _is_iterable_of(val, int)
 
 

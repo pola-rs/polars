@@ -24,7 +24,6 @@ from typing import (
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import (
-    FLOAT_DTYPES,
     INTEGER_DTYPES,
     N_INFER_DEFAULT,
     TEMPORAL_DTYPES,
@@ -478,7 +477,7 @@ def sequence_to_pyseries(
                 if value is None
                 else py_type_to_dtype(type(value), raise_unmatched=False)
             )
-            if values_dtype in FLOAT_DTYPES:
+            if values_dtype is not None and values_dtype.is_float():
                 raise TypeError(
                     # we do not accept float values as temporal; if this is
                     # required, the caller should explicitly cast to int first.
