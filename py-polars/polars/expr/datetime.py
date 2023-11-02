@@ -1457,17 +1457,6 @@ class ExprDateTimeNameSpace:
             self._pyexpr.dt_replace_time_zone(time_zone, ambiguous._pyexpr)
         )
 
-    @deprecate_renamed_function("total_days", version="0.19.3")
-    def days(self) -> Expr:
-        """
-        Extract the total days from a Duration type.
-
-        .. deprecated:: 0.19.3
-            Use :meth:`total_days` instead.
-
-        """
-        return self.total_days()
-
     def total_days(self) -> Expr:
         """
         Extract the total days from a Duration type.
@@ -1506,17 +1495,6 @@ class ExprDateTimeNameSpace:
 
         """
         return wrap_expr(self._pyexpr.duration_days())
-
-    @deprecate_renamed_function("total_hours", version="0.19.3")
-    def hours(self) -> Expr:
-        """
-        Extract the total hours from a Duration type.
-
-        .. deprecated:: 0.19.3
-            Use :meth:`total_hours` instead.
-
-        """
-        return self.total_hours()
 
     def total_hours(self) -> Expr:
         """
@@ -1558,17 +1536,6 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.duration_hours())
 
-    @deprecate_renamed_function("total_minutes", version="0.19.3")
-    def minutes(self) -> Expr:
-        """
-        Extract the total minutes from a Duration type.
-
-        .. deprecated:: 0.19.3
-            Use :meth:`total_minutes` instead.
-
-        """
-        return self.total_minutes()
-
     def total_minutes(self) -> Expr:
         """
         Extract the total minutes from a Duration type.
@@ -1608,17 +1575,6 @@ class ExprDateTimeNameSpace:
 
         """
         return wrap_expr(self._pyexpr.duration_minutes())
-
-    @deprecate_renamed_function("total_seconds", version="0.19.3")
-    def seconds(self) -> Expr:
-        """
-        Extract the total seconds from a Duration type.
-
-        .. deprecated:: 0.19.3
-            Use :meth:`total_seconds` instead.
-
-        """
-        return self.total_seconds()
 
     def total_seconds(self) -> Expr:
         """
@@ -1661,17 +1617,6 @@ class ExprDateTimeNameSpace:
 
         """
         return wrap_expr(self._pyexpr.duration_seconds())
-
-    @deprecate_renamed_function("total_milliseconds", version="0.19.3")
-    def milliseconds(self) -> Expr:
-        """
-        Extract the total milliseconds from a Duration type.
-
-        .. deprecated:: 0.19.3
-            Use :meth:`total_milliseconds` instead.
-
-        """
-        return self.total_milliseconds()
 
     def total_milliseconds(self) -> Expr:
         """
@@ -1719,17 +1664,6 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.duration_milliseconds())
 
-    @deprecate_renamed_function("total_microseconds", version="0.19.3")
-    def microseconds(self) -> Expr:
-        """
-        Extract the total microseconds from a Duration type.
-
-        .. deprecated:: 0.19.3
-            Use :meth:`total_microseconds` instead.
-
-        """
-        return self.total_microseconds()
-
     def total_microseconds(self) -> Expr:
         """
         Extract the total microseconds from a Duration type.
@@ -1775,17 +1709,6 @@ class ExprDateTimeNameSpace:
 
         """
         return wrap_expr(self._pyexpr.duration_microseconds())
-
-    @deprecate_renamed_function("total_nanoseconds", version="0.19.3")
-    def nanoseconds(self) -> Expr:
-        """
-        Extract the total nanoseconds from a Duration type.
-
-        .. deprecated:: 0.19.3
-            Use :meth:`total_nanoseconds` instead.
-
-        """
-        return self.total_nanoseconds()
 
     def total_nanoseconds(self) -> Expr:
         """
@@ -2090,3 +2013,80 @@ class ExprDateTimeNameSpace:
         └─────────────────────────────┴──────────────┘
         """
         return wrap_expr(self._pyexpr.dt_dst_offset())
+
+    @deprecate_renamed_function("total_days", version="0.19.13")
+    def days(self) -> Expr:
+        """
+        Extract the total days from a Duration type.
+
+        .. deprecated:: 0.19.13
+            Use :meth:`total_days` instead.
+
+        """
+        return self.total_days()
+
+    @deprecate_renamed_function("total_hours", version="0.19.13")
+    def hours(self) -> Expr:
+        """
+        Extract the total hours from a Duration type.
+
+        .. deprecated:: 0.19.13
+            Use :meth:`total_hours` instead.
+
+        """
+        return self.total_hours()
+
+    @deprecate_renamed_function("total_minutes", version="0.19.13")
+    def minutes(self) -> Expr:
+        """
+        Extract the total minutes from a Duration type.
+
+        .. deprecated:: 0.19.13
+            Use :meth:`total_minutes` instead.
+
+        """
+        return self.total_minutes()
+
+    @deprecate_renamed_function("total_seconds", version="0.19.13")
+    def seconds(self) -> Expr:
+        """
+        Extract the total seconds from a Duration type.
+
+        .. deprecated:: 0.19.13
+            Use :meth:`total_seconds` instead.
+
+        """
+        return self.total_seconds()
+
+    @deprecate_renamed_function("total_milliseconds", version="0.19.13")
+    def milliseconds(self) -> Expr:
+        """
+        Extract the total milliseconds from a Duration type.
+
+        .. deprecated:: 0.19.13
+            Use :meth:`total_milliseconds` instead.
+
+        """
+        return self.total_milliseconds()
+
+    @deprecate_renamed_function("total_microseconds", version="0.19.13")
+    def microseconds(self) -> Expr:
+        """
+        Extract the total microseconds from a Duration type.
+
+        .. deprecated:: 0.19.13
+            Use :meth:`total_microseconds` instead.
+
+        """
+        return self.total_microseconds()
+
+    @deprecate_renamed_function("total_nanoseconds", version="0.19.13")
+    def nanoseconds(self) -> Expr:
+        """
+        Extract the total nanoseconds from a Duration type.
+
+        .. deprecated:: 0.19.13
+            Use :meth:`total_nanoseconds` instead.
+
+        """
+        return self.total_nanoseconds()
