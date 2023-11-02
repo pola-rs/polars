@@ -533,7 +533,7 @@ def test_series_dtype_is() -> None:
     assert s.is_integer()
     assert s.is_integer(signed=True)
     assert not s.is_integer(signed=False)
-    assert (s * 0.99).is_float()
+    assert (s * 0.99).dtype.is_float()
 
     s = pl.Series("s", [1, 2, 3], dtype=pl.UInt8)
     assert s.is_numeric()
@@ -548,12 +548,12 @@ def test_series_dtype_is() -> None:
     assert s.is_utf8()
 
     s = pl.Series("s", [], dtype=pl.Decimal(precision=20, scale=15))
-    assert not s.is_float()
+    assert not s.dtype.is_float()
     assert s.is_numeric()
     assert s.is_empty()
 
     s = pl.Series("s", [], dtype=pl.Datetime("ms", time_zone="UTC"))
-    assert s.is_temporal()
+    assert s.dtype.is_temporal()
 
 
 def test_series_head_tail_limit() -> None:

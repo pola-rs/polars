@@ -737,7 +737,7 @@ class Series:
             return self._from_pyseries(getattr(self._s, op_s)(Series(other)._s))
         if (
             isinstance(other, (float, date, datetime, timedelta, str))
-            and not self.is_float()
+            and not self.dtype.is_float()
         ):
             _s = sequence_to_pyseries(self.name, [other])
             if "rhs" in op_ffi:
@@ -799,11 +799,11 @@ class Series:
     def __truediv__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self) / other
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError("first cast to integer before dividing datelike dtypes")
 
         # this branch is exactly the floordiv function without rounding the floats
-        if self.is_float() or self.dtype == Decimal:
+        if self.dtype.is_float() or self.dtype == Decimal:
             return self._arithmetic(other, "div", "div_<>")
 
         return self.cast(Float64) / other
@@ -819,7 +819,7 @@ class Series:
     def __floordiv__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self) // other
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError("first cast to integer before dividing datelike dtypes")
 
         if not isinstance(other, pl.Expr):
@@ -844,7 +844,7 @@ class Series:
     def __mul__(self, other: Any) -> Series | DataFrame | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self) * other
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError("first cast to integer before multiplying datelike dtypes")
         elif isinstance(other, pl.DataFrame):
             return other * self
@@ -862,14 +862,14 @@ class Series:
     def __mod__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__mod__(other)
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError(
                 "first cast to integer before applying modulo on datelike dtypes"
             )
         return self._arithmetic(other, "rem", "rem_<>")
 
     def __rmod__(self, other: Any) -> Series:
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError(
                 "first cast to integer before applying modulo on datelike dtypes"
             )
@@ -884,9 +884,9 @@ class Series:
         return self._arithmetic(other, "sub", "sub_<>_rhs")
 
     def __rtruediv__(self, other: Any) -> Series:
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError("first cast to integer before dividing datelike dtypes")
-        if self.is_float():
+        if self.dtype.is_float():
             self.__rfloordiv__(other)
 
         if isinstance(other, int):
@@ -894,12 +894,12 @@ class Series:
         return self.cast(Float64).__rfloordiv__(other)
 
     def __rfloordiv__(self, other: Any) -> Series:
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError("first cast to integer before dividing datelike dtypes")
         return self._arithmetic(other, "div", "div_<>_rhs")
 
     def __rmul__(self, other: Any) -> Series:
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError("first cast to integer before multiplying datelike dtypes")
         return self._arithmetic(other, "mul", "mul_<>")
 
@@ -907,7 +907,7 @@ class Series:
         return self.pow(exponent)
 
     def __rpow__(self, other: Any) -> Series:
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
@@ -1076,7 +1076,7 @@ class Series:
             self.set_at_idx(key, value)
             return None
         elif isinstance(value, Sequence) and not isinstance(value, str):
-            if self.is_numeric() or self.is_temporal():
+            if self.is_numeric() or self.dtype.is_temporal():
                 self.set_at_idx(key, value)  # type: ignore[arg-type]
                 return None
             raise TypeError(
@@ -1609,7 +1609,7 @@ class Series:
                 "null_count": self.null_count(),
                 "unique": len(self.unique()),
             }
-        elif self.is_temporal():
+        elif self.dtype.is_temporal():
             # we coerce all to string, because a polars column
             # only has a single dtype and dates: datetime and count: int don't match
             stats = {
@@ -1682,7 +1682,7 @@ class Series:
         ]
 
         """
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
@@ -4181,7 +4181,7 @@ class Series:
             return np.array(self.to_list(), dtype="object")
         else:
             if not self.null_count():
-                if self.is_temporal():
+                if self.dtype.is_temporal():
                     np_array = convert_to_date(self.view(ignore_nulls=True))
                 elif self.is_numeric():
                     np_array = self.view(ignore_nulls=True)
@@ -4189,7 +4189,7 @@ class Series:
                     raise_no_zero_copy()
                     np_array = self._s.to_numpy()
 
-            elif self.is_temporal():
+            elif self.dtype.is_temporal():
                 np_array = convert_to_date(self.to_physical()._s.to_numpy())
             else:
                 raise_no_zero_copy()
