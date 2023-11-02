@@ -51,9 +51,6 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Fix README symlink
-        run: rm py-polars/README.md && cp README.md py-polars/README.md
-
       - name: Install yq
         if: matrix.package != 'polars'
         run: pip install yq
@@ -74,8 +71,6 @@ jobs:
 
       - name: Test sdist
         run: |
-          TOOLCHAIN=$(grep -oP 'channel = "\K[^"]+' rust-toolchain.toml)
-          rustup default $TOOLCHAIN
           pip install --force-reinstall --verbose dist/*.tar.gz
           python -c 'import polars'
 
@@ -118,9 +113,6 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Fix README symlink
-        run: rm py-polars/README.md && cp README.md py-polars/README.md
 
       - name: Install yq
         if: matrix.package != 'polars'

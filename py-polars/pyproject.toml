@@ -60,6 +60,9 @@ all = [
   "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,pydantic,pyiceberg,sqlalchemy,xlsxwriter,adbc,cloudpickle,gevent]",
 ]
 
+[tool.maturin]
+include = ["rust-toolchain.toml"]
+
 [tool.mypy]
 files = ["polars", "tests"]
 strict = true
