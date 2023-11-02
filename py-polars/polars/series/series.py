@@ -23,8 +23,6 @@ import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import (
     NUMERIC_DTYPES,
-    SIGNED_INTEGER_DTYPES,
-    UNSIGNED_INTEGER_DTYPES,
     Array,
     Boolean,
     Categorical,
@@ -991,7 +989,7 @@ class Series:
                 if self.min() < -(2**32):  # type: ignore[operator]
                     raise ValueError("index positions should be bigger than -2^32 + 1")
 
-        if self.dtype in SIGNED_INTEGER_DTYPES:
+        if self.dtype.is_signed_integer():
             if self.min() < 0:  # type: ignore[operator]
                 if idx_type == UInt32:
                     idxs = self.cast(Int32) if self.dtype in {Int8, Int16} else self
@@ -3977,37 +3975,6 @@ class Series:
         """
         return self.dtype in NUMERIC_DTYPES
 
-    def is_integer(self, signed: bool | None = None) -> bool:
-        """
-        Check if this Series datatype is an integer (signed or unsigned).
-
-        Parameters
-        ----------
-        signed
-            * if `None`, both signed and unsigned integer dtypes will match.
-            * if `True`, only signed integer dtypes will be considered a match.
-            * if `False`, only unsigned integer dtypes will be considered a match.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, 2, 3], dtype=pl.UInt32)
-        >>> s.is_integer()
-        True
-        >>> s.is_integer(signed=False)
-        True
-        >>> s.is_integer(signed=True)
-        False
-
-        """
-        if signed is None:
-            return self.dtype.is_integer()
-        elif signed is True:
-            return self.dtype in SIGNED_INTEGER_DTYPES
-        elif signed is False:
-            return self.dtype in UNSIGNED_INTEGER_DTYPES
-
-        raise ValueError(f"`signed` must be None, True or False; got {signed!r}")
-
     def is_temporal(self, excluding: OneOrMoreDataTypes | None = None) -> bool:
         """
         Check if this Series datatype is temporal.
@@ -6931,6 +6898,48 @@ class Series:
 
         """
         return self.dtype.is_float()
+
+    @deprecate_function(
+        "Use `Series.dtype.is_integer()` instead."
+        " For signed/unsigned variants, use `Series.dtype.is_signed_integer()`"
+        " or `Series.dtype.is_unsigned_integer()`.",
+        version="0.19.13",
+    )
+    def is_integer(self, signed: bool | None = None) -> bool:
+        """
+        Check if this Series datatype is an integer (signed or unsigned).
+
+        .. deprecated:: 0.19.13
+            Use `Series.dtype.is_integer()` instead.
+            For signed/unsigned variants, use `Series.dtype.is_signed_integer()`
+            or `Series.dtype.is_unsigned_integer()`.
+
+        Parameters
+        ----------
+        signed
+            * if `None`, both signed and unsigned integer dtypes will match.
+            * if `True`, only signed integer dtypes will be considered a match.
+            * if `False`, only unsigned integer dtypes will be considered a match.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3], dtype=pl.UInt32)
+        >>> s.is_integer()  # doctest: +SKIP
+        True
+        >>> s.is_integer(signed=False)  # doctest: +SKIP
+        True
+        >>> s.is_integer(signed=True)  # doctest: +SKIP
+        False
+
+        """
+        if signed is None:
+            return self.dtype.is_integer()
+        elif signed is True:
+            return self.dtype.is_signed_integer()
+        elif signed is False:
+            return self.dtype.is_unsigned_integer()
+
+        raise ValueError(f"`signed` must be None, True or False; got {signed!r}")
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`

@@ -23,6 +23,7 @@ from polars.datatypes.classes import (
     Null,
     NumericType,
     Object,
+    SignedIntegerType,
     Struct,
     TemporalType,
     Time,
@@ -31,6 +32,7 @@ from polars.datatypes.classes import (
     UInt32,
     UInt64,
     Unknown,
+    UnsignedIntegerType,
     Utf8,
 )
 from polars.datatypes.constants import (
@@ -99,6 +101,7 @@ __all__ = [
     "Null",
     "NumericType",
     "Object",
+    "SignedIntegerType",
     "Struct",
     "TemporalType",
     "Time",
@@ -107,6 +110,7 @@ __all__ = [
     "UInt64",
     "UInt8",
     "Unknown",
+    "UnsignedIntegerType",
     "Utf8",
     # constants
     "DATETIME_DTYPES",

@@ -68,6 +68,14 @@ class DataTypeClass(type):
         ...
 
     @classmethod
+    def is_signed_integer(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
+    def is_unsigned_integer(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
     def is_float(cls) -> bool:  # noqa: D102
         ...
 
@@ -176,7 +184,17 @@ class DataType(metaclass=DataTypeClass):
     @classmethod
     def is_integer(cls) -> bool:
         """Check whether the data type is an integer type."""
-        return issubclass(cls, IntegerType)
+        return cls.is_signed_integer() or cls.is_unsigned_integer()
+
+    @classmethod
+    def is_signed_integer(cls) -> bool:
+        """Check whether the data type is a signed integer type."""
+        return issubclass(cls, SignedIntegerType)
+
+    @classmethod
+    def is_unsigned_integer(cls) -> bool:
+        """Check whether the data type is an unsigned integer type."""
+        return issubclass(cls, UnsignedIntegerType)
 
     @classmethod
     def is_float(cls) -> bool:
@@ -241,7 +259,15 @@ class NumericType(DataType):
 
 
 class IntegerType(NumericType):
-    """Base class for integral data types."""
+    """Base class for integer data types."""
+
+
+class SignedIntegerType(NumericType):
+    """Base class for signed integer data types."""
+
+
+class UnsignedIntegerType(NumericType):
+    """Base class for unsigned integer data types."""
 
 
 class FractionalType(NumericType):
@@ -279,35 +305,35 @@ class NestedType(DataType):
         return True
 
 
-class Int8(IntegerType):
+class Int8(SignedIntegerType):
     """8-bit signed integer type."""
 
 
-class Int16(IntegerType):
+class Int16(SignedIntegerType):
     """16-bit signed integer type."""
 
 
-class Int32(IntegerType):
+class Int32(SignedIntegerType):
     """32-bit signed integer type."""
 
 
-class Int64(IntegerType):
+class Int64(SignedIntegerType):
     """64-bit signed integer type."""
 
 
-class UInt8(IntegerType):
+class UInt8(UnsignedIntegerType):
     """8-bit unsigned integer type."""
 
 
-class UInt16(IntegerType):
+class UInt16(UnsignedIntegerType):
     """16-bit unsigned integer type."""
 
 
-class UInt32(IntegerType):
+class UInt32(UnsignedIntegerType):
     """32-bit unsigned integer type."""
 
 
-class UInt64(IntegerType):
+class UInt64(UnsignedIntegerType):
     """64-bit unsigned integer type."""
 
 

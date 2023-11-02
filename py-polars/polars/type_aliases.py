@@ -22,7 +22,13 @@ if TYPE_CHECKING:
     import sys
 
     from polars import DataFrame, Expr, LazyFrame, Series
-    from polars.datatypes import DataType, DataTypeClass, IntegerType, TemporalType
+    from polars.datatypes import (
+        DataType,
+        DataTypeClass,
+        SignedIntegerType,
+        TemporalType,
+        UnsignedIntegerType,
+    )
     from polars.dependencies import numpy as np
     from polars.dependencies import pandas as pd
     from polars.dependencies import pyarrow as pa
@@ -36,7 +42,12 @@ if TYPE_CHECKING:
 # Data types
 PolarsDataType: TypeAlias = Union["DataTypeClass", "DataType"]
 PolarsTemporalType: TypeAlias = Union[Type["TemporalType"], "TemporalType"]
-PolarsIntegerType: TypeAlias = Union[Type["IntegerType"], "IntegerType"]
+PolarsIntegerType: TypeAlias = Union[
+    Type["SignedIntegerType"],
+    "SignedIntegerType",
+    Type["UnsignedIntegerType"],
+    "UnsignedIntegerType",
+]
 OneOrMoreDataTypes: TypeAlias = Union[PolarsDataType, Iterable[PolarsDataType]]
 PythonDataType: TypeAlias = Union[
     Type[int],

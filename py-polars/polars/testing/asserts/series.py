@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 
 from polars.datatypes import (
     NUMERIC_DTYPES,
-    UNSIGNED_INTEGER_DTYPES,
     Array,
     Categorical,
     Decimal,
@@ -342,7 +341,7 @@ def _assert_series_values_within_tolerance(
 
 
 def _calc_absolute_diff(left: Series, right: Series) -> Series:
-    if left.dtype in UNSIGNED_INTEGER_DTYPES and right.dtype in UNSIGNED_INTEGER_DTYPES:
+    if left.dtype.is_unsigned_integer() and right.dtype.is_unsigned_integer():
         try:
             left = left.cast(Int64)
             right = right.cast(Int64)
