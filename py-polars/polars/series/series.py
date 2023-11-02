@@ -4035,19 +4035,6 @@ class Series:
 
         return self.dtype.is_temporal()
 
-    def is_float(self) -> bool:
-        """
-        Check if this Series has floating point numbers.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1.0, 2.0, 3.0])
-        >>> s.is_float()
-        True
-
-        """
-        return self.dtype.is_float()
-
     def is_boolean(self) -> bool:
         """
         Check if this Series is a Boolean.
@@ -6927,6 +6914,23 @@ class Series:
             Number of places to shift (may be negative).
 
         """
+
+    @deprecate_function("Use `Series.dtype.is_float()` instead.", version="0.19.13")
+    def is_float(self) -> bool:
+        """
+        Check if this Series has floating point numbers.
+
+        .. deprecated:: 0.19.13
+            Use `Series.dtype.is_float()` instead.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1.0, 2.0, 3.0])
+        >>> s.is_float()
+        True
+
+        """
+        return self.dtype.is_float()
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`
