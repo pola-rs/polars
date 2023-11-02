@@ -1,12 +1,13 @@
-use std::collections::BTreeSet;
 use std::future::Future;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::RwLock;
+use std::thread::ThreadId;
 use std::time::Duration;
 
 use once_cell::sync::Lazy;
 use polars_core::POOL;
+use polars_utils::aliases::PlHashSet;
 use tokio::runtime::{Builder, Runtime};
 
 static CONCURRENCY_BUDGET: AtomicI32 = AtomicI32::new(64);
@@ -36,7 +37,7 @@ where
 
 pub struct RuntimeManager {
     rt: Runtime,
-    blocking_rayon_threads: RwLock<BTreeSet<usize>>,
+    blocking_threads: RwLock<PlHashSet<ThreadId>>,
 }
 
 impl RuntimeManager {
@@ -50,7 +51,7 @@ impl RuntimeManager {
 
         Self {
             rt,
-            blocking_rayon_threads: Default::default(),
+            blocking_threads: Default::default(),
         }
     }
 
@@ -63,31 +64,15 @@ impl RuntimeManager {
         F: Future + Send,
         F::Output: Send,
     {
-        if let Some(thread_id) = POOL.current_thread_index() {
-            if self
-                .blocking_rayon_threads
-                .read()
-                .unwrap()
-                .contains(&thread_id)
-            {
-                std::thread::scope(|s| s.spawn(|| self.rt.block_on(future)).join().unwrap())
-            } else {
-                self.blocking_rayon_threads
-                    .write()
-                    .unwrap()
-                    .insert(thread_id);
-                let out = self.rt.block_on(future);
-                self.blocking_rayon_threads
-                    .write()
-                    .unwrap()
-                    .remove(&thread_id);
-                out
-            }
-        }
-        // Assumption that the main thread never runs rayon tasks, so we wouldn't be rescheduled
-        // on the main thread and thus we can always block.
-        else {
-            self.rt.block_on(future)
+        let thread_id = std::thread::current().id();
+
+        if self.blocking_threads.read().unwrap().contains(&thread_id) {
+            std::thread::scope(|s| s.spawn(|| self.rt.block_on(future)).join().unwrap())
+        } else {
+            self.blocking_threads.write().unwrap().insert(thread_id);
+            let out = self.rt.block_on(future);
+            self.blocking_threads.write().unwrap().remove(&thread_id);
+            out
         }
     }
 
