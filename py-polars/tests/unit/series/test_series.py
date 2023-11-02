@@ -556,6 +556,13 @@ def test_series_dtype_is() -> None:
     assert s.dtype.is_temporal()
 
 
+def test_series_is_float_deprecated() -> None:
+    s = pl.Series([1.0, 2.0])
+    with pytest.deprecated_call():
+        result = s.is_float()
+    assert result is True
+
+
 def test_series_head_tail_limit() -> None:
     s = pl.Series(range(10))
 
