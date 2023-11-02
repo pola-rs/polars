@@ -88,6 +88,7 @@ arrow-data = { version = ">=41", default-features = false }
 arrow-schema = { version = ">=41", default-features = false }
 parquet2 = { version = "0.17.2", features = ["async"], default-features = false }
 avro-schema = { version = "0.3" }
+zstd = "0.13"
 
 [workspace.dependencies.arrow]
 package = "polars-arrow"

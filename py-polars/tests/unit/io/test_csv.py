@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, TypedDict
 import numpy as np
 import pyarrow as pa
 import pytest
+import zstandard
 
 import polars as pl
 from polars.exceptions import ComputeError, NoDataError
@@ -500,6 +501,16 @@ def test_compressed_csv(io_files_path: Path) -> None:
     )
     assert_frame_equal(out, expected)
 
+    # zstd compression
+    csv_bytes = zstandard.compress(csv.encode())
+    out = pl.read_csv(csv_bytes)
+    assert_frame_equal(out, expected)
+
+    # zstd compressed file
+    csv_file = io_files_path / "zstd_compressed.csv.zst"
+    out = pl.read_csv(str(csv_file), truncate_ragged_lines=True)
+    assert_frame_equal(out, expected)
+
     # no compression
     f2 = io.BytesIO(b"a,b\n1,2\n")
     out2 = pl.read_csv(f2)
@@ -513,6 +524,12 @@ def test_partial_decompression(foods_file_path: Path) -> None:
         f.write(foods_file_path.read_bytes())
 
     csv_bytes = f_out.getvalue()
+    for n_rows in [1, 5, 26]:
+        out = pl.read_csv(csv_bytes, n_rows=n_rows)
+        assert out.shape == (n_rows, 4)
+        
+    # zstd compression
+    csv_bytes = zstandard.compress(foods_file_path.read_bytes())
     for n_rows in [1, 5, 26]:
         out = pl.read_csv(csv_bytes, n_rows=n_rows)
         assert out.shape == (n_rows, 4)

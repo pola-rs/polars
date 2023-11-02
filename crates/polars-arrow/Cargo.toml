@@ -46,7 +46,7 @@ hex = { workspace = true, optional = true }
 
 # for IPC compression
 lz4 = { version = "1.24", optional = true }
-zstd = { version = "0.13", optional = true }
+zstd = { workspace = true, optional = true }
 
 # to write to parquet as a stream
 futures = { workspace = true, optional = true }
