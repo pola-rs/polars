@@ -876,6 +876,8 @@ impl PyExpr {
         input_wildcard_expansion: bool,
         returns_scalar: bool,
         cast_to_supertypes: bool,
+        pass_name_to_apply: bool,
+        changes_length: bool,
     ) -> PyResult<Self> {
         use polars_plan::prelude::*;
         let inner = self.inner.clone();
@@ -903,6 +905,8 @@ impl PyExpr {
                 input_wildcard_expansion,
                 returns_scalar,
                 cast_to_supertypes,
+                pass_name_to_apply,
+                changes_length,
                 ..Default::default()
             },
         }
