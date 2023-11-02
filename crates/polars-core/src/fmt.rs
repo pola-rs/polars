@@ -995,11 +995,11 @@ impl Series {
             },
             _ => {
                 let mut result = "[".to_owned();
-                let s = self.rechunk();
+                let s = self.slice(0, max_items).rechunk();
                 for (i, item) in s.iter().enumerate() {
                     if i == max_items.saturating_sub(1) {
                         result.push_str("… ");
-                        write!(result, "{}", s.get(s.len() - 1).unwrap()).unwrap();
+                        write!(result, "{}", self.get(self.len() - 1).unwrap()).unwrap();
                         break;
                     } else {
                         write!(result, "{item}").unwrap();
