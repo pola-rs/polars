@@ -21,7 +21,6 @@ Config options
     Config.set_fmt_table_cell_list_len
     Config.set_streaming_chunk_size
     Config.set_tbl_cell_alignment
-    Config.set_tbl_cell_alignment
     Config.set_tbl_cell_numeric_alignment
     Config.set_tbl_cols
     Config.set_tbl_column_data_type_inline
