@@ -527,7 +527,7 @@ def test_partial_decompression(foods_file_path: Path) -> None:
     for n_rows in [1, 5, 26]:
         out = pl.read_csv(csv_bytes, n_rows=n_rows)
         assert out.shape == (n_rows, 4)
-        
+
     # zstd compression
     csv_bytes = zstandard.compress(foods_file_path.read_bytes())
     for n_rows in [1, 5, 26]:

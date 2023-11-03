@@ -46,7 +46,7 @@ smartstring = { workspace = true }
 tokio = { workspace = true, features = ["net", "rt-multi-thread", "time", "sync"], optional = true }
 tokio-util = { workspace = true, features = ["io", "io-util"], optional = true }
 url = { workspace = true, optional = true }
-zstd ={ workspace = true, optional = true }
+zstd = { workspace = true, optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 home = "0.5.4"
