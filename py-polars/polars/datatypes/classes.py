@@ -188,12 +188,12 @@ class DataType(metaclass=DataTypeClass):
     @classmethod
     def is_numeric(cls) -> bool:
         """Check whether the data type is a numeric type."""
-        return cls.is_integer() or cls.is_float() or issubclass(cls, Decimal)
+        return issubclass(cls, NumericType)
 
     @classmethod
     def is_integer(cls) -> bool:
         """Check whether the data type is an integer type."""
-        return cls.is_signed_integer() or cls.is_unsigned_integer()
+        return issubclass(cls, IntegerType)
 
     @classmethod
     def is_signed_integer(cls) -> bool:
@@ -271,11 +271,11 @@ class IntegerType(NumericType):
     """Base class for integer data types."""
 
 
-class SignedIntegerType(NumericType):
+class SignedIntegerType(IntegerType):
     """Base class for signed integer data types."""
 
 
-class UnsignedIntegerType(NumericType):
+class UnsignedIntegerType(IntegerType):
     """Base class for unsigned integer data types."""
 
 
