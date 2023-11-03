@@ -4898,20 +4898,45 @@ class DataFrame:
         """
         return self.lazy().drop_nulls(subset).collect(_eager=True)
 
+    @overload
     def pipe(
         self,
         function: Callable[Concatenate[DataFrame, P], T],
         *args: P.args,
         **kwargs: P.kwargs,
     ) -> T:
+        ...
+
+    @overload
+    def pipe(
+        self,
+        function: Mapping[ColumnNameOrSelector, Callable[Concatenate[Expr, P], Expr]],
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> DataFrame:
+        ...
+
+    def pipe(
+        self,
+        function: (
+            Callable[Concatenate[DataFrame, P], T]
+            | Mapping[ColumnNameOrSelector, Callable[Concatenate[Expr, P], Expr]]
+        ),
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> T | DataFrame:
         """
         Offers a structured way to apply a sequence of user-defined functions (UDFs).
 
         Parameters
         ----------
         function
-            Callable; will receive the frame as the first parameter,
-            followed by any given args/kwargs.
+            Callable, or a dictionary of column names (or selectors) to Callables.
+
+            * A single function will receive the frame as the first parameter,
+              followed by any given args/kwargs.
+            * The functions in a dict receive the column defined by their
+              key as the first parameter, followed by any given args/kwargs.
         *args
             Arguments to pass to the UDF.
         **kwargs
@@ -4943,16 +4968,6 @@ class DataFrame:
         └─────┴─────┘
 
         >>> df = pl.DataFrame({"b": [1, 2], "a": [3, 4]})
-        >>> df
-        shape: (2, 2)
-        ┌─────┬─────┐
-        │ b   ┆ a   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 1   ┆ 3   │
-        │ 2   ┆ 4   │
-        └─────┴─────┘
         >>> df.pipe(lambda tdf: tdf.select(sorted(tdf.columns)))
         shape: (2, 2)
         ┌─────┬─────┐
@@ -4964,7 +4979,38 @@ class DataFrame:
         │ 4   ┆ 2   │
         └─────┴─────┘
 
+        >>> def square(col: pl.Expr) -> pl.Expr:
+        ...     return col * col
+        >>> def cube(col: pl.Expr) -> pl.Expr:
+        ...     return col * col * col
+        >>> transforms = {
+        ...     "x": cube,
+        ...     "y": square,
+        ...     "z": cube,
+        ... }
+        >>> df = pl.DataFrame({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
+        >>> df.pipe(transforms)
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ x   ┆ y   ┆ z   │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 16  ┆ 343 │
+        │ 8   ┆ 25  ┆ 512 │
+        │ 27  ┆ 36  ┆ 729 │
+        └─────┴─────┴─────┘
+
         """
+        # note: cannot pass-through to the lazy implementation as the given UDF(s)
+        # may use DataFrame functions that are not available on LazyFrame.
+        if isinstance(function, Mapping):
+            return self.with_columns(
+                *(
+                    (F.col(nm) if isinstance(nm, str) else nm).pipe(fn, *args, **kwargs)
+                    for nm, fn in function.items()
+                )
+            )
         return function(self, *args, **kwargs)
 
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:

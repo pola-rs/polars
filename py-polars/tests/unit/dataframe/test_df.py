@@ -434,8 +434,15 @@ def test_pipe() -> None:
         return data * mul
 
     result = df.pipe(_multiply, mul=3)
-
     assert_frame_equal(result, df * 3)
+
+    def _cube(col: pl.Expr, scale: float) -> pl.Expr:
+        return ((col * col * col) * scale).name.suffix(f"_cube_x_{scale}")
+
+    result = df.pipe({"foo": _cube}, scale=10)
+    assert_frame_equal(
+        result, df.with_columns(foo_cube_x_10=(pl.col("foo").pow(3) * 10).cast(int))
+    )
 
 
 def test_explode() -> None:

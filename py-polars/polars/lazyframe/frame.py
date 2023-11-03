@@ -937,20 +937,45 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.serialize(file)
 
+    @overload
     def pipe(
         self,
         function: Callable[Concatenate[LazyFrame, P], T],
         *args: P.args,
         **kwargs: P.kwargs,
     ) -> T:
+        ...
+
+    @overload
+    def pipe(
+        self,
+        function: Mapping[ColumnNameOrSelector, Callable[Concatenate[Expr, P], Expr]],
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> LazyFrame:
+        ...
+
+    def pipe(
+        self,
+        function: (
+            Callable[Concatenate[LazyFrame, P], T]
+            | Mapping[ColumnNameOrSelector, Callable[Concatenate[Expr, P], Expr]]
+        ),
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> T | LazyFrame:
         """
-        Offers a structured way to apply a sequence of user-defined functions (UDFs).
+        Offers a structured way to apply one or more user-defined functions (UDFs).
 
         Parameters
         ----------
         function
-            Callable; will receive the frame as the first parameter,
-            followed by any given args/kwargs.
+            Callable, or a dictionary of column names (or selectors) to Callables.
+
+            * A single function will receive the frame as the first parameter,
+              followed by any given args/kwargs.
+            * The functions in a dict receive the column defined by their
+              key as the first parameter, followed by any given args/kwargs.
         *args
             Arguments to pass to the UDF.
         **kwargs
@@ -961,12 +986,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> def cast_str_to_int(data, col_name):
         ...     return data.with_columns(pl.col(col_name).cast(pl.Int64))
         ...
-        >>> lf = pl.LazyFrame(
-        ...     {
-        ...         "a": [1, 2, 3, 4],
-        ...         "b": ["10", "20", "30", "40"],
-        ...     }
-        ... )
+        >>> lf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": ["10", "20", "30", "40"]})
         >>> lf.pipe(cast_str_to_int, col_name="b").collect()
         shape: (4, 2)
         ┌─────┬─────┐
@@ -980,22 +1000,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 40  │
         └─────┴─────┘
 
-        >>> lf = pl.LazyFrame(
-        ...     {
-        ...         "b": [1, 2],
-        ...         "a": [3, 4],
-        ...     }
-        ... )
-        >>> lf.collect()
-        shape: (2, 2)
-        ┌─────┬─────┐
-        │ b   ┆ a   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 1   ┆ 3   │
-        │ 2   ┆ 4   │
-        └─────┴─────┘
+        >>> lf = pl.LazyFrame({"b": [1, 2], "a": [3, 4]})
         >>> lf.pipe(lambda tdf: tdf.select(sorted(tdf.columns))).collect()
         shape: (2, 2)
         ┌─────┬─────┐
@@ -1007,7 +1012,36 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 2   │
         └─────┴─────┘
 
+        >>> def square(col: pl.Expr) -> pl.Expr:
+        ...     return col * col
+        >>> def cube(col: pl.Expr) -> pl.Expr:
+        ...     return col * col * col
+        >>> transforms = {
+        ...     "x": cube,
+        ...     "y": square,
+        ...     "z": cube,
+        ... }
+        >>> lf = pl.LazyFrame({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
+        >>> lf.pipe(transforms).collect()
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ x   ┆ y   ┆ z   │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 16  ┆ 343 │
+        │ 8   ┆ 25  ┆ 512 │
+        │ 27  ┆ 36  ┆ 729 │
+        └─────┴─────┴─────┘
+
         """
+        if isinstance(function, Mapping):
+            return self.with_columns(
+                *(
+                    (F.col(nm) if isinstance(nm, str) else nm).pipe(fn, *args, **kwargs)
+                    for nm, fn in function.items()
+                )
+            )
         return function(self, *args, **kwargs)
 
     @deprecate_renamed_parameter(

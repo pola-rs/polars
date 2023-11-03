@@ -21,6 +21,8 @@ from polars.testing.asserts import assert_series_equal
 if TYPE_CHECKING:
     from _pytest.capture import CaptureFixture
 
+    from polars.type_aliases import ColumnNameOrSelector
+
 
 def test_init_signature_match() -> None:
     # eager/lazy init signatures are expected to match; if this test fails, it
@@ -1535,3 +1537,31 @@ def test_lazy_comparison_operators(
         match=f'"{comparators[0]!r}" comparison not supported for LazyFrame objects',
     ):
         comparators[1](pl.LazyFrame(), pl.LazyFrame())
+
+
+def test_lazy_pipe() -> None:
+    lf = pl.LazyFrame({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
+
+    def square(col: pl.Expr) -> pl.Expr:
+        return (col * col).name.suffix("_square")
+
+    def cube(col: pl.Expr) -> pl.Expr:
+        return (col * col * col).name.suffix("_cube")
+
+    transforms: dict[ColumnNameOrSelector, Callable[[pl.Expr], pl.Expr]] = {
+        "x": cube,
+        cs.matches("y|z"): square,
+    }
+    assert_frame_equal(
+        lf.pipe(transforms).collect(),
+        pl.DataFrame(
+            {
+                "x": [1, 2, 3],
+                "y": [4, 5, 6],
+                "z": [7, 8, 9],
+                "x_cube": [1, 8, 27],
+                "y_square": [16, 25, 36],
+                "z_square": [49, 64, 81],
+            }
+        ),
+    )
