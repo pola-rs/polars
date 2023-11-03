@@ -37,7 +37,7 @@ where
 pub fn convert_to_unsigned_index(s: &Series, target_len: usize) -> PolarsResult<IdxCa> {
     let dtype = s.dtype();
     polars_ensure!(dtype.is_integer(), InvalidOperation: "expected integers as index");
-    if dtype.is_unsigned() {
+    if dtype.is_unsigned_integer() {
         let out = s.cast(&IDX_DTYPE).unwrap();
         return Ok(out.idx().unwrap().clone());
     }
