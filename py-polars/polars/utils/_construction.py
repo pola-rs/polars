@@ -494,34 +494,34 @@ def sequence_to_pyseries(
             else:
                 s = wrap_s(py_series).dt.cast_time_unit(time_unit)
             time_zone = getattr(dtype, "time_zone", None)
-            if dtype == Datetime:
-                if values_dtype == Date:
-                    # check for zone info
-                    return (
-                        s.cast(Datetime(time_unit)).dt.replace_time_zone(time_zone)._s
+
+            if (values_dtype == Date) & (dtype == Datetime):
+                return s.cast(Datetime(time_unit)).dt.replace_time_zone(time_zone)._s
+
+            if (dtype == Datetime) and (
+                value.tzinfo is not None or time_zone is not None
+            ):
+                values_tz = str(value.tzinfo) if value.tzinfo is not None else None
+                dtype_tz = dtype.time_zone  # type: ignore[union-attr]
+                if values_tz is not None and (
+                    dtype_tz is not None and dtype_tz != "UTC"
+                ):
+                    raise ValueError(
+                        "time-zone-aware datetimes are converted to UTC"
+                        "\n\nPlease either drop the time zone from the dtype, or set it to 'UTC'."
+                        " To convert to a different time zone, please use `.dt.convert_time_zone`."
                     )
-                elif value.tzinfo is not None or time_zone is not None:
-                    values_tz = str(value.tzinfo) if value.tzinfo is not None else None
-                    dtype_tz = dtype.time_zone  # type: ignore[union-attr]
-                    if values_tz is not None and (
-                        dtype_tz is not None and dtype_tz != "UTC"
-                    ):
-                        raise ValueError(
-                            "time-zone-aware datetimes are converted to UTC"
-                            "\n\nPlease either drop the time zone from the dtype, or set it to 'UTC'."
-                            " To convert to a different time zone, please use `.dt.convert_time_zone`."
-                        )
-                    if values_tz != "UTC" and dtype_tz is None:
-                        warnings.warn(
-                            "Constructing a Series with time-zone-aware "
-                            "datetimes results in a Series with UTC time zone. "
-                            "To silence this warning, you can filter "
-                            "warnings of class TimeZoneAwareConstructorWarning, or "
-                            "set 'UTC' as the time zone of your datatype.",
-                            TimeZoneAwareConstructorWarning,
-                            stacklevel=find_stacklevel(),
-                        )
-                    return s.dt.replace_time_zone(dtype_tz or "UTC")._s
+                if values_tz != "UTC" and dtype_tz is None:
+                    warnings.warn(
+                        "Constructing a Series with time-zone-aware "
+                        "datetimes results in a Series with UTC time zone. "
+                        "To silence this warning, you can filter "
+                        "warnings of class TimeZoneAwareConstructorWarning, or "
+                        "set 'UTC' as the time zone of your datatype.",
+                        TimeZoneAwareConstructorWarning,
+                        stacklevel=find_stacklevel(),
+                    )
+                return s.dt.replace_time_zone(dtype_tz or "UTC")._s
             return s._s
 
         elif (
