@@ -58,8 +58,7 @@ impl AsU64 for i16 {
 impl AsU64 for i32 {
     #[inline]
     fn as_u64(self) -> u64 {
-        let asu32: u32 = unsafe { std::mem::transmute(self) };
-        (asu32 as u64).wrapping_mul(RANDOM_ODD)
+        (self as u64).wrapping_mul(RANDOM_ODD)
     }
 }
 
