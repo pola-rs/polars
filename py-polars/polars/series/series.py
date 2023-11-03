@@ -4395,7 +4395,7 @@ class Series:
         f = get_ffi_func("set_with_mask_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
-        return self._from_pyseries(f(filter._s, value)).rename(self.name)
+        return self._from_pyseries(f(filter._s, value))
 
     def set_at_idx(
         self,

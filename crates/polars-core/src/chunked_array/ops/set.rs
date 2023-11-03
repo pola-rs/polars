@@ -114,7 +114,8 @@ where
                     Some(true) => value,
                     _ => opt_val,
                 })
-                .collect_trusted();
+                .collect_trusted::<Self>()
+                .with_name(self.name());
             Ok(ca)
         }
     }
@@ -166,7 +167,8 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
                 Some(true) => value,
                 _ => opt_val,
             })
-            .collect_trusted();
+            .collect_trusted::<Self>()
+            .with_name(self.name());
         Ok(ca)
     }
 }
@@ -229,7 +231,8 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
                 Some(true) => value,
                 _ => opt_val,
             })
-            .collect_trusted();
+            .collect_trusted::<Self>()
+            .with_name(self.name());
         Ok(ca)
     }
 }
@@ -293,7 +296,8 @@ impl<'a> ChunkSet<'a, &'a [u8], Vec<u8>> for BinaryChunked {
                 Some(true) => value,
                 _ => opt_val,
             })
-            .collect_trusted();
+            .collect_trusted::<Self>()
+            .with_name(self.name());
         Ok(ca)
     }
 }
