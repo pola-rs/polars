@@ -46,6 +46,7 @@ smartstring = { workspace = true }
 tokio = { workspace = true, features = ["net", "rt-multi-thread", "time", "sync"], optional = true }
 tokio-util = { workspace = true, features = ["io", "io-util"], optional = true }
 url = { workspace = true, optional = true }
+zstd = { workspace = true, optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 home = "0.5.4"
@@ -73,8 +74,8 @@ ipc_streaming = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # support for arrow avro parsing
 avro = ["arrow/io_avro", "arrow/io_avro_compression"]
 csv = ["lexical", "polars-core/rows", "itoa", "ryu", "fast-float", "simdutf8"]
-decompress = ["flate2/rust_backend"]
-decompress-fast = ["flate2/zlib-ng"]
+decompress = ["flate2/rust_backend", "zstd"]
+decompress-fast = ["flate2/zlib-ng", "zstd"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date"]
 object = []
