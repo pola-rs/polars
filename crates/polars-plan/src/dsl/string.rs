@@ -53,6 +53,32 @@ impl StringNameSpace {
         )
     }
 
+    #[cfg(feature = "string_encoding")]
+    pub fn hex_encode(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::HexEncode))
+    }
+
+    #[cfg(feature = "binary_encoding")]
+    pub fn hex_decode(self, strict: bool) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::HexDecode(strict)))
+    }
+
+    #[cfg(feature = "string_encoding")]
+    pub fn base64_encode(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::Base64Encode))
+    }
+
+    #[cfg(feature = "binary_encoding")]
+    pub fn base64_decode(self, strict: bool) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::Base64Decode(
+                strict,
+            )))
+    }
+
     /// Extract a regex pattern from the a string value. If `group_index` is out of bounds, null is returned.
     pub fn extract(self, pat: &str, group_index: usize) -> Expr {
         let pat = pat.to_string();
