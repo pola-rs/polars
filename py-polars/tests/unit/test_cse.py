@@ -313,7 +313,7 @@ def test_cse_mixed_window_functions() -> None:
             "c_diff": [None],
             "c_diff_by_a": [None],
         },
-    ).with_columns(pl.col(pl.Float32).cast(pl.Int64))
+    ).with_columns(pl.col(pl.Null).cast(pl.Int64))
     assert_frame_equal(result, expected)
 
 
