@@ -7,6 +7,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
+from collections import Counter
+
 import numpy as np
 import pytest
 
@@ -14,6 +16,36 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 pytestmark = pytest.mark.xdist_group("streaming")
+
+
+def assert_df_sorted_by(
+    df: pl.DataFrame,
+    sort_df: pl.DataFrame,
+    cols: list[str],
+    descending: list[bool] | None = None,
+) -> None:
+    if descending is None:
+        descending = [False] * len(cols)
+
+    # Is sorted by the key columns?
+    keycols = sort_df[cols]
+    equal = keycols.head(-1) == keycols.tail(-1)
+
+    # Tuple inequality.
+    # a0 < b0 || (a0 == b0 && (a1 < b1 || (a1 == b1 && ...))
+    # Evaluating in reverse is easiest.
+    ordered = equal[cols[-1]]
+    for c, desc in zip(cols[::-1], descending[::-1]):
+        ordered &= equal[c]
+        if desc:
+            ordered |= keycols[c].head(-1) > keycols[c].tail(-1)
+        else:
+            ordered |= keycols[c].head(-1) < keycols[c].tail(-1)
+
+    assert ordered.all()
+
+    # Do all the rows still exist?
+    assert Counter(df.rows()) == Counter(sort_df.rows())
 
 
 def test_streaming_sort_multiple_columns_logical_types() -> None:
@@ -179,16 +211,24 @@ def test_streaming_sort_varying_order_and_dtypes(
     io_files_path: Path, sort_by: list[str]
 ) -> None:
     q = pl.scan_parquet(io_files_path / "foods*.parquet")
-    q = q.sort(sort_by)
-    assert_frame_equal(q.collect(streaming=True), q.collect(streaming=False))
+    df = q.collect()
+    assert_df_sorted_by(df, q.sort(sort_by).collect(streaming=True), sort_by)
+    assert_df_sorted_by(df, q.sort(sort_by).collect(streaming=False), sort_by)
 
 
 def test_streaming_sort_fixed_reverse() -> None:
-    q = pl.LazyFrame(
+    df = pl.DataFrame(
         {
             "a": [1, 1, 2, 1, 2, 4, 1, 7],
             "b": [1, 2, 2, 1, 2, 4, 8, 7],
         }
-    ).sort(by=["a", "b"], descending=[True, False])
+    )
+    descending = [True, False]
+    q = df.lazy().sort(by=["a", "b"], descending=descending)
 
-    assert_frame_equal(q.collect(streaming=True), q.collect(streaming=False))
+    assert_df_sorted_by(
+        df, q.collect(streaming=True), ["a", "b"], descending=descending
+    )
+    assert_df_sorted_by(
+        df, q.collect(streaming=False), ["a", "b"], descending=descending
+    )
