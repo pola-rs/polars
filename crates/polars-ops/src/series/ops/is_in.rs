@@ -12,12 +12,10 @@ where
     let mut set = PlHashSet::with_capacity(other.len());
 
     let other = ca.unpack_series_matching_type(other)?;
-    other.downcast_iter().for_each(|iter| {
-        iter.iter().for_each(|opt_val| {
-            if let Some(v) = opt_val {
-                set.insert(v);
-            }
-        })
+    other.for_each(|opt_val| {
+        if let Some(v) = opt_val {
+            set.insert(v);
+        }
     });
     Ok(ca.apply_values_generic(|val| set.contains(&val)))
 }

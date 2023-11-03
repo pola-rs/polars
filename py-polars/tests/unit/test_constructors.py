@@ -98,7 +98,7 @@ def test_init_dict() -> None:
     # Empty dictionary/values
     df = pl.DataFrame({"a": [], "b": []})
     assert df.shape == (0, 2)
-    assert df.schema == {"a": pl.Float32, "b": pl.Float32}
+    assert df.schema == {"a": pl.Null, "b": pl.Null}
 
     for df in (
         pl.DataFrame({}, schema={"a": pl.Date, "b": pl.Utf8}),
@@ -1055,9 +1055,6 @@ def test_from_dicts_missing_columns() -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.xfail(
-    reason="Fails because of bug. See: https://github.com/pola-rs/polars/issues/12120"
-)
 def test_from_dicts_schema_columns_do_not_match() -> None:
     data = [{"a": 1, "b": 2}]
     result = pl.from_dicts(data, schema=["x"])
@@ -1436,3 +1433,22 @@ def test_list_null_constructor() -> None:
 def test_numpy_float_construction_av() -> None:
     np_dict = {"a": np.float64(1)}
     assert_frame_equal(pl.DataFrame(np_dict), pl.DataFrame({"a": 1.0}))
+
+
+def test_empty_and_all_null_construction() -> None:
+    empty = pl.Series([])
+    assert_series_equal(empty, pl.Series([], dtype=pl.Null))
+    all_null = pl.Series([None, None, None])
+    assert_series_equal(all_null, pl.Series([None, None, None], dtype=pl.Null))
+
+    empty_df = pl.DataFrame({"a": [], "b": []})
+    assert_frame_equal(
+        empty_df, pl.DataFrame({"a": [], "b": []}, schema={"a": pl.Null, "b": pl.Null})
+    )
+    all_null_df = pl.DataFrame({"a": [None, None], "b": [None, None]})
+    assert_frame_equal(
+        all_null_df,
+        pl.DataFrame(
+            {"a": [None, None], "b": [None, None]}, schema={"a": pl.Null, "b": pl.Null}
+        ),
+    )

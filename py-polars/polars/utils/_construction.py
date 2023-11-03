@@ -33,8 +33,8 @@ from polars.datatypes import (
     Date,
     Datetime,
     Duration,
-    Float32,
     List,
+    Null,
     Object,
     Struct,
     Time,
@@ -393,8 +393,8 @@ def sequence_to_pyseries(
     # empty sequence
     if not values and dtype is None:
         # if dtype for empty sequence could be guessed
-        # (e.g comparisons between self and other), default to Float32
-        dtype = dtype_if_empty or Float32
+        # (e.g comparisons between self and other), default to Null
+        dtype = dtype_if_empty or Null
 
     # lists defer to subsequent handling; identify nested type
     elif dtype == List:
@@ -456,10 +456,10 @@ def sequence_to_pyseries(
     else:
         if python_dtype is None:
             if value is None:
-                # Create a series with a dtype_if_empty dtype (if set) or Float32
+                # Create a series with a dtype_if_empty dtype (if set) or Null
                 # (if not set) for a sequence which contains only None values.
                 constructor = polars_type_to_constructor(
-                    dtype_if_empty if dtype_if_empty else Float32
+                    dtype_if_empty if dtype_if_empty else Null
                 )
                 return _construct_series_with_fallbacks(
                     constructor, name, values, dtype, strict=strict
