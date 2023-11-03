@@ -17,7 +17,6 @@ pub(super) fn probe_inner<T, F, I>(
     // <I as IntoIterator>::IntoIter: TrustedLen,
     F: Fn(IdxSize, IdxSize) -> (IdxSize, IdxSize),
 {
-    assert!(hash_tbls.len().is_power_of_two());
     probe.into_iter().enumerate_idx().for_each(|(idx_a, k)| {
         let idx_a = idx_a + local_offset;
         // probe table that contains the hashed value
@@ -61,7 +60,6 @@ where
     };
 
     let n_tables = hash_tbls.len() as u64;
-    debug_assert!(n_tables.is_power_of_two());
     let offsets = probe_to_offsets(&probe);
     // next we probe the other relation
     // code duplication is because we want to only do the swap check once

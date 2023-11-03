@@ -13,9 +13,17 @@ pub fn flatten<T: Clone, R: AsRef<[T]>>(bufs: &[R], len: Option<usize>) -> Vec<T
 
 #[inline]
 pub fn hash_to_partition(h: u64, n_partitions: usize) -> usize {
-    debug_assert!(n_partitions.is_power_of_two());
-    // n % 2^i = n & (2^i - 1)
-    h as usize & n_partitions.wrapping_sub(1)
+    // FIXME: we currently use an identity hash in some places, giving a very
+    // poorly distributed hash. So we spread values around by a simple wrapping
+    // multiplication by a 'random' odd number.
+    let h = h.wrapping_mul(0x55fbfd6bfc5458e9);
+
+    // Now, assuming h is a 64-bit random number, we note that
+    // h / 2^64 is almost a uniform random number in [0, 1), and thus
+    // floor(h * n_partitions / 2^64) is almost a uniform random integer in
+    // [0, n_partitions). Despite being written with u128 multiplication this
+    // compiles to a single mul / mulhi instruction on x86-x64/aarch64.
+    ((h as u128 * n_partitions as u128) >> 64) as usize
 }
 
 #[inline]

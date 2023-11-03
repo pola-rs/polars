@@ -1,3 +1,5 @@
+use polars_utils::hash_to_partition;
+
 use super::*;
 
 // Used to to get a u64 from the hashing keys
@@ -130,9 +132,6 @@ impl<'a> AsU64 for BytesHash<'a> {
 }
 
 #[inline]
-/// For partitions that are a power of 2 we can use a bitshift instead of a modulo.
 pub fn this_partition(h: u64, thread_no: u64, n_partitions: u64) -> bool {
-    debug_assert!(n_partitions.is_power_of_two());
-    // n % 2^i = n & (2^i - 1)
-    (h & n_partitions.wrapping_sub(1)) == thread_no
+    hash_to_partition(h, n_partitions as usize) as u64 == thread_no
 }
