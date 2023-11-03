@@ -146,6 +146,7 @@ extract_groups = ["polars-plan/extract_groups"]
 peaks = ["polars-plan/peaks"]
 
 binary_encoding = ["polars-plan/binary_encoding"]
+string_encoding = ["polars-plan/string_encoding"]
 
 bigidx = ["polars-plan/bigidx"]
 

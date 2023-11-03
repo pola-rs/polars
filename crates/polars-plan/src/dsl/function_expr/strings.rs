@@ -75,6 +75,14 @@ pub enum StringFunction {
         fill_char: char,
     },
     Slice(i64, Option<u64>),
+    #[cfg(feature = "string_encoding")]
+    HexEncode,
+    #[cfg(feature = "binary_encoding")]
+    HexDecode(bool),
+    #[cfg(feature = "string_encoding")]
+    Base64Encode,
+    #[cfg(feature = "binary_encoding")]
+    Base64Decode(bool),
     StartsWith,
     StripChars,
     StripCharsStart,
@@ -130,6 +138,14 @@ impl StringFunction {
             Titlecase => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-decimal")]
             ToDecimal(_) => mapper.with_dtype(DataType::Decimal(None, None)),
+            #[cfg(feature = "string_encoding")]
+            HexEncode => mapper.with_same_dtype(),
+            #[cfg(feature = "binary_encoding")]
+            HexDecode(_) => mapper.with_dtype(DataType::Binary),
+            #[cfg(feature = "string_encoding")]
+            Base64Encode => mapper.with_same_dtype(),
+            #[cfg(feature = "binary_encoding")]
+            Base64Decode(_) => mapper.with_dtype(DataType::Binary),
             Uppercase
             | Lowercase
             | StripChars
@@ -186,6 +202,14 @@ impl Display for StringFunction {
             PadStart { .. } => "pad_start",
             #[cfg(feature = "regex")]
             Replace { .. } => "replace",
+            #[cfg(feature = "string_encoding")]
+            HexEncode => "hex_encode",
+            #[cfg(feature = "binary_encoding")]
+            HexDecode(_) => "hex_decode",
+            #[cfg(feature = "string_encoding")]
+            Base64Encode => "base64_encode",
+            #[cfg(feature = "binary_encoding")]
+            Base64Decode(_) => "base64_decode",
             Slice(_, _) => "slice",
             StartsWith { .. } => "starts_with",
             StripChars => "strip_chars",
@@ -291,6 +315,14 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "string_from_radix")]
             FromRadix(radix, strict) => map!(strings::from_radix, radix, strict),
             Slice(start, length) => map!(strings::str_slice, start, length),
+            #[cfg(feature = "string_encoding")]
+            HexEncode => map!(strings::hex_encode),
+            #[cfg(feature = "binary_encoding")]
+            HexDecode(strict) => map!(strings::hex_decode, strict),
+            #[cfg(feature = "string_encoding")]
+            Base64Encode => map!(strings::base64_encode),
+            #[cfg(feature = "binary_encoding")]
+            Base64Decode(strict) => map!(strings::base64_decode, strict),
             Explode => map!(strings::explode),
             #[cfg(feature = "dtype-decimal")]
             ToDecimal(infer_len) => map!(strings::to_decimal, infer_len),
@@ -778,6 +810,26 @@ pub(super) fn from_radix(s: &Series, radix: u32, strict: bool) -> PolarsResult<S
 pub(super) fn str_slice(s: &Series, start: i64, length: Option<u64>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     Ok(ca.str_slice(start, length).into_series())
+}
+
+#[cfg(feature = "string_encoding")]
+pub(super) fn hex_encode(s: &Series) -> PolarsResult<Series> {
+    Ok(s.utf8()?.hex_encode().into_series())
+}
+
+#[cfg(feature = "binary_encoding")]
+pub(super) fn hex_decode(s: &Series, strict: bool) -> PolarsResult<Series> {
+    s.utf8()?.hex_decode(strict).map(|ca| ca.into_series())
+}
+
+#[cfg(feature = "string_encoding")]
+pub(super) fn base64_encode(s: &Series) -> PolarsResult<Series> {
+    Ok(s.utf8()?.base64_encode().into_series())
+}
+
+#[cfg(feature = "binary_encoding")]
+pub(super) fn base64_decode(s: &Series, strict: bool) -> PolarsResult<Series> {
+    s.utf8()?.base64_decode(strict).map(|ca| ca.into_series())
 }
 
 pub(super) fn explode(s: &Series) -> PolarsResult<Series> {
