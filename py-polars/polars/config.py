@@ -523,6 +523,7 @@ class Config(contextlib.ContextDecorator):
         ...     tbl_cell_numeric_alignment="RIGHT",
         ...     thousands_separator=".",
         ...     decimal_separator=",",
+        ...     float_precision=2,
         ... ):
         ...     print(df)
         shape: (3, 2)
