@@ -208,7 +208,7 @@ def test_format_numeric_locale_options() -> None:
     # when right-aligned with fixed float precision
     with pl.Config(
         tbl_cell_numeric_alignment="RIGHT",
-        digit_group_size=3,
+        thousands_separator=",",
         float_precision=3,
     ):
         assert (
@@ -224,23 +224,22 @@ def test_format_numeric_locale_options() -> None:
 └─────┴──────────────┴────────────────┴─────────────────┘"""
         )
 
-    # custom digit/decimal separators, 4-digit grouping
+    # switch digit/decimal separators
     with pl.Config(
-        digit_group_size=4,
         decimal_separator=",",
-        digit_group_separator=".",
+        thousands_separator=".",
     ):
         assert (
             str(df)
             == """shape: (2, 4)
-┌─────┬────────────────┬───────────────┬────────────────┐
-│ a   ┆ b              ┆ c             ┆ d              │
-│ --- ┆ ---            ┆ ---           ┆ ---            │
-│ str ┆ f64            ┆ i64           ┆ decimal[4]     │
-╞═════╪════════════════╪═══════════════╪════════════════╡
-│ xx  ┆ 10.0000,987654 ┆ -1111.1111    ┆ 1.2345,6789    │
-│ yy  ┆ -23.4567,89    ┆ 444.4444.4444 ┆ -999.9999,9900 │
-└─────┴────────────────┴───────────────┴────────────────┘"""
+┌─────┬────────────────┬────────────────┬─────────────────┐
+│ a   ┆ b              ┆ c              ┆ d               │
+│ --- ┆ ---            ┆ ---            ┆ ---             │
+│ str ┆ f64            ┆ i64            ┆ decimal[4]      │
+╞═════╪════════════════╪════════════════╪═════════════════╡
+│ xx  ┆ 100.000,987654 ┆ -11.111.111    ┆ 12.345,6789     │
+│ yy  ┆ -234.567,89    ┆ 44.444.444.444 ┆ -9.999.999,9900 │
+└─────┴────────────────┴────────────────┴─────────────────┘"""
         )
 
     # default (no digit grouping, standard digit/decimal separators)

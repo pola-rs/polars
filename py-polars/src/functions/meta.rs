@@ -61,29 +61,16 @@ pub fn get_float_precision() -> PyResult<Option<usize>> {
 }
 
 #[pyfunction]
-pub fn set_digit_group_separator(sep: Option<char>) -> PyResult<()> {
-    use polars_core::fmt::set_digit_group_separator;
-    set_digit_group_separator(sep);
+pub fn set_thousands_separator(sep: Option<char>) -> PyResult<()> {
+    use polars_core::fmt::set_thousands_separator;
+    set_thousands_separator(sep);
     Ok(())
 }
 
 #[pyfunction]
-pub fn get_digit_group_separator() -> PyResult<Option<char>> {
-    use polars_core::fmt::get_digit_group_separator;
-    Ok(Some(get_digit_group_separator()))
-}
-
-#[pyfunction]
-pub fn set_digit_group_size(sep: Option<u8>) -> PyResult<()> {
-    use polars_core::fmt::set_digit_group_size;
-    set_digit_group_size(sep);
-    Ok(())
-}
-
-#[pyfunction]
-pub fn get_digit_group_size() -> PyResult<Option<u8>> {
-    use polars_core::fmt::get_digit_group_size;
-    Ok(Some(get_digit_group_size()))
+pub fn get_thousands_separator() -> PyResult<Option<String>> {
+    use polars_core::fmt::get_thousands_separator;
+    Ok(Some(get_thousands_separator()))
 }
 
 #[pyfunction]

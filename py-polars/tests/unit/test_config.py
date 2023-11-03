@@ -637,7 +637,7 @@ def test_config_load_save(tmp_path: Path) -> None:
         pl.Config.set_verbose(True)
         pl.Config.set_fmt_float("full")
         pl.Config.set_float_precision(6)
-        pl.Config.set_digit_group_size(3)
+        pl.Config.set_thousands_separator(",")
         assert os.environ.get("POLARS_VERBOSE") == "1"
 
         if file is None:
@@ -653,7 +653,7 @@ def test_config_load_save(tmp_path: Path) -> None:
         pl.Config.set_verbose(False)
         pl.Config.set_fmt_float("mixed")
         pl.Config.set_float_precision(2)
-        pl.Config.set_digit_group_size(None)
+        pl.Config.set_thousands_separator(None)
         assert os.environ.get("POLARS_VERBOSE") == "0"
 
         # ...load back from config file/string...
@@ -677,7 +677,6 @@ def test_config_load_save(tmp_path: Path) -> None:
         assert os.environ.get("POLARS_VERBOSE") == "1"
         assert plr.get_float_fmt() == "full"
         assert plr.get_float_precision() == 6
-        assert plr.get_digit_group_size() == 3
 
         # restore all default options (unsets from env)
         pl.Config.restore_defaults()
@@ -689,7 +688,6 @@ def test_config_load_save(tmp_path: Path) -> None:
         assert os.environ.get("POLARS_VERBOSE") is None
         assert plr.get_float_fmt() == "mixed"
         assert plr.get_float_precision() is None
-        assert plr.get_digit_group_size() == 0
 
     # ref: #11094
     with pl.Config(

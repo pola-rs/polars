@@ -227,17 +227,15 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     .unwrap();
 
     // Numeric formatting
-    m.add_wrapped(wrap_pyfunction!(functions::meta::get_digit_group_separator))
+    m.add_wrapped(wrap_pyfunction!(functions::meta::get_thousands_separator))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::meta::set_digit_group_separator))
+    m.add_wrapped(wrap_pyfunction!(functions::meta::set_thousands_separator))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::meta::get_float_fmt))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::meta::get_float_precision))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::meta::get_decimal_separator))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::meta::get_digit_group_size))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::meta::get_trim_decimal_zeros))
         .unwrap();
@@ -246,8 +244,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::meta::set_float_precision))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::meta::set_decimal_separator))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::meta::set_digit_group_size))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::meta::set_trim_decimal_zeros))
         .unwrap();

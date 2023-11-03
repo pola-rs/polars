@@ -13,8 +13,6 @@ Config options
     Config.set_ascii_tables
     Config.set_auto_structify
     Config.set_decimal_separator
-    Config.set_digit_group_separator
-    Config.set_digit_group_size
     Config.set_float_precision
     Config.set_fmt_float
     Config.set_fmt_str_lengths
@@ -32,6 +30,7 @@ Config options
     Config.set_tbl_hide_dtype_separator
     Config.set_tbl_rows
     Config.set_tbl_width_chars
+    Config.set_thousands_separator
     Config.set_trim_decimal_zeros
     Config.set_verbose
 

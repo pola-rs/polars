@@ -10,10 +10,6 @@ from polars.dependencies import json
 from polars.utils.deprecation import deprecate_nonkeyword_arguments
 from polars.utils.various import normalize_filepath
 
-with contextlib.suppress(ImportError):  # Module not available when building docs
-    import polars.polars as plr
-
-
 if sys.version_info >= (3, 10):
     from typing import TypeAlias
 else:
@@ -73,13 +69,14 @@ _POLARS_CFG_ENV_VARS = {
 
 # vars that set the rust env directly should declare themselves here as the Config
 # method name paired with a callable that returns the current state of that value:
-with contextlib.suppress(NameError):
+with contextlib.suppress(ImportError, NameError):
     # note: 'plr' not available when building docs
+    import polars.polars as plr
+
     _POLARS_CFG_DIRECT_VARS = {
         "set_fmt_float": plr.get_float_fmt,
         "set_float_precision": plr.get_float_precision,
-        "set_digit_group_separator": plr.get_digit_group_separator,
-        "set_digit_group_size": plr.get_digit_group_size,
+        "set_thousands_separator": plr.get_thousands_separator,
         "set_decimal_separator": plr.get_decimal_separator,
         "set_trim_decimal_zeros": plr.get_trim_decimal_zeros,
     }
@@ -444,18 +441,21 @@ class Config(contextlib.ContextDecorator):
 
         Parameters
         ----------
-        separator : str
+        separator : str, bool
             Character to use as the decimal separator.
             Set to ``None`` to revert to the default (".").
+
+        See Also
+        --------
+        set_thousands_separator : Set the thousands grouping separator character.
 
         Examples
         --------
         >>> df = pl.DataFrame({"v": [9876.54321, 1010101.0, -123456.78]})
         >>> with pl.Config(
         ...     tbl_cell_numeric_alignment="RIGHT",
+        ...     thousands_separator=".",
         ...     decimal_separator=",",
-        ...     digit_group_separator=".",
-        ...     digit_group_size=3,
         ...     float_precision=3,
         ... ):
         ...     print(df)
@@ -479,92 +479,73 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
-    def set_digit_group_separator(cls, separator: str | None = None) -> type[Config]:
+    def set_thousands_separator(
+        cls, separator: str | bool | None = None
+    ) -> type[Config]:
         """
-        Set the digit group separator character.
+        Set the thousands grouping separator character.
 
         Parameters
         ----------
-        separator : str
-            Character to use as the digit group separator.
-            Set to ``None`` to revert to the default (",").
+        separator : str, bool
+            Set True to use the default "," (thousands) and "." (decimal) separators.
+            Can also set a custom char, or set ``None`` to omit the separator.
+
+        See Also
+        --------
+        set_decimal_separator : Set the decimal separator character.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"v": [1234567, 987654, 10101]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "x": [1234567, -987654, 10101],
+        ...         "y": [1234.5, 100000.0, -7654321.25],
+        ...     }
+        ... )
         >>> with pl.Config(
         ...     tbl_cell_numeric_alignment="RIGHT",
-        ...     digit_group_separator=" ",
-        ...     digit_group_size=3,
+        ...     thousands_separator=True,
+        ...     float_precision=2,
         ... ):
         ...     print(df)
-        shape: (3, 1)
-        ┌───────────┐
-        │         v │
-        │       --- │
-        │       i64 │
-        ╞═══════════╡
-        │ 1 234 567 │
-        │   987 654 │
-        │    10 101 │
-        └───────────┘
-
-        """
-        if isinstance(separator, str) and len(separator) != 1:
-            raise ValueError(
-                f"`separator` must be a single character; found {separator!r}"
-            )
-        plr.set_digit_group_separator(sep=separator)
-        return cls
-
-    @classmethod
-    def set_digit_group_size(cls, n: int | None = None) -> type[Config]:
-        """
-        Set the number of digits between digit group separators.
-
-        Parameters
-        ----------
-        n : int
-            Number of digits between digit group separators.
-            Set to ``None`` (or zero) to disable digit grouping.
-
-        Notes
-        -----
-        Use of digit-grouping disables scientific notation as the
-        two styles do not mix well.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"v": [123456789, 9876543, 10101]})
-        >>> pl.Config.set_tbl_cell_numeric_alignment("RIGHT")  # doctest: +IGNORE_RESULT
-        >>> pl.Config.set_digit_group_size(3)  # doctest: +IGNORE_RESULT
-        >>> print(df)
-        shape: (3, 1)
-        ┌─────────────┐
-        │           v │
-        │         --- │
-        │         i64 │
-        ╞═════════════╡
-        │ 123,456,789 │
-        │   9,876,543 │
-        │      10,101 │
-        └─────────────┘
-        >>> with pl.Config(digit_group_size=4):
+        shape: (3, 2)
+        ┌───────────┬───────────────┐
+        │         x ┆             y │
+        │       --- ┆           --- │
+        │       i64 ┆           f64 │
+        ╞═══════════╪═══════════════╡
+        │ 1,234,567 ┆      1,234.50 │
+        │  -987,654 ┆    100,000.00 │
+        │    10,101 ┆ -7,654,321.25 │
+        └───────────┴───────────────┘
+        >>> with pl.Config(
+        ...     tbl_cell_numeric_alignment="RIGHT",
+        ...     thousands_separator=".",
+        ...     decimal_separator=",",
+        ... ):
         ...     print(df)
-        ...
-        shape: (3, 1)
-        ┌─────────────┐
-        │           v │
-        │         --- │
-        │         i64 │
-        ╞═════════════╡
-        │ 1,2345,6789 │
-        │    987,6543 │
-        │      1,0101 │
-        └─────────────┘
+        shape: (3, 2)
+        ┌───────────┬───────────────┐
+        │         x ┆             y │
+        │       --- ┆           --- │
+        │       i64 ┆           f64 │
+        ╞═══════════╪═══════════════╡
+        │ 1.234.567 ┆      1.234,50 │
+        │  -987.654 ┆    100.000,00 │
+        │    10.101 ┆ -7.654.321,25 │
+        └───────────┴───────────────┘
 
         """
-        plr.set_digit_group_size(n)
+        if separator is True:
+            plr.set_decimal_separator(sep=".")
+            plr.set_thousands_separator(sep=",")
+        else:
+            if isinstance(separator, str) and len(separator) > 1:
+                raise ValueError(
+                    f"`separator` must be a single character; found {separator!r}"
+                )
+            plr.set_thousands_separator(sep=separator or None)
         return cls
 
     @classmethod
@@ -618,7 +599,7 @@ class Config(contextlib.ContextDecorator):
         ... )
         >>> with pl.Config(
         ...     tbl_cell_numeric_alignment="RIGHT",
-        ...     digit_group_size=3,
+        ...     thousands_separator=",",
         ...     float_precision=3,
         ... ):
         ...     print(df)

@@ -37,8 +37,7 @@ static FLOAT_PRECISION: RwLock<Option<usize>> = RwLock::new(None);
 static FLOAT_FMT: AtomicU8 = AtomicU8::new(FloatFmt::Mixed as u8);
 
 static TRIM_DECIMAL_ZEROS: AtomicBool = AtomicBool::new(false);
-static DIGIT_GROUP_SEPARATOR: AtomicU8 = AtomicU8::new(b',');
-static DIGIT_GROUP_SIZE: AtomicU8 = AtomicU8::new(0);
+static THOUSANDS_SEPARATOR: AtomicU8 = AtomicU8::new(b'\0');
 static DECIMAL_SEPARATOR: AtomicU8 = AtomicU8::new(b'.');
 
 // Numeric formatting getters
@@ -55,11 +54,13 @@ pub fn get_float_precision() -> Option<usize> {
 pub fn get_decimal_separator() -> char {
     DECIMAL_SEPARATOR.load(Ordering::Relaxed) as char
 }
-pub fn get_digit_group_separator() -> char {
-    DIGIT_GROUP_SEPARATOR.load(Ordering::Relaxed) as char
-}
-pub fn get_digit_group_size() -> u8 {
-    DIGIT_GROUP_SIZE.load(Ordering::Relaxed)
+pub fn get_thousands_separator() -> String {
+    let sep = THOUSANDS_SEPARATOR.load(Ordering::Relaxed) as char;
+    if sep == '\0' {
+        "".to_string()
+    } else {
+        sep.to_string()
+    }
 }
 pub fn get_trim_decimal_zeros() -> bool {
     TRIM_DECIMAL_ZEROS.load(Ordering::Relaxed)
@@ -75,11 +76,8 @@ pub fn set_float_precision(precision: Option<usize>) {
 pub fn set_decimal_separator(dec: Option<char>) {
     DECIMAL_SEPARATOR.store(dec.unwrap_or('.') as u8, Ordering::Relaxed)
 }
-pub fn set_digit_group_separator(sep: Option<char>) {
-    DIGIT_GROUP_SEPARATOR.store(sep.unwrap_or(',') as u8, Ordering::Relaxed)
-}
-pub fn set_digit_group_size(n: Option<u8>) {
-    DIGIT_GROUP_SIZE.store(n.unwrap_or(0), Ordering::Relaxed)
+pub fn set_thousands_separator(sep: Option<char>) {
+    THOUSANDS_SEPARATOR.store(sep.unwrap_or('\0') as u8, Ordering::Relaxed)
 }
 pub fn set_trim_decimal_zeros(trim: Option<bool>) {
     TRIM_DECIMAL_ZEROS.store(trim.unwrap_or(false), Ordering::Relaxed)
@@ -753,11 +751,7 @@ fn fmt_int_string_custom(num: &str, group_size: u8, group_separator: &str) -> St
 }
 
 fn fmt_int_string(num: &str) -> String {
-    fmt_int_string_custom(
-        num,
-        get_digit_group_size(),
-        &get_digit_group_separator().to_string(),
-    )
+    fmt_int_string_custom(num, 3, &get_thousands_separator())
 }
 
 fn fmt_float_string_custom(
@@ -793,12 +787,7 @@ fn fmt_float_string_custom(
 }
 
 fn fmt_float_string(num: &str) -> String {
-    fmt_float_string_custom(
-        num,
-        get_digit_group_size(),
-        &get_digit_group_separator().to_string(),
-        get_decimal_separator(),
-    )
+    fmt_float_string_custom(num, 3, &get_thousands_separator(), get_decimal_separator())
 }
 
 fn fmt_integer<T: Num + NumCast + Display>(
@@ -837,7 +826,7 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
         // large and small floats in scientific notation.
         // (note: scientific notation does not play well with digit grouping)
         if (!(0.000001..=SCIENTIFIC_BOUND).contains(&v.abs()) | (v.abs() > SCIENTIFIC_BOUND))
-            && get_digit_group_size() == 0
+            && get_thousands_separator().is_empty()
         {
             let s = format!("{v:>width$.4e}");
             write!(f, "{}", fmt_float_string(s.as_str()))
