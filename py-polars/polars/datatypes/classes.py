@@ -306,7 +306,7 @@ class Decimal(FractionalType):
 
     def __init__(
         self,
-        *args,
+        *args: Any,
         precision: int | None = None,
         scale: int = 0,
     ):
