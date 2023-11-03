@@ -746,12 +746,16 @@ def _unpack_schema(
 
     # determine column dtypes from schema and lookup_names
     lookup: dict[str, str] | None = (
-        {col: name for col, name in zip_longest(column_names, lookup_names) if name}
+        {
+            name: lookup_name
+            for name, lookup_name in zip_longest(column_names, lookup_names)
+            if lookup_name
+        }
         if lookup_names
         else None
     )
     column_dtypes: dict[str, PolarsDataType] = {
-        lookup.get((name := col[0]), name) if lookup else col[0]: dtype  # type: ignore[misc]
+        lookup.get(name := col[0], name) if lookup else col[0]: dtype  # type: ignore[misc]
         if is_polars_dtype(dtype, include_unknown=True)
         else py_type_to_dtype(dtype)
         for col in schema

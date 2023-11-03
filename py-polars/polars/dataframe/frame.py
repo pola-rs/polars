@@ -363,7 +363,7 @@ class DataFrame:
                 nan_to_null=nan_to_null,
             )
 
-        elif isinstance(data, (list, tuple, Sequence)):
+        elif isinstance(data, Sequence):
             self._df = sequence_to_pydf(
                 data,
                 schema=schema,
