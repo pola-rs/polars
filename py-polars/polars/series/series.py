@@ -1141,12 +1141,12 @@ class Series:
 
             args: list[int | float | np.ndarray[Any, Any]] = []
 
-            null_mask = self.is_null()
+            validity_mask = self.is_not_null()
             for arg in inputs:
                 if isinstance(arg, (int, float, np.ndarray)):
                     args.append(arg)
                 elif isinstance(arg, Series):
-                    null_mask |= arg.is_null()
+                    validity_mask &= arg.is_not_null()
                     args.append(arg.view(ignore_nulls=True))
                 else:
                     raise TypeError(
@@ -1189,7 +1189,12 @@ class Series:
                 )
 
             series = f(lambda out: ufunc(*args, out=out, dtype=dtype_char, **kwargs))
-            return self._from_pyseries(series).set(null_mask, None)
+            return (
+                self._from_pyseries(series)
+                .to_frame()
+                .select(F.when(validity_mask).then(F.col(self.name)))
+                .to_series(0)
+            )
         else:
             raise NotImplementedError(
                 "only `__call__` is implemented for numpy ufuncs on a Series, got "
