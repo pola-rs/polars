@@ -3961,33 +3961,6 @@ class Series:
             .to_series()
         )
 
-    def is_temporal(self, excluding: OneOrMoreDataTypes | None = None) -> bool:
-        """
-        Check if this Series datatype is temporal.
-
-        Parameters
-        ----------
-        excluding
-            Optionally exclude one or more temporal dtypes from matching.
-
-        Examples
-        --------
-        >>> from datetime import date
-        >>> s = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
-        >>> s.is_temporal()
-        True
-        >>> s.is_temporal(excluding=[pl.Date])
-        False
-
-        """
-        if excluding is not None:
-            if not isinstance(excluding, Iterable):
-                excluding = [excluding]
-            if self.dtype in excluding:
-                return False
-
-        return self.dtype.is_temporal()
-
     def is_boolean(self) -> bool:
         """
         Check if this Series is a Boolean.
@@ -4122,7 +4095,7 @@ class Series:
             use_pyarrow
             and _PYARROW_AVAILABLE
             and self.dtype != Object
-            and not self.is_temporal(excluding=Time)
+            and (self.dtype == Time or not self.dtype.is_temporal())
         ):
             return self.to_arrow().to_numpy(
                 *args, zero_copy_only=zero_copy_only, writable=writable
@@ -6943,6 +6916,37 @@ class Series:
 
         """
         return self.dtype.is_numeric()
+
+    @deprecate_function("Use `Series.dtype.is_temporal()` instead.", version="0.19.13")
+    def is_temporal(self, excluding: OneOrMoreDataTypes | None = None) -> bool:
+        """
+        Check if this Series datatype is temporal.
+
+        .. deprecated:: 0.19.13
+            Use `Series.dtype.is_temporal()` instead.
+
+        Parameters
+        ----------
+        excluding
+            Optionally exclude one or more temporal dtypes from matching.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> s = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
+        >>> s.is_temporal()  # doctest: +SKIP
+        True
+        >>> s.is_temporal(excluding=[pl.Date])  # doctest: +SKIP
+        False
+
+        """
+        if excluding is not None:
+            if not isinstance(excluding, Iterable):
+                excluding = [excluding]
+            if self.dtype in excluding:
+                return False
+
+        return self.dtype.is_temporal()
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`

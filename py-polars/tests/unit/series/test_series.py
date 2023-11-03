@@ -564,6 +564,8 @@ def test_series_is_dtype_deprecated() -> None:
         assert s.is_numeric() is True
     with pytest.deprecated_call():
         assert s.is_integer() is False
+    with pytest.deprecated_call():
+        assert s.is_temporal() is False
 
 
 def test_series_head_tail_limit() -> None:
