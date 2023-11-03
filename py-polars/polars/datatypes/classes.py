@@ -296,7 +296,9 @@ class Decimal(FractionalType):
     """
     Decimal 128-bit type with an optional precision and non-negative scale.
 
-    NOTE: this is an experimental work-in-progress feature and may not work as expected.
+    .. warning::
+        This is an experimental work-in-progress feature and may not work as expected.
+
     """
 
     precision: int | None
