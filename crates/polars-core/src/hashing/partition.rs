@@ -66,7 +66,7 @@ impl AsU64 for i32 {
 impl AsU64 for i64 {
     #[inline]
     fn as_u64(self) -> u64 {
-        (unsafe { std::mem::transmute::<_, u64>(self) }).wrapping_mul(RANDOM_ODD)
+        (self as u64).wrapping_mul(RANDOM_ODD)
     }
 }
 
@@ -74,15 +74,16 @@ impl<T: AsU64 + Copy> AsU64 for Option<&T> {
     #[inline]
     fn as_u64(self) -> u64 {
         match self {
-            Some(v) => v.as_u64().wrapping_mul(RANDOM_ODD),
-            None => RANDOM_ODD,
+            Some(v) => v.as_u64(),
+            // just a number safe from overflow
+            None => u64::MAX >> 2,
         }
     }
 }
 
 impl<T: AsU64 + Copy> AsU64 for &T {
     fn as_u64(self) -> u64 {
-        (*self).as_u64().wrapping_mul(RANDOM_ODD)
+        (*self).as_u64()
     }
 }
 
@@ -91,7 +92,8 @@ impl AsU64 for Option<u32> {
     fn as_u64(self) -> u64 {
         match self {
             Some(v) => (v as u64).wrapping_mul(RANDOM_ODD),
-            None => RANDOM_ODD,
+            // just a number safe from overflow
+            None => u64::MAX >> 2,
         }
     }
 }
@@ -102,7 +104,8 @@ impl AsU64 for Option<u8> {
     fn as_u64(self) -> u64 {
         match self {
             Some(v) => (v as u64).wrapping_mul(RANDOM_ODD),
-            None => RANDOM_ODD,
+            // just a number safe from overflow
+            None => u64::MAX >> 2,
         }
     }
 }
@@ -113,7 +116,8 @@ impl AsU64 for Option<u16> {
     fn as_u64(self) -> u64 {
         match self {
             Some(v) => (v as u64).wrapping_mul(RANDOM_ODD),
-            None => RANDOM_ODD,
+            // just a number safe from overflow
+            None => u64::MAX >> 2,
         }
     }
 }
@@ -123,7 +127,8 @@ impl AsU64 for Option<u64> {
     fn as_u64(self) -> u64 {
         match self {
             Some(v) => v.wrapping_mul(RANDOM_ODD),
-            None => RANDOM_ODD,
+            // just a number safe from overflow
+            None => u64::MAX >> 2,
         }
     }
 }
