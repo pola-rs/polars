@@ -100,18 +100,18 @@ def test_read_excel_multi_sheets(
     spreadsheet_path = request.getfixturevalue(source)
     frames_by_id = read_spreadsheet(
         spreadsheet_path,
-        sheet_id=[1, 2],
+        sheet_id=[2, 1],
         sheet_name=None,
         **params,
     )
     frames_by_name = read_spreadsheet(
         spreadsheet_path,
         sheet_id=None,
-        sheet_name=["test1", "test2"],
+        sheet_name=["test2", "test1"],
         **params,
     )
     for frames in (frames_by_id, frames_by_name):
-        assert len(frames) == 2
+        assert list(frames_by_name) == ["test2", "test1"]
 
         expected1 = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
         expected2 = pl.DataFrame({"world": ["Row 3", "Row 4"]})
@@ -218,7 +218,7 @@ def test_read_invalid_worksheet(
         value = sheet_id if param == "id" else sheet_name
         with pytest.raises(
             ValueError,
-            match=f"no matching sheets found when `sheet_{param}` is {value!r}",
+            match=f"no matching sheet found when `sheet_{param}` is {value!r}",
         ):
             read_spreadsheet(
                 spreadsheet_path, sheet_id=sheet_id, sheet_name=sheet_name, **params

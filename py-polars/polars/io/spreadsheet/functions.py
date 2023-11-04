@@ -421,27 +421,45 @@ def _read_spreadsheet(
     reader_fn, parser, worksheets = _initialise_spreadsheet_parser(
         engine, source, engine_options or {}
     )
-
-    # determine which named worksheets to read
-    if sheet_id is None and sheet_name is None:
-        sheet_names = [worksheets[0]["name"]]
-        return_multi = False
-    else:
-        return_multi = (
-            sheet_id == 0
-            or isinstance(sheet_id, Sequence)
-            or (isinstance(sheet_name, Sequence) and not isinstance(sheet_name, str))
-        )
-        ids = (sheet_id,) if isinstance(sheet_id, int) else sheet_id or ()
-        names = (sheet_name,) if isinstance(sheet_name, str) else sheet_name or ()
-        sheet_names = [
-            ws["name"]
-            for ws in worksheets
-            if (sheet_id == 0 or ws["index"] in ids or ws["name"] in names)
-        ]
-
-    # read data from the indicated sheet(s)
     try:
+        # determine which named worksheets to read
+        if sheet_id is None and sheet_name is None:
+            sheet_names = [worksheets[0]["name"]]
+            return_multi = False
+        else:
+            return_multi = (
+                (isinstance(sheet_name, Sequence) and not isinstance(sheet_name, str))
+                or isinstance(sheet_id, Sequence)
+                or sheet_id == 0
+            )
+            sheet_names = []
+            if names := (
+                (sheet_name,) if isinstance(sheet_name, str) else sheet_name or ()
+            ):
+                known_sheet_names = {ws["name"] for ws in worksheets}
+                for name in names:
+                    if name not in known_sheet_names:
+                        raise ValueError(
+                            f"no matching sheet found when `sheet_name` is {name!r}"
+                        )
+                    sheet_names.append(name)
+            elif sheet_id == 0:
+                sheet_names.extend(ws["name"] for ws in worksheets)
+            else:
+                ids = (sheet_id,) if isinstance(sheet_id, int) else sheet_id or ()
+                sheet_names_by_idx = {
+                    idx: ws["name"]
+                    for idx, ws in enumerate(worksheets, start=1)
+                    if (sheet_id == 0 or ws["index"] in ids or ws["name"] in names)
+                }
+                for idx in ids:
+                    if (name := sheet_names_by_idx.get(idx)) is None:  # type: ignore[assignment]
+                        raise ValueError(
+                            f"no matching sheet found when `sheet_id` is {idx}"
+                        )
+                    sheet_names.append(name)
+
+        # read data from the indicated sheet(s)
         parsed_sheets = {
             name: reader_fn(
                 parser=parser,
