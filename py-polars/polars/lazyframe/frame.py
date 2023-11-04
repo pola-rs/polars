@@ -154,7 +154,7 @@ class LazyFrame:
 
         The number of entries in the schema should match the underlying data
         dimensions, unless a sequence of dictionaries is being passed, in which case
-        a _partial_ schema can be declared to prevent specific fields from being loaded.
+        a *partial* schema can be declared to prevent specific fields from being loaded.
     orient : {'col', 'row'}, default None
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
