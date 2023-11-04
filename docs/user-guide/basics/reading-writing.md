@@ -42,4 +42,4 @@ As we can see above, Polars made the datetimes a `string`. We can tell Polars to
 --8<-- "python/getting-started/reading-writing.py:parquet"
 ```
 
-To see more examples and other data formats go to the [User Guide](../user-guide/io/csv.md), section IO.
+To see more examples and other data formats go to the [User Guide](../io/csv.md), section IO.

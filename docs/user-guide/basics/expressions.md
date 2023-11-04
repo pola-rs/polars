@@ -7,7 +7,7 @@
 - `with_columns`
 - `group_by`
 
-To learn more about expressions and the context in which they operate, see the User Guide sections: [Contexts](../user-guide/concepts/contexts.md) and [Expressions](../user-guide/concepts/expressions.md).
+To learn more about expressions and the context in which they operate, see the User Guide sections: [Contexts](../concepts/contexts.md) and [Expressions](../concepts/expressions.md).
 
 ### Select statement
 

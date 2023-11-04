@@ -36,7 +36,7 @@ Polars is a highly performant DataFrame library for manipulating structured data
 
 The Polars user guide is intended to live alongside the API documentation. Its purpose is to explain (new) users how to use Polars and to provide meaningful examples. The guide is split into two parts:
 
-- [Getting started](getting-started/intro.md): A 10 minute helicopter view of the library and its primary function.
+- [Getting started](user-guide/basics/index.md): A 10 minute helicopter view of the library and its primary function.
 - [User guide](user-guide/index.md): A detailed explanation of how the library is setup and how to use it most effectively.
 
 If you are looking for details on a specific level / object, it is probably best to go the API documentation: [Python](https://pola-rs.github.io/polars/py-polars/html/reference/index.html) | [Rust](https://docs.rs/polars/latest/polars/).

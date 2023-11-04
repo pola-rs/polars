@@ -13,7 +13,7 @@ Polars supports all types of join (e.g. left, right, inner, outer). Let's have a
 --8<-- "python/getting-started/joins.py:join"
 ```
 
-To see more examples with other types of joins, go the [User Guide](../user-guide/transformations/joins.md).
+To see more examples with other types of joins, go the [User Guide](../transformations/joins.md).
 
 ## Concat
 
