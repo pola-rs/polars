@@ -632,6 +632,9 @@ class Expr:
         """
         Rename the output of an expression by mapping a function over the root name.
 
+        .. deprecated:: 0.19.12
+            This method has been renamed to :func:`name.map`.
+
         Parameters
         ----------
         function
@@ -639,7 +642,7 @@ class Expr:
 
         See Also
         --------
-        alias
+        keep_name
         prefix
         suffix
 
@@ -674,6 +677,9 @@ class Expr:
     def prefix(self, prefix: str) -> Self:
         """
         Add a prefix to the root column name of the expression.
+
+        .. deprecated:: 0.19.12
+            This method has been renamed to :func:`name.prefix`.
 
         Parameters
         ----------
@@ -719,6 +725,9 @@ class Expr:
         """
         Add a suffix to the root column name of the expression.
 
+        .. deprecated:: 0.19.12
+            This method has been renamed to :func:`name.suffix`.
+
         Parameters
         ----------
         suffix
@@ -762,6 +771,9 @@ class Expr:
     def keep_name(self) -> Self:
         """
         Keep the original root name of the expression.
+
+        .. deprecated:: 0.19.12
+            This method has been renamed to :func:`name.keep`.
 
         Notes
         -----
