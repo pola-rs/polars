@@ -4,7 +4,7 @@ pub(super) fn round(s: &Series, decimals: u32) -> PolarsResult<Series> {
     s.round(decimals)
 }
 
-pub(super) fn round_sig_figs(s: &Series, digits: u32) -> PolarsResult<Series> {
+pub(super) fn round_sig_figs(s: &Series, digits: i32) -> PolarsResult<Series> {
     s.round_sig_figs(digits)
 }
 

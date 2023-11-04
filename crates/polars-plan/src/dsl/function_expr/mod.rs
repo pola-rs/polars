@@ -232,7 +232,7 @@ pub enum FunctionExpr {
     },
     #[cfg(feature = "round_series")]
     RoundSF {
-        digits: u32,
+        digits: i32,
     },
     #[cfg(feature = "round_series")]
     Floor,

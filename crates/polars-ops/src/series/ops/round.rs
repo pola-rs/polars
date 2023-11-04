@@ -37,7 +37,7 @@ pub trait RoundSeries: SeriesSealed {
         polars_bail!(opq = round, s.dtype());
     }
 
-    fn round_sig_figs(&self, digits: u32) -> PolarsResult<Series> {
+    fn round_sig_figs(&self, digits: i32) -> PolarsResult<Series> {
         let s = self.as_series();
         if digits < 1 {
             polars_bail!(
@@ -107,11 +107,11 @@ pub trait RoundSeries: SeriesSealed {
 
 impl RoundSeries for Series {}
 
-fn round_sig_figs(value: f64, digits: u32) -> f64 {
+fn round_sig_figs(value: f64, digits: i32) -> f64 {
     if value == 0.0 {
         return value;
     }
-    let magnitude = 10.0.pow(digits as f64 - 1.0 - ((value.abs()).log10().floor()));
+    let magnitude = 10.0_f64.powi(digits - 1 - ((value.abs()).log10().floor() as i32));
     (value * magnitude).round() / magnitude
 }
 
