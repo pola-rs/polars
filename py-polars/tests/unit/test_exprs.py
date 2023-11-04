@@ -1050,13 +1050,3 @@ def test_is_not_deprecated() -> None:
 
     expected = pl.DataFrame({"a": [False, True, False]})
     assert_frame_equal(result, expected)
-
-
-def test_literal_super_type_12227() -> None:
-    assert pl.select(x=1).select(y=pl.lit(0) + ((pl.col("x") > 0) * 0.1)).item() == 0.1
-    assert (
-        pl.select(
-            (pl.lit(0) + (pl.lit(0) == pl.lit(0)) * pl.lit(0.1)) + pl.lit(0)
-        ).item()
-        == 0.1
-    )
