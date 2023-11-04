@@ -13,11 +13,6 @@ pub fn flatten<T: Clone, R: AsRef<[T]>>(bufs: &[R], len: Option<usize>) -> Vec<T
 
 #[inline]
 pub fn hash_to_partition(h: u64, n_partitions: usize) -> usize {
-    // FIXME: we currently use an identity hash in some places, giving a very
-    // poorly distributed hash. So we spread values around by a simple wrapping
-    // multiplication by a 'random' odd number.
-    let h = h.wrapping_mul(0x55fbfd6bfc5458e9);
-
     // Now, assuming h is a 64-bit random number, we note that
     // h / 2^64 is almost a uniform random number in [0, 1), and thus
     // floor(h * n_partitions / 2^64) is almost a uniform random integer in
