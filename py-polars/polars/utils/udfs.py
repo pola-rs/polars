@@ -870,7 +870,7 @@ def warn_on_inefficient_map(
 
 
 def is_shared_lib(file: str) -> bool:
-    return file.endswith((".so", ".dll"))
+    return file.endswith((".so", ".dll", ".pyd"))
 
 
 def _get_shared_lib_location(main_file: Any) -> str:
