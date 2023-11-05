@@ -16,19 +16,19 @@ polars-ops = { path = "../crates/polars-ops", default-features = false, features
 polars-parquet = { path = "../crates/polars-parquet", default-features = false, optional = true }
 polars-plan = { path = "../crates/polars-plan", default-features = false }
 
-ahash = ">=0.8.5"
-ciborium = "0.2"
-either = "1.8"
-lexical-core = "0.8"
+ahash = { workspace = true }
+ciborium = { workspace = true }
+either = { workspace = true }
+lexical-core = { workspace = true }
 libc = "0.2"
-ndarray = { version = "0.15", default-features = false }
+ndarray = { workspace = true }
 numpy = { version = "0.20", default-features = false }
-once_cell = "1"
-pyo3 = { version = "0.20", features = ["abi3-py38", "extension-module", "multiple-pymethods"] }
+once_cell = { workspace = true }
+pyo3 = { workspace = true, features = ["abi3-py38", "extension-module", "multiple-pymethods"] }
 pyo3-built = { version = "0.4", optional = true }
-serde_json = { version = "1", optional = true }
-smartstring = "1"
-thiserror = "1"
+serde_json = { workspace = true, optional = true }
+smartstring = { workspace = true }
+thiserror = { workspace = true }
 
 [dependencies.polars]
 path = "../crates/polars"
