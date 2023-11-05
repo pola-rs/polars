@@ -45,7 +45,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run clippy
-        run: cargo clippy --locked -- -D warnings
+        run: cargo clippy -- -D warnings
 
       - name: Compile without default features
         run: cargo check --no-default-features
