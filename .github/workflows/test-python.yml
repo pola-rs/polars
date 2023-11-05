@@ -133,7 +133,7 @@ jobs:
         shell: bash
         run: |
           maturin build
-          pip install target/wheels/polars-*.whl
+          pip install ../target/wheels/polars-*.whl
 
       - name: Run tests
         if: github.ref_name != 'main'
