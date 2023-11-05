@@ -26,6 +26,7 @@ env:
 defaults:
   run:
     working-directory: py-polars
+    shell: bash
 
 jobs:
   ubuntu:
@@ -117,6 +118,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Create virtual environment
+        run: |
+          python -m venv .venv
+          echo "$GITHUB_WORKSPACE/py-polars/.venv/Scripts" >> $GITHUB_PATH
+
       - name: Install Python dependencies
         run: pip install -r requirements-dev.txt
 
@@ -130,10 +136,9 @@ jobs:
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Install Polars
-        shell: bash
         run: |
-          maturin build
-          pip install ../target/wheels/polars-*.whl
+          source activate
+          maturin develop
 
       - name: Run tests
         if: github.ref_name != 'main'
