@@ -3,7 +3,7 @@ resolver = "2"
 members = [
   "crates/*",
   "examples/*",
-  "py-polars"
+  "py-polars",
 ]
 default-members = [
   "crates/*",
