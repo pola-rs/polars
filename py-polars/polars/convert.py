@@ -101,7 +101,7 @@ def from_dicts(
         to rename after loading the frame.
 
         If you want to drop some of the fields found in the input dictionaries, a
-        _partial_ schema can be declared, in which case omitted fields will not be
+        *partial* schema can be declared, in which case omitted fields will not be
         loaded. Similarly, you can extend the loaded frame with empty columns by
         adding them to the schema.
     schema_overrides : dict, default None

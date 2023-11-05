@@ -70,6 +70,11 @@ def test_sql_cast() -> None:
         (5.0, 5.0, 5, 5, 5, 1, "5", "5.5", b"e", b"e", "true"),
     ]
 
+    with pytest.raises(pl.ComputeError, match="unsupported use of FORMAT in CAST"):
+        pl.SQLContext(df=df, eager_execution=True).execute(
+            "SELECT CAST(a AS STRING FORMAT 'HEX') FROM df"
+        )
+
 
 def test_sql_any_all() -> None:
     df = pl.DataFrame(
@@ -896,7 +901,8 @@ def test_sql_substr() -> None:
 
 
 def test_sql_trim(foods_ipc_path: Path) -> None:
-    out = pl.SQLContext(foods1=pl.scan_ipc(foods_ipc_path)).execute(
+    lf = pl.scan_ipc(foods_ipc_path)
+    out = pl.SQLContext(foods1=lf).execute(
         """
         SELECT DISTINCT TRIM(LEADING 'vmf' FROM category) as new_category
         FROM foods1
@@ -907,6 +913,13 @@ def test_sql_trim(foods_ipc_path: Path) -> None:
     assert out.to_dict(as_series=False) == {
         "new_category": ["seafood", "ruit", "egetables", "eat"]
     }
+    with pytest.raises(pl.ComputeError, match="unsupported TRIM"):
+        # currently unsupported (snowflake) trim syntax
+        pl.SQLContext(foods=lf).execute(
+            """
+            SELECT DISTINCT TRIM('*^xxxx^*', '^*') as new_category FROM foods
+            """,
+        )
 
 
 @pytest.mark.parametrize(
@@ -947,9 +960,6 @@ def test_sql_trim(foods_ipc_path: Path) -> None:
             ["c2", "c1"],
             "DISTINCT BY NAME",
             [(1, "zz"), (2, "yy"), (3, "xx")],
-            # TODO: Remove xfail marker when supported added in sqlparser-rs
-            # https://github.com/sqlparser-rs/sqlparser-rs/pull/997
-            marks=pytest.mark.xfail,
         ),
     ],
 )

@@ -351,21 +351,21 @@ class ExprStringNameSpace:
         ...         ]
         ...     }
         ... )
-        >>> df.select(pl.col("numbers").str.to_decimal())
-        shape: (7, 1)
-        ┌────────────┐
-        │ numbers    │
-        │ ---        │
-        │ decimal[2] │
-        ╞════════════╡
-        │ 40.12      │
-        │ 3420.13    │
-        │ 120134.19  │
-        │ 3212.98    │
-        │ 12.9       │
-        │ 143.09     │
-        │ 143.9      │
-        └────────────┘
+        >>> df.with_columns(numbers_decimal=pl.col("numbers").str.to_decimal())
+        shape: (7, 2)
+        ┌───────────┬─────────────────┐
+        │ numbers   ┆ numbers_decimal │
+        │ ---       ┆ ---             │
+        │ str       ┆ decimal[2]      │
+        ╞═══════════╪═════════════════╡
+        │ 40.12     ┆ 40.12           │
+        │ 3420.13   ┆ 3420.13         │
+        │ 120134.19 ┆ 120134.19       │
+        │ 3212.98   ┆ 3212.98         │
+        │ 12.90     ┆ 12.9            │
+        │ 143.09    ┆ 143.09          │
+        │ 143.9     ┆ 143.9           │
+        └───────────┴─────────────────┘
 
         """
         return wrap_expr(self._pyexpr.str_to_decimal(inference_length))
@@ -505,16 +505,16 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": ["cat", "dog"]})
-        >>> df.select(pl.col("foo").str.to_uppercase())
-        shape: (2, 1)
-        ┌─────┐
-        │ foo │
-        │ --- │
-        │ str │
-        ╞═════╡
-        │ CAT │
-        │ DOG │
-        └─────┘
+        >>> df.with_columns(foo_upper=pl.col("foo").str.to_uppercase())
+        shape: (2, 2)
+        ┌─────┬───────────┐
+        │ foo ┆ foo_upper │
+        │ --- ┆ ---       │
+        │ str ┆ str       │
+        ╞═════╪═══════════╡
+        │ cat ┆ CAT       │
+        │ dog ┆ DOG       │
+        └─────┴───────────┘
 
         """
         return wrap_expr(self._pyexpr.str_to_uppercase())
@@ -526,16 +526,16 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": ["CAT", "DOG"]})
-        >>> df.select(pl.col("foo").str.to_lowercase())
-        shape: (2, 1)
-        ┌─────┐
-        │ foo │
-        │ --- │
-        │ str │
-        ╞═════╡
-        │ cat │
-        │ dog │
-        └─────┘
+        >>> df.with_columns(foo_lower=pl.col("foo").str.to_lowercase())
+        shape: (2, 2)
+        ┌─────┬───────────┐
+        │ foo ┆ foo_lower │
+        │ --- ┆ ---       │
+        │ str ┆ str       │
+        ╞═════╪═══════════╡
+        │ CAT ┆ cat       │
+        │ DOG ┆ dog       │
+        └─────┴───────────┘
 
         """
         return wrap_expr(self._pyexpr.str_to_lowercase())
@@ -549,16 +549,16 @@ class ExprStringNameSpace:
         >>> df = pl.DataFrame(
         ...     {"sing": ["welcome to my world", "THERE'S NO TURNING BACK"]}
         ... )
-        >>> df.select(pl.col("sing").str.to_titlecase())
-        shape: (2, 1)
-        ┌─────────────────────────┐
-        │ sing                    │
-        │ ---                     │
-        │ str                     │
-        ╞═════════════════════════╡
-        │ Welcome To My World     │
-        │ There's No Turning Back │
-        └─────────────────────────┘
+        >>> df.with_columns(foo_title=pl.col("sing").str.to_titlecase())
+        shape: (2, 2)
+        ┌─────────────────────────┬─────────────────────────┐
+        │ sing                    ┆ foo_title               │
+        │ ---                     ┆ ---                     │
+        │ str                     ┆ str                     │
+        ╞═════════════════════════╪═════════════════════════╡
+        │ welcome to my world     ┆ Welcome To My World     │
+        │ THERE'S NO TURNING BACK ┆ There's No Turning Back │
+        └─────────────────────────┴─────────────────────────┘
 
         """
         return wrap_expr(self._pyexpr.str_to_titlecase())
@@ -589,31 +589,33 @@ class ExprStringNameSpace:
         │ world  │
         └────────┘
 
-        >>> df.select(pl.col("foo").str.strip_chars())
-        shape: (2, 1)
-        ┌───────┐
-        │ foo   │
-        │ ---   │
-        │ str   │
-        ╞═══════╡
-        │ hello │
-        │ world │
-        └───────┘
+        >>> df.with_columns(foo_stripped=pl.col("foo").str.strip_chars())
+        shape: (2, 2)
+        ┌────────┬──────────────┐
+        │ foo    ┆ foo_stripped │
+        │ ---    ┆ ---          │
+        │ str    ┆ str          │
+        ╞════════╪══════════════╡
+        │  hello ┆ hello        │
+        │        ┆ world        │
+        │ world  ┆              │
+        └────────┴──────────────┘
 
         Characters can be stripped by passing a string as argument. Note that whitespace
         will not be stripped automatically when doing so, unless that whitespace is
         also included in the string.
 
-        >>> df.select(pl.col("foo").str.strip_chars("ow\n"))
-        shape: (2, 1)
-        ┌───────┐
-        │ foo   │
-        │ ---   │
-        │ str   │
-        ╞═══════╡
-        │  hell │
-        │ rld   │
-        └───────┘
+        >>> df.with_columns(foo_stripped=pl.col("foo").str.strip_chars("ow\n"))
+        shape: (2, 2)
+        ┌────────┬──────────────┐
+        │ foo    ┆ foo_stripped │
+        │ ---    ┆ ---          │
+        │ str    ┆ str          │
+        ╞════════╪══════════════╡
+        │  hello ┆  hell        │
+        │        ┆ rld          │
+        │ world  ┆              │
+        └────────┴──────────────┘
 
         """
         characters = parse_as_expression(characters, str_as_lit=True)
@@ -623,6 +625,12 @@ class ExprStringNameSpace:
         r"""
         Remove leading characters.
 
+        .. note::
+            This method strips any characters present in `characters` from the
+            start of the input, no matter their order. To strip a prefix (i.e.
+            a "word" of characters in a certain order), use
+            :func:`strip_prefix` instead.
+
         Parameters
         ----------
         characters
@@ -630,33 +638,54 @@ class ExprStringNameSpace:
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
 
+        See Also
+        --------
+        strip_prefix
+        strip_chars_end
+
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [" hello ", "\tworld"]})
-        >>> df.select(pl.col("foo").str.strip_chars_start())
-        shape: (2, 1)
-        ┌────────┐
-        │ foo    │
-        │ ---    │
-        │ str    │
-        ╞════════╡
-        │ hello  │
-        │ world  │
-        └────────┘
+        >>> df.with_columns(foo_strip_start=pl.col("foo").str.strip_chars_start())
+        shape: (2, 2)
+        ┌─────────┬─────────────────┐
+        │ foo     ┆ foo_strip_start │
+        │ ---     ┆ ---             │
+        │ str     ┆ str             │
+        ╞═════════╪═════════════════╡
+        │  hello  ┆ hello           │
+        │   world   ┆ world           │
+        └─────────┴─────────────────┘
 
         Characters can be stripped by passing a string as argument. Note that whitespace
         will not be stripped automatically when doing so.
 
-        >>> df.select(pl.col("foo").str.strip_chars_start("wod\t"))
-        shape: (2, 1)
-        ┌─────────┐
-        │ foo     │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │  hello  │
-        │ rld     │
-        └─────────┘
+        >>> df.with_columns(
+        ...     foo_strip_start=pl.col("foo").str.strip_chars_start("wod\t"),
+        ... )
+        shape: (2, 2)
+        ┌─────────┬─────────────────┐
+        │ foo     ┆ foo_strip_start │
+        │ ---     ┆ ---             │
+        │ str     ┆ str             │
+        ╞═════════╪═════════════════╡
+        │  hello  ┆  hello          │
+        │   world   ┆ rld             │
+        └─────────┴─────────────────┘
+
+        The order of the provided characters does not matter, they behave like a set.
+
+        >>> pl.DataFrame({"foo": ["aabcdef"]}).with_columns(
+        ...     foo_strip_start=pl.col("foo").str.strip_chars_start("cba")
+        ... )
+        shape: (1, 2)
+        ┌─────────┬─────────────────┐
+        │ foo     ┆ foo_strip_start │
+        │ ---     ┆ ---             │
+        │ str     ┆ str             │
+        ╞═════════╪═════════════════╡
+        │ aabcdef ┆ def             │
+        └─────────┴─────────────────┘
 
         """
         characters = parse_as_expression(characters, str_as_lit=True)
@@ -666,12 +695,23 @@ class ExprStringNameSpace:
         r"""
         Remove trailing characters.
 
+        .. note::
+            This method strips any characters present in `characters` from the
+            end of the input, no matter their order. To strip a suffix (i.e.
+            a "word" of characters in a certain order), use
+            :func:`strip_suffix` instead.
+
         Parameters
         ----------
         characters
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
+
+        See Also
+        --------
+        strip_suffix
+        strip_chars_start
 
         Examples
         --------
@@ -687,32 +727,47 @@ class ExprStringNameSpace:
         │ world  │
         │        │
         └────────┘
-        >>> df.select(pl.col("foo").str.strip_chars_end())
-        shape: (2, 1)
-        ┌────────┐
-        │ foo    │
-        │ ---    │
-        │ str    │
-        ╞════════╡
-        │  hello │
-        │ world  │
-        └────────┘
+        >>> df.with_columns(foo_strip_end=pl.col("foo").str.strip_chars_end())
+        shape: (2, 2)
+        ┌────────┬───────────────┐
+        │ foo    ┆ foo_strip_end │
+        │ ---    ┆ ---           │
+        │ str    ┆ str           │
+        ╞════════╪═══════════════╡
+        │  hello ┆  hello        │
+        │ world  ┆ world         │
+        │        ┆               │
+        └────────┴───────────────┘
 
         Characters can be stripped by passing a string as argument. Note that whitespace
         will not be stripped automatically when doing so, unless that whitespace is
         also included in the string.
 
-        >>> df.select(pl.col("foo").str.strip_chars_end("oldw "))
-        shape: (2, 1)
-        ┌───────┐
-        │ foo   │
-        │ ---   │
-        │ str   │
-        ╞═══════╡
-        │  he   │
-        │ world │
-        │       │
-        └───────┘
+        >>> df.with_columns(foo_strip_end=pl.col("foo").str.strip_chars_end("oldw "))
+        shape: (2, 2)
+        ┌────────┬───────────────┐
+        │ foo    ┆ foo_strip_end │
+        │ ---    ┆ ---           │
+        │ str    ┆ str           │
+        ╞════════╪═══════════════╡
+        │  hello ┆  he           │
+        │ world  ┆ world         │
+        │        ┆               │
+        └────────┴───────────────┘
+
+        The order of the provided characters does not matter, they behave like a set.
+
+        >>> pl.DataFrame({"foo": ["abcdeff"]}).with_columns(
+        ...     foo_strip_end=pl.col("foo").str.strip_chars_end("fed")
+        ... )
+        shape: (1, 2)
+        ┌─────────┬───────────────┐
+        │ foo     ┆ foo_strip_end │
+        │ ---     ┆ ---           │
+        │ str     ┆ str           │
+        ╞═════════╪═══════════════╡
+        │ abcdeff ┆ abc           │
+        └─────────┴───────────────┘
 
         """
         characters = parse_as_expression(characters, str_as_lit=True)
@@ -724,10 +779,20 @@ class ExprStringNameSpace:
 
         The prefix will be removed from the string exactly once, if found.
 
+        .. note::
+            This method strips the exact character sequence provided in
+            `prefix` from the start of the input. To strip a set of characters
+            in any order, use :func:`strip_chars_start` instead.
+
         Parameters
         ----------
         prefix
             The prefix to be removed.
+
+        See Also
+        --------
+        strip_chars_start
+        strip_suffix
 
         Examples
         --------
@@ -755,10 +820,20 @@ class ExprStringNameSpace:
 
         The suffix will be removed from the string exactly once, if found.
 
+        .. note::
+            This method strips the exact character sequence provided in
+            `suffix` from the end of the input. To strip a set of characters
+            in any order, use :func:`strip_chars_end` instead.
+
         Parameters
         ----------
         suffix
             The suffix to be removed.
+
+        See Also
+        --------
+        strip_chars_end
+        strip_prefix
 
         Examples
         --------
@@ -1119,17 +1194,17 @@ class ExprStringNameSpace:
         ...     {"json": ['{"a":1, "b": true}', None, '{"a":2, "b": false}']}
         ... )
         >>> dtype = pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)])
-        >>> df.select(pl.col("json").str.json_extract(dtype))
-        shape: (3, 1)
-        ┌─────────────┐
-        │ json        │
-        │ ---         │
-        │ struct[2]   │
-        ╞═════════════╡
-        │ {1,true}    │
-        │ {null,null} │
-        │ {2,false}   │
-        └─────────────┘
+        >>> df.with_columns(extracted=pl.col("json").str.json_extract(dtype))
+        shape: (3, 2)
+        ┌─────────────────────┬─────────────┐
+        │ json                ┆ extracted   │
+        │ ---                 ┆ ---         │
+        │ str                 ┆ struct[2]   │
+        ╞═════════════════════╪═════════════╡
+        │ {"a":1, "b": true}  ┆ {1,true}    │
+        │ null                ┆ {null,null} │
+        │ {"a":2, "b": false} ┆ {2,false}   │
+        └─────────────────────┴─────────────┘
 
         """
         if dtype is not None:
@@ -1163,19 +1238,19 @@ class ExprStringNameSpace:
         >>> df = pl.DataFrame(
         ...     {"json_val": ['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}']}
         ... )
-        >>> df.select(pl.col("json_val").str.json_path_match("$.a"))
-        shape: (5, 1)
-        ┌──────────┐
-        │ json_val │
-        │ ---      │
-        │ str      │
-        ╞══════════╡
-        │ 1        │
-        │ null     │
-        │ 2        │
-        │ 2.1      │
-        │ true     │
-        └──────────┘
+        >>> df.with_columns(matched=pl.col("json_val").str.json_path_match("$.a"))
+        shape: (5, 2)
+        ┌────────────┬─────────┐
+        │ json_val   ┆ matched │
+        │ ---        ┆ ---     │
+        │ str        ┆ str     │
+        ╞════════════╪═════════╡
+        │ {"a":"1"}  ┆ 1       │
+        │ null       ┆ null    │
+        │ {"a":2}    ┆ 2       │
+        │ {"a":2.1}  ┆ 2.1     │
+        │ {"a":true} ┆ true    │
+        └────────────┴─────────┘
 
         """
         return wrap_expr(self._pyexpr.str_json_path_match(json_path))
@@ -1219,17 +1294,17 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"strings": ["foo", "bar", None]})
-        >>> df.select(pl.col("strings").str.encode("hex"))
-        shape: (3, 1)
-        ┌─────────┐
-        │ strings │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │ 666f6f  │
-        │ 626172  │
-        │ null    │
-        └─────────┘
+        >>> df.with_columns(strings_hex=pl.col("strings").str.encode("hex"))
+        shape: (3, 2)
+        ┌─────────┬─────────────┐
+        │ strings ┆ strings_hex │
+        │ ---     ┆ ---         │
+        │ str     ┆ str         │
+        ╞═════════╪═════════════╡
+        │ foo     ┆ 666f6f      │
+        │ bar     ┆ 626172      │
+        │ null    ┆ null        │
+        └─────────┴─────────────┘
 
         """
         if encoding == "hex":
@@ -1268,18 +1343,21 @@ class ExprStringNameSpace:
         ...         ]
         ...     }
         ... )
-        >>> df.select(
+        >>> df.with_columns(
         ...     pl.col("lines").str.extract(r"(?m)^(T\w+)", 1).alias("matches"),
         ... )
-        shape: (2, 1)
-        ┌─────────┐
-        │ matches │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │ Those   │
-        │ This    │
-        └─────────┘
+        shape: (2, 2)
+        ┌─────────┬─────────┐
+        │ lines   ┆ matches │
+        │ ---     ┆ ---     │
+        │ str     ┆ str     │
+        ╞═════════╪═════════╡
+        │ I Like  ┆ Those   │
+        │ Those   ┆         │
+        │ Odds    ┆         │
+        │ This is ┆ This    │
+        │ The Way ┆         │
+        └─────────┴─────────┘
 
         See the regex crate's section on `grouping and flags
         <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
@@ -1516,38 +1594,38 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t", "bar", None]})
-        >>> df.select(
+        >>> df.with_columns(
         ...     pl.col("foo").str.count_matches(r"\d").alias("count_digits"),
         ... )
-        shape: (4, 1)
-        ┌──────────────┐
-        │ count_digits │
-        │ ---          │
-        │ u32          │
-        ╞══════════════╡
-        │ 5            │
-        │ 6            │
-        │ 0            │
-        │ null         │
-        └──────────────┘
+        shape: (4, 2)
+        ┌────────────────┬──────────────┐
+        │ foo            ┆ count_digits │
+        │ ---            ┆ ---          │
+        │ str            ┆ u32          │
+        ╞════════════════╪══════════════╡
+        │ 123 bla 45 asd ┆ 5            │
+        │ xyz 678 910t   ┆ 6            │
+        │ bar            ┆ 0            │
+        │ null           ┆ null         │
+        └────────────────┴──────────────┘
 
         >>> df = pl.DataFrame({"bar": ["12 dbc 3xy", "cat\\w", "1zy3\\d\\d", None]})
-        >>> df.select(
+        >>> df.with_columns(
         ...     pl.col("bar")
         ...     .str.count_matches(r"\d", literal=True)
         ...     .alias("count_digits"),
         ... )
-        shape: (4, 1)
-        ┌──────────────┐
-        │ count_digits │
-        │ ---          │
-        │ u32          │
-        ╞══════════════╡
-        │ 0            │
-        │ 0            │
-        │ 2            │
-        │ null         │
-        └──────────────┘
+        shape: (4, 2)
+        ┌────────────┬──────────────┐
+        │ bar        ┆ count_digits │
+        │ ---        ┆ ---          │
+        │ str        ┆ u32          │
+        ╞════════════╪══════════════╡
+        │ 12 dbc 3xy ┆ 0            │
+        │ cat\w      ┆ 0            │
+        │ 1zy3\d\d   ┆ 2            │
+        │ null       ┆ null         │
+        └────────────┴──────────────┘
 
         """
         pattern = parse_as_expression(pattern, str_as_lit=True)
@@ -1639,20 +1717,20 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"x": ["a_1", None, "c", "d_4"]})
-        >>> df.select(
-        ...     pl.col("x").str.split_exact("_", 1).alias("fields"),
+        >>> df.with_columns(
+        ...     extracted=pl.col("x").str.split_exact("_", 1).alias("fields"),
         ... )
-        shape: (4, 1)
-        ┌─────────────┐
-        │ fields      │
-        │ ---         │
-        │ struct[2]   │
-        ╞═════════════╡
-        │ {"a","1"}   │
-        │ {null,null} │
-        │ {"c",null}  │
-        │ {"d","4"}   │
-        └─────────────┘
+        shape: (4, 2)
+        ┌──────┬─────────────┐
+        │ x    ┆ extracted   │
+        │ ---  ┆ ---         │
+        │ str  ┆ struct[2]   │
+        ╞══════╪═════════════╡
+        │ a_1  ┆ {"a","1"}   │
+        │ null ┆ {null,null} │
+        │ c    ┆ {"c",null}  │
+        │ d_4  ┆ {"d","4"}   │
+        └──────┴─────────────┘
 
 
         Split string values in column x in exactly 2 parts and assign
@@ -1708,18 +1786,18 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"s": ["foo bar", None, "foo-bar", "foo bar baz"]})
-        >>> df.select(pl.col("s").str.splitn(" ", 2).alias("fields"))
-        shape: (4, 1)
-        ┌───────────────────┐
-        │ fields            │
-        │ ---               │
-        │ struct[2]         │
-        ╞═══════════════════╡
-        │ {"foo","bar"}     │
-        │ {null,null}       │
-        │ {"foo-bar",null}  │
-        │ {"foo","bar baz"} │
-        └───────────────────┘
+        >>> df.with_columns(pl.col("s").str.splitn(" ", 2).alias("fields"))
+        shape: (4, 2)
+        ┌─────────────┬───────────────────┐
+        │ s           ┆ fields            │
+        │ ---         ┆ ---               │
+        │ str         ┆ struct[2]         │
+        ╞═════════════╪═══════════════════╡
+        │ foo bar     ┆ {"foo","bar"}     │
+        │ null        ┆ {null,null}       │
+        │ foo-bar     ┆ {"foo-bar",null}  │
+        │ foo bar baz ┆ {"foo","bar baz"} │
+        └─────────────┴───────────────────┘
 
         Split string values in column s in exactly 2 parts and assign
         each part to a new column.
@@ -1974,32 +2052,32 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"bin": ["110", "101", "010", "invalid"]})
-        >>> df.select(pl.col("bin").str.parse_int(2, strict=False))
-        shape: (4, 1)
-        ┌──────┐
-        │ bin  │
-        │ ---  │
-        │ i32  │
-        ╞══════╡
-        │ 6    │
-        │ 5    │
-        │ 2    │
-        │ null │
-        └──────┘
+        >>> df.with_columns(parsed=pl.col("bin").str.parse_int(2, strict=False))
+        shape: (4, 2)
+        ┌─────────┬────────┐
+        │ bin     ┆ parsed │
+        │ ---     ┆ ---    │
+        │ str     ┆ i32    │
+        ╞═════════╪════════╡
+        │ 110     ┆ 6      │
+        │ 101     ┆ 5      │
+        │ 010     ┆ 2      │
+        │ invalid ┆ null   │
+        └─────────┴────────┘
 
         >>> df = pl.DataFrame({"hex": ["fa1e", "ff00", "cafe", None]})
-        >>> df.select(pl.col("hex").str.parse_int(16, strict=True))
-        shape: (4, 1)
-        ┌───────┐
-        │ hex   │
-        │ ---   │
-        │ i32   │
-        ╞═══════╡
-        │ 64030 │
-        │ 65280 │
-        │ 51966 │
-        │ null  │
-        └───────┘
+        >>> df.with_columns(parsed=pl.col("hex").str.parse_int(16, strict=True))
+        shape: (4, 2)
+        ┌──────┬────────┐
+        │ hex  ┆ parsed │
+        │ ---  ┆ ---    │
+        │ str  ┆ i32    │
+        ╞══════╪════════╡
+        │ fa1e ┆ 64030  │
+        │ ff00 ┆ 65280  │
+        │ cafe ┆ 51966  │
+        │ null ┆ null   │
+        └──────┴────────┘
 
         """
         if radix is None:

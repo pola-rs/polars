@@ -46,7 +46,6 @@ where
     let offsets = probe_to_offsets(&probe);
 
     let n_tables = hash_sets.len() as u64;
-    debug_assert!(n_tables.is_power_of_two());
 
     // next we probe the other relation
     POOL.install(move || {

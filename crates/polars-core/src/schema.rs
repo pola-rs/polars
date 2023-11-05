@@ -382,6 +382,13 @@ impl Schema {
         self.inner.iter().map(|(_name, dtype)| dtype)
     }
 
+    /// Iterates over mut references to the dtypes in this schema
+    pub fn iter_dtypes_mut(
+        &mut self,
+    ) -> impl Iterator<Item = &mut DataType> + '_ + ExactSizeIterator {
+        self.inner.iter_mut().map(|(_name, dtype)| dtype)
+    }
+
     /// Iterates over references to the names in this schema
     pub fn iter_names(&self) -> impl Iterator<Item = &SmartString> + '_ + ExactSizeIterator {
         self.inner.iter().map(|(name, _dtype)| name)

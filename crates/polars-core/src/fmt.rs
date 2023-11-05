@@ -995,8 +995,8 @@ impl Series {
             },
             _ => {
                 let mut result = "[".to_owned();
-
-                for (i, item) in self.iter().enumerate() {
+                let s = self.slice(0, max_items).rechunk();
+                for (i, item) in s.iter().enumerate() {
                     if i == max_items.saturating_sub(1) {
                         result.push_str("… ");
                         write!(result, "{}", self.get(self.len() - 1).unwrap()).unwrap();

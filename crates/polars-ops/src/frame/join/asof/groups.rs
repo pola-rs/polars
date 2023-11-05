@@ -237,7 +237,6 @@ where
     drop(build_hashes); // Early drop to reduce memory pressure.
     let offsets = mk::get_offsets(&probe_hashes);
     let n_tables = hash_tbls.len() as u64;
-    debug_assert!(n_tables.is_power_of_two());
 
     // Now we probe the right hand side for each left hand side.
     POOL.install(|| {

@@ -4,6 +4,7 @@ import contextlib
 import sys
 import textwrap
 import typing
+from collections import OrderedDict
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
@@ -1426,6 +1427,49 @@ def test_from_rows_of_dicts() -> None:
         assert df3.schema == {"id": pl.Int16, "value": pl.Int32}
 
 
+def test_from_records_with_schema_overrides_12032() -> None:
+    # the 'id' fields contains an int value that exceeds Int64 and doesn't have an exact
+    # Float64 representation; confirm that the override is applied *during* inference,
+    # not as a post-inference cast, so we maintain the accuracy of the original value.
+    rec = [
+        {"id": 9187643043065364490, "x": 333, "y": None},
+        {"id": 9223671840084328467, "x": 666.5, "y": 1698177261953686},
+        {"id": 9187643043065364505, "x": 999, "y": 9223372036854775807},
+    ]
+    df = pl.from_records(rec, schema_overrides={"x": pl.Float32, "id": pl.UInt64})
+    assert df.schema == OrderedDict(
+        [
+            ("id", pl.UInt64),
+            ("x", pl.Float32),
+            ("y", pl.Int64),
+        ]
+    )
+    assert rec == df.rows(named=True)
+
+
+def test_from_large_uint64_misc() -> None:
+    uint_data = [[9187643043065364490, 9223671840084328467, 9187643043065364505]]
+
+    df = pl.DataFrame(uint_data, orient="col", schema_overrides={"column_0": pl.UInt64})
+    assert df["column_0"].dtype == pl.UInt64
+    assert df["column_0"].to_list() == uint_data[0]
+
+    for overrides in ({}, {"column_1": pl.UInt64}):
+        df = pl.DataFrame(
+            uint_data,
+            orient="row",
+            schema_overrides=overrides,  # type: ignore[arg-type]
+        )
+        assert df.schema == OrderedDict(
+            [
+                ("column_0", pl.Int64),
+                ("column_1", pl.UInt64),
+                ("column_2", pl.Int64),
+            ]
+        )
+        assert df.row(0) == tuple(uint_data[0])
+
+
 def test_repeat_by_unequal_lengths_panic() -> None:
     df = pl.DataFrame(
         {
@@ -1601,7 +1645,7 @@ def test_reproducible_hash_with_seeds() -> None:
     if platform.mac_ver()[-1] != "arm64":
         expected = pl.Series(
             "s",
-            [13477868900383131459, 6344663067812082469, 16840582678788620208],
+            [924615033311830428, 6344663067812082469, 12712849352301301328],
             dtype=pl.UInt64,
         )
         result = df.hash_rows(*seeds)
@@ -3549,3 +3593,9 @@ def test_interchange() -> None:
     assert dfi.num_rows() == 2
     assert dfi.get_column(0).dtype[1] == 64
     assert dfi.get_column_by_name("c").get_buffers()["data"][0].bufsize == 6
+
+
+def test_from_dicts_undeclared_column_dtype() -> None:
+    data = [{"a": 1, "b": 2}]
+    result = pl.from_dicts(data, schema=["x"])
+    assert result.schema == {"x": pl.Null}

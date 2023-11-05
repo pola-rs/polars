@@ -36,7 +36,7 @@ To use the library import it into your project
 
 ## Feature Flags
 
-By using the above command you install the core of `Polars` onto your system. However depending on your use case you might want to install the optional dependencies as well. These are made optional to minimize the footprint. The flags are different depending on the programming language. Throughout the user guide we will mention when a functionality is used that requires an additional dependency.
+By using the above command you install the core of Polars onto your system. However depending on your use case you might want to install the optional dependencies as well. These are made optional to minimize the footprint. The flags are different depending on the programming language. Throughout the user guide we will mention when a functionality is used that requires an additional dependency.
 
 ### Python
 

@@ -30,19 +30,7 @@ impl<T> Deref for Wrap<T> {
 }
 
 pub fn _set_partition_size() -> usize {
-    let mut n_partitions = POOL.current_num_threads();
-    if n_partitions == 1 {
-        return 1;
-    }
-    // set n_partitions to closest 2^n size
-    loop {
-        if n_partitions.is_power_of_two() {
-            break;
-        } else {
-            n_partitions -= 1;
-        }
-    }
-    n_partitions
+    POOL.current_num_threads()
 }
 
 /// Just a wrapper structure. Useful for certain impl specializations

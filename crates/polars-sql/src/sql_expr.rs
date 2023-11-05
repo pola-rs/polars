@@ -7,9 +7,9 @@ use polars_plan::prelude::{col, lit, when};
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use sqlparser::ast::{
-    ArrayAgg, BinaryOperator as SQLBinaryOperator, BinaryOperator, DataType as SQLDataType,
-    Expr as SqlExpr, Function as SQLFunction, Ident, JoinConstraint, OrderByExpr,
-    Query as Subquery, SelectItem, TrimWhereField, UnaryOperator, Value as SqlValue,
+    ArrayAgg, ArrayElemTypeDef, BinaryOperator as SQLBinaryOperator, BinaryOperator, CastFormat,
+    DataType as SQLDataType, Expr as SqlExpr, Function as SQLFunction, Ident, JoinConstraint,
+    OrderByExpr, Query as Subquery, SelectItem, TrimWhereField, UnaryOperator, Value as SqlValue,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -19,7 +19,8 @@ use crate::SQLContext;
 
 pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<DataType> {
     Ok(match data_type {
-        SQLDataType::Array(Some(inner_type)) => {
+        SQLDataType::Array(ArrayElemTypeDef::AngleBracket(inner_type))
+        | SQLDataType::Array(ArrayElemTypeDef::SquareBracket(inner_type)) => {
             DataType::List(Box::new(map_sql_polars_datatype(inner_type)?))
         },
         SQLDataType::BigInt(_) => DataType::Int64,
@@ -32,7 +33,7 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
         | SQLDataType::Character(_)
         | SQLDataType::CharacterVarying(_)
         | SQLDataType::Clob(_)
-        | SQLDataType::String
+        | SQLDataType::String(_)
         | SQLDataType::Text
         | SQLDataType::Uuid
         | SQLDataType::Varchar(_) => DataType::Utf8,
@@ -90,7 +91,11 @@ impl SqlExprVisitor<'_> {
                 high,
             } => self.visit_between(expr, *negated, low, high),
             SqlExpr::BinaryOp { left, op, right } => self.visit_binary_op(left, op, right),
-            SqlExpr::Cast { expr, data_type } => self.visit_cast(expr, data_type),
+            SqlExpr::Cast {
+                expr,
+                data_type,
+                format,
+            } => self.visit_cast(expr, data_type, format),
             SqlExpr::Ceil { expr, .. } => Ok(self.visit_expr(expr)?.ceil()),
             SqlExpr::CompoundIdentifier(idents) => self.visit_compound_identifier(idents),
             SqlExpr::Floor { expr, .. } => Ok(self.visit_expr(expr)?.floor()),
@@ -124,7 +129,8 @@ impl SqlExprVisitor<'_> {
                 expr,
                 trim_where,
                 trim_what,
-            } => self.visit_trim(expr, trim_where, trim_what),
+                trim_characters,
+            } => self.visit_trim(expr, trim_where, trim_what, trim_characters),
             SqlExpr::UnaryOp { op, expr } => self.visit_unary_op(op, expr),
             SqlExpr::Value(value) => self.visit_literal(value),
             e @ SqlExpr::Case { .. } => self.visit_when_then(e),
@@ -342,7 +348,15 @@ impl SqlExprVisitor<'_> {
     /// Visit a SQL CAST
     ///
     /// e.g. `CAST(column AS INT)` or `column::INT`
-    fn visit_cast(&mut self, expr: &SqlExpr, data_type: &SQLDataType) -> PolarsResult<Expr> {
+    fn visit_cast(
+        &mut self,
+        expr: &SqlExpr,
+        data_type: &SQLDataType,
+        format: &Option<CastFormat>,
+    ) -> PolarsResult<Expr> {
+        if format.is_some() {
+            return Err(polars_err!(ComputeError: "unsupported use of FORMAT in CAST expression"));
+        }
         let polars_type = map_sql_polars_datatype(data_type)?;
         let expr = self.visit_expr(expr)?;
 
@@ -440,7 +454,12 @@ impl SqlExprVisitor<'_> {
         expr: &SqlExpr,
         trim_where: &Option<TrimWhereField>,
         trim_what: &Option<Box<SqlExpr>>,
+        trim_characters: &Option<Vec<SqlExpr>>,
     ) -> PolarsResult<Expr> {
+        if trim_characters.is_some() {
+            // TODO: allow compact snowflake/bigquery syntax?
+            return Err(polars_err!(ComputeError: "unsupported TRIM syntax"));
+        };
         let expr = self.visit_expr(expr)?;
         let trim_what = trim_what.as_ref().map(|e| self.visit_expr(e)).transpose()?;
         let trim_what = match trim_what {
@@ -448,7 +467,6 @@ impl SqlExprVisitor<'_> {
             None => None,
             _ => return self.err(&expr),
         };
-
         Ok(match (trim_where, trim_what) {
             (None | Some(TrimWhereField::Both), None) => expr.str().strip_chars(lit(Null)),
             (None | Some(TrimWhereField::Both), Some(val)) => expr.str().strip_chars(lit(val)),
@@ -676,7 +694,7 @@ pub(super) fn process_join_constraint(
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     if let JoinConstraint::On(SqlExpr::BinaryOp { left, op, right }) = constraint {
         if op != &BinaryOperator::Eq {
-            polars_bail!(InvalidOperation: 
+            polars_bail!(InvalidOperation:
                 "SQL interface (currently) only supports basic equi-join \
                  constraints; found '{:?}' op in\n{:?}", op, constraint)
         }

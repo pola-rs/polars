@@ -74,7 +74,7 @@ def test_sort_by_exprs() -> None:
 
 def test_arg_sort_nulls() -> None:
     a = pl.Series("a", [1.0, 2.0, 3.0, None, None])
-    assert a.arg_sort(nulls_last=True).to_list() == [0, 1, 2, 4, 3]
+    assert a.arg_sort(nulls_last=True).to_list() == [0, 1, 2, 3, 4]
     assert a.arg_sort(nulls_last=False).to_list() == [3, 4, 0, 1, 2]
 
     assert a.to_frame().sort(by="a", nulls_last=False).to_series().to_list() == [
@@ -715,3 +715,40 @@ def test_sort_by_11653() -> None:
         .sum()
         .alias("sort_by"),
     ).sort("id").to_dict(as_series=False) == {"id": [0, 1], "sort_by": [1.0, 1.0]}
+
+
+def test_sort_with_null_12139() -> None:
+    df = pl.DataFrame(
+        {
+            "bool": [True, False, None, True, False],
+            "float": [1.0, 2.0, 3.0, 4.0, 5.0],
+        }
+    )
+
+    assert df.sort("bool", descending=False, nulls_last=False).to_dict(
+        as_series=False
+    ) == {
+        "bool": [None, False, False, True, True],
+        "float": [3.0, 2.0, 5.0, 1.0, 4.0],
+    }
+
+    assert df.sort("bool", descending=False, nulls_last=True).to_dict(
+        as_series=False
+    ) == {
+        "bool": [False, False, True, True, None],
+        "float": [2.0, 5.0, 1.0, 4.0, 3.0],
+    }
+
+    assert df.sort("bool", descending=True, nulls_last=True).to_dict(
+        as_series=False
+    ) == {
+        "bool": [True, True, False, False, None],
+        "float": [1.0, 4.0, 2.0, 5.0, 3.0],
+    }
+
+    assert df.sort("bool", descending=True, nulls_last=False).to_dict(
+        as_series=False
+    ) == {
+        "bool": [None, True, True, False, False],
+        "float": [3.0, 1.0, 4.0, 2.0, 5.0],
+    }

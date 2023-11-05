@@ -210,7 +210,7 @@ class DataFrame:
 
         The number of entries in the schema should match the underlying data
         dimensions, unless a sequence of dictionaries is being passed, in which case
-        a _partial_ schema can be declared to prevent specific fields from being loaded.
+        a *partial* schema can be declared to prevent specific fields from being loaded.
     orient : {'col', 'row'}, default None
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
@@ -425,7 +425,9 @@ class DataFrame:
         schema_overrides: SchemaDict | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> Self:
-        pydf = PyDataFrame.read_dicts(data, infer_schema_length, schema)
+        pydf = PyDataFrame.read_dicts(
+            data, infer_schema_length, schema, schema_overrides
+        )
         if schema or schema_overrides:
             pydf = _post_apply_columns(
                 pydf, list(schema or pydf.columns()), schema_overrides=schema_overrides
@@ -6070,7 +6072,7 @@ class DataFrame:
 
         The UDF will receive each row as a tuple of values: `udf(row)`.
 
-        Implementing logic using a Python function is almost always _significantly_
+        Implementing logic using a Python function is almost always *significantly*
         slower and more memory intensive than implementing the same logic using
         the native expression API because:
 
@@ -8828,9 +8830,9 @@ class DataFrame:
         An example of the supercast rules when applying an arithmetic operation on two
         DataTypes are for instance:
 
-        Int8 + Utf8 = Utf8
-        Float32 + Int64 = Float32
-        Float32 + Float64 = Float64
+        - Int8 + Utf8 = Utf8
+        - Float32 + Int64 = Float32
+        - Float32 + Float64 = Float64
 
         Examples
         --------

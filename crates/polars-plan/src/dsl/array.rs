@@ -37,4 +37,10 @@ impl ArrayNameSpace {
         self.0
             .map_private(FunctionExpr::ArrayExpr(ArrayFunction::Unique(true)))
     }
+
+    /// Cast the Array column to List column with the same inner data type.
+    pub fn to_list(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ArrayExpr(ArrayFunction::ToList))
+    }
 }

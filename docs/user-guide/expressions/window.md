@@ -51,7 +51,7 @@ that each pokemon within a group are sorted by `Speed` in `ascending` order. Unf
 --8<-- "python/user-guide/expressions/window.py:sort"
 ```
 
-`Polars` keeps track of each group's location and maps the expressions to the proper row locations. This will also work over different groups in a single `select`.
+Polars keeps track of each group's location and maps the expressions to the proper row locations. This will also work over different groups in a single `select`.
 
 The power of window expressions is that you often don't need a `group_by -> explode` combination, but you can put the logic in a single expression. It also makes the API cleaner. If properly used a:
 

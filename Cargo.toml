@@ -45,9 +45,9 @@ rayon = "1.8"
 regex = "1.9"
 serde = "1.0.188"
 serde_json = "1"
-simd-json = { version = "0.12", features = ["known-key"] }
+simd-json = { version = "0.13", features = ["known-key"] }
 smartstring = "1"
-sqlparser = "0.38"
+sqlparser = "0.39"
 strum_macros = "0.25"
 thiserror = "1"
 tokio = "1.26"
@@ -88,6 +88,7 @@ arrow-data = { version = ">=41", default-features = false }
 arrow-schema = { version = ">=41", default-features = false }
 parquet2 = { version = "0.17.2", features = ["async"], default-features = false }
 avro-schema = { version = "0.3" }
+zstd = "0.13"
 
 [workspace.dependencies.arrow]
 package = "polars-arrow"

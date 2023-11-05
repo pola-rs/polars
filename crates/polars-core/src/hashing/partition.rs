@@ -1,3 +1,5 @@
+use polars_utils::hash_to_partition;
+
 use super::*;
 
 // Used to to get a u64 from the hashing keys
@@ -7,60 +9,63 @@ pub trait AsU64 {
     fn as_u64(self) -> u64;
 }
 
+// Identity gives a poorly distributed hash. So we spread values around by a simple wrapping
+// multiplication by a 'random' odd number.
+const RANDOM_ODD: u64 = 0x55fbfd6bfc5458e9;
+
 impl AsU64 for u8 {
     #[inline]
     fn as_u64(self) -> u64 {
-        self as u64
+        (self as u64).wrapping_mul(RANDOM_ODD)
     }
 }
 
 impl AsU64 for u16 {
     #[inline]
     fn as_u64(self) -> u64 {
-        self as u64
+        (self as u64).wrapping_mul(RANDOM_ODD)
     }
 }
 
 impl AsU64 for u32 {
     #[inline]
     fn as_u64(self) -> u64 {
-        self as u64
+        (self as u64).wrapping_mul(RANDOM_ODD)
     }
 }
 
 impl AsU64 for u64 {
     #[inline]
     fn as_u64(self) -> u64 {
-        self
+        self.wrapping_mul(RANDOM_ODD)
     }
 }
 
 impl AsU64 for i8 {
     #[inline]
     fn as_u64(self) -> u64 {
-        self as u64
+        (self as u64).wrapping_mul(RANDOM_ODD)
     }
 }
 
 impl AsU64 for i16 {
     #[inline]
     fn as_u64(self) -> u64 {
-        self as u64
+        (self as u64).wrapping_mul(RANDOM_ODD)
     }
 }
 
 impl AsU64 for i32 {
     #[inline]
     fn as_u64(self) -> u64 {
-        let asu32: u32 = unsafe { std::mem::transmute(self) };
-        asu32 as u64
+        (self as u64).wrapping_mul(RANDOM_ODD)
     }
 }
 
 impl AsU64 for i64 {
     #[inline]
     fn as_u64(self) -> u64 {
-        unsafe { std::mem::transmute(self) }
+        (self as u64).wrapping_mul(RANDOM_ODD)
     }
 }
 
@@ -85,7 +90,7 @@ impl AsU64 for Option<u32> {
     #[inline]
     fn as_u64(self) -> u64 {
         match self {
-            Some(v) => v as u64,
+            Some(v) => (v as u64).wrapping_mul(RANDOM_ODD),
             // just a number safe from overflow
             None => u64::MAX >> 2,
         }
@@ -97,7 +102,7 @@ impl AsU64 for Option<u8> {
     #[inline]
     fn as_u64(self) -> u64 {
         match self {
-            Some(v) => v as u64,
+            Some(v) => (v as u64).wrapping_mul(RANDOM_ODD),
             // just a number safe from overflow
             None => u64::MAX >> 2,
         }
@@ -109,7 +114,7 @@ impl AsU64 for Option<u16> {
     #[inline]
     fn as_u64(self) -> u64 {
         match self {
-            Some(v) => v as u64,
+            Some(v) => (v as u64).wrapping_mul(RANDOM_ODD),
             // just a number safe from overflow
             None => u64::MAX >> 2,
         }
@@ -119,7 +124,11 @@ impl AsU64 for Option<u16> {
 impl AsU64 for Option<u64> {
     #[inline]
     fn as_u64(self) -> u64 {
-        self.unwrap_or(u64::MAX >> 2)
+        match self {
+            Some(v) => v.wrapping_mul(RANDOM_ODD),
+            // just a number safe from overflow
+            None => u64::MAX >> 2,
+        }
     }
 }
 
@@ -130,9 +139,6 @@ impl<'a> AsU64 for BytesHash<'a> {
 }
 
 #[inline]
-/// For partitions that are a power of 2 we can use a bitshift instead of a modulo.
 pub fn this_partition(h: u64, thread_no: u64, n_partitions: u64) -> bool {
-    debug_assert!(n_partitions.is_power_of_two());
-    // n % 2^i = n & (2^i - 1)
-    (h & n_partitions.wrapping_sub(1)) == thread_no
+    hash_to_partition(h, n_partitions as usize) as u64 == thread_no
 }
