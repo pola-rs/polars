@@ -222,25 +222,3 @@ default = [
   "all",
   "nightly",
 ]
-
-[profile.opt-dev]
-inherits = "dev"
-opt-level = 1
-
-[profile.debug-release]
-inherits = "release"
-debug = true
-incremental = true
-codegen-units = 16
-lto = "thin"
-
-[profile.release]
-codegen-units = 1
-lto = "fat"
-
-# This is ignored here; would be set in .cargo/config.toml.
-# Should not be used when packaging
-# target-cpu = "native"
-
-# Prevent package from thinking it's in the workspace
-[workspace]
