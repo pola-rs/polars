@@ -99,12 +99,14 @@ impl ApplyExpr {
     ) -> PolarsResult<AggregationContext<'a>> {
         let all_unit_len = all_unit_length(&ca);
         if all_unit_len && self.returns_scalar {
-            ac.with_series(ca.explode().unwrap().into_series(), true, Some(&self.expr))?;
-            ac.update_groups = UpdateGroups::No;
+            ac.with_agg_state(AggState::AggregatedScalar(
+                ca.explode().unwrap().into_series(),
+            ));
         } else {
             ac.with_series(ca.into_series(), true, Some(&self.expr))?;
             ac.with_update_groups(UpdateGroups::WithSeriesLen);
         }
+
         Ok(ac)
     }
 
