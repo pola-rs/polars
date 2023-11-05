@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Final, Iterator, cast
+from typing import TYPE_CHECKING, Any, Iterator, cast
 
 import numpy as np
 import pandas as pd
@@ -129,7 +129,7 @@ def test_init_inputs(monkeypatch: Any) -> None:
     assert s.dtype.time_zone is None  # type: ignore[union-attr]
 
     # conversion of Date to Datetime with specified timezone and units
-    tu: Final = "ms"
+    tu: TimeUnit = "ms"
     tz = "America/Argentina/Rio_Gallegos"
     s = pl.Series([date(2023, 1, 1), date(2023, 1, 2)], dtype=pl.Datetime(tu, tz))
     d1 = datetime(2023, 1, 1, 0, 0, 0, 0, ZoneInfo(tz))
