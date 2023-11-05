@@ -181,6 +181,7 @@ impl CsvSink {
     pub fn new(path: &Path, options: CsvWriterOptions, schema: &Schema) -> PolarsResult<FilesSink> {
         let file = std::fs::File::create(path)?;
         let writer = CsvWriter::new(file)
+            .include_bom(options.include_bom)
             .include_header(options.include_header)
             .with_separator(options.serialize_options.separator)
             .with_line_terminator(options.serialize_options.line_terminator)

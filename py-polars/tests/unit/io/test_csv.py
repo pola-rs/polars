@@ -1668,3 +1668,11 @@ def test_read_filelike_object_12404() -> None:
     buf = io.BufferedReader(io.BytesIO(csv))  # type: ignore[arg-type]
     df = pl.read_csv(buf, eol_char=";")
     assert_frame_equal(df, expected)
+
+
+def test_write_csv_bom() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
+    f = io.BytesIO()
+    df.write_csv(f, has_bom=True)
+    f.seek(0)
+    assert f.read() == b"\xef\xbb\xbfa,b\n1,1\n2,2\n3,3\n"

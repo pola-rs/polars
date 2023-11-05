@@ -28,6 +28,7 @@ pub struct CsvWriter<W: Write> {
     buffer: W,
     options: write_impl::SerializeOptions,
     header: bool,
+    bom: bool,
     batch_size: usize,
 }
 
@@ -46,11 +47,15 @@ where
             buffer,
             options,
             header: true,
+            bom: false,
             batch_size: 1024,
         }
     }
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
+        if self.bom {
+            write_impl::write_bom(&mut self.buffer)?;
+        }
         let names = df.get_column_names();
         if self.header {
             write_impl::write_header(&mut self.buffer, &names, &self.options)?;
@@ -66,6 +71,12 @@ where
     /// Set whether to write headers.
     pub fn include_header(mut self, include_header: bool) -> Self {
         self.header = include_header;
+        self
+    }
+
+    /// Set whether to write UTF-8 BOM.
+    pub fn has_bom(mut self, has_bom: bool) -> Self {
+        self.bom = has_bom;
         self
     }
 
@@ -139,9 +150,11 @@ where
     }
 
     pub fn batched(self, _schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
+        let expects_bom = self.bom;
         let expects_header = self.header;
         Ok(BatchedWriter {
             writer: self,
+            has_written_bom: !expects_bom,
             has_written_header: !expects_header,
         })
     }
@@ -149,6 +162,7 @@ where
 
 pub struct BatchedWriter<W: Write> {
     writer: CsvWriter<W>,
+    has_written_bom: bool,
     has_written_header: bool,
 }
 
@@ -158,6 +172,11 @@ impl<W: Write> BatchedWriter<W> {
     /// # Panics
     /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
     pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
+        if !self.has_written_bom {
+            self.has_written_bom = true;
+            write_impl::write_bom(&mut self.writer.buffer)?;
+        }
+
         if !self.has_written_header {
             self.has_written_header = true;
             let names = df.get_column_names();
