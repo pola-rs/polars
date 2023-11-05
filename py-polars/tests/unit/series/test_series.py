@@ -437,7 +437,7 @@ def test_power() -> None:
     assert_series_equal(a**a, pl.Series([1.0, 4.0], dtype=Float64))
     assert_series_equal(b**b, pl.Series([None, 4.0], dtype=Float64))
     assert_series_equal(a**b, pl.Series([None, 4.0], dtype=Float64))
-    assert_series_equal(a**None, pl.Series([None] * len(a), dtype=Float64))
+    assert_series_equal(a ** None, pl.Series([None] * len(a), dtype=Float64))
     with pytest.raises(TypeError):
         c**2
     with pytest.raises(pl.ColumnNotFoundError):

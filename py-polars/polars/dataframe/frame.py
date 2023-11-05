@@ -2611,6 +2611,7 @@ class DataFrame:
         self,
         file: BinaryIO | BytesIO | str | Path,
         compression: AvroCompression = "uncompressed",
+        name: str = "",
     ) -> None:
         """
         Write to Apache Avro file.
@@ -2621,6 +2622,8 @@ class DataFrame:
             File path or writeable file-like object to which the data will be written.
         compression : {'uncompressed', 'snappy', 'deflate'}
             Compression method. Defaults to "uncompressed".
+        name
+            Schema name. Defaults to empty string.
 
         Examples
         --------
@@ -2641,8 +2644,10 @@ class DataFrame:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
             file = normalize_filepath(file)
+        if name is None:
+            name = ""
 
-        self._df.write_avro(file, compression)
+        self._df.write_avro(file, compression, name)
 
     def write_excel(
         self,
