@@ -30,13 +30,18 @@ pub(crate) fn unlocalize_datetime(ndt: NaiveDateTime, tz: &Tz) -> NaiveDateTime 
 }
 
 #[cfg(feature = "timezones")]
-pub(crate) fn localize_timestamp(timestamp: i64, tu: TimeUnit, tz: Tz) -> PolarsResult<i64> {
+pub(crate) fn localize_timestamp(
+    timestamp: i64,
+    tu: TimeUnit,
+    tz: Tz,
+    ambiguous: Ambiguous,
+) -> PolarsResult<i64> {
     match tu {
         TimeUnit::Nanoseconds => Ok(convert_to_naive_local(
             &chrono_tz::UTC,
             &tz,
             timestamp_ns_to_datetime(timestamp),
-            Ambiguous::Raise,
+            ambiguous,
         )?
         .timestamp_nanos_opt()
         .unwrap()),
@@ -44,14 +49,14 @@ pub(crate) fn localize_timestamp(timestamp: i64, tu: TimeUnit, tz: Tz) -> Polars
             &chrono_tz::UTC,
             &tz,
             timestamp_us_to_datetime(timestamp),
-            Ambiguous::Raise,
+            ambiguous,
         )?
         .timestamp_micros()),
         TimeUnit::Milliseconds => Ok(convert_to_naive_local(
             &chrono_tz::UTC,
             &tz,
             timestamp_ms_to_datetime(timestamp),
-            Ambiguous::Raise,
+            ambiguous,
         )?
         .timestamp_millis()),
     }

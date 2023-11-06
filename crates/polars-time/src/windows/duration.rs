@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::ops::Mul;
 
+#[cfg(feature = "timezones")]
 use arrow::legacy::kernels::Ambiguous;
 use arrow::legacy::time_zone::Tz;
 use arrow::temporal_conversions::{
@@ -439,6 +440,44 @@ impl Duration {
         )
     }
 
+    /// Localize result to given time zone., respecting DST fold of original datetime.
+    /// For example, 2022-11-06 01:30:00 CST truncated by 1 hour becomes 2022-11-06 01:00:00 CST,
+    /// whereas 2022-11-06 01:30:00 CDT truncated by 1 hour becomes 2022-11-06 01:00:00 CDT.
+    ///
+    /// * `original_dt_naive` - original datetime, without time zone.
+    ///   E.g. if the original datetime was 2022-11-06 01:30:00 CST, then this would
+    ///   be 2022-11-06 01:30:00.
+    /// * `original_dt_utc` - original datetime converted to UTC. E.g. if the
+    ///   original datetime was 2022-11-06 01:30:00 CST, then this would
+    ///   be 2022-11-06 07:30:00.
+    /// * `result_dt_naive` - result, without time zone.
+    #[cfg(feature = "timezones")]
+    fn localize_result(
+        &self,
+        original_dt_naive: NaiveDateTime,
+        original_dt_utc: NaiveDateTime,
+        result_dt_naive: NaiveDateTime,
+        tz: &Tz,
+        localize_datetime: impl Fn(NaiveDateTime, &Tz, Ambiguous) -> PolarsResult<NaiveDateTime>,
+    ) -> NaiveDateTime {
+        match localize_datetime(result_dt_naive, tz, Ambiguous::Raise) {
+            Ok(dt) => dt,
+            Err(_) => {
+                if localize_datetime(original_dt_naive, tz, Ambiguous::Earliest).unwrap()
+                    == original_dt_utc
+                {
+                    localize_datetime(result_dt_naive, tz, Ambiguous::Earliest).unwrap()
+                } else if localize_datetime(original_dt_naive, tz, Ambiguous::Latest).unwrap()
+                    == original_dt_utc
+                {
+                    localize_datetime(result_dt_naive, tz, Ambiguous::Latest).unwrap()
+                } else {
+                    unreachable!()
+                }
+            },
+        }
+    }
+
     fn truncate_subweekly<G, J>(
         &self,
         t: i64,
@@ -446,29 +485,39 @@ impl Duration {
         duration: i64,
         _timestamp_to_datetime: G,
         _datetime_to_timestamp: J,
-        _ambiguous: Ambiguous,
     ) -> PolarsResult<i64>
     where
         G: Fn(i64) -> NaiveDateTime,
         J: Fn(NaiveDateTime) -> i64,
     {
-        let t = match tz {
-            #[cfg(feature = "timezones")]
-            Some(tz) => _datetime_to_timestamp(unlocalize_datetime(_timestamp_to_datetime(t), tz)),
-            _ => t,
-        };
-        let mut remainder = t % duration;
-        if remainder < 0 {
-            remainder += duration
-        }
         match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => Ok(_datetime_to_timestamp(localize_datetime(
-                _timestamp_to_datetime(t - remainder),
-                tz,
-                _ambiguous,
-            )?)),
-            _ => Ok(t - remainder),
+            Some(tz) => {
+                let original_dt_utc = _timestamp_to_datetime(t);
+                let original_dt_naive = unlocalize_datetime(original_dt_utc, tz);
+                let t = _datetime_to_timestamp(original_dt_naive);
+                let mut remainder = t % duration;
+                if remainder < 0 {
+                    remainder += duration
+                }
+                let result_timestamp = t - remainder;
+                let result_dt_naive = _timestamp_to_datetime(result_timestamp);
+                let result_dt_utc = self.localize_result(
+                    original_dt_naive,
+                    original_dt_utc,
+                    result_dt_naive,
+                    tz,
+                    localize_datetime,
+                );
+                Ok(_datetime_to_timestamp(result_dt_utc))
+            },
+            _ => {
+                let mut remainder = t % duration;
+                if remainder < 0 {
+                    remainder += duration
+                }
+                Ok(t - remainder)
+            },
         }
     }
 
@@ -478,30 +527,43 @@ impl Duration {
         tz: Option<&Tz>,
         timestamp_to_datetime: G,
         datetime_to_timestamp: J,
-        _ambiguous: Ambiguous,
     ) -> PolarsResult<i64>
     where
         G: Fn(i64) -> NaiveDateTime,
         J: Fn(NaiveDateTime) -> i64,
     {
+        let _original_dt_utc;
+        let original_dt_naive;
         let dt = match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => unlocalize_datetime(timestamp_to_datetime(t), tz).date(),
-            _ => timestamp_to_datetime(t).date(),
+            Some(tz) => {
+                _original_dt_utc = timestamp_to_datetime(t);
+                original_dt_naive = unlocalize_datetime(_original_dt_utc, tz);
+                original_dt_naive.date()
+            },
+            _ => {
+                _original_dt_utc = timestamp_to_datetime(t);
+                original_dt_naive = _original_dt_utc;
+                original_dt_naive.date()
+            },
         };
         let week_timestamp = dt.week(Weekday::Mon);
         let first_day_of_week =
             week_timestamp.first_day() - chrono::Duration::weeks(self.weeks - 1);
+        let result_dt_naive = first_day_of_week.and_time(NaiveTime::default());
         match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => Ok(datetime_to_timestamp(localize_datetime(
-                first_day_of_week.and_time(NaiveTime::default()),
-                tz,
-                _ambiguous,
-            )?)),
-            _ => Ok(datetime_to_timestamp(
-                first_day_of_week.and_time(NaiveTime::default()),
-            )),
+            Some(tz) => {
+                let result_dt_utc = self.localize_result(
+                    original_dt_naive,
+                    _original_dt_utc,
+                    result_dt_naive,
+                    tz,
+                    localize_datetime,
+                );
+                Ok(datetime_to_timestamp(result_dt_utc))
+            },
+            _ => Ok(datetime_to_timestamp(result_dt_naive)),
         }
     }
     fn truncate_monthly<G, J>(
@@ -510,18 +572,25 @@ impl Duration {
         tz: Option<&Tz>,
         timestamp_to_datetime: G,
         datetime_to_timestamp: J,
-        _ambiguous: Ambiguous,
     ) -> PolarsResult<i64>
     where
         G: Fn(i64) -> NaiveDateTime,
         J: Fn(NaiveDateTime) -> i64,
     {
-        let ts = match tz {
+        let original_dt_utc;
+        let original_dt_naive;
+        match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => unlocalize_datetime(timestamp_to_datetime(t), tz),
-            _ => timestamp_to_datetime(t),
+            Some(tz) => {
+                original_dt_utc = timestamp_to_datetime(t);
+                original_dt_naive = unlocalize_datetime(original_dt_utc, tz);
+            },
+            _ => {
+                original_dt_utc = timestamp_to_datetime(t);
+                original_dt_naive = original_dt_utc;
+            },
         };
-        let (year, month) = (ts.year(), ts.month());
+        let (year, month) = (original_dt_naive.year(), original_dt_naive.month());
 
         // determine the total number of months and truncate
         // the number of months by the duration amount
@@ -532,15 +601,22 @@ impl Duration {
         // recreate a new time from the year and month combination
         let (year, month) = ((total / 12), ((total % 12) + 1) as u32);
 
-        let dt = new_datetime(year, month, 1, 0, 0, 0, 0).ok_or(polars_err!(
+        let result_dt_naive = new_datetime(year, month, 1, 0, 0, 0, 0).ok_or(polars_err!(
             ComputeError: format!("date '{}-{}-1' does not exist", year, month)
         ))?;
         match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => Ok(datetime_to_timestamp(localize_datetime(
-                dt, tz, _ambiguous,
-            )?)),
-            _ => Ok(datetime_to_timestamp(dt)),
+            Some(tz) => {
+                let result_dt_utc = self.localize_result(
+                    original_dt_naive,
+                    original_dt_utc,
+                    result_dt_naive,
+                    tz,
+                    localize_datetime,
+                );
+                Ok(datetime_to_timestamp(result_dt_utc))
+            },
+            _ => Ok(datetime_to_timestamp(result_dt_naive)),
         }
     }
 
@@ -552,7 +628,6 @@ impl Duration {
         nsecs_to_unit: F,
         timestamp_to_datetime: G,
         datetime_to_timestamp: J,
-        _ambiguous: Ambiguous,
     ) -> PolarsResult<i64>
     where
         F: Fn(i64) -> i64,
@@ -570,7 +645,6 @@ impl Duration {
                     duration,
                     timestamp_to_datetime,
                     datetime_to_timestamp,
-                    _ambiguous,
                 )
             },
             // truncate by days
@@ -582,25 +656,16 @@ impl Duration {
                     duration,
                     timestamp_to_datetime,
                     datetime_to_timestamp,
-                    _ambiguous,
                 )
             },
             // truncate by weeks
-            (0, _, 0, 0) => self.truncate_weekly(
-                t,
-                tz,
-                timestamp_to_datetime,
-                datetime_to_timestamp,
-                _ambiguous,
-            ),
+            (0, _, 0, 0) => {
+                self.truncate_weekly(t, tz, timestamp_to_datetime, datetime_to_timestamp)
+            },
             // truncate by months
-            (_, 0, 0, 0) => self.truncate_monthly(
-                t,
-                tz,
-                timestamp_to_datetime,
-                datetime_to_timestamp,
-                _ambiguous,
-            ),
+            (_, 0, 0, 0) => {
+                self.truncate_monthly(t, tz, timestamp_to_datetime, datetime_to_timestamp)
+            },
             _ => {
                 polars_bail!(ComputeError: "duration may not mix month, weeks and nanosecond units")
             },
@@ -609,40 +674,37 @@ impl Duration {
 
     // Truncate the given ns timestamp by the window boundary.
     #[inline]
-    pub fn truncate_ns(&self, t: i64, tz: Option<&Tz>, ambiguous: Ambiguous) -> PolarsResult<i64> {
+    pub fn truncate_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
             tz,
             |nsecs| nsecs,
             timestamp_ns_to_datetime,
             datetime_to_timestamp_ns,
-            ambiguous,
         )
     }
 
     // Truncate the given ns timestamp by the window boundary.
     #[inline]
-    pub fn truncate_us(&self, t: i64, tz: Option<&Tz>, ambiguous: Ambiguous) -> PolarsResult<i64> {
+    pub fn truncate_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
             tz,
             |nsecs| nsecs / 1000,
             timestamp_us_to_datetime,
             datetime_to_timestamp_us,
-            ambiguous,
         )
     }
 
     // Truncate the given ms timestamp by the window boundary.
     #[inline]
-    pub fn truncate_ms(&self, t: i64, tz: Option<&Tz>, ambiguous: Ambiguous) -> PolarsResult<i64> {
+    pub fn truncate_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
             tz,
             |nsecs| nsecs / 1_000_000,
             timestamp_ms_to_datetime,
             datetime_to_timestamp_ms,
-            ambiguous,
         )
     }
 
