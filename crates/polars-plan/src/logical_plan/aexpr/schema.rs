@@ -257,9 +257,11 @@ fn get_arithmetic_field(
         _ => {
             let right_type = right_ae.get_type(schema, ctxt, arena)?;
 
-            // Avoid needlessly type casting integer columns during arithmetic
-            // with integer literals.
-            if left_field.dtype.is_integer() && right_type.is_integer() {
+            // Avoid needlessly type casting numeric columns during arithmetic
+            // with literals.
+            if (left_field.dtype.is_integer() && right_type.is_integer())
+                || (left_field.dtype.is_float() && right_type.is_float())
+            {
                 match (left_ae, right_ae) {
                     (AExpr::Literal(_), AExpr::Literal(_)) => {},
                     (AExpr::Literal(_), _) => {
