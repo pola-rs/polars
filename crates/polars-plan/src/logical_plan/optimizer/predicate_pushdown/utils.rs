@@ -372,6 +372,10 @@ pub(super) fn aexpr_blocks_predicate_pushdown(node: Node, expr_arena: &Arena<AEx
                 let values = input.get(1).unwrap();
                 let ae = expr_arena.get(*values);
                 if matches!(ae, AExpr::Literal { .. }) {
+                    // Still need to check the input expr (LHS) of the is_in.
+                    let node = *input.get(0).unwrap();
+                    stack.push(node);
+                    expr_arena.get(node).nodes(&mut stack);
                     false
                 } else {
                     ae.nodes(&mut stack);
