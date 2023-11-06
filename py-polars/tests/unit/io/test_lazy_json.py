@@ -129,13 +129,17 @@ def test_ndjson_list_arg(io_files_path: Path) -> None:
     assert df.row(-1) == ("seafood", 194, 12.0, 1)
     assert df.row(0) == ("vegetables", 45, 0.5, 2)
 
+
 def test_anonymous_scan_explain(io_files_path: Path) -> None:
     file = io_files_path / "foods1.ndjson"
     q = pl.scan_ndjson(source=file)
     assert "Anonymous" in q.explain()
     assert "Anonymous" in q.show_graph(raw_output=True)  # type: ignore[operator]
 
-def test_sink_json_should_write_same_data(io_files_path: Path, tmp_path: Path) -> None:
+
+def test_sink_ndjson_should_write_same_data(
+    io_files_path: Path, tmp_path: Path
+) -> None:
     tmp_path.mkdir(exist_ok=True)
     # Arrange
     source_path = io_files_path / "foods1.csv"
@@ -143,58 +147,7 @@ def test_sink_json_should_write_same_data(io_files_path: Path, tmp_path: Path) -
     expected = pl.read_csv(source_path)
     lf = pl.scan_csv(source_path)
     # Act
-    lf.sink_json(target_path)
+    lf.sink_ndjson(target_path)
     df = pl.read_ndjson(target_path)
     # Assert
     assert_frame_equal(df, expected)
-
-
-def test_sink_json_should_write_same_data_with_json_argument(
-    io_files_path: Path, tmp_path: Path
-) -> None:
-    tmp_path.mkdir(exist_ok=True)
-    # Arrange
-    source_path = io_files_path / "foods1.csv"
-    target_path = tmp_path / "foods_test.json"
-
-    expected = pl.read_csv(source_path)
-    lf = pl.scan_csv(source_path)
-    # Act
-    # df = pl.read_json(target_path)
-    # # Assert
-    # assert_frame_equal(df, expected)
-    lf.sink_json(target_path, json_format="json")
-    df = pl.read_json(target_path)
-    # Assert
-    assert_frame_equal(df, expected)
-
-
-def test_sink_json_should_write_same_data_with_json_lines_argument(
-    io_files_path: Path, tmp_path: Path
-) -> None:
-    tmp_path.mkdir(exist_ok=True)
-    # Arrange
-    source_path = io_files_path / "foods1.csv"
-    target_path = tmp_path / "foods_test.ndjson"
-
-    expected = pl.read_csv(source_path)
-    lf = pl.scan_csv(source_path)
-    # Act
-    lf.sink_json(target_path, json_format="json_lines")
-    df = pl.read_ndjson(target_path)
-    # Assert
-    assert_frame_equal(df, expected)
-
-
-def test_sink_json_should_raise_exception_with_invalid_argument(
-    io_files_path: Path, tmp_path: Path
-) -> None:
-    tmp_path.mkdir(exist_ok=True)
-    # Arrange
-    source_path = io_files_path / "foods1.csv"
-    target_path = tmp_path / "foods_test.ndjson"
-
-    lf = pl.scan_csv(source_path)
-    # Act & Assert
-    with pytest.raises(ValueError):
-        lf.sink_json(target_path, json_format="invalid_argument")  # type: ignore[arg-type]

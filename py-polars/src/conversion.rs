@@ -10,8 +10,6 @@ use polars::io::avro::AvroCompression;
 #[cfg(feature = "ipc")]
 use polars::io::ipc::IpcCompression;
 use polars::prelude::AnyValue;
-#[cfg(feature = "json")]
-use polars::prelude::JsonFormat;
 use polars::series::ops::NullBehavior;
 use polars_core::frame::row::any_values_to_dtype;
 use polars_core::prelude::{IndexOrder, QuantileInterpolOptions};
@@ -1312,22 +1310,6 @@ impl FromPyObject<'_> for Wrap<ParallelStrategy> {
                 return Err(PyValueError::new_err(format!(
                 "`parallel` must be one of {{'auto', 'columns', 'row_groups', 'none'}}, got {v}",
             )))
-            },
-        };
-        Ok(Wrap(parsed))
-    }
-}
-
-#[cfg(feature = "json")]
-impl FromPyObject<'_> for Wrap<JsonFormat> {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
-        let parsed = match ob.extract::<&str>()? {
-            "json" => JsonFormat::Json,
-            "json_lines" => JsonFormat::JsonLines,
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "json format must be one of: {{'json', 'json_lines'}}, got {v}",
-                )))
             },
         };
         Ok(Wrap(parsed))

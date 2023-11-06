@@ -11,10 +11,9 @@ use polars::lazy::frame::LazyCsvReader;
 use polars::lazy::frame::LazyJsonLineReader;
 use polars::lazy::frame::{AllowedOptimizations, LazyFrame};
 use polars::lazy::prelude::col;
-#[cfg(feature = "json")]
-use polars::prelude::JsonFormat;
 #[cfg(feature = "csv")]
-use polars::prelude::{ClosedWindow, CsvEncoding, Field, JoinType, Schema};
+use polars::prelude::CsvEncoding;
+use polars::prelude::{ClosedWindow, Field, JoinType, Schema};
 use polars::time::*;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::UniqueKeepStrategy;
@@ -631,18 +630,9 @@ impl PyLazyFrame {
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(all(feature = "streaming", feature = "json"))]
-    #[pyo3(signature = (path, json_format, maintain_order))]
-    fn sink_json(
-        &self,
-        py: Python,
-        path: PathBuf,
-        json_format: Option<Wrap<JsonFormat>>,
-        maintain_order: bool,
-    ) -> PyResult<()> {
-        let options = JsonWriterOptions {
-            json_format: json_format.map(|c| c.0).unwrap_or_default(),
-            maintain_order,
-        };
+    #[pyo3(signature = (path, maintain_order))]
+    fn sink_json(&self, py: Python, path: PathBuf, maintain_order: bool) -> PyResult<()> {
+        let options = JsonWriterOptions { maintain_order };
 
         // if we don't allow threads and we have udfs trying to acquire the gil from different
         // threads we deadlock.

@@ -7,7 +7,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "csv")]
 use polars_io::csv::CsvWriter;
 #[cfg(feature = "json")]
-use polars_io::json::JsonBatchedWriter;
+use polars_io::json::BatchedWriter;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetWriter;
 #[cfg(feature = "ipc")]
@@ -66,13 +66,12 @@ impl SinkWriter for polars_io::csv::BatchedWriter<std::fs::File> {
 }
 
 #[cfg(feature = "json")]
-impl SinkWriter for JsonBatchedWriter<std::fs::File> {
+impl SinkWriter for BatchedWriter<std::fs::File> {
     fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
         self.write_batch(df)
     }
 
     fn _finish(&mut self) -> PolarsResult<()> {
-        self.finish()?;
         Ok(())
     }
 }
@@ -245,8 +244,10 @@ impl JsonSink {
         _schema: &Schema,
     ) -> PolarsResult<FilesSink> {
         let file = std::fs::File::create(path)?;
-        let writer = Box::new(JsonBatchedWriter::new(file, options.json_format))
-            as Box<dyn SinkWriter + Send + Sync>;
+        let writer = BatchedWriter::new(file);
+
+        let writer = Box::new(writer) as Box<dyn SinkWriter + Send + Sync>;
+
         let morsels_per_sink = morsels_per_sink();
         let backpressure = morsels_per_sink * 2;
         let (sender, receiver) = bounded(backpressure);

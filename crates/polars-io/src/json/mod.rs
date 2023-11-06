@@ -68,14 +68,10 @@ use std::ops::Deref;
 use arrow::array::StructArray;
 use arrow::legacy::conversion::chunk_to_struct;
 use polars_core::error::to_compute_err;
-use polars_core::frame::RecordBatchIter;
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
 use polars_json::json::infer;
 use polars_json::json::write::FallibleStreamingIterator;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-use polars_json::{json, ndjson};
 use simd_json::BorrowedValue;
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
@@ -84,8 +80,6 @@ use crate::prelude::*;
 /// The format to use to write the DataFrame to JSON: `Json` (a JSON array) or `JsonLines` (each row output on a
 /// separate line). In either case, each row is serialized as a JSON object whose keys are the column names and whose
 /// values are the row's corresponding values.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum JsonFormat {
     /// A single JSON array containing each DataFrame row as an object. The length of the array is the number of rows in
     /// the DataFrame.
@@ -99,7 +93,6 @@ pub enum JsonFormat {
     /// at a time. But the output in its entirety is not valid JSON; only the individual lines are.
     ///
     /// It is recommended to use the file extension `.jsonl` when saving as JSON Lines.
-    #[default]
     JsonLines,
 }
 
@@ -161,29 +154,17 @@ where
     }
 }
 
-pub struct JsonBatchedWriter<W: Write> {
+pub struct BatchedWriter<W: Write> {
     writer: W,
-    is_first_row: bool,
-    json_format: JsonFormat,
 }
 
-impl<W> JsonBatchedWriter<W>
+impl<W> BatchedWriter<W>
 where
     W: Write,
 {
-    pub fn new(writer: W, json_format: JsonFormat) -> Self {
-        JsonBatchedWriter {
-            writer,
-            is_first_row: true,
-            json_format,
-        }
+    pub fn new(writer: W) -> Self {
+        BatchedWriter { writer }
     }
-}
-
-impl<W> JsonBatchedWriter<W>
-where
-    W: Write,
-{
     /// Write a batch to the json writer.
     ///
     /// # Panics
@@ -191,72 +172,12 @@ where
     pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
         let fields = df.iter().map(|s| s.field().to_arrow()).collect::<Vec<_>>();
         let chunks = df.iter_chunks();
-        match self.json_format {
-            JsonFormat::Json => {
-                self.write_json_batch(fields, chunks)?;
-            },
-            JsonFormat::JsonLines => {
-                self.write_json_lines_batch(fields, chunks)?;
-            },
-        }
-        Ok(())
-    }
-
-    /// Writes the footer of the Json file.
-    pub fn finish(&mut self) -> PolarsResult<()> {
-        if JsonFormat::Json == self.json_format {
-            self.write_json_finish()?;
-        }
-        Ok(())
-    }
-}
-/// These are the methods implementation for json lines format
-impl<W> JsonBatchedWriter<W>
-where
-    W: Write,
-{
-    fn write_json_lines_batch(
-        &mut self,
-        fields: Vec<ArrowField>,
-        chunks: RecordBatchIter,
-    ) -> Result<(), PolarsError> {
         let batches =
             chunks.map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
         let mut serializer = polars_json::ndjson::write::Serializer::new(batches, vec![]);
         while let Some(block) = serializer.next()? {
             self.writer.write_all(block)?;
         }
-        Ok(())
-    }
-}
-/// These are the methods implementation for standard json format
-impl<W> JsonBatchedWriter<W>
-where
-    W: Write,
-{
-    fn write_json_batch(
-        &mut self,
-        fields: Vec<ArrowField>,
-        chunks: RecordBatchIter,
-    ) -> Result<(), PolarsError> {
-        let batches =
-            chunks.map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
-        let mut serializer = polars_json::json::write::Serializer::new(batches, vec![]);
-
-        while let Some(block) = serializer.next()? {
-            if self.is_first_row {
-                self.writer.write_all(&[b'['])?;
-                self.is_first_row = false;
-            } else {
-                self.writer.write_all(&[b','])?;
-            }
-            self.writer.write_all(block)?;
-        }
-        Ok(())
-    }
-
-    fn write_json_finish(&mut self) -> Result<(), PolarsError> {
-        self.writer.write_all(&[b']'])?;
         Ok(())
     }
 }

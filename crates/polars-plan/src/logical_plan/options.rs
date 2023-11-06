@@ -7,8 +7,6 @@ use polars_io::csv::SerializeOptions;
 use polars_io::csv::{CsvEncoding, NullValues};
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcCompression;
-#[cfg(feature = "json")]
-use polars_io::json::JsonFormat;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetCompression;
 use polars_io::RowCount;
@@ -91,8 +89,6 @@ pub struct CsvWriterOptions {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct JsonWriterOptions {
-    /// format to use to write the DataFrame to JSON
-    pub json_format: JsonFormat,
     /// maintain the order the data was processed
     pub maintain_order: bool,
 }

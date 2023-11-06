@@ -101,7 +101,6 @@ if TYPE_CHECKING:
         IntoExprColumn,
         JoinStrategy,
         JoinValidation,
-        JsonFormat,
         Label,
         Orientation,
         ParallelStrategy,
@@ -2245,11 +2244,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             maintain_order=maintain_order,
         )
 
-    def sink_json(
+    def sink_ndjson(
         self,
         path: str | Path,
         *,
-        json_format: JsonFormat | None = None,
         maintain_order: bool = True,
         type_coercion: bool = True,
         predicate_pushdown: bool = True,
@@ -2267,9 +2265,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         path
             File path to which the file should be written.
-        json_format : {'json', 'json_lines'}
-            Choose "json" for single JSON array containing each row as an object.
-            Choose "json_lines" for each row output on a separate line.
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will  be slightly faster.
@@ -2305,9 +2300,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown=slice_pushdown,
         )
 
-        return lf.sink_json(
-            path=path, json_format=json_format, maintain_order=maintain_order
-        )
+        return lf.sink_json(path=path, maintain_order=maintain_order)
 
     def _set_sink_optimizations(
         self,
