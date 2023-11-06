@@ -357,11 +357,22 @@ pub(super) fn aexpr_blocks_predicate_pushdown(node: Node, expr_arena: &Arena<AEx
     let mut stack = Vec::<Node>::with_capacity(4);
     stack.push(node);
 
-    while !stack.is_empty() {
-        let node = stack.pop().unwrap();
+    while let Some(node) = stack.pop() {
         let ae = expr_arena.get(node);
 
-        let should_block = match ae {
+        if match ae {
+            // Already checked these literals are not from the RHS of an `is_in`,
+            // meaning these literals are either projecting as columns or
+            // predicates both of which rely on the current height of the
+            // dataframe and thus need to block pushdown.
+            AExpr::Literal(LiteralValue::Range { .. }) => true,
+            AExpr::Literal(LiteralValue::Series(s)) => s.len() > 1,
+            ae => ae.groups_sensitive(),
+        } {
+            return true;
+        }
+
+        match ae {
             AExpr::Function {
                 function: FunctionExpr::Boolean(BooleanFunction::IsIn),
                 input,
@@ -370,31 +381,18 @@ pub(super) fn aexpr_blocks_predicate_pushdown(node: Node, expr_arena: &Arena<AEx
                 // Handles a special case where the expr contains a series, but it is being
                 // used as part of an `is_in`, so it can be pushed down.
                 let values = input.get(1).unwrap();
-                let ae = expr_arena.get(*values);
-                if matches!(ae, AExpr::Literal { .. }) {
+                if matches!(expr_arena.get(*values), AExpr::Literal { .. }) {
                     // Still need to check the input expr (LHS) of the is_in.
                     let node = *input.get(0).unwrap();
                     stack.push(node);
                     expr_arena.get(node).nodes(&mut stack);
-                    false
                 } else {
                     ae.nodes(&mut stack);
-                    ae.groups_sensitive()
                 }
             },
-            // Already checked we are not inside an `is_in`, meaning these literals are
-            // either projecting as columns or predicates, both of which rely on the
-            // current height of the dataframe and thus need to block pushdown.
-            AExpr::Literal(LiteralValue::Range { .. }) => true,
-            AExpr::Literal(LiteralValue::Series(s)) => s.len() > 1,
             ae => {
                 ae.nodes(&mut stack);
-                ae.groups_sensitive()
             },
-        };
-
-        if should_block {
-            return should_block;
         };
     }
 
