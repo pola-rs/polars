@@ -50,42 +50,49 @@ impl PyDataFrame {
     fn finish_from_rows(
         rows: Vec<Row>,
         infer_schema_length: Option<usize>,
-        schema_overwrite: Option<Schema>,
+        schema: Option<Schema>,
+        schema_overrides_by_idx: Option<Vec<(usize, DataType)>>,
     ) -> PyResult<Self> {
         // Object builder must be registered, this is done on import.
-        let schema =
+        let mut final_schema =
             rows_to_schema_supertypes(&rows, infer_schema_length.map(|n| std::cmp::max(1, n)))
                 .map_err(PyPolarsErr::from)?;
-        // Replace inferred nulls with boolean and erase scale from inferred decimals.
-        let fields = schema.iter_fields().map(|mut fld| match fld.data_type() {
-            DataType::Null => {
-                fld.coerce(DataType::Boolean);
-                fld
-            },
-            DataType::Decimal(_, _) => {
-                fld.coerce(DataType::Decimal(None, None));
-                fld
-            },
-            _ => fld,
-        });
-        let mut schema = Schema::from_iter(fields);
 
-        if let Some(schema_overwrite) = schema_overwrite {
-            for (i, (name, dtype)) in schema_overwrite.into_iter().enumerate() {
-                if let Some((name_, dtype_)) = schema.get_at_index_mut(i) {
+        // Erase scale from inferred decimals.
+        for dtype in final_schema.iter_dtypes_mut() {
+            if let DataType::Decimal(_, _) = dtype {
+                *dtype = DataType::Decimal(None, None)
+            }
+        }
+
+        // Integrate explicit/inferred schema.
+        if let Some(schema) = schema {
+            for (i, (name, dtype)) in schema.into_iter().enumerate() {
+                if let Some((name_, dtype_)) = final_schema.get_at_index_mut(i) {
                     *name_ = name;
 
-                    // If user sets dtype unknown, we use the inferred datatype.
+                    // If schema dtype is Unknown, overwrite with inferred datatype.
                     if !matches!(dtype, DataType::Unknown) {
                         *dtype_ = dtype;
                     }
                 } else {
-                    schema.with_column(name, dtype);
+                    final_schema.with_column(name, dtype);
                 }
             }
         }
 
-        let df = DataFrame::from_rows_and_schema(&rows, &schema).map_err(PyPolarsErr::from)?;
+        // Optional per-field overrides; these supersede default/inferred dtypes.
+        if let Some(overrides) = schema_overrides_by_idx {
+            for (i, dtype) in overrides {
+                if let Some((_, dtype_)) = final_schema.get_at_index_mut(i) {
+                    if !matches!(dtype, DataType::Unknown) {
+                        *dtype_ = dtype;
+                    }
+                }
+            }
+        }
+        let df =
+            DataFrame::from_rows_and_schema(&rows, &final_schema).map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
@@ -403,6 +410,7 @@ impl PyDataFrame {
     #[cfg(feature = "json")]
     pub fn read_json(
         py_f: &PyAny,
+        infer_schema_length: Option<usize>,
         schema: Option<Wrap<Schema>>,
         schema_overrides: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
@@ -421,8 +429,9 @@ impl PyDataFrame {
                     let e = PyPolarsErr::from(PolarsError::ComputeError(msg.into()));
                     Err(PyErr::from(e))
                 } else {
-                    let mut builder =
-                        JsonReader::new(mmap_bytes_r).with_json_format(JsonFormat::Json);
+                    let mut builder = JsonReader::new(mmap_bytes_r)
+                        .with_json_format(JsonFormat::Json)
+                        .infer_schema_len(infer_schema_length);
 
                     if let Some(schema) = schema {
                         builder = builder.with_schema(Arc::new(schema.0));
@@ -510,35 +519,40 @@ impl PyDataFrame {
     pub fn read_rows(
         rows: Vec<Wrap<Row>>,
         infer_schema_length: Option<usize>,
-        schema_overwrite: Option<Wrap<Schema>>,
+        schema: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
         // SAFETY: Wrap<T> is transparent.
         let rows = unsafe { std::mem::transmute::<Vec<Wrap<Row>>, Vec<Row>>(rows) };
-        Self::finish_from_rows(
-            rows,
-            infer_schema_length,
-            schema_overwrite.map(|wrap| wrap.0),
-        )
+        Self::finish_from_rows(rows, infer_schema_length, schema.map(|wrap| wrap.0), None)
     }
 
     #[staticmethod]
     pub fn read_dicts(
         dicts: &PyAny,
         infer_schema_length: Option<usize>,
-        schema_overwrite: Option<Wrap<Schema>>,
+        schema: Option<Wrap<Schema>>,
+        schema_overrides: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
         // If given, read dict fields in schema order.
         let mut schema_columns = PlIndexSet::new();
-        if let Some(schema) = &schema_overwrite {
-            schema_columns.extend(schema.0.iter_names().map(|n| n.to_string()))
+        if let Some(s) = &schema {
+            schema_columns.extend(s.0.iter_names().map(|n| n.to_string()))
         }
         let (rows, names) = dicts_to_rows(dicts, infer_schema_length, schema_columns)?;
+        let mut schema_overrides_by_idx: Vec<(usize, DataType)> = Vec::new();
+        if let Some(overrides) = schema_overrides {
+            for (idx, name) in names.iter().enumerate() {
+                if let Some(dtype) = overrides.0.get(name) {
+                    schema_overrides_by_idx.push((idx, dtype.clone()));
+                }
+            }
+        }
         let mut pydf = Self::finish_from_rows(
             rows,
             infer_schema_length,
-            schema_overwrite.map(|wrap| wrap.0),
+            schema.map(|wrap| wrap.0),
+            Some(schema_overrides_by_idx),
         )?;
-
         unsafe {
             for (s, name) in pydf.df.get_columns_mut().iter_mut().zip(&names) {
                 s.rename(name);
@@ -926,14 +940,14 @@ impl PyDataFrame {
 
     pub fn sample_frac(
         &self,
-        frac: f64,
+        frac: &PySeries,
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
         let df = self
             .df
-            .sample_frac(frac, with_replacement, shuffle, seed)
+            .sample_frac(&frac.series, with_replacement, shuffle, seed)
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
@@ -1227,10 +1241,6 @@ impl PyDataFrame {
 
         // SAFETY: PyDataFrame is a repr(transparent) DataFrame.
         Ok(unsafe { std::mem::transmute::<Vec<DataFrame>, Vec<PyDataFrame>>(out) })
-    }
-
-    pub fn shift(&self, periods: i64) -> Self {
-        self.df.shift(periods).into()
     }
 
     pub fn lazy(&self) -> PyLazyFrame {

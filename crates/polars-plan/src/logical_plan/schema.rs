@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::path::Path;
 
+use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
 use polars_utils::format_smartstring;
 #[cfg(feature = "serde")]
@@ -41,32 +42,65 @@ impl LogicalPlan {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FileInfo {
     pub schema: SchemaRef,
-    // - known size
-    // - estimated size
+    /// Stores the schema used for the reader, as the main schema can contain
+    /// extra hive columns.
+    pub reader_schema: Option<ArrowSchemaRef>,
+    /// - known size
+    /// - estimated size
     pub row_estimation: (Option<usize>, usize),
     pub hive_parts: Option<Arc<hive::HivePartitions>>,
 }
 
 impl FileInfo {
-    pub fn new(schema: SchemaRef, row_estimation: (Option<usize>, usize)) -> Self {
+    pub fn new(
+        schema: SchemaRef,
+        reader_schema: Option<ArrowSchemaRef>,
+        row_estimation: (Option<usize>, usize),
+    ) -> Self {
         Self {
-            schema,
+            schema: schema.clone(),
+            reader_schema,
             row_estimation,
             hive_parts: None,
         }
     }
 
-    pub fn set_hive_partitions(&mut self, url: &Path) {
+    /// Updates the statistics and merges the hive partitions schema with the file one.
+    pub fn init_hive_partitions(&mut self, url: &Path) -> PolarsResult<()> {
         self.hive_parts = hive::HivePartitions::parse_url(url).map(|hive_parts| {
-            let schema = Arc::make_mut(&mut self.schema);
-            schema.merge(hive_parts.get_statistics().schema().clone());
+            let hive_schema = hive_parts.get_statistics().schema().clone();
+            let expected_len = self.schema.len() + hive_schema.len();
 
-            Arc::new(hive_parts)
-        });
+            let schema = Arc::make_mut(&mut self.schema);
+            schema.merge((**hive_parts.get_statistics().schema()).clone());
+
+            polars_ensure!(schema.len() == expected_len, ComputeError: "invalid hive partitions\n\n\
+            Extending the schema with the hive partitioned columns creates duplicate fields.");
+
+            Ok(Arc::new(hive_parts))
+        }).transpose()?;
+        Ok(())
+    }
+
+    /// Updates the statistics, but not the schema.
+    pub fn update_hive_partitions(&mut self, url: &Path) {
+        let new = hive::HivePartitions::parse_url(url);
+
+        match (&mut self.hive_parts, new) {
+            (Some(current), Some(new)) => match Arc::get_mut(current) {
+                Some(current) => {
+                    *current = new;
+                },
+                _ => {
+                    *current = Arc::new(new);
+                },
+            },
+            (_, new) => self.hive_parts = new.map(Arc::new),
+        }
     }
 }
 
@@ -125,7 +159,7 @@ pub fn set_estimated_row_counts(
                 mut options,
             } = lp_arena.take(root)
             {
-                let mut sum_output = (None, 0);
+                let mut sum_output = (None, 0usize);
                 for input in &inputs {
                     let mut out =
                         set_estimated_row_counts(*input, lp_arena, expr_arena, 0, scratch);
@@ -134,7 +168,7 @@ pub fn set_estimated_row_counts(
                     }
                     // todo! deal with known as well
                     let out = estimate_sizes(out.0, out.1, out.2);
-                    sum_output.1 += out.1;
+                    sum_output.1 = sum_output.1.saturating_add(out.1);
                 }
                 options.rows = sum_output;
                 lp_arena.replace(root, Union { inputs, options });

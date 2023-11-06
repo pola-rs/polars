@@ -7,7 +7,7 @@ use super::common::*;
 use super::{read_batch, read_file_dictionaries, Dictionaries, FileMetadata};
 use crate::array::Array;
 use crate::chunk::Chunk;
-use crate::datatypes::Schema;
+use crate::datatypes::ArrowSchema;
 
 /// An iterator of [`Chunk`]s from an Arrow IPC file.
 pub struct FileReader<R: Read + Seek> {
@@ -16,7 +16,7 @@ pub struct FileReader<R: Read + Seek> {
     // the dictionaries are going to be read
     dictionaries: Option<Dictionaries>,
     current_block: usize,
-    projection: Option<(Vec<usize>, AHashMap<usize, usize>, Schema)>,
+    projection: Option<(Vec<usize>, AHashMap<usize, usize>, ArrowSchema)>,
     remaining: usize,
     data_scratch: Vec<u8>,
     message_scratch: Vec<u8>,
@@ -34,7 +34,7 @@ impl<R: Read + Seek> FileReader<R> {
     ) -> Self {
         let projection = projection.map(|projection| {
             let (p, h, fields) = prepare_projection(&metadata.schema.fields, projection);
-            let schema = Schema {
+            let schema = ArrowSchema {
                 fields,
                 metadata: metadata.schema.metadata.clone(),
             };
@@ -53,7 +53,7 @@ impl<R: Read + Seek> FileReader<R> {
     }
 
     /// Return the schema of the file
-    pub fn schema(&self) -> &Schema {
+    pub fn schema(&self) -> &ArrowSchema {
         self.projection
             .as_ref()
             .map(|x| &x.2)

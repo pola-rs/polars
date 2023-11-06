@@ -43,6 +43,7 @@ from polars.datatypes import (
     Utf8,
     dtype_to_py_type,
     is_polars_dtype,
+    numpy_char_code_to_dtype,
     py_type_to_dtype,
 )
 from polars.datatypes.constructor import (
@@ -137,7 +138,9 @@ def include_unknowns(
 ) -> MutableMapping[str, PolarsDataType]:
     """Complete partial schema dict by including Unknown type."""
     return {
-        col: (schema.get(col, Unknown) or Unknown)  # type: ignore[truthy-bool]
+        col: (
+            schema.get(col, Unknown) or Unknown  # type: ignore[truthy-bool]
+        )
         for col in cols
     }
 
@@ -267,6 +270,26 @@ def sequence_from_anyvalue_or_object(name: str, values: Sequence[Any]) -> PySeri
         raise
 
 
+def sequence_from_anyvalue_and_dtype_or_object(
+    name: str, values: Sequence[Any], dtype: PolarsDataType
+) -> PySeries:
+    """
+    Last resort conversion.
+
+    AnyValues are most flexible and if they fail we go for object types
+
+    """
+    try:
+        return PySeries.new_from_anyvalues_and_dtype(name, values, dtype, strict=True)
+    # raised if we cannot convert to Wrap<AnyValue>
+    except RuntimeError:
+        return PySeries.new_object(name, values, _strict=False)
+    except ComputeError as exc:
+        if "mixed dtypes" in str(exc):
+            return PySeries.new_object(name, values, _strict=False)
+        raise
+
+
 def iterable_to_pyseries(
     name: str,
     values: Iterable[Any],
@@ -332,8 +355,7 @@ def _construct_series_with_fallbacks(
             if "'float'" in str_exc and (
                 # we do not accept float values as int/temporal, as it causes silent
                 # information loss; the caller should explicitly cast in this case.
-                target_dtype
-                not in (INTEGER_DTYPES | TEMPORAL_DTYPES)
+                target_dtype not in (INTEGER_DTYPES | TEMPORAL_DTYPES)
             ):
                 constructor = py_type_to_constructor(float)
 
@@ -518,7 +540,7 @@ def sequence_to_pyseries(
             if isinstance(dtype, Object):
                 return PySeries.new_object(name, values, strict)
             if dtype:
-                srs = sequence_from_anyvalue_or_object(name, values)
+                srs = sequence_from_anyvalue_and_dtype_or_object(name, values, dtype)
                 if dtype.is_not(srs.dtype()):
                     srs = srs.cast(dtype, strict=False)
                 return srs
@@ -533,9 +555,17 @@ def sequence_to_pyseries(
             constructor = py_type_to_constructor(python_dtype)
             if constructor == PySeries.new_object:
                 try:
-                    return PySeries.new_from_anyvalues(name, values, strict)
-                # raised if we cannot convert to Wrap<AnyValue>
+                    srs = PySeries.new_from_anyvalues(name, values, strict)
+                    if _check_for_numpy(python_dtype, check_type=False) and isinstance(
+                        np.bool_(True), np.generic
+                    ):
+                        dtype = numpy_char_code_to_dtype(np.dtype(python_dtype).char)
+                        return srs.cast(dtype, strict=strict)
+                    else:
+                        return srs
+
                 except RuntimeError:
+                    # raised if we cannot convert to Wrap<AnyValue>
                     return sequence_from_anyvalue_or_object(name, values)
 
             return _construct_series_with_fallbacks(
@@ -704,7 +734,7 @@ def _unpack_schema(
         )
 
     # determine column names from schema
-    if isinstance(schema, dict):
+    if isinstance(schema, Mapping):
         column_names: list[str] = list(schema)
         # coerce schema to list[str | tuple[str, PolarsDataType | PythonDataType | None]
         schema = list(schema.items())
@@ -721,9 +751,7 @@ def _unpack_schema(
         else None
     )
     column_dtypes: dict[str, PolarsDataType] = {
-        lookup.get((name := col[0]), name)
-        if lookup
-        else col[0]: dtype  # type: ignore[misc]
+        lookup.get((name := col[0]), name) if lookup else col[0]: dtype  # type: ignore[misc]
         if is_polars_dtype(dtype, include_unknown=True)
         else py_type_to_dtype(dtype)
         for col in schema
@@ -821,7 +849,7 @@ def dict_to_pydf(
     nan_to_null: bool = False,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a dictionary of sequences."""
-    if isinstance(schema, dict) and data:
+    if isinstance(schema, Mapping) and data:
         if not all((col in schema) for col in data):
             raise ValueError(
                 "the given column-schema names do not match the data dictionary"
@@ -1024,7 +1052,11 @@ def _sequence_of_sequence_to_pydf(
         local_schema_override = (
             include_unknowns(schema_overrides, column_names) if schema_overrides else {}
         )
-        if column_names and first_element and len(first_element) != len(column_names):
+        if (
+            column_names
+            and len(first_element) > 0
+            and len(first_element) != len(column_names)
+        ):
             raise ShapeError("the row data does not match the number of columns")
 
         unpack_nested = False
@@ -1116,7 +1148,9 @@ def _sequence_of_dict_to_pydf(
         if column_names
         else None
     )
-    pydf = PyDataFrame.read_dicts(data, infer_schema_length, dicts_schema)
+    pydf = PyDataFrame.read_dicts(
+        data, infer_schema_length, dicts_schema, schema_overrides
+    )
 
     # TODO: we can remove this `schema_overrides` block completely
     #  once https://github.com/pola-rs/polars/issues/11044 is fixed

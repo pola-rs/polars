@@ -128,7 +128,7 @@ impl PyLazyFrame {
         let r = if let Some(path) = &path {
             LazyJsonLineReader::new(path)
         } else {
-            LazyJsonLineReader::new_paths(paths)
+            LazyJsonLineReader::new_paths(paths.into())
         };
 
         let lf = r
@@ -197,7 +197,7 @@ impl PyLazyFrame {
         let r = if let Some(path) = path.as_ref() {
             LazyCsvReader::new(path)
         } else {
-            LazyCsvReader::new_paths(paths)
+            LazyCsvReader::new_paths(paths.into())
         };
 
         let mut r = r
@@ -306,7 +306,7 @@ impl PyLazyFrame {
         let lf = if path.is_some() {
             LazyFrame::scan_parquet(first_path, args)
         } else {
-            LazyFrame::scan_parquet_files(paths, args)
+            LazyFrame::scan_parquet_files(Arc::from(paths), args)
         }
         .map_err(PyPolarsErr::from)?;
         Ok(lf.into())
@@ -336,7 +336,7 @@ impl PyLazyFrame {
         let lf = if let Some(path) = &path {
             LazyFrame::scan_ipc(path, args)
         } else {
-            LazyFrame::scan_ipc_files(paths, args)
+            LazyFrame::scan_ipc_files(paths.into(), args)
         }
         .map_err(PyPolarsErr::from)?;
         Ok(lf.into())
@@ -834,14 +834,13 @@ impl PyLazyFrame {
         ldf.reverse().into()
     }
 
-    fn shift(&self, periods: i64) -> Self {
-        let ldf = self.ldf.clone();
-        ldf.shift(periods).into()
-    }
-
-    fn shift_and_fill(&self, periods: i64, fill_value: PyExpr) -> Self {
-        let ldf = self.ldf.clone();
-        ldf.shift_and_fill(periods, fill_value.inner).into()
+    fn shift(&self, n: PyExpr, fill_value: Option<PyExpr>) -> Self {
+        let lf = self.ldf.clone();
+        let out = match fill_value {
+            Some(v) => lf.shift_and_fill(n.inner, v.inner),
+            None => lf.shift(n.inner),
+        };
+        out.into()
     }
 
     fn fill_nan(&self, fill_value: PyExpr) -> Self {

@@ -6,6 +6,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_series_equal
+from polars.testing.asserts.frame import assert_frame_equal
 
 
 def test_struct_logical_is_in() -> None:
@@ -31,7 +32,7 @@ def test_struct_logical_is_in() -> None:
 def test_is_in_bool() -> None:
     vals = [True, None]
     df = pl.DataFrame({"A": [True, False, None]})
-    assert df.select(pl.col("A").is_in(vals)).to_dict(False) == {
+    assert df.select(pl.col("A").is_in(vals)).to_dict(as_series=False) == {
         "A": [True, False, None]
     }
 
@@ -50,9 +51,9 @@ def test_is_in_empty_list_4639() -> None:
     df = pl.DataFrame({"a": [1, None]})
     empty_list: list[int] = []
 
-    assert df.with_columns([pl.col("a").is_in(empty_list).alias("a_in_list")]).to_dict(
-        False
-    ) == {"a": [1, None], "a_in_list": [False, None]}
+    result = df.with_columns([pl.col("a").is_in(empty_list).alias("a_in_list")])
+    expected = pl.DataFrame({"a": [1, None], "a_in_list": [False, None]})
+    assert_frame_equal(result, expected)
 
 
 def test_is_in_struct() -> None:
@@ -66,7 +67,9 @@ def test_is_in_struct() -> None:
         }
     )
 
-    assert df.filter(pl.col("struct_elem").is_in("struct_list")).to_dict(False) == {
+    assert df.filter(pl.col("struct_elem").is_in("struct_list")).to_dict(
+        as_series=False
+    ) == {
         "struct_elem": [{"a": 1, "b": 11}],
         "struct_list": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 3, "b": 13}]],
     }
@@ -105,18 +108,14 @@ def test_is_in_float_list_10764() -> None:
             "n": [3.0, 2.0],
         }
     )
-    assert df.select(pl.col("n").is_in("lst").alias("is_in")).to_dict(False) == {
-        "is_in": [True, False]
-    }
+    assert df.select(pl.col("n").is_in("lst").alias("is_in")).to_dict(
+        as_series=False
+    ) == {"is_in": [True, False]}
 
 
 def test_is_in_df() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
-    assert df.select(pl.col("a").is_in([1, 2]))["a"].to_list() == [
-        True,
-        True,
-        False,
-    ]
+    assert df.select(pl.col("a").is_in([1, 2]))["a"].to_list() == [True, True, False]
 
 
 def test_is_in_series() -> None:

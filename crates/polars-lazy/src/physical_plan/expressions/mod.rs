@@ -216,6 +216,11 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
+    fn with_agg_state(&mut self, agg_state: AggState) {
+        self.state = agg_state;
+        self.update_groups = UpdateGroups::No
+    }
+
     fn from_agg_state(agg_state: AggState, groups: Cow<'a, GroupsProxy>) -> AggregationContext<'a> {
         Self {
             state: agg_state,

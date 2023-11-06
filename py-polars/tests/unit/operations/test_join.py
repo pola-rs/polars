@@ -19,28 +19,23 @@ def test_semi_anti_join() -> None:
 
     df_b = pl.DataFrame({"key": [3, 4, 5, None]})
 
-    assert df_a.join(df_b, on="key", how="anti").to_dict(False) == {
+    assert df_a.join(df_b, on="key", how="anti").to_dict(as_series=False) == {
         "key": [1, 2],
         "payload": ["f", "i"],
     }
-    assert df_a.join(df_b, on="key", how="semi").to_dict(False) == {
+    assert df_a.join(df_b, on="key", how="semi").to_dict(as_series=False) == {
         "key": [3],
         "payload": [None],
     }
 
     # lazy
-    assert df_a.lazy().join(df_b.lazy(), on="key", how="anti").collect().to_dict(
-        False
-    ) == {
-        "key": [1, 2],
-        "payload": ["f", "i"],
-    }
-    assert df_a.lazy().join(df_b.lazy(), on="key", how="semi").collect().to_dict(
-        False
-    ) == {
-        "key": [3],
-        "payload": [None],
-    }
+    result = df_a.lazy().join(df_b.lazy(), on="key", how="anti").collect()
+    expected_values = {"key": [1, 2], "payload": ["f", "i"]}
+    assert result.to_dict(as_series=False) == expected_values
+
+    result = df_a.lazy().join(df_b.lazy(), on="key", how="semi").collect()
+    expected_values = {"key": [3], "payload": [None]}
+    assert result.to_dict(as_series=False) == expected_values
 
     df_a = pl.DataFrame(
         {"a": [1, 2, 3, 1], "b": ["a", "b", "c", "a"], "payload": [10, 20, 30, 40]}
@@ -48,12 +43,12 @@ def test_semi_anti_join() -> None:
 
     df_b = pl.DataFrame({"a": [3, 3, 4, 5], "b": ["c", "c", "d", "e"]})
 
-    assert df_a.join(df_b, on=["a", "b"], how="anti").to_dict(False) == {
+    assert df_a.join(df_b, on=["a", "b"], how="anti").to_dict(as_series=False) == {
         "a": [1, 2, 1],
         "b": ["a", "b", "a"],
         "payload": [10, 20, 40],
     }
-    assert df_a.join(df_b, on=["a", "b"], how="semi").to_dict(False) == {
+    assert df_a.join(df_b, on=["a", "b"], how="semi").to_dict(as_series=False) == {
         "a": [3],
         "b": ["c"],
         "payload": [30],
@@ -66,7 +61,7 @@ def test_join_same_cat_src() -> None:
         schema=[("column", pl.Categorical), ("more", pl.Int32)],
     )
     df_agg = df.group_by("column").agg(pl.col("more").mean())
-    assert df.join(df_agg, on="column").to_dict(False) == {
+    assert df.join(df_agg, on="column").to_dict(as_series=False) == {
         "column": ["a", "a", "b"],
         "more": [1, 2, 3],
         "more_right": [1.5, 1.5, 3.0],
@@ -128,7 +123,7 @@ def test_join_negative_integers() -> None:
         assert (
             df1.with_columns(pl.all().cast(dt))
             .join(df2.with_columns(pl.all().cast(dt)), on="a", how="inner")
-            .to_dict(False)
+            .to_dict(as_series=False)
             == expected
         )
 
@@ -244,13 +239,16 @@ def test_join_on_cast() -> None:
 
     df_b = pl.DataFrame({"a": [-2, -3, 3, 10]})
 
-    assert df_a.join(df_b, on=pl.col("a").cast(pl.Int64)).to_dict(False) == {
+    assert df_a.join(df_b, on=pl.col("a").cast(pl.Int64)).to_dict(as_series=False) == {
         "row_nr": [1, 2, 3, 5],
         "a": [-2, 3, 3, 10],
     }
     assert df_a.lazy().join(
         df_b.lazy(), on=pl.col("a").cast(pl.Int64)
-    ).collect().to_dict(False) == {"row_nr": [1, 2, 3, 5], "a": [-2, 3, 3, 10]}
+    ).collect().to_dict(as_series=False) == {
+        "row_nr": [1, 2, 3, 5],
+        "a": [-2, 3, 3, 10],
+    }
 
 
 def test_join_chunks_alignment_4720() -> None:
@@ -280,7 +278,7 @@ def test_join_chunks_alignment_4720() -> None:
             on=["index1", "index2", "index3"],
             how="left",
         )
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "index1": [0, 0, 1, 1],
         "index2": [10, 10, 11, 11],
         "index3": [100, 101, 100, 101],
@@ -292,7 +290,7 @@ def test_join_chunks_alignment_4720() -> None:
             on=["index3", "index1", "index2"],
             how="left",
         )
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "index1": [0, 0, 1, 1],
         "index2": [10, 10, 11, 11],
         "index3": [100, 101, 100, 101],
@@ -407,7 +405,7 @@ def test_join_panic_on_binary_expr_5915() -> None:
     df_b = pl.DataFrame({"b": [1, 4, 9, 9, 0]}).lazy()
 
     z = df_a.join(df_b, left_on=[(pl.col("a") + 1).cast(int)], right_on=[pl.col("b")])
-    assert z.collect().to_dict(False) == {"a": [4]}
+    assert z.collect().to_dict(as_series=False) == {"a": [4]}
 
 
 def test_semi_join_projection_pushdown_6423() -> None:
@@ -418,7 +416,7 @@ def test_semi_join_projection_pushdown_6423() -> None:
         df1.join(df2, left_on="x", right_on="y", how="semi")
         .join(df2, left_on="x", right_on="y", how="semi")
         .select(["x"])
-    ).collect().to_dict(False) == {"x": [1]}
+    ).collect().to_dict(as_series=False) == {"x": [1]}
 
 
 def test_semi_join_projection_pushdown_6455() -> None:
@@ -436,7 +434,7 @@ def test_semi_join_projection_pushdown_6455() -> None:
 
     latest = df.group_by("id").agg(pl.col("timestamp").max())
     df = df.join(latest, on=["id", "timestamp"], how="semi")
-    assert df.select(["id", "value"]).collect().to_dict(False) == {
+    assert df.select(["id", "value"]).collect().to_dict(as_series=False) == {
         "id": [1, 2],
         "value": [2, 4],
     }
@@ -535,14 +533,17 @@ def test_update() -> None:
 
     new_df = pl.DataFrame({"B": [4, None, 6], "C": [7, 8, 9]})
 
-    assert df.update(new_df).to_dict(False) == {
+    assert df.update(new_df).to_dict(as_series=False) == {
         "A": [1, 2, 3, 4],
         "B": [4, 500, 6, 700],
     }
     df1 = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
     df2 = pl.DataFrame({"a": [2, 3], "b": [8, 9]})
 
-    assert df1.update(df2, on="a").to_dict(False) == {"a": [1, 2, 3], "b": [4, 8, 9]}
+    assert df1.update(df2, on="a").to_dict(as_series=False) == {
+        "a": [1, 2, 3],
+        "b": [4, 8, 9],
+    }
 
     a = pl.LazyFrame({"a": [1, 2, 3]})
     b = pl.LazyFrame({"b": [4, 5], "c": [3, 1]})
@@ -560,6 +561,28 @@ def test_update() -> None:
     assert [1, 2, 3, 4, 5] == sorted(
         a.update(b.rename({"b": "a"}), how="outer", on="a").collect().to_series()
     )
+
+    # check behavior of include_nulls=True
+    df = pl.DataFrame(
+        {
+            "A": [1, 2, 3, 4],
+            "B": [400, 500, 600, 700],
+        }
+    )
+    new_df = pl.DataFrame(
+        {
+            "B": [-66, None, -99],
+            "C": [5, 3, 1],
+        }
+    )
+    out = df.update(new_df, left_on="A", right_on="C", how="outer", include_nulls=True)
+    expected = pl.DataFrame(
+        {
+            "A": [1, 2, 3, 4, 5],
+            "B": [-99, 500, None, 700, -66],
+        }
+    )
+    assert_frame_equal(out, expected)
 
     # edge-case #11684
     x = pl.DataFrame({"a": [0, 1]})
@@ -604,17 +627,17 @@ def test_join_concat_projection_pd_case_7071() -> None:
 def test_join_sorted_fast_paths_null() -> None:
     df1 = pl.DataFrame({"x": [0, 1, 0]}).sort("x")
     df2 = pl.DataFrame({"x": [0, None], "y": [0, 1]})
-    assert df1.join(df2, on="x", how="inner").to_dict(False) == {
+    assert df1.join(df2, on="x", how="inner").to_dict(as_series=False) == {
         "x": [0, 0],
         "y": [0, 0],
     }
-    assert df1.join(df2, on="x", how="left").to_dict(False) == {
+    assert df1.join(df2, on="x", how="left").to_dict(as_series=False) == {
         "x": [0, 0, 1],
         "y": [0, 0, None],
     }
-    assert df1.join(df2, on="x", how="anti").to_dict(False) == {"x": [1]}
-    assert df1.join(df2, on="x", how="semi").to_dict(False) == {"x": [0, 0]}
-    assert df1.join(df2, on="x", how="outer").to_dict(False) == {
+    assert df1.join(df2, on="x", how="anti").to_dict(as_series=False) == {"x": [1]}
+    assert df1.join(df2, on="x", how="semi").to_dict(as_series=False) == {"x": [0, 0]}
+    assert df1.join(df2, on="x", how="outer").to_dict(as_series=False) == {
         "x": [0, 0, 1, None],
         "y": [0, 0, None, 1],
     }
@@ -625,7 +648,7 @@ def test_outer_join_list_() -> None:
 
     df1 = pl.DataFrame({"id": [1], "vals": [[]]}, schema=schema)  # type: ignore[arg-type]
     df2 = pl.DataFrame({"id": [2, 3], "vals": [[], [4]]}, schema=schema)  # type: ignore[arg-type]
-    assert df1.join(df2, on="id", how="outer").to_dict(False) == {
+    assert df1.join(df2, on="id", how="outer").to_dict(as_series=False) == {
         "id": [2, 3, 1],
         "vals": [None, None, []],
         "vals_right": [[], [4.0], None],
@@ -702,7 +725,7 @@ def test_join_validation() -> None:
 def test_outer_join_bool() -> None:
     df1 = pl.DataFrame({"id": [True, False], "val": [1, 2]})
     df2 = pl.DataFrame({"id": [True, False], "val": [0, -1]})
-    assert df1.join(df2, on="id", how="outer").to_dict(False) == {
+    assert df1.join(df2, on="id", how="outer").to_dict(as_series=False) == {
         "id": [True, False],
         "val": [1, 2],
         "val_right": [0, -1],

@@ -36,7 +36,7 @@ To use the library import it into your project
 
 ## Feature Flags
 
-By using the above command you install the core of `Polars` onto your system. However depending on your use case you might want to install the optional dependencies as well. These are made optional to minimize the footprint. The flags are different depending on the programming language. Throughout the user guide we will mention when a functionality is used that requires an additional dependency.
+By using the above command you install the core of Polars onto your system. However depending on your use case you might want to install the optional dependencies as well. These are made optional to minimize the footprint. The flags are different depending on the programming language. Throughout the user guide we will mention when a functionality is used that requires an additional dependency.
 
 ### Python
 
@@ -88,7 +88,7 @@ The opt-in features are:
 - `temporal` - Conversions between [Chrono](https://docs.rs/chrono/) and Polars for temporal data types
 - `timezones` - Activate timezone support.
 - `strings` - Extra string utilities for `Utf8Chunked`
-  - `string_justify` - `zfill`, `ljust`, `rjust`
+  - `string_pad` - `pad_start`, `pad_end`, `zfill`
   - `string_from_radix` - `parse_int`
 - `object` - Support for generic ChunkedArrays called `ObjectChunked<T>` (generic over `T`).
   These are downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.

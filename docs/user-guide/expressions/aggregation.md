@@ -1,6 +1,6 @@
 # Aggregation
 
-`Polars` implements a powerful syntax defined not only in its lazy API, but also in its eager API. Let's take a look at what that means.
+Polars implements a powerful syntax defined not only in its lazy API, but also in its eager API. Let's take a look at what that means.
 
 We can start with the simple [US congress `dataset`](https://github.com/unitedstates/congress-legislators).
 
@@ -64,7 +64,7 @@ In the example below we show how this can be done.
 
 !!! note
 
-    Note that we can make `Python` functions for clarity. These functions don't cost us anything. That is because we only create `Polars` expressions, we don't apply a custom function over a `Series` during runtime of the query. Of course, you can make functions that return expressions in Rust, too.
+    Note that we can make Python functions for clarity. These functions don't cost us anything. That is because we only create Polars expressions, we don't apply a custom function over a `Series` during runtime of the query. Of course, you can make functions that return expressions in Rust, too.
 
 {{code_block('user-guide/expressions/aggregation','filter',['group_by'])}}
 
@@ -102,21 +102,21 @@ We can even sort by another column in the `group_by` context. If we want to know
 
 !!! warning "Python Users Only"
 
-    The following section is specific to `Python`, and doesn't apply to `Rust`. Within `Rust`, blocks and closures (lambdas) can, and will, be executed concurrently.
+    The following section is specific to Python, and doesn't apply to Rust. Within Rust, blocks and closures (lambdas) can, and will, be executed concurrently.
 
-We have all heard that `Python` is slow, and does "not scale." Besides the overhead of
-running "slow" bytecode, `Python` has to remain within the constraints of the Global
-Interpreter Lock (GIL). This means that if you were to use a `lambda` or a custom `Python`
-function to apply during a parallelized phase, `Polars` speed is capped running `Python`
+We have all heard that Python is slow, and does "not scale." Besides the overhead of
+running "slow" bytecode, Python has to remain within the constraints of the Global
+Interpreter Lock (GIL). This means that if you were to use a `lambda` or a custom Python
+function to apply during a parallelized phase, Polars speed is capped running Python
 code preventing any multiple threads from executing the function.
 
 This all feels terribly limiting, especially because we often need those `lambda` functions in a
-`.group_by()` step, for example. This approach is still supported by `Polars`, but
+`.group_by()` step, for example. This approach is still supported by Polars, but
 keeping in mind bytecode **and** the GIL costs have to be paid. It is recommended to try to solve your queries using the expression syntax before moving to `lambdas`. If you want to learn more about using `lambdas`, go to the [user defined functions section](./user-defined-functions.md).
 
 ### Conclusion
 
-In the examples above we've seen that we can do a lot by combining expressions. By doing so we delay the use of custom `Python` functions that slow down the queries (by the slow nature of Python AND the GIL).
+In the examples above we've seen that we can do a lot by combining expressions. By doing so we delay the use of custom Python functions that slow down the queries (by the slow nature of Python AND the GIL).
 
 If we are missing a type expression let us know by opening a
 [feature request](https://github.com/pola-rs/polars/issues/new/choose)!

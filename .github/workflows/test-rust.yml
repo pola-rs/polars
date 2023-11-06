@@ -45,27 +45,29 @@ jobs:
       - name: Compile tests
         run: >
           cargo test --all-features --no-run
-          -p polars-lazy
-          -p polars-plan
-          -p polars-io
           -p polars-core
-          -p polars-time
-          -p polars-utils
+          -p polars-io
+          -p polars-lazy
+          -p polars-ops
+          -p polars-plan
           -p polars-row
           -p polars-sql
+          -p polars-time
+          -p polars-utils
 
       - name: Run tests
         if: github.ref_name != 'main'
         run: >
           cargo test --all-features
-          -p polars-lazy
-          -p polars-plan
-          -p polars-io
           -p polars-core
-          -p polars-time
-          -p polars-utils
+          -p polars-io
+          -p polars-lazy
+          -p polars-ops
+          -p polars-plan
           -p polars-row
           -p polars-sql
+          -p polars-time
+          -p polars-utils
 
   integration-test:
     runs-on: ${{ matrix.os }}

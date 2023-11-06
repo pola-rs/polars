@@ -400,13 +400,13 @@ def test_strptime_fractional_seconds(series_of_str_dates: pl.Series) -> None:
 @pytest.mark.parametrize(
     ("unit_attr", "expected"),
     [
-        ("days", pl.Series([1])),
-        ("hours", pl.Series([24])),
-        ("minutes", pl.Series([24 * 60])),
-        ("seconds", pl.Series([3600 * 24])),
-        ("milliseconds", pl.Series([3600 * 24 * int(1e3)])),
-        ("microseconds", pl.Series([3600 * 24 * int(1e6)])),
-        ("nanoseconds", pl.Series([3600 * 24 * int(1e9)])),
+        ("total_days", pl.Series([1])),
+        ("total_hours", pl.Series([24])),
+        ("total_minutes", pl.Series([24 * 60])),
+        ("total_seconds", pl.Series([3600 * 24])),
+        ("total_milliseconds", pl.Series([3600 * 24 * int(1e3)])),
+        ("total_microseconds", pl.Series([3600 * 24 * int(1e6)])),
+        ("total_nanoseconds", pl.Series([3600 * 24 * int(1e9)])),
     ],
 )
 def test_duration_extract_times(
@@ -416,6 +416,32 @@ def test_duration_extract_times(
     duration = pl.Series([datetime(2022, 1, 2)]) - pl.Series([datetime(2022, 1, 1)])
 
     assert_series_equal(getattr(duration.dt, unit_attr)(), expected)
+
+
+@pytest.mark.parametrize(
+    ("unit_attr", "expected"),
+    [
+        ("days", pl.Series([1])),
+        ("hours", pl.Series([24])),
+        ("minutes", pl.Series([24 * 60])),
+        ("seconds", pl.Series([3600 * 24])),
+        ("milliseconds", pl.Series([3600 * 24 * int(1e3)])),
+        ("microseconds", pl.Series([3600 * 24 * int(1e6)])),
+        ("nanoseconds", pl.Series([3600 * 24 * int(1e9)])),
+    ],
+)
+def test_duration_extract_times_deprecated_methods(
+    unit_attr: str,
+    expected: pl.Series,
+) -> None:
+    duration = pl.Series([datetime(2022, 1, 2)]) - pl.Series([datetime(2022, 1, 1)])
+
+    with pytest.deprecated_call():
+        assert_series_equal(getattr(duration.dt, unit_attr)(), expected)
+    with pytest.deprecated_call():
+        # Test Expr case too
+        result_df = pl.select(getattr(pl.lit(duration).dt, unit_attr)())
+        assert_series_equal(result_df[result_df.columns[0]], expected)
 
 
 @pytest.mark.parametrize(
@@ -565,7 +591,7 @@ def test_date_time_combine(tzinfo: ZoneInfo | None, time_zone: str | None) -> No
             datetime(2022, 7, 5, 4, 5, 6),
         ],
     }
-    assert df.to_dict(False) == expected_dict
+    assert df.to_dict(as_series=False) == expected_dict
 
     expected_schema = {
         "d1": pl.Datetime("us", time_zone),
@@ -735,7 +761,7 @@ def test_offset_by_broadcasting() -> None:
         ],
         "d5": [None, None, None, None],
     }
-    assert result.to_dict(False) == expected_dict
+    assert result.to_dict(as_series=False) == expected_dict
 
     # test broadcast rhs
     df = pl.DataFrame({"dt": [datetime(2020, 10, 25), datetime(2021, 1, 2), None]})
@@ -757,11 +783,11 @@ def test_offset_by_broadcasting() -> None:
         ],
         "d4": [datetime(2021, 11, 26).date(), datetime(2022, 2, 3).date(), None],
     }
-    assert result.to_dict(False) == expected_dict
+    assert result.to_dict(as_series=False) == expected_dict
 
     # test all literal
     result = df.select(d=pl.lit(datetime(2021, 11, 26)).dt.offset_by("1mo1d"))
-    assert result.to_dict(False) == {"d": [datetime(2021, 12, 27)]}
+    assert result.to_dict(as_series=False) == {"d": [datetime(2021, 12, 27)]}
 
 
 def test_offset_by_expressions() -> None:

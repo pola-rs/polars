@@ -4,10 +4,8 @@ use std::borrow::Cow;
 
 use default::*;
 pub(super) use groups::AsofJoinBy;
-use num_traits::Bounded;
 use polars_core::prelude::*;
-use polars_core::utils::{ensure_sorted_arg, slice_slice};
-use polars_core::with_match_physical_numeric_polars_type;
+use polars_core::utils::ensure_sorted_arg;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
@@ -19,6 +17,133 @@ use super::{
     prepare_bytes,
 };
 use crate::frame::IntoDf;
+
+trait AsofJoinState<T>: Default {
+    fn next<F: FnMut(IdxSize) -> Option<T>>(
+        &mut self,
+        left_val: &T,
+        right: F,
+        n_right: IdxSize,
+    ) -> Option<IdxSize>;
+}
+
+#[derive(Default)]
+struct AsofJoinForwardState {
+    scan_offset: IdxSize,
+}
+
+impl<T: PartialOrd> AsofJoinState<T> for AsofJoinForwardState {
+    #[inline]
+    fn next<F: FnMut(IdxSize) -> Option<T>>(
+        &mut self,
+        left_val: &T,
+        mut right: F,
+        n_right: IdxSize,
+    ) -> Option<IdxSize> {
+        while (self.scan_offset) < n_right {
+            if let Some(right_val) = right(self.scan_offset) {
+                if right_val >= *left_val {
+                    return Some(self.scan_offset);
+                }
+            }
+            self.scan_offset += 1;
+        }
+        None
+    }
+}
+
+#[derive(Default)]
+struct AsofJoinBackwardState {
+    // best_bound is the greatest right index <= left_val.
+    best_bound: Option<IdxSize>,
+    scan_offset: IdxSize,
+}
+
+impl<T: PartialOrd> AsofJoinState<T> for AsofJoinBackwardState {
+    #[inline]
+    fn next<F: FnMut(IdxSize) -> Option<T>>(
+        &mut self,
+        left_val: &T,
+        mut right: F,
+        n_right: IdxSize,
+    ) -> Option<IdxSize> {
+        while self.scan_offset < n_right {
+            if let Some(right_val) = right(self.scan_offset) {
+                if right_val <= *left_val {
+                    self.best_bound = Some(self.scan_offset);
+                } else {
+                    break;
+                }
+            }
+            self.scan_offset += 1;
+        }
+        self.best_bound
+    }
+}
+
+#[derive(Default)]
+struct AsofJoinNearestState {
+    // best_bound is the nearest value to left_val, with ties broken towards the last element.
+    best_bound: Option<IdxSize>,
+    scan_offset: IdxSize,
+}
+
+impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
+    #[inline]
+    fn next<F: FnMut(IdxSize) -> Option<T>>(
+        &mut self,
+        left_val: &T,
+        mut right: F,
+        n_right: IdxSize,
+    ) -> Option<IdxSize> {
+        // Skipping ahead to the first value greater than left_val. This is
+        // cheaper than computing differences.
+        while self.scan_offset < n_right {
+            if let Some(scan_right_val) = right(self.scan_offset) {
+                if scan_right_val <= *left_val {
+                    self.best_bound = Some(self.scan_offset);
+                } else {
+                    // Now we must compute a difference to see if scan_right_val
+                    // is closer than our current best bound.
+                    let scan_is_better = if let Some(best_idx) = self.best_bound {
+                        let best_right_val = unsafe { right(best_idx).unwrap_unchecked() };
+                        let best_diff = left_val.abs_diff(best_right_val);
+                        let scan_diff = left_val.abs_diff(scan_right_val);
+
+                        scan_diff <= best_diff
+                    } else {
+                        true
+                    };
+
+                    if scan_is_better {
+                        self.best_bound = Some(self.scan_offset);
+                        self.scan_offset += 1;
+
+                        // It is possible there are later elements equal to our
+                        // scan, so keep going on.
+                        while self.scan_offset < n_right {
+                            if let Some(next_right_val) = right(self.scan_offset) {
+                                if next_right_val == scan_right_val {
+                                    self.best_bound = Some(self.scan_offset);
+                                } else {
+                                    break;
+                                }
+                            }
+
+                            self.scan_offset += 1;
+                        }
+                    }
+
+                    break;
+                }
+            }
+
+            self.scan_offset += 1;
+        }
+
+        self.best_bound
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -36,22 +161,31 @@ pub struct AsOfOptions {
     pub right_by: Option<Vec<SmartString>>,
 }
 
-fn check_asof_columns(a: &Series, b: &Series, check_sorted: bool) -> PolarsResult<()> {
+fn check_asof_columns(
+    a: &Series,
+    b: &Series,
+    has_tolerance: bool,
+    check_sorted: bool,
+) -> PolarsResult<()> {
     let dtype_a = a.dtype();
     let dtype_b = b.dtype();
-    polars_ensure!(
-        dtype_a.to_physical().is_numeric() && dtype_b.to_physical().is_numeric(),
-        InvalidOperation:
-        "asof join only supported on numeric/temporal keys"
-    );
+    if has_tolerance {
+        polars_ensure!(
+            dtype_a.to_physical().is_numeric() && dtype_b.to_physical().is_numeric(),
+            InvalidOperation:
+            "asof join with tolerance is only supported on numeric/temporal keys"
+        );
+    } else {
+        polars_ensure!(
+            dtype_a.to_physical().is_primitive() && dtype_b.to_physical().is_primitive(),
+            InvalidOperation:
+            "asof join is only supported on primitive key types"
+        );
+    }
     polars_ensure!(
         dtype_a == dtype_b,
         ComputeError: "mismatching key dtypes in asof-join: `{}` and `{}`",
         a.dtype(), b.dtype()
-    );
-    polars_ensure!(
-        a.null_count() == 0 && b.null_count() == 0,
-        ComputeError: "asof join must not have null values in 'on' arguments"
     );
     if check_sorted {
         ensure_sorted_arg(a, "asof_join")?;
@@ -72,60 +206,6 @@ pub enum AsofStrategy {
     Nearest,
 }
 
-pub(crate) fn join_asof<T>(
-    input_ca: &ChunkedArray<T>,
-    other: &Series,
-    strategy: AsofStrategy,
-    tolerance: Option<AnyValue<'static>>,
-) -> PolarsResult<Vec<Option<IdxSize>>>
-where
-    T: PolarsNumericType,
-    T::Native: Bounded + PartialOrd,
-{
-    let other = input_ca.unpack_series_matching_type(other)?;
-
-    // cont_slice requires a single chunk
-    let ca = input_ca.rechunk();
-    let other = other.rechunk();
-
-    let out = match strategy {
-        AsofStrategy::Forward => match tolerance {
-            None => join_asof_forward(ca.cont_slice().unwrap(), other.cont_slice().unwrap()),
-            Some(tolerance) => {
-                let tolerance = tolerance.extract::<T::Native>().unwrap();
-                join_asof_forward_with_tolerance(
-                    ca.cont_slice().unwrap(),
-                    other.cont_slice().unwrap(),
-                    tolerance,
-                )
-            },
-        },
-        AsofStrategy::Backward => match tolerance {
-            None => join_asof_backward(ca.cont_slice().unwrap(), other.cont_slice().unwrap()),
-            Some(tolerance) => {
-                let tolerance = tolerance.extract::<T::Native>().unwrap();
-                join_asof_backward_with_tolerance(
-                    input_ca.cont_slice().unwrap(),
-                    other.cont_slice().unwrap(),
-                    tolerance,
-                )
-            },
-        },
-        AsofStrategy::Nearest => match tolerance {
-            None => join_asof_nearest(ca.cont_slice().unwrap(), other.cont_slice().unwrap()),
-            Some(tolerance) => {
-                let tolerance = tolerance.extract::<T::Native>().unwrap();
-                join_asof_nearest_with_tolerance(
-                    input_ca.cont_slice().unwrap(),
-                    other.cont_slice().unwrap(),
-                    tolerance,
-                )
-            },
-        },
-    };
-    Ok(out)
-}
-
 pub trait AsofJoin: IntoDf {
     #[doc(hidden)]
     #[allow(clippy::too_many_arguments)]
@@ -143,49 +223,57 @@ pub trait AsofJoin: IntoDf {
         let left_key = self_df.column(left_on)?;
         let right_key = other.column(right_on)?;
 
-        check_asof_columns(left_key, right_key, true)?;
+        check_asof_columns(left_key, right_key, tolerance.is_some(), true)?;
         let left_key = left_key.to_physical_repr();
         let right_key = right_key.to_physical_repr();
 
-        let take_idx = match left_key.dtype() {
+        let mut take_idx = match left_key.dtype() {
             DataType::Int64 => {
                 let ca = left_key.i64().unwrap();
-                join_asof(ca, &right_key, strategy, tolerance)
+                join_asof_numeric(ca, &right_key, strategy, tolerance)
             },
             DataType::Int32 => {
                 let ca = left_key.i32().unwrap();
-                join_asof(ca, &right_key, strategy, tolerance)
+                join_asof_numeric(ca, &right_key, strategy, tolerance)
             },
             DataType::UInt64 => {
                 let ca = left_key.u64().unwrap();
-                join_asof(ca, &right_key, strategy, tolerance)
+                join_asof_numeric(ca, &right_key, strategy, tolerance)
             },
             DataType::UInt32 => {
                 let ca = left_key.u32().unwrap();
-                join_asof(ca, &right_key, strategy, tolerance)
+                join_asof_numeric(ca, &right_key, strategy, tolerance)
             },
             DataType::Float32 => {
                 let ca = left_key.f32().unwrap();
-                join_asof(ca, &right_key, strategy, tolerance)
+                join_asof_numeric(ca, &right_key, strategy, tolerance)
             },
             DataType::Float64 => {
                 let ca = left_key.f64().unwrap();
-                join_asof(ca, &right_key, strategy, tolerance)
+                join_asof_numeric(ca, &right_key, strategy, tolerance)
+            },
+            DataType::Boolean => {
+                let ca = left_key.bool().unwrap();
+                join_asof::<BooleanType>(ca, &right_key, strategy)
+            },
+            DataType::Binary => {
+                let ca = left_key.binary().unwrap();
+                join_asof::<BinaryType>(ca, &right_key, strategy)
+            },
+            DataType::Utf8 => {
+                let ca = left_key.utf8().unwrap();
+                let right_binary = right_key.cast(&DataType::Binary).unwrap();
+                join_asof::<BinaryType>(&ca.as_binary(), &right_binary, strategy)
             },
             _ => {
                 let left_key = left_key.cast(&DataType::Int32).unwrap();
                 let right_key = right_key.cast(&DataType::Int32).unwrap();
                 let ca = left_key.i32().unwrap();
-                join_asof(ca, &right_key, strategy, tolerance)
+                join_asof_numeric(ca, &right_key, strategy, tolerance)
             },
         }?;
 
-        // take_idx are sorted so this is a bound check for all
-        if let Some(Some(idx)) = take_idx.last() {
-            assert!((*idx as usize) < other.height())
-        }
-
-        // drop right join column
+        // Drop right join column.
         let other = if left_on == right_on {
             Cow::Owned(other.drop(right_on)?)
         } else {
@@ -193,15 +281,13 @@ pub trait AsofJoin: IntoDf {
         };
 
         let mut left = self_df.clone();
-        let mut take_idx = &*take_idx;
-
         if let Some((offset, len)) = slice {
             left = left.slice(offset, len);
-            take_idx = slice_slice(take_idx, offset, len);
+            take_idx = take_idx.slice(offset, len);
         }
 
         // SAFETY: join tuples are in bounds.
-        let right_df = unsafe { other.take_unchecked(&take_idx.iter().copied().collect_ca("")) };
+        let right_df = unsafe { other.take_unchecked(&take_idx) };
 
         _finish_join(left, right_df, suffix.as_deref())
     }

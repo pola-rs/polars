@@ -19,7 +19,7 @@ polars-utils = { workspace = true, features = ["sysinfo"] }
 tokio = { workspace = true, optional = true }
 
 crossbeam-channel = { workspace = true }
-crossbeam-queue = { version = "0.3" }
+crossbeam-queue = { workspace = true }
 enum_dispatch = { version = "0.3" }
 hashbrown = { workspace = true }
 num-traits = { workspace = true }

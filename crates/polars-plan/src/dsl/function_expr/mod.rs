@@ -100,6 +100,22 @@ use super::*;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug)]
 pub enum FunctionExpr {
+    // Namespaces
+    #[cfg(feature = "dtype-array")]
+    ArrayExpr(ArrayFunction),
+    BinaryExpr(BinaryFunction),
+    #[cfg(feature = "dtype-categorical")]
+    Categorical(CategoricalFunction),
+    ListExpr(ListFunction),
+    #[cfg(feature = "strings")]
+    StringExpr(StringFunction),
+    #[cfg(feature = "dtype-struct")]
+    StructExpr(StructFunction),
+    #[cfg(feature = "temporal")]
+    TemporalExpr(TemporalFunction),
+
+    // Other expressions
+    Boolean(BooleanFunction),
     #[cfg(feature = "abs")]
     Abs,
     NullCount,
@@ -110,11 +126,6 @@ pub enum FunctionExpr {
     ArgWhere,
     #[cfg(feature = "search_sorted")]
     SearchSorted(SearchSortedSide),
-    #[cfg(feature = "strings")]
-    StringExpr(StringFunction),
-    BinaryExpr(BinaryFunction),
-    #[cfg(feature = "temporal")]
-    TemporalExpr(TemporalFunction),
     #[cfg(feature = "range")]
     Range(RangeFunction),
     #[cfg(feature = "date_offset")]
@@ -134,9 +145,8 @@ pub enum FunctionExpr {
         window_size: usize,
         bias: bool,
     },
-    ShiftAndFill {
-        periods: i64,
-    },
+    ShiftAndFill,
+    Shift,
     DropNans,
     DropNulls,
     #[cfg(feature = "mode")]
@@ -145,6 +155,9 @@ pub enum FunctionExpr {
     Skew(bool),
     #[cfg(feature = "moment")]
     Kurtosis(bool, bool),
+    Reshape(Vec<i64>),
+    #[cfg(feature = "repeat_by")]
+    RepeatBy,
     ArgUnique,
     #[cfg(feature = "rank")]
     Rank {
@@ -156,16 +169,10 @@ pub enum FunctionExpr {
         has_min: bool,
         has_max: bool,
     },
-    ListExpr(ListFunction),
-    #[cfg(feature = "dtype-array")]
-    ArrayExpr(ArrayFunction),
-    #[cfg(feature = "dtype-struct")]
-    StructExpr(StructFunction),
     #[cfg(feature = "dtype-struct")]
     AsStruct,
     #[cfg(feature = "top_k")]
     TopK(bool),
-    Shift(i64),
     #[cfg(feature = "cum_agg")]
     Cumcount {
         reverse: bool,
@@ -194,11 +201,8 @@ pub enum FunctionExpr {
     },
     #[cfg(feature = "unique_counts")]
     UniqueCounts,
-    Boolean(BooleanFunction),
     #[cfg(feature = "approx_unique")]
     ApproxNUnique,
-    #[cfg(feature = "dtype-categorical")]
-    Categorical(CategoricalFunction),
     Coalesce,
     ShrinkType,
     #[cfg(feature = "diff")]
@@ -305,38 +309,42 @@ pub enum FunctionExpr {
 impl Hash for FunctionExpr {
     fn hash<H: Hasher>(&self, state: &mut H) {
         std::mem::discriminant(self).hash(state);
+        use FunctionExpr::*;
         match self {
-            FunctionExpr::Pow(f) => f.hash(state),
-            #[cfg(feature = "search_sorted")]
-            FunctionExpr::SearchSorted(f) => f.hash(state),
-            FunctionExpr::BinaryExpr(f) => f.hash(state),
-            FunctionExpr::Boolean(f) => f.hash(state),
-            #[cfg(feature = "strings")]
-            FunctionExpr::StringExpr(f) => f.hash(state),
-            FunctionExpr::ListExpr(f) => f.hash(state),
+            // Namespaces
             #[cfg(feature = "dtype-array")]
-            FunctionExpr::ArrayExpr(f) => f.hash(state),
-            #[cfg(feature = "dtype-struct")]
-            FunctionExpr::StructExpr(f) => f.hash(state),
-            #[cfg(feature = "random")]
-            FunctionExpr::Random { method, .. } => method.hash(state),
-            FunctionExpr::Correlation { method, .. } => method.hash(state),
-            #[cfg(feature = "range")]
-            FunctionExpr::Range(f) => f.hash(state),
-            #[cfg(feature = "temporal")]
-            FunctionExpr::TemporalExpr(f) => f.hash(state),
-            #[cfg(feature = "trigonometry")]
-            FunctionExpr::Trigonometry(f) => f.hash(state),
-            #[cfg(feature = "fused")]
-            FunctionExpr::Fused(f) => f.hash(state),
-            #[cfg(feature = "diff")]
-            FunctionExpr::Diff(_, null_behavior) => null_behavior.hash(state),
-            #[cfg(feature = "interpolate")]
-            FunctionExpr::Interpolate(f) => f.hash(state),
+            ArrayExpr(f) => f.hash(state),
+            BinaryExpr(f) => f.hash(state),
             #[cfg(feature = "dtype-categorical")]
-            FunctionExpr::Categorical(f) => f.hash(state),
+            Categorical(f) => f.hash(state),
+            ListExpr(f) => f.hash(state),
+            #[cfg(feature = "strings")]
+            StringExpr(f) => f.hash(state),
+            #[cfg(feature = "dtype-struct")]
+            StructExpr(f) => f.hash(state),
+            #[cfg(feature = "temporal")]
+            TemporalExpr(f) => f.hash(state),
+
+            // Other expressions
+            Boolean(f) => f.hash(state),
+            Pow(f) => f.hash(state),
+            #[cfg(feature = "search_sorted")]
+            SearchSorted(f) => f.hash(state),
+            #[cfg(feature = "random")]
+            Random { method, .. } => method.hash(state),
+            Correlation { method, .. } => method.hash(state),
+            #[cfg(feature = "range")]
+            Range(f) => f.hash(state),
+            #[cfg(feature = "trigonometry")]
+            Trigonometry(f) => f.hash(state),
+            #[cfg(feature = "fused")]
+            Fused(f) => f.hash(state),
+            #[cfg(feature = "diff")]
+            Diff(_, null_behavior) => null_behavior.hash(state),
+            #[cfg(feature = "interpolate")]
+            Interpolate(f) => f.hash(state),
             #[cfg(feature = "ffi_plugin")]
-            FunctionExpr::FfiPlugin {
+            FfiPlugin {
                 lib,
                 symbol,
                 kwargs,
@@ -345,7 +353,144 @@ impl Hash for FunctionExpr {
                 lib.hash(state);
                 symbol.hash(state);
             },
-            _ => {},
+            SumHorizontal | MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse
+            | ArgUnique | Shift | ShiftAndFill => {},
+            #[cfg(feature = "mode")]
+            Mode => {},
+            #[cfg(feature = "abs")]
+            Abs => {},
+            NullCount => {},
+            #[cfg(feature = "date_offset")]
+            DateOffset => {},
+            #[cfg(feature = "arg_where")]
+            ArgWhere => {},
+            #[cfg(feature = "trigonometry")]
+            Atan2 => {},
+            #[cfg(feature = "dtype-struct")]
+            AsStruct => {},
+            #[cfg(feature = "sign")]
+            Sign => {},
+            #[cfg(feature = "row_hash")]
+            Hash(a, b, c, d) => (a, b, c, d).hash(state),
+            FillNull { super_type } => super_type.hash(state),
+            #[cfg(all(feature = "rolling_window", feature = "moment"))]
+            RollingSkew { window_size, bias } => {
+                window_size.hash(state);
+                bias.hash(state);
+            },
+            #[cfg(feature = "moment")]
+            Skew(a) => a.hash(state),
+            #[cfg(feature = "moment")]
+            Kurtosis(a, b) => {
+                a.hash(state);
+                b.hash(state);
+            },
+            #[cfg(feature = "rank")]
+            Rank { options, seed } => {
+                options.hash(state);
+                seed.hash(state);
+            },
+            #[cfg(feature = "round_series")]
+            Clip { has_min, has_max } => {
+                has_min.hash(state);
+                has_max.hash(state);
+            },
+            #[cfg(feature = "top_k")]
+            TopK(a) => a.hash(state),
+            #[cfg(feature = "cum_agg")]
+            Cumcount { reverse } => reverse.hash(state),
+            #[cfg(feature = "cum_agg")]
+            Cumsum { reverse } => reverse.hash(state),
+            #[cfg(feature = "cum_agg")]
+            Cumprod { reverse } => reverse.hash(state),
+            #[cfg(feature = "cum_agg")]
+            Cummin { reverse } => reverse.hash(state),
+            #[cfg(feature = "cum_agg")]
+            Cummax { reverse } => reverse.hash(state),
+            #[cfg(feature = "dtype-struct")]
+            ValueCounts { sort, parallel } => {
+                sort.hash(state);
+                parallel.hash(state);
+            },
+            #[cfg(feature = "unique_counts")]
+            UniqueCounts => {},
+            #[cfg(feature = "approx_unique")]
+            ApproxNUnique => {},
+            Coalesce => {},
+            ShrinkType => {},
+            #[cfg(feature = "pct_change")]
+            PctChange => {},
+            #[cfg(feature = "log")]
+            Entropy { base, normalize } => {
+                base.to_bits().hash(state);
+                normalize.hash(state);
+            },
+            #[cfg(feature = "log")]
+            Log { base } => base.to_bits().hash(state),
+            #[cfg(feature = "log")]
+            Log1p => {},
+            #[cfg(feature = "log")]
+            Exp => {},
+            Unique(a) => a.hash(state),
+            #[cfg(feature = "round_series")]
+            Round { decimals } => decimals.hash(state),
+            #[cfg(feature = "round_series")]
+            Floor => {},
+            #[cfg(feature = "round_series")]
+            Ceil => {},
+            UpperBound => {},
+            LowerBound => {},
+            ConcatExpr(a) => a.hash(state),
+            #[cfg(feature = "peaks")]
+            PeakMin => {},
+            #[cfg(feature = "peaks")]
+            PeakMax => {},
+            #[cfg(feature = "cutqcut")]
+            Cut {
+                breaks,
+                labels,
+                left_closed,
+                include_breaks,
+            } => {
+                let slice = bytemuck::cast_slice::<_, u64>(breaks);
+                slice.hash(state);
+                labels.hash(state);
+                left_closed.hash(state);
+                include_breaks.hash(state);
+            },
+            Reshape(dims) => {
+                dims.hash(state);
+            },
+            #[cfg(feature = "repeat_by")]
+            RepeatBy => {},
+            #[cfg(feature = "cutqcut")]
+            QCut {
+                probs,
+                labels,
+                left_closed,
+                allow_duplicates,
+                include_breaks,
+            } => {
+                let slice = bytemuck::cast_slice::<_, u64>(probs);
+                slice.hash(state);
+                labels.hash(state);
+                left_closed.hash(state);
+                allow_duplicates.hash(state);
+                include_breaks.hash(state);
+            },
+            #[cfg(feature = "rle")]
+            RLE => {},
+            #[cfg(feature = "rle")]
+            RLEID => {},
+            ToPhysical => {},
+            SetSortedFlag(is_sorted) => is_sorted.hash(state),
+            BackwardFill { limit } | ForwardFill { limit } => limit.hash(state),
+            #[cfg(feature = "ewma")]
+            EwmMean { options } => options.hash(state),
+            #[cfg(feature = "ewma")]
+            EwmStd { options } => options.hash(state),
+            #[cfg(feature = "ewma")]
+            EwmVar { options } => options.hash(state),
         }
     }
 }
@@ -353,8 +498,23 @@ impl Hash for FunctionExpr {
 impl Display for FunctionExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use FunctionExpr::*;
-
         let s = match self {
+            // Namespaces
+            #[cfg(feature = "dtype-array")]
+            ArrayExpr(func) => return write!(f, "{func}"),
+            BinaryExpr(func) => return write!(f, "{func}"),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(func) => return write!(f, "{func}"),
+            ListExpr(func) => return write!(f, "{func}"),
+            #[cfg(feature = "strings")]
+            StringExpr(func) => return write!(f, "{func}"),
+            #[cfg(feature = "dtype-struct")]
+            StructExpr(func) => return write!(f, "{func}"),
+            #[cfg(feature = "temporal")]
+            TemporalExpr(func) => return write!(f, "{func}"),
+
+            // Other expressions
+            Boolean(func) => return write!(f, "{func}"),
             #[cfg(feature = "abs")]
             Abs => "abs",
             NullCount => "null_count",
@@ -365,11 +525,6 @@ impl Display for FunctionExpr {
             ArgWhere => "arg_where",
             #[cfg(feature = "search_sorted")]
             SearchSorted(_) => "search_sorted",
-            #[cfg(feature = "strings")]
-            StringExpr(s) => return write!(f, "{s}"),
-            BinaryExpr(b) => return write!(f, "{b}"),
-            #[cfg(feature = "temporal")]
-            TemporalExpr(fun) => return write!(f, "{fun}"),
             #[cfg(feature = "range")]
             Range(func) => return write!(f, "{func}"),
             #[cfg(feature = "date_offset")]
@@ -383,7 +538,7 @@ impl Display for FunctionExpr {
             FillNull { .. } => "fill_null",
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingSkew { .. } => "rolling_skew",
-            ShiftAndFill { .. } => "shift_and_fill",
+            ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
             DropNulls => "drop_nulls",
             #[cfg(feature = "mode")]
@@ -402,9 +557,6 @@ impl Display for FunctionExpr {
                 (true, false) => "clip_min",
                 _ => unreachable!(),
             },
-            ListExpr(func) => return write!(f, "{func}"),
-            #[cfg(feature = "dtype-struct")]
-            StructExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "dtype-struct")]
             AsStruct => "as_struct",
             #[cfg(feature = "top_k")]
@@ -415,7 +567,7 @@ impl Display for FunctionExpr {
                     "top_k"
                 }
             },
-            Shift(_) => "shift",
+            Shift => "shift",
             #[cfg(feature = "cum_agg")]
             Cumcount { .. } => "cumcount",
             #[cfg(feature = "cum_agg")]
@@ -431,11 +583,8 @@ impl Display for FunctionExpr {
             #[cfg(feature = "unique_counts")]
             UniqueCounts => "unique_counts",
             Reverse => "reverse",
-            Boolean(func) => return write!(f, "{func}"),
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => "approx_n_unique",
-            #[cfg(feature = "dtype-categorical")]
-            Categorical(func) => return write!(f, "{func}"),
             Coalesce => "coalesce",
             ShrinkType => "shrink_dtype",
             #[cfg(feature = "diff")]
@@ -469,8 +618,6 @@ impl Display for FunctionExpr {
             LowerBound => "lower_bound",
             #[cfg(feature = "fused")]
             Fused(fused) => return Display::fmt(fused, f),
-            #[cfg(feature = "dtype-array")]
-            ArrayExpr(af) => return Display::fmt(af, f),
             ConcatExpr(_) => "concat_expr",
             Correlation { method, .. } => return Display::fmt(method, f),
             #[cfg(feature = "peaks")]
@@ -481,6 +628,9 @@ impl Display for FunctionExpr {
             Cut { .. } => "cut",
             #[cfg(feature = "cutqcut")]
             QCut { .. } => "qcut",
+            Reshape(_) => "reshape",
+            #[cfg(feature = "repeat_by")]
+            RepeatBy => "repeat_by",
             #[cfg(feature = "rle")]
             RLE => "rle",
             #[cfg(feature = "rle")]
@@ -585,6 +735,22 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: FunctionExpr) -> Self {
         use FunctionExpr::*;
         match func {
+            // Namespaces
+            #[cfg(feature = "dtype-array")]
+            ArrayExpr(func) => func.into(),
+            BinaryExpr(func) => func.into(),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(func) => func.into(),
+            ListExpr(func) => func.into(),
+            #[cfg(feature = "strings")]
+            StringExpr(func) => func.into(),
+            #[cfg(feature = "dtype-struct")]
+            StructExpr(func) => func.into(),
+            #[cfg(feature = "temporal")]
+            TemporalExpr(func) => func.into(),
+
+            // Other expressions
+            Boolean(func) => func.into(),
             #[cfg(feature = "abs")]
             Abs => map!(abs::abs),
             NullCount => {
@@ -611,11 +777,6 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             SearchSorted(side) => {
                 map_as_slice!(search_sorted::search_sorted_impl, side)
             },
-            #[cfg(feature = "strings")]
-            StringExpr(s) => s.into(),
-            BinaryExpr(s) => s.into(),
-            #[cfg(feature = "temporal")]
-            TemporalExpr(func) => func.into(),
             #[cfg(feature = "range")]
             Range(func) => func.into(),
 
@@ -645,8 +806,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             RollingSkew { window_size, bias } => {
                 map!(rolling::rolling_skew, window_size, bias)
             },
-            ShiftAndFill { periods } => {
-                map_as_slice!(shift_and_fill::shift_and_fill, periods)
+            ShiftAndFill => {
+                map_as_slice!(shift_and_fill::shift_and_fill)
             },
             DropNans => map_owned!(nan::drop_nans),
             DropNulls => map!(dispatch::drop_nulls),
@@ -663,61 +824,6 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             ArgUnique => map!(dispatch::arg_unique),
             #[cfg(feature = "rank")]
             Rank { options, seed } => map!(dispatch::rank, options, seed),
-            ListExpr(lf) => {
-                use ListFunction::*;
-                match lf {
-                    Concat => wrap!(list::concat),
-                    #[cfg(feature = "is_in")]
-                    Contains => wrap!(list::contains),
-                    #[cfg(feature = "list_drop_nulls")]
-                    DropNulls => map!(list::drop_nulls),
-                    Slice => wrap!(list::slice),
-                    Shift => map_as_slice!(list::shift),
-                    Get => wrap!(list::get),
-                    #[cfg(feature = "list_take")]
-                    Take(null_ob_oob) => map_as_slice!(list::take, null_ob_oob),
-                    #[cfg(feature = "list_count")]
-                    CountMatches => map_as_slice!(list::count_matches),
-                    Sum => map!(list::sum),
-                    Length => map!(list::length),
-                    Max => map!(list::max),
-                    Min => map!(list::min),
-                    Mean => map!(list::mean),
-                    ArgMin => map!(list::arg_min),
-                    ArgMax => map!(list::arg_max),
-                    #[cfg(feature = "diff")]
-                    Diff { n, null_behavior } => map!(list::diff, n, null_behavior),
-                    Sort(options) => map!(list::sort, options),
-                    Reverse => map!(list::reverse),
-                    Unique(is_stable) => map!(list::unique, is_stable),
-                    #[cfg(feature = "list_sets")]
-                    SetOperation(s) => map_as_slice!(list::set_operation, s),
-                    #[cfg(feature = "list_any_all")]
-                    Any => map!(list::lst_any),
-                    #[cfg(feature = "list_any_all")]
-                    All => map!(list::lst_all),
-                    Join => map_as_slice!(list::join),
-                }
-            },
-            #[cfg(feature = "dtype-array")]
-            ArrayExpr(lf) => {
-                use ArrayFunction::*;
-                match lf {
-                    Min => map!(array::min),
-                    Max => map!(array::max),
-                    Sum => map!(array::sum),
-                    Unique(stable) => map!(array::unique, stable),
-                }
-            },
-            #[cfg(feature = "dtype-struct")]
-            StructExpr(sf) => {
-                use StructFunction::*;
-                match sf {
-                    FieldByIndex(index) => map!(struct_::get_by_index, index),
-                    FieldByName(name) => map!(struct_::get_by_name, name.clone()),
-                    RenameFields(names) => map!(struct_::rename_fields, names.clone()),
-                }
-            },
             #[cfg(feature = "dtype-struct")]
             AsStruct => {
                 map_as_slice!(coerce::as_struct)
@@ -726,7 +832,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             TopK(descending) => {
                 map_as_slice!(top_k, descending)
             },
-            Shift(periods) => map!(dispatch::shift, periods),
+            Shift => map_as_slice!(shift_and_fill::shift),
             #[cfg(feature = "cum_agg")]
             Cumcount { reverse } => map!(cum::cumcount, reverse),
             #[cfg(feature = "cum_agg")]
@@ -742,11 +848,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "unique_counts")]
             UniqueCounts => map!(dispatch::unique_counts),
             Reverse => map!(dispatch::reverse),
-            Boolean(func) => func.into(),
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => map!(dispatch::approx_n_unique),
-            #[cfg(feature = "dtype-categorical")]
-            Categorical(func) => func.into(),
             Coalesce => map_as_slice!(fill_null::coalesce),
             ShrinkType => map_owned!(shrink_type::shrink),
             #[cfg(feature = "diff")]
@@ -782,6 +885,9 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             PeakMin => map!(peaks::peak_min),
             #[cfg(feature = "peaks")]
             PeakMax => map!(peaks::peak_max),
+            #[cfg(feature = "repeat_by")]
+            RepeatBy => map_as_slice!(dispatch::repeat_by),
+            Reshape(dims) => map!(dispatch::reshape, dims.clone()),
             #[cfg(feature = "cutqcut")]
             Cut {
                 breaks,
@@ -820,15 +926,17 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 use RandomMethod::*;
                 match method {
                     Shuffle => map!(random::shuffle, seed),
-                    SampleFrac {
-                        frac,
+                    Sample {
+                        is_fraction,
                         with_replacement,
                         shuffle,
-                    } => map!(random::sample_frac, frac, with_replacement, shuffle, seed),
-                    SampleN {
-                        with_replacement,
-                        shuffle,
-                    } => map_as_slice!(random::sample_n, with_replacement, shuffle, seed),
+                    } => {
+                        if is_fraction {
+                            map_as_slice!(random::sample_frac, with_replacement, shuffle, seed)
+                        } else {
+                            map_as_slice!(random::sample_n, with_replacement, shuffle, seed)
+                        }
+                    },
                 }
             },
             SetSortedFlag(sorted) => map!(dispatch::set_sorted_flag, sorted),
@@ -856,156 +964,6 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             EwmStd { options } => map!(ewm::ewm_std, options),
             #[cfg(feature = "ewma")]
             EwmVar { options } => map!(ewm::ewm_var, options),
-        }
-    }
-}
-
-#[cfg(feature = "strings")]
-impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
-    fn from(func: StringFunction) -> Self {
-        use StringFunction::*;
-        match func {
-            #[cfg(feature = "regex")]
-            Contains { literal, strict } => map_as_slice!(strings::contains, literal, strict),
-            CountMatches(literal) => {
-                map_as_slice!(strings::count_matches, literal)
-            },
-            EndsWith { .. } => map_as_slice!(strings::ends_with),
-            StartsWith { .. } => map_as_slice!(strings::starts_with),
-            Extract { pat, group_index } => {
-                map!(strings::extract, &pat, group_index)
-            },
-            ExtractAll => {
-                map_as_slice!(strings::extract_all)
-            },
-            #[cfg(feature = "extract_groups")]
-            ExtractGroups { pat, dtype } => {
-                map!(strings::extract_groups, &pat, &dtype)
-            },
-            LenBytes => map!(strings::len_bytes),
-            LenChars => map!(strings::len_chars),
-            #[cfg(feature = "string_justify")]
-            Zfill(alignment) => {
-                map!(strings::zfill, alignment)
-            },
-            #[cfg(feature = "string_justify")]
-            LJust { width, fillchar } => {
-                map!(strings::ljust, width, fillchar)
-            },
-            #[cfg(feature = "string_justify")]
-            RJust { width, fillchar } => {
-                map!(strings::rjust, width, fillchar)
-            },
-            #[cfg(feature = "temporal")]
-            Strptime(dtype, options) => {
-                map_as_slice!(strings::strptime, dtype.clone(), &options)
-            },
-            Split(inclusive) => {
-                map_as_slice!(strings::split, inclusive)
-            },
-            #[cfg(feature = "dtype-struct")]
-            SplitExact { n, inclusive } => map_as_slice!(strings::split_exact, n, inclusive),
-            #[cfg(feature = "dtype-struct")]
-            SplitN(n) => map_as_slice!(strings::splitn, n),
-            #[cfg(feature = "concat_str")]
-            ConcatVertical(delimiter) => map!(strings::concat, &delimiter),
-            #[cfg(feature = "concat_str")]
-            ConcatHorizontal(delimiter) => map_as_slice!(strings::concat_hor, &delimiter),
-            #[cfg(feature = "regex")]
-            Replace { n, literal } => map_as_slice!(strings::replace, literal, n),
-            Uppercase => map!(strings::uppercase),
-            Lowercase => map!(strings::lowercase),
-            #[cfg(feature = "nightly")]
-            Titlecase => map!(strings::titlecase),
-            StripChars => map_as_slice!(strings::strip_chars),
-            StripCharsStart => map_as_slice!(strings::strip_chars_start),
-            StripCharsEnd => map_as_slice!(strings::strip_chars_end),
-            StripPrefix => map_as_slice!(strings::strip_prefix),
-            StripSuffix => map_as_slice!(strings::strip_suffix),
-            #[cfg(feature = "string_from_radix")]
-            FromRadix(radix, strict) => map!(strings::from_radix, radix, strict),
-            Slice(start, length) => map!(strings::str_slice, start, length),
-            Explode => map!(strings::explode),
-            #[cfg(feature = "dtype-decimal")]
-            ToDecimal(infer_len) => map!(strings::to_decimal, infer_len),
-            #[cfg(feature = "extract_jsonpath")]
-            JsonExtract {
-                dtype,
-                infer_schema_len,
-            } => map!(strings::json_extract, dtype.clone(), infer_schema_len),
-        }
-    }
-}
-
-impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
-    fn from(func: BinaryFunction) -> Self {
-        use BinaryFunction::*;
-        match func {
-            Contains => {
-                map_as_slice!(binary::contains)
-            },
-            EndsWith => {
-                map_as_slice!(binary::ends_with)
-            },
-            StartsWith => {
-                map_as_slice!(binary::starts_with)
-            },
-        }
-    }
-}
-
-#[cfg(feature = "temporal")]
-impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
-    fn from(func: TemporalFunction) -> Self {
-        use TemporalFunction::*;
-        match func {
-            Year => map!(datetime::year),
-            IsLeapYear => map!(datetime::is_leap_year),
-            IsoYear => map!(datetime::iso_year),
-            Month => map!(datetime::month),
-            Quarter => map!(datetime::quarter),
-            Week => map!(datetime::week),
-            WeekDay => map!(datetime::weekday),
-            Day => map!(datetime::day),
-            OrdinalDay => map!(datetime::ordinal_day),
-            Time => map!(datetime::time),
-            Date => map!(datetime::date),
-            Datetime => map!(datetime::datetime),
-            Hour => map!(datetime::hour),
-            Minute => map!(datetime::minute),
-            Second => map!(datetime::second),
-            Millisecond => map!(datetime::millisecond),
-            Microsecond => map!(datetime::microsecond),
-            Nanosecond => map!(datetime::nanosecond),
-            ToString(format) => map!(datetime::to_string, &format),
-            TimeStamp(tu) => map!(datetime::timestamp, tu),
-            #[cfg(feature = "timezones")]
-            ConvertTimeZone(tz) => map!(datetime::convert_time_zone, &tz),
-            WithTimeUnit(tu) => map!(datetime::with_time_unit, tu),
-            CastTimeUnit(tu) => map!(datetime::cast_time_unit, tu),
-            Truncate(offset) => {
-                map_as_slice!(datetime::truncate, &offset)
-            },
-            #[cfg(feature = "date_offset")]
-            MonthStart => map!(datetime::month_start),
-            #[cfg(feature = "date_offset")]
-            MonthEnd => map!(datetime::month_end),
-            #[cfg(feature = "timezones")]
-            BaseUtcOffset => map!(datetime::base_utc_offset),
-            #[cfg(feature = "timezones")]
-            DSTOffset => map!(datetime::dst_offset),
-            Round(every, offset) => map_as_slice!(datetime::round, &every, &offset),
-            #[cfg(feature = "timezones")]
-            ReplaceTimeZone(tz) => {
-                map_as_slice!(dispatch::replace_time_zone, tz.as_deref())
-            },
-            Combine(tu) => map_as_slice!(temporal::combine, tu),
-            DatetimeFunction {
-                time_unit,
-                time_zone,
-            } => {
-                map_as_slice!(temporal::datetime, &time_unit, time_zone.as_deref())
-            },
         }
     }
 }

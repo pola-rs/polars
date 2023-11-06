@@ -520,7 +520,12 @@ pub fn cast(
             // Safety: offsets _are_ monotonically increasing
             let offsets = unsafe { Offsets::new_unchecked(offsets) };
 
-            let list_array = ListArray::<i64>::new(to_type.clone(), offsets.into(), values, None);
+            let list_array = ListArray::<i64>::new(
+                to_type.clone(),
+                offsets.into(),
+                values,
+                array.validity().cloned(),
+            );
 
             Ok(Box::new(list_array))
         },
@@ -580,9 +585,11 @@ pub fn cast(
             LargeUtf8 => Ok(Box::new(utf8_to_large_utf8(
                 array.as_any().downcast_ref().unwrap(),
             ))),
-            Timestamp(TimeUnit::Nanosecond, None) => utf8_to_naive_timestamp_ns_dyn::<i32>(array),
-            Timestamp(TimeUnit::Nanosecond, Some(tz)) => {
-                utf8_to_timestamp_ns_dyn::<i32>(array, tz.clone())
+            Timestamp(time_unit, None) => {
+                utf8_to_naive_timestamp_dyn::<i32>(array, time_unit.to_owned())
+            },
+            Timestamp(time_unit, Some(time_zone)) => {
+                utf8_to_timestamp_dyn::<i32>(array, time_zone.clone(), time_unit.to_owned())
             },
             _ => polars_bail!(InvalidOperation:
                 "casting from {from_type:?} to {to_type:?} not supported",
@@ -607,9 +614,11 @@ pub fn cast(
                 to_type.clone(),
             )
             .boxed()),
-            Timestamp(TimeUnit::Nanosecond, None) => utf8_to_naive_timestamp_ns_dyn::<i64>(array),
-            Timestamp(TimeUnit::Nanosecond, Some(tz)) => {
-                utf8_to_timestamp_ns_dyn::<i64>(array, tz.clone())
+            Timestamp(time_unit, None) => {
+                utf8_to_naive_timestamp_dyn::<i64>(array, time_unit.to_owned())
+            },
+            Timestamp(time_unit, Some(time_zone)) => {
+                utf8_to_timestamp_dyn::<i64>(array, time_zone.clone(), time_unit.to_owned())
             },
             _ => polars_bail!(InvalidOperation:
                 "casting from {from_type:?} to {to_type:?} not supported",

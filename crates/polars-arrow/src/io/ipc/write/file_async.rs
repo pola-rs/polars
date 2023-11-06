@@ -30,7 +30,7 @@ pub struct FileSink<'a, W: AsyncWrite + Unpin + Send + 'a> {
     fields: Vec<IpcField>,
     record_blocks: Vec<Block>,
     dictionary_blocks: Vec<Block>,
-    schema: Schema,
+    schema: ArrowSchema,
 }
 
 impl<'a, W> FileSink<'a, W>
@@ -40,7 +40,7 @@ where
     /// Create a new file writer.
     pub fn new(
         writer: W,
-        schema: Schema,
+        schema: ArrowSchema,
         ipc_fields: Option<Vec<IpcField>>,
         options: WriteOptions,
     ) -> Self {

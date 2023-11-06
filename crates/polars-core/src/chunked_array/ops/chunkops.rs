@@ -55,8 +55,15 @@ fn slice(
 
 impl<T: PolarsDataType> ChunkedArray<T> {
     /// Get the length of the ChunkedArray
+    #[inline]
     pub fn len(&self) -> usize {
         self.length as usize
+    }
+
+    /// Count the null values.
+    #[inline]
+    pub fn null_count(&self) -> usize {
+        self.null_count as usize
     }
 
     /// Check if ChunkedArray is empty.
@@ -74,6 +81,11 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             }
         }
         self.length = IdxSize::try_from(inner(&self.chunks)).expect(LENGTH_LIMIT_MSG);
+        self.null_count = self
+            .chunks
+            .iter()
+            .map(|arr| arr.null_count())
+            .sum::<usize>() as IdxSize;
 
         if self.length <= 1 {
             self.set_sorted_flag(IsSorted::Ascending)

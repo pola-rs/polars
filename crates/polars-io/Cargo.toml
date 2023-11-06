@@ -10,8 +10,9 @@ description = "IO related logic for the Polars DataFrame library"
 
 [dependencies]
 polars-core = { workspace = true }
-polars-error = { workspace = true, default-features = false }
+polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
+polars-parquet = { workspace = true, optional = true }
 polars-time = { workspace = true, features = [], optional = true }
 polars-utils = { workspace = true }
 
@@ -42,9 +43,10 @@ serde_json = { version = "1", default-features = false, features = ["alloc", "ra
 simd-json = { workspace = true, optional = true }
 simdutf8 = { workspace = true, optional = true }
 smartstring = { workspace = true }
-tokio = { workspace = true, features = ["net", "rt-multi-thread", "time"], optional = true }
+tokio = { workspace = true, features = ["net", "rt-multi-thread", "time", "sync"], optional = true }
 tokio-util = { workspace = true, features = ["io", "io-util"], optional = true }
 url = { workspace = true, optional = true }
+zstd = { workspace = true, optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 home = "0.5.4"
@@ -72,8 +74,8 @@ ipc_streaming = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # support for arrow avro parsing
 avro = ["arrow/io_avro", "arrow/io_avro_compression"]
 csv = ["lexical", "polars-core/rows", "itoa", "ryu", "fast-float", "simdutf8"]
-decompress = ["flate2/rust_backend"]
-decompress-fast = ["flate2/zlib-ng"]
+decompress = ["flate2/rust_backend", "zstd"]
+decompress-fast = ["flate2/zlib-ng", "zstd"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date"]
 object = []
@@ -92,8 +94,16 @@ dtype-struct = ["polars-core/dtype-struct"]
 dtype-decimal = ["polars-core/dtype-decimal"]
 fmt = ["polars-core/fmt"]
 lazy = []
-parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression"]
-async = ["async-trait", "futures", "tokio", "tokio-util", "arrow/io_ipc_write_async", "polars-error/regex"]
+parquet = ["polars-parquet", "polars-parquet/compression"]
+async = [
+  "async-trait",
+  "futures",
+  "tokio",
+  "tokio-util",
+  "arrow/io_ipc_write_async",
+  "polars-error/regex",
+  "polars-parquet?/async",
+]
 cloud = ["object_store", "async", "polars-error/object_store", "url"]
 aws = ["object_store/aws", "cloud", "reqwest"]
 azure = ["object_store/azure", "cloud"]

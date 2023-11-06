@@ -1,3 +1,6 @@
+use std::str::FromStr;
+
+use arrow::legacy::kernels::Ambiguous;
 use arrow::legacy::time_zone::Tz;
 use arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
 use polars_core::prelude::arity::try_binary_elementwise;
@@ -36,12 +39,16 @@ impl PolarsRound for DatetimeChunked {
 
         let out = match ambiguous.len() {
             1 => match ambiguous.get(0) {
-                Some(ambiguous) => self.try_apply(|t| func(&w, t, tz, ambiguous)),
+                Some(ambiguous) => {
+                    self.try_apply(|t| func(&w, t, tz, Ambiguous::from_str(ambiguous)?))
+                },
                 None => Ok(Int64Chunked::full_null(self.name(), self.len())),
             },
             _ => try_binary_elementwise(self, ambiguous, |opt_t, opt_aambiguous| {
                 match (opt_t, opt_aambiguous) {
-                    (Some(t), Some(aambiguous)) => func(&w, t, tz, aambiguous).map(Some),
+                    (Some(t), Some(ambiguous)) => {
+                        func(&w, t, tz, Ambiguous::from_str(ambiguous)?).map(Some)
+                    },
                     _ => Ok(None),
                 }
             }),
@@ -63,7 +70,10 @@ impl PolarsRound for DateChunked {
         Ok(self
             .try_apply(|t| {
                 const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
-                Ok((w.round_ms(MSECS_IN_DAY * t as i64, None, "raise")? / MSECS_IN_DAY) as i32)
+                Ok(
+                    (w.round_ms(MSECS_IN_DAY * t as i64, None, Ambiguous::Raise)? / MSECS_IN_DAY)
+                        as i32,
+                )
             })?
             .into_date())
     }

@@ -10,7 +10,7 @@ pub fn as_struct(exprs: Vec<Expr>) -> Expr {
         options: FunctionOptions {
             input_wildcard_expansion: true,
             pass_name_to_apply: true,
-            collect_groups: ApplyOptions::ApplyFlat,
+            collect_groups: ApplyOptions::ElementWise,
             ..Default::default()
         },
     }

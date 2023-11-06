@@ -19,9 +19,9 @@ fn external_props(schema: &AvroSchema) -> Metadata {
     props
 }
 
-/// Infers an [`Schema`] from the root [`Record`].
+/// Infers an [`ArrowSchema`] from the root [`Record`].
 /// This
-pub fn infer_schema(record: &Record) -> PolarsResult<Schema> {
+pub fn infer_schema(record: &Record) -> PolarsResult<ArrowSchema> {
     Ok(record
         .fields
         .iter()

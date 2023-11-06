@@ -75,18 +75,18 @@ class SQLContext(Generic[FrameType]):
         **named_frames: DataFrame | LazyFrame,
     ) -> None:
         """
-        Initialise a new ``SQLContext``.
+        Initialise a new `SQLContext`.
 
         Parameters
         ----------
         frames
-            A ``{name:frame, ...}`` mapping.
+            A `{name:frame, ...}` mapping.
         register_globals
             Register all eager/lazy frames found in the globals, automatically
             mapping their variable name to a table name. If given an integer
             then only the most recent "n" frames found will be registered.
         eager_execution
-            Return query execution results as ``DataFrame`` instead of ``LazyFrame``.
+            Return query execution results as `DataFrame` instead of `LazyFrame`.
             (Note that the query itself is always executed in lazy-mode; this
             parameter impacts whether :meth:`execute` returns an eager or lazy
             result frame).
@@ -202,7 +202,7 @@ class SQLContext(Generic[FrameType]):
         query
             A valid string SQL query.
         eager
-            Apply the query eagerly, returning ``DataFrame`` instead of ``LazyFrame``.
+            Apply the query eagerly, returning `DataFrame` instead of `LazyFrame`.
             If unset, the value of the init-time parameter "eager_execution" will be
             used. (Note that the query itself is always executed in lazy-mode; this
             parameter only impacts the type of the returned frame).
@@ -371,7 +371,7 @@ class SQLContext(Generic[FrameType]):
         Parameters
         ----------
         frames
-            A ``{name:frame, ...}`` mapping.
+            A `{name:frame, ...}` mapping.
         **named_frames
             Named eager/lazy frames, provided as kwargs.
 
@@ -417,7 +417,7 @@ class SQLContext(Generic[FrameType]):
 
         Notes
         -----
-        You can also control table registration lifetime by using ``SQLContext`` as a
+        You can also control table registration lifetime by using `SQLContext` as a
         context manager; this can often be more useful when such control is wanted:
 
         >>> df0 = pl.DataFrame({"colx": [0, 1, 2]})

@@ -1,15 +1,43 @@
-use std::collections::BTreeSet;
 use std::future::Future;
 use std::ops::Deref;
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::RwLock;
+use std::thread::ThreadId;
+use std::time::Duration;
 
 use once_cell::sync::Lazy;
 use polars_core::POOL;
+use polars_utils::aliases::PlHashSet;
 use tokio::runtime::{Builder, Runtime};
+
+static CONCURRENCY_BUDGET: AtomicI32 = AtomicI32::new(64);
+
+pub async fn with_concurrency_budget<F, Fut>(requested_budget: u16, callable: F) -> Fut::Output
+where
+    F: FnOnce() -> Fut,
+    Fut: Future,
+{
+    loop {
+        let requested_budget = requested_budget as i32;
+        let available_budget = CONCURRENCY_BUDGET.fetch_sub(requested_budget, Ordering::Relaxed);
+
+        // Bail out, there was no budget
+        if available_budget < 0 {
+            CONCURRENCY_BUDGET.fetch_add(requested_budget, Ordering::Relaxed);
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        } else {
+            let fut = callable();
+            let out = fut.await;
+            CONCURRENCY_BUDGET.fetch_add(requested_budget, Ordering::Relaxed);
+
+            return out;
+        }
+    }
+}
 
 pub struct RuntimeManager {
     rt: Runtime,
-    blocking_rayon_threads: RwLock<BTreeSet<usize>>,
+    blocking_threads: RwLock<PlHashSet<ThreadId>>,
 }
 
 impl RuntimeManager {
@@ -23,7 +51,7 @@ impl RuntimeManager {
 
         Self {
             rt,
-            blocking_rayon_threads: Default::default(),
+            blocking_threads: Default::default(),
         }
     }
 
@@ -36,31 +64,15 @@ impl RuntimeManager {
         F: Future + Send,
         F::Output: Send,
     {
-        if let Some(thread_id) = POOL.current_thread_index() {
-            if self
-                .blocking_rayon_threads
-                .read()
-                .unwrap()
-                .contains(&thread_id)
-            {
-                std::thread::scope(|s| s.spawn(|| self.rt.block_on(future)).join().unwrap())
-            } else {
-                self.blocking_rayon_threads
-                    .write()
-                    .unwrap()
-                    .insert(thread_id);
-                let out = self.rt.block_on(future);
-                self.blocking_rayon_threads
-                    .write()
-                    .unwrap()
-                    .remove(&thread_id);
-                out
-            }
-        }
-        // Assumption that the main thread never runs rayon tasks, so we wouldn't be rescheduled
-        // on the main thread and thus we can always block.
-        else {
-            self.rt.block_on(future)
+        let thread_id = std::thread::current().id();
+
+        if self.blocking_threads.read().unwrap().contains(&thread_id) {
+            std::thread::scope(|s| s.spawn(|| self.rt.block_on(future)).join().unwrap())
+        } else {
+            self.blocking_threads.write().unwrap().insert(thread_id);
+            let out = self.rt.block_on(future);
+            self.blocking_threads.write().unwrap().remove(&thread_id);
+            out
         }
     }
 

@@ -12,7 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .group_by(["keys"])
         .agg([
             col("values")
-                .map(|s| Ok(s.shift(1)), GetOutput::default())
+                .map(|s| Ok(s.shift(lit(1))), GetOutput::default())
                 .alias("shift_map"),
             col("values").shift(1).alias("shift_expression"),
         ])

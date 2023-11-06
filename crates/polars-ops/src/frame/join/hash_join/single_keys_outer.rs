@@ -22,7 +22,6 @@ fn probe_outer<T, F, G, H>(
     H: Fn(IdxSize) -> (Option<IdxSize>, Option<IdxSize>),
 {
     // needed for the partition shift instead of modulo to make sense
-    assert!(n_tables.is_power_of_two());
     let mut idx_a = 0;
     for probe_hashes in probe_hashes {
         for (h, key) in probe_hashes {

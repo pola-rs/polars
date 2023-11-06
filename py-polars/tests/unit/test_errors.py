@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import io
-import re
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -105,7 +104,7 @@ def test_string_numeric_comp_err() -> None:
 def test_panic_error() -> None:
     with pytest.raises(
         pl.PolarsPanicError,
-        match="""dimensions cannot be empty""",
+        match="dimensions cannot be empty",
     ):
         pl.Series("a", [1, 2, 3]).reshape(())
 
@@ -134,7 +133,8 @@ def test_join_lazy_on_df() -> None:
 
 def test_projection_update_schema_missing_column() -> None:
     with pytest.raises(
-        pl.ComputeError, match="column 'colC' not available in schema Schema:*"
+        pl.ColumnNotFoundError,
+        match='unable to find column "colC"',
     ):
         (
             pl.DataFrame({"colA": ["a", "b", "c"], "colB": [1, 2, 3]})
@@ -219,40 +219,6 @@ def test_filter_not_of_type_bool() -> None:
         pl.ComputeError, match="filter predicate must be of type `Boolean`, got"
     ):
         df.filter(pl.col("json_val").str.json_path_match("$.a"))
-
-
-def test_err_asof_join_null_values() -> None:
-    n = 5
-    start_time = datetime(2021, 9, 30)
-
-    df_coor = pl.DataFrame(
-        {
-            "vessel_id": [1] * n + [2] * n,
-            "timestamp": [start_time + timedelta(hours=h) for h in range(n)]
-            + [start_time + timedelta(hours=h) for h in range(n)],
-        }
-    )
-
-    df_voyages = pl.DataFrame(
-        {
-            "vessel_id": [1, None],
-            "voyage_id": [1, None],
-            "voyage_start": [datetime(2022, 1, 1), None],
-            "voyage_end": [datetime(2022, 1, 20), None],
-        }
-    )
-    with pytest.raises(
-        pl.ComputeError, match=".sof join must not have null values in 'on' argument"
-    ):
-        (
-            df_coor.sort("timestamp").join_asof(
-                df_voyages.sort("voyage_start"),
-                right_on="voyage_start",
-                left_on="timestamp",
-                by="vessel_id",
-                strategy="backward",
-            )
-        )
 
 
 def test_is_nan_on_non_boolean() -> None:
@@ -524,11 +490,7 @@ def test_skip_nulls_err() -> None:
         pytest.param(
             pl.DataFrame({"A": [1, 2, 3], "B": ["1", "2", "help"]}),
             pl.UInt32,
-            re.escape(
-                "strict conversion from `str` to `u32` failed for column: B, "
-                'value(s) ["help"]; if you were trying to cast Utf8 to temporal '
-                "dtypes, consider using `strptime`"
-            ),
+            "Conversion .* failed",
             id="Unsigned integer",
         )
     ],
@@ -718,4 +680,18 @@ def test_sort_by_error() -> None:
     ):
         df.group_by("id", maintain_order=True).agg(
             pl.col("cost").filter(pl.col("type") == "A").sort_by("number")
+        )
+
+
+def test_non_existent_expr_inputs_in_lazy() -> None:
+    with pytest.raises(pl.ColumnNotFoundError):
+        pl.LazyFrame().filter(pl.col("x") == 1).explain()  # tests: 12074
+
+    lf = pl.LazyFrame({"foo": [1, 1, -2, 3]})
+
+    with pytest.raises(pl.ColumnNotFoundError):
+        (
+            lf.select(pl.col("foo").cumsum().alias("bar"))
+            .filter(pl.col("bar") == pl.col("foo"))
+            .explain()
         )

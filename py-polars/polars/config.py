@@ -132,7 +132,7 @@ class Config(contextlib.ContextDecorator):
         """
         Initialise a Config object instance for context manager usage.
 
-        Any ``options`` kwargs should correspond to the available named "set_*"
+        Any `options` kwargs should correspond to the available named "set_*"
         methods, but are allowed to omit the "set_" prefix for brevity.
 
         Parameters
@@ -199,7 +199,7 @@ class Config(contextlib.ContextDecorator):
         Parameters
         ----------
         cfg : str
-            JSON string produced by ``Config.save()``.
+            JSON string produced by `Config.save()`.
 
         See Also
         --------
@@ -228,7 +228,7 @@ class Config(contextlib.ContextDecorator):
         Parameters
         ----------
         file : Path | str
-            File path to a JSON string produced by ``Config.save()``.
+            File path to a JSON string produced by `Config.save()`.
 
         See Also
         --------
@@ -314,7 +314,7 @@ class Config(contextlib.ContextDecorator):
         ----------
         file
             Optional path to a file into which the JSON string will be written.
-            Leave as ``None`` to return the JSON string directly.
+            Leave as `None` to return the JSON string directly.
 
         See Also
         --------
@@ -333,7 +333,9 @@ class Config(contextlib.ContextDecorator):
     @classmethod
     @deprecate_nonkeyword_arguments(version="0.19.3")
     def state(
-        cls, if_set: bool = False, env_only: bool = False  # noqa: FBT001
+        cls,
+        if_set: bool = False,  # noqa: FBT001
+        env_only: bool = False,  # noqa: FBT001
     ) -> dict[str, str | None]:
         """
         Show the current state of all Config variables as a dict.
@@ -341,8 +343,8 @@ class Config(contextlib.ContextDecorator):
         Parameters
         ----------
         if_set : bool
-            By default this will show the state of all ``Config`` environment variables.
-            change this to ``True`` to restrict the returned dictionary to include only
+            By default this will show the state of all `Config` environment variables.
+            change this to `True` to restrict the returned dictionary to include only
             those that have been set to a specific value.
 
         env_only : bool
@@ -369,10 +371,10 @@ class Config(contextlib.ContextDecorator):
     @classmethod
     def activate_decimals(cls, active: bool | None = True) -> type[Config]:
         """
-        Activate ``Decimal`` data types.
+        Activate `Decimal` data types.
 
-        This is a temporary setting that will be removed once the ``Decimal`` type
-        stabilizes (``Decimal`` is currently considered to be in beta testing).
+        This is a temporary setting that will be removed once the `Decimal` type
+        stabilizes (`Decimal` is currently considered to be in beta testing).
 
         """
         if not active:
@@ -450,7 +452,7 @@ class Config(contextlib.ContextDecorator):
         Parameters
         ----------
         precision : int
-            Number of decimal places to display; set to ``None`` to revert to the
+            Number of decimal places to display; set to `None` to revert to the
             default/standard behaviour.
 
         Notes
@@ -636,7 +638,7 @@ class Config(contextlib.ContextDecorator):
     @classmethod
     def set_streaming_chunk_size(cls, size: int | None) -> type[Config]:
         """
-        Overwrite chunk size used in ``streaming`` engine.
+        Overwrite chunk size used in `streaming` engine.
 
         By default, the chunk size is determined by the schema
         and size of the thread pool. For some datasets (esp.
@@ -762,7 +764,7 @@ class Config(contextlib.ContextDecorator):
         Parameters
         ----------
         n : int
-            Number of columns to display; if ``n < 0`` (eg: -1), display all columns.
+            Number of columns to display; if `n < 0` (eg: -1), display all columns.
 
         Examples
         --------
@@ -1061,7 +1063,7 @@ class Config(contextlib.ContextDecorator):
         Parameters
         ----------
         n : int
-            Number of rows to display; if ``n < 0`` (eg: -1), display all
+            Number of rows to display; if `n < 0` (eg: -1), display all
             rows (DataFrame) and all elements (Series).
 
         Examples

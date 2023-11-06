@@ -3,8 +3,6 @@
 #[cfg(feature = "cloud")]
 use std::borrow::Cow;
 #[cfg(feature = "cloud")]
-use std::str::FromStr;
-#[cfg(feature = "cloud")]
 use std::sync::Arc;
 
 #[cfg(feature = "cloud")]

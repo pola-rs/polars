@@ -151,8 +151,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .select([
-            col("Array_1").list().min().suffix("_min"),
-            col("Array_2").list().sum().suffix("_sum"),
+            col("Array_1").list().min().name().suffix("_min"),
+            col("Array_2").list().sum().name().suffix("_sum"),
         ])
         .collect()?;
     println!("{}", &out);

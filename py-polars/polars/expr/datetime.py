@@ -9,7 +9,10 @@ from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.deprecation import rename_use_earliest_to_ambiguous
+from polars.utils.deprecation import (
+    deprecate_renamed_function,
+    rename_use_earliest_to_ambiguous,
+)
 
 if TYPE_CHECKING:
     from datetime import timedelta
@@ -49,22 +52,22 @@ class ExprDateTimeNameSpace:
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
-            - ``None`` (default): raise
-            - ``True``: use the earliest datetime
-            - ``False``: use the latest datetime
+            - `None` (default): raise
+            - `True`: use the earliest datetime
+            - `False`: use the latest datetime
 
             .. deprecated:: 0.19.0
                 Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
-            - ``'raise'`` (default): raise
-            - ``'earliest'``: use the earliest datetime
-            - ``'latest'``: use the latest datetime
+            - `'raise'` (default): raise
+            - `'earliest'`: use the earliest datetime
+            - `'latest'`: use the latest datetime
 
         Notes
         -----
-        The ``every`` and ``offset`` argument are created with the
+        The `every` and `offset` argument are created with the
         the following string language:
 
         - 1ns   (1 nanosecond)
@@ -261,9 +264,9 @@ class ExprDateTimeNameSpace:
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
-            - ``'raise'`` (default): raise
-            - ``'earliest'``: use the earliest datetime
-            - ``'latest'``: use the latest datetime
+            - `'raise'` (default): raise
+            - `'earliest'`: use the earliest datetime
+            - `'latest'`: use the latest datetime
 
         Notes
         -----
@@ -426,7 +429,7 @@ class ExprDateTimeNameSpace:
         """
         Convert a Date/Time/Datetime column into a Utf8 column with the given format.
 
-        Similar to ``cast(pl.Utf8)``, but this method allows you to customize the
+        Similar to `cast(pl.Utf8)`, but this method allows you to customize the
         formatting of the resulting string.
 
         Parameters
@@ -434,7 +437,7 @@ class ExprDateTimeNameSpace:
         format
             Format to use, refer to the `chrono strftime documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for specification. Example: ``"%y-%m-%d"``.
+            for specification. Example: `"%y-%m-%d"`.
 
         Examples
         --------
@@ -471,7 +474,7 @@ class ExprDateTimeNameSpace:
         """
         Convert a Date/Time/Datetime column into a Utf8 column with the given format.
 
-        Similar to ``cast(pl.Utf8)``, but this method allows you to customize the
+        Similar to `cast(pl.Utf8)`, but this method allows you to customize the
         formatting of the resulting string.
 
         Alias for :func:`to_string`.
@@ -481,11 +484,11 @@ class ExprDateTimeNameSpace:
         format
             Format to use, refer to the `chrono strftime documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for specification. Example: ``"%y-%m-%d"``.
+            for specification. Example: `"%y-%m-%d"`.
 
         See Also
         --------
-        to_string : The identical expression for which ``strftime`` is an alias.
+        to_string : The identical expression for which `strftime` is an alias.
 
         Examples
         --------
@@ -1006,7 +1009,7 @@ class ExprDateTimeNameSpace:
         Applies to Datetime columns.
 
         Returns the integer second number from 0 to 59, or a floating
-        point number from 0 < 60 if ``fractional=True`` that includes
+        point number from 0 < 60 if `fractional=True` that includes
         any milli/micro/nanosecond component.
 
         Parameters
@@ -1227,7 +1230,7 @@ class ExprDateTimeNameSpace:
         Parameters
         ----------
         time_unit : {'ns', 'us', 'ms'}
-            Unit of time for the ``Datetime`` expression.
+            Unit of time for the `Datetime` expression.
 
         Examples
         --------
@@ -1270,7 +1273,7 @@ class ExprDateTimeNameSpace:
         Parameters
         ----------
         time_unit : {'ns', 'us', 'ms'}
-            Time unit for the ``Datetime`` expression.
+            Time unit for the `Datetime` expression.
 
         Examples
         --------
@@ -1357,7 +1360,7 @@ class ExprDateTimeNameSpace:
         """
         Replace time zone for an expression of type Datetime.
 
-        Different from ``convert_time_zone``, this will also modify
+        Different from `convert_time_zone`, this will also modify
         the underlying timestamp and will ignore the original time zone.
 
         Parameters
@@ -1367,18 +1370,18 @@ class ExprDateTimeNameSpace:
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
-            - ``None`` (default): raise
-            - ``True``: use the earliest datetime
-            - ``False``: use the latest datetime
+            - `None` (default): raise
+            - `True`: use the earliest datetime
+            - `False`: use the latest datetime
 
             .. deprecated:: 0.19.0
                 Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
-            - ``'raise'`` (default): raise
-            - ``'earliest'``: use the earliest datetime
-            - ``'latest'``: use the latest datetime
+            - `'raise'` (default): raise
+            - `'earliest'`: use the earliest datetime
+            - `'latest'`: use the latest datetime
 
         Examples
         --------
@@ -1454,9 +1457,9 @@ class ExprDateTimeNameSpace:
             self._pyexpr.dt_replace_time_zone(time_zone, ambiguous._pyexpr)
         )
 
-    def days(self) -> Expr:
+    def total_days(self) -> Expr:
         """
-        Extract the days from a Duration type.
+        Extract the total days from a Duration type.
 
         Returns
         -------
@@ -1476,7 +1479,7 @@ class ExprDateTimeNameSpace:
         >>> df.select(
         ...     [
         ...         pl.col("date"),
-        ...         pl.col("date").diff().dt.days().alias("days_diff"),
+        ...         pl.col("date").diff().dt.total_days().alias("days_diff"),
         ...     ]
         ... )
         shape: (3, 2)
@@ -1491,11 +1494,11 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴───────────┘
 
         """
-        return wrap_expr(self._pyexpr.duration_days())
+        return wrap_expr(self._pyexpr.dt_total_days())
 
-    def hours(self) -> Expr:
+    def total_hours(self) -> Expr:
         """
-        Extract the hours from a Duration type.
+        Extract the total hours from a Duration type.
 
         Returns
         -------
@@ -1515,7 +1518,7 @@ class ExprDateTimeNameSpace:
         >>> df.select(
         ...     [
         ...         pl.col("date"),
-        ...         pl.col("date").diff().dt.hours().alias("hours_diff"),
+        ...         pl.col("date").diff().dt.total_hours().alias("hours_diff"),
         ...     ]
         ... )
         shape: (4, 2)
@@ -1531,11 +1534,11 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴────────────┘
 
         """
-        return wrap_expr(self._pyexpr.duration_hours())
+        return wrap_expr(self._pyexpr.dt_total_hours())
 
-    def minutes(self) -> Expr:
+    def total_minutes(self) -> Expr:
         """
-        Extract the minutes from a Duration type.
+        Extract the total minutes from a Duration type.
 
         Returns
         -------
@@ -1555,7 +1558,7 @@ class ExprDateTimeNameSpace:
         >>> df.select(
         ...     [
         ...         pl.col("date"),
-        ...         pl.col("date").diff().dt.minutes().alias("minutes_diff"),
+        ...         pl.col("date").diff().dt.total_minutes().alias("minutes_diff"),
         ...     ]
         ... )
         shape: (4, 2)
@@ -1571,11 +1574,11 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴──────────────┘
 
         """
-        return wrap_expr(self._pyexpr.duration_minutes())
+        return wrap_expr(self._pyexpr.dt_total_minutes())
 
-    def seconds(self) -> Expr:
+    def total_seconds(self) -> Expr:
         """
-        Extract the seconds from a Duration type.
+        Extract the total seconds from a Duration type.
 
         Returns
         -------
@@ -1596,10 +1599,8 @@ class ExprDateTimeNameSpace:
         ...     }
         ... )
         >>> df.select(
-        ...     [
-        ...         pl.col("date"),
-        ...         pl.col("date").diff().dt.seconds().alias("seconds_diff"),
-        ...     ]
+        ...     pl.col("date"),
+        ...     pl.col("date").diff().dt.total_seconds().alias("seconds_diff"),
         ... )
         shape: (5, 2)
         ┌─────────────────────┬──────────────┐
@@ -1615,11 +1616,11 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴──────────────┘
 
         """
-        return wrap_expr(self._pyexpr.duration_seconds())
+        return wrap_expr(self._pyexpr.dt_total_seconds())
 
-    def milliseconds(self) -> Expr:
+    def total_milliseconds(self) -> Expr:
         """
-        Extract the milliseconds from a Duration type.
+        Extract the total milliseconds from a Duration type.
 
         Returns
         -------
@@ -1640,10 +1641,8 @@ class ExprDateTimeNameSpace:
         ...     }
         ... )
         >>> df.select(
-        ...     [
-        ...         pl.col("date"),
-        ...         pl.col("date").diff().dt.milliseconds().alias("milliseconds_diff"),
-        ...     ]
+        ...     pl.col("date"),
+        ...     milliseconds_diff=pl.col("date").diff().dt.total_milliseconds(),
         ... )
         shape: (1_001, 2)
         ┌─────────────────────────┬───────────────────┐
@@ -1663,11 +1662,11 @@ class ExprDateTimeNameSpace:
         └─────────────────────────┴───────────────────┘
 
         """
-        return wrap_expr(self._pyexpr.duration_milliseconds())
+        return wrap_expr(self._pyexpr.dt_total_milliseconds())
 
-    def microseconds(self) -> Expr:
+    def total_microseconds(self) -> Expr:
         """
-        Extract the microseconds from a Duration type.
+        Extract the total microseconds from a Duration type.
 
         Returns
         -------
@@ -1688,10 +1687,8 @@ class ExprDateTimeNameSpace:
         ...     }
         ... )
         >>> df.select(
-        ...     [
-        ...         pl.col("date"),
-        ...         pl.col("date").diff().dt.microseconds().alias("microseconds_diff"),
-        ...     ]
+        ...     pl.col("date"),
+        ...     microseconds_diff=pl.col("date").diff().dt.total_microseconds(),
         ... )
         shape: (1_001, 2)
         ┌─────────────────────────┬───────────────────┐
@@ -1711,11 +1708,11 @@ class ExprDateTimeNameSpace:
         └─────────────────────────┴───────────────────┘
 
         """
-        return wrap_expr(self._pyexpr.duration_microseconds())
+        return wrap_expr(self._pyexpr.dt_total_microseconds())
 
-    def nanoseconds(self) -> Expr:
+    def total_nanoseconds(self) -> Expr:
         """
-        Extract the nanoseconds from a Duration type.
+        Extract the total nanoseconds from a Duration type.
 
         Returns
         -------
@@ -1736,10 +1733,8 @@ class ExprDateTimeNameSpace:
         ...     }
         ... )
         >>> df.select(
-        ...     [
-        ...         pl.col("date"),
-        ...         pl.col("date").diff().dt.nanoseconds().alias("nanoseconds_diff"),
-        ...     ]
+        ...     pl.col("date"),
+        ...     nanoseconds_diff=pl.col("date").diff().dt.total_nanoseconds(),
         ... )
         shape: (1_001, 2)
         ┌─────────────────────────┬──────────────────┐
@@ -1759,15 +1754,15 @@ class ExprDateTimeNameSpace:
         └─────────────────────────┴──────────────────┘
 
         """
-        return wrap_expr(self._pyexpr.duration_nanoseconds())
+        return wrap_expr(self._pyexpr.dt_total_nanoseconds())
 
     def offset_by(self, by: str | Expr) -> Expr:
         """
         Offset this date by a relative time offset.
 
-        This differs from ``pl.col("foo") + timedelta`` in that it can
+        This differs from `pl.col("foo") + timedelta` in that it can
         take months and leap years into account. Note that only a single minus
-        sign is allowed in the ``by`` string, as the first character.
+        sign is allowed in the `by` string, as the first character.
 
         Parameters
         ----------
@@ -1863,7 +1858,7 @@ class ExprDateTimeNameSpace:
         Notes
         -----
         If you're coming from pandas, you can think of this as a vectorised version
-        of ``pandas.tseries.offsets.MonthBegin().rollback(datetime)``.
+        of `pandas.tseries.offsets.MonthBegin().rollback(datetime)`.
 
         Examples
         --------
@@ -1910,7 +1905,7 @@ class ExprDateTimeNameSpace:
         Notes
         -----
         If you're coming from pandas, you can think of this as a vectorised version
-        of ``pandas.tseries.offsets.MonthEnd().rollforward(datetime)``.
+        of `pandas.tseries.offsets.MonthEnd().rollforward(datetime)`.
 
         Examples
         --------
@@ -2018,3 +2013,80 @@ class ExprDateTimeNameSpace:
         └─────────────────────────────┴──────────────┘
         """
         return wrap_expr(self._pyexpr.dt_dst_offset())
+
+    @deprecate_renamed_function("total_days", version="0.19.13")
+    def days(self) -> Expr:
+        """
+        Extract the total days from a Duration type.
+
+        .. deprecated:: 0.19.13
+            Use :meth:`total_days` instead.
+
+        """
+        return self.total_days()
+
+    @deprecate_renamed_function("total_hours", version="0.19.13")
+    def hours(self) -> Expr:
+        """
+        Extract the total hours from a Duration type.
+
+        .. deprecated:: 0.19.13
+            Use :meth:`total_hours` instead.
+
+        """
+        return self.total_hours()
+
+    @deprecate_renamed_function("total_minutes", version="0.19.13")
+    def minutes(self) -> Expr:
+        """
+        Extract the total minutes from a Duration type.
+
+        .. deprecated:: 0.19.13
+            Use :meth:`total_minutes` instead.
+
+        """
+        return self.total_minutes()
+
+    @deprecate_renamed_function("total_seconds", version="0.19.13")
+    def seconds(self) -> Expr:
+        """
+        Extract the total seconds from a Duration type.
+
+        .. deprecated:: 0.19.13
+            Use :meth:`total_seconds` instead.
+
+        """
+        return self.total_seconds()
+
+    @deprecate_renamed_function("total_milliseconds", version="0.19.13")
+    def milliseconds(self) -> Expr:
+        """
+        Extract the total milliseconds from a Duration type.
+
+        .. deprecated:: 0.19.13
+            Use :meth:`total_milliseconds` instead.
+
+        """
+        return self.total_milliseconds()
+
+    @deprecate_renamed_function("total_microseconds", version="0.19.13")
+    def microseconds(self) -> Expr:
+        """
+        Extract the total microseconds from a Duration type.
+
+        .. deprecated:: 0.19.13
+            Use :meth:`total_microseconds` instead.
+
+        """
+        return self.total_microseconds()
+
+    @deprecate_renamed_function("total_nanoseconds", version="0.19.13")
+    def nanoseconds(self) -> Expr:
+        """
+        Extract the total nanoseconds from a Duration type.
+
+        .. deprecated:: 0.19.13
+            Use :meth:`total_nanoseconds` instead.
+
+        """
+        return self.total_nanoseconds()

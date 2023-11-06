@@ -27,7 +27,7 @@ class StringCache(contextlib.ContextDecorator):
     The amount of overhead depends on the number of categories in your data.
     It is advised to enable the global string cache only when strictly necessary.
 
-    If ``StringCache`` calls are nested, the global string cache will only be disabled
+    If `StringCache` calls are nested, the global string cache will only be disabled
     and cleared when the outermost context exits.
 
     Examples
@@ -93,9 +93,9 @@ def enable_string_cache(enable: bool | None = None) -> None:
         Enable or disable the global string cache.
 
         .. deprecated:: 0.19.3
-            ``enable_string_cache`` no longer accepts an argument.
-             Call ``enable_string_cache()`` to enable the string cache
-             and ``disable_string_cache()`` to disable the string cache.
+            `enable_string_cache` no longer accepts an argument.
+             Call `enable_string_cache()` to enable the string cache
+             and `disable_string_cache()` to disable the string cache.
 
     See Also
     --------

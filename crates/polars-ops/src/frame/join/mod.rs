@@ -52,12 +52,13 @@ pub trait DataFrameJoinOps: IntoDf {
     ///
     /// ```no_run
     /// # use polars_core::prelude::*;
+    /// # use polars_ops::prelude::*;
     /// let df1: DataFrame = df!("Fruit" => &["Apple", "Banana", "Pear"],
     ///                          "Phosphorus (mg/100g)" => &[11, 22, 12])?;
     /// let df2: DataFrame = df!("Name" => &["Apple", "Banana", "Pear"],
     ///                          "Potassium (mg/100g)" => &[107, 358, 115])?;
     ///
-    /// let df3: DataFrame = df1.join(&df2, ["Fruit"], ["Name"], JoinType::Inner, None)?;
+    /// let df3: DataFrame = df1.join(&df2, ["Fruit"], ["Name"], JoinArgs::new(JoinType::Inner))?;
     /// assert_eq!(df3.shape(), (3, 3));
     /// println!("{}", df3);
     /// # Ok::<(), PolarsError>(())
@@ -188,7 +189,7 @@ pub trait DataFrameJoinOps: IntoDf {
             _check_categorical_src(l.dtype(), r.dtype())?
         }
 
-        // Single keys
+        // Single keys.
         if selected_left.len() == 1 {
             let s_left = left_df.column(selected_left[0].name())?;
             let s_right = other.column(selected_right[0].name())?;
@@ -255,12 +256,13 @@ pub trait DataFrameJoinOps: IntoDf {
             }
             new.unwrap()
         }
-        // make sure that we don't have logical types.
-        // we don't overwrite the original selected as that might be used to create a column in the new df
+
+        // Make sure that we don't have logical types.
+        // We don't overwrite the original selected as that might be used to create a column in the new df.
         let selected_left_physical = _to_physical_and_bit_repr(&selected_left);
         let selected_right_physical = _to_physical_and_bit_repr(&selected_right);
 
-        // multiple keys
+        // Multiple keys.
         match args.how {
             JoinType::Inner => {
                 let left = DataFrame::new_no_checks(selected_left_physical);
@@ -290,8 +292,11 @@ pub trait DataFrameJoinOps: IntoDf {
             JoinType::Left => {
                 let mut left = DataFrame::new_no_checks(selected_left_physical);
                 let mut right = DataFrame::new_no_checks(selected_right_physical);
-                let ids = _left_join_multiple_keys(&mut left, &mut right, None, None);
 
+                if let Some((offset, len)) = args.slice {
+                    left = left.slice(offset, len);
+                }
+                let ids = _left_join_multiple_keys(&mut left, &mut right, None, None);
                 left_df._finish_left_join(ids, &remove_selected(other, &selected_right), args)
             },
             JoinType::Outer => {
@@ -369,6 +374,7 @@ pub trait DataFrameJoinOps: IntoDf {
     ///
     /// ```
     /// # use polars_core::prelude::*;
+    /// # use polars_ops::prelude::*;
     /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> PolarsResult<DataFrame> {
     ///     left.inner_join(right, ["join_column_left"], ["join_column_right"])
     /// }
@@ -391,6 +397,7 @@ pub trait DataFrameJoinOps: IntoDf {
     ///
     /// ```no_run
     /// # use polars_core::prelude::*;
+    /// # use polars_ops::prelude::*;
     /// let df1: DataFrame = df!("Wavelength (nm)" => &[480.0, 650.0, 577.0, 1201.0, 100.0])?;
     /// let df2: DataFrame = df!("Color" => &["Blue", "Yellow", "Red"],
     ///                          "Wavelength nm" => &[480.0, 577.0, 650.0])?;
@@ -433,6 +440,7 @@ pub trait DataFrameJoinOps: IntoDf {
     ///
     /// ```
     /// # use polars_core::prelude::*;
+    /// # use polars_ops::prelude::*;
     /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> PolarsResult<DataFrame> {
     ///     left.outer_join(right, ["join_column_left"], ["join_column_right"])
     /// }

@@ -1,6 +1,6 @@
 # Expressions
 
-`Polars` has a powerful concept called expressions that is central to its very fast performance.
+Polars has a powerful concept called expressions that is central to its very fast performance.
 
 Expressions are at the core of many data science operations:
 
@@ -16,12 +16,12 @@ However, expressions are also used within other operations:
 - calculating the size of groups in a `group_by` operation
 - taking the sum horizontally across columns
 
-`Polars` performs these core data transformations very quickly by:
+Polars performs these core data transformations very quickly by:
 
 - automatic query optimization on each expression
 - automatic parallelization of expressions on many columns
 
-Polars expressions are a mapping from a series to a series (or mathematically `Fn(Series) -> Series`). As expressions have a `Series` as an input and a `Series` as an output then it is straightforward to do a sequence of expressions (similar to method chaining in `Pandas`).
+Polars expressions are a mapping from a series to a series (or mathematically `Fn(Series) -> Series`). As expressions have a `Series` as an input and a `Series` as an output then it is straightforward to do a sequence of expressions (similar to method chaining in pandas).
 
 ## Examples
 
@@ -36,13 +36,13 @@ The snippet above says:
 1. Then take the first two values of the sorted output
 
 The power of expressions is that every expression produces a new expression, and that they
-can be _piped_ together. You can run an expression by passing them to one of `Polars` execution contexts.
+can be _piped_ together. You can run an expression by passing them to one of Polars execution contexts.
 
 Here we run two expressions by running `df.select`:
 
 {{code_block('user-guide/concepts/expressions','example2',['select'])}}
 
-All expressions are run in parallel, meaning that separate `Polars` expressions are **embarrassingly parallel**. Note that within an expression there may be more parallelization going on.
+All expressions are run in parallel, meaning that separate Polars expressions are **embarrassingly parallel**. Note that within an expression there may be more parallelization going on.
 
 ## Conclusion
 

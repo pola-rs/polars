@@ -172,7 +172,7 @@ impl DateLikeNameSpace {
         self.0.map_many_private(
             FunctionExpr::TemporalExpr(TemporalFunction::Truncate(offset)),
             &[every, ambiguous],
-            true,
+            false,
             false,
         )
     }

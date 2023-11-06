@@ -60,6 +60,9 @@ all = [
   "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,pydantic,pyiceberg,sqlalchemy,xlsxwriter,adbc,cloudpickle,gevent]",
 ]
 
+[tool.maturin]
+include = ["rust-toolchain.toml"]
+
 [tool.mypy]
 files = ["polars", "tests"]
 strict = true
@@ -102,6 +105,7 @@ ignore_missing_imports = true
 module = [
   "IPython.*",
   "matplotlib.*",
+  "dataframe_api_compat.*",
 ]
 follow_imports = "skip"
 
@@ -129,7 +133,6 @@ select = [
   "SIM", # flake8-simplify
   "TCH", # flake8-type-checking
   "TID", # flake8-tidy-imports
-  "Q", # flake8-quotes
   "UP", # pyupgrade
   "PT", # flake8-pytest-style
   "RUF", # Ruff-specific rules
@@ -171,13 +174,13 @@ ignore = [
   "TD003", # Missing issue link on the line following this TODO
   # tryceratops
   "TRY003", # Avoid specifying long messages outside the exception class
+  # Lints below are turned off because of conflicts with the ruff formatter
+  "D206",
+  "W191",
 ]
 
 [tool.ruff.pycodestyle]
 max-doc-length = 88
-
-[tool.ruff.isort]
-split-on-trailing-comma = false
 
 [tool.ruff.flake8-tidy-imports]
 ban-relative-imports = "all"

@@ -11,14 +11,14 @@ use super::schema::deserialize_stream_metadata;
 use super::{Dictionaries, OutOfSpecKind};
 use crate::array::Array;
 use crate::chunk::Chunk;
-use crate::datatypes::Schema;
+use crate::datatypes::ArrowSchema;
 use crate::io::ipc::IpcSchema;
 
 /// Metadata of an Arrow IPC stream, written at the start of the stream
 #[derive(Debug, Clone)]
 pub struct StreamMetadata {
     /// The schema that is read from the stream's first message
-    pub schema: Schema,
+    pub schema: ArrowSchema,
 
     /// The IPC version of the stream
     pub version: arrow_format::ipc::MetadataVersion,
@@ -94,7 +94,7 @@ fn read_next<R: Read>(
     dictionaries: &mut Dictionaries,
     message_buffer: &mut Vec<u8>,
     data_buffer: &mut Vec<u8>,
-    projection: &Option<(Vec<usize>, AHashMap<usize, usize>, Schema)>,
+    projection: &Option<(Vec<usize>, AHashMap<usize, usize>, ArrowSchema)>,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<Option<StreamState>> {
     // determine metadata length
@@ -239,7 +239,7 @@ pub struct StreamReader<R: Read> {
     finished: bool,
     data_buffer: Vec<u8>,
     message_buffer: Vec<u8>,
-    projection: Option<(Vec<usize>, AHashMap<usize, usize>, Schema)>,
+    projection: Option<(Vec<usize>, AHashMap<usize, usize>, ArrowSchema)>,
     scratch: Vec<u8>,
 }
 
@@ -252,7 +252,7 @@ impl<R: Read> StreamReader<R> {
     pub fn new(reader: R, metadata: StreamMetadata, projection: Option<Vec<usize>>) -> Self {
         let projection = projection.map(|projection| {
             let (p, h, fields) = prepare_projection(&metadata.schema.fields, projection);
-            let schema = Schema {
+            let schema = ArrowSchema {
                 fields,
                 metadata: metadata.schema.metadata.clone(),
             };
@@ -277,7 +277,7 @@ impl<R: Read> StreamReader<R> {
     }
 
     /// Return the schema of the file
-    pub fn schema(&self) -> &Schema {
+    pub fn schema(&self) -> &ArrowSchema {
         self.projection
             .as_ref()
             .map(|x| &x.2)

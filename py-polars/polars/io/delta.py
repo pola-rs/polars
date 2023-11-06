@@ -38,7 +38,7 @@ def read_delta(
     version
         Version of the Delta lake table.
 
-        Note: If ``version`` is not provided, the latest version of delta lake
+        Note: If `version` is not provided, the latest version of delta lake
         table is read.
     columns
         Columns to select. Accepts a list of column names.
@@ -163,7 +163,7 @@ def scan_delta(
     version
         Version of the Delta lake table.
 
-        Note: If ``version`` is not provided, the latest version of delta lake
+        Note: If `version` is not provided, the latest version of delta lake
         table is read.
     storage_options
         Extra options for the storage backends supported by `deltalake`.

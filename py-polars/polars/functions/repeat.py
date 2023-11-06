@@ -74,17 +74,17 @@ def repeat(
     n
         Length of the resulting column.
     dtype
-        Data type of the resulting column. If set to ``None`` (default), data type is
+        Data type of the resulting column. If set to `None` (default), data type is
         inferred from the given value. Defaults to Int32 for integer values, unless
         Int64 is required to fit the given value. Defaults to Float64 for float values.
     eager
-        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        Evaluate immediately and return a `Series`. If set to `False` (default),
         return an expression instead.
     name
         Name of the resulting column.
 
         .. deprecated:: 0.17.15
-            This argument is deprecated. Use the ``alias`` method instead.
+            This argument is deprecated. Use the `alias` method instead.
 
     Notes
     -----
@@ -108,7 +108,7 @@ def repeat(
             "z"
     ]
 
-    Generate a Series directly by setting ``eager=True``.
+    Generate a Series directly by setting `eager=True`.
 
     >>> pl.repeat(3, n=3, dtype=pl.Int8, eager=True)
     shape: (3,)
@@ -176,7 +176,7 @@ def ones(
     """
     Construct a column of length `n` filled with ones.
 
-    Syntactic sugar for ``repeat(1.0, ...)``.
+    Syntactic sugar for `repeat(1.0, ...)`.
 
     Parameters
     ----------
@@ -185,7 +185,7 @@ def ones(
     dtype
         Data type of the resulting column. Defaults to Float64.
     eager
-        Evaluate immediately and return a ``Series``. If set to ``False``,
+        Evaluate immediately and return a `Series`. If set to `False`,
         return an expression instead.
 
     Notes
@@ -252,7 +252,7 @@ def zeros(
     """
     Construct a column of length `n` filled with zeros.
 
-    Syntactic sugar for ``repeat(0.0, ...)``.
+    Syntactic sugar for `repeat(0.0, ...)`.
 
     Parameters
     ----------
@@ -261,7 +261,7 @@ def zeros(
     dtype
         Data type of the resulting column. Defaults to Float64.
     eager
-        Evaluate immediately and return a ``Series``. If set to ``False``,
+        Evaluate immediately and return a `Series`. If set to `False`,
         return an expression instead.
 
     Notes

@@ -245,7 +245,9 @@ def test_int_to_python_datetime() -> None:
     assert df.select(
         [pl.col(col).dt.timestamp() for col in ("c", "d", "e")]
         + [
-            getattr(pl.col("b").cast(pl.Duration).dt, unit)().alias(f"u[{unit}]")
+            getattr(pl.col("b").cast(pl.Duration).dt, f"total_{unit}")().alias(
+                f"u[{unit}]"
+            )
             for unit in ("milliseconds", "microseconds", "nanoseconds")
         ]
     ).rows() == [
@@ -1176,7 +1178,7 @@ def test_duration_aggregations() -> None:
             pl.col("duration").median().alias("median"),
             pl.col("duration").alias("list"),
         ]
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "group": ["A", "B"],
         "mean": [timedelta(days=2), timedelta(days=2)],
         "sum": [timedelta(days=4), timedelta(days=4)],
@@ -1263,11 +1265,7 @@ def test_unique_counts_on_dates() -> None:
             pl.col("dt_ns").dt.cast_time_unit("ms").alias("dt_ms"),
             pl.col("dt_ns").cast(pl.Date).alias("date"),
         ]
-    ).select(
-        pl.all().unique_counts().sum()
-    ).to_dict(
-        False
-    ) == {
+    ).select(pl.all().unique_counts().sum()).to_dict(as_series=False) == {
         "dt_ns": [3],
         "dt_us": [3],
         "dt_ms": [3],
@@ -1304,9 +1302,7 @@ def test_rolling_by_ordering() -> None:
         [
             pl.col("val").sum().alias("sum val"),
         ]
-    ).to_dict(
-        False
-    ) == {
+    ).to_dict(as_series=False) == {
         "key": ["A", "A", "A", "A", "B", "B", "B"],
         "dt": [
             datetime(2022, 1, 1, 0, 1),
@@ -1344,7 +1340,7 @@ def test_rolling_by_() -> None:
         .agg([pl.count().alias("count")])
     )
     assert_frame_equal(out.sort(["group", "datetime"]), expected)
-    assert out.to_dict(False) == {
+    assert out.to_dict(as_series=False) == {
         "group": [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
         "datetime": [
             datetime(2020, 1, 1, 0, 0),
@@ -1374,7 +1370,7 @@ def test_sorted_unique() -> None:
         )
         .sort("dt")
         .unique()
-    ).to_dict(False) == {"dt": [date(2015, 6, 23), date(2015, 6, 24)]}
+    ).to_dict(as_series=False) == {"dt": [date(2015, 6, 23), date(2015, 6, 24)]}
 
 
 def test_date_to_time_cast_5111() -> None:
@@ -1401,10 +1397,11 @@ def test_sum_duration() -> None:
             {"name": "Jen", "duration": timedelta(seconds=60)},
         ]
     ).select(
-        [pl.col("duration").sum(), pl.col("duration").dt.seconds().alias("sec").sum()]
-    ).to_dict(
-        False
-    ) == {
+        [
+            pl.col("duration").sum(),
+            pl.col("duration").dt.total_seconds().alias("sec").sum(),
+        ]
+    ).to_dict(as_series=False) == {
         "duration": [timedelta(seconds=150)],
         "sec": [150],
     }
@@ -1417,11 +1414,13 @@ def test_supertype_timezones_4174() -> None:
                 datetime(2020, 3, 1), datetime(2020, 5, 1), "1mo", eager=True
             ),
         }
-    ).with_columns(pl.col("dt").dt.replace_time_zone("Europe/London").suffix("_London"))
+    ).with_columns(
+        pl.col("dt").dt.replace_time_zone("Europe/London").name.suffix("_London")
+    )
 
     # test if this runs without error
     date_to_fill = df["dt_London"][0]
-    df.with_columns(df["dt_London"].shift_and_fill(date_to_fill, periods=1))
+    df.with_columns(df["dt_London"].shift(fill_value=date_to_fill))
 
 
 @pytest.mark.skip(reason="from_dicts cannot yet infer timezones")
@@ -1434,31 +1433,21 @@ def test_from_dict_tu_consistency() -> None:
     assert from_dict.dtypes == from_dicts.dtypes
 
 
-def test_shift_and_fill_group_logicals() -> None:
-    df = pl.from_records(
-        [
-            (date(2001, 1, 2), "A"),
-            (date(2001, 1, 3), "A"),
-            (date(2001, 1, 4), "A"),
-            (date(2001, 1, 3), "B"),
-            (date(2001, 1, 4), "B"),
-        ],
-        schema=["d", "s"],
-    )
-    assert df.select(
-        pl.col("d").shift_and_fill(pl.col("d").max(), periods=-1).over("s")
-    ).dtypes == [pl.Date]
-
-
 def test_date_arr_concat() -> None:
     expected = {"d": [[date(2000, 1, 1), date(2000, 1, 1)]]}
 
     # type date
     df = pl.DataFrame({"d": [date(2000, 1, 1)]})
-    assert df.select(pl.col("d").list.concat(pl.col("d"))).to_dict(False) == expected
+    assert (
+        df.select(pl.col("d").list.concat(pl.col("d"))).to_dict(as_series=False)
+        == expected
+    )
     # type list[date]
     df = pl.DataFrame({"d": [[date(2000, 1, 1)]]})
-    assert df.select(pl.col("d").list.concat(pl.col("d"))).to_dict(False) == expected
+    assert (
+        df.select(pl.col("d").list.concat(pl.col("d"))).to_dict(as_series=False)
+        == expected
+    )
 
 
 def test_date_timedelta() -> None:
@@ -1470,7 +1459,7 @@ def test_date_timedelta() -> None:
             (pl.col("date") + timedelta(days=1)).alias("date_plus_one"),
             (pl.col("date") - timedelta(days=1)).alias("date_min_one"),
         ]
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "date": [date(2001, 1, 1), date(2001, 1, 2), date(2001, 1, 3)],
         "date_plus_one": [date(2001, 1, 2), date(2001, 1, 3), date(2001, 1, 4)],
         "date_min_one": [date(2000, 12, 31), date(2001, 1, 1), date(2001, 1, 2)],
@@ -1522,7 +1511,7 @@ def test_replace_time_zone() -> None:
     ny = ZoneInfo("America/New_York")
     assert pl.DataFrame({"a": [datetime(2022, 9, 25, 14)]}).with_columns(
         pl.col("a").dt.replace_time_zone("America/New_York").alias("b")
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "a": [datetime(2022, 9, 25, 14, 0)],
         "b": [datetime(2022, 9, 25, 14, 0, tzinfo=ny)],
     }
@@ -1640,7 +1629,7 @@ def test_tz_datetime_duration_arithm_5221() -> None:
     )
     out = out.with_columns(pl.col("run_datetime") + pl.duration(days=1))
     utc = ZoneInfo("UTC")
-    assert out.to_dict(False) == {
+    assert out.to_dict(as_series=False) == {
         "run_datetime": [
             datetime(2022, 1, 2, 0, 0, tzinfo=utc),
             datetime(2022, 1, 3, 0, 0, tzinfo=utc),
@@ -1678,7 +1667,7 @@ def test_logical_nested_take() -> None:
         pl.List(pl.Time),
         pl.List(pl.Duration("us")),
     ]
-    assert out.to_dict(False) == {
+    assert out.to_dict(as_series=False) == {
         "ix": [1, 2],
         "dt": [[datetime(2001, 1, 2, 0, 0)], [datetime(2001, 1, 1, 0, 0)]],
         "d": [[date(2001, 1, 1)], [date(2001, 1, 1)]],
@@ -1699,7 +1688,7 @@ def test_replace_time_zone_from_naive() -> None:
 
     assert df.select(
         pl.col("date").cast(pl.Datetime).dt.replace_time_zone("America/New_York")
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "date": [
             datetime(2022, 1, 1, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
             datetime(2022, 1, 2, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
@@ -1731,7 +1720,7 @@ def test_replace_time_zone_ambiguous_with_use_earliest(
 def test_replace_time_zone_ambiguous_raises() -> None:
     ts = pl.Series(["2018-10-28 02:30:00"]).str.strptime(pl.Datetime)
     with pytest.raises(
-        pl.InvalidOperationError,
+        pl.ComputeError,
         match="Please use `ambiguous` to tell how it should be localized",
     ):
         ts.dt.replace_time_zone("Europe/Brussels")
@@ -1961,7 +1950,7 @@ def test_unlocalize() -> None:
 
 
 def test_tz_aware_truncate() -> None:
-    test = pl.DataFrame(
+    df = pl.DataFrame(
         {
             "dt": pl.datetime_range(
                 start=datetime(2022, 11, 1),
@@ -1971,9 +1960,8 @@ def test_tz_aware_truncate() -> None:
             ).dt.replace_time_zone("America/New_York")
         }
     )
-    assert test.with_columns(pl.col("dt").dt.truncate("1d").alias("trunced")).to_dict(
-        False
-    ) == {
+    result = df.with_columns(pl.col("dt").dt.truncate("1d").alias("trunced"))
+    expected = {
         "dt": [
             datetime(2022, 11, 1, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
             datetime(2022, 11, 1, 12, 0, tzinfo=ZoneInfo(key="America/New_York")),
@@ -1993,6 +1981,7 @@ def test_tz_aware_truncate() -> None:
             datetime(2022, 11, 4, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
         ],
     }
+    assert result.to_dict(as_series=False) == expected
 
     # 5507
     lf = pl.DataFrame(
@@ -2008,7 +1997,7 @@ def test_tz_aware_truncate() -> None:
     lf = lf.with_columns(pl.col("naive").dt.replace_time_zone("UTC").alias("UTC"))
     lf = lf.with_columns(pl.col("UTC").dt.convert_time_zone("US/Central").alias("CST"))
     lf = lf.with_columns(pl.col("CST").dt.truncate("1d").alias("CST truncated"))
-    assert lf.collect().to_dict(False) == {
+    assert lf.collect().to_dict(as_series=False) == {
         "naive": [
             datetime(2021, 12, 31, 23, 0),
             datetime(2022, 1, 1, 0, 0),
@@ -2073,9 +2062,8 @@ def test_tz_aware_to_string() -> None:
             ).dt.replace_time_zone("America/New_York")
         }
     )
-    assert df.with_columns(pl.col("dt").dt.to_string("%c").alias("fmt")).to_dict(
-        False
-    ) == {
+    result = df.with_columns(pl.col("dt").dt.to_string("%c").alias("fmt"))
+    expected = {
         "dt": [
             datetime(2022, 11, 1, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
             datetime(2022, 11, 2, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
@@ -2089,6 +2077,7 @@ def test_tz_aware_to_string() -> None:
             "Fri Nov  4 00:00:00 2022",
         ],
     }
+    assert result.to_dict(as_series=False) == expected
 
 
 @pytest.mark.parametrize(
@@ -2127,7 +2116,7 @@ def test_tz_aware_filter_lit() -> None:
             pl.col("date").dt.replace_time_zone("America/New_York").alias("nyc")
         )
         .filter(pl.col("nyc") < dt)
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "date": [
             datetime(1970, 1, 1, 0, 0),
             datetime(1970, 1, 1, 1, 0),
@@ -2160,7 +2149,7 @@ def test_asof_join_by_forward() -> None:
         right_on="value_two",
         by="category",
         strategy="forward",
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "category": ["a", "a", "a", "a", "a"],
         "value_one": [1, 2, 3, 5, 12],
         "value_two": [3, 3, 3, None, None],
@@ -2184,7 +2173,7 @@ def test_truncate_expr() -> None:
     every_expr = df.select(
         pl.col("date").dt.truncate(every=pl.col("every"), ambiguous=pl.lit("raise"))
     )
-    assert every_expr.to_dict(False) == {
+    assert every_expr.to_dict(as_series=False) == {
         "date": [
             datetime(2022, 1, 1),
             datetime(2023, 10, 1),
@@ -2196,7 +2185,7 @@ def test_truncate_expr() -> None:
     all_lit = df.select(
         pl.col("date").dt.truncate(every=pl.lit("1mo"), ambiguous=pl.lit("raise"))
     )
-    assert all_lit.to_dict(False) == {
+    assert all_lit.to_dict(as_series=False) == {
         "date": [
             datetime(2022, 11, 1),
             datetime(2023, 10, 1),
@@ -2230,7 +2219,7 @@ def test_truncate_expr() -> None:
     ambiguous_expr = df.select(
         pl.col("date").dt.truncate(every=pl.lit("30m"), ambiguous=pl.col("ambiguous"))
     )
-    assert ambiguous_expr.to_dict(False) == {
+    assert ambiguous_expr.to_dict(as_series=False) == {
         "date": [
             datetime(2020, 10, 25, tzinfo=ZoneInfo(key="Europe/London")),
             datetime(2020, 10, 25, 0, 30, tzinfo=ZoneInfo(key="Europe/London")),
@@ -2245,7 +2234,7 @@ def test_truncate_expr() -> None:
     all_expr = df.select(
         pl.col("date").dt.truncate(every=pl.col("every"), ambiguous=pl.col("ambiguous"))
     )
-    assert all_expr.to_dict(False) == {
+    assert all_expr.to_dict(as_series=False) == {
         "date": [
             datetime(2020, 10, 25, tzinfo=ZoneInfo(key="Europe/London")),
             datetime(2020, 10, 25, 0, 45, tzinfo=ZoneInfo(key="Europe/London")),
@@ -2272,18 +2261,18 @@ def test_truncate_propagate_null() -> None:
     )
     assert df.select(
         pl.col("date").dt.truncate(every=pl.col("every"), ambiguous="raise")
-    ).to_dict(False) == {"date": [None, None, datetime(2022, 3, 20, 5, 7, 0)]}
+    ).to_dict(as_series=False) == {"date": [None, None, datetime(2022, 3, 20, 5, 7, 0)]}
     assert df.select(
         pl.col("date").dt.truncate(every="1mo", ambiguous=pl.col("ambiguous"))
-    ).to_dict(False) == {"date": [None, datetime(2022, 11, 1), None]}
+    ).to_dict(as_series=False) == {"date": [None, datetime(2022, 11, 1), None]}
     assert df.select(
         pl.col("date").dt.truncate(every=pl.col("every"), ambiguous=pl.col("ambiguous"))
-    ).to_dict(False) == {"date": [None, None, None]}
+    ).to_dict(as_series=False) == {"date": [None, None, None]}
     assert df.select(
         pl.col("date").dt.truncate(
             every=pl.lit(None, dtype=pl.Utf8), ambiguous=pl.lit(None, dtype=pl.Utf8)
         )
-    ).to_dict(False) == {"date": [None, None, None]}
+    ).to_dict(as_series=False) == {"date": [None, None, None]}
 
 
 def test_truncate_by_calendar_weeks() -> None:
@@ -2296,7 +2285,7 @@ def test_truncate_by_calendar_weeks() -> None:
         .alias("date")
         .to_frame()
         .select([pl.col("date").dt.truncate("1w")])
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "date": [
             datetime(2022, 11, 14),
             datetime(2022, 11, 14),
@@ -2316,7 +2305,7 @@ def test_truncate_by_calendar_weeks() -> None:
         }
     )
 
-    assert df.select(pl.col("date").dt.truncate("1w")).to_dict(False) == {
+    assert df.select(pl.col("date").dt.truncate("1w")).to_dict(as_series=False) == {
         "date": [
             date(1768, 2, 29),
             date(2022, 12, 26),
@@ -2347,7 +2336,7 @@ def test_truncate_by_multiple_weeks() -> None:
                 pl.col("date").dt.truncate("17w").alias("17w"),
             ]
         )
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "2w": [date(2022, 4, 11), date(2022, 11, 21)],
         "3w": [date(2022, 4, 4), date(2022, 11, 14)],
         "4w": [date(2022, 3, 28), date(2022, 11, 7)],
@@ -2435,7 +2424,7 @@ def test_round_ambiguous() -> None:
     )
 
     df = df.select(pl.col("date").dt.round("30m", ambiguous=pl.col("ambiguous")))
-    assert df.to_dict(False) == {
+    assert df.to_dict(as_series=False) == {
         "date": [
             datetime(2020, 10, 25, 0, 30, tzinfo=ZoneInfo(key="Europe/London")),
             datetime(2020, 10, 25, 1, tzinfo=ZoneInfo(key="Europe/London")),
@@ -2468,7 +2457,7 @@ def test_round_by_week() -> None:
                 pl.col("date").dt.round("1w").alias("1w"),
             ]
         )
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "7d": [date(1998, 4, 9), date(2022, 12, 1)],
         "1w": [date(1998, 4, 13), date(2022, 11, 28)],
     }
@@ -2515,7 +2504,7 @@ def test_tz_aware_day_weekday() -> None:
             pl.col("tyo_date").dt.weekday().alias("tyo_weekday"),
             pl.col("ny_date").dt.weekday().alias("ny_weekday"),
         ]
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "day": [1, 4, 7],
         "tyo_day": [1, 4, 7],
         "ny_day": [31, 3, 6],
@@ -2547,7 +2536,7 @@ def test_datetime_cum_agg_schema() -> None:
             (pl.col("cummax") + pl.duration(hours=24)).alias("cummax+24"),
         )
         .collect()
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "timestamp": [
             datetime(2023, 1, 1, 0, 0),
             datetime(2023, 1, 2, 0, 0),
@@ -2597,7 +2586,7 @@ def test_rolling_group_by_empty_groups_by_take_6330() -> None:
             by="Event",
             closed="left",
         ).agg([pl.count()])
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "Event": ["Rain", "Rain", "Rain", "Rain", "Sun", "Sun", "Sun", "Sun"],
         "Date": [1, 2, 3, 4, 1, 2, 3, 4],
         "count": [0, 1, 2, 2, 0, 1, 2, 2],

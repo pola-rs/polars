@@ -42,30 +42,30 @@ miri:  ## Run miri
 .PHONY: test
 test:  ## Run tests
 	cargo test --all-features \
-		-p polars-lazy \
-		-p polars-io \
 		-p polars-core \
-		-p polars-time \
-		-p polars-utils \
-		-p polars-row \
-		-p polars-sql \
+		-p polars-io \
+		-p polars-lazy \
 		-p polars-ops \
 		-p polars-plan \
+		-p polars-row \
+		-p polars-sql \
+		-p polars-time \
+		-p polars-utils \
 		-- \
 		--test-threads=2
 
 .PHONY: nextest
 nextest:  ## Run tests with nextest
 	cargo nextest run --all-features \
-		-p polars-lazy \
-		-p polars-io \
 		-p polars-core \
-		-p polars-time \
-		-p polars-utils \
-		-p polars-row \
-		-p polars-sql \
+		-p polars-io \
+		-p polars-lazy \
 		-p polars-ops \
 		-p polars-plan \
+		-p polars-row \
+		-p polars-sql \
+		-p polars-time \
+		-p polars-utils \
 
 .PHONY: integration-tests
 integration-tests:  ## Run integration tests

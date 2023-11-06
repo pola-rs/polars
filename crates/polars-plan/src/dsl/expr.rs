@@ -89,6 +89,7 @@ pub enum Expr {
     Take {
         expr: Box<Expr>,
         idx: Box<Expr>,
+        returns_scalar: bool,
     },
     SortBy {
         expr: Box<Expr>,

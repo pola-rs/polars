@@ -18,7 +18,7 @@ To read multiple files into a single `DataFrame`, we can use globbing patterns:
 ```
 
 To see how this works we can take a look at the query plan. Below we see that all files are read separately and
-concatenated into a single `DataFrame`. `Polars` will try to parallelize the reading.
+concatenated into a single `DataFrame`. Polars will try to parallelize the reading.
 
 {{code_block('user-guide/io/multiple','graph',['show_graph'])}}
 
@@ -29,7 +29,7 @@ concatenated into a single `DataFrame`. `Polars` will try to parallelize the rea
 ## Reading and processing in parallel
 
 If your files don't have to be in a single table you can also build a query plan for each file and execute them in parallel
-on the `Polars` thread pool.
+on the Polars thread pool.
 
 All query plan execution is embarrassingly parallel and doesn't require any communication.
 

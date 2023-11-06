@@ -6,4 +6,4 @@ edition = "2021"
 [dependencies]
 polars = { path = "../../crates/polars", features = ["lazy", "aws", "parquet"] }
 
-aws-creds = "0.35.0"
+aws-creds = "0.36.0"

@@ -122,9 +122,10 @@ def test_decimal_cast() -> None:
             "decimals": [D("2"), D("2"), D("-1.5")],
         }
     )
-    assert df.with_columns(pl.col("decimals").cast(pl.Float32).alias("b2")).to_dict(
-        False
-    ) == {"decimals": [D("2"), D("2"), D("-1.5")], "b2": [2.0, 2.0, -1.5]}
+
+    result = df.with_columns(pl.col("decimals").cast(pl.Float32).alias("b2"))
+    expected = {"decimals": [D("2"), D("2"), D("-1.5")], "b2": [2.0, 2.0, -1.5]}
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_decimal_scale_precision_roundtrip(monkeypatch: Any) -> None:
@@ -196,7 +197,7 @@ def test_decimal_arithmetic() -> None:
         pl.Decimal(precision=None, scale=2),
     ]
 
-    assert out.to_dict(False) == {
+    assert out.to_dict(as_series=False) == {
         "out1": [D("2.01"), D("102.91"), D("3921.39")],
         "out2": [D("20.20"), D("20.29"), D("139.22")],
         "out3": [D("0.00"), D("0.99"), D("2.55")],
@@ -216,7 +217,7 @@ def test_decimal_aggregations() -> None:
         sum=pl.sum("a"),
         min=pl.min("a"),
         max=pl.max("a"),
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "g": [1, 2],
         "sum": [D("10.20"), D("9100.13")],
         "min": [D("0.10"), D("100.01")],
@@ -227,6 +228,8 @@ def test_decimal_aggregations() -> None:
         sum=pl.sum("a"),
         min=pl.min("a"),
         max=pl.max("a"),
-    ).to_dict(
-        False
-    ) == {"sum": [D("9110.33")], "min": [D("0.10")], "max": [D("9000.12")]}
+    ).to_dict(as_series=False) == {
+        "sum": [D("9110.33")],
+        "min": [D("0.10")],
+        "max": [D("9000.12")],
+    }

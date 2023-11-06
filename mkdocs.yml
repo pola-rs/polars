@@ -1,7 +1,7 @@
 # https://www.mkdocs.org/user-guide/configuration/
 
 # Project information
-site_name: Polars documentation
+site_name: Polars
 site_url: https://pola-rs.github.io/polars
 repo_url: https://github.com/pola-rs/polars
 repo_name: pola-rs/polars
@@ -9,6 +9,7 @@ repo_name: pola-rs/polars
 # Documentation layout
 nav:
   - Home: index.md
+
   - Getting started:
     - getting-started/intro.md
     - getting-started/installation.md
@@ -16,6 +17,7 @@ nav:
     - getting-started/reading-writing.md
     - getting-started/expressions.md
     - getting-started/joins.md
+
   - User guide:
     - user-guide/index.md
     - user-guide/installation.md
@@ -37,6 +39,7 @@ nav:
       - user-guide/expressions/window.md
       - user-guide/expressions/folds.md
       - user-guide/expressions/lists.md
+      - user-guide/expressions/plugins.md
       - user-guide/expressions/user-defined-functions.md
       - user-guide/expressions/structs.md
       - user-guide/expressions/numpy.md
@@ -60,6 +63,7 @@ nav:
       - user-guide/lazy/streaming.md
     - IO:
       - user-guide/io/csv.md
+      - user-guide/io/excel.md
       - user-guide/io/parquet.md
       - user-guide/io/json.md
       - user-guide/io/multiple.md
@@ -78,8 +82,24 @@ nav:
     - Misc:
       - user-guide/misc/multiprocessing.md
       - user-guide/misc/alternatives.md
-      - user-guide/misc/reference-guides.md
-      - user-guide/misc/contributing.md
+
+  - API reference: api/index.md
+
+  - Development:
+    - Contributing:
+      - development/contributing/index.md
+      - development/contributing/ide.md
+      - development/contributing/test.md
+      - development/contributing/ci.md
+      - development/contributing/code-style.md
+    - development/versioning.md
+
+  - Releases:
+    - releases/changelog.md
+    - Upgrade guides:
+      - releases/upgrade/index.md
+      - releases/upgrade/0.19.md
+
 not_in_nav: |
   /_build/
   people.md
@@ -140,8 +160,8 @@ markdown_extensions:
   - pymdownx.details
   - attr_list
   - pymdownx.emoji:
-      emoji_index: !!python/name:materialx.emoji.twemoji
-      emoji_generator: !!python/name:materialx.emoji.to_svg
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - pymdownx.superfences
   - pymdownx.tabbed:
       alternate_style: true

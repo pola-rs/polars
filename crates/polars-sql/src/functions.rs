@@ -242,6 +242,7 @@ pub(crate) enum PolarsSqlFunctions {
     /// ```sql
     /// SELECT INITCAP(column_1) from df;
     /// ```
+    #[cfg(feature = "nightly")]
     InitCap,
     /// SQL 'left' function
     /// Returns the `length` first characters
@@ -579,6 +580,7 @@ impl PolarsSqlFunctions {
             // String functions
             // ----
             "ends_with" => Self::EndsWith,
+            #[cfg(feature = "nightly")]
             "initcap" => Self::InitCap,
             "length" => Self::Length,
             "left" => Self::Left,
@@ -697,6 +699,7 @@ impl SqlFunctionVisitor<'_> {
             // String functions
             // ----
             EndsWith => self.visit_binary(|e, s| e.str().ends_with(s)),
+            #[cfg(feature = "nightly")]
             InitCap => self.visit_unary(|e| e.str().to_titlecase()),
             Left => self.try_visit_binary(|e, length| {
                 Ok(e.str().slice(0, match length {

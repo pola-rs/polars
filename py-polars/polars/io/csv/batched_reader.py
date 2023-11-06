@@ -108,9 +108,9 @@ class BatchedCsvReader:
 
     def next_batches(self, n: int) -> list[DataFrame] | None:
         """
-        Read ``n`` batches from the reader.
+        Read `n` batches from the reader.
 
-        The ``n`` chunks will be parallelized over the
+        The `n` chunks will be parallelized over the
         available threads.
 
         Parameters

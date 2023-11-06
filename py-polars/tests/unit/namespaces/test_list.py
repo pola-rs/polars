@@ -39,9 +39,7 @@ def test_list_arr_get() -> None:
         {"a": [[1], [2], [3], [4, 5, 6], [7, 8, 9], [None, 11]]}
     ).with_columns(
         [pl.col("a").list.get(i).alias(f"get_{i}") for i in range(4)]
-    ).to_dict(
-        False
-    ) == {
+    ).to_dict(as_series=False) == {
         "a": [[1], [2], [3], [4, 5, 6], [7, 8, 9], [None, 11]],
         "get_0": [1, 2, 3, 4, 7, None],
         "get_1": [None, None, None, 5, 8, 11],
@@ -52,7 +50,7 @@ def test_list_arr_get() -> None:
     # get by indexes where some are out of bounds
     df = pl.DataFrame({"cars": [[1, 2, 3], [2, 3], [4], []], "indexes": [-2, 1, -3, 0]})
 
-    assert df.select([pl.col("cars").list.get("indexes")]).to_dict(False) == {
+    assert df.select([pl.col("cars").list.get("indexes")]).to_dict(as_series=False) == {
         "cars": [2, 3, None, None]
     }
     # exact on oob boundary
@@ -63,12 +61,12 @@ def test_list_arr_get() -> None:
         }
     )
 
-    assert df.select(pl.col("lists").list.get(3)).to_dict(False) == {
+    assert df.select(pl.col("lists").list.get(3)).to_dict(as_series=False) == {
         "lists": [None, None, 4]
     }
-    assert df.select(pl.col("lists").list.get(pl.col("index"))).to_dict(False) == {
-        "lists": [None, None, 4]
-    }
+    assert df.select(pl.col("lists").list.get(pl.col("index"))).to_dict(
+        as_series=False
+    ) == {"lists": [None, None, 4]}
 
 
 def test_contains() -> None:
@@ -102,9 +100,9 @@ def test_list_join() -> None:
         }
     )
     out = df.select(pl.col("a").list.join("-"))
-    assert out.to_dict(False) == {"a": ["ab-c-d", "e-f", "g", "", None]}
+    assert out.to_dict(as_series=False) == {"a": ["ab-c-d", "e-f", "g", "", None]}
     out = df.select(pl.col("a").list.join(pl.col("separator")))
-    assert out.to_dict(False) == {"a": ["ab&c&d", None, "g", "", None]}
+    assert out.to_dict(as_series=False) == {"a": ["ab&c&d", None, "g", "", None]}
 
 
 def test_list_arr_empty() -> None:
@@ -179,6 +177,37 @@ def test_list_drop_nulls() -> None:
     assert_frame_equal(df, expected_df)
 
 
+def test_list_sample() -> None:
+    s = pl.Series("values", [[1, 2, 3, None], [None, None], [1, 2], None])
+
+    expected_sample_n = pl.Series("values", [[3, 1], [None], [2], None])
+    assert_series_equal(
+        s.list.sample(n=pl.Series([2, 1, 1, 1]), seed=1), expected_sample_n
+    )
+
+    expected_sample_frac = pl.Series("values", [[3, 1], [None], [1, 2], None])
+    assert_series_equal(
+        s.list.sample(fraction=pl.Series([0.5, 0.5, 1.0, 0.3]), seed=1),
+        expected_sample_frac,
+    )
+
+    df = pl.DataFrame(
+        {
+            "values": [[1, 2, 3, None], [None, None], [3, 4]],
+            "n": [2, 1, 2],
+            "frac": [0.5, 0.5, 1.0],
+        }
+    )
+    df = df.select(
+        sample_n=pl.col("values").list.sample(n=pl.col("n"), seed=1),
+        sample_frac=pl.col("values").list.sample(fraction=pl.col("frac"), seed=1),
+    )
+    expected_df = pl.DataFrame(
+        {"sample_n": [[3, 1], [None], [3, 4]], "sample_frac": [[3, 1], [None], [3, 4]]}
+    )
+    assert_frame_equal(df, expected_df)
+
+
 def test_list_diff() -> None:
     s = pl.Series("a", [[1, 2], [10, 2, 1]])
     expected = pl.Series("a", [[None, 1], [None, -8, -1]])
@@ -238,7 +267,7 @@ def test_list_ternary_concat() -> None:
         .then(pl.col("list1").list.concat(pl.col("list2")))
         .otherwise(pl.col("list2"))
         .alias("result")
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "list1": [["123", "456"], None],
         "list2": [["789"], ["zzz"]],
         "result": [["789"], None],
@@ -249,7 +278,7 @@ def test_list_ternary_concat() -> None:
         .then(pl.col("list2"))
         .otherwise(pl.col("list1").list.concat(pl.col("list2")))
         .alias("result")
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "list1": [["123", "456"], None],
         "list2": [["789"], ["zzz"]],
         "result": [["123", "456", "789"], ["zzz"]],
@@ -262,9 +291,10 @@ def test_arr_contains_categorical() -> None:
     ).lazy()
     df = df.with_columns(pl.col("str").cast(pl.Categorical))
     df_groups = df.group_by("group").agg([pl.col("str").alias("str_list")])
-    assert df_groups.filter(pl.col("str_list").list.contains("C")).collect().to_dict(
-        False
-    ) == {"group": [2], "str_list": [["A", "C"]]}
+
+    result = df_groups.filter(pl.col("str_list").list.contains("C")).collect()
+    expected = {"group": [2], "str_list": [["A", "C"]]}
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_list_eval_type_coercion() -> None:
@@ -281,7 +311,7 @@ def test_list_eval_type_coercion() -> None:
             .list.eval(last_non_null_value, parallel=False)
             .alias("col_last")
         ]
-    ).to_dict(False) == {"col_last": [[3]]}
+    ).to_dict(as_series=False) == {"col_last": [[3]]}
 
 
 def test_list_slice() -> None:
@@ -293,15 +323,15 @@ def test_list_slice() -> None:
         }
     )
 
-    assert df.select([pl.col("lst").list.slice("offset", "len")]).to_dict(False) == {
-        "lst": [[2, 3, 4], [1]]
-    }
-    assert df.select([pl.col("lst").list.slice("offset", 1)]).to_dict(False) == {
-        "lst": [[2], [1]]
-    }
-    assert df.select([pl.col("lst").list.slice(-2, "len")]).to_dict(False) == {
-        "lst": [[3, 4], [2, 1]]
-    }
+    assert df.select([pl.col("lst").list.slice("offset", "len")]).to_dict(
+        as_series=False
+    ) == {"lst": [[2, 3, 4], [1]]}
+    assert df.select([pl.col("lst").list.slice("offset", 1)]).to_dict(
+        as_series=False
+    ) == {"lst": [[2], [1]]}
+    assert df.select([pl.col("lst").list.slice(-2, "len")]).to_dict(
+        as_series=False
+    ) == {"lst": [[3, 4], [2, 1]]}
 
 
 def test_list_sliced_get_5186() -> None:
@@ -401,9 +431,9 @@ def test_list_eval_all_null() -> None:
         pl.col("bar").cast(pl.List(pl.Utf8))
     )
 
-    assert df.select(pl.col("bar").list.eval(pl.element())).to_dict(False) == {
-        "bar": [None, None, None]
-    }
+    assert df.select(pl.col("bar").list.eval(pl.element())).to_dict(
+        as_series=False
+    ) == {"bar": [None, None, None]}
 
 
 def test_list_function_group_awareness() -> None:
@@ -416,15 +446,19 @@ def test_list_function_group_awareness() -> None:
 
     assert df.group_by("group").agg(
         [
-            pl.col("a").implode().list.get(0).alias("get"),
-            pl.col("a").implode().list.take([0]).alias("take"),
-            pl.col("a").implode().list.slice(0, 3).alias("slice"),
+            pl.col("a").get(0).alias("get_scalar"),
+            pl.col("a").take([0]).alias("take_no_implode"),
+            pl.col("a").implode().list.get(0).alias("implode_get"),
+            pl.col("a").implode().list.take([0]).alias("implode_take"),
+            pl.col("a").implode().list.slice(0, 3).alias("implode_slice"),
         ]
-    ).sort("group").to_dict(False) == {
+    ).sort("group").to_dict(as_series=False) == {
         "group": [0, 1, 2],
-        "get": [100, 105, 100],
-        "take": [[100], [105], [100]],
-        "slice": [[100, 103], [105, 106, 105], [100, 102]],
+        "get_scalar": [100, 105, 100],
+        "take_no_implode": [[100], [105], [100]],
+        "implode_get": [[100], [105], [100]],
+        "implode_take": [[[100]], [[105]], [[100]]],
+        "implode_slice": [[[100, 103]], [[105, 106, 105]], [[100, 102]]],
     }
 
 
@@ -436,7 +470,9 @@ def test_list_get_logical_types() -> None:
         }
     )
 
-    assert df.select(pl.all().list.get(1).suffix("_element_1")).to_dict(False) == {
+    assert df.select(pl.all().list.get(1).name.suffix("_element_1")).to_dict(
+        as_series=False
+    ) == {
         "date_col_element_1": [date(2023, 2, 2)],
         "datetime_col_element_1": [datetime(2023, 2, 2, 0, 0)],
     }
@@ -449,7 +485,7 @@ def test_list_take_logical_type() -> None:
 
     df = pl.concat([df, df], rechunk=False)
     assert df.n_chunks() == 2
-    assert df.select(pl.all().take([0, 1])).to_dict(False) == {
+    assert df.select(pl.all().take([0, 1])).to_dict(as_series=False) == {
         "foo": [["foo", "foo", "bar"], ["foo", "foo", "bar"]],
         "bar": [[5.0, 10.0, 12.0], [5.0, 10.0, 12.0]],
     }
@@ -489,7 +525,7 @@ def test_list_to_struct() -> None:
 def test_list_arr_get_8810() -> None:
     assert pl.DataFrame(pl.Series("a", [None], pl.List(pl.Int64))).select(
         pl.col("a").list.get(0)
-    ).to_dict(False) == {"a": [None]}
+    ).to_dict(as_series=False) == {"a": [None]}
 
 
 def test_list_tail_underflow_9087() -> None:
@@ -578,16 +614,16 @@ def test_list_set_operations_broadcast() -> None:
 
     assert df.with_columns(
         pl.col("a").list.set_intersection(pl.lit(pl.Series([[1, 2]])))
-    ).to_dict(False) == {"a": [[2], [1], [1, 2]]}
+    ).to_dict(as_series=False) == {"a": [[2], [1], [1, 2]]}
     assert df.with_columns(
         pl.col("a").list.set_union(pl.lit(pl.Series([[1, 2]])))
-    ).to_dict(False) == {"a": [[2, 3, 1], [3, 1, 2], [1, 2, 3]]}
+    ).to_dict(as_series=False) == {"a": [[2, 3, 1], [3, 1, 2], [1, 2, 3]]}
     assert df.with_columns(
         pl.col("a").list.set_difference(pl.lit(pl.Series([[1, 2]])))
-    ).to_dict(False) == {"a": [[3], [3], [3]]}
+    ).to_dict(as_series=False) == {"a": [[3], [3], [3]]}
     assert df.with_columns(
         pl.lit(pl.Series("a", [[1, 2]])).list.set_difference("a")
-    ).to_dict(False) == {"a": [[1], [2], []]}
+    ).to_dict(as_series=False) == {"a": [[1], [2], []]}
 
 
 def test_list_take_oob_10079() -> None:
@@ -607,7 +643,7 @@ def test_utf8_empty_series_arg_min_max_10703() -> None:
         pl.all().list.arg_min().alias("arg_min"),
         pl.all().list.arg_max().alias("arg_max"),
     )
-    assert res.to_dict(False) == {
+    assert res.to_dict(as_series=False) == {
         "list": [["a"], []],
         "arg_min": [0, None],
         "arg_max": [0, None],
@@ -627,3 +663,25 @@ def test_list_lengths_deprecated() -> None:
         result = s.list.lengths()
     expected = pl.Series([3, 1], dtype=pl.UInt32)
     assert_series_equal(result, expected)
+
+
+def test_list_to_array() -> None:
+    data = [[1.0, 2.0], [3.0, 4.0]]
+    s = pl.Series(data, dtype=pl.List(pl.Float32))
+
+    result = s.list.to_array(2)
+
+    expected = pl.Series(data, dtype=pl.Array(inner=pl.Float32, width=2))
+    assert_series_equal(result, expected)
+
+
+def test_list_to_array_wrong_lengths() -> None:
+    s = pl.Series([[1.0, 2.0], [3.0, 4.0]], dtype=pl.List(pl.Float32))
+    with pytest.raises(pl.ComputeError, match="incompatible offsets in source list"):
+        s.list.to_array(3)
+
+
+def test_list_to_array_wrong_dtype() -> None:
+    s = pl.Series([1.0, 2.0])
+    with pytest.raises(pl.ComputeError, match="expected List dtype"):
+        s.list.to_array(2)

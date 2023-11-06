@@ -72,7 +72,7 @@ impl RoundSeries for Series {}
 
 #[cfg(test)]
 mod test {
-    use crate::prelude::*;
+    use super::*;
 
     #[test]
     fn test_round_series() {

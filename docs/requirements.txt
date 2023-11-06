@@ -3,7 +3,7 @@ pyarrow<=12
 graphviz
 matplotlib
 
-mkdocs-material==9.2.5
+mkdocs-material==9.4.6
 mkdocs-macros-plugin==1.0.4
-markdown-exec[ansi]==1.6.0
-PyGithub==1.59.1
+markdown-exec[ansi]==1.7.0
+PyGithub==2.1.1
