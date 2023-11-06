@@ -62,7 +62,7 @@ where
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
         let schema = df.schema().to_arrow();
-        let record = write::to_record(&schema, &self.name)?;
+        let record = write::to_record(&schema, self.name.clone())?;
 
         let mut data = vec![];
         let mut compressed_block = avro_schema::file::CompressedBlock::default();
