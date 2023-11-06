@@ -337,8 +337,6 @@ def _convert_pa_schema_to_delta(schema: pa.schema) -> pa.schema:
         pa.uint16(): pa.int16(),
         pa.uint32(): pa.int32(),
         pa.uint64(): pa.int64(),
-        pa.large_string(): pa.string(),
-        pa.large_binary(): pa.binary(),
     }
 
     def dtype_to_delta_dtype(dtype: pa.DataType) -> pa.DataType:
@@ -356,10 +354,10 @@ def _convert_pa_schema_to_delta(schema: pa.schema) -> pa.schema:
         except KeyError:
             return dtype
 
-    def list_to_delta_dtype(dtype: pa.LargeListType) -> pa.ListType:
+    def list_to_delta_dtype(dtype: pa.LargeListType) -> pa.LargeListType:
         nested_dtype = dtype.value_type
         nested_dtype_cast = dtype_to_delta_dtype(nested_dtype)
-        return pa.list_(nested_dtype_cast)
+        return pa.large_list(nested_dtype_cast)
 
     def struct_to_delta_dtype(dtype: pa.StructType) -> pa.StructType:
         fields = [dtype.field(i) for i in range(dtype.num_fields)]

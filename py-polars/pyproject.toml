@@ -41,7 +41,7 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 adbc = ["adbc_driver_sqlite"]
 cloudpickle = ["cloudpickle"]
 connectorx = ["connectorx"]
-deltalake = ["deltalake >= 0.10.0"]
+deltalake = ["deltalake >= 0.13.0"]
 fsspec = ["fsspec"]
 gevent = ["gevent"]
 matplotlib = ["matplotlib"]

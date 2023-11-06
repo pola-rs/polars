@@ -3640,6 +3640,7 @@ class DataFrame:
             mode=mode,
             overwrite_schema=overwrite_schema,
             storage_options=storage_options,
+            large_dtypes=True,
             **delta_write_options,
         )
 
