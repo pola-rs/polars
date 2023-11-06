@@ -8,22 +8,6 @@ pub fn extract_highest_bit(n: usize) -> usize {
     1 << (usize::BITS - 1 - n.leading_zeros())
 }
 
-pub fn sqrt_approx(n: usize) -> usize {
-    // Note that sqrt(n) = n^(1/2), and that 2^log2(n) = n. We combine these
-    // two facts to approximate sqrt(n) as 2^(log2(n) / 2). Because our integer
-    // log floors we want to add 0.5 to compensate for this on average, so our
-    // initial approximation is 2^((1 + floor(log2(n))) / 2).
-    //
-    // We then apply an iteration of Newton's method to improve our
-    // approximation, which for sqrt(n) is a1 = (a0 + n / a0) / 2.
-    //
-    // Finally we note that the exponentiation / division can be done directly
-    // with shifts. We OR with 1 to avoid zero-checks in the integer log.
-    let ilog = (n | 1).ilog2();
-    let shift = (1 + ilog) / 2;
-    ((1 << shift) + (n >> shift)) / 2
-}
-
 // The ith portion of a range split in k (as equal as possible) parts.
 #[inline(always)]
 pub fn range_portion(i: usize, k: usize, r: Range<usize>) -> Range<usize> {

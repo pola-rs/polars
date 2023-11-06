@@ -1,39 +1,44 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
-
 use polars_utils::sync::SyncPtr;
-use polars_utils::{range_portion, sqrt_approx};
 
 use super::*;
 
+// FIXME: we should compute the number of threads / partition size we'll use.
+// let avail_threads = POOL.current_num_threads();
+// let n_threads = (num_keys / MIN_ELEMS_PER_THREAD).clamp(1, avail_threads);
 const MIN_ELEMS_PER_THREAD: usize = 128;
 
 
-pub(crate) fn build_tables_nonnull<T>(keys: &[T]) -> Vec<PlHashMap<T, Vec<IdxSize>>>
+pub(crate) fn build_tables<T, I>(keys: Vec<I>) -> Vec<PlHashMap<T, Vec<IdxSize>>>
 where
     T: Send + Hash + Eq + Sync + Copy + AsU64,
+    I: IntoIterator<Item = T> + Send + Sync + Clone,
 {
+    // FIXME: change interface to split the input here, instead of taking
+    // pre-split input iterators.
+    let n_partitions = keys.len();
+    let n_threads = n_partitions;
+    let num_keys_est: usize = keys.iter().map(|k| k.clone().into_iter().size_hint().0).sum();
+
     // Don't bother parallelizing anything for small inputs.
-    if keys.len() < 2*MIN_ELEMS_PER_THREAD {
+    if num_keys_est < 2*MIN_ELEMS_PER_THREAD {
         let mut hm: PlHashMap<T, Vec<IdxSize>> = PlHashMap::new();
-        for (i, k) in keys.iter().enumerate() {
-            hm.entry(*k).or_default().push(i as IdxSize);
+        let mut offset = 0;
+        for it in keys {
+            for k in it {
+                hm.entry(k).or_default().push(offset);
+                offset += 1;
+            }
         }
         return vec![hm];
     }
     
-    // Compute the number of threads / partition size we'll use.
-    let avail_threads = POOL.current_num_threads();
-    let n_threads = (keys.len() / MIN_ELEMS_PER_THREAD).clamp(1, avail_threads);
-    let n_partitions = n_threads;
-    
     POOL.install(|| {
         // Compute the number of elements in each partition for each portion.
-        let per_thread_partition_sizes: Vec<Vec<usize>> = (0..n_threads)
-            .into_par_iter()
-            .map(|t| {
+        let per_thread_partition_sizes: Vec<Vec<usize>> = keys
+            .par_iter()
+            .map(|key_portion| {
                 let mut partition_sizes = vec![0; n_partitions];
-                let key_portion = &keys[range_portion(t, n_threads, 0..keys.len())];
-                for key in key_portion {
+                for key in key_portion.clone() {
                     let h = key.as_u64();
                     let p = hash_to_partition(h, n_partitions);
                     unsafe {
@@ -56,35 +61,46 @@ where
                 cum_offset += per_thread_partition_sizes[t][p];
             }
         }
-        per_thread_partition_offsets[n_threads*n_partitions] = keys.len();
-        partition_offsets[n_partitions] = keys.len();
+        let num_keys = cum_offset;
+        per_thread_partition_offsets[n_threads*n_partitions] = num_keys;
+        partition_offsets[n_partitions] = num_keys;
+
+        // FIXME: we wouldn't need this if we changed our interface to split the
+        // input in this function, instead of taking a vec of iterators.
+        let mut per_thread_input_offsets = vec![0; n_partitions];
+        cum_offset = 0;
+        for t in 0..n_threads {
+            per_thread_input_offsets[t] = cum_offset;
+            for p in 0..n_partitions {
+                cum_offset += per_thread_partition_sizes[t][p];
+            }
+        }
         
         // Scatter values into partitions.
-        let mut scatter_keys: Vec<T> = Vec::with_capacity(keys.len());
-        let mut scatter_idxs: Vec<IdxSize> = Vec::with_capacity(keys.len());
+        let mut scatter_keys: Vec<T> = Vec::with_capacity(num_keys);
+        let mut scatter_idxs: Vec<IdxSize> = Vec::with_capacity(num_keys);
         let scatter_keys_ptr = unsafe { SyncPtr::new(scatter_keys.as_mut_ptr()) };
         let scatter_idxs_ptr = unsafe { SyncPtr::new(scatter_idxs.as_mut_ptr()) };
-        (0..n_threads)
+        keys
             .into_par_iter()
-            .for_each(|t| {
+            .enumerate()
+            .for_each(|(t, key_portion)| {
                 let scatter_keys_ptr = scatter_keys_ptr;
                 let scatter_idxs_ptr = scatter_idxs_ptr;
                 let mut partition_offsets = per_thread_partition_offsets[t*n_partitions..(t + 1)*n_partitions].to_vec();
-                let key_range = range_portion(t, n_threads, 0..keys.len());
-                let key_portion = &keys[key_range.clone()];
-                for (i, key) in key_portion.iter().enumerate() {
+                for (i, key) in key_portion.into_iter().enumerate() {
                     unsafe {
                         let p = hash_to_partition(key.as_u64(), n_partitions);
                         let off = partition_offsets.get_unchecked_mut(p);
-                        *scatter_keys_ptr.get().add(*off) = *key;
-                        *scatter_idxs_ptr.get().add(*off) = (key_range.start + i) as IdxSize;
+                        *scatter_keys_ptr.get().add(*off) = key;
+                        *scatter_idxs_ptr.get().add(*off) = (per_thread_input_offsets[t] + i) as IdxSize;
                         *off += 1;
                     }
                 }
             });
         unsafe {
-            scatter_keys.set_len(keys.len());
-            scatter_idxs.set_len(keys.len());
+            scatter_keys.set_len(num_keys);
+            scatter_idxs.set_len(num_keys);
         }
         
         // Build tables.
@@ -119,59 +135,6 @@ where
                 }
                 
                 hm
-            })
-            .collect()
-    })
-}
-
-pub(crate) fn build_tables<T, I>(keys: Vec<I>) -> Vec<PlHashMap<T, Vec<IdxSize>>>
-where
-    T: Send + Hash + Eq + Sync + Copy + AsU64,
-    I: IntoIterator<Item = T> + Send + Sync + Clone,
-    // <I as IntoIterator>::IntoIter: TrustedLen,
-{
-    let n_partitions = _set_partition_size();
-
-    // We will create a hashtable in every thread.
-    // We use the hash to partition the keys to the matching hashtable.
-    // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    POOL.install(|| {
-        (0..n_partitions)
-            .into_par_iter()
-            .map(|partition_no| {
-                let partition_no = partition_no as u64;
-
-                let mut hash_tbl: PlHashMap<T, Vec<IdxSize>> =
-                    PlHashMap::with_capacity(_HASHMAP_INIT_SIZE);
-
-                let n_partitions = n_partitions as u64;
-                let mut offset = 0;
-                for keys in &keys {
-                    let keys = keys.clone().into_iter();
-                    let len = keys.size_hint().1.unwrap() as IdxSize;
-
-                    let mut cnt = 0;
-                    keys.for_each(|k| {
-                        let idx = cnt + offset;
-                        cnt += 1;
-
-                        if this_partition(k.as_u64(), partition_no, n_partitions) {
-                            let entry = hash_tbl.entry(k);
-
-                            match entry {
-                                Entry::Vacant(entry) => {
-                                    entry.insert(vec![idx]);
-                                },
-                                Entry::Occupied(mut entry) => {
-                                    let v = entry.get_mut();
-                                    v.push(idx);
-                                },
-                            }
-                        }
-                    });
-                    offset += len;
-                }
-                hash_tbl
             })
             .collect()
     })
