@@ -367,7 +367,7 @@ pub(super) fn aexpr_blocks_predicate_pushdown(node: Node, expr_arena: &Arena<AEx
 #[inline(always)]
 pub(super) fn assert_aexpr_allows_predicate_pushdown(node: Node, expr_arena: &Arena<AExpr>) {
     assert!(
-        aexpr_blocks_predicate_pushdown(node, expr_arena),
+        !aexpr_blocks_predicate_pushdown(node, expr_arena),
         "Predicate pushdown: Did not expect blocking exprs at this point, please open an issue."
     );
 }
