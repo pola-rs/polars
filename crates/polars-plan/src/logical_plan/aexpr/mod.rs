@@ -228,8 +228,11 @@ impl AExpr {
             | Slice { .. }
             | Take { .. }
             | Nth(_)
+            | Literal(LiteralValue::Range {..})
              => true,
-            | Alias(_, _)
+            // A literal series of len > 1 would broadcast to different rows when run in different groups.
+            Literal(LiteralValue::Series(s)) => s.len() > 1,
+            Alias(_, _)
             | Explode(_)
             | Column(_)
             | Literal(_)

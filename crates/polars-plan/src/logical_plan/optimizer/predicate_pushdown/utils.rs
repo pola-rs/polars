@@ -104,87 +104,23 @@ pub(super) fn predicate_is_sort_boundary(node: Node, expr_arena: &Arena<AExpr>) 
     has_aexpr(node, expr_arena, matches)
 }
 
-// this checks if a predicate from a node upstream can pass
-// the predicate in this filter
-// Cases where this cannot be the case:
-//
-// .filter(a > 1)           # filter 2
-///.filter(a == min(a))     # filter 1
-///
-/// the min(a) is influenced by filter 2 so min(a) should not pass
-pub(super) fn predicate_is_pushdown_boundary(node: Node, expr_arena: &Arena<AExpr>) -> bool {
-    let matches = |e: &AExpr| {
-        matches!(
-            e,
-            AExpr::Sort { .. } | AExpr::SortBy { .. }
-            | AExpr::Take{..} // A take needs all rows
-            | AExpr::Agg(_) // an aggregation needs all rows
-            // Apply groups can be something like shift, sort, or an aggregation like skew
-            // both need all values
-            | AExpr::AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::GroupWise, .. }, ..}
-            | AExpr::Function {options: FunctionOptions { collect_groups: ApplyOptions::GroupWise, .. }, ..}
-            | AExpr::Explode {..}
-            // A group_by needs all rows for aggregation
-            | AExpr::Window {..}
-        )
-    };
-    has_aexpr(node, expr_arena, matches)
-}
-
-/// Some predicates should not pass a projection if they would influence results of other columns.
-/// For instance shifts | sorts results are influenced by a filter so we do all predicates before the shift | sort
-/// The rule of thumb is any operation that changes the order of a column w/r/t other columns should be a
-/// predicate pushdown blocker.
-///
-/// This checks the boundary of other columns
-pub(super) fn projection_is_definite_pushdown_boundary(
-    node: Node,
-    expr_arena: &Arena<AExpr>,
-) -> bool {
-    let matches = |e: &AExpr| {
-        use AExpr::*;
-        // any result that will change due to rows filtered before the projection
-
-        // explicit match is more readable in this case
-        #[allow(clippy::match_like_matches_macro)]
-        match e {
-             Agg(_) // an aggregation needs all rows
-            // Apply groups can be something like shift, sort, or an aggregation like skew
-            // both need all values
-            | AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::GroupWise, .. }, ..}
-            | Function {options: FunctionOptions { collect_groups: ApplyOptions::GroupWise, .. }, ..}
-            // still need to investigate this one
-            | Explode {..}
-            | Count
-             | Nth(_)
-             | Slice {..}
-             | Take {..}
-            // A group_by needs all rows for aggregation
-            | Window {..}
-            | Literal(LiteralValue::Range {..}) => true,
-            // The series might be used in a comparison with exactly the right length
-            Literal(LiteralValue::Series(s)) => s.len() > 1,
-            _ => false
-        }
-    };
-    has_aexpr(node, expr_arena, matches)
-}
-
-/// This is only a boundary if a predicate refers to the projection output name.
-/// This checks the boundary of same columns.
-/// So that means columns that are referred in the predicate
-/// for instance `predicate = col(A) == col(B).`
+/// Predicates can be renamed during pushdown to support being pushed past
+/// aliases. For example, given the projection `col(A).alias(B)`, and the
+/// predicate `col(B) == 1`, the predicate can be pushed past the alias by being
+/// re-written as col(A) == 1. However, this must not be done for aliases that
+/// are preceded by operations on the column.
+/// For instance, `predicate = col(A) == col(B).`
 /// and `col().some_func().alias(B)` is projected.
 /// then the projection can not pass, as column `B` maybe
 /// changed by `some_func`
-pub(super) fn projection_is_optional_pushdown_boundary(
+pub(super) fn aexpr_blocks_aliased_predicate_pushdown(
     node: Node,
     expr_arena: &Arena<AExpr>,
 ) -> bool {
     let matches = |e: &AExpr| {
         use AExpr::*;
         // anything that changes output values modifies the predicate result
-        // and is not captured by function above: `projection_is_definite_pushdown_boundary`
+        // and is not captured by `aexpr_blocks_predicate_pushdown`.
 
         // explicit match is more readable in this case
         #[allow(clippy::match_like_matches_macro)]
@@ -273,6 +209,7 @@ fn remove_predicate_refers_to_alias(
 }
 
 /// Implementation for both Hstack and Projection
+/// Safety: `projections` and `acc_predicates` do not contain blocking exprs.
 pub(super) fn rewrite_projection_node(
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &Arena<ALogicalPlan>,
@@ -290,7 +227,7 @@ where
     for projection_node in &projections {
         // only if a predicate refers to this projection's output column.
         let projection_maybe_boundary =
-            projection_is_optional_pushdown_boundary(*projection_node, expr_arena);
+            aexpr_blocks_aliased_predicate_pushdown(*projection_node, expr_arena);
 
         {
             // if this alias refers to one of the predicates in the upper nodes
@@ -312,9 +249,8 @@ where
             .to_field(&input_schema, Context::Default, expr_arena)
             .unwrap();
 
-        // we check if predicates can be done on the input above
-        // this can only be done if the current projection is not a projection boundary
-        let is_boundary = projection_is_definite_pushdown_boundary(*projection_node, expr_arena);
+        // should have been handled earlier by `pushdown_and_continue`.
+        assert_aexpr_allows_predicate_pushdown(*projection_node, expr_arena);
 
         // remove predicates that cannot be done on the input above
         let to_local = acc_predicates
@@ -324,15 +260,11 @@ where
                 // 1. does the column exist on the node above
                 // 2. if the projection is a computation/transformation and the predicate is based on that column
                 //    we must block because the predicate would be incorrect.
-                // 3. if applying the predicate earlier does not influence the result of this projection
-                //    this is the case for instance with a sum operation (filtering out rows influences the result)
 
                 // checks 1.
                 if check_input_node(*predicate, &input_schema, expr_arena)
                 // checks 2.
                 && !(key_has_name(name, output_field.name()) && projection_maybe_boundary)
-                // checks 3.
-                && !is_boundary
                 {
                     None
                 } else {
@@ -409,29 +341,33 @@ where
     local_predicates
 }
 
-/// predicates that need the full context should not be pushed down to the scans
-/// example: min(..) == null_count
-pub(super) fn partition_by_full_context(
-    acc_predicates: &mut PlHashMap<Arc<str>, Node>,
-    expr_arena: &Arena<AExpr>,
-) -> Vec<Node> {
-    // TODO!
-    // Assert that acc_predicates does not contain a mix of groups sensitive and
-    // non-groups sensitive predicates, as this should have been handled
-    // earlier under push_down::match::Selection.
-    if acc_predicates.values().any(|node| {
-        has_aexpr(*node, expr_arena, |ae| match ae {
-            AExpr::BinaryExpr { left, right, .. } => {
-                expr_arena.get(*left).groups_sensitive()
-                    || expr_arena.get(*right).groups_sensitive()
-            },
-            ae => ae.groups_sensitive(),
-        })
-    }) {
-        let local_predicates = acc_predicates.values().copied().collect::<Vec<_>>();
-        acc_predicates.clear();
-        local_predicates
-    } else {
-        vec![]
-    }
+/// An expression blocks predicates from being pushed past it if its results for
+/// the subset where the predicate evaluates as true becomes different compared
+/// to if it was performed before the predicate was applied. This is in general
+/// any expression that produces outputs based on groups of values
+/// (i.e. groups-wise) rather than individual values (i.e. element-wise).
+///
+/// Examples of expressions whose results would change, and thus block push-down:
+/// - any aggregation - sum, mean, first, last, min, max etc.
+/// - sorting - as the sort keys would change between filters
+///
+/// Examples of expressions whose results do not change, and thus allow push-down:
+/// - column addition, equality, string concatenation
+pub(super) fn aexpr_blocks_predicate_pushdown(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    has_aexpr(node, expr_arena, |ae| match ae {
+        AExpr::BinaryExpr { left, right, .. } => {
+            expr_arena.get(*left).groups_sensitive() || expr_arena.get(*right).groups_sensitive()
+        },
+        ae => ae.groups_sensitive(),
+    })
+}
+
+/// Used in places that previously handled blocking exprs before refactoring.
+/// Can probably be eventually removed if it isn't catching anything.
+#[inline(always)]
+pub(super) fn assert_aexpr_allows_predicate_pushdown(node: Node, expr_arena: &Arena<AExpr>) {
+    assert!(
+        aexpr_blocks_predicate_pushdown(node, expr_arena),
+        "Predicate pushdown: Did not expect blocking exprs at this point, please open an issue."
+    );
 }
