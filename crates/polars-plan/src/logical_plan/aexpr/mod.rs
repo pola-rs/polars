@@ -228,11 +228,7 @@ impl AExpr {
             | Slice { .. }
             | Take { .. }
             | Nth(_)
-            | Literal(LiteralValue::Range {..})
              => true,
-            // A literal series of len > 1 would broadcast to different rows when run in different groups.
-            // TODO! This was copied from predicate pushdown, but there's no known example of how this works?
-            Literal(LiteralValue::Series(s)) => s.len() > 1,
             Alias(_, _)
             | Explode(_)
             | Column(_)
