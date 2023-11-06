@@ -194,7 +194,7 @@ where
     let splitted_b = split_ca(b, n_threads).unwrap();
     let splitted_a = get_arrays(&splitted_a);
     let splitted_b = get_arrays(&splitted_b);
-    
+
     match (left.null_count(), right.null_count()) {
         (0, 0) => {
             let first = &splitted_a[0];

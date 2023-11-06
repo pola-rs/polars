@@ -7,7 +7,6 @@ use super::*;
 // let n_threads = (num_keys / MIN_ELEMS_PER_THREAD).clamp(1, avail_threads);
 const MIN_ELEMS_PER_THREAD: usize = 128;
 
-
 pub(crate) fn build_tables<T, I>(keys: Vec<I>) -> Vec<PlHashMap<T, Vec<IdxSize>>>
 where
     T: Send + Hash + Eq + Sync + Copy + AsU64,
@@ -17,10 +16,13 @@ where
     // pre-split input iterators.
     let n_partitions = keys.len();
     let n_threads = n_partitions;
-    let num_keys_est: usize = keys.iter().map(|k| k.clone().into_iter().size_hint().0).sum();
+    let num_keys_est: usize = keys
+        .iter()
+        .map(|k| k.clone().into_iter().size_hint().0)
+        .sum();
 
     // Don't bother parallelizing anything for small inputs.
-    if num_keys_est < 2*MIN_ELEMS_PER_THREAD {
+    if num_keys_est < 2 * MIN_ELEMS_PER_THREAD {
         let mut hm: PlHashMap<T, Vec<IdxSize>> = PlHashMap::new();
         let mut offset = 0;
         for it in keys {
@@ -31,7 +33,7 @@ where
         }
         return vec![hm];
     }
-    
+
     POOL.install(|| {
         // Compute the number of elements in each partition for each portion.
         let per_thread_partition_sizes: Vec<Vec<usize>> = keys
@@ -42,8 +44,7 @@ where
                     let h = key.as_u64();
                     let p = hash_to_partition(h, n_partitions);
                     unsafe {
-                        *partition_sizes
-                            .get_unchecked_mut(p) += 1;
+                        *partition_sizes.get_unchecked_mut(p) += 1;
                     }
                 }
                 partition_sizes
@@ -57,12 +58,12 @@ where
         for p in 0..n_partitions {
             partition_offsets[p] = cum_offset;
             for t in 0..n_threads {
-                per_thread_partition_offsets[t*n_partitions + p] = cum_offset;
+                per_thread_partition_offsets[t * n_partitions + p] = cum_offset;
                 cum_offset += per_thread_partition_sizes[t][p];
             }
         }
         let num_keys = cum_offset;
-        per_thread_partition_offsets[n_threads*n_partitions] = num_keys;
+        per_thread_partition_offsets[n_threads * n_partitions] = num_keys;
         partition_offsets[n_partitions] = num_keys;
 
         // FIXME: we wouldn't need this if we changed our interface to split the
@@ -75,25 +76,26 @@ where
                 cum_offset += per_thread_partition_sizes[t][p];
             }
         }
-        
+
         // Scatter values into partitions.
         let mut scatter_keys: Vec<T> = Vec::with_capacity(num_keys);
         let mut scatter_idxs: Vec<IdxSize> = Vec::with_capacity(num_keys);
         let scatter_keys_ptr = unsafe { SyncPtr::new(scatter_keys.as_mut_ptr()) };
         let scatter_idxs_ptr = unsafe { SyncPtr::new(scatter_idxs.as_mut_ptr()) };
-        keys
-            .into_par_iter()
+        keys.into_par_iter()
             .enumerate()
             .for_each(|(t, key_portion)| {
                 let scatter_keys_ptr = scatter_keys_ptr;
                 let scatter_idxs_ptr = scatter_idxs_ptr;
-                let mut partition_offsets = per_thread_partition_offsets[t*n_partitions..(t + 1)*n_partitions].to_vec();
+                let mut partition_offsets =
+                    per_thread_partition_offsets[t * n_partitions..(t + 1) * n_partitions].to_vec();
                 for (i, key) in key_portion.into_iter().enumerate() {
                     unsafe {
                         let p = hash_to_partition(key.as_u64(), n_partitions);
                         let off = partition_offsets.get_unchecked_mut(p);
                         *scatter_keys_ptr.get().add(*off) = key;
-                        *scatter_idxs_ptr.get().add(*off) = (per_thread_input_offsets[t] + i) as IdxSize;
+                        *scatter_idxs_ptr.get().add(*off) =
+                            (per_thread_input_offsets[t] + i) as IdxSize;
                         *off += 1;
                     }
                 }
@@ -102,7 +104,7 @@ where
             scatter_keys.set_len(num_keys);
             scatter_idxs.set_len(num_keys);
         }
-        
+
         // Build tables.
         (0..n_partitions)
             .into_par_iter()
@@ -112,28 +114,32 @@ where
                 // map, which would satisfy a highly skewed relation. If this
                 // fills up we immediately reserve enough for a full cardinality
                 // data set.
-                let partition_range = partition_offsets[p]..partition_offsets[p+1];
+                let partition_range = partition_offsets[p]..partition_offsets[p + 1];
                 let full_size = partition_range.len();
                 let mut conservative_size = _HASHMAP_INIT_SIZE.max(full_size / 64);
                 let mut hm: PlHashMap<T, Vec<IdxSize>> =
                     PlHashMap::with_capacity(conservative_size);
-                
+
                 unsafe {
                     for i in partition_range {
                         if hm.len() == conservative_size {
                             hm.reserve(full_size - conservative_size);
                             conservative_size = 0; // Hack to ensure we never hit this branch again.
                         }
-                            
+
                         let key = *scatter_keys.get_unchecked(i);
                         let idx = *scatter_idxs.get_unchecked(i);
                         match hm.entry(key) {
-                            Entry::Occupied(mut o) => { o.get_mut().push(idx as IdxSize); }
-                            Entry::Vacant(v) => { v.insert(vec![idx as IdxSize]); }
+                            Entry::Occupied(mut o) => {
+                                o.get_mut().push(idx as IdxSize);
+                            },
+                            Entry::Vacant(v) => {
+                                v.insert(vec![idx as IdxSize]);
+                            },
                         };
                     }
                 }
-                
+
                 hm
             })
             .collect()

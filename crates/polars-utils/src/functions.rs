@@ -1,13 +1,6 @@
 use std::hash::{BuildHasher, Hash};
 use std::ops::Range;
 
-
-#[inline(always)]
-pub fn extract_highest_bit(n: usize) -> usize {
-    if n <= 1 { return n; }
-    1 << (usize::BITS - 1 - n.leading_zeros())
-}
-
 // The ith portion of a range split in k (as equal as possible) parts.
 #[inline(always)]
 pub fn range_portion(i: usize, k: usize, r: Range<usize>) -> Range<usize> {
