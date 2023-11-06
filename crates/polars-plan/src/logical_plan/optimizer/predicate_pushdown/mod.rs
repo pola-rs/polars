@@ -266,12 +266,14 @@ impl<'a> PredicatePushDown<'a> {
                 }
 
                 let local_predicates = match &scan_type {
-                    #[cfg(feature = "csv")]
-                    FileScan::Csv { .. } => {
-                        // CSV scans apply predicates prior to updating the row counts of every thread
-                        // batch, as it is not possible for every thread to know its row count offset
-                        // during read due to non-deterministic chunking. So any predicates based on
-                        // row count are moved out.
+                    #[cfg(feature = "parquet")]
+                    FileScan::Parquet { .. } => vec![],
+                    #[cfg(feature = "ipc")]
+                    FileScan::Ipc { .. } => vec![],
+                    _ => {
+                        // Disallow row-count pushdown of other scans as they may
+                        // not guarantee to update the row counts properly before
+                        // applying the predicate (e.g. CsvScan).
                         if let Some(ref row_count) = options.row_count {
                             let row_count_predicates = transfer_to_local_by_name(expr_arena, &mut acc_predicates, |name| {
                                 name.as_ref() == row_count.name
@@ -281,7 +283,6 @@ impl<'a> PredicatePushDown<'a> {
                             vec![]
                         }
                     }
-                    _ => Vec::<Node>::new()
                 };
                 let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
