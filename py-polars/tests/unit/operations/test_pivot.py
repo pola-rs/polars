@@ -367,7 +367,7 @@ def test_aggregate_function_deprecation_warning() -> None:
     with pytest.raises(
         pl.ComputeError, match="found multiple elements in the same group"
     ):
-        df.pivot("b", "c", "a")
+        df.pivot("a", "b", "c")
 
 
 def test_pivot_struct() -> None:
