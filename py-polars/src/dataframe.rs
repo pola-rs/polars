@@ -380,12 +380,13 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "avro")]
-    #[pyo3(signature = (py_f, compression))]
+    #[pyo3(signature = (py_f, compression, name))]
     pub fn write_avro(
         &mut self,
         py: Python,
         py_f: PyObject,
         compression: Wrap<Option<AvroCompression>>,
+        name: String,
     ) -> PyResult<()> {
         use polars::io::avro::AvroWriter;
 
@@ -393,12 +394,14 @@ impl PyDataFrame {
             let f = std::fs::File::create(s).unwrap();
             AvroWriter::new(f)
                 .with_compression(compression.0)
+                .with_name(name)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         } else {
             let mut buf = get_file_like(py_f, true)?;
             AvroWriter::new(&mut buf)
                 .with_compression(compression.0)
+                .with_name(name)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         }
