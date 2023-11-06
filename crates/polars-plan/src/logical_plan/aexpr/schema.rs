@@ -264,7 +264,6 @@ fn get_arithmetic_field(
                     (AExpr::Literal(_), AExpr::Literal(_)) => {},
                     (AExpr::Literal(_), _) => {
                         // literal will be coerced to match right type
-                        let right_type = right_ae.get_type(schema, ctxt, arena)?;
                         left_field.coerce(right_type);
                         return Ok(left_field);
                     },
