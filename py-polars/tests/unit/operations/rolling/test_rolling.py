@@ -711,3 +711,52 @@ def test_rolling_nanoseconds_11003() -> None:
     )
     expected = df.with_columns(val=pl.Series([1, 3, 6]))
     assert_frame_equal(result, expected)
+
+
+def test_rolling_by_1mo_saturating_12216() -> None:
+    df = pl.DataFrame(
+        {
+            "date": [
+                date(2020, 6, 29),
+                date(2020, 6, 30),
+                date(2020, 7, 30),
+                date(2020, 7, 31),
+                date(2020, 8, 1),
+            ],
+            "val": [1, 2, 3, 4, 5],
+        }
+    ).set_sorted("date")
+    result = df.rolling(index_column="date", period="1mo_saturating").agg(
+        vals=pl.col("val")
+    )
+    expected = pl.DataFrame(
+        {
+            "date": [
+                date(2020, 6, 29),
+                date(2020, 6, 30),
+                date(2020, 7, 30),
+                date(2020, 7, 31),
+                date(2020, 8, 1),
+            ],
+            "vals": [[1], [1, 2], [3], [3, 4], [3, 4, 5]],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+    # check with `closed='both'` against DuckDB output
+    result = df.rolling(
+        index_column="date", period="1mo_saturating", closed="both"
+    ).agg(vals=pl.col("val"))
+    expected = pl.DataFrame(
+        {
+            "date": [
+                date(2020, 6, 29),
+                date(2020, 6, 30),
+                date(2020, 7, 30),
+                date(2020, 7, 31),
+                date(2020, 8, 1),
+            ],
+            "vals": [[1], [1, 2], [2, 3], [2, 3, 4], [3, 4, 5]],
+        }
+    )
+    assert_frame_equal(result, expected)

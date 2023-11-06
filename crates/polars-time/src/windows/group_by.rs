@@ -242,7 +242,7 @@ pub(crate) fn group_by_values_iter_lookbehind(
     // Use binary search to find the initial start as that is behind.
     let mut start = if let Some(&t) = time.get(start_offset) {
         let lower = add(&offset, t, tz.as_ref()).unwrap();
-        let upper = add(&period, lower, tz.as_ref()).unwrap();
+        let upper = t; // period == -offset, so `t + offset + period` is equal to `t`
         let b = Bounds::new(lower, upper);
         let slice = &time[..start_offset];
         slice.partition_point(|v| !b.is_member(*v, closed_window))
@@ -256,7 +256,7 @@ pub(crate) fn group_by_values_iter_lookbehind(
         .map(move |(mut i, t)| {
             i += start_offset;
             let lower = add(&offset, *t, tz.as_ref())?;
-            let upper = add(&period, lower, tz.as_ref())?;
+            let upper = *t; // period == -offset, so `t + offset + period` is equal to `t`
 
             let b = Bounds::new(lower, upper);
 
