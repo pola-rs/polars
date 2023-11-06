@@ -288,5 +288,5 @@ def test_literal_series_expr_predicate_pushdown() -> None:
         .filter(pl.col("x").is_in([0, 1]))
     )
 
-    assert not "FILTER" in lf.explain()
+    assert "FILTER" not in lf.explain()
     assert lf.collect().to_series().to_list() == [1]
