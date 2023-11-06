@@ -141,7 +141,7 @@ def test_to_date_non_exact_strptime() -> None:
     ],
 )
 def test_non_exact_short_elements_10223(value: str, attr: str) -> None:
-    with pytest.raises(pl.ComputeError, match="strict .* parsing failed"):
+    with pytest.raises(pl.ComputeError, match="Conversion .* failed"):
         getattr(pl.Series(["2019-01-01", value]).str, attr)(exact=False)
 
 
@@ -459,14 +459,14 @@ def test_strptime_invalid_timezone() -> None:
 
 def test_to_datetime_ambiguous_or_non_existent() -> None:
     with pytest.raises(
-        pl.InvalidOperationError,
+        pl.ComputeError,
         match="datetime '2021-11-07 01:00:00' is ambiguous in time zone 'US/Central'",
     ):
         pl.Series(["2021-11-07 01:00"]).str.to_datetime(
             time_unit="us", time_zone="US/Central"
         )
     with pytest.raises(
-        pl.InvalidOperationError,
+        pl.ComputeError,
         match="datetime '2021-03-28 02:30:00' is non-existent in time zone 'Europe/Warsaw'",
     ):
         pl.Series(["2021-03-28 02:30"]).str.to_datetime(
@@ -643,7 +643,7 @@ def test_to_datetime_use_earliest(exact: bool) -> None:
     )
     expected = datetime(2020, 10, 25, 1, fold=1, tzinfo=ZoneInfo("Europe/London"))
     assert result == expected
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(pl.ComputeError):
         pl.Series(["2020-10-25 01:00"]).str.to_datetime(
             time_zone="Europe/London",
             exact=exact,
@@ -670,7 +670,7 @@ def test_strptime_use_earliest(exact: bool) -> None:
     )
     expected = datetime(2020, 10, 25, 1, fold=1, tzinfo=ZoneInfo("Europe/London"))
     assert result == expected
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(pl.ComputeError):
         pl.Series(["2020-10-25 01:00"]).str.strptime(
             pl.Datetime("us", "Europe/London"),
             exact=exact,

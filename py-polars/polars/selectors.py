@@ -684,7 +684,7 @@ def categorical() -> SelectorType:
 
 def contains(substring: str | Collection[str]) -> SelectorType:
     """
-    Select columns that contain the given literal substring(s).
+    Select columns whose names contain the given literal substring(s).
 
     Parameters
     ----------

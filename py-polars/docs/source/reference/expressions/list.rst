@@ -46,6 +46,7 @@ The following methods are available under the `expr.list` attribute.
     Expr.list.symmetric_difference
     Expr.list.tail
     Expr.list.take
+    Expr.list.to_array
     Expr.list.to_struct
     Expr.list.union
     Expr.list.unique

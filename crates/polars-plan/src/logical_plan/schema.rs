@@ -159,7 +159,7 @@ pub fn set_estimated_row_counts(
                 mut options,
             } = lp_arena.take(root)
             {
-                let mut sum_output = (None, 0);
+                let mut sum_output = (None, 0usize);
                 for input in &inputs {
                     let mut out =
                         set_estimated_row_counts(*input, lp_arena, expr_arena, 0, scratch);
@@ -168,7 +168,7 @@ pub fn set_estimated_row_counts(
                     }
                     // todo! deal with known as well
                     let out = estimate_sizes(out.0, out.1, out.2);
-                    sum_output.1 += out.1;
+                    sum_output.1 = sum_output.1.saturating_add(out.1);
                 }
                 options.rows = sum_output;
                 lp_arena.replace(root, Union { inputs, options });

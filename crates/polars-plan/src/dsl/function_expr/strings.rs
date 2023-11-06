@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 static TZ_AWARE_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(%z)|(%:z)|(%::z)|(%:::z)|(%#z)|(^%\+$)").unwrap());
 
+use polars_core::utils::handle_casting_failures;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::format_smartstring;
 
@@ -74,6 +75,14 @@ pub enum StringFunction {
         fill_char: char,
     },
     Slice(i64, Option<u64>),
+    #[cfg(feature = "string_encoding")]
+    HexEncode,
+    #[cfg(feature = "binary_encoding")]
+    HexDecode(bool),
+    #[cfg(feature = "string_encoding")]
+    Base64Encode,
+    #[cfg(feature = "binary_encoding")]
+    Base64Decode(bool),
     StartsWith,
     StripChars,
     StripCharsStart,
@@ -129,6 +138,14 @@ impl StringFunction {
             Titlecase => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-decimal")]
             ToDecimal(_) => mapper.with_dtype(DataType::Decimal(None, None)),
+            #[cfg(feature = "string_encoding")]
+            HexEncode => mapper.with_same_dtype(),
+            #[cfg(feature = "binary_encoding")]
+            HexDecode(_) => mapper.with_dtype(DataType::Binary),
+            #[cfg(feature = "string_encoding")]
+            Base64Encode => mapper.with_same_dtype(),
+            #[cfg(feature = "binary_encoding")]
+            Base64Decode(_) => mapper.with_dtype(DataType::Binary),
             Uppercase
             | Lowercase
             | StripChars
@@ -185,6 +202,14 @@ impl Display for StringFunction {
             PadStart { .. } => "pad_start",
             #[cfg(feature = "regex")]
             Replace { .. } => "replace",
+            #[cfg(feature = "string_encoding")]
+            HexEncode => "hex_encode",
+            #[cfg(feature = "binary_encoding")]
+            HexDecode(_) => "hex_decode",
+            #[cfg(feature = "string_encoding")]
+            Base64Encode => "base64_encode",
+            #[cfg(feature = "binary_encoding")]
+            Base64Decode(_) => "base64_decode",
             Slice(_, _) => "slice",
             StartsWith { .. } => "starts_with",
             StripChars => "strip_chars",
@@ -290,6 +315,14 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "string_from_radix")]
             FromRadix(radix, strict) => map!(strings::from_radix, radix, strict),
             Slice(start, length) => map!(strings::str_slice, start, length),
+            #[cfg(feature = "string_encoding")]
+            HexEncode => map!(strings::hex_encode),
+            #[cfg(feature = "binary_encoding")]
+            HexDecode(strict) => map!(strings::hex_decode, strict),
+            #[cfg(feature = "string_encoding")]
+            Base64Encode => map!(strings::base64_encode),
+            #[cfg(feature = "binary_encoding")]
+            Base64Decode(strict) => map!(strings::base64_decode, strict),
             Explode => map!(strings::explode),
             #[cfg(feature = "dtype-decimal")]
             ToDecimal(infer_len) => map!(strings::to_decimal, infer_len),
@@ -500,46 +533,6 @@ pub(super) fn split(s: &[Series], inclusive: bool) -> PolarsResult<Series> {
     }
 }
 
-fn handle_temporal_parsing_error(
-    ca: &Utf8Chunked,
-    out: &Series,
-    format: Option<&str>,
-    has_non_exact_option: bool,
-) -> PolarsResult<()> {
-    let failure_mask = !ca.is_null() & out.is_null();
-    let all_failures = ca.filter(&failure_mask)?;
-    let first_failures = all_failures.slice(0, 3);
-    let n_failures = all_failures.len();
-    let exact_addendum = if has_non_exact_option {
-        "- setting `exact=False` (note: this is much slower!)\n"
-    } else {
-        ""
-    };
-    let format_addendum;
-    if let Some(format) = format {
-        format_addendum = format!(
-            "- checking whether the format provided ('{}') is correct",
-            format
-        );
-    } else {
-        format_addendum = String::from("- explicitly specifying `format`");
-    }
-    polars_bail!(
-        ComputeError:
-        "strict {} parsing failed for {} value(s) (first few failures: {})\n\
-        \n\
-        You might want to try:\n\
-        - setting `strict=False`\n\
-        {}\
-        {}",
-        out.dtype(),
-        n_failures,
-        first_failures.into_series().fmt_list(),
-        exact_addendum,
-        format_addendum,
-    )
-}
-
 #[cfg(feature = "dtype-date")]
 fn to_date(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
     let ca = s.utf8()?;
@@ -554,7 +547,7 @@ fn to_date(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
     };
 
     if options.strict && ca.null_count() != out.null_count() {
-        handle_temporal_parsing_error(ca, &out, options.format.as_deref(), true)?;
+        handle_casting_failures(s, &out)?;
     }
     Ok(out.into_series())
 }
@@ -607,7 +600,7 @@ fn to_datetime(
     };
 
     if options.strict && datetime_strings.null_count() != out.null_count() {
-        handle_temporal_parsing_error(datetime_strings, &out, options.format.as_deref(), true)?;
+        handle_casting_failures(&s[0], &out)?;
     }
     Ok(out.into_series())
 }
@@ -624,7 +617,7 @@ fn to_time(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
         .into_series();
 
     if options.strict && ca.null_count() != out.null_count() {
-        handle_temporal_parsing_error(ca, &out, options.format.as_deref(), false)?;
+        handle_casting_failures(s, &out)?;
     }
     Ok(out.into_series())
 }
@@ -817,6 +810,26 @@ pub(super) fn from_radix(s: &Series, radix: u32, strict: bool) -> PolarsResult<S
 pub(super) fn str_slice(s: &Series, start: i64, length: Option<u64>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     Ok(ca.str_slice(start, length).into_series())
+}
+
+#[cfg(feature = "string_encoding")]
+pub(super) fn hex_encode(s: &Series) -> PolarsResult<Series> {
+    Ok(s.utf8()?.hex_encode().into_series())
+}
+
+#[cfg(feature = "binary_encoding")]
+pub(super) fn hex_decode(s: &Series, strict: bool) -> PolarsResult<Series> {
+    s.utf8()?.hex_decode(strict).map(|ca| ca.into_series())
+}
+
+#[cfg(feature = "string_encoding")]
+pub(super) fn base64_encode(s: &Series) -> PolarsResult<Series> {
+    Ok(s.utf8()?.base64_encode().into_series())
+}
+
+#[cfg(feature = "binary_encoding")]
+pub(super) fn base64_decode(s: &Series, strict: bool) -> PolarsResult<Series> {
+    s.utf8()?.base64_decode(strict).map(|ca| ca.into_series())
 }
 
 pub(super) fn explode(s: &Series) -> PolarsResult<Series> {

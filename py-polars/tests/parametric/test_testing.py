@@ -266,3 +266,9 @@ def test_invalid_arguments() -> None:
 
     with pytest.raises(InvalidArgument, match="unable to determine dtype"):
         column("colx", strategy=sampled_from([None]))
+
+
+@given(s=series(allowed_dtypes=pl.Binary))
+@settings(max_examples=5)
+def test_strategy_dtype_binary(s: pl.Series) -> None:
+    assert s.dtype == pl.Binary

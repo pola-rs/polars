@@ -905,6 +905,40 @@ class ExprListNameSpace:
         element = parse_as_expression(element, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_count_matches(element))
 
+    def to_array(self, width: int) -> Expr:
+        """
+        Convert a List column into an Array column with the same inner data type.
+
+        Parameters
+        ----------
+        width
+            Width of the resulting Array column.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Array`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2], [3, 4]]},
+        ...     schema={"a": pl.List(pl.Int8)},
+        ... )
+        >>> df.select(pl.col("a").list.to_array(2))
+        shape: (2, 1)
+        ┌──────────────┐
+        │ a            │
+        │ ---          │
+        │ array[i8, 2] │
+        ╞══════════════╡
+        │ [1, 2]       │
+        │ [3, 4]       │
+        └──────────────┘
+
+        """
+        return wrap_expr(self._pyexpr.list_to_array(width))
+
     def to_struct(
         self,
         n_field_strategy: ToStructStrategy = "first_non_null",
@@ -1134,7 +1168,6 @@ class ExprListNameSpace:
         ----------
         other
             Right hand side of the set operation.
-
 
         Examples
         --------

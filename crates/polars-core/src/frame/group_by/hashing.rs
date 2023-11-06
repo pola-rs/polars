@@ -188,7 +188,6 @@ where
     T: Send + Hash + Eq + Sync + Copy + AsU64,
     IntoSlice: AsRef<[T]> + Send + Sync,
 {
-    assert!(n_partitions.is_power_of_two());
     let init_size = get_init_size();
 
     // We will create a hashtable in every thread.
@@ -252,7 +251,6 @@ where
     I::IntoIter: ExactSizeIterator,
     T: Send + Hash + Eq + Sync + Copy + AsU64,
 {
-    assert!(n_partitions.is_power_of_two());
     let init_size = get_init_size();
 
     // We will create a hashtable in every thread.

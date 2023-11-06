@@ -663,3 +663,25 @@ def test_list_lengths_deprecated() -> None:
         result = s.list.lengths()
     expected = pl.Series([3, 1], dtype=pl.UInt32)
     assert_series_equal(result, expected)
+
+
+def test_list_to_array() -> None:
+    data = [[1.0, 2.0], [3.0, 4.0]]
+    s = pl.Series(data, dtype=pl.List(pl.Float32))
+
+    result = s.list.to_array(2)
+
+    expected = pl.Series(data, dtype=pl.Array(inner=pl.Float32, width=2))
+    assert_series_equal(result, expected)
+
+
+def test_list_to_array_wrong_lengths() -> None:
+    s = pl.Series([[1.0, 2.0], [3.0, 4.0]], dtype=pl.List(pl.Float32))
+    with pytest.raises(pl.ComputeError, match="incompatible offsets in source list"):
+        s.list.to_array(3)
+
+
+def test_list_to_array_wrong_dtype() -> None:
+    s = pl.Series([1.0, 2.0])
+    with pytest.raises(pl.ComputeError, match="expected List dtype"):
+        s.list.to_array(2)

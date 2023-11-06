@@ -128,7 +128,6 @@ where
     let offsets = probe_to_offsets(&probe);
 
     let n_tables = hash_tbls.len() as u64;
-    debug_assert!(n_tables.is_power_of_two());
 
     // next we probe the other relation
     let result: Vec<LeftJoinIds> = POOL.install(move || {

@@ -1,12 +1,12 @@
 # Missing data
 
-This page sets out how missing data is represented in `Polars` and how missing data can be filled.
+This page sets out how missing data is represented in Polars and how missing data can be filled.
 
 ## `null` and `NaN` values
 
-Each column in a `DataFrame` (or equivalently a `Series`) is an Arrow array or a collection of Arrow arrays [based on the Apache Arrow format](https://arrow.apache.org/docs/format/Columnar.html#null-count). Missing data is represented in Arrow and `Polars` with a `null` value. This `null` missing value applies for all data types including numerical values.
+Each column in a `DataFrame` (or equivalently a `Series`) is an Arrow array or a collection of Arrow arrays [based on the Apache Arrow format](https://arrow.apache.org/docs/format/Columnar.html#null-count). Missing data is represented in Arrow and Polars with a `null` value. This `null` missing value applies for all data types including numerical values.
 
-`Polars` also allows `NotaNumber` or `NaN` values for float columns. These `NaN` values are considered to be a type of floating point data rather than missing data. We discuss `NaN` values separately below.
+Polars also allows `NotaNumber` or `NaN` values for float columns. These `NaN` values are considered to be a type of floating point data rather than missing data. We discuss `NaN` values separately below.
 
 You can manually define a missing value with the python `None` value:
 
@@ -19,11 +19,11 @@ You can manually define a missing value with the python `None` value:
 
 !!! info
 
-    In `Pandas` the value for missing data depends on the dtype of the column. In `Polars` missing data is always represented as a `null` value.
+    In pandas the value for missing data depends on the dtype of the column. In Polars missing data is always represented as a `null` value.
 
 ## Missing data metadata
 
-Each Arrow array used by `Polars` stores two kinds of metadata related to missing data. This metadata allows `Polars` to quickly show how many missing values there are and which values are missing.
+Each Arrow array used by Polars stores two kinds of metadata related to missing data. This metadata allows Polars to quickly show how many missing values there are and which values are missing.
 
 The first piece of metadata is the `null_count` - this is the number of rows with `null` values in the column:
 
@@ -36,7 +36,7 @@ The first piece of metadata is the `null_count` - this is the number of rows wit
 The `null_count` method can be called on a `DataFrame`, a column from a `DataFrame` or a `Series`. The `null_count` method is a cheap operation as `null_count` is already calculated for the underlying Arrow array.
 
 The second piece of metadata is an array called a _validity bitmap_ that indicates whether each data value is valid or missing.
-The validity bitmap is memory efficient as it is bit encoded - each value is either a 0 or a 1. This bit encoding means the memory overhead per array is only (array length / 8) bytes. The validity bitmap is used by the `is_null` method in `Polars`.
+The validity bitmap is memory efficient as it is bit encoded - each value is either a 0 or a 1. This bit encoding means the memory overhead per array is only (array length / 8) bytes. The validity bitmap is used by the `is_null` method in Polars.
 
 You can return a `Series` based on the validity bitmap for a column in a `DataFrame` or a `Series` with the `is_null` method:
 
@@ -122,14 +122,14 @@ Missing data in a `Series` has a `null` value. However, you can use `NotaNumber`
 
 !!! info
 
-    In `Pandas` by default a `NaN` value in an integer column causes the column to be cast to float. This does not happen in `Polars` - instead an exception is raised.
+    In pandas by default a `NaN` value in an integer column causes the column to be cast to float. This does not happen in Polars - instead an exception is raised.
 
-`NaN` values are considered to be a type of floating point data and are **not considered to be missing data** in `Polars`. This means:
+`NaN` values are considered to be a type of floating point data and are **not considered to be missing data** in Polars. This means:
 
 - `NaN` values are **not** counted with the `null_count` method
 - `NaN` values are filled when you use `fill_nan` method but are **not** filled with the `fill_null` method
 
-`Polars` has `is_nan` and `fill_nan` methods which work in a similar way to the `is_null` and `fill_null` methods. The underlying Arrow arrays do not have a pre-computed validity bitmask for `NaN` values so this has to be computed for the `is_nan` method.
+Polars has `is_nan` and `fill_nan` methods which work in a similar way to the `is_null` and `fill_null` methods. The underlying Arrow arrays do not have a pre-computed validity bitmask for `NaN` values so this has to be computed for the `is_nan` method.
 
 One further difference between `null` and `NaN` values is that taking the `mean` of a column with `null` values excludes the `null` values from the calculation but with `NaN` values taking the mean results in a `NaN`. This behaviour can be avoided by replacing the `NaN` values with `null` values;
 

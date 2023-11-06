@@ -245,7 +245,9 @@ def test_int_to_python_datetime() -> None:
     assert df.select(
         [pl.col(col).dt.timestamp() for col in ("c", "d", "e")]
         + [
-            getattr(pl.col("b").cast(pl.Duration).dt, unit)().alias(f"u[{unit}]")
+            getattr(pl.col("b").cast(pl.Duration).dt, f"total_{unit}")().alias(
+                f"u[{unit}]"
+            )
             for unit in ("milliseconds", "microseconds", "nanoseconds")
         ]
     ).rows() == [
@@ -1395,7 +1397,10 @@ def test_sum_duration() -> None:
             {"name": "Jen", "duration": timedelta(seconds=60)},
         ]
     ).select(
-        [pl.col("duration").sum(), pl.col("duration").dt.seconds().alias("sec").sum()]
+        [
+            pl.col("duration").sum(),
+            pl.col("duration").dt.total_seconds().alias("sec").sum(),
+        ]
     ).to_dict(as_series=False) == {
         "duration": [timedelta(seconds=150)],
         "sec": [150],
@@ -1715,7 +1720,7 @@ def test_replace_time_zone_ambiguous_with_use_earliest(
 def test_replace_time_zone_ambiguous_raises() -> None:
     ts = pl.Series(["2018-10-28 02:30:00"]).str.strptime(pl.Datetime)
     with pytest.raises(
-        pl.InvalidOperationError,
+        pl.ComputeError,
         match="Please use `ambiguous` to tell how it should be localized",
     ):
         ts.dt.replace_time_zone("Europe/Brussels")

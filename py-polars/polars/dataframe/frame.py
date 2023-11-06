@@ -210,7 +210,7 @@ class DataFrame:
 
         The number of entries in the schema should match the underlying data
         dimensions, unless a sequence of dictionaries is being passed, in which case
-        a _partial_ schema can be declared to prevent specific fields from being loaded.
+        a *partial* schema can be declared to prevent specific fields from being loaded.
     orient : {'col', 'row'}, default None
         Whether to interpret two-dimensional data as columns or as rows. If None,
         the orientation is inferred by matching the columns and data dimensions. If
@@ -2611,6 +2611,7 @@ class DataFrame:
         self,
         file: BinaryIO | BytesIO | str | Path,
         compression: AvroCompression = "uncompressed",
+        name: str = "",
     ) -> None:
         """
         Write to Apache Avro file.
@@ -2621,6 +2622,8 @@ class DataFrame:
             File path or writeable file-like object to which the data will be written.
         compression : {'uncompressed', 'snappy', 'deflate'}
             Compression method. Defaults to "uncompressed".
+        name
+            Schema name. Defaults to empty string.
 
         Examples
         --------
@@ -2641,8 +2644,10 @@ class DataFrame:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
             file = normalize_filepath(file)
+        if name is None:
+            name = ""
 
-        self._df.write_avro(file, compression)
+        self._df.write_avro(file, compression, name)
 
     def write_excel(
         self,
@@ -3640,6 +3645,7 @@ class DataFrame:
             mode=mode,
             overwrite_schema=overwrite_schema,
             storage_options=storage_options,
+            large_dtypes=True,
             **delta_write_options,
         )
 
@@ -6072,7 +6078,7 @@ class DataFrame:
 
         The UDF will receive each row as a tuple of values: `udf(row)`.
 
-        Implementing logic using a Python function is almost always _significantly_
+        Implementing logic using a Python function is almost always *significantly*
         slower and more memory intensive than implementing the same logic using
         the native expression API because:
 

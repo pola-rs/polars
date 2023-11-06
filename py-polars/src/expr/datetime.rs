@@ -149,7 +149,7 @@ impl PyExpr {
         self.inner.clone().dt().timestamp(time_unit.0).into()
     }
 
-    fn duration_days(&self) -> Self {
+    fn dt_total_days(&self) -> Self {
         self.inner
             .clone()
             .map(
@@ -158,7 +158,7 @@ impl PyExpr {
             )
             .into()
     }
-    fn duration_hours(&self) -> Self {
+    fn dt_total_hours(&self) -> Self {
         self.inner
             .clone()
             .map(
@@ -167,7 +167,7 @@ impl PyExpr {
             )
             .into()
     }
-    fn duration_minutes(&self) -> Self {
+    fn dt_total_minutes(&self) -> Self {
         self.inner
             .clone()
             .map(
@@ -176,7 +176,7 @@ impl PyExpr {
             )
             .into()
     }
-    fn duration_seconds(&self) -> Self {
+    fn dt_total_seconds(&self) -> Self {
         self.inner
             .clone()
             .map(
@@ -185,7 +185,7 @@ impl PyExpr {
             )
             .into()
     }
-    fn duration_milliseconds(&self) -> Self {
+    fn dt_total_milliseconds(&self) -> Self {
         self.inner
             .clone()
             .map(
@@ -194,7 +194,7 @@ impl PyExpr {
             )
             .into()
     }
-    fn duration_microseconds(&self) -> Self {
+    fn dt_total_microseconds(&self) -> Self {
         self.inner
             .clone()
             .map(
@@ -203,7 +203,7 @@ impl PyExpr {
             )
             .into()
     }
-    fn duration_nanoseconds(&self) -> Self {
+    fn dt_total_nanoseconds(&self) -> Self {
         self.inner
             .clone()
             .map(

@@ -223,13 +223,11 @@ impl SQLContext {
                 concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any))
             },
             // UNION ALL BY NAME
-            // TODO: add recognition for SetQuantifier::DistinctByName
-            //  when "https://github.com/sqlparser-rs/sqlparser-rs/pull/997" is available
             #[cfg(feature = "diagonal_concat")]
             SetQuantifier::AllByName => concat_lf_diagonal(vec![left, right], opts),
             // UNION [DISTINCT] BY NAME
             #[cfg(feature = "diagonal_concat")]
-            SetQuantifier::ByName => {
+            SetQuantifier::ByName | SetQuantifier::DistinctByName => {
                 let concatenated = concat_lf_diagonal(vec![left, right], opts);
                 concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any))
             },

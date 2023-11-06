@@ -56,7 +56,7 @@ def test_datetime_time_zone(time_zone: str | None) -> None:
 def test_datetime_ambiguous_time_zone() -> None:
     expr = pl.datetime(2018, 10, 28, 2, 30, time_zone="Europe/Brussels")
 
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(pl.ComputeError):
         pl.select(expr)
 
 
