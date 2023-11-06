@@ -1,5 +1,5 @@
 pandas
-pyarrow
+pyarrow<=12
 graphviz
 matplotlib
 
