@@ -354,46 +354,47 @@ where
 /// Examples of expressions whose results do not change, and thus allow push-down:
 /// - column addition, equality, string concatenation
 pub(super) fn aexpr_blocks_predicate_pushdown(node: Node, expr_arena: &Arena<AExpr>) -> bool {
-    match expr_arena.get(node) {
-        AExpr::Function {
-            function: FunctionExpr::Boolean(BooleanFunction::IsIn),
-            input,
-            ..
-        } => {
-            // Handles a special case where the expr contains a series, but it is being
-            // used as part of an `is_in`, so it can be pushed down.
-            let values = input.get(1).unwrap();
-            if matches!(expr_arena.get(*values), AExpr::Literal { .. }) {
-                false
-            } else {
-                aexpr_blocks_predicate_pushdown(*values, expr_arena)
-            }
-        },
-        // Already checked we are not inside an `is_in`, meaning these literals are
-        // either projecting as columns or predicates, both of which rely on the
-        // current height of the dataframe and thus need to block pushdown.
-        AExpr::Literal(LiteralValue::Range { .. }) => true,
-        AExpr::Literal(LiteralValue::Series(s)) => s.len() > 1,
-        AExpr::BinaryExpr { left, right, .. } => {
-            aexpr_blocks_predicate_pushdown(*left, expr_arena)
-                || aexpr_blocks_predicate_pushdown(*right, expr_arena)
-        },
-        AExpr::Ternary {
-            predicate,
-            truthy,
-            falsy,
-        } => {
-            aexpr_blocks_predicate_pushdown(*predicate, expr_arena)
-                || aexpr_blocks_predicate_pushdown(*truthy, expr_arena)
-                || aexpr_blocks_predicate_pushdown(*falsy, expr_arena)
-        },
-        AExpr::Cast { expr, .. } => aexpr_blocks_predicate_pushdown(*expr, expr_arena),
-        AExpr::Filter { input, by } => {
-            aexpr_blocks_predicate_pushdown(*input, expr_arena)
-                || aexpr_blocks_predicate_pushdown(*by, expr_arena)
-        },
-        ae => ae.groups_sensitive(),
+    let mut stack = Vec::<Node>::with_capacity(4);
+    stack.push(node);
+
+    while !stack.is_empty() {
+        let node = stack.pop().unwrap();
+        let ae = expr_arena.get(node);
+
+        let should_block = match ae {
+            AExpr::Function {
+                function: FunctionExpr::Boolean(BooleanFunction::IsIn),
+                input,
+                ..
+            } => {
+                // Handles a special case where the expr contains a series, but it is being
+                // used as part of an `is_in`, so it can be pushed down.
+                let values = input.get(1).unwrap();
+                let ae = expr_arena.get(*values);
+                if matches!(ae, AExpr::Literal { .. }) {
+                    false
+                } else {
+                    ae.nodes(&mut stack);
+                    ae.groups_sensitive()
+                }
+            },
+            // Already checked we are not inside an `is_in`, meaning these literals are
+            // either projecting as columns or predicates, both of which rely on the
+            // current height of the dataframe and thus need to block pushdown.
+            AExpr::Literal(LiteralValue::Range { .. }) => true,
+            AExpr::Literal(LiteralValue::Series(s)) => s.len() > 1,
+            ae => {
+                ae.nodes(&mut stack);
+                ae.groups_sensitive()
+            },
+        };
+
+        if should_block {
+            return should_block;
+        };
     }
+
+    false
 }
 
 /// Used in places that previously handled blocking exprs before refactoring.
