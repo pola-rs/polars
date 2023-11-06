@@ -2,7 +2,7 @@
 
 numpy
 pandas
-pyarrow<=12
+pyarrow
 
 hypothesis==6.88.1
 

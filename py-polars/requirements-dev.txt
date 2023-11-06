@@ -18,7 +18,7 @@ patchelf; platform_system == 'Linux'  # Extra dependency for maturin, only for L
 # Interoperability
 numpy
 pandas
-pyarrow<=12
+pyarrow
 pydantic >= 2.0.0
 # Datetime / time zones
 backports.zoneinfo; python_version < '3.9'
