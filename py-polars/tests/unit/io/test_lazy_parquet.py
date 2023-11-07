@@ -52,6 +52,25 @@ def test_row_count(foods_parquet_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
+def test_row_count_predicate_pushdown(tmp_path: Path, foods_parquet_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    file_path = tmp_path / "data.parquet"
+
+    pl.DataFrame({"x": range(100)}).write_parquet(file_path, row_group_size=5)
+
+    assert (
+        pl.scan_parquet(file_path)
+        .with_row_count()
+        .filter(pl.col("row_nr") == 0)
+        .collect()
+        .select("x")
+        .item()
+        == 0
+    )
+
+
+@pytest.mark.write_disk()
 def test_categorical_parquet_statistics(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
