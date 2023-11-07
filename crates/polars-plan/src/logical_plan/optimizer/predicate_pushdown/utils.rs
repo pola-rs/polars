@@ -117,12 +117,9 @@ pub(super) fn projection_allows_aliased_predicate_pushdown(
     node: Node,
     expr_arena: &Arena<AExpr>,
 ) -> bool {
-    for (_, ae) in expr_arena.iter(node) {
-        if !matches!(ae, AExpr::Column(_) | AExpr::Alias(_, _)) {
-            return false;
-        };
-    }
-    true
+    !has_aexpr(node, expr_arena, |ae| {
+        !matches!(ae, AExpr::Column(_) | AExpr::Alias(_, _))
+    })
 }
 
 enum LoopBehavior {
