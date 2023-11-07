@@ -1,5 +1,6 @@
 use num_traits::pow::Pow;
 use polars_core::prelude::*;
+use polars_core::with_match_physical_numeric_polars_type;
 
 use crate::series::ops::SeriesSealed;
 
@@ -45,33 +46,18 @@ pub trait RoundSeries: SeriesSealed {
             )
         };
 
-        if let Ok(ca) = s.f64() {
-            let s = ca
-                .apply_values(|val| round_sig_figs(val, digits))
-                .into_series();
+        with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+            let s = s.cast(&DataType::Float64)?;
+            let ca = s.f64()?;
+            let s = ca.apply_values(|value| {
+                if value == 0.0 {
+                    return 0.0;
+                }
+                let magnitude = 10.0_f64.powi(digits - 1 - ((value.abs()).log10().floor() as i32));
+                (value * magnitude).round() / magnitude
+            }).into_series();
             return Ok(s);
-        }
-        // Note we do the computation on f64 floats to not lose precision
-        // when the computation is done we cast back
-        if let Ok(ca) = s.f32() {
-            let s = ca
-                .apply_values(|val| round_sig_figs(val as f64, digits) as f32)
-                .into_series();
-            return Ok(s);
-        }
-        if let Ok(ca) = s.i32() {
-            let s = ca
-                .apply_values(|val| round_sig_figs(val as f64, digits) as i32)
-                .into_series();
-            return Ok(s);
-        }
-        if let Ok(ca) = s.i64() {
-            let s = ca
-                .apply_values(|val| round_sig_figs(val as f64, digits) as i64)
-                .into_series();
-            return Ok(s);
-        }
-        polars_bail!(opq = round_sig_figs, s.dtype());
+        });
     }
 
     /// Floor underlying floating point array to the lowest integers smaller or equal to the float value.
@@ -106,14 +92,6 @@ pub trait RoundSeries: SeriesSealed {
 }
 
 impl RoundSeries for Series {}
-
-fn round_sig_figs(value: f64, digits: i32) -> f64 {
-    if value == 0.0 {
-        return value;
-    }
-    let magnitude = 10.0_f64.powi(digits - 1 - ((value.abs()).log10().floor() as i32));
-    (value * magnitude).round() / magnitude
-}
 
 #[cfg(test)]
 mod test {
