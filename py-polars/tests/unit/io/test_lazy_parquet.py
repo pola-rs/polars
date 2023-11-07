@@ -52,7 +52,7 @@ def test_row_count(foods_parquet_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
-def test_row_count_predicate_pushdown(tmp_path: Path, foods_parquet_path: Path) -> None:
+def test_row_count_predicate_pushdown(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
     file_path = tmp_path / "data.parquet"
