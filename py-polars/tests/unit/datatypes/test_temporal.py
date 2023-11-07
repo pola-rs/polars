@@ -2201,6 +2201,20 @@ def test_truncate_expr() -> None:
         }
     )
 
+    # How to deal with ambiguousness is auto-inferred
+    ambiguous_expr = df.select(pl.col("date").dt.truncate(every=pl.lit("30m")))
+    assert ambiguous_expr.to_dict(as_series=False) == {
+        "date": [
+            datetime(2020, 10, 25, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 0, 30, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 1, 0, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 1, 30, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 1, 0, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 1, 30, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 2, 0, tzinfo=ZoneInfo(key="Europe/London")),
+        ]
+    }
+
     all_expr = df.select(pl.col("date").dt.truncate(every=pl.col("every")))
     assert all_expr.to_dict(as_series=False) == {
         "date": [
