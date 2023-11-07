@@ -359,7 +359,7 @@ impl Duration {
     }
 
     #[doc(hidden)]
-    fn add_month(ts: NaiveDateTime, n_months: i64, negative: bool) -> PolarsResult<NaiveDateTime> {
+    fn add_month(ts: NaiveDateTime, n_months: i64, negative: bool) -> NaiveDateTime {
         let mut months = n_months;
         if negative {
             months = -months;
@@ -400,20 +400,9 @@ impl Duration {
         let minute = ts.minute();
         let sec = ts.second();
         let nsec = ts.nanosecond();
-        new_datetime(year, month as u32, day, hour, minute, sec, nsec).ok_or(polars_err!(
-            ComputeError: format!(
-                "cannot advance '{}' by {} month(s), datetime {}-{}-{}T{}:{}:{}.{} does not exist.",
-                    ts,
-                    if negative {-n_months} else {n_months},
-                    year,
-                    month,
-                    day,
-                    hour,
-                    minute,
-                    sec,
-                    nsec
-            )
-        ))
+        new_datetime(year, month as u32, day, hour, minute, sec, nsec).expect(
+            "Expected valid datetime, please open an issue at https://github.com/pola-rs/polars/issues"
+        )
     }
 
     fn truncate_subweekly<G, J>(
@@ -645,7 +634,7 @@ impl Duration {
                 Some(tz) => unlocalize_datetime(timestamp_to_datetime(t), tz),
                 _ => timestamp_to_datetime(t),
             };
-            let dt = Self::add_month(ts, d.months, d.negative)?;
+            let dt = Self::add_month(ts, d.months, d.negative);
             new_t = match tz {
                 #[cfg(feature = "timezones")]
                 Some(tz) => datetime_to_timestamp(localize_datetime(dt, tz, Ambiguous::Raise)?),

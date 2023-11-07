@@ -138,6 +138,31 @@ def test_date_ranges_single_row_lazy_7110() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_date_range_end_of_month_5441() -> None:
+    start = date(2020, 1, 31)
+    stop = date(2021, 1, 31)
+    result = pl.date_range(start, stop, interval="1mo", eager=True)
+    expected = pl.Series(
+        "date",
+        [
+            date(2020, 1, 31),
+            date(2020, 2, 29),
+            date(2020, 3, 29),
+            date(2020, 4, 29),
+            date(2020, 5, 29),
+            date(2020, 6, 29),
+            date(2020, 7, 29),
+            date(2020, 8, 29),
+            date(2020, 9, 29),
+            date(2020, 10, 29),
+            date(2020, 11, 29),
+            date(2020, 12, 29),
+            date(2021, 1, 29),
+        ],
+    )
+    assert_series_equal(result, expected)
+
+
 def test_date_range_name() -> None:
     expected_name = "date"
     result_eager = pl.date_range(date(2020, 1, 1), date(2020, 1, 3), eager=True)

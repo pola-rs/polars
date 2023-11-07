@@ -697,6 +697,12 @@ def test_offset_by_crossing_dst(time_zone: str | None) -> None:
     assert_series_equal(result, expected)
 
 
+def test_negative_offset_by_err_msg_8464() -> None:
+    result = pl.Series([datetime(2022, 3, 30)]).dt.offset_by("-1mo")
+    expected = pl.Series([datetime(2022, 2, 28)])
+    assert_series_equal(result, expected)
+
+
 def test_offset_by_truncate_sorted_flag() -> None:
     s = pl.Series([datetime(2001, 1, 1), datetime(2001, 1, 2)])
     s = s.set_sorted()
