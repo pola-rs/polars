@@ -697,13 +697,6 @@ def test_offset_by_crossing_dst(time_zone: str | None) -> None:
     assert_series_equal(result, expected)
 
 
-def test_negative_offset_by_err_msg_8464() -> None:
-    with pytest.raises(
-        ComputeError, match=r"cannot advance '2022-03-30 00:00:00' by -1 month\(s\)"
-    ):
-        pl.Series([datetime(2022, 3, 30)]).dt.offset_by("-1mo")
-
-
 def test_offset_by_truncate_sorted_flag() -> None:
     s = pl.Series([datetime(2001, 1, 1), datetime(2001, 1, 2)])
     s = s.set_sorted()

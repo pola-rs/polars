@@ -138,15 +138,6 @@ def test_date_ranges_single_row_lazy_7110() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_date_range_end_of_month_5441() -> None:
-    start = date(2020, 1, 31)
-    stop = date(2021, 1, 31)
-    with pytest.raises(
-        pl.ComputeError, match=r"cannot advance '2020-01-31 00:00:00' by 1 month\(s\)"
-    ):
-        pl.date_range(start, stop, interval="1mo", eager=True)
-
-
 def test_date_range_name() -> None:
     expected_name = "date"
     result_eager = pl.date_range(date(2020, 1, 1), date(2020, 1, 3), eager=True)

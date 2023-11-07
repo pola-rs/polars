@@ -56,6 +56,7 @@ from polars.utils.deprecation import (
     deprecate_nonkeyword_arguments,
     deprecate_renamed_function,
     deprecate_renamed_parameter,
+    deprecate_saturating,
     warn_closed_future_change,
 )
 from polars.utils.meta import threadpool_size

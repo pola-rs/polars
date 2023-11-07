@@ -10,6 +10,7 @@ from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.deprecation import (
     deprecate_renamed_parameter,
+    deprecate_saturating,
     issue_deprecation_warning,
 )
 

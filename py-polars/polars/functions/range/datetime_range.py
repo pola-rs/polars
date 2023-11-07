@@ -7,6 +7,7 @@ from polars import functions as F
 from polars.functions.range._utils import parse_interval_argument
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
+from polars.utils.deprecation import deprecate_saturating
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr

@@ -11,8 +11,8 @@ from polars.utils._wrap import wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_renamed_function,
-    rename_use_earliest_to_ambiguous,
     deprecate_saturating,
+    rename_use_earliest_to_ambiguous,
 )
 
 if TYPE_CHECKING:

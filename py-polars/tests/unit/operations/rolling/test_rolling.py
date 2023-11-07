@@ -726,9 +726,10 @@ def test_rolling_by_1mo_saturating_12216() -> None:
             "val": [1, 2, 3, 4, 5],
         }
     ).set_sorted("date")
-    result = df.rolling(index_column="date", period="1mo").agg(
-        vals=pl.col("val")
-    )
+    with pytest.deprecated_call(match="The '_saturating' suffix is deprecated"):
+        result = df.rolling(index_column="date", period="1mo_saturating").agg(
+            vals=pl.col("val")
+        )
     expected = pl.DataFrame(
         {
             "date": [
@@ -744,9 +745,9 @@ def test_rolling_by_1mo_saturating_12216() -> None:
     assert_frame_equal(result, expected)
 
     # check with `closed='both'` against DuckDB output
-    result = df.rolling(
-        index_column="date", period="1mo", closed="both"
-    ).agg(vals=pl.col("val"))
+    result = df.rolling(index_column="date", period="1mo", closed="both").agg(
+        vals=pl.col("val")
+    )
     expected = pl.DataFrame(
         {
             "date": [
