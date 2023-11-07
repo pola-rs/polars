@@ -4,7 +4,6 @@ use arrow::legacy::kernels::rolling::no_nulls::{MaxWindow, MinWindow};
 use arrow::legacy::kernels::take_agg::{
     take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
 };
-use polars_core::export::num::Bounded;
 use polars_core::frame::group_by::aggregations::{
     _agg_helper_idx, _agg_helper_slice, _rolling_apply_agg_window_no_nulls,
     _rolling_apply_agg_window_nulls, _slice_from_offsets, _use_rolling_kernels,
@@ -103,15 +102,12 @@ where
                             ca.downcast_iter().next().unwrap(),
                             idx.iter().map(|i| *i as usize),
                             nan_max,
-                            T::Native::min_value(),
                         )
                     }),
                     (_, 1) => take_agg_primitive_iter_unchecked::<T::Native, _, _>(
                         ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
                         nan_max,
-                        T::Native::min_value(),
-                        idx.len() as IdxSize,
                     ),
                     _ => {
                         let take = { ca.take_unchecked(idx) };
@@ -176,14 +172,11 @@ where
                         ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
                         nan_min,
-                        T::Native::max_value(),
                     )),
                     (_, 1) => take_agg_primitive_iter_unchecked::<T::Native, _, _>(
                         ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
                         nan_min,
-                        T::Native::max_value(),
-                        idx.len() as IdxSize,
                     ),
                     _ => {
                         let take = { ca.take_unchecked(idx) };

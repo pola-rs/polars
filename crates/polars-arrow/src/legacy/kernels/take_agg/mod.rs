@@ -12,7 +12,7 @@ use crate::types::NativeType;
 
 /// Take kernel for single chunk without nulls and an iterator as index.
 /// # Safety
-/// caller must ensure iterators indexes are in bounds
+/// caller must ensure iterators are nonempty and indexes are in bounds
 #[inline]
 pub unsafe fn take_agg_no_null_primitive_iter_unchecked<
     T: NativeType + ToPrimitive,
@@ -23,17 +23,15 @@ pub unsafe fn take_agg_no_null_primitive_iter_unchecked<
     arr: &PrimitiveArray<T>,
     indices: I,
     f: F,
-    init: TOut,
 ) -> TOut {
     debug_assert!(arr.null_count() == 0);
     let array_values = arr.values().as_slice();
 
-    indices.into_iter().fold(init, |acc, idx| {
-        f(
-            acc,
-            NumCast::from(*array_values.get_unchecked(idx)).unwrap_unchecked(),
-        )
-    })
+    indices
+        .into_iter()
+        .map(|idx| TOut::from(*array_values.get_unchecked(idx)).unwrap_unchecked())
+        .reduce(f)
+        .expect("indices cannot be empty.")
 }
 
 /// Take kernel for single chunk and an iterator as index.
@@ -48,26 +46,15 @@ pub unsafe fn take_agg_primitive_iter_unchecked<
     arr: &PrimitiveArray<T>,
     indices: I,
     f: F,
-    init: T,
-    len: IdxSize,
 ) -> Option<T> {
     let array_values = arr.values().as_slice();
     let validity = arr.validity().unwrap();
-    let mut null_count = 0 as IdxSize;
 
-    let out = indices.into_iter().fold(init, |acc, idx| {
-        if validity.get_bit_unchecked(idx) {
-            f(acc, *array_values.get_unchecked(idx))
-        } else {
-            null_count += 1;
-            acc
-        }
-    });
-    if null_count == len {
-        None
-    } else {
-        Some(out)
-    }
+    indices
+        .into_iter()
+        .filter(|&idx| validity.get_bit_unchecked(idx))
+        .map(|idx| *array_values.get_unchecked(idx))
+        .reduce(f)
 }
 
 /// Take kernel for single chunk and an iterator as index.
