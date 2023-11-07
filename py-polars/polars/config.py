@@ -1257,7 +1257,7 @@ class Config(contextlib.ContextDecorator):
         >>> from decimal import Decimal as D
         >>> df = pl.DataFrame(
         ...     data={"d": [D("1.01"), D("-5.6789")]},
-        ...     schema={"d": pl.Decimal(5)},
+        ...     schema={"d": pl.Decimal(scale=5)},
         ... )
         >>> with pl.Config(trim_decimal_zeros=False):
         ...     print(df)
