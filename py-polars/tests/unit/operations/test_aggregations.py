@@ -160,8 +160,8 @@ def test_mean_null_simd() -> None:
             .select(pl.when(pl.col("a") > 40).then(pl.col("a")))
         )
 
-    s = df["a"]
-    assert s.mean() == s.to_pandas().mean()
+        s = df["a"]
+        assert s.mean() == s.to_pandas().mean()
 
 
 def test_literal_group_agg_chunked_7968() -> None:
