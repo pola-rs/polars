@@ -5,6 +5,8 @@ on:
     paths:
       - crates/**
       - examples/**
+      - py-polars/src/**
+      - py-polars/Cargo.toml
       - Cargo.toml
       - .github/workflows/lint-rust.yml
   push:
@@ -13,6 +15,8 @@ on:
     paths:
       - crates/**
       - examples/**
+      - py-polars/src/**
+      - py-polars/Cargo.toml
       - Cargo.toml
       - .github/workflows/lint-rust.yml
 
@@ -38,7 +42,7 @@ jobs:
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Run cargo clippy with all features enabled
-        run: cargo clippy -p polars --all-features -- -D warnings
+        run: cargo clippy --workspace --all-features -- -D warnings
 
   # Default feature set should compile on the stable toolchain
   clippy-stable:
@@ -70,7 +74,7 @@ jobs:
         run: rustup component add rustfmt
 
       - name: Run cargo fmt
-        run: cargo fmt --all -- --check
+        run: cargo fmt --all --check
 
   miri:
     if: github.ref_name != 'main'
