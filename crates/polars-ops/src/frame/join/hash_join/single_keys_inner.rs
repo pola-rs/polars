@@ -40,7 +40,7 @@ pub(super) fn hash_join_tuples_inner<T, I>(
     validate: JoinValidation,
 ) -> PolarsResult<(Vec<IdxSize>, Vec<IdxSize>)>
 where
-    I: IntoIterator<Item = T> + Send + Sync + Copy,
+    I: IntoIterator<Item = T> + Send + Sync + Clone,
     // <I as IntoIterator>::IntoIter: TrustedLen,
     T: Send + Hash + Eq + Sync + Copy + AsU64,
 {
@@ -49,7 +49,7 @@ where
     let hash_tbls = if validate.needs_checks() {
         let expected_size = build
             .iter()
-            .map(|v| v.into_iter().size_hint().1.unwrap())
+            .map(|v| v.clone().into_iter().size_hint().1.unwrap())
             .sum();
         let hash_tbls = build_tables(build);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();

@@ -6,7 +6,7 @@ pub mod cache;
 pub mod cell;
 pub mod contention_pool;
 mod error;
-mod functions;
+pub mod functions;
 pub mod mem;
 pub mod slice;
 pub mod sort;
