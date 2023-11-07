@@ -242,9 +242,9 @@ pub(crate) fn group_by_values_iter_lookbehind(
     // Use binary search to find the initial start as that is behind.
     let mut start = if let Some(&t) = time.get(start_offset) {
         let lower = add(&offset, t, tz.as_ref())?;
-        // period == -offset, so `t + offset + period` is equal to `t` and `upper`
-        // is trivially equal to `t` itself. Using the trivial calculation, instead
-        // of `upper = lower + period`, avoids issues around
+        // We have `period == -offset`, so `t + offset + period` is equal to `t`,
+        // and `upper` is trivially equal to `t` itself. Using the trivial calculation,
+        // instead of `upper = lower + period`, avoids issues around
         // `t - 1mo_saturating + 1mo_saturating` not round-tripping.
         let upper = t;
         let b = Bounds::new(lower, upper);
