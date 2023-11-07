@@ -185,7 +185,7 @@ mod test {
     fn test_equal_ref(ca: &UInt32Chunked, idx_ca: &IdxCa) {
         let ref_ca: Vec<Option<u32>> = ca.into_iter().collect();
         let ref_idx_ca: Vec<Option<usize>> =
-            (&idx_ca).into_iter().map(|i| Some(i? as usize)).collect();
+            idx_ca.into_iter().map(|i| Some(i? as usize)).collect();
         let gather = ca.gather_skip_nulls(idx_ca).ok();
         let ref_gather = ref_gather_nulls(ref_ca, ref_idx_ca);
         assert_eq!(gather.map(|ca| ca.into_iter().collect()), ref_gather);
@@ -212,12 +212,12 @@ mod test {
             let num_idx_chunks = rng.gen_range(1..10);
             let idx_chunks: Vec<_> = (0..num_idx_chunks).map(|_| random_vec(&mut rng, 0..num_nonnull_elems as IdxSize, 0..200)).collect();
             let null_idx_chunks: Vec<_> = idx_chunks.iter().map(|c| random_filter(&mut rng, c, 0.7..1.0)).collect();
-            
+
             let nonnull_ca = UInt32Chunked::from_chunk_iter("", elem_chunks.iter().cloned().map(|v| v.into_iter().collect_arr()));
             let ca = UInt32Chunked::from_chunk_iter("", null_elem_chunks.iter().cloned().map(|v| v.into_iter().collect_arr()));
             let nonnull_idx_ca = IdxCa::from_chunk_iter("", idx_chunks.iter().cloned().map(|v| v.into_iter().collect_arr()));
             let idx_ca = IdxCa::from_chunk_iter("", null_idx_chunks.iter().cloned().map(|v| v.into_iter().collect_arr()));
-            
+
             gather_skip_nulls_check(&ca, &idx_ca);
             gather_skip_nulls_check(&ca, &nonnull_idx_ca);
             gather_skip_nulls_check(&nonnull_ca, &idx_ca);
