@@ -479,7 +479,8 @@ def test_skip_nulls_err() -> None:
     df = pl.DataFrame({"foo": [None, None]})
 
     with pytest.raises(
-        pl.ComputeError, match=r"The output type of 'apply' function cannot determined"
+        pl.ComputeError,
+        match=r"The output type of the 'apply' function cannot be determined",
     ):
         df.with_columns(pl.col("foo").map_elements(lambda x: x, skip_nulls=True))
 

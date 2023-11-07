@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -861,3 +862,11 @@ def test_lazy_group_by_reuse_11767() -> None:
     a = lgb.count()
     b = lgb.count()
     assert a.collect().frame_equal(b.collect())
+
+
+def test_group_by_double_on_empty_12194() -> None:
+    df = pl.DataFrame({"group": [1], "x": [1]}).clear()
+    squared_deviation_sum = ((pl.col("x") - pl.col("x").mean()) ** 2).sum()
+    assert df.group_by("group").agg(squared_deviation_sum).schema == OrderedDict(
+        [("group", pl.Int64), ("x", pl.Float64)]
+    )

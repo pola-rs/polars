@@ -229,7 +229,7 @@ pub(crate) fn group_by_values_iter_lookbehind(
     tz: Option<Tz>,
     start_offset: usize,
     upper_bound: Option<usize>,
-) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_ {
+) -> PolarsResult<impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_> {
     debug_assert!(offset.duration_ns() == period.duration_ns());
     debug_assert!(offset.negative);
     let add = match tu {
@@ -241,7 +241,7 @@ pub(crate) fn group_by_values_iter_lookbehind(
     let upper_bound = upper_bound.unwrap_or(time.len());
     // Use binary search to find the initial start as that is behind.
     let mut start = if let Some(&t) = time.get(start_offset) {
-        let lower = add(&offset, t, tz.as_ref()).unwrap();
+        let lower = add(&offset, t, tz.as_ref())?;
         let upper = t; // period == -offset, so `t + offset + period` is equal to `t`
         let b = Bounds::new(lower, upper);
         let slice = &time[..start_offset];
@@ -250,7 +250,7 @@ pub(crate) fn group_by_values_iter_lookbehind(
         0
     };
     let mut end = start;
-    time[start_offset..upper_bound]
+    Ok(time[start_offset..upper_bound]
         .iter()
         .enumerate()
         .map(move |(mut i, t)| {
@@ -285,7 +285,7 @@ pub(crate) fn group_by_values_iter_lookbehind(
             let offset = start as IdxSize;
 
             Ok((offset, len as IdxSize))
-        })
+        }))
 }
 
 // this one is correct for all lookbehind/lookaheads, but is slower
@@ -446,7 +446,7 @@ pub(crate) fn group_by_values_iter(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<Tz>,
-) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_ {
+) -> PolarsResult<impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_> {
     let mut offset = period;
     offset.negative = true;
     // t is at the right endpoint of the window
@@ -509,7 +509,7 @@ pub fn group_by_values(
                             tz,
                             base_offset,
                             Some(upper_bound),
-                        );
+                        )?;
                         iter.map(|result| result.map(|(offset, len)| [offset, len]))
                             .collect::<PolarsResult<Vec<_>>>()
                     })
