@@ -428,14 +428,14 @@ impl<'a> AnyValue<'a> {
         })
     }
 
-    pub fn is_signed(&self) -> bool {
+    pub fn is_signed_integer(&self) -> bool {
         matches!(
             self,
             AnyValue::Int8(_) | AnyValue::Int16(_) | AnyValue::Int32(_) | AnyValue::Int64(_)
         )
     }
 
-    pub fn is_unsigned(&self) -> bool {
+    pub fn is_unsigned_integer(&self) -> bool {
         matches!(
             self,
             AnyValue::UInt8(_) | AnyValue::UInt16(_) | AnyValue::UInt32(_) | AnyValue::UInt64(_)
@@ -476,8 +476,8 @@ impl<'a> AnyValue<'a> {
         let new_av = match self {
             AnyValue::Boolean(v) => cast_to!(*v as u8),
             AnyValue::Float32(_) | AnyValue::Float64(_) => cast_to!(self.extract::<f64>().unwrap()),
-            av if av.is_signed() => cast_to!(av.extract::<i64>().unwrap()),
-            av if av.is_unsigned() => cast_to!(av.extract::<u64>().unwrap()),
+            av if av.is_signed_integer() => cast_to!(av.extract::<i64>().unwrap()),
+            av if av.is_unsigned_integer() => cast_to!(av.extract::<u64>().unwrap()),
             #[cfg(feature = "dtype-datetime")]
             AnyValue::Datetime(v, tu, None) => match dtype {
                 DataType::Int64 => AnyValue::Int64(*v),

@@ -133,7 +133,7 @@ impl FunctionExpr {
                     if dt.is_numeric() {
                         if dt.is_float() {
                             DataType::Float32
-                        } else if dt.is_unsigned() {
+                        } else if dt.is_unsigned_integer() {
                             DataType::Int8
                         } else {
                             DataType::UInt8

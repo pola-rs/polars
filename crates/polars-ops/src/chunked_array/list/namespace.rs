@@ -370,7 +370,7 @@ pub trait ListNameSpaceImpl: AsList {
                 Ok(out.into_series())
             },
             UInt32 | UInt64 => index_typed_index(idx),
-            dt if dt.is_signed() => {
+            dt if dt.is_signed_integer() => {
                 if let Some(min) = idx.min::<i64>() {
                     if min >= 0 {
                         index_typed_index(idx)
@@ -713,7 +713,7 @@ fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series
                 idx
             }
         },
-        dt if dt.is_unsigned() => idx.cast(&IDX_DTYPE).unwrap(),
+        dt if dt.is_unsigned_integer() => idx.cast(&IDX_DTYPE).unwrap(),
         Int8 => {
             let a = idx.i8().unwrap();
             cast_signed_index_ca(a, len)
