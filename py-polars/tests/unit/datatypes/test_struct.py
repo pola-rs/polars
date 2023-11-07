@@ -889,3 +889,49 @@ def test_struct_null_count_10130() -> None:
 
     s = pl.Series([{"a": None}])
     assert s.null_count() == 1
+
+
+def test_struct_prefix_suffix() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [
+                {"x": 1, "y": 10},
+                {"x": 2, "y": 20},
+            ],
+            "b": [
+                {"x": 3, "y": 30},
+                {"x": 4, "y": 40},
+            ],
+        }
+    )
+    expected = pl.DataFrame(
+        {
+            "a_x": [1, 2],
+            "a_y": [10, 20],
+            "b_x": [3, 4],
+            "b_y": [30, 40],
+        }
+    )
+
+    result = df.with_columns(
+        pl.col("a").struct.prefix("a_"),
+        pl.col("b").struct.prefix("b_"),
+    ).unnest("a", "b")
+
+    assert_frame_equal(expected, result)
+
+    expected = pl.DataFrame(
+        {
+            "x_a": [1, 2],
+            "y_a": [10, 20],
+            "x_b": [3, 4],
+            "y_b": [30, 40],
+        }
+    )
+
+    result = df.with_columns(
+        pl.col("a").struct.suffix("_a"),
+        pl.col("b").struct.suffix("_b"),
+    ).unnest("a", "b")
+
+    assert_frame_equal(expected, result)

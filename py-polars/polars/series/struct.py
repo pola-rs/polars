@@ -54,6 +54,16 @@ class StructNameSpace:
 
         """
 
+    def prefix(self, prefix: str) -> Series:
+        """
+        Add a prefix to the field names of the struct.
+
+        Parameters
+        ----------
+        prefix
+            Prefix to add to the field names
+        """
+
     def rename_fields(self, names: Sequence[str]) -> Series:
         """
         Rename the fields of the struct.
@@ -62,7 +72,6 @@ class StructNameSpace:
         ----------
         names
             New names in the order of the struct's fields
-
         """
 
     @property
@@ -71,6 +80,16 @@ class StructNameSpace:
         if getattr(self, "_s", None) is None:
             return {}
         return OrderedDict(self._s.dtype().to_schema())
+
+    def suffix(self, suffix: str) -> Series:
+        """
+        Add a suffix to the field names  of the struct.
+
+        Parameters
+        ----------
+        suffix
+            Suffix to add to the field names.
+        """
 
     def unnest(self) -> DataFrame:
         """

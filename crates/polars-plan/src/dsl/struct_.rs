@@ -28,11 +28,27 @@ impl StructNameSpace {
             })
     }
 
+    /// Add prefix to the field names of the [`StructChunked`].
+    pub fn prefix(self, prefix: &str) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StructExpr(StructFunction::Prefix(Arc::from(
+                prefix,
+            ))))
+    }
+
     /// Rename the fields of the [`StructChunked`].
     pub fn rename_fields(self, names: Vec<String>) -> Expr {
         self.0
             .map_private(FunctionExpr::StructExpr(StructFunction::RenameFields(
                 Arc::from(names),
             )))
+    }
+
+    /// Add suffix to the field names of the [`StructChunked`].
+    pub fn suffix(self, suffix: &str) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StructExpr(StructFunction::Suffix(Arc::from(
+                suffix,
+            ))))
     }
 }

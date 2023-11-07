@@ -28,3 +28,15 @@ def test_rename_fields() -> None:
         "a",
         "b",
     ]
+
+
+def test_struct_prefix_suffix() -> None:
+    df = pl.DataFrame({"int": [1], "str": ["a"], "bool": [True], "list": [[3]]})
+
+    expected = pl.DataFrame({f"p_{col.name}": col for col in df})
+
+    assert_frame_equal(df.to_struct("").struct.prefix("p_").struct.unnest(), expected)
+
+    expected = pl.DataFrame({f"{col.name}_s": col for col in df})
+
+    assert_frame_equal(df.to_struct("").struct.suffix("_s").struct.unnest(), expected)

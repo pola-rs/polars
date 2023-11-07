@@ -10,7 +10,9 @@ The following methods are available under the `Series.struct` attribute.
    :template: autosummary/accessor_method.rst
 
     Series.struct.field
+    Series.struct.prefix
     Series.struct.rename_fields
+    Series.struct.suffix
     Series.struct.unnest
 
 .. autosummary::

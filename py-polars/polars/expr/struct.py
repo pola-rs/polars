@@ -86,6 +86,39 @@ class ExprStructNameSpace:
         """
         return wrap_expr(self._pyexpr.struct_field_by_name(name))
 
+    def prefix(self, prefix: str) -> Expr:
+        """
+        Add a prefix to the fields of the struct.
+
+        Parameters
+        ----------
+        prefix
+            Prefix to add to the struct's fields.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [{"x": 1, "y": 10}, {"x": 2, "y": 20}],
+        ...         "b": [{"x": 3, "y": 30}, {"x": 4, "y": 40}],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("a").struct.prefix("a_"),
+        ...     pl.col("b").struct.prefix("b_"),
+        ... ).unnest("a", "b")
+        shape: (2, 4)
+        ┌─────┬─────┬─────┬─────┐
+        │ a_x ┆ a_y ┆ b_x ┆ b_y │
+        │ --- ┆ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╪═════╡
+        │ 1   ┆ 10  ┆ 3   ┆ 30  │
+        │ 2   ┆ 20  ┆ 4   ┆ 40  │
+        └─────┴─────┴─────┴─────┘
+        """
+        return wrap_expr(self._pyexpr.struct_prefix(prefix))
+
     def rename_fields(self, names: Sequence[str]) -> Expr:
         """
         Rename the fields of the struct.
@@ -150,3 +183,36 @@ class ExprStructNameSpace:
 
         """
         return wrap_expr(self._pyexpr.struct_rename_fields(names))
+
+    def suffix(self, suffix: str) -> Expr:
+        """
+        Add a suffix to the fields of the struct.
+
+        Parameters
+        ----------
+        suffix
+            Suffix to add to the struct's fields.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [{"x": 1, "y": 10}, {"x": 2, "y": 20}],
+        ...         "b": [{"x": 3, "y": 30}, {"x": 4, "y": 40}],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("a").struct.suffix("_a"),
+        ...     pl.col("b").struct.suffix("_b"),
+        ... ).unnest("a", "b")
+        shape: (2, 4)
+        ┌─────┬─────┬─────┬─────┐
+        │ x_a ┆ y_a ┆ x_b ┆ y_b │
+        │ --- ┆ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╪═════╡
+        │ 1   ┆ 10  ┆ 3   ┆ 30  │
+        │ 2   ┆ 20  ┆ 4   ┆ 40  │
+        └─────┴─────┴─────┴─────┘
+        """
+        return wrap_expr(self._pyexpr.struct_suffix(suffix))
