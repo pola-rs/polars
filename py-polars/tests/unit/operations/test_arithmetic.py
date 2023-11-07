@@ -230,3 +230,17 @@ def test_bitwise_6311() -> None:
             .otherwise(pl.col("flag"))
         )
     ).to_dict(as_series=False) == {"col1": [0, 1, 2, 3], "flag": [6, 4, 4, 6]}
+
+
+def test_arithmetic_null_count() -> None:
+    df = pl.DataFrame({"a": [1, None, 2], "b": [None, 2, 1]})
+    out = df.select(
+        no_broadcast=pl.col("a") + pl.col("b"),
+        broadcast_left=1 + pl.col("b"),
+        broadcast_right=pl.col("a") + 1,
+    )
+    assert out.null_count().to_dict(as_series=False) == {
+        "no_broadcast": [2],
+        "broadcast_left": [1],
+        "broadcast_right": [1],
+    }
