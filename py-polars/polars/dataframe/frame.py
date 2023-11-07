@@ -5172,6 +5172,13 @@ class DataFrame:
             * ...
             * (t_n - period, t_n]
 
+        whereas if you pass a non-default `offset`, then the windows will be
+
+            * (t_0 + offset, t_0 + offset + period]
+            * (t_1 + offset, t_1 + offset + period]
+            * ...
+            * (t_n + offset, t_n + offset + period]
+
         The `period` and `offset` arguments are created either from a timedelta, or
         by using the following string language:
 
