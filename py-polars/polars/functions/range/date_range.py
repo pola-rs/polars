@@ -95,9 +95,6 @@ def date_range(
     interval
         Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
-
-        To create a month-end date series, combine with :meth:`Expr.dt.month_end` (see
-        "Examples" section below).
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     time_unit : {None, 'ns', 'us', 'ms'}
@@ -184,11 +181,11 @@ def date_range(
         1985-01-09
     ]
 
-    Combine with :meth:`Expr.dt.month_end` to get the last day of the month:
+    Multiples of `interval` are added to the start date, so if you start on the
+    last day of the month and use "1mo" as the interval, each element will be the
+    end of its month:
 
-    >>> pl.date_range(
-    ...     date(2022, 1, 1), date(2022, 3, 1), "1mo", eager=True
-    ... ).dt.month_end()
+    >>> pl.date_range(date(2022, 1, 31), date(2022, 3, 31), "1mo", eager=True)
     shape: (3,)
     Series: 'date' [date]
     [
