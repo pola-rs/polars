@@ -267,3 +267,26 @@ def test_take_can_block_predicate_pushdown() -> None:
     result = lf.collect(predicate_pushdown=True)
     expected = {"x": [2], "y": [True]}
     assert result.to_dict(as_series=False) == expected
+
+
+def test_literal_series_expr_predicate_pushdown() -> None:
+    # No pushdown should occur in this case, because otherwise the filter will
+    # attempt to filter 3 rows with a boolean mask of 2 rows.
+    lf = (
+        pl.LazyFrame({"x": [0, 1, 2]})
+        .filter(pl.col("x") > 0)
+        .filter(pl.Series([True, True]))
+    )
+
+    assert lf.collect().to_series().to_list() == [1, 2]
+
+    # Pushdown should occur here, because the series is being used as part of
+    # an `is_in`.
+    lf = (
+        pl.LazyFrame({"x": [0, 1, 2]})
+        .filter(pl.col("x") > 0)
+        .filter(pl.col("x").is_in([0, 1]))
+    )
+
+    assert "FILTER" not in lf.explain()
+    assert lf.collect().to_series().to_list() == [1]

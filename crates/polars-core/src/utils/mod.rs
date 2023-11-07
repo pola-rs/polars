@@ -29,6 +29,7 @@ impl<T> Deref for Wrap<T> {
     }
 }
 
+#[inline(always)]
 pub fn _set_partition_size() -> usize {
     POOL.current_num_threads()
 }

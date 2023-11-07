@@ -229,7 +229,7 @@ impl AExpr {
             | Take { .. }
             | Nth(_)
              => true,
-            | Alias(_, _)
+            Alias(_, _)
             | Explode(_)
             | Column(_)
             | Literal(_)

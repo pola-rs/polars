@@ -23,9 +23,9 @@ pub mod string;
 pub mod take_agg;
 mod time;
 
-#[cfg(feature = "timezones")]
-pub use time::convert_to_naive_local;
 pub use time::Ambiguous;
+#[cfg(feature = "timezones")]
+pub use time::{convert_to_naive_local, convert_to_naive_local_opt};
 
 /// Internal state of [SlicesIterator]
 #[derive(Debug, PartialEq)]
