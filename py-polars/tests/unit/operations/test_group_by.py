@@ -870,3 +870,20 @@ def test_group_by_double_on_empty_12194() -> None:
     assert df.group_by("group").agg(squared_deviation_sum).schema == OrderedDict(
         [("group", pl.Int64), ("x", pl.Float64)]
     )
+
+
+def test_group_by_when_then_no_aggregation_predicate() -> None:
+    df = pl.DataFrame(
+        {
+            "key": ["aa", "aa", "bb", "bb", "aa", "aa"],
+            "val": [-3, -2, 1, 4, -3, 5],
+        }
+    )
+    assert df.group_by("key").agg(
+        pos=pl.when(pl.col("val") >= 0).then(pl.col("val")).sum(),
+        neg=pl.when(pl.col("val") < 0).then(pl.col("val")).sum(),
+    ).sort("key").to_dict(as_series=False) == {
+        "key": ["aa", "bb"],
+        "pos": [5, 5],
+        "neg": [-8, 0],
+    }
