@@ -181,19 +181,6 @@ def date_range(
         1985-01-09
     ]
 
-    Multiples of `interval` are added to the start date, so if you start on the
-    last day of the month and use "1mo" as the interval, each element will be the
-    end of its month:
-
-    >>> pl.date_range(date(2022, 1, 31), date(2022, 3, 31), "1mo", eager=True)
-    shape: (3,)
-    Series: 'date' [date]
-    [
-        2022-01-31
-        2022-02-28
-        2022-03-31
-    ]
-
     """
     interval = deprecate_saturating(interval)
     if name is not None:
