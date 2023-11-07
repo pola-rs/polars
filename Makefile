@@ -30,6 +30,11 @@ build-python: .venv  ## Compile and install Python Polars for development
 clippy:  ## Run clippy with all features
 	cargo clippy --workspace --all-features --locked -- -D warnings
 
+.PHONY: fmt
+fmt:  ## Run rustfmt and dprint
+	cargo fmt --all
+	dprint fmt
+
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts
 	@rm -rf .venv/
