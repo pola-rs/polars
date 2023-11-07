@@ -10,26 +10,6 @@ from polars.dependencies import json
 from polars.utils.deprecation import deprecate_nonkeyword_arguments
 from polars.utils.various import normalize_filepath
 
-
-# dummy funcs required here (so that docs build)
-def _get_float_fmt() -> str:  # pragma: no cover
-    return "n/a"
-
-
-def _get_float_precision() -> int:
-    return -1
-
-
-# note: module not available when building docs
-with contextlib.suppress(ImportError):
-    from polars.polars import get_float_fmt as _get_float_fmt  # type: ignore[no-redef]
-    from polars.polars import (  # type: ignore[no-redef]
-        get_float_precision as _get_float_precision,
-    )
-    from polars.polars import set_float_fmt as _set_float_fmt
-    from polars.polars import set_float_precision as _set_float_precision
-
-
 if sys.version_info >= (3, 10):
     from typing import TypeAlias
 else:
@@ -67,9 +47,12 @@ _POLARS_CFG_ENV_VARS = {
     "POLARS_AUTO_STRUCTIFY",
     "POLARS_FMT_MAX_COLS",
     "POLARS_FMT_MAX_ROWS",
-    "POLARS_FMT_STR_LEN",
+    "POLARS_FMT_NUM_DECIMAL",
+    "POLARS_FMT_NUM_GROUP_SEPARATOR",
     "POLARS_FMT_NUM_LEN",
+    "POLARS_FMT_STR_LEN",
     "POLARS_FMT_TABLE_CELL_ALIGNMENT",
+    "POLARS_FMT_TABLE_CELL_LIST_LEN",
     "POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT",
     "POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW",
     "POLARS_FMT_TABLE_FORMATTING",
@@ -79,7 +62,6 @@ _POLARS_CFG_ENV_VARS = {
     "POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION",
     "POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE",
     "POLARS_FMT_TABLE_ROUNDED_CORNERS",
-    "POLARS_FMT_TABLE_CELL_LIST_LEN",
     "POLARS_STREAMING_CHUNK_SIZE",
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
@@ -87,10 +69,17 @@ _POLARS_CFG_ENV_VARS = {
 
 # vars that set the rust env directly should declare themselves here as the Config
 # method name paired with a callable that returns the current state of that value:
-_POLARS_CFG_DIRECT_VARS = {
-    "set_fmt_float": _get_float_fmt,
-    "set_float_precision": _get_float_precision,
-}
+with contextlib.suppress(ImportError, NameError):
+    # note: 'plr' not available when building docs
+    import polars.polars as plr
+
+    _POLARS_CFG_DIRECT_VARS = {
+        "set_fmt_float": plr.get_float_fmt,
+        "set_float_precision": plr.get_float_precision,
+        "set_thousands_separator": plr.get_thousands_separator,
+        "set_decimal_separator": plr.get_decimal_separator,
+        "set_trim_decimal_zeros": plr.get_trim_decimal_zeros,
+    }
 
 
 class Config(contextlib.ContextDecorator):
@@ -264,9 +253,10 @@ class Config(contextlib.ContextDecorator):
         for var in _POLARS_CFG_ENV_VARS:
             os.environ.pop(var, None)
 
-        # apply any 'direct' setting values
-        cls.set_fmt_float()
-        cls.set_float_precision()
+        # reset all 'direct' defaults
+        for method in _POLARS_CFG_DIRECT_VARS:
+            getattr(cls, method)(None)
+
         return cls
 
     @classmethod
@@ -364,7 +354,7 @@ class Config(contextlib.ContextDecorator):
         }
         if not env_only:
             for cfg_methodname, get_value in _POLARS_CFG_DIRECT_VARS.items():
-                config_state[cfg_methodname] = get_value()  # type: ignore[assignment]
+                config_state[cfg_methodname] = get_value()
 
         return config_state
 
@@ -445,6 +435,121 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
+    def set_decimal_separator(cls, separator: str | None = None) -> type[Config]:
+        """
+        Set the decimal separator character.
+
+        Parameters
+        ----------
+        separator : str, bool
+            Character to use as the decimal separator.
+            Set to ``None`` to revert to the default (".").
+
+        See Also
+        --------
+        set_thousands_separator : Set the thousands grouping separator character.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"v": [9876.54321, 1010101.0, -123456.78]})
+        >>> with pl.Config(
+        ...     tbl_cell_numeric_alignment="RIGHT",
+        ...     thousands_separator=".",
+        ...     decimal_separator=",",
+        ...     float_precision=3,
+        ... ):
+        ...     print(df)
+        shape: (3, 1)
+        ┌───────────────┐
+        │             v │
+        │           --- │
+        │           f64 │
+        ╞═══════════════╡
+        │     9.876,543 │
+        │ 1.010.101,000 │
+        │  -123.456,780 │
+        └───────────────┘
+
+        """
+        if isinstance(separator, str) and len(separator) != 1:
+            raise ValueError(
+                f"`separator` must be a single character; found {separator!r}"
+            )
+        plr.set_decimal_separator(sep=separator)
+        return cls
+
+    @classmethod
+    def set_thousands_separator(
+        cls, separator: str | bool | None = None
+    ) -> type[Config]:
+        """
+        Set the thousands grouping separator character.
+
+        Parameters
+        ----------
+        separator : str, bool
+            Set True to use the default "," (thousands) and "." (decimal) separators.
+            Can also set a custom char, or set ``None`` to omit the separator.
+
+        See Also
+        --------
+        set_decimal_separator : Set the decimal separator character.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "x": [1234567, -987654, 10101],
+        ...         "y": [1234.5, 100000.0, -7654321.25],
+        ...     }
+        ... )
+        >>> with pl.Config(
+        ...     tbl_cell_numeric_alignment="RIGHT",
+        ...     thousands_separator=True,
+        ...     float_precision=2,
+        ... ):
+        ...     print(df)
+        shape: (3, 2)
+        ┌───────────┬───────────────┐
+        │         x ┆             y │
+        │       --- ┆           --- │
+        │       i64 ┆           f64 │
+        ╞═══════════╪═══════════════╡
+        │ 1,234,567 ┆      1,234.50 │
+        │  -987,654 ┆    100,000.00 │
+        │    10,101 ┆ -7,654,321.25 │
+        └───────────┴───────────────┘
+        >>> with pl.Config(
+        ...     tbl_cell_numeric_alignment="RIGHT",
+        ...     thousands_separator=".",
+        ...     decimal_separator=",",
+        ...     float_precision=2,
+        ... ):
+        ...     print(df)
+        shape: (3, 2)
+        ┌───────────┬───────────────┐
+        │         x ┆             y │
+        │       --- ┆           --- │
+        │       i64 ┆           f64 │
+        ╞═══════════╪═══════════════╡
+        │ 1.234.567 ┆      1.234,50 │
+        │  -987.654 ┆    100.000,00 │
+        │    10.101 ┆ -7.654.321,25 │
+        └───────────┴───────────────┘
+
+        """
+        if separator is True:
+            plr.set_decimal_separator(sep=".")
+            plr.set_thousands_separator(sep=",")
+        else:
+            if isinstance(separator, str) and len(separator) > 1:
+                raise ValueError(
+                    f"`separator` must be a single character; found {separator!r}"
+                )
+            plr.set_thousands_separator(sep=separator or None)
+        return cls
+
+    @classmethod
     def set_float_precision(cls, precision: int | None = None) -> type[Config]:
         """
         Control the number of decimal places displayed for floating point values.
@@ -466,10 +571,12 @@ class Config(contextlib.ContextDecorator):
 
         Examples
         --------
+        Set a large maximum float precision:
+
         >>> from math import pi, e
         >>> df = pl.DataFrame({"const": ["pi", "e"], "value": [pi, e]})
         >>> with pl.Config(float_precision=15):
-        ...     print(repr(df))
+        ...     print(df)
         ...
         shape: (2, 2)
         ┌───────┬───────────────────┐
@@ -481,8 +588,34 @@ class Config(contextlib.ContextDecorator):
         │ e     ┆ 2.718281828459045 │
         └───────┴───────────────────┘
 
+        Set a fixed float precision and align numeric columns to the
+        right in order to cleanly line-up the decimal separator:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": ["xx", "yy"],
+        ...         "b": [-11111111, 44444444444],
+        ...         "c": [100000.987654321, -23456789],
+        ...     }
+        ... )
+        >>> with pl.Config(
+        ...     tbl_cell_numeric_alignment="RIGHT",
+        ...     thousands_separator=",",
+        ...     float_precision=3,
+        ... ):
+        ...     print(df)
+        shape: (2, 3)
+        ┌─────┬────────────────┬─────────────────┐
+        │ a   ┆              b ┆               c │
+        │ --- ┆            --- ┆             --- │
+        │ str ┆            i64 ┆             f64 │
+        ╞═════╪════════════════╪═════════════════╡
+        │ xx  ┆    -11,111,111 ┆     100,000.988 │
+        │ yy  ┆ 44,444,444,444 ┆ -23,456,789.000 │
+        └─────┴────────────────┴─────────────────┘
+
         """
-        _set_float_precision(precision)
+        plr.set_float_precision(precision)
         return cls
 
     @classmethod
@@ -529,7 +662,7 @@ class Config(contextlib.ContextDecorator):
         ]
 
         """
-        _set_float_fmt(fmt="mixed" if fmt is None else fmt)
+        plr.set_float_fmt(fmt="mixed" if fmt is None else fmt)
         return cls
 
     @classmethod
@@ -680,18 +813,18 @@ class Config(contextlib.ContextDecorator):
         >>> df = pl.DataFrame(
         ...     {"column_abc": [1.0, 2.5, 5.0], "column_xyz": [True, False, True]}
         ... )
-        >>> pl.Config.set_tbl_cell_alignment("RIGHT")  # doctest: +SKIP
-        # ...
-        # shape: (3, 2)
-        # ┌────────────┬────────────┐
-        # │ column_abc ┆ column_xyz │
-        # │        --- ┆        --- │
-        # │        f64 ┆       bool │
-        # ╞════════════╪════════════╡
-        # │        1.0 ┆       true │
-        # │        2.5 ┆      false │
-        # │        5.0 ┆       true │
-        # └────────────┴────────────┘
+        >>> pl.Config.set_tbl_cell_alignment("RIGHT")  # doctest: +IGNORE_RESULT
+        >>> print(df)
+        shape: (3, 2)
+        ┌────────────┬────────────┐
+        │ column_abc ┆ column_xyz │
+        │        --- ┆        --- │
+        │        f64 ┆       bool │
+        ╞════════════╪════════════╡
+        │        1.0 ┆       true │
+        │        2.5 ┆      false │
+        │        5.0 ┆       true │
+        └────────────┴────────────┘
 
         Raises
         ------
@@ -726,22 +859,22 @@ class Config(contextlib.ContextDecorator):
         >>> df = pl.DataFrame(
         ...     {
         ...         "abc": [11, 2, 333],
-        ...         "mno": [date.today(), None, date.today()],
+        ...         "mno": [date(2023, 10, 29), None, date(2001, 7, 5)],
         ...         "xyz": [True, False, None],
         ...     }
         ... )
-        >>> pl.Config.set_tbl_cell_numeric_alignment("RIGHT")  # doctest: +SKIP
-        # ...
-        # shape: (3, 3)
-        # ┌─────┬────────────┬───────┐
-        # │ abc ┆ mno        ┆ xyz   │
-        # │ --- ┆ ---        ┆ ---   │
-        # │ i64 ┆ date       ┆ bool  │
-        # ╞═════╪════════════╪═══════╡
-        # │  11 ┆ 2023-09-05 ┆ true  │
-        # │   2 ┆ null       ┆ false │
-        # │ 333 ┆ 2023-09-05 ┆ null  │
-        # └─────┴────────────┴───────┘
+        >>> pl.Config.set_tbl_cell_numeric_alignment("RIGHT")  # doctest: +IGNORE_RESULT
+        >>> print(df)
+        shape: (3, 3)
+        ┌─────┬────────────┬───────┐
+        │ abc ┆ mno        ┆ xyz   │
+        │ --- ┆ ---        ┆ ---   │
+        │ i64 ┆ date       ┆ bool  │
+        ╞═════╪════════════╪═══════╡
+        │  11 ┆ 2023-10-29 ┆ true  │
+        │   2 ┆ null       ┆ false │
+        │ 333 ┆ 2001-07-05 ┆ null  │
+        └─────┴────────────┴───────┘
 
         Raises
         ------
@@ -1107,6 +1240,52 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_TABLE_WIDTH", None)
         else:
             os.environ["POLARS_TABLE_WIDTH"] = str(width)
+        return cls
+
+    @classmethod
+    def set_trim_decimal_zeros(cls, active: bool | None = True) -> type[Config]:
+        """
+        Strip trailing zeros from Decimal data type values.
+
+        Parameters
+        ----------
+        active : bool
+            Enable stripping of trailing '0' characters from Decimal values.
+
+        Examples
+        --------
+        >>> from decimal import Decimal as D
+        >>> df = pl.DataFrame(
+        ...     data={"d": [D("1.01"), D("-5.6789")]},
+        ...     schema={"d": pl.Decimal(5)},
+        ... )
+        >>> with pl.Config(trim_decimal_zeros=False):
+        ...     print(df)
+        ...
+        shape: (2, 1)
+        ┌────────────┐
+        │ d          │
+        │ ---        │
+        │ decimal[5] │
+        ╞════════════╡
+        │ 1.01000    │
+        │ -5.67890   │
+        └────────────┘
+        >>> with pl.Config(trim_decimal_zeros=True):
+        ...     print(df)
+        ...
+        shape: (2, 1)
+        ┌────────────┐
+        │ d          │
+        │ ---        │
+        │ decimal[5] │
+        ╞════════════╡
+        │ 1.01       │
+        │ -5.6789    │
+        └────────────┘
+
+        """
+        plr.set_trim_decimal_zeros(active)
         return cls
 
     @classmethod

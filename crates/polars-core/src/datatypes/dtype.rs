@@ -166,6 +166,15 @@ impl DataType {
         self.is_float() || self.is_integer()
     }
 
+    /// Check if this [`DataType`] is a Decimal type (of any scale/precision).
+    pub fn is_decimal(&self) -> bool {
+        match self {
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => true,
+            _ => false,
+        }
+    }
+
     /// Check if this [`DataType`] is a basic floating point type (excludes Decimal).
     pub fn is_float(&self) -> bool {
         matches!(self, DataType::Float32 | DataType::Float64)
