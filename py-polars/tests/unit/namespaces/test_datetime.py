@@ -864,9 +864,9 @@ def test_offset_by_expressions() -> None:
 @pytest.mark.parametrize(
     ("duration", "input_date", "expected"),
     [
-        ("1mo_saturating", date(2018, 1, 31), date(2018, 2, 28)),
-        ("1y_saturating", date(2024, 2, 29), date(2025, 2, 28)),
-        ("1y1mo_saturating", date(2024, 1, 30), date(2025, 2, 28)),
+        ("1mo", date(2018, 1, 31), date(2018, 2, 28)),
+        ("1y", date(2024, 2, 29), date(2025, 2, 28)),
+        ("1y1mo", date(2024, 1, 30), date(2025, 2, 28)),
     ],
 )
 def test_offset_by_saturating_8217_8474(

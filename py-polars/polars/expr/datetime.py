@@ -12,6 +12,7 @@ from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_renamed_function,
     rename_use_earliest_to_ambiguous,
+    deprecate_saturating,
 )
 
 if TYPE_CHECKING:
@@ -86,9 +87,6 @@ class ExprDateTimeNameSpace:
 
         - 3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
 
-        Suffix with `"_saturating"` to indicate that dates too large for
-        their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-        instead of erroring.
 
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
@@ -221,6 +219,8 @@ class ExprDateTimeNameSpace:
         │ 2020-10-25 02:00:00 GMT     │
         └─────────────────────────────┘
         """
+        every = deprecate_saturating(every)
+        offset = deprecate_saturating(offset)
         ambiguous = rename_use_earliest_to_ambiguous(use_earliest, ambiguous)
         if not isinstance(ambiguous, pl.Expr):
             ambiguous = F.lit(ambiguous)
@@ -287,9 +287,6 @@ class ExprDateTimeNameSpace:
 
         eg: 3d12h4m25s  # 3 days, 12 hours, 4 minutes, and 25 seconds
 
-        Suffix with `"_saturating"` to indicate that dates too large for
-        their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-        instead of erroring.
 
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
@@ -350,6 +347,8 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴─────────────────────┘
 
         """
+        every = deprecate_saturating(every)
+        offset = deprecate_saturating(offset)
         if offset is None:
             offset = "0ns"
 
@@ -1782,10 +1781,6 @@ class ExprDateTimeNameSpace:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date
-            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
-
             By "calendar day", we mean the corresponding time on the next day (which may
             not be 24 hours, due to daylight savings). Similarly for "calendar week",
             "calendar month", "calendar quarter", and "calendar year".
@@ -1843,6 +1838,7 @@ class ExprDateTimeNameSpace:
         │ 2005-01-01 00:00:00 ┆ 1y     ┆ 2006-01-01 00:00:00 │
         └─────────────────────┴────────┴─────────────────────┘
         """
+        by = deprecate_saturating(by)
         by = parse_as_expression(by, str_as_lit=True)
         return wrap_expr(self._pyexpr.dt_offset_by(by))
 

@@ -97,10 +97,6 @@ impl Duration {
     /// * `y`:  calendar year
     /// * `i`:  index value (only for {Int32, Int64} dtypes)
     ///
-    /// Suffix with `"_saturating"` to indicate that dates too large for
-    /// their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-    /// instead of erroring.
-    ///
     /// By "calendar day", we mean the corresponding time on the next
     /// day (which may not be 24 hours, depending on daylight savings).
     /// Similarly for "calendar week", "calendar month", "calendar quarter",
@@ -122,13 +118,6 @@ impl Duration {
         let mut days = 0;
         let mut months = 0;
         let negative = duration.starts_with('-');
-        let (saturating, mut iter) = match duration.ends_with("_saturating") {
-            true => (
-                true,
-                duration[..duration.len() - "_saturating".len()].char_indices(),
-            ),
-            false => (false, duration.char_indices()),
-        };
         let mut start = 0;
 
         // skip the '-' char
@@ -429,11 +418,16 @@ impl Duration {
         new_datetime(year, month as u32, day, hour, minute, sec, nsec).ok_or(
             polars_err!(
                 ComputeError: format!(
-                    "cannot advance '{}' by {} month(s). \
-                        If you were trying to get the last day of each month, you may want to try `.dt.month_end` \
-                        or append \"_saturating\" to your duration string.",
+                    "cannot advance '{}' by {} month(s), datetime {}-{}-{}T{}:{}:{}.{} does not exist.",
                         ts,
-                        if negative {-n_months} else {n_months}
+                        if negative {-n_months} else {n_months},
+                        year,
+                        month,
+                        day,
+                        hour,
+                        minute,
+                        sec,
+                        nsec
                 )
             ),
         )

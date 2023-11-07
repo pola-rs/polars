@@ -3310,10 +3310,6 @@ class Expr:
         Or combine them:
         "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
-        Suffix with `"_saturating"` to indicate that dates too large for
-        their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-        instead of erroring.
-
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
@@ -3378,6 +3374,8 @@ class Expr:
         └─────────────────────┴─────┴───────┴───────┴───────┘
 
         """
+        period = deprecate_saturating(period)
+        offset = deprecate_saturating(offset)
         if offset is None:
             offset = _negate_duration(_timedelta_to_pl_duration(period))
 
@@ -5582,10 +5580,6 @@ class Expr:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-            Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date
-            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
-
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
             "calendar week", "calendar month", "calendar quarter", and
@@ -5732,6 +5726,7 @@ class Expr:
         └────────┴─────────────────────┴─────────────────┘
 
         """
+        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
@@ -5791,10 +5786,6 @@ class Expr:
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
-
-            Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date
-            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -5965,6 +5956,7 @@ class Expr:
         └────────┴─────────────────────┴─────────────────┘
 
         """
+        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
@@ -6024,10 +6016,6 @@ class Expr:
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
-
-            Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date
-            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -6202,6 +6190,7 @@ class Expr:
         └────────┴─────────────────────┴──────────────────┘
 
         """
+        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
@@ -6261,10 +6250,6 @@ class Expr:
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
-
-            Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date
-            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -6435,6 +6420,7 @@ class Expr:
         └────────┴─────────────────────┴─────────────────┘
 
         """
+        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
@@ -6491,10 +6477,6 @@ class Expr:
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
-
-            Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date
-            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -6671,6 +6653,7 @@ class Expr:
         └────────┴─────────────────────┴─────────────────┘
 
         """
+        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
@@ -6727,10 +6710,6 @@ class Expr:
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
-
-            Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date
-            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -6907,6 +6886,7 @@ class Expr:
         └────────┴─────────────────────┴─────────────────┘
 
         """
+        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
@@ -6968,10 +6948,6 @@ class Expr:
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
-
-            Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date
-            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -7072,6 +7048,7 @@ class Expr:
         └─────┴────────────────┘
 
         """
+        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
@@ -7133,10 +7110,6 @@ class Expr:
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
-
-            Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date
-            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -7265,6 +7238,7 @@ class Expr:
         └─────┴──────────────────┘
 
         """
+        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )

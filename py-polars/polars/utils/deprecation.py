@@ -260,3 +260,11 @@ def rename_use_earliest_to_ambiguous(
         )
         return ambiguous
     return ambiguous
+
+def deprecate_saturating(
+    duration: T,
+) -> T:
+    if isinstance(duration, str) and duration.endswith('_saturating'):
+        issue_deprecation_warning("The '_saturating' suffix is deprecated and is now done by default, you can safely remove it.", version="0.19.3")
+        return duration[:-11]
+    return duration

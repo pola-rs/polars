@@ -726,7 +726,7 @@ def test_rolling_by_1mo_saturating_12216() -> None:
             "val": [1, 2, 3, 4, 5],
         }
     ).set_sorted("date")
-    result = df.rolling(index_column="date", period="1mo_saturating").agg(
+    result = df.rolling(index_column="date", period="1mo").agg(
         vals=pl.col("val")
     )
     expected = pl.DataFrame(
@@ -745,7 +745,7 @@ def test_rolling_by_1mo_saturating_12216() -> None:
 
     # check with `closed='both'` against DuckDB output
     result = df.rolling(
-        index_column="date", period="1mo_saturating", closed="both"
+        index_column="date", period="1mo", closed="both"
     ).agg(vals=pl.col("val"))
     expected = pl.DataFrame(
         {
