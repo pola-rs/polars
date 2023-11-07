@@ -31,4 +31,4 @@ jobs:
 
       - name: Run tests
         working-directory: py-polars
-        run: PYTHONPATH=polars/utils pytest tests/test_udfs.py
+        run: PYTHONPATH=polars/utils python -m tests/test_udfs.py
