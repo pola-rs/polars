@@ -104,9 +104,14 @@ def test_string_numeric_comp_err() -> None:
 def test_panic_error() -> None:
     with pytest.raises(
         pl.PolarsPanicError,
-        match="dimensions cannot be empty",
+        match="unit: 'k' not supported",
     ):
-        pl.Series("a", [1, 2, 3]).reshape(())
+        pl.datetime_range(
+            start=datetime(2021, 12, 16),
+            end=datetime(2021, 12, 16, 3),
+            interval="99k",
+            eager=True,
+        )
 
 
 def test_join_lazy_on_df() -> None:
