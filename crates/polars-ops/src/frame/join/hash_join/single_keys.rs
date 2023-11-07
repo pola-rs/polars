@@ -5,7 +5,8 @@ use super::*;
 // FIXME: we should compute the number of threads / partition size we'll use.
 // let avail_threads = POOL.current_num_threads();
 // let n_threads = (num_keys / MIN_ELEMS_PER_THREAD).clamp(1, avail_threads);
-const MIN_ELEMS_PER_THREAD: usize = 128;
+// Use a small element per thread threshold for debugging/testing purposes.
+const MIN_ELEMS_PER_THREAD: usize = if cfg!(debug_assertions) { 1 } else { 128 };
 
 pub(crate) fn build_tables<T, I>(keys: Vec<I>) -> Vec<PlHashMap<T, Vec<IdxSize>>>
 where
