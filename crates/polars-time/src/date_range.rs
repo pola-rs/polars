@@ -8,7 +8,7 @@ use polars_core::series::IsSorted;
 
 use crate::prelude::*;
 #[cfg(feature = "timezones")]
-use crate::utils::localize_timestamp;
+use crate::utils::try_localize_timestamp;
 
 pub fn in_nanoseconds_window(ndt: &NaiveDateTime) -> bool {
     // ~584 year around 1970
@@ -50,8 +50,8 @@ pub fn datetime_range_impl(
         #[cfg(feature = "timezones")]
         Some(tz) => match tz.parse::<chrono_tz::Tz>() {
             Ok(tz) => {
-                let start = localize_timestamp(start, tu, tz, Ambiguous::Raise);
-                let end = localize_timestamp(end, tu, tz, Ambiguous::Raise);
+                let start = try_localize_timestamp(start, tu, tz, Ambiguous::Raise);
+                let end = try_localize_timestamp(end, tu, tz, Ambiguous::Raise);
                 Int64Chunked::new_vec(
                     name,
                     datetime_range_i64(start?, end?, interval, closed, tu, Some(&tz))?,

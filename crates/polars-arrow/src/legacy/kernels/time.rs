@@ -51,3 +51,22 @@ pub fn convert_to_naive_local(
         ),
     }
 }
+
+#[cfg(feature = "timezones")]
+pub fn convert_to_naive_local_opt(
+    from_tz: &Tz,
+    to_tz: &Tz,
+    ndt: NaiveDateTime,
+    ambiguous: Ambiguous,
+) -> Option<NaiveDateTime> {
+    let ndt = from_tz.from_utc_datetime(&ndt).naive_local();
+    match to_tz.from_local_datetime(&ndt) {
+        LocalResult::Single(dt) => Some(dt.naive_utc()),
+        LocalResult::Ambiguous(dt_earliest, dt_latest) => match ambiguous {
+            Ambiguous::Earliest => Some(dt_earliest.naive_utc()),
+            Ambiguous::Latest => Some(dt_latest.naive_utc()),
+            Ambiguous::Raise => None,
+        },
+        LocalResult::None => None,
+    }
+}

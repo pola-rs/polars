@@ -22,7 +22,7 @@ use super::calendar::{
     NS_DAY, NS_HOUR, NS_MICROSECOND, NS_MILLISECOND, NS_MINUTE, NS_SECOND, NS_WEEK,
 };
 #[cfg(feature = "timezones")]
-use crate::utils::{localize_datetime, unlocalize_datetime};
+use crate::utils::{localize_datetime_opt, try_localize_datetime, unlocalize_datetime};
 use crate::windows::calendar::{is_leap_year, last_day_of_month};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -458,19 +458,18 @@ impl Duration {
         original_dt_utc: NaiveDateTime,
         result_dt_naive: NaiveDateTime,
         tz: &Tz,
-        localize_datetime: impl Fn(NaiveDateTime, &Tz, Ambiguous) -> PolarsResult<NaiveDateTime>,
     ) -> NaiveDateTime {
-        match localize_datetime(result_dt_naive, tz, Ambiguous::Raise) {
-            Ok(dt) => dt,
-            Err(_) => {
-                if localize_datetime(original_dt_naive, tz, Ambiguous::Earliest).unwrap()
+        match localize_datetime_opt(result_dt_naive, tz, Ambiguous::Raise) {
+            Some(dt) => dt,
+            None => {
+                if try_localize_datetime(original_dt_naive, tz, Ambiguous::Earliest).unwrap()
                     == original_dt_utc
                 {
-                    localize_datetime(result_dt_naive, tz, Ambiguous::Earliest).unwrap()
-                } else if localize_datetime(original_dt_naive, tz, Ambiguous::Latest).unwrap()
+                    try_localize_datetime(result_dt_naive, tz, Ambiguous::Earliest).unwrap()
+                } else if try_localize_datetime(original_dt_naive, tz, Ambiguous::Latest).unwrap()
                     == original_dt_utc
                 {
-                    localize_datetime(result_dt_naive, tz, Ambiguous::Latest).unwrap()
+                    try_localize_datetime(result_dt_naive, tz, Ambiguous::Latest).unwrap()
                 } else {
                     unreachable!()
                 }
@@ -502,13 +501,8 @@ impl Duration {
                 }
                 let result_timestamp = t - remainder;
                 let result_dt_naive = _timestamp_to_datetime(result_timestamp);
-                let result_dt_utc = self.localize_result(
-                    original_dt_naive,
-                    original_dt_utc,
-                    result_dt_naive,
-                    tz,
-                    localize_datetime,
-                );
+                let result_dt_utc =
+                    self.localize_result(original_dt_naive, original_dt_utc, result_dt_naive, tz);
                 Ok(_datetime_to_timestamp(result_dt_utc))
             },
             _ => {
@@ -554,13 +548,8 @@ impl Duration {
         match tz {
             #[cfg(feature = "timezones")]
             Some(tz) => {
-                let result_dt_utc = self.localize_result(
-                    original_dt_naive,
-                    _original_dt_utc,
-                    result_dt_naive,
-                    tz,
-                    localize_datetime,
-                );
+                let result_dt_utc =
+                    self.localize_result(original_dt_naive, _original_dt_utc, result_dt_naive, tz);
                 Ok(datetime_to_timestamp(result_dt_utc))
             },
             _ => Ok(datetime_to_timestamp(result_dt_naive)),
@@ -607,13 +596,8 @@ impl Duration {
         match tz {
             #[cfg(feature = "timezones")]
             Some(tz) => {
-                let result_dt_utc = self.localize_result(
-                    original_dt_naive,
-                    original_dt_utc,
-                    result_dt_naive,
-                    tz,
-                    localize_datetime,
-                );
+                let result_dt_utc =
+                    self.localize_result(original_dt_naive, original_dt_utc, result_dt_naive, tz);
                 Ok(datetime_to_timestamp(result_dt_utc))
             },
             _ => Ok(datetime_to_timestamp(result_dt_naive)),
@@ -733,7 +717,7 @@ impl Duration {
             let dt = Self::add_month(ts, d.months, d.negative, d.saturating)?;
             new_t = match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => datetime_to_timestamp(localize_datetime(dt, tz, Ambiguous::Raise)?),
+                Some(tz) => datetime_to_timestamp(try_localize_datetime(dt, tz, Ambiguous::Raise)?),
                 _ => datetime_to_timestamp(dt),
             };
         }
@@ -746,7 +730,7 @@ impl Duration {
                     new_t =
                         datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
                     new_t += if d.negative { -t_weeks } else { t_weeks };
-                    new_t = datetime_to_timestamp(localize_datetime(
+                    new_t = datetime_to_timestamp(try_localize_datetime(
                         timestamp_to_datetime(new_t),
                         tz,
                         Ambiguous::Raise,
@@ -764,7 +748,7 @@ impl Duration {
                     new_t =
                         datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
                     new_t += if d.negative { -t_days } else { t_days };
-                    new_t = datetime_to_timestamp(localize_datetime(
+                    new_t = datetime_to_timestamp(try_localize_datetime(
                         timestamp_to_datetime(new_t),
                         tz,
                         Ambiguous::Raise,
