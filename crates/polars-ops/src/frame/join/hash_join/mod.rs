@@ -42,18 +42,11 @@ pub fn default_join_ids() -> ChunkJoinOptIds {
 macro_rules! det_hash_prone_order {
     ($self:expr, $other:expr) => {{
         // The shortest relation will be used to create a hash table.
-        let left_first = $self.len() > $other.len();
-        let a;
-        let b;
-        if left_first {
-            a = $self;
-            b = $other;
+        if $self.len() > $other.len() {
+            ($self, $other, false)
         } else {
-            b = $self;
-            a = $other;
+            ($other, $self, true)
         }
-
-        (a, b, !left_first)
     }};
 }
 

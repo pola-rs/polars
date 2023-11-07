@@ -118,8 +118,9 @@ where
                 // this may still fail with overflow?
                 let dtype = self.dtype();
 
-                let to_signed = data_type.is_signed();
-                let unsigned2unsigned = dtype.is_unsigned() && data_type.is_unsigned();
+                let to_signed = data_type.is_signed_integer();
+                let unsigned2unsigned =
+                    dtype.is_unsigned_integer() && data_type.is_unsigned_integer();
                 let allowed = to_signed || unsigned2unsigned;
 
                 if (allowed)

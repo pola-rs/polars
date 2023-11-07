@@ -296,13 +296,36 @@ class Decimal(FractionalType):
     """
     Decimal 128-bit type with an optional precision and non-negative scale.
 
-    NOTE: this is an experimental work-in-progress feature and may not work as expected.
+    .. warning::
+        This is an experimental work-in-progress feature and may not work as expected.
+
     """
 
     precision: int | None
     scale: int
 
-    def __init__(self, scale: int, precision: int | None = None):
+    def __init__(
+        self,
+        *args: Any,
+        precision: int | None = None,
+        scale: int = 0,
+    ):
+        from polars.utils.deprecation import issue_deprecation_warning
+
+        if args:
+            # TODO: When removing this deprecation, update the `to_object`
+            # implementation in py-polars/src/conversion.rs to use `call1` instead of
+            # `call`
+            issue_deprecation_warning(
+                "`Decimal` parameters `scale` and `precision` will change positions in the next breaking release."
+                " Use keyword arguments to keep current behavior and silence this warning.",
+                version="0.19.13",
+            )
+            if len(args) == 1:
+                scale = args[0]
+            else:
+                scale, precision = args[:2]
+
         self.precision = precision
         self.scale = scale
 
@@ -526,8 +549,8 @@ class Array(NestedType):
     def __init__(  # noqa: D417
         self,
         *args: Any,
-        width: int | None = None,
         inner: PolarsDataType | PythonDataType | None = None,
+        width: int | None = None,
     ):
         """
         Fixed length list type.
@@ -560,7 +583,7 @@ class Array(NestedType):
             # implementation in py-polars/src/conversion.rs to use `call1` instead of
             # `call`
             issue_deprecation_warning(
-                "Parameters `inner` and `width` will change positions in the next breaking release."
+                "`Array` parameters `width` and `inner` will change positions in the next breaking release."
                 " Use keyword arguments to keep current behavior and silence this warning.",
                 version="0.19.11",
             )

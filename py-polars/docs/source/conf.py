@@ -108,12 +108,8 @@ switcher_version = version_match.group(1) if version_match is not None else "dev
 html_theme_options = {
     "external_links": [
         {
-            "name": "User Guide",
-            "url": f"{web_root}/polars/user-guide/index.html",
-        },
-        {
-            "name": "Powered by Xomnia",
-            "url": "https://www.xomnia.com/",
+            "name": "User guide",
+            "url": f"{web_root}/polars/user-guide/",
         },
     ],
     "icon_links": [

@@ -912,8 +912,27 @@ def test_dataframe_from_repr() -> None:
         """
         ),
     )
-    assert df.rows() == []
-    assert df.schema == {"misc": pl.Utf8, "other": pl.Utf8}
+    assert_frame_equal(df, pl.DataFrame(schema={"misc": pl.Utf8, "other": pl.Utf8}))
+
+    # empty frame with non-standard/blank 'null'
+    df = cast(
+        pl.DataFrame,
+        pl.from_repr(
+            """
+            ┌─────┬─────┐
+            │ c1  ┆ c2  │
+            │ --- ┆ --- │
+            │ i32 ┆ f64 │
+            ╞═════╪═════╡
+            │     │     │
+            └─────┴─────┘
+            """
+        ),
+    )
+    assert_frame_equal(
+        df,
+        pl.DataFrame(data=[(None, None)], schema={"c1": pl.Int32, "c2": pl.Float64}),
+    )
 
     df = cast(
         pl.DataFrame,
@@ -1062,6 +1081,37 @@ def test_series_from_repr() -> None:
         ),
     )
     assert_series_equal(s, pl.Series("flt", [], dtype=pl.Float32))
+
+
+def test_dataframe_from_repr_custom_separators() -> None:
+    # repr created with custom digit-grouping
+    # and non-default group/decimal separators
+    df = cast(
+        pl.DataFrame,
+        pl.from_repr(
+            """
+            ┌───────────┬────────────┐
+            │ x         ┆ y          │
+            │ ---       ┆ ---        │
+            │ i32       ┆ f64        │
+            ╞═══════════╪════════════╡
+            │ 123.456   ┆ -10.000,55 │
+            │ -9.876    ┆ 10,0       │
+            │ 9.999.999 ┆ 8,5e8      │
+            └───────────┴────────────┘
+            """
+        ),
+    )
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "x": [123456, -9876, 9999999],
+                "y": [-10000.55, 10.0, 850000000.0],
+            },
+            schema={"x": pl.Int32, "y": pl.Float64},
+        ),
+    )
 
 
 def test_to_init_repr() -> None:

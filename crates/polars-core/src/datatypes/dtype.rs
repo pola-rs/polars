@@ -166,6 +166,15 @@ impl DataType {
         self.is_float() || self.is_integer()
     }
 
+    /// Check if this [`DataType`] is a Decimal type (of any scale/precision).
+    pub fn is_decimal(&self) -> bool {
+        match self {
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => true,
+            _ => false,
+        }
+    }
+
     /// Check if this [`DataType`] is a basic floating point type (excludes Decimal).
     pub fn is_float(&self) -> bool {
         matches!(self, DataType::Float32 | DataType::Float64)
@@ -186,20 +195,27 @@ impl DataType {
         )
     }
 
-    pub fn is_signed(&self) -> bool {
+    pub fn is_signed_integer(&self) -> bool {
         // allow because it cannot be replaced when object feature is activated
-        #[allow(clippy::match_like_matches_macro)]
         match self {
+            DataType::Int64 | DataType::Int32 => true,
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => true,
             #[cfg(feature = "dtype-i16")]
             DataType::Int16 => true,
-            DataType::Int32 | DataType::Int64 => true,
             _ => false,
         }
     }
-    pub fn is_unsigned(&self) -> bool {
-        self.is_numeric() && !self.is_signed()
+
+    pub fn is_unsigned_integer(&self) -> bool {
+        match self {
+            DataType::UInt64 | DataType::UInt32 => true,
+            #[cfg(feature = "dtype-u8")]
+            DataType::UInt8 => true,
+            #[cfg(feature = "dtype-u16")]
+            DataType::UInt16 => true,
+            _ => false,
+        }
     }
 
     /// Convert to an Arrow data type.

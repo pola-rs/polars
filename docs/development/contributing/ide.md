@@ -16,7 +16,6 @@ For it to work well for the Polars code base, add the following settings to your
 ```json
 {
     "rust-analyzer.cargo.features": "all",
-    "rust-analyzer.linkedProjects": ["py-polars/Cargo.toml"],
 }
 ```
 

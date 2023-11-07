@@ -73,7 +73,7 @@ arrow-data = { workspace = true, optional = true }
 arrow-schema = { workspace = true, optional = true }
 
 [dev-dependencies]
-avro-rs = { version = "0.13", features = ["snappy"] }
+apache-avro = { version = "0.16", features = ["snappy"] }
 criterion = "0.5"
 crossbeam-channel = { workspace = true }
 doc-comment = "0.3"

@@ -24,7 +24,7 @@ from polars.datatypes import (
     UInt64,
     Unknown,
 )
-from polars.exceptions import PolarsInefficientMapWarning, ShapeError
+from polars.exceptions import ComputeError, PolarsInefficientMapWarning, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import iterable_to_pyseries
 from polars.utils._wrap import wrap_s
@@ -531,7 +531,7 @@ def test_series_dtype_is() -> None:
     s = pl.Series("s", ["testing..."])
     assert s.is_utf8()
 
-    s = pl.Series("s", [], dtype=pl.Decimal(scale=15, precision=20))
+    s = pl.Series("s", [], dtype=pl.Decimal(precision=20, scale=15))
     assert not s.is_float()
     assert s.is_numeric()
     assert s.is_empty()
@@ -585,7 +585,7 @@ def test_cast() -> None:
     assert a.cast(pl.Date).dtype == pl.Date
 
     # display failed values, GH#4706
-    with pytest.raises(pl.ComputeError, match="foobar"):
+    with pytest.raises(ComputeError, match="foobar"):
         pl.Series(["1", "2", "3", "4", "foobar"]).cast(int)
 
 
@@ -1389,9 +1389,9 @@ def test_range() -> None:
 
 
 def test_strict_cast() -> None:
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         pl.Series("a", [2**16]).cast(dtype=pl.Int16, strict=True)
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         pl.DataFrame({"a": [2**16]}).select([pl.col("a").cast(pl.Int16, strict=True)])
 
 
@@ -1938,6 +1938,10 @@ def test_reshape() -> None:
     # test lazy_dispatch
     out = pl.select(pl.lit(s).reshape((-1, 1))).to_series()
     assert_series_equal(out, expected)
+
+    # invalid (empty) dimensions
+    with pytest.raises(ComputeError, match="reshape `dimensions` cannot be empty"):
+        s.reshape(())
 
 
 def test_init_categorical() -> None:
