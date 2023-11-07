@@ -262,7 +262,7 @@ impl<'a> PredicatePushDown<'a> {
                 output_schema
             } => {
                 for node in acc_predicates.values() {
-                    assert_aexpr_allows_predicate_pushdown(*node, expr_arena);
+                    debug_assert_aexpr_allows_predicate_pushdown(*node, expr_arena);
                 }
 
                 let local_predicates = match &scan_type {

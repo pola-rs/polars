@@ -115,7 +115,7 @@ pub(super) fn process_join(
         let mut filter_left = false;
         let mut filter_right = false;
 
-        assert_aexpr_allows_predicate_pushdown(predicate, expr_arena);
+        debug_assert_aexpr_allows_predicate_pushdown(predicate, expr_arena);
 
         if check_input_node(predicate, &schema_left, expr_arena) && !block_pushdown_left {
             insert_and_combine_predicate(&mut pushdown_left, predicate, expr_arena);

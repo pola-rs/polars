@@ -238,7 +238,7 @@ where
             .unwrap();
 
         // should have been handled earlier by `pushdown_and_continue`.
-        assert_aexpr_allows_predicate_pushdown(*projection_node, expr_arena);
+        debug_assert_aexpr_allows_predicate_pushdown(*projection_node, expr_arena);
 
         // remove predicates that cannot be done on the input above
         let to_local = acc_predicates
@@ -391,8 +391,8 @@ pub(super) fn aexpr_blocks_predicate_pushdown(node: Node, expr_arena: &Arena<AEx
 
 /// Used in places that previously handled blocking exprs before refactoring.
 /// Can probably be eventually removed if it isn't catching anything.
-pub(super) fn assert_aexpr_allows_predicate_pushdown(node: Node, expr_arena: &Arena<AExpr>) {
-    assert!(
+pub(super) fn debug_assert_aexpr_allows_predicate_pushdown(node: Node, expr_arena: &Arena<AExpr>) {
+    debug_assert!(
         !aexpr_blocks_predicate_pushdown(node, expr_arena),
         "Predicate pushdown: Did not expect blocking exprs at this point, please open an issue."
     );
