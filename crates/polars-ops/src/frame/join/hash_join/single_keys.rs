@@ -85,8 +85,6 @@ where
         keys.into_par_iter()
             .enumerate()
             .for_each(|(t, key_portion)| {
-                let scatter_keys_ptr = scatter_keys_ptr;
-                let scatter_idxs_ptr = scatter_idxs_ptr;
                 let mut partition_offsets =
                     per_thread_partition_offsets[t * n_partitions..(t + 1) * n_partitions].to_vec();
                 for (i, key) in key_portion.into_iter().enumerate() {
