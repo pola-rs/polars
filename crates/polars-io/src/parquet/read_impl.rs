@@ -328,7 +328,7 @@ fn rg_to_dfs_par_over_rg(
     Ok(dfs.into_iter().flatten().collect())
 }
 
-fn materialize_empty_df(
+pub(super) fn materialize_empty_df(
     projection: Option<&[usize]>,
     reader_schema: &ArrowSchema,
     hive_partition_columns: Option<&[Series]>,
