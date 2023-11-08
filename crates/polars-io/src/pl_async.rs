@@ -35,6 +35,11 @@ where
     }
 }
 
+/// Increase/decrease the concurrency budget and return the previous budget
+pub fn increase_concurrency_budget(increase: i32) -> i32 {
+    CONCURRENCY_BUDGET.fetch_add(increase, Ordering::Relaxed)
+}
+
 pub struct RuntimeManager {
     rt: Runtime,
     blocking_threads: RwLock<PlHashSet<ThreadId>>,
