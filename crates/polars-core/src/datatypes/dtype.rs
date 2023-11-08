@@ -311,11 +311,11 @@ impl Display for DataType {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
                 return match (precision, scale) {
-                    (_, None) => f.write_str("decimal[?]"), // shouldn't happen
-                    (None, Some(scale)) => f.write_str(&format!("decimal[{scale}]")),
                     (Some(precision), Some(scale)) => {
                         f.write_str(&format!("decimal[{precision},{scale}]"))
                     },
+                    (None, Some(scale)) => f.write_str(&format!("decimal[*,{scale}]")),
+                    _ => f.write_str("decimal[?]"), // shouldn't happen
                 };
             },
             DataType::Utf8 => "str",
