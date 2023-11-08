@@ -68,6 +68,8 @@ impl PartialEq for RollingOptions {
             && self.center == other.center
             && self.by == other.by
             && self.closed_window == other.closed_window
+            && self.fn_params.is_none()
+            && other.fn_params.is_none()
     }
 }
 

@@ -122,14 +122,8 @@ pub enum FunctionExpr {
     FillNull {
         super_type: DataType,
     },
-    #[cfg(all(feature = "rolling_window", feature = "moment"))]
-    // if we add more, make a sub enum
-    RollingSkew {
-        window_size: usize,
-        bias: bool,
-    },
     #[cfg(all(feature = "rolling_window"))]
-    RollingExpr(RollingFunction, RollingOptions),
+    RollingExpr(RollingFunction),
     ShiftAndFill {
         periods: i64,
     },
@@ -294,8 +288,6 @@ impl Display for FunctionExpr {
             #[cfg(feature = "sign")]
             Sign => "sign",
             FillNull { .. } => "fill_null",
-            #[cfg(all(feature = "rolling_window", feature = "moment"))]
-            RollingSkew { .. } => "rolling_skew",
             #[cfg(all(feature = "rolling_window"))]
             RollingExpr(func, ..) => return write!(f, "{func}"),
             ShiftAndFill { .. } => "shift_and_fill",
@@ -509,30 +501,29 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             FillNull { super_type } => {
                 map_as_slice!(fill_null::fill_null, &super_type)
             },
-
-            RollingSkew { window_size, bias } => {
-                map!(rolling::rolling_skew, window_size, bias)
-            },
             #[cfg(all(feature = "rolling_window"))]
-            RollingExpr(f, options) => {
+            RollingExpr(f) => {
                 use RollingFunction::*;
                 match f {
-                    Min => map!(rolling::rolling_min, options.clone()),
-                    MinBy => map_as_slice!(rolling::rolling_min_by, options.clone()),
-                    Max => map!(rolling::rolling_max, options.clone()),
-                    MaxBy => map_as_slice!(rolling::rolling_max_by, options.clone()),
-                    Mean => map!(rolling::rolling_mean, options.clone()),
-                    MeanBy => map_as_slice!(rolling::rolling_mean_by, options.clone()),
-                    Sum => map!(rolling::rolling_sum, options.clone()),
-                    SumBy => map_as_slice!(rolling::rolling_sum_by, options.clone()),
-                    Median => map!(rolling::rolling_median, options.clone()),
-                    MedianBy => map_as_slice!(rolling::rolling_median_by, options.clone()),
-                    Quantile => map!(rolling::rolling_quantile, options.clone()),
-                    QuantileBy => map_as_slice!(rolling::rolling_quantile_by, options.clone()),
-                    Var => map!(rolling::rolling_var, options.clone()),
-                    VarBy => map_as_slice!(rolling::rolling_var_by, options.clone()),
-                    Std => map!(rolling::rolling_std, options.clone()),
-                    StdBy => map_as_slice!(rolling::rolling_std_by, options.clone()),
+                    Min(options) => map!(rolling::rolling_min, options.clone()),
+                    MinBy(options) => map_as_slice!(rolling::rolling_min_by, options.clone()),
+                    Max(options) => map!(rolling::rolling_max, options.clone()),
+                    MaxBy(options) => map_as_slice!(rolling::rolling_max_by, options.clone()),
+                    Mean(options) => map!(rolling::rolling_mean, options.clone()),
+                    MeanBy(options) => map_as_slice!(rolling::rolling_mean_by, options.clone()),
+                    Sum(options) => map!(rolling::rolling_sum, options.clone()),
+                    SumBy(options) => map_as_slice!(rolling::rolling_sum_by, options.clone()),
+                    Median(options) => map!(rolling::rolling_median, options.clone()),
+                    MedianBy(options) => map_as_slice!(rolling::rolling_median_by, options.clone()),
+                    Quantile(options) => map!(rolling::rolling_quantile, options.clone()),
+                    QuantileBy(options) => {
+                        map_as_slice!(rolling::rolling_quantile_by, options.clone())
+                    },
+                    Var(options) => map!(rolling::rolling_var, options.clone()),
+                    VarBy(options) => map_as_slice!(rolling::rolling_var_by, options.clone()),
+                    Std(options) => map!(rolling::rolling_std, options.clone()),
+                    StdBy(options) => map_as_slice!(rolling::rolling_std_by, options.clone()),
+                    #[cfg(all(feature = "rolling_window", feature = "moment"))]
                     Skew(window_size, bias) => map!(rolling::rolling_skew, window_size, bias),
                 }
             },

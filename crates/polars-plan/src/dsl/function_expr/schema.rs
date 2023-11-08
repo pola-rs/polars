@@ -91,16 +91,14 @@ impl FunctionExpr {
             Sign => mapper.with_dtype(DataType::Int64),
             FillNull { super_type, .. } => mapper.with_dtype(super_type.clone()),
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
-            RollingSkew { .. } => mapper.map_to_float_dtype(),
             #[cfg(all(feature = "rolling_window"))]
             RollingExpr(rolling_func, ..) => {
                 use RollingFunction::*;
                 match rolling_func {
-                    Min | MinBy | Max | MaxBy | Sum | SumBy | Median | MedianBy => {
-                        mapper.with_same_dtype()
-                    },
-                    Mean | MeanBy | Quantile | QuantileBy | Var | VarBy | Std | StdBy
-                    | Skew(..) => mapper.map_to_float_dtype(),
+                    Min(_) | MinBy(_) | Max(_) | MaxBy(_) | Sum(_) | SumBy(_) | Median(_)
+                    | MedianBy(_) => mapper.with_same_dtype(),
+                    Mean(_) | MeanBy(_) | Quantile(_) | QuantileBy(_) | Var(_) | VarBy(_)
+                    | Std(_) | StdBy(_) | Skew(..) => mapper.map_to_float_dtype(),
                 }
             },
             ShiftAndFill { .. } => mapper.with_same_dtype(),

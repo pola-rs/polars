@@ -1215,13 +1215,13 @@ impl Expr {
     fn finish_rolling(
         self,
         options: RollingOptions,
-        rolling_function: RollingFunction,
-        rolling_function_by: RollingFunction,
+        rolling_function: &dyn Fn(RollingOptions) -> RollingFunction,
+        rolling_function_by: &dyn Fn(RollingOptions) -> RollingFunction,
     ) -> Expr {
         if let Some(ref by) = options.by {
             let name = by.clone();
             self.apply_many_private(
-                FunctionExpr::RollingExpr(rolling_function_by, options),
+                FunctionExpr::RollingExpr(rolling_function_by(options)),
                 &[col(&name)],
                 true,
                 false,
@@ -1230,7 +1230,7 @@ impl Expr {
             if !options.window_size.parsed_int {
                 panic!("if dynamic windows are used in a rolling aggregation, the 'by' argument must be set")
             }
-            self.apply_private(FunctionExpr::RollingExpr(rolling_function, options))
+            self.apply_private(FunctionExpr::RollingExpr(rolling_function(options)))
         }
     }
 
@@ -1239,7 +1239,11 @@ impl Expr {
     /// See: [`RollingAgg::rolling_min`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_min(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(options, RollingFunction::Min, RollingFunction::MinBy)
+        self.finish_rolling(
+            options,
+            &|options| RollingFunction::Min(options),
+            &|options| RollingFunction::MinBy(options),
+        )
     }
 
     /// Apply a rolling maximum.
@@ -1247,7 +1251,11 @@ impl Expr {
     /// See: [`RollingAgg::rolling_max`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_max(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(options, RollingFunction::Max, RollingFunction::MaxBy)
+        self.finish_rolling(
+            options,
+            &|options| RollingFunction::Max(options),
+            &|options| RollingFunction::MaxBy(options),
+        )
     }
 
     /// Apply a rolling mean.
@@ -1255,7 +1263,11 @@ impl Expr {
     /// See: [`RollingAgg::rolling_mean`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_mean(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(options, RollingFunction::Mean, RollingFunction::MeanBy)
+        self.finish_rolling(
+            options,
+            &|options| RollingFunction::Mean(options),
+            &|options| RollingFunction::MeanBy(options),
+        )
     }
 
     /// Apply a rolling sum.
@@ -1263,7 +1275,11 @@ impl Expr {
     /// See: [`RollingAgg::rolling_sum`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_sum(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(options, RollingFunction::Sum, RollingFunction::SumBy)
+        self.finish_rolling(
+            options,
+            &|options| RollingFunction::Sum(options),
+            &|options| RollingFunction::SumBy(options),
+        )
     }
 
     /// Apply a rolling median.
@@ -1271,7 +1287,11 @@ impl Expr {
     /// See: [`RollingAgg::rolling_median`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_median(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(options, RollingFunction::Median, RollingFunction::MedianBy)
+        self.finish_rolling(
+            options,
+            &|options| RollingFunction::Median(options),
+            &|options| RollingFunction::MedianBy(options),
+        )
     }
 
     /// Apply a rolling quantile.
@@ -1281,28 +1301,39 @@ impl Expr {
     pub fn rolling_quantile(self, options: RollingOptions) -> Expr {
         self.finish_rolling(
             options,
-            RollingFunction::Quantile,
-            RollingFunction::QuantileBy,
+            &|options| RollingFunction::Quantile(options),
+            &|options| RollingFunction::QuantileBy(options),
         )
     }
 
     /// Apply a rolling variance
     #[cfg(feature = "rolling_window")]
     pub fn rolling_var(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(options, RollingFunction::Var, RollingFunction::VarBy)
+        self.finish_rolling(
+            options,
+            &|options| RollingFunction::Var(options),
+            &|options| RollingFunction::VarBy(options),
+        )
     }
 
     /// Apply a rolling std-dev
     #[cfg(feature = "rolling_window")]
     pub fn rolling_std(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(options, RollingFunction::Std, RollingFunction::StdBy)
+        self.finish_rolling(
+            options,
+            &|options| RollingFunction::Std(options),
+            &|options| RollingFunction::StdBy(options),
+        )
     }
 
     /// Apply a rolling skew
     #[cfg(feature = "rolling_window")]
     #[cfg(feature = "moment")]
     pub fn rolling_skew(self, window_size: usize, bias: bool) -> Expr {
-        self.apply_private(FunctionExpr::RollingSkew { window_size, bias })
+        self.apply_private(FunctionExpr::RollingExpr(RollingFunction::Skew(
+            window_size,
+            bias,
+        )))
     }
 
     #[cfg(feature = "rolling_window")]
