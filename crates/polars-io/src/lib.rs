@@ -48,7 +48,6 @@ use polars_core::prelude::*;
 
 #[cfg(any(
     feature = "ipc",
-    feature = "json",
     feature = "avro",
     feature = "ipc_streaming",
 ))]
@@ -96,7 +95,6 @@ pub trait ArrowReader {
 
 #[cfg(any(
     feature = "ipc",
-    feature = "json",
     feature = "avro",
     feature = "ipc_streaming",
 ))]

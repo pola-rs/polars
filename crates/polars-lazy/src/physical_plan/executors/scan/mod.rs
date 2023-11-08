@@ -8,7 +8,7 @@ mod ndjson;
 mod parquet;
 
 use std::mem;
-#[cfg(any(feature = "parquet", feature = "csv", feature = "ipc", feature = "cse"))]
+#[cfg(any(feature = "parquet", feature = "ipc", feature = "cse"))]
 use std::ops::Deref;
 
 #[cfg(feature = "csv")]
