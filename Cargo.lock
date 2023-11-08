@@ -2277,6 +2277,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-doc-examples"
+version = "0.34.2"
+dependencies = [
+ "chrono",
+ "polars",
+ "rand 0.8.5",
+]
+
+[[package]]
 name = "polars-error"
 version = "0.34.2"
 dependencies = [

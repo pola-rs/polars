@@ -1,0 +1,37 @@
+[package]
+name = "polars-doc-examples"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "Code examples included in the Polars documentation website"
+
+[dependencies]
+chrono = { workspace = true }
+rand = { workspace = true }
+
+[dependencies.polars]
+workspace = true
+
+[[bin]]
+name = "home"
+path = "home/example.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-basics-expressions"
+path = "user-guide/basics/expressions.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-basics-joins"
+path = "user-guide/basics/joins.rs"
+[[bin]]
+name = "user-guide-basics-reading-writing"
+path = "user-guide/basics/reading-writing.rs"
+required-features = ["polars/json"]
+[[bin]]
+name = "user-guide-basics-series-dataframes"
+path = "user-guide/basics/series-dataframes.rs"
+required-features = ["polars/describe"]
+
