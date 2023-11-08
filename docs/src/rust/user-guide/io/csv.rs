@@ -9,6 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .finish()
         .unwrap();
     // --8<-- [end:read]
+    println!("{}", df);
 
     // --8<-- [start:write]
     let mut df = df!(
@@ -22,8 +23,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:write]
 
     // --8<-- [start:scan]
-    let df = LazyCsvReader::new("./test.csv").finish().unwrap();
+    let lf = LazyCsvReader::new("./test.csv").finish().unwrap();
     // --8<-- [end:scan]
+    println!("{}", lf.collect()?);
 
     Ok(())
 }

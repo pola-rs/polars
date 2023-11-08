@@ -60,5 +60,19 @@ required-features = ["polars/lazy"]
 name = "user-guide-io-cloud-storage"
 path = "user-guide/io/cloud-storage.rs"
 required-features = ["polars/csv"]
+[[bin]]
+name = "user-guide-io-csv"
+path = "user-guide/io/csv.rs"
+required-features = ["polars/csv"]
+[[bin]]
+name = "user-guide-io-json"
+path = "user-guide/io/json.rs"
+required-features = ["polars/json"]
+[[bin]]
+name = "user-guide-io-parquet"
+path = "user-guide/io/parquet.rs"
+required-features = ["polars/parquet"]
+
+
 
 

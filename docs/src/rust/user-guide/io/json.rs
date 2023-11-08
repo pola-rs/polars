@@ -7,11 +7,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut file = std::fs::File::open("docs/data/path.json").unwrap();
     let df = JsonReader::new(&mut file).finish().unwrap();
     // --8<-- [end:read]
+    println!("{}", df);
 
     // --8<-- [start:readnd]
     let mut file = std::fs::File::open("docs/data/path.json").unwrap();
     let df = JsonLineReader::new(&mut file).finish().unwrap();
     // --8<-- [end:readnd]
+    println!("{}", df);
 
     // --8<-- [start:write]
     let mut df = df!(
@@ -36,10 +38,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:write]
 
     // --8<-- [start:scan]
-    let df = LazyJsonLineReader::new("docs/data/path.json".to_string())
+    let lf = LazyJsonLineReader::new("docs/data/path.json")
         .finish()
         .unwrap();
     // --8<-- [end:scan]
+    println!("{}", lf.collect()?);
 
     Ok(())
 }
