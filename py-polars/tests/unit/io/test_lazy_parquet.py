@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -425,3 +426,13 @@ def test_parquet_many_row_groups_12297(tmp_path: Path) -> None:
     df = pl.DataFrame({"x": range(100)})
     df.write_parquet(file_path, row_group_size=5, use_pyarrow=True)
     assert_frame_equal(pl.scan_parquet(file_path).collect(), df)
+
+
+@pytest.mark.write_disk()
+def test_row_count_empty_file(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "test.parquet"
+    pl.DataFrame({"a": []}).write_parquet(file_path)
+    assert pl.scan_parquet(file_path).with_row_count(
+        "idx"
+    ).collect().schema == OrderedDict([("idx", pl.UInt32), ("a", pl.Float32)])
