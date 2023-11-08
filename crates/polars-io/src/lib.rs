@@ -16,7 +16,9 @@ pub mod json;
 #[cfg(feature = "json")]
 pub mod ndjson;
 #[cfg(feature = "cloud")]
-pub use crate::cloud::glob as async_glob;
+pub use cloud::glob as async_glob;
+#[cfg(feature = "cloud")]
+pub use pl_async::increase_concurrency_budget;
 
 pub mod mmap;
 mod options;
