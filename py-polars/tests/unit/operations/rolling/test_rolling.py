@@ -834,6 +834,10 @@ def test_rolling_weighted_quantile_10031() -> None:
     )
 
 
+def test_rolling_meta_eq_10101() -> None:
+    assert pl.col("A").rolling_sum(10).meta.eq(pl.col("A").rolling_sum(10)) == True
+
+
 def test_rolling() -> None:
     a = pl.Series("a", [1, 2, 3, 2, 1])
     assert_series_equal(a.rolling_min(2), pl.Series("a", [None, 1, 2, 2, 1]))
