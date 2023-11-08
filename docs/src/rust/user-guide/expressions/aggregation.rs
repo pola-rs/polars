@@ -2,8 +2,9 @@ use polars::prelude::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:dataframe]
-    use reqwest::blocking::Client;
     use std::io::Cursor;
+
+    use reqwest::blocking::Client;
 
     let url = "https://theunitedstates.io/congress-legislators/legislators-historical.csv";
 

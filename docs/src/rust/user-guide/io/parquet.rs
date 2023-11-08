@@ -1,14 +1,11 @@
 use polars::prelude::*;
 
-fn main() -> Result<(), Box<dyn std::error::Error>>{
-
-    """
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:read]
     let mut file = std::fs::File::open("docs/data/path.parquet").unwrap();
 
     let df = ParquetReader::new(&mut file).finish().unwrap();
     // --8<-- [end:read]
-    """
 
     // --8<-- [start:write]
     let mut df = df!(
@@ -23,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
 
     // --8<-- [start:scan]
     let args = ScanArgsParquet::default();
-    let df = LazyFrame::scan_parquet("./file.parquet",args).unwrap();
+    let df = LazyFrame::scan_parquet("./file.parquet", args).unwrap();
     // --8<-- [end:scan]
 
     Ok(())

@@ -2,8 +2,9 @@ use polars::prelude::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:dataframe]
-    use chrono::prelude::*;
     use std::fs::File;
+
+    use chrono::prelude::*;
 
     let mut df: DataFrame = df!(
         "integer" => &[1, 2, 3],
