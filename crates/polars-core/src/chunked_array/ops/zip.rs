@@ -127,7 +127,7 @@ where
     ) -> PolarsResult<ChunkedArray<T>> {
         // broadcasting path
         if self.len() != mask.len() || other.len() != mask.len() {
-            impl_ternary_broadcast!(self, self.len(), mask.len(), other.len(), other, mask, T)
+            impl_ternary_broadcast!(self, self.len(), other.len(), mask.len(), other, mask, T)
         } else {
             zip_with(self, other, mask)
         }
