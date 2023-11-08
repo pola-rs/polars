@@ -1,4 +1,3 @@
-use std::hash::{BuildHasher, Hash};
 use std::ops::Range;
 
 // The ith portion of a range split in k (as equal as possible) parts.
@@ -23,9 +22,4 @@ pub fn flatten<T: Clone, R: AsRef<[T]>>(bufs: &[R], len: Option<usize>) -> Vec<T
         out.extend_from_slice(b.as_ref());
     }
     out
-}
-
-#[inline]
-pub fn get_hash<T: Hash, B: BuildHasher>(value: T, hb: &B) -> u64 {
-    hb.hash_one(value)
 }
