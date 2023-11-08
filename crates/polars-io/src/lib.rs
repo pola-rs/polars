@@ -46,11 +46,7 @@ pub use options::*;
 use polars_core::frame::ArrowChunk;
 use polars_core::prelude::*;
 
-#[cfg(any(
-    feature = "ipc",
-    feature = "avro",
-    feature = "ipc_streaming",
-))]
+#[cfg(any(feature = "ipc", feature = "avro", feature = "ipc_streaming",))]
 use crate::predicates::PhysicalIoExpr;
 
 pub trait SerReader<R>
@@ -93,11 +89,7 @@ pub trait ArrowReader {
     fn next_record_batch(&mut self) -> PolarsResult<Option<ArrowChunk>>;
 }
 
-#[cfg(any(
-    feature = "ipc",
-    feature = "avro",
-    feature = "ipc_streaming",
-))]
+#[cfg(any(feature = "ipc", feature = "avro", feature = "ipc_streaming",))]
 pub(crate) fn finish_reader<R: ArrowReader>(
     mut reader: R,
     rechunk: bool,

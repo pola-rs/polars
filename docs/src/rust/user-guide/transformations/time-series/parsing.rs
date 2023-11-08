@@ -23,9 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let df = df
         .clone()
         .lazy()
-        .with_columns([col("Date")
-            .str()
-            .to_date(StrptimeOptions::default())])
+        .with_columns([col("Date").str().to_date(StrptimeOptions::default())])
         .collect()?;
     println!("{}", &df);
     // --8<-- [end:cast]

@@ -42,11 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	"ts"=> &["-1300-05-23", "-1400-03-02"],
 	"values"=> &[3, 4])?
     .lazy()
-    .with_column(
-        col("ts")
-            .str()
-            .to_date(StrptimeOptions::default()),
-    )
+    .with_column(col("ts").str().to_date(StrptimeOptions::default()))
     .collect()?;
 
     let negative_dates_filtered_df = negative_dates_df
