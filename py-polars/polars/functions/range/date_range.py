@@ -389,11 +389,11 @@ def _warn_for_deprecated_date_range_use(
     if (
         isinstance(start, datetime)
         or isinstance(end, datetime)
-        or "s" in interval
-        or "h" in interval
-        or ("m" in interval and "mo" not in interval)
         or time_unit is not None
         or time_zone is not None
+        or ("h" in interval)
+        or ("m" in interval and "mo" not in interval)
+        or ("s" in interval.replace("saturating", ""))
     ):
         issue_deprecation_warning(
             "Creating Datetime ranges using `date_range(s)` is deprecated."
