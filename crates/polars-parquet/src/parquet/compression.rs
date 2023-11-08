@@ -4,6 +4,7 @@ pub use super::parquet_bridge::{
 };
 use crate::parquet::error::{Error, Result};
 
+#[cfg(any(feature = "snappy", feature = "l4z"))]
 fn inner_compress<G: Fn(usize) -> Result<usize>, F: Fn(&[u8], &mut [u8]) -> Result<usize>>(
     input: &[u8],
     output: &mut Vec<u8>,
@@ -24,10 +25,11 @@ fn inner_compress<G: Fn(usize) -> Result<usize>, F: Fn(&[u8], &mut [u8]) -> Resu
 /// to `output_buf`.
 /// Note that you'll need to call `clear()` before reusing the same `output_buf`
 /// across different `compress` calls.
+#[allow(unused_variables)]
 pub fn compress(
     compression: CompressionOptions,
     input_buf: &[u8],
-    output_buf: &mut Vec<u8>,
+    #[allow(clippy::ptr_arg)] output_buf: &mut Vec<u8>,
 ) -> Result<()> {
     match compression {
         #[cfg(feature = "brotli")]
@@ -120,6 +122,7 @@ pub fn compress(
 
 /// Decompresses data stored in slice `input_buf` and writes output to `output_buf`.
 /// Returns the total number of bytes written.
+#[allow(unused_variables)]
 pub fn decompress(compression: Compression, input_buf: &[u8], output_buf: &mut [u8]) -> Result<()> {
     match compression {
         #[cfg(feature = "brotli")]

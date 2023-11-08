@@ -709,6 +709,8 @@ impl Series {
             dt => panic!("date not implemented for {dt:?}"),
         }
     }
+
+    #[allow(unused_variables)]
     pub(crate) fn into_datetime(self, timeunit: TimeUnit, tz: Option<TimeZone>) -> Series {
         #[cfg(not(feature = "dtype-datetime"))]
         {
@@ -734,6 +736,7 @@ impl Series {
         }
     }
 
+    #[allow(unused_variables)]
     pub(crate) fn into_duration(self, timeunit: TimeUnit) -> Series {
         #[cfg(not(feature = "dtype-duration"))]
         {

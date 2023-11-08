@@ -62,7 +62,7 @@ jobs:
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Run cargo clippy
-        run: cargo clippy -p polars -- -D warnings
+        run: cargo clippy --all-targets --locked -- -D warnings
 
   rustfmt:
     if: github.ref_name != 'main'

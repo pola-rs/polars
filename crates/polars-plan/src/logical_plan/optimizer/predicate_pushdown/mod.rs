@@ -329,6 +329,7 @@ impl<'a> PredicatePushDown<'a> {
                     #[cfg(feature = "csv")]
                     FileScan::Csv {..} => options.n_rows.is_none(),
                     FileScan::Anonymous {function, ..} => function.allows_predicate_pushdown(),
+                    #[allow(unreachable_patterns)]
                     _ => true
                 };
                 do_optimization &= predicate.is_some();

@@ -1,5 +1,6 @@
 #[cfg(feature = "dtype-struct")]
 use arrow::legacy::trusted_len::TrustedLenPush;
+#[cfg(feature = "dtype-date")]
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
@@ -736,6 +737,7 @@ impl<'a> AnyValue<'a> {
             },
             #[cfg(feature = "dtype-decimal")]
             Decimal(val, scale) => Decimal(val, scale),
+            #[allow(unreachable_patterns)]
             dt => polars_bail!(ComputeError: "cannot get static any-value from {}", dt),
         };
         Ok(av)

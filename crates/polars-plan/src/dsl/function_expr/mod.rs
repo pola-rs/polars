@@ -11,6 +11,7 @@ mod bounds;
 mod cat;
 #[cfg(feature = "round_series")]
 mod clip;
+#[cfg(feature = "dtype-struct")]
 mod coerce;
 mod concat;
 mod correlation;

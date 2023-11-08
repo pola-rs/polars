@@ -88,6 +88,7 @@ impl PushNode for &mut [Option<Node>] {
 }
 
 /// A projection that only takes a column or a column + alias.
+#[cfg(feature = "meta")]
 pub(crate) fn aexpr_is_simple_projection(current_node: Node, arena: &Arena<AExpr>) -> bool {
     arena
         .iter(current_node)

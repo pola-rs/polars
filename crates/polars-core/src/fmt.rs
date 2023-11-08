@@ -462,10 +462,12 @@ fn prepare_row(
     row_strings
 }
 
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 fn env_is_true(varname: &str) -> bool {
     std::env::var(varname).as_deref().unwrap_or("0") == "1"
 }
 
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 fn fmt_df_shape((shape0, shape1): &(usize, usize)) -> String {
     // e.g. (1_000_000, 4_000)
     format!(
@@ -867,16 +869,21 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
     }
 }
 
+#[cfg(feature = "dtype-duration")]
+const NAMES: [&str; 4] = ["d", "h", "m", "s"];
+#[cfg(feature = "dtype-duration")]
 const SIZES_NS: [i64; 4] = [
     86_400_000_000_000,
     3_600_000_000_000,
     60_000_000_000,
     1_000_000_000,
 ];
-const NAMES: [&str; 4] = ["d", "h", "m", "s"];
+#[cfg(feature = "dtype-duration")]
 const SIZES_US: [i64; 4] = [86_400_000_000, 3_600_000_000, 60_000_000, 1_000_000];
+#[cfg(feature = "dtype-duration")]
 const SIZES_MS: [i64; 4] = [86_400_000, 3_600_000, 60_000, 1_000];
 
+#[cfg(feature = "dtype-duration")]
 fn fmt_duration_ns(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     if v == 0 {
         return write!(f, "0ns");
@@ -892,6 +899,7 @@ fn fmt_duration_ns(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     Ok(())
 }
 
+#[cfg(feature = "dtype-duration")]
 fn fmt_duration_us(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     if v == 0 {
         return write!(f, "0µs");
@@ -905,6 +913,7 @@ fn fmt_duration_us(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     Ok(())
 }
 
+#[cfg(feature = "dtype-duration")]
 fn fmt_duration_ms(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     if v == 0 {
         return write!(f, "0ms");
@@ -916,6 +925,7 @@ fn fmt_duration_ms(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     Ok(())
 }
 
+#[cfg(feature = "dtype-duration")]
 fn format_duration(f: &mut Formatter, v: i64, sizes: &[i64], names: &[&str]) -> fmt::Result {
     for i in 0..4 {
         let whole_num = if i == 0 {
