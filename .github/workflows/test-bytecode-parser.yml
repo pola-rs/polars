@@ -30,5 +30,6 @@ jobs:
         run: pip install ipython numpy pytest
 
       - name: Run tests
-        working-directory: py-polars
-        run: PYTHONPATH=polars/utils python -m tests/test_udfs.py
+        env:
+          PYTHONPATH: py-polars:py-polars/polars/utils
+        run: pytest .github/scripts/test_bytecode_parser.py

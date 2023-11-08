@@ -1,5 +1,5 @@
 """
-Minimal test of the BytecodeParser class.
+Minimal testing script of the BytecodeParser class.
 
 This can be run without polars installed, and so can be easily run in CI
 over all supported Python versions.
@@ -8,7 +8,7 @@ All that needs to be installed is pytest, numpy, and ipython.
 
 Usage:
 
-    $ PYTHONPATH=polars/utils python -m pytest tests/test_udfs.py
+    $ PYTHONPATH=polars/utils pytest tests/udf_warning_test_script.py
 
 Running it without `PYTHONPATH` set will result in the test being skipped.
 """
@@ -18,7 +18,6 @@ from datetime import datetime  # noqa: F401
 from typing import Any, Callable
 
 import pytest
-
 from tests.unit.operations.map.test_inefficient_map_warning import (
     MY_DICT,
     NOOP_TEST_CASES,
@@ -31,15 +30,7 @@ from tests.unit.operations.map.test_inefficient_map_warning import (
     TEST_CASES,
 )
 def test_bytecode_parser_expression(col: str, func: str, expected: str) -> None:
-    try:
-        import udfs  # type: ignore[import-not-found]
-    except ModuleNotFoundError as exc:
-        assert "No module named 'udfs'" in str(exc)  # noqa: PT017
-        # Skip test if udfs can't be imported because it's not in the path.
-        # Prefer this over importorskip, so that if `udfs` can't be
-        # imported for some other reason, then the test
-        # won't be skipped.
-        return
+    import udfs  # type: ignore[import-not-found]
 
     bytecode_parser = udfs.BytecodeParser(eval(func), map_target="expr")
     result = bytecode_parser.to_expression(col)
@@ -53,15 +44,7 @@ def test_bytecode_parser_expression(col: str, func: str, expected: str) -> None:
 def test_bytecode_parser_expression_in_ipython(
     col: str, func: Callable[[Any], Any], expected: str
 ) -> None:
-    try:
-        import udfs  # noqa: F401
-    except ModuleNotFoundError as exc:
-        assert "No module named 'udfs'" in str(exc)  # noqa: PT017
-        # Skip test if udfs can't be imported because it's not in the path.
-        # Prefer this over importorskip, so that if `udfs` can't be
-        # imported for some other reason, then the test
-        # won't be skipped.
-        return
+    import udfs  # noqa: F401
 
     script = (
         "import udfs; "
@@ -83,15 +66,7 @@ def test_bytecode_parser_expression_in_ipython(
     NOOP_TEST_CASES,
 )
 def test_bytecode_parser_expression_noop(func: str) -> None:
-    try:
-        import udfs
-    except ModuleNotFoundError as exc:
-        assert "No module named 'udfs'" in str(exc)  # noqa: PT017
-        # Skip test if udfs can't be imported because it's not in the path.
-        # Prefer this over importorskip, so that if `udfs` can't be
-        # imported for some other reason, then the test
-        # won't be skipped.
-        return
+    import udfs
 
     parser = udfs.BytecodeParser(eval(func), map_target="expr")
     assert not parser.can_attempt_rewrite() or not parser.to_expression("x")
@@ -102,15 +77,7 @@ def test_bytecode_parser_expression_noop(func: str) -> None:
     NOOP_TEST_CASES,
 )
 def test_bytecode_parser_expression_noop_in_ipython(func: str) -> None:
-    try:
-        import udfs  # noqa: F401
-    except ModuleNotFoundError as exc:
-        assert "No module named 'udfs'" in str(exc)  # noqa: PT017
-        # Skip test if udfs can't be imported because it's not in the path.
-        # Prefer this over importorskip, so that if `udfs` can't be
-        # imported for some other reason, then the test
-        # won't be skipped.
-        return
+    import udfs  # noqa: F401
 
     script = (
         "import udfs; "
@@ -124,13 +91,10 @@ def test_bytecode_parser_expression_noop_in_ipython(func: str) -> None:
 
 
 def test_local_imports() -> None:
-    try:
-        import udfs
-    except ModuleNotFoundError as exc:
-        assert "No module named 'udfs'" in str(exc)  # noqa: PT017
-        return
     import datetime as dt  # noqa: F811
     import json
+
+    import udfs
 
     bytecode_parser = udfs.BytecodeParser(lambda x: json.loads(x), map_target="expr")
     result = bytecode_parser.to_expression("x")
