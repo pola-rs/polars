@@ -187,7 +187,7 @@ async fn download_row_group(
         .unwrap();
 
     let result = async_reader
-        .get_range(offset as usize, (max_offset + len) as usize)
+        .get_range(offset as usize, (max_offset - offset + len) as usize)
         .await
         .map(|bytes| {
             let base_offset = offset;
