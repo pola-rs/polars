@@ -256,3 +256,19 @@ def test_when_then_deprecated_string_input() -> None:
 
     expected = pl.Series("when", ["b", "c"])
     assert_series_equal(result.to_series(), expected)
+
+
+def test_predicate_broadcast() -> None:
+    df = pl.DataFrame(
+        {
+            "key": ["a", "a", "b", "b", "c", "c"],
+            "val": [1, 2, 3, 4, 5, 6],
+        }
+    )
+    out = df.group_by("key", maintain_order=True).agg(
+        agg=pl.when(pl.col("val").min() >= 3).then(pl.col("val")),
+    )
+    assert out.to_dict(as_series=False) == {
+        "key": ["a", "b", "c"],
+        "agg": [[None, None], [3, 4], [5, 6]],
+    }
