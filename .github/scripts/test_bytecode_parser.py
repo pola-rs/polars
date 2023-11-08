@@ -8,9 +8,9 @@ All that needs to be installed is pytest, numpy, and ipython.
 
 Usage:
 
-    $ PYTHONPATH="py-polars:py-polars/polars/utils" pytest .github/scripts/test_bytecode_parser.py
+    $ PYTHONPATH=py-polars pytest .github/scripts/test_bytecode_parser.py
 
-Running it without `PYTHONPATH` set will result in the test being skipped.
+Running it without `PYTHONPATH` set will result in the test failing.
 """
 import datetime as dt  # noqa: F401
 import subprocess
@@ -18,6 +18,7 @@ from datetime import datetime  # noqa: F401
 from typing import Any, Callable
 
 import pytest
+from polars.utils.udfs import BytecodeParser
 from tests.unit.operations.map.test_inefficient_map_warning import (
     MY_DICT,
     NOOP_TEST_CASES,
@@ -30,9 +31,7 @@ from tests.unit.operations.map.test_inefficient_map_warning import (
     TEST_CASES,
 )
 def test_bytecode_parser_expression(col: str, func: str, expected: str) -> None:
-    import udfs  # type: ignore[import-not-found]
-
-    bytecode_parser = udfs.BytecodeParser(eval(func), map_target="expr")
+    bytecode_parser = BytecodeParser(eval(func), map_target="expr")
     result = bytecode_parser.to_expression(col)
     assert result == expected
 
@@ -44,16 +43,14 @@ def test_bytecode_parser_expression(col: str, func: str, expected: str) -> None:
 def test_bytecode_parser_expression_in_ipython(
     col: str, func: Callable[[Any], Any], expected: str
 ) -> None:
-    import udfs  # noqa: F401
-
     script = (
-        "import udfs; "
+        "from polars.utils.udfs import BytecodeParser; "
         "import datetime as dt; "
         "from datetime import datetime; "
         "import numpy as np; "
         "import json; "
         f"MY_DICT = {MY_DICT};"
-        f'bytecode_parser = udfs.BytecodeParser({func}, map_target="expr");'
+        f'bytecode_parser = BytecodeParser({func}, map_target="expr");'
         f'print(bytecode_parser.to_expression("{col}"));'
     )
 
@@ -66,9 +63,7 @@ def test_bytecode_parser_expression_in_ipython(
     NOOP_TEST_CASES,
 )
 def test_bytecode_parser_expression_noop(func: str) -> None:
-    import udfs
-
-    parser = udfs.BytecodeParser(eval(func), map_target="expr")
+    parser = BytecodeParser(eval(func), map_target="expr")
     assert not parser.can_attempt_rewrite() or not parser.to_expression("x")
 
 
@@ -77,12 +72,10 @@ def test_bytecode_parser_expression_noop(func: str) -> None:
     NOOP_TEST_CASES,
 )
 def test_bytecode_parser_expression_noop_in_ipython(func: str) -> None:
-    import udfs  # noqa: F401
-
     script = (
-        "import udfs; "
+        "from polars.utils.udfs import BytecodeParser; "
         f"MY_DICT = {MY_DICT};"
-        f'parser = udfs.BytecodeParser({func}, map_target="expr");'
+        f'parser = BytecodeParser({func}, map_target="expr");'
         f'print(not parser.can_attempt_rewrite() or not parser.to_expression("x"));'
     )
 
@@ -94,14 +87,12 @@ def test_local_imports() -> None:
     import datetime as dt  # noqa: F811
     import json
 
-    import udfs
-
-    bytecode_parser = udfs.BytecodeParser(lambda x: json.loads(x), map_target="expr")
+    bytecode_parser = BytecodeParser(lambda x: json.loads(x), map_target="expr")
     result = bytecode_parser.to_expression("x")
     expected = 'pl.col("x").str.json_extract()'
     assert result == expected
 
-    bytecode_parser = udfs.BytecodeParser(
+    bytecode_parser = BytecodeParser(
         lambda x: dt.datetime.strptime(x, "%Y-%m-%d"), map_target="expr"
     )
     result = bytecode_parser.to_expression("x")
