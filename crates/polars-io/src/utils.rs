@@ -37,9 +37,7 @@ pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
             // we have to read to an owned buffer to get the bytes.
             let mut bytes = Vec::with_capacity(1024 * 128);
             reader.read_to_end(&mut bytes)?;
-            if !bytes.is_empty()
-                && (bytes[bytes.len() - 1] != b'\n' || bytes[bytes.len() - 1] != b'\r')
-            {
+            if !bytes.is_empty() && (bytes[bytes.len() - 1] != b'\n') {
                 bytes.push(b'\n')
             }
             Ok(ReaderBytes::Owned(bytes))

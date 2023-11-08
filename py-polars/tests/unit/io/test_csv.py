@@ -1639,3 +1639,19 @@ def test_custom_writeable_object() -> None:
     df.write_csv(buf)  # type: ignore[call-overload]
 
     assert b"".join(buf.writes) == b"a,b\n10,x\n20,y\n30,z\n"
+
+
+def test_read_filelike_object(io_files_path: Path) -> None:
+    # multi columns
+    file_path = io_files_path / "small.csv"
+    expect = pl.read_csv(file_path)
+    with file_path.open("rb") as f:
+        read_df = pl.read_csv(f)
+    assert_frame_equal(read_df, expect)
+
+    # single column
+    file_path = io_files_path / "single_column.csv"
+    expect = pl.read_csv(file_path)
+    with file_path.open("rb") as f:
+        read_df = pl.read_csv(f)
+    assert_frame_equal(read_df, expect)
