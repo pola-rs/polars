@@ -258,7 +258,7 @@ def test_when_then_deprecated_string_input() -> None:
     assert_series_equal(result.to_series(), expected)
 
 
-def test_() -> None:
+def test_predicate_broadcast() -> None:
     df = pl.DataFrame(
         {
             "key": ["a", "a", "b", "b", "c", "c"],
