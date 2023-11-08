@@ -78,7 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = ratings
         .clone()
         .lazy()
-        .with_columns([as_struct(&[col("Count"), col("Avg_Rating")])
+        .with_columns([as_struct(vec![col("Count"), col("Avg_Rating")])
             .rank(
                 RankOptions {
                     method: RankMethod::Dense,

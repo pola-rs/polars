@@ -9,11 +9,12 @@ repository = { workspace = true }
 description = "Code examples included in the Polars documentation website"
 
 [dependencies]
-chrono = { workspace = true }
-rand = { workspace = true }
-tokio = { workspace = true }
 aws-config = { version = "0.57" }
 aws-sdk-s3 = { version = "0.35" }
+chrono = { workspace = true }
+rand = { workspace = true }
+reqwest = { workspace = true, features = ["blocking"] }
+tokio = { workspace = true }
 
 [dependencies.polars]
 workspace = true
@@ -55,6 +56,55 @@ required-features = ["polars/lazy"]
 name = "user-guide-concepts-streaming"
 path = "user-guide/concepts/streaming.rs"
 required-features = ["polars/lazy"]
+
+[[bin]]
+name = "user-guide-expressions-aggregation"
+path = "user-guide/expressions/aggregation.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-expressions-casting"
+path = "user-guide/expressions/casting.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-expressions-column-selections"
+path = "user-guide/expressions/column-selections.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-expressions-folds"
+path = "user-guide/expressions/folds.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-expressions-functions"
+path = "user-guide/expressions/functions.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-expressions-lists"
+path = "user-guide/expressions/lists.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-expressions-null"
+path = "user-guide/expressions/null.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-expressions-operators"
+path = "user-guide/expressions/operators.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-expressions-strings"
+path = "user-guide/expressions/strings.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-expressions-structs"
+path = "user-guide/expressions/structs.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-expressions-user-defined-functions"
+path = "user-guide/expressions/user-defined-functions.rs"
+required-features = ["polars/lazy"]
+# [[bin]]
+# name = "user-guide-expressions-window"
+# path = "user-guide/expressions/window.rs"
+# required-features = ["polars/lazy"]
 
 [[bin]]
 name = "user-guide-io-cloud-storage"

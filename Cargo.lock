@@ -2841,6 +2841,7 @@ dependencies = [
  "chrono",
  "polars",
  "rand 0.8.5",
+ "reqwest",
  "tokio",
 ]
 

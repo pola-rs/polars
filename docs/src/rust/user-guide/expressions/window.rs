@@ -65,19 +65,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:rules]
     // aggregate and broadcast within a group
     // output type: -> i32
-    sum("foo").over([col("groups")])
+    sum("foo").over([col("groups")]);
     // sum within a group and multiply with group elements
     // output type: -> i32
     (col("x").sum() * col("y"))
         .over([col("groups")])
-        .alias("x1")
+        .alias("x1");
     // sum within a group and multiply with group elements
     // and aggregate the group to a list
     // output type: -> ChunkedArray<i32>
     (col("x").sum() * col("y"))
         .list()
         .over([col("groups")])
-        .alias("x2")
+        .alias("x2");
     // note that it will require an explicit `list()` call
     // sum within a group and multiply with group elements
     // and aggregate the group to a list
