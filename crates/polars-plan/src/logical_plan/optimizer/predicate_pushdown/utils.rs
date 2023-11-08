@@ -366,21 +366,20 @@ pub(super) fn aexpr_blocks_predicate_pushdown(node: Node, expr_arena: &Arena<AEx
                 ..
             } => {
                 // Handles a special case where the expr contains a series, but it is being
-                // used as part the RHS of an `is_in` and not being projected, so it can be
-                // pushed down.
-                loop {
-                    if let Some(rhs) = input.get(1) {
-                        if matches!(expr_arena.get(*rhs), AExpr::Literal { .. }) {
-                            let mut local_nodes = Vec::<Node>::with_capacity(4);
-                            ae.nodes(&mut local_nodes);
+                // used as part the RHS of an `is_in`, so it can be pushed down as it is not
+                // being projected.
+                let mut transferred_local_nodes = false;
+                if let Some(rhs) = input.get(1) {
+                    if matches!(expr_arena.get(*rhs), AExpr::Literal { .. }) {
+                        let mut local_nodes = Vec::<Node>::with_capacity(4);
+                        ae.nodes(&mut local_nodes);
 
-                            stack.extend(local_nodes.into_iter().filter(|node| node != rhs));
-                            break;
-                        }
-                    };
-
+                        stack.extend(local_nodes.into_iter().filter(|node| node != rhs));
+                        transferred_local_nodes = true;
+                    }
+                };
+                if !transferred_local_nodes {
                     ae.nodes(&mut stack);
-                    break;
                 }
             },
             ae => {
