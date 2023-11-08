@@ -9,8 +9,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .group_by(vec![col("species")])
         .agg([col("*").sum()]);
 
-    let df = q.collect();
+    let df = q.collect()?;
     // --8<-- [end:example]
+
+    println!("{}", df);
 
     Ok(())
 }

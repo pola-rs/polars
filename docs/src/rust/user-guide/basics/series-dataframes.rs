@@ -49,7 +49,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:tail]
 
     // --8<-- [start:sample]
-    println!("{}", df.sample_n(2, false, true, None)?);
+    let n = Series::new("n", [2]);
+    println!("{}", df.sample_n(&n, false, true, None)?);
     // --8<-- [end:sample]
 
     // --8<-- [start:describe]
