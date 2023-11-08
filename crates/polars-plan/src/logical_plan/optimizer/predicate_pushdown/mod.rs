@@ -293,7 +293,7 @@ impl<'a> PredicatePushDown<'a> {
 
 
                             for path in paths.as_ref().iter() {
-                                file_info.update_hive_partitions(path);
+                                file_info.update_hive_partitions(path)?;
                                 let hive_part_stats = file_info.hive_parts.as_deref().ok_or_else(|| polars_err!(ComputeError: "cannot combine hive partitioned directories with non-hive partitioned ones"))?;
 
                                 if stats_evaluator.should_read(hive_part_stats.get_statistics())? {

@@ -69,7 +69,7 @@ impl ParquetExec {
                 .iter()
                 .map(|path| {
                     let mut file_info = self.file_info.clone();
-                    file_info.update_hive_partitions(path);
+                    file_info.update_hive_partitions(path)?;
 
                     let hive_partitions = file_info
                         .hive_parts
@@ -252,7 +252,7 @@ impl ParquetExec {
                             offset: rc.offset + *cumulative_read as IdxSize,
                         });
 
-                        file_info.update_hive_partitions(path);
+                        file_info.update_hive_partitions(path)?;
 
                         let hive_partitions = file_info
                             .hive_parts
