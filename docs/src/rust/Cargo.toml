@@ -11,6 +11,9 @@ description = "Code examples included in the Polars documentation website"
 [dependencies]
 chrono = { workspace = true }
 rand = { workspace = true }
+tokio = { workspace = true }
+aws-config = { version = "0.57" }
+aws-sdk-s3 = { version = "0.35" }
 
 [dependencies.polars]
 workspace = true
@@ -19,6 +22,7 @@ workspace = true
 name = "home"
 path = "home/example.rs"
 required-features = ["polars/lazy"]
+
 [[bin]]
 name = "user-guide-basics-expressions"
 path = "user-guide/basics/expressions.rs"
@@ -34,4 +38,27 @@ required-features = ["polars/json"]
 name = "user-guide-basics-series-dataframes"
 path = "user-guide/basics/series-dataframes.rs"
 required-features = ["polars/describe"]
+
+[[bin]]
+name = "user-guide-concepts-contexts"
+path = "user-guide/concepts/contexts.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-concepts-expressions"
+path = "user-guide/concepts/expressions.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-concepts-lazy-vs-eager"
+path = "user-guide/concepts/lazy-vs-eager.rs"
+required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-concepts-streaming"
+path = "user-guide/concepts/streaming.rs"
+required-features = ["polars/lazy"]
+
+[[bin]]
+name = "user-guide-io-cloud-storage"
+path = "user-guide/io/cloud-storage.rs"
+required-features = ["polars/csv"]
+
 
