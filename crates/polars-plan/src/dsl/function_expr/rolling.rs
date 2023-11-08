@@ -44,6 +44,7 @@ impl Display for RollingFunction {
             VarBy(_) => "rolling_var_by",
             Std(_) => "rolling_std",
             StdBy(_) => "rolling_std_by",
+            #[cfg(feature = "moment")]
             Skew(..) => "rolling_skew",
         };
 
@@ -57,6 +58,7 @@ impl Hash for RollingFunction {
 
         std::mem::discriminant(self).hash(state);
         match self {
+            #[cfg(feature = "moment")]
             Skew(window_size, bias) => {
                 window_size.hash(state);
                 bias.hash(state)
@@ -177,6 +179,7 @@ pub(super) fn rolling_std_by(s: &[Series], options: RollingOptions) -> PolarsRes
     convert!(rolling_std, s, options)
 }
 
+#[cfg(feature = "moment")]
 pub(super) fn rolling_skew(s: &Series, window_size: usize, bias: bool) -> PolarsResult<Series> {
     s.rolling_skew(window_size, bias)
 }

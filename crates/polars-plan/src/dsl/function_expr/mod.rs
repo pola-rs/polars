@@ -38,7 +38,7 @@ mod pow;
 mod random;
 #[cfg(feature = "range")]
 mod range;
-#[cfg(all(feature = "rolling_window"))]
+#[cfg(feature = "rolling_window")]
 mod rolling;
 #[cfg(feature = "round_series")]
 mod round;
@@ -90,7 +90,7 @@ pub(super) use self::datetime::TemporalFunction;
 pub(super) use self::pow::PowFunction;
 #[cfg(feature = "range")]
 pub(super) use self::range::RangeFunction;
-#[cfg(all(feature = "rolling_window"))]
+#[cfg(feature = "rolling_window")]
 pub(super) use self::rolling::RollingFunction;
 #[cfg(feature = "strings")]
 pub(crate) use self::strings::StringFunction;
@@ -142,7 +142,7 @@ pub enum FunctionExpr {
     FillNull {
         super_type: DataType,
     },
-    #[cfg(all(feature = "rolling_window"))]
+    #[cfg(feature = "rolling_window")]
     RollingExpr(RollingFunction),
     ShiftAndFill,
     Shift,
@@ -540,7 +540,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "sign")]
             Sign => "sign",
             FillNull { .. } => "fill_null",
-            #[cfg(all(feature = "rolling_window"))]
+            #[cfg(feature = "rolling_window")]
             RollingExpr(func, ..) => return write!(f, "{func}"),
             ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
@@ -807,7 +807,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             FillNull { super_type } => {
                 map_as_slice!(fill_null::fill_null, &super_type)
             },
-            #[cfg(all(feature = "rolling_window"))]
+            #[cfg(feature = "rolling_window")]
             RollingExpr(f) => {
                 use RollingFunction::*;
                 match f {
@@ -829,7 +829,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     VarBy(options) => map_as_slice!(rolling::rolling_var_by, options.clone()),
                     Std(options) => map!(rolling::rolling_std, options.clone()),
                     StdBy(options) => map_as_slice!(rolling::rolling_std_by, options.clone()),
-                    #[cfg(all(feature = "rolling_window", feature = "moment"))]
+                    #[cfg(feature = "moment")]
                     Skew(window_size, bias) => map!(rolling::rolling_skew, window_size, bias),
                 }
             },
