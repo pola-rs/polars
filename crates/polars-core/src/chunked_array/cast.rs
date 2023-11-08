@@ -7,6 +7,7 @@ use arrow::compute::cast::CastOptions;
 use crate::chunked_array::categorical::CategoricalChunkedBuilder;
 #[cfg(feature = "timezones")]
 use crate::chunked_array::temporal::validate_time_zone;
+#[cfg(feature = "dtype-datetime")]
 use crate::prelude::DataType::Datetime;
 use crate::prelude::*;
 
