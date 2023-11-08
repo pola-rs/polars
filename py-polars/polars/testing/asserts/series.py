@@ -53,6 +53,7 @@ def assert_series_equal(
     check_exact
         Require data values to match exactly. If set to `False`, values are considered
         equal when within tolerance of each other (see `rtol` and `atol`).
+        Only takes effect for numeric, non-integer data types.
         Logical types like dates are always checked exactly.
     rtol
         Relative tolerance for inexact checking, given as a fraction of the values in
@@ -178,8 +179,8 @@ def _assert_series_values_equal(
     if not unequal.any():
         return
 
-    # Only do inexact checking for numeric types
-    if check_exact or not left.dtype.is_numeric() or not right.dtype.is_numeric():
+    # Only do inexact checking for float types
+    if check_exact or not left.dtype.is_float() or not right.dtype.is_float():
         raise_assertion_error(
             "Series", "exact value mismatch", left=left.to_list(), right=right.to_list()
         )
