@@ -8,7 +8,7 @@ All that needs to be installed is pytest, numpy, and ipython.
 
 Usage:
 
-    $ PYTHONPATH=polars/utils pytest tests/udf_warning_test_script.py
+    $ PYTHONPATH="py-polars:py-polars/polars/utils" pytest .github/scripts/test_bytecode_parser.py
 
 Running it without `PYTHONPATH` set will result in the test being skipped.
 """
