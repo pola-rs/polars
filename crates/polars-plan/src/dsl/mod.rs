@@ -1188,8 +1188,8 @@ impl Expr {
     fn finish_rolling(
         self,
         options: RollingOptions,
-        rolling_function: &dyn Fn(RollingOptions) -> RollingFunction,
-        rolling_function_by: &dyn Fn(RollingOptions) -> RollingFunction,
+        rolling_function: fn(RollingOptions) -> RollingFunction,
+        rolling_function_by: fn(RollingOptions) -> RollingFunction,
     ) -> Expr {
         if let Some(ref by) = options.by {
             let name = by.clone();
@@ -1212,11 +1212,7 @@ impl Expr {
     /// See: [`RollingAgg::rolling_min`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_min(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(
-            options,
-            &|options| RollingFunction::Min(options),
-            &|options| RollingFunction::MinBy(options),
-        )
+        self.finish_rolling(options, RollingFunction::Min, RollingFunction::MinBy)
     }
 
     /// Apply a rolling maximum.
@@ -1224,11 +1220,7 @@ impl Expr {
     /// See: [`RollingAgg::rolling_max`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_max(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(
-            options,
-            &|options| RollingFunction::Max(options),
-            &|options| RollingFunction::MaxBy(options),
-        )
+        self.finish_rolling(options, RollingFunction::Max, RollingFunction::MaxBy)
     }
 
     /// Apply a rolling mean.
@@ -1236,11 +1228,7 @@ impl Expr {
     /// See: [`RollingAgg::rolling_mean`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_mean(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(
-            options,
-            &|options| RollingFunction::Mean(options),
-            &|options| RollingFunction::MeanBy(options),
-        )
+        self.finish_rolling(options, RollingFunction::Mean, RollingFunction::MeanBy)
     }
 
     /// Apply a rolling sum.
@@ -1248,11 +1236,7 @@ impl Expr {
     /// See: [`RollingAgg::rolling_sum`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_sum(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(
-            options,
-            &|options| RollingFunction::Sum(options),
-            &|options| RollingFunction::SumBy(options),
-        )
+        self.finish_rolling(options, RollingFunction::Sum, RollingFunction::SumBy)
     }
 
     /// Apply a rolling median.
@@ -1260,11 +1244,7 @@ impl Expr {
     /// See: [`RollingAgg::rolling_median`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_median(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(
-            options,
-            &|options| RollingFunction::Median(options),
-            &|options| RollingFunction::MedianBy(options),
-        )
+        self.finish_rolling(options, RollingFunction::Median, RollingFunction::MedianBy)
     }
 
     /// Apply a rolling quantile.
@@ -1274,29 +1254,21 @@ impl Expr {
     pub fn rolling_quantile(self, options: RollingOptions) -> Expr {
         self.finish_rolling(
             options,
-            &|options| RollingFunction::Quantile(options),
-            &|options| RollingFunction::QuantileBy(options),
+            RollingFunction::Quantile,
+            RollingFunction::QuantileBy,
         )
     }
 
     /// Apply a rolling variance.
     #[cfg(feature = "rolling_window")]
     pub fn rolling_var(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(
-            options,
-            &|options| RollingFunction::Var(options),
-            &|options| RollingFunction::VarBy(options),
-        )
+        self.finish_rolling(options, RollingFunction::Var, RollingFunction::VarBy)
     }
 
     /// Apply a rolling std-dev.
     #[cfg(feature = "rolling_window")]
     pub fn rolling_std(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(
-            options,
-            &|options| RollingFunction::Std(options),
-            &|options| RollingFunction::StdBy(options),
-        )
+        self.finish_rolling(options, RollingFunction::Std, RollingFunction::StdBy)
     }
 
     /// Apply a rolling skew.
