@@ -31,8 +31,7 @@ smartstring = { workspace = true }
 thiserror = { workspace = true }
 
 [dependencies.polars]
-path = "../crates/polars"
-default-features = false
+workspace = true
 features = [
   "abs",
   "approx_unique",
