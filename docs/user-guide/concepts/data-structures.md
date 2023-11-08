@@ -10,7 +10,7 @@ The snippet below shows how to create a simple named `Series` object.
 {{code_block('getting-started/series-dataframes','series',['Series'])}}
 
 ```python exec="on" result="text" session="getting-started/series"
---8<-- "python/getting-started/series-dataframes.py:series"
+--8<-- "python/user-guide/basics/series-dataframes.py:series"
 ```
 
 ## DataFrame
@@ -20,7 +20,7 @@ A `DataFrame` is a 2-dimensional data structure that is backed by a `Series`, an
 {{code_block('getting-started/series-dataframes','dataframe',['DataFrame'])}}
 
 ```python exec="on" result="text" session="getting-started/series"
---8<-- "python/getting-started/series-dataframes.py:dataframe"
+--8<-- "python/user-guide/basics/series-dataframes.py:dataframe"
 ```
 
 ### Viewing data
@@ -34,7 +34,7 @@ The `head` function shows by default the first 5 rows of a `DataFrame`. You can 
 {{code_block('getting-started/series-dataframes','head',['head'])}}
 
 ```python exec="on" result="text" session="getting-started/series"
---8<-- "python/getting-started/series-dataframes.py:head"
+--8<-- "python/user-guide/basics/series-dataframes.py:head"
 ```
 
 #### Tail
@@ -44,7 +44,7 @@ The `tail` function shows the last 5 rows of a `DataFrame`. You can also specify
 {{code_block('getting-started/series-dataframes','tail',['tail'])}}
 
 ```python exec="on" result="text" session="getting-started/series"
---8<-- "python/getting-started/series-dataframes.py:tail"
+--8<-- "python/user-guide/basics/series-dataframes.py:tail"
 ```
 
 #### Sample
@@ -54,7 +54,7 @@ If you want to get an impression of the data of your `DataFrame`, you can also u
 {{code_block('getting-started/series-dataframes','sample',['sample'])}}
 
 ```python exec="on" result="text" session="getting-started/series"
---8<-- "python/getting-started/series-dataframes.py:sample"
+--8<-- "python/user-guide/basics/series-dataframes.py:sample"
 ```
 
 #### Describe
@@ -64,5 +64,5 @@ If you want to get an impression of the data of your `DataFrame`, you can also u
 {{code_block('getting-started/series-dataframes','describe',['describe'])}}
 
 ```python exec="on" result="text" session="getting-started/series"
---8<-- "python/getting-started/series-dataframes.py:describe"
+--8<-- "python/user-guide/basics/series-dataframes.py:describe"
 ```

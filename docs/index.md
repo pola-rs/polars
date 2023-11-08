@@ -32,15 +32,6 @@ Polars is a highly performant DataFrame library for manipulating structured data
 - **Parallel**: Polars fully utilises the power of your machine by dividing the workload among the available CPU cores without any additional configuration.
 - **Vectorized Query Engine**: Polars uses [Apache Arrow](https://arrow.apache.org/), a columnar data format, to process your queries in a vectorized manner. It uses [SIMD](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) to optimize CPU usage.
 
-## About this guide
-
-The Polars user guide is intended to live alongside the API documentation. Its purpose is to explain (new) users how to use Polars and to provide meaningful examples. The guide is split into two parts:
-
-- [Getting started](getting-started/intro.md): A 10 minute helicopter view of the library and its primary function.
-- [User guide](user-guide/index.md): A detailed explanation of how the library is setup and how to use it most effectively.
-
-If you are looking for details on a specific level / object, it is probably best to go the API documentation: [Python](https://pola-rs.github.io/polars/py-polars/html/reference/index.html) | [Rust](https://docs.rs/polars/latest/polars/).
-
 ## Performance :rocket: :rocket:
 
 Polars is very fast, and in fact is one of the best performing solutions available.
