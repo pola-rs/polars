@@ -835,7 +835,7 @@ def test_rolling_weighted_quantile_10031() -> None:
 
 
 def test_rolling_meta_eq_10101() -> None:
-    assert pl.col("A").rolling_sum(10).meta.eq(pl.col("A").rolling_sum(10)) == True
+    assert pl.col("A").rolling_sum(10).meta.eq(pl.col("A").rolling_sum(10)) is True
 
 
 def test_rolling() -> None:
