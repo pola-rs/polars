@@ -34,6 +34,12 @@ def adbc_sqlite_connect(*args: Any, **kwargs: Any) -> Any:
 def create_temp_sqlite_db(test_db: str) -> None:
     Path(test_db).unlink(missing_ok=True)
 
+    def convert_date(val: bytes) -> date:
+        """Convert ISO 8601 date to datetime.date object."""
+        return date.fromisoformat(val.decode())
+
+    sqlite3.register_converter("date", convert_date)
+
     # NOTE: at the time of writing adcb/connectorx have weak SQLite support (poor or
     # no bool/date/datetime dtypes, for example) and there is a bug in connectorx that
     # causes float rounding < py 3.11, hence we are only testing/storing simple values
@@ -183,6 +189,10 @@ class MockResultSet:
                 schema_overrides={"id": pl.UInt8},
             ),
             id="uri: connectorx",
+            marks=pytest.mark.skipif(
+                sys.version_info > (3, 11),
+                reason="connectorx cannot be installed on Python 3.12 yet.",
+            ),
         ),
         pytest.param(
             *DatabaseReadTestParams(
@@ -584,6 +594,10 @@ def test_read_database_exceptions(
         read_database(**params)
 
 
+@pytest.mark.skipif(
+    sys.version_info > (3, 11),
+    reason="connectorx cannot be installed on Python 3.12 yet.",
+)
 @pytest.mark.parametrize(
     "uri",
     [
