@@ -5,10 +5,10 @@ use arrow::legacy::trusted_len::TrustedLen;
 use arrow::legacy::utils::CustomIterTools;
 use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
-use polars_core::hashing::partition::this_partition;
 use polars_core::prelude::*;
 use polars_core::utils::_set_partition_size;
 use polars_core::POOL;
+use polars_utils::hashing::hash_to_partition;
 use rayon::prelude::*;
 
 pub(crate) fn prepare_hashed_relation_threaded<T, I>(
@@ -30,11 +30,9 @@ where
             .map(|partition_no| {
                 let build_hasher = build_hasher.clone();
                 let hashes_and_keys = &hashes_and_keys;
-                let partition_no = partition_no as u64;
                 let mut hash_tbl: HashMap<T, (bool, Vec<IdxSize>), RandomState> =
                     HashMap::with_hasher(build_hasher);
 
-                let n_threads = n_partitions as u64;
                 let mut offset = 0;
                 for hashes_and_keys in hashes_and_keys {
                     let len = hashes_and_keys.len();
@@ -45,7 +43,7 @@ where
                             let idx = idx as IdxSize;
                             // partition hashes by thread no.
                             // So only a part of the hashes go to this hashmap
-                            if this_partition(*h, partition_no, n_threads) {
+                            if partition_no == hash_to_partition(*h, n_partitions) {
                                 let idx = idx + offset;
                                 let entry = hash_tbl
                                     .raw_entry_mut()

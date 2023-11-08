@@ -5,6 +5,7 @@ use polars_core::hashing::{
 };
 use polars_core::utils::{_set_partition_size, split_df};
 use polars_core::POOL;
+use polars_utils::hashing::hash_to_partition;
 
 use super::*;
 
@@ -36,11 +37,9 @@ pub(crate) fn create_probe_table(
         (0..n_partitions)
             .into_par_iter()
             .map(|part_no| {
-                let part_no = part_no as u64;
                 let mut hash_tbl: HashMap<IdxHash, Vec<IdxSize>, IdBuildHasher> =
                     HashMap::with_capacity_and_hasher(_HASHMAP_INIT_SIZE, Default::default());
 
-                let n_partitions = n_partitions as u64;
                 let mut offset = 0;
                 for hashes in hashes {
                     for hashes in hashes.data_views() {
@@ -49,7 +48,7 @@ pub(crate) fn create_probe_table(
                         hashes.iter().for_each(|h| {
                             // partition hashes by thread no.
                             // So only a part of the hashes go to this hashmap
-                            if this_partition(*h, part_no, n_partitions) {
+                            if part_no == hash_to_partition(*h, n_partitions) {
                                 let idx = idx + offset;
                                 populate_multiple_key_hashmap(
                                     &mut hash_tbl,
@@ -85,11 +84,9 @@ fn create_build_table_outer(
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
     POOL.install(|| {
         (0..n_partitions).into_par_iter().map(|part_no| {
-            let part_no = part_no as u64;
             let mut hash_tbl: HashMap<IdxHash, (bool, Vec<IdxSize>), IdBuildHasher> =
                 HashMap::with_capacity_and_hasher(_HASHMAP_INIT_SIZE, Default::default());
 
-            let n_partitions = n_partitions as u64;
             let mut offset = 0;
             for hashes in hashes {
                 for hashes in hashes.data_views() {
@@ -98,7 +95,7 @@ fn create_build_table_outer(
                     hashes.iter().for_each(|h| {
                         // partition hashes by thread no.
                         // So only a part of the hashes go to this hashmap
-                        if this_partition(*h, part_no, n_partitions) {
+                        if part_no == hash_to_partition(*h, n_partitions) {
                             let idx = idx + offset;
                             populate_multiple_key_hashmap(
                                 &mut hash_tbl,
@@ -128,7 +125,7 @@ fn probe_inner<F>(
     hash_tbls: &[HashMap<IdxHash, Vec<IdxSize>, IdBuildHasher>],
     results: &mut Vec<(IdxSize, IdxSize)>,
     local_offset: usize,
-    n_tables: u64,
+    n_tables: usize,
     a: &DataFrame,
     b: &DataFrame,
     swap_fn: F,
@@ -140,7 +137,7 @@ fn probe_inner<F>(
         for &h in probe_hashes {
             // probe table that contains the hashed value
             let current_probe_table =
-                unsafe { get_hash_tbl_threaded_join_partitioned(h, hash_tbls, n_tables) };
+                unsafe { hash_tbls.get_unchecked(hash_to_partition(h, n_tables)) };
 
             let entry = current_probe_table.raw_entry().from_hash(h, |idx_hash| {
                 let idx_b = idx_hash.idx;
@@ -190,7 +187,7 @@ pub fn _inner_join_multiple_keys(
     // early drop to reduce memory pressure
     drop(build_hashes);
 
-    let n_tables = hash_tbls.len() as u64;
+    let n_tables = hash_tbls.len();
     let offsets = get_offsets(&probe_hashes);
     // next we probe the other relation
     // code duplication is because we want to only do the swap check once
@@ -272,7 +269,7 @@ pub fn _left_join_multiple_keys(
     // early drop to reduce memory pressure
     drop(build_hashes);
 
-    let n_tables = hash_tbls.len() as u64;
+    let n_tables = hash_tbls.len();
     let offsets = get_offsets(&probe_hashes);
 
     // next we probe the other relation
@@ -294,9 +291,8 @@ pub fn _left_join_multiple_keys(
                 for probe_hashes in probe_hashes.data_views() {
                     for &h in probe_hashes {
                         // probe table that contains the hashed value
-                        let current_probe_table = unsafe {
-                            get_hash_tbl_threaded_join_partitioned(h, hash_tbls, n_tables)
-                        };
+                        let current_probe_table =
+                            unsafe { hash_tbls.get_unchecked(hash_to_partition(h, n_tables)) };
 
                         let entry = current_probe_table.raw_entry().from_hash(h, |idx_hash| {
                             let idx_b = idx_hash.idx;
@@ -346,11 +342,9 @@ pub(crate) fn create_build_table_semi_anti(
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
     POOL.install(|| {
         (0..n_partitions).into_par_iter().map(|part_no| {
-            let part_no = part_no as u64;
             let mut hash_tbl: HashMap<IdxHash, (), IdBuildHasher> =
                 HashMap::with_capacity_and_hasher(_HASHMAP_INIT_SIZE, Default::default());
 
-            let n_partitions = n_partitions as u64;
             let mut offset = 0;
             for hashes in hashes {
                 for hashes in hashes.data_views() {
@@ -359,7 +353,7 @@ pub(crate) fn create_build_table_semi_anti(
                     hashes.iter().for_each(|h| {
                         // partition hashes by thread no.
                         // So only a part of the hashes go to this hashmap
-                        if this_partition(*h, part_no, n_partitions) {
+                        if part_no == hash_to_partition(*h, n_partitions) {
                             let idx = idx + offset;
                             populate_multiple_key_hashmap(
                                 &mut hash_tbl,
@@ -403,7 +397,7 @@ pub(crate) fn semi_anti_join_multiple_keys_impl<'a>(
     // early drop to reduce memory pressure
     drop(build_hashes);
 
-    let n_tables = hash_tbls.len() as u64;
+    let n_tables = hash_tbls.len();
     let offsets = get_offsets(&probe_hashes);
 
     // next we probe the other relation
@@ -423,9 +417,8 @@ pub(crate) fn semi_anti_join_multiple_keys_impl<'a>(
                 for probe_hashes in probe_hashes.data_views() {
                     for &h in probe_hashes {
                         // probe table that contains the hashed value
-                        let current_probe_table = unsafe {
-                            get_hash_tbl_threaded_join_partitioned(h, hash_tbls, n_tables)
-                        };
+                        let current_probe_table =
+                            unsafe { hash_tbls.get_unchecked(hash_to_partition(h, n_tables)) };
 
                         let entry = current_probe_table.raw_entry().from_hash(h, |idx_hash| {
                             let idx_b = idx_hash.idx;
@@ -472,7 +465,7 @@ fn probe_outer<F, G, H>(
     probe_hashes: &[UInt64Chunked],
     hash_tbls: &mut [HashMap<IdxHash, (bool, Vec<IdxSize>), IdBuildHasher>],
     results: &mut Vec<(Option<IdxSize>, Option<IdxSize>)>,
-    n_tables: u64,
+    n_tables: usize,
     a: &DataFrame,
     b: &DataFrame,
     // Function that get index_a, index_b when there is a match and pushes to result
@@ -499,7 +492,7 @@ fn probe_outer<F, G, H>(
             for &h in probe_hashes {
                 // probe table that contains the hashed value
                 let current_probe_table =
-                    unsafe { get_hash_tbl_threaded_join_mut_partitioned(h, hash_tbls, n_tables) };
+                    unsafe { hash_tbls.get_unchecked_mut(hash_to_partition(h, n_tables)) };
 
                 let entry = current_probe_table
                     .raw_entry_mut()
@@ -558,7 +551,7 @@ pub fn _outer_join_multiple_keys(
     // early drop to reduce memory pressure
     drop(build_hashes);
 
-    let n_tables = hash_tbls.len() as u64;
+    let n_tables = hash_tbls.len();
     // probe the hash table.
     // Note: indexes from b that are not matched will be None, Some(idx_b)
     // Therefore we remove the matches and the remaining will be joined from the right

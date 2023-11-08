@@ -1,3 +1,4 @@
+use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::sync::SyncPtr;
 
 use super::*;
@@ -10,7 +11,7 @@ const MIN_ELEMS_PER_THREAD: usize = if cfg!(debug_assertions) { 1 } else { 128 }
 
 pub(crate) fn build_tables<T, I>(keys: Vec<I>) -> Vec<PlHashMap<T, Vec<IdxSize>>>
 where
-    T: Send + Hash + Eq + Sync + Copy + AsU64,
+    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
     I: IntoIterator<Item = T> + Send + Sync + Clone,
 {
     // FIXME: change interface to split the input here, instead of taking
@@ -42,8 +43,7 @@ where
             .map(|key_portion| {
                 let mut partition_sizes = vec![0; n_partitions];
                 for key in key_portion.clone() {
-                    let h = key.as_u64();
-                    let p = hash_to_partition(h, n_partitions);
+                    let p = hash_to_partition(key.dirty_hash(), n_partitions);
                     unsafe {
                         *partition_sizes.get_unchecked_mut(p) += 1;
                     }
@@ -90,7 +90,7 @@ where
                     per_thread_partition_offsets[t * n_partitions..(t + 1) * n_partitions].to_vec();
                 for (i, key) in key_portion.into_iter().enumerate() {
                     unsafe {
-                        let p = hash_to_partition(key.as_u64(), n_partitions);
+                        let p = hash_to_partition(key.dirty_hash(), n_partitions);
                         let off = partition_offsets.get_unchecked_mut(p);
                         *scatter_keys_ptr.get().add(*off) = key;
                         *scatter_idxs_ptr.get().add(*off) =
@@ -150,7 +150,7 @@ pub(super) fn probe_to_offsets<T, I>(probe: &[I]) -> Vec<usize>
 where
     I: IntoIterator<Item = T> + Clone,
     // <I as IntoIterator>::IntoIter: TrustedLen,
-    T: Send + Hash + Eq + Sync + Copy + AsU64,
+    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
 {
     probe
         .iter()
