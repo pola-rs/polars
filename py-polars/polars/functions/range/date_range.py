@@ -10,6 +10,7 @@ from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.deprecation import (
     deprecate_renamed_parameter,
+    deprecate_saturating,
     issue_deprecation_warning,
 )
 
@@ -146,10 +147,6 @@ def date_range(
        Or combine them:
        "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
-       Suffix with `"_saturating"` to indicate that dates too large for
-       their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-       instead of erroring.
-
        By "calendar day", we mean the corresponding time on the next day (which may
        not be 24 hours, due to daylight savings). Similarly for "calendar week",
        "calendar month", "calendar quarter", and "calendar year".
@@ -201,6 +198,7 @@ def date_range(
     ]
 
     """
+    interval = deprecate_saturating(interval)
     if name is not None:
         issue_deprecation_warning(
             "the `name` argument is deprecated. Use the `alias` method instead.",
@@ -328,10 +326,6 @@ def date_ranges(
     Or combine them:
     "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
-    Suffix with `"_saturating"` to indicate that dates too large for
-    their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-    instead of erroring.
-
     By "calendar day", we mean the corresponding time on the next day (which may
     not be 24 hours, due to daylight savings). Similarly for "calendar week",
     "calendar month", "calendar quarter", and "calendar year".
@@ -357,6 +351,7 @@ def date_ranges(
     └────────────┴────────────┴───────────────────────────────────┘
 
     """
+    interval = deprecate_saturating(interval)
     interval = parse_interval_argument(interval)
     if time_unit is None and "ns" in interval:
         time_unit = "ns"

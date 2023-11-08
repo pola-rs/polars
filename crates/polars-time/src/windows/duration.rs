@@ -40,9 +40,6 @@ pub struct Duration {
     pub(crate) negative: bool,
     // indicates if an integer string was passed. e.g. "2i"
     pub parsed_int: bool,
-    // indicates if an offset to a non-existent date (e.g. 2022-02-29)
-    // should saturate (to 2022-02-28) as opposed to erroring
-    pub(crate) saturating: bool,
 }
 
 impl PartialOrd<Self> for Duration {
@@ -67,7 +64,6 @@ impl Duration {
             nsecs: fixed_slots.abs(),
             negative: fixed_slots < 0,
             parsed_int: true,
-            saturating: false,
         }
     }
 
@@ -98,10 +94,6 @@ impl Duration {
     /// * `y`:  calendar year
     /// * `i`:  index value (only for {Int32, Int64} dtypes)
     ///
-    /// Suffix with `"_saturating"` to indicate that dates too large for
-    /// their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-    /// instead of erroring.
-    ///
     /// By "calendar day", we mean the corresponding time on the next
     /// day (which may not be 24 hours, depending on daylight savings).
     /// Similarly for "calendar week", "calendar month", "calendar quarter",
@@ -123,13 +115,7 @@ impl Duration {
         let mut days = 0;
         let mut months = 0;
         let negative = duration.starts_with('-');
-        let (saturating, mut iter) = match duration.ends_with("_saturating") {
-            true => (
-                true,
-                duration[..duration.len() - "_saturating".len()].char_indices(),
-            ),
-            false => (false, duration.char_indices()),
-        };
+        let mut iter = duration.char_indices();
         let mut start = 0;
 
         // skip the '-' char
@@ -198,7 +184,6 @@ impl Duration {
             months: months.abs(),
             negative,
             parsed_int,
-            saturating,
         }
     }
 
@@ -265,7 +250,6 @@ impl Duration {
             nsecs,
             negative,
             parsed_int: false,
-            saturating: false,
         }
     }
 
@@ -279,7 +263,6 @@ impl Duration {
             nsecs: 0,
             negative,
             parsed_int: false,
-            saturating: false,
         }
     }
 
@@ -293,7 +276,6 @@ impl Duration {
             nsecs: 0,
             negative,
             parsed_int: false,
-            saturating: false,
         }
     }
 
@@ -307,7 +289,6 @@ impl Duration {
             nsecs: 0,
             negative,
             parsed_int: false,
-            saturating: false,
         }
     }
 
@@ -379,12 +360,7 @@ impl Duration {
     }
 
     #[doc(hidden)]
-    fn add_month(
-        ts: NaiveDateTime,
-        n_months: i64,
-        negative: bool,
-        saturating: bool,
-    ) -> PolarsResult<NaiveDateTime> {
+    fn add_month(ts: NaiveDateTime, n_months: i64, negative: bool) -> NaiveDateTime {
         let mut months = n_months;
         if negative {
             months = -months;
@@ -409,16 +385,14 @@ impl Duration {
             month += 12;
         }
 
-        if saturating {
-            // Normalize the day if we are past the end of the month.
-            let mut last_day_of_month = last_day_of_month(month);
-            if month == (chrono::Month::February.number_from_month() as i32) && is_leap_year(year) {
-                last_day_of_month += 1;
-            }
+        // Normalize the day if we are past the end of the month.
+        let mut last_day_of_month = last_day_of_month(month);
+        if month == (chrono::Month::February.number_from_month() as i32) && is_leap_year(year) {
+            last_day_of_month += 1;
+        }
 
-            if day > last_day_of_month {
-                day = last_day_of_month
-            }
+        if day > last_day_of_month {
+            day = last_day_of_month
         }
 
         // Retrieve the original time and construct a data
@@ -427,16 +401,8 @@ impl Duration {
         let minute = ts.minute();
         let sec = ts.second();
         let nsec = ts.nanosecond();
-        new_datetime(year, month as u32, day, hour, minute, sec, nsec).ok_or(
-            polars_err!(
-                ComputeError: format!(
-                    "cannot advance '{}' by {} month(s). \
-                        If you were trying to get the last day of each month, you may want to try `.dt.month_end` \
-                        or append \"_saturating\" to your duration string.",
-                        ts,
-                        if negative {-n_months} else {n_months}
-                )
-            ),
+        new_datetime(year, month as u32, day, hour, minute, sec, nsec).expect(
+            "Expected valid datetime, please open an issue at https://github.com/pola-rs/polars/issues"
         )
     }
 
@@ -714,7 +680,7 @@ impl Duration {
                 Some(tz) => unlocalize_datetime(timestamp_to_datetime(t), tz),
                 _ => timestamp_to_datetime(t),
             };
-            let dt = Self::add_month(ts, d.months, d.negative, d.saturating)?;
+            let dt = Self::add_month(ts, d.months, d.negative);
             new_t = match tz {
                 #[cfg(feature = "timezones")]
                 Some(tz) => datetime_to_timestamp(try_localize_datetime(dt, tz, Ambiguous::Raise)?),
