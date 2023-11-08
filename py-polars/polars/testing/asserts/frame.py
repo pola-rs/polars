@@ -44,10 +44,9 @@ def assert_frame_equal(
     check_dtype
         Require data types to match.
     check_exact
-        Require data values to match exactly. If set to `False`, values are considered
+        Require float values to match exactly. If set to `False`, values are considered
         equal when within tolerance of each other (see `rtol` and `atol`).
-        Only takes effect for numeric, non-integer data types.
-        Logical types like dates are always checked exactly.
+        Only affects columns with a Float data type.
     rtol
         Relative tolerance for inexact checking. Fraction of values in `right`.
     atol
@@ -229,9 +228,9 @@ def assert_frame_not_equal(
     check_dtype
         Require data types to match.
     check_exact
-        Require data values to match exactly. If set to `False`, values are considered
+        Require float values to match exactly. If set to `False`, values are considered
         equal when within tolerance of each other (see `rtol` and `atol`).
-        Logical types like dates are always checked exactly.
+        Only affects columns with a Float data type.
     rtol
         Relative tolerance for inexact checking. Fraction of values in `right`.
     atol

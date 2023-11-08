@@ -8,10 +8,8 @@ from polars.datatypes import (
     Categorical,
     Decimal,
     Float64,
-    Int64,
     List,
     Struct,
-    UInt64,
     Utf8,
     unpack_dtypes,
 )
@@ -51,10 +49,8 @@ def assert_series_equal(
     check_names
         Require names to match.
     check_exact
-        Require data values to match exactly. If set to `False`, values are considered
+        Require float values to match exactly. If set to `False`, values are considered
         equal when within tolerance of each other (see `rtol` and `atol`).
-        Only takes effect for numeric, non-integer data types.
-        Logical types like dates are always checked exactly.
     rtol
         Relative tolerance for inexact checking, given as a fraction of the values in
         `right`.
@@ -284,7 +280,7 @@ def _assert_series_values_within_tolerance(
 ) -> None:
     left_unequal, right_unequal = left.filter(unequal), right.filter(unequal)
 
-    difference = _calc_absolute_diff(left_unequal, right_unequal)
+    difference = (left_unequal - right_unequal).abs()
     tolerance = atol + rtol * right_unequal.abs()
     exceeds_tolerance = difference > tolerance
 
@@ -295,19 +291,6 @@ def _assert_series_values_within_tolerance(
             left.to_list(),
             right.to_list(),
         )
-
-
-def _calc_absolute_diff(left: Series, right: Series) -> Series:
-    if left.dtype.is_unsigned_integer() and right.dtype.is_unsigned_integer():
-        try:
-            left = left.cast(Int64)
-            right = right.cast(Int64)
-        except ComputeError:
-            # Handle big UInt64 values through conversion to Python
-            diff = [abs(v1 - v2) for v1, v2 in zip(left, right)]
-            return Series(diff, dtype=UInt64)
-
-    return (left - right).abs()
 
 
 def assert_series_not_equal(
@@ -337,9 +320,9 @@ def assert_series_not_equal(
     check_names
         Require names to match.
     check_exact
-        Require data values to match exactly. If set to `False`, values are considered
+        Require float values to match exactly. If set to `False`, values are considered
         equal when within tolerance of each other (see `rtol` and `atol`).
-        Logical types like dates are always checked exactly.
+        Only affects columns with a Float data type.
     rtol
         Relative tolerance for inexact checking, given as a fraction of the values in
         `right`.
