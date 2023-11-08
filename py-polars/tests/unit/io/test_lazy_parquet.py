@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
@@ -9,8 +10,6 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from polars.type_aliases import ParallelStrategy
 
 
@@ -27,6 +26,13 @@ def foods_parquet_path(io_files_path: Path) -> Path:
 def test_scan_parquet(parquet_file_path: Path) -> None:
     df = pl.scan_parquet(parquet_file_path)
     assert df.collect().shape == (4, 3)
+
+
+def test_scan_parquet_local_with_async(
+    monkeypatch: Any, foods_parquet_path: Path
+) -> None:
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    pl.scan_parquet(foods_parquet_path.relative_to(Path.cwd())).head(1).collect()
 
 
 def test_row_count(foods_parquet_path: Path) -> None:
