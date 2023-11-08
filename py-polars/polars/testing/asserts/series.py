@@ -51,6 +51,7 @@ def assert_series_equal(
     check_exact
         Require float values to match exactly. If set to `False`, values are considered
         equal when within tolerance of each other (see `rtol` and `atol`).
+        Only affects columns with a Float data type.
     rtol
         Relative tolerance for inexact checking, given as a fraction of the values in
         `right`.
