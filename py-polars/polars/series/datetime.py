@@ -1440,13 +1440,17 @@ class DateTimeNameSpace:
         offset: str | dt.timedelta | None = None,
         *,
         use_earliest: bool | None = None,
-        ambiguous: Ambiguous | Series = "raise",
+        ambiguous: Ambiguous | Series | None = None,
     ) -> Series:
         """
         Divide the date/ datetime range into buckets.
 
         Each date/datetime is mapped to the start of its bucket using the corresponding
         local datetime. Note that weekly buckets start on Monday.
+        Ambiguous results are localised using the DST offset of the original timestamp -
+        for example, truncating `'2022-11-06 01:30:00 CST'` by `'1h'` results in
+        `'2022-11-06 01:00:00 CST'`, whereas truncating `'2022-11-06 01:30:00 CDT'` by
+        `'1h'` results in `'2022-11-06 01:00:00 CDT'`.
 
         Parameters
         ----------
@@ -1469,6 +1473,9 @@ class DateTimeNameSpace:
             - `'raise'` (default): raise
             - `'earliest'`: use the earliest datetime
             - `'latest'`: use the latest datetime
+
+            .. deprecated:: 0.19.3
+                This is now auto-inferred, you can safely remove this argument.
 
         Notes
         -----
@@ -1570,48 +1577,6 @@ class DateTimeNameSpace:
                 2001-01-01 01:00:00
         ]
 
-        If crossing daylight savings time boundaries, you may want to use
-        `use_earliest` and combine with :func:`~polars.Series.dt.dst_offset`
-        and :func:`~polars.when`:
-
-        >>> s = pl.datetime_range(
-        ...     datetime(2020, 10, 25, 0),
-        ...     datetime(2020, 10, 25, 2),
-        ...     "30m",
-        ...     eager=True,
-        ...     time_zone="Europe/London",
-        ... ).dt.offset_by("15m")
-        >>> s
-        shape: (7,)
-        Series: 'datetime' [datetime[μs, Europe/London]]
-        [
-                2020-10-25 00:15:00 BST
-                2020-10-25 00:45:00 BST
-                2020-10-25 01:15:00 BST
-                2020-10-25 01:45:00 BST
-                2020-10-25 01:15:00 GMT
-                2020-10-25 01:45:00 GMT
-                2020-10-25 02:15:00 GMT
-        ]
-        >>> (
-        ...     s.dt.truncate(
-        ...         "30m",
-        ...         ambiguous=(s.dt.dst_offset() == pl.duration(hours=1)).map_dict(
-        ...             {True: "earliest", False: "latest"}
-        ...         ),
-        ...     )
-        ... )
-        shape: (7,)
-        Series: 'datetime' [datetime[μs, Europe/London]]
-        [
-                2020-10-25 00:00:00 BST
-                2020-10-25 00:30:00 BST
-                2020-10-25 01:00:00 BST
-                2020-10-25 01:30:00 BST
-                2020-10-25 01:00:00 GMT
-                2020-10-25 01:30:00 GMT
-                2020-10-25 02:00:00 GMT
-        ]
         """
 
     def round(
@@ -1619,7 +1584,7 @@ class DateTimeNameSpace:
         every: str | dt.timedelta,
         offset: str | dt.timedelta | None = None,
         *,
-        ambiguous: Ambiguous | Series = "raise",
+        ambiguous: Ambiguous | Series | None = None,
     ) -> Series:
         """
         Divide the date/ datetime range into buckets.
@@ -1628,6 +1593,10 @@ class DateTimeNameSpace:
         is mapped to the start of its bucket.
         Each date/datetime in the second half of the interval
         is mapped to the end of its bucket.
+        Ambiguous results are localised using the DST offset of the original timestamp -
+        for example, rounding `'2022-11-06 01:20:00 CST'` by `'1h'` results in
+        `'2022-11-06 01:00:00 CST'`, whereas rounding `'2022-11-06 01:20:00 CDT'` by
+        `'1h'` results in `'2022-11-06 01:00:00 CDT'`.
 
         The `every` and `offset` argument are created with the
         the following string language:
@@ -1668,6 +1637,9 @@ class DateTimeNameSpace:
             - `'raise'` (default): raise
             - `'earliest'`: use the earliest datetime
             - `'latest'`: use the latest datetime
+
+            .. deprecated:: 0.19.3
+                This is now auto-inferred, you can safely remove this argument.
 
         Returns
         -------
