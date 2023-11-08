@@ -1,11 +1,8 @@
-"""
-# --8<-- [start:read_parquet]
-use aws_sdk_s3::Region;
-
-use aws_config::meta::region::RegionProviderChain;
-use aws_sdk_s3::Client;
+// --8<-- [start:read_parquet]
 use std::borrow::Cow;
 
+use aws_config::meta::region::RegionProviderChain;
+use aws_sdk_s3::{Client, Region};
 use polars::prelude::*;
 
 #[tokio::main]
@@ -28,18 +25,16 @@ async fn main() {
 
     println!("{:?}", df);
 }
-# --8<-- [end:read_parquet]
+// --8<-- [end:read_parquet]
 
-# --8<-- [start:scan_parquet]
-# --8<-- [end:scan_parquet]
+// --8<-- [start:scan_parquet]
+// --8<-- [end:scan_parquet]
 
-# --8<-- [start:scan_parquet_query]
-# --8<-- [end:scan_parquet_query]
+// --8<-- [start:scan_parquet_query]
+// --8<-- [end:scan_parquet_query]
 
-# --8<-- [start:scan_pyarrow_dataset]
-# --8<-- [end:scan_pyarrow_dataset]
+// --8<-- [start:scan_pyarrow_dataset]
+// --8<-- [end:scan_pyarrow_dataset]
 
-# --8<-- [start:write_parquet]
-# --8<-- [end:write_parquet]
-
-"""
+// --8<-- [start:write_parquet]
+// --8<-- [end:write_parquet]

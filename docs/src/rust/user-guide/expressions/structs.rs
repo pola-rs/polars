@@ -1,5 +1,6 @@
 // --8<-- [start:setup]
-use polars::{lazy::dsl::count, prelude::*};
+use polars::lazy::dsl::count;
+use polars::prelude::*;
 // --8<-- [end:setup]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:ratings_df]

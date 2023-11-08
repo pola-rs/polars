@@ -1,8 +1,6 @@
 use polars::prelude::*;
 
-fn main() -> Result<(), Box<dyn std::error::Error>>{
-
-    """
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:read]
     use polars::prelude::*;
 
@@ -10,12 +8,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
     let df = JsonReader::new(&mut file).finish().unwrap();
     // --8<-- [end:read]
 
-
     // --8<-- [start:readnd]
     let mut file = std::fs::File::open("docs/data/path.json").unwrap();
     let df = JsonLineReader::new(&mut file).finish().unwrap();
     // --8<-- [end:readnd]
-    """
 
     // --8<-- [start:write]
     let mut df = df!(
@@ -40,7 +36,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
     // --8<-- [end:write]
 
     // --8<-- [start:scan]
-    let df = LazyJsonLineReader::new("docs/data/path.json".to_string()).finish().unwrap();
+    let df = LazyJsonLineReader::new("docs/data/path.json".to_string())
+        .finish()
+        .unwrap();
     // --8<-- [end:scan]
 
     Ok(())

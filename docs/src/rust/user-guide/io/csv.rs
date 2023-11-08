@@ -1,14 +1,14 @@
 use polars::prelude::*;
 
-fn main() -> Result<(), Box<dyn std::error::Error>>{
-
-    """
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:read]
     use polars::prelude::*;
 
-    let df = CsvReader::from_path("docs/data/path.csv").unwrap().finish().unwrap();
+    let df = CsvReader::from_path("docs/data/path.csv")
+        .unwrap()
+        .finish()
+        .unwrap();
     // --8<-- [end:read]
-    """
 
     // --8<-- [start:write]
     let mut df = df!(
