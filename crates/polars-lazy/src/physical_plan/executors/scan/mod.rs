@@ -8,6 +8,7 @@ mod ndjson;
 mod parquet;
 
 use std::mem;
+#[cfg(any(feature = "parquet", feature = "csv", feature = "ipc", feature = "cse"))]
 use std::ops::Deref;
 
 #[cfg(feature = "csv")]
@@ -18,12 +19,14 @@ pub(crate) use ipc::IpcExec;
 pub(crate) use parquet::ParquetExec;
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 use polars_io::predicates::PhysicalIoExpr;
+#[cfg(any(feature = "parquet", feature = "csv", feature = "ipc", feature = "cse"))]
 use polars_io::prelude::*;
 use polars_plan::global::_set_n_rows_for_scan;
 #[cfg(any(feature = "parquet", feature = "csv", feature = "ipc", feature = "cse"))]
 use polars_plan::logical_plan::FileFingerPrint;
 
 use super::*;
+#[cfg(any(feature = "ipc", feature = "parquet"))]
 use crate::physical_plan::expressions::phys_expr_to_io_expr;
 use crate::prelude::*;
 

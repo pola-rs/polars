@@ -29,7 +29,7 @@ fn inner_compress<G: Fn(usize) -> Result<usize>, F: Fn(&[u8], &mut [u8]) -> Resu
 pub fn compress(
     compression: CompressionOptions,
     input_buf: &[u8],
-    output_buf: &mut Vec<u8>,
+    #[allow(clippy::ptr_arg)] output_buf: &mut Vec<u8>,
 ) -> Result<()> {
     match compression {
         #[cfg(feature = "brotli")]
