@@ -1,6 +1,7 @@
+use arrow::array::MutableBinaryArray;
 use once_cell::sync::Lazy;
-use polars_arrow::export::arrow::array::MutableBinaryArray;
 use polars_core::export::once_cell;
+use polars_utils::hashing::hash_to_partition;
 
 use super::*;
 use crate::pipeline::PARTITION_SIZE;

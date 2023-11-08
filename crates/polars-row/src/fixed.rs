@@ -1,9 +1,11 @@
+use std::fmt::Debug;
 use std::mem::MaybeUninit;
 
 use arrow::array::{BooleanArray, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::DataType;
 use arrow::types::NativeType;
+use arrow::util::total_ord::{canonical_f32, canonical_f64};
 use polars_utils::slice::*;
 
 use crate::row::{RowsEncoded, SortField};
@@ -25,7 +27,7 @@ impl<const N: usize> FromSlice for [u8; N] {
 }
 
 /// Encodes a value of a particular fixed width type into bytes
-pub trait FixedLengthEncoding: Copy {
+pub trait FixedLengthEncoding: Copy + Debug {
     // 1 is validity 0 or 1
     // bit repr of encoding
     const ENCODED_LEN: usize = 1 + std::mem::size_of::<Self::Encoded>();
@@ -35,6 +37,13 @@ pub trait FixedLengthEncoding: Copy {
     fn encode(self) -> Self::Encoded;
 
     fn decode(encoded: Self::Encoded) -> Self;
+
+    fn decode_reverse(mut encoded: Self::Encoded) -> Self {
+        for v in encoded.as_mut() {
+            *v = !*v
+        }
+        Self::decode(encoded)
+    }
 }
 
 impl FixedLengthEncoding for bool {
@@ -107,7 +116,7 @@ impl FixedLengthEncoding for f32 {
 
     fn encode(self) -> [u8; 4] {
         // https://github.com/rust-lang/rust/blob/9c20b2a8cc7588decb6de25ac6a7912dcef24d65/library/core/src/num/f32.rs#L1176-L1260
-        let s = self.to_bits() as i32;
+        let s = canonical_f32(self).to_bits() as i32;
         let val = s ^ (((s >> 31) as u32) >> 1) as i32;
         val.encode()
     }
@@ -124,7 +133,7 @@ impl FixedLengthEncoding for f64 {
 
     fn encode(self) -> [u8; 8] {
         // https://github.com/rust-lang/rust/blob/9c20b2a8cc7588decb6de25ac6a7912dcef24d65/library/core/src/num/f32.rs#L1176-L1260
-        let s = self.to_bits() as i64;
+        let s = canonical_f64(self).to_bits() as i64;
         let val = s ^ (((s >> 63) as u64) >> 1) as i64;
         val.encode()
     }
@@ -227,7 +236,12 @@ where
             let end = start + T::ENCODED_LEN - 1;
             let slice = row.get_unchecked_release(start..end);
             let bytes = T::Encoded::from_slice(slice);
-            T::decode(bytes)
+
+            if field.descending {
+                T::decode_reverse(bytes)
+            } else {
+                T::decode(bytes)
+            }
         })
         .collect::<Vec<_>>();
 
@@ -258,7 +272,12 @@ pub(super) unsafe fn decode_bool(rows: &mut [&[u8]], field: &SortField) -> Boole
             let end = start + bool::ENCODED_LEN - 1;
             let slice = row.get_unchecked_release(start..end);
             let bytes = <bool as FixedLengthEncoding>::Encoded::from_slice(slice);
-            bool::decode(bytes)
+
+            if field.descending {
+                bool::decode_reverse(bytes)
+            } else {
+                bool::decode(bytes)
+            }
         })
         .collect::<Bitmap>();
 

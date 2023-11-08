@@ -367,7 +367,7 @@ def test_selector_repr() -> None:
         cs.integer() & cs.matches("z"), "(cs.integer() & cs.matches(pattern='z'))"
     )
     assert_repr_equals(
-        cs.temporal() | cs.by_dtype(pl.Utf8) & cs.string(False),
+        cs.temporal() | cs.by_dtype(pl.Utf8) & cs.string(include_categorical=False),
         "(cs.temporal() | (cs.by_dtype(dtypes=[Utf8]) & cs.string(include_categorical=False)))",
     )
 
@@ -441,7 +441,7 @@ def test_selector_expr_dispatch() -> None:
     assert_frame_equal(
         expected,
         df.with_columns(
-            pl.when(cs.float().is_finite()).then(cs.float()).otherwise(0.0).keep_name()
+            pl.when(cs.float().is_finite()).then(cs.float()).otherwise(0.0).name.keep()
         ),
     )
 
@@ -449,7 +449,7 @@ def test_selector_expr_dispatch() -> None:
     assert_frame_equal(
         expected,
         df.with_columns(
-            pl.when(~cs.float().is_finite()).then(0.0).otherwise(cs.float()).keep_name()
+            pl.when(~cs.float().is_finite()).then(0.0).otherwise(cs.float()).name.keep()
         ),
     )
 
@@ -462,7 +462,7 @@ def test_selector_expr_dispatch() -> None:
         assert_frame_equal(
             expected,
             df.with_columns(
-                pl.when(nan_or_inf).then(0.0).otherwise(cs.float()).keep_name()
+                pl.when(nan_or_inf).then(0.0).otherwise(cs.float()).name.keep()
             ).fill_null(0),
         )
 
@@ -483,3 +483,20 @@ def test_regex_expansion_exclude_10002() -> None:
         ).to_dict(as_series=False)
         == expected
     )
+
+
+def test_selector_or() -> None:
+    df = pl.DataFrame(
+        {
+            "int": [1, 2, 3],
+            "float": [1.0, 2.0, 3.0],
+            "str": ["x", "y", "z"],
+        }
+    ).with_row_count("rn")
+
+    result = df.select(cs.by_name("rn") | ~cs.numeric())
+
+    expected = pl.DataFrame(
+        {"rn": [0, 1, 2], "str": ["x", "y", "z"]}, schema_overrides={"rn": pl.UInt32}
+    )
+    assert_frame_equal(result, expected)

@@ -102,10 +102,8 @@ def test_write_database_append(engine: DbWriteEngine, tmp_path: Path) -> None:
     [
         pytest.param(
             "adbc",
-            marks=pytest.mark.skipif(
-                # see: https://github.com/apache/arrow-adbc/issues/1000
-                adbc_sqlite_driver_version() == "0.6.0",
-                reason="ADBC SQLite driver v0.6.0 has a bug with quoted/qualified table names",
+            marks=pytest.mark.xfail(  # see: https://github.com/apache/arrow-adbc/issues/1000
+                reason="ADBC SQLite driver has a bug with quoted/qualified table names",
             ),
         ),
         "sqlalchemy",

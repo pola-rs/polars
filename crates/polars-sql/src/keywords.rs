@@ -16,8 +16,8 @@ pub fn all_keywords() -> Vec<&'static str> {
     use sqlparser::keywords;
     let sql_keywords = &[
         keywords::AND,
+        keywords::ANTI,
         keywords::ARRAY,
-        keywords::AS,
         keywords::AS,
         keywords::ASC,
         keywords::BOOLEAN,
@@ -51,6 +51,7 @@ pub fn all_keywords() -> Vec<&'static str> {
         keywords::OUTER,
         keywords::RIGHT,
         keywords::SELECT,
+        keywords::SEMI,
         keywords::SHOW,
         keywords::TABLE,
         keywords::TABLES,

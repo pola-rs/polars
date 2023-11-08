@@ -1,5 +1,6 @@
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
+use polars_plan::prelude::LiteralValue::Null;
 use polars_sql::*;
 
 #[test]
@@ -48,32 +49,32 @@ fn test_string_functions() {
             col("a").str().to_uppercase().alias("upper_a_df"),
             col("a").str().to_uppercase().alias("upper_a_df2"),
             col("a").str().to_uppercase().alias("upper_a_df3"),
-            col("a").str().strip(Some("x".into())).alias("trim_a"),
+            col("a").str().strip_chars(lit("x")).alias("trim_a"),
             col("a")
                 .str()
-                .lstrip(Some("x".into()))
+                .strip_chars_start(lit("x"))
                 .alias("trim_a_leading"),
             col("a")
                 .str()
-                .rstrip(Some("x".into()))
+                .strip_chars_end(lit("x"))
                 .alias("trim_a_trailing"),
-            col("a").str().lstrip(None).alias("ltrim_a"),
-            col("a").str().rstrip(None).alias("rtrim_a"),
+            col("a").str().strip_chars_start(lit(Null)).alias("ltrim_a"),
+            col("a").str().strip_chars_end(lit(Null)).alias("rtrim_a"),
             col("a")
                 .str()
-                .lstrip(Some("-".into()))
+                .strip_chars_start(lit("-"))
                 .alias("ltrim_a_dash"),
             col("a")
                 .str()
-                .rstrip(Some("-".into()))
+                .strip_chars_end(lit("-"))
                 .alias("rtrim_a_dash"),
             col("a")
                 .str()
-                .lstrip(Some("xyz".into()))
+                .strip_chars_start(lit("xyz"))
                 .alias("ltrim_a_xyz"),
             col("a")
                 .str()
-                .rstrip(Some("xyz".into()))
+                .strip_chars_end(lit("xyz"))
                 .alias("rtrim_a_xyz"),
         ])
         .collect()
@@ -116,7 +117,7 @@ fn array_to_string() {
         .lazy()
         .group_by([col("b")])
         .agg([col("a")])
-        .select(&[col("b"), col("a").list().join(", ").alias("as")])
+        .select(&[col("b"), col("a").list().join(lit(", ")).alias("as")])
         .sort_by_exprs(vec![col("b"), col("as")], vec![false, false], false, true)
         .collect()
         .unwrap();

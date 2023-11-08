@@ -255,21 +255,27 @@ fn get_arithmetic_field(
             IDX_DTYPE
         },
         _ => {
-            match (left_ae, right_ae) {
-                (AExpr::Literal(_), AExpr::Literal(_)) => {},
-                (AExpr::Literal(_), _) => {
-                    // literal will be coerced to match right type
-                    let right_type = right_ae.get_type(schema, ctxt, arena)?;
-                    left_field.coerce(right_type);
-                    return Ok(left_field);
-                },
-                (_, AExpr::Literal(_)) => {
-                    // literal will be coerced to match right type
-                    return Ok(left_field);
-                },
-                _ => {},
-            }
             let right_type = right_ae.get_type(schema, ctxt, arena)?;
+
+            // Avoid needlessly type casting numeric columns during arithmetic
+            // with literals.
+            if (left_field.dtype.is_integer() && right_type.is_integer())
+                || (left_field.dtype.is_float() && right_type.is_float())
+            {
+                match (left_ae, right_ae) {
+                    (AExpr::Literal(_), AExpr::Literal(_)) => {},
+                    (AExpr::Literal(_), _) => {
+                        // literal will be coerced to match right type
+                        left_field.coerce(right_type);
+                        return Ok(left_field);
+                    },
+                    (_, AExpr::Literal(_)) => {
+                        // literal will be coerced to match right type
+                        return Ok(left_field);
+                    },
+                    _ => {},
+                }
+            }
             try_get_supertype(&left_field.dtype, &right_type)?
         },
     };

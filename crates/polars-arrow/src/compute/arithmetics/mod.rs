@@ -1,2 +1,1 @@
-#[cfg(feature = "dtype-decimal")]
-pub mod decimal;
+pub mod basic;

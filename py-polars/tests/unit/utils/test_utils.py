@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Sequence
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -13,7 +14,15 @@ from polars.utils.convert import (
     _timedelta_to_pl_duration,
     _timedelta_to_pl_timedelta,
 )
-from polars.utils.various import _in_notebook, parse_percentiles, parse_version
+from polars.utils.various import (
+    _in_notebook,
+    is_bool_sequence,
+    is_int_sequence,
+    is_sequence,
+    is_str_sequence,
+    parse_percentiles,
+    parse_version,
+)
 
 if TYPE_CHECKING:
     from polars.type_aliases import TimeUnit
@@ -121,24 +130,100 @@ def test_in_notebook() -> None:
 
 
 @pytest.mark.parametrize(
-    ("percentiles", "expected"),
+    ("percentiles", "expected", "inject_median"),
     [
-        (None, [0.5]),
-        (0.2, [0.2, 0.5]),
-        (0.5, [0.5]),
-        ((0.25, 0.75), [0.25, 0.5, 0.75]),
+        (None, [0.5], True),
+        (0.2, [0.2, 0.5], True),
+        (0.5, [0.5], True),
+        ((0.25, 0.75), [0.25, 0.5, 0.75], True),
         # Undocumented effect - percentiles get sorted.
         # Can be changed, this serves as documentation of current behaviour.
-        ((0.6, 0.3), [0.3, 0.5, 0.6]),
+        ((0.6, 0.3), [0.3, 0.5, 0.6], True),
+        (None, [], False),
+        (0.2, [0.2], False),
+        (0.5, [0.5], False),
+        ((0.25, 0.75), [0.25, 0.75], False),
+        ((0.6, 0.3), [0.3, 0.6], False),
     ],
 )
 def test_parse_percentiles(
-    percentiles: Sequence[float] | float | None, expected: Sequence[float]
+    percentiles: Sequence[float] | float | None,
+    expected: Sequence[float],
+    inject_median: bool,
 ) -> None:
-    assert parse_percentiles(percentiles) == expected
+    assert parse_percentiles(percentiles, inject_median=inject_median) == expected
 
 
 @pytest.mark.parametrize(("percentiles"), [(1.1), ([-0.1])])
 def test_parse_percentiles_errors(percentiles: Sequence[float] | float | None) -> None:
     with pytest.raises(ValueError):
         parse_percentiles(percentiles)
+
+
+@pytest.mark.parametrize(
+    ("sequence", "include_series", "expected"),
+    [
+        (pl.Series(["xx", "yy"]), True, False),
+        (pl.Series([True, False]), False, False),
+        (pl.Series([True, False]), True, True),
+        (np.array([False, True]), False, True),
+        (np.array([False, True]), True, True),
+        ([True, False], False, True),
+        (["xx", "yy"], False, False),
+        (True, False, False),
+    ],
+)
+def test_is_bool_sequence_check(
+    sequence: Any,
+    include_series: bool,
+    expected: bool,
+) -> None:
+    assert is_bool_sequence(sequence, include_series=include_series) == expected
+    if expected:
+        assert is_sequence(sequence, include_series=include_series)
+
+
+@pytest.mark.parametrize(
+    ("sequence", "include_series", "expected"),
+    [
+        (pl.Series(["xx", "yy"]), True, False),
+        (pl.Series([123, 345]), False, False),
+        (pl.Series([123, 345]), True, True),
+        (np.array([123, 345]), False, True),
+        (np.array([123, 345]), True, True),
+        (["xx", "yy"], False, False),
+        ([123, 456], False, True),
+        (123, False, False),
+    ],
+)
+def test_is_int_sequence_check(
+    sequence: Any,
+    include_series: bool,
+    expected: bool,
+) -> None:
+    assert is_int_sequence(sequence, include_series=include_series) == expected
+    if expected:
+        assert is_sequence(sequence, include_series=include_series)
+
+
+@pytest.mark.parametrize(
+    ("sequence", "include_series", "expected"),
+    [
+        (pl.Series(["xx", "yy"]), False, False),
+        (pl.Series(["xx", "yy"]), True, True),
+        (pl.Series([123, 345]), True, False),
+        (np.array(["xx", "yy"]), False, True),
+        (np.array(["xx", "yy"]), True, True),
+        (["xx", "yy"], False, True),
+        ([123, 456], False, False),
+        ("xx", False, False),
+    ],
+)
+def test_is_str_sequence_check(
+    sequence: Any,
+    include_series: bool,
+    expected: bool,
+) -> None:
+    assert is_str_sequence(sequence, include_series=include_series) == expected
+    if expected:
+        assert is_sequence(sequence, include_series=include_series)

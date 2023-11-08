@@ -6,7 +6,7 @@ use crate::prelude::*;
 use crate::utils::try_get_supertype;
 use crate::POOL;
 
-/// Get the supertype that is valid for all columns in the DataFrame.
+/// Get the supertype that is valid for all columns in the [`DataFrame`].
 /// This reduces casting of the rhs in arithmetic.
 fn get_supertype_all(df: &DataFrame, rhs: &Series) -> PolarsResult<DataType> {
     df.columns.iter().try_fold(rhs.dtype().clone(), |dt, s| {

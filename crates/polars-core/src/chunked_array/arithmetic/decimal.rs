@@ -1,4 +1,4 @@
-use polars_arrow::compute::arithmetics::decimal;
+use arrow::legacy::compute::arithmetics::decimal;
 
 use super::*;
 use crate::prelude::DecimalChunked;

@@ -7,11 +7,13 @@ mod export;
 mod numpy_ufunc;
 mod set_at_idx;
 
+use std::io::Cursor;
+
 use polars_algo::hist;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
 use polars_core::with_match_physical_numeric_polars_type;
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
+use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pyo3::Python;
@@ -154,20 +156,46 @@ impl PySeries {
         }
     }
 
-    fn get_idx(&self, py: Python, idx: usize) -> PyResult<PyObject> {
-        let av = self.series.get(idx).map_err(PyPolarsErr::from)?;
-        if let AnyValue::List(s) = av {
-            let pyseries = PySeries::new(s);
-            let out = POLARS
-                .getattr(py, "wrap_s")
-                .unwrap()
-                .call1(py, (pyseries,))
-                .unwrap();
+    fn get_index(&self, py: Python, index: usize) -> PyResult<PyObject> {
+        let av = match self.series.get(index) {
+            Ok(v) => v,
+            Err(PolarsError::OutOfBounds(err)) => {
+                return Err(PyIndexError::new_err(err.to_string()))
+            },
+            Err(e) => return Err(PyPolarsErr::from(e).into()),
+        };
 
-            Ok(out.into_py(py))
+        let out = match av {
+            AnyValue::List(s) | AnyValue::Array(s, _) => {
+                let pyseries = PySeries::new(s);
+                let out = POLARS
+                    .getattr(py, "wrap_s")
+                    .unwrap()
+                    .call1(py, (pyseries,))
+                    .unwrap();
+                out.into_py(py)
+            },
+            _ => Wrap(av).into_py(py),
+        };
+
+        Ok(out)
+    }
+
+    /// Get index but allow negative indices
+    fn get_index_signed(&self, py: Python, index: i64) -> PyResult<PyObject> {
+        let index = if index < 0 {
+            match self.len().checked_sub(index.unsigned_abs() as usize) {
+                Some(v) => v,
+                None => {
+                    return Err(PyIndexError::new_err(
+                        polars_err!(oob = index, self.len()).to_string(),
+                    ));
+                },
+            }
         } else {
-            Ok(Wrap(self.series.get(idx).map_err(PyPolarsErr::from)?).into_py(py))
-        }
+            index as usize
+        };
+        self.get_index(py, index)
     }
 
     fn bitand(&self, other: &PySeries) -> PyResult<Self> {
@@ -281,9 +309,10 @@ impl PySeries {
     }
 
     fn series_equal(&self, other: &PySeries, null_equal: bool, strict: bool) -> bool {
-        if strict {
-            self.series.eq(&other.series)
-        } else if null_equal {
+        if strict && (self.series.dtype() != other.series.dtype()) {
+            return false;
+        }
+        if null_equal {
             self.series.series_equal_missing(&other.series)
         } else {
             self.series.series_equal(&other.series)
@@ -322,7 +351,7 @@ impl PySeries {
             if let Some(output_type) = output_type {
                 return Ok(Series::full_null(series.name(), series.len(), &output_type.0).into());
             }
-            let msg = "The output type of 'apply' function cannot determined.\n\
+            let msg = "The output type of the 'apply' function cannot be determined.\n\
             The function was never called because 'skip_nulls=True' and all values are null.\n\
             Consider setting 'skip_nulls=False' or setting the 'return_dtype'.";
             raise_err!(msg, ComputeError)
@@ -551,20 +580,8 @@ impl PySeries {
     }
 
     fn get_list(&self, index: usize) -> Option<Self> {
-        if let Ok(ca) = &self.series.list() {
-            let s = ca.get(index);
-            s.map(|s| s.into())
-        } else {
-            None
-        }
-    }
-
-    fn peak_max(&self) -> Self {
-        self.series.peak_max().into_series().into()
-    }
-
-    fn peak_min(&self) -> Self {
-        self.series.peak_min().into_series().into()
+        let ca = self.series.list().ok()?;
+        Some(ca.get_as_series(index)?.into())
     }
 
     fn n_unique(&self) -> PyResult<usize> {
@@ -585,22 +602,37 @@ impl PySeries {
         self.series.dot(&other.series)
     }
 
+    #[cfg(feature = "ipc_streaming")]
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         // Used in pickle/pickling
-        let mut writer: Vec<u8> = vec![];
-        ciborium::ser::into_writer(&self.series, &mut writer)
-            .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
-
-        Ok(PyBytes::new(py, &writer).to_object(py))
+        let mut buf: Vec<u8> = vec![];
+        // IPC only support DataFrames so we need to convert it
+        let mut df = self.series.clone().into_frame();
+        IpcStreamWriter::new(&mut buf)
+            .finish(&mut df)
+            .expect("ipc writer");
+        Ok(PyBytes::new(py, &buf).to_object(py))
     }
 
+    #[cfg(feature = "ipc_streaming")]
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         // Used in pickle/pickling
         match state.extract::<&PyBytes>(py) {
             Ok(s) => {
-                self.series = ciborium::de::from_reader(s.as_bytes())
-                    .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
-                Ok(())
+                let c = Cursor::new(s.as_bytes());
+                let reader = IpcStreamReader::new(c);
+                let mut df = reader.finish().map_err(PyPolarsErr::from)?;
+
+                df.pop()
+                    .map(|s| {
+                        self.series = s;
+                    })
+                    .ok_or_else(|| {
+                        PyPolarsErr::from(PolarsError::NoData(
+                            "No columns found in IPC byte stream".into(),
+                        ))
+                        .into()
+                    })
             },
             Err(e) => Err(e),
         }

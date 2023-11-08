@@ -27,7 +27,7 @@ impl<'a> AggregationContext<'a> {
                     ))
                 }
             },
-            AggState::AggregatedFlat(_) => {
+            AggState::AggregatedScalar(_) => {
                 self.groups();
                 let s = self.series();
                 let name = if keep_names { s.name() } else { "" };

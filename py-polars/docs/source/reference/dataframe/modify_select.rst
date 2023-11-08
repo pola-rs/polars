@@ -7,6 +7,7 @@ Manipulation/selection
    :toctree: api/
 
     DataFrame.bottom_k
+    DataFrame.cast
     DataFrame.clear
     DataFrame.clone
     DataFrame.drop
@@ -46,6 +47,7 @@ Manipulation/selection
     DataFrame.replace
     DataFrame.replace_at_idx
     DataFrame.reverse
+    DataFrame.rolling
     DataFrame.row
     DataFrame.rows
     DataFrame.rows_by_key

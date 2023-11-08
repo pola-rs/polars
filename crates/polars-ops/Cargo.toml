@@ -9,24 +9,35 @@ repository = { workspace = true }
 description = "More operations on Polars data structures"
 
 [dependencies]
-polars-arrow = { version = "0.32.0", path = "../polars-arrow", default-features = false }
-polars-core = { version = "0.32.0", path = "../polars-core", features = [], default-features = false }
-polars-json = { version = "0.32.0", optional = true, path = "../polars-json", default-features = false }
-polars-utils = { version = "0.32.0", path = "../polars-utils", default-features = false }
+polars-core = { workspace = true, features = ["algorithm_group_by"] }
+polars-error = { workspace = true }
+polars-json = { workspace = true, optional = true }
+polars-utils = { workspace = true }
 
+ahash = { workspace = true }
 argminmax = { version = "0.6.1", default-features = false, features = ["float"] }
 arrow = { workspace = true }
-base64 = { version = "0.21", optional = true }
+base64 = { workspace = true, optional = true }
+bytemuck = { workspace = true }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
 either = { workspace = true }
-hex = { version = "0.4", optional = true }
+hashbrown = { workspace = true }
+hex = { workspace = true, optional = true }
 indexmap = { workspace = true }
 jsonpath_lib = { version = "0.3", optional = true, git = "https://github.com/ritchie46/jsonpath", branch = "improve_compiled" }
 memchr = { workspace = true }
+num-traits = { workspace = true }
+rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
+rand_distr = { workspace = true, optional = true }
+rayon = { workspace = true }
+regex = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { workspace = true, optional = true }
 smartstring = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }
 
 [build-dependencies]
 version_check = { workspace = true }
@@ -51,14 +62,17 @@ propagate_nans = []
 performant = ["polars-core/performant", "fused"]
 big_idx = ["polars-core/bigidx"]
 round_series = []
-is_first = []
-is_last = []
+is_first_distinct = []
+is_last_distinct = []
 is_unique = []
+unique_counts = []
 approx_unique = []
 fused = []
 cutqcut = ["dtype-categorical", "dtype-struct"]
 rle = ["dtype-struct"]
 timezones = ["chrono-tz", "chrono"]
+random = ["rand", "rand_distr"]
+rank = ["rand"]
 
 # extra utilities for BinaryChunked
 binary_encoding = ["base64", "hex"]
@@ -69,27 +83,37 @@ to_dummies = []
 interpolate = []
 list_to_struct = ["polars-core/dtype-struct"]
 list_count = []
-diff = ["polars-core/diff"]
+diff = []
+pct_change = ["diff"]
 strings = ["polars-core/strings"]
-string_justify = ["polars-core/strings"]
+string_pad = ["polars-core/strings"]
 string_from_radix = ["polars-core/strings"]
 extract_jsonpath = ["serde_json", "jsonpath_lib", "polars-json"]
 log = []
 hash = []
+zip_with = ["polars-core/zip_with"]
 group_by_list = ["polars-core/group_by_list"]
 rolling_window = ["polars-core/rolling_window"]
-moment = ["polars-core/moment"]
+moment = []
+mode = []
 search_sorted = []
 merge_sorted = []
 top_k = []
 pivot = ["polars-core/reinterpret"]
-cross_join = ["polars-core/cross_join"]
+cross_join = []
 chunked_ids = ["polars-core/chunked_ids"]
 asof_join = ["polars-core/asof_join"]
-semi_anti_join = ["polars-core/semi_anti_join"]
+semi_anti_join = []
 list_take = []
 list_sets = []
 list_any_all = []
+list_drop_nulls = []
+list_sample = []
 extract_groups = ["dtype-struct", "polars-core/regex"]
 is_in = ["polars-core/reinterpret"]
 convert_index = []
+repeat_by = []
+peaks = []
+cum_agg = []
+ewma = []
+abs = []

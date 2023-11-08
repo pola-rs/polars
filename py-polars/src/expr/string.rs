@@ -7,8 +7,12 @@ use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {
-    fn str_concat(&self, delimiter: &str) -> Self {
-        self.inner.clone().str().concat(delimiter).into()
+    fn str_concat(&self, delimiter: &str, ignore_nulls: bool) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .concat(delimiter, ignore_nulls)
+            .into()
     }
 
     #[pyo3(signature = (format, strict, exact, cache))]
@@ -23,7 +27,6 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (format, time_unit, time_zone, strict, exact, cache, ambiguous))]
-    #[allow(clippy::too_many_arguments)]
     fn str_to_datetime(
         &self,
         format: Option<String>,
@@ -63,20 +66,36 @@ impl PyExpr {
         self.inner.clone().str().to_time(options).into()
     }
 
-    fn str_strip(&self, matches: Option<String>) -> Self {
-        self.inner.clone().str().strip(matches).into()
+    fn str_strip_chars(&self, matches: Self) -> Self {
+        self.inner.clone().str().strip_chars(matches.inner).into()
     }
 
-    fn str_rstrip(&self, matches: Option<String>) -> Self {
-        self.inner.clone().str().rstrip(matches).into()
+    fn str_strip_chars_start(&self, matches: Self) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .strip_chars_start(matches.inner)
+            .into()
     }
 
-    fn str_lstrip(&self, matches: Option<String>) -> Self {
-        self.inner.clone().str().lstrip(matches).into()
+    fn str_strip_chars_end(&self, matches: Self) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .strip_chars_end(matches.inner)
+            .into()
+    }
+
+    fn str_strip_prefix(&self, prefix: Self) -> Self {
+        self.inner.clone().str().strip_prefix(prefix.inner).into()
+    }
+
+    fn str_strip_suffix(&self, suffix: Self) -> Self {
+        self.inner.clone().str().strip_suffix(suffix.inner).into()
     }
 
     fn str_slice(&self, start: i64, length: Option<u64>) -> Self {
-        self.inner.clone().str().str_slice(start, length).into()
+        self.inner.clone().str().slice(start, length).into()
     }
 
     fn str_explode(&self) -> Self {
@@ -96,12 +115,12 @@ impl PyExpr {
         self.inner.clone().str().to_titlecase().into()
     }
 
-    fn str_lengths(&self) -> Self {
-        self.inner.clone().str().lengths().into()
+    fn str_len_bytes(&self) -> Self {
+        self.inner.clone().str().len_bytes().into()
     }
 
-    fn str_n_chars(&self) -> Self {
-        self.inner.clone().str().n_chars().into()
+    fn str_len_chars(&self) -> Self {
+        self.inner.clone().str().len_chars().into()
     }
 
     #[cfg(feature = "lazy_regex")]
@@ -122,16 +141,16 @@ impl PyExpr {
             .into()
     }
 
-    fn str_zfill(&self, alignment: usize) -> Self {
-        self.clone().inner.str().zfill(alignment).into()
+    fn str_pad_start(&self, length: usize, fill_char: char) -> Self {
+        self.inner.clone().str().pad_start(length, fill_char).into()
     }
 
-    fn str_ljust(&self, width: usize, fillchar: char) -> Self {
-        self.clone().inner.str().ljust(width, fillchar).into()
+    fn str_pad_end(&self, length: usize, fill_char: char) -> Self {
+        self.inner.clone().str().pad_end(length, fill_char).into()
     }
 
-    fn str_rjust(&self, width: usize, fillchar: char) -> Self {
-        self.clone().inner.str().rjust(width, fillchar).into()
+    fn str_zfill(&self, length: usize) -> Self {
+        self.inner.clone().str().zfill(length).into()
     }
 
     #[pyo3(signature = (pat, literal, strict))]
@@ -152,53 +171,21 @@ impl PyExpr {
     }
 
     fn str_hex_encode(&self) -> Self {
-        self.clone()
-            .inner
-            .map(
-                move |s| s.utf8().map(|s| Some(s.hex_encode().into_series())),
-                GetOutput::same_type(),
-            )
-            .with_fmt("str.hex_encode")
-            .into()
+        self.inner.clone().str().hex_encode().into()
     }
 
     #[cfg(feature = "binary_encoding")]
     fn str_hex_decode(&self, strict: bool) -> Self {
-        self.clone()
-            .inner
-            .map(
-                move |s| s.utf8()?.hex_decode(strict).map(|s| Some(s.into_series())),
-                GetOutput::from_type(DataType::Binary),
-            )
-            .with_fmt("str.hex_decode")
-            .into()
+        self.inner.clone().str().hex_decode(strict).into()
     }
 
     fn str_base64_encode(&self) -> Self {
-        self.clone()
-            .inner
-            .map(
-                move |s| s.utf8().map(|s| Some(s.base64_encode().into_series())),
-                GetOutput::same_type(),
-            )
-            .with_fmt("str.base64_encode")
-            .into()
+        self.inner.clone().str().base64_encode().into()
     }
 
     #[cfg(feature = "binary_encoding")]
     fn str_base64_decode(&self, strict: bool) -> Self {
-        self.clone()
-            .inner
-            .map(
-                move |s| {
-                    s.utf8()?
-                        .base64_decode(strict)
-                        .map(|s| Some(s.into_series()))
-                },
-                GetOutput::from_type(DataType::Binary),
-            )
-            .with_fmt("str.base64_decode")
-            .into()
+        self.inner.clone().str().base64_decode(strict).into()
     }
 
     fn str_parse_int(&self, radix: u32, strict: bool) -> Self {
@@ -233,8 +220,8 @@ impl PyExpr {
                 Err(e) => Err(PolarsError::ComputeError(format!("{e:?}").into())),
             }
         };
-        self.clone()
-            .inner
+        self.inner
+            .clone()
             .map(function, GetOutput::from_type(DataType::Utf8))
             .with_fmt("str.json_path_match")
             .into()
@@ -259,28 +246,36 @@ impl PyExpr {
             .into())
     }
 
-    fn str_count_match(&self, pat: Self) -> Self {
-        self.inner.clone().str().count_match(pat.inner).into()
+    fn str_count_matches(&self, pat: Self, literal: bool) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .count_matches(pat.inner, literal)
+            .into()
     }
 
-    fn str_split(&self, by: &str) -> Self {
-        self.inner.clone().str().split(by).into()
+    fn str_split(&self, by: Self) -> Self {
+        self.inner.clone().str().split(by.inner).into()
     }
 
-    fn str_split_inclusive(&self, by: &str) -> Self {
-        self.inner.clone().str().split_inclusive(by).into()
+    fn str_split_inclusive(&self, by: Self) -> Self {
+        self.inner.clone().str().split_inclusive(by.inner).into()
     }
 
-    fn str_split_exact(&self, by: &str, n: usize) -> Self {
-        self.inner.clone().str().split_exact(by, n).into()
+    fn str_split_exact(&self, by: Self, n: usize) -> Self {
+        self.inner.clone().str().split_exact(by.inner, n).into()
     }
 
-    fn str_split_exact_inclusive(&self, by: &str, n: usize) -> Self {
-        self.inner.clone().str().split_exact_inclusive(by, n).into()
+    fn str_split_exact_inclusive(&self, by: Self, n: usize) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .split_exact_inclusive(by.inner, n)
+            .into()
     }
 
-    fn str_splitn(&self, by: &str, n: usize) -> Self {
-        self.inner.clone().str().splitn(by, n).into()
+    fn str_splitn(&self, by: Self, n: usize) -> Self {
+        self.inner.clone().str().splitn(by.inner, n).into()
     }
 
     fn str_to_decimal(&self, infer_len: usize) -> Self {

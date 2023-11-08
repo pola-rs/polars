@@ -1,5 +1,5 @@
-use polars_arrow::time_zone::Tz;
-use polars_arrow::utils::CustomIterTools;
+use arrow::legacy::time_zone::Tz;
+use arrow::legacy::utils::CustomIterTools;
 use polars_core::export::rayon::prelude::*;
 use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
@@ -7,6 +7,7 @@ use polars_core::series::IsSorted;
 use polars_core::utils::ensure_sorted_arg;
 use polars_core::utils::flatten::flatten_par;
 use polars_core::POOL;
+use polars_utils::idx_vec::IdxVec;
 use polars_utils::slice::{GetSaferUnchecked, SortedSlice};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -29,7 +30,7 @@ pub struct DynamicGroupOptions {
     /// Offset window boundaries.
     pub offset: Duration,
     /// Truncate the time column values to the window.
-    pub truncate: bool,
+    pub label: Label,
     /// Add the boundaries to the dataframe.
     pub include_boundaries: bool,
     pub closed_window: ClosedWindow,
@@ -46,7 +47,7 @@ impl Default for DynamicGroupOptions {
             every: Duration::new(1),
             period: Duration::new(1),
             offset: Duration::new(1),
-            truncate: true,
+            label: Label::Left,
             include_boundaries: false,
             closed_window: ClosedWindow::Left,
             start_by: Default::default(),
@@ -55,7 +56,7 @@ impl Default for DynamicGroupOptions {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RollingGroupOptions {
     /// Time or index column.
@@ -290,8 +291,10 @@ impl Wrap<&DataFrame> {
             include_lower_bound = true;
             include_upper_bound = true;
         }
-        if options.truncate {
+        if options.label == Label::Left {
             include_lower_bound = true;
+        } else if options.label == Label::Right {
+            include_upper_bound = true;
         }
 
         let mut update_bounds =
@@ -332,13 +335,13 @@ impl Wrap<&DataFrame> {
                 .take_groups();
 
             // Include boundaries cannot be parallel (easily).
-            if include_lower_bound {
+            if include_lower_bound | include_upper_bound {
                 POOL.install(|| match groups {
                     GroupsProxy::Idx(groups) => {
                         let ir = groups
                             .par_iter()
                             .map(|base_g| {
-                                let dt = unsafe { dt.take_unchecked(base_g.1.into()) };
+                                let dt = unsafe { dt.take_unchecked(base_g.1) };
                                 let vals = dt.downcast_iter().next().unwrap();
                                 let ts = vals.values().as_slice();
                                 if options.check_sorted
@@ -417,7 +420,7 @@ impl Wrap<&DataFrame> {
                         let groupsidx = groups
                             .par_iter()
                             .map(|base_g| {
-                                let dt = unsafe { dt.take_unchecked(base_g.1.into()) };
+                                let dt = unsafe { dt.take_unchecked(base_g.1) };
                                 let vals = dt.downcast_iter().next().unwrap();
                                 let ts = vals.values().as_slice();
                                 if options.check_sorted
@@ -481,28 +484,30 @@ impl Wrap<&DataFrame> {
         }
 
         let lower = lower_bound.map(|lower| Int64Chunked::new_vec(LB_NAME, lower));
+        let upper = upper_bound.map(|upper| Int64Chunked::new_vec(UP_NAME, upper));
 
-        if options.truncate {
+        if options.label == Label::Left {
             let mut lower = lower.clone().unwrap();
             if by.is_empty() {
                 lower.set_sorted_flag(IsSorted::Ascending)
             }
             dt = lower.with_name(dt.name());
+        } else if options.label == Label::Right {
+            let mut upper = upper.clone().unwrap();
+            if by.is_empty() {
+                upper.set_sorted_flag(IsSorted::Ascending)
+            }
+            dt = upper.with_name(dt.name());
         }
 
-        if let (true, Some(mut lower), Some(upper)) =
-            (options.include_boundaries, lower, upper_bound)
+        if let (true, Some(mut lower), Some(mut upper)) = (options.include_boundaries, lower, upper)
         {
-            let mut upper = Int64Chunked::new_vec(UP_NAME, upper)
-                .into_datetime(tu, tz.clone())
-                .into_series();
-
             if by.is_empty() {
                 lower.set_sorted_flag(IsSorted::Ascending);
                 upper.set_sorted_flag(IsSorted::Ascending);
             }
             by.push(lower.into_datetime(tu, tz.clone()).into_series());
-            by.push(upper);
+            by.push(upper.into_datetime(tu, tz.clone()).into_series());
         }
 
         dt.into_datetime(tu, None)
@@ -560,7 +565,7 @@ impl Wrap<&DataFrame> {
                     let idx = groups
                         .par_iter()
                         .map(|base_g| {
-                            let dt = unsafe { dt_local.take_unchecked(base_g.1.into()) };
+                            let dt = unsafe { dt_local.take_unchecked(base_g.1) };
                             let vals = dt.downcast_iter().next().unwrap();
                             let ts = vals.values().as_slice();
                             if options.check_sorted
@@ -629,8 +634,8 @@ fn update_subgroups_slice(sub_groups: &[[IdxSize; 2]], base_g: [IdxSize; 2]) -> 
 
 fn update_subgroups_idx(
     sub_groups: &[[IdxSize; 2]],
-    base_g: (IdxSize, &Vec<IdxSize>),
-) -> Vec<(IdxSize, Vec<IdxSize>)> {
+    base_g: (IdxSize, &IdxVec),
+) -> Vec<(IdxSize, IdxVec)> {
     sub_groups
         .iter()
         .map(|&[first, len]| {
@@ -646,7 +651,7 @@ fn update_subgroups_idx(
             let len = len as usize;
             let idx = (first..first + len)
                 .map(|i| unsafe { *base_g.1.get_unchecked_release(i) })
-                .collect_trusted::<Vec<_>>();
+                .collect::<IdxVec>();
             (new_first, idx)
         })
         .collect_trusted::<Vec<_>>()
@@ -655,6 +660,8 @@ fn update_subgroups_idx(
 #[cfg(test)]
 mod test {
     use chrono::prelude::*;
+    use polars_ops::prelude::*;
+    use polars_utils::idxvec;
 
     use super::*;
 
@@ -773,11 +780,11 @@ mod test {
             "",
             [0.0, 8.0, 4.000000000000002, 6.666666666666667, 24.5, 0.0],
         );
-        assert!((var - expected).abs().unwrap().lt(1e-12).unwrap().all());
+        assert!(abs(&(var - expected)).unwrap().lt(1e-12).unwrap().all());
 
         let var = unsafe { nulls.agg_var(&groups, 1) };
         let expected = Series::new("", [0.0, 8.0, 8.0, 9.333333333333343, 24.5, 0.0]);
-        assert!((var - expected).abs().unwrap().lt(1e-12).unwrap().all());
+        assert!(abs(&(var - expected)).unwrap().lt(1e-12).unwrap().all());
 
         let quantile = unsafe { a.agg_quantile(&groups, 0.5, QuantileInterpolOptions::Linear) };
         let expected = Series::new("", [3.0, 5.0, 5.0, 6.0, 5.5, 1.0]);
@@ -824,7 +831,7 @@ mod test {
                     every: Duration::parse("1h"),
                     period: Duration::parse("1h"),
                     offset: Duration::parse("0h"),
-                    truncate: true,
+                    label: Label::Left,
                     include_boundaries: true,
                     closed_window: ClosedWindow::Both,
                     start_by: Default::default(),
@@ -892,12 +899,12 @@ mod test {
 
         let expected = GroupsProxy::Idx(
             vec![
-                (0 as IdxSize, vec![0 as IdxSize, 1, 2]),
-                (2, vec![2]),
-                (5, vec![5, 6]),
-                (6, vec![6]),
-                (3, vec![3, 4]),
-                (4, vec![4]),
+                (0 as IdxSize, idxvec![0 as IdxSize, 1, 2]),
+                (2, idxvec![2]),
+                (5, idxvec![5, 6]),
+                (6, idxvec![6]),
+                (3, idxvec![3, 4]),
+                (4, idxvec![4]),
             ]
             .into(),
         );
@@ -939,7 +946,7 @@ mod test {
                     every: Duration::parse("6d"),
                     period: Duration::parse("6d"),
                     offset: Duration::parse("0h"),
-                    truncate: true,
+                    label: Label::Left,
                     include_boundaries: true,
                     closed_window: ClosedWindow::Both,
                     start_by: Default::default(),

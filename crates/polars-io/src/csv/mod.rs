@@ -17,8 +17,8 @@
 //!     let mut file = File::create("example.csv").expect("could not create file");
 //!
 //!     CsvWriter::new(&mut file)
-//!     .has_header(true)
-//!     .with_delimiter(b',')
+//!     .include_header(true)
+//!     .with_separator(b',')
 //!     .finish(df)
 //! }
 //! ```
@@ -66,8 +66,7 @@ pub use write::{BatchedWriter, CsvWriter, QuoteStyle};
 pub use write_impl::SerializeOptions;
 
 use crate::csv::read_impl::CoreReader;
-use crate::csv::utils::get_reader_bytes;
 use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
-use crate::utils::resolve_homedir;
+use crate::utils::{get_reader_bytes, resolve_homedir};
 use crate::{RowCount, SerReader, SerWriter};

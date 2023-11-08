@@ -32,7 +32,7 @@ impl ArrayChunked {
         let inner_dtype = self.inner_dtype().to_arrow();
         let arr = ca.downcast_iter().next().unwrap();
         unsafe {
-            Series::try_from_arrow_unchecked(
+            Series::_try_from_arrow_unchecked(
                 self.name(),
                 vec![(arr.values()).clone()],
                 &inner_dtype,
@@ -41,7 +41,7 @@ impl ArrayChunked {
         }
     }
 
-    /// Ignore the list indices and apply `func` to the inner type as `Series`.
+    /// Ignore the list indices and apply `func` to the inner type as [`Series`].
     pub fn apply_to_inner(
         &self,
         func: &dyn Fn(Series) -> PolarsResult<Series>,
@@ -52,7 +52,7 @@ impl ArrayChunked {
 
         let chunks = ca.downcast_iter().map(|arr| {
             let elements = unsafe {
-                Series::try_from_arrow_unchecked(
+                Series::_try_from_arrow_unchecked(
                     self.name(),
                     vec![(*arr.values()).clone()],
                     &inner_dtype,

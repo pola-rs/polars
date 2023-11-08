@@ -12,10 +12,10 @@ use std::iter::FromIterator;
 pub(crate) use arg_sort_multiple::argsort_multiple_row_fmt;
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
+use arrow::legacy::kernels::rolling::compare_fn_nan_max;
+use arrow::legacy::prelude::{FromData, ValueSize};
+use arrow::legacy::trusted_len::TrustedLenPush;
 use num_traits::Float;
-use polars_arrow::kernels::rolling::compare_fn_nan_max;
-use polars_arrow::prelude::{FromData, ValueSize};
-use polars_arrow::trusted_len::TrustedLenPush;
 use rayon::prelude::*;
 pub use slice::*;
 
@@ -736,7 +736,7 @@ mod test {
         });
         let idx = idx.cont_slice().unwrap();
         // the duplicates are in reverse order of appearance, so we cannot reverse expected
-        let expected = [1, 5, 6, 0, 3, 7, 4, 2];
+        let expected = [4, 2, 1, 5, 6, 0, 3, 7];
         assert_eq!(idx, expected);
     }
 

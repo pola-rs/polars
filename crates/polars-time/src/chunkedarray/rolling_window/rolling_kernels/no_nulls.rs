@@ -1,6 +1,6 @@
+use arrow::legacy::kernels::rolling::no_nulls::{self, RollingAggWindowNoNulls};
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
-use polars_arrow::kernels::rolling::no_nulls::{self, RollingAggWindowNoNulls};
 
 use super::*;
 
@@ -63,7 +63,7 @@ where
         #[cfg(feature = "timezones")]
         Some(tz) => group_by_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok()),
         _ => group_by_values_iter(period, time, closed_window, tu, None),
-    };
+    }?;
     rolling_apply_agg_window::<no_nulls::MinWindow<_>, _, _>(values, offset_iter, None)
 }
 
@@ -84,7 +84,7 @@ where
         #[cfg(feature = "timezones")]
         Some(tz) => group_by_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok()),
         _ => group_by_values_iter(period, time, closed_window, tu, None),
-    };
+    }?;
     rolling_apply_agg_window::<no_nulls::MaxWindow<_>, _, _>(values, offset_iter, None)
 }
 
@@ -105,7 +105,7 @@ where
         #[cfg(feature = "timezones")]
         Some(tz) => group_by_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok()),
         _ => group_by_values_iter(period, time, closed_window, tu, None),
-    };
+    }?;
     rolling_apply_agg_window::<no_nulls::SumWindow<_>, _, _>(values, offset_iter, None)
 }
 
@@ -126,7 +126,7 @@ where
         #[cfg(feature = "timezones")]
         Some(tz) => group_by_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok()),
         _ => group_by_values_iter(period, time, closed_window, tu, None),
-    };
+    }?;
     rolling_apply_agg_window::<no_nulls::MeanWindow<_>, _, _>(values, offset_iter, None)
 }
 
@@ -147,7 +147,7 @@ where
         #[cfg(feature = "timezones")]
         Some(tz) => group_by_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok()),
         _ => group_by_values_iter(period, time, closed_window, tu, None),
-    };
+    }?;
     rolling_apply_agg_window::<no_nulls::VarWindow<_>, _, _>(values, offset_iter, params)
 }
 
@@ -168,6 +168,6 @@ where
         #[cfg(feature = "timezones")]
         Some(tz) => group_by_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok()),
         _ => group_by_values_iter(period, time, closed_window, tu, None),
-    };
+    }?;
     rolling_apply_agg_window::<no_nulls::QuantileWindow<_>, _, _>(values, offset_iter, params)
 }

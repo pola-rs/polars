@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
+use arrow::legacy::kernels::rolling::compare_fn_nan_max;
 use either::Either;
-use polars_arrow::kernels::rolling::compare_fn_nan_max;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::sort::{sort_slice_ascending, sort_slice_descending};
 use polars_core::prelude::*;
@@ -70,19 +70,34 @@ where
     }
 }
 
-pub fn top_k(s: &Series, k: usize, descending: bool) -> PolarsResult<Series> {
-    if s.is_empty() {
-        return Ok(s.clone());
-    }
-    let dtype = s.dtype();
+pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
+    let src = &s[0];
+    let k_s = &s[1];
 
-    let s = s.to_physical_repr();
-
-    macro_rules! dispatch {
-        ($ca:expr) => {{
-            top_k_impl($ca, k, descending).into_series()
-        }};
+    if src.is_empty() {
+        return Ok(src.clone());
     }
 
-    downcast_as_macro_arg_physical!(&s, dispatch).cast(dtype)
+    polars_ensure!(
+        k_s.len() == 1,
+        ComputeError: "k must be a single value."
+    );
+
+    let k_s = k_s.cast(&IDX_DTYPE)?;
+    let k = k_s.idx()?;
+
+    let dtype = src.dtype();
+
+    if let Some(k) = k.get(0) {
+        let s = src.to_physical_repr();
+        macro_rules! dispatch {
+            ($ca:expr) => {{
+                top_k_impl($ca, k as usize, descending).into_series()
+            }};
+        }
+
+        downcast_as_macro_arg_physical!(&s, dispatch).cast(dtype)
+    } else {
+        Ok(Series::full_null(src.name(), src.len(), dtype))
+    }
 }

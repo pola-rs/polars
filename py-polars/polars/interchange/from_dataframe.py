@@ -6,13 +6,15 @@ import polars._reexport as pl
 from polars.convert import from_arrow
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.dependencies import pyarrow as pa
+from polars.interchange.dataframe import PolarsDataFrame
 from polars.utils.various import parse_version
 
 if TYPE_CHECKING:
     from polars import DataFrame
+    from polars.interchange.protocol import SupportsInterchange
 
 
-def from_dataframe(df: Any, *, allow_copy: bool = True) -> DataFrame:
+def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataFrame:
     """
     Build a Polars DataFrame from any dataframe supporting the interchange protocol.
 
@@ -20,7 +22,7 @@ def from_dataframe(df: Any, *, allow_copy: bool = True) -> DataFrame:
     ----------
     df
         Object supporting the dataframe interchange protocol, i.e. must have implemented
-        the ``__dataframe__`` method.
+        the `__dataframe__` method.
     allow_copy
         Allow memory to be copied to perform the conversion. If set to False, causes
         conversions that are not zero-copy to fail.
@@ -37,7 +39,7 @@ def from_dataframe(df: Any, *, allow_copy: bool = True) -> DataFrame:
     protocol. Therefore, pyarrow>=11.0.0 is required for this function to work.
 
     Because Polars can not currently guarantee zero-copy conversion from Arrow for
-    categorical columns, ``allow_copy=False`` will not work if the dataframe contains
+    categorical columns, `allow_copy=False` will not work if the dataframe contains
     categorical data.
 
     Examples
@@ -61,6 +63,9 @@ def from_dataframe(df: Any, *, allow_copy: bool = True) -> DataFrame:
     """
     if isinstance(df, pl.DataFrame):
         return df
+    elif isinstance(df, PolarsDataFrame):
+        return df._df
+
     if not hasattr(df, "__dataframe__"):
         raise TypeError(
             f"`df` of type {type(df).__name__!r} does not support the dataframe interchange protocol"

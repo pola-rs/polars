@@ -8,15 +8,15 @@ mod null;
 mod primitive;
 
 pub use anonymous::*;
+use arrow::legacy::array::list::AnonymousBuilder;
+use arrow::legacy::array::null::MutableNullArray;
+use arrow::legacy::prelude::*;
 pub use binary::*;
 pub use boolean::*;
 #[cfg(feature = "dtype-categorical")]
 use categorical::*;
 use dtypes::*;
 use null::*;
-use polars_arrow::array::list::AnonymousBuilder;
-use polars_arrow::array::null::MutableNullArray;
-use polars_arrow::prelude::*;
 pub use primitive::*;
 
 use super::*;
@@ -120,6 +120,12 @@ pub fn get_list_builder(
         ))),
         DataType::Null => Ok(Box::new(ListNullChunkedBuilder::new(name, list_capacity))),
         DataType::List(_) => Ok(Box::new(AnonymousOwnedListBuilder::new(
+            name,
+            list_capacity,
+            Some(inner_type_logical.clone()),
+        ))),
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(..) => Ok(Box::new(AnonymousOwnedListBuilder::new(
             name,
             list_capacity,
             Some(inner_type_logical.clone()),

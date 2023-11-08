@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import timezone
-from typing import TYPE_CHECKING, Any, Collection, Mapping, TypeVar
+from typing import TYPE_CHECKING, Any, Collection, Literal, Mapping, overload
 
 from polars import functions as F
 from polars.datatypes import (
@@ -24,19 +24,29 @@ from polars.datatypes import (
     is_polars_dtype,
 )
 from polars.expr import Expr
-from polars.utils.deprecation import deprecate_function
+from polars.utils.deprecation import deprecate_function, deprecate_nonkeyword_arguments
 
 if TYPE_CHECKING:
     import sys
 
     from polars import DataFrame, LazyFrame
     from polars.datatypes import PolarsDataType
-    from polars.type_aliases import TimeUnit
+    from polars.type_aliases import SelectorType, TimeUnit
 
     if sys.version_info >= (3, 11):
         from typing import Self
     else:
         from typing_extensions import Self
+
+
+@overload
+def is_selector(obj: _selector_proxy_) -> Literal[True]:  # type: ignore[misc]
+    ...
+
+
+@overload
+def is_selector(obj: Any) -> Literal[False]:
+    ...
 
 
 def is_selector(obj: Any) -> bool:
@@ -181,6 +191,7 @@ def _expand_selectors(
 def _expand_selector_dicts(
     df: DataFrame,
     d: Mapping[Any, Any] | None,
+    *,
     expand_keys: bool,
     expand_values: bool,
     tuple_keys: bool = False,
@@ -300,9 +311,9 @@ class _selector_proxy_(Expr):
 
     def as_expr(self) -> Expr:
         """
-        Materialize the ``selector`` into a normal expression.
+        Materialize the `selector` into a normal expression.
 
-        This ensures that the operators ``|``, ``&``, ``~`` and ``-``
+        This ensures that the operators `|`, `&`, `~` and `-`
         are applied on the data and not on the selector sets.
         """
         return Expr._from_pyexpr(self._pyexpr)
@@ -321,9 +332,6 @@ def _re_string(string: str | Collection[str]) -> str:
                 strings.append(st)
         rx = "|".join(re.escape(x) for x in strings)
     return f"({rx})"
-
-
-SelectorType = TypeVar("SelectorType", Expr, _selector_proxy_)
 
 
 def all() -> SelectorType:
@@ -402,12 +410,12 @@ def binary() -> SelectorType:
 
     Select binary columns and export as a dict:
 
-    >>> df.select(cs.binary()).to_dict(False)
+    >>> df.select(cs.binary()).to_dict(as_series=False)
     {'a': [b'hello'], 'c': [b'!']}
 
     Select all columns *except* for those that are binary:
 
-    >>> df.select(~cs.binary()).to_dict(False)
+    >>> df.select(~cs.binary()).to_dict(as_series=False)
     {'b': ['world'], 'd': [':)']}
 
     """
@@ -676,7 +684,7 @@ def categorical() -> SelectorType:
 
 def contains(substring: str | Collection[str]) -> SelectorType:
     """
-    Select columns that contain the given literal substring(s).
+    Select columns whose names contain the given literal substring(s).
 
     Parameters
     ----------
@@ -821,8 +829,8 @@ def datetime(
         Omit to select columns with any valid timeunit.
     time_zone
         * One or more timezone strings, as defined in zoneinfo (to see valid options
-          run ``import zoneinfo; zoneinfo.available_timezones()`` for a full list).
-        * Set ``None`` to select Datetime columns that do not have a timezone.
+          run `import zoneinfo; zoneinfo.available_timezones()` for a full list).
+        * Set `None` to select Datetime columns that do not have a timezone.
         * Set "*" to select Datetime columns that have *any* timezone.
 
     See Also
@@ -949,10 +957,7 @@ def datetime(
             [time_zone] if isinstance(time_zone, (str, timezone)) else list(time_zone)
         )
 
-    datetime_dtypes = []
-    for tu in time_unit:
-        for tz in time_zone:  # type: ignore[union-attr]
-            datetime_dtypes.append(Datetime(tu, tz))
+    datetime_dtypes = [Datetime(tu, tz) for tu in time_unit for tz in time_zone]  # type: ignore[union-attr]
 
     return _selector_proxy_(
         F.col(datetime_dtypes),
@@ -1479,7 +1484,7 @@ def last() -> SelectorType:
 
     Select everything  *except* for the last column:
 
-    >> df.select(~cs.last())
+    >>> df.select(~cs.last())
     shape: (2, 3)
     ┌─────┬─────┬─────┐
     │ foo ┆ bar ┆ baz │
@@ -1658,7 +1663,7 @@ def object() -> SelectorType:
 
     Select object columns and export as a dict:
 
-    >>> df.select(cs.object()).to_dict(False)  # doctest: +IGNORE_RESULT
+    >>> df.select(cs.object()).to_dict(as_series=False)  # doctest: +IGNORE_RESULT
     {
         "uuid_obj": [
             UUID("6be063cf-c9c6-43be-878e-e446cfd42981"),
@@ -1758,7 +1763,8 @@ def starts_with(*prefix: str) -> SelectorType:
     )
 
 
-def string(include_categorical: bool = False) -> SelectorType:
+@deprecate_nonkeyword_arguments(version="0.19.3")
+def string(include_categorical: bool = False) -> SelectorType:  # noqa: FBT001
     """
     Select all Utf8 (and, optionally, Categorical) string columns .
 
@@ -1797,7 +1803,9 @@ def string(include_categorical: bool = False) -> SelectorType:
 
     Group by all string *and* categorical columns:
 
-    >>> df.group_by(cs.string(True)).agg(cs.numeric().sum()).sort(by=cs.string(True))
+    >>> df.group_by(cs.string(include_categorical=True)).agg(cs.numeric().sum()).sort(
+    ...     by=cs.string(include_categorical=True)
+    ... )
     shape: (3, 4)
     ┌─────┬─────┬─────┬──────┐
     │ w   ┆ z   ┆ x   ┆ y    │
@@ -1963,5 +1971,4 @@ __all__ = [
     "string",
     "is_selector",
     "expand_selector",
-    "SelectorType",
 ]

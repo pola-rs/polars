@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
-use polars_arrow::is_valid::IsValid;
+use arrow::legacy::is_valid::IsValid;
 use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 
 use crate::physical_plan::state::ExecutionState;
@@ -73,7 +74,7 @@ impl PhysicalExpr for FilterExpr {
             let predicate = predicate_s.bool()?;
 
             // All values true - don't do anything.
-            if predicate.all() {
+            if let Some(true) = predicate.all_kleene() {
                 return Ok(ac_s);
             }
             // All values false - create empty groups.
@@ -94,7 +95,7 @@ impl PhysicalExpr for FilterExpr {
                             let groups = groups
                                 .par_iter()
                                 .map(|(first, idx)| unsafe {
-                                    let idx: Vec<IdxSize> = idx
+                                    let idx: IdxVec = idx
                                         .iter()
                                         .copied()
                                         .filter(|i| {
@@ -114,7 +115,7 @@ impl PhysicalExpr for FilterExpr {
                             let groups = groups
                                 .par_iter()
                                 .map(|&[first, len]| unsafe {
-                                    let idx: Vec<IdxSize> = (first..first + len)
+                                    let idx: IdxVec = (first..first + len)
                                         .filter(|&i| {
                                             // SAFETY: just checked bounds in short circuited lhs
                                             predicate.value(i as usize)

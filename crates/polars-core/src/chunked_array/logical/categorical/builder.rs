@@ -2,11 +2,11 @@ use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 
 use arrow::array::*;
+use arrow::legacy::trusted_len::TrustedLenPush;
 use hashbrown::hash_map::{Entry, RawEntryMut};
-use polars_arrow::trusted_len::TrustedLenPush;
 
 use crate::datatypes::PlHashMap;
-use crate::frame::group_by::hashing::HASHMAP_INIT_SIZE;
+use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::{using_string_cache, StringCache, POOL};
 
@@ -92,7 +92,7 @@ impl RevMapping {
         !self.is_global()
     }
 
-    /// Get the categories in this RevMapping
+    /// Get the categories in this [`RevMapping`]
     pub fn get_categories(&self) -> &Utf8Array<i64> {
         match self {
             Self::Global(_, a, _) => a,
@@ -105,7 +105,9 @@ impl RevMapping {
         self.get_categories().len()
     }
 
-    /// Categorical to str
+    /// [`Categorical`] to [`str`]
+    ///
+    /// [`Categorical`]: crate::datatypes::DataType::Categorical
     pub fn get(&self, idx: u32) -> &str {
         match self {
             Self::Global(map, a, _) => {
@@ -126,7 +128,9 @@ impl RevMapping {
         }
     }
 
-    /// Categorical to str
+    /// [`Categorical`] to [`str`]
+    ///
+    /// [`Categorical`]: crate::datatypes::DataType::Categorical
     ///
     /// # Safety
     /// This doesn't do any bound checking
@@ -150,7 +154,10 @@ impl RevMapping {
         }
     }
 
-    /// str to Categorical
+    /// [`str`] to [`Categorical`]
+    ///
+    ///
+    /// [`Categorical`]: crate::datatypes::DataType::Categorical
     pub fn find(&self, value: &str) -> Option<u32> {
         match self {
             Self::Global(rev_map, a, id) => {
@@ -270,7 +277,7 @@ impl<'a> CategoricalChunkedBuilder<'a> {
     }
 
     /// `store_hashes` is not needed by the local builder, only for the global builder under contention
-    /// The hashes have the same order as the `Utf8Array` values.
+    /// The hashes have the same order as the [`Utf8Array`] values.
     fn build_local_map<I>(&mut self, i: I, store_hashes: bool) -> Vec<u64>
     where
         I: IntoIterator<Item = Option<&'a str>>,
@@ -280,8 +287,10 @@ impl<'a> CategoricalChunkedBuilder<'a> {
             self.hashes = Vec::with_capacity(iter.size_hint().0 / 10)
         }
         // It is important that we use the same hash builder as the global `StringCache` does.
-        self.local_mapping =
-            PlHashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, StringCache::get_hash_builder());
+        self.local_mapping = PlHashMap::with_capacity_and_hasher(
+            _HASHMAP_INIT_SIZE,
+            StringCache::get_hash_builder(),
+        );
         for opt_s in &mut iter {
             match opt_s {
                 Some(s) => self.push_impl(s, store_hashes),
@@ -297,7 +306,7 @@ impl<'a> CategoricalChunkedBuilder<'a> {
         std::mem::take(&mut self.hashes)
     }
 
-    /// Build a global string cached `CategoricalChunked` from a local `Dictionary`.
+    /// Build a global string cached [`CategoricalChunked`] from a local [`Dictionary`].
     pub(super) fn global_map_from_local(&mut self, keys: &UInt32Array, values: Utf8Array<i64>) {
         // locally we don't need a hashmap because we all categories are 1 integer apart
         // so the index is local, and the values is global
@@ -352,7 +361,7 @@ impl<'a> CategoricalChunkedBuilder<'a> {
     where
         I: IntoIterator<Item = Option<&'a str>>,
     {
-        // first build the values: `Utf8Array`
+        // first build the values: [`Utf8Array`]
         // we can use a local hashmap for that
         // `hashes.len()` is equal to to the number of unique values.
         let hashes = self.build_local_map(i, true);
@@ -477,7 +486,7 @@ impl CategoricalChunked {
     pub unsafe fn from_global_indices_unchecked(cats: UInt32Chunked) -> CategoricalChunked {
         let cache = crate::STRING_CACHE.read_map();
 
-        let cap = std::cmp::min(std::cmp::min(cats.len(), cache.len()), HASHMAP_INIT_SIZE);
+        let cap = std::cmp::min(std::cmp::min(cats.len(), cache.len()), _HASHMAP_INIT_SIZE);
         let mut rev_map = PlHashMap::with_capacity(cap);
         let mut str_values = MutableUtf8Array::with_capacities(cap, cap * 24);
 
@@ -503,12 +512,12 @@ impl CategoricalChunked {
 mod test {
     use crate::chunked_array::categorical::CategoricalChunkedBuilder;
     use crate::prelude::*;
-    use crate::{enable_string_cache, reset_string_cache, SINGLE_LOCK};
+    use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
 
     #[test]
     fn test_categorical_rev() -> PolarsResult<()> {
         let _lock = SINGLE_LOCK.lock();
-        reset_string_cache();
+        disable_string_cache();
         let slice = &[
             Some("foo"),
             None,
@@ -523,7 +532,7 @@ mod test {
         assert_eq!(out.get_rev_map().len(), 2);
 
         // test the global branch
-        enable_string_cache(true);
+        enable_string_cache();
         // empty global cache
         let out = ca.cast(&DataType::Categorical(None))?;
         let out = out.categorical().unwrap().clone();
@@ -547,11 +556,13 @@ mod test {
 
     #[test]
     fn test_categorical_builder() {
-        use crate::{enable_string_cache, reset_string_cache};
+        use crate::{disable_string_cache, enable_string_cache};
         let _lock = crate::SINGLE_LOCK.lock();
-        for b in &[false, true] {
-            reset_string_cache();
-            enable_string_cache(*b);
+        for use_string_cache in [false, true] {
+            disable_string_cache();
+            if use_string_cache {
+                enable_string_cache();
+            }
 
             // Use 2 builders to check if the global string cache
             // does not interfere with the index mapping

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_arrow::utils::CustomIterTools;
+use arrow::legacy::utils::CustomIterTools;
 use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
@@ -36,6 +36,33 @@ impl TernaryExpr {
 }
 
 fn expand_lengths(truthy: &mut Series, falsy: &mut Series, mask: &mut BooleanChunked) {
+    match mask.len() {
+        0 => {
+            *truthy = Series::new_empty(truthy.name(), truthy.dtype());
+            *falsy = Series::new_empty(falsy.name(), falsy.dtype());
+
+            return;
+        },
+        1 => {
+            // Mask length 1 will broadcast to the matching branch.
+            let len = match mask.get(0) {
+                Some(true) => {
+                    *falsy = truthy.clone();
+                    truthy.len()
+                },
+                _ => {
+                    *truthy = falsy.clone();
+                    falsy.len()
+                },
+            };
+
+            *mask = mask.new_from_index(0, len);
+
+            return;
+        },
+        _ => {},
+    }
+
     let len = std::cmp::max(std::cmp::max(truthy.len(), falsy.len()), mask.len());
     if len > 1 {
         if falsy.len() == 1 {
@@ -114,16 +141,6 @@ impl PhysicalExpr for TernaryExpr {
         let mut truthy = truthy?;
         let mut falsy = falsy?;
 
-        if truthy.is_empty() {
-            return Ok(truthy);
-        }
-        if falsy.is_empty() {
-            return Ok(falsy);
-        }
-        if mask.is_empty() {
-            return Ok(Series::new_empty(truthy.name(), truthy.dtype()));
-        }
-
         expand_lengths(&mut truthy, &mut falsy, &mut mask);
         truthy.zip_with(&mask, &falsy)
     }
@@ -140,12 +157,6 @@ impl PhysicalExpr for TernaryExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let aggregation_predicate = self.predicate.is_valid_aggregation();
-        if !aggregation_predicate {
-            // Unwrap will not fail as it is not an aggregation expression.
-            eprintln!(
-                "The predicate '{}' in 'when->then->otherwise' is not a valid aggregation and might produce a different number of rows than the group_by operation would. This behavior is experimental and may be subject to change", self.predicate.as_expression().unwrap()
-            )
-        }
 
         let op_mask = || self.predicate.evaluate_on_groups(df, groups, state);
         let op_truthy = || self.truthy.evaluate_on_groups(df, groups, state);
@@ -170,9 +181,12 @@ impl PhysicalExpr for TernaryExpr {
             // truthy -> aggregated-flat | literal
             // falsy -> aggregated-flat | literal
             // simply align lengths and zip
-            (Literal(truthy) | AggregatedFlat(truthy), AggregatedFlat(falsy) | Literal(falsy))
+            (
+                Literal(truthy) | AggregatedScalar(truthy),
+                AggregatedScalar(falsy) | Literal(falsy),
+            )
             | (AggregatedList(truthy), AggregatedList(falsy))
-                if matches!(ac_mask.agg_state(), AggState::AggregatedFlat(_)) =>
+                if matches!(ac_mask.agg_state(), AggState::AggregatedScalar(_)) =>
             {
                 let mut truthy = truthy.clone();
                 let mut falsy = falsy.clone();
@@ -194,7 +208,6 @@ impl PhysicalExpr for TernaryExpr {
             //     None
             (AggregatedList(_), Literal(_)) | (Literal(_), AggregatedList(_)) => {
                 if !aggregation_predicate {
-                    // Experimental elementwise behavior tested in `test_binary_agg_context_1`.
                     return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
                 }
                 let mask = mask_s.bool()?;
@@ -296,7 +309,6 @@ impl PhysicalExpr for TernaryExpr {
                 }
 
                 if !aggregation_predicate {
-                    // Experimental elementwise behavior tested in `test_binary_agg_context_1`.
                     return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
                 }
                 let mut mask = mask_s.bool()?.clone();

@@ -16,4 +16,5 @@ pub(crate) use parquet::*;
 pub(crate) use reproject::*;
 pub(crate) use union::*;
 
+#[cfg(feature = "csv")]
 use super::*;

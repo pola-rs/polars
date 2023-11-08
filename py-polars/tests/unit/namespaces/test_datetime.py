@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -288,7 +288,7 @@ def test_month_start_end_invalid() -> None:
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_base_utc_offset(time_unit: TimeUnit) -> None:
-    ser = pl.date_range(
+    ser = pl.datetime_range(
         datetime(2011, 12, 29),
         datetime(2012, 1, 1),
         "2d",
@@ -305,7 +305,7 @@ def test_base_utc_offset(time_unit: TimeUnit) -> None:
 
 
 def test_base_utc_offset_lazy_schema() -> None:
-    ser = pl.date_range(
+    ser = pl.datetime_range(
         datetime(2020, 10, 25),
         datetime(2020, 10, 26),
         time_zone="Europe/London",
@@ -321,7 +321,7 @@ def test_base_utc_offset_lazy_schema() -> None:
 
 
 def test_base_utc_offset_invalid() -> None:
-    ser = pl.date_range(datetime(2020, 10, 25), datetime(2020, 10, 26), eager=True)
+    ser = pl.datetime_range(datetime(2020, 10, 25), datetime(2020, 10, 26), eager=True)
     with pytest.raises(
         InvalidOperationError,
         match=r"`base_utc_offset` operation not supported for dtype `datetime\[μs\]` \(expected: time-zone-aware datetime\)",
@@ -331,7 +331,7 @@ def test_base_utc_offset_invalid() -> None:
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_dst_offset(time_unit: TimeUnit) -> None:
-    ser = pl.date_range(
+    ser = pl.datetime_range(
         datetime(2020, 10, 25),
         datetime(2020, 10, 26),
         time_zone="Europe/London",
@@ -343,7 +343,7 @@ def test_dst_offset(time_unit: TimeUnit) -> None:
 
 
 def test_dst_offset_lazy_schema() -> None:
-    ser = pl.date_range(
+    ser = pl.datetime_range(
         datetime(2020, 10, 25),
         datetime(2020, 10, 26),
         time_zone="Europe/London",
@@ -359,7 +359,7 @@ def test_dst_offset_lazy_schema() -> None:
 
 
 def test_dst_offset_invalid() -> None:
-    ser = pl.date_range(datetime(2020, 10, 25), datetime(2020, 10, 26), eager=True)
+    ser = pl.datetime_range(datetime(2020, 10, 25), datetime(2020, 10, 26), eager=True)
     with pytest.raises(
         InvalidOperationError,
         match=r"`dst_offset` operation not supported for dtype `datetime\[μs\]` \(expected: time-zone-aware datetime\)",
@@ -400,13 +400,13 @@ def test_strptime_fractional_seconds(series_of_str_dates: pl.Series) -> None:
 @pytest.mark.parametrize(
     ("unit_attr", "expected"),
     [
-        ("days", pl.Series([1])),
-        ("hours", pl.Series([24])),
-        ("minutes", pl.Series([24 * 60])),
-        ("seconds", pl.Series([3600 * 24])),
-        ("milliseconds", pl.Series([3600 * 24 * int(1e3)])),
-        ("microseconds", pl.Series([3600 * 24 * int(1e6)])),
-        ("nanoseconds", pl.Series([3600 * 24 * int(1e9)])),
+        ("total_days", pl.Series([1])),
+        ("total_hours", pl.Series([24])),
+        ("total_minutes", pl.Series([24 * 60])),
+        ("total_seconds", pl.Series([3600 * 24])),
+        ("total_milliseconds", pl.Series([3600 * 24 * int(1e3)])),
+        ("total_microseconds", pl.Series([3600 * 24 * int(1e6)])),
+        ("total_nanoseconds", pl.Series([3600 * 24 * int(1e9)])),
     ],
 )
 def test_duration_extract_times(
@@ -416,6 +416,32 @@ def test_duration_extract_times(
     duration = pl.Series([datetime(2022, 1, 2)]) - pl.Series([datetime(2022, 1, 1)])
 
     assert_series_equal(getattr(duration.dt, unit_attr)(), expected)
+
+
+@pytest.mark.parametrize(
+    ("unit_attr", "expected"),
+    [
+        ("days", pl.Series([1])),
+        ("hours", pl.Series([24])),
+        ("minutes", pl.Series([24 * 60])),
+        ("seconds", pl.Series([3600 * 24])),
+        ("milliseconds", pl.Series([3600 * 24 * int(1e3)])),
+        ("microseconds", pl.Series([3600 * 24 * int(1e6)])),
+        ("nanoseconds", pl.Series([3600 * 24 * int(1e9)])),
+    ],
+)
+def test_duration_extract_times_deprecated_methods(
+    unit_attr: str,
+    expected: pl.Series,
+) -> None:
+    duration = pl.Series([datetime(2022, 1, 2)]) - pl.Series([datetime(2022, 1, 1)])
+
+    with pytest.deprecated_call():
+        assert_series_equal(getattr(duration.dt, unit_attr)(), expected)
+    with pytest.deprecated_call():
+        # Test Expr case too
+        result_df = pl.select(getattr(pl.lit(duration).dt, unit_attr)())
+        assert_series_equal(result_df[result_df.columns[0]], expected)
 
 
 @pytest.mark.parametrize(
@@ -432,7 +458,7 @@ def test_truncate(
     every: str | timedelta,
 ) -> None:
     start, stop = datetime(2022, 1, 1), datetime(2022, 1, 2)
-    s = pl.date_range(
+    s = pl.datetime_range(
         start,
         stop,
         timedelta(minutes=30),
@@ -466,7 +492,7 @@ def test_round(
     every: str | timedelta,
 ) -> None:
     start, stop = datetime(2022, 1, 1), datetime(2022, 1, 2)
-    s = pl.date_range(
+    s = pl.datetime_range(
         start,
         stop,
         timedelta(minutes=30),
@@ -565,7 +591,7 @@ def test_date_time_combine(tzinfo: ZoneInfo | None, time_zone: str | None) -> No
             datetime(2022, 7, 5, 4, 5, 6),
         ],
     }
-    assert df.to_dict(False) == expected_dict
+    assert df.to_dict(as_series=False) == expected_dict
 
     expected_schema = {
         "d1": pl.Datetime("us", time_zone),
@@ -610,7 +636,7 @@ def test_combine_lazy_schema_date(time_unit: TimeUnit) -> None:
 
 
 def test_is_leap_year() -> None:
-    assert pl.date_range(
+    assert pl.datetime_range(
         datetime(1990, 1, 1), datetime(2004, 1, 1), "1y", eager=True
     ).dt.is_leap_year().to_list() == [
         False,
@@ -632,7 +658,7 @@ def test_is_leap_year() -> None:
 
 
 def test_quarter() -> None:
-    assert pl.date_range(
+    assert pl.datetime_range(
         datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo", eager=True
     ).dt.quarter().to_list() == [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4]
 
@@ -640,7 +666,7 @@ def test_quarter() -> None:
 def test_date_offset() -> None:
     df = pl.DataFrame(
         {
-            "dates": pl.date_range(
+            "dates": pl.datetime_range(
                 datetime(2000, 1, 1), datetime(2020, 1, 1), "1y", eager=True
             )
         }
@@ -672,10 +698,9 @@ def test_offset_by_crossing_dst(time_zone: str | None) -> None:
 
 
 def test_negative_offset_by_err_msg_8464() -> None:
-    with pytest.raises(
-        ComputeError, match=r"cannot advance '2022-03-30 00:00:00' by -1 month\(s\)"
-    ):
-        pl.Series([datetime(2022, 3, 30)]).dt.offset_by("-1mo")
+    result = pl.Series([datetime(2022, 3, 30)]).dt.offset_by("-1mo")
+    expected = pl.Series([datetime(2022, 2, 28)])
+    assert_series_equal(result, expected)
 
 
 def test_offset_by_truncate_sorted_flag() -> None:
@@ -688,6 +713,80 @@ def test_offset_by_truncate_sorted_flag() -> None:
     assert s1.flags["SORTED_ASC"]
     s2 = s1.dt.truncate("1mo")
     assert s2.flags["SORTED_ASC"]
+
+
+def test_offset_by_broadcasting() -> None:
+    # test broadcast lhs
+    df = pl.DataFrame(
+        {
+            "offset": ["1d", "10d", "3d", None],
+        }
+    )
+    result = df.select(
+        d1=pl.lit(datetime(2020, 10, 25)).dt.offset_by(pl.col("offset")),
+        d2=pl.lit(datetime(2020, 10, 25))
+        .dt.cast_time_unit("ms")
+        .dt.offset_by(pl.col("offset")),
+        d3=pl.lit(datetime(2020, 10, 25))
+        .dt.replace_time_zone("Europe/London")
+        .dt.offset_by(pl.col("offset")),
+        d4=pl.lit(datetime(2020, 10, 25)).dt.date().dt.offset_by(pl.col("offset")),
+        d5=pl.lit(None, dtype=pl.Datetime).dt.offset_by(pl.col("offset")),
+    )
+    expected_dict = {
+        "d1": [
+            datetime(2020, 10, 26),
+            datetime(2020, 11, 4),
+            datetime(2020, 10, 28),
+            None,
+        ],
+        "d2": [
+            datetime(2020, 10, 26),
+            datetime(2020, 11, 4),
+            datetime(2020, 10, 28),
+            None,
+        ],
+        "d3": [
+            datetime(2020, 10, 26, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 11, 4, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 28, tzinfo=ZoneInfo(key="Europe/London")),
+            None,
+        ],
+        "d4": [
+            datetime(2020, 10, 26).date(),
+            datetime(2020, 11, 4).date(),
+            datetime(2020, 10, 28).date(),
+            None,
+        ],
+        "d5": [None, None, None, None],
+    }
+    assert result.to_dict(as_series=False) == expected_dict
+
+    # test broadcast rhs
+    df = pl.DataFrame({"dt": [datetime(2020, 10, 25), datetime(2021, 1, 2), None]})
+    result = df.select(
+        d1=pl.col("dt").dt.offset_by(pl.lit("1mo3d")),
+        d2=pl.col("dt").dt.cast_time_unit("ms").dt.offset_by(pl.lit("1y1mo")),
+        d3=pl.col("dt")
+        .dt.replace_time_zone("Europe/London")
+        .dt.offset_by(pl.lit("3d")),
+        d4=pl.col("dt").dt.date().dt.offset_by(pl.lit("1y1mo1d")),
+    )
+    expected_dict = {
+        "d1": [datetime(2020, 11, 28), datetime(2021, 2, 5), None],
+        "d2": [datetime(2021, 11, 25), datetime(2022, 2, 2), None],
+        "d3": [
+            datetime(2020, 10, 28, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2021, 1, 5, tzinfo=ZoneInfo(key="Europe/London")),
+            None,
+        ],
+        "d4": [datetime(2021, 11, 26).date(), datetime(2022, 2, 3).date(), None],
+    }
+    assert result.to_dict(as_series=False) == expected_dict
+
+    # test all literal
+    result = df.select(d=pl.lit(datetime(2021, 11, 26)).dt.offset_by("1mo1d"))
+    assert result.to_dict(as_series=False) == {"d": [datetime(2021, 12, 27)]}
 
 
 def test_offset_by_expressions() -> None:
@@ -710,24 +809,18 @@ def test_offset_by_expressions() -> None:
         e=pl.col("a").dt.replace_time_zone("Europe/London").dt.offset_by(pl.col("b")),
         f=pl.col("a").dt.date().dt.offset_by(pl.col("b")),
     )
-    expected = cast(
-        pl.DataFrame,
-        pl.from_repr(
-            """
-shape: (5, 4)
-┌─────────────────────┬─────────────────────┬─────────────────────────────┬────────────┐
-│ c                   ┆ d                   ┆ e                           ┆ f          │
-│ ---                 ┆ ---                 ┆ ---                         ┆ ---        │
-│ datetime[μs]        ┆ datetime[ms]        ┆ datetime[μs, Europe/London] ┆ date       │
-╞═════════════════════╪═════════════════════╪═════════════════════════════╪════════════╡
-│ null                ┆ null                ┆ null                        ┆ null       │
-│ null                ┆ null                ┆ null                        ┆ null       │
-│ 2020-10-26 00:00:00 ┆ 2020-10-26 00:00:00 ┆ 2020-10-26 00:00:00 GMT     ┆ 2020-10-26 │
-│ 2021-01-12 00:00:00 ┆ 2021-01-12 00:00:00 ┆ 2021-01-12 00:00:00 GMT     ┆ 2021-01-12 │
-│ null                ┆ null                ┆ null                        ┆ null       │
-└─────────────────────┴─────────────────────┴─────────────────────────────┴────────────┘
-"""
-        ),
+
+    expected = pl.DataFrame(
+        {
+            "c": [None, None, datetime(2020, 10, 26), datetime(2021, 1, 12), None],
+            "d": [None, None, datetime(2020, 10, 26), datetime(2021, 1, 12), None],
+            "e": [None, None, datetime(2020, 10, 26), datetime(2021, 1, 12), None],
+            "f": [None, None, date(2020, 10, 26), date(2021, 1, 12), None],
+        },
+        schema_overrides={
+            "d": pl.Datetime("ms"),
+            "e": pl.Datetime(time_zone="Europe/London"),
+        },
     )
     assert_frame_equal(result, expected)
     assert result.flags == {
@@ -770,9 +863,9 @@ shape: (5, 4)
 @pytest.mark.parametrize(
     ("duration", "input_date", "expected"),
     [
-        ("1mo_saturating", date(2018, 1, 31), date(2018, 2, 28)),
-        ("1y_saturating", date(2024, 2, 29), date(2025, 2, 28)),
-        ("1y1mo_saturating", date(2024, 1, 30), date(2025, 2, 28)),
+        ("1mo", date(2018, 1, 31), date(2018, 2, 28)),
+        ("1y", date(2024, 2, 29), date(2025, 2, 28)),
+        ("1y1mo", date(2024, 1, 30), date(2025, 2, 28)),
     ],
 )
 def test_offset_by_saturating_8217_8474(

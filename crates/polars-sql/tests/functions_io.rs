@@ -1,5 +1,8 @@
+#[cfg(any(feature = "csv", feature = "ipc"))]
 use polars_core::prelude::*;
+#[cfg(any(feature = "csv", feature = "ipc"))]
 use polars_lazy::prelude::*;
+#[cfg(any(feature = "csv", feature = "ipc"))]
 use polars_sql::*;
 
 #[test]

@@ -10,14 +10,13 @@ use std::any::Any;
 use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
 
+use arrow::array::BinaryArray;
 use eval::Eval;
 use hash_table::AggHashTable;
 use hashbrown::hash_map::{RawEntryMut, RawVacantEntryMut};
-use polars_arrow::export::arrow::array::BinaryArray;
 use polars_core::frame::row::AnyValueBufferTrusted;
 use polars_core::series::SeriesPhysIter;
 use polars_core::IdBuildHasher;
-use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 pub(crate) use sink::GenericGroupby2;

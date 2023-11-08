@@ -1,6 +1,6 @@
 use super::*;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Hash)]
 #[cfg_attr(
     any(feature = "serde-lazy", feature = "serde"),
     derive(Serialize, Deserialize)
@@ -58,6 +58,8 @@ impl TimeUnit {
     }
 }
 
+#[cfg(feature = "rows")]
+#[cfg(any(feature = "dtype-datetime", feature = "dtype-duration"))]
 #[inline]
 pub(crate) fn convert_time_units(v: i64, tu_l: TimeUnit, tu_r: TimeUnit) -> i64 {
     use TimeUnit::*;

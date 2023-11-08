@@ -12,7 +12,7 @@ fn write_csv() {
     let mut df = create_df();
 
     CsvWriter::new(&mut buf)
-        .has_header(true)
+        .include_header(true)
         .finish(&mut df)
         .expect("csv written");
     let csv = std::str::from_utf8(&buf).unwrap();
@@ -20,7 +20,7 @@ fn write_csv() {
 
     let mut buf: Vec<u8> = Vec::new();
     CsvWriter::new(&mut buf)
-        .has_header(false)
+        .include_header(false)
         .finish(&mut df)
         .expect("csv written");
     let csv = std::str::from_utf8(&buf).unwrap();
@@ -28,7 +28,7 @@ fn write_csv() {
 
     let mut buf: Vec<u8> = Vec::new();
     CsvWriter::new(&mut buf)
-        .has_header(false)
+        .include_header(false)
         .with_line_terminator("\r\n".into())
         .finish(&mut df)
         .expect("csv written");
@@ -153,7 +153,7 @@ fn test_tab_sep() {
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
         .infer_schema(Some(100))
-        .with_delimiter(b'\t')
+        .with_separator(b'\t')
         .has_header(false)
         .with_ignore_errors(true)
         .finish()
@@ -472,10 +472,9 @@ fn test_skip_rows() -> PolarsResult<()> {
     let df = CsvReader::new(file)
         .has_header(false)
         .with_skip_rows(3)
-        .with_delimiter(b' ')
+        .with_separator(b' ')
         .finish()?;
 
-    dbg!(&df);
     assert_eq!(df.height(), 3);
     Ok(())
 }
@@ -491,7 +490,7 @@ fn test_projection_idx() -> PolarsResult<()> {
     let df = CsvReader::new(file)
         .has_header(false)
         .with_projection(Some(vec![4, 5]))
-        .with_delimiter(b' ')
+        .with_separator(b' ')
         .finish()?;
 
     assert_eq!(df.width(), 2);
@@ -501,7 +500,7 @@ fn test_projection_idx() -> PolarsResult<()> {
     let out = CsvReader::new(file)
         .has_header(false)
         .with_projection(Some(vec![4, 6]))
-        .with_delimiter(b' ')
+        .with_separator(b' ')
         .finish();
 
     assert!(out.is_err());
@@ -788,7 +787,7 @@ fn test_infer_schema_eol() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_whitespace_delimiters() -> PolarsResult<()> {
+fn test_whitespace_separators() -> PolarsResult<()> {
     let tsv = "\ta\tb\tc\n1\ta1\tb1\tc1\n2\ta2\tb2\tc2\n".to_string();
 
     let contents = vec![
@@ -799,7 +798,7 @@ fn test_whitespace_delimiters() -> PolarsResult<()> {
 
     for (content, sep) in contents {
         let file = Cursor::new(&content);
-        let df = CsvReader::new(file).with_delimiter(sep).finish()?;
+        let df = CsvReader::new(file).with_separator(sep).finish()?;
 
         assert_eq!(df.shape(), (2, 4));
         assert_eq!(df.get_column_names(), &["", "a", "b", "c"]);
@@ -828,7 +827,7 @@ fn test_tsv_header_offset() -> PolarsResult<()> {
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
         .truncate_ragged_lines(true)
-        .with_delimiter(b'\t')
+        .with_separator(b'\t')
         .finish()?;
 
     assert_eq!(df.shape(), (3, 2));
@@ -859,7 +858,7 @@ fn test_null_values_infer_schema() -> PolarsResult<()> {
 fn test_comma_separated_field_in_tsv() -> PolarsResult<()> {
     let csv = "first\tsecond\n1\t2.3,2.4\n3\t4.5,4.6\n";
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file).with_delimiter(b'\t').finish()?;
+    let df = CsvReader::new(file).with_separator(b'\t').finish()?;
     assert_eq!(df.dtypes(), &[DataType::Int64, DataType::Utf8]);
     Ok(())
 }
@@ -1096,7 +1095,7 @@ fn test_try_parse_dates_3380() -> PolarsResult<()> {
 46.685;7.953;2022-05-10T08:07:12Z;8.8;0.00";
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
-        .with_delimiter(b';')
+        .with_separator(b';')
         .with_try_parse_dates(true)
         .finish()?;
     assert_eq!(df.column("validdate")?.null_count(), 0);

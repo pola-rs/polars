@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 from typing import Any
 
 import pytest
@@ -91,6 +92,20 @@ def test_nested_min_max() -> None:
 
     expected = pl.DataFrame({"a": [1], "b": [2], "c": [3], "d": [4], "t": [3]})
     assert_frame_equal(result, expected)
+
+
+def test_empty_inputs_raise() -> None:
+    with pytest.raises(
+        pl.ComputeError,
+        match="cannot return empty fold because the number of output rows is unknown",
+    ):
+        pl.select(pl.any_horizontal())
+
+    with pytest.raises(
+        pl.ComputeError,
+        match="cannot return empty fold because the number of output rows is unknown",
+    ):
+        pl.select(pl.all_horizontal())
 
 
 def test_max_min_wildcard_columns(fruits_cars: pl.DataFrame) -> None:
@@ -226,4 +241,22 @@ def test_cumsum_fold() -> None:
         }
     )
     result = df.select(pl.cumsum_horizontal("a", "c"))
-    assert result.to_dict(False) == {"cumsum": [{"a": 1, "c": 6}, {"a": 2, "c": 8}]}
+    assert result.to_dict(as_series=False) == {
+        "cumsum": [{"a": 1, "c": 6}, {"a": 2, "c": 8}]
+    }
+
+
+def test_sum_dtype_12028() -> None:
+    result = pl.select(
+        pl.sum_horizontal([pl.duration(seconds=10)]).alias("sum_duration")
+    )
+    expected = pl.DataFrame(
+        [
+            pl.Series(
+                "sum_duration",
+                [datetime.timedelta(seconds=10)],
+                dtype=pl.Duration(time_unit="us"),
+            ),
+        ]
+    )
+    assert_frame_equal(expected, result)

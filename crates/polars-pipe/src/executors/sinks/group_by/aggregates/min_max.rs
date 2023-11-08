@@ -1,9 +1,9 @@
 use std::any::Any;
 use std::cmp::Ordering;
 
-use polars_arrow::export::arrow::array::PrimitiveArray;
-use polars_arrow::export::arrow::compute::aggregate::SimdOrd;
-use polars_arrow::kernels::rolling::{compare_fn_nan_max, compare_fn_nan_min};
+use arrow::array::PrimitiveArray;
+use arrow::compute::aggregate::SimdOrd;
+use arrow::legacy::kernels::rolling::{compare_fn_nan_max, compare_fn_nan_min};
 use polars_core::datatypes::{AnyValue, DataType};
 use polars_core::export::arrow::types::simd::Simd;
 use polars_core::export::num::NumCast;
@@ -89,7 +89,7 @@ where
         length: IdxSize,
         values: &Series,
     ) {
-        let ca: &ChunkedArray<K::POLARSTYPE> = values.as_ref().as_ref();
+        let ca: &ChunkedArray<K::PolarsType> = values.as_ref().as_ref();
         let arr = ca.downcast_iter().next().unwrap();
         let arr = unsafe { arr.slice_typed_unchecked(offset as usize, length as usize) };
         // convince the compiler that K::POLARSTYPE::Native == K

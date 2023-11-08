@@ -1,14 +1,14 @@
 name: '✨ Feature request'
-description: Suggest a new feature or enhancement for Polars
+description: Suggest a new feature or enhancement for Polars.
 labels: [enhancement]
 
 body:
   - type: textarea
     id: description
     attributes:
-      label: Problem description
+      label: Description
       description: >
-        Please describe the feature or enhancement and explain why it should be implemented.
+        Describe the feature or enhancement and explain why it should be implemented.
         Include a code example if applicable.
     validations:
       required: true

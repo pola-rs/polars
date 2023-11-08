@@ -1,15 +1,16 @@
 use std::convert::TryFrom;
 
 use arrow::compute::cast::utf8_to_large_utf8;
+use arrow::legacy::compute::cast::cast;
+#[cfg(any(feature = "dtype-struct", feature = "dtype-categorical"))]
+use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 #[cfg(any(
     feature = "dtype-date",
     feature = "dtype-datetime",
-    feature = "dtype-time"
+    feature = "dtype-time",
+    feature = "dtype-duration"
 ))]
 use arrow::temporal_conversions::*;
-use polars_arrow::compute::cast::cast;
-#[cfg(any(feature = "dtype-struct", feature = "dtype-categorical"))]
-use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
 use polars_error::feature_gated;
 
 use crate::chunked_array::cast::cast_chunks;
@@ -97,7 +98,9 @@ impl Series {
             Float32 => Float32Chunked::from_chunks(name, chunks).into_series(),
             Float64 => Float64Chunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-struct")]
-            Struct(_) => Series::try_from_arrow_unchecked(name, chunks, &dtype.to_arrow()).unwrap(),
+            Struct(_) => {
+                Series::_try_from_arrow_unchecked(name, chunks, &dtype.to_arrow()).unwrap()
+            },
             #[cfg(feature = "object")]
             Object(_) => {
                 assert_eq!(chunks.len(), 1);
@@ -123,10 +126,11 @@ impl Series {
         }
     }
 
-    // Create a new Series without checking if the inner dtype of the chunks is correct
-    // # Safety
-    // The caller must ensure that the given `dtype` matches all the `ArrayRef` dtypes.
-    pub(crate) unsafe fn try_from_arrow_unchecked(
+    /// Create a new Series without checking if the inner dtype of the chunks is correct
+    ///
+    /// # Safety
+    /// The caller must ensure that the given `dtype` matches all the `ArrayRef` dtypes.
+    pub unsafe fn _try_from_arrow_unchecked(
         name: &str,
         chunks: Vec<ArrayRef>,
         dtype: &ArrowDataType,
@@ -383,7 +387,7 @@ impl Series {
                     .iter()
                     .zip(dtype_fields)
                     .map(|(arr, field)| {
-                        Series::try_from_arrow_unchecked(
+                        Series::_try_from_arrow_unchecked(
                             &field.name,
                             vec![arr.clone()],
                             &field.data_type,
@@ -485,7 +489,7 @@ fn convert<F: Fn(&dyn Array) -> ArrayRef>(arr: &[ArrayRef], f: F) -> Vec<ArrayRe
 }
 
 /// Converts to physical types and bubbles up the correct [`DataType`].
-fn to_physical_and_dtype(arrays: Vec<ArrayRef>) -> (Vec<ArrayRef>, DataType) {
+unsafe fn to_physical_and_dtype(arrays: Vec<ArrayRef>) -> (Vec<ArrayRef>, DataType) {
     match arrays[0].data_type() {
         ArrowDataType::Utf8 => (
             convert(&arrays, |arr| {
@@ -499,7 +503,7 @@ fn to_physical_and_dtype(arrays: Vec<ArrayRef>) -> (Vec<ArrayRef>, DataType) {
             feature_gated!("dtype-categorical", {
                 let s = unsafe {
                     let dt = dt.clone();
-                    Series::try_from_arrow_unchecked("", arrays, &dt)
+                    Series::_try_from_arrow_unchecked("", arrays, &dt)
                 }
                 .unwrap();
                 (s.chunks().clone(), s.dtype().clone())
@@ -609,6 +613,19 @@ fn to_physical_and_dtype(arrays: Vec<ArrayRef>) -> (Vec<ArrayRef>, DataType) {
                 (vec![arrow_array], DataType::Struct(polars_fields))
             })
         },
+        // Use Series architecture to convert nested logical types to physical.
+        dt @ (ArrowDataType::Duration(_)
+        | ArrowDataType::Time32(_)
+        | ArrowDataType::Time64(_)
+        | ArrowDataType::Timestamp(_, _)
+        | ArrowDataType::Date32
+        | ArrowDataType::Decimal(_, _)
+        | ArrowDataType::Date64) => {
+            let dt = dt.clone();
+            let mut s = Series::_try_from_arrow_unchecked("", arrays, &dt).unwrap();
+            let dtype = s.dtype().clone();
+            (std::mem::take(s.chunks_mut()), dtype)
+        },
         dt => {
             let dtype = dt.into();
             (arrays, dtype)
@@ -638,7 +655,7 @@ impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
         }
         // Safety:
         // dtype is checked
-        unsafe { Series::try_from_arrow_unchecked(name, chunks, &data_type) }
+        unsafe { Series::_try_from_arrow_unchecked(name, chunks, &data_type) }
     }
 }
 

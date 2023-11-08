@@ -36,7 +36,7 @@ def test_arg_true() -> None:
 
 def test_suffix(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
-    out = df.select([pl.all().suffix("_reverse")])
+    out = df.select([pl.all().name.suffix("_reverse")])
     assert out.columns == ["A_reverse", "fruits_reverse", "B_reverse", "cars_reverse"]
 
 
@@ -57,7 +57,7 @@ def test_pipe() -> None:
 
 def test_prefix(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
-    out = df.select([pl.all().prefix("reverse_")])
+    out = df.select([pl.all().name.prefix("reverse_")])
     assert out.columns == ["reverse_A", "reverse_fruits", "reverse_B", "reverse_cars"]
 
 
@@ -85,12 +85,6 @@ def test_filter_where() -> None:
     assert_frame_equal(result_filter, expected)
 
 
-def test_list_join_strings() -> None:
-    s = pl.Series("a", [["ab", "c", "d"], ["e", "f"], ["g"], []])
-    expected = pl.Series("a", ["ab-c-d", "e-f", "g", ""])
-    assert_series_equal(s.list.join("-"), expected)
-
-
 def test_count_expr() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 3, 3], "b": ["a", "a", "b", "a", "a"]})
 
@@ -105,7 +99,7 @@ def test_count_expr() -> None:
 
 def test_map_alias() -> None:
     out = pl.DataFrame({"foo": [1, 2, 3]}).select(
-        (pl.col("foo") * 2).map_alias(lambda name: f"{name}{name}")
+        (pl.col("foo") * 2).name.map(lambda name: f"{name}{name}")
     )
     expected = pl.DataFrame({"foofoo": [2, 4, 6]})
     assert_frame_equal(out, expected)
@@ -248,7 +242,7 @@ def test_list_eval_expression() -> None:
             pl.concat_list(["a", "b"])
             .list.eval(pl.first().rank(), parallel=parallel)
             .alias("rank")
-        ).to_dict(False) == {
+        ).to_dict(as_series=False) == {
             "a": [1, 8, 3],
             "b": [4, 5, 2],
             "rank": [[1.0, 2.0], [2.0, 1.0], [2.0, 1.0]],
@@ -262,7 +256,26 @@ def test_list_eval_expression() -> None:
 def test_null_count_expr() -> None:
     df = pl.DataFrame({"key": ["a", "b", "b", "a"], "val": [1, 2, None, 1]})
 
-    assert df.select([pl.all().null_count()]).to_dict(False) == {"key": [0], "val": [1]}
+    assert df.select([pl.all().null_count()]).to_dict(as_series=False) == {
+        "key": [0],
+        "val": [1],
+    }
+
+
+def test_pos_neg() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [3, 2, 1],
+            "y": [6, 7, 8],
+        }
+    ).with_columns(-pl.col("x"), +pl.col("y"), -pl.lit(1))
+
+    # #11149: ensure that we preserve the output name (where available)
+    assert df.to_dict(as_series=False) == {
+        "x": [-3, -2, -1],
+        "y": [6, 7, 8],
+        "literal": [-1, -1, -1],
+    }
 
 
 def test_power_by_expression() -> None:
@@ -321,7 +334,7 @@ def test_arr_contains() -> None:
     )
     assert df_groups.lazy().filter(
         pl.col("str_list").list.contains("cat")
-    ).collect().to_dict(False) == {
+    ).collect().to_dict(as_series=False) == {
         "str_list": [["cat", "mouse", "dog"], ["dog", "mouse", "cat"]]
     }
 
@@ -357,7 +370,7 @@ def test_rank_so_4109() -> None:
             pl.col("rank").rank(method="dense").alias("dense"),
             pl.col("rank").rank(method="average").alias("average"),
         ]
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "id": [1, 2, 3, 4],
         "original": [[None, 2, 3, 4], [1, 2, 3, 4], [None, 1, 3, 4], [None, 1, 3, 4]],
         "dense": [[None, 1, 2, 3], [1, 2, 3, 4], [None, 1, 2, 3], [None, 1, 2, 3]],
@@ -368,6 +381,11 @@ def test_rank_so_4109() -> None:
             [None, 1.0, 2.0, 3.0],
         ],
     }
+
+
+def test_rank_string_null_11252() -> None:
+    rank = pl.Series([None, "", "z", None, "a"]).rank()
+    assert rank.to_list() == [None, 1.0, 3.0, None, 2.0]
 
 
 def test_unique_empty() -> None:
@@ -413,10 +431,10 @@ def test_logical_boolean() -> None:
     # note, cannot use expressions in logical
     # boolean context (eg: and/or/not operators)
     with pytest.raises(TypeError, match="ambiguous"):
-        pl.col("colx") and pl.col("coly")
+        pl.col("colx") and pl.col("coly")  # type: ignore[redundant-expr]
 
     with pytest.raises(TypeError, match="ambiguous"):
-        pl.col("colx") or pl.col("coly")
+        pl.col("colx") or pl.col("coly")  # type: ignore[redundant-expr]
 
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
 
@@ -439,7 +457,7 @@ def test_ewm_with_multiple_chunks() -> None:
         schema=["a", "b", "c"],
     ).with_columns(
         [
-            pl.col(pl.Float64).log().diff().prefix("ld_"),
+            pl.col(pl.Float64).log().diff().name.prefix("ld_"),
         ]
     )
     assert df0.n_chunks() == 1
@@ -451,7 +469,7 @@ def test_ewm_with_multiple_chunks() -> None:
 
     ewm_std = df1.with_columns(
         [
-            pl.all().ewm_std(com=20).prefix("ewm_"),
+            pl.all().ewm_std(com=20).name.prefix("ewm_"),
         ]
     )
     assert ewm_std.null_count().sum(axis=1)[0] == 4
@@ -949,18 +967,26 @@ def test_operators_vs_expressions() -> None:
 
 def test_head() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
-    assert df.select(pl.col("a").head(0)).to_dict(False) == {"a": []}
-    assert df.select(pl.col("a").head(3)).to_dict(False) == {"a": [1, 2, 3]}
-    assert df.select(pl.col("a").head(10)).to_dict(False) == {"a": [1, 2, 3, 4, 5]}
-    assert df.select(pl.col("a").head(pl.count() / 2)).to_dict(False) == {"a": [1, 2]}
+    assert df.select(pl.col("a").head(0)).to_dict(as_series=False) == {"a": []}
+    assert df.select(pl.col("a").head(3)).to_dict(as_series=False) == {"a": [1, 2, 3]}
+    assert df.select(pl.col("a").head(10)).to_dict(as_series=False) == {
+        "a": [1, 2, 3, 4, 5]
+    }
+    assert df.select(pl.col("a").head(pl.count() / 2)).to_dict(as_series=False) == {
+        "a": [1, 2]
+    }
 
 
 def test_tail() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
-    assert df.select(pl.col("a").tail(0)).to_dict(False) == {"a": []}
-    assert df.select(pl.col("a").tail(3)).to_dict(False) == {"a": [3, 4, 5]}
-    assert df.select(pl.col("a").tail(10)).to_dict(False) == {"a": [1, 2, 3, 4, 5]}
-    assert df.select(pl.col("a").tail(pl.count() / 2)).to_dict(False) == {"a": [4, 5]}
+    assert df.select(pl.col("a").tail(0)).to_dict(as_series=False) == {"a": []}
+    assert df.select(pl.col("a").tail(3)).to_dict(as_series=False) == {"a": [3, 4, 5]}
+    assert df.select(pl.col("a").tail(10)).to_dict(as_series=False) == {
+        "a": [1, 2, 3, 4, 5]
+    }
+    assert df.select(pl.col("a").tail(pl.count() / 2)).to_dict(as_series=False) == {
+        "a": [4, 5]
+    }
 
 
 @pytest.mark.parametrize(

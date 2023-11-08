@@ -11,11 +11,13 @@ from typing import TYPE_CHECKING, Any, ClassVar, Hashable, cast
 _DATAFRAME_API_COMPAT_AVAILABLE = True
 _DELTALAKE_AVAILABLE = True
 _FSSPEC_AVAILABLE = True
+_GEVENT_AVAILABLE = True
 _HYPOTHESIS_AVAILABLE = True
 _NUMPY_AVAILABLE = True
 _PANDAS_AVAILABLE = True
 _PYARROW_AVAILABLE = True
 _PYDANTIC_AVAILABLE = True
+_PYICEBERG_AVAILABLE = True
 _ZONEINFO_AVAILABLE = True
 
 
@@ -42,6 +44,7 @@ class _LazyModule(ModuleType):
     def __init__(
         self,
         module_name: str,
+        *,
         module_available: bool,
     ) -> None:
         """
@@ -154,11 +157,13 @@ if TYPE_CHECKING:
     import dataframe_api_compat
     import deltalake
     import fsspec
+    import gevent
     import hypothesis
     import numpy
     import pandas
     import pyarrow
     import pydantic
+    import pyiceberg
 
     if sys.version_info >= (3, 9):
         import zoneinfo
@@ -183,11 +188,13 @@ else:
     pandas, _PANDAS_AVAILABLE = _lazy_import("pandas")
     pyarrow, _PYARROW_AVAILABLE = _lazy_import("pyarrow")
     pydantic, _PYDANTIC_AVAILABLE = _lazy_import("pydantic")
+    pyiceberg, _PYICEBERG_AVAILABLE = _lazy_import("pyiceberg")
     zoneinfo, _ZONEINFO_AVAILABLE = (
         _lazy_import("zoneinfo")
         if sys.version_info >= (3, 9)
         else _lazy_import("backports.zoneinfo")
     )
+    gevent, _GEVENT_AVAILABLE = _lazy_import("gevent")
 
 
 @lru_cache(maxsize=None)
@@ -200,20 +207,28 @@ def _might_be(cls: type, type_: str) -> bool:
         return False
 
 
-def _check_for_numpy(obj: Any) -> bool:
-    return _NUMPY_AVAILABLE and _might_be(cast(Hashable, type(obj)), "numpy")
+def _check_for_numpy(obj: Any, *, check_type: bool = True) -> bool:
+    return _NUMPY_AVAILABLE and _might_be(
+        cast(Hashable, type(obj) if check_type else obj), "numpy"
+    )
 
 
-def _check_for_pandas(obj: Any) -> bool:
-    return _PANDAS_AVAILABLE and _might_be(cast(Hashable, type(obj)), "pandas")
+def _check_for_pandas(obj: Any, *, check_type: bool = True) -> bool:
+    return _PANDAS_AVAILABLE and _might_be(
+        cast(Hashable, type(obj) if check_type else obj), "pandas"
+    )
 
 
-def _check_for_pyarrow(obj: Any) -> bool:
-    return _PYARROW_AVAILABLE and _might_be(cast(Hashable, type(obj)), "pyarrow")
+def _check_for_pyarrow(obj: Any, *, check_type: bool = True) -> bool:
+    return _PYARROW_AVAILABLE and _might_be(
+        cast(Hashable, type(obj) if check_type else obj), "pyarrow"
+    )
 
 
-def _check_for_pydantic(obj: Any) -> bool:
-    return _PYDANTIC_AVAILABLE and _might_be(cast(Hashable, type(obj)), "pydantic")
+def _check_for_pydantic(obj: Any, *, check_type: bool = True) -> bool:
+    return _PYDANTIC_AVAILABLE and _might_be(
+        cast(Hashable, type(obj) if check_type else obj), "pydantic"
+    )
 
 
 __all__ = [
@@ -227,9 +242,11 @@ __all__ = [
     "dataframe_api_compat",
     "deltalake",
     "fsspec",
+    "gevent",
     "numpy",
     "pandas",
     "pydantic",
+    "pyiceberg",
     "pyarrow",
     "zoneinfo",
     # lazy utilities
@@ -240,7 +257,9 @@ __all__ = [
     "_LazyModule",
     # exported flags/guards
     "_DELTALAKE_AVAILABLE",
+    "_PYICEBERG_AVAILABLE",
     "_FSSPEC_AVAILABLE",
+    "_GEVENT_AVAILABLE",
     "_HYPOTHESIS_AVAILABLE",
     "_NUMPY_AVAILABLE",
     "_PANDAS_AVAILABLE",

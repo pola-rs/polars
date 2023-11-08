@@ -181,6 +181,19 @@ impl PySeries {
     }
 
     #[staticmethod]
+    fn new_from_anyvalues_and_dtype(
+        name: &str,
+        val: Vec<Wrap<AnyValue<'_>>>,
+        dtype: Wrap<DataType>,
+        strict: bool,
+    ) -> PyResult<PySeries> {
+        let avs = slice_extract_wrapped(&val);
+        let s = Series::from_any_values_and_dtype(name, avs, &dtype.0, strict)
+            .map_err(PyPolarsErr::from)?;
+        Ok(s.into())
+    }
+
+    #[staticmethod]
     fn new_str(name: &str, val: Wrap<Utf8Chunked>, _strict: bool) -> Self {
         val.0.into_series().with_name(name).into()
     }

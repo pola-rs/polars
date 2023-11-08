@@ -6,11 +6,10 @@ use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::MutableBitmap;
 use arrow::compute;
 use arrow::compute::comparison;
+use arrow::legacy::prelude::FromData;
 use arrow::scalar::{BinaryScalar, PrimitiveScalar, Scalar, Utf8Scalar};
 use either::Either;
 use num_traits::{NumCast, ToPrimitive};
-use polars_arrow::kernels::rolling::compare_fn_nan_max;
-use polars_arrow::prelude::FromData;
 
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -687,7 +686,7 @@ where
 {
     match (lhs.len(), rhs.len()) {
         (_, 1) => {
-            let right = rhs.get(0).map(|s| s.with_name(""));
+            let right = rhs.get_as_series(0).map(|s| s.with_name(""));
             // SAFETY: values within iterator do not outlive the iterator itself
             unsafe {
                 lhs.amortized_iter()
@@ -696,7 +695,7 @@ where
             }
         },
         (1, _) => {
-            let left = lhs.get(0).map(|s| s.with_name(""));
+            let left = lhs.get_as_series(0).map(|s| s.with_name(""));
             // SAFETY: values within iterator do not outlive the iterator itself
             unsafe {
                 rhs.amortized_iter()
@@ -857,31 +856,51 @@ impl ChunkCompare<&StructChunked> for StructChunked {
 impl ChunkCompare<&ArrayChunked> for ArrayChunked {
     type Item = BooleanChunked;
     fn equal(&self, rhs: &ArrayChunked) -> BooleanChunked {
+        if self.width() != rhs.width() {
+            return BooleanChunked::full("", false, self.len());
+        }
         arity::binary_mut_with_options(
             self,
             rhs,
-            polars_arrow::kernels::comparison::fixed_size_list_eq,
+            arrow::legacy::kernels::comparison::fixed_size_list_eq,
             "",
         )
     }
 
     fn equal_missing(&self, rhs: &ArrayChunked) -> BooleanChunked {
-        // TODO!: maybe do something else here
-        self.equal(rhs)
-    }
-
-    fn not_equal(&self, rhs: &ArrayChunked) -> BooleanChunked {
+        if self.width() != rhs.width() {
+            return BooleanChunked::full("", false, self.len());
+        }
         arity::binary_mut_with_options(
             self,
             rhs,
-            polars_arrow::kernels::comparison::fixed_size_list_neq,
+            arrow::legacy::kernels::comparison::fixed_size_list_eq_missing,
+            "",
+        )
+    }
+
+    fn not_equal(&self, rhs: &ArrayChunked) -> BooleanChunked {
+        if self.width() != rhs.width() {
+            return BooleanChunked::full("", true, self.len());
+        }
+        arity::binary_mut_with_options(
+            self,
+            rhs,
+            arrow::legacy::kernels::comparison::fixed_size_list_neq,
             "",
         )
     }
 
     fn not_equal_missing(&self, rhs: &ArrayChunked) -> Self::Item {
-        // TODO!: maybe do something else here
-        self.not_equal(rhs)
+        if self.width() != rhs.width() {
+            return BooleanChunked::full("", true, self.len());
+        }
+        arity::binary_mut_with_options(
+            self,
+            rhs,
+            arrow::legacy::kernels::comparison::fixed_size_list_neq_missing,
+            "",
+        )
     }
 
     // following are not implemented because gt, lt comparison of series don't make sense

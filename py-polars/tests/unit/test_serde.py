@@ -17,6 +17,12 @@ def test_pickling_simple_expression() -> None:
     assert str(pickle.loads(buf)) == str(e)
 
 
+def test_pickling_as_struct_11100() -> None:
+    e = pl.struct("a")
+    buf = pickle.dumps(e)
+    assert str(pickle.loads(buf)) == str(e)
+
+
 def test_lazyframe_serde() -> None:
     lf = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).lazy().select(pl.col("a"))
 
@@ -130,7 +136,9 @@ def test_pickle_udf_expression() -> None:
     b = pickle.dumps(e)
     e = pickle.loads(b)
 
-    assert df.select(e).to_dict(False) == {"a": [2, 4, 6]}
+    result = df.select(e)
+    expected = pl.DataFrame({"a": [2, 4, 6]})
+    assert_frame_equal(result, expected)
 
     e = pl.col("a").map_batches(times2, return_dtype=pl.Utf8)
     b = pickle.dumps(e)

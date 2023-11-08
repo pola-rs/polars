@@ -1,5 +1,7 @@
+#[cfg(feature = "timezones")]
+use arrow::legacy::kernels::Ambiguous;
+use arrow::legacy::time_zone::Tz;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
-use polars_arrow::time_zone::Tz;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
@@ -7,7 +9,7 @@ use polars_core::utils::arrow::temporal_conversions::{
 };
 
 #[cfg(feature = "timezones")]
-use crate::utils::{localize_datetime, unlocalize_datetime};
+use crate::utils::{try_localize_datetime, unlocalize_datetime};
 
 // roll backward to the first day of the month
 pub(crate) fn roll_backward(
@@ -30,20 +32,22 @@ pub(crate) fn roll_backward(
         ts.second(),
         ts.timestamp_subsec_nanos(),
     )
-    .ok_or(polars_err!(
-        ComputeError:
-            format!(
-                "Could not construct time {}:{}:{}.{}",
-                ts.hour(),
-                ts.minute(),
-                ts.second(),
-                ts.timestamp_subsec_nanos()
-            )
-    ))?;
+    .ok_or_else(|| {
+        polars_err!(
+            ComputeError:
+                format!(
+                    "Could not construct time {}:{}:{}.{}",
+                    ts.hour(),
+                    ts.minute(),
+                    ts.second(),
+                    ts.timestamp_subsec_nanos()
+                )
+        )
+    })?;
     let ndt = NaiveDateTime::new(date, time);
     let t = match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => datetime_to_timestamp(localize_datetime(ndt, tz, "raise")?),
+        Some(tz) => datetime_to_timestamp(try_localize_datetime(ndt, tz, Ambiguous::Raise)?),
         _ => datetime_to_timestamp(ndt),
     };
     Ok(t)

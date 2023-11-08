@@ -1,5 +1,6 @@
 use super::*;
 
+#[cfg(feature = "parquet")]
 pub(crate) fn row_count_at_scan(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
@@ -57,6 +58,7 @@ pub(crate) fn predicate_at_all_scans(q: LazyFrame) -> bool {
     })
 }
 
+#[cfg(feature = "streaming")]
 pub(crate) fn is_pipeline(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
@@ -69,6 +71,7 @@ pub(crate) fn is_pipeline(q: LazyFrame) -> bool {
     )
 }
 
+#[cfg(feature = "streaming")]
 pub(crate) fn has_pipeline(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
@@ -83,6 +86,7 @@ pub(crate) fn has_pipeline(q: LazyFrame) -> bool {
     })
 }
 
+#[cfg(any(feature = "parquet", feature = "csv"))]
 fn slice_at_scan(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
@@ -166,6 +170,7 @@ fn test_no_left_join_pass() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "parquet")]
 pub fn test_simple_slice() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     let q = scan_foods_parquet(false).limit(3);
@@ -185,6 +190,7 @@ pub fn test_simple_slice() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "parquet")]
 #[cfg(feature = "cse")]
 pub fn test_slice_pushdown_join() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
@@ -221,6 +227,7 @@ pub fn test_slice_pushdown_join() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "parquet")]
 pub fn test_slice_pushdown_group_by() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     let q = scan_foods_parquet(false).limit(100);
@@ -250,6 +257,7 @@ pub fn test_slice_pushdown_group_by() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "parquet")]
 pub fn test_slice_pushdown_sort() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     let q = scan_foods_parquet(false).limit(100);
@@ -546,6 +554,7 @@ fn test_with_column_prune() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "csv")]
 fn test_slice_at_scan_group_by() -> PolarsResult<()> {
     let ldf = scan_foods_csv();
 

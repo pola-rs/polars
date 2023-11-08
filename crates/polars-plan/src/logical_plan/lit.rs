@@ -252,7 +252,7 @@ impl Literal for NaiveDateTime {
     fn lit(self) -> Expr {
         if in_nanoseconds_window(&self) {
             Expr::Literal(LiteralValue::DateTime(
-                self.timestamp_nanos(),
+                self.timestamp_nanos_opt().unwrap(),
                 TimeUnit::Nanoseconds,
                 None,
             ))
@@ -312,10 +312,26 @@ pub fn lit<L: Literal>(t: L) -> Expr {
 
 impl Hash for LiteralValue {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        if let Some(v) = self.to_anyvalue() {
-            v.hash_impl(state, true)
-        } else {
-            0.hash(state)
+        std::mem::discriminant(self).hash(state);
+        match self {
+            LiteralValue::Series(s) => {
+                s.dtype().hash(state);
+                s.len().hash(state);
+            },
+            LiteralValue::Range {
+                low,
+                high,
+                data_type,
+            } => {
+                low.hash(state);
+                high.hash(state);
+                data_type.hash(state)
+            },
+            _ => {
+                if let Some(v) = self.to_anyvalue() {
+                    v.hash_impl(state, true)
+                }
+            },
         }
     }
 }

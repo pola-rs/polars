@@ -2,12 +2,13 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 
 use ahash::RandomState;
+use arrow::legacy::prelude::QuantileInterpolOptions;
 use num_traits::NumCast;
-use polars_arrow::prelude::QuantileInterpolOptions;
+use polars_utils::hashing::{BytesHash, DirtyHash};
 use rayon::prelude::*;
 
 use self::hashing::*;
-use crate::hashing::{get_null_hash_value, AsU64, BytesHash};
+use crate::hashing::get_null_hash_value;
 use crate::prelude::*;
 use crate::utils::{_set_partition_size, accumulate_dataframes_vertical};
 use crate::POOL;
@@ -60,16 +61,21 @@ impl DataFrame {
             !by.is_empty(),
             ComputeError: "at least one key is required in a group_by operation"
         );
-        let by_len = by[0].len();
+        let minimal_by_len = by.iter().map(|s| s.len()).min().expect("at least 1 key");
+        let df_height = self.height();
 
         // we only throw this error if self.width > 0
         // so that we can still call this on a dummy dataframe where we provide the keys
-        if (by_len != self.height()) && (self.width() > 0) {
+        if (minimal_by_len != df_height) && (self.width() > 0) {
             polars_ensure!(
-                by_len == 1,
+                minimal_by_len == 1,
                 ShapeMismatch: "series used as keys should have the same length as the dataframe"
             );
-            by[0] = by[0].new_from_index(0, self.height())
+            for by_key in by.iter_mut() {
+                if by_key.len() == minimal_by_len {
+                    *by_key = by_key.new_from_index(0, df_height)
+                }
+            }
         };
 
         let n_partitions = _set_partition_size();
@@ -265,10 +271,8 @@ impl<'df> GroupBy<'df> {
                 .map(|s| {
                     match groups {
                         GroupsProxy::Idx(groups) => {
-                            let mut iter = groups.first().iter().map(|first| *first as usize);
-                            // Safety:
-                            // groups are always in bounds
-                            let mut out = unsafe { s.take_iter_unchecked(&mut iter) };
+                            // SAFETY: groups are always in bounds.
+                            let mut out = unsafe { s.take_slice_unchecked(groups.first()) };
                             if groups.sorted {
                                 out.set_sorted_flag(s.is_sorted_flag());
                             };
@@ -276,7 +280,7 @@ impl<'df> GroupBy<'df> {
                         },
                         GroupsProxy::Slice { groups, rolling } => {
                             if *rolling && !groups.is_empty() {
-                                // groups can be sliced
+                                // Groups can be sliced.
                                 let offset = groups[0][0];
                                 let [upper_offset, upper_len] = groups[groups.len() - 1];
                                 return s.slice(
@@ -285,11 +289,10 @@ impl<'df> GroupBy<'df> {
                                 );
                             }
 
-                            let mut iter = groups.iter().map(|&[first, _len]| first as usize);
-                            // Safety:
-                            // groups are always in bounds
-                            let mut out = unsafe { s.take_iter_unchecked(&mut iter) };
-                            // sliced groups are always in order of discovery
+                            let indices = groups.iter().map(|&[first, _len]| first).collect_ca("");
+                            // SAFETY: groups are always in bounds.
+                            let mut out = unsafe { s.take_unchecked(&indices) };
+                            // Sliced groups are always in order of discovery.
                             out.set_sorted_flag(s.is_sorted_flag());
                             out
                         },
@@ -583,13 +586,13 @@ impl<'df> GroupBy<'df> {
         DataFrame::new(cols)
     }
 
-    /// Aggregate grouped `Series` and determine the quantile per group.
+    /// Aggregate grouped [`Series`] and determine the quantile per group.
     ///
     /// # Example
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// # use polars_arrow::prelude::QuantileInterpolOptions;
+    /// # use arrow::legacy::prelude::QuantileInterpolOptions;
     ///
     /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
     ///     df.group_by(["date"])?.select(["temp"]).quantile(0.2, QuantileInterpolOptions::default())
@@ -616,7 +619,7 @@ impl<'df> GroupBy<'df> {
         DataFrame::new(cols)
     }
 
-    /// Aggregate grouped `Series` and determine the median per group.
+    /// Aggregate grouped [`Series`] and determine the median per group.
     ///
     /// # Example
     ///
@@ -638,7 +641,7 @@ impl<'df> GroupBy<'df> {
         DataFrame::new(cols)
     }
 
-    /// Aggregate grouped `Series` and determine the variance per group.
+    /// Aggregate grouped [`Series`] and determine the variance per group.
     #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
     pub fn var(&self, ddof: u8) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
@@ -651,7 +654,7 @@ impl<'df> GroupBy<'df> {
         DataFrame::new(cols)
     }
 
-    /// Aggregate grouped `Series` and determine the standard deviation per group.
+    /// Aggregate grouped [`Series`] and determine the standard deviation per group.
     #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
     pub fn std(&self, ddof: u8) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
@@ -790,7 +793,7 @@ impl<'df> GroupBy<'df> {
         }
     }
 
-    /// Apply a closure over the groups as a new DataFrame in parallel.
+    /// Apply a closure over the groups as a new [`DataFrame`] in parallel.
     #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
     pub fn par_apply<F>(&self, f: F) -> PolarsResult<DataFrame>
     where
@@ -813,7 +816,7 @@ impl<'df> GroupBy<'df> {
         Ok(df)
     }
 
-    /// Apply a closure over the groups as a new DataFrame.
+    /// Apply a closure over the groups as a new [`DataFrame`].
     pub fn apply<F>(&self, mut f: F) -> PolarsResult<DataFrame>
     where
         F: FnMut(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
@@ -838,7 +841,7 @@ impl<'df> GroupBy<'df> {
 
 unsafe fn take_df(df: &DataFrame, g: GroupsIndicator) -> DataFrame {
     match g {
-        GroupsIndicator::Idx(idx) => df.take_iter_unchecked(idx.1.iter().map(|i| *i as usize)),
+        GroupsIndicator::Idx(idx) => df.take_slice_unchecked(idx.1),
         GroupsIndicator::Slice([first, len]) => df.slice(first as i64, len as usize),
     }
 }

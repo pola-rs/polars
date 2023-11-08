@@ -1,6 +1,6 @@
 #[cfg(feature = "object")]
 use arrow::array::Array;
-use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
+use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use polars_error::constants::LENGTH_LIMIT_MSG;
 
 use super::*;
@@ -55,8 +55,15 @@ fn slice(
 
 impl<T: PolarsDataType> ChunkedArray<T> {
     /// Get the length of the ChunkedArray
+    #[inline]
     pub fn len(&self) -> usize {
         self.length as usize
+    }
+
+    /// Count the null values.
+    #[inline]
+    pub fn null_count(&self) -> usize {
+        self.null_count as usize
     }
 
     /// Check if ChunkedArray is empty.
@@ -74,6 +81,11 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             }
         }
         self.length = IdxSize::try_from(inner(&self.chunks)).expect(LENGTH_LIMIT_MSG);
+        self.null_count = self
+            .chunks
+            .iter()
+            .map(|arr| arr.null_count())
+            .sum::<usize>() as IdxSize;
 
         if self.length <= 1 {
             self.set_sorted_flag(IsSorted::Ascending)
@@ -123,7 +135,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.slice(0, num_elements)
     }
 
-    /// Get the head of the ChunkedArray
+    /// Get the head of the [`ChunkedArray`]
     #[must_use]
     pub fn head(&self, length: Option<usize>) -> Self
     where
@@ -135,7 +147,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         }
     }
 
-    /// Get the tail of the ChunkedArray
+    /// Get the tail of the [`ChunkedArray`]
     #[must_use]
     pub fn tail(&self, length: Option<usize>) -> Self
     where

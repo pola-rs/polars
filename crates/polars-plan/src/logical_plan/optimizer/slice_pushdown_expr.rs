@@ -71,7 +71,7 @@ impl OptimizationRule for SlicePushDown {
                     })
                 },
                 m @ AnonymousFunction { options, .. }
-                    if matches!(options.collect_groups, ApplyOptions::ApplyFlat) =>
+                    if matches!(options.collect_groups, ApplyOptions::ElementWise) =>
                 {
                     if let AnonymousFunction {
                         input,

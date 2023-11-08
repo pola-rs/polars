@@ -5,7 +5,7 @@ mod arity;
 mod coerce;
 mod concat;
 mod correlation;
-mod horizontal;
+pub(crate) mod horizontal;
 mod index;
 #[cfg(feature = "range")]
 mod range;
@@ -21,7 +21,7 @@ pub use correlation::*;
 pub use horizontal::*;
 pub use index::*;
 #[cfg(feature = "temporal")]
-use polars_core::export::arrow::temporal_conversions::NANOSECONDS;
+use polars_core::export::arrow::temporal_conversions::{MICROSECONDS, MILLISECONDS, NANOSECONDS};
 #[cfg(feature = "temporal")]
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 #[cfg(feature = "dtype-struct")]

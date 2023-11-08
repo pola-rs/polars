@@ -29,6 +29,7 @@ from polars.datatypes import (
     DURATION_DTYPES,
     FLOAT_DTYPES,
     INTEGER_DTYPES,
+    NESTED_DTYPES,
     NUMERIC_DTYPES,
     TEMPORAL_DTYPES,
     Array,
@@ -67,6 +68,7 @@ from polars.exceptions import (
     DuplicateError,
     InvalidOperationError,
     NoDataError,
+    OutOfBoundsError,
     PolarsPanicError,
     SchemaError,
     SchemaFieldNotFoundError,
@@ -106,6 +108,8 @@ from polars.functions import (
     date_range,
     date_ranges,
     datetime,
+    datetime_range,
+    datetime_ranges,
     duration,
     element,
     exclude,
@@ -165,10 +169,12 @@ from polars.io import (
     read_ipc_stream,
     read_json,
     read_ndjson,
+    read_ods,
     read_parquet,
     read_parquet_schema,
     scan_csv,
     scan_delta,
+    scan_iceberg,
     scan_ipc,
     scan_ndjson,
     scan_parquet,
@@ -177,7 +183,12 @@ from polars.io import (
 from polars.lazyframe import LazyFrame
 from polars.series import Series
 from polars.sql import SQLContext
-from polars.string_cache import StringCache, enable_string_cache, using_string_cache
+from polars.string_cache import (
+    StringCache,
+    disable_string_cache,
+    enable_string_cache,
+    using_string_cache,
+)
 from polars.type_aliases import PolarsDataType
 from polars.utils import build_info, get_index_type, show_versions, threadpool_size
 
@@ -199,6 +210,7 @@ __all__ = [
     "DuplicateError",
     "InvalidOperationError",
     "NoDataError",
+    "OutOfBoundsError",
     "PolarsPanicError",
     "SchemaError",
     "SchemaFieldNotFoundError",
@@ -242,6 +254,7 @@ __all__ = [
     "DURATION_DTYPES",
     "FLOAT_DTYPES",
     "INTEGER_DTYPES",
+    "NESTED_DTYPES",
     "NUMERIC_DTYPES",
     "TEMPORAL_DTYPES",
     # polars.type_aliases
@@ -259,16 +272,19 @@ __all__ = [
     "read_ipc_stream",
     "read_json",
     "read_ndjson",
+    "read_ods",
     "read_parquet",
     "read_parquet_schema",
     "scan_csv",
     "scan_delta",
+    "scan_iceberg",
     "scan_ipc",
     "scan_ndjson",
     "scan_parquet",
     "scan_pyarrow_dataset",
     # polars.stringcache
     "StringCache",
+    "disable_string_cache",
     "enable_string_cache",
     "using_string_cache",
     # polars.config
@@ -281,6 +297,8 @@ __all__ = [
     "concat",
     "date_range",
     "date_ranges",
+    "datetime_range",
+    "datetime_ranges",
     "element",
     "ones",
     "repeat",

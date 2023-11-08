@@ -7,22 +7,23 @@ use std::cmp::Ordering;
 
 pub use agg_list::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::legacy::data_types::IsFloat;
+use arrow::legacy::kernels::rolling;
+use arrow::legacy::kernels::rolling::no_nulls::{
+    MaxWindow, MeanWindow, MinWindow, QuantileWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
+};
+use arrow::legacy::kernels::rolling::nulls::RollingAggWindowNulls;
+use arrow::legacy::kernels::rolling::{
+    compare_fn_nan_max, compare_fn_nan_min, DynArgs, RollingQuantileParams, RollingVarParams,
+};
+use arrow::legacy::kernels::take_agg::*;
+use arrow::legacy::prelude::QuantileInterpolOptions;
+use arrow::legacy::trusted_len::TrustedLenPush;
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num_traits::pow::Pow;
 use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
-use polars_arrow::data_types::IsFloat;
-use polars_arrow::kernels::rolling;
-use polars_arrow::kernels::rolling::no_nulls::{
-    MaxWindow, MeanWindow, MinWindow, QuantileWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
-};
-use polars_arrow::kernels::rolling::nulls::RollingAggWindowNulls;
-use polars_arrow::kernels::rolling::{
-    compare_fn_nan_max, compare_fn_nan_min, DynArgs, RollingQuantileParams, RollingVarParams,
-};
-use polars_arrow::kernels::take_agg::*;
-use polars_arrow::prelude::QuantileInterpolOptions;
-use polars_arrow::trusted_len::TrustedLenPush;
+use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 
 #[cfg(feature = "object")]
@@ -157,7 +158,7 @@ where
 /// Helper that combines the groups into a parallel iterator over `(first, all): (u32, &Vec<u32>)`.
 pub fn _agg_helper_idx<T, F>(groups: &GroupsIdx, f: F) -> Series
 where
-    F: Fn((IdxSize, &Vec<IdxSize>)) -> Option<T::Native> + Send + Sync,
+    F: Fn((IdxSize, &IdxVec)) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
 {
@@ -168,7 +169,7 @@ where
 /// Same helper as `_agg_helper_idx` but for aggregations that don't return an Option.
 pub fn _agg_helper_idx_no_null<T, F>(groups: &GroupsIdx, f: F) -> Series
 where
-    F: Fn((IdxSize, &Vec<IdxSize>)) -> T::Native + Send + Sync,
+    F: Fn((IdxSize, &IdxVec)) -> T::Native + Send + Sync,
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
 {
@@ -180,7 +181,7 @@ where
 /// this doesn't have traverse the `first: Vec<u32>` memory and is therefore faster.
 fn agg_helper_idx_on_all<T, F>(groups: &GroupsIdx, f: F) -> Series
 where
-    F: Fn(&Vec<IdxSize>) -> Option<T::Native> + Send + Sync,
+    F: Fn(&IdxVec) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
 {
@@ -355,7 +356,7 @@ where
                 if idx.is_empty() {
                     return None;
                 }
-                let take = { ca.take_unchecked(idx.into()) };
+                let take = { ca.take_unchecked(idx) };
                 // checked with invalid quantile check
                 take._quantile(quantile, interpol).unwrap_unchecked()
             })
@@ -429,7 +430,7 @@ where
                 if idx.is_empty() {
                     return None;
                 }
-                let take = { ca.take_unchecked(idx.into()) };
+                let take = { ca.take_unchecked(idx) };
                 take._median()
             })
         },
@@ -984,7 +985,7 @@ where
                                 })
                             },
                             _ => {
-                                let take = { self.take_unchecked(idx.into()) };
+                                let take = { self.take_unchecked(idx) };
                                 take.mean()
                             },
                         }
@@ -1111,5 +1112,3 @@ where
         agg_median_generic::<_, Float64Type>(self, groups)
     }
 }
-
-impl<T: PolarsDataType> ChunkedArray<T> where ChunkedArray<T>: ChunkTake + IntoSeries {}

@@ -40,6 +40,6 @@ fn test_min_max_sorted_desc() {
 #[test]
 fn test_construct_list_of_null_series() {
     let s = Series::new("a", [Series::new_null("a1", 1), Series::new_null("a1", 1)]);
-    assert_eq!(s.null_count(), s.len());
+    assert_eq!(s.null_count(), 0);
     assert_eq!(s.field().name(), "a");
 }

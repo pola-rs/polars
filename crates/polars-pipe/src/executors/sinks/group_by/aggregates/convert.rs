@@ -107,9 +107,9 @@ pub fn can_convert_to_hash_agg(
 }
 
 /// # Returns:
-///     - input_dtype: dtype that goes into the agg expression
-///     - physical expr: physical expression that produces the input of the aggregation
-///     - aggregation function: the aggregation function
+///  - input_dtype: dtype that goes into the agg expression
+///  - physical expr: physical expression that produces the input of the aggregation
+///  - aggregation function: the aggregation function
 pub(crate) fn convert_to_hash_agg<F>(
     node: Node,
     expr_arena: &Arena<AExpr>,

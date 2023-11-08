@@ -31,7 +31,7 @@ def threadpool_size() -> int:
 
     Notes
     -----
-    The threadpool size can be overridden by setting the ``POLARS_MAX_THREADS``
+    The threadpool size can be overridden by setting the `POLARS_MAX_THREADS`
     environment variable before process start. (The thread pool is not behind a
     lock, so it cannot be modified once set). A reasonable use-case for this might
     be temporarily setting max threads to a low value before importing polars in a

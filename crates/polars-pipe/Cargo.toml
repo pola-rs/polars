@@ -9,16 +9,17 @@ repository = { workspace = true }
 description = "Lazy query engine for the Polars DataFrame library"
 
 [dependencies]
-polars-arrow = { version = "0.32.0", path = "../polars-arrow", default-features = false }
-polars-core = { version = "0.32.0", path = "../polars-core", features = ["lazy", "zip_with", "random"], default-features = false }
-polars-io = { version = "0.32.0", path = "../polars-io", default-features = false }
-polars-ops = { version = "0.32.0", path = "../polars-ops", features = ["search_sorted"] }
-polars-plan = { version = "0.32.0", path = "../polars-plan", default-features = false, features = ["compile"] }
-polars-row = { version = "0.32.0", path = "../polars-row" }
-polars-utils = { version = "0.32.0", path = "../polars-utils", features = ["sysinfo"] }
+arrow = { workspace = true }
+polars-core = { workspace = true, features = ["lazy", "zip_with", "random", "rows", "chunked_ids"] }
+polars-io = { workspace = true, features = ["ipc"] }
+polars-ops = { workspace = true, features = ["search_sorted"] }
+polars-plan = { workspace = true }
+polars-row = { workspace = true }
+polars-utils = { workspace = true, features = ["sysinfo"] }
+tokio = { workspace = true, optional = true }
 
-crossbeam-channel = { version = "0.5", optional = true }
-crossbeam-queue = { version = "0.3", optional = true }
+crossbeam-channel = { workspace = true }
+crossbeam-queue = { workspace = true }
 enum_dispatch = { version = "0.3" }
 hashbrown = { workspace = true }
 num-traits = { workspace = true }
@@ -29,13 +30,13 @@ smartstring = { workspace = true }
 version_check = { workspace = true }
 
 [features]
-compile = ["crossbeam-channel", "crossbeam-queue", "polars-io/ipc"]
 csv = ["polars-plan/csv", "polars-io/csv"]
-parquet = ["polars-plan/parquet", "polars-io/parquet"]
+cloud = ["async", "polars-io/cloud", "polars-plan/cloud", "tokio"]
+parquet = ["polars-plan/parquet", "polars-io/parquet", "polars-io/async"]
 ipc = ["polars-plan/ipc", "polars-io/ipc"]
 async = ["polars-plan/async", "polars-io/async"]
 nightly = ["polars-core/nightly", "polars-utils/nightly", "hashbrown/nightly"]
-cross_join = ["polars-core/cross_join"]
+cross_join = ["polars-ops/cross_join"]
 dtype-u8 = ["polars-core/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16"]
 dtype-i8 = ["polars-core/dtype-i8"]
@@ -44,4 +45,4 @@ dtype-decimal = ["polars-core/dtype-decimal"]
 dtype-array = ["polars-core/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 trigger_ooc = []
-test = ["compile", "polars-core/chunked_ids"]
+test = ["polars-core/chunked_ids"]

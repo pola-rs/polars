@@ -2,13 +2,13 @@ use std::convert::TryFrom;
 
 use arrow::array::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use polars_arrow::array::list::AnonymousBuilder;
-use polars_arrow::array::PolarsArray;
-use polars_arrow::bit_util::unset_bit_raw;
+use arrow::legacy::array::list::AnonymousBuilder;
+use arrow::legacy::array::PolarsArray;
+use arrow::legacy::bit_util::unset_bit_raw;
 #[cfg(feature = "dtype-array")]
-use polars_arrow::is_valid::IsValid;
-use polars_arrow::prelude::*;
-use polars_arrow::trusted_len::TrustedLenPush;
+use arrow::legacy::is_valid::IsValid;
+use arrow::legacy::prelude::*;
+use arrow::legacy::trusted_len::TrustedLenPush;
 
 #[cfg(feature = "dtype-array")]
 use crate::chunked_array::builder::get_fixed_size_list_builder;
@@ -176,7 +176,16 @@ impl ExplodeByOffsets for Float64Chunked {
 
 impl ExplodeByOffsets for NullChunked {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        NullChunked::new(self.name.clone(), offsets.len() - 1).into_series()
+        let mut last_offset = offsets[0];
+
+        let mut len = 0;
+        for &offset in &offsets[1..] {
+            // If offset == last_offset we have an empty list and a new row is inserted,
+            // therefore we always increase at least 1.
+            len += std::cmp::max(offset - last_offset, 1) as usize;
+            last_offset = offset;
+        }
+        NullChunked::new(self.name.clone(), len).into_series()
     }
 }
 
@@ -229,7 +238,7 @@ impl ExplodeByOffsets for ListChunked {
         let cap = get_capacity(offsets);
         let inner_type = self.inner_dtype();
 
-        let mut builder = polars_arrow::array::list::AnonymousBuilder::new(cap);
+        let mut builder = arrow::legacy::array::list::AnonymousBuilder::new(cap);
         let mut owned = Vec::with_capacity(cap);
         let mut start = offsets[0] as usize;
         let mut last = start;

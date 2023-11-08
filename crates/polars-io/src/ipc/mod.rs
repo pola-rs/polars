@@ -6,7 +6,7 @@ mod ipc_file;
 #[cfg(feature = "ipc_streaming")]
 mod ipc_stream;
 mod mmap;
-#[cfg(feature = "ipc")]
+#[cfg(any(feature = "ipc", feature = "ipc_streaming"))]
 mod write;
 #[cfg(all(feature = "async", feature = "ipc"))]
 mod write_async;

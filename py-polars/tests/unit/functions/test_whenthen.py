@@ -123,7 +123,7 @@ def test_nested_when_then_and_wildcard_expansion_6284() -> None:
     )
 
     assert_frame_equal(out0, out1)
-    assert out0.to_dict(False) == {
+    assert out0.to_dict(as_series=False) == {
         "1": ["a", "b"],
         "2": ["c", "d"],
         "result": ["a", "d"],
@@ -140,10 +140,10 @@ def test_list_zip_with_logical_type() -> None:
     )
 
     df = df.with_columns(
-        pl.date_ranges(
+        pl.datetime_ranges(
             pl.col("start"), pl.col("stop"), interval="1h", eager=False, closed="left"
         ).alias("interval_1"),
-        pl.date_ranges(
+        pl.datetime_ranges(
             pl.col("start"), pl.col("stop"), interval="1h", eager=False, closed="left"
         ).alias("interval_2"),
     )
@@ -190,13 +190,13 @@ def test_when_then_edge_cases_3994() -> None:
         .group_by(["id"])
         .agg(pl.col("type"))
         .with_columns(
-            pl.when(pl.col("type").list.lengths() == 0)
+            pl.when(pl.col("type").list.len() == 0)
             .then(pl.lit(None))
             .otherwise(pl.col("type"))
-            .keep_name()
+            .name.keep()
         )
         .collect()
-    ).to_dict(False) == {"id": [1], "type": [[2, 2]]}
+    ).to_dict(as_series=False) == {"id": [1], "type": [[2, 2]]}
 
     # this tests ternary with an empty argument
     assert (
@@ -204,12 +204,12 @@ def test_when_then_edge_cases_3994() -> None:
         .group_by(["id"])
         .agg(pl.col("type"))
         .with_columns(
-            pl.when(pl.col("type").list.lengths() == 0)
+            pl.when(pl.col("type").list.len() == 0)
             .then(pl.lit(None))
             .otherwise(pl.col("type"))
-            .keep_name()
+            .name.keep()
         )
-    ).to_dict(False) == {"id": [], "type": []}
+    ).to_dict(as_series=False) == {"id": [], "type": []}
 
 
 def test_object_when_then_4702() -> None:
@@ -221,7 +221,7 @@ def test_object_when_then_4702() -> None:
         .then(pl.lit(pl.UInt16, allow_object=True))
         .otherwise(pl.lit(pl.UInt8, allow_object=True))
         .alias("New_Type")
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "Row": [1, 2],
         "Type": [pl.Date, pl.UInt8],
         "New_Type": [pl.UInt16, pl.UInt8],
@@ -256,3 +256,42 @@ def test_when_then_deprecated_string_input() -> None:
 
     expected = pl.Series("when", ["b", "c"])
     assert_series_equal(result.to_series(), expected)
+
+
+def test_predicate_broadcast() -> None:
+    df = pl.DataFrame(
+        {
+            "key": ["a", "a", "b", "b", "c", "c"],
+            "val": [1, 2, 3, 4, 5, 6],
+        }
+    )
+    out = df.group_by("key", maintain_order=True).agg(
+        agg=pl.when(pl.col("val").min() >= 3).then(pl.col("val")),
+    )
+    assert out.to_dict(as_series=False) == {
+        "key": ["a", "b", "c"],
+        "agg": [[None, None], [3, 4], [5, 6]],
+    }
+
+
+def test_broadcast_zero_len_12354() -> None:
+    df = pl.DataFrame({"x": range(5)}).with_columns(true=True, false=False)
+
+    for out_true, out_false in (
+        (pl.col("x").head(0), pl.col("x")),
+        (pl.col("x"), pl.col("x").head(0)),
+    ):
+        for predicate, expected in (
+            # true
+            (pl.lit(True), df.select(out_true)),
+            (pl.col("true").first(), df.select(out_true)),
+            # false
+            (pl.lit(False), df.select(out_false)),
+            (pl.col("false").first(), df.select(out_false)),
+        ):
+            assert df.select(
+                pl.when(predicate).then(out_true).otherwise(out_false)
+            ).frame_equal(expected)
+
+    # should not panic on NULL 1-length predicate
+    assert pl.select(pl.when(pl.lit(None, dtype=pl.Boolean)).then(1)).item() is None

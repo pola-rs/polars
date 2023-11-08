@@ -1,6 +1,5 @@
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
-use polars_core::frame::hash_join::JoinArgs;
 use polars_core::prelude::*;
 use polars_core::utils::ensure_sorted_arg;
 use polars_ops::prelude::*;
@@ -10,7 +9,7 @@ use crate::prelude::*;
 use crate::utils::unlocalize_timestamp;
 
 pub trait PolarsUpsample {
-    /// Upsample a DataFrame at a regular frequency.
+    /// Upsample a [`DataFrame`] at a regular frequency.
     ///
     /// # Arguments
     /// * `by` - First group by these columns and then upsample for every group
@@ -36,10 +35,6 @@ pub trait PolarsUpsample {
     ///
     /// Or combine them:
     /// "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
-    ///
-    /// Suffix with `"_saturating"` to saturate dates with days too
-    /// large for their month to the last day of the month (e.g.
-    /// 2022-02-29 to 2022-02-28).
     ///
     /// By "calendar day", we mean the corresponding time on the next
     /// day (which may not be 24 hours, depending on daylight savings).
@@ -79,10 +74,6 @@ pub trait PolarsUpsample {
     ///
     /// Or combine them:
     /// "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
-    ///
-    /// Suffix with `"_saturating"` to saturate dates with days too
-    /// large for their month to the last day of the month (e.g.
-    /// 2022-02-29 to 2022-02-28).
     ///
     /// By "calendar day", we mean the corresponding time on the next
     /// day (which may not be 24 hours, depending on daylight savings).

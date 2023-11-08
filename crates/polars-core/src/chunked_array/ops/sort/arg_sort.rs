@@ -27,15 +27,7 @@ where
 
     let mut vals = Vec::with_capacity(len - null_count);
 
-    // If we sort descending, the nulls are last
-    // and need to be extended to the indices in descending order.
-    let null_cap = if descending || nulls_last {
-        null_count
-        // If we sort normally, the nulls are first
-        // and can be extended with the sorted indices.
-    } else {
-        len
-    };
+    let null_cap = if nulls_last { null_count } else { len };
     let mut nulls_idx = Vec::with_capacity(null_cap);
     let mut count: IdxSize = 0;
 
@@ -64,13 +56,20 @@ where
     );
 
     let iter = vals.into_iter().map(|(idx, _v)| idx);
-    let idx = if descending || nulls_last {
+    let idx = if nulls_last {
         let mut idx = Vec::with_capacity(len);
         idx.extend(iter);
-        idx.extend(nulls_idx.into_iter().rev());
+        if descending {
+            idx.extend(nulls_idx.into_iter().rev());
+        } else {
+            idx.extend(nulls_idx);
+        }
         idx
     } else {
         let ptr = nulls_idx.as_ptr() as usize;
+        if descending {
+            nulls_idx.reverse();
+        }
         nulls_idx.extend(iter);
         // We had a realloc.
         debug_assert_eq!(nulls_idx.as_ptr() as usize, ptr);

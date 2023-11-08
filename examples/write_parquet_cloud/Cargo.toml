@@ -1,0 +1,10 @@
+[package]
+name = "write_parquet_cloud"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+aws-creds = "0.36.0"
+polars = { path = "../../crates/polars", features = ["lazy", "aws", "parquet", "cloud_write"] }

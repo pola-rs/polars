@@ -1,7 +1,7 @@
 use crate::chunked_array::object::extension::PolarsExtension;
 use crate::prelude::*;
 
-/// This will dereference a raw ptr when dropping the PolarsExtension, make sure that it's valid.
+/// This will dereference a raw ptr when dropping the [`PolarsExtension`], make sure that it's valid.
 pub(crate) unsafe fn drop_list(ca: &ListChunked) {
     let mut inner = ca.inner_dtype();
     let mut nested_count = 0;

@@ -1,6 +1,6 @@
 use std::borrow::Borrow;
 
-use arrow::datatypes::{DataType, Field, Schema};
+use arrow::datatypes::{ArrowSchema, DataType, Field};
 use indexmap::map::Entry;
 use indexmap::IndexMap;
 use simd_json::borrowed::Object;
@@ -25,10 +25,10 @@ pub fn infer(json: &BorrowedValue) -> PolarsResult<DataType> {
     })
 }
 
-/// Infers [`Schema`] from JSON [`Value`][Value] in (pandas-compatible) records format.
+/// Infers [`ArrowSchema`] from JSON [`Value`][Value] in (pandas-compatible) records format.
 ///
 /// [Value]: simd_json::value::Value
-pub fn infer_records_schema(json: &BorrowedValue) -> PolarsResult<Schema> {
+pub fn infer_records_schema(json: &BorrowedValue) -> PolarsResult<ArrowSchema> {
     let outer_array = match json {
         BorrowedValue::Array(array) => Ok(array),
         _ => Err(PolarsError::ComputeError(
@@ -61,7 +61,7 @@ pub fn infer_records_schema(json: &BorrowedValue) -> PolarsResult<Schema> {
         )),
     }?;
 
-    Ok(Schema {
+    Ok(ArrowSchema {
         fields,
         metadata: Default::default(),
     })

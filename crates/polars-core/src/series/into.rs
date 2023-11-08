@@ -4,7 +4,7 @@
     feature = "dtype-duration",
     feature = "dtype-time"
 ))]
-use polars_arrow::compute::cast::cast;
+use arrow::legacy::compute::cast::cast;
 
 use crate::prelude::*;
 
@@ -59,7 +59,7 @@ impl Series {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => {
                 let ca = self.categorical().unwrap();
-                let arr = ca.logical().chunks()[chunk_idx].clone();
+                let arr = ca.physical().chunks()[chunk_idx].clone();
                 // SAFETY: categoricals are always u32's.
                 let cats = unsafe { UInt32Chunked::from_chunks("", vec![arr]) };
 

@@ -4,10 +4,11 @@ mod supertype;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
+use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
+pub use arrow::legacy::utils::{TrustMyLength, *};
 use flatten::*;
 use num_traits::{One, Zero};
-pub use polars_arrow::utils::{TrustMyLength, *};
 use rayon::prelude::*;
 pub use series::*;
 use smartstring::alias::String as SmartString;
@@ -28,20 +29,9 @@ impl<T> Deref for Wrap<T> {
     }
 }
 
+#[inline(always)]
 pub fn _set_partition_size() -> usize {
-    let mut n_partitions = POOL.current_num_threads();
-    if n_partitions == 1 {
-        return 1;
-    }
-    // set n_partitions to closest 2^n size
-    loop {
-        if n_partitions.is_power_of_two() {
-            break;
-        } else {
-            n_partitions -= 1;
-        }
-    }
-    n_partitions
+    POOL.current_num_threads()
 }
 
 /// Just a wrapper structure. Useful for certain impl specializations
@@ -145,7 +135,7 @@ pub fn split_series(s: &Series, n: usize) -> PolarsResult<Vec<Series>> {
 
 pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
     let total_len = df.height();
-    let chunk_size = std::cmp::max(total_len / n, 3);
+    let chunk_size = std::cmp::max(total_len / n, 1);
 
     if df.n_chunks() == n
         && df.get_columns()[0]
@@ -331,6 +321,19 @@ macro_rules! with_match_physical_integer_type {(
         UInt16 => __with_ty__! { u16 },
         UInt32 => __with_ty__! { u32 },
         UInt64 => __with_ty__! { u64 },
+        _ => unimplemented!()
+    }
+})}
+
+#[macro_export]
+macro_rules! with_match_physical_float_polars_type {(
+    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+) => ({
+    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    use $crate::datatypes::DataType::*;
+    match $key_type {
+        Float32 => __with_ty__! { Float32Type },
+        Float64 => __with_ty__! { Float64Type },
         _ => unimplemented!()
     }
 })}
@@ -673,7 +676,6 @@ where
 }
 
 #[allow(clippy::type_complexity)]
-#[cfg(feature = "zip_with")]
 pub fn align_chunks_ternary<'a, A, B, C>(
     a: &'a ChunkedArray<A>,
     b: &'a ChunkedArray<B>,
@@ -809,33 +811,6 @@ pub(crate) fn index_to_chunked_index<
     (current_chunk_idx, index_remainder)
 }
 
-#[cfg(feature = "dtype-struct")]
-pub(crate) fn index_to_chunked_index2(chunks: &[ArrayRef], index: usize) -> (usize, usize) {
-    let mut index_remainder = index;
-    let mut current_chunk_idx = 0;
-
-    for chunk in chunks {
-        if chunk.len() > index_remainder {
-            break;
-        } else {
-            index_remainder -= chunk.len();
-            current_chunk_idx += 1;
-        }
-    }
-    (current_chunk_idx, index_remainder)
-}
-
-#[cfg(feature = "chunked_ids")]
-pub(crate) fn create_chunked_index_mapping(chunks: &[ArrayRef], len: usize) -> Vec<ChunkId> {
-    let mut vals = Vec::with_capacity(len);
-
-    for (chunk_i, chunk) in chunks.iter().enumerate() {
-        vals.extend((0..chunk.len()).map(|array_i| [chunk_i as IdxSize, array_i as IdxSize]))
-    }
-
-    vals
-}
-
 pub(crate) fn first_non_null<'a, I>(iter: I) -> Option<usize>
 where
     I: Iterator<Item = Option<&'a Bitmap>>,
@@ -843,10 +818,9 @@ where
     let mut offset = 0;
     for validity in iter {
         if let Some(validity) = validity {
-            for (idx, is_valid) in validity.iter().enumerate() {
-                if is_valid {
-                    return Some(offset + idx);
-                }
+            let mask = BitMask::from_bitmap(validity);
+            if let Some(n) = mask.nth_set_bit_idx(0, 0) {
+                return Some(offset + n);
             }
             offset += validity.len()
         } else {
@@ -864,17 +838,16 @@ where
         return None;
     }
     let mut offset = 0;
-    let len = len - 1;
     for validity in iter.rev() {
         if let Some(validity) = validity {
-            for (idx, is_valid) in validity.iter().rev().enumerate() {
-                if is_valid {
-                    return Some(len - (offset + idx));
-                }
+            let mask = BitMask::from_bitmap(validity);
+            if let Some(n) = mask.nth_set_bit_idx_rev(0, mask.len()) {
+                let mask_start = len - offset - mask.len();
+                return Some(mask_start + n);
             }
             offset += validity.len()
         } else {
-            return Some(len - offset);
+            return Some(len - 1 - offset);
         }
     }
     None
@@ -895,6 +868,7 @@ pub fn coalesce_nulls<'a, T: PolarsDataType>(
                 *arr_b = arr_b.with_validity(arr.validity().cloned())
             }
         }
+        b.compute_len();
         (Cow::Owned(a), Cow::Owned(b))
     } else {
         (Cow::Borrowed(a), Cow::Borrowed(b))
@@ -915,6 +889,8 @@ pub fn coalesce_nulls_series(a: &Series, b: &Series) -> (Series, Series) {
             *arr_a = arr_a.with_validity(validity.clone());
             *arr_b = arr_b.with_validity(validity);
         }
+        a.compute_len();
+        b.compute_len();
         (a, b)
     } else {
         (a.clone(), b.clone())

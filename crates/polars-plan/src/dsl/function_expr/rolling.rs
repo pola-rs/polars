@@ -51,6 +51,21 @@ impl Display for RollingFunction {
     }
 }
 
+impl Hash for RollingFunction {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        use RollingFunction::*;
+
+        std::mem::discriminant(self).hash(state);
+        match self {
+            Skew(window_size, bias) => {
+                window_size.hash(state);
+                bias.hash(state)
+            },
+            _ => {},
+        }
+    }
+}
+
 macro_rules! convert {
     ($func:ident, $s:expr, $options:expr) => {{
         let mut by = $s[1].clone();
@@ -61,13 +76,18 @@ macro_rules! convert {
             $options.weights.is_none(),
             ComputeError: "`weights` is not supported in 'rolling by' expression"
         );
+        let expr_name = stringify!($func);
         let (by, tz) = match by.dtype() {
-            DataType::Datetime(_, tz) => (
-                by.cast(&DataType::Datetime(TimeUnit::Microseconds, None))?,
-                tz,
+            DataType::Datetime(tu, tz) => {
+                (by.cast(&DataType::Datetime(*tu, None))?, tz)
+            },
+            DataType::Date => (
+                by.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
+                &None,
             ),
-            _ => (by.clone(), &None),
+            dt => polars_bail!(opq = expr_name, got = dt, expected = "date/datetime"),
         };
+        ensure_sorted_arg(&by, expr_name)?;
         let by = by.datetime().unwrap();
         let by_values = by.cont_slice().map_err(|_| {
             polars_err!(

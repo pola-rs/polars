@@ -2,6 +2,9 @@ use std::hash::{BuildHasher, Hash};
 
 use hashbrown::hash_map::{Entry, RawEntryMut};
 use hashbrown::HashMap;
+use polars_utils::hashing::{hash_to_partition, DirtyHash};
+use polars_utils::idx_vec::IdxVec;
+use polars_utils::idxvec;
 use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
@@ -10,24 +13,19 @@ use super::GroupsProxy;
 use crate::datatypes::PlHashMap;
 use crate::frame::group_by::{GroupsIdx, IdxItem};
 use crate::hashing::{
-    df_rows_to_hashes_threaded_vertical, series_to_hashes, this_partition, AsU64, IdBuildHasher,
-    IdxHash,
+    _df_rows_to_hashes_threaded_vertical, series_to_hashes, IdBuildHasher, IdxHash, *,
 };
 use crate::prelude::compare_inner::PartialEqInner;
 use crate::prelude::*;
 use crate::utils::{flatten, split_df, CustomIterTools};
 use crate::POOL;
 
-// We must strike a balance between cache coherence and resizing costs.
-// Overallocation seems a lot more expensive than resizing so we start reasonable small.
-pub(crate) const HASHMAP_INIT_SIZE: usize = 512;
-
 fn get_init_size() -> usize {
     // we check if this is executed from the main thread
     // we don't want to pre-allocate this much if executed
     // group_tuples in a parallel iterator as that explodes allocation
     if POOL.current_thread_index().is_none() {
-        HASHMAP_INIT_SIZE
+        _HASHMAP_INIT_SIZE
     } else {
         0
     }
@@ -53,7 +51,7 @@ fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsProxy {
                         g.sort_unstable_by_key(|g| g.0);
 
                         unsafe {
-                            let mut items_ptr: *mut (IdxSize, Vec<IdxSize>) = items_ptr.get();
+                            let mut items_ptr: *mut (IdxSize, IdxVec) = items_ptr.get();
                             items_ptr = items_ptr.add(offset);
 
                             for (i, g) in g.into_iter().enumerate() {
@@ -82,11 +80,11 @@ fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsProxy {
     }
 }
 
-// The inner vecs should be sorted by IdxSize
+// The inner vecs should be sorted by [`IdxSize`]
 // the group_by multiple keys variants suffice
-// this requirements as they use an IdxMap strategy
+// this requirements as they use an [`IdxMap`] strategy
 fn finish_group_order_vecs(
-    mut vecs: Vec<(Vec<IdxSize>, Vec<Vec<IdxSize>>)>,
+    mut vecs: Vec<(Vec<IdxSize>, Vec<IdxVec>)>,
     sorted: bool,
 ) -> GroupsProxy {
     if sorted {
@@ -117,7 +115,7 @@ fn finish_group_order_vecs(
                     // this is due to using an index hashmap
 
                     unsafe {
-                        let mut items_ptr: *mut (IdxSize, Vec<IdxSize>) = items_ptr.get();
+                        let mut items_ptr: *mut (IdxSize, IdxVec) = items_ptr.get();
                         items_ptr = items_ptr.add(offset);
 
                         // give the compiler some info
@@ -149,7 +147,7 @@ where
     T: Hash + Eq,
 {
     let init_size = get_init_size();
-    let mut hash_tbl: PlHashMap<T, (IdxSize, Vec<IdxSize>)> = PlHashMap::with_capacity(init_size);
+    let mut hash_tbl: PlHashMap<T, (IdxSize, IdxVec)> = PlHashMap::with_capacity(init_size);
     let mut cnt = 0;
     a.for_each(|k| {
         let idx = cnt;
@@ -158,7 +156,8 @@ where
 
         match entry {
             Entry::Vacant(entry) => {
-                entry.insert((idx, vec![idx]));
+                let tuples = idxvec![idx];
+                entry.insert((idx, tuples));
             },
             Entry::Occupied(mut entry) => {
                 let v = entry.get_mut();
@@ -185,14 +184,13 @@ where
 // have the code duplication
 pub(crate) fn group_by_threaded_slice<T, IntoSlice>(
     keys: Vec<IntoSlice>,
-    n_partitions: u64,
+    n_partitions: usize,
     sorted: bool,
 ) -> GroupsProxy
 where
-    T: Send + Hash + Eq + Sync + Copy + AsU64,
+    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
     IntoSlice: AsRef<[T]> + Send + Sync,
 {
-    assert!(n_partitions.is_power_of_two());
     let init_size = get_init_size();
 
     // We will create a hashtable in every thread.
@@ -202,7 +200,7 @@ where
         (0..n_partitions)
             .into_par_iter()
             .map(|thread_no| {
-                let mut hash_tbl: PlHashMap<T, (IdxSize, Vec<IdxSize>)> =
+                let mut hash_tbl: PlHashMap<T, (IdxSize, IdxVec)> =
                     PlHashMap::with_capacity(init_size);
 
                 let mut offset = 0;
@@ -216,13 +214,13 @@ where
                         let idx = cnt + offset;
                         cnt += 1;
 
-                        if this_partition(k.as_u64(), thread_no, n_partitions) {
+                        if thread_no == hash_to_partition(k.dirty_hash(), n_partitions) {
                             let hash = hasher.hash_one(k);
                             let entry = hash_tbl.raw_entry_mut().from_key_hashed_nocheck(hash, k);
 
                             match entry {
                                 RawEntryMut::Vacant(entry) => {
-                                    let tuples = vec![idx];
+                                    let tuples = idxvec![idx];
                                     entry.insert_with_hasher(hash, *k, (idx, tuples), |k| {
                                         hasher.hash_one(k)
                                     });
@@ -248,15 +246,14 @@ where
 
 pub(crate) fn group_by_threaded_iter<T, I>(
     keys: &[I],
-    n_partitions: u64,
+    n_partitions: usize,
     sorted: bool,
 ) -> GroupsProxy
 where
-    I: IntoIterator<Item = T> + Send + Sync + Copy,
+    I: IntoIterator<Item = T> + Send + Sync + Clone,
     I::IntoIter: ExactSizeIterator,
-    T: Send + Hash + Eq + Sync + Copy + AsU64,
+    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
 {
-    assert!(n_partitions.is_power_of_two());
     let init_size = get_init_size();
 
     // We will create a hashtable in every thread.
@@ -266,12 +263,12 @@ where
         (0..n_partitions)
             .into_par_iter()
             .map(|thread_no| {
-                let mut hash_tbl: PlHashMap<T, (IdxSize, Vec<IdxSize>)> =
+                let mut hash_tbl: PlHashMap<T, (IdxSize, IdxVec)> =
                     PlHashMap::with_capacity(init_size);
 
                 let mut offset = 0;
                 for keys in keys {
-                    let keys = keys.into_iter();
+                    let keys = keys.clone().into_iter();
                     let len = keys.len() as IdxSize;
                     let hasher = hash_tbl.hasher().clone();
 
@@ -280,13 +277,13 @@ where
                         let idx = cnt + offset;
                         cnt += 1;
 
-                        if this_partition(k.as_u64(), thread_no, n_partitions) {
+                        if thread_no == hash_to_partition(k.dirty_hash(), n_partitions) {
                             let hash = hasher.hash_one(k);
                             let entry = hash_tbl.raw_entry_mut().from_key_hashed_nocheck(hash, &k);
 
                             match entry {
                                 RawEntryMut::Vacant(entry) => {
-                                    let tuples = vec![idx];
+                                    let tuples = idxvec![idx];
                                     entry.insert_with_hasher(hash, k, (idx, tuples), |k| {
                                         hasher.hash_one(k)
                                     });
@@ -317,75 +314,6 @@ where
             .collect::<Vec<_>>()
     });
     finish_group_order(out, sorted)
-}
-
-/// Utility function used as comparison function in the hashmap.
-/// The rationale is that equality is an AND operation and therefore its probability of success
-/// declines rapidly with the number of keys. Instead of first copying an entire row from both
-/// sides and then do the comparison, we do the comparison value by value catching early failures
-/// eagerly.
-///
-/// # Safety
-/// Doesn't check any bounds
-#[inline]
-pub(crate) unsafe fn compare_df_rows(keys: &DataFrame, idx_a: usize, idx_b: usize) -> bool {
-    for s in keys.get_columns() {
-        if !s.equal_element(idx_a, idx_b, s) {
-            return false;
-        }
-    }
-    true
-}
-
-/// Populate a multiple key hashmap with row indexes.
-/// Instead of the keys (which could be very large), the row indexes are stored.
-/// To check if a row is equal the original DataFrame is also passed as ref.
-/// When a hash collision occurs the indexes are ptrs to the rows and the rows are compared
-/// on equality.
-pub(crate) fn populate_multiple_key_hashmap<V, H, F, G>(
-    hash_tbl: &mut HashMap<IdxHash, V, H>,
-    // row index
-    idx: IdxSize,
-    // hash
-    original_h: u64,
-    // keys of the hash table (will not be inserted, the indexes will be used)
-    // the keys are needed for the equality check
-    keys: &DataFrame,
-    // value to insert
-    vacant_fn: G,
-    // function that gets a mutable ref to the occupied value in the hash table
-    mut occupied_fn: F,
-) where
-    G: Fn() -> V,
-    F: FnMut(&mut V),
-    H: BuildHasher,
-{
-    let entry = hash_tbl
-        .raw_entry_mut()
-        // uses the idx to probe rows in the original DataFrame with keys
-        // to check equality to find an entry
-        // this does not invalidate the hashmap as this equality function is not used
-        // during rehashing/resize (then the keys are already known to be unique).
-        // Only during insertion and probing an equality function is needed
-        .from_hash(original_h, |idx_hash| {
-            // first check the hash values
-            // before we incur a cache miss
-            idx_hash.hash == original_h && {
-                let key_idx = idx_hash.idx;
-                // Safety:
-                // indices in a group_by operation are always in bounds.
-                unsafe { compare_df_rows(keys, key_idx as usize, idx as usize) }
-            }
-        });
-    match entry {
-        RawEntryMut::Vacant(entry) => {
-            entry.insert_hashed_nocheck(original_h, IdxHash::new(idx, original_h), vacant_fn());
-        },
-        RawEntryMut::Occupied(mut entry) => {
-            let (_k, v) = entry.get_key_value_mut();
-            occupied_fn(v);
-        },
-    }
 }
 
 #[inline]
@@ -456,8 +384,7 @@ pub(crate) fn group_by_threaded_multiple_keys_flat(
     sorted: bool,
 ) -> PolarsResult<GroupsProxy> {
     let dfs = split_df(&mut keys, n_partitions).unwrap();
-    let (hashes, _random_state) = df_rows_to_hashes_threaded_vertical(&dfs, None)?;
-    let n_partitions = n_partitions as u64;
+    let (hashes, _random_state) = _df_rows_to_hashes_threaded_vertical(&dfs, None)?;
 
     let init_size = get_init_size();
 
@@ -487,8 +414,7 @@ pub(crate) fn group_by_threaded_multiple_keys_flat(
                 // 2 mutable borrows (this is safe as we don't alias)
                 // even if the vecs reallocate, we have a pointer to the stack vec, and thus always
                 // access the proper data.
-                let all_buf_ptr =
-                    &mut all_vals as *mut Vec<Vec<IdxSize>> as *const Vec<Vec<IdxSize>>;
+                let all_buf_ptr = &mut all_vals as *mut Vec<IdxVec> as *const Vec<IdxVec>;
                 let first_buf_ptr = &mut first_vals as *mut Vec<IdxSize> as *const Vec<IdxSize>;
 
                 let mut offset = 0;
@@ -500,7 +426,7 @@ pub(crate) fn group_by_threaded_multiple_keys_flat(
                         for &h in hashes_chunk {
                             // partition hashes by thread no.
                             // So only a part of the hashes go to this hashmap
-                            if this_partition(h, thread_no, n_partitions) {
+                            if thread_no == hash_to_partition(h, n_partitions) {
                                 let row_idx = idx + offset;
                                 populate_multiple_key_hashmap2(
                                     &mut hash_tbl,
@@ -509,18 +435,16 @@ pub(crate) fn group_by_threaded_multiple_keys_flat(
                                     &keys_cmp,
                                     || unsafe {
                                         let first_vals = &mut *(first_buf_ptr as *mut Vec<IdxSize>);
-                                        let all_vals =
-                                            &mut *(all_buf_ptr as *mut Vec<Vec<IdxSize>>);
+                                        let all_vals = &mut *(all_buf_ptr as *mut Vec<IdxVec>);
                                         let offset_idx = first_vals.len() as IdxSize;
 
-                                        let tuples = vec![row_idx];
+                                        let tuples = idxvec![row_idx];
                                         all_vals.push(tuples);
                                         first_vals.push(row_idx);
                                         offset_idx
                                     },
                                     |v| unsafe {
-                                        let all_vals =
-                                            &mut *(all_buf_ptr as *mut Vec<Vec<IdxSize>>);
+                                        let all_vals = &mut *(all_buf_ptr as *mut Vec<IdxVec>);
                                         let offset_idx = *v;
                                         let buf = all_vals.get_unchecked_mut(offset_idx as usize);
                                         buf.push(row_idx)
@@ -563,7 +487,7 @@ pub(crate) fn group_by_multiple_keys(keys: DataFrame, sorted: bool) -> PolarsRes
     // 2 mutable borrows (this is safe as we don't alias)
     // even if the vecs reallocate, we have a pointer to the stack vec, and thus always
     // access the proper data.
-    let all_buf_ptr = &mut all_vals as *mut Vec<Vec<IdxSize>> as *const Vec<Vec<IdxSize>>;
+    let all_buf_ptr = &mut all_vals as *mut Vec<IdxVec> as *const Vec<IdxVec>;
     let first_buf_ptr = &mut first_vals as *mut Vec<IdxSize> as *const Vec<IdxSize>;
 
     for (row_idx, h) in hashes.into_iter().enumerate_idx() {
@@ -574,16 +498,16 @@ pub(crate) fn group_by_multiple_keys(keys: DataFrame, sorted: bool) -> PolarsRes
             &keys_cmp,
             || unsafe {
                 let first_vals = &mut *(first_buf_ptr as *mut Vec<IdxSize>);
-                let all_vals = &mut *(all_buf_ptr as *mut Vec<Vec<IdxSize>>);
+                let all_vals = &mut *(all_buf_ptr as *mut Vec<IdxVec>);
                 let offset_idx = first_vals.len() as IdxSize;
 
-                let tuples = vec![row_idx];
+                let tuples = idxvec![row_idx];
                 all_vals.push(tuples);
                 first_vals.push(row_idx);
                 offset_idx
             },
             |v| unsafe {
-                let all_vals = &mut *(all_buf_ptr as *mut Vec<Vec<IdxSize>>);
+                let all_vals = &mut *(all_buf_ptr as *mut Vec<IdxVec>);
                 let offset_idx = *v;
                 let buf = all_vals.get_unchecked_mut(offset_idx as usize);
                 buf.push(row_idx)

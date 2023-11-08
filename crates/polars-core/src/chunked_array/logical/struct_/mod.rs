@@ -5,13 +5,13 @@ use std::io::Write;
 use std::ops::BitOr;
 
 use arrow::bitmap::MutableBitmap;
+use arrow::legacy::trusted_len::TrustedLenPush;
 use arrow::offset::OffsetsBuffer;
-use polars_arrow::trusted_len::TrustedLenPush;
 use smartstring::alias::String as SmartString;
 
 use super::*;
 use crate::datatypes::*;
-use crate::utils::index_to_chunked_index2;
+use crate::utils::index_to_chunked_index;
 
 /// This is logical type [`StructChunked`] that
 /// dispatches most logic to the `fields` implementations
@@ -112,7 +112,7 @@ impl StructChunked {
             }
             Ok(Self::new_unchecked(name, &new_fields))
         } else if fields.is_empty() {
-            let fields = &[Series::full_null("", 1, &DataType::Null)];
+            let fields = &[Series::full_null("", 0, &DataType::Null)];
             Ok(Self::new_unchecked(name, fields))
         } else {
             Ok(Self::new_unchecked(name, fields))
@@ -425,7 +425,7 @@ impl LogicalType for StructChunked {
     }
 
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
-        let (chunk_idx, idx) = index_to_chunked_index2(&self.chunks, i);
+        let (chunk_idx, idx) = index_to_chunked_index(self.chunks.iter().map(|c| c.len()), i);
         if let DataType::Struct(flds) = self.dtype() {
             // safety: we already have a single chunk and we are
             // guarded by the type system.

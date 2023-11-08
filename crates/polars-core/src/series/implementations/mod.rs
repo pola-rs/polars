@@ -31,7 +31,7 @@ use std::borrow::Cow;
 use std::ops::{BitAnd, BitOr, BitXor, Deref};
 
 use ahash::RandomState;
-use polars_arrow::prelude::QuantileInterpolOptions;
+use arrow::legacy::prelude::QuantileInterpolOptions;
 
 use super::{private, IntoSeries, SeriesTrait, *};
 use crate::chunked_array::comparison::*;
@@ -40,9 +40,11 @@ use crate::chunked_array::ops::compare_inner::{
     IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner,
 };
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
+#[cfg(feature = "chunked_ids")]
+use crate::chunked_array::ops::take::TakeChunked;
 use crate::chunked_array::AsSinglePtr;
+#[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
-use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
 #[cfg(feature = "checked_arithmetic")]
 use crate::series::arithmetic::checked::NumOpsDispatchChecked;
@@ -103,16 +105,6 @@ macro_rules! impl_dyn_series {
                 self.0.explode_by_offsets(offsets)
             }
 
-            #[cfg(feature = "cum_agg")]
-            fn _cummax(&self, reverse: bool) -> Series {
-                self.0.cummax(reverse).into_series()
-            }
-
-            #[cfg(feature = "cum_agg")]
-            fn _cummin(&self, reverse: bool) -> Series {
-                self.0.cummin(reverse).into_series()
-            }
-
             unsafe fn equal_element(
                 &self,
                 idx_self: usize,
@@ -152,14 +144,17 @@ macro_rules! impl_dyn_series {
                 Ok(())
             }
 
+            #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_min(groups)
             }
 
+            #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_max(groups)
             }
 
+            #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
                 use DataType::*;
                 match self.dtype() {
@@ -168,25 +163,21 @@ macro_rules! impl_dyn_series {
                 }
             }
 
+            #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Series {
                 self.0.agg_std(groups, ddof)
             }
 
+            #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_var(&self, groups: &GroupsProxy, ddof: u8) -> Series {
                 self.0.agg_var(groups, ddof)
             }
 
+            #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_list(groups)
             }
 
-            fn zip_outer_join_column(
-                &self,
-                right_column: &Series,
-                opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
-            ) -> Series {
-                ZipOuterJoinColumn::zip_outer_join_column(&self.0, right_column, opt_join_tuples)
-            }
             fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
                 NumOpsDispatch::subtract(&self.0, rhs)
             }
@@ -202,6 +193,7 @@ macro_rules! impl_dyn_series {
             fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
                 NumOpsDispatch::remainder(&self.0, rhs)
             }
+            #[cfg(feature = "algorithm_group_by")]
             fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
                 IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
             }
@@ -311,44 +303,19 @@ macro_rules! impl_dyn_series {
             }
 
             fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-                let indices = if indices.chunks.len() > 1 {
-                    Cow::Owned(indices.rechunk())
-                } else {
-                    Cow::Borrowed(indices)
-                };
-                Ok(ChunkTake::take(&self.0, (&*indices).into())?.into_series())
+                Ok(self.0.take(indices)?.into_series())
             }
 
-            fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
-                Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
+            unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
+                self.0.take_unchecked(indices).into_series()
             }
 
-            unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-                ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
+            fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
+                Ok(self.0.take(indices)?.into_series())
             }
 
-            unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
-                let idx = if idx.chunks.len() > 1 {
-                    Cow::Owned(idx.rechunk())
-                } else {
-                    Cow::Borrowed(idx)
-                };
-                let mut out = ChunkTake::take_unchecked(&self.0, (&*idx).into());
-                if self.0.is_sorted_ascending_flag()
-                    && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
-                {
-                    out.set_sorted_flag(idx.is_sorted_flag())
-                }
-                Ok(out.into_series())
-            }
-
-            unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-                ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
-            }
-
-            #[cfg(feature = "take_opt_iter")]
-            fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
-                Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
+            unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
+                self.0.take_unchecked(indices).into_series()
             }
 
             fn len(&self) -> usize {
@@ -392,14 +359,17 @@ macro_rules! impl_dyn_series {
                 self.0.has_validity()
             }
 
+            #[cfg(feature = "algorithm_group_by")]
             fn unique(&self) -> PolarsResult<Series> {
                 ChunkUnique::unique(&self.0).map(|ca| ca.into_series())
             }
 
+            #[cfg(feature = "algorithm_group_by")]
             fn n_unique(&self) -> PolarsResult<usize> {
                 ChunkUnique::n_unique(&self.0)
             }
 
+            #[cfg(feature = "algorithm_group_by")]
             fn arg_unique(&self) -> PolarsResult<IdxCa> {
                 ChunkUnique::arg_unique(&self.0)
             }
@@ -454,19 +424,6 @@ macro_rules! impl_dyn_series {
                 Arc::new(SeriesWrap(Clone::clone(&self.0)))
             }
 
-            fn peak_max(&self) -> BooleanChunked {
-                self.0.peak_max()
-            }
-
-            fn peak_min(&self) -> BooleanChunked {
-                self.0.peak_min()
-            }
-
-            #[cfg(feature = "repeat_by")]
-            fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
-                RepeatBy::repeat_by(&self.0, by)
-            }
-
             #[cfg(feature = "checked_arithmetic")]
             fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {
                 self.0.checked_div(rhs)
@@ -475,15 +432,6 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "object")]
             fn as_any(&self) -> &dyn Any {
                 &self.0
-            }
-            #[cfg(feature = "mode")]
-            fn mode(&self) -> PolarsResult<Series> {
-                Ok(self.0.mode()?.into_series())
-            }
-
-            #[cfg(feature = "concat_str")]
-            fn str_concat(&self, delimiter: &str) -> Utf8Chunked {
-                self.0.str_concat(delimiter)
             }
 
             fn tile(&self, n: usize) -> Series {

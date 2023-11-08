@@ -65,6 +65,40 @@ pub fn date_ranges(
 }
 
 #[pyfunction]
+pub fn datetime_range(
+    start: PyExpr,
+    end: PyExpr,
+    every: &str,
+    closed: Wrap<ClosedWindow>,
+    time_unit: Option<Wrap<TimeUnit>>,
+    time_zone: Option<TimeZone>,
+) -> PyExpr {
+    let start = start.inner;
+    let end = end.inner;
+    let every = Duration::parse(every);
+    let closed = closed.0;
+    let time_unit = time_unit.map(|x| x.0);
+    dsl::datetime_range(start, end, every, closed, time_unit, time_zone).into()
+}
+
+#[pyfunction]
+pub fn datetime_ranges(
+    start: PyExpr,
+    end: PyExpr,
+    every: &str,
+    closed: Wrap<ClosedWindow>,
+    time_unit: Option<Wrap<TimeUnit>>,
+    time_zone: Option<TimeZone>,
+) -> PyExpr {
+    let start = start.inner;
+    let end = end.inner;
+    let every = Duration::parse(every);
+    let closed = closed.0;
+    let time_unit = time_unit.map(|x| x.0);
+    dsl::datetime_ranges(start, end, every, closed, time_unit, time_zone).into()
+}
+
+#[pyfunction]
 pub fn time_range(start: PyExpr, end: PyExpr, every: &str, closed: Wrap<ClosedWindow>) -> PyExpr {
     let start = start.inner;
     let end = end.inner;

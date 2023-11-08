@@ -10,35 +10,45 @@ impl Expr {
 
     pub fn sample_n(
         self,
-        n: usize,
+        n: Expr,
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
     ) -> Self {
-        self.apply_private(FunctionExpr::Random {
-            method: RandomMethod::SampleN {
-                n,
-                with_replacement,
-                shuffle,
+        self.apply_many_private(
+            FunctionExpr::Random {
+                method: RandomMethod::Sample {
+                    is_fraction: false,
+                    with_replacement,
+                    shuffle,
+                },
+                seed,
             },
-            seed,
-        })
+            &[n],
+            false,
+            false,
+        )
     }
 
     pub fn sample_frac(
         self,
-        frac: f64,
+        frac: Expr,
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
     ) -> Self {
-        self.apply_private(FunctionExpr::Random {
-            method: RandomMethod::SampleFrac {
-                frac,
-                with_replacement,
-                shuffle,
+        self.apply_many_private(
+            FunctionExpr::Random {
+                method: RandomMethod::Sample {
+                    is_fraction: true,
+                    with_replacement,
+                    shuffle,
+                },
+                seed,
             },
-            seed,
-        })
+            &[frac],
+            false,
+            false,
+        )
     }
 }

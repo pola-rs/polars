@@ -1,6 +1,7 @@
 use super::*;
 
 #[test]
+#[cfg(feature = "parquet")]
 fn test_multiple_roots() -> PolarsResult<()> {
     let mut expr_arena = Arena::with_capacity(16);
     let mut lp_arena = Arena::with_capacity(8);

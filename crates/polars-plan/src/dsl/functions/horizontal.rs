@@ -44,9 +44,9 @@ where
         function,
         output_type: GetOutput::super_type(),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             input_wildcard_expansion: true,
-            auto_explode: true,
+            returns_scalar: true,
             fmt_str: "fold",
             ..Default::default()
         },
@@ -87,9 +87,9 @@ where
         function,
         output_type: GetOutput::super_type(),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             input_wildcard_expansion: true,
-            auto_explode: true,
+            returns_scalar: true,
             fmt_str: "reduce",
             ..Default::default()
         },
@@ -132,9 +132,9 @@ where
         function,
         output_type: cumfold_dtype(),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             input_wildcard_expansion: true,
-            auto_explode: true,
+            returns_scalar: true,
             fmt_str: "cumreduce",
             ..Default::default()
         },
@@ -181,9 +181,9 @@ where
         function,
         output_type: cumfold_dtype(),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             input_wildcard_expansion: true,
-            auto_explode: true,
+            returns_scalar: true,
             fmt_str: "cumfold",
             ..Default::default()
         },
@@ -193,83 +193,104 @@ where
 /// Create a new column with the the bitwise-and of the elements in each row.
 ///
 /// The name of the resulting column will be "all"; use [`alias`](Expr::alias) to choose a different name.
-pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
+pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
-    Expr::Function {
+    polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
+
+    Ok(Expr::Function {
         input: exprs,
         function: FunctionExpr::Boolean(BooleanFunction::AllHorizontal),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyFlat,
+            collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
-            auto_explode: true,
+            returns_scalar: false,
             cast_to_supertypes: false,
             allow_rename: true,
             ..Default::default()
         },
-    }
+    })
 }
 
 /// Create a new column with the the bitwise-or of the elements in each row.
 ///
 /// The name of the resulting column will be "any"; use [`alias`](Expr::alias) to choose a different name.
-pub fn any_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
+pub fn any_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
-    Expr::Function {
+    polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
+
+    Ok(Expr::Function {
         input: exprs,
         function: FunctionExpr::Boolean(BooleanFunction::AnyHorizontal),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyFlat,
+            collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
-            auto_explode: true,
+            returns_scalar: false,
             cast_to_supertypes: false,
             allow_rename: true,
             ..Default::default()
         },
-    }
+    })
 }
 
 /// Create a new column with the the maximum value per row.
 ///
 /// The name of the resulting column will be `"max"`; use [`alias`](Expr::alias) to choose a different name.
-pub fn max_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
+pub fn max_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
-    if exprs.is_empty() {
-        return Expr::Columns(Vec::new());
-    }
-    let func = |s1, s2| {
-        let df = DataFrame::new_no_checks(vec![s1, s2]);
-        df.hmax()
-    };
-    reduce_exprs(func, exprs).alias("max")
+    polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
+
+    Ok(Expr::Function {
+        input: exprs,
+        function: FunctionExpr::MaxHorizontal,
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ElementWise,
+            input_wildcard_expansion: true,
+            returns_scalar: false,
+            allow_rename: true,
+            ..Default::default()
+        },
+    })
 }
 
 /// Create a new column with the the minimum value per row.
 ///
 /// The name of the resulting column will be `"min"`; use [`alias`](Expr::alias) to choose a different name.
-pub fn min_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
+pub fn min_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
-    if exprs.is_empty() {
-        return Expr::Columns(Vec::new());
-    }
-    let func = |s1, s2| {
-        let df = DataFrame::new_no_checks(vec![s1, s2]);
-        df.hmin()
-    };
-    reduce_exprs(func, exprs).alias("min")
+    polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
+
+    Ok(Expr::Function {
+        input: exprs,
+        function: FunctionExpr::MinHorizontal,
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ElementWise,
+            input_wildcard_expansion: true,
+            returns_scalar: false,
+            allow_rename: true,
+            ..Default::default()
+        },
+    })
 }
 
 /// Create a new column with the the sum of the values in each row.
 ///
 /// The name of the resulting column will be `"sum"`; use [`alias`](Expr::alias) to choose a different name.
-pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
-    let mut exprs = exprs.as_ref().to_vec();
-    let func = |s1, s2| Ok(Some(&s1 + &s2));
-    let init = match exprs.pop() {
-        Some(e) => e,
-        // use u32 as that is not cast to float as eagerly
-        _ => lit(0u32),
-    };
-    fold_exprs(init, func, exprs).alias("sum")
+pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
+    let exprs = exprs.as_ref().to_vec();
+    polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
+
+    Ok(Expr::Function {
+        input: exprs,
+        function: FunctionExpr::SumHorizontal,
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ElementWise,
+            input_wildcard_expansion: true,
+            returns_scalar: false,
+            cast_to_supertypes: false,
+            allow_rename: true,
+            ..Default::default()
+        },
+    })
 }
 
 /// Folds the expressions from left to right keeping the first non-null values.
@@ -281,7 +302,7 @@ pub fn coalesce(exprs: &[Expr]) -> Expr {
         input,
         function: FunctionExpr::Coalesce,
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::ElementWise,
             cast_to_supertypes: true,
             input_wildcard_expansion: true,
             ..Default::default()

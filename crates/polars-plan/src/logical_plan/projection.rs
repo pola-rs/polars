@@ -1,9 +1,10 @@
 //! this contains code used for rewriting projections, expanding wildcards, regex selection etc.
-use polars_arrow::index::IndexToUsize;
+use arrow::legacy::index::IndexToUsize;
 use polars_core::utils::get_supertype;
 
 use super::*;
 use crate::prelude::function_expr::FunctionExpr;
+use crate::utils::expr_output_name;
 
 /// This replace the wildcard Expr with a Column Expr. It also removes the Exclude Expr from the
 /// expression chain.
@@ -24,7 +25,8 @@ pub(super) fn replace_wildcard_with_column(mut expr: Expr, column_name: Arc<str>
     expr
 }
 
-pub fn remove_exclude(mut expr: Expr) -> Expr {
+#[cfg(feature = "regex")]
+fn remove_exclude(mut expr: Expr) -> Expr {
     expr.mutate().apply(|e| {
         if let Expr::Exclude(input, _) = e {
             *e = remove_exclude(std::mem::take(input));
@@ -54,7 +56,7 @@ fn rewrite_special_aliases(expr: Expr) -> PolarsResult<Expr> {
                 let name = function.call(&name)?;
                 Ok(Expr::Alias(expr, Arc::from(name)))
             },
-            _ => panic!("`keep_name`, `suffix`, `prefix` should be last expression"),
+            _ => panic!("`keep`, `suffix`, `prefix` should be last expression"),
         }
     } else {
         Ok(expr)
@@ -170,6 +172,7 @@ fn replace_regex(
 }
 
 /// replace `columns(["A", "B"])..` with `col("A")..`, `col("B")..`
+#[allow(unused_variables)]
 fn expand_columns(
     expr: &Expr,
     result: &mut Vec<Expr>,
@@ -354,21 +357,9 @@ fn prepare_excluded(
     }
 
     // exclude group_by keys
-    for mut expr in keys.iter() {
-        // Allow a number of aliases of a column expression, still exclude column from aggregation
-        loop {
-            match expr {
-                Expr::Column(name) => {
-                    exclude.insert(name.clone());
-                    break;
-                },
-                Expr::Alias(e, _) => {
-                    expr = e;
-                },
-                _ => {
-                    break;
-                },
-            }
+    for expr in keys.iter() {
+        if let Ok(name) = expr_output_name(expr) {
+            exclude.insert(name.clone());
         }
     }
     Ok(exclude)
@@ -580,7 +571,9 @@ fn replace_selector_inner(
         },
         Selector::Add(lhs, rhs) => {
             replace_selector_inner(*lhs, members, scratch, schema, keys)?;
-            replace_selector_inner(*rhs, members, scratch, schema, keys)?;
+            let mut rhs_members: PlIndexSet<Expr> = Default::default();
+            replace_selector_inner(*rhs, &mut rhs_members, scratch, schema, keys)?;
+            members.extend(rhs_members)
         },
         Selector::Sub(lhs, rhs) => {
             // fill lhs

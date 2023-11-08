@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import glob
+import re
 from contextlib import contextmanager
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -8,19 +9,24 @@ from typing import Any, BinaryIO, ContextManager, Iterator, TextIO, overload
 
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.exceptions import NoDataError
-from polars.utils.various import normalise_filepath
+from polars.utils.various import normalize_filepath
 
 
 def _is_glob_pattern(file: str) -> bool:
     return any(char in file for char in ["*", "?", "["])
 
 
+def _is_supported_cloud(file: str) -> bool:
+    return bool(re.match("^(s3a?|gs|gcs|file|abfss?|azure|az|adl)://", file))
+
+
 def _is_local_file(file: str) -> bool:
     try:
         next(glob.iglob(file, recursive=True))  # noqa: PTH207
-        return True
     except StopIteration:
         return False
+    else:
+        return True
 
 
 @overload
@@ -47,6 +53,7 @@ def _prepare_file_arg(
 def _prepare_file_arg(
     file: str | list[str] | TextIO | Path | BinaryIO | bytes,
     encoding: str | None = None,
+    *,
     use_pyarrow: bool | None = None,
     raise_if_empty: bool = True,
     **kwargs: Any,
@@ -61,15 +68,15 @@ def _prepare_file_arg(
     A local path is returned as a string.
     An http URL is read into a buffer and returned as a :class:`BytesIO`.
 
-    When ``encoding`` is not ``utf8`` or ``utf8-lossy``, the whole file is
+    When `encoding` is not `utf8` or `utf8-lossy`, the whole file is
     first read in python and decoded using the specified encoding and
-    returned as a :class:`BytesIO` (for usage with ``read_csv``).
+    returned as a :class:`BytesIO` (for usage with `read_csv`).
 
-    A `bytes` file is returned as a :class:`BytesIO` if ``use_pyarrow=True``.
+    A `bytes` file is returned as a :class:`BytesIO` if `use_pyarrow=True`.
 
     When fsspec is installed, remote file(s) is (are) opened with
     `fsspec.open(file, **kwargs)` or `fsspec.open_files(file, **kwargs)`.
-    If encoding is not ``utf8`` or ``utf8-lossy``, decoding is handled by
+    If encoding is not `utf8` or `utf8-lossy`, decoding is handled by
     fsspec too.
 
     """
@@ -135,7 +142,7 @@ def _prepare_file_arg(
                 context=f"Path ({file!r})",
                 raise_if_empty=raise_if_empty,
             )
-        return managed_file(normalise_filepath(file, check_not_dir))
+        return managed_file(normalize_filepath(file, check_not_directory=check_not_dir))
 
     if isinstance(file, str):
         # make sure that this is before fsspec
@@ -150,7 +157,9 @@ def _prepare_file_arg(
             if infer_storage_options(file)["protocol"] == "file":
                 # (lossy) utf8
                 if has_utf8_utf8_lossy_encoding:
-                    return managed_file(normalise_filepath(file, check_not_dir))
+                    return managed_file(
+                        normalize_filepath(file, check_not_directory=check_not_dir)
+                    )
                 # decode first
                 with Path(file).open(encoding=encoding_str) as f:
                     return _check_empty(
@@ -158,19 +167,8 @@ def _prepare_file_arg(
                         context=f"{file!r}",
                         raise_if_empty=raise_if_empty,
                     )
-            # non-local file
-            if "*" in file:
-                raise ValueError(
-                    "globbing patterns not supported when scanning non-local files"
-                )
             kwargs["encoding"] = encoding
             return fsspec.open(file, **kwargs)
-
-        # todo! add azure/ gcp/ ?
-        if file.startswith("s3://"):
-            raise ModuleNotFoundError(
-                "fsspec needs to be installed to read files from S3"
-            )
 
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
         if _FSSPEC_AVAILABLE:
@@ -179,13 +177,16 @@ def _prepare_file_arg(
             if has_utf8_utf8_lossy_encoding:
                 if all(infer_storage_options(f)["protocol"] == "file" for f in file):
                     return managed_file(
-                        [normalise_filepath(f, check_not_dir) for f in file]
+                        [
+                            normalize_filepath(f, check_not_directory=check_not_dir)
+                            for f in file
+                        ]
                     )
             kwargs["encoding"] = encoding
             return fsspec.open_files(file, **kwargs)
 
     if isinstance(file, str):
-        file = normalise_filepath(file, check_not_dir)
+        file = normalize_filepath(file, check_not_directory=check_not_dir)
         if not has_utf8_utf8_lossy_encoding:
             with Path(file).open(encoding=encoding_str) as f:
                 return _check_empty(

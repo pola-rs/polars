@@ -222,7 +222,7 @@ pub fn get_either_file(py_f: PyObject, truncate: bool) -> PyResult<EitherRustPyt
             };
             Ok(EitherRustPythonFile::Rust(f))
         } else {
-            let f = PyFileLikeObject::with_requirements(py_f, true, true, true)?;
+            let f = PyFileLikeObject::with_requirements(py_f, !truncate, truncate, !truncate)?;
             Ok(EitherRustPythonFile::Py(f))
         }
     })

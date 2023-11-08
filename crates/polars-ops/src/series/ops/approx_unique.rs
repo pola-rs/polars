@@ -58,7 +58,7 @@ fn dispatcher(s: &Series) -> PolarsResult<Series> {
 ///  let s = Series::new("s", [1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3]);
 ///
 ///   let approx_count = approx_n_unique(&s).unwrap();
-///   dbg!(approx_count);
+///   println!("{}", approx_count);
 /// # }
 /// ```
 /// Outputs:

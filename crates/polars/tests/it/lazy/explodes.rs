@@ -9,7 +9,7 @@ fn test_explode_row_numbers() -> PolarsResult<()> {
         "text" => ["one two three four", "uno dos tres cuatro"]
     ]?
     .lazy()
-    .select([col("text").str().split(" ").alias("tokens")])
+    .select([col("text").str().split(lit(" ")).alias("tokens")])
     .with_row_count("row_nr", None)
     .explode([col("tokens")])
     .select([col("row_nr"), col("tokens")])

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from datetime import datetime
 from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
@@ -9,6 +10,7 @@ from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.deprecation import (
     deprecate_renamed_parameter,
+    deprecate_saturating,
     issue_deprecation_warning,
 )
 
@@ -16,17 +18,17 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars.polars as plr
 
 if TYPE_CHECKING:
-    from datetime import date, datetime, timedelta
+    from datetime import date, timedelta
     from typing import Literal
 
     from polars import Expr, Series
-    from polars.type_aliases import ClosedInterval, IntoExpr, TimeUnit
+    from polars.type_aliases import ClosedInterval, IntoExprColumn, TimeUnit
 
 
 @overload
 def date_range(
-    start: date | datetime | IntoExpr,
-    end: date | datetime | IntoExpr,
+    start: date | datetime | IntoExprColumn,
+    end: date | datetime | IntoExprColumn,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -40,8 +42,8 @@ def date_range(
 
 @overload
 def date_range(
-    start: date | datetime | IntoExpr,
-    end: date | datetime | IntoExpr,
+    start: date | datetime | IntoExprColumn,
+    end: date | datetime | IntoExprColumn,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -55,8 +57,8 @@ def date_range(
 
 @overload
 def date_range(
-    start: date | datetime | IntoExpr,
-    end: date | datetime | IntoExpr,
+    start: date | datetime | IntoExprColumn,
+    end: date | datetime | IntoExprColumn,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -71,8 +73,8 @@ def date_range(
 @deprecate_renamed_parameter("low", "start", version="0.18.0")
 @deprecate_renamed_parameter("high", "end", version="0.18.0")
 def date_range(
-    start: date | datetime | IntoExpr,
-    end: date | datetime | IntoExpr,
+    start: date | datetime | IntoExprColumn,
+    end: date | datetime | IntoExprColumn,
     interval: str | timedelta = "1d",
     *,
     closed: ClosedInterval = "both",
@@ -91,31 +93,24 @@ def date_range(
     end
         Upper bound of the date range.
     interval
-        Interval of the range periods, specified as a Python ``timedelta`` object
-        or a Polars duration string like ``1h30m25s``.
-
-        Append ``_saturating`` to the interval string to restrict resulting invalid
-        dates to valid ranges.
-
-        It is common to attempt to create a month-end date series by using the "1mo"
-        offset string with a start date at the end of the month. This will not produce
-        the desired results. See Note #2 below for further information.
+        Interval of the range periods, specified as a Python `timedelta` object
+        or using the Polars duration string language (see "Notes" section below).
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     time_unit : {None, 'ns', 'us', 'ms'}
-        Time unit of the resulting ``Datetime`` data type.
-        Only takes effect if the output column is of type ``Datetime``.
+        Time unit of the resulting `Datetime` data type.
+        Only takes effect if the output column is of type `Datetime`.
     time_zone
-        Time zone of the resulting ``Datetime`` data type.
-        Only takes effect if the output column is of type ``Datetime``.
+        Time zone of the resulting `Datetime` data type.
+        Only takes effect if the output column is of type `Datetime`.
     eager
-        Evaluate immediately and return a ``Series``.
-        If set to ``False`` (default), return an expression instead.
+        Evaluate immediately and return a `Series`.
+        If set to `False` (default), return an expression instead.
     name
         Name of the output column.
 
         .. deprecated:: 0.18.0
-            This argument is deprecated. Use the ``alias`` method instead.
+            This argument is deprecated. Use the `alias` method instead.
 
     Returns
     -------
@@ -124,43 +119,34 @@ def date_range(
 
     Notes
     -----
-    1) If both ``start`` and ``end`` are passed as date types (not datetime), and the
-    interval granularity is no finer than 1d, the returned range is also of
-    type date. All other permutations return a datetime Series.
+    1) If both `start` and `end` are passed as date types (not datetime), and the
+       interval granularity is no finer than 1d, the returned range is also of
+       type date. All other permutations return a datetime Series.
 
-    2) Because different months of the year have differing numbers of days, the offset
-    strings "1mo" and "1y" are not well-defined units of time, and vary according to
-    their starting point. For example, February 1st offset by one month returns a time
-    28 days later (in a non-leap year), whereas May 1st offset by one month returns a
-    time 31 days later. In general, an offset of one month selects the same day in the
-    following month. However, this is not always intended: when one begins Febrary 28th
-    and offsets by 1 month, does the user intend to target March 28th (the next month
-    but same day), or March 31st (the end of the month)?
+       .. deprecated:: 0.19.3
+           In a future version of Polars, `date_range` will always return a `Date`.
+           Please use :func:`datetime_range` if you want a `Datetime` instead.
 
-    Polars uses the first approach: February 28th offset by 1 month is March 28th. When
-    a date-series is generated, each date is offset as of the prior date, meaning that
-    if one began January 31st, 2023, and offset by ``1mo_saturating`` until May 31st,
-    the following dates would be generated:
+    2) `interval` is created according to the following string language:
 
-    ``2023-01-31``, ``2023-02-28``, ``2023-03-28``, ``2023-04-28``, ``2023-05-28``.
+       - 1ns   (1 nanosecond)
+       - 1us   (1 microsecond)
+       - 1ms   (1 millisecond)
+       - 1s    (1 second)
+       - 1m    (1 minute)
+       - 1h    (1 hour)
+       - 1d    (1 calendar day)
+       - 1w    (1 calendar week)
+       - 1mo   (1 calendar month)
+       - 1q    (1 calendar quarter)
+       - 1y    (1 calendar year)
 
-    This is almost never the intended result. Instead, it is recommended to begin with
-    the first day of the month and use the ``.dt.month_end()`` conversion routine, as
-    in:
+       Or combine them:
+       "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
-    >>> from datetime import date
-    >>> pl.date_range(
-    ...     date(2023, 1, 1), date(2023, 5, 1), "1mo", eager=True
-    ... ).dt.month_end()
-    shape: (5,)
-    Series: 'date' [date]
-    [
-            2023-01-31
-            2023-02-28
-            2023-03-31
-            2023-04-30
-            2023-05-31
-    ]
+       By "calendar day", we mean the corresponding time on the next day (which may
+       not be 24 hours, due to daylight savings). Similarly for "calendar week",
+       "calendar month", "calendar quarter", and "calendar year".
 
     Examples
     --------
@@ -176,59 +162,27 @@ def date_range(
         2022-03-01
     ]
 
-    Using ``timedelta`` object to specify the interval:
+    Using `timedelta` object to specify the interval:
 
-    >>> from datetime import datetime, timedelta
+    >>> from datetime import timedelta
     >>> pl.date_range(
-    ...     datetime(1985, 1, 1),
-    ...     datetime(1985, 1, 10),
-    ...     timedelta(days=1, hours=12),
-    ...     time_unit="ms",
+    ...     date(1985, 1, 1),
+    ...     date(1985, 1, 10),
+    ...     timedelta(days=2),
     ...     eager=True,
     ... )
-    shape: (7,)
-    Series: 'date' [datetime[ms]]
+    shape: (5,)
+    Series: 'date' [date]
     [
-        1985-01-01 00:00:00
-        1985-01-02 12:00:00
-        1985-01-04 00:00:00
-        1985-01-05 12:00:00
-        1985-01-07 00:00:00
-        1985-01-08 12:00:00
-        1985-01-10 00:00:00
-    ]
-
-    Specifying a time zone:
-
-    >>> pl.date_range(
-    ...     datetime(2022, 1, 1),
-    ...     datetime(2022, 3, 1),
-    ...     "1mo",
-    ...     time_zone="America/New_York",
-    ...     eager=True,
-    ... )
-    shape: (3,)
-    Series: 'date' [datetime[μs, America/New_York]]
-    [
-        2022-01-01 00:00:00 EST
-        2022-02-01 00:00:00 EST
-        2022-03-01 00:00:00 EST
-    ]
-
-    Combine with ``month_end`` to get the last day of the month:
-
-    >>> pl.date_range(
-    ...     datetime(2022, 1, 1), datetime(2022, 3, 1), "1mo", eager=True
-    ... ).dt.month_end()
-    shape: (3,)
-    Series: 'date' [datetime[μs]]
-    [
-        2022-01-31 00:00:00
-        2022-02-28 00:00:00
-        2022-03-31 00:00:00
+        1985-01-01
+        1985-01-03
+        1985-01-05
+        1985-01-07
+        1985-01-09
     ]
 
     """
+    interval = deprecate_saturating(interval)
     if name is not None:
         issue_deprecation_warning(
             "the `name` argument is deprecated. Use the `alias` method instead.",
@@ -238,6 +192,8 @@ def date_range(
     interval = parse_interval_argument(interval)
     if time_unit is None and "ns" in interval:
         time_unit = "ns"
+
+    _warn_for_deprecated_date_range_use(start, end, interval, time_unit, time_zone)
 
     start_pyexpr = parse_as_expression(start)
     end_pyexpr = parse_as_expression(end)
@@ -256,8 +212,8 @@ def date_range(
 
 @overload
 def date_ranges(
-    start: date | datetime | IntoExpr,
-    end: date | datetime | IntoExpr,
+    start: date | datetime | IntoExprColumn,
+    end: date | datetime | IntoExprColumn,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -270,8 +226,8 @@ def date_ranges(
 
 @overload
 def date_ranges(
-    start: date | datetime | IntoExpr,
-    end: date | datetime | IntoExpr,
+    start: date | datetime | IntoExprColumn,
+    end: date | datetime | IntoExprColumn,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -284,8 +240,8 @@ def date_ranges(
 
 @overload
 def date_ranges(
-    start: date | datetime | IntoExpr,
-    end: date | datetime | IntoExpr,
+    start: date | datetime | IntoExprColumn,
+    end: date | datetime | IntoExprColumn,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -297,8 +253,8 @@ def date_ranges(
 
 
 def date_ranges(
-    start: date | datetime | IntoExpr,
-    end: date | datetime | IntoExpr,
+    start: date | datetime | IntoExprColumn,
+    end: date | datetime | IntoExprColumn,
     interval: str | timedelta = "1d",
     *,
     closed: ClosedInterval = "both",
@@ -316,31 +272,47 @@ def date_ranges(
     end
         Upper bound of the date range.
     interval
-        Interval of the range periods, specified as a Python ``timedelta`` object
-        or a Polars duration string like ``1h30m25s``.
-
-        Append ``_saturating`` to the interval string to restrict resulting invalid
-        dates to valid ranges.
-
-        It is common to attempt to create a month-end date series by using the "1mo"
-        offset string with a start date at the end of the month. This will not produce
-        the desired results. See Note #2 below for further information.
+        Interval of the range periods, specified as a Python `timedelta` object
+        or using the Polars duration string language (see "Notes" section below).
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     time_unit : {None, 'ns', 'us', 'ms'}
-        Time unit of the resulting ``Datetime`` data type.
-        Only takes effect if the output column is of type ``Datetime``.
+        Time unit of the resulting `Datetime` data type.
+        Only takes effect if the output column is of type `Datetime`.
     time_zone
-        Time zone of the resulting ``Datetime`` data type.
-        Only takes effect if the output column is of type ``Datetime``.
+        Time zone of the resulting `Datetime` data type.
+        Only takes effect if the output column is of type `Datetime`.
     eager
-        Evaluate immediately and return a ``Series``.
-        If set to ``False`` (default), return an expression instead.
+        Evaluate immediately and return a `Series`.
+        If set to `False` (default), return an expression instead.
 
     Returns
     -------
     Expr or Series
-        Column of data type ``List(Date)`` or ``List(Datetime)``.
+        Column of data type `List(Date)` or `List(Datetime)`.
+
+    Notes
+    -----
+    `interval` is created according to the following string language:
+
+    - 1ns   (1 nanosecond)
+    - 1us   (1 microsecond)
+    - 1ms   (1 millisecond)
+    - 1s    (1 second)
+    - 1m    (1 minute)
+    - 1h    (1 hour)
+    - 1d    (1 calendar day)
+    - 1w    (1 calendar week)
+    - 1mo   (1 calendar month)
+    - 1q    (1 calendar quarter)
+    - 1y    (1 calendar year)
+
+    Or combine them:
+    "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+    By "calendar day", we mean the corresponding time on the next day (which may
+    not be 24 hours, due to daylight savings). Similarly for "calendar week",
+    "calendar month", "calendar quarter", and "calendar year".
 
     Examples
     --------
@@ -363,9 +335,12 @@ def date_ranges(
     └────────────┴────────────┴───────────────────────────────────┘
 
     """
+    interval = deprecate_saturating(interval)
     interval = parse_interval_argument(interval)
     if time_unit is None and "ns" in interval:
         time_unit = "ns"
+
+    _warn_for_deprecated_date_range_use(start, end, interval, time_unit, time_zone)
 
     start_pyexpr = parse_as_expression(start)
     end_pyexpr = parse_as_expression(end)
@@ -380,3 +355,27 @@ def date_ranges(
         return F.select(result).to_series()
 
     return result
+
+
+def _warn_for_deprecated_date_range_use(
+    start: date | datetime | IntoExprColumn,
+    end: date | datetime | IntoExprColumn,
+    interval: str,
+    time_unit: TimeUnit | None,
+    time_zone: str | None,
+) -> None:
+    # This check is not foolproof, but should catch most cases
+    if (
+        isinstance(start, datetime)
+        or isinstance(end, datetime)
+        or time_unit is not None
+        or time_zone is not None
+        or ("h" in interval)
+        or ("m" in interval.replace("mo", ""))
+        or ("s" in interval.replace("saturating", ""))
+    ):
+        issue_deprecation_warning(
+            "Creating Datetime ranges using `date_range(s)` is deprecated."
+            " Use `datetime_range(s)` instead.",
+            version="0.19.3",
+        )

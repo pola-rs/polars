@@ -14,7 +14,7 @@ impl Series {
     }
 
     /// Check if all values in series are equal where `None == None` evaluates to `true`.
-    /// Two `Datetime` series are *not* equal if their timezones are different, regardless
+    /// Two [`Datetime`](DataType::Datetime) series are *not* equal if their timezones are different, regardless
     /// if they represent the same UTC time or not.
     pub fn series_equal_missing(&self, other: &Series) -> bool {
         match (self.dtype(), other.dtype()) {
@@ -40,7 +40,7 @@ impl Series {
             }
     }
 
-    /// Get a pointer to the underlying data of this Series.
+    /// Get a pointer to the underlying data of this [`Series`].
     /// Can be useful for fast comparisons.
     pub fn get_data_ptr(&self) -> usize {
         let object = self.0.deref();
@@ -63,7 +63,7 @@ impl PartialEq for Series {
 }
 
 impl DataFrame {
-    /// Check if `DataFrames` schemas are equal.
+    /// Check if [`DataFrame`]' schemas are equal.
     pub fn frame_equal_schema(&self, other: &DataFrame) -> PolarsResult<()> {
         for (lhs, rhs) in self.iter().zip(other.iter()) {
             polars_ensure!(
@@ -80,7 +80,7 @@ impl DataFrame {
         Ok(())
     }
 
-    /// Check if `DataFrames` are equal. Note that `None == None` evaluates to `false`
+    /// Check if [`DataFrame`]s are equal. Note that `None == None` evaluates to `false`
     ///
     /// # Example
     ///
@@ -106,7 +106,7 @@ impl DataFrame {
         true
     }
 
-    /// Check if all values in `DataFrames` are equal where `None == None` evaluates to `true`.
+    /// Check if all values in [`DataFrame`]s are equal where `None == None` evaluates to `true`.
     ///
     /// # Example
     ///
@@ -132,7 +132,7 @@ impl DataFrame {
         true
     }
 
-    /// Checks if the Arc ptrs of the Series are equal
+    /// Checks if the Arc ptrs of the [`Series`] are equal
     ///
     /// # Example
     ///

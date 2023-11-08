@@ -41,7 +41,7 @@ impl<'a> MMapChunkIter<'a> {
 }
 
 impl ArrowReader for MMapChunkIter<'_> {
-    fn next_record_batch(&mut self) -> ArrowResult<Option<ArrowChunk>> {
+    fn next_record_batch(&mut self) -> PolarsResult<Option<ArrowChunk>> {
         if self.idx < self.end {
             let chunk = unsafe {
                 mmap_unchecked(
@@ -67,6 +67,7 @@ impl ArrowReader for MMapChunkIter<'_> {
     }
 }
 
+#[cfg(feature = "ipc")]
 impl<R: MmapBytesReader> IpcReader<R> {
     pub(super) fn finish_memmapped(
         &mut self,
@@ -84,7 +85,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
                 }
 
                 let schema = if let Some(projection) = &self.projection {
-                    apply_projection(&metadata.schema, projection)
+                    Arc::new(apply_projection(&metadata.schema, projection))
                 } else {
                     metadata.schema.clone()
                 };

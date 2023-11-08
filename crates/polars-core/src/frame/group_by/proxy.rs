@@ -1,7 +1,8 @@
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
 
-use polars_arrow::utils::CustomIterTools;
+use arrow::legacy::utils::CustomIterTools;
+use polars_utils::idx_vec::IdxVec;
 use polars_utils::sync::SyncPtr;
 use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::prelude::*;
@@ -16,11 +17,11 @@ use crate::POOL;
 pub struct GroupsIdx {
     pub(crate) sorted: bool,
     first: Vec<IdxSize>,
-    all: Vec<Vec<IdxSize>>,
+    all: Vec<IdxVec>,
 }
 
-pub type IdxItem = (IdxSize, Vec<IdxSize>);
-pub type BorrowIdxItem<'a> = (IdxSize, &'a Vec<IdxSize>);
+pub type IdxItem = (IdxSize, IdxVec);
+pub type BorrowIdxItem<'a> = (IdxSize, &'a IdxVec);
 
 impl Drop for GroupsIdx {
     fn drop(&mut self) {
@@ -45,8 +46,8 @@ impl From<Vec<IdxItem>> for GroupsIdx {
     }
 }
 
-impl From<Vec<(Vec<IdxSize>, Vec<Vec<IdxSize>>)>> for GroupsIdx {
-    fn from(v: Vec<(Vec<IdxSize>, Vec<Vec<IdxSize>>)>) -> Self {
+impl From<Vec<(Vec<IdxSize>, Vec<IdxVec>)>> for GroupsIdx {
+    fn from(v: Vec<(Vec<IdxSize>, Vec<IdxVec>)>) -> Self {
         // we have got the hash tables so we can determine the final
         let cap = v.iter().map(|v| v.0.len()).sum::<usize>();
         let offsets = v
@@ -66,7 +67,7 @@ impl From<Vec<(Vec<IdxSize>, Vec<Vec<IdxSize>>)>> for GroupsIdx {
             v.into_par_iter().zip(offsets).for_each(
                 |((local_first_vals, mut local_all_vals), offset)| unsafe {
                     let global_first: *mut IdxSize = global_first_ptr.get();
-                    let global_all: *mut Vec<IdxSize> = global_all_ptr.get();
+                    let global_all: *mut IdxVec = global_all_ptr.get();
                     let global_first = global_first.add(offset);
                     let global_all = global_all.add(offset);
 
@@ -116,7 +117,7 @@ impl From<Vec<Vec<IdxItem>>> for GroupsIdx {
                 .for_each(|(mut inner, offset)| {
                     unsafe {
                         let first = (first_ptr as *const IdxSize as *mut IdxSize).add(offset);
-                        let all = (all_ptr as *const Vec<IdxSize> as *mut Vec<IdxSize>).add(offset);
+                        let all = (all_ptr as *const IdxVec as *mut IdxVec).add(offset);
 
                         let inner_ptr = inner.as_mut_ptr();
                         for i in 0..inner.len() {
@@ -143,7 +144,7 @@ impl From<Vec<Vec<IdxItem>>> for GroupsIdx {
 }
 
 impl GroupsIdx {
-    pub fn new(first: Vec<IdxSize>, all: Vec<Vec<IdxSize>>, sorted: bool) -> Self {
+    pub fn new(first: Vec<IdxSize>, all: Vec<IdxVec>, sorted: bool) -> Self {
         Self { sorted, first, all }
     }
 
@@ -182,12 +183,12 @@ impl GroupsIdx {
 
     pub fn iter(
         &self,
-    ) -> std::iter::Zip<std::iter::Copied<std::slice::Iter<IdxSize>>, std::slice::Iter<Vec<IdxSize>>>
+    ) -> std::iter::Zip<std::iter::Copied<std::slice::Iter<IdxSize>>, std::slice::Iter<IdxVec>>
     {
         self.into_iter()
     }
 
-    pub fn all(&self) -> &[Vec<IdxSize>] {
+    pub fn all(&self) -> &[IdxVec] {
         &self.all
     }
 
@@ -225,7 +226,7 @@ impl<'a> IntoIterator for &'a GroupsIdx {
     type Item = BorrowIdxItem<'a>;
     type IntoIter = std::iter::Zip<
         std::iter::Copied<std::slice::Iter<'a, IdxSize>>,
-        std::slice::Iter<'a, Vec<IdxSize>>,
+        std::slice::Iter<'a, IdxVec>,
     >;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -235,7 +236,7 @@ impl<'a> IntoIterator for &'a GroupsIdx {
 
 impl IntoIterator for GroupsIdx {
     type Item = IdxItem;
-    type IntoIter = std::iter::Zip<std::vec::IntoIter<IdxSize>, std::vec::IntoIter<Vec<IdxSize>>>;
+    type IntoIter = std::iter::Zip<std::vec::IntoIter<IdxSize>, std::vec::IntoIter<IdxVec>>;
 
     fn into_iter(mut self) -> Self::IntoIter {
         let first = std::mem::take(&mut self.first);
@@ -261,7 +262,7 @@ impl FromParallelIterator<IdxItem> for GroupsIdx {
 impl<'a> IntoParallelIterator for &'a GroupsIdx {
     type Iter = rayon::iter::Zip<
         rayon::iter::Copied<rayon::slice::Iter<'a, IdxSize>>,
-        rayon::slice::Iter<'a, Vec<IdxSize>>,
+        rayon::slice::Iter<'a, IdxVec>,
     >;
     type Item = BorrowIdxItem<'a>;
 
@@ -271,7 +272,7 @@ impl<'a> IntoParallelIterator for &'a GroupsIdx {
 }
 
 impl IntoParallelIterator for GroupsIdx {
-    type Iter = rayon::iter::Zip<rayon::vec::IntoIter<IdxSize>, rayon::vec::IntoIter<Vec<IdxSize>>>;
+    type Iter = rayon::iter::Zip<rayon::vec::IntoIter<IdxSize>, rayon::vec::IntoIter<IdxVec>>;
     type Item = IdxItem;
 
     fn into_par_iter(mut self) -> Self::Iter {
@@ -315,7 +316,7 @@ impl GroupsProxy {
                 polars_warn!("Had to reallocate groups, missed an optimization opportunity. Please open an issue.");
                 groups
                     .iter()
-                    .map(|&[first, len]| (first, (first..first + len).collect_trusted::<Vec<_>>()))
+                    .map(|&[first, len]| (first, (first..first + len).collect::<IdxVec>()))
                     .collect()
             },
         }
@@ -367,19 +368,16 @@ impl GroupsProxy {
         }
     }
 
-    pub fn take_group_lasts(self) -> Vec<IdxSize> {
+    /// # Safety
+    /// This will not do any bounds checks. The caller must ensure
+    /// all groups have members.
+    pub unsafe fn take_group_lasts(self) -> Vec<IdxSize> {
         match self {
-            GroupsProxy::Idx(groups) => {
-                groups
-                    .all
-                    .iter()
-                    .map(|idx| {
-                        // safety:
-                        // idx has at least one eletment, so -1 is always in bounds
-                        unsafe { *idx.get_unchecked(idx.len() - 1) }
-                    })
-                    .collect()
-            },
+            GroupsProxy::Idx(groups) => groups
+                .all
+                .iter()
+                .map(|idx| *idx.get_unchecked(idx.len() - 1))
+                .collect(),
             GroupsProxy::Slice { groups, .. } => groups
                 .into_iter()
                 .map(|[first, len]| first + len - 1)

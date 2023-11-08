@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-categorical")]
-use polars_core::IUseStringCache;
+use polars_core::StringCacheHolder;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
@@ -332,7 +332,7 @@ impl FunctionNode {
                 // we use a global string cache here as streaming chunks all have different rev maps
                 #[cfg(feature = "dtype-categorical")]
                 {
-                    let _hold = IUseStringCache::hold();
+                    let _sc = StringCacheHolder::hold();
                     Arc::get_mut(function).unwrap().call_udf(df)
                 }
 

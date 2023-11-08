@@ -1,13 +1,13 @@
 use arrow::array::DictionaryArray;
 use arrow::datatypes::IntegerType;
-use polars_arrow::compute::cast::cast;
+use arrow::legacy::compute::cast::cast;
 
 use super::*;
 use crate::using_string_cache;
 
 impl From<&CategoricalChunked> for DictionaryArray<u32> {
     fn from(ca: &CategoricalChunked) -> Self {
-        let keys = ca.logical().rechunk();
+        let keys = ca.physical().rechunk();
         let keys = keys.downcast_iter().next().unwrap();
         let map = &**ca.get_rev_map();
         let dtype = ArrowDataType::Dictionary(
@@ -42,7 +42,7 @@ impl From<&CategoricalChunked> for DictionaryArray<u32> {
 }
 impl From<&CategoricalChunked> for DictionaryArray<i64> {
     fn from(ca: &CategoricalChunked) -> Self {
-        let keys = ca.logical().rechunk();
+        let keys = ca.physical().rechunk();
         let keys = keys.downcast_iter().next().unwrap();
         let map = &**ca.get_rev_map();
         let dtype = ArrowDataType::Dictionary(

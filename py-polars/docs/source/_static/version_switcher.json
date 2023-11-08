@@ -7,7 +7,8 @@
     {
         "name": "0.19 (stable)",
         "version": "0.19",
-        "url": "https://pola-rs.github.io/polars/py-polars/html/"
+        "url": "https://pola-rs.github.io/polars/py-polars/html/",
+        "preferred": true
     },
     {
         "name": "0.18",

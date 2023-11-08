@@ -18,7 +18,7 @@ jobs:
         working-directory: py-polars
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -28,11 +28,14 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements-lint.txt
 
-      - name: Lint Python
-        run: |
-          ruff --exit-non-zero-on-fix .
-          black --check .
-          blackdoc --check .
+      - name: Run ruff linter
+        run: ruff check --no-fix .
+
+      - name: Run ruff formatter
+        run: ruff format --diff .
+
+      - name: Run blackdoc
+        run: blackdoc --diff .
 
   mypy:
     runs-on: ubuntu-latest
@@ -45,7 +48,7 @@ jobs:
         working-directory: py-polars
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v4

@@ -12,8 +12,17 @@ from polars.testing import assert_frame_equal
 
 def test_from_dataframe_polars() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]})
+    result = pl.from_dataframe(df, allow_copy=False)
+    assert_frame_equal(result, df)
+
+
+def test_from_dataframe_polars_interchange_fast_path() -> None:
+    df = pl.DataFrame(
+        {"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]},
+        schema_overrides={"c": pl.Categorical},
+    )
     dfi = df.__dataframe__()
-    result = pl.from_dataframe(dfi)
+    result = pl.from_dataframe(dfi, allow_copy=False)
     assert_frame_equal(result, df)
 
 
@@ -47,11 +56,11 @@ def test_from_dataframe_pyarrow_recordbatch_zero_copy() -> None:
     a = pa.array([1, 2])
     b = pa.array([3.0, 4.0])
     c = pa.array(["foo", "bar"])
+
     batch = pa.record_batch([a, b, c], names=["a", "b", "c"])
-
     result = pl.from_dataframe(batch, allow_copy=False)
-
     expected = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]})
+
     assert_frame_equal(result, expected)
 
 
@@ -74,7 +83,7 @@ def test_from_dataframe_allow_copy() -> None:
 def test_from_dataframe_invalid_type() -> None:
     df = [[1, 2], [3, 4]]
     with pytest.raises(TypeError):
-        pl.from_dataframe(df)
+        pl.from_dataframe(df)  # type: ignore[arg-type]
 
 
 def test_from_dataframe_pyarrow_required(monkeypatch: Any) -> None:
@@ -82,7 +91,7 @@ def test_from_dataframe_pyarrow_required(monkeypatch: Any) -> None:
 
     df = pl.DataFrame({"a": [1, 2]})
     with pytest.raises(ImportError, match="pyarrow"):
-        pl.from_dataframe(df.__dataframe__())
+        pl.from_dataframe(df.to_pandas())
 
     # 'Converting' from a Polars dataframe does not hit this requirement
     result = pl.from_dataframe(df)
@@ -90,7 +99,7 @@ def test_from_dataframe_pyarrow_required(monkeypatch: Any) -> None:
 
 
 def test_from_dataframe_pyarrow_min_version(monkeypatch: Any) -> None:
-    dfi = pl.DataFrame({"a": [1, 2]}).__dataframe__()
+    dfi = pl.DataFrame({"a": [1, 2]}).to_arrow().__dataframe__()
 
     monkeypatch.setattr(
         pl.convert.pa,  # type: ignore[attr-defined]
@@ -106,17 +115,12 @@ def test_from_dataframe_pyarrow_min_version(monkeypatch: Any) -> None:
 def test_from_dataframe_data_type_not_implemented_by_arrow(
     dtype: pl.PolarsDataType,
 ) -> None:
-    df = pl.Series(dtype=dtype).to_frame()
+    df = pl.Series([0], dtype=dtype).to_frame().to_arrow()
     dfi = df.__dataframe__()
-    with pytest.raises(NotImplementedError, match="not supported"):
+    with pytest.raises(ValueError, match="not supported"):
         pl.from_dataframe(dfi)
 
 
-# Remove xfail marker when the issue is fixed:
-# https://github.com/apache/arrow/issues/37050
-@pytest.mark.xfail(
-    reason="Bug in pyarrow's implementation of the interchange protocol."
-)
 def test_from_dataframe_empty_arrow_interchange_object() -> None:
     df = pl.Series("a", dtype=pl.Int8).to_frame()
     df_pa = df.to_arrow()

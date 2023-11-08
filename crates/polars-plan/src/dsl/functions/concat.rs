@@ -10,9 +10,9 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, separator: &str) -> Expr {
         input,
         function: StringFunction::ConcatHorizontal(separator).into(),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyFlat,
+            collect_groups: ApplyOptions::ElementWise,
             input_wildcard_expansion: true,
-            auto_explode: true,
+            returns_scalar: false,
             ..Default::default()
         },
     }
@@ -58,7 +58,7 @@ pub fn concat_list<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult
         input: s,
         function: FunctionExpr::ListExpr(ListFunction::Concat),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             input_wildcard_expansion: true,
             ..Default::default()
         },
@@ -76,7 +76,7 @@ pub fn concat_expr<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
         input: s,
         function: FunctionExpr::ConcatExpr(rechunk),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             input_wildcard_expansion: true,
             cast_to_supertypes: true,
             ..Default::default()

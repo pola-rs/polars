@@ -1,7 +1,7 @@
 use arrow::array::{Array, BooleanArray};
 use arrow::bitmap::utils::count_zeros;
 use arrow::bitmap::Bitmap;
-use polars_arrow::utils::CustomIterTools;
+use arrow::legacy::utils::CustomIterTools;
 
 use super::*;
 
@@ -25,7 +25,7 @@ fn count_bits_set_by_offsets(values: &Bitmap, offset: &[i64]) -> Vec<IdxSize> {
 }
 
 #[cfg(feature = "list_count")]
-pub fn list_count_match(ca: &ListChunked, value: AnyValue) -> PolarsResult<Series> {
+pub fn list_count_matches(ca: &ListChunked, value: AnyValue) -> PolarsResult<Series> {
     let value = Series::new("", [value]);
 
     let ca = ca.apply_to_inner(&|s| {

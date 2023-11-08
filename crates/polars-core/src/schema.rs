@@ -1,5 +1,6 @@
 use std::fmt::{Debug, Formatter};
 
+use arrow::datatypes::ArrowSchemaRef;
 use indexmap::map::MutableKeys;
 use indexmap::IndexMap;
 #[cfg(feature = "serde-lazy")]
@@ -9,7 +10,7 @@ use smartstring::alias::String as SmartString;
 use crate::prelude::*;
 use crate::utils::try_get_supertype;
 
-/// A map from field/column name (`String`) to the type of that field/column (`DataType`)
+/// A map from field/column name ([`String`](smartstring::alias::String)) to the type of that field/column ([`DataType`])
 #[derive(Eq, Clone, Default)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct Schema {
@@ -17,7 +18,7 @@ pub struct Schema {
 }
 
 // Schemas will only compare equal if they have the same fields in the same order. We can't use `self.inner ==
-// other.inner` because IndexMap ignores order when checking equality, but we don't want to ignore it.
+// other.inner` because [`IndexMap`] ignores order when checking equality, but we don't want to ignore it.
 impl PartialEq for Schema {
     fn eq(&self, other: &Self) -> bool {
         self.len() == other.len() && self.iter().zip(other.iter()).all(|(a, b)| a == b)
@@ -31,6 +32,12 @@ impl Debug for Schema {
             writeln!(f, "name: {name}, data type: {dtype:?}")?;
         }
         Ok(())
+    }
+}
+
+impl From<&[Series]> for Schema {
+    fn from(value: &[Series]) -> Self {
+        value.iter().map(|s| s.field().into_owned()).collect()
     }
 }
 
@@ -129,7 +136,7 @@ impl Schema {
     ) -> PolarsResult<Self> {
         polars_ensure!(
             index <= self.len(),
-            ComputeError:
+            OutOfBounds:
                 "index {} is out of bounds for schema with length {} (the max index allowed is self.len())",
                     index,
                     self.len()
@@ -167,7 +174,7 @@ impl Schema {
     ) -> PolarsResult<Option<DataType>> {
         polars_ensure!(
             index <= self.len(),
-            ComputeError:
+            OutOfBounds:
                 "index {} is out of bounds for schema with length {} (the max index allowed is self.len())",
                     index,
                     self.len()
@@ -360,9 +367,9 @@ impl Schema {
         ArrowSchema::from(fields)
     }
 
-    /// Iterates the `Field`s in this schema, constructing them anew by cloning each `(&name, &dtype)` pair
+    /// Iterates the [`Field`]s in this schema, constructing them anew by cloning each `(&name, &dtype)` pair
     ///
-    /// Note that this clones each name and dtype in order to form an owned `Field`. For a clone-free version, use
+    /// Note that this clones each name and dtype in order to form an owned [`Field`]. For a clone-free version, use
     /// [`iter`][Self::iter], which returns `(&name, &dtype)`.
     pub fn iter_fields(&self) -> impl Iterator<Item = Field> + ExactSizeIterator + '_ {
         self.inner
@@ -373,6 +380,13 @@ impl Schema {
     /// Iterates over references to the dtypes in this schema
     pub fn iter_dtypes(&self) -> impl Iterator<Item = &DataType> + '_ + ExactSizeIterator {
         self.inner.iter().map(|(_name, dtype)| dtype)
+    }
+
+    /// Iterates over mut references to the dtypes in this schema
+    pub fn iter_dtypes_mut(
+        &mut self,
+    ) -> impl Iterator<Item = &mut DataType> + '_ + ExactSizeIterator {
+        self.inner.iter_mut().map(|(_name, dtype)| dtype)
     }
 
     /// Iterates over references to the names in this schema
@@ -449,5 +463,28 @@ impl IndexOfSchema for ArrowSchema {
 
     fn get_names(&self) -> Vec<&str> {
         self.fields.iter().map(|f| f.name.as_str()).collect()
+    }
+}
+
+impl From<&ArrowSchema> for Schema {
+    fn from(value: &ArrowSchema) -> Self {
+        Self::from_iter(value.fields.iter())
+    }
+}
+impl From<ArrowSchema> for Schema {
+    fn from(value: ArrowSchema) -> Self {
+        Self::from(&value)
+    }
+}
+
+impl From<ArrowSchemaRef> for Schema {
+    fn from(value: ArrowSchemaRef) -> Self {
+        Self::from(value.as_ref())
+    }
+}
+
+impl From<&ArrowSchemaRef> for Schema {
+    fn from(value: &ArrowSchemaRef) -> Self {
+        Self::from(value.as_ref())
     }
 }

@@ -31,9 +31,14 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             data_type,
             strict,
         },
-        Expr::Take { expr, idx } => AExpr::Take {
+        Expr::Take {
+            expr,
+            idx,
+            returns_scalar,
+        } => AExpr::Take {
             expr: to_aexpr(*expr, arena),
             idx: to_aexpr(*idx, arena),
+            returns_scalar,
         },
         Expr::Sort { expr, options } => AExpr::Sort {
             expr: to_aexpr(*expr, arena),
@@ -128,12 +133,10 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         Expr::Window {
             function,
             partition_by,
-            order_by,
             options,
         } => AExpr::Window {
             function: to_aexpr(*function, arena),
             partition_by: to_aexprs(partition_by, arena),
-            order_by: order_by.map(|ob| to_aexpr(*ob, arena)),
             options,
         },
         Expr::Slice {
@@ -148,8 +151,9 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         Expr::Wildcard => AExpr::Wildcard,
         Expr::Count => AExpr::Count,
         Expr::Nth(i) => AExpr::Nth(i),
-        Expr::KeepName(_) => panic!("no keep_name expected at this point"),
-        Expr::Exclude(_, _) => panic!("no exclude expected at this point"),
+        Expr::SubPlan { .. } => panic!("no SQLSubquery expected at this point"),
+        Expr::KeepName(_) => panic!("no `name.keep` expected at this point"),
+        Expr::Exclude(_, _) => panic!("no `exclude` expected at this point"),
         Expr::RenameAlias { .. } => panic!("no `rename_alias` expected at this point"),
         Expr::Columns { .. } => panic!("no `columns` expected at this point"),
         Expr::DtypeColumn { .. } => panic!("no `dtype-columns` expected at this point"),
@@ -169,29 +173,17 @@ pub fn to_alp(
     let v = match lp {
         LogicalPlan::Scan {
             file_info,
-            path,
+            paths,
             predicate,
             scan_type,
             file_options: options,
         } => ALogicalPlan::Scan {
             file_info,
-            path,
+            paths,
             output_schema: None,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
             scan_type,
             file_options: options,
-        },
-        LogicalPlan::AnonymousScan {
-            function,
-            file_info,
-            predicate,
-            options,
-        } => ALogicalPlan::AnonymousScan {
-            function,
-            file_info,
-            output_schema: None,
-            predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
-            options,
         },
         #[cfg(feature = "python")]
         LogicalPlan::PythonScan { options } => ALogicalPlan::PythonScan {
@@ -364,9 +356,9 @@ pub fn to_alp(
                 schema,
             }
         },
-        LogicalPlan::FileSink { input, payload } => {
+        LogicalPlan::Sink { input, payload } => {
             let input = to_alp(*input, expr_arena, lp_arena)?;
-            ALogicalPlan::FileSink { input, payload }
+            ALogicalPlan::Sink { input, payload }
         },
     };
     Ok(lp_arena.add(v))
@@ -412,12 +404,17 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 options,
             }
         },
-        AExpr::Take { expr, idx } => {
+        AExpr::Take {
+            expr,
+            idx,
+            returns_scalar,
+        } => {
             let expr = node_to_expr(expr, expr_arena);
             let idx = node_to_expr(idx, expr_arena);
             Expr::Take {
                 expr: Box::new(expr),
                 idx: Box::new(idx),
+                returns_scalar,
             }
         },
         AExpr::SortBy {
@@ -565,16 +562,13 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
         AExpr::Window {
             function,
             partition_by,
-            order_by,
             options,
         } => {
             let function = Box::new(node_to_expr(function, expr_arena));
             let partition_by = nodes_to_exprs(&partition_by, expr_arena);
-            let order_by = order_by.map(|ob| Box::new(node_to_expr(ob, expr_arena)));
             Expr::Window {
                 function,
                 partition_by,
-                order_by,
                 options,
             }
         },
@@ -613,30 +607,18 @@ impl ALogicalPlan {
         };
         match lp {
             ALogicalPlan::Scan {
-                path,
+                paths,
                 file_info,
                 predicate,
                 scan_type,
                 output_schema: _,
                 file_options: options,
             } => LogicalPlan::Scan {
-                path,
+                paths,
                 file_info,
                 predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
                 scan_type,
                 file_options: options,
-            },
-            ALogicalPlan::AnonymousScan {
-                function,
-                file_info,
-                output_schema: _,
-                predicate,
-                options,
-            } => LogicalPlan::AnonymousScan {
-                function,
-                file_info,
-                predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
-                options,
             },
             #[cfg(feature = "python")]
             ALogicalPlan::PythonScan { options, .. } => LogicalPlan::PythonScan { options },
@@ -790,9 +772,9 @@ impl ALogicalPlan {
                     schema,
                 }
             },
-            ALogicalPlan::FileSink { input, payload } => {
+            ALogicalPlan::Sink { input, payload } => {
                 let input = Box::new(convert_to_lp(input, lp_arena));
-                LogicalPlan::FileSink { input, payload }
+                LogicalPlan::Sink { input, payload }
             },
         }
     }

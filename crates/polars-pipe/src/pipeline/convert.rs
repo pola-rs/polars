@@ -5,6 +5,7 @@ use std::sync::Arc;
 use hashbrown::hash_map::Entry;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
+use polars_ops::prelude::JoinType;
 use polars_plan::prelude::*;
 
 use crate::executors::operators::HstackOperator;
@@ -13,7 +14,7 @@ use crate::executors::sinks::group_by::GenericGroupby2;
 use crate::executors::sinks::*;
 use crate::executors::{operators, sources};
 use crate::expressions::PhysicalPipedExpr;
-use crate::operators::{Operator, Sink, Source};
+use crate::operators::{Operator, Sink as SinkTrait, Source};
 use crate::pipeline::PipeLine;
 
 fn exprs_to_physical<F>(
@@ -31,6 +32,7 @@ where
         .collect()
 }
 
+#[allow(unused_variables)]
 fn get_source<F>(
     source: ALogicalPlan,
     operator_objects: &mut Vec<Box<dyn Operator>>,
@@ -67,7 +69,7 @@ where
             Ok(Box::new(sources::DataFrameSource::from_df(df)) as Box<dyn Source>)
         },
         Scan {
-            path,
+            paths,
             file_info,
             file_options,
             predicate,
@@ -86,8 +88,9 @@ where
                 FileScan::Csv {
                     options: csv_options,
                 } => {
+                    assert_eq!(paths.len(), 1);
                     let src = sources::CsvSource::new(
-                        path,
+                        paths[0].clone(),
                         file_info.schema,
                         csv_options,
                         file_options,
@@ -99,13 +102,15 @@ where
                 FileScan::Parquet {
                     options: parquet_options,
                     cloud_options,
+                    metadata,
                 } => {
                     let src = sources::ParquetSource::new(
-                        path,
+                        paths,
                         parquet_options,
                         cloud_options,
+                        metadata,
                         file_options,
-                        file_info.schema,
+                        file_info,
                         verbose,
                     )?;
                     Ok(Box::new(src) as Box<dyn Source>)
@@ -122,32 +127,69 @@ pub fn get_sink<F>(
     lp_arena: &Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
     to_physical: &F,
-) -> PolarsResult<Box<dyn Sink>>
+) -> PolarsResult<Box<dyn SinkTrait>>
 where
     F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     use ALogicalPlan::*;
     let out = match lp_arena.get(node) {
-        FileSink { input, payload } => {
-            let path = payload.path.as_ref().as_path();
+        Sink { input, payload } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);
-            match &payload.file_type {
-                #[cfg(feature = "parquet")]
-                FileType::Parquet(options) => {
-                    Box::new(ParquetSink::new(path, *options, input_schema.as_ref())?)
-                        as Box<dyn Sink>
+            match payload {
+                SinkType::Memory => {
+                    Box::new(OrderedSink::new(input_schema.into_owned())) as Box<dyn SinkTrait>
                 },
-                #[cfg(feature = "ipc")]
-                FileType::Ipc(options) => {
-                    Box::new(IpcSink::new(path, *options, input_schema.as_ref())?) as Box<dyn Sink>
+                #[allow(unused_variables)]
+                SinkType::File {
+                    path, file_type, ..
+                } => match &file_type {
+                    #[cfg(feature = "parquet")]
+                    FileType::Parquet(options) => {
+                        let path = path.as_ref().as_path();
+                        Box::new(ParquetSink::new(path, *options, input_schema.as_ref())?)
+                            as Box<dyn SinkTrait>
+                    },
+                    #[cfg(feature = "ipc")]
+                    FileType::Ipc(options) => {
+                        let path = path.as_ref().as_path();
+                        Box::new(IpcSink::new(path, *options, input_schema.as_ref())?)
+                            as Box<dyn SinkTrait>
+                    },
+                    #[cfg(feature = "csv")]
+                    FileType::Csv(options) => {
+                        let path = path.as_ref().as_path();
+                        Box::new(CsvSink::new(path, options.clone(), input_schema.as_ref())?)
+                            as Box<dyn SinkTrait>
+                    },
+                    #[allow(unreachable_patterns)]
+                    _ => unreachable!(),
                 },
-                #[cfg(feature = "csv")]
-                FileType::Csv(options) => {
-                    Box::new(CsvSink::new(path, options.clone(), input_schema.as_ref())?)
-                        as Box<dyn Sink>
-                },
-                FileType::Memory => {
-                    Box::new(OrderedSink::new(input_schema.into_owned())) as Box<dyn Sink>
+                #[cfg(feature = "cloud")]
+                SinkType::Cloud {
+                    uri,
+                    file_type,
+                    cloud_options,
+                } => {
+                    let uri = uri.as_ref().as_str();
+                    let input_schema = lp_arena.get(*input).schema(lp_arena);
+                    let cloud_options = &cloud_options;
+                    match &file_type {
+                        #[cfg(feature = "parquet")]
+                        FileType::Parquet(parquet_options) => Box::new(ParquetCloudSink::new(
+                            uri,
+                            cloud_options.as_ref(),
+                            *parquet_options,
+                            input_schema.as_ref(),
+                        )?)
+                            as Box<dyn SinkTrait>,
+                        #[cfg(feature = "ipc")]
+                        FileType::Ipc(_ipc_options) => {
+                            // TODO: support Ipc as well
+                            todo!("For now, only parquet cloud files are supported");
+                        },
+                        #[allow(unreachable_patterns)]
+                        _ => unreachable!(),
+                    }
                 },
             }
         },
@@ -165,7 +207,7 @@ where
             match &options.args.how {
                 #[cfg(feature = "cross_join")]
                 JoinType::Cross => {
-                    Box::new(CrossJoin::new(options.args.suffix().into())) as Box<dyn Sink>
+                    Box::new(CrossJoin::new(options.args.suffix().into())) as Box<dyn SinkTrait>
                 },
                 join_type @ JoinType::Inner | join_type @ JoinType::Left => {
                     let input_schema_left = lp_arena.get(*input_left).schema(lp_arena);
@@ -197,14 +239,14 @@ where
                         swapped,
                         join_columns_left,
                         join_columns_right,
-                    )) as Box<dyn Sink>
+                    )) as Box<dyn SinkTrait>
                 },
                 _ => unimplemented!(),
             }
         },
         Slice { offset, len, .. } => {
             let slice = SliceSink::new(*offset as u64, *len as usize);
-            Box::new(slice) as Box<dyn Sink>
+            Box::new(slice) as Box<dyn SinkTrait>
         },
         Sort {
             input,
@@ -220,7 +262,7 @@ where
                 let index = input_schema.try_index_of(by_column.as_ref())?;
 
                 let sort_sink = SortSink::new(index, args.clone(), input_schema);
-                Box::new(sort_sink) as Box<dyn Sink>
+                Box::new(sort_sink) as Box<dyn SinkTrait>
             } else {
                 let sort_idx = by_column
                     .iter()
@@ -230,8 +272,8 @@ where
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                let sort_sink = SortSinkMultiple::new(args.clone(), input_schema, sort_idx);
-                Box::new(sort_sink) as Box<dyn Sink>
+                let sort_sink = SortSinkMultiple::new(args.clone(), input_schema, sort_idx)?;
+                Box::new(sort_sink) as Box<dyn SinkTrait>
             }
         },
         Distinct { input, options } => {
@@ -370,7 +412,7 @@ where
                                 input_schema,
                                 output_schema.clone(),
                                 options.slice,
-                            )) as Box<dyn Sink>
+                            )) as Box<dyn SinkTrait>
                         })
                     },
                     (DataType::Utf8, 1) => Box::new(group_by::Utf8GroupbySink::new(
@@ -380,7 +422,7 @@ where
                         input_schema,
                         output_schema.clone(),
                         options.slice,
-                    )) as Box<dyn Sink>,
+                    )) as Box<dyn SinkTrait>,
                     _ => Box::new(GenericGroupby2::new(
                         key_columns,
                         aggregation_columns,
@@ -529,7 +571,7 @@ pub fn create_pipeline<F>(
     expr_arena: &mut Arena<AExpr>,
     to_physical: F,
     verbose: bool,
-    sink_cache: &mut PlHashMap<usize, Box<dyn Sink>>,
+    sink_cache: &mut PlHashMap<usize, Box<dyn SinkTrait>>,
 ) -> PolarsResult<PipeLine>
 where
     F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,

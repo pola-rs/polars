@@ -1,7 +1,8 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use polars_arrow::prelude::ArrayRef;
+use arrow::legacy::prelude::ArrayRef;
+use polars_error::constants::LENGTH_LIMIT_MSG;
 use polars_utils::IdxSize;
 
 use crate::datatypes::IdxCa;
@@ -43,7 +44,14 @@ impl PrivateSeriesNumeric for NullChunked {}
 
 impl PrivateSeries for NullChunked {
     fn compute_len(&mut self) {
-        // no-op
+        fn inner(chunks: &[ArrayRef]) -> usize {
+            match chunks.len() {
+                // fast path
+                1 => chunks[0].len(),
+                _ => chunks.iter().fold(0, |acc, arr| acc + arr.len()),
+            }
+        }
+        self.length = IdxSize::try_from(inner(&self.chunks)).expect(LENGTH_LIMIT_MSG);
     }
     fn _field(&self) -> Cow<Field> {
         Cow::Owned(Field::new(self.name(), DataType::Null))
@@ -99,24 +107,20 @@ impl SeriesTrait for NullChunked {
         NullChunked::new(self.name.clone(), by.len()).into_series()
     }
 
-    fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
-        Ok(NullChunked::new(self.name.clone(), iter.size_hint().0).into_series())
-    }
-
-    unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-        NullChunked::new(self.name.clone(), iter.size_hint().0).into_series()
-    }
-
-    unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
-        Ok(NullChunked::new(self.name.clone(), idx.len()).into_series())
-    }
-
-    unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-        NullChunked::new(self.name.clone(), iter.size_hint().0).into_series()
-    }
-
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
         Ok(NullChunked::new(self.name.clone(), indices.len()).into_series())
+    }
+
+    unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
+        NullChunked::new(self.name.clone(), indices.len()).into_series()
+    }
+
+    fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
+        Ok(NullChunked::new(self.name.clone(), indices.len()).into_series())
+    }
+
+    unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
+        NullChunked::new(self.name.clone(), indices.len()).into_series()
     }
 
     fn len(&self) -> usize {

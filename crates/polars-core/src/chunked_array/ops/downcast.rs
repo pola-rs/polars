@@ -47,18 +47,13 @@ impl<'a, T> Chunks<'a, T> {
 }
 
 #[doc(hidden)]
-impl<T: PolarsDataType> ChunkedArray<T>
-where
-    Self: HasUnderlyingArray,
-{
+impl<T: PolarsDataType> ChunkedArray<T> {
     #[inline]
-    pub fn downcast_iter(
-        &self,
-    ) -> impl Iterator<Item = &<Self as HasUnderlyingArray>::ArrayT> + DoubleEndedIterator {
+    pub fn downcast_iter(&self) -> impl Iterator<Item = &T::Array> + DoubleEndedIterator {
         self.chunks.iter().map(|arr| {
-            // SAFETY: HasUnderlyingArray guarantees this is correct.
+            // SAFETY: T::Array guarantees this is correct.
             let arr = &**arr;
-            unsafe { &*(arr as *const dyn Array as *const <Self as HasUnderlyingArray>::ArrayT) }
+            unsafe { &*(arr as *const dyn Array as *const T::Array) }
         })
     }
 
@@ -69,24 +64,48 @@ where
     #[inline]
     pub unsafe fn downcast_iter_mut(
         &mut self,
-    ) -> impl Iterator<Item = &mut <Self as HasUnderlyingArray>::ArrayT> + DoubleEndedIterator {
+    ) -> impl Iterator<Item = &mut T::Array> + DoubleEndedIterator {
         self.chunks.iter_mut().map(|arr| {
-            // SAFETY: HasUnderlyingArray guarantees this is correct.
+            // SAFETY: T::Array guarantees this is correct.
             let arr = &mut **arr;
-            &mut *(arr as *mut dyn Array as *mut <Self as HasUnderlyingArray>::ArrayT)
+            &mut *(arr as *mut dyn Array as *mut T::Array)
         })
     }
 
     #[inline]
-    pub fn downcast_chunks(&self) -> Chunks<'_, <Self as HasUnderlyingArray>::ArrayT> {
+    pub fn downcast_chunks(&self) -> Chunks<'_, T::Array> {
         Chunks::new(&self.chunks)
+    }
+
+    #[inline]
+    pub fn downcast_get(&self, idx: usize) -> Option<&T::Array> {
+        let arr = self.chunks.get(idx)?;
+        // SAFETY: T::Array guarantees this is correct.
+        let arr = &**arr;
+        unsafe { Some(&*(arr as *const dyn Array as *const T::Array)) }
+    }
+
+    #[inline]
+    /// # Safety
+    /// It is up to the caller to ensure the chunk idx is in-bounds
+    pub unsafe fn downcast_get_unchecked(&self, idx: usize) -> &T::Array {
+        let arr = self.chunks.get_unchecked(idx);
+        // SAFETY: T::Array guarantees this is correct.
+        let arr = &**arr;
+        unsafe { &*(arr as *const dyn Array as *const T::Array) }
     }
 
     /// Get the index of the chunk and the index of the value in that chunk.
     #[inline]
     pub(crate) fn index_to_chunked_index(&self, index: usize) -> (usize, usize) {
         if self.chunks.len() == 1 {
-            return (0, index);
+            // SAFETY: chunks.len() == 1 guarantees this is correct.
+            let len = unsafe { self.chunks.get_unchecked(0).len() };
+            return if index < len {
+                (0, index)
+            } else {
+                (1, index - len)
+            };
         }
         index_to_chunked_index(self.downcast_iter().map(|arr| arr.len()), index)
     }

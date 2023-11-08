@@ -8,6 +8,8 @@ mod count;
 mod filter;
 mod group_iter;
 mod literal;
+#[cfg(feature = "dynamic_group_by")]
+mod rolling;
 mod slice;
 mod sort;
 mod sortby;
@@ -21,16 +23,18 @@ use std::fmt::{Display, Formatter};
 pub(crate) use aggregation::*;
 pub(crate) use alias::*;
 pub(crate) use apply::*;
+use arrow::legacy::utils::CustomIterTools;
 pub(crate) use binary::*;
 pub(crate) use cast::*;
 pub(crate) use column::*;
 pub(crate) use count::*;
 pub(crate) use filter::*;
 pub(crate) use literal::*;
-use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
+#[cfg(feature = "dynamic_group_by")]
+pub(crate) use rolling::RollingExpr;
 pub(crate) use slice::*;
 pub(crate) use sort::*;
 pub(crate) use sortby::*;
@@ -46,10 +50,10 @@ pub(crate) enum AggState {
     /// Already aggregated: `.agg_list(group_tuples`) is called
     /// and produced a `Series` of dtype `List`
     AggregatedList(Series),
-    /// Already aggregated: `.agg_list(group_tuples`) is called
-    /// and produced a `Series` of any dtype that is not nested.
+    /// Already aggregated: `.agg` is called on an aggregation
+    /// that produces a scalar.
     /// think of `sum`, `mean`, `variance` like aggregations.
-    AggregatedFlat(Series),
+    AggregatedScalar(Series),
     /// Not yet aggregated: `agg_list` still has to be called.
     NotAggregated(Series),
     Literal(Series),
@@ -69,6 +73,25 @@ impl AggState {
             },
             _ => true,
         }
+    }
+
+    fn try_map<F>(&self, func: F) -> PolarsResult<Self>
+    where
+        F: FnOnce(&Series) -> PolarsResult<Series>,
+    {
+        Ok(match self {
+            AggState::AggregatedList(s) => AggState::AggregatedList(func(s)?),
+            AggState::AggregatedScalar(s) => AggState::AggregatedScalar(func(s)?),
+            AggState::Literal(s) => AggState::Literal(func(s)?),
+            AggState::NotAggregated(s) => AggState::NotAggregated(func(s)?),
+        })
+    }
+
+    fn map<F>(&self, func: F) -> Self
+    where
+        F: FnOnce(&Series) -> Series,
+    {
+        self.try_map(|s| Ok(func(s))).unwrap()
     }
 }
 
@@ -106,11 +129,6 @@ pub struct AggregationContext<'a> {
     /// This is true when the Series and GroupsProxy still have all
     /// their original values. Not the case when filtered
     original_len: bool,
-    // special state that just should propagate nulls on aggregations.
-    // this is needed as (expr - expr.mean()) could leave nulls but is
-    // not really a final aggregation as left is still a list, but right only
-    // contains null and thus propagates that.
-    null_propagated: bool,
 }
 
 impl<'a> AggregationContext<'a> {
@@ -157,7 +175,7 @@ impl<'a> AggregationContext<'a> {
     pub(crate) fn series(&self) -> &Series {
         match &self.state {
             AggState::NotAggregated(s)
-            | AggState::AggregatedFlat(s)
+            | AggState::AggregatedScalar(s)
             | AggState::AggregatedList(s) => s,
             AggState::Literal(s) => s,
         }
@@ -197,7 +215,7 @@ impl<'a> AggregationContext<'a> {
             },
             (true, _) => {
                 assert_eq!(series.len(), groups.len());
-                AggState::AggregatedFlat(series)
+                AggState::AggregatedScalar(series)
             },
             _ => AggState::NotAggregated(series),
         };
@@ -208,7 +226,21 @@ impl<'a> AggregationContext<'a> {
             sorted: false,
             update_groups: UpdateGroups::No,
             original_len: true,
-            null_propagated: false,
+        }
+    }
+
+    fn with_agg_state(&mut self, agg_state: AggState) {
+        self.state = agg_state;
+        self.update_groups = UpdateGroups::No
+    }
+
+    fn from_agg_state(agg_state: AggState, groups: Cow<'a, GroupsProxy>) -> AggregationContext<'a> {
+        Self {
+            state: agg_state,
+            groups,
+            sorted: false,
+            update_groups: UpdateGroups::No,
+            original_len: true,
         }
     }
 
@@ -219,7 +251,6 @@ impl<'a> AggregationContext<'a> {
             sorted: false,
             update_groups: UpdateGroups::No,
             original_len: true,
-            null_propagated: false,
         }
     }
 
@@ -311,7 +342,7 @@ impl<'a> AggregationContext<'a> {
                     self.state = AggState::AggregatedList(agg);
                 }
             },
-            AggState::AggregatedFlat(_) => {},
+            AggState::AggregatedScalar(_) => {},
             AggState::AggregatedList(_) => {},
             AggState::Literal(_) => {},
         }
@@ -355,12 +386,12 @@ impl<'a> AggregationContext<'a> {
                 }
                 AggState::AggregatedList(series)
             },
-            (true, _) => AggState::AggregatedFlat(series),
+            (true, _) => AggState::AggregatedScalar(series),
             _ => {
                 match self.state {
                     // already aggregated to sum, min even this series was flattened it never could
                     // retrieve the length before grouping, so it stays  in this state.
-                    AggState::AggregatedFlat(_) => AggState::AggregatedFlat(series),
+                    AggState::AggregatedScalar(_) => AggState::AggregatedScalar(series),
                     // applying a function on a literal, keeps the literal state
                     AggState::Literal(_) if series.len() == 1 && mapped => {
                         AggState::Literal(series)
@@ -415,7 +446,7 @@ impl<'a> AggregationContext<'a> {
                 self.update_groups = UpdateGroups::WithGroupsLen;
                 out
             },
-            AggState::AggregatedList(s) | AggState::AggregatedFlat(s) => s,
+            AggState::AggregatedList(s) | AggState::AggregatedScalar(s) => s,
             AggState::Literal(s) => {
                 self.groups();
                 let rows = self.groups.len();
@@ -446,7 +477,7 @@ impl<'a> AggregationContext<'a> {
         use AggState::*;
         match self.agg_state() {
             Literal(s) => s.len() == 1,
-            AggregatedFlat(_) => true,
+            AggregatedScalar(_) => true,
             _ => false,
         }
     }
@@ -456,7 +487,7 @@ impl<'a> AggregationContext<'a> {
         let groups = self.groups;
         match self.state {
             AggState::NotAggregated(s) => (s, groups),
-            AggState::AggregatedFlat(s) => (s, groups),
+            AggState::AggregatedScalar(s) => (s, groups),
             AggState::Literal(s) => (s, groups),
             AggState::AggregatedList(s) => {
                 let flattened = s.explode().unwrap();
@@ -510,7 +541,7 @@ impl<'a> AggregationContext<'a> {
 
                 Cow::Owned(s.explode().unwrap())
             },
-            AggState::AggregatedFlat(s) => Cow::Borrowed(s),
+            AggState::AggregatedScalar(s) => Cow::Borrowed(s),
             AggState::Literal(s) => Cow::Borrowed(s),
         }
     }
@@ -519,7 +550,7 @@ impl<'a> AggregationContext<'a> {
     pub(crate) fn take(&mut self) -> Series {
         let s = match &mut self.state {
             AggState::NotAggregated(s)
-            | AggState::AggregatedFlat(s)
+            | AggState::AggregatedScalar(s)
             | AggState::AggregatedList(s) => s,
             AggState::Literal(s) => s,
         };
@@ -623,7 +654,7 @@ impl PhysicalIoExpr for PhysicalIoHelper {
     }
 }
 
-pub(super) fn phys_expr_to_io_expr(expr: Arc<dyn PhysicalExpr>) -> Arc<dyn PhysicalIoExpr> {
+pub(crate) fn phys_expr_to_io_expr(expr: Arc<dyn PhysicalExpr>) -> Arc<dyn PhysicalIoExpr> {
     let has_window_function = if let Some(expr) = expr.as_expression() {
         expr.into_iter()
             .any(|expr| matches!(expr, Expr::Window { .. }))

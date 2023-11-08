@@ -1,27 +1,36 @@
 *.iml
 *.so
 *.ipynb
-.DS_Store
 .ENV
-.coverage
 .env
-.hypothesis/
-.idea/
 .ipynb_checkpoints/
-.mypy_cache/
-.pytest_cache/
 .python-version
 .yarn/
-.vscode/
-__pycache__/
-AUTO_CHANGELOG.md
-Cargo.lock
 coverage.lcov
 coverage.xml
 data/
-node_modules/
 polars/vendor
-target/
-venv*/
-.venv*/
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
 .vim
+
+# Python
+.hypothesis/
+.mypy_cache/
+.pytest_cache/
+.venv*/
+__pycache__/
+.coverage
+
+# Rust
+target/
+
+# Project
+/docs/data/
+/docs/images/
+/docs/people.md

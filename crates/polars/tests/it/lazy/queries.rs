@@ -76,7 +76,7 @@ fn test_special_group_by_schemas() -> PolarsResult<()> {
                 every: Duration::parse("2i"),
                 period: Duration::parse("2i"),
                 offset: Duration::parse("0i"),
-                truncate: false,
+                label: Label::DataPoint,
                 include_boundaries: false,
                 closed_window: ClosedWindow::Left,
                 ..Default::default()
@@ -225,7 +225,7 @@ fn test_apply_multiple_columns() -> PolarsResult<()> {
         .collect()?;
 
     let out = out.column("A")?;
-    let out = out.list()?.get(1).unwrap();
+    let out = out.list()?.get_as_series(1).unwrap();
     let out = out.i32()?;
 
     assert_eq!(Vec::from(out), &[Some(16)]);

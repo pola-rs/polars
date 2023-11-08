@@ -1,10 +1,12 @@
 use arrow::datatypes::Field;
-use arrow::io::parquet::read::{
+#[cfg(feature = "async")]
+use bytes::Bytes;
+#[cfg(feature = "async")]
+use polars_core::datatypes::PlHashMap;
+use polars_parquet::read::{
     column_iter_to_arrays, get_field_columns, ArrayIter, BasicDecompressor, ColumnChunkMetaData,
     PageReader,
 };
-#[cfg(feature = "async")]
-use polars_core::datatypes::PlHashMap;
 
 use super::*;
 
@@ -22,7 +24,7 @@ use super::*;
 pub enum ColumnStore<'a> {
     Local(&'a [u8]),
     #[cfg(feature = "async")]
-    Fetched(PlHashMap<u64, Vec<u8>>),
+    Fetched(PlHashMap<u64, Bytes>),
 }
 
 /// For local files memory maps all columns that are part of the parquet field `field_name`.
@@ -52,7 +54,7 @@ fn _mmap_single_column<'a>(
                     "mmap_columns: column with start {start} must be prefetched in ColumnStore.\n"
                 )
             });
-            entry.as_slice()
+            entry.as_ref()
         },
     };
     (meta, chunk)
@@ -65,7 +67,7 @@ pub(super) fn to_deserializer<'a>(
     field: Field,
     num_rows: usize,
     chunk_size: Option<usize>,
-) -> ArrowResult<ArrayIter<'a>> {
+) -> PolarsResult<ArrayIter<'a>> {
     let chunk_size = chunk_size.unwrap_or(usize::MAX).min(num_rows);
 
     let (columns, types): (Vec<_>, Vec<_>) = columns

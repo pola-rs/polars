@@ -1,6 +1,3 @@
-#[cfg(feature = "rank")]
-pub(crate) mod rank;
-
 use std::hash::Hash;
 
 use arrow::bitmap::MutableBitmap;
@@ -8,10 +5,8 @@ use arrow::bitmap::MutableBitmap;
 #[cfg(feature = "object")]
 use crate::datatypes::ObjectType;
 use crate::datatypes::PlHashSet;
-use crate::frame::group_by::hashing::HASHMAP_INIT_SIZE;
 use crate::frame::group_by::GroupsProxy;
-#[cfg(feature = "mode")]
-use crate::frame::group_by::IntoGroupsProxy;
+use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::series::IsSorted;
 
@@ -75,54 +70,6 @@ where
         }
     });
     unique
-}
-
-#[cfg(feature = "mode")]
-fn mode_indices(groups: GroupsProxy) -> Vec<IdxSize> {
-    match groups {
-        GroupsProxy::Idx(groups) => {
-            let mut groups = groups.into_iter().collect_trusted::<Vec<_>>();
-            groups.sort_unstable_by_key(|k| k.1.len());
-            let last = &groups.last().unwrap();
-            let max_occur = last.1.len();
-            groups
-                .iter()
-                .rev()
-                .take_while(|v| v.1.len() == max_occur)
-                .map(|v| v.0)
-                .collect()
-        },
-        GroupsProxy::Slice { groups, .. } => {
-            let last = groups.last().unwrap();
-            let max_occur = last[1];
-
-            groups
-                .iter()
-                .rev()
-                .take_while(|v| {
-                    let len = v[1];
-                    len == max_occur
-                })
-                .map(|v| v[0])
-                .collect()
-        },
-    }
-}
-
-#[cfg(feature = "mode")]
-fn mode<T: PolarsDataType>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
-where
-    ChunkedArray<T>: IntoGroupsProxy + ChunkTake,
-{
-    if ca.is_empty() {
-        return ca.clone();
-    }
-    let groups = ca.group_tuples(true, false).unwrap();
-    let idx = mode_indices(groups);
-
-    // Safety:
-    // group indices are in bounds
-    unsafe { ca.take_unchecked(idx.as_slice().into()) }
 }
 
 macro_rules! arg_unique_ca {
@@ -222,11 +169,6 @@ where
             },
         }
     }
-
-    #[cfg(feature = "mode")]
-    fn mode(&self) -> PolarsResult<Self> {
-        Ok(mode(self))
-    }
 }
 
 impl ChunkUnique<Utf8Type> for Utf8Chunked {
@@ -242,12 +184,6 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
     fn n_unique(&self) -> PolarsResult<usize> {
         self.as_binary().n_unique()
     }
-
-    #[cfg(feature = "mode")]
-    fn mode(&self) -> PolarsResult<Self> {
-        let out = self.as_binary().mode()?;
-        Ok(unsafe { out.to_utf8() })
-    }
 }
 
 impl ChunkUnique<BinaryType> for BinaryChunked {
@@ -255,7 +191,7 @@ impl ChunkUnique<BinaryType> for BinaryChunked {
         match self.null_count() {
             0 => {
                 let mut set =
-                    PlHashSet::with_capacity(std::cmp::min(HASHMAP_INIT_SIZE, self.len()));
+                    PlHashSet::with_capacity(std::cmp::min(_HASHMAP_INIT_SIZE, self.len()));
                 for arr in self.downcast_iter() {
                     set.extend(arr.values_iter())
                 }
@@ -266,7 +202,7 @@ impl ChunkUnique<BinaryType> for BinaryChunked {
             },
             _ => {
                 let mut set =
-                    PlHashSet::with_capacity(std::cmp::min(HASHMAP_INIT_SIZE, self.len()));
+                    PlHashSet::with_capacity(std::cmp::min(_HASHMAP_INIT_SIZE, self.len()));
                 for arr in self.downcast_iter() {
                     set.extend(arr.iter())
                 }
@@ -295,11 +231,6 @@ impl ChunkUnique<BinaryType> for BinaryChunked {
             }
             Ok(set.len())
         }
-    }
-
-    #[cfg(feature = "mode")]
-    fn mode(&self) -> PolarsResult<Self> {
-        Ok(mode(self))
     }
 }
 
@@ -333,12 +264,6 @@ impl ChunkUnique<Float32Type> for Float32Chunked {
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         self.bit_repr_small().arg_unique()
     }
-    #[cfg(feature = "mode")]
-    fn mode(&self) -> PolarsResult<ChunkedArray<Float32Type>> {
-        let s = self.apply_as_ints(|v| v.mode().unwrap());
-        let ca = s.f32().unwrap().clone();
-        Ok(ca)
-    }
 }
 
 impl ChunkUnique<Float64Type> for Float64Chunked {
@@ -350,12 +275,6 @@ impl ChunkUnique<Float64Type> for Float64Chunked {
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         self.bit_repr_large().arg_unique()
-    }
-    #[cfg(feature = "mode")]
-    fn mode(&self) -> PolarsResult<ChunkedArray<Float64Type>> {
-        let s = self.apply_as_ints(|v| v.mode().unwrap());
-        let ca = s.f64().unwrap().clone();
-        Ok(ca)
     }
 }
 
@@ -394,23 +313,5 @@ mod test {
             ca.arg_unique().unwrap().into_iter().collect::<Vec<_>>(),
             vec![Some(0), Some(1), Some(4)]
         );
-    }
-
-    #[test]
-    #[cfg(feature = "mode")]
-    fn mode() {
-        let ca = Int32Chunked::from_slice("a", &[0, 1, 2, 3, 4, 4, 5, 6, 5, 0]);
-        let mut result = Vec::from(&ca.mode().unwrap());
-        result.sort_by_key(|a| a.unwrap());
-        assert_eq!(&result, &[Some(0), Some(4), Some(5)]);
-
-        let ca2 = Int32Chunked::from_slice("b", &[1, 1]);
-        let mut result2 = Vec::from(&ca2.mode().unwrap());
-        result2.sort_by_key(|a| a.unwrap());
-        assert_eq!(&result2, &[Some(1)]);
-
-        let ca3 = Int32Chunked::from_slice("c", &[]);
-        let result3 = Vec::from(&ca3.mode().unwrap());
-        assert_eq!(result3, &[]);
     }
 }

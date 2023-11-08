@@ -1,39 +1,176 @@
 [package]
 name = "polars-arrow"
 version = { workspace = true }
-authors = { workspace = true }
+authors = [
+  "Jorge C. Leitao <jorgecarleitao@gmail.com>",
+  "Apache Arrow <dev@arrow.apache.org>",
+  "Ritchie Vink <ritchie46@gmail.com>",
+]
 edition = { workspace = true }
 homepage = { workspace = true }
-license = { workspace = true }
+license-file = "./LICENSE"
 repository = { workspace = true }
-description = "Arrow interfaces for Polars DataFrame library"
+description = "Minimal implementation of the Arrow specification forked from arrow2."
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-polars-error = { version = "0.32.0", path = "../polars-error" }
-
-arrow = { workspace = true }
 atoi = { workspace = true, optional = true }
-chrono = { workspace = true, optional = true }
+bytemuck = { workspace = true }
+chrono = { workspace = true }
+# for timezone support
 chrono-tz = { workspace = true, optional = true }
-ethnum = { version = "1.3.2", optional = true }
+dyn-clone = { version = "1" }
+either = { workspace = true }
+foreign_vec = { version = "0.1" }
 hashbrown = { workspace = true }
-multiversion = { workspace = true }
 num-traits = { workspace = true }
+polars-error = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
-thiserror = { workspace = true }
+simdutf8 = { workspace = true }
+
+ethnum = { workspace = true }
+
+# To efficiently cast numbers to strings
+lexical-core = { workspace = true, optional = true }
+
+regex = { workspace = true, optional = true }
+regex-syntax = { version = "0.8", optional = true }
+streaming-iterator = { workspace = true }
+
+indexmap = { workspace = true, optional = true }
+
+arrow-format = { version = "0.8", optional = true, features = ["ipc"] }
+
+hex = { workspace = true, optional = true }
+
+# for IPC compression
+lz4 = { version = "1.24", optional = true }
+zstd = { workspace = true, optional = true }
+
+# to write to parquet as a stream
+futures = { workspace = true, optional = true }
+
+# to read IPC as a stream
+async-stream = { version = "0.3.2", optional = true }
+
+# avro support
+avro-schema = { workspace = true, optional = true }
+
+# for division/remainder optimization at runtime
+strength_reduce = { version = "0.2", optional = true }
+
+# For instruction multiversioning
+multiversion = { workspace = true, optional = true }
+
+# Faster hashing
+ahash = { workspace = true }
+
+# Support conversion to/from arrow-rs
+arrow-array = { workspace = true, optional = true }
+arrow-buffer = { workspace = true, optional = true }
+arrow-data = { workspace = true, optional = true }
+arrow-schema = { workspace = true, optional = true }
+
+[dev-dependencies]
+apache-avro = { version = "0.16", features = ["snappy"] }
+criterion = "0.5"
+crossbeam-channel = { workspace = true }
+doc-comment = "0.3"
+flate2 = "1"
+# used to run formal property testing
+proptest = { version = "1", default_features = false, features = ["std"] }
+# use for flaky testing
+rand = { workspace = true }
+# use for generating and testing random data samples
+sample-arrow2 = "0.17"
+sample-std = "0.1"
+sample-test = "0.1"
+# used to test async readers
+tokio = { workspace = true, features = ["macros", "rt", "fs", "io-util"] }
+tokio-util = { workspace = true, features = ["compat"] }
 
 [build-dependencies]
-version_check = { workspace = true }
+rustc_version = "0.4.0"
+
+[target.wasm32-unknown-unknown.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
 
 [features]
-dtype-decimal = ["atoi", "ethnum"]
-dtype-array = []
-nightly = ["hashbrown/nightly"]
-strings = []
-compute = ["arrow/compute_cast"]
-temporal = ["arrow/compute_temporal"]
-bigidx = []
-performant = []
-like = ["arrow/compute_like"]
-timezones = ["chrono-tz", "chrono"]
+default = []
+full = [
+  "arrow_rs",
+  "io_ipc",
+  "io_flight",
+  "io_ipc_write_async",
+  "io_ipc_read_async",
+  "io_ipc_compression",
+  "io_avro",
+  "io_avro_compression",
+  "io_avro_async",
+  "regex-syntax",
+  "compute",
+  # parses timezones used in timestamp conversions
+  "chrono-tz",
+]
+arrow_rs = ["arrow-buffer", "arrow-schema", "arrow-data", "arrow-array"]
+io_ipc = ["arrow-format", "polars-error/arrow-format"]
+io_ipc_write_async = ["io_ipc", "futures"]
+io_ipc_read_async = ["io_ipc", "futures", "async-stream"]
+io_ipc_compression = ["lz4", "zstd"]
+io_flight = ["io_ipc", "arrow-format/flight-data"]
+
+io_avro = ["avro-schema", "polars-error/avro-schema"]
+io_avro_compression = [
+  "avro-schema/compression",
+]
+io_avro_async = ["avro-schema/async"]
+
+# the compute kernels. Disabling this significantly reduces compile time.
+compute_aggregate = ["multiversion"]
+compute_arithmetics_decimal = ["strength_reduce"]
+compute_arithmetics = ["strength_reduce", "compute_arithmetics_decimal"]
+compute_bitwise = []
+compute_boolean = []
+compute_boolean_kleene = []
+compute_cast = ["lexical-core", "compute_take"]
+compute_comparison = ["compute_take", "compute_boolean"]
+compute_concatenate = []
+compute_filter = []
+compute_hash = ["multiversion"]
+compute_if_then_else = []
+compute_take = []
+compute_temporal = []
+compute = [
+  "compute_aggregate",
+  "compute_arithmetics",
+  "compute_bitwise",
+  "compute_boolean",
+  "compute_boolean_kleene",
+  "compute_cast",
+  "compute_comparison",
+  "compute_concatenate",
+  "compute_filter",
+  "compute_hash",
+  "compute_if_then_else",
+  "compute_take",
+  "compute_temporal",
+]
 simd = []
+
+# polars-arrow
+timezones = []
+dtype-array = []
+dtype-decimal = ["atoi"]
+bigidx = []
+nightly = []
+performant = []
+strings = []
+temporal = []
+
+[package.metadata.docs.rs]
+features = ["full"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+[package.metadata.cargo-all-features]
+allowlist = ["compute", "compute_sort", "compute_hash", "compute_nullif"]

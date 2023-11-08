@@ -18,6 +18,7 @@ Computation
     Series.cbrt
     Series.cos
     Series.cosh
+    Series.cot
     Series.cummax
     Series.cummin
     Series.cumprod

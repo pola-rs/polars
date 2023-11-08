@@ -9,7 +9,7 @@ def test_binary_conversions() -> None:
         pl.col("blob").cast(pl.Utf8).alias("decoded_blob")
     )
 
-    assert df.to_dict(False) == {
+    assert df.to_dict(as_series=False) == {
         "blob": [b"abc", None, b"cde"],
         "decoded_blob": ["abc", None, "cde"],
     }
@@ -24,15 +24,16 @@ def test_contains() -> None:
             (1, b"some * * text"),
             (2, b"(with) special\n * chars"),
             (3, b"**etc...?$"),
+            (4, None),
         ],
         schema=["idx", "bin"],
     )
     for pattern, expected in (
-        (b"e * ", [True, False, False]),
-        (b"text", [True, False, False]),
-        (b"special", [False, True, False]),
-        (b"", [True, True, True]),
-        (b"qwe", [False, False, False]),
+        (b"e * ", [True, False, False, None]),
+        (b"text", [True, False, False, None]),
+        (b"special", [False, True, False, None]),
+        (b"", [True, True, True, None]),
+        (b"qwe", [False, False, False, None]),
     ):
         # series
         assert expected == df["bin"].bin.contains(pattern).to_list()
@@ -41,16 +42,57 @@ def test_contains() -> None:
             expected == df.select(pl.col("bin").bin.contains(pattern))["bin"].to_list()
         )
         # frame filter
-        assert sum(expected) == len(df.filter(pl.col("bin").bin.contains(pattern)))
+        assert sum([e for e in expected if e is True]) == len(
+            df.filter(pl.col("bin").bin.contains(pattern))
+        )
+
+
+def test_contains_with_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "bin": [b"some * * text", b"(with) special\n * chars", b"**etc...?$", None],
+            "lit1": [b"e * ", b"", b"qwe", b"None"],
+            "lit2": [None, b"special\n", b"?!", None],
+        }
+    )
+
+    assert df.select(
+        [
+            pl.col("bin").bin.contains(pl.col("lit1")).alias("contains_1"),
+            pl.col("bin").bin.contains(pl.col("lit2")).alias("contains_2"),
+            pl.col("bin").bin.contains(pl.lit(None)).alias("contains_3"),
+        ]
+    ).to_dict(as_series=False) == {
+        "contains_1": [True, True, False, None],
+        "contains_2": [None, True, False, None],
+        "contains_3": [None, None, None, None],
+    }
 
 
 def test_starts_ends_with() -> None:
-    assert pl.DataFrame({"a": [b"hamburger", b"nuts", b"lollypop"]}).select(
+    assert pl.DataFrame(
+        {
+            "a": [b"hamburger", b"nuts", b"lollypop", None],
+            "end": [b"ger", b"tg", None, b"anything"],
+            "start": [b"ha", b"nga", None, b"anything"],
+        }
+    ).select(
         [
-            pl.col("a").bin.ends_with(b"pop").alias("pop"),
-            pl.col("a").bin.starts_with(b"ham").alias("ham"),
+            pl.col("a").bin.ends_with(b"pop").alias("end_lit"),
+            pl.col("a").bin.ends_with(pl.lit(None)).alias("end_none"),
+            pl.col("a").bin.ends_with(pl.col("end")).alias("end_expr"),
+            pl.col("a").bin.starts_with(b"ham").alias("start_lit"),
+            pl.col("a").bin.ends_with(pl.lit(None)).alias("start_none"),
+            pl.col("a").bin.starts_with(pl.col("start")).alias("start_expr"),
         ]
-    ).to_dict(False) == {"pop": [False, False, True], "ham": [True, False, False]}
+    ).to_dict(as_series=False) == {
+        "end_lit": [False, False, True, None],
+        "end_none": [None, None, None, None],
+        "end_expr": [True, False, None, None],
+        "start_lit": [True, False, False, None],
+        "start_none": [None, None, None, None],
+        "start_expr": [True, False, None, None],
+    }
 
 
 def test_base64_encode() -> None:

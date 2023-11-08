@@ -1,4 +1,7 @@
+import pytest
+
 import polars as pl
+from polars import PolarsDataType
 from polars.testing import assert_frame_equal
 
 
@@ -10,6 +13,11 @@ def test_simplify_expression_lit_true_4376() -> None:
     assert df.lazy().filter((pl.col("column_0") == 1) | pl.lit(True)).collect(
         simplify_expression=True
     ).rows() == [(1, 2, 3), (4, 5, 6), (7, 8, 9)]
+
+
+def test_filter_contains_nth_11205() -> None:
+    df = pl.DataFrame({"x": [False]})
+    assert df.filter(pl.first()).is_empty()
 
 
 def test_melt_values_predicate_pushdown() -> None:
@@ -26,7 +34,27 @@ def test_melt_values_predicate_pushdown() -> None:
         lf.melt("id", ["asset_key_1", "asset_key_2", "asset_key_3"])
         .filter(pl.col("value") == pl.lit("123"))
         .collect()
-    ).to_dict(False) == {"id": [1], "variable": ["asset_key_1"], "value": ["123"]}
+    ).to_dict(as_series=False) == {
+        "id": [1],
+        "variable": ["asset_key_1"],
+        "value": ["123"],
+    }
+
+
+def test_group_by_filter_all_true() -> None:
+    df = pl.DataFrame(
+        {
+            "name": ["a", "a", "b", "b"],
+            "type": [None, 1, 1, None],
+            "order": [1, 2, 3, 4],
+        }
+    )
+    out = (
+        df.group_by("name")
+        .agg([pl.col("order").filter(pl.col("type") == 1).n_unique().alias("n_unique")])
+        .select("n_unique")
+    )
+    assert out.to_dict(as_series=False) == {"n_unique": [1, 1]}
 
 
 def test_filter_is_in_4572() -> None:
@@ -50,6 +78,15 @@ def test_filter_is_in_4572() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.parametrize(
+    "dtype", [pl.Int32, pl.Boolean, pl.Utf8, pl.Binary, pl.List(pl.Int64), pl.Object]
+)
+def test_filter_on_empty(dtype: PolarsDataType) -> None:
+    df = pl.DataFrame({"a": []}, schema={"a": dtype})
+    out = df.filter(pl.col("a").is_null())
+    assert out.is_empty()
+
+
 def test_filter_aggregation_any() -> None:
     df = pl.DataFrame(
         {
@@ -71,7 +108,7 @@ def test_filter_aggregation_any() -> None:
         .sort("group")
     )
 
-    assert result.to_dict(False) == {
+    assert result.to_dict(as_series=False) == {
         "group": [1, 2],
         "any": [[False, True, True], [True]],
         "filtered": [[3, 4], [2]],
@@ -91,7 +128,7 @@ def test_predicate_order_explode_5950() -> None:
         .explode("i")
         .filter(pl.col("n").count().over(["i"]) == 2)
         .filter(pl.col("n").is_not_null())
-    ).collect().to_dict(False) == {"i": [1], "n": [0]}
+    ).collect().to_dict(as_series=False) == {"i": [1], "n": [0]}
 
 
 def test_binary_simplification_5971() -> None:
@@ -127,7 +164,7 @@ def test_categorical_string_comparison_6283() -> None:
         }
     )
 
-    assert scores.filter(scores["zone"] == "North").to_dict(False) == {
+    assert scores.filter(scores["zone"] == "North").to_dict(as_series=False) == {
         "zone": ["North", "North", "North"],
         "funding": ["yes", "yes", "no"],
         "score": [78, 39, 76],
@@ -144,20 +181,23 @@ def test_clear_window_cache_after_filter_10499() -> None:
 
     assert df.lazy().filter((pl.col("a").null_count() < pl.count()).over("b")).filter(
         ((pl.col("a") == 0).sum() < pl.count()).over("b")
-    ).collect().to_dict(False) == {"a": [3, None, 5, 0, 9, 10], "b": [2, 2, 3, 3, 5, 5]}
+    ).collect().to_dict(as_series=False) == {
+        "a": [3, None, 5, 0, 9, 10],
+        "b": [2, 2, 3, 3, 5, 5],
+    }
 
 
 def test_agg_function_of_filter_10565() -> None:
     df_int = pl.DataFrame(data={"a": []}, schema={"a": pl.Int16})
-    assert df_int.filter(pl.col("a").n_unique().over("a") == 1).to_dict(False) == {
-        "a": []
-    }
+    assert df_int.filter(pl.col("a").n_unique().over("a") == 1).to_dict(
+        as_series=False
+    ) == {"a": []}
 
     df_str = pl.DataFrame(data={"a": []}, schema={"a": pl.Utf8})
-    assert df_str.filter(pl.col("a").n_unique().over("a") == 1).to_dict(False) == {
-        "a": []
-    }
+    assert df_str.filter(pl.col("a").n_unique().over("a") == 1).to_dict(
+        as_series=False
+    ) == {"a": []}
 
     assert df_str.lazy().filter(pl.col("a").n_unique().over("a") == 1).collect(
         predicate_pushdown=False
-    ).to_dict(False) == {"a": []}
+    ).to_dict(as_series=False) == {"a": []}

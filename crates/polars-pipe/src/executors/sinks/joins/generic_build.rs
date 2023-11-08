@@ -2,16 +2,17 @@ use std::any::Any;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
+use arrow::array::BinaryArray;
 use hashbrown::hash_map::RawEntryMut;
-use polars_arrow::export::arrow::array::BinaryArray;
+use polars_core::datatypes::ChunkId;
 use polars_core::error::PolarsResult;
 use polars_core::export::ahash::RandomState;
-use polars_core::frame::hash_join::ChunkId;
 use polars_core::prelude::*;
 use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
-use polars_utils::hash_to_partition;
+use polars_utils::hashing::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 
+use super::*;
 use crate::executors::sinks::joins::inner_left::GenericJoinProbe;
 use crate::executors::sinks::utils::{hash_rows, load_vec};
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
