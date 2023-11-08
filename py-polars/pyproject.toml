@@ -207,10 +207,11 @@ markers = [
   "docs: Documentation code snippets",
 ]
 filterwarnings = [
-  # Fail on warnings...
+  # Fail on warnings
   "error",
-  # ...except where it prevents test debugging in an IPython console
+  # Allow debugging in an IPython console
   "ignore:.*unrecognized arguments.*PyDevIPCompleter:DeprecationWarning",
+  # Ignore warnings issued by dependency internals
   "ignore:.*is_sparse is deprecated.*:FutureWarning",
   "ignore:FigureCanvasAgg is non-interactive:UserWarning",
 ]
