@@ -52,7 +52,7 @@ impl ParquetSource {
         let file_options = self.file_options.clone();
         let schema = self.file_info.schema.clone();
 
-        self.file_info.update_hive_partitions(path);
+        self.file_info.update_hive_partitions(path)?;
         let hive_partitions = self
             .file_info
             .hive_parts
