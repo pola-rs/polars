@@ -75,10 +75,10 @@ impl<'a> PredicatePushDown<'a> {
         let exprs = lp.get_exprs();
 
         if has_projections {
-            // we should not pass these projections
+            // This checks the exprs in the projections at this level.
             if exprs
                 .iter()
-                .any(|e_n| projection_is_definite_pushdown_boundary(*e_n, expr_arena))
+                .any(|e_n| aexpr_blocks_predicate_pushdown(*e_n, expr_arena))
             {
                 return self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
             }
@@ -211,12 +211,13 @@ impl<'a> PredicatePushDown<'a> {
                 // filter(y > 1) --> filter(x == min(x)) & filter(y > 2)
                 // pushdown of filter(y > 2) is correctly stopped at the boundary
                 //
-                // Performing this step here should guarantee that acc_predicates
-                // in all other contexts do not contain a mix of boundary and
-                // non-boundary predicates.
+                // Assuming all predicates originate from the `Selection` node
+                // at the beginning of optimization, applying this step here
+                // guarantees that boundary predicates will not appear in other
+                // contexts. Note boundary projections are handled elsewhere.
                 let local_predicates = if acc_predicates
                     .values()
-                    .any(|node| predicate_is_pushdown_boundary(*node, expr_arena))
+                    .any(|node| aexpr_blocks_predicate_pushdown(*node, expr_arena))
                 {
                     let local_predicates = acc_predicates.values().copied().collect::<Vec<_>>();
                     acc_predicates.clear();
@@ -260,13 +261,29 @@ impl<'a> PredicatePushDown<'a> {
                 file_options: options,
                 output_schema
             } => {
-                let mut local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
-                if let Some(ref row_count) = options.row_count{
-                    let row_count_predicates = transfer_to_local_by_name(expr_arena, &mut acc_predicates, |name| {
-                        name.as_ref() == row_count.name
-                    });
-                    local_predicates.extend_from_slice(&row_count_predicates);
+                for node in acc_predicates.values() {
+                    debug_assert_aexpr_allows_predicate_pushdown(*node, expr_arena);
                 }
+
+                let local_predicates = match &scan_type {
+                    #[cfg(feature = "parquet")]
+                    FileScan::Parquet { .. } => vec![],
+                    #[cfg(feature = "ipc")]
+                    FileScan::Ipc { .. } => vec![],
+                    _ => {
+                        // Disallow row-count pushdown of other scans as they may
+                        // not update the row counts properly before applying the
+                        // predicate (e.g. FileScan::Csv doesn't).
+                        if let Some(ref row_count) = options.row_count {
+                            let row_count_predicates = transfer_to_local_by_name(expr_arena, &mut acc_predicates, |name| {
+                                name.as_ref() == row_count.name
+                            });
+                            row_count_predicates
+                        } else {
+                            vec![]
+                        }
+                    }
+                };
                 let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
                 if let (true, Some(predicate)) = (file_info.hive_parts.is_some(), predicate) {
