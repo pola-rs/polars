@@ -1641,16 +1641,63 @@ def test_custom_writeable_object() -> None:
     assert b"".join(buf.writes) == b"a,b\n10,x\n20,y\n30,z\n"
 
 
-def test_read_filelike_object(io_files_path: Path) -> None:
-    # multi columns
-    file_path = io_files_path / "small.csv"
+@pytest.mark.write_disk()
+def test_read_filelike_object(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    # has multiple columns and ends with LF
+    csv = textwrap.dedent(
+        """\
+        a,b
+        1,2
+        1,2
+        """
+    )
+    file_path = tmp_path / "multiple-columns_ends-with-LF.csv"
+    file_path.write_text(csv)
     expect = pl.read_csv(file_path)
     with file_path.open("rb") as f:
         read_df = pl.read_csv(f)
     assert_frame_equal(read_df, expect)
 
-    # single column
-    file_path = io_files_path / "single_column.csv"
+    # has multiple columns and ends without LF
+    csv = textwrap.dedent(
+        """\
+        a,b
+        1,2
+        1,2"""
+    )
+    file_path = tmp_path / "multiple-columns_ends-without-LF.csv"
+    file_path.write_text(csv)
+    expect = pl.read_csv(file_path)
+    with file_path.open("rb") as f:
+        read_df = pl.read_csv(f)
+    assert_frame_equal(read_df, expect)
+
+    # has a single column and ends with LF
+    csv = textwrap.dedent(
+        """\
+        a
+        1
+        1
+        """
+    )
+    file_path = tmp_path / "single-column_ends-with-LF.csv"
+    file_path.write_text(csv)
+    expect = pl.read_csv(file_path)
+    with file_path.open("rb") as f:
+        read_df = pl.read_csv(f)
+    assert_frame_equal(read_df, expect)
+
+    # has a single column and ends without LF
+    csv = textwrap.dedent(
+        """\
+        a
+        1
+        1"""
+    )
+    file_path = tmp_path / "single-column_ends-without-LF.csv"
+    file_path.write_text(csv)
     expect = pl.read_csv(file_path)
     with file_path.open("rb") as f:
         read_df = pl.read_csv(f)
