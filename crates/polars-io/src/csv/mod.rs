@@ -17,7 +17,7 @@
 //!     let mut file = File::create("example.csv").expect("could not create file");
 //!
 //!     CsvWriter::new(&mut file)
-//!     .has_header(true)
+//!     .include_header(true)
 //!     .with_separator(b',')
 //!     .finish(df)
 //! }

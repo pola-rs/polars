@@ -22,7 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:csv]
     let mut file = File::create("docs/data/output.csv").expect("could not create file");
     CsvWriter::new(&mut file)
-        .has_header(true)
+        .include_header(true)
         .with_separator(b',')
         .finish(&mut df)?;
     let df_csv = CsvReader::from_path("docs/data/output.csv")?
@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:csv2]
     let mut file = File::create("docs/data/output.csv").expect("could not create file");
     CsvWriter::new(&mut file)
-        .has_header(true)
+        .include_header(true)
         .with_separator(b',')
         .finish(&mut df)?;
     let df_csv = CsvReader::from_path("docs/data/output.csv")?

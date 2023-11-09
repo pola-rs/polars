@@ -559,9 +559,9 @@ def read_csv_batched(
     ...     for group, df in partition_dfs.items():
     ...         if group in seen_groups:
     ...             with open(f"./data/{group}.csv", "a") as fh:
-    ...                 fh.write(df.write_csv(file=None, has_header=False))
+    ...                 fh.write(df.write_csv(file=None, include_header=False))
     ...         else:
-    ...             df.write_csv(file=f"./data/{group}.csv", has_header=True)
+    ...             df.write_csv(file=f"./data/{group}.csv", include_header=True)
     ...         seen_groups.add(group)
     ...
     ...     batches = reader.next_batches(100)
