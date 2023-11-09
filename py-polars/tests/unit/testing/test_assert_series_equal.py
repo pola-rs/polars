@@ -149,31 +149,6 @@ def test_assert_series_equal_int_overflow() -> None:
             assert_series_equal(s1, s2, check_exact=check_exact)
 
 
-def test_assert_series_equal_uint_overflow() -> None:
-    # 'atol' is checked following "(left-right).abs()", which can overflow on uint
-    s1 = pl.Series([1, 2, 3], dtype=pl.UInt8)
-    s2 = pl.Series([2, 3, 4], dtype=pl.UInt8)
-
-    with pytest.raises(AssertionError):
-        assert_series_equal(s1, s2, atol=0)
-    with pytest.raises(AssertionError):
-        # integer dtypes are checked for equality
-        assert_series_equal(s1, s2, atol=1)
-
-    # confirm no OverflowError in the below test case:
-    # as "(left-right).abs()" > max(Int64)
-    left = pl.Series(
-        values=[2810428175213635359],
-        dtype=pl.UInt64,
-    )
-    right = pl.Series(
-        values=[15807433754238349345],
-        dtype=pl.UInt64,
-    )
-    with pytest.raises(AssertionError):
-        assert_series_equal(left, right)
-
-
 @pytest.mark.parametrize(
     ("data1", "data2"),
     [
@@ -588,13 +563,43 @@ def test_assert_series_equal_nested_list_none() -> None:
     assert_series_equal(s1, s2)
 
 
-def test_assert_series_equal_unsigned_ints_underflow() -> None:
+def test_assert_series_equal_uint_overflow() -> None:
+    s1 = pl.Series([1, 2, 3], dtype=pl.UInt8)
+    s2 = pl.Series([2, 3, 4], dtype=pl.UInt8)
+
+    with pytest.raises(AssertionError):
+        assert_series_equal(s1, s2, atol=0)
+    with pytest.raises(AssertionError):
+        assert_series_equal(s1, s2, atol=1)
+
+    left = pl.Series(
+        values=[2810428175213635359],
+        dtype=pl.UInt64,
+    )
+    right = pl.Series(
+        values=[15807433754238349345],
+        dtype=pl.UInt64,
+    )
+    with pytest.raises(AssertionError):
+        assert_series_equal(left, right)
+
+
+def test_assert_series_equal_uint_always_checked_exactly() -> None:
     s1 = pl.Series([1, 3], dtype=pl.UInt8)
     s2 = pl.Series([2, 4], dtype=pl.Int64)
 
     with pytest.raises(AssertionError):
-        # integer dtypes are checked for equality
         assert_series_equal(s1, s2, atol=1, check_dtype=False)
+
+
+def test_assert_series_equal_nested_int_always_checked_exactly() -> None:
+    s1 = pl.Series([[1, 2], [3, 4]])
+    s2 = pl.Series([[1, 2], [3, 5]])
+
+    with pytest.raises(AssertionError):
+        assert_series_equal(s1, s2, atol=1)
+    with pytest.raises(AssertionError):
+        assert_series_equal(s1, s2, check_exact=True)
 
 
 @pytest.mark.parametrize("check_exact", [True, False])
@@ -604,17 +609,6 @@ def test_assert_series_equal_array_equal(check_exact: bool) -> None:
 
     with pytest.raises(AssertionError):
         assert_series_equal(s1, s2, check_exact=check_exact)
-
-
-def test_assert_series_equal_nested_int() -> None:
-    s1 = pl.Series([[1, 2], [3, 4]])
-    s2 = pl.Series([[1, 2], [3, 5]])
-
-    with pytest.raises(AssertionError):
-        # integer dtypes are checked for equality
-        assert_series_equal(s1, s2, atol=1)
-    with pytest.raises(AssertionError):
-        assert_series_equal(s1, s2, check_exact=True)
 
 
 def test_series_equal_nested_lengths_mismatch() -> None:
