@@ -19,7 +19,7 @@ pub trait StatsEvaluator {
     fn should_read(&self, stats: &BatchStats) -> PolarsResult<bool>;
 }
 
-#[cfg(any(feature = "parquet", feature = "json",))]
+#[cfg(feature = "parquet")]
 pub(crate) fn apply_predicate(
     df: &mut DataFrame,
     predicate: Option<&dyn PhysicalIoExpr>,

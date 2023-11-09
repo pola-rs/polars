@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
+#[cfg(feature = "cloud")]
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_parquet::read;
 use polars_parquet::write::FileMetaData;
@@ -17,8 +18,10 @@ use crate::mmap::MmapBytesReader;
 use crate::parquet::async_impl::FetchRowGroupsFromObjectStore;
 #[cfg(feature = "cloud")]
 use crate::parquet::async_impl::ParquetObjectStore;
+#[cfg(feature = "cloud")]
+use crate::parquet::read_impl::materialize_empty_df;
+use crate::parquet::read_impl::read_parquet;
 pub use crate::parquet::read_impl::BatchedParquetReader;
-use crate::parquet::read_impl::{materialize_empty_df, read_parquet};
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::RowCount;

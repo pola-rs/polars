@@ -1,6 +1,4 @@
-use chrono::prelude::*;
 use polars::prelude::*;
-use rand::Rng;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let df = df! (
@@ -9,7 +7,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     // --8<-- [start:example1]
-    df.column("foo")?.sort(false).head(Some(2));
+    let _ = col("foo").sort(Default::default()).head(Some(2));
     // --8<-- [end:example1]
 
     // --8<-- [start:example2]

@@ -6,6 +6,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let df = ParquetReader::new(&mut file).finish().unwrap();
     // --8<-- [end:read]
+    println!("{}", df);
 
     // --8<-- [start:write]
     let mut df = df!(
@@ -20,8 +21,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:scan]
     let args = ScanArgsParquet::default();
-    let df = LazyFrame::scan_parquet("./file.parquet", args).unwrap();
+    let lf = LazyFrame::scan_parquet("./file.parquet", args).unwrap();
     // --8<-- [end:scan]
+    println!("{}", lf.collect()?);
 
     Ok(())
 }

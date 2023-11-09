@@ -16,7 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "y"=> &["A", "A", "A", "B", "B", "C", "X", "X"],
     )
     .unwrap();
-    let joined = df.join(&df2, ["a"], ["x"], JoinType::Left, None)?;
+    let joined = df.join(&df2, ["a"], ["x"], JoinType::Left.into())?;
     println!("{}", joined);
     // --8<-- [end:join]
 

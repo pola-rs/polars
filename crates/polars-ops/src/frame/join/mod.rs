@@ -18,9 +18,7 @@ use ahash::RandomState;
 pub use args::*;
 use arrow::legacy::trusted_len::TrustedLen;
 #[cfg(feature = "asof_join")]
-use asof::AsofJoinBy;
-#[cfg(feature = "asof_join")]
-pub use asof::{AsOfOptions, AsofJoin, AsofStrategy};
+pub use asof::{AsOfOptions, AsofJoin, AsofJoinBy, AsofStrategy};
 #[cfg(feature = "dtype-categorical")]
 pub(crate) use checks::*;
 pub use cross_join::CrossJoin;

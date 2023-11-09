@@ -8,13 +8,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let out = df
+        .clone()
         .lazy()
         .group_by(["keys"])
         .agg([
             col("values")
-                .map(|s| Ok(s.shift(lit(1))), GetOutput::default())
+                .map(|s| Ok(Some(s.shift(1))), GetOutput::default())
                 .alias("shift_map"),
-            col("values").shift(1).alias("shift_expression"),
+            col("values").shift(lit(1)).alias("shift_expression"),
         ])
         .collect()?;
 
@@ -28,9 +29,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .group_by([col("keys")])
         .agg([
             col("values")
-                .apply(|s| Ok(s.shift(1)), GetOutput::default())
+                .apply(|s| Ok(Some(s.shift(1))), GetOutput::default())
                 .alias("shift_map"),
-            col("values").shift(1).alias("shift_expression"),
+            col("values").shift(lit(1)).alias("shift_expression"),
         ])
         .collect()?;
     println!("{}", out);
@@ -45,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .select([
             // pack to struct to get access to multiple fields in a custom `apply/map`
-            as_struct(&[col("keys"), col("values")])
+            as_struct(vec![col("keys"), col("values")])
                 // we will compute the len(a) + b
                 .apply(
                     |s| {
@@ -70,12 +71,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             })
                             .collect();
 
-                        Ok(out.into_series())
+                        Ok(Some(out.into_series()))
                     },
                     GetOutput::from_type(DataType::Int32),
                 )
                 .alias("solution_apply"),
-            (col("keys").str().count_match(".") + col("values")).alias("solution_expr"),
+            (col("keys").str().count_matches(lit("."), true) + col("values"))
+                .alias("solution_expr"),
         ])
         .collect()?;
     println!("{}", out);

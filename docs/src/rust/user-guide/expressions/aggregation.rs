@@ -9,19 +9,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let url = "https://theunitedstates.io/congress-legislators/legislators-historical.csv";
 
     let mut schema = Schema::new();
-    schema.with_column("first_name".to_string(), DataType::Categorical(None));
-    schema.with_column("gender".to_string(), DataType::Categorical(None));
-    schema.with_column("type".to_string(), DataType::Categorical(None));
-    schema.with_column("state".to_string(), DataType::Categorical(None));
-    schema.with_column("party".to_string(), DataType::Categorical(None));
-    schema.with_column("birthday".to_string(), DataType::Date);
+    schema.with_column("first_name".into(), DataType::Categorical(None));
+    schema.with_column("gender".into(), DataType::Categorical(None));
+    schema.with_column("type".into(), DataType::Categorical(None));
+    schema.with_column("state".into(), DataType::Categorical(None));
+    schema.with_column("party".into(), DataType::Categorical(None));
+    schema.with_column("birthday".into(), DataType::Date);
 
     let data: Vec<u8> = Client::new().get(url).send()?.text()?.bytes().collect();
 
     let dataset = CsvReader::new(Cursor::new(data))
         .has_header(true)
-        .with_dtypes(Some(&schema))
-        .with_parse_dates(true)
+        .with_dtypes(Some(Arc::new(schema)))
+        .with_try_parse_dates(true)
         .finish()?;
 
     println!("{}", &dataset);
@@ -32,12 +32,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .group_by(["first_name"])
-        .agg([count(), col("gender").list(), col("last_name").first()])
+        .agg([count(), col("gender"), col("last_name").first()])
         .sort(
             "count",
             SortOptions {
                 descending: true,
                 nulls_last: true,
+                ..Default::default()
             },
         )
         .limit(5)
@@ -64,6 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             SortOptions {
                 descending: true,
                 nulls_last: false,
+                ..Default::default()
             },
         )
         .limit(5)
@@ -88,6 +90,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             SortOptions {
                 descending: true,
                 nulls_last: true,
+                ..Default::default()
             },
         )
         .limit(5)
@@ -137,6 +140,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             SortOptions {
                 descending: true,
                 nulls_last: true,
+                ..Default::default()
             },
         )
         .group_by(["state"])
@@ -159,6 +163,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             SortOptions {
                 descending: true,
                 nulls_last: true,
+                ..Default::default()
             },
         )
         .group_by(["state"])
@@ -182,6 +187,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             SortOptions {
                 descending: true,
                 nulls_last: true,
+                ..Default::default()
             },
         )
         .group_by(["state"])

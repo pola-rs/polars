@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ],
         "float" => &[4.0, 5.0, 6.0]
     )
-    .expect("should not fail");
+    .unwrap();
     println!("{}", df);
     // --8<-- [end:dataframe]
 
@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     CsvWriter::new(&mut file)
         .has_header(true)
         .with_separator(b',')
-        .finish(&mut df);
+        .finish(&mut df)?;
     let df_csv = CsvReader::from_path("docs/data/output.csv")?
         .infer_schema(None)
         .has_header(true)
@@ -37,19 +37,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     CsvWriter::new(&mut file)
         .has_header(true)
         .with_separator(b',')
-        .finish(&mut df);
+        .finish(&mut df)?;
     let df_csv = CsvReader::from_path("docs/data/output.csv")?
         .infer_schema(None)
         .has_header(true)
-        .with_parse_dates(true)
+        .with_try_parse_dates(true)
         .finish()?;
     println!("{}", df_csv);
     // --8<-- [end:csv2]
 
     // --8<-- [start:json]
     let mut file = File::create("docs/data/output.json").expect("could not create file");
-    JsonWriter::new(&mut file).finish(&mut df);
-    let mut f = File::open("docs/data/output.json")?;
+    JsonWriter::new(&mut file).finish(&mut df)?;
+    let f = File::open("docs/data/output.json")?;
     let df_json = JsonReader::new(f)
         .with_json_format(JsonFormat::JsonLines)
         .finish()?;
@@ -58,8 +58,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:parquet]
     let mut file = File::create("docs/data/output.parquet").expect("could not create file");
-    ParquetWriter::new(&mut file).finish(&mut df);
-    let mut f = File::open("docs/data/output.parquet")?;
+    ParquetWriter::new(&mut file).finish(&mut df)?;
+    let f = File::open("docs/data/output.parquet")?;
     let df_parquet = ParquetReader::new(f).finish()?;
     println!("{}", df_parquet);
     // --8<-- [end:parquet]
