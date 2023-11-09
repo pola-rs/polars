@@ -6,7 +6,7 @@ pub mod string_cache;
 
 use bitflags::bitflags;
 pub use builder::*;
-pub(crate) use merge::*;
+pub use merge::*;
 use polars_utils::sync::SyncPtr;
 
 use super::*;

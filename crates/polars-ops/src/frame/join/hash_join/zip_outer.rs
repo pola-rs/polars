@@ -1,6 +1,21 @@
+#[cfg(feature = "dtype-categorical")]
+use polars_core::prelude::{call_categorical_merge_operation, CategoricalMergeOperation};
 use polars_core::with_match_physical_numeric_polars_type;
 
 use super::*;
+
+struct CategoricalOuterZip<'a> {
+    opt_join_tuples: &'a [(Option<IdxSize>, Option<IdxSize>)],
+}
+
+impl CategoricalMergeOperation for CategoricalOuterZip<'_> {
+    fn finish(self, lhs: &UInt32Chunked, rhs: &UInt32Chunked) -> PolarsResult<UInt32Chunked> {
+        let s = unsafe {
+            zip_outer_join_column_ca(lhs, &rhs.clone().into_series(), self.opt_join_tuples)
+        };
+        s.u32().cloned()
+    }
+}
 
 pub(crate) unsafe fn zip_outer_join_column(
     left_column: &Series,
@@ -14,23 +29,15 @@ pub(crate) unsafe fn zip_outer_join_column(
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(_) => {
             let left_column = left_column.categorical().unwrap();
-            let new_rev_map = left_column
-                ._merge_categorical_map(right_column.categorical().unwrap())
-                .unwrap();
-            let left = left_column.physical();
-            let right = right_column
-                .categorical()
-                .unwrap()
-                .physical()
-                .clone()
-                .into_series();
+            let right_column = right_column.categorical().unwrap();
 
-            let cats = zip_outer_join_column_ca(left, &right, opt_join_tuples);
-            let cats = cats.u32().unwrap().clone();
-
-            unsafe {
-                CategoricalChunked::from_cats_and_rev_map_unchecked(cats, new_rev_map).into_series()
-            }
+            call_categorical_merge_operation(
+                left_column,
+                right_column,
+                CategoricalOuterZip { opt_join_tuples },
+            )
+            .unwrap()
+            .into_series()
         },
         DataType::Utf8 => {
             let left_column = left_column.cast(&DataType::Binary).unwrap();

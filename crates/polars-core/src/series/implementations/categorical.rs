@@ -165,13 +165,8 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), extend);
-        let other = other.categorical()?;
-        self.0.physical_mut().extend(other.physical());
-        let new_rev_map = self.0._merge_categorical_map(other)?;
-        // SAFETY
-        // rev_maps are merged
-        unsafe { self.0.set_rev_map(new_rev_map, false) };
-        Ok(())
+        // TODO: actually implement extend here
+        self.0.append(other.categorical().unwrap())
     }
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {

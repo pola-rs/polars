@@ -283,31 +283,7 @@ pub trait JoinDispatch: IntoDf {
         );
 
         let s = unsafe {
-            zip_outer_join_column(
-                &s_left.to_physical_repr(),
-                &s_right.to_physical_repr(),
-                opt_join_tuples,
-            )
-            .with_name(s_left.name())
-        };
-        let s = match s_left.dtype() {
-            #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => {
-                let ca_left = s_left.categorical().unwrap();
-                let new_rev_map = ca_left._merge_categorical_map(s_right.categorical().unwrap())?;
-                let logical = s.u32().unwrap().clone();
-                // safety:
-                // categorical maps are merged
-                unsafe {
-                    CategoricalChunked::from_cats_and_rev_map_unchecked(logical, new_rev_map)
-                        .into_series()
-                }
-            },
-            dt @ DataType::Datetime(_, _)
-            | dt @ DataType::Time
-            | dt @ DataType::Date
-            | dt @ DataType::Duration(_) => s.cast(dt).unwrap(),
-            _ => s,
+            zip_outer_join_column(&s_left, &s_right, opt_join_tuples).with_name(s_left.name())
         };
 
         unsafe { df_left.get_columns_mut().insert(join_column_index, s) };

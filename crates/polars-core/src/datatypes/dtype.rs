@@ -351,8 +351,14 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
     Ok(match (left, right) {
         #[cfg(feature = "dtype-categorical")]
         (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r))) => {
-            let rev_map = merge_rev_map(rev_map_l, rev_map_r)?;
-            Categorical(Some(rev_map))
+            match (&**rev_map_l, &**rev_map_r) {
+                (RevMapping::Global(_, _, idl), RevMapping::Global(_, _, idr)) if idl == idr => {
+                    let mut merger = GlobalRevMapMerger::new(rev_map_l.clone());
+                    merger.merge_map(rev_map_r)?;
+                    Categorical(Some(merger.finish()))
+                },
+                _ => polars_bail!(string_cache_mismatch),
+            }
         },
         (List(inner_l), List(inner_r)) => {
             let merged = merge_dtypes(inner_l, inner_r)?;
