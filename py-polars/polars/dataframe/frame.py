@@ -4188,7 +4188,7 @@ class DataFrame:
         percentile_exprs = []
         for p in parse_percentiles(percentiles):
             percentile_exprs.append(F.all().quantile(p).name.prefix(f"{p}:"))
-            metrics.append(f"{p:.0%}")
+            metrics.append(f"{p:.000%}")
         metrics.append("max")
 
         # execute metrics in parallel
