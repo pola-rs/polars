@@ -2455,7 +2455,7 @@ class DataFrame:
         self,
         file: None = None,
         *,
-        has_header: bool = ...,
+        include_header: bool = ...,
         separator: str = ...,
         line_terminator: str = ...,
         quote_char: str = ...,
@@ -2474,7 +2474,7 @@ class DataFrame:
         self,
         file: BytesIO | TextIOWrapper | str | Path,
         *,
-        has_header: bool = ...,
+        include_header: bool = ...,
         separator: str = ...,
         line_terminator: str = ...,
         quote_char: str = ...,
@@ -2489,11 +2489,12 @@ class DataFrame:
         ...
 
     @deprecate_renamed_parameter("quote", "quote_char", version="0.19.8")
+    @deprecate_renamed_parameter("has_header", "include_header", version="0.19.13")
     def write_csv(
         self,
         file: BytesIO | TextIOWrapper | str | Path | None = None,
         *,
-        has_header: bool = True,
+        include_header: bool = True,
         separator: str = ",",
         line_terminator: str = "\n",
         quote_char: str = '"',
@@ -2513,7 +2514,7 @@ class DataFrame:
         file
             File path or writeable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
-        has_header
+        include_header
             Whether to include header in the CSV output.
         separator
             Separate CSV fields with this symbol.
@@ -2590,7 +2591,7 @@ class DataFrame:
 
         self._df.write_csv(
             file,
-            has_header,
+            include_header,
             ord(separator),
             line_terminator,
             ord(quote_char),
@@ -2650,6 +2651,7 @@ class DataFrame:
 
         self._df.write_avro(file, compression, name)
 
+    @deprecate_renamed_parameter("has_header", "include_header", version="0.19.13")
     def write_excel(
         self,
         workbook: Workbook | BytesIO | Path | str | None = None,
@@ -2669,7 +2671,7 @@ class DataFrame:
         sparklines: dict[str, Sequence[str] | dict[str, Any]] | None = None,
         formulas: dict[str, str | dict[str, str]] | None = None,
         float_precision: int = 3,
-        has_header: bool = True,
+        include_header: bool = True,
         autofilter: bool = True,
         autofit: bool = False,
         hidden_columns: Sequence[str] | SelectorType | None = None,
@@ -2760,7 +2762,7 @@ class DataFrame:
             rows (if providing a dictionary) or all rows (if providing an integer) that
             intersect with the table body (including any header and total row) in
             integer pixel units. Note that `row_index` starts at zero and will be
-            the header row (unless `has_headers` is False).
+            the header row (unless `include_header` is False).
         sparklines : dict
             A `{colname:list,}` or `{colname:dict,}` dictionary defining one or more
             sparklines to be written into a new column in the table.
@@ -2789,7 +2791,7 @@ class DataFrame:
         float_precision : int
             Default number of decimals displayed for floating point columns (note that
             this is purely a formatting directive; the actual values are not rounded).
-        has_header : bool
+        include_header : bool
             Indicate if the table should be created with a header row.
         autofilter : bool
             If the table has headers, provide autofilter capability.
@@ -3049,20 +3051,20 @@ class DataFrame:
             table_start[0]
             + len(df)
             + int(is_empty)
-            - int(not has_header)
+            - int(not include_header)
             + int(bool(column_totals)),
             table_start[1] + len(df.columns) - 1,
         )
 
         # write table structure and formats into the target sheet
-        if not is_empty or has_header:
+        if not is_empty or include_header:
             ws.add_table(
                 *table_start,
                 *table_finish,
                 {
                     "style": table_style,
                     "columns": table_columns,
-                    "header_row": has_header,
+                    "header_row": include_header,
                     "autofilter": autofilter,
                     "total_row": bool(column_totals) and not is_empty,
                     "name": table_name,
@@ -3072,7 +3074,7 @@ class DataFrame:
 
             # write data into the table range, column-wise
             if not is_empty:
-                column_start = [table_start[0] + int(has_header), table_start[1]]
+                column_start = [table_start[0] + int(include_header), table_start[1]]
                 for c in df.columns:
                     if c in self.columns:
                         ws.write_column(
@@ -3089,7 +3091,7 @@ class DataFrame:
                     ws=ws,
                     conditional_formats=conditional_formats,
                     table_start=table_start,
-                    has_header=has_header,
+                    include_header=include_header,
                     format_cache=fmt_cache,
                 )
         # additional column-level properties
@@ -3122,7 +3124,7 @@ class DataFrame:
         # finally, inject any sparklines into the table
         for column, params in (sparklines or {}).items():
             _xl_inject_sparklines(
-                ws, df, table_start, column, has_header=has_header, params=params
+                ws, df, table_start, column, include_header=include_header, params=params
             )
 
         # worksheet options

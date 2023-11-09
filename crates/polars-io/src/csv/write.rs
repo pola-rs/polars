@@ -64,8 +64,8 @@ where
     W: Write,
 {
     /// Set whether to write headers.
-    pub fn has_header(mut self, has_header: bool) -> Self {
-        self.header = has_header;
+    pub fn include_header(mut self, include_header: bool) -> Self {
+        self.header = include_header;
         self
     }
 

@@ -2105,11 +2105,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
     @deprecate_renamed_parameter("quote", "quote_char", version="0.19.8")
+    @deprecate_renamed_parameter("has_header", "include_header", version="0.19.13")
     def sink_csv(
         self,
         path: str | Path,
         *,
-        has_header: bool = True,
+        include_header: bool = True,
         separator: str = ",",
         line_terminator: str = "\n",
         quote_char: str = '"',
@@ -2137,7 +2138,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         path
             File path to which the file should be written.
-        has_header
+        include_header
             Whether to include header in the CSV output.
         separator
             Separate CSV fields with this symbol.
@@ -2224,7 +2225,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return lf.sink_csv(
             path=path,
-            has_header=has_header,
+            include_header=include_header,
             separator=ord(separator),
             line_terminator=line_terminator,
             quote_char=ord(quote_char),

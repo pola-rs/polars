@@ -600,7 +600,7 @@ impl PyDataFrame {
         &mut self,
         py: Python,
         py_f: PyObject,
-        has_header: bool,
+        include_header: bool,
         separator: u8,
         line_terminator: String,
         quote_char: u8,
@@ -619,7 +619,7 @@ impl PyDataFrame {
                 let f = std::fs::File::create(s).unwrap();
                 // No need for a buffered writer, because the csv writer does internal buffering.
                 CsvWriter::new(f)
-                    .has_header(has_header)
+                    .include_header(include_header)
                     .with_separator(separator)
                     .with_line_terminator(line_terminator)
                     .with_quote_char(quote_char)
@@ -636,7 +636,7 @@ impl PyDataFrame {
         } else {
             let mut buf = get_file_like(py_f, true)?;
             CsvWriter::new(&mut buf)
-                .has_header(has_header)
+                .include_header(include_header)
                 .with_separator(separator)
                 .with_line_terminator(line_terminator)
                 .with_quote_char(quote_char)

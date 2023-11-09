@@ -12,7 +12,7 @@ fn write_csv() {
     let mut df = create_df();
 
     CsvWriter::new(&mut buf)
-        .has_header(true)
+        .include_header(true)
         .finish(&mut df)
         .expect("csv written");
     let csv = std::str::from_utf8(&buf).unwrap();
@@ -20,7 +20,7 @@ fn write_csv() {
 
     let mut buf: Vec<u8> = Vec::new();
     CsvWriter::new(&mut buf)
-        .has_header(false)
+        .include_header(false)
         .finish(&mut df)
         .expect("csv written");
     let csv = std::str::from_utf8(&buf).unwrap();
@@ -28,7 +28,7 @@ fn write_csv() {
 
     let mut buf: Vec<u8> = Vec::new();
     CsvWriter::new(&mut buf)
-        .has_header(false)
+        .include_header(false)
         .with_line_terminator("\r\n".into())
         .finish(&mut df)
         .expect("csv written");
