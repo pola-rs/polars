@@ -681,6 +681,9 @@ fn inline_cast(input: &AExpr, dtype: &DataType, strict: bool) -> PolarsResult<Op
                 let Some(av) = lv.to_anyvalue() else {
                     return Ok(None);
                 };
+                if dtype == &av.dtype() {
+                    return Ok(Some(input.clone()));
+                }
                 match (av, dtype) {
                     // casting null always remains null
                     (AnyValue::Null, _) => return Ok(None),
