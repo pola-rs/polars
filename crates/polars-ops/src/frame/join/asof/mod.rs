@@ -3,7 +3,7 @@ mod groups;
 use std::borrow::Cow;
 
 use default::*;
-pub(super) use groups::AsofJoinBy;
+pub use groups::AsofJoinBy;
 use polars_core::prelude::*;
 use polars_core::utils::ensure_sorted_arg;
 #[cfg(feature = "serde")]

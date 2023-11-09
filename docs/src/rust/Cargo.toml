@@ -127,10 +127,10 @@ required-features = ["polars/parquet"]
 name = "user-guide-transformations-concatenation"
 path = "user-guide/transformations/concatenation.rs"
 required-features = ["polars/lazy"]
-# [[bin]]
-# name = "user-guide-transformations-joins"
-# path = "user-guide/transformations/joins.rs"
-# required-features = ["polars/lazy", "polars/asof_join"]
+[[bin]]
+name = "user-guide-transformations-joins"
+path = "user-guide/transformations/joins.rs"
+required-features = ["polars/lazy"]
 [[bin]]
 name = "user-guide-transformations-melt"
 path = "user-guide/transformations/melt.rs"
