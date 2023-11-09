@@ -214,6 +214,8 @@ filterwarnings = [
   # Ignore warnings issued by dependency internals
   "ignore:.*is_sparse is deprecated.*:FutureWarning",
   "ignore:FigureCanvasAgg is non-interactive:UserWarning",
+  # Introspection under PyCharm IDE can generate this in 3.12
+  "ignore:.*co_lnotab is deprecated, use co_lines.*:DeprecationWarning",
 ]
 xfail_strict = true
 
