@@ -80,7 +80,7 @@ TEST_CASES = [
     (
         "a",
         "lambda x: x > 1 or (x == 1 and x == 2)",
-        '(pl.col("a") > 1) | (pl.col("a") == 1) & (pl.col("a") == 2)',
+        '(pl.col("a") > 1) | ((pl.col("a") == 1) & (pl.col("a") == 2))',
     ),
     (
         "a",
@@ -90,12 +90,12 @@ TEST_CASES = [
     (
         "a",
         "lambda x: x > 2 or x != 3 and x not in (0, 1, 4)",
-        '(pl.col("a") > 2) | (pl.col("a") != 3) & ~pl.col("a").is_in((0, 1, 4))',
+        '(pl.col("a") > 2) | ((pl.col("a") != 3) & ~pl.col("a").is_in((0, 1, 4)))',
     ),
     (
         "a",
         "lambda x: x > 1 and x != 2 or x % 2 == 0 and x < 3",
-        '(pl.col("a") > 1) & (pl.col("a") != 2) | ((pl.col("a") % 2) == 0) & (pl.col("a") < 3)',
+        '((pl.col("a") > 1) & (pl.col("a") != 2)) | (((pl.col("a") % 2) == 0) & (pl.col("a") < 3))',
     ),
     (
         "a",
@@ -303,7 +303,7 @@ def test_parse_apply_miscellaneous() -> None:
         (
             [-20, -12, -5, 0, 5, 12, 20],
             lambda x: (abs(x) != 12) and (x > 10 or x < -10 or x == 0),
-            "(s.abs() != 12) & ((s > 10) | ((s < -10) | (s == 0)))",
+            "(s.abs() != 12) & ((s > 10) | (s < -10) | (s == 0))",
         ),
     ],
 )
