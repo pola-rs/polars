@@ -5,6 +5,7 @@ use arrow::legacy::prelude::*;
 
 use super::*;
 use crate::config::verbose;
+use crate::prelude::chunkops::slice_chunks;
 use crate::utils::_split_offsets;
 use crate::utils::flatten::flatten_par;
 
@@ -30,7 +31,7 @@ where
     Option<T::Native>: AsU64,
 {
     if multithreaded && group_multithreaded(ca) {
-        let n_partitions = _set_partition_size() as u64;
+        let n_partitions = _set_partition_size();
 
         // use the arrays as iterators
         if ca.null_count() == 0 {
@@ -38,10 +39,25 @@ where
                 .downcast_iter()
                 .map(|arr| arr.values().as_slice())
                 .collect::<Vec<_>>();
-            group_by_threaded_slice(keys, n_partitions, sorted)
+
+            group_by_threaded_iter2(
+                |range| slice_chunks(&keys, range.start as i64, range.len(), ca.len()).0,
+                n_partitions,
+                sorted,
+                ca.len(),
+            )
         } else {
-            let keys = ca.downcast_iter().collect::<Vec<_>>();
-            group_by_threaded_iter(&keys, n_partitions, sorted)
+            group_by_threaded_iter2(
+                |range| {
+                    ca.slice(range.start as i64, range.len())
+                        .downcast_iter()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                },
+                n_partitions,
+                sorted,
+                ca.len(),
+            )
         }
     } else if !ca.has_validity() {
         group_by(ca.into_no_null_iter(), sorted)
@@ -236,6 +252,22 @@ impl IntoGroupsProxy for Utf8Chunked {
     }
 }
 
+// A special function to ensure we don't instantiate group_by_threaded twice with different closures,
+// as every new closure would lead to a new monomorphization.
+fn finalize_bytes_hashes(
+    bytes_hashes: &[&[BytesHash]],
+    n_partitions: usize,
+    sorted: bool,
+    len: usize,
+) -> GroupsProxy {
+    group_by_threaded_iter2(
+        |range| slice_chunks(bytes_hashes, range.start as i64, range.len(), len).0,
+        n_partitions,
+        sorted,
+        len,
+    )
+}
+
 impl IntoGroupsProxy for BinaryChunked {
     #[allow(clippy::needless_lifetimes)]
     fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
@@ -270,8 +302,8 @@ impl IntoGroupsProxy for BinaryChunked {
                     })
                     .collect::<Vec<_>>()
             });
-            let byte_hashes = byte_hashes.iter().collect::<Vec<_>>();
-            group_by_threaded_slice(byte_hashes, n_partitions as u64, sorted)
+            let byte_hashes = byte_hashes.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
+            finalize_bytes_hashes(&byte_hashes, n_partitions, sorted, self.len())
         } else {
             let byte_hashes = self
                 .into_iter()
@@ -337,11 +369,15 @@ impl IntoGroupsProxy for ListChunked {
                             arr_to_hashes(&ca)
                         })
                         .collect::<PolarsResult<Vec<_>>>()?;
-                    let bytes_hashes = bytes_hashes.iter().collect::<Vec<_>>();
-                    Ok(group_by_threaded_slice(
-                        bytes_hashes,
-                        n_partitions as u64,
+                    let byte_hashes = bytes_hashes
+                        .iter()
+                        .map(|v| v.as_slice())
+                        .collect::<Vec<_>>();
+                    Ok(finalize_bytes_hashes(
+                        &byte_hashes,
+                        n_partitions,
                         sorted,
+                        self.len(),
                     ))
                 });
                 groups
