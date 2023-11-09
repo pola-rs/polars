@@ -2,6 +2,7 @@ use std::hash::{BuildHasher, Hash};
 
 use hashbrown::hash_map::{Entry, RawEntryMut};
 use hashbrown::HashMap;
+use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
@@ -10,8 +11,7 @@ use super::GroupsProxy;
 use crate::datatypes::PlHashMap;
 use crate::frame::group_by::{GroupsIdx, IdxItem};
 use crate::hashing::{
-    _df_rows_to_hashes_threaded_vertical, series_to_hashes, this_partition, AsU64, IdBuildHasher,
-    IdxHash, *,
+    _df_rows_to_hashes_threaded_vertical, series_to_hashes, IdBuildHasher, IdxHash, *,
 };
 use crate::prelude::compare_inner::PartialEqInner;
 use crate::prelude::*;
@@ -181,11 +181,11 @@ where
 // have the code duplication
 pub(crate) fn group_by_threaded_slice<T, IntoSlice>(
     keys: Vec<IntoSlice>,
-    n_partitions: u64,
+    n_partitions: usize,
     sorted: bool,
 ) -> GroupsProxy
 where
-    T: Send + Hash + Eq + Sync + Copy + AsU64,
+    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
     IntoSlice: AsRef<[T]> + Send + Sync,
 {
     let init_size = get_init_size();
@@ -211,7 +211,7 @@ where
                         let idx = cnt + offset;
                         cnt += 1;
 
-                        if this_partition(k.as_u64(), thread_no, n_partitions) {
+                        if thread_no == hash_to_partition(k.dirty_hash(), n_partitions) {
                             let hash = hasher.hash_one(k);
                             let entry = hash_tbl.raw_entry_mut().from_key_hashed_nocheck(hash, k);
 
@@ -243,13 +243,13 @@ where
 
 pub(crate) fn group_by_threaded_iter<T, I>(
     keys: &[I],
-    n_partitions: u64,
+    n_partitions: usize,
     sorted: bool,
 ) -> GroupsProxy
 where
-    I: IntoIterator<Item = T> + Send + Sync + Copy,
+    I: IntoIterator<Item = T> + Send + Sync + Clone,
     I::IntoIter: ExactSizeIterator,
-    T: Send + Hash + Eq + Sync + Copy + AsU64,
+    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
 {
     let init_size = get_init_size();
 
@@ -265,7 +265,7 @@ where
 
                 let mut offset = 0;
                 for keys in keys {
-                    let keys = keys.into_iter();
+                    let keys = keys.clone().into_iter();
                     let len = keys.len() as IdxSize;
                     let hasher = hash_tbl.hasher().clone();
 
@@ -274,7 +274,7 @@ where
                         let idx = cnt + offset;
                         cnt += 1;
 
-                        if this_partition(k.as_u64(), thread_no, n_partitions) {
+                        if thread_no == hash_to_partition(k.dirty_hash(), n_partitions) {
                             let hash = hasher.hash_one(k);
                             let entry = hash_tbl.raw_entry_mut().from_key_hashed_nocheck(hash, &k);
 
@@ -382,7 +382,6 @@ pub(crate) fn group_by_threaded_multiple_keys_flat(
 ) -> PolarsResult<GroupsProxy> {
     let dfs = split_df(&mut keys, n_partitions).unwrap();
     let (hashes, _random_state) = _df_rows_to_hashes_threaded_vertical(&dfs, None)?;
-    let n_partitions = n_partitions as u64;
 
     let init_size = get_init_size();
 
@@ -425,7 +424,7 @@ pub(crate) fn group_by_threaded_multiple_keys_flat(
                         for &h in hashes_chunk {
                             // partition hashes by thread no.
                             // So only a part of the hashes go to this hashmap
-                            if this_partition(h, thread_no, n_partitions) {
+                            if thread_no == hash_to_partition(h, n_partitions) {
                                 let row_idx = idx + offset;
                                 populate_multiple_key_hashmap2(
                                     &mut hash_tbl,

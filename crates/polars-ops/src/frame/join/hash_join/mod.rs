@@ -53,26 +53,6 @@ macro_rules! det_hash_prone_order {
 #[cfg(feature = "performant")]
 use arrow::legacy::conversion::primitive_to_vec;
 pub(super) use det_hash_prone_order;
-use polars_utils::hash_to_partition;
-
-pub(super) unsafe fn get_hash_tbl_threaded_join_partitioned<Item>(
-    h: u64,
-    hash_tables: &[Item],
-    len: u64,
-) -> &Item {
-    let i = hash_to_partition(h, len as usize);
-    hash_tables.get_unchecked(i)
-}
-
-#[allow(clippy::type_complexity)]
-unsafe fn get_hash_tbl_threaded_join_mut_partitioned<T, H>(
-    h: u64,
-    hash_tables: &mut [HashMap<T, (bool, Vec<IdxSize>), H>],
-    len: u64,
-) -> &mut HashMap<T, (bool, Vec<IdxSize>), H> {
-    let i = hash_to_partition(h, len as usize);
-    hash_tables.get_unchecked_mut(i)
-}
 
 pub trait JoinDispatch: IntoDf {
     /// # Safety

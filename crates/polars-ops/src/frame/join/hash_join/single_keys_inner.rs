@@ -1,4 +1,5 @@
 use polars_core::utils::flatten;
+use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::sync::SyncPtr;
 
@@ -9,10 +10,10 @@ pub(super) fn probe_inner<T, F, I>(
     hash_tbls: &[PlHashMap<T, Vec<IdxSize>>],
     results: &mut Vec<(IdxSize, IdxSize)>,
     local_offset: IdxSize,
-    n_tables: u64,
+    n_tables: usize,
     swap_fn: F,
 ) where
-    T: Send + Hash + Eq + Sync + Copy + AsU64,
+    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
     I: IntoIterator<Item = T>,
     // <I as IntoIterator>::IntoIter: TrustedLen,
     F: Fn(IdxSize, IdxSize) -> (IdxSize, IdxSize),
@@ -21,7 +22,7 @@ pub(super) fn probe_inner<T, F, I>(
         let idx_a = idx_a + local_offset;
         // probe table that contains the hashed value
         let current_probe_table =
-            unsafe { get_hash_tbl_threaded_join_partitioned(k.as_u64(), hash_tbls, n_tables) };
+            unsafe { hash_tbls.get_unchecked(hash_to_partition(k.dirty_hash(), n_tables)) };
 
         let value = current_probe_table.get(&k);
 
@@ -42,7 +43,7 @@ pub(super) fn hash_join_tuples_inner<T, I>(
 where
     I: IntoIterator<Item = T> + Send + Sync + Clone,
     // <I as IntoIterator>::IntoIter: TrustedLen,
-    T: Send + Hash + Eq + Sync + Copy + AsU64,
+    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
 {
     // NOTE: see the left join for more elaborate comments
     // first we hash one relation
@@ -59,7 +60,7 @@ where
         build_tables(build)
     };
 
-    let n_tables = hash_tbls.len() as u64;
+    let n_tables = hash_tbls.len();
     let offsets = probe_to_offsets(&probe);
     // next we probe the other relation
     // code duplication is because we want to only do the swap check once
