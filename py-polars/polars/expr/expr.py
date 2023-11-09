@@ -5194,7 +5194,7 @@ class Expr:
         >>> df = pl.DataFrame(
         ...     {"sets": [[1, 2, 3], [1, 2], [9, 10]], "optional_members": [1, 2, 3]}
         ... )
-        >>> df.select(pl.col("optional_members").is_in("sets").alias("contains"))
+        >>> df.with_columns(contains=pl.col("optional_members").is_in("sets"))
         shape: (3, 1)
         ┌──────────┐
         │ contains │
