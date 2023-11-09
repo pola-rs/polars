@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars.datatypes import (
-    NUMERIC_DTYPES,
+    FLOAT_DTYPES,
     Array,
     Categorical,
     Decimal,
@@ -151,7 +151,7 @@ def _assert_series_values_equal(
         )
 
     # Check nested dtypes in separate function
-    if _comparing_nested_numerics(left.dtype, right.dtype):
+    if _comparing_nested_floats(left.dtype, right.dtype):
         try:
             _assert_series_nested_values_equal(
                 left=left.filter(unequal),
@@ -264,11 +264,13 @@ def _comparing_structs(left: PolarsDataType, right: PolarsDataType) -> bool:
     return left == Struct and right == Struct
 
 
-def _comparing_nested_numerics(left: PolarsDataType, right: PolarsDataType) -> bool:
+def _comparing_nested_floats(left: PolarsDataType, right: PolarsDataType) -> bool:
     if not (_comparing_lists(left, right) or _comparing_structs(left, right)):
         return False
 
-    return bool(NUMERIC_DTYPES & unpack_dtypes(left, right))
+    return bool(FLOAT_DTYPES & unpack_dtypes(left)) and bool(
+        FLOAT_DTYPES & unpack_dtypes(right)
+    )
 
 
 def _assert_series_values_within_tolerance(
