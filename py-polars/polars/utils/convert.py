@@ -46,6 +46,11 @@ if sys.version_info >= (3, 11):
     _reverse_mapping_views = tuple(type(reversed(view)) for view in _views)
 
 SECONDS_PER_DAY = 86_400
+SECONDS_PER_HOUR = 3_600
+NS_PER_SECOND = 1_000_000_000
+US_PER_SECOND = 1_000_000
+MS_PER_SECOND = 1_000
+
 EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
 EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
@@ -97,9 +102,9 @@ def _negate_duration(duration: str) -> str:
 
 def _time_to_pl_time(t: time) -> int:
     t = t.replace(tzinfo=timezone.utc)
-    return (
-        t.hour * 3_600 + t.minute * 60 + t.second
-    ) * 1_000_000_000 + t.microsecond * 1_000
+    seconds = t.hour * SECONDS_PER_HOUR + t.minute * 60 + t.second
+    microseconds = t.microsecond
+    return seconds * NS_PER_SECOND + microseconds * 1_000
 
 
 def _date_to_pl_date(d: date) -> int:
@@ -115,11 +120,11 @@ def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
     microseconds = dt.microsecond
     seconds = _timestamp_in_seconds(dt)
     if time_unit == "ns":
-        return 1_000 * (seconds * 1_000_000 + microseconds)
+        return seconds * NS_PER_SECOND + microseconds * 1_000
     elif time_unit == "us" or time_unit is None:
-        return seconds * 1_000_000 + microseconds
+        return seconds * US_PER_SECOND + microseconds
     elif time_unit == "ms":
-        return seconds * 1_000 + microseconds // 1_000
+        return seconds * MS_PER_SECOND + microseconds // 1_000
     raise ValueError(
         f"`time_unit` must be one of {{'ms', 'us', 'ns'}}, got {time_unit!r}"
     )
@@ -130,11 +135,11 @@ def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None) -> int
     microseconds = td.microseconds
     seconds = td.days * SECONDS_PER_DAY + td.seconds
     if time_unit == "ns":
-        return 1_000 * (seconds * 1_000_000 + microseconds)
+        return seconds * NS_PER_SECOND + microseconds * 1_000
     elif time_unit == "us" or time_unit is None:
-        return seconds * 1_000_000 + microseconds
+        return seconds * US_PER_SECOND + microseconds
     elif time_unit == "ms":
-        return seconds * 1_000 + microseconds // 1_000
+        return seconds * MS_PER_SECOND + microseconds // 1_000
 
 
 def _to_python_time(value: int) -> time:
@@ -142,7 +147,7 @@ def _to_python_time(value: int) -> time:
     if value == 0:
         return time(microsecond=0)
     else:
-        seconds, nanoseconds = divmod(value, 1_000_000_000)
+        seconds, nanoseconds = divmod(value, NS_PER_SECOND)
         minutes, seconds = divmod(seconds, 60)
         hours, minutes = divmod(minutes, 60)
         return time(
@@ -159,9 +164,10 @@ def _to_python_timedelta(
         return timedelta(microseconds=value)
     elif time_unit == "ms":
         return timedelta(milliseconds=value)
-    raise ValueError(
-        f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
-    )
+    else:
+        raise ValueError(
+            f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
+        )
 
 
 @lru_cache(256)
