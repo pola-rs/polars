@@ -47,7 +47,7 @@ fn any_values_to_decimal(
     // two-pass approach, first we scan and record the scales, then convert (or not)
     let mut scale_range: Option<(usize, usize)> = None;
     for av in avs {
-        let s_av = if av.is_signed() || av.is_unsigned() {
+        let s_av = if av.is_signed_integer() || av.is_unsigned_integer() {
             0 // integers are treated as decimals with scale of zero
         } else if let AnyValue::Decimal(_, scale) = av {
             *scale
@@ -80,7 +80,7 @@ fn any_values_to_decimal(
     let mut builder = PrimitiveChunkedBuilder::<Int128Type>::new("", avs.len());
     let is_equally_scaled = s_min == s_max && s_max == scale;
     for av in avs {
-        let (v, s_av) = if av.is_signed() || av.is_unsigned() {
+        let (v, s_av) = if av.is_signed_integer() || av.is_unsigned_integer() {
             (
                 av.try_extract::<i128>().unwrap_or_else(|_| unreachable!()),
                 0,

@@ -8,6 +8,8 @@ from polars.datatypes import (
     UNSIGNED_INTEGER_DTYPES,
     Array,
     Categorical,
+    Decimal,
+    Float64,
     Int64,
     List,
     Struct,
@@ -39,7 +41,7 @@ def assert_series_equal(
     """
     Assert that the left and right Series are equal.
 
-    Raises a detailed ``AssertionError`` if the Series differ.
+    Raises a detailed `AssertionError` if the Series differ.
     This function is intended for use in unit tests.
 
     Parameters
@@ -53,12 +55,12 @@ def assert_series_equal(
     check_names
         Require names to match.
     check_exact
-        Require data values to match exactly. If set to ``False``, values are considered
-        equal when within tolerance of each other (see ``rtol`` and ``atol``).
+        Require data values to match exactly. If set to `False`, values are considered
+        equal when within tolerance of each other (see `rtol` and `atol`).
         Logical types like dates are always checked exactly.
     rtol
         Relative tolerance for inexact checking, given as a fraction of the values in
-        ``right``.
+        `right`.
     atol
         Absolute tolerance for inexact checking.
     categorical_as_str
@@ -69,7 +71,7 @@ def assert_series_equal(
 
         .. deprecated: 0.19.12
             This parameter will be removed. Default behaviour will remain as though it
-            were set to ``True``.
+            were set to `True`.
 
     See Also
     --------
@@ -79,7 +81,7 @@ def assert_series_equal(
     Notes
     -----
     When using pytest, it may be worthwhile to shorten Python traceback printing
-    by passing ``--tb=short``. The default mode tends to be unhelpfully verbose.
+    by passing `--tb=short`. The default mode tends to be unhelpfully verbose.
     More information in the
     `pytest docs <https://docs.pytest.org/en/latest/how-to/output.html#modifying-python-traceback-printing>`_.
 
@@ -151,13 +153,13 @@ def _assert_series_values_equal(
         if right.dtype == Categorical:
             right = right.cast(Utf8)
 
-    # Handle arrays
-    # TODO: Remove this check when equality for Arrays is implemented
-    # https://github.com/pola-rs/polars/issues/12012
-    if left.dtype == Array:
-        left = left.cast(List(left.dtype.inner))  # type: ignore[union-attr]
-    if right.dtype == Array:
-        right = right.cast(List(right.dtype.inner))  # type: ignore[union-attr]
+    # Handle decimals
+    # TODO: Delete this branch when Decimal equality is implemented
+    # https://github.com/pola-rs/polars/issues/12118
+    if left.dtype == Decimal:
+        left = left.cast(Float64)
+    if right.dtype == Decimal:
+        right = right.cast(Float64)
 
     # Determine unequal elements
     try:
@@ -178,15 +180,25 @@ def _assert_series_values_equal(
 
     # Check nested dtypes in separate function
     if _comparing_nested_numerics(left.dtype, right.dtype):
-        if _assert_series_nested(
-            left=left.filter(unequal),
-            right=right.filter(unequal),
-            check_exact=check_exact,
-            rtol=rtol,
-            atol=atol,
-            nans_compare_equal=nans_compare_equal,
-            categorical_as_str=categorical_as_str,
-        ):
+        try:
+            _assert_series_nested_values_equal(
+                left=left.filter(unequal),
+                right=right.filter(unequal),
+                check_exact=check_exact,
+                rtol=rtol,
+                atol=atol,
+                nans_compare_equal=nans_compare_equal,
+                categorical_as_str=categorical_as_str,
+            )
+        except AssertionError as exc:
+            raise_assertion_error(
+                "Series",
+                "nested value mismatch",
+                left=left.to_list(),
+                right=right.to_list(),
+                cause=exc,
+            )
+        else:  # All nested values match
             return
 
     # If no differences found during exact checking, we're done
@@ -200,10 +212,7 @@ def _assert_series_values_equal(
         or right.dtype not in NUMERIC_DTYPES
     ):
         raise_assertion_error(
-            "Series",
-            "exact value mismatch",
-            left=left.to_list(),
-            right=right.to_list(),
+            "Series", "exact value mismatch", left=left.to_list(), right=right.to_list()
         )
 
     _assert_series_null_values_match(left, right)
@@ -215,6 +224,47 @@ def _assert_series_values_equal(
         rtol=rtol,
         atol=atol,
     )
+
+
+def _assert_series_nested_values_equal(
+    left: Series,
+    right: Series,
+    *,
+    check_exact: bool,
+    rtol: float,
+    atol: float,
+    nans_compare_equal: bool,
+    categorical_as_str: bool,
+) -> None:
+    # compare nested lists element-wise
+    if _comparing_lists(left.dtype, right.dtype):
+        for s1, s2 in zip(left, right):
+            if s1 is None or s2 is None:
+                raise_assertion_error("Series", "nested value mismatch", s1, s2)
+
+            _assert_series_values_equal(
+                s1,
+                s2,
+                check_exact=check_exact,
+                rtol=rtol,
+                atol=atol,
+                nans_compare_equal=nans_compare_equal,
+                categorical_as_str=categorical_as_str,
+            )
+
+    # unnest structs as series and compare
+    else:
+        ls, rs = left.struct.unnest(), right.struct.unnest()
+        for s1, s2 in zip(ls, rs):
+            _assert_series_values_equal(
+                s1,
+                s2,
+                check_exact=check_exact,
+                rtol=rtol,
+                atol=atol,
+                nans_compare_equal=nans_compare_equal,
+                categorical_as_str=categorical_as_str,
+            )
 
 
 def _assert_series_null_values_match(left: Series, right: Series) -> None:
@@ -248,53 +298,6 @@ def _assert_series_nan_values_match(
             left.to_list(),
             right.to_list(),
         )
-
-
-def _assert_series_nested(
-    left: Series,
-    right: Series,
-    *,
-    check_exact: bool,
-    rtol: float,
-    atol: float,
-    nans_compare_equal: bool,
-    categorical_as_str: bool,
-) -> bool:
-    # compare nested lists element-wise
-    if _comparing_lists(left.dtype, right.dtype):
-        for s1, s2 in zip(left, right):
-            if (s1 is None and s2 is not None) or (s2 is None and s1 is not None):
-                raise_assertion_error("Series", "nested value mismatch", s1, s2)
-
-            _assert_series_values_equal(
-                s1,
-                s2,
-                check_exact=check_exact,
-                rtol=rtol,
-                atol=atol,
-                nans_compare_equal=nans_compare_equal,
-                categorical_as_str=categorical_as_str,
-            )
-        return True
-
-    # unnest structs as series and compare
-    elif _comparing_structs(left.dtype, right.dtype):
-        ls, rs = left.struct.unnest(), right.struct.unnest()
-        for s1, s2 in zip(ls, rs):
-            _assert_series_values_equal(
-                s1,
-                s2,
-                check_exact=check_exact,
-                rtol=rtol,
-                atol=atol,
-                nans_compare_equal=nans_compare_equal,
-                categorical_as_str=categorical_as_str,
-            )
-        return True
-    else:
-        # fall-back to outer codepath (if mismatched dtypes we would expect
-        # the equality check to fail - unless ALL series values are null)
-        return False
 
 
 def _comparing_floats(left: PolarsDataType, right: PolarsDataType) -> bool:
@@ -380,12 +383,12 @@ def assert_series_not_equal(
     check_names
         Require names to match.
     check_exact
-        Require data values to match exactly. If set to ``False``, values are considered
-        equal when within tolerance of each other (see ``rtol`` and ``atol``).
+        Require data values to match exactly. If set to `False`, values are considered
+        equal when within tolerance of each other (see `rtol` and `atol`).
         Logical types like dates are always checked exactly.
     rtol
         Relative tolerance for inexact checking, given as a fraction of the values in
-        ``right``.
+        `right`.
     atol
         Absolute tolerance for inexact checking.
     categorical_as_str
@@ -396,7 +399,7 @@ def assert_series_not_equal(
 
         .. deprecated: 0.19.12
             This parameter will be removed. Default behaviour will remain as though it
-            were set to ``True``.
+            were set to `True`.
 
     See Also
     --------

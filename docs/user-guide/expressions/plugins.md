@@ -1,8 +1,8 @@
 # Expression plugins
 
-Expression plugins are the preferred way to create user defined functions. They allow you to compile a rust function
-and register that as an expression into the polars library. The polars engine will dynamically link your function at runtime
-and your expression will run almost as fast as native expressions. Note that this works without any interference of python
+Expression plugins are the preferred way to create user defined functions. They allow you to compile a Rust function
+and register that as an expression into the Polars library. The Polars engine will dynamically link your function at runtime
+and your expression will run almost as fast as native expressions. Note that this works without any interference of Python
 and thus no GIL contention.
 
 They will benefit from the same benefits default expressions have:
@@ -45,10 +45,11 @@ serde = { version = "*", features = ["derive"] }
 ### Writing the expression
 
 In this library we create a helper function that converts a `&str` to pig-latin, and we create the function that we will
-expose as an expression. To expose a function we must add the `#[polars_expr(output=DataType)]` attribute and the function
+expose as an expression. To expose a function we must add the `#[polars_expr(output_type=DataType)]` attribute and the function
 must always accept `inputs: &[Series]` as its first argument.
 
 ```rust
+// src/expressions.rs
 use polars::prelude::*;
 use pyo3_polars::derive::polars_expr;
 use std::fmt::Write;
@@ -67,22 +68,35 @@ fn pig_latinnify(inputs: &[Series]) -> PolarsResult<Series> {
 }
 ```
 
-This is all that is needed on the rust side. On the python side we must setup a folder with the same name as defined in
-the `Cargo.toml`, in this case "expression_lib". We will create a folder in the same directory as our rust `src` folder
-named `expression_lib` and we create an `expression_lib/init.py`.
+This is all that is needed on the Rust side. On the Python side we must setup a folder with the same name as defined in
+the `Cargo.toml`, in this case "expression_lib". We will create a folder in the same directory as our Rust `src` folder
+named `expression_lib` and we create an `expression_lib/__init__.py`. The resulting file structure should look something like this:
+
+```
+├── 📁 expression_lib/  # name must match "lib.name" in Cargo.toml
+|   └── __init__.py
+|
+├── 📁src/
+|   ├── lib.rs
+|   └── expressions.rs
+|
+├── Cargo.toml
+└── pyproject.toml
+```
 
 Then we create a new class `Language` that will hold the expressions for our new `expr.language` namespace. The function
-name of our expression can be registered. Note that it is important that this name is correct, otherwise the main polars
-package cannot resolve the function name. Furthermore we can set additional keyword arguments that explain to polars how
-this expression behaves. In this case we tell polars that this function is elementwise. This allows polars to run this
+name of our expression can be registered. Note that it is important that this name is correct, otherwise the main Polars
+package cannot resolve the function name. Furthermore we can set additional keyword arguments that explain to Polars how
+this expression behaves. In this case we tell Polars that this function is elementwise. This allows Polars to run this
 expression in batches. Whereas for other operations this would not be allowed, think for instance of a sort, or a slice.
 
 ```python
+# expression_lib/__init__.py
 import polars as pl
 from polars.type_aliases import IntoExpr
 from polars.utils.udfs import _get_shared_lib_location
 
-# boilerplate needed to inform polars of the location of binary wheel.
+# Boilerplate needed to inform Polars of the location of binary wheel.
 lib = _get_shared_lib_location(__file__)
 
 @pl.api.register_expr_namespace("language")
@@ -120,7 +134,7 @@ out = df.with_columns(
 
 ## Accepting kwargs
 
-If you want to accept `kwargs` (keyword arguments) in a polars expression, all you have to do is define a rust `struct`
+If you want to accept `kwargs` (keyword arguments) in a polars expression, all you have to do is define a Rust `struct`
 and make sure that it derives `serde::Deserialize`.
 
 ```rust
@@ -136,7 +150,7 @@ pub struct MyKwargs {
 
 /// If you want to accept `kwargs`. You define a `kwargs` argument
 /// on the second position in you plugin. You can provide any custom struct that is deserializable
-/// with the pickle protocol (on the rust side).
+/// with the pickle protocol (on the Rust side).
 #[polars_expr(output_type=Utf8)]
 fn append_kwargs(input: &[Series], kwargs: MyKwargs) -> PolarsResult<Series> {
     let input = &input[0];
@@ -156,14 +170,14 @@ fn append_kwargs(input: &[Series], kwargs: MyKwargs) -> PolarsResult<Series> {
 }
 ```
 
-On the python side the kwargs can be passed when we register the plugin.
+On the Python side the kwargs can be passed when we register the plugin.
 
 ```python
 @pl.api.register_expr_namespace("my_expr")
 class MyCustomExpr:
     def __init__(self, expr: pl.Expr):
         self._expr = expr
-        
+
     def append_args(
             self,
             float_arg: float,

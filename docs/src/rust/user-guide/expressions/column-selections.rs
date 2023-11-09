@@ -22,6 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:all]
     let out = df.clone().lazy().select([col("*")]).collect()?;
+    println!("{}", &out);
 
     // Is equivalent to
     let out = df.clone().lazy().select([all()]).collect()?;

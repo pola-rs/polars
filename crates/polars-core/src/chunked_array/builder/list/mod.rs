@@ -124,6 +124,12 @@ pub fn get_list_builder(
             list_capacity,
             Some(inner_type_logical.clone()),
         ))),
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(..) => Ok(Box::new(AnonymousOwnedListBuilder::new(
+            name,
+            list_capacity,
+            Some(inner_type_logical.clone()),
+        ))),
         _ => {
             macro_rules! get_primitive_builder {
                 ($type:ty) => {{

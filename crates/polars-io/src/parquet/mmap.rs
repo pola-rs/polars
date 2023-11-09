@@ -1,4 +1,5 @@
 use arrow::datatypes::Field;
+#[cfg(feature = "async")]
 use bytes::Bytes;
 #[cfg(feature = "async")]
 use polars_core::datatypes::PlHashMap;

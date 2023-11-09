@@ -23,9 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let df = df
         .clone()
         .lazy()
-        .with_columns([col("Date")
-            .str()
-            .to_date(StrptimeOptions::default(), lit("raise"))])
+        .with_columns([col("Date").str().to_date(StrptimeOptions::default())])
         .collect()?;
     println!("{}", &df);
     // --8<-- [end:cast]
@@ -58,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let q = col("date")
         .str()
         .to_datetime(
-            TimeUnit::Microseconds,
+            Some(TimeUnit::Microseconds),
             None,
             StrptimeOptions {
                 format: Some("%Y-%m-%dT%H:%M:%S%z".to_string()),

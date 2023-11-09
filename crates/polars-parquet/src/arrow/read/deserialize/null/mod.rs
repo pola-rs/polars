@@ -61,6 +61,7 @@ mod tests {
     use super::iter_to_arrays;
     use crate::parquet::encoding::Encoding;
     use crate::parquet::error::Error as ParquetError;
+    use crate::parquet::fallible_streaming_iterator;
     use crate::parquet::metadata::Descriptor;
     use crate::parquet::page::{DataPage, DataPageHeader, DataPageHeaderV1, Page};
     use crate::parquet::schema::types::{PhysicalType, PrimitiveType};

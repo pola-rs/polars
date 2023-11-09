@@ -7,8 +7,12 @@ use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {
-    fn str_concat(&self, delimiter: &str) -> Self {
-        self.inner.clone().str().concat(delimiter).into()
+    fn str_concat(&self, delimiter: &str, ignore_nulls: bool) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .concat(delimiter, ignore_nulls)
+            .into()
     }
 
     #[pyo3(signature = (format, strict, exact, cache))]
@@ -167,53 +171,21 @@ impl PyExpr {
     }
 
     fn str_hex_encode(&self) -> Self {
-        self.inner
-            .clone()
-            .map(
-                move |s| s.utf8().map(|s| Some(s.hex_encode().into_series())),
-                GetOutput::same_type(),
-            )
-            .with_fmt("str.hex_encode")
-            .into()
+        self.inner.clone().str().hex_encode().into()
     }
 
     #[cfg(feature = "binary_encoding")]
     fn str_hex_decode(&self, strict: bool) -> Self {
-        self.inner
-            .clone()
-            .map(
-                move |s| s.utf8()?.hex_decode(strict).map(|s| Some(s.into_series())),
-                GetOutput::from_type(DataType::Binary),
-            )
-            .with_fmt("str.hex_decode")
-            .into()
+        self.inner.clone().str().hex_decode(strict).into()
     }
 
     fn str_base64_encode(&self) -> Self {
-        self.inner
-            .clone()
-            .map(
-                move |s| s.utf8().map(|s| Some(s.base64_encode().into_series())),
-                GetOutput::same_type(),
-            )
-            .with_fmt("str.base64_encode")
-            .into()
+        self.inner.clone().str().base64_encode().into()
     }
 
     #[cfg(feature = "binary_encoding")]
     fn str_base64_decode(&self, strict: bool) -> Self {
-        self.inner
-            .clone()
-            .map(
-                move |s| {
-                    s.utf8()?
-                        .base64_decode(strict)
-                        .map(|s| Some(s.into_series()))
-                },
-                GetOutput::from_type(DataType::Binary),
-            )
-            .with_fmt("str.base64_decode")
-            .into()
+        self.inner.clone().str().base64_decode(strict).into()
     }
 
     fn str_parse_int(&self, radix: u32, strict: bool) -> Self {

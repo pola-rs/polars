@@ -75,10 +75,10 @@ impl<'a> PredicatePushDown<'a> {
         let exprs = lp.get_exprs();
 
         if has_projections {
-            // we should not pass these projections
+            // This checks the exprs in the projections at this level.
             if exprs
                 .iter()
-                .any(|e_n| projection_is_definite_pushdown_boundary(*e_n, expr_arena))
+                .any(|e_n| aexpr_blocks_predicate_pushdown(*e_n, expr_arena))
             {
                 return self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
             }
@@ -191,12 +191,41 @@ impl<'a> PredicatePushDown<'a> {
 
         match lp {
             Selection { predicate, input } => {
-
-                // If a predicates result would be influenced by earlier applied filter
-                // we remove it and apply it locally
-                let local_predicates = transfer_to_local_by_node(&mut acc_predicates, |node| predicate_is_pushdown_boundary(node, expr_arena));
-
                 insert_and_combine_predicate(&mut acc_predicates, predicate, expr_arena);
+
+                // If the result of any predicate depends on the predicates that
+                // occur before it, then we must stop pushdown of all accumulated
+                // predicates at this level. Otherwise, if they are pushed past
+                // the boundary predicate, then the value of the boundary
+                // predicate itself will change and become incorrect.
+                // For example:
+                // (unoptimized)
+                // filter(y > 1) --> filter(x == min(x)) --> filter(y > 2)
+                //
+                // (incorrectly optimized)
+                // filter(y > 1) & filter(y > 2) --> filter(x == min(x))
+                // incorrect as min(x) in the subset where y > 2 may not be equal
+                // to min(x) in the subset where y > 1
+                //
+                // (correctly optimized)
+                // filter(y > 1) --> filter(x == min(x)) & filter(y > 2)
+                // pushdown of filter(y > 2) is correctly stopped at the boundary
+                //
+                // Assuming all predicates originate from the `Selection` node
+                // at the beginning of optimization, applying this step here
+                // guarantees that boundary predicates will not appear in other
+                // contexts. Note boundary projections are handled elsewhere.
+                let local_predicates = if acc_predicates
+                    .values()
+                    .any(|node| aexpr_blocks_predicate_pushdown(*node, expr_arena))
+                {
+                    let local_predicates = acc_predicates.values().copied().collect::<Vec<_>>();
+                    acc_predicates.clear();
+                    local_predicates
+                } else {
+                    vec![]
+                };
+
                 let alp = lp_arena.take(input);
                 let new_input = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
 
@@ -232,7 +261,29 @@ impl<'a> PredicatePushDown<'a> {
                 file_options: options,
                 output_schema
             } => {
-                let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
+                for node in acc_predicates.values() {
+                    debug_assert_aexpr_allows_predicate_pushdown(*node, expr_arena);
+                }
+
+                let local_predicates = match &scan_type {
+                    #[cfg(feature = "parquet")]
+                    FileScan::Parquet { .. } => vec![],
+                    #[cfg(feature = "ipc")]
+                    FileScan::Ipc { .. } => vec![],
+                    _ => {
+                        // Disallow row-count pushdown of other scans as they may
+                        // not update the row counts properly before applying the
+                        // predicate (e.g. FileScan::Csv doesn't).
+                        if let Some(ref row_count) = options.row_count {
+                            let row_count_predicates = transfer_to_local_by_name(expr_arena, &mut acc_predicates, |name| {
+                                name.as_ref() == row_count.name
+                            });
+                            row_count_predicates
+                        } else {
+                            vec![]
+                        }
+                    }
+                };
                 let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
                 if let (true, Some(predicate)) = (file_info.hive_parts.is_some(), predicate) {
@@ -242,7 +293,7 @@ impl<'a> PredicatePushDown<'a> {
 
 
                             for path in paths.as_ref().iter() {
-                                file_info.update_hive_partitions(path);
+                                file_info.update_hive_partitions(path)?;
                                 let hive_part_stats = file_info.hive_parts.as_deref().ok_or_else(|| polars_err!(ComputeError: "cannot combine hive partitioned directories with non-hive partitioned ones"))?;
 
                                 if stats_evaluator.should_read(hive_part_stats.get_statistics())? {
@@ -278,6 +329,7 @@ impl<'a> PredicatePushDown<'a> {
                     #[cfg(feature = "csv")]
                     FileScan::Csv {..} => options.n_rows.is_none(),
                     FileScan::Anonymous {function, ..} => function.allows_predicate_pushdown(),
+                    #[allow(unreachable_patterns)]
                     _ => true
                 };
                 do_optimization &= predicate.is_some();
@@ -336,9 +388,8 @@ impl<'a> PredicatePushDown<'a> {
                             true
                         }
                     };
-                    let mut local_predicates =
+                    let local_predicates =
                         transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
-                    local_predicates.extend_from_slice(&transfer_to_local_by_node(&mut acc_predicates, |node| predicate_is_pushdown_boundary(node, expr_arena)));
 
                     self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
                     let lp = Distinct {
@@ -395,14 +446,8 @@ impl<'a> PredicatePushDown<'a> {
                             let condition = |name: Arc<str>| columns.iter().any(|s| s.as_ref() == &*name);
 
                             // first columns that refer to the exploded columns should be done here
-                            let mut local_predicates =
+                            let local_predicates =
                                 transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
-
-                            // if any predicate is a pushdown boundary, thus influenced by order of predicates e.g.: sum(), over(), sort
-                            // we do all here. #5950
-                            if acc_predicates.values().chain(local_predicates.iter()).any(|node| predicate_is_pushdown_boundary(*node, expr_arena)) {
-                                local_predicates.extend(acc_predicates.drain().map(|(_name, node)| node))
-                            }
 
                             let lp = self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
                             Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))

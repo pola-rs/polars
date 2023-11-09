@@ -2,6 +2,7 @@ use arrow::legacy::utils::CustomIterTools;
 use polars_ops::chunked_array::list::*;
 
 use super::*;
+use crate::{map, map_as_slice, wrap};
 
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -47,6 +48,60 @@ pub enum ListFunction {
     #[cfg(feature = "list_any_all")]
     All,
     Join,
+    #[cfg(feature = "dtype-array")]
+    ToArray(usize),
+}
+
+impl ListFunction {
+    pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
+        use ListFunction::*;
+        match self {
+            Concat => mapper.map_to_list_supertype(),
+            #[cfg(feature = "is_in")]
+            Contains => mapper.with_dtype(DataType::Boolean),
+            #[cfg(feature = "list_drop_nulls")]
+            DropNulls => mapper.with_same_dtype(),
+            #[cfg(feature = "list_sample")]
+            Sample { .. } => mapper.with_same_dtype(),
+            Slice => mapper.with_same_dtype(),
+            Shift => mapper.with_same_dtype(),
+            Get => mapper.map_to_list_and_array_inner_dtype(),
+            #[cfg(feature = "list_take")]
+            Take(_) => mapper.with_same_dtype(),
+            #[cfg(feature = "list_count")]
+            CountMatches => mapper.with_dtype(IDX_DTYPE),
+            Sum => mapper.nested_sum_type(),
+            Min => mapper.map_to_list_and_array_inner_dtype(),
+            Max => mapper.map_to_list_and_array_inner_dtype(),
+            Mean => mapper.with_dtype(DataType::Float64),
+            ArgMin => mapper.with_dtype(IDX_DTYPE),
+            ArgMax => mapper.with_dtype(IDX_DTYPE),
+            #[cfg(feature = "diff")]
+            Diff { .. } => mapper.with_same_dtype(),
+            Sort(_) => mapper.with_same_dtype(),
+            Reverse => mapper.with_same_dtype(),
+            Unique(_) => mapper.with_same_dtype(),
+            Length => mapper.with_dtype(IDX_DTYPE),
+            #[cfg(feature = "list_sets")]
+            SetOperation(_) => mapper.with_same_dtype(),
+            #[cfg(feature = "list_any_all")]
+            Any => mapper.with_dtype(DataType::Boolean),
+            #[cfg(feature = "list_any_all")]
+            All => mapper.with_dtype(DataType::Boolean),
+            Join => mapper.with_dtype(DataType::Utf8),
+            #[cfg(feature = "dtype-array")]
+            ToArray(width) => mapper.try_map_dtype(|dt| map_list_dtype_to_array_dtype(dt, *width)),
+        }
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+fn map_list_dtype_to_array_dtype(datatype: &DataType, width: usize) -> PolarsResult<DataType> {
+    if let DataType::List(inner) = datatype {
+        Ok(DataType::Array(inner.clone(), width))
+    } else {
+        polars_bail!(ComputeError: "expected List dtype")
+    }
 }
 
 impl Display for ListFunction {
@@ -99,8 +154,64 @@ impl Display for ListFunction {
             #[cfg(feature = "list_any_all")]
             All => "all",
             Join => "join",
+            #[cfg(feature = "dtype-array")]
+            ToArray(_) => "to_array",
         };
         write!(f, "list.{name}")
+    }
+}
+
+impl From<ListFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+    fn from(func: ListFunction) -> Self {
+        use ListFunction::*;
+        match func {
+            Concat => wrap!(concat),
+            #[cfg(feature = "is_in")]
+            Contains => wrap!(contains),
+            #[cfg(feature = "list_drop_nulls")]
+            DropNulls => map!(drop_nulls),
+            #[cfg(feature = "list_sample")]
+            Sample {
+                is_fraction,
+                with_replacement,
+                shuffle,
+                seed,
+            } => {
+                if is_fraction {
+                    map_as_slice!(sample_fraction, with_replacement, shuffle, seed)
+                } else {
+                    map_as_slice!(sample_n, with_replacement, shuffle, seed)
+                }
+            },
+            Slice => wrap!(slice),
+            Shift => map_as_slice!(shift),
+            Get => wrap!(get),
+            #[cfg(feature = "list_take")]
+            Take(null_ob_oob) => map_as_slice!(take, null_ob_oob),
+            #[cfg(feature = "list_count")]
+            CountMatches => map_as_slice!(count_matches),
+            Sum => map!(sum),
+            Length => map!(length),
+            Max => map!(max),
+            Min => map!(min),
+            Mean => map!(mean),
+            ArgMin => map!(arg_min),
+            ArgMax => map!(arg_max),
+            #[cfg(feature = "diff")]
+            Diff { n, null_behavior } => map!(diff, n, null_behavior),
+            Sort(options) => map!(sort, options),
+            Reverse => map!(reverse),
+            Unique(is_stable) => map!(unique, is_stable),
+            #[cfg(feature = "list_sets")]
+            SetOperation(s) => map_as_slice!(set_operation, s),
+            #[cfg(feature = "list_any_all")]
+            Any => map!(lst_any),
+            #[cfg(feature = "list_any_all")]
+            All => map!(lst_all),
+            Join => map_as_slice!(join),
+            #[cfg(feature = "dtype-array")]
+            ToArray(width) => map!(to_array, width),
+        }
     }
 }
 
@@ -423,4 +534,10 @@ pub(super) fn join(s: &[Series]) -> PolarsResult<Series> {
     let ca = s[0].list()?;
     let separator = s[1].utf8()?;
     Ok(ca.lst_join(separator)?.into_series())
+}
+
+#[cfg(feature = "dtype-array")]
+pub(super) fn to_array(s: &Series, width: usize) -> PolarsResult<Series> {
+    let array_dtype = map_list_dtype_to_array_dtype(s.dtype(), width)?;
+    s.cast(&array_dtype)
 }

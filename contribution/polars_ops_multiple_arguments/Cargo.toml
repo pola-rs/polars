@@ -1,8 +1,0 @@
-[package]
-name = "polars_ops_multiple_arguments"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-polars = { path = "../../crates/polars" }
-polars-core = { path = "../../crates/polars-core" }

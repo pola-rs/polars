@@ -48,6 +48,13 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.time
     Series.dt.timestamp
     Series.dt.to_string
+    Series.dt.total_days
+    Series.dt.total_hours
+    Series.dt.total_microseconds
+    Series.dt.total_milliseconds
+    Series.dt.total_minutes
+    Series.dt.total_nanoseconds
+    Series.dt.total_seconds
     Series.dt.truncate
     Series.dt.week
     Series.dt.weekday

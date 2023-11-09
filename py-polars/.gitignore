@@ -1,5 +1,4 @@
 wheels/
-!Cargo.lock
 target/
 venv/
 .venv/

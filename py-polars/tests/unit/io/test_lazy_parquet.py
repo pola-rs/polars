@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import OrderedDict
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
@@ -9,8 +11,6 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from polars.type_aliases import ParallelStrategy
 
 
@@ -27,6 +27,13 @@ def foods_parquet_path(io_files_path: Path) -> Path:
 def test_scan_parquet(parquet_file_path: Path) -> None:
     df = pl.scan_parquet(parquet_file_path)
     assert df.collect().shape == (4, 3)
+
+
+def test_scan_parquet_local_with_async(
+    monkeypatch: Any, foods_parquet_path: Path
+) -> None:
+    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    pl.scan_parquet(foods_parquet_path.relative_to(Path.cwd())).head(1).collect()
 
 
 def test_row_count(foods_parquet_path: Path) -> None:
@@ -359,7 +366,7 @@ def test_parquet_struct_categorical(tmp_path: Path) -> None:
 
     with pl.StringCache():
         out = pl.read_parquet(file_path).select(pl.col("b").value_counts())
-    assert out.to_dict(False) == {"b": [{"b": "foo", "counts": 1}]}
+    assert out.to_dict(as_series=False) == {"b": [{"b": "foo", "counts": 1}]}
 
 
 def test_glob_n_rows(io_files_path: Path) -> None:
@@ -370,7 +377,7 @@ def test_glob_n_rows(io_files_path: Path) -> None:
     assert df.shape == (40, 4)
 
     # take first and last rows
-    assert df[[0, 39]].to_dict(False) == {
+    assert df[[0, 39]].to_dict(as_series=False) == {
         "category": ["vegetables", "seafood"],
         "calories": [45, 146],
         "fats_g": [0.5, 6.0],
@@ -388,7 +395,7 @@ def test_parquet_statistics_filter_9925(tmp_path: Path) -> None:
     q = pl.scan_parquet(file_path).filter(
         (pl.col("code").floordiv(100_000)).is_in([0, 3])
     )
-    assert q.collect().to_dict(False) == {"code": [300964, 300972, 26]}
+    assert q.collect().to_dict(as_series=False) == {"code": [300964, 300972, 26]}
 
 
 @pytest.mark.write_disk()
@@ -396,9 +403,10 @@ def test_parquet_statistics_filter_11069(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "foo.parquet"
     pl.DataFrame({"x": [1, None]}).write_parquet(file_path, statistics=False)
-    assert pl.scan_parquet(file_path).filter(pl.col("x").is_null()).collect().to_dict(
-        False
-    ) == {"x": [None]}
+
+    result = pl.scan_parquet(file_path).filter(pl.col("x").is_null()).collect()
+    expected = {"x": [None]}
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_parquet_list_arg(io_files_path: Path) -> None:
@@ -409,3 +417,22 @@ def test_parquet_list_arg(io_files_path: Path) -> None:
     assert df.shape == (54, 4)
     assert df.row(-1) == ("seafood", 194, 12.0, 1)
     assert df.row(0) == ("vegetables", 45, 0.5, 2)
+
+
+@pytest.mark.write_disk()
+def test_parquet_many_row_groups_12297(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "foo.parquet"
+    df = pl.DataFrame({"x": range(100)})
+    df.write_parquet(file_path, row_group_size=5, use_pyarrow=True)
+    assert_frame_equal(pl.scan_parquet(file_path).collect(), df)
+
+
+@pytest.mark.write_disk()
+def test_row_count_empty_file(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "test.parquet"
+    pl.DataFrame({"a": []}).write_parquet(file_path)
+    assert pl.scan_parquet(file_path).with_row_count(
+        "idx"
+    ).collect().schema == OrderedDict([("idx", pl.UInt32), ("a", pl.Float32)])

@@ -328,10 +328,11 @@ fn rg_to_dfs_par_over_rg(
     Ok(dfs.into_iter().flatten().collect())
 }
 
-fn materialize_empty_df(
+pub(super) fn materialize_empty_df(
     projection: Option<&[usize]>,
     reader_schema: &ArrowSchema,
     hive_partition_columns: Option<&[Series]>,
+    row_count: Option<&RowCount>,
 ) -> DataFrame {
     let schema = if let Some(projection) = projection {
         Cow::Owned(apply_projection(reader_schema, projection))
@@ -339,7 +340,14 @@ fn materialize_empty_df(
         Cow::Borrowed(reader_schema)
     };
     let mut df = DataFrame::from(schema.as_ref());
+
+    if let Some(row_count) = row_count {
+        df.insert_at_idx(0, Series::new_empty(&row_count.name, &IDX_DTYPE))
+            .unwrap();
+    }
+
     materialize_hive_partitions(&mut df, hive_partition_columns, 0);
+
     df
 }
 
@@ -362,6 +370,7 @@ pub fn read_parquet<R: MmapBytesReader>(
             projection,
             reader_schema,
             hive_partition_columns,
+            row_count.as_ref(),
         ));
     }
 
@@ -416,7 +425,7 @@ pub fn read_parquet<R: MmapBytesReader>(
         &file_metadata,
         reader_schema,
         predicate,
-        row_count,
+        row_count.clone(),
         parallel,
         &materialized_projection,
         use_statistics,
@@ -428,6 +437,7 @@ pub fn read_parquet<R: MmapBytesReader>(
             projection,
             reader_schema,
             hive_partition_columns,
+            row_count.as_ref(),
         ))
     } else {
         accumulate_dataframes_vertical(dfs)
@@ -449,7 +459,7 @@ impl FetchRowGroupsFromMmapReader {
         let reader_bytes = get_reader_bytes(reader_ptr)?;
         Ok(FetchRowGroupsFromMmapReader(reader_bytes))
     }
-    async fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
+    fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
         Ok(mmap::ColumnStore::Local(self.0.deref()))
     }
 }
@@ -478,11 +488,31 @@ impl From<FetchRowGroupsFromMmapReader> for RowGroupFetcher {
 impl RowGroupFetcher {
     async fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
         match self {
-            RowGroupFetcher::Local(f) => f.fetch_row_groups(_row_groups).await,
+            RowGroupFetcher::Local(f) => f.fetch_row_groups(_row_groups),
             #[cfg(feature = "cloud")]
             RowGroupFetcher::ObjectStore(f) => f.fetch_row_groups(_row_groups).await,
         }
     }
+}
+
+pub(super) fn compute_row_group_range(
+    row_group_start: usize,
+    row_group_end: usize,
+    limit: usize,
+    row_groups: &[RowGroupMetaData],
+) -> usize {
+    let mut row_group_end_truncated = row_group_start;
+    let mut acc_row_count = 0;
+
+    #[allow(clippy::needless_range_loop)]
+    for rg_i in row_group_start..(std::cmp::min(row_group_end, row_groups.len())) {
+        if acc_row_count >= limit {
+            break;
+        }
+        row_group_end_truncated = rg_i + 1;
+        acc_row_count += row_groups[rg_i].num_rows();
+    }
+    row_group_end_truncated
 }
 
 pub struct BatchedParquetReader {
@@ -559,6 +589,14 @@ impl BatchedParquetReader {
         &self.schema
     }
 
+    pub fn is_finished(&self) -> bool {
+        self.row_group_offset >= self.n_row_groups
+    }
+
+    pub fn finishes_this_batch(&self, n: usize) -> bool {
+        self.row_group_offset + n > self.n_row_groups
+    }
+
     pub async fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
         if self.limit == 0 && self.has_returned {
             return Ok(None);
@@ -568,17 +606,12 @@ impl BatchedParquetReader {
         if self.row_group_offset <= self.n_row_groups && self.chunks_fifo.len() < n {
             // Ensure we apply the limit on the metadata, before we download the row-groups.
             let row_group_start = self.row_group_offset;
-            let mut row_group_end = row_group_start;
-            let mut acc_row_count = 0;
-            for rg_i in
-                row_group_start..(std::cmp::min(self.row_group_offset + n, self.n_row_groups))
-            {
-                if acc_row_count >= self.limit {
-                    break;
-                }
-                row_group_end = rg_i + 1;
-                acc_row_count += self.metadata.row_groups[rg_i].num_rows();
-            }
+            let row_group_end = compute_row_group_range(
+                row_group_start,
+                row_group_start + n,
+                self.limit,
+                &self.metadata.row_groups,
+            );
 
             let store = self
                 .row_group_fetcher
@@ -602,6 +635,7 @@ impl BatchedParquetReader {
             )?;
 
             self.row_group_offset += n;
+
             // case where there is no data in the file
             // the streaming engine needs at least a single chunk
             if self.rows_read == 0 && dfs.is_empty() {
@@ -609,6 +643,7 @@ impl BatchedParquetReader {
                     Some(&self.projection),
                     self.schema.as_ref(),
                     self.hive_partition_columns.as_deref(),
+                    self.row_count.as_ref(),
                 )]));
             }
 

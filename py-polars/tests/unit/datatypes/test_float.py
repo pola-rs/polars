@@ -25,10 +25,10 @@ def test_nan_aggregations() -> None:
     ]
 
     assert (
-        str(df.select(aggs).to_dict(False))
+        str(df.select(aggs).to_dict(as_series=False))
         == "{'max': [3.0], 'min': [1.0], 'nan_max': [nan], 'nan_min': [nan]}"
     )
     assert (
-        str(df.group_by("b").agg(aggs).to_dict(False))
+        str(df.group_by("b").agg(aggs).to_dict(as_series=False))
         == "{'b': [1], 'max': [3.0], 'min': [1.0], 'nan_max': [nan], 'nan_min': [nan]}"
     )

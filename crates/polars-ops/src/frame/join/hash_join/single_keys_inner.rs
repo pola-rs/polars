@@ -17,7 +17,6 @@ pub(super) fn probe_inner<T, F, I>(
     // <I as IntoIterator>::IntoIter: TrustedLen,
     F: Fn(IdxSize, IdxSize) -> (IdxSize, IdxSize),
 {
-    assert!(hash_tbls.len().is_power_of_two());
     probe.into_iter().enumerate_idx().for_each(|(idx_a, k)| {
         let idx_a = idx_a + local_offset;
         // probe table that contains the hashed value
@@ -41,7 +40,7 @@ pub(super) fn hash_join_tuples_inner<T, I>(
     validate: JoinValidation,
 ) -> PolarsResult<(Vec<IdxSize>, Vec<IdxSize>)>
 where
-    I: IntoIterator<Item = T> + Send + Sync + Copy,
+    I: IntoIterator<Item = T> + Send + Sync + Clone,
     // <I as IntoIterator>::IntoIter: TrustedLen,
     T: Send + Hash + Eq + Sync + Copy + AsU64,
 {
@@ -50,7 +49,7 @@ where
     let hash_tbls = if validate.needs_checks() {
         let expected_size = build
             .iter()
-            .map(|v| v.into_iter().size_hint().1.unwrap())
+            .map(|v| v.clone().into_iter().size_hint().1.unwrap())
             .sum();
         let hash_tbls = build_tables(build);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
@@ -61,7 +60,6 @@ where
     };
 
     let n_tables = hash_tbls.len() as u64;
-    debug_assert!(n_tables.is_power_of_two());
     let offsets = probe_to_offsets(&probe);
     // next we probe the other relation
     // code duplication is because we want to only do the swap check once

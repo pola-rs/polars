@@ -63,18 +63,18 @@ def datetime_(
     use_earliest
         Determine how to deal with ambiguous datetimes:
 
-        - ``None`` (default): raise
-        - ``True``: use the earliest datetime
-        - ``False``: use the latest datetime
+        - `None` (default): raise
+        - `True`: use the earliest datetime
+        - `False`: use the latest datetime
 
         .. deprecated:: 0.19.0
             Use `ambiguous` instead
     ambiguous
         Determine how to deal with ambiguous datetimes:
 
-        - ``'raise'`` (default): raise
-        - ``'earliest'``: use the earliest datetime
-        - ``'latest'``: use the latest datetime
+        - `'raise'` (default): raise
+        - `'earliest'`: use the earliest datetime
+        - `'latest'`: use the latest datetime
 
 
     Returns
@@ -219,8 +219,8 @@ def duration(
     Notes
     -----
     A `duration` represents a fixed amount of time. For example,
-    ``pl.duration(days=1)`` means "exactly 24 hours". By contrast,
-    ``Expr.dt.offset_by('1d')`` means "1 calendar day", which could sometimes be
+    `pl.duration(days=1)` means "exactly 24 hours". By contrast,
+    `Expr.dt.offset_by('1d')` means "1 calendar day", which could sometimes be
     23 hours or 25 hours depending on Daylight Savings Time.
     For non-fixed durations such as "calendar month" or "calendar day",
     please use :meth:`polars.Expr.dt.offset_by` instead.
@@ -413,7 +413,7 @@ def struct(
         Optional schema that explicitly defines the struct field dtypes. If no columns
         or expressions are provided, schema keys are used to define columns.
     eager
-        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        Evaluate immediately and return a `Series`. If set to `False` (default),
         return an expression instead.
     **named_exprs
         Additional columns to collect into the struct column, specified as keyword
@@ -421,7 +421,7 @@ def struct(
 
     Examples
     --------
-    Collect all columns of a dataframe into a struct by passing ``pl.all()``.
+    Collect all columns of a dataframe into a struct by passing `pl.all()`.
 
     >>> df = pl.DataFrame(
     ...     {
@@ -494,7 +494,7 @@ def concat_str(
     exprs
         Columns to concatenate into a single string column. Accepts expression input.
         Strings are parsed as column names, other non-expression inputs are parsed as
-        literals. Non-``Utf8`` columns are cast to ``Utf8``.
+        literals. Non-`Utf8` columns are cast to `Utf8`.
     *more_exprs
         Additional columns to concatenate into a single string column, specified as
         positional arguments.

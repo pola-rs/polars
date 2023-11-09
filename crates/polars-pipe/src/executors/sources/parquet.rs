@@ -1,7 +1,9 @@
-use std::ops::Deref;
+use std::collections::VecDeque;
+use std::ops::{Deref, Range};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use polars_core::config::get_file_prefetch_size;
 use polars_core::error::*;
 use polars_core::POOL;
 use polars_io::cloud::CloudOptions;
@@ -19,12 +21,12 @@ use crate::operators::{DataChunk, PExecutionContext, Source, SourceResult};
 use crate::pipeline::determine_chunk_size;
 
 pub struct ParquetSource {
-    batched_reader: Option<BatchedParquetReader>,
+    batched_readers: VecDeque<BatchedParquetReader>,
     n_threads: usize,
     processed_paths: usize,
     chunk_index: IdxSize,
-    paths: std::slice::Iter<'static, PathBuf>,
-    _paths_lifetime: Arc<[PathBuf]>,
+    iter: Range<usize>,
+    paths: Arc<[PathBuf]>,
     options: ParquetOptions,
     file_options: FileScanOptions,
     #[allow(dead_code)]
@@ -32,21 +34,25 @@ pub struct ParquetSource {
     metadata: Option<Arc<FileMetaData>>,
     file_info: FileInfo,
     verbose: bool,
+    prefetch_size: usize,
 }
 
 impl ParquetSource {
-    // Delay initializing the reader
-    // otherwise all files would be opened during construction of the pipeline
-    // leading to Too many Open files error
+    fn init_next_reader(&mut self) -> PolarsResult<()> {
+        self.metadata = None;
+        self.init_reader()
+    }
+
     fn init_reader(&mut self) -> PolarsResult<()> {
-        let Some(path) = self.paths.next() else {
+        let Some(index) = self.iter.next() else {
             return Ok(());
         };
+        let path = &self.paths[index];
         let options = self.options;
         let file_options = self.file_options.clone();
         let schema = self.file_info.schema.clone();
 
-        self.file_info.update_hive_partitions(path);
+        self.file_info.update_hive_partitions(path)?;
         let hive_partitions = self
             .file_info
             .hive_parts
@@ -118,7 +124,7 @@ impl ParquetSource {
         if self.processed_paths >= 1 {
             polars_ensure!(batched_reader.schema().as_ref() == self.file_info.reader_schema.as_ref().unwrap().as_ref(), ComputeError: "schema of all files in a single scan_parquet must be equal");
         }
-        self.batched_reader = Some(batched_reader);
+        self.batched_readers.push_back(batched_reader);
         self.processed_paths += 1;
         Ok(())
     }
@@ -135,71 +141,87 @@ impl ParquetSource {
     ) -> PolarsResult<Self> {
         let n_threads = POOL.current_num_threads();
 
-        // extend lifetime as it will be bound to parquet source
-        let iter = unsafe {
-            std::mem::transmute::<std::slice::Iter<'_, PathBuf>, std::slice::Iter<'static, PathBuf>>(
-                paths.iter(),
-            )
-        };
+        let iter = 0..paths.len();
 
-        Ok(ParquetSource {
-            batched_reader: None,
+        let prefetch_size = get_file_prefetch_size();
+        if verbose {
+            eprintln!("POLARS PREFETCH_SIZE: {}", prefetch_size)
+        }
+
+        let mut source = ParquetSource {
+            batched_readers: VecDeque::new(),
             n_threads,
             chunk_index: 0,
             processed_paths: 0,
             options,
             file_options,
-            paths: iter,
-            _paths_lifetime: paths,
+            iter,
+            paths,
             cloud_options,
             metadata,
             file_info,
             verbose,
-        })
+            prefetch_size,
+        };
+        // Already start downloading when we deal with cloud urls.
+        if !source.paths.first().unwrap().is_file() {
+            source.init_reader()?;
+        }
+        Ok(source)
     }
 }
 
 impl Source for ParquetSource {
     fn get_batches(&mut self, _context: &PExecutionContext) -> PolarsResult<SourceResult> {
-        if self.batched_reader.is_none() {
-            self.init_reader()?;
-
-            // If there was no new reader, we depleted all of them and are finished.
-            if self.batched_reader.is_none() {
-                return Ok(SourceResult::Finished);
+        // We already start downloading the next file, we can only do that if we don't have a limit.
+        // In the case of a limit we first must update the row count with the batch results.
+        if self.batched_readers.len() < self.prefetch_size && self.file_options.n_rows.is_none()
+            || self.batched_readers.is_empty()
+        {
+            for _ in 0..self.prefetch_size - self.batched_readers.len() {
+                self.init_next_reader()?
             }
         }
-        let batches = get_runtime().block_on(
-            self.batched_reader
-                .as_mut()
-                .unwrap()
-                .next_batches(self.n_threads),
-        )?;
+
+        let Some(mut reader) = self.batched_readers.pop_front() else {
+            // If there was no new reader, we depleted all of them and are finished.
+            return Ok(SourceResult::Finished);
+        };
+
+        let batches =
+            get_runtime().block_on_potential_spawn(reader.next_batches(self.n_threads))?;
         Ok(match batches {
             None => {
-                if self.batched_reader.as_ref().unwrap().limit_reached() {
+                if reader.limit_reached() {
                     return Ok(SourceResult::Finished);
                 }
+
                 // reset the reader
-                self.batched_reader = None;
-                self.metadata = None;
+                self.init_next_reader()?;
                 return self.get_batches(_context);
             },
-            Some(batches) => SourceResult::GotMoreData(
-                batches
-                    .into_iter()
-                    .map(|data| {
-                        // Keep the row limit updated so the next reader will have a correct limit.
-                        if let Some(n_rows) = &mut self.file_options.n_rows {
-                            *n_rows = n_rows.saturating_sub(data.height())
-                        }
+            Some(batches) => {
+                let result = SourceResult::GotMoreData(
+                    batches
+                        .into_iter()
+                        .map(|data| {
+                            // Keep the row limit updated so the next reader will have a correct limit.
+                            if let Some(n_rows) = &mut self.file_options.n_rows {
+                                *n_rows = n_rows.saturating_sub(data.height())
+                            }
 
-                        let chunk_index = self.chunk_index;
-                        self.chunk_index += 1;
-                        DataChunk { chunk_index, data }
-                    })
-                    .collect(),
-            ),
+                            let chunk_index = self.chunk_index;
+                            self.chunk_index += 1;
+                            DataChunk { chunk_index, data }
+                        })
+                        .collect(),
+                );
+                // We are not yet done with this reader.
+                // Ensure it is used in next iteration.
+                self.batched_readers.push_front(reader);
+
+                result
+            },
         })
     }
     fn fmt(&self) -> &str {

@@ -1,4 +1,3 @@
-mod fx;
 mod identity;
 pub mod partition;
 pub(crate) mod vector_hasher;
@@ -6,7 +5,6 @@ pub(crate) mod vector_hasher;
 use std::hash::{BuildHasher, BuildHasherDefault, Hash, Hasher};
 
 use ahash::RandomState;
-pub use fx::*;
 use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
 pub use identity::*;

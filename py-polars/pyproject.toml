@@ -40,8 +40,8 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
 adbc = ["adbc_driver_sqlite"]
 cloudpickle = ["cloudpickle"]
-connectorx = ["connectorx"]
-deltalake = ["deltalake >= 0.10.0"]
+connectorx = ["connectorx >= 0.3.2"]
+deltalake = ["deltalake >= 0.13.0"]
 fsspec = ["fsspec"]
 gevent = ["gevent"]
 matplotlib = ["matplotlib"]
@@ -59,6 +59,9 @@ xlsxwriter = ["xlsxwriter"]
 all = [
   "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,pydantic,pyiceberg,sqlalchemy,xlsxwriter,adbc,cloudpickle,gevent]",
 ]
+
+[tool.maturin]
+include = ["rust-toolchain.toml"]
 
 [tool.mypy]
 files = ["polars", "tests"]
@@ -204,12 +207,15 @@ markers = [
   "docs: Documentation code snippets",
 ]
 filterwarnings = [
-  # Fail on warnings...
+  # Fail on warnings
   "error",
-  # ...except where it prevents test debugging in an IPython console
+  # Allow debugging in an IPython console
   "ignore:.*unrecognized arguments.*PyDevIPCompleter:DeprecationWarning",
+  # Ignore warnings issued by dependency internals
   "ignore:.*is_sparse is deprecated.*:FutureWarning",
   "ignore:FigureCanvasAgg is non-interactive:UserWarning",
+  # Introspection under PyCharm IDE can generate this in 3.12
+  "ignore:.*co_lnotab is deprecated, use co_lines.*:DeprecationWarning",
 ]
 xfail_strict = true
 

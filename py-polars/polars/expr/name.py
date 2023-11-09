@@ -27,6 +27,7 @@ class ExprNameNameSpace:
         See Also
         --------
         alias
+        map
 
         Examples
         --------
@@ -76,7 +77,7 @@ class ExprNameNameSpace:
 
         See Also
         --------
-        alias
+        keep
         prefix
         suffix
 

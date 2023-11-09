@@ -473,7 +473,7 @@ def test_parquet_nested_list_pandas() -> None:
     f.seek(0)
     df = pl.read_parquet(f)
     assert df.dtypes == [pl.List(pl.Null)]
-    assert df.to_dict(False) == {"listcol": [[]]}
+    assert df.to_dict(as_series=False) == {"listcol": [[]]}
 
 
 def test_parquet_string_cache() -> None:

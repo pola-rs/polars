@@ -7,6 +7,8 @@ use arrow::compute::cast::CastOptions;
 use crate::chunked_array::categorical::CategoricalChunkedBuilder;
 #[cfg(feature = "timezones")]
 use crate::chunked_array::temporal::validate_time_zone;
+#[cfg(feature = "dtype-datetime")]
+use crate::prelude::DataType::Datetime;
 use crate::prelude::*;
 
 pub(crate) fn cast_chunks(
@@ -117,8 +119,9 @@ where
                 // this may still fail with overflow?
                 let dtype = self.dtype();
 
-                let to_signed = data_type.is_signed();
-                let unsigned2unsigned = dtype.is_unsigned() && data_type.is_unsigned();
+                let to_signed = data_type.is_signed_integer();
+                let unsigned2unsigned =
+                    dtype.is_unsigned_integer() && data_type.is_unsigned_integer();
                 let allowed = to_signed || unsigned2unsigned;
 
                 if (allowed)
@@ -194,6 +197,33 @@ impl ChunkCast for Utf8Chunked {
                 _ => {
                     polars_bail!(ComputeError: "expected 'precision' or 'scale' when casting to Decimal")
                 },
+            },
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => {
+                let result = cast_chunks(&self.chunks, data_type, true)?;
+                let out = Series::try_from((self.name(), result))?;
+                Ok(out)
+            },
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(time_unit, time_zone) => {
+                let out = match time_zone {
+                    #[cfg(feature = "timezones")]
+                    Some(time_zone) => {
+                        validate_time_zone(time_zone)?;
+                        let result = cast_chunks(
+                            &self.chunks,
+                            &Datetime(time_unit.to_owned(), Some(time_zone.clone())),
+                            true,
+                        )?;
+                        Series::try_from((self.name(), result))
+                    },
+                    _ => {
+                        let result =
+                            cast_chunks(&self.chunks, &Datetime(time_unit.to_owned(), None), true)?;
+                        Series::try_from((self.name(), result))
+                    },
+                };
+                out
             },
             _ => cast_impl(self.name(), &self.chunks, data_type),
         }

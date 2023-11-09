@@ -8,6 +8,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap();
     let mask = df.column("sepal_length")?.f64()?.gt(5.0);
     let df_small = df.filter(&mask)?;
+    #[allow(deprecated)]
     let df_agg = df_small
         .group_by(["species"])?
         .select(["sepal_width"])

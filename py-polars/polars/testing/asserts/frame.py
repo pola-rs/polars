@@ -26,7 +26,7 @@ def assert_frame_equal(
     """
     Assert that the left and right frame are equal.
 
-    Raises a detailed ``AssertionError`` if the frames differ.
+    Raises a detailed `AssertionError` if the frames differ.
     This function is intended for use in unit tests.
 
     Parameters
@@ -39,18 +39,18 @@ def assert_frame_equal(
         Require row order to match.
 
         .. note::
-            Setting this to ``False`` requires sorting the data, which will fail on
+            Setting this to `False` requires sorting the data, which will fail on
             frames that contain unsortable columns.
     check_column_order
         Require column order to match.
     check_dtype
         Require data types to match.
     check_exact
-        Require data values to match exactly. If set to ``False``, values are considered
-        equal when within tolerance of each other (see ``rtol`` and ``atol``).
+        Require data values to match exactly. If set to `False`, values are considered
+        equal when within tolerance of each other (see `rtol` and `atol`).
         Logical types like dates are always checked exactly.
     rtol
-        Relative tolerance for inexact checking. Fraction of values in ``right``.
+        Relative tolerance for inexact checking. Fraction of values in `right`.
     atol
         Absolute tolerance for inexact checking.
     categorical_as_str
@@ -61,7 +61,7 @@ def assert_frame_equal(
 
         .. deprecated: 0.19.12
             This parameter will be removed. Default behaviour will remain as though it
-            were set to ``True``.
+            were set to `True`.
 
     See Also
     --------
@@ -71,7 +71,7 @@ def assert_frame_equal(
     Notes
     -----
     When using pytest, it may be worthwhile to shorten Python traceback printing
-    by passing ``--tb=short``. The default mode tends to be unhelpfully verbose.
+    by passing `--tb=short`. The default mode tends to be unhelpfully verbose.
     More information in the
     `pytest docs <https://docs.pytest.org/en/latest/how-to/output.html#modifying-python-traceback-printing>`_.
 
@@ -127,10 +127,11 @@ def assert_frame_equal(
         left, right = _sort_dataframes(left, right)
 
     for c in left.columns:
+        s_left, s_right = left.get_column(c), right.get_column(c)
         try:
             _assert_series_values_equal(
-                left.get_column(c),
-                right.get_column(c),
+                s_left,
+                s_right,
                 check_exact=check_exact,
                 rtol=rtol,
                 atol=atol,
@@ -138,8 +139,13 @@ def assert_frame_equal(
                 categorical_as_str=categorical_as_str,
             )
         except AssertionError as exc:
-            msg = f"values for column {c!r} are different"
-            raise AssertionError(msg) from exc
+            raise_assertion_error(
+                objects,
+                f"value mismatch for column {c!r}",
+                s_left.to_list(),
+                s_right.to_list(),
+                cause=exc,
+            )
 
 
 def _assert_correct_input_type(
@@ -234,18 +240,18 @@ def assert_frame_not_equal(
         Require row order to match.
 
         .. note::
-            Setting this to ``False`` requires sorting the data, which will fail on
+            Setting this to `False` requires sorting the data, which will fail on
             frames that contain unsortable columns.
     check_column_order
         Require column order to match.
     check_dtype
         Require data types to match.
     check_exact
-        Require data values to match exactly. If set to ``False``, values are considered
-        equal when within tolerance of each other (see ``rtol`` and ``atol``).
+        Require data values to match exactly. If set to `False`, values are considered
+        equal when within tolerance of each other (see `rtol` and `atol`).
         Logical types like dates are always checked exactly.
     rtol
-        Relative tolerance for inexact checking. Fraction of values in ``right``.
+        Relative tolerance for inexact checking. Fraction of values in `right`.
     atol
         Absolute tolerance for inexact checking.
     categorical_as_str
@@ -256,7 +262,7 @@ def assert_frame_not_equal(
 
         .. deprecated: 0.19.12
             This parameter will be removed. Default behaviour will remain as though it
-            were set to ``True``.
+            were set to `True`.
 
     See Also
     --------

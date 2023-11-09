@@ -140,12 +140,6 @@ impl PhysicalExpr for TernaryExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let aggregation_predicate = self.predicate.is_valid_aggregation();
-        if !aggregation_predicate {
-            // Unwrap will not fail as it is not an aggregation expression.
-            eprintln!(
-                "The predicate '{}' in 'when->then->otherwise' is not a valid aggregation and might produce a different number of rows than the group_by operation would. This behavior is experimental and may be subject to change", self.predicate.as_expression().unwrap()
-            )
-        }
 
         let op_mask = || self.predicate.evaluate_on_groups(df, groups, state);
         let op_truthy = || self.truthy.evaluate_on_groups(df, groups, state);
@@ -197,7 +191,6 @@ impl PhysicalExpr for TernaryExpr {
             //     None
             (AggregatedList(_), Literal(_)) | (Literal(_), AggregatedList(_)) => {
                 if !aggregation_predicate {
-                    // Experimental elementwise behavior tested in `test_binary_agg_context_1`.
                     return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
                 }
                 let mask = mask_s.bool()?;
@@ -299,7 +292,6 @@ impl PhysicalExpr for TernaryExpr {
                 }
 
                 if !aggregation_predicate {
-                    // Experimental elementwise behavior tested in `test_binary_agg_context_1`.
                     return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
                 }
                 let mut mask = mask_s.bool()?.clone();

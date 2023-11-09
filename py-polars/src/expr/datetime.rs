@@ -50,12 +50,8 @@ impl PyExpr {
             .into()
     }
 
-    fn dt_truncate(&self, every: Self, offset: String, ambiguous: Self) -> Self {
-        self.inner
-            .clone()
-            .dt()
-            .truncate(every.inner, offset, ambiguous.inner)
-            .into()
+    fn dt_truncate(&self, every: Self, offset: String) -> Self {
+        self.inner.clone().dt().truncate(every.inner, offset).into()
     }
 
     fn dt_month_start(&self) -> Self {
@@ -75,12 +71,8 @@ impl PyExpr {
         self.inner.clone().dt().dst_offset().into()
     }
 
-    fn dt_round(&self, every: &str, offset: &str, ambiguous: Self) -> Self {
-        self.inner
-            .clone()
-            .dt()
-            .round(every, offset, ambiguous.inner)
-            .into()
+    fn dt_round(&self, every: &str, offset: &str) -> Self {
+        self.inner.clone().dt().round(every, offset).into()
     }
 
     fn dt_combine(&self, time: Self, time_unit: Wrap<TimeUnit>) -> Self {
@@ -149,7 +141,7 @@ impl PyExpr {
         self.inner.clone().dt().timestamp(time_unit.0).into()
     }
 
-    fn duration_days(&self) -> Self {
+    fn dt_total_days(&self) -> Self {
         self.inner
             .clone()
             .map(
@@ -158,7 +150,7 @@ impl PyExpr {
             )
             .into()
     }
-    fn duration_hours(&self) -> Self {
+    fn dt_total_hours(&self) -> Self {
         self.inner
             .clone()
             .map(
@@ -167,7 +159,7 @@ impl PyExpr {
             )
             .into()
     }
-    fn duration_minutes(&self) -> Self {
+    fn dt_total_minutes(&self) -> Self {
         self.inner
             .clone()
             .map(
@@ -176,7 +168,7 @@ impl PyExpr {
             )
             .into()
     }
-    fn duration_seconds(&self) -> Self {
+    fn dt_total_seconds(&self) -> Self {
         self.inner
             .clone()
             .map(
@@ -185,7 +177,7 @@ impl PyExpr {
             )
             .into()
     }
-    fn duration_milliseconds(&self) -> Self {
+    fn dt_total_milliseconds(&self) -> Self {
         self.inner
             .clone()
             .map(
@@ -194,7 +186,7 @@ impl PyExpr {
             )
             .into()
     }
-    fn duration_microseconds(&self) -> Self {
+    fn dt_total_microseconds(&self) -> Self {
         self.inner
             .clone()
             .map(
@@ -203,7 +195,7 @@ impl PyExpr {
             )
             .into()
     }
-    fn duration_nanoseconds(&self) -> Self {
+    fn dt_total_nanoseconds(&self) -> Self {
         self.inner
             .clone()
             .map(

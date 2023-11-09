@@ -78,9 +78,9 @@ def test_sort_categoricals_6014() -> None:
         )
 
     out = df1.sort("key")
-    assert out.to_dict(False) == {"key": ["bbb", "aaa", "ccc"]}
+    assert out.to_dict(as_series=False) == {"key": ["bbb", "aaa", "ccc"]}
     out = df2.sort("key")
-    assert out.to_dict(False) == {"key": ["aaa", "bbb", "ccc"]}
+    assert out.to_dict(as_series=False) == {"key": ["aaa", "bbb", "ccc"]}
 
 
 def test_categorical_get_categories() -> None:

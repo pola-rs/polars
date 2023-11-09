@@ -87,20 +87,20 @@ impl FileInfo {
     }
 
     /// Updates the statistics, but not the schema.
-    pub fn update_hive_partitions(&mut self, url: &Path) {
-        let new = hive::HivePartitions::parse_url(url);
-
-        match (&mut self.hive_parts, new) {
-            (Some(current), Some(new)) => match Arc::get_mut(current) {
+    pub fn update_hive_partitions(&mut self, url: &Path) -> PolarsResult<()> {
+        if let Some(current) = &mut self.hive_parts {
+            let new = hive::HivePartitions::parse_url(url).ok_or_else(|| polars_err!(ComputeError: "expected hive partitioned path, got {}\n\n\
+            This error occurs if 'hive_partitioning=true' some paths are hive partitioned and some paths are not.", url.display()))?;
+            match Arc::get_mut(current) {
                 Some(current) => {
                     *current = new;
                 },
                 _ => {
                     *current = Arc::new(new);
                 },
-            },
-            (_, new) => self.hive_parts = new.map(Arc::new),
+            }
         }
+        Ok(())
     }
 }
 
@@ -159,7 +159,7 @@ pub fn set_estimated_row_counts(
                 mut options,
             } = lp_arena.take(root)
             {
-                let mut sum_output = (None, 0);
+                let mut sum_output = (None, 0usize);
                 for input in &inputs {
                     let mut out =
                         set_estimated_row_counts(*input, lp_arena, expr_arena, 0, scratch);
@@ -168,7 +168,7 @@ pub fn set_estimated_row_counts(
                     }
                     // todo! deal with known as well
                     let out = estimate_sizes(out.0, out.1, out.2);
-                    sum_output.1 += out.1;
+                    sum_output.1 = sum_output.1.saturating_add(out.1);
                 }
                 options.rows = sum_output;
                 lp_arena.replace(root, Union { inputs, options });

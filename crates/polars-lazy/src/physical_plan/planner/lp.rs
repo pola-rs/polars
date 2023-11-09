@@ -193,6 +193,7 @@ pub fn create_physical_plan(
                 state.has_windows,
             )))
         },
+        #[allow(unused_variables)]
         Scan {
             paths,
             file_info,

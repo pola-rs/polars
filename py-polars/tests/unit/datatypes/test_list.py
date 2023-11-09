@@ -124,7 +124,7 @@ def test_list_empty_group_by_result_3521() -> None:
         left.join(right, on="join_column", how="left")
         .group_by("group_by_column")
         .agg(pl.col("n_unique_column").drop_nulls())
-    ).to_dict(False) == {"group_by_column": [1], "n_unique_column": [[]]}
+    ).to_dict(as_series=False) == {"group_by_column": [1], "n_unique_column": [[]]}
 
 
 def test_list_fill_null() -> None:
@@ -147,14 +147,15 @@ def test_list_fill_list() -> None:
             .otherwise(pl.col("a"))
             .alias("filled")
         ]
-    ).to_dict(False) == {"filled": [[1, 2, 3], [5]]}
+    ).to_dict(as_series=False) == {"filled": [[1, 2, 3], [5]]}
 
 
 def test_empty_list_construction() -> None:
     assert pl.Series([[]]).to_list() == [[]]
-    assert pl.DataFrame([{"array": [], "not_array": 1234}], orient="row").to_dict(
-        False
-    ) == {"array": [[]], "not_array": [1234]}
+
+    df = pl.DataFrame([{"array": [], "not_array": 1234}], orient="row")
+    expected = {"array": [[]], "not_array": [1234]}
+    assert df.to_dict(as_series=False) == expected
 
     df = pl.DataFrame(schema=[("col", pl.List)])
     assert df.schema == {"col": pl.List}
@@ -174,7 +175,7 @@ def test_list_diagonal_concat() -> None:
 
     df2 = pl.DataFrame({"b": [[1]]})
 
-    assert pl.concat([df1, df2], how="diagonal").to_dict(False) == {
+    assert pl.concat([df1, df2], how="diagonal").to_dict(as_series=False) == {
         "a": [1, 2, None],
         "b": [None, None, [1]],
     }
@@ -196,7 +197,9 @@ def test_group_by_list_column() -> None:
         .agg(pl.col("a").alias("a_list"))
     )
 
-    assert df.group_by("a_list", maintain_order=True).first().to_dict(False) == {
+    assert df.group_by("a_list", maintain_order=True).first().to_dict(
+        as_series=False
+    ) == {
         "a_list": [["a", "a"], ["b"]],
         "a": ["a", "b"],
     }
@@ -214,7 +217,7 @@ def test_group_by_multiple_keys_contains_list_column() -> None:
         .group_by(["a", "b"], maintain_order=True)
         .agg(pl.all())
     )
-    assert df.to_dict(False) == {
+    assert df.to_dict(as_series=False) == {
         "a": ["x", "y", "y"],
         "b": [[1, 2], [3, 4, 5], [6]],
         "c": [[3, 2], [1], [0]],
@@ -260,7 +263,7 @@ def test_fast_explode_on_list_struct_6208() -> None:
     )
 
     assert not df["parents"].flags["FAST_EXPLODE"]
-    assert df.explode("parents").to_dict(False) == {
+    assert df.explode("parents").to_dict(as_series=False) == {
         "label": ["l", "l"],
         "tag": ["t", "t"],
         "ref": [1, 1],
@@ -276,26 +279,27 @@ def test_flat_aggregation_to_list_conversion_6918() -> None:
 
     assert df.group_by("a", maintain_order=True).agg(
         pl.concat_list([pl.col("b").list.get(i).mean().implode() for i in range(2)])
-    ).to_dict(False) == {"a": [1, 2], "b": [[[0.0, 1.0]], [[3.0, 4.0]]]}
+    ).to_dict(as_series=False) == {"a": [1, 2], "b": [[[0.0, 1.0]], [[3.0, 4.0]]]}
 
 
 def test_list_count_matches_deprecated() -> None:
+    df = pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]})
     with pytest.deprecated_call():
-        # Your test code here
-        assert pl.DataFrame(
-            {"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}
-        ).select(pl.col("listcol").list.count_match(2).alias("number_of_twos")).to_dict(
-            False
-        ) == {"number_of_twos": [0, 0, 2, 1, 0]}
+        result = df.select(
+            pl.col("listcol").list.count_match(2).alias("number_of_twos")
+        )
+
+    expected = {"number_of_twos": [0, 0, 2, 1, 0]}
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_list_count_matches() -> None:
     assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
         pl.col("listcol").list.count_matches(2).alias("number_of_twos")
-    ).to_dict(False) == {"number_of_twos": [0, 0, 2, 1, 0]}
+    ).to_dict(as_series=False) == {"number_of_twos": [0, 0, 2, 1, 0]}
     assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
         pl.col("listcol").list.count_matches(2).alias("number_of_twos")
-    ).to_dict(False) == {"number_of_twos": [0, 0, 2, 1, 0]}
+    ).to_dict(as_series=False) == {"number_of_twos": [0, 0, 2, 1, 0]}
 
 
 def test_list_sum_and_dtypes() -> None:
@@ -320,22 +324,26 @@ def test_list_sum_and_dtypes() -> None:
         assert summed.item() == 32
         assert df.select(pl.col("a").list.sum()).dtypes == [dt_out]
 
-    assert df.select(pl.col("a").list.sum()).to_dict(False) == {"a": [1, 6, 10, 15]}
+    assert df.select(pl.col("a").list.sum()).to_dict(as_series=False) == {
+        "a": [1, 6, 10, 15]
+    }
 
     # include nulls
     assert pl.DataFrame(
         {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5], None]}
-    ).select(pl.col("a").list.sum()).to_dict(False) == {"a": [1, 6, 10, 15, None]}
+    ).select(pl.col("a").list.sum()).to_dict(as_series=False) == {
+        "a": [1, 6, 10, 15, None]
+    }
 
 
 def test_list_mean() -> None:
     assert pl.DataFrame({"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]}).select(
         pl.col("a").list.mean()
-    ).to_dict(False) == {"a": [1.0, 2.0, 2.5, 3.0]}
+    ).to_dict(as_series=False) == {"a": [1.0, 2.0, 2.5, 3.0]}
 
     assert pl.DataFrame({"a": [[1], [1, 2, 3], [1, 2, 3, 4], None]}).select(
         pl.col("a").list.mean()
-    ).to_dict(False) == {"a": [1.0, 2.0, 2.5, None]}
+    ).to_dict(as_series=False) == {"a": [1.0, 2.0, 2.5, None]}
 
 
 def test_list_all() -> None:
@@ -351,7 +359,7 @@ def test_list_all() -> None:
                 [],
             ]
         }
-    ).select(pl.col("a").list.all()).to_dict(False) == {
+    ).select(pl.col("a").list.all()).to_dict(as_series=False) == {
         "a": [True, False, True, False, False, True, True]
     }
 
@@ -369,7 +377,7 @@ def test_list_any() -> None:
                 [],
             ]
         }
-    ).select(pl.col("a").list.any()).to_dict(False) == {
+    ).select(pl.col("a").list.any()).to_dict(as_series=False) == {
         "a": [True, False, True, True, False, False, False]
     }
 
@@ -392,10 +400,12 @@ def test_list_min_max() -> None:
     df = pl.DataFrame(
         {"a": [[1], [1, 5, -1, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5], None]},
     )
-    assert df.select(pl.col("a").list.min()).to_dict(False) == {
+    assert df.select(pl.col("a").list.min()).to_dict(as_series=False) == {
         "a": [1, -1, 1, 1, None]
     }
-    assert df.select(pl.col("a").list.max()).to_dict(False) == {"a": [1, 5, 4, 5, None]}
+    assert df.select(pl.col("a").list.max()).to_dict(as_series=False) == {
+        "a": [1, 5, 4, 5, None]
+    }
 
 
 def test_fill_null_empty_list() -> None:
@@ -405,7 +415,7 @@ def test_fill_null_empty_list() -> None:
 def test_nested_logical() -> None:
     assert pl.select(
         pl.lit(pl.Series(["a", "b"], dtype=pl.Categorical)).implode().implode()
-    ).to_dict(False) == {"": [[["a", "b"]]]}
+    ).to_dict(as_series=False) == {"": [[["a", "b"]]]}
 
 
 def test_null_list_construction_and_materialization() -> None:
@@ -445,7 +455,7 @@ def test_logical_parallel_list_collect() -> None:
         .unnest("Values")
     )
     assert out.dtypes == [pl.Utf8, pl.Categorical, pl.UInt32]
-    assert out.to_dict(False) == {
+    assert out.to_dict(as_series=False) == {
         "Group": ["GroupA", "GroupA"],
         "Values": ["Value1", "Value2"],
         "counts": [2, 1],
@@ -519,7 +529,9 @@ def test_list_null_pickle() -> None:
 
 def test_struct_with_nulls_as_list() -> None:
     df = pl.DataFrame([[{"a": 1, "b": 2}], [{"c": 3, "d": None}]])
-    assert df.select(pl.concat_list(pl.all()).alias("as_list")).to_dict(False) == {
+    assert df.select(pl.concat_list(pl.all()).alias("as_list")).to_dict(
+        as_series=False
+    ) == {
         "as_list": [
             [
                 {"a": 1, "b": 2, "c": None, "d": None},
@@ -539,7 +551,7 @@ def test_list_amortized_iter_clear_settings_10126() -> None:
         .sort("a")
     )
 
-    assert out.to_dict(False) == {"a": [1, 2], "b": [[1, 2, 3], [4]]}
+    assert out.to_dict(as_series=False) == {"a": [1, 2], "b": [[1, 2, 3], [4]]}
 
 
 def test_list_inner_cast_physical_11513() -> None:
@@ -560,7 +572,9 @@ def test_list_inner_cast_physical_11513() -> None:
             )
         },
     )
-    assert df.select(pl.col("struct").take(0)).to_dict(False) == {"struct": [[]]}
+    assert df.select(pl.col("struct").take(0)).to_dict(as_series=False) == {
+        "struct": [[]]
+    }
 
 
 @pytest.mark.parametrize(

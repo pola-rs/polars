@@ -170,20 +170,38 @@ def test_boolean_min_max_agg() -> None:
 
     df = pl.DataFrame({"idx": idx, "c": c})
     aggs = [pl.col("c").min().alias("c_min"), pl.col("c").max().alias("c_max")]
-    assert df.group_by("idx").agg(aggs).sum().to_dict(False) == {
-        "idx": [107583],
-        "c_min": [120],
-        "c_max": [321],
-    }
+
+    result = df.group_by("idx").agg(aggs).sum()
+
+    schema = {"idx": pl.Int64, "c_min": pl.UInt32, "c_max": pl.UInt32}
+    expected = pl.DataFrame(
+        {
+            "idx": [107583],
+            "c_min": [120],
+            "c_max": [321],
+        },
+        schema=schema,
+    )
+    assert_frame_equal(result, expected)
 
     nulls = np.random.randint(0, 500, 1000) < 100
-    assert df.with_columns(
-        c=pl.when(pl.lit(nulls)).then(None).otherwise(pl.col("c"))
-    ).group_by("idx").agg(aggs).sum().to_dict(False) == {
-        "idx": [107583],
-        "c_min": [133],
-        "c_max": [276],
-    }
+
+    result = (
+        df.with_columns(c=pl.when(pl.lit(nulls)).then(None).otherwise(pl.col("c")))
+        .group_by("idx")
+        .agg(aggs)
+        .sum()
+    )
+
+    expected = pl.DataFrame(
+        {
+            "idx": [107583],
+            "c_min": [133],
+            "c_max": [276],
+        },
+        schema=schema,
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_categorical_vs_str_group_by() -> None:

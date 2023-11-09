@@ -16,25 +16,67 @@ def test_str_slice() -> None:
 
 
 def test_str_concat() -> None:
-    s = pl.Series(["1", None, "2"])
-    result = s.str.concat()
-    expected = pl.Series(["1-null-2"])
-    assert_series_equal(result, expected)
+    s = pl.Series(["1", None, "2", None])
+    # propagate null
+    assert_series_equal(
+        s.str.concat(ignore_nulls=False), pl.Series([None], dtype=pl.Utf8)
+    )
+    # ignore null
+    assert_series_equal(s.str.concat(), pl.Series(["1-2"]))
+
+    # str None/null is ok
+    s = pl.Series(["1", "None", "2", "null"])
+    assert_series_equal(s.str.concat(ignore_nulls=False), pl.Series(["1-None-2-null"]))
+    assert_series_equal(s.str.concat(), pl.Series(["1-None-2-null"]))
 
 
 def test_str_concat2() -> None:
-    df = pl.DataFrame({"foo": [1, None, 2]})
-    df = df.select(pl.col("foo").str.concat("-"))
-    assert cast(str, df.item()) == "1-null-2"
+    df = pl.DataFrame({"foo": [1, None, 2, None]})
+
+    out = df.select(pl.col("foo").str.concat("-", ignore_nulls=False))
+    assert cast(str, out.item()) is None
+
+    out = df.select(pl.col("foo").str.concat("-"))
+    assert cast(str, out.item()) == "1-2"
+
+
+def test_str_concat_all_null() -> None:
+    s = pl.Series([None, None, None], dtype=pl.Utf8)
+    assert_series_equal(
+        s.str.concat(ignore_nulls=False), pl.Series([None], dtype=pl.Utf8)
+    )
+    assert_series_equal(s.str.concat(ignore_nulls=True), pl.Series([""]))
+
+
+def test_str_concat_empty_list() -> None:
+    s = pl.Series([], dtype=pl.Utf8)
+    assert_series_equal(s.str.concat(ignore_nulls=False), pl.Series([""]))
+    assert_series_equal(s.str.concat(ignore_nulls=True), pl.Series([""]))
+
+
+def test_str_concat_empty_list2() -> None:
+    s = pl.Series([], dtype=pl.Utf8)
+    df = pl.DataFrame({"foo": s})
+    result = df.select(pl.col("foo").str.concat()).item()
+    expected = ""
+    assert result == expected
+
+
+def test_str_concat_empty_list_agg_context() -> None:
+    df = pl.DataFrame(data={"i": [1], "v": [None]}, schema_overrides={"v": pl.Utf8})
+    result = df.group_by("i").agg(pl.col("v").drop_nulls().str.concat())["v"].item()
+    expected = ""
+    assert result == expected
 
 
 def test_str_concat_datetime() -> None:
     df = pl.DataFrame({"d": [datetime(2020, 1, 1), None, datetime(2022, 1, 1)]})
-    df = df.select(pl.col("d").str.concat("|"))
+    out = df.select(pl.col("d").str.concat("|", ignore_nulls=True))
     assert (
-        cast(str, df.item())
-        == "2020-01-01 00:00:00.000000|null|2022-01-01 00:00:00.000000"
+        cast(str, out.item()) == "2020-01-01 00:00:00.000000|2022-01-01 00:00:00.000000"
     )
+    out = df.select(pl.col("d").str.concat("|", ignore_nulls=False))
+    assert cast(str, out.item()) is None
 
 
 def test_str_len_bytes() -> None:
@@ -360,7 +402,7 @@ def test_str_strip_prefix_suffix_expr() -> None:
         pl.col("s").str.strip_prefix(pl.col("prefix")).alias("strip_prefix"),
         pl.col("s").str.strip_suffix(pl.col("suffix")).alias("strip_suffix"),
     )
-    assert out.to_dict(False) == {
+    assert out.to_dict(as_series=False) == {
         "strip_prefix": ["-bar", "bar", "barfoo", "", None, None],
         "strip_suffix": ["foo-", "foo", "barfoo", "", None, None],
     }
@@ -559,7 +601,7 @@ def test_contains_expr() -> None:
             .str.contains(pl.col("pattern"), literal=True)
             .alias("contains_lit"),
         ]
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "contains": [True, True, False, None, None, None],
         "contains_lit": [False, True, False, None, None, False],
     }
@@ -671,15 +713,17 @@ def test_replace_all() -> None:
 def test_replace_expressions() -> None:
     df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"], "value": ["A", "B"]})
     out = df.select([pl.col("foo").str.replace(pl.col("foo").first(), pl.col("value"))])
-    assert out.to_dict(False) == {"foo": ["A", "xyz 678 910t"]}
+    assert out.to_dict(as_series=False) == {"foo": ["A", "xyz 678 910t"]}
     out = df.select([pl.col("foo").str.replace(pl.col("foo").last(), "value")])
-    assert out.to_dict(False) == {"foo": ["123 bla 45 asd", "value"]}
+    assert out.to_dict(as_series=False) == {"foo": ["123 bla 45 asd", "value"]}
 
     df = pl.DataFrame(
         {"foo": ["1 bla 45 asd", "xyz 6t"], "pat": [r"\d", r"\W"], "value": ["A", "B"]}
     )
     out = df.select([pl.col("foo").str.replace_all(pl.col("pat").first(), "value")])
-    assert out.to_dict(False) == {"foo": ["value bla valuevalue asd", "xyz valuet"]}
+    assert out.to_dict(as_series=False) == {
+        "foo": ["value bla valuevalue asd", "xyz valuet"]
+    }
 
 
 def test_extract_all_count() -> None:
@@ -688,7 +732,7 @@ def test_extract_all_count() -> None:
         df.select(
             pl.col("foo").str.extract_all(r"a").alias("extract"),
             pl.col("foo").str.count_matches(r"a").alias("count"),
-        ).to_dict(False)
+        ).to_dict(as_series=False)
     ) == {"extract": [["a", "a"], ["a"], [], None], "count": [2, 1, 0, None]}
 
     assert df["foo"].str.extract_all(r"a").dtype == pl.List
@@ -717,7 +761,7 @@ def test_count_matches_many() -> None:
     assert (
         df.select(
             pl.col("foo").str.count_matches(pl.col("bar")).alias("count")
-        ).to_dict(False)
+        ).to_dict(as_series=False)
     ) == {"count": [5, 4, None, None]}
 
     assert df["foo"].str.count_matches(df["bar"]).dtype == pl.UInt32
@@ -727,7 +771,7 @@ def test_count_matches_many() -> None:
         pl.col("foo").str.count_matches(pl.col("bar").first()).alias("count"),
         pl.col("foo").str.count_matches(pl.col("bar").last()).alias("count_null"),
     )
-    assert broad.to_dict(False) == {
+    assert broad.to_dict(as_series=False) == {
         "count": [5, 6, None, 0],
         "count_null": [None, None, None, None],
     }
@@ -755,7 +799,7 @@ def test_extract_all_many() -> None:
         pl.col("foo").str.extract_all(pl.col("re").first()).alias("a"),
         pl.col("foo").str.extract_all(pl.col("re").last()).alias("null"),
     )
-    assert broad.to_dict(False) == {
+    assert broad.to_dict(as_series=False) == {
         "a": [["a"], ["a"], ["a"], [], None, []],
         "null": [None] * 6,
     }
@@ -790,23 +834,23 @@ def test_extract_groups() -> None:
     assert (
         df.select(pl.col("iso_code").str.extract_groups(pattern))
         .unnest("iso_code")
-        .to_dict(False)
+        .to_dict(as_series=False)
         == expected
     )
 
-    assert df.select(pl.col("iso_code").str.extract_groups("")).to_dict(False) == {
-        "iso_code": [{"iso_code": None}, {"iso_code": None}]
-    }
+    assert df.select(pl.col("iso_code").str.extract_groups("")).to_dict(
+        as_series=False
+    ) == {"iso_code": [{"iso_code": None}, {"iso_code": None}]}
 
     assert df.select(
         pl.col("iso_code").str.extract_groups(r"\A(ISO\S*).*?(\d+)")
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "iso_code": [{"1": "ISO", "2": "80000"}, {"1": "ISO/IEC/IEEE", "2": "29148"}]
     }
 
     assert df.select(
         pl.col("iso_code").str.extract_groups(r"\A(ISO\S*).*?(?<year>\d+)\z")
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "iso_code": [
             {"1": "ISO", "year": "2009"},
             {"1": "ISO/IEC/IEEE", "year": "2018"},
@@ -815,7 +859,7 @@ def test_extract_groups() -> None:
 
     assert pl.select(
         pl.lit(r"foobar").str.extract_groups(r"(?<foo>.{3})|(?<bar>...)")
-    ).to_dict(False) == {"literal": [{"foo": "foo", "bar": None}]}
+    ).to_dict(as_series=False) == {"literal": [{"foo": "foo", "bar": None}]}
 
 
 def test_starts_ends_with() -> None:
@@ -835,7 +879,7 @@ def test_starts_ends_with() -> None:
             pl.col("a").str.starts_with(pl.lit(None)).alias("starts_None"),
             pl.col("a").str.starts_with(pl.col("sub")).alias("starts_sub"),
         ]
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "ends_pop": [False, False, True, None],
         "ends_None": [None, None, None, None],
         "ends_sub": [False, True, None, None],
@@ -849,16 +893,17 @@ def test_json_path_match_type_4905() -> None:
     df = pl.DataFrame({"json_val": ['{"a":"hello"}', None, '{"a":"world"}']})
     assert df.filter(
         pl.col("json_val").str.json_path_match("$.a").is_in(["hello"])
-    ).to_dict(False) == {"json_val": ['{"a":"hello"}']}
+    ).to_dict(as_series=False) == {"json_val": ['{"a":"hello"}']}
 
 
 def test_decode_strict() -> None:
     df = pl.DataFrame(
         {"strings": ["0IbQvTc3", "0J%2FQldCf0JA%3D", "0J%2FRgNC%2B0YHRgtC%2B"]}
     )
-    assert df.select(pl.col("strings").str.decode("base64", strict=False)).to_dict(
-        False
-    ) == {"strings": [b"\xd0\x86\xd0\xbd77", None, None]}
+    result = df.select(pl.col("strings").str.decode("base64", strict=False))
+    expected = {"strings": [b"\xd0\x86\xd0\xbd77", None, None]}
+    assert result.to_dict(as_series=False) == expected
+
     with pytest.raises(pl.ComputeError):
         df.select(pl.col("strings").str.decode("base64", strict=True))
 
@@ -1043,7 +1088,7 @@ def test_titlecase() -> None:
         }
     )
 
-    assert df.select(pl.col("sing").str.to_titlecase()).to_dict(False) == {
+    assert df.select(pl.col("sing").str.to_titlecase()).to_dict(as_series=False) == {
         "sing": [
             "Welcome To My World",
             "There's No Turning Back",
@@ -1060,7 +1105,7 @@ def test_string_replace_with_nulls_10124() -> None:
         pl.col("col1"),
         pl.col("col1").str.replace("S", "O", n=1).alias("n_1"),
         pl.col("col1").str.replace("S", "O", n=3).alias("n_3"),
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "col1": ["S", "S", "S", None, "S", "S", "S", "S"],
         "n_1": ["O", "O", "O", None, "O", "O", "O", "O"],
         "n_3": ["O", "O", "O", None, "O", "O", "O", "O"],

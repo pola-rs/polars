@@ -9,7 +9,7 @@ def test_binary_conversions() -> None:
         pl.col("blob").cast(pl.Utf8).alias("decoded_blob")
     )
 
-    assert df.to_dict(False) == {
+    assert df.to_dict(as_series=False) == {
         "blob": [b"abc", None, b"cde"],
         "decoded_blob": ["abc", None, "cde"],
     }
@@ -62,7 +62,7 @@ def test_contains_with_expr() -> None:
             pl.col("bin").bin.contains(pl.col("lit2")).alias("contains_2"),
             pl.col("bin").bin.contains(pl.lit(None)).alias("contains_3"),
         ]
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "contains_1": [True, True, False, None],
         "contains_2": [None, True, False, None],
         "contains_3": [None, None, None, None],
@@ -85,7 +85,7 @@ def test_starts_ends_with() -> None:
             pl.col("a").bin.ends_with(pl.lit(None)).alias("start_none"),
             pl.col("a").bin.starts_with(pl.col("start")).alias("start_expr"),
         ]
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "end_lit": [False, False, True, None],
         "end_none": [None, None, None, None],
         "end_expr": [True, False, None, None],

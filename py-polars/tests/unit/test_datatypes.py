@@ -138,22 +138,20 @@ def test_conversion_dtype() -> None:
             }
         )
         .select(
-            [
-                pl.struct(
-                    [pl.col("id_column"), pl.col("some_column").cast(pl.Categorical)]
-                ).alias("struct"),
-                pl.col("some_partition_column"),
-            ]
+            pl.struct(
+                pl.col("id_column"), pl.col("some_column").cast(pl.Categorical)
+            ).alias("struct"),
+            pl.col("some_partition_column"),
         )
-        .group_by(["some_partition_column"], maintain_order=True)
-        .agg([pl.col(["struct"])])
+        .group_by("some_partition_column", maintain_order=True)
+        .agg("struct")
     )
 
-    df = pl.from_arrow(df.to_arrow())  # type: ignore[assignment]
+    result: pl.DataFrame = pl.from_arrow(df.to_arrow())  # type: ignore[assignment]
     # the assertion is not the real test
     # this tests if dtype has bubbled up correctly in conversion
     # if not we would UB
-    assert df.to_dict(False) == {
+    expected = {
         "some_partition_column": ["partition_1", "partition_2"],
         "struct": [
             [
@@ -166,6 +164,7 @@ def test_conversion_dtype() -> None:
             ],
         ],
     }
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_struct_field_iter() -> None:

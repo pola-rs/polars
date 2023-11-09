@@ -2,7 +2,7 @@
 
 ## Column-based API vs. Row-based API
 
-Whereas the `Spark` `DataFrame` is analogous to a collection of rows, a `Polars` `DataFrame` is closer to a collection of columns. This means that you can combine columns in `Polars` in ways that are not possible in `Spark`, because `Spark` preserves the relationship of the data in each row.
+Whereas the `Spark` `DataFrame` is analogous to a collection of rows, a Polars `DataFrame` is closer to a collection of columns. This means that you can combine columns in Polars in ways that are not possible in `Spark`, because `Spark` preserves the relationship of the data in each row.
 
 Consider this sample dataset:
 
@@ -28,7 +28,7 @@ dfs = spark.createDataFrame(
 
 ### Example 1: Combining `head` and `sum`
 
-In `Polars` you can write something like this:
+In Polars you can write something like this:
 
 ```python
 df.select(
@@ -89,7 +89,7 @@ Output:
 
 ### Example 2: Combining Two `head`s
 
-In `Polars` you can combine two different `head` expressions on the same DataFrame, provided that they return the same number of values.
+In Polars you can combine two different `head` expressions on the same DataFrame, provided that they return the same number of values.
 
 ```python
 df.select(

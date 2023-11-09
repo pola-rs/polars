@@ -4,7 +4,6 @@ use std::sync::RwLock;
 use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
-use polars_ops::prelude::*;
 
 use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::function_expr::ListFunction;
@@ -229,6 +228,13 @@ impl ListNameSpace {
     /// Get the tail of every sublist
     pub fn tail(self, n: Expr) -> Expr {
         self.slice(lit(0i64) - n.clone().cast(DataType::Int64), n)
+    }
+
+    #[cfg(feature = "dtype-array")]
+    /// Convert a List column into an Array column with the same inner data type.
+    pub fn to_array(self, width: usize) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ListExpr(ListFunction::ToArray(width)))
     }
 
     #[cfg(feature = "list_to_struct")]

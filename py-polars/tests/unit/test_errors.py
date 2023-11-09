@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import re
 from datetime import date, datetime, time
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -105,9 +104,14 @@ def test_string_numeric_comp_err() -> None:
 def test_panic_error() -> None:
     with pytest.raises(
         pl.PolarsPanicError,
-        match="dimensions cannot be empty",
+        match="unit: 'k' not supported",
     ):
-        pl.Series("a", [1, 2, 3]).reshape(())
+        pl.datetime_range(
+            start=datetime(2021, 12, 16),
+            end=datetime(2021, 12, 16, 3),
+            interval="99k",
+            eager=True,
+        )
 
 
 def test_join_lazy_on_df() -> None:
@@ -134,7 +138,8 @@ def test_join_lazy_on_df() -> None:
 
 def test_projection_update_schema_missing_column() -> None:
     with pytest.raises(
-        pl.ComputeError, match="column 'colC' not available in schema Schema:*"
+        pl.ColumnNotFoundError,
+        match='unable to find column "colC"',
     ):
         (
             pl.DataFrame({"colA": ["a", "b", "c"], "colB": [1, 2, 3]})
@@ -479,7 +484,8 @@ def test_skip_nulls_err() -> None:
     df = pl.DataFrame({"foo": [None, None]})
 
     with pytest.raises(
-        pl.ComputeError, match=r"The output type of 'apply' function cannot determined"
+        pl.ComputeError,
+        match=r"The output type of the 'apply' function cannot be determined",
     ):
         df.with_columns(pl.col("foo").map_elements(lambda x: x, skip_nulls=True))
 
@@ -490,11 +496,7 @@ def test_skip_nulls_err() -> None:
         pytest.param(
             pl.DataFrame({"A": [1, 2, 3], "B": ["1", "2", "help"]}),
             pl.UInt32,
-            re.escape(
-                "strict conversion from `str` to `u32` failed for column: B, "
-                'value(s) ["help"]; if you were trying to cast Utf8 to temporal '
-                "dtypes, consider using `strptime`"
-            ),
+            "Conversion .* failed",
             id="Unsigned integer",
         )
     ],
@@ -684,4 +686,18 @@ def test_sort_by_error() -> None:
     ):
         df.group_by("id", maintain_order=True).agg(
             pl.col("cost").filter(pl.col("type") == "A").sort_by("number")
+        )
+
+
+def test_non_existent_expr_inputs_in_lazy() -> None:
+    with pytest.raises(pl.ColumnNotFoundError):
+        pl.LazyFrame().filter(pl.col("x") == 1).explain()  # tests: 12074
+
+    lf = pl.LazyFrame({"foo": [1, 1, -2, 3]})
+
+    with pytest.raises(pl.ColumnNotFoundError):
+        (
+            lf.select(pl.col("foo").cumsum().alias("bar"))
+            .filter(pl.col("bar") == pl.col("foo"))
+            .explain()
         )

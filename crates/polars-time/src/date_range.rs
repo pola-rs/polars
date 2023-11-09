@@ -1,3 +1,5 @@
+#[cfg(feature = "timezones")]
+use arrow::legacy::kernels::Ambiguous;
 use arrow::legacy::time_zone::Tz;
 use chrono::{Datelike, NaiveDateTime, NaiveTime};
 use polars_core::chunked_array::temporal::time_to_time64ns;
@@ -6,7 +8,7 @@ use polars_core::series::IsSorted;
 
 use crate::prelude::*;
 #[cfg(feature = "timezones")]
-use crate::utils::localize_timestamp;
+use crate::utils::try_localize_timestamp;
 
 pub fn in_nanoseconds_window(ndt: &NaiveDateTime) -> bool {
     // ~584 year around 1970
@@ -48,8 +50,8 @@ pub fn datetime_range_impl(
         #[cfg(feature = "timezones")]
         Some(tz) => match tz.parse::<chrono_tz::Tz>() {
             Ok(tz) => {
-                let start = localize_timestamp(start, tu, tz);
-                let end = localize_timestamp(end, tu, tz);
+                let start = try_localize_timestamp(start, tu, tz, Ambiguous::Raise);
+                let end = try_localize_timestamp(end, tu, tz, Ambiguous::Raise);
                 Int64Chunked::new_vec(
                     name,
                     datetime_range_i64(start?, end?, interval, closed, tu, Some(&tz))?,
@@ -130,32 +132,25 @@ pub(crate) fn datetime_range_i64(
     }
     let mut ts = Vec::with_capacity(size);
 
-    let mut t = start;
+    let mut i = match closed {
+        ClosedWindow::Both | ClosedWindow::Left => 0,
+        ClosedWindow::Right | ClosedWindow::None => 1,
+    };
+    let mut t = offset_fn(&(interval * i), start, tz)?;
+    i += 1;
     match closed {
-        ClosedWindow::Both => {
+        ClosedWindow::Both | ClosedWindow::Right => {
             while t <= end {
                 ts.push(t);
-                t = offset_fn(&interval, t, tz)?
+                t = offset_fn(&(interval * i), start, tz)?;
+                i += 1;
             }
         },
-        ClosedWindow::Left => {
+        ClosedWindow::Left | ClosedWindow::None => {
             while t < end {
                 ts.push(t);
-                t = offset_fn(&interval, t, tz)?
-            }
-        },
-        ClosedWindow::Right => {
-            t = offset_fn(&interval, t, tz)?;
-            while t <= end {
-                ts.push(t);
-                t = offset_fn(&interval, t, tz)?
-            }
-        },
-        ClosedWindow::None => {
-            t = offset_fn(&interval, t, tz)?;
-            while t < end {
-                ts.push(t);
-                t = offset_fn(&interval, t, tz)?
+                t = offset_fn(&(interval * i), start, tz)?;
+                i += 1;
             }
         },
     }
