@@ -3599,3 +3599,9 @@ def test_from_dicts_undeclared_column_dtype() -> None:
     data = [{"a": 1, "b": 2}]
     result = pl.from_dicts(data, schema=["x"])
     assert result.schema == {"x": pl.Null}
+
+
+def test_from_records_u64_12329() -> None:
+    s = pl.from_records([{"a": 9908227375760408577}])
+    assert s.dtypes == [pl.UInt64]
+    assert s["a"][0] == 9908227375760408577
