@@ -146,6 +146,7 @@ NOOP_TEST_CASES = [
     "lambda x: MY_LIST[x]",
     "lambda x: MY_DICT[1]",
     'lambda x: "first" if x == 1 else "not first"',
+    "lambda x: 0xffffffff << (32-x)",
 ]
 
 EVAL_ENVIRONMENT = {
