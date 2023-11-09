@@ -212,10 +212,14 @@ def _xl_column_multi_range(
     m: dict[str, Any] = {}
     if _adjacent_cols(df, cols, min_max=m):
         return _xl_column_range(
-            df, table_start, (m["min"]["idx"], m["max"]["idx"]), include_header=include_header
+            df,
+            table_start,
+            (m["min"]["idx"], m["max"]["idx"]),
+            include_header=include_header,
         )
     return " ".join(
-        _xl_column_range(df, table_start, col, include_header=include_header) for col in cols
+        _xl_column_range(df, table_start, col, include_header=include_header)
+        for col in cols
     )
 
 

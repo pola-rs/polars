@@ -3124,7 +3124,12 @@ class DataFrame:
         # finally, inject any sparklines into the table
         for column, params in (sparklines or {}).items():
             _xl_inject_sparklines(
-                ws, df, table_start, column, include_header=include_header, params=params
+                ws,
+                df,
+                table_start,
+                column,
+                include_header=include_header,
+                params=params,
             )
 
         # worksheet options
