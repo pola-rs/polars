@@ -2,6 +2,7 @@ use std::hash::{BuildHasher, Hash};
 
 use hashbrown::hash_map::{Entry, RawEntryMut};
 use hashbrown::HashMap;
+use polars_utils::hash_to_partition;
 use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
@@ -15,7 +16,7 @@ use crate::hashing::{
 };
 use crate::prelude::compare_inner::PartialEqInner;
 use crate::prelude::*;
-use crate::utils::{flatten, split_df, CustomIterTools};
+use crate::utils::{flatten, split_df, CustomIterTools, _split_offsets};
 use crate::POOL;
 
 fn get_init_size() -> usize {
@@ -176,124 +177,144 @@ where
     }
 }
 
-// giving the slice info to the compiler is much
-// faster than the using an iterator, that's why we
-// have the code duplication
-pub(crate) fn group_by_threaded_slice<T, IntoSlice>(
-    keys: Vec<IntoSlice>,
-    n_partitions: u64,
+pub(crate) fn group_by_threaded_iter2<T, K, F>(
+    get_range: F,
+    n_partitions: usize,
     sorted: bool,
+    len: usize,
 ) -> GroupsProxy
 where
+    K: IntoIterator<Item = T> + Send + Sync,
     T: Send + Hash + Eq + Sync + Copy + AsU64,
-    IntoSlice: AsRef<[T]> + Send + Sync,
+    F: Fn(std::ops::Range<usize>) -> Vec<K> + Send + Sync,
+    K: Send + Sync,
 {
-    let init_size = get_init_size();
+    let n_threads = n_partitions;
 
-    // We will create a hashtable in every thread.
-    // We use the hash to partition the keys to the matching hashtable.
-    // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    let out = POOL.install(|| {
-        (0..n_partitions)
-            .into_par_iter()
-            .map(|thread_no| {
-                let mut hash_tbl: PlHashMap<T, (IdxSize, Vec<IdxSize>)> =
-                    PlHashMap::with_capacity(init_size);
+    POOL.install(|| {
+        let offsets = _split_offsets(len, n_threads);
 
-                let mut offset = 0;
-                for keys in &keys {
-                    let keys = keys.as_ref();
-                    let len = keys.len() as IdxSize;
-                    let hasher = hash_tbl.hasher().clone();
+        // Compute the number of elements in each partition for each portion.
+        // A portion is are the number of elements processed per thread.
+        let per_thread_partition_sizes: Vec<Vec<usize>> = offsets
+            .par_iter()
+            .map(|(start, len)| {
+                let portion_range = *start..*start + len;
+                let key_portion = get_range(portion_range);
 
-                    let mut cnt = 0;
-                    keys.iter().for_each(|k| {
-                        let idx = cnt + offset;
-                        cnt += 1;
-
-                        if this_partition(k.as_u64(), thread_no, n_partitions) {
-                            let hash = hasher.hash_one(k);
-                            let entry = hash_tbl.raw_entry_mut().from_key_hashed_nocheck(hash, k);
-
-                            match entry {
-                                RawEntryMut::Vacant(entry) => {
-                                    let tuples = vec![idx];
-                                    entry.insert_with_hasher(hash, *k, (idx, tuples), |k| {
-                                        hasher.hash_one(k)
-                                    });
-                                },
-                                RawEntryMut::Occupied(mut entry) => {
-                                    let v = entry.get_mut();
-                                    v.1.push(idx);
-                                },
-                            }
+                let mut partition_sizes = vec![0; n_partitions];
+                for key_chunk in key_portion {
+                    for key in key_chunk.into_iter() {
+                        let h = key.as_u64();
+                        let p = hash_to_partition(h, n_partitions);
+                        unsafe {
+                            *partition_sizes.get_unchecked_mut(p) += 1;
                         }
-                    });
-                    offset += len;
+                    }
                 }
-                hash_tbl
-                    .into_iter()
-                    .map(|(_k, v)| v)
-                    .collect_trusted::<Vec<_>>()
+                partition_sizes
             })
-            .collect::<Vec<_>>()
-    });
-    finish_group_order(out, sorted)
-}
+            .collect();
 
-pub(crate) fn group_by_threaded_iter<T, I>(
-    keys: &[I],
-    n_partitions: u64,
-    sorted: bool,
-) -> GroupsProxy
-where
-    I: IntoIterator<Item = T> + Send + Sync + Copy,
-    I::IntoIter: ExactSizeIterator,
-    T: Send + Hash + Eq + Sync + Copy + AsU64,
-{
-    let init_size = get_init_size();
+        // Compute output offsets with a cumulative sum.
+        let mut per_thread_partition_offsets = vec![0; n_partitions * n_threads + 1];
+        let mut partition_offsets = vec![0; n_partitions + 1];
+        let mut cum_offset = 0;
+        for p in 0..n_partitions {
+            partition_offsets[p] = cum_offset;
+            for t in 0..n_threads {
+                per_thread_partition_offsets[t * n_partitions + p] = cum_offset;
+                cum_offset += per_thread_partition_sizes[t][p]
+            }
+        }
 
-    // We will create a hashtable in every thread.
-    // We use the hash to partition the keys to the matching hashtable.
-    // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    let out = POOL.install(|| {
-        (0..n_partitions)
-            .into_par_iter()
-            .map(|thread_no| {
-                let mut hash_tbl: PlHashMap<T, (IdxSize, Vec<IdxSize>)> =
-                    PlHashMap::with_capacity(init_size);
+        assert_eq!(len, cum_offset);
+        let num_keys = len;
+        per_thread_partition_offsets[n_threads * n_partitions] = num_keys;
+        partition_offsets[n_partitions] = num_keys;
 
-                let mut offset = 0;
-                for keys in keys {
-                    let keys = keys.into_iter();
-                    let len = keys.len() as IdxSize;
-                    let hasher = hash_tbl.hasher().clone();
+        let mut scatter_keys: Vec<T> = Vec::with_capacity(num_keys);
+        let mut scatter_idx: Vec<IdxSize> = Vec::with_capacity(num_keys);
+        let scatter_keys_ptr = unsafe { SyncPtr::new(scatter_keys.as_mut_ptr()) };
+        let scatter_idxs_ptr = unsafe { SyncPtr::new(scatter_idx.as_mut_ptr()) };
 
-                    let mut cnt = 0;
-                    keys.for_each(|k| {
-                        let idx = cnt + offset;
-                        cnt += 1;
+        offsets
+            .par_iter()
+            .enumerate()
+            .for_each(|(t, (start, len))| {
+                let portion_range = *start..*start + len;
+                let key_portion = get_range(portion_range);
 
-                        if this_partition(k.as_u64(), thread_no, n_partitions) {
-                            let hash = hasher.hash_one(k);
-                            let entry = hash_tbl.raw_entry_mut().from_key_hashed_nocheck(hash, &k);
+                let mut partition_offsets =
+                    per_thread_partition_offsets[t * n_partitions..(t + 1) * n_partitions].to_vec();
 
-                            match entry {
-                                RawEntryMut::Vacant(entry) => {
-                                    let tuples = vec![idx];
-                                    entry.insert_with_hasher(hash, k, (idx, tuples), |k| {
-                                        hasher.hash_one(k)
-                                    });
-                                },
-                                RawEntryMut::Occupied(mut entry) => {
-                                    let v = entry.get_mut();
-                                    v.1.push(idx);
-                                },
-                            }
+                let mut i = *start as IdxSize;
+                for keys_chunk in key_portion {
+                    for key in keys_chunk {
+                        unsafe {
+                            let p = hash_to_partition(key.as_u64(), n_partitions);
+                            let offset = partition_offsets.get_unchecked_mut(p);
+                            *scatter_keys_ptr.get().add(*offset) = key;
+                            *scatter_idxs_ptr.get().add(*offset) = i;
+                            *offset += 1;
                         }
-                    });
-                    offset += len;
+
+                        i += 1;
+                    }
                 }
+            });
+
+        // Safety: all values are initialized.
+        unsafe {
+            scatter_keys.set_len(len);
+            scatter_idx.set_len(len);
+        }
+
+        // Build tables
+        let out = (0..n_partitions)
+            .into_par_iter()
+            .map(|p| {
+                // Resizing the hash map is very, very expensive. That's why we
+                // adopt a hybrid strategy: we assume an initially small hash
+                // map, which would satisfy a highly skewed relation. If this
+                // fills up we immediately reserve enough for a full cardinality
+                // data set.
+
+                let partition_range = partition_offsets[p]..partition_offsets[p + 1];
+                let full_size = partition_range.len();
+                let mut conservative_size = _HASHMAP_INIT_SIZE.max(full_size / 64);
+
+                let mut hash_tbl: PlHashMap<T, (IdxSize, Vec<IdxSize>)> =
+                    PlHashMap::with_capacity(conservative_size);
+                let hasher = hash_tbl.hasher().clone();
+
+                unsafe {
+                    for i in partition_range {
+                        if hash_tbl.len() == conservative_size {
+                            hash_tbl.reserve(full_size - conservative_size);
+                            conservative_size = 0; // Hack to ensure we never hit this branch again.
+                        }
+                        let key = *scatter_keys.get_unchecked(i);
+                        let idx = *scatter_idx.get_unchecked(i);
+
+                        let hash = hasher.hash_one(key);
+                        let entry = hash_tbl.raw_entry_mut().from_key_hashed_nocheck(hash, &key);
+
+                        match entry {
+                            RawEntryMut::Vacant(entry) => {
+                                let tuples = vec![idx];
+                                entry.insert_with_hasher(hash, key, (idx, tuples), |k| {
+                                    hasher.hash_one(k)
+                                });
+                            },
+                            RawEntryMut::Occupied(mut entry) => {
+                                let v = entry.get_mut();
+                                v.1.push(idx);
+                            },
+                        }
+                    }
+                }
+
                 // iterating the hash tables locally
                 // was faster than iterating in the materialization phase directly
                 // the proper end vec. I believe this is because the hash-table
@@ -308,10 +329,41 @@ where
                     .map(|(_k, v)| v)
                     .collect_trusted::<Vec<_>>()
             })
-            .collect::<Vec<_>>()
-    });
-    finish_group_order(out, sorted)
+            .collect::<Vec<_>>();
+
+        finish_group_order(out, sorted)
+    })
 }
+
+// #[test]
+// fn test_par_radix() {
+//     let ca= UInt32Chunked::new("foo", &[0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10,
+//         0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10,
+//        0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10,
+//     ]);
+//     let own_length = ca.len();
+//     let out = group_by_threaded_iter2(
+//         ca.downcast_iter().cloned().collect(),
+//         |chunks, range| {
+//             slice_chunks(chunks, range.start as i64, range.len(), own_length).0
+//         },
+//         POOL.current_num_threads(),
+//         false,
+//         ca.len()
+//     );
+//
+//
+//     // let values = &[0u32, 0, 1, 1, 2, 2];
+//     // group_by_threaded_iter2(
+//     //     values.as_slice(),
+//     //     |ca, range| {
+//     //         &ca[range]
+//     //     },
+//     //     POOL.current_num_threads(),
+//     //     false,
+//     //     ca.len()
+//     // );
+// }
 
 #[inline]
 pub(crate) unsafe fn compare_keys<'a>(

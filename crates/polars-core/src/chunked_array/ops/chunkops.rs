@@ -1,20 +1,70 @@
 #[cfg(feature = "object")]
 use arrow::array::Array;
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
+use arrow::types::NativeType;
 use polars_error::constants::LENGTH_LIMIT_MSG;
 
 use super::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
+use crate::prelude::chunkops::private::Sealed;
 use crate::utils::slice_offsets;
 
-#[inline]
-fn slice(
-    chunks: &[ArrayRef],
+mod private {
+    use super::*;
+    pub trait Sealed {}
+
+    impl Sealed for ArrayRef {}
+    impl<T: NativeType> Sealed for PrimitiveArray<T> {}
+    impl<T> Sealed for &[T] {}
+}
+pub(crate) trait SliceAble: private::Sealed {
+    unsafe fn sliced_unchecked_(&self, offset: usize, length: usize) -> Self;
+
+    fn len_chunk(&self) -> usize;
+}
+
+impl SliceAble for ArrayRef {
+    unsafe fn sliced_unchecked_(&self, offset: usize, length: usize) -> Self {
+        let mut out = self.clone();
+        out.slice_unchecked(offset, length);
+        out
+    }
+
+    fn len_chunk(&self) -> usize {
+        self.len()
+    }
+}
+
+trait Private {}
+impl<T: NativeType> Private for PrimitiveArray<T> {}
+
+impl<T: Array + SlicedArray + Private + Clone + Sealed> SliceAble for T {
+    unsafe fn sliced_unchecked_(&self, offset: usize, length: usize) -> Self {
+        self.slice_typed_unchecked(offset, length)
+    }
+
+    fn len_chunk(&self) -> usize {
+        <Self as Array>::len(self)
+    }
+}
+
+impl<T> SliceAble for &[T] {
+    unsafe fn sliced_unchecked_(&self, offset: usize, length: usize) -> Self {
+        self.get_unchecked(offset..offset + length)
+    }
+
+    fn len_chunk(&self) -> usize {
+        self.len()
+    }
+}
+
+pub(crate) fn slice_chunks<A: SliceAble>(
+    chunks: &[A],
     offset: i64,
     slice_length: usize,
     own_length: usize,
-) -> (Vec<ArrayRef>, usize) {
+) -> (Vec<A>, usize) {
     let mut new_chunks = Vec::with_capacity(1);
     let (raw_offset, slice_len) = slice_offsets(offset, slice_length, own_length);
 
@@ -23,7 +73,7 @@ fn slice(
     let mut new_len = 0;
 
     for chunk in chunks {
-        let chunk_len = chunk.len();
+        let chunk_len = chunk.len_chunk();
         if remaining_offset > 0 && remaining_offset >= chunk_len {
             remaining_offset -= chunk_len;
             continue;
@@ -35,11 +85,11 @@ fn slice(
         };
         new_len += take_len;
 
-        debug_assert!(remaining_offset + take_len <= chunk.len());
+        debug_assert!(remaining_offset + take_len <= chunk.len_chunk());
         unsafe {
             // Safety:
             // this function ensures the slices are in bounds
-            new_chunks.push(chunk.sliced_unchecked(remaining_offset, take_len));
+            new_chunks.push(chunk.sliced_unchecked_(remaining_offset, take_len));
         }
         remaining_length -= take_len;
         remaining_offset = 0;
@@ -48,7 +98,7 @@ fn slice(
         }
     }
     if new_chunks.is_empty() {
-        new_chunks.push(chunks[0].sliced(0, 0));
+        unsafe { new_chunks.push(chunks[0].sliced_unchecked_(0, 0)) };
     }
     (new_chunks, new_len)
 }
@@ -120,7 +170,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// and will slice the best match when offset, or length is out of bounds
     #[inline]
     pub fn slice(&self, offset: i64, length: usize) -> Self {
-        let (chunks, len) = slice(&self.chunks, offset, length, self.len());
+        let (chunks, len) = slice_chunks(&self.chunks, offset, length, self.len());
         let mut out = unsafe { self.copy_with_chunks(chunks, true, true) };
         out.length = len as IdxSize;
         out
