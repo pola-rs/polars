@@ -1645,60 +1645,51 @@ def test_custom_writeable_object() -> None:
 def test_read_filelike_object(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
-    # has multiple columns and ends with LF
-    csv = textwrap.dedent(
-        """\
-        a,b
-        1,2
-        1,2
-        """
-    )
-    file_path = tmp_path / "multiple-columns_ends-with-LF.csv"
-    file_path.write_text(csv)
-    expect = pl.read_csv(file_path)
-    with file_path.open("rb") as f:
-        read_df = pl.read_csv(f)
-    assert_frame_equal(read_df, expect)
+    data = [
+        (
+            "multiple-columns_ends-with-LF.csv",
+            textwrap.dedent(
+                """\
+                a,b
+                1,2
+                1,2
+                """
+            ),
+        ),
+        (
+            "multiple-columns_ends-without-LF.csv",
+            textwrap.dedent(
+                """\
+                a,b
+                1,2
+                1,2"""
+            ),
+        ),
+        (
+            "single-column_ends-with-LF.csv",
+            textwrap.dedent(
+                """\
+                a
+                1
+                1
+                """
+            ),
+        ),
+        (
+            "single-column_ends-without-LF.csv",
+            textwrap.dedent(
+                """\
+                a
+                1
+                1"""
+            ),
+        ),
+    ]
 
-    # has multiple columns and ends without LF
-    csv = textwrap.dedent(
-        """\
-        a,b
-        1,2
-        1,2"""
-    )
-    file_path = tmp_path / "multiple-columns_ends-without-LF.csv"
-    file_path.write_text(csv)
-    expect = pl.read_csv(file_path)
-    with file_path.open("rb") as f:
-        read_df = pl.read_csv(f)
-    assert_frame_equal(read_df, expect)
-
-    # has a single column and ends with LF
-    csv = textwrap.dedent(
-        """\
-        a
-        1
-        1
-        """
-    )
-    file_path = tmp_path / "single-column_ends-with-LF.csv"
-    file_path.write_text(csv)
-    expect = pl.read_csv(file_path)
-    with file_path.open("rb") as f:
-        read_df = pl.read_csv(f)
-    assert_frame_equal(read_df, expect)
-
-    # has a single column and ends without LF
-    csv = textwrap.dedent(
-        """\
-        a
-        1
-        1"""
-    )
-    file_path = tmp_path / "single-column_ends-without-LF.csv"
-    file_path.write_text(csv)
-    expect = pl.read_csv(file_path)
-    with file_path.open("rb") as f:
-        read_df = pl.read_csv(f)
-    assert_frame_equal(read_df, expect)
+    for name, csv in data:
+        file_path = tmp_path / name
+        file_path.write_text(csv)
+        expect = pl.read_csv(file_path)
+        with file_path.open("rb") as f:
+            read_df = pl.read_csv(f)
+        assert_frame_equal(read_df, expect)
