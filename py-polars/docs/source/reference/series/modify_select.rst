@@ -41,6 +41,7 @@ Manipulation/selection
     Series.rle
     Series.rle_id
     Series.round
+    Series.round_sig_figs
     Series.sample
     Series.set
     Series.set_at_idx

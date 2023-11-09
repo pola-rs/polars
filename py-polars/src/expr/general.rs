@@ -453,6 +453,10 @@ impl PyExpr {
         self.inner.clone().round(decimals).into()
     }
 
+    fn round_sig_figs(&self, digits: i32) -> Self {
+        self.clone().inner.round_sig_figs(digits).into()
+    }
+
     fn floor(&self) -> Self {
         self.inner.clone().floor().into()
     }

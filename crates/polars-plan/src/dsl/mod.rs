@@ -816,6 +816,12 @@ impl Expr {
         self.map_private(FunctionExpr::Round { decimals })
     }
 
+    /// Round to a number of significant figures.
+    #[cfg(feature = "round_series")]
+    pub fn round_sig_figs(self, digits: i32) -> Self {
+        self.map_private(FunctionExpr::RoundSF { digits })
+    }
+
     /// Floor underlying floating point array to the lowest integers smaller or equal to the float value.
     #[cfg(feature = "round_series")]
     pub fn floor(self) -> Self {

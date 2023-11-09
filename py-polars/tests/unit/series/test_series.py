@@ -1234,6 +1234,40 @@ def test_round() -> None:
     assert b.to_list() == [1.0, 2.0]
 
 
+@pytest.mark.parametrize(
+    ("series", "digits", "expected_result"),
+    [
+        pytest.param(pl.Series([1.234, 0.1234]), 2, pl.Series([1.2, 0.12]), id="f64"),
+        pytest.param(
+            pl.Series([1.234, 0.1234]).cast(pl.Float32),
+            2,
+            pl.Series([1.2, 0.12]).cast(pl.Float32),
+            id="f32",
+        ),
+        pytest.param(pl.Series([123400, 1234]), 2, pl.Series([120000, 1200]), id="i64"),
+        pytest.param(
+            pl.Series([123400, 1234]).cast(pl.Int32),
+            2,
+            pl.Series([120000, 1200]).cast(pl.Int32),
+            id="i32",
+        ),
+        pytest.param(
+            pl.Series([0.0]), 2, pl.Series([0.0]), id="0 should remain the same"
+        ),
+    ],
+)
+def test_round_sig_figs(
+    series: pl.Series, digits: int, expected_result: pl.Series
+) -> None:
+    result = series.round_sig_figs(digits=digits)
+    assert_series_equal(result, expected_result)
+
+
+def test_round_sig_figs_raises_exc() -> None:
+    with pytest.raises(polars.exceptions.InvalidOperationError):
+        pl.Series([1.234, 0.1234]).round_sig_figs(digits=0)
+
+
 def test_apply_list_out() -> None:
     s = pl.Series("count", [3, 2, 2])
     out = s.map_elements(lambda val: pl.repeat(val, val, eager=True))

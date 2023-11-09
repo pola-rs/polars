@@ -231,6 +231,10 @@ pub enum FunctionExpr {
         decimals: u32,
     },
     #[cfg(feature = "round_series")]
+    RoundSF {
+        digits: i32,
+    },
+    #[cfg(feature = "round_series")]
     Floor,
     #[cfg(feature = "round_series")]
     Ceil,
@@ -436,7 +440,9 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "round_series")]
             Round { decimals } => decimals.hash(state),
             #[cfg(feature = "round_series")]
-            Floor => {},
+            FunctionExpr::RoundSF { digits } => digits.hash(state),
+            #[cfg(feature = "round_series")]
+            FunctionExpr::Floor => {},
             #[cfg(feature = "round_series")]
             Ceil => {},
             UpperBound => {},
@@ -611,6 +617,8 @@ impl Display for FunctionExpr {
             },
             #[cfg(feature = "round_series")]
             Round { .. } => "round",
+            #[cfg(feature = "round_series")]
+            RoundSF { .. } => "round_sig_figs",
             #[cfg(feature = "round_series")]
             Floor => "floor",
             #[cfg(feature = "round_series")]
@@ -872,6 +880,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Unique(stable) => map!(unique::unique, stable),
             #[cfg(feature = "round_series")]
             Round { decimals } => map!(round::round, decimals),
+            #[cfg(feature = "round_series")]
+            RoundSF { digits } => map!(round::round_sig_figs, digits),
             #[cfg(feature = "round_series")]
             Floor => map!(round::floor),
             #[cfg(feature = "round_series")]

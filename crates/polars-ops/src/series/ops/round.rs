@@ -1,5 +1,6 @@
 use num_traits::pow::Pow;
 use polars_core::prelude::*;
+use polars_core::with_match_physical_numeric_polars_type;
 
 use crate::series::ops::SeriesSealed;
 
@@ -35,6 +36,24 @@ pub trait RoundSeries: SeriesSealed {
             };
         }
         polars_bail!(opq = round, s.dtype());
+    }
+
+    fn round_sig_figs(&self, digits: i32) -> PolarsResult<Series> {
+        let s = self.as_series();
+        polars_ensure!(digits >= 1, InvalidOperation: "digits must be an integer >= 1");
+        polars_ensure!(s.dtype().is_numeric(), InvalidOperation: "round_sig_figs can only be used on numeric types" );
+        with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+            let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+            let s = ca.apply_values(|value| {
+                let value = value as f64;
+                if value == 0.0 {
+                    return value as <$T as PolarsNumericType>::Native;
+                }
+                let magnitude = 10.0_f64.powi(digits - 1 - value.abs().log10().floor() as i32);
+                ((value * magnitude).round() / magnitude) as <$T as PolarsNumericType>::Native
+            }).into_series();
+            return Ok(s);
+        });
     }
 
     /// Floor underlying floating point array to the lowest integers smaller or equal to the float value.
