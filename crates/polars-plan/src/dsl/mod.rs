@@ -816,7 +816,7 @@ impl Expr {
         self.map_private(FunctionExpr::Round { decimals })
     }
 
-    /// Round underlying floating point array to given significant figures.
+    /// Round to a number of significant figures.
     #[cfg(feature = "round_series")]
     pub fn round_sig_figs(self, digits: i32) -> Self {
         self.map_private(FunctionExpr::RoundSF { digits })

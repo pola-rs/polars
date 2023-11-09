@@ -4698,24 +4698,24 @@ class Series:
 
     def round_sig_figs(self, digits: int) -> Series:
         """
-        Round underlying floating point data by `significant` figures.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [0.12345, 2.56789, 39.01234])
-        >>> s.round_sig_figs(2)
-        shape: (3,)
-        Series: 'a' [f64]
-        [
-                0.12
-                2.6
-                39.0
-        ]
+        Round to a number of significant figures.
 
         Parameters
         ----------
         digits
-            number of significant figures to round by.
+            Number of significant figures to round to.
+
+        Examples
+        --------
+        >>> s = pl.Series([0.01234, 3.333, 1234.0])
+        >>> s.round_sig_figs(2)
+        shape: (3,)
+        Series: '' [f64]
+        [
+                0.012
+                3.3
+                1200.0
+        ]
 
         """
 
