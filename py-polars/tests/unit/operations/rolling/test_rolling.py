@@ -761,3 +761,12 @@ def test_rolling_by_1mo_saturating_12216() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_index_expr_with_literal() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).sort("a")
+    out = df.rolling(index_column=(5 * pl.col("a")).set_sorted(), period="2i").agg(
+        pl.col("b")
+    )
+    expected = pl.DataFrame({"literal": [5, 10, 15], "b": [["a"], ["b"], ["c"]]})
+    assert_frame_equal(out, expected)

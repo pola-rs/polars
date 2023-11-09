@@ -8,7 +8,7 @@ use smartstring::alias::String as SmartString;
 
 use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::Context;
-use crate::prelude::consts::COUNT;
+use crate::prelude::consts::{COUNT, LITERAL_NAME};
 use crate::prelude::*;
 
 /// Utility to write comma delimited strings
@@ -183,6 +183,12 @@ pub fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
                 "this expression may produce multiple output names"
             ),
             Expr::Count => return Ok(Arc::from(COUNT)),
+            Expr::Literal(val) => {
+                return match val {
+                    LiteralValue::Series(s) => Ok(Arc::from(s.name())),
+                    _ => Ok(Arc::from(LITERAL_NAME)),
+                }
+            },
             _ => {},
         }
     }
