@@ -1,5 +1,3 @@
-use polars::prelude::*;
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:pokemon]
     use polars::prelude::*;
@@ -65,17 +63,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:rules]
     // aggregate and broadcast within a group
     // output type: -> i32
-    sum("foo").over([col("groups")]);
+    let _ = sum("foo").over([col("groups")]);
     // sum within a group and multiply with group elements
     // output type: -> i32
-    (col("x").sum() * col("y"))
+    let _ = (col("x").sum() * col("y"))
         .over([col("groups")])
         .alias("x1");
     // sum within a group and multiply with group elements
     // and aggregate the group to a list
     // output type: -> ChunkedArray<i32>
-    (col("x").sum() * col("y"))
-        .list()
+    let _ = (col("x").sum() * col("y"))
         .over([col("groups")])
         .alias("x2");
     // note that it will require an explicit `list()` call
@@ -84,11 +81,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // the flatten call explodes that list
 
     // This is the fastest method to do things over groups when the groups are sorted
-    (col("x").sum() * col("y"))
-    .list()
-    .over([col("groups")])
-    .flatten()
-    .alias("x3");
+    let _ = (col("x").sum() * col("y"))
+        .over([col("groups")])
+        .flatten()
+        .alias("x3");
     // --8<-- [end:rules]
 
     // --8<-- [start:examples]
@@ -96,29 +92,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .select([
-            col("Type 1")
-                .head(Some(3))
-                .list()
-                .over(["Type 1"])
-                .flatten(),
+            col("Type 1").head(Some(3)).over(["Type 1"]).flatten(),
             col("Name")
                 .sort_by(["Speed"], [true])
                 .head(Some(3))
-                .list()
                 .over(["Type 1"])
                 .flatten()
                 .alias("fastest/group"),
             col("Name")
                 .sort_by(["Attack"], [true])
                 .head(Some(3))
-                .list()
                 .over(["Type 1"])
                 .flatten()
                 .alias("strongest/group"),
             col("Name")
                 .sort(false)
                 .head(Some(3))
-                .list()
                 .over(["Type 1"])
                 .flatten()
                 .alias("sorted_by_alphabet"),

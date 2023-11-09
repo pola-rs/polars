@@ -101,10 +101,10 @@ required-features = ["polars/lazy"]
 name = "user-guide-expressions-user-defined-functions"
 path = "user-guide/expressions/user-defined-functions.rs"
 required-features = ["polars/lazy"]
-# [[bin]]
-# name = "user-guide-expressions-window"
-# path = "user-guide/expressions/window.rs"
-# required-features = ["polars/lazy"]
+[[bin]]
+name = "user-guide-expressions-window"
+path = "user-guide/expressions/window.rs"
+required-features = ["polars/lazy"]
 
 [[bin]]
 name = "user-guide-io-cloud-storage"
