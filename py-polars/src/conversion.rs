@@ -838,7 +838,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                         if ob.is_instance_of::<PyBool>() {
                             get_bool
                             // TODO: this heap allocs on failure
-                        } else if ob.extract::<i64>().is_ok() {
+                        } else if ob.extract::<i64>().is_ok() || ob.extract::<u64>().is_ok() {
                             get_int
                         } else if ob.is_instance_of::<PyFloat>() {
                             get_float
