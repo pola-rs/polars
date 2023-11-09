@@ -29,7 +29,7 @@ class _LazyModule(ModuleType):
     -----
     We do NOT register this module with `sys.modules` so as not to cause
     confusion in the global environment. This way we have a valid proxy
-    module for our own use, but it lives _exclusively_ within polars.
+    module for our own use, but it lives *exclusively* within polars.
 
     """
 
