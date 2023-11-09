@@ -5195,16 +5195,16 @@ class Expr:
         ...     {"sets": [[1, 2, 3], [1, 2], [9, 10]], "optional_members": [1, 2, 3]}
         ... )
         >>> df.with_columns(contains=pl.col("optional_members").is_in("sets"))
-        shape: (3, 1)
-        ┌──────────┐
-        │ contains │
-        │ ---      │
-        │ bool     │
-        ╞══════════╡
-        │ true     │
-        │ true     │
-        │ false    │
-        └──────────┘
+        shape: (3, 3)
+        ┌───────────┬──────────────────┬──────────┐
+        │ sets      ┆ optional_members ┆ contains │
+        │ ---       ┆ ---              ┆ ---      │
+        │ list[i64] ┆ i64              ┆ bool     │
+        ╞═══════════╪══════════════════╪══════════╡
+        │ [1, 2, 3] ┆ 1                ┆ true     │
+        │ [1, 2]    ┆ 2                ┆ true     │
+        │ [9, 10]   ┆ 3                ┆ false    │
+        └───────────┴──────────────────┴──────────┘
 
         """
         if isinstance(other, Collection) and not isinstance(other, str):
