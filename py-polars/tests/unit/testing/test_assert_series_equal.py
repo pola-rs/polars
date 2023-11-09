@@ -393,27 +393,6 @@ def test_assert_series_equal_passes_assertion(
     ("s1", "s2", "kwargs"),
     [
         pytest.param(
-            pl.struct(a=0, b=1.09, eager=True),
-            pl.struct(a=0, b=1, eager=True),
-            {"atol": 0.1, "rtol": 0, "check_dtype": False},
-            id="struct_approx_equal_different_type",
-        ),
-    ],
-)
-def test_assert_series_equal_fails_assertion(
-    s1: pl.Series,
-    s2: pl.Series,
-    kwargs: Any,
-) -> None:
-    with pytest.raises(AssertionError):
-        assert_series_equal(s1, s2, **kwargs)
-    assert_series_not_equal(s1, s2, **kwargs)
-
-
-@pytest.mark.parametrize(
-    ("s1", "s2", "kwargs"),
-    [
-        pytest.param(
             pl.Series([0.2, 0.3]),
             pl.Series([0.2, 0.39]),
             {"atol": 0.09, "rtol": 0},
@@ -495,6 +474,12 @@ def test_assert_series_equal_fails_assertion(
             pl.struct(a=0, b=1.1, eager=True),
             pl.struct(a=0, b=1, eager=True),
             {"atol": 0.1, "rtol": 0, "check_dtype": True},
+            id="struct_approx_equal_different_type",
+        ),
+        pytest.param(
+            pl.struct(a=0, b=1.09, eager=True),
+            pl.struct(a=0, b=1, eager=True),
+            {"atol": 0.1, "rtol": 0, "check_dtype": False},
             id="struct_approx_equal_different_type",
         ),
     ],
