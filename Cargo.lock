@@ -3088,6 +3088,7 @@ dependencies = [
  "polars-ops",
  "polars-parquet",
  "polars-plan",
+ "polars-utils",
  "pyo3",
  "pyo3-built",
  "serde_json",

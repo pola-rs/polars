@@ -15,6 +15,7 @@ polars-lazy = { path = "../crates/polars-lazy", default-features = false, featur
 polars-ops = { path = "../crates/polars-ops", default-features = false, features = ["convert_index"] }
 polars-parquet = { path = "../crates/polars-parquet", default-features = false, optional = true }
 polars-plan = { path = "../crates/polars-plan", default-features = false }
+polars-utils = { path = "../crates/polars-utils", default-features = false }
 
 ahash = { workspace = true }
 ciborium = { workspace = true }
