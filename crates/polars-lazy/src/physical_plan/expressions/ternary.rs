@@ -45,12 +45,12 @@ fn expand_lengths(truthy: &mut Series, falsy: &mut Series, mask: &mut BooleanChu
         },
         1 => {
             // Mask length 1 will broadcast to the matching branch.
-            let len = match mask.get(0).unwrap() {
-                true => {
+            let len = match mask.get(0) {
+                Some(true) => {
                     *falsy = truthy.clone();
                     truthy.len()
                 },
-                false => {
+                _ => {
                     *truthy = falsy.clone();
                     falsy.len()
                 },

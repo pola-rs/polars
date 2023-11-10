@@ -375,6 +375,9 @@ def _cast_repr_strings_with_schema(
             elif tp != df.schema[c]:
                 cast_cols[c] = F.col(c).cast(tp)
 
+    if cast_cols:
+        print(df.lazy().with_columns(**cast_cols).explain())
+
     return df.with_columns(**cast_cols) if cast_cols else df
 
 

@@ -292,3 +292,6 @@ def test_broadcast_zero_len_12354() -> None:
             assert df.select(
                 pl.when(predicate).then(out_true).otherwise(out_false)
             ).frame_equal(expected)
+
+    # should not panic on NULL 1-length predicate
+    assert pl.select(pl.when(pl.lit(None, dtype=pl.Boolean)).then(1)).item() is None
