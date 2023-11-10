@@ -67,6 +67,8 @@ polars = { version = "0.26.1", features = ["lazy", "temporal", "describe", "json
 
 The opt-in features are:
 
+<!-- dprint-ignore-start -->
+
 - Additional data types:
     - `dtype-date`
     - `dtype-datetime`
@@ -171,3 +173,5 @@ The opt-in features are:
     - `propagate_nans` NaN propagating min/max aggregations.
 - `DataFrame` pretty printing
     - `fmt` - Activate DataFrame formatting
+
+<!-- dprint-ignore-end -->

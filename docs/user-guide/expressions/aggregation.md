@@ -14,6 +14,8 @@ make any combination you want. In the snippet below we do the following aggregat
 
 Per GROUP `"first_name"` we
 
+<!-- dprint-ignore-start -->
+
 - count the number of rows in the group:
     - short form: `pl.count("party")`
     - full form: `pl.col("party").count()`
@@ -22,6 +24,8 @@ Per GROUP `"first_name"` we
 - get the first value of column `"last_name"` in the group:
     - short form: `pl.first("last_name")` (not available in Rust)
     - full form: `pl.col("last_name").first()`
+
+<!-- dprint-ignore-end -->
 
 Besides the aggregation, we immediately sort the result and limit to the top `5` so that
 we have a nice summary overview.
