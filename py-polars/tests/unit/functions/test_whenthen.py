@@ -272,3 +272,26 @@ def test_predicate_broadcast() -> None:
         "key": ["a", "b", "c"],
         "agg": [[None, None], [3, 4], [5, 6]],
     }
+
+
+def test_broadcast_zero_len_12354() -> None:
+    df = pl.DataFrame({"x": range(5)}).with_columns(true=True, false=False)
+
+    for out_true, out_false in (
+        (pl.col("x").head(0), pl.col("x")),
+        (pl.col("x"), pl.col("x").head(0)),
+    ):
+        for predicate, expected in (
+            # true
+            (pl.lit(True), df.select(out_true)),
+            (pl.col("true").first(), df.select(out_true)),
+            # false
+            (pl.lit(False), df.select(out_false)),
+            (pl.col("false").first(), df.select(out_false)),
+        ):
+            assert df.select(
+                pl.when(predicate).then(out_true).otherwise(out_false)
+            ).frame_equal(expected)
+
+    # should not panic on NULL 1-length predicate
+    assert pl.select(pl.when(pl.lit(None, dtype=pl.Boolean)).then(1)).item() is None
