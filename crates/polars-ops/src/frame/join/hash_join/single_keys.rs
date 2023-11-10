@@ -1,5 +1,6 @@
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::idx_vec::IdxVec;
+use polars_utils::hyperloglog::HyperLogLog;
 use polars_utils::sync::SyncPtr;
 
 use super::*;
@@ -112,23 +113,21 @@ where
             .into_par_iter()
             .with_max_len(1)
             .map(|p| {
-                // Resizing the hash map is very, very expensive. That's why we
-                // adopt a hybrid strategy: we assume an initially small hash
-                // map, which would satisfy a highly skewed relation. If this
-                // fills up we immediately reserve enough for a full cardinality
-                // data set.
                 let partition_range = partition_offsets[p]..partition_offsets[p + 1];
-                let full_size = partition_range.len();
-                let mut conservative_size = _HASHMAP_INIT_SIZE.max(full_size / 64);
-                let mut hm: PlHashMap<T, IdxVec> = PlHashMap::with_capacity(conservative_size);
+                let mut sketch = HyperLogLog::with_seed(0x4c3f1546bc2db3e1); 
+                for i in partition_range.clone() {
+                    unsafe {
+                        let key = *scatter_keys.get_unchecked(i);
+                        sketch.insert(key.dirty_hash());
+                    }
+                }
+                
+                let cap = (sketch.estimate() as f64 * 1.2) as usize;
+                let mut hm: PlHashMap<T, IdxVec> =
+                    PlHashMap::with_capacity(_HASHMAP_INIT_SIZE.max(cap));
 
                 unsafe {
                     for i in partition_range {
-                        if hm.len() == conservative_size {
-                            hm.reserve(full_size - conservative_size);
-                            conservative_size = 0; // Hack to ensure we never hit this branch again.
-                        }
-
                         let key = *scatter_keys.get_unchecked(i);
                         let idx = *scatter_idxs.get_unchecked(i);
                         match hm.entry(key) {
