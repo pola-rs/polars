@@ -702,6 +702,6 @@ def test_read_csv_file_not_found_error() -> None:
 def test_scan_csv_file_not_found_error() -> None:
     with pytest.raises(
         FileNotFoundError,
-        match=r"error opening file: test.csv \(No such file or directory \(os error 2\)\)",
+        match="No such file or directory \\(os error 2\\): test.csv",
     ):
         pl.scan_csv("test.csv")

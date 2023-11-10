@@ -10,9 +10,6 @@ where
 {
     std::fs::File::open(&path).map_err(|err| {
         let path = path.as_ref().to_string_lossy();
-        PolarsError::Io(Error::new(
-            err.kind(),
-            format!("error opening file: {path} ({err})"),
-        ))
+        PolarsError::Io(Error::new(err.kind(), format!("{err}: {path}")))
     })
 }
