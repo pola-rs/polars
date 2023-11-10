@@ -3,8 +3,6 @@ use std::fmt::{Debug, Formatter};
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 
-use rayon::prelude::*;
-
 use crate::IdxSize;
 
 /// A type logically equivalent to `Vec<IdxSize>`, but which does not do a
@@ -76,7 +74,9 @@ impl IdxVec {
     }
 
     #[inline(always)]
-    unsafe fn push_unchecked(&mut self, idx: IdxSize) {
+    /// # Safety
+    /// Caller must ensure that `IdxVec` has enough capacity.
+    pub unsafe fn push_unchecked(&mut self, idx: IdxSize) {
         unsafe {
             self.data_ptr_mut().add(self.len).write(idx);
             self.len += 1;
@@ -248,27 +248,6 @@ impl From<&[IdxSize]> for IdxVec {
     }
 }
 
-impl From<IdxSize> for IdxVec {
-    #[inline(always)]
-    fn from(value: IdxSize) -> Self {
-        let mut new = Self::new();
-        // SAFETY: first element always fits.
-        unsafe { new.push_unchecked(value) };
-        new
-    }
-}
-
-impl FromParallelIterator<IdxSize> for IdxVec {
-    fn from_par_iter<I>(par_iter: I) -> Self
-    where
-        I: IntoParallelIterator<Item = IdxSize>,
-    {
-        let iter = par_iter.into_par_iter();
-        let v = iter.collect::<Vec<_>>();
-        v.into()
-    }
-}
-
 #[macro_export]
 macro_rules! idxvec {
     () => (
@@ -281,14 +260,13 @@ macro_rules! idxvec {
         }
         new
     );
+    ($elem:expr) => (
+        {let mut new = $crate::idx_vec::IdxVec::new();
+        // SAFETY: first element always fits.
+        unsafe { new.push_unchecked($elem) };
+        new}
+    );
     ($($x:expr),+ $(,)?) => (
-        {let arr = [$($x),+];
-
-        if arr.len() == 1 {
-            $crate::idx_vec::IdxVec::from(arr[0])
-        } else {
             vec![$($x),+].into()
-        }
-        }
     );
 }

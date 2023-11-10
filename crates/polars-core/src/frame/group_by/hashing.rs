@@ -4,6 +4,7 @@ use hashbrown::hash_map::{Entry, RawEntryMut};
 use hashbrown::HashMap;
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::idx_vec::IdxVec;
+use polars_utils::idxvec;
 use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
@@ -155,7 +156,7 @@ where
 
         match entry {
             Entry::Vacant(entry) => {
-                let tuples = IdxVec::from(idx);
+                let tuples = idxvec![idx];
                 entry.insert((idx, tuples));
             },
             Entry::Occupied(mut entry) => {
@@ -219,7 +220,7 @@ where
 
                             match entry {
                                 RawEntryMut::Vacant(entry) => {
-                                    let tuples = IdxVec::from(idx);
+                                    let tuples = idxvec![idx];
                                     entry.insert_with_hasher(hash, *k, (idx, tuples), |k| {
                                         hasher.hash_one(k)
                                     });
@@ -282,7 +283,7 @@ where
 
                             match entry {
                                 RawEntryMut::Vacant(entry) => {
-                                    let tuples = IdxVec::from(idx);
+                                    let tuples = idxvec![idx];
                                     entry.insert_with_hasher(hash, k, (idx, tuples), |k| {
                                         hasher.hash_one(k)
                                     });
@@ -437,7 +438,7 @@ pub(crate) fn group_by_threaded_multiple_keys_flat(
                                         let all_vals = &mut *(all_buf_ptr as *mut Vec<IdxVec>);
                                         let offset_idx = first_vals.len() as IdxSize;
 
-                                        let tuples = IdxVec::from(row_idx);
+                                        let tuples = idxvec![row_idx];
                                         all_vals.push(tuples);
                                         first_vals.push(row_idx);
                                         offset_idx
@@ -500,7 +501,7 @@ pub(crate) fn group_by_multiple_keys(keys: DataFrame, sorted: bool) -> PolarsRes
                 let all_vals = &mut *(all_buf_ptr as *mut Vec<IdxVec>);
                 let offset_idx = first_vals.len() as IdxSize;
 
-                let tuples = IdxVec::from(row_idx);
+                let tuples = idxvec![row_idx];
                 all_vals.push(tuples);
                 first_vals.push(row_idx);
                 offset_idx
