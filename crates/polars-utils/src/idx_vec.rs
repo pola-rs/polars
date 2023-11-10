@@ -1,4 +1,3 @@
-use std::alloc::{GlobalAlloc, Layout, System};
 use std::fmt::{Debug, Formatter};
 use std::num::NonZeroUsize;
 use std::ops::Deref;
@@ -145,8 +144,8 @@ impl Drop for IdxVec {
 impl Clone for IdxVec {
     fn clone(&self) -> Self {
         unsafe {
-            let layout = Layout::array::<IdxSize>(self.len).unwrap();
-            let buffer = System.alloc(layout) as *mut IdxSize;
+            let mut me = std::mem::ManuallyDrop::new(Vec::with_capacity(self.len));
+            let buffer = me.as_mut_ptr();
             std::ptr::copy(self.data_ptr(), buffer, self.len);
             IdxVec {
                 data: buffer,
