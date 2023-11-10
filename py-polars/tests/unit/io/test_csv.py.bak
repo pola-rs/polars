@@ -1641,22 +1641,55 @@ def test_custom_writeable_object() -> None:
     assert b"".join(buf.writes) == b"a,b\n10,x\n20,y\n30,z\n"
 
 
-@pytest.mark.parametrize(
-    ("csv", "expected"),
-    [
-        (b"a,b\n1,2\n1,2\n", pl.DataFrame({"a": [1, 1], "b": [2, 2]})),
-        (b"a,b\n1,2\n1,2", pl.DataFrame({"a": [1, 1], "b": [2, 2]})),
-        (b"a\n1\n1\n", pl.DataFrame({"a": [1, 1]})),
-        (b"a\n1\n1", pl.DataFrame({"a": [1, 1]})),
-    ],
-    ids=[
-        "multiple columns, ends with LF",
-        "multiple columns, ends with non-LF",
-        "single column, ends with LF",
-        "single column, ends with non-LF",
-    ],
-)
-def test_read_filelike_object(csv: bytes, expected: pl.DataFrame) -> None:
-    buf = io.BufferedReader(io.BytesIO(csv))  # type: ignore[arg-type]
-    df = pl.read_csv(buf)
-    assert_frame_equal(df, expected)
+@pytest.mark.write_disk()
+def test_read_filelike_object(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    data = [
+        (
+            "multiple-columns_ends-with-LF.csv",
+            textwrap.dedent(
+                """\
+                a,b
+                1,2
+                1,2
+                """
+            ),
+        ),
+        (
+            "multiple-columns_ends-without-LF.csv",
+            textwrap.dedent(
+                """\
+                a,b
+                1,2
+                1,2"""
+            ),
+        ),
+        (
+            "single-column_ends-with-LF.csv",
+            textwrap.dedent(
+                """\
+                a
+                1
+                1
+                """
+            ),
+        ),
+        (
+            "single-column_ends-without-LF.csv",
+            textwrap.dedent(
+                """\
+                a
+                1
+                1"""
+            ),
+        ),
+    ]
+
+    for name, csv in data:
+        file_path = tmp_path / name
+        file_path.write_text(csv)
+        expect = pl.read_csv(file_path)
+        with file_path.open("rb") as f:
+            read_df = pl.read_csv(f)
+        assert_frame_equal(read_df, expect)
