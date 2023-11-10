@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import sys
 from pathlib import Path
 from typing import Any, Callable, cast
 
@@ -24,10 +25,13 @@ from polars.testing import assert_frame_equal, assert_series_equal
     ],
 )
 def test_read_missing_file(read_function: Callable[[Any], pl.DataFrame]) -> None:
-    with pytest.raises(
-        FileNotFoundError, match="No such file or directory \\(os error 2\\): fake_file"
-    ):
-        read_function("fake_file")
+    match = "\\(os error 2\\): fake_file_path"
+    # The message associated with OS error 2 may differ per platform
+    if sys.platform == "linux":
+        match = "No such file or directory " + match
+
+    with pytest.raises(FileNotFoundError, match=match):
+        read_function("fake_file_path")
 
 
 def test_copy() -> None:
