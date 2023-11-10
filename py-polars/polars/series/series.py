@@ -5233,7 +5233,7 @@ class Series:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their min.
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
@@ -5289,7 +5289,7 @@ class Series:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their max.
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
@@ -5345,7 +5345,7 @@ class Series:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their mean.
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
@@ -5458,7 +5458,7 @@ class Series:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their std dev.
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
@@ -5518,7 +5518,7 @@ class Series:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their variance.
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.

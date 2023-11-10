@@ -5573,7 +5573,7 @@ class Expr:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their min.
 
         If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
@@ -5780,7 +5780,7 @@ class Expr:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their max.
 
         If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
