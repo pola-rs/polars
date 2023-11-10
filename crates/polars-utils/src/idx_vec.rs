@@ -3,7 +3,7 @@ use std::num::NonZeroUsize;
 
 use crate::IdxSize;
 
-/// A type logically equivalent to Vec<IdxSize>, but which does not do a
+/// A type logically equivalent to `Vec<IdxSize>`, but which does not do a
 /// memory allocation until at least two elements have been pushed, storing the
 /// first element in the data pointer directly.
 pub struct IdxVec {
