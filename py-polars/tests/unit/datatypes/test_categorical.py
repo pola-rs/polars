@@ -418,6 +418,7 @@ def test_categorical_update_lengths() -> None:
     assert s.null_count() == 1
     assert s.len() == 5
 
+
 def test_categorical_zip_append_local_different_rev_map() -> None:
     s1 = pl.Series(["cat1", "cat2", "cat1"], dtype=pl.Categorical)
     s2 = pl.Series(["cat2", "cat2", "cat3"], dtype=pl.Categorical)
@@ -426,6 +427,7 @@ def test_categorical_zip_append_local_different_rev_map() -> None:
     assert len(categories) == 3
     assert set(categories) == {"cat1", "cat2", "cat3"}
 
+
 def test_categorical_zip_extend_local_different_rev_map() -> None:
     s1 = pl.Series(["cat1", "cat2", "cat1"], dtype=pl.Categorical)
     s2 = pl.Series(["cat2", "cat2", "cat3"], dtype=pl.Categorical)
@@ -433,6 +435,7 @@ def test_categorical_zip_extend_local_different_rev_map() -> None:
     categories = s3.cat.get_categories()
     assert len(categories) == 3
     assert set(categories) == {"cat1", "cat2", "cat3"}
+
 
 def test_categorical_zip_with_local_different_rev_map() -> None:
     s1 = pl.Series(["cat1", "cat2", "cat1"], dtype=pl.Categorical)

@@ -13,6 +13,6 @@ impl CategoricalChunked {
         mask: &BooleanChunked,
         other: &CategoricalChunked,
     ) -> PolarsResult<Self> {
-        call_categorical_merge_operation(&self, other, CategoricalZipWith(mask))
+        call_categorical_merge_operation(self, other, CategoricalZipWith(mask))
     }
 }

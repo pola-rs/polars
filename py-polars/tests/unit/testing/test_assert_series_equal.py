@@ -492,6 +492,7 @@ def test_assert_series_equal_raises_assertion_error(
         assert_series_equal(s1, s2, **kwargs)
     assert_series_not_equal(s1, s2, **kwargs)
 
+
 def test_assert_series_equal_categorical_vs_str() -> None:
     s1 = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
     s2 = pl.Series(["a", "b", "a"], dtype=pl.Utf8)

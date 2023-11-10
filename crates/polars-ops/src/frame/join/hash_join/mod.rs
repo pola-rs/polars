@@ -283,7 +283,7 @@ pub trait JoinDispatch: IntoDf {
         );
 
         let s = unsafe {
-            zip_outer_join_column(&s_left, &s_right, opt_join_tuples).with_name(s_left.name())
+            zip_outer_join_column(s_left, s_right, opt_join_tuples).with_name(s_left.name())
         };
 
         unsafe { df_left.get_columns_mut().insert(join_column_index, s) };

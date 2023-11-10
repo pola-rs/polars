@@ -31,7 +31,7 @@ impl CategoricalChunked {
             return Ok(());
         }
 
-        let mut new_self = call_categorical_merge_operation(&self, &other, CategoricalAppend)?;
+        let mut new_self = call_categorical_merge_operation(self, other, CategoricalAppend)?;
         std::mem::swap(self, &mut new_self);
         Ok(())
     }
