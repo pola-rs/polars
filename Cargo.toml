@@ -3,15 +3,15 @@ resolver = "2"
 members = [
   "crates/*",
   "docs/src/rust",
-  "examples/*",
+  # "examples/*",
   "py-polars",
 ]
 default-members = [
   "crates/*",
 ]
-exclude = [
-  "examples/datasets",
-]
+# exclude = [
+#   "examples/datasets",
+# ]
 
 [workspace.package]
 version = "0.34.2"
