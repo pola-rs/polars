@@ -446,14 +446,18 @@ def test_categorical_zip_with_local_different_rev_map() -> None:
     assert len(categories) == 3
     assert set(categories) == {"cat1", "cat2", "cat3"}
 
+
 def test_categorical_vstack_with_local_different_rev_map() -> None:
-    df1 = pl.DataFrame({
-        'a': pl.Series(['a', 'b', 'c'], dtype=pl.Categorical)
-    })
-    df2 = pl.DataFrame({
-        'a': pl.Series(['d', 'e', 'f'], dtype=pl.Categorical)
-    })
+    df1 = pl.DataFrame({"a": pl.Series(["a", "b", "c"], dtype=pl.Categorical)})
+    df2 = pl.DataFrame({"a": pl.Series(["d", "e", "f"], dtype=pl.Categorical)})
 
     df3 = df1.vstack(df2)
-    assert df3.get_column('a').cat.get_categories().to_list() == ['a','b','c','d','e','f']
-    assert df3.get_column('a').cast(pl.UInt32).to_list() == [0,1,2,3,4,5]
+    assert df3.get_column("a").cat.get_categories().to_list() == [
+        "a",
+        "b",
+        "c",
+        "d",
+        "e",
+        "f",
+    ]
+    assert df3.get_column("a").cast(pl.UInt32).to_list() == [0, 1, 2, 3, 4, 5]

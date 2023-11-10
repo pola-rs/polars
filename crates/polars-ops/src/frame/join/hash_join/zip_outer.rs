@@ -4,10 +4,12 @@ use polars_core::with_match_physical_numeric_polars_type;
 
 use super::*;
 
+#[cfg(feature = "dtype-categorical")]
 struct CategoricalOuterZip<'a> {
     opt_join_tuples: &'a [(Option<IdxSize>, Option<IdxSize>)],
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl CategoricalMergeOperation for CategoricalOuterZip<'_> {
     fn finish(self, lhs: &UInt32Chunked, rhs: &UInt32Chunked) -> PolarsResult<UInt32Chunked> {
         let s = unsafe {
