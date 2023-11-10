@@ -197,7 +197,12 @@ pub trait DataFrameJoinOps: IntoDf {
                 JoinType::Left => {
                     left_df._left_join_from_series(other, s_left, s_right, args, _verbose)
                 },
-                JoinType::Outer => left_df._outer_join_from_series(other, s_left, s_right, args),
+                JoinType::Outer => left_df._outer_join_from_series(
+                    other,
+                    selected_left.get(0).unwrap(),
+                    selected_right.get(0).unwrap(),
+                    args,
+                ),
                 #[cfg(feature = "semi_anti_join")]
                 JoinType::Anti => {
                     left_df._semi_anti_join_from_series(s_left, s_right, args.slice, true)

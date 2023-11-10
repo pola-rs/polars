@@ -138,13 +138,12 @@ pub fn merge_local_rhs_categorical<'a>(
             new_categories.push(Some(s));
         }
     }
-    // Keep the original
     let new_rev_map = Arc::new(RevMapping::Local(new_categories.into()));
     Ok((
         ca_right
             .physical()
             .into_iter()
-            .map(move |z: Option<u32>| z.map(|z| *idx_mapping.get(&z).unwrap())),
+            .map(move |v: Option<u32>| v.map(|v2| *idx_mapping.get(&v2).unwrap())),
         new_rev_map,
     ))
 }
@@ -158,24 +157,21 @@ pub fn call_categorical_merge_operation<I: CategoricalMergeOperation>(
     cat_right: &CategoricalChunked,
     merge_ops: I,
 ) -> PolarsResult<CategoricalChunked> {
-    let (new_physical, new_rev_map) = match (&**cat_left.get_rev_map(), &**cat_right.get_rev_map())
-    {
+    let rev_map_left = cat_left.get_rev_map();
+    let rev_map_right = cat_right.get_rev_map();
+    let (new_physical, new_rev_map) = match (&**rev_map_left, &**rev_map_right) {
         (RevMapping::Global(_, _, idl), RevMapping::Global(_, _, idr)) if idl == idr => {
-            let mut rev_map_merger = GlobalRevMapMerger::new(cat_left.get_rev_map().clone());
-            rev_map_merger.merge_map(cat_right.get_rev_map())?;
+            let mut rev_map_merger = GlobalRevMapMerger::new(rev_map_left.clone());
+            rev_map_merger.merge_map(rev_map_right)?;
             (
                 merge_ops.finish(cat_left.physical(), cat_right.physical())?,
                 rev_map_merger.finish(),
             )
         },
-        (RevMapping::Local(_), RevMapping::Local(_))
-            if cat_left.get_rev_map().same_src(cat_right.get_rev_map()) =>
-        {
-            (
-                merge_ops.finish(cat_left.physical(), cat_right.physical())?,
-                cat_left.get_rev_map().clone(),
-            )
-        },
+        (RevMapping::Local(_), RevMapping::Local(_)) if rev_map_left.same_src(rev_map_right) => (
+            merge_ops.finish(cat_left.physical(), cat_right.physical())?,
+            rev_map_left.clone(),
+        ),
         (RevMapping::Local(categorical), RevMapping::Local(_)) => {
             let (rhs_iter, rev_map) = merge_local_rhs_categorical(categorical, cat_right)?;
             let rhs_physical = rhs_iter.collect();

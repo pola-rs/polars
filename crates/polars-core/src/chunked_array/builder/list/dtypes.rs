@@ -31,6 +31,7 @@ impl DtypeMerger {
                 let DataType::Categorical(Some(rev_map)) = dtype else {
                     polars_bail!(ComputeError: "expected categorical rev-map")
                 };
+                polars_ensure!(rev_map.is_global(), string_cache_mismatch);
                 return merger.merge_map(rev_map);
             },
             DtypeMerger::Other(Some(set_dtype)) => {

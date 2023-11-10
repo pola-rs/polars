@@ -27,7 +27,7 @@ pub fn create_categorical_chunked_listbuilder(
     }
 }
 
-pub(super) struct ListLocalCategoricalChunkedBuilder {
+struct ListLocalCategoricalChunkedBuilder {
     inner: ListPrimitiveChunkedBuilder<UInt32Type>,
     idx_lookup: PlHashMap<usize, ()>,
     categories: MutableUtf8Array<i64>,
@@ -63,6 +63,7 @@ impl ListBuilderTrait for ListLocalCategoricalChunkedBuilder {
         };
         let ca = s.categorical()?;
 
+        // Map the physical of the appended series to be compatible with the existing rev map
         let mut idx_mapping = PlHashMap::with_capacity(ca.len());
         for (idx, cat) in cats_right.values_iter().enumerate() {
             let hash_cat = self.idx_lookup.hasher().hash_one(cat);
@@ -109,9 +110,9 @@ impl ListBuilderTrait for ListLocalCategoricalChunkedBuilder {
     }
 }
 
-pub(super) struct ListGlobalCategoricalChunkedBuilder {
+struct ListGlobalCategoricalChunkedBuilder {
     inner: ListPrimitiveChunkedBuilder<UInt32Type>,
-    inner_dtype: GlobalRevMapMerger,
+    map_merger: GlobalRevMapMerger,
 }
 
 impl ListGlobalCategoricalChunkedBuilder {
@@ -128,7 +129,7 @@ impl ListGlobalCategoricalChunkedBuilder {
         };
         Self {
             inner,
-            inner_dtype: GlobalRevMapMerger::new(rev_map),
+            map_merger: GlobalRevMapMerger::new(rev_map),
         }
     }
 }
@@ -138,7 +139,7 @@ impl ListBuilderTrait for ListGlobalCategoricalChunkedBuilder {
         let DataType::Categorical(Some(rev_map)) = s.dtype() else {
             polars_bail!(ComputeError: "expected categorical type")
         };
-        self.inner_dtype.merge_map(rev_map)?;
+        self.map_merger.merge_map(rev_map)?;
         self.inner.append_series(s)
     }
 
@@ -147,7 +148,7 @@ impl ListBuilderTrait for ListGlobalCategoricalChunkedBuilder {
     }
 
     fn finish(&mut self) -> ListChunked {
-        let rev_map = std::mem::take(&mut self.inner_dtype).finish();
+        let rev_map = std::mem::take(&mut self.map_merger).finish();
         let inner_dtype = DataType::Categorical(Some(rev_map));
         let mut ca = self.inner.finish();
         unsafe { ca.set_dtype(DataType::List(Box::new(inner_dtype))) }
