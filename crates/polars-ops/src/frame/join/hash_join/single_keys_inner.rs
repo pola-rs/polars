@@ -1,5 +1,6 @@
 use polars_core::utils::flatten;
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
+use polars_utils::idx_vec::IdxVec;
 use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::sync::SyncPtr;
 
@@ -7,7 +8,7 @@ use super::*;
 
 pub(super) fn probe_inner<T, F, I>(
     probe: I,
-    hash_tbls: &[PlHashMap<T, Vec<IdxSize>>],
+    hash_tbls: &[PlHashMap<T, IdxVec>],
     results: &mut Vec<(IdxSize, IdxSize)>,
     local_offset: IdxSize,
     n_tables: usize,

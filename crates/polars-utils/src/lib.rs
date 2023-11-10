@@ -8,6 +8,7 @@ pub mod contention_pool;
 mod error;
 pub mod functions;
 pub mod hashing;
+pub mod idx_vec;
 pub mod mem;
 pub mod slice;
 pub mod sort;
