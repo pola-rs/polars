@@ -120,8 +120,7 @@ where
                 let partition_range = partition_offsets[p]..partition_offsets[p + 1];
                 let full_size = partition_range.len();
                 let mut conservative_size = _HASHMAP_INIT_SIZE.max(full_size / 64);
-                let mut hm: PlHashMap<T, IdxVec> =
-                    PlHashMap::with_capacity(conservative_size);
+                let mut hm: PlHashMap<T, IdxVec> = PlHashMap::with_capacity(conservative_size);
 
                 unsafe {
                     for i in partition_range {

@@ -12,8 +12,8 @@ pub struct IdxVec {
     data: *mut IdxSize,
 }
 
-unsafe impl Send for IdxVec { }
-unsafe impl Sync for IdxVec { }
+unsafe impl Send for IdxVec {}
+unsafe impl Sync for IdxVec {}
 
 impl IdxVec {
     #[inline(always)]
@@ -49,6 +49,11 @@ impl IdxVec {
     #[inline(always)]
     pub fn len(&self) -> usize {
         self.len
+    }
+
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
     }
 
     #[inline(always)]
@@ -100,17 +105,17 @@ impl IdxVec {
     }
 
     pub fn iter(&self) -> std::slice::Iter<'_, IdxSize> {
-        self.as_slice().into_iter()
+        self.as_slice().iter()
     }
 
     pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, IdxSize> {
-        self.as_mut_slice().into_iter()
+        self.as_mut_slice().iter_mut()
     }
-    
+
     pub fn as_slice(&self) -> &[IdxSize] {
         self.as_ref()
     }
-    
+
     pub fn as_mut_slice(&mut self) -> &mut [IdxSize] {
         self.as_mut()
     }
@@ -124,7 +129,11 @@ impl Drop for IdxVec {
 
 impl Default for IdxVec {
     fn default() -> Self {
-        Self { len: 0, capacity: NonZeroUsize::new(1).unwrap(), data: std::ptr::null_mut() }
+        Self {
+            len: 0,
+            capacity: NonZeroUsize::new(1).unwrap(),
+            data: std::ptr::null_mut(),
+        }
     }
 }
 
@@ -136,8 +145,6 @@ impl AsRef<[IdxSize]> for IdxVec {
 
 impl AsMut<[IdxSize]> for IdxVec {
     fn as_mut(&mut self) -> &mut [IdxSize] {
-        unsafe {
-            std::slice::from_raw_parts_mut(self.data_ptr_mut(), self.len)
-        }
+        unsafe { std::slice::from_raw_parts_mut(self.data_ptr_mut(), self.len) }
     }
 }
