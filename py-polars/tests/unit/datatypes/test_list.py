@@ -189,6 +189,11 @@ def test_inner_type_categorical_on_rechunk() -> None:
     assert pl.concat([df, df], rechunk=True).dtypes == [pl.List(pl.Categorical)]
 
 
+def test_local_categorical_list() -> None:
+    s = pl.Series([["a", "b"], ["c"], ["a", "d"]], dtype=pl.List(pl.Categorical))
+    assert len(s.cat.get_categories()) == 4
+
+
 def test_group_by_list_column() -> None:
     df = (
         pl.DataFrame({"a": ["a", "b", "a"]})
