@@ -123,7 +123,7 @@ where
                 }
 
                 let guess = (sketch.estimate() as f64 * 1.2) as usize;
-                let cap = guess.clamp(_HASHMAP_INIT_SIZE, partition_range.len());
+                let cap = guess.min(partition_range.len()).max(_HASHMAP_INIT_SIZE);
                 let mut hm: PlHashMap<T, IdxVec> = PlHashMap::with_capacity(cap);
 
                 unsafe {
