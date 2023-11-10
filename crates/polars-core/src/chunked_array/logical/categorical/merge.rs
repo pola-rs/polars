@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use arrow::bitmap::MutableBitmap;
 use arrow::offset::Offsets;
-use polars_utils::iter::*;
 
 use super::*;
 
@@ -111,39 +110,41 @@ impl GlobalRevMapMerger {
     }
 }
 
-fn merge_local_rhs_categorical<'a>(
-    cat_left: &'a CategoricalChunked,
-    cat_right: &'a CategoricalChunked,
+pub fn merge_local_rhs_categorical<'a>(
+    categories: &'a Utf8Array<i64>,
+    ca_right: &'a CategoricalChunked,
 ) -> Result<(impl Iterator<Item = Option<u32>> + 'a, Arc<RevMapping>), PolarsError> {
     // Counterpart of the GlobalRevmapMerger.
     // In case of local categorical we also need to change the physicals not only the revmap
-    let RevMapping::Local(cats_left) = &**cat_left.get_rev_map() else {
+
+    let RevMapping::Local(cats_right) = &**ca_right.get_rev_map() else {
         unreachable!()
     };
 
-    let RevMapping::Local(cats_right) = &**cat_right.get_rev_map() else {
-        unreachable!()
-    };
-
-    let cats_left_hashmap =
-        PlHashMap::from_iter(cats_left.iter().enumerate_idx().map(|(k, v)| (v, k as u32)));
-    let mut new_categories = slots_to_mut(cats_left);
+    let cats_left_hashmap = PlHashMap::from_iter(
+        categories
+            .values_iter()
+            .enumerate()
+            .map(|(k, v)| (v, k as u32)),
+    );
+    let mut new_categories = slots_to_mut(categories);
     let mut idx_mapping = PlHashMap::with_capacity(cats_right.len());
 
-    for (idx, s) in cats_right.iter().enumerate() {
+    for (idx, s) in cats_right.values_iter().enumerate() {
         if let Some(v) = cats_left_hashmap.get(&s) {
-            idx_mapping.insert(idx, *v);
+            idx_mapping.insert(idx as u32, *v);
         } else {
-            idx_mapping.insert(idx, new_categories.len() as u32);
-            new_categories.push(s);
+            idx_mapping.insert(idx as u32, new_categories.len() as u32);
+            new_categories.push(Some(s));
         }
     }
+    // Keep the original
     let new_rev_map = Arc::new(RevMapping::Local(new_categories.into()));
     Ok((
-        cat_right
+        ca_right
             .physical()
             .into_iter()
-            .map(move |z: Option<u32>| Some(*idx_mapping.get(&(z? as usize)).unwrap())),
+            .map(move |z: Option<u32>| z.map(|z| *idx_mapping.get(&z).unwrap() as u32)),
         new_rev_map,
     ))
 }
@@ -167,8 +168,16 @@ pub fn call_categorical_merge_operation<I: CategoricalMergeOperation>(
                 rev_map_merger.finish(),
             )
         },
-        (RevMapping::Local(_), RevMapping::Local(_)) => {
-            let (rhs_iter, rev_map) = merge_local_rhs_categorical(cat_left, cat_right)?;
+        (RevMapping::Local(_), RevMapping::Local(_))
+            if cat_left.get_rev_map().same_src(cat_right.get_rev_map()) =>
+        {
+            (
+                merge_ops.finish(cat_left.physical(), cat_right.physical())?,
+                cat_left.get_rev_map().clone(),
+            )
+        },
+        (RevMapping::Local(categorical), RevMapping::Local(_)) => {
+            let (rhs_iter, rev_map) = merge_local_rhs_categorical(categorical, cat_right)?;
             let rhs_physical = rhs_iter.collect();
             (
                 merge_ops.finish(cat_left.physical(), &rhs_physical)?,

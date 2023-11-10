@@ -357,6 +357,9 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
                     merger.merge_map(rev_map_r)?;
                     Categorical(Some(merger.finish()))
                 },
+                (RevMapping::Local(_), RevMapping::Local(_)) if rev_map_l.same_src(rev_map_r) => {
+                    left.clone()
+                },
                 _ => polars_bail!(string_cache_mismatch),
             }
         },

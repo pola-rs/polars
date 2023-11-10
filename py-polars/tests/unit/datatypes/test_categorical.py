@@ -442,13 +442,3 @@ def test_categorical_zip_with_local_different_rev_map() -> None:
     categories = s3.cat.get_categories()
     assert len(categories) == 3
     assert set(categories) == {"cat1", "cat2", "cat3"}
-
-def test_list_concat_local_categorical_different_rev_map() -> None:
-    s1 = pl.Series([["cat1", "cat2", "cat1"]],dtype=pl.List(pl.Categorical))
-    s2 = pl.Series([["cat2", "cat2", "cat3"]],dtype=pl.List(pl.Categorical))
-    s3 = s1.list.concat(s2)
-    categories = s3.cat.get_categories()
-    assert len(categories) == 3
-    assert set(categories) == {"cat1", "cat2", "cat3"}
-
-

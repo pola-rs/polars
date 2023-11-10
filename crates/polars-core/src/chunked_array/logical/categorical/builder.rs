@@ -143,7 +143,7 @@ impl RevMapping {
             Self::Local(a) => a.value_unchecked(idx as usize),
         }
     }
-    /// Check if the categoricals are created under the same global string cache.
+    /// Check if the categoricals have a compatible mapping
     pub fn same_src(&self, other: &Self) -> bool {
         match (self, other) {
             (RevMapping::Global(_, _, l), RevMapping::Global(_, _, r)) => *l == *r,
