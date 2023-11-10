@@ -190,8 +190,11 @@ def test_inner_type_categorical_on_rechunk() -> None:
 
 
 def test_local_categorical_list() -> None:
-    s = pl.Series([["a", "b"], ["c"], ["a", "d"]], dtype=pl.List(pl.Categorical))
-    assert len(s.cat.get_categories()) == 4
+    values = [["a", "b"], ["c"], ["a", "d"]]
+    s = pl.Series(values, dtype=pl.List(pl.Categorical))
+    assert s.dtype == pl.List
+    assert s.inner_dtype == pl.Categorical
+    assert s.to_list() == values
 
 
 def test_group_by_list_column() -> None:
