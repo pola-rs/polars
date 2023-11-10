@@ -97,14 +97,12 @@ where
                 ca.get(first as usize)
             } else {
                 match (ca.has_validity(), ca.chunks().len()) {
-                    (false, 1) => Some({
-                        take_agg_no_null_primitive_iter_unchecked(
-                            ca.downcast_iter().next().unwrap(),
-                            idx.iter().map(|i| *i as usize),
-                            nan_max,
-                        )
-                    }),
-                    (_, 1) => take_agg_primitive_iter_unchecked::<T::Native, _, _>(
+                    (false, 1) => take_agg_no_null_primitive_iter_unchecked(
+                        ca.downcast_iter().next().unwrap(),
+                        idx.iter().map(|i| *i as usize),
+                        nan_max,
+                    ),
+                    (_, 1) => take_agg_primitive_iter_unchecked(
                         ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
                         nan_max,
@@ -168,12 +166,12 @@ where
                 ca.get(first as usize)
             } else {
                 match (ca.has_validity(), ca.chunks().len()) {
-                    (false, 1) => Some(take_agg_no_null_primitive_iter_unchecked(
+                    (false, 1) => take_agg_no_null_primitive_iter_unchecked(
                         ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
                         nan_min,
-                    )),
-                    (_, 1) => take_agg_primitive_iter_unchecked::<T::Native, _, _>(
+                    ),
+                    (_, 1) => take_agg_primitive_iter_unchecked(
                         ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
                         nan_min,

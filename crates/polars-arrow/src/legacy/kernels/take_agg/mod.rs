@@ -23,7 +23,7 @@ pub unsafe fn take_agg_no_null_primitive_iter_unchecked<
     arr: &PrimitiveArray<T>,
     indices: I,
     f: F,
-) -> TOut {
+) -> Option<TOut> {
     debug_assert!(arr.null_count() == 0);
     let array_values = arr.values().as_slice();
 
@@ -31,7 +31,6 @@ pub unsafe fn take_agg_no_null_primitive_iter_unchecked<
         .into_iter()
         .map(|idx| TOut::from(*array_values.get_unchecked(idx)).unwrap_unchecked())
         .reduce(f)
-        .expect("indices cannot be empty.")
 }
 
 /// Take kernel for single chunk and an iterator as index.
