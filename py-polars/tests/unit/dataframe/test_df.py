@@ -504,14 +504,6 @@ def test_file_buffer() -> None:
         pl.read_parquet(f)
 
 
-@pytest.mark.parametrize(
-    "read_function", [pl.read_parquet, pl.read_csv, pl.read_ipc, pl.read_avro]
-)
-def test_read_missing_file(read_function: Callable[[Any], pl.DataFrame]) -> None:
-    with pytest.raises(FileNotFoundError, match="fake_file"):
-        read_function("fake_file")
-
-
 def test_shift() -> None:
     df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})
     a = df.shift(1)

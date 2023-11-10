@@ -692,16 +692,3 @@ def test_non_existent_expr_inputs_in_lazy() -> None:
             .filter(pl.col("bar") == pl.col("foo"))
             .explain()
         )
-
-
-def test_read_csv_file_not_found_error() -> None:
-    with pytest.raises(FileNotFoundError, match="test.csv"):
-        pl.read_csv("test.csv")
-
-
-def test_scan_csv_file_not_found_error() -> None:
-    with pytest.raises(
-        FileNotFoundError,
-        match="No such file or directory \\(os error 2\\): test.csv",
-    ):
-        pl.scan_csv("test.csv")

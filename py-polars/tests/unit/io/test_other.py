@@ -2,10 +2,32 @@ from __future__ import annotations
 
 import copy
 from pathlib import Path
-from typing import cast
+from typing import Any, Callable, cast
+
+import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+
+@pytest.mark.parametrize(
+    "read_function",
+    [
+        pl.read_csv,
+        pl.read_ipc,
+        pl.read_json,
+        pl.read_parquet,
+        pl.read_avro,
+        pl.scan_csv,
+        pl.scan_ipc,
+        pl.scan_parquet,
+    ],
+)
+def test_read_missing_file(read_function: Callable[[Any], pl.DataFrame]) -> None:
+    with pytest.raises(
+        FileNotFoundError, match="No such file or directory \\(os error 2\\): fake_file"
+    ):
+        read_function("fake_file")
 
 
 def test_copy() -> None:
