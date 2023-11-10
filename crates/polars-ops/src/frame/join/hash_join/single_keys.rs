@@ -1,4 +1,5 @@
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
+use polars_utils::idx_vec::IdxVec;
 use polars_utils::sync::SyncPtr;
 
 use super::*;
@@ -9,7 +10,7 @@ use super::*;
 // Use a small element per thread threshold for debugging/testing purposes.
 const MIN_ELEMS_PER_THREAD: usize = if cfg!(debug_assertions) { 1 } else { 128 };
 
-pub(crate) fn build_tables<T, I>(keys: Vec<I>) -> Vec<PlHashMap<T, Vec<IdxSize>>>
+pub(crate) fn build_tables<T, I>(keys: Vec<I>) -> Vec<PlHashMap<T, IdxVec>>
 where
     T: Send + Hash + Eq + Sync + Copy + DirtyHash,
     I: IntoIterator<Item = T> + Send + Sync + Clone,
@@ -25,7 +26,7 @@ where
 
     // Don't bother parallelizing anything for small inputs.
     if num_keys_est < 2 * MIN_ELEMS_PER_THREAD {
-        let mut hm: PlHashMap<T, Vec<IdxSize>> = PlHashMap::new();
+        let mut hm: PlHashMap<T, IdxVec> = PlHashMap::new();
         let mut offset = 0;
         for it in keys {
             for k in it {
@@ -40,6 +41,7 @@ where
         // Compute the number of elements in each partition for each portion.
         let per_thread_partition_sizes: Vec<Vec<usize>> = keys
             .par_iter()
+            .with_max_len(1)
             .map(|key_portion| {
                 let mut partition_sizes = vec![0; n_partitions];
                 for key in key_portion.clone() {
@@ -84,6 +86,7 @@ where
         let scatter_keys_ptr = unsafe { SyncPtr::new(scatter_keys.as_mut_ptr()) };
         let scatter_idxs_ptr = unsafe { SyncPtr::new(scatter_idxs.as_mut_ptr()) };
         keys.into_par_iter()
+            .with_max_len(1)
             .enumerate()
             .for_each(|(t, key_portion)| {
                 let mut partition_offsets =
@@ -107,6 +110,7 @@ where
         // Build tables.
         (0..n_partitions)
             .into_par_iter()
+            .with_max_len(1)
             .map(|p| {
                 // Resizing the hash map is very, very expensive. That's why we
                 // adopt a hybrid strategy: we assume an initially small hash
@@ -116,7 +120,7 @@ where
                 let partition_range = partition_offsets[p]..partition_offsets[p + 1];
                 let full_size = partition_range.len();
                 let mut conservative_size = _HASHMAP_INIT_SIZE.max(full_size / 64);
-                let mut hm: PlHashMap<T, Vec<IdxSize>> =
+                let mut hm: PlHashMap<T, IdxVec> =
                     PlHashMap::with_capacity(conservative_size);
 
                 unsafe {
@@ -133,7 +137,9 @@ where
                                 o.get_mut().push(idx as IdxSize);
                             },
                             Entry::Vacant(v) => {
-                                v.insert(vec![idx as IdxSize]);
+                                let mut iv = IdxVec::new();
+                                iv.push(idx as IdxSize);
+                                v.insert(iv);
                             },
                         };
                     }

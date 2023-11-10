@@ -128,7 +128,7 @@ where
                         results.push(asof_in_group::<T, A, &F>(
                             left_val,
                             right_val_arr,
-                            right_grp_idxs,
+                            right_grp_idxs.as_slice(),
                             &mut group_states,
                             &filter,
                         ));
@@ -195,7 +195,7 @@ where
                     results.push(asof_in_group::<T, A, &F>(
                         left_val,
                         right_val_arr,
-                        &right_grp_idxs[..],
+                        right_grp_idxs.as_slice(),
                         &mut group_states,
                         &filter,
                     ));
