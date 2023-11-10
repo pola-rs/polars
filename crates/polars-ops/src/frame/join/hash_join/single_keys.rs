@@ -1,6 +1,6 @@
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
-use polars_utils::idx_vec::IdxVec;
 use polars_utils::hyperloglog::HyperLogLog;
+use polars_utils::idx_vec::IdxVec;
 use polars_utils::sync::SyncPtr;
 
 use super::*;
@@ -114,17 +114,17 @@ where
             .with_max_len(1)
             .map(|p| {
                 let partition_range = partition_offsets[p]..partition_offsets[p + 1];
-                let mut sketch = HyperLogLog::with_seed(0x4c3f1546bc2db3e1); 
+                let mut sketch = HyperLogLog::with_seed(0x4c3f1546bc2db3e1);
                 for i in partition_range.clone() {
                     unsafe {
                         let key = *scatter_keys.get_unchecked(i);
                         sketch.insert(key.dirty_hash());
                     }
                 }
-                
-                let cap = (sketch.estimate() as f64 * 1.2) as usize;
-                let mut hm: PlHashMap<T, IdxVec> =
-                    PlHashMap::with_capacity(_HASHMAP_INIT_SIZE.max(cap));
+
+                let guess = (sketch.estimate() as f64 * 1.2) as usize;
+                let cap = guess.clamp(_HASHMAP_INIT_SIZE, partition_range.len());
+                let mut hm: PlHashMap<T, IdxVec> = PlHashMap::with_capacity(cap);
 
                 unsafe {
                     for i in partition_range {
