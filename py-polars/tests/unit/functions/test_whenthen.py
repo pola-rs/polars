@@ -277,22 +277,18 @@ def test_predicate_broadcast() -> None:
 def test_broadcast_zero_len_12354() -> None:
     df = pl.DataFrame({"x": range(5)}).with_columns(true=True, false=False)
 
-    for predicate, expected in (
-        (True, df.select("x").head(0)),
-        (pl.col("true").first(), df.select("x").head(0)),
-        (False, df.select("x")),
-        (pl.col("false").first(), df.select("x")),
+    for out_true, out_false in (
+        (pl.col("x").head(0), pl.col("x")),
+        (pl.col("x"), pl.col("x").head(0)),
     ):
-        assert df.select(
-            pl.when(predicate).then(pl.col("x").head(0)).otherwise(pl.col("x"))
-        ).frame_equal(expected)
-
-    for predicate, expected in (
-        (True, df.select("x")),
-        (pl.col("true").first(), df.select("x")),
-        (False, df.select("x").head(0)),
-        (pl.col("false").first(), df.select("x").head(0)),
-    ):
-        assert df.select(
-            pl.when(predicate).then(pl.col("x")).otherwise(pl.col("x").head(0))
-        ).frame_equal(expected)
+        for predicate, expected in (
+            # true
+            (pl.lit(True), df.select(out_true)),
+            (pl.col("true").first(), df.select(out_true)),
+            # false
+            (pl.lit(False), df.select(out_false)),
+            (pl.col("false").first(), df.select(out_false)),
+        ):
+            assert df.select(
+                pl.when(predicate).then(out_true).otherwise(out_false)
+            ).frame_equal(expected)
