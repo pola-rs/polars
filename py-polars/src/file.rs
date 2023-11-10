@@ -3,7 +3,6 @@ use std::io;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom, Write};
 
 use polars::io::mmap::MmapBytesReader;
-use polars_utils::open_file;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString};
@@ -203,7 +202,7 @@ pub fn get_either_file(py_f: PyObject, truncate: bool) -> PyResult<EitherRustPyt
             let f = if truncate {
                 File::create(file_path)?
             } else {
-                open_file(&file_path).map_err(PyPolarsErr::from)?
+                polars_utils::open_file(&file_path).map_err(PyPolarsErr::from)?
             };
             let reader = BufReader::new(f);
             Ok(EitherRustPythonFile::Rust(reader))
@@ -232,7 +231,7 @@ pub fn get_mmap_bytes_reader<'a>(py_f: &'a PyAny) -> PyResult<Box<dyn MmapBytesR
         let s = pstring.to_str()?;
         let p = std::path::Path::new(&s);
         let p = resolve_homedir(p);
-        let f = open_file(p).map_err(PyPolarsErr::from)?;
+        let f = polars_utils::open_file(p).map_err(PyPolarsErr::from)?;
         Ok(Box::new(f))
     }
     // a normal python file: with open(...) as f:.
