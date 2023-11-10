@@ -299,22 +299,7 @@ impl LogicalPlanBuilder {
         truncate_ragged_lines: bool,
     ) -> PolarsResult<Self> {
         let path = path.into();
-        let mut file = polars_utils::open_file(&path).map_err(|e| {
-            let mut path = path.to_string_lossy();
-
-            if path.len() > 88 {
-                path = path.chars().skip(path.len() - 88).collect();
-            }
-
-            match e {
-                PolarsError::FileNotFound(_) => {
-                    polars_err!(FileNotFound: "No such file or directory: {}", path)
-                },
-                _ => {
-                    polars_err!(ComputeError: "error open file: {}, {}", path, e)
-                },
-            }
-        })?;
+        let mut file = polars_utils::open_file(&path)?;
 
         let paths = Arc::new([path]);
 
