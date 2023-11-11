@@ -18,6 +18,9 @@ pub mod ndjson;
 #[cfg(feature = "cloud")]
 pub use crate::cloud::glob as async_glob;
 
+#[cfg(feature = "odbc")]
+pub mod odbc;
+
 pub mod mmap;
 mod options;
 #[cfg(feature = "parquet")]

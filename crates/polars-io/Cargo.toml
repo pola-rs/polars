@@ -26,7 +26,10 @@ fast-float = { version = "0.2", optional = true }
 flate2 = { version = "1", optional = true, default-features = false }
 futures = { workspace = true, optional = true }
 itoa = { workspace = true, optional = true }
-lexical = { version = "6", optional = true, default-features = false, features = ["std", "parse-integers"] }
+lexical = { version = "6", optional = true, default-features = false, features = [
+  "std",
+  "parse-integers",
+] }
 lexical-core = { workspace = true, optional = true }
 memchr = { workspace = true }
 memmap = { package = "memmap2", version = "0.7" }
@@ -39,11 +42,19 @@ regex = { workspace = true }
 reqwest = { workspace = true, optional = true }
 ryu = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive", "rc"], optional = true }
-serde_json = { version = "1", default-features = false, features = ["alloc", "raw_value"], optional = true }
+serde_json = { version = "1", default-features = false, features = [
+  "alloc",
+  "raw_value",
+], optional = true }
 simd-json = { workspace = true, optional = true }
 simdutf8 = { workspace = true, optional = true }
 smartstring = { workspace = true }
-tokio = { workspace = true, features = ["net", "rt-multi-thread", "time", "sync"], optional = true }
+tokio = { workspace = true, features = [
+  "net",
+  "rt-multi-thread",
+  "time",
+  "sync",
+], optional = true }
 tokio-util = { workspace = true, features = ["io", "io-util"], optional = true }
 url = { workspace = true, optional = true }
 zstd = { workspace = true, optional = true }
@@ -74,6 +85,7 @@ ipc_streaming = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # support for arrow avro parsing
 avro = ["arrow/io_avro", "arrow/io_avro_compression"]
 csv = ["lexical", "polars-core/rows", "itoa", "ryu", "fast-float", "simdutf8"]
+odbc = []
 decompress = ["flate2/rust_backend", "zstd"]
 decompress-fast = ["flate2/zlib-ng", "zstd"]
 dtype-categorical = ["polars-core/dtype-categorical"]
@@ -85,11 +97,12 @@ dtype-datetime = [
   "polars-time/dtype-datetime",
   "chrono",
 ]
-timezones = [
-  "chrono-tz",
-  "dtype-datetime",
+timezones = ["chrono-tz", "dtype-datetime"]
+dtype-time = [
+  "polars-core/dtype-time",
+  "polars-core/temporal",
+  "polars-time/dtype-time",
 ]
-dtype-time = ["polars-core/dtype-time", "polars-core/temporal", "polars-time/dtype-time"]
 dtype-struct = ["polars-core/dtype-struct"]
 dtype-decimal = ["polars-core/dtype-decimal"]
 fmt = ["polars-core/fmt"]
