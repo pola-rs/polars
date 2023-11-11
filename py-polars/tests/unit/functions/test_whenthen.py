@@ -280,6 +280,9 @@ def test_broadcast_zero_len_12354() -> None:
     for out_true, out_false in (
         (pl.col("x").head(0), pl.col("x")),
         (pl.col("x"), pl.col("x").head(0)),
+        # If the len of the non-matching branch >= the matching branch,
+        # a `slice` operation is used instead of allocating a new series.
+        (pl.col("x"), pl.col("x")),
     ):
         for predicate, expected in (
             # true
