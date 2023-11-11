@@ -2169,20 +2169,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             A string representing null values (defaulting to the empty string).
         quote_style : {'necessary', 'always', 'non_numeric', 'never'}
             Determines the quoting strategy used.
+
             - necessary (default): This puts quotes around fields only when necessary.
-            They are necessary when fields contain a quote,
-            delimiter or record terminator.
-            Quotes are also necessary when writing an empty record
-            (which is indistinguishable from a record with one empty field).
-            This is the default.
+              They are necessary when fields contain a quote,
+              delimiter or record terminator.
+              Quotes are also necessary when writing an empty record
+              (which is indistinguishable from a record with one empty field).
+              This is the default.
             - always: This puts quotes around every field. Always.
             - never: This never puts quotes around fields, even if that results in
-            invalid CSV data (e.g.: by not quoting strings containing the
-            separator).
+              invalid CSV data (e.g.: by not quoting strings containing the
+              separator).
             - non_numeric: This puts quotes around all fields that are non-numeric.
-            Namely, when writing a field that does not parse as a valid float
-            or integer, then quotes will be used even if they aren`t strictly
-            necessary.
+              Namely, when writing a field that does not parse as a valid float
+              or integer, then quotes will be used even if they aren`t strictly
+              necessary.
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will  be slightly faster.
