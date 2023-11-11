@@ -48,17 +48,19 @@ fn expand_lengths(truthy: &mut Series, falsy: &mut Series, mask: &mut BooleanChu
             let len = match mask.get(0) {
                 Some(true) => {
                     let len = truthy.len();
-                    *falsy = match falsy.len() < len {
-                        true => Series::full_null(falsy.name(), len, falsy.dtype()),
-                        false => falsy.slice(0, len),
+                    *falsy = if falsy.len() < len {
+                        Series::full_null(falsy.name(), len, falsy.dtype())
+                    } else {
+                        falsy.slice(0, len)
                     };
                     len
                 },
                 _ => {
                     let len = falsy.len();
-                    *truthy = match truthy.len() < len {
-                        true => Series::full_null(truthy.name(), len, truthy.dtype()),
-                        false => truthy.slice(0, len),
+                    *truthy = if truthy.len() < len {
+                        Series::full_null(truthy.name(), len, truthy.dtype())
+                    } else {
+                        truthy.slice(0, len)
                     };
                     len
                 },
