@@ -80,15 +80,18 @@ macro_rules! impl_ternary_broadcast {
             Ok(val)
         },
         (l_len, r_len, 1) if l_len == r_len => {
-            let mask = $mask.get(0).unwrap_or(false);
-            let mut val: ChunkedArray<$ty> = $self
-                .into_iter()
-                .zip($other)
-                .map(|(left, right)| ternary_apply(mask, left, right))
-                .collect_trusted();
+            let mut val = if let Some(true) = $mask.get(0) {
+                $self.clone()
+            } else {
+                $other.clone()
+            };
+
             val.rename($self.name());
             Ok(val)
         },
+        (_, _, 0) => {
+            Ok($self.slice(0, 0))
+        }
         (_, _, _) => Err(polars_err!(
                 ShapeMismatch: "shapes of `self`, `mask` and `other` are not suitable for `zip_with` operation"
             )),
@@ -101,6 +104,12 @@ fn zip_with<T: PolarsDataType>(
     right: &ChunkedArray<T>,
     mask: &BooleanChunked,
 ) -> PolarsResult<ChunkedArray<T>> {
+    if left.len() != right.len() || right.len() != mask.len() {
+        return Err(polars_err!(
+            ShapeMismatch: "shapes of `left`, `right` and `mask` are not suitable for `zip_with` operation"
+        ));
+    };
+
     let (left, right, mask) = align_chunks_ternary(left, right, mask);
     let chunks = left
         .chunks()
@@ -209,6 +218,12 @@ impl<T: PolarsObject> ChunkZip<ObjectType<T>> for ObjectChunked<T> {
         mask: &BooleanChunked,
         other: &ChunkedArray<ObjectType<T>>,
     ) -> PolarsResult<ChunkedArray<ObjectType<T>>> {
+        if self.len() != mask.len() || mask.len() != other.len() {
+            return Err(polars_err!(
+                ShapeMismatch: "shapes of `self`, `mask` and `other` are not suitable for `zip_with` operation"
+            ));
+        };
+
         let (left, right, mask) = align_chunks_ternary(self, other, mask);
         let mut ca: Self = left
             .as_ref()

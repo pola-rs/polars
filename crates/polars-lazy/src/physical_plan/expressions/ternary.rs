@@ -36,32 +36,11 @@ impl TernaryExpr {
 }
 
 fn expand_lengths(truthy: &mut Series, falsy: &mut Series, mask: &mut BooleanChunked) {
-    match mask.len() {
-        0 => {
-            *truthy = Series::new_empty(truthy.name(), truthy.dtype());
-            *falsy = Series::new_empty(falsy.name(), falsy.dtype());
-
-            return;
-        },
-        1 => {
-            // Mask length 1 will broadcast to the matching branch.
-            let len = match mask.get(0) {
-                Some(true) => {
-                    *falsy = truthy.clone();
-                    truthy.len()
-                },
-                _ => {
-                    *truthy = falsy.clone();
-                    falsy.len()
-                },
-            };
-
-            *mask = mask.new_from_index(0, len);
-
-            return;
-        },
-        _ => {},
-    }
+    if mask.is_empty() {
+        *truthy = truthy.slice(0, 0);
+        *falsy = falsy.slice(0, 0);
+        return;
+    };
 
     let len = std::cmp::max(std::cmp::max(truthy.len(), falsy.len()), mask.len());
     if len > 1 {
