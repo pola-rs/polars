@@ -295,3 +295,22 @@ def test_broadcast_zero_len_12354() -> None:
 
     # should not panic on NULL 1-length predicate
     assert pl.select(pl.when(pl.lit(None, dtype=pl.Boolean)).then(1)).item() is None
+
+
+def test_when_then_output_name_12380() -> None:
+    df = pl.DataFrame(
+        {"x": range(5), "y": range(5, 10)}, schema={"x": pl.Int8, "y": pl.Int64}
+    ).with_columns(true=True, false=False)
+
+    expect = df.select(pl.col("x").cast(pl.Int64))
+    for true_expr in (pl.first("true"), pl.col("true"), pl.lit(True)):
+        assert_frame_equal(
+            expect,
+            df.select(pl.when(true_expr).then(pl.col("x")).otherwise(pl.col("y"))),
+        )
+    expect = df.select(pl.col("y").alias("x"))
+    for false_expr in (pl.first("false"), pl.col("false"), pl.lit(False)):
+        assert_frame_equal(
+            expect,
+            df.select(pl.when(false_expr).then(pl.col("x")).otherwise(pl.col("y"))),
+        )
