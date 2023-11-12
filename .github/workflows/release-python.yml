@@ -150,7 +150,7 @@ jobs:
             --release
             --manifest-path py-polars/Cargo.toml
             --out dist
-          manylinux: '2_28'
+          manylinux: '2_24'
 
       - name: Upload wheel
         uses: actions/upload-artifact@v3
