@@ -256,7 +256,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                     self.chunks.first().unwrap().data_type().clone(),
                 )],
                 true,
-                false,
+                true,
             )
         }
     }
