@@ -90,7 +90,7 @@ macro_rules! impl_ternary_broadcast {
             Ok(val)
         },
         (_, _, 0) => {
-            Ok($self.slice(0, 0))
+            Ok($self.clear())
         }
         (_, _, _) => Err(polars_err!(
                 ShapeMismatch: "shapes of `self`, `mask` and `other` are not suitable for `zip_with` operation"

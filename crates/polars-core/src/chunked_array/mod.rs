@@ -248,6 +248,19 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.chunks = vec![concatenate_owned_unchecked(self.chunks.as_slice()).unwrap()];
     }
 
+    pub fn clear(&self) -> Self {
+        // SAFETY: we keep the correct dtype
+        unsafe {
+            self.copy_with_chunks(
+                vec![new_empty_array(
+                    self.chunks.first().unwrap().data_type().clone(),
+                )],
+                true,
+                false,
+            )
+        }
+    }
+
     /// Unpack a [`Series`] to the same physical type.
     ///
     /// # Safety

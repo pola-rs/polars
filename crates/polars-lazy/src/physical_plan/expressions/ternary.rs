@@ -37,8 +37,8 @@ impl TernaryExpr {
 
 fn expand_lengths(truthy: &mut Series, falsy: &mut Series, mask: &mut BooleanChunked) {
     if mask.is_empty() {
-        *truthy = truthy.slice(0, 0);
-        *falsy = falsy.slice(0, 0);
+        *truthy = truthy.clear();
+        *falsy = falsy.clear();
         return;
     };
 

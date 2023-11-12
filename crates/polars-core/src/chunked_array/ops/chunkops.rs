@@ -120,6 +120,9 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// and will slice the best match when offset, or length is out of bounds
     #[inline]
     pub fn slice(&self, offset: i64, length: usize) -> Self {
+        if length == 0 {
+            return self.clear();
+        }
         let (chunks, len) = slice(&self.chunks, offset, length, self.len());
         let mut out = unsafe { self.copy_with_chunks(chunks, true, true) };
         out.length = len as IdxSize;
