@@ -369,6 +369,12 @@ macro_rules! impl_dyn_series {
             fn min_as_series(&self) -> Series {
                 self.0.min_as_series().$into_logical()
             }
+            fn mean_as_series(&self) -> Series {
+                Int32Chunked::full_null(self.name(), 1)
+                    .cast(self.dtype())
+                    .unwrap()
+                    .into()
+            }
             fn median_as_series(&self) -> Series {
                 Int32Chunked::full_null(self.name(), 1)
                     .cast(self.dtype())

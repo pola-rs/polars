@@ -316,11 +316,6 @@ pub(crate) fn create_physical_expr(
                                 }
                             }) as Arc<dyn SeriesUdf>)
                         },
-                        AAggExpr::Median(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                            let s = std::mem::take(&mut s[0]);
-                            Ok(Some(s.median_as_series()))
-                        })
-                            as Arc<dyn SeriesUdf>),
                         AAggExpr::NUnique(_) => {
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
@@ -335,18 +330,23 @@ pub(crate) fn create_physical_expr(
                         AAggExpr::First(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                             let s = std::mem::take(&mut s[0]);
                             Ok(Some(s.head(Some(1))))
-                        })
-                            as Arc<dyn SeriesUdf>),
+                        }) as Arc<dyn SeriesUdf>),
                         AAggExpr::Last(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                             let s = std::mem::take(&mut s[0]);
                             Ok(Some(s.tail(Some(1))))
-                        })
-                            as Arc<dyn SeriesUdf>),
-                        AAggExpr::Mean(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                            let s = std::mem::take(&mut s[0]);
-                            Ok(Some(s.mean_as_series()))
-                        })
-                            as Arc<dyn SeriesUdf>),
+                        }) as Arc<dyn SeriesUdf>),
+                        AAggExpr::Mean(_) => {
+                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                                let s = std::mem::take(&mut s[0]);
+                                Ok(Some(s.mean_as_series()))
+                            }) as Arc<dyn SeriesUdf>)
+                        },
+                        AAggExpr::Median(_) => {
+                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                                let s = std::mem::take(&mut s[0]);
+                                Ok(Some(s.median_as_series()))
+                            }) as Arc<dyn SeriesUdf>)
+                        },
                         AAggExpr::Implode(_) => {
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = &s[0];
@@ -369,8 +369,7 @@ pub(crate) fn create_physical_expr(
                             Ok(Some(
                                 IdxCa::from_slice(s.name(), &[count as IdxSize]).into_series(),
                             ))
-                        })
-                            as Arc<dyn SeriesUdf>),
+                        }) as Arc<dyn SeriesUdf>),
                         AAggExpr::Std(_, ddof) => {
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);

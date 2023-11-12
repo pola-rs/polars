@@ -2,10 +2,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars.datatypes import Date, Datetime
+from polars import functions as F
+from polars.datatypes import Date, Datetime, Duration
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
-from polars.utils.convert import _to_python_datetime
+from polars.utils.convert import (
+    _to_python_date,
+    _to_python_datetime,
+    _to_python_timedelta,
+)
+from polars.utils.deprecation import deprecate_renamed_function
 
 if TYPE_CHECKING:
     import datetime as dt
@@ -79,17 +85,17 @@ class DateTimeNameSpace:
 
         """
         s = wrap_s(self._s)
-        out = s.median()
-
+        out = s._s.median()
         if out is not None:
             if s.dtype == Date:
-                out = _to_python_datetime(int(out))
+                return _to_python_date(int(out))
             elif s.dtype == Datetime:
-                out = _to_python_datetime(int(out), s.dtype.time_unit)
+                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
+            elif s.dtype == Duration:
+                return _to_python_timedelta(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
+        return None
 
-        return out
-
-    def mean(self) -> dt.datetime | None:
+    def mean(self) -> dt.date | dt.datetime | dt.timedelta | None:
         """
         Return mean as python DateTime.
 
@@ -104,15 +110,30 @@ class DateTimeNameSpace:
 
         """
         s = wrap_s(self._s)
-        out = s.mean()
-
+        out = s._s.mean()
         if out is not None:
             if s.dtype == Date:
-                out = _to_python_datetime(int(out))
+                return _to_python_date(int(out))
             elif s.dtype == Datetime:
-                out = _to_python_datetime(int(out), s.dtype.time_unit)
+                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
+            elif s.dtype == Duration:
+                return _to_python_timedelta(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
+        return None
 
-        return out
+    def std(self, ddof: int = 1) -> dt.timedelta | None:
+        """Return standard deviation as timedelta."""
+        s = wrap_s(self._s)
+        out = s.to_frame().select(F.col(s.name).to_physical().std(ddof)).to_series().item()
+
+        if out is not None:
+            # convert to nanoseconds for pl.Date
+            if s.dtype == Date:
+                # convert days to us
+                return _to_python_timedelta(out * 86400000000, "us")  # type: ignore[union-attr]
+            else:
+                return _to_python_timedelta(out, s.dtype.time_unit)  # type: ignore[union-attr]
+
+        return None
 
     def to_string(self, format: str) -> Series:
         """

@@ -1622,7 +1622,7 @@ class Series:
         """
         return self._s.sum()
 
-    def mean(self) -> int | float | datetime | timedelta | None:
+    def mean(self) -> int | float | date | datetime | timedelta:
         """
         Reduce this Series to the mean value.
 
@@ -1633,7 +1633,10 @@ class Series:
         2.0
 
         """
-        return self._s.mean()
+        if self.is_temporal():
+            return self.dt.mean()
+        else:
+            return self._s.mean()
 
     def product(self) -> int | float:
         """Reduce this Series to the product value."""
@@ -1716,7 +1719,7 @@ class Series:
         """
         return self.to_frame().select(F.col(self.name).nan_min()).item()
 
-    def std(self, ddof: int = 1) -> float | None:
+    def std(self, ddof: int = 1) -> float | timedelta | None:
         """
         Get the standard deviation of this Series.
 
@@ -1734,6 +1737,8 @@ class Series:
         1.0
 
         """
+        if self.is_temporal():
+            return self.dt.std(ddof)
         if not self.is_numeric():
             return None
         return self.to_frame().select(F.col(self.name).std(ddof)).to_series().item()
@@ -1756,11 +1761,13 @@ class Series:
         1.0
 
         """
+        if self.is_temporal():
+            return self.dt.var(ddof)
         if not self.is_numeric():
             return None
         return self.to_frame().select(F.col(self.name).var(ddof)).to_series().item()
 
-    def median(self) -> float | datetime | timedelta | None:
+    def median(self) -> float | date | datetime | timedelta | None:
         """
         Get the median of this Series.
 
@@ -1771,8 +1778,10 @@ class Series:
         2.0
 
         """
-        print("hi!")
-        return self._s.median()
+        if self.is_temporal():
+            return self.dt.median()
+        else:
+            return self._s.median()
 
     def quantile(
         self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
