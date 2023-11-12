@@ -141,23 +141,23 @@ TEST_CASES = [
     # Bitwise shifts
     # ---------------------------------------------
     (
-        'a',
-        'lambda x: (3 << (32-x)) & 3',
+        "a",
+        "lambda x: (3 << (32-x)) & 3",
         '(3*2**(32 - pl.col("a"))).cast(pl.Int64) & 3',
     ),
     (
-        'a',
-        'lambda x: (x << 32) & 3',
+        "a",
+        "lambda x: (x << 32) & 3",
         '(pl.col("a")*2**32).cast(pl.Int64) & 3',
     ),
     (
-        'a',
-        'lambda x: ((32-x) >> (3)) & 3',
+        "a",
+        "lambda x: ((32-x) >> (3)) & 3",
         '((32 - pl.col("a")) / (2**3)).cast(pl.Int64) & 3',
     ),
     (
-        'a',
-        'lambda x: (32 >> (3-x)) & 3',
+        "a",
+        "lambda x: (32 >> (3-x)) & 3",
         '(32 / (2**(3 - pl.col("a")))).cast(pl.Int64) & 3',
     ),
 ]
