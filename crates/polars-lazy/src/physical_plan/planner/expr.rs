@@ -334,26 +334,6 @@ pub(crate) fn create_physical_expr(
                         },
                         AAggExpr::First(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                             let s = std::mem::take(&mut s[0]);
-<<<<<<< HEAD
-                            Ok(Some(s.head(Some(1))))
-                        }) as Arc<dyn SeriesUdf>),
-                        AAggExpr::Last(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                            let s = std::mem::take(&mut s[0]);
-                            Ok(Some(s.tail(Some(1))))
-                        }) as Arc<dyn SeriesUdf>),
-                        AAggExpr::Mean(_) => {
-                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                                let s = std::mem::take(&mut s[0]);
-                                Ok(Some(s.mean_as_series()))
-                            }) as Arc<dyn SeriesUdf>)
-                        },
-                        AAggExpr::Median(_) => {
-                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                                let s = std::mem::take(&mut s[0]);
-                                Ok(Some(s.median_as_series()))
-                            }) as Arc<dyn SeriesUdf>)
-                        },
-=======
                             let out = if s.is_empty() {
                                 Series::full_null(s.name(), 1, s.dtype())
                             } else {
@@ -377,7 +357,11 @@ pub(crate) fn create_physical_expr(
                             Ok(Some(s.mean_as_series()))
                         })
                             as Arc<dyn SeriesUdf>),
->>>>>>> main
+                        AAggExpr::Median(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                            let s = std::mem::take(&mut s[0]);
+                            Ok(Some(s.median_as_series()))
+                        })
+                            as Arc<dyn SeriesUdf>),
                         AAggExpr::Implode(_) => {
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = &s[0];
