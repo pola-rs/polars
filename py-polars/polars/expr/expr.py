@@ -5636,7 +5636,8 @@ class Expr:
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
         warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column (if passed). Experimental.
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
@@ -5842,7 +5843,8 @@ class Expr:
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
         warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column (if passed). Experimental.
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
@@ -6079,7 +6081,8 @@ class Expr:
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
         warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column (if passed). Experimental.
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
@@ -6318,7 +6321,8 @@ class Expr:
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
         warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column (if passed). Experimental.
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
@@ -6554,7 +6558,8 @@ class Expr:
         ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
         warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column (if passed). Experimental.
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
@@ -6797,7 +6802,8 @@ class Expr:
         ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
         warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column (if passed). Experimental.
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
@@ -7037,7 +7043,8 @@ class Expr:
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
         warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column (if passed). Experimental.
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
@@ -7202,7 +7209,8 @@ class Expr:
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
         warn_if_unsorted
-            Warn if data is not known to be sorted by `by` column (if passed). Experimental.
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
