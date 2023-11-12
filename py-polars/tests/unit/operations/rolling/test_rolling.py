@@ -608,11 +608,46 @@ def test_rolling_aggregations_unsorted_raise_10991() -> None:
             "val": [1, 2, 3],
         }
     )
-    with pytest.raises(
-        pl.InvalidOperationError,
-        match="argument in operation 'rolling_sum' is not explicitly sorted",
+    with pytest.warns(
+        UserWarning, match="Series is not known to be sorted by `by` column."
     ):
-        df.with_columns(roll=pl.col("val").rolling_sum("2d", by="dt", closed="right"))
+        _ = df.with_columns(
+            roll=pl.col("val").rolling_sum("2d", by="dt", closed="right")
+        )
+
+
+def test_rolling_aggregations_with_over_11225() -> None:
+    start = datetime(2001, 1, 1)
+
+    df_temporal = pl.DataFrame(
+        {
+            "date": [start + timedelta(days=k) for k in range(5)],
+            "group": ["A"] * 2 + ["B"] * 3,
+        }
+    ).with_row_count()
+
+    df_temporal = df_temporal.sort("group", "date")
+
+    result = df_temporal.with_columns(
+        rolling_row_mean=pl.col("row_nr")
+        .rolling_mean(
+            window_size="2d",
+            by="date",
+            closed="left",
+            warn_if_unsorted=False,
+        )
+        .over("group")
+    )
+    expected = pl.DataFrame(
+        {
+            "row_nr": [0, 1, 2, 3, 4],
+            "date": pl.datetime_range(date(2001, 1, 1), date(2001, 1, 5), eager=True),
+            "group": ["A", "A", "B", "B", "B"],
+            "rolling_row_mean": [None, 0.0, None, 2.0, 2.5],
+        },
+        schema_overrides={"row_nr": pl.UInt32},
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_rolling() -> None:

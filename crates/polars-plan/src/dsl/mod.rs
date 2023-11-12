@@ -1,7 +1,5 @@
 #![allow(ambiguous_glob_reexports)]
 //! Domain specific language for the Lazy API.
-#[cfg(feature = "rolling_window")]
-use polars_core::utils::ensure_sorted_arg;
 #[cfg(feature = "dtype-categorical")]
 pub mod cat;
 #[cfg(feature = "dtype-categorical")]
