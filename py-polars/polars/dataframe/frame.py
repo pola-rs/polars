@@ -6917,9 +6917,9 @@ class DataFrame:
 
     def pivot(
         self,
-        values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
-        index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
-        columns: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None,
+        values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        columns: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         aggregate_function: PivotAgg | Expr | None = None,
         *,
         maintain_order: bool = True,
@@ -6939,10 +6939,12 @@ class DataFrame:
             arguments contains multiple columns as well. If None, all columns not
             specified by `index` or `columns` are used.
         index
-            One or multiple keys to group by.
+            One or multiple keys to group by. If None, all columns not specified by
+            `values` or `columns` are used.
         columns
             Name of the column(s) whose values will be used as the header of the output
-            DataFrame.
+            DataFrame. If None, all columns not specified by `values` or `index` are
+            used.
         aggregate_function
             Choose from:
 
@@ -6950,6 +6952,9 @@ class DataFrame:
             - A predefined aggregate function string, one of
               {'first', 'sum', 'max', 'min', 'mean', 'median', 'last', 'count'}
             - An expression to do the aggregation.
+
+        Note that only two of `values`, `index`, and `columns` are required; if any are
+        not specified, the remaining columns are used.
 
         maintain_order
             Sort the grouped keys so that the output order is predictable.
@@ -7064,12 +7069,23 @@ class DataFrame:
         """  # noqa: W505
         index = _expand_selectors(self, index)
         columns = _expand_selectors(self, columns)
-
-        if values is None:
+        values = _expand_selectors(self, values)
+        val_err_str = "must provide at least two of `values`, `index`, and `columns`"
+        if index == [None]:
+            if not columns or not values:
+                raise ValueError(val_err_str)
+            used = list(set(columns).union(values))
+            index = [x for x in self.columns if x not in used and x not in used]
+        elif columns == [None]:
+            if not index or not values:
+                raise ValueError(val_err_str)
+            used = list(set(index).union(values))
+            columns = [x for x in self.columns if x not in used and x not in used]
+        elif values == [None]:
+            if not index or not columns:
+                raise ValueError(val_err_str)
             used = list(set(index).union(columns))
-            values = [x for x in self.columns if x not in used]
-        else:
-            values = _expand_selectors(self, values)
+            values = [x for x in self.columns if x not in used and x not in used]
 
         if isinstance(aggregate_function, str):
             if aggregate_function == "first":

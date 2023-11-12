@@ -35,7 +35,7 @@ def test_pivot() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_pivot_no_values() -> None:
+def test_pivot_missing_arg() -> None:
     df = pl.DataFrame(
         {
             "foo": ["A", "A", "B", "B", "C"],
@@ -44,7 +44,6 @@ def test_pivot_no_values() -> None:
             "bar": ["k", "l", "m", "n", "o"],
         }
     )
-    result = df.pivot(values=None, index="foo", columns="bar", aggregate_function=None)
 
     expected = pl.DataFrame(
         [
@@ -65,6 +64,16 @@ def test_pivot_no_values() -> None:
             "M_bar_n",
             "M_bar_o",
         ],
+    )
+
+    result = df.pivot(values=None, index="foo", columns="bar", aggregate_function=None)
+    assert_frame_equal(result, expected)
+    result = df.pivot(
+        values=["N", "M"], index=None, columns="bar", aggregate_function=None
+    )
+    assert_frame_equal(result, expected)
+    result = df.pivot(
+        values=["N", "M"], index="foo", columns=None, aggregate_function=None
     )
     assert_frame_equal(result, expected)
 
@@ -207,16 +216,6 @@ def test_pivot_multiple_values_column_names_5116() -> None:
         "x2|c2|C": [8, 7],
         "x2|c2|D": [6, 5],
     }
-    assert result.to_dict(as_series=False) == expected
-
-    # test using remaining columns as values by default
-    result = df.pivot(
-        values=None,
-        index="c1",
-        columns="c2",
-        separator="|",
-        aggregate_function="first",
-    )
     assert result.to_dict(as_series=False) == expected
 
 
