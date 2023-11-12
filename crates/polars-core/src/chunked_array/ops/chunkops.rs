@@ -122,14 +122,20 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     pub fn slice(&self, offset: i64, length: usize) -> Self {
         // The len: 0 special cases ensure we release memory.
         // A normal slice, slice the buffers and thus keep the whole memory allocated.
+        let exec = || {
+            let (chunks, len) = slice(&self.chunks, offset, length, self.len());
+            let mut out = unsafe { self.copy_with_chunks(chunks, true, true) };
+            out.length = len as IdxSize;
+            out
+        };
+
         match length {
-            0 => self.clear(),
-            _ => {
-                let (chunks, len) = slice(&self.chunks, offset, length, self.len());
-                let mut out = unsafe { self.copy_with_chunks(chunks, true, true) };
-                out.length = len as IdxSize;
-                out
+            0 => match self.dtype() {
+                #[cfg(feature = "object")]
+                DataType::Object(_) => exec(),
+                _ => self.clear(),
             },
+            _ => exec(),
         }
     }
 
