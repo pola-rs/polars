@@ -7,6 +7,7 @@ import pyarrow as pa
 import pyarrow.fs
 import pytest
 from deltalake import DeltaTable
+from deltalake._internal import TableNotFoundError
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_frame_not_equal
@@ -369,3 +370,12 @@ def test_write_delta_with_tz_in_df(expr: pl.Expr, tmp_path: Path) -> None:
 
     expected = df.cast(pl.Datetime)
     assert_frame_equal(result, expected)
+
+
+def test_write_delta_with_merge_and_no_table(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    with pytest.raises(TableNotFoundError):
+        df.write_delta(
+            tmp_path, mode="merge", delta_merge_options={"predicate": "a = a"}
+        )

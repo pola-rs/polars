@@ -3609,11 +3609,11 @@ class DataFrame:
         self,
         target: str | Path | deltalake.DeltaTable,
         *,
-        mode: Literal["merge"],
+        mode: Literal["error", "append", "overwrite", "ignore"] = ...,
         overwrite_schema: bool = ...,
         storage_options: dict[str, str] | None = ...,
-        delta_merge_options: dict[str, Any],
-    ) -> deltalake.table.TableMerger:
+        delta_write_options: dict[str, Any] | None = ...,
+    ) -> None:
         ...
 
     @overload
@@ -3621,11 +3621,11 @@ class DataFrame:
         self,
         target: str | Path | deltalake.DeltaTable,
         *,
-        mode: Literal["error", "append", "overwrite", "ignore"] = ...,
+        mode: Literal["merge"],
         overwrite_schema: bool = ...,
         storage_options: dict[str, str] | None = ...,
-        delta_write_options: dict[str, Any] | None = ...,
-    ) -> None:
+        delta_merge_options: dict[str, Any],
+    ) -> deltalake.table.TableMerger:
         ...
 
     def write_delta(
