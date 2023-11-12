@@ -53,6 +53,8 @@ class OpNames:
         "BINARY_ADD": "+",
         "BINARY_AND": "&",
         "BINARY_FLOOR_DIVIDE": "//",
+        "BINARY_LSHIFT": "<<",
+        "BINARY_RSHIFT": ">>",
         "BINARY_MODULO": "%",
         "BINARY_MULTIPLY": "*",
         "BINARY_OR": "|",
@@ -113,9 +115,6 @@ _PYTHON_METHODS_MAP = {
     "title": "str.to_titlecase",
     "upper": "str.to_uppercase",
 }
-
-# Python binary operations which don't (yet?) have a Polars equivalent
-UNSUPPORTED_BINARY_OPS = frozenset({"<<", ">>"})
 
 FUNCTION_KINDS: list[dict[str, list[AbstractSet[str]]]] = [
     # lambda x: module.func(CONSTANT)
@@ -320,12 +319,6 @@ class BytecodeParser:
                         if inst.opname == "RETURN_VALUE"
                     )
                     == 1
-                    # exclude binary operations not supported by Polars expressions
-                    and not any(
-                        inst.opname == "BINARY_OP"
-                        and inst.argrepr in UNSUPPORTED_BINARY_OPS
-                        for inst in self.original_instructions
-                    )
                 )
 
         return self._can_attempt_rewrite[self._map_target]
