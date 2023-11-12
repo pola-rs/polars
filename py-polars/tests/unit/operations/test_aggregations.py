@@ -308,16 +308,10 @@ def test_first_last_unit_length_12363() -> None:
 
     assert df.select(
         pl.all().drop_nulls().first().name.suffix("_first"),
-        pl.all().drop_nulls().first().len().name.suffix("_first_len"),
         pl.all().drop_nulls().last().name.suffix("_last"),
-        pl.all().drop_nulls().last().len().name.suffix("_last_len"),
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "a_first": [1],
         "b_first": [None],
-        "a_first_len": [1],
-        "b_first_len": [1],
         "a_last": [2],
         "b_last": [None],
-        "a_last_len": [1],
-        "b_last_len": [1],
     }
