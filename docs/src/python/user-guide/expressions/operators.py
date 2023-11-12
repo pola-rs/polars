@@ -34,7 +34,7 @@ print(df_numerical)
 # --8<-- [start:logical]
 df_logical = df.select(
     (pl.col("nrs") > 1).alias("nrs > 1"),
-    (pl.col("random") <= 0.5).alias("random < .5"),
+    (pl.col("random") <= 0.5).alias("random <= .5"),
     (pl.col("nrs") != 1).alias("nrs != 1"),
     (pl.col("nrs") == 1).alias("nrs == 1"),
     ((pl.col("random") <= 0.5) & (pl.col("nrs") > 1)).alias("and_expr"),  # and

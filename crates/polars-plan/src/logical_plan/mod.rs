@@ -156,7 +156,7 @@ pub enum LogicalPlan {
         count: usize,
     },
     Scan {
-        path: PathBuf,
+        paths: Arc<[PathBuf]>,
         file_info: FileInfo,
         predicate: Option<Expr>,
         file_options: FileScanOptions,

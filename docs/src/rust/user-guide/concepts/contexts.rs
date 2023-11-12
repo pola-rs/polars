@@ -59,6 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("random")
                 .filter(col("names").is_not_null())
                 .sum()
+                .name()
                 .suffix("_sum"),
             col("names").reverse().alias("reversed names"),
         ])

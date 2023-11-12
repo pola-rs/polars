@@ -156,32 +156,38 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         ca.apply_kernel_cast(&string_len_bytes)
     }
 
-    /// Return a copy of the string left filled with ASCII '0' digits to make a string of length width.
-    /// A leading sign prefix ('+'/'-') is handled by inserting the padding after the sign character
-    /// rather than before.
-    /// The original string is returned if width is less than or equal to `s.len()`.
-    #[cfg(feature = "string_justify")]
-    fn zfill(&self, alignment: usize) -> Utf8Chunked {
+    /// Pad the start of the string until it reaches the given length.
+    ///
+    /// Padding is done using the specified `fill_char`.
+    /// Strings with length equal to or greater than the given length are
+    /// returned as-is.
+    #[cfg(feature = "string_pad")]
+    fn pad_start(&self, length: usize, fill_char: char) -> Utf8Chunked {
         let ca = self.as_utf8();
-        justify::zfill(ca, alignment)
+        pad::pad_start(ca, length, fill_char)
     }
 
-    /// Return the string left justified in a string of length width.
-    /// Padding is done using the specified `fillchar`,
-    /// The original string is returned if width is less than or equal to `s.len()`.
-    #[cfg(feature = "string_justify")]
-    fn ljust(&self, width: usize, fillchar: char) -> Utf8Chunked {
+    /// Pad the end of the string until it reaches the given length.
+    ///
+    /// Padding is done using the specified `fill_char`.
+    /// Strings with length equal to or greater than the given length are
+    /// returned as-is.
+    #[cfg(feature = "string_pad")]
+    fn pad_end(&self, length: usize, fill_char: char) -> Utf8Chunked {
         let ca = self.as_utf8();
-        justify::ljust(ca, width, fillchar)
+        pad::pad_end(ca, length, fill_char)
     }
 
-    /// Return the string right justified in a string of length width.
-    /// Padding is done using the specified `fillchar`,
-    /// The original string is returned if width is less than or equal to `s.len()`.
-    #[cfg(feature = "string_justify")]
-    fn rjust(&self, width: usize, fillchar: char) -> Utf8Chunked {
+    /// Pad the start of the string with zeros until it reaches the given length.
+    ///
+    /// A sign prefix (`-`) is handled by inserting the padding after the sign
+    /// character rather than before.
+    /// Strings with length equal to or greater than the given length are
+    /// returned as-is.
+    #[cfg(feature = "string_pad")]
+    fn zfill(&self, length: usize) -> Utf8Chunked {
         let ca = self.as_utf8();
-        justify::rjust(ca, width, fillchar)
+        pad::zfill(ca, length)
     }
 
     /// Check if strings contain a regex pattern.

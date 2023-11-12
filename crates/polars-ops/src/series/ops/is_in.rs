@@ -343,7 +343,7 @@ pub fn is_in(s: &Series, other: &Series) -> PolarsResult<BooleanChunked> {
             use crate::frame::join::_check_categorical_src;
             _check_categorical_src(s.dtype(), other.dtype())?;
             let ca = s.categorical().unwrap();
-            let ca = ca.logical();
+            let ca = ca.physical();
             is_in_numeric(ca, &other.to_physical_repr())
         },
         #[cfg(feature = "dtype-struct")]

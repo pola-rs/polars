@@ -4,7 +4,7 @@ pub struct FusedArithmetic {}
 
 fn get_expr(input: Vec<Node>, op: FusedOperator) -> AExpr {
     let mut options = FunctionOptions {
-        collect_groups: ApplyOptions::ApplyFlat,
+        collect_groups: ApplyOptions::ElementWise,
         cast_to_supertypes: true,
         ..Default::default()
     };

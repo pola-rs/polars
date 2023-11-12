@@ -13,9 +13,12 @@ from typing import TYPE_CHECKING, Any, Generator, Iterable, Literal, Sequence, T
 import polars as pl
 from polars import functions as F
 from polars.datatypes import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
     Boolean,
     Date,
     Datetime,
+    Decimal,
     Duration,
     Int64,
     Time,
@@ -28,7 +31,7 @@ from polars.dependencies import numpy as np
 if TYPE_CHECKING:
     from collections.abc import Reversible
 
-    from polars import DataFrame, Series
+    from polars import DataFrame
     from polars.type_aliases import PolarsDataType, PolarsIntegerType, SizeUnit
 
     if sys.version_info >= (3, 10):
@@ -67,22 +70,41 @@ def _is_iterable_of(val: Iterable[object], eltype: type | tuple[type, ...]) -> b
     return all(isinstance(x, eltype) for x in val)
 
 
-def is_bool_sequence(val: object) -> TypeGuard[Sequence[bool]]:
+def is_bool_sequence(
+    val: object, *, include_series: bool = False
+) -> TypeGuard[Sequence[bool]]:
     """Check whether the given sequence is a sequence of booleans."""
     if _check_for_numpy(val) and isinstance(val, np.ndarray):
         return val.dtype == np.bool_
+    elif include_series and isinstance(val, pl.Series):
+        return val.dtype == pl.Boolean
     return isinstance(val, Sequence) and _is_iterable_of(val, bool)
 
 
-def is_int_sequence(val: object) -> TypeGuard[Sequence[int]]:
+def is_int_sequence(
+    val: object, *, include_series: bool = False
+) -> TypeGuard[Sequence[int]]:
     """Check whether the given sequence is a sequence of integers."""
     if _check_for_numpy(val) and isinstance(val, np.ndarray):
         return np.issubdtype(val.dtype, np.integer)
+    elif include_series and isinstance(val, pl.Series):
+        return val.dtype in pl.INTEGER_DTYPES
     return isinstance(val, Sequence) and _is_iterable_of(val, int)
 
 
+def is_sequence(
+    val: object, *, include_series: bool = False
+) -> TypeGuard[Sequence[Any]]:
+    """Check whether the given input is a numpy array or python sequence."""
+    return (
+        (_check_for_numpy(val) and isinstance(val, np.ndarray))
+        or isinstance(val, (pl.Series, Sequence) if include_series else Sequence)
+        and not isinstance(val, str)
+    )
+
+
 def is_str_sequence(
-    val: object, *, allow_str: bool = False
+    val: object, *, allow_str: bool = False, include_series: bool = False
 ) -> TypeGuard[Sequence[str]]:
     """
     Check that `val` is a sequence of strings.
@@ -92,12 +114,16 @@ def is_str_sequence(
     """
     if allow_str is False and isinstance(val, str):
         return False
+    elif _check_for_numpy(val) and isinstance(val, np.ndarray):
+        return np.issubdtype(val.dtype, np.str_)
+    elif include_series and isinstance(val, pl.Series):
+        return val.dtype == pl.Utf8
     return isinstance(val, Sequence) and _is_iterable_of(val, str)
 
 
 def range_to_series(
     name: str, rng: range, dtype: PolarsIntegerType | None = None
-) -> Series:
+) -> pl.Series:
     """Fast conversion of the given range to a Series."""
     dtype = dtype or Int64
     return F.int_range(
@@ -316,7 +342,35 @@ def _cast_repr_strings_with_schema(
                 )
             elif tp == Boolean:
                 cast_cols[c] = F.col(c).map_dict(
-                    {"true": True, "false": False}, return_dtype=Boolean
+                    remapping={"true": True, "false": False},
+                    return_dtype=Boolean,
+                )
+            elif tp in INTEGER_DTYPES:
+                int_string = F.col(c).str.replace_all(r"[^\d+-]", "")
+                cast_cols[c] = (
+                    pl.when(int_string.str.len_bytes() > 0).then(int_string).cast(tp)
+                )
+            elif tp in FLOAT_DTYPES or tp.base_type() == Decimal:
+                # identify integer/fractional parts
+                integer_part = F.col(c).str.replace(r"^(.*)\D(\d*)$", "$1")
+                fractional_part = F.col(c).str.replace(r"^(.*)\D(\d*)$", "$2")
+                cast_cols[c] = (
+                    # check for empty string and/or integer format
+                    pl.when(F.col(c).str.contains(r"^[+-]?\d*$"))
+                    .then(pl.when(F.col(c).str.len_bytes() > 0).then(F.col(c)))
+                    # check for scientific notation
+                    .when(F.col(c).str.contains("[eE]"))
+                    .then(F.col(c).str.replace(r"[^eE\d]", "."))
+                    .otherwise(
+                        # recombine sanitised integer/fractional components
+                        pl.concat_str(
+                            integer_part.str.replace_all(r"[^\d+-]", ""),
+                            fractional_part,
+                            separator=".",
+                        )
+                    )
+                    .cast(Utf8)
+                    .cast(tp)
                 )
             elif tp != df.schema[c]:
                 cast_cols[c] = F.col(c).cast(tp)
@@ -407,9 +461,9 @@ def _get_stack_locals(
     of_type
         Only return objects of this type.
     n_objects
-        If specified, return only the most recent ``n`` matching objects.
+        If specified, return only the most recent `n` matching objects.
     n_frames
-        If specified, look at objects in the last ``n`` stack frames only.
+        If specified, look at objects in the last `n` stack frames only.
     named
         If specified, only return objects matching the given name(s).
 

@@ -1,11 +1,14 @@
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
+pub mod abs_diff;
 pub mod arena;
 pub mod atomic;
 pub mod cache;
 pub mod cell;
 pub mod contention_pool;
 mod error;
-mod functions;
+pub mod functions;
+pub mod hashing;
+pub mod idx_vec;
 pub mod mem;
 pub mod slice;
 pub mod sort;

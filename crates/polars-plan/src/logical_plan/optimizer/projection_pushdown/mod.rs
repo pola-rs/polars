@@ -377,7 +377,7 @@ impl ProjectionPushDown {
                 Ok(PythonScan { options, predicate })
             },
             Scan {
-                path,
+                paths,
                 file_info,
                 scan_type,
                 predicate,
@@ -385,6 +385,7 @@ impl ProjectionPushDown {
                 mut output_schema,
             } => {
                 let mut do_optimization = true;
+                #[allow(irrefutable_let_patterns)]
                 if let FileScan::Anonymous { ref function, .. } = scan_type {
                     do_optimization = function.allows_projection_pushdown();
                 }
@@ -421,7 +422,7 @@ impl ProjectionPushDown {
                 }
 
                 let lp = Scan {
-                    path,
+                    paths,
                     file_info,
                     output_schema,
                     scan_type,

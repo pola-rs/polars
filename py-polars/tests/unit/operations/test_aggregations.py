@@ -30,13 +30,13 @@ def test_boolean_aggs() -> None:
         pl.std("bool").alias("std"),
         pl.var("bool").alias("var"),
     ]
-    assert df.select(aggs).to_dict(False) == {
+    assert df.select(aggs).to_dict(as_series=False) == {
         "mean": [0.6666666666666666],
         "std": [0.5773502588272095],
         "var": [0.3333333432674408],
     }
 
-    assert df.group_by(pl.lit(1)).agg(aggs).to_dict(False) == {
+    assert df.group_by(pl.lit(1)).agg(aggs).to_dict(as_series=False) == {
         "literal": [1],
         "mean": [0.6666666666666666],
         "std": [0.5773502691896258],
@@ -64,10 +64,12 @@ def test_duration_aggs() -> None:
 
     df = df.with_columns((pl.col("time2") - pl.col("time1")).alias("time_difference"))
 
-    assert df.select("time_difference").mean().to_dict(False) == {
+    assert df.select("time_difference").mean().to_dict(as_series=False) == {
         "time_difference": [timedelta(days=31)]
     }
-    assert df.group_by(pl.lit(1)).agg(pl.mean("time_difference")).to_dict(False) == {
+    assert df.group_by(pl.lit(1)).agg(pl.mean("time_difference")).to_dict(
+        as_series=False
+    ) == {
         "literal": [1],
         "time_difference": [timedelta(days=31)],
     }
@@ -91,7 +93,7 @@ def test_list_aggregation_that_filters_all_data_6017() -> None:
     )
 
     assert out.schema == {"col_to_group_by": pl.Int64, "calc": pl.List(pl.Float64)}
-    assert out.to_dict(False) == {"col_to_group_by": [2], "calc": [[]]}
+    assert out.to_dict(as_series=False) == {"col_to_group_by": [2], "calc": [[]]}
 
 
 def test_median() -> None:
@@ -132,7 +134,6 @@ def test_quantile_vs_numpy(tp: type, n: int) -> None:
         np_result = np.quantile(a, q)
     except IndexError:
         np_result = None
-        pass
     if np_result:
         # nan check
         if np_result != np_result:
@@ -218,7 +219,9 @@ def test_string_par_materialize_8207() -> None:
         }
     )
 
-    assert df.group_by(["a"]).agg(pl.min("b")).sort("a").collect().to_dict(False) == {
+    assert df.group_by(["a"]).agg(pl.min("b")).sort("a").collect().to_dict(
+        as_series=False
+    ) == {
         "a": ["a", "b", "c", "d", "e"],
         "b": ["P", "L", "T", "R", "a long string"],
     }
@@ -254,9 +257,9 @@ def test_err_on_implode_and_agg() -> None:
     # implode + function should be allowed in group_by
     assert df.group_by("type", maintain_order=True).agg(
         pl.col("type").implode().list.head().alias("foo")
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "type": ["water", "fire", "earth"],
-        "foo": [["water", "water"], ["fire"], ["earth"]],
+        "foo": [[["water", "water"]], [["fire"]], [["earth"]]],
     }
 
     # but not during a window function as the groups cannot be mapped back
@@ -271,7 +274,10 @@ def test_mapped_literal_to_literal_9217() -> None:
     df = pl.DataFrame({"unique_id": ["a", "b"]})
     assert df.group_by(True).agg(
         pl.struct(pl.lit("unique_id").alias("unique_id"))
-    ).to_dict(False) == {"literal": [True], "unique_id": [{"unique_id": "unique_id"}]}
+    ).to_dict(as_series=False) == {
+        "literal": [True],
+        "unique_id": [{"unique_id": "unique_id"}],
+    }
 
 
 def test_sum_empty_and_null_set() -> None:
@@ -290,3 +296,22 @@ def test_horizontal_sum_null_to_identity() -> None:
     assert pl.DataFrame({"a": [1, 5], "b": [10, None]}).select(
         [pl.sum_horizontal(["a", "b"])]
     ).to_series().to_list() == [11, 5]
+
+
+def test_first_last_unit_length_12363() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [None, None],
+        }
+    )
+
+    assert df.select(
+        pl.all().drop_nulls().first().name.suffix("_first"),
+        pl.all().drop_nulls().last().name.suffix("_last"),
+    ).to_dict(as_series=False) == {
+        "a_first": [1],
+        "b_first": [None],
+        "a_last": [2],
+        "b_last": [None],
+    }

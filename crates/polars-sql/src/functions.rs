@@ -2,8 +2,8 @@ use polars_core::prelude::{polars_bail, polars_err, PolarsResult};
 use polars_lazy::dsl::Expr;
 use polars_plan::dsl::{coalesce, count, when};
 use polars_plan::logical_plan::LiteralValue;
-use polars_plan::prelude::lit;
 use polars_plan::prelude::LiteralValue::Null;
+use polars_plan::prelude::{lit, StrptimeOptions};
 use sqlparser::ast::{
     Expr as SqlExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, Value as SqlValue,
     WindowSpec, WindowType,
@@ -218,6 +218,16 @@ pub(crate) enum PolarsSqlFunctions {
     Radians,
 
     // ----
+    // Date Functions
+    // ----
+    /// SQL 'date' function
+    /// ```sql
+    /// SELECT DATE('2021-03-15') from df;
+    /// SELECT DATE('2021-03', '%Y-%m') from df;
+    /// ```
+    Date,
+
+    // ----
     // String functions
     // ----
     /// SQL 'ends_with' function
@@ -232,6 +242,7 @@ pub(crate) enum PolarsSqlFunctions {
     /// ```sql
     /// SELECT INITCAP(column_1) from df;
     /// ```
+    #[cfg(feature = "nightly")]
     InitCap,
     /// SQL 'left' function
     /// Returns the `length` first characters
@@ -471,6 +482,7 @@ impl PolarsSqlFunctions {
             "cot",
             "cotd",
             "count",
+            "date",
             "degrees",
             "ends_with",
             "exp",
@@ -560,9 +572,15 @@ impl PolarsSqlFunctions {
             "coalesce" => Self::Coalesce,
 
             // ----
+            // Date functions
+            // ----
+            "date" => Self::Date,
+
+            // ----
             // String functions
             // ----
             "ends_with" => Self::EndsWith,
+            #[cfg(feature = "nightly")]
             "initcap" => Self::InitCap,
             "length" => Self::Length,
             "left" => Self::Left,
@@ -681,6 +699,7 @@ impl SqlFunctionVisitor<'_> {
             // String functions
             // ----
             EndsWith => self.visit_binary(|e, s| e.str().ends_with(s)),
+            #[cfg(feature = "nightly")]
             InitCap => self.visit_unary(|e| e.str().to_titlecase()),
             Left => self.try_visit_binary(|e, length| {
                 Ok(e.str().slice(0, match length {
@@ -717,6 +736,14 @@ impl SqlFunctionVisitor<'_> {
                         true))
                 }),
                 _ => polars_bail!(InvalidOperation:"Invalid number of arguments for RegexpLike: {}",function.args.len()),
+            },
+            Date => match function.args.len() {
+                1 => self.visit_unary(|e| e.str().to_date(StrptimeOptions::default())),
+                2 => self.visit_binary(|e, fmt| e.str().to_date(fmt)),
+                _ => polars_bail!(InvalidOperation:
+                    "Invalid number of arguments for Date: {}",
+                    function.args.len()
+                ),
             },
             RTrim => match function.args.len() {
                 1 => self.visit_unary(|e| e.str().strip_chars_end(lit(Null))),
@@ -1069,6 +1096,24 @@ impl FromSqlExpr for String {
         match expr {
             SqlExpr::Value(v) => match v {
                 SqlValue::SingleQuotedString(s) => Ok(s.clone()),
+                _ => polars_bail!(ComputeError: "can't parse literal {:?}", v),
+            },
+            _ => polars_bail!(ComputeError: "can't parse literal {:?}", expr),
+        }
+    }
+}
+
+impl FromSqlExpr for StrptimeOptions {
+    fn from_sql_expr(expr: &SqlExpr, _: &mut SQLContext) -> PolarsResult<Self>
+    where
+        Self: Sized,
+    {
+        match expr {
+            SqlExpr::Value(v) => match v {
+                SqlValue::SingleQuotedString(s) => Ok(StrptimeOptions {
+                    format: Some(s.clone()),
+                    ..StrptimeOptions::default()
+                }),
                 _ => polars_bail!(ComputeError: "can't parse literal {:?}", v),
             },
             _ => polars_bail!(ComputeError: "can't parse literal {:?}", expr),

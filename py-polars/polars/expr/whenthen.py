@@ -20,9 +20,9 @@ class When:
     """
     Utility class for the `when-then-otherwise` expression.
 
-    Represents the initial state of the expression after ``pl.when(...)`` is called.
+    Represents the initial state of the expression after `pl.when(...)` is called.
 
-    In this state, ``then`` must be called to continue to finish the expression.
+    In this state, `then` must be called to continue to finish the expression.
 
     """
 
@@ -51,7 +51,7 @@ class Then(Expr):
     """
     Utility class for the `when-then-otherwise` expression.
 
-    Represents the state of the expression after ``pl.when(...).then(...)`` is called.
+    Represents the state of the expression after `pl.when(...).then(...)` is called.
 
     """
 
@@ -103,9 +103,9 @@ class ChainedWhen(Expr):
     """
     Utility class for the `when-then-otherwise` expression.
 
-    Represents the state of the expression after an additional ``when`` is called.
+    Represents the state of the expression after an additional `when` is called.
 
-    In this state, ``then`` must be called to continue to finish the expression.
+    In this state, `then` must be called to continue to finish the expression.
 
     """
 
@@ -134,7 +134,7 @@ class ChainedThen(Expr):
     """
     Utility class for the `when-then-otherwise` expression.
 
-    Represents the state of the expression after an additional ``then`` is called.
+    Represents the state of the expression after an additional `then` is called.
 
     """
 

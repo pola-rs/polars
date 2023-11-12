@@ -55,8 +55,15 @@ fn slice(
 
 impl<T: PolarsDataType> ChunkedArray<T> {
     /// Get the length of the ChunkedArray
+    #[inline]
     pub fn len(&self) -> usize {
         self.length as usize
+    }
+
+    /// Count the null values.
+    #[inline]
+    pub fn null_count(&self) -> usize {
+        self.null_count as usize
     }
 
     /// Check if ChunkedArray is empty.
@@ -74,6 +81,11 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             }
         }
         self.length = IdxSize::try_from(inner(&self.chunks)).expect(LENGTH_LIMIT_MSG);
+        self.null_count = self
+            .chunks
+            .iter()
+            .map(|arr| arr.null_count())
+            .sum::<usize>() as IdxSize;
 
         if self.length <= 1 {
             self.set_sorted_flag(IsSorted::Ascending)
@@ -108,10 +120,23 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// and will slice the best match when offset, or length is out of bounds
     #[inline]
     pub fn slice(&self, offset: i64, length: usize) -> Self {
-        let (chunks, len) = slice(&self.chunks, offset, length, self.len());
-        let mut out = unsafe { self.copy_with_chunks(chunks, true, true) };
-        out.length = len as IdxSize;
-        out
+        // The len: 0 special cases ensure we release memory.
+        // A normal slice, slice the buffers and thus keep the whole memory allocated.
+        let exec = || {
+            let (chunks, len) = slice(&self.chunks, offset, length, self.len());
+            let mut out = unsafe { self.copy_with_chunks(chunks, true, true) };
+            out.length = len as IdxSize;
+            out
+        };
+
+        match length {
+            0 => match self.dtype() {
+                #[cfg(feature = "object")]
+                DataType::Object(_) => exec(),
+                _ => self.clear(),
+            },
+            _ => exec(),
+        }
     }
 
     /// Take a view of top n elements

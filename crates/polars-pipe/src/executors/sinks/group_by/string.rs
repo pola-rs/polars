@@ -9,7 +9,7 @@ use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 use polars_core::utils::_set_partition_size;
 use polars_core::{IdBuildHasher, POOL};
-use polars_utils::hash_to_partition;
+use polars_utils::hashing::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 use rayon::prelude::*;

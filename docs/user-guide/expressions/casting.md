@@ -1,6 +1,6 @@
 # Casting
 
-Casting converts the underlying [`DataType`](../concepts/data-types.md) of a column to a new one. Polars uses Arrow to manage the data in memory and relies on the compute kernels in the [rust implementation](https://github.com/jorgecarleitao/arrow2) to do the conversion. Casting is available with the `cast()` method.
+Casting converts the underlying [`DataType`](../concepts/data-types.md) of a column to a new one. Polars uses Arrow to manage the data in memory and relies on the compute kernels in the [Rust implementation](https://github.com/jorgecarleitao/arrow2) to do the conversion. Casting is available with the `cast()` method.
 
 The `cast` method includes a `strict` parameter that determines how Polars behaves when it encounters a value that can't be converted from the source `DataType` to the target `DataType`. By default, `strict=True`, which means that Polars will throw an error to notify the user of the failed conversion and provide details on the values that couldn't be cast. On the other hand, if `strict=False`, any values that can't be converted to the target `DataType` will be quietly converted to `null`.
 

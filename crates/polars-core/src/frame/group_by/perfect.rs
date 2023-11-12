@@ -2,7 +2,8 @@ use std::fmt::Debug;
 
 use arrow::array::Array;
 use arrow::legacy::bit_util::round_upto_multiple_of_64;
-use num_traits::FromPrimitive;
+use num_traits::{FromPrimitive, ToPrimitive};
+use polars_utils::idx_vec::IdxVec;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::sync::SyncPtr;
 use polars_utils::IdxSize;
@@ -11,14 +12,13 @@ use rayon::prelude::*;
 #[cfg(all(feature = "dtype-categorical", feature = "performant"))]
 use crate::config::verbose;
 use crate::datatypes::*;
-use crate::hashing::AsU64;
 use crate::prelude::*;
 use crate::POOL;
 
 impl<T> ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    T::Native: AsU64 + FromPrimitive + Debug,
+    T::Native: ToPrimitive + FromPrimitive + Debug,
 {
     // Use the indexes as perfect groups
     pub fn group_tuples_perfect(
@@ -41,8 +41,8 @@ where
         let chunk_size = len / n_threads;
 
         let (groups, first) = if multithreaded && chunk_size > 1 {
-            let mut groups: Vec<Vec<IdxSize>> = unsafe { aligned_vec(len) };
-            groups.resize_with(len, || Vec::with_capacity(group_capacity));
+            let mut groups: Vec<IdxVec> = unsafe { aligned_vec(len) };
+            groups.resize_with(len, || IdxVec::with_capacity(group_capacity));
             let mut first: Vec<IdxSize> = unsafe { aligned_vec(len) };
 
             // ensure we keep aligned to cache lines
@@ -87,7 +87,7 @@ where
                             if arr.null_count() == 0 {
                                 for &cat in arr.values().as_slice() {
                                     if cat >= start && cat < end {
-                                        let cat = cat.as_u64() as usize;
+                                        let cat = cat.to_usize().unwrap();
                                         let buf = unsafe { groups.get_unchecked_release_mut(cat) };
                                         buf.push(row_nr);
 
@@ -106,7 +106,7 @@ where
                                     if let Some(&cat) = opt_cat {
                                         // cannot factor out due to bchk
                                         if cat >= start && cat < end {
-                                            let cat = cat.as_u64() as usize;
+                                            let cat = cat.to_usize().unwrap();
                                             let buf =
                                                 unsafe { groups.get_unchecked_release_mut(cat) };
                                             buf.push(row_nr);
@@ -149,13 +149,13 @@ where
         } else {
             let mut groups = Vec::with_capacity(len);
             let mut first = vec![IdxSize::MAX; len];
-            groups.resize_with(len, || Vec::with_capacity(group_capacity));
+            groups.resize_with(len, || IdxVec::with_capacity(group_capacity));
 
             let mut row_nr = 0 as IdxSize;
             for arr in self.downcast_iter() {
                 for opt_cat in arr.iter() {
                     if let Some(cat) = opt_cat {
-                        let group_id = cat.as_u64() as usize;
+                        let group_id = cat.to_usize().unwrap();
                         let buf = unsafe { groups.get_unchecked_release_mut(group_id) };
                         buf.push(row_nr);
 
@@ -196,7 +196,7 @@ impl CategoricalChunked {
         if self.is_empty() {
             return GroupsProxy::Idx(GroupsIdx::new(vec![], vec![], true));
         }
-        let cats = self.logical();
+        let cats = self.physical();
 
         let mut out = match &**rev_map {
             RevMapping::Local(cached) => {
@@ -208,7 +208,7 @@ impl CategoricalChunked {
                     // but on huge tables, this can be > 2x faster
                     cats.group_tuples_perfect(cached.len() - 1, multithreaded, 0)
                 } else {
-                    self.logical().group_tuples(multithreaded, sorted).unwrap()
+                    self.physical().group_tuples(multithreaded, sorted).unwrap()
                 }
             },
             RevMapping::Global(_mapping, _cached, _) => {
@@ -216,7 +216,7 @@ impl CategoricalChunked {
                 // the problem is that the global categories are not guaranteed packed together
                 // so we might need to deref them first to local ones, but that might be more
                 // expensive than just hashing (benchmark first)
-                self.logical().group_tuples(multithreaded, sorted).unwrap()
+                self.physical().group_tuples(multithreaded, sorted).unwrap()
             },
         };
         if sorted {

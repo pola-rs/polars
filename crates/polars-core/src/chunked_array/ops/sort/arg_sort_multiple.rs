@@ -75,7 +75,7 @@ pub fn _get_rows_encoded_compat_array(by: &Series) -> PolarsResult<ArrayRef> {
             if ca.uses_lexical_ordering() {
                 by.to_arrow(0)
             } else {
-                ca.logical().chunks[0].clone()
+                ca.physical().chunks[0].clone()
             }
         },
         _ => by.to_arrow(0),

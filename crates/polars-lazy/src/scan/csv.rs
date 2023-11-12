@@ -13,7 +13,7 @@ use crate::prelude::*;
 #[cfg(feature = "csv")]
 pub struct LazyCsvReader<'a> {
     path: PathBuf,
-    paths: Vec<PathBuf>,
+    paths: Arc<[PathBuf]>,
     separator: u8,
     has_header: bool,
     ignore_errors: bool,
@@ -40,14 +40,14 @@ pub struct LazyCsvReader<'a> {
 
 #[cfg(feature = "csv")]
 impl<'a> LazyCsvReader<'a> {
-    pub fn new_paths(paths: Vec<PathBuf>) -> Self {
+    pub fn new_paths(paths: Arc<[PathBuf]>) -> Self {
         Self::new("").with_paths(paths)
     }
 
     pub fn new(path: impl AsRef<Path>) -> Self {
         LazyCsvReader {
             path: path.as_ref().to_owned(),
-            paths: vec![],
+            paths: Arc::new([]),
             separator: b',',
             has_header: true,
             ignore_errors: false,
@@ -317,7 +317,7 @@ impl LazyFileListReader for LazyCsvReader<'_> {
         self
     }
 
-    fn with_paths(mut self, paths: Vec<PathBuf>) -> Self {
+    fn with_paths(mut self, paths: Arc<[PathBuf]>) -> Self {
         self.paths = paths;
         self
     }

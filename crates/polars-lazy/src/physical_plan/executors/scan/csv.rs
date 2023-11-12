@@ -54,7 +54,7 @@ impl CsvExec {
 impl Executor for CsvExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let finger_print = FileFingerPrint {
-            path: self.path.clone(),
+            paths: Arc::new([self.path.clone()]),
             predicate: self
                 .predicate
                 .as_ref()

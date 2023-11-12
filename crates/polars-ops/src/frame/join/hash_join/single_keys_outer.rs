@@ -1,3 +1,5 @@
+use polars_utils::hashing::hash_to_partition;
+
 use super::*;
 
 /// Probe the build table and add tuples to the results (inner join)
@@ -5,7 +7,7 @@ fn probe_outer<T, F, G, H>(
     probe_hashes: &[Vec<(u64, T)>],
     hash_tbls: &mut [PlHashMap<T, (bool, Vec<IdxSize>)>],
     results: &mut Vec<(Option<IdxSize>, Option<IdxSize>)>,
-    n_tables: u64,
+    n_tables: usize,
     // Function that get index_a, index_b when there is a match and pushes to result
     swap_fn_match: F,
     // Function that get index_a when there is no match and pushes to result
@@ -22,14 +24,13 @@ fn probe_outer<T, F, G, H>(
     H: Fn(IdxSize) -> (Option<IdxSize>, Option<IdxSize>),
 {
     // needed for the partition shift instead of modulo to make sense
-    assert!(n_tables.is_power_of_two());
     let mut idx_a = 0;
     for probe_hashes in probe_hashes {
         for (h, key) in probe_hashes {
             let h = *h;
             // probe table that contains the hashed value
             let current_probe_table =
-                unsafe { get_hash_tbl_threaded_join_mut_partitioned(h, hash_tbls, n_tables) };
+                unsafe { hash_tbls.get_unchecked_mut(hash_to_partition(h, n_tables)) };
 
             let entry = current_probe_table
                 .raw_entry_mut()
@@ -108,7 +109,7 @@ where
     // we pre hash the probing values
     let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(probe, Some(random_state));
 
-    let n_tables = hash_tbls.len() as u64;
+    let n_tables = hash_tbls.len();
 
     // probe the hash table.
     // Note: indexes from b that are not matched will be None, Some(idx_b)

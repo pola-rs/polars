@@ -29,9 +29,9 @@ pub(super) fn is_streamable(node: Node, expr_arena: &Arena<AExpr>, context: Cont
         {
             Context::Default => matches!(
                 options.collect_groups,
-                ApplyOptions::ApplyFlat | ApplyOptions::ApplyList
+                ApplyOptions::ElementWise | ApplyOptions::ApplyList
             ),
-            Context::Aggregation => matches!(options.collect_groups, ApplyOptions::ApplyFlat),
+            Context::Aggregation => matches!(options.collect_groups, ApplyOptions::ElementWise),
         },
         AExpr::Column(_) => {
             seen_column = true;

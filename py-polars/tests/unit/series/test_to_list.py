@@ -7,13 +7,7 @@ from polars.testing import assert_series_equal
 from polars.testing.parametric import series
 
 
-@given(
-    s=series(
-        # TODO: Remove exclusion when bug is fixed.
-        # https://github.com/pola-rs/polars/issues/11744
-        excluded_dtypes=[pl.Duration]
-    )
-)
+@given(s=series())
 def test_to_list(s: pl.Series) -> None:
     values = s.to_list()
     result = pl.Series(values, dtype=s.dtype)

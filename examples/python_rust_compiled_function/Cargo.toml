@@ -14,4 +14,4 @@ polars = { path = "../../crates/polars" }
 pyo3 = { workspace = true, features = ["extension-module"] }
 
 [build-dependencies]
-pyo3-build-config = "0.19"
+pyo3-build-config = "0.20"

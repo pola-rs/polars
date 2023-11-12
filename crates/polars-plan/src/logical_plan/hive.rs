@@ -87,7 +87,7 @@ impl HivePartitions {
         }
     }
 
-    pub(crate) fn schema(&self) -> &Schema {
+    pub(crate) fn schema(&self) -> &SchemaRef {
         self.get_statistics().schema()
     }
 

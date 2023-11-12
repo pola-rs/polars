@@ -3,6 +3,8 @@ use std::sync::Arc;
 use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
+#[cfg(feature = "round_series")]
+use polars_ops::prelude::floor_div_series;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
@@ -97,6 +99,24 @@ impl BinaryExpr {
 
         let out = apply_operator_owned(lhs, rhs, self.op)?;
         ac_l.with_series(out, aggregated, Some(&self.expr))?;
+        Ok(ac_l)
+    }
+
+    fn apply_all_literal<'a>(
+        &self,
+        mut ac_l: AggregationContext<'a>,
+        mut ac_r: AggregationContext<'a>,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        let name = ac_l.series().name().to_string();
+        ac_l.groups();
+        ac_r.groups();
+        polars_ensure!(ac_l.groups.len() == ac_r.groups.len(), ComputeError: "lhs and rhs should have same group length");
+        let left_s = ac_l.series().rechunk();
+        let right_s = ac_r.series().rechunk();
+        let res_s = apply_operator(&left_s, &right_s, self.op)?;
+        let ca = ListChunked::full(&name, &res_s, ac_l.groups.len());
+        ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
+        ac_l.with_series(ca.into_series(), true, Some(&self.expr))?;
         Ok(ac_l)
     }
 
@@ -200,16 +220,21 @@ impl PhysicalExpr for BinaryExpr {
         let ac_r = result_b?;
 
         match (ac_l.agg_state(), ac_r.agg_state()) {
+            (AggState::Literal(s), AggState::NotAggregated(_))
+            | (AggState::NotAggregated(_), AggState::Literal(s)) => match s.len() {
+                1 => self.apply_elementwise(ac_l, ac_r, false),
+                _ => self.apply_group_aware(ac_l, ac_r),
+            },
+            (AggState::Literal(_), AggState::Literal(_)) => self.apply_all_literal(ac_l, ac_r),
+            (AggState::NotAggregated(_), AggState::NotAggregated(_)) => {
+                self.apply_elementwise(ac_l, ac_r, false)
+            },
             (
-                AggState::Literal(_) | AggState::NotAggregated(_),
-                AggState::Literal(_) | AggState::NotAggregated(_),
-            ) => self.apply_elementwise(ac_l, ac_r, false),
-            (
-                AggState::AggregatedFlat(_) | AggState::Literal(_),
-                AggState::AggregatedFlat(_) | AggState::Literal(_),
+                AggState::AggregatedScalar(_) | AggState::Literal(_),
+                AggState::AggregatedScalar(_) | AggState::Literal(_),
             ) => self.apply_elementwise(ac_l, ac_r, true),
-            (AggState::AggregatedFlat(_), AggState::NotAggregated(_))
-            | (AggState::NotAggregated(_), AggState::AggregatedFlat(_)) => {
+            (AggState::AggregatedScalar(_), AggState::NotAggregated(_))
+            | (AggState::NotAggregated(_), AggState::AggregatedScalar(_)) => {
                 self.apply_group_aware(ac_l, ac_r)
             },
             (AggState::AggregatedList(lhs), AggState::AggregatedList(rhs)) => {

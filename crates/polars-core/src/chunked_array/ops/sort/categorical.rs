@@ -31,7 +31,7 @@ impl CategoricalChunked {
 
         if self.uses_lexical_ordering() {
             let mut vals = self
-                .logical()
+                .physical()
                 .into_no_null_iter()
                 .zip(self.iter_str())
                 .collect_trusted::<Vec<_>>();
@@ -57,7 +57,7 @@ impl CategoricalChunked {
                 )
             };
         }
-        let cats = self.logical().sort_with(options);
+        let cats = self.physical().sort_with(options);
         // safety:
         // we only reordered the indexes so we are still in bounds
         unsafe {
@@ -84,11 +84,11 @@ impl CategoricalChunked {
                 self.name(),
                 iters,
                 options,
-                self.logical().null_count(),
+                self.physical().null_count(),
                 self.len(),
             )
         } else {
-            self.logical().arg_sort(options)
+            self.physical().arg_sort(options)
         }
     }
 
@@ -96,7 +96,7 @@ impl CategoricalChunked {
 
     pub(crate) fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
         if self.uses_lexical_ordering() {
-            args_validate(self.logical(), &options.other, &options.descending)?;
+            args_validate(self.physical(), &options.other, &options.descending)?;
             let mut count: IdxSize = 0;
 
             // we use bytes to save a monomorphisized str impl
@@ -112,7 +112,7 @@ impl CategoricalChunked {
 
             arg_sort_multiple_impl(vals, options)
         } else {
-            self.logical().arg_sort_multiple(options)
+            self.physical().arg_sort_multiple(options)
         }
     }
 }

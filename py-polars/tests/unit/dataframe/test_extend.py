@@ -51,9 +51,13 @@ def test_extend_various_dtypes() -> None:
 
 def test_extend_slice_offset_8745() -> None:
     df = pl.DataFrame([{"age": 1}, {"age": 2}, {"age": 3}])
+
     df = df[:-1]
     tail = pl.DataFrame([{"age": 8}])
-    assert df.extend(tail).to_dict(False) == {"age": [1, 2, 8]}
+    result = df.extend(tail)
+
+    expected = pl.DataFrame({"age": [1, 2, 8]})
+    assert_frame_equal(result, expected)
 
 
 def test_extend_self() -> None:

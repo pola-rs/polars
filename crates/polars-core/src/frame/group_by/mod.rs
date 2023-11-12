@@ -4,10 +4,11 @@ use std::hash::Hash;
 use ahash::RandomState;
 use arrow::legacy::prelude::QuantileInterpolOptions;
 use num_traits::NumCast;
+use polars_utils::hashing::{BytesHash, DirtyHash};
 use rayon::prelude::*;
 
 use self::hashing::*;
-use crate::hashing::{get_null_hash_value, AsU64, BytesHash};
+use crate::hashing::get_null_hash_value;
 use crate::prelude::*;
 use crate::utils::{_set_partition_size, accumulate_dataframes_vertical};
 use crate::POOL;

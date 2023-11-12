@@ -11,6 +11,7 @@ use polars_core::{downcast_as_macro_arg_physical, POOL};
 use polars_ops::frame::join::{
     default_join_ids, private_left_join_multiple_keys, ChunkJoinOptIds, JoinValidation,
 };
+use polars_ops::frame::SeriesJoin;
 use polars_utils::format_smartstring;
 use polars_utils::sort::perfect_sort;
 use polars_utils::sync::SyncPtr;
@@ -301,8 +302,8 @@ impl WindowExpr {
                         },
                         Expr::Function { options, .. }
                         | Expr::AnonymousFunction { options, .. } => {
-                            if options.auto_explode
-                                && matches!(options.collect_groups, ApplyOptions::ApplyGroups)
+                            if options.returns_scalar
+                                && matches!(options.collect_groups, ApplyOptions::GroupWise)
                             {
                                 agg_col = true;
                             }
@@ -330,7 +331,7 @@ impl WindowExpr {
             // (false, false, _) => Ok(MapStrategy::Join),
             // aggregations
             //`sum("foo").over("groups")`
-            (_, AggState::AggregatedFlat(_)) => Ok(MapStrategy::Join),
+            (_, AggState::AggregatedScalar(_)) => Ok(MapStrategy::Join),
             // no explicit aggregations, map over the groups
             //`(col("x").sum() * col("y")).over("groups")`
             (WindowMapping::Join, AggState::AggregatedList(_)) => Ok(MapStrategy::Join),
@@ -716,7 +717,7 @@ where
                         .zip(groups.all().par_iter())
                         .for_each(|(v, g)| {
                             let ptr = sync_ptr_values.get();
-                            for idx in g {
+                            for idx in g.as_slice() {
                                 debug_assert!((*idx as usize) < len);
                                 unsafe { *ptr.add(*idx as usize) = *v }
                             }
@@ -766,7 +767,7 @@ where
                 let validity_ptr = sync_ptr_validity.get();
 
                 ca.into_iter().zip(groups.iter()).for_each(|(opt_v, g)| {
-                    for idx in g {
+                    for idx in g.as_slice() {
                         let idx = *idx as usize;
                         debug_assert!(idx < len);
                         unsafe {

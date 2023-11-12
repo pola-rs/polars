@@ -41,14 +41,14 @@ impl Utf8ChunkedBuilder {
 
     pub fn finish(mut self) -> Utf8Chunked {
         let arr = self.builder.as_box();
-        let length = arr.len() as IdxSize;
 
         let mut ca = ChunkedArray {
             field: Arc::new(self.field),
             chunks: vec![arr],
             phantom: PhantomData,
             bit_settings: Default::default(),
-            length,
+            length: 0,
+            null_count: 0,
         };
         ca.compute_len();
         ca

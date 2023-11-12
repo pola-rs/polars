@@ -90,13 +90,13 @@ class ColumnFactory(metaclass=ColumnFactoryMeta):
 
     Notes
     -----
-    An instance of this class is exported under the name ``col``. It can be used as
-    though it were a function by calling, for example, ``pl.col("foo")``.
+    An instance of this class is exported under the name `col`. It can be used as
+    though it were a function by calling, for example, `pl.col("foo")`.
     See the :func:`__call__` method for further documentation.
 
     This helper class enables an alternative syntax for creating a column expression
-    through attribute lookup. For example ``col.foo`` creates an expression equal to
-    ``col("foo")``.
+    through attribute lookup. For example `col.foo` creates an expression equal to
+    `col("foo")`.
     See the :func:`__getattr__` method for further documentation.
 
     The function call syntax is considered the idiomatic way of constructing a column
@@ -155,7 +155,7 @@ class ColumnFactory(metaclass=ColumnFactoryMeta):
         name
             The name or datatype of the column(s) to represent.
             Accepts regular expression input.
-            Regular expressions should start with ``^`` and end with ``$``.
+            Regular expressions should start with `^` and end with `$`.
         *more_names
             Additional names or datatypes of columns to represent,
             specified as positional arguments.
@@ -197,7 +197,7 @@ class ColumnFactory(metaclass=ColumnFactoryMeta):
         │ 3   │
         └─────┘
 
-        Use the wildcard ``*`` to represent all columns.
+        Use the wildcard `*` to represent all columns.
 
         >>> df.select(pl.col("*"))
         shape: (2, 4)

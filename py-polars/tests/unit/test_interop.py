@@ -79,6 +79,14 @@ def test_to_numpy_no_zero_copy(
         series.to_numpy(zero_copy_only=True, use_pyarrow=use_pyarrow)
 
 
+def test_to_numpy_empty_no_pyarrow() -> None:
+    series = pl.Series([], dtype=pl.Null)
+    result = series.to_numpy()
+    assert result.dtype == pl.Float32
+    assert result.shape == (0,)
+    assert result.size == 0
+
+
 def test_from_pandas() -> None:
     df = pd.DataFrame(
         {
@@ -183,16 +191,19 @@ def test_from_pandas_include_indexes() -> None:
     pd_df = pd.DataFrame(data)
 
     df = pl.from_pandas(pd_df.set_index(["dtm"]))
-    assert df.to_dict(False) == {"val": [100, 200, 300], "misc": ["x", "y", "z"]}
+    assert df.to_dict(as_series=False) == {
+        "val": [100, 200, 300],
+        "misc": ["x", "y", "z"],
+    }
 
     df = pl.from_pandas(pd_df.set_index(["dtm", "val"]))
-    assert df.to_dict(False) == {"misc": ["x", "y", "z"]}
+    assert df.to_dict(as_series=False) == {"misc": ["x", "y", "z"]}
 
     df = pl.from_pandas(pd_df.set_index(["dtm"]), include_index=True)
-    assert df.to_dict(False) == data
+    assert df.to_dict(as_series=False) == data
 
     df = pl.from_pandas(pd_df.set_index(["dtm", "val"]), include_index=True)
-    assert df.to_dict(False) == data
+    assert df.to_dict(as_series=False) == data
 
 
 def test_from_pandas_duplicated_columns() -> None:
@@ -382,11 +393,11 @@ def test_from_dicts_struct() -> None:
     assert df["a"][1] == {"b": 3, "c": 4}
 
     # 5649
-    assert pl.from_dicts([{"a": [{"x": 1}]}, {"a": [{"y": 1}]}]).to_dict(False) == {
-        "a": [[{"y": None, "x": 1}], [{"y": 1, "x": None}]]
-    }
+    assert pl.from_dicts([{"a": [{"x": 1}]}, {"a": [{"y": 1}]}]).to_dict(
+        as_series=False
+    ) == {"a": [[{"y": None, "x": 1}], [{"y": 1, "x": None}]]}
     assert pl.from_dicts([{"a": [{"x": 1}, {"y": 2}]}, {"a": [{"y": 1}]}]).to_dict(
-        False
+        as_series=False
     ) == {"a": [[{"y": None, "x": 1}, {"y": 2, "x": None}], [{"y": 1, "x": None}]]}
 
 
@@ -527,7 +538,7 @@ def test_upcast_pyarrow_dicts() -> None:
         for i in range(128)
     ]
 
-    tbl = pa.concat_tables(tbls, promote=True)
+    tbl = pa.concat_tables(tbls, promote_options="default")
     out = cast(pl.DataFrame, pl.from_arrow(tbl))
     assert out.shape == (128, 1)
     assert out["col_name"][0] == "value_0"
@@ -770,7 +781,9 @@ def test_from_pandas_null_struct_6412() -> None:
         {"a": None},
     ]
     df_pandas = pd.DataFrame(data)
-    assert pl.from_pandas(df_pandas).to_dict(False) == {"a": [{"b": None}, {"b": None}]}
+    assert pl.from_pandas(df_pandas).to_dict(as_series=False) == {
+        "a": [{"b": None}, {"b": None}]
+    }
 
 
 def test_from_pyarrow_map() -> None:
@@ -782,7 +795,7 @@ def test_from_pyarrow_map() -> None:
     )
 
     result = cast(pl.DataFrame, pl.from_arrow(pa_table))
-    assert result.to_dict(False) == {
+    assert result.to_dict(as_series=False) == {
         "idx": [1, 2],
         "mapping": [
             [{"key": "a", "value": "something"}],
@@ -899,8 +912,27 @@ def test_dataframe_from_repr() -> None:
         """
         ),
     )
-    assert df.rows() == []
-    assert df.schema == {"misc": pl.Utf8, "other": pl.Utf8}
+    assert_frame_equal(df, pl.DataFrame(schema={"misc": pl.Utf8, "other": pl.Utf8}))
+
+    # empty frame with non-standard/blank 'null'
+    df = cast(
+        pl.DataFrame,
+        pl.from_repr(
+            """
+            ┌─────┬─────┐
+            │ c1  ┆ c2  │
+            │ --- ┆ --- │
+            │ i32 ┆ f64 │
+            ╞═════╪═════╡
+            │     │     │
+            └─────┴─────┘
+            """
+        ),
+    )
+    assert_frame_equal(
+        df,
+        pl.DataFrame(data=[(None, None)], schema={"c1": pl.Int32, "c2": pl.Float64}),
+    )
 
     df = cast(
         pl.DataFrame,
@@ -1051,6 +1083,37 @@ def test_series_from_repr() -> None:
     assert_series_equal(s, pl.Series("flt", [], dtype=pl.Float32))
 
 
+def test_dataframe_from_repr_custom_separators() -> None:
+    # repr created with custom digit-grouping
+    # and non-default group/decimal separators
+    df = cast(
+        pl.DataFrame,
+        pl.from_repr(
+            """
+            ┌───────────┬────────────┐
+            │ x         ┆ y          │
+            │ ---       ┆ ---        │
+            │ i32       ┆ f64        │
+            ╞═══════════╪════════════╡
+            │ 123.456   ┆ -10.000,55 │
+            │ -9.876    ┆ 10,0       │
+            │ 9.999.999 ┆ 8,5e8      │
+            └───────────┴────────────┘
+            """
+        ),
+    )
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "x": [123456, -9876, 9999999],
+                "y": [-10000.55, 10.0, 850000000.0],
+            },
+            schema={"x": pl.Int32, "y": pl.Float64},
+        ),
+    )
+
+
 def test_to_init_repr() -> None:
     # round-trip various types
     with pl.StringCache():
@@ -1083,7 +1146,7 @@ def test_to_init_repr() -> None:
 
 def test_untrusted_categorical_input() -> None:
     df = pd.DataFrame({"x": pd.Categorical(["x"], ["x", "y"])})
-    assert pl.from_pandas(df).group_by("x").count().to_dict(False) == {
+    assert pl.from_pandas(df).group_by("x").count().to_dict(as_series=False) == {
         "x": ["x"],
         "count": [1],
     }
@@ -1107,12 +1170,12 @@ def test_sliced_struct_from_arrow() -> None:
     # slice the table
     # check if FFI correctly reads sliced
     result = cast(pl.DataFrame, pl.from_arrow(tbl.slice(1, 2)))
-    assert result.to_dict(False) == {
+    assert result.to_dict(as_series=False) == {
         "struct_col": [{"a": 2, "b": "bar"}, {"a": 3, "b": "baz"}]
     }
 
     result = cast(pl.DataFrame, pl.from_arrow(tbl.slice(1, 1)))
-    assert result.to_dict(False) == {"struct_col": [{"a": 2, "b": "bar"}]}
+    assert result.to_dict(as_series=False) == {"struct_col": [{"a": 2, "b": "bar"}]}
 
 
 def test_from_arrow_invalid_time_zone() -> None:

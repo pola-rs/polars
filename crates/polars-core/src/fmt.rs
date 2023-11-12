@@ -1,7 +1,8 @@
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter, Write};
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::RwLock;
 use std::{fmt, str};
 
 #[cfg(any(
@@ -32,8 +33,14 @@ pub enum FloatFmt {
     Mixed,
     Full,
 }
+static FLOAT_PRECISION: RwLock<Option<usize>> = RwLock::new(None);
 static FLOAT_FMT: AtomicU8 = AtomicU8::new(FloatFmt::Mixed as u8);
 
+static TRIM_DECIMAL_ZEROS: AtomicBool = AtomicBool::new(false);
+static THOUSANDS_SEPARATOR: AtomicU8 = AtomicU8::new(b'\0');
+static DECIMAL_SEPARATOR: AtomicU8 = AtomicU8::new(b'.');
+
+// Numeric formatting getters
 pub fn get_float_fmt() -> FloatFmt {
     match FLOAT_FMT.load(Ordering::Relaxed) {
         0 => FloatFmt::Mixed,
@@ -41,9 +48,39 @@ pub fn get_float_fmt() -> FloatFmt {
         _ => panic!(),
     }
 }
+pub fn get_float_precision() -> Option<usize> {
+    *FLOAT_PRECISION.read().unwrap()
+}
+pub fn get_decimal_separator() -> char {
+    DECIMAL_SEPARATOR.load(Ordering::Relaxed) as char
+}
+pub fn get_thousands_separator() -> String {
+    let sep = THOUSANDS_SEPARATOR.load(Ordering::Relaxed) as char;
+    if sep == '\0' {
+        "".to_string()
+    } else {
+        sep.to_string()
+    }
+}
+pub fn get_trim_decimal_zeros() -> bool {
+    TRIM_DECIMAL_ZEROS.load(Ordering::Relaxed)
+}
 
+// Numeric formatting setters
 pub fn set_float_fmt(fmt: FloatFmt) {
     FLOAT_FMT.store(fmt as u8, Ordering::Relaxed)
+}
+pub fn set_float_precision(precision: Option<usize>) {
+    *FLOAT_PRECISION.write().unwrap() = precision;
+}
+pub fn set_decimal_separator(dec: Option<char>) {
+    DECIMAL_SEPARATOR.store(dec.unwrap_or('.') as u8, Ordering::Relaxed)
+}
+pub fn set_thousands_separator(sep: Option<char>) {
+    THOUSANDS_SEPARATOR.store(sep.unwrap_or('\0') as u8, Ordering::Relaxed)
+}
+pub fn set_trim_decimal_zeros(trim: Option<bool>) {
+    TRIM_DECIMAL_ZEROS.store(trim.unwrap_or(false), Ordering::Relaxed)
 }
 
 macro_rules! format_array {
@@ -51,7 +88,7 @@ macro_rules! format_array {
         write!(
             $f,
             "shape: ({},)\n{}: '{}' [{}]\n[\n",
-            fmt_uint(&$a.len()),
+            fmt_int_string_custom(&$a.len().to_string(), 3, "_"),
             $array_type,
             $name,
             $dtype
@@ -128,21 +165,18 @@ fn format_object_array(
     match object.dtype() {
         DataType::Object(inner_type) => {
             let limit = std::cmp::min(LIMIT, object.len());
-
             write!(
                 f,
                 "shape: ({},)\n{}: '{}' [o][{}]\n[\n",
-                fmt_uint(&object.len()),
+                fmt_int_string_custom(&object.len().to_string(), 3, "_"),
                 array_type,
                 name,
                 inner_type
             )?;
-
             for i in 0..limit {
                 let v = object.str_value(i);
                 writeln!(f, "\t{}", v.unwrap())?;
             }
-
             write!(f, "]")
         },
         _ => unreachable!(),
@@ -428,26 +462,19 @@ fn prepare_row(
     row_strings
 }
 
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 fn env_is_true(varname: &str) -> bool {
     std::env::var(varname).as_deref().unwrap_or("0") == "1"
 }
 
-fn fmt_uint(num: &usize) -> String {
-    // Return a string with thousands separated by _
-    // e.g. 1_000_000
-    num.to_string()
-        .as_bytes()
-        .rchunks(3)
-        .rev()
-        .map(str::from_utf8)
-        .collect::<Result<Vec<&str>, _>>()
-        .unwrap()
-        .join("_") // separator
-}
-
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 fn fmt_df_shape((shape0, shape1): &(usize, usize)) -> String {
     // e.g. (1_000_000, 4_000)
-    format!("({}, {})", fmt_uint(shape0), fmt_uint(shape1))
+    format!(
+        "({}, {})",
+        fmt_int_string_custom(&shape0.to_string(), 3, "_"),
+        fmt_int_string_custom(&shape1.to_string(), 3, "_")
+    )
 }
 
 impl Display for DataFrame {
@@ -655,19 +682,24 @@ impl Display for DataFrame {
             }
 
             // set alignment of cells, if defined
-            if std::env::var(FMT_TABLE_CELL_ALIGNMENT).is_ok() {
-                // for (column_index, column) in table.column_iter_mut().enumerate() {
+            if std::env::var(FMT_TABLE_CELL_ALIGNMENT).is_ok()
+                | std::env::var(FMT_TABLE_CELL_NUMERIC_ALIGNMENT).is_ok()
+            {
                 let str_preset = std::env::var(FMT_TABLE_CELL_ALIGNMENT)
                     .unwrap_or_else(|_| "DEFAULT".to_string());
-                for column in table.column_iter_mut() {
-                    if str_preset == "RIGHT" {
-                        column.set_cell_alignment(CellAlignment::Right);
-                    } else if str_preset == "LEFT" {
-                        column.set_cell_alignment(CellAlignment::Left);
-                    } else if str_preset == "CENTER" {
-                        column.set_cell_alignment(CellAlignment::Center);
-                    } else {
-                        column.set_cell_alignment(CellAlignment::Left);
+                let num_preset = std::env::var(FMT_TABLE_CELL_NUMERIC_ALIGNMENT)
+                    .unwrap_or_else(|_| str_preset.to_string());
+                for (column_index, column) in table.column_iter_mut().enumerate() {
+                    let dtype = fields[column_index].data_type();
+                    let mut preset = str_preset.as_str();
+                    if dtype.is_numeric() || dtype.is_decimal() {
+                        preset = num_preset.as_str();
+                    }
+                    match preset {
+                        "RIGHT" => column.set_cell_alignment(CellAlignment::Right),
+                        "LEFT" => column.set_cell_alignment(CellAlignment::Left),
+                        "CENTER" => column.set_cell_alignment(CellAlignment::Center),
+                        _ => {},
                     }
                 }
             }
@@ -684,7 +716,6 @@ impl Display for DataFrame {
                 }
             }
         }
-
         #[cfg(not(any(feature = "fmt", feature = "fmt_no_tty")))]
         {
             write!(
@@ -697,29 +728,110 @@ impl Display for DataFrame {
     }
 }
 
+fn fmt_int_string_custom(num: &str, group_size: u8, group_separator: &str) -> String {
+    if group_size == 0 || num.len() <= 1 {
+        num.to_string()
+    } else {
+        let mut out = String::new();
+        let sign_offset = if num.starts_with('-') || num.starts_with('+') {
+            out.push(num.chars().next().unwrap());
+            1
+        } else {
+            0
+        };
+        let int_body = num[sign_offset..]
+            .as_bytes()
+            .rchunks(group_size as usize)
+            .rev()
+            .map(str::from_utf8)
+            .collect::<Result<Vec<&str>, _>>()
+            .unwrap()
+            .join(group_separator);
+        out.push_str(&int_body);
+        out
+    }
+}
+
+fn fmt_int_string(num: &str) -> String {
+    fmt_int_string_custom(num, 3, &get_thousands_separator())
+}
+
+fn fmt_float_string_custom(
+    num: &str,
+    group_size: u8,
+    group_separator: &str,
+    decimal: char,
+) -> String {
+    // Quick exit if no formatting would be applied
+    if num.len() <= 1 || (group_size == 0 && decimal == '.') {
+        num.to_string()
+    } else {
+        // Take existing numeric string and apply digit grouping & separator/decimal chars
+        // e.g. "1000000" → "1_000_000", "-123456.798" → "-123,456.789", etc
+        let (idx, has_fractional) = match num.find('.') {
+            Some(i) => (i, true),
+            None => (num.len(), false),
+        };
+        let mut out = String::new();
+        let integer_part = &num[..idx];
+
+        out.push_str(&fmt_int_string_custom(
+            integer_part,
+            group_size,
+            group_separator,
+        ));
+        if has_fractional {
+            out.push(decimal);
+            out.push_str(&num[idx + 1..]);
+        };
+        out
+    }
+}
+
+fn fmt_float_string(num: &str) -> String {
+    fmt_float_string_custom(num, 3, &get_thousands_separator(), get_decimal_separator())
+}
+
 fn fmt_integer<T: Num + NumCast + Display>(
     f: &mut Formatter<'_>,
     width: usize,
     v: T,
 ) -> fmt::Result {
-    write!(f, "{v:>width$}")
+    write!(f, "{:>width$}", fmt_int_string(&v.to_string()))
 }
 
 const SCIENTIFIC_BOUND: f64 = 999999.0;
 
 fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt::Result {
     let v: f64 = NumCast::from(v).unwrap();
+
+    let float_precision = get_float_precision();
+
+    if let Some(precision) = float_precision {
+        if format!("{v:.precision$}", precision = precision).len() > 19 {
+            return write!(f, "{v:>width$.precision$e}", precision = precision);
+        }
+        let s = format!("{v:>width$.precision$}", precision = precision);
+        return write!(f, "{}", fmt_float_string(s.as_str()));
+    }
+
     if matches!(get_float_fmt(), FloatFmt::Full) {
-        return write!(f, "{v:>width$}");
+        let s = format!("{v:>width$}");
+        return write!(f, "{}", fmt_float_string(s.as_str()));
     }
 
     // show integers as 0.0, 1.0 ... 101.0
     if v.fract() == 0.0 && v.abs() < SCIENTIFIC_BOUND {
-        write!(f, "{v:>width$.1}")
+        let s = format!("{v:>width$.1}");
+        write!(f, "{}", fmt_float_string(s.as_str()))
     } else if format!("{v}").len() > 9 {
-        // large and small floats in scientific notation
-        if !(0.000001..=SCIENTIFIC_BOUND).contains(&v.abs()) | (v.abs() > SCIENTIFIC_BOUND) {
-            write!(f, "{v:>width$.4e}")
+        // large and small floats in scientific notation.
+        // (note: scientific notation does not play well with digit grouping)
+        if (!(0.000001..=SCIENTIFIC_BOUND).contains(&v.abs()) | (v.abs() > SCIENTIFIC_BOUND))
+            && get_thousands_separator().is_empty()
+        {
+            let s = format!("{v:>width$.4e}");
+            write!(f, "{}", fmt_float_string(s.as_str()))
         } else {
             // this makes sure we don't write 12.00000 in case of a long flt that is 12.0000000001
             // instead we write 12.0
@@ -733,35 +845,45 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
                     s = &s[..len];
                     len -= 1;
                 }
-                if s.ends_with('.') {
-                    write!(f, "{s}0")
+                let s = if s.ends_with('.') {
+                    format!("{s}0")
                 } else {
-                    write!(f, "{s}")
-                }
+                    s.to_string()
+                };
+                write!(f, "{}", fmt_float_string(s.as_str()))
             } else {
                 // 12.0934509341243124
                 // written as
                 // 12.09345
-                write!(f, "{v:>width$.6}")
+                let s = format!("{v:>width$.6}");
+                write!(f, "{}", fmt_float_string(s.as_str()))
             }
         }
-    } else if v.fract() == 0.0 {
-        write!(f, "{v:>width$e}")
     } else {
-        write!(f, "{v:>width$}")
+        let s = if v.fract() == 0.0 {
+            format!("{v:>width$e}")
+        } else {
+            format!("{v:>width$}")
+        };
+        write!(f, "{}", fmt_float_string(s.as_str()))
     }
 }
 
+#[cfg(feature = "dtype-duration")]
+const NAMES: [&str; 4] = ["d", "h", "m", "s"];
+#[cfg(feature = "dtype-duration")]
 const SIZES_NS: [i64; 4] = [
     86_400_000_000_000,
     3_600_000_000_000,
     60_000_000_000,
     1_000_000_000,
 ];
-const NAMES: [&str; 4] = ["d", "h", "m", "s"];
+#[cfg(feature = "dtype-duration")]
 const SIZES_US: [i64; 4] = [86_400_000_000, 3_600_000_000, 60_000_000, 1_000_000];
+#[cfg(feature = "dtype-duration")]
 const SIZES_MS: [i64; 4] = [86_400_000, 3_600_000, 60_000, 1_000];
 
+#[cfg(feature = "dtype-duration")]
 fn fmt_duration_ns(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     if v == 0 {
         return write!(f, "0ns");
@@ -777,6 +899,7 @@ fn fmt_duration_ns(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     Ok(())
 }
 
+#[cfg(feature = "dtype-duration")]
 fn fmt_duration_us(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     if v == 0 {
         return write!(f, "0µs");
@@ -790,6 +913,7 @@ fn fmt_duration_us(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     Ok(())
 }
 
+#[cfg(feature = "dtype-duration")]
 fn fmt_duration_ms(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     if v == 0 {
         return write!(f, "0ms");
@@ -801,6 +925,7 @@ fn fmt_duration_ms(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     Ok(())
 }
 
+#[cfg(feature = "dtype-duration")]
 fn format_duration(f: &mut Formatter, v: i64, sizes: &[i64], names: &[&str]) -> fmt::Result {
     for i in 0..4 {
         let whole_num = if i == 0 {
@@ -939,36 +1064,46 @@ fn fmt_struct(f: &mut Formatter<'_>, vals: &[AnyValue]) -> fmt::Result {
 
 impl Series {
     pub fn fmt_list(&self) -> String {
-        match self.len() {
-            0 => "[]".to_string(),
-            1 => format!("[{}]", self.get(0).unwrap()),
-            2 => format!("[{}, {}]", self.get(0).unwrap(), self.get(1).unwrap()),
-            3 => format!(
-                "[{}, {}, {}]",
-                self.get(0).unwrap(),
-                self.get(1).unwrap(),
-                self.get(2).unwrap()
-            ),
-            _ => {
-                let max_items = std::env::var(FMT_TABLE_CELL_LIST_LEN)
-                    .as_deref()
-                    .unwrap_or("")
-                    .parse()
-                    .map_or(3, |n: i64| if n < 0 { self.len() } else { n as usize });
+        if self.is_empty() {
+            return "[]".to_owned();
+        }
 
+        let max_items = std::env::var(FMT_TABLE_CELL_LIST_LEN)
+            .as_deref()
+            .unwrap_or("")
+            .parse()
+            .map_or(3, |n: i64| if n < 0 { self.len() } else { n as usize });
+
+        match max_items {
+            0 => "[…]".to_owned(),
+            _ if max_items >= self.len() => {
                 let mut result = "[".to_owned();
 
-                for (i, item) in self.iter().enumerate() {
+                for i in 0..self.len() {
+                    let item = self.get(i).unwrap();
                     write!(result, "{item}").unwrap();
+                    // this will always leave a trailing ", " after the last item
+                    // but for long lists, this is faster than checking against the length each time
+                    result.push_str(", ");
+                }
+                // remove trailing ", " and replace with closing brace
+                result.pop();
+                result.pop();
+                result.push(']');
 
-                    if i != self.len() - 1 {
-                        result.push_str(", ");
-                    }
-
-                    if i == max_items - 2 {
+                result
+            },
+            _ => {
+                let mut result = "[".to_owned();
+                let s = self.slice(0, max_items).rechunk();
+                for (i, item) in s.iter().enumerate() {
+                    if i == max_items.saturating_sub(1) {
                         result.push_str("… ");
                         write!(result, "{}", self.get(self.len() - 1).unwrap()).unwrap();
                         break;
+                    } else {
+                        write!(result, "{item}").unwrap();
+                        result.push_str(", ");
                     }
                 }
                 result.push(']');
@@ -983,6 +1118,8 @@ impl Series {
 mod decimal {
     use std::fmt::Formatter;
     use std::{fmt, ptr, str};
+
+    use crate::fmt::{fmt_float_string, get_trim_decimal_zeros};
 
     const BUF_LEN: usize = 48;
 
@@ -1089,7 +1226,8 @@ mod decimal {
 
     #[inline]
     pub fn fmt_decimal(f: &mut Formatter<'_>, v: i128, scale: usize) -> fmt::Result {
-        f.write_str(format_decimal(v, scale, !f.alternate()).as_str())
+        let trim_zeros = get_trim_decimal_zeros();
+        f.write_str(fmt_float_string(format_decimal(v, scale, trim_zeros).as_str()).as_str())
     }
 }
 
@@ -1111,7 +1249,7 @@ mod test {
             ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
         builder.append_opt_slice(Some(&[1, 2, 3, 4, 5, 6]));
         builder.append_opt_slice(None);
-        let list = builder.finish().into_series();
+        let list_long = builder.finish().into_series();
 
         assert_eq!(
             r#"shape: (2,)
@@ -1120,7 +1258,7 @@ Series: 'a' [list[i32]]
 	[1, 2, … 6]
 	null
 ]"#,
-            format!("{:?}", list)
+            format!("{:?}", list_long)
         );
 
         std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "10");
@@ -1132,8 +1270,116 @@ Series: 'a' [list[i32]]
 	[1, 2, 3, 4, 5, 6]
 	null
 ]"#,
-            format!("{:?}", list)
-        )
+            format!("{:?}", list_long)
+        );
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "-1");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[1, 2, 3, 4, 5, 6]
+	null
+]"#,
+            format!("{:?}", list_long)
+        );
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "0");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[…]
+	null
+]"#,
+            format!("{:?}", list_long)
+        );
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "1");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[… 6]
+	null
+]"#,
+            format!("{:?}", list_long)
+        );
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "4");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[1, 2, 3, … 6]
+	null
+]"#,
+            format!("{:?}", list_long)
+        );
+
+        let mut builder =
+            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
+        builder.append_opt_slice(Some(&[1]));
+        builder.append_opt_slice(None);
+        let list_short = builder.finish().into_series();
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[1]
+	null
+]"#,
+            format!("{:?}", list_short)
+        );
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "0");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[…]
+	null
+]"#,
+            format!("{:?}", list_short)
+        );
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "-1");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[1]
+	null
+]"#,
+            format!("{:?}", list_short)
+        );
+
+        let mut builder =
+            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
+        builder.append_opt_slice(Some(&[]));
+        builder.append_opt_slice(None);
+        let list_empty = builder.finish().into_series();
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[]
+	null
+]"#,
+            format!("{:?}", list_empty)
+        );
     }
 
     #[test]

@@ -145,6 +145,10 @@ impl ArrowSchema {
         }
     }
 
+    pub fn is_null(&self) -> bool {
+        self.private_data.is_null()
+    }
+
     /// returns the format of this schema.
     pub(crate) fn format(&self) -> &str {
         assert!(!self.format.is_null());

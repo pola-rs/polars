@@ -128,7 +128,7 @@ impl PyLazyFrame {
         let r = if let Some(path) = &path {
             LazyJsonLineReader::new(path)
         } else {
-            LazyJsonLineReader::new_paths(paths)
+            LazyJsonLineReader::new_paths(paths.into())
         };
 
         let lf = r
@@ -197,7 +197,7 @@ impl PyLazyFrame {
         let r = if let Some(path) = path.as_ref() {
             LazyCsvReader::new(path)
         } else {
-            LazyCsvReader::new_paths(paths)
+            LazyCsvReader::new_paths(paths.into())
         };
 
         let mut r = r
@@ -306,7 +306,7 @@ impl PyLazyFrame {
         let lf = if path.is_some() {
             LazyFrame::scan_parquet(first_path, args)
         } else {
-            LazyFrame::scan_parquet_files(paths, args)
+            LazyFrame::scan_parquet_files(Arc::from(paths), args)
         }
         .map_err(PyPolarsErr::from)?;
         Ok(lf.into())
@@ -336,7 +336,7 @@ impl PyLazyFrame {
         let lf = if let Some(path) = &path {
             LazyFrame::scan_ipc(path, args)
         } else {
-            LazyFrame::scan_ipc_files(paths, args)
+            LazyFrame::scan_ipc_files(paths.into(), args)
         }
         .map_err(PyPolarsErr::from)?;
         Ok(lf.into())
@@ -577,12 +577,12 @@ impl PyLazyFrame {
     }
 
     #[cfg(all(feature = "streaming", feature = "csv"))]
-    #[pyo3(signature = (path, has_header, separator, line_terminator, quote_char, batch_size, datetime_format, date_format, time_format, float_precision, null_value, quote_style, maintain_order))]
+    #[pyo3(signature = (path, include_header, separator, line_terminator, quote_char, batch_size, datetime_format, date_format, time_format, float_precision, null_value, quote_style, maintain_order))]
     fn sink_csv(
         &self,
         py: Python,
         path: PathBuf,
-        has_header: bool,
+        include_header: bool,
         separator: u8,
         line_terminator: String,
         quote_char: u8,
@@ -611,7 +611,7 @@ impl PyLazyFrame {
         };
 
         let options = CsvWriterOptions {
-            has_header,
+            include_header,
             maintain_order,
             batch_size,
             serialize_options,
@@ -661,7 +661,7 @@ impl PyLazyFrame {
         PyLazyGroupBy { lgb: Some(lazy_gb) }
     }
 
-    fn group_by_rolling(
+    fn rolling(
         &mut self,
         index_column: PyExpr,
         period: &str,
@@ -834,14 +834,13 @@ impl PyLazyFrame {
         ldf.reverse().into()
     }
 
-    fn shift(&self, periods: i64) -> Self {
-        let ldf = self.ldf.clone();
-        ldf.shift(periods).into()
-    }
-
-    fn shift_and_fill(&self, periods: i64, fill_value: PyExpr) -> Self {
-        let ldf = self.ldf.clone();
-        ldf.shift_and_fill(periods, fill_value.inner).into()
+    fn shift(&self, n: PyExpr, fill_value: Option<PyExpr>) -> Self {
+        let lf = self.ldf.clone();
+        let out = match fill_value {
+            Some(v) => lf.shift_and_fill(n.inner, v.inner),
+            None => lf.shift(n.inner),
+        };
+        out.into()
     }
 
     fn fill_nan(&self, fill_value: PyExpr) -> Self {
