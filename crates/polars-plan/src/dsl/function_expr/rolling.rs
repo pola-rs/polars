@@ -68,21 +68,21 @@ impl Hash for RollingFunction {
     }
 }
 
-macro_rules! convert {
-    ($func:ident, $s:expr, $options:expr) => {{
-        let mut by = $s[1].clone();
+fn convert<'a>(
+    f: impl Fn(RollingOptionsImpl) -> PolarsResult<Series> + 'a,
+    ss: &'a [Series],
+    expr_name: &'static str,
+) -> impl Fn(RollingOptions) -> PolarsResult<Series> + 'a {
+    move |options| {
+        let mut by = ss[1].clone();
         by = by.rechunk();
-        let s = &$s[0];
 
         polars_ensure!(
-            $options.weights.is_none(),
+            options.weights.is_none(),
             ComputeError: "`weights` is not supported in 'rolling by' expression"
         );
-        let expr_name = stringify!($func);
         let (by, tz) = match by.dtype() {
-            DataType::Datetime(tu, tz) => {
-                (by.cast(&DataType::Datetime(*tu, None))?, tz)
-            },
+            DataType::Datetime(tu, tz) => (by.cast(&DataType::Datetime(*tu, None))?, tz),
             DataType::Date => (
                 by.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
                 &None,
@@ -100,19 +100,19 @@ macro_rules! convert {
         let tu = by.time_unit();
 
         let options = RollingOptionsImpl {
-            window_size: $options.window_size,
-            min_periods: $options.min_periods,
+            window_size: options.window_size,
+            min_periods: options.min_periods,
             weights: None,
-            center: $options.center,
+            center: options.center,
             by: Some(by_values),
             tu: Some(tu),
             tz: tz.as_ref(),
-            closed_window: $options.closed_window,
-            fn_params: $options.fn_params.clone(),
+            closed_window: options.closed_window,
+            fn_params: options.fn_params.clone(),
         };
 
-        s.$func(options)
-    }};
+        f(options)
+    }
 }
 
 pub(super) fn rolling_min(s: &Series, options: RollingOptions) -> PolarsResult<Series> {
@@ -120,7 +120,7 @@ pub(super) fn rolling_min(s: &Series, options: RollingOptions) -> PolarsResult<S
 }
 
 pub(super) fn rolling_min_by(s: &[Series], options: RollingOptions) -> PolarsResult<Series> {
-    convert!(rolling_min, s, options)
+    convert(|options| s[0].rolling_min(options), s, "rolling_min")(options)
 }
 
 pub(super) fn rolling_max(s: &Series, options: RollingOptions) -> PolarsResult<Series> {
@@ -128,7 +128,7 @@ pub(super) fn rolling_max(s: &Series, options: RollingOptions) -> PolarsResult<S
 }
 
 pub(super) fn rolling_max_by(s: &[Series], options: RollingOptions) -> PolarsResult<Series> {
-    convert!(rolling_max, s, options)
+    convert(|options| s[0].rolling_max(options), s, "rolling_max")(options)
 }
 
 pub(super) fn rolling_mean(s: &Series, options: RollingOptions) -> PolarsResult<Series> {
@@ -136,7 +136,7 @@ pub(super) fn rolling_mean(s: &Series, options: RollingOptions) -> PolarsResult<
 }
 
 pub(super) fn rolling_mean_by(s: &[Series], options: RollingOptions) -> PolarsResult<Series> {
-    convert!(rolling_mean, s, options)
+    convert(|options| s[0].rolling_mean(options), s, "rolling_mean")(options)
 }
 
 pub(super) fn rolling_sum(s: &Series, options: RollingOptions) -> PolarsResult<Series> {
@@ -144,7 +144,7 @@ pub(super) fn rolling_sum(s: &Series, options: RollingOptions) -> PolarsResult<S
 }
 
 pub(super) fn rolling_sum_by(s: &[Series], options: RollingOptions) -> PolarsResult<Series> {
-    convert!(rolling_sum, s, options)
+    convert(|options| s[0].rolling_sum(options), s, "rolling_sum")(options)
 }
 
 pub(super) fn rolling_median(s: &Series, options: RollingOptions) -> PolarsResult<Series> {
@@ -152,7 +152,7 @@ pub(super) fn rolling_median(s: &Series, options: RollingOptions) -> PolarsResul
 }
 
 pub(super) fn rolling_median_by(s: &[Series], options: RollingOptions) -> PolarsResult<Series> {
-    convert!(rolling_median, s, options)
+    convert(|options| s[0].rolling_median(options), s, "rolling_median")(options)
 }
 
 pub(super) fn rolling_quantile(s: &Series, options: RollingOptions) -> PolarsResult<Series> {
@@ -160,7 +160,11 @@ pub(super) fn rolling_quantile(s: &Series, options: RollingOptions) -> PolarsRes
 }
 
 pub(super) fn rolling_quantile_by(s: &[Series], options: RollingOptions) -> PolarsResult<Series> {
-    convert!(rolling_quantile, s, options)
+    convert(
+        |options| s[0].rolling_quantile(options),
+        s,
+        "rolling_quantile",
+    )(options)
 }
 
 pub(super) fn rolling_var(s: &Series, options: RollingOptions) -> PolarsResult<Series> {
@@ -168,7 +172,7 @@ pub(super) fn rolling_var(s: &Series, options: RollingOptions) -> PolarsResult<S
 }
 
 pub(super) fn rolling_var_by(s: &[Series], options: RollingOptions) -> PolarsResult<Series> {
-    convert!(rolling_var, s, options)
+    convert(|options| s[0].rolling_var(options), s, "rolling_var")(options)
 }
 
 pub(super) fn rolling_std(s: &Series, options: RollingOptions) -> PolarsResult<Series> {
@@ -176,7 +180,7 @@ pub(super) fn rolling_std(s: &Series, options: RollingOptions) -> PolarsResult<S
 }
 
 pub(super) fn rolling_std_by(s: &[Series], options: RollingOptions) -> PolarsResult<Series> {
-    convert!(rolling_std, s, options)
+    convert(|options| s[0].rolling_std(options), s, "rolling_std")(options)
 }
 
 #[cfg(feature = "moment")]
