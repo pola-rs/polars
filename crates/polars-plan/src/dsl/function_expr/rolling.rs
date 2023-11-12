@@ -90,16 +90,17 @@ fn convert<'a>(
             dt => polars_bail!(opq = expr_name, got = dt, expected = "date/datetime"),
         };
         if by.is_sorted_flag() != IsSorted::Ascending && options.warn_if_unsorted {
-            polars_warn!(
-                "Series is not known to be sorted by `by` column.\n\
+            polars_warn!(format!(
+                "Series is not known to be sorted by `by` column in {} operation.\n\
                 \n\
                 To silence this warning, you may want to try:\n\
                 - sorting your data by your `by` column beforehand;\n\
                 - setting `.set_sorted()` if you already know your data is sorted;\n\
                 - passing `warn_if_unsorted=False` if this warning is a false-positive\n  \
-                    (this is known to happen if combining rolling aggregations and `over`);\n\n\
-                before passing calling the rolling aggregation function.\n"
-            );
+                    (this is known to happen when combining rolling aggregations with `over`);\n\n\
+                before passing calling the rolling aggregation function.\n",
+                expr_name
+            ));
         }
         let by = by.datetime().unwrap();
         let by_values = by.cont_slice().map_err(|_| {
