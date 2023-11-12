@@ -20,7 +20,7 @@ impl<
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        let sum = self.sum.update(start, end).unwrap();
+        let sum = self.sum.update(start, end).unwrap_unchecked();
         Some(sum / NumCast::from(end - start).unwrap())
     }
 }
