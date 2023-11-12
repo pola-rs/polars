@@ -138,9 +138,7 @@ def include_unknowns(
 ) -> MutableMapping[str, PolarsDataType]:
     """Complete partial schema dict by including Unknown type."""
     return {
-        col: (
-            schema.get(col, Unknown) or Unknown  # type: ignore[truthy-bool]
-        )
+        col: (schema.get(col, Unknown) or Unknown)  # type: ignore[truthy-bool]
         for col in cols
     }
 
@@ -491,12 +489,16 @@ def sequence_to_pyseries(
             # we store the values internally as UTC and set the timezone
             py_series = PySeries.new_from_anyvalues(name, values, strict)
             time_unit = getattr(dtype, "time_unit", None)
-            if time_unit is None:
+            if time_unit is None or values_dtype == Date:
                 s = wrap_s(py_series)
             else:
                 s = wrap_s(py_series).dt.cast_time_unit(time_unit)
             time_zone = getattr(dtype, "time_zone", None)
-            if dtype == Datetime and (
+
+            if (values_dtype == Date) & (dtype == Datetime):
+                return s.cast(Datetime(time_unit)).dt.replace_time_zone(time_zone)._s
+
+            if (dtype == Datetime) and (
                 value.tzinfo is not None or time_zone is not None
             ):
                 values_tz = str(value.tzinfo) if value.tzinfo is not None else None
@@ -667,7 +669,7 @@ def _post_apply_columns(
     structs: dict[str, Struct] | None = None,
     schema_overrides: SchemaDict | None = None,
 ) -> PyDataFrame:
-    """Apply 'columns' param _after_ PyDataFrame creation (if no alternative)."""
+    """Apply 'columns' param *after* PyDataFrame creation (if no alternative)."""
     pydf_columns, pydf_dtypes = pydf.columns(), pydf.dtypes()
     columns, dtypes = _unpack_schema(
         (columns or pydf_columns), schema_overrides=schema_overrides

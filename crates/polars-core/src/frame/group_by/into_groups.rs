@@ -26,11 +26,11 @@ fn group_multithreaded<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
 fn num_groups_proxy<T>(ca: &ChunkedArray<T>, multithreaded: bool, sorted: bool) -> GroupsProxy
 where
     T: PolarsIntegerType,
-    T::Native: Hash + Eq + Send + AsU64,
-    Option<T::Native>: AsU64,
+    T::Native: Hash + Eq + Send + DirtyHash,
+    Option<T::Native>: DirtyHash,
 {
     if multithreaded && group_multithreaded(ca) {
-        let n_partitions = _set_partition_size() as u64;
+        let n_partitions = _set_partition_size();
 
         // use the arrays as iterators
         if ca.null_count() == 0 {
@@ -40,7 +40,10 @@ where
                 .collect::<Vec<_>>();
             group_by_threaded_slice(keys, n_partitions, sorted)
         } else {
-            let keys = ca.downcast_iter().collect::<Vec<_>>();
+            let keys = ca
+                .downcast_iter()
+                .map(|arr| arr.iter().map(|o| o.copied()))
+                .collect::<Vec<_>>();
             group_by_threaded_iter(&keys, n_partitions, sorted)
         }
     } else if !ca.has_validity() {
@@ -240,7 +243,7 @@ impl IntoGroupsProxy for BinaryChunked {
     #[allow(clippy::needless_lifetimes)]
     fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         let hb = RandomState::default();
-        let null_h = get_null_hash_value(hb.clone());
+        let null_h = get_null_hash_value(&hb);
 
         let out = if multithreaded {
             let n_partitions = _set_partition_size();
@@ -271,7 +274,7 @@ impl IntoGroupsProxy for BinaryChunked {
                     .collect::<Vec<_>>()
             });
             let byte_hashes = byte_hashes.iter().collect::<Vec<_>>();
-            group_by_threaded_slice(byte_hashes, n_partitions as u64, sorted)
+            group_by_threaded_slice(byte_hashes, n_partitions, sorted)
         } else {
             let byte_hashes = self
                 .into_iter()
@@ -301,7 +304,7 @@ impl IntoGroupsProxy for ListChunked {
             );
 
             let hb = RandomState::default();
-            let null_h = get_null_hash_value(hb.clone());
+            let null_h = get_null_hash_value(&hb);
 
             let arr_to_hashes = |ca: &ListChunked| {
                 let mut out = Vec::with_capacity(ca.len());
@@ -338,11 +341,7 @@ impl IntoGroupsProxy for ListChunked {
                         })
                         .collect::<PolarsResult<Vec<_>>>()?;
                     let bytes_hashes = bytes_hashes.iter().collect::<Vec<_>>();
-                    Ok(group_by_threaded_slice(
-                        bytes_hashes,
-                        n_partitions as u64,
-                        sorted,
-                    ))
+                    Ok(group_by_threaded_slice(bytes_hashes, n_partitions, sorted))
                 });
                 groups
             } else {

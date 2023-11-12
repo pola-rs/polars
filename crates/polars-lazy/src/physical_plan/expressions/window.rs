@@ -717,7 +717,7 @@ where
                         .zip(groups.all().par_iter())
                         .for_each(|(v, g)| {
                             let ptr = sync_ptr_values.get();
-                            for idx in g {
+                            for idx in g.as_slice() {
                                 debug_assert!((*idx as usize) < len);
                                 unsafe { *ptr.add(*idx as usize) = *v }
                             }
@@ -767,7 +767,7 @@ where
                 let validity_ptr = sync_ptr_validity.get();
 
                 ca.into_iter().zip(groups.iter()).for_each(|(opt_v, g)| {
-                    for idx in g {
+                    for idx in g.as_slice() {
                         let idx = *idx as usize;
                         debug_assert!(idx < len);
                         unsafe {

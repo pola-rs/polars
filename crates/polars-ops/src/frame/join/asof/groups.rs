@@ -2,11 +2,11 @@ use std::hash::Hash;
 
 use ahash::RandomState;
 use num_traits::Zero;
-use polars_core::hashing::partition::AsU64;
 use polars_core::hashing::{_df_rows_to_hashes_threaded_vertical, _HASHMAP_INIT_SIZE};
 use polars_core::utils::{split_ca, split_df};
 use polars_core::POOL;
 use polars_utils::abs_diff::AbsDiff;
+use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use rayon::prelude::*;
 use smartstring::alias::String as SmartString;
 
@@ -70,7 +70,7 @@ fn asof_join_by_numeric<T, S, A, F>(
 where
     T: PolarsDataType,
     S: PolarsNumericType,
-    S::Native: Hash + Eq + AsU64,
+    S::Native: Hash + Eq + DirtyHash,
     A: for<'a> AsofJoinState<T::Physical<'a>>,
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
@@ -91,7 +91,7 @@ where
         .map(|ca| ca.downcast_iter().next().unwrap().values_iter())
         .collect();
     let hash_tbls = build_tables(right_slices);
-    let n_tables = hash_tbls.len() as u64;
+    let n_tables = hash_tbls.len();
 
     // Now we probe the right hand side for each left hand side.
     Ok(POOL
@@ -117,8 +117,8 @@ where
                         };
 
                         let group_probe_table = unsafe {
-                            let h_left = by_left_k.as_u64();
-                            get_hash_tbl_threaded_join_partitioned(h_left, &hash_tbls, n_tables)
+                            hash_tbls
+                                .get_unchecked(hash_to_partition(by_left_k.dirty_hash(), n_tables))
                         };
                         let Some(right_grp_idxs) = group_probe_table.get(by_left_k) else {
                             results.push(None);
@@ -128,7 +128,7 @@ where
                         results.push(asof_in_group::<T, A, &F>(
                             left_val,
                             right_val_arr,
-                            right_grp_idxs,
+                            right_grp_idxs.as_slice(),
                             &mut group_states,
                             &filter,
                         ));
@@ -165,7 +165,7 @@ where
     let prep_by_left = prepare_bytes(&split_by_left, &hb);
     let prep_by_right = prepare_bytes(&split_by_right, &hb);
     let hash_tbls = build_tables(prep_by_right);
-    let n_tables = hash_tbls.len() as u64;
+    let n_tables = hash_tbls.len();
 
     // Now we probe the right hand side for each left hand side.
     POOL.install(|| {
@@ -185,8 +185,7 @@ where
                     };
 
                     let group_probe_table = unsafe {
-                        let h_left = by_left_k.as_u64();
-                        get_hash_tbl_threaded_join_partitioned(h_left, &hash_tbls, n_tables)
+                        hash_tbls.get_unchecked(hash_to_partition(by_left_k.dirty_hash(), n_tables))
                     };
                     let Some(right_grp_idxs) = group_probe_table.get(by_left_k) else {
                         results.push(None);
@@ -196,7 +195,7 @@ where
                     results.push(asof_in_group::<T, A, &F>(
                         left_val,
                         right_val_arr,
-                        &right_grp_idxs[..],
+                        right_grp_idxs.as_slice(),
                         &mut group_states,
                         &filter,
                     ));
@@ -236,7 +235,7 @@ where
     let hash_tbls = mk::create_probe_table(&build_hashes, by_right);
     drop(build_hashes); // Early drop to reduce memory pressure.
     let offsets = mk::get_offsets(&probe_hashes);
-    let n_tables = hash_tbls.len() as u64;
+    let n_tables = hash_tbls.len();
 
     // Now we probe the right hand side for each left hand side.
     POOL.install(|| {
@@ -260,9 +259,8 @@ where
                             continue;
                         };
 
-                        let group_probe_table = unsafe {
-                            get_hash_tbl_threaded_join_partitioned(h_left, &hash_tbls, n_tables)
-                        };
+                        let group_probe_table =
+                            unsafe { hash_tbls.get_unchecked(hash_to_partition(h_left, n_tables)) };
 
                         let entry = group_probe_table.raw_entry().from_hash(h_left, |idx_hash| {
                             let idx_right = idx_hash.idx;

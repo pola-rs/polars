@@ -85,3 +85,14 @@ def test_meta_tree_format(namespace_files_path: Path) -> None:
         result = e.meta.tree_format(return_as_string=True)
         result = "\n".join(s.rstrip() for s in result.split("\n"))
         assert result.strip() == tree_fmt.strip()
+
+
+def test_literal_output_name() -> None:
+    e = pl.lit(1)
+    assert e.meta.output_name() == "literal"
+
+    e = pl.lit(pl.Series("abc", [1, 2, 3]))
+    assert e.meta.output_name() == "abc"
+
+    e = pl.lit(pl.Series([1, 2, 3]))
+    assert e.meta.output_name() == ""

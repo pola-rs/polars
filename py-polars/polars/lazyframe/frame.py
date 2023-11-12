@@ -65,6 +65,7 @@ from polars.utils.deprecation import (
     deprecate_function,
     deprecate_renamed_function,
     deprecate_renamed_parameter,
+    deprecate_saturating,
     issue_deprecation_warning,
 )
 from polars.utils.various import (
@@ -2104,11 +2105,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
     @deprecate_renamed_parameter("quote", "quote_char", version="0.19.8")
+    @deprecate_renamed_parameter("has_header", "include_header", version="0.19.13")
     def sink_csv(
         self,
         path: str | Path,
         *,
-        has_header: bool = True,
+        include_header: bool = True,
         separator: str = ",",
         line_terminator: str = "\n",
         quote_char: str = '"',
@@ -2136,7 +2138,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         path
             File path to which the file should be written.
-        has_header
+        include_header
             Whether to include header in the CSV output.
         separator
             Separate CSV fields with this symbol.
@@ -2167,20 +2169,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             A string representing null values (defaulting to the empty string).
         quote_style : {'necessary', 'always', 'non_numeric', 'never'}
             Determines the quoting strategy used.
+
             - necessary (default): This puts quotes around fields only when necessary.
-            They are necessary when fields contain a quote,
-            delimiter or record terminator.
-            Quotes are also necessary when writing an empty record
-            (which is indistinguishable from a record with one empty field).
-            This is the default.
+              They are necessary when fields contain a quote,
+              delimiter or record terminator.
+              Quotes are also necessary when writing an empty record
+              (which is indistinguishable from a record with one empty field).
+              This is the default.
             - always: This puts quotes around every field. Always.
             - never: This never puts quotes around fields, even if that results in
-            invalid CSV data (e.g.: by not quoting strings containing the
-            separator).
+              invalid CSV data (e.g.: by not quoting strings containing the
+              separator).
             - non_numeric: This puts quotes around all fields that are non-numeric.
-            Namely, when writing a field that does not parse as a valid float
-            or integer, then quotes will be used even if they aren`t strictly
-            necessary.
+              Namely, when writing a field that does not parse as a valid float
+              or integer, then quotes will be used even if they aren`t strictly
+              necessary.
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will  be slightly faster.
@@ -2223,7 +2226,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return lf.sink_csv(
             path=path,
-            has_header=has_header,
+            include_header=include_header,
             separator=ord(separator),
             line_terminator=line_terminator,
             quote_char=ord(quote_char),
@@ -2993,6 +2996,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * ...
             * (t_n - period, t_n]
 
+        whereas if you pass a non-default `offset`, then the windows will be
+
+            * (t_0 + offset, t_0 + offset + period]
+            * (t_1 + offset, t_1 + offset + period]
+            * ...
+            * (t_n + offset, t_n + offset + period]
+
         The `period` and `offset` arguments are created either from a timedelta, or
         by using the following string language:
 
@@ -3011,10 +3021,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Or combine them:
         "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
-
-        Suffix with `"_saturating"` to indicate that dates too large for
-        their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-        instead of erroring.
 
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
@@ -3100,6 +3106,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────────────────────┴───────┴───────┴───────┘
 
         """
+        period = deprecate_saturating(period)
+        offset = deprecate_saturating(offset)
         index_column = parse_as_expression(index_column)
         if offset is None:
             offset = _negate_duration(_timedelta_to_pl_duration(period))
@@ -3171,8 +3179,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. deprecated:: 0.19.4
                 Use `label` instead.
         include_boundaries
-            Add the lower and upper bound of the window to the "_lower_bound" and
-            "_upper_bound" columns. This will impact performance because it's harder to
+            Add the lower and upper bound of the window to the "_lower_boundary" and
+            "_upper_boundary" columns. This will impact performance because it's harder to
             parallelize
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
@@ -3255,10 +3263,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
            Or combine them:
            "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
-
-           Suffix with `"_saturating"` to indicate that dates too large for
-           their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-           instead of erroring.
 
            By "calendar day", we mean the corresponding time on the next day (which may
            not be 24 hours, due to daylight savings). Similarly for "calendar week",
@@ -3437,6 +3441,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────────────────┴─────────────────┴─────┴─────────────────┘
 
         """  # noqa: W505
+        every = deprecate_saturating(every)
+        period = deprecate_saturating(period)
+        offset = deprecate_saturating(offset)
         if truncate is not None:
             if truncate:
                 label = "left"
@@ -3555,10 +3562,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 Or combine them:
                 "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
-                Suffix with `"_saturating"` to indicate that dates too large for
-                their month should saturate at the largest date
-                (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
-
                 By "calendar day", we mean the corresponding time on the next day
                 (which may not be 24 hours, due to daylight savings). Similarly for
                 "calendar week", "calendar month", "calendar quarter", and
@@ -3610,6 +3613,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────────────────────┴────────────┴──────┘
 
         """
+        tolerance = deprecate_saturating(tolerance)
         if not isinstance(other, LazyFrame):
             raise TypeError(
                 f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"

@@ -328,10 +328,11 @@ fn rg_to_dfs_par_over_rg(
     Ok(dfs.into_iter().flatten().collect())
 }
 
-fn materialize_empty_df(
+pub(super) fn materialize_empty_df(
     projection: Option<&[usize]>,
     reader_schema: &ArrowSchema,
     hive_partition_columns: Option<&[Series]>,
+    row_count: Option<&RowCount>,
 ) -> DataFrame {
     let schema = if let Some(projection) = projection {
         Cow::Owned(apply_projection(reader_schema, projection))
@@ -339,7 +340,14 @@ fn materialize_empty_df(
         Cow::Borrowed(reader_schema)
     };
     let mut df = DataFrame::from(schema.as_ref());
+
+    if let Some(row_count) = row_count {
+        df.insert_at_idx(0, Series::new_empty(&row_count.name, &IDX_DTYPE))
+            .unwrap();
+    }
+
     materialize_hive_partitions(&mut df, hive_partition_columns, 0);
+
     df
 }
 
@@ -362,6 +370,7 @@ pub fn read_parquet<R: MmapBytesReader>(
             projection,
             reader_schema,
             hive_partition_columns,
+            row_count.as_ref(),
         ));
     }
 
@@ -416,7 +425,7 @@ pub fn read_parquet<R: MmapBytesReader>(
         &file_metadata,
         reader_schema,
         predicate,
-        row_count,
+        row_count.clone(),
         parallel,
         &materialized_projection,
         use_statistics,
@@ -428,6 +437,7 @@ pub fn read_parquet<R: MmapBytesReader>(
             projection,
             reader_schema,
             hive_partition_columns,
+            row_count.as_ref(),
         ))
     } else {
         accumulate_dataframes_vertical(dfs)
@@ -633,6 +643,7 @@ impl BatchedParquetReader {
                     Some(&self.projection),
                     self.schema.as_ref(),
                     self.hive_partition_columns.as_deref(),
+                    self.row_count.as_ref(),
                 )]));
             }
 

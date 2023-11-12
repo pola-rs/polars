@@ -220,7 +220,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
         "c": pl.Datetime("us"),
         "d": pl.Datetime("ns"),
         "e": pl.Int32,
-        "decimal1": pl.Decimal(1, 2),
+        "decimal1": pl.Decimal(precision=2, scale=1),
     }
     expected_data = [
         (
@@ -1645,7 +1645,7 @@ def test_reproducible_hash_with_seeds() -> None:
     if platform.mac_ver()[-1] != "arm64":
         expected = pl.Series(
             "s",
-            [924615033311830428, 6344663067812082469, 12712849352301301328],
+            [15801072432137883943, 6344663067812082469, 9604537446374444741],
             dtype=pl.UInt64,
         )
         result = df.hash_rows(*seeds)
@@ -3599,3 +3599,9 @@ def test_from_dicts_undeclared_column_dtype() -> None:
     data = [{"a": 1, "b": 2}]
     result = pl.from_dicts(data, schema=["x"])
     assert result.schema == {"x": pl.Null}
+
+
+def test_from_records_u64_12329() -> None:
+    s = pl.from_records([{"a": 9908227375760408577}])
+    assert s.dtypes == [pl.UInt64]
+    assert s["a"][0] == 9908227375760408577

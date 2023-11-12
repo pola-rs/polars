@@ -88,6 +88,7 @@ from polars.utils.deprecation import (
     deprecate_nonkeyword_arguments,
     deprecate_renamed_function,
     deprecate_renamed_parameter,
+    deprecate_saturating,
 )
 from polars.utils.various import (
     _prepare_row_count_args,
@@ -2454,7 +2455,7 @@ class DataFrame:
         self,
         file: None = None,
         *,
-        has_header: bool = ...,
+        include_header: bool = ...,
         separator: str = ...,
         line_terminator: str = ...,
         quote_char: str = ...,
@@ -2473,7 +2474,7 @@ class DataFrame:
         self,
         file: BytesIO | TextIOWrapper | str | Path,
         *,
-        has_header: bool = ...,
+        include_header: bool = ...,
         separator: str = ...,
         line_terminator: str = ...,
         quote_char: str = ...,
@@ -2488,11 +2489,12 @@ class DataFrame:
         ...
 
     @deprecate_renamed_parameter("quote", "quote_char", version="0.19.8")
+    @deprecate_renamed_parameter("has_header", "include_header", version="0.19.13")
     def write_csv(
         self,
         file: BytesIO | TextIOWrapper | str | Path | None = None,
         *,
-        has_header: bool = True,
+        include_header: bool = True,
         separator: str = ",",
         line_terminator: str = "\n",
         quote_char: str = '"',
@@ -2512,7 +2514,7 @@ class DataFrame:
         file
             File path or writeable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
-        has_header
+        include_header
             Whether to include header in the CSV output.
         separator
             Separate CSV fields with this symbol.
@@ -2543,20 +2545,20 @@ class DataFrame:
             A string representing null values (defaulting to the empty string).
         quote_style : {'necessary', 'always', 'non_numeric', 'never'}
             Determines the quoting strategy used.
+
             - necessary (default): This puts quotes around fields only when necessary.
-            They are necessary when fields contain a quote,
-            separator or record terminator.
-            Quotes are also necessary when writing an empty record
-            (which is indistinguishable from a record with one empty field).
-            This is the default.
+              They are necessary when fields contain a quote,
+              separator or record terminator.
+              Quotes are also necessary when writing an empty record
+              (which is indistinguishable from a record with one empty field).
+              This is the default.
             - always: This puts quotes around every field. Always.
             - never: This never puts quotes around fields, even if that results in
-            invalid CSV data (e.g.: by not quoting strings containing the separator).
+              invalid CSV data (e.g.: by not quoting strings containing the separator).
             - non_numeric: This puts quotes around all fields that are non-numeric.
-            Namely, when writing a field that does not parse as a valid float
-            or integer, then quotes will be used even if they aren`t strictly
-            necessary.
-
+              Namely, when writing a field that does not parse as a valid float
+              or integer, then quotes will be used even if they aren`t strictly
+              necessary.
 
         Examples
         --------
@@ -2589,7 +2591,7 @@ class DataFrame:
 
         self._df.write_csv(
             file,
-            has_header,
+            include_header,
             ord(separator),
             line_terminator,
             ord(quote_char),
@@ -2611,6 +2613,7 @@ class DataFrame:
         self,
         file: BinaryIO | BytesIO | str | Path,
         compression: AvroCompression = "uncompressed",
+        name: str = "",
     ) -> None:
         """
         Write to Apache Avro file.
@@ -2621,6 +2624,8 @@ class DataFrame:
             File path or writeable file-like object to which the data will be written.
         compression : {'uncompressed', 'snappy', 'deflate'}
             Compression method. Defaults to "uncompressed".
+        name
+            Schema name. Defaults to empty string.
 
         Examples
         --------
@@ -2641,9 +2646,12 @@ class DataFrame:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
             file = normalize_filepath(file)
+        if name is None:
+            name = ""
 
-        self._df.write_avro(file, compression)
+        self._df.write_avro(file, compression, name)
 
+    @deprecate_renamed_parameter("has_header", "include_header", version="0.19.13")
     def write_excel(
         self,
         workbook: Workbook | BytesIO | Path | str | None = None,
@@ -2663,7 +2671,7 @@ class DataFrame:
         sparklines: dict[str, Sequence[str] | dict[str, Any]] | None = None,
         formulas: dict[str, str | dict[str, str]] | None = None,
         float_precision: int = 3,
-        has_header: bool = True,
+        include_header: bool = True,
         autofilter: bool = True,
         autofit: bool = False,
         hidden_columns: Sequence[str] | SelectorType | None = None,
@@ -2754,7 +2762,7 @@ class DataFrame:
             rows (if providing a dictionary) or all rows (if providing an integer) that
             intersect with the table body (including any header and total row) in
             integer pixel units. Note that `row_index` starts at zero and will be
-            the header row (unless `has_headers` is False).
+            the header row (unless `include_header` is False).
         sparklines : dict
             A `{colname:list,}` or `{colname:dict,}` dictionary defining one or more
             sparklines to be written into a new column in the table.
@@ -2783,7 +2791,7 @@ class DataFrame:
         float_precision : int
             Default number of decimals displayed for floating point columns (note that
             this is purely a formatting directive; the actual values are not rounded).
-        has_header : bool
+        include_header : bool
             Indicate if the table should be created with a header row.
         autofilter : bool
             If the table has headers, provide autofilter capability.
@@ -3043,20 +3051,20 @@ class DataFrame:
             table_start[0]
             + len(df)
             + int(is_empty)
-            - int(not has_header)
+            - int(not include_header)
             + int(bool(column_totals)),
             table_start[1] + len(df.columns) - 1,
         )
 
         # write table structure and formats into the target sheet
-        if not is_empty or has_header:
+        if not is_empty or include_header:
             ws.add_table(
                 *table_start,
                 *table_finish,
                 {
                     "style": table_style,
                     "columns": table_columns,
-                    "header_row": has_header,
+                    "header_row": include_header,
                     "autofilter": autofilter,
                     "total_row": bool(column_totals) and not is_empty,
                     "name": table_name,
@@ -3066,7 +3074,7 @@ class DataFrame:
 
             # write data into the table range, column-wise
             if not is_empty:
-                column_start = [table_start[0] + int(has_header), table_start[1]]
+                column_start = [table_start[0] + int(include_header), table_start[1]]
                 for c in df.columns:
                     if c in self.columns:
                         ws.write_column(
@@ -3083,7 +3091,7 @@ class DataFrame:
                     ws=ws,
                     conditional_formats=conditional_formats,
                     table_start=table_start,
-                    has_header=has_header,
+                    include_header=include_header,
                     format_cache=fmt_cache,
                 )
         # additional column-level properties
@@ -3116,7 +3124,12 @@ class DataFrame:
         # finally, inject any sparklines into the table
         for column, params in (sparklines or {}).items():
             _xl_inject_sparklines(
-                ws, df, table_start, column, has_header=has_header, params=params
+                ws,
+                df,
+                table_start,
+                column,
+                include_header=include_header,
+                params=params,
             )
 
         # worksheet options
@@ -3640,6 +3653,7 @@ class DataFrame:
             mode=mode,
             overwrite_schema=overwrite_schema,
             storage_options=storage_options,
+            large_dtypes=True,
             **delta_write_options,
         )
 
@@ -5166,6 +5180,13 @@ class DataFrame:
             * ...
             * (t_n - period, t_n]
 
+        whereas if you pass a non-default `offset`, then the windows will be
+
+            * (t_0 + offset, t_0 + offset + period]
+            * (t_1 + offset, t_1 + offset + period]
+            * ...
+            * (t_n + offset, t_n + offset + period]
+
         The `period` and `offset` arguments are created either from a timedelta, or
         by using the following string language:
 
@@ -5184,10 +5205,6 @@ class DataFrame:
 
         Or combine them:
         "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
-
-        Suffix with `"_saturating"` to indicate that dates too large for
-        their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-        instead of erroring.
 
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
@@ -5274,6 +5291,8 @@ class DataFrame:
         └─────────────────────┴───────┴───────┴───────┘
 
         """
+        period = deprecate_saturating(period)
+        offset = deprecate_saturating(offset)
         return RollingGroupBy(
             self,
             index_column=index_column,
@@ -5342,8 +5361,8 @@ class DataFrame:
             .. deprecated:: 0.19.4
                 Use `label` instead.
         include_boundaries
-            Add the lower and upper bound of the window to the "_lower_bound" and
-            "_upper_bound" columns. This will impact performance because it's harder to
+            Add the lower and upper bound of the window to the "_lower_boundary" and
+            "_upper_boundary" columns. This will impact performance because it's harder to
             parallelize
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
@@ -5426,10 +5445,6 @@ class DataFrame:
 
            Or combine them:
            "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
-
-           Suffix with `"_saturating"` to indicate that dates too large for
-           their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-           instead of erroring.
 
            By "calendar day", we mean the corresponding time on the next day (which may
            not be 24 hours, due to daylight savings). Similarly for "calendar week",
@@ -5604,6 +5619,9 @@ class DataFrame:
         └─────────────────┴─────────────────┴─────┴─────────────────┘
 
         """  # noqa: W505
+        every = deprecate_saturating(every)
+        period = deprecate_saturating(period)
+        offset = deprecate_saturating(offset)
         return DynamicGroupBy(
             self,
             index_column=index_column,
@@ -5651,9 +5669,6 @@ class DataFrame:
 
         - "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
-        Suffix with `"_saturating"` to indicate that dates too large for
-        their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-        instead of erroring.
 
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
@@ -5715,6 +5730,8 @@ class DataFrame:
         └─────────────────────┴────────┴────────┘
 
         """
+        every = deprecate_saturating(every)
+        offset = deprecate_saturating(offset)
         if by is None:
             by = []
         if isinstance(by, str):
@@ -5810,10 +5827,6 @@ class DataFrame:
                 Or combine them:
                 "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
-                Suffix with `"_saturating"` to indicate that dates too large for
-                their month should saturate at the largest date
-                (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
-
                 By "calendar day", we mean the corresponding time on the next day
                 (which may not be 24 hours, due to daylight savings). Similarly for
                 "calendar week", "calendar month", "calendar quarter", and
@@ -5865,6 +5878,7 @@ class DataFrame:
         └─────────────────────┴────────────┴──────┘
 
         """
+        tolerance = deprecate_saturating(tolerance)
         if not isinstance(other, DataFrame):
             raise TypeError(
                 f"expected `other` join table to be a DataFrame, got {type(other).__name__!r}"

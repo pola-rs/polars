@@ -1,20 +1,27 @@
 // --8<-- [start:setup]
 use chrono::prelude::*;
-use polars::io::prelude::*;
 use polars::prelude::*;
-use polars::time::prelude::*;
 // --8<-- [end:setup]
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:df]
-    let df = df!(
-    "time" => date_range(
+    let time = polars::time::date_range(
         "time",
-        NaiveDate::from_ymd_opt(2021, 12, 16).unwrap().and_hms_opt(0, 0, 0).unwrap(),
-        NaiveDate::from_ymd_opt(2021, 12, 16).unwrap().and_hms_opt(3, 0, 0).unwrap(),
+        NaiveDate::from_ymd_opt(2021, 12, 16)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap(),
+        NaiveDate::from_ymd_opt(2021, 12, 16)
+            .unwrap()
+            .and_hms_opt(3, 0, 0)
+            .unwrap(),
         Duration::parse("30m"),
         ClosedWindow::Both,
-        TimeUnit::Milliseconds, None)?,
+        TimeUnit::Milliseconds,
+        None,
+    )?;
+    let df = df!(
+        "time" => time,
         "groups" => &["a", "a", "a", "b", "b", "a", "a"],
         "values" => &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
     )?;

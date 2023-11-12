@@ -319,23 +319,22 @@ pub(super) fn cast_time_unit(s: &Series, tu: TimeUnit) -> PolarsResult<Series> {
 pub(super) fn truncate(s: &[Series], offset: &str) -> PolarsResult<Series> {
     let time_series = &s[0];
     let every = s[1].utf8()?;
-    let ambiguous = s[2].utf8()?;
 
     let mut out = match time_series.dtype() {
         DataType::Datetime(_, tz) => match tz {
             #[cfg(feature = "timezones")]
             Some(tz) => time_series
                 .datetime()?
-                .truncate(tz.parse::<Tz>().ok().as_ref(), every, offset, ambiguous)?
+                .truncate(tz.parse::<Tz>().ok().as_ref(), every, offset)?
                 .into_series(),
             _ => time_series
                 .datetime()?
-                .truncate(None, every, offset, ambiguous)?
+                .truncate(None, every, offset)?
                 .into_series(),
         },
         DataType::Date => time_series
             .date()?
-            .truncate(None, every, offset, ambiguous)?
+            .truncate(None, every, offset)?
             .into_series(),
         dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
     };
@@ -415,7 +414,6 @@ pub(super) fn round(s: &[Series], every: &str, offset: &str) -> PolarsResult<Ser
     let offset = Duration::parse(offset);
 
     let time_series = &s[0];
-    let ambiguous = s[1].utf8()?;
 
     Ok(match time_series.dtype() {
         DataType::Datetime(_, tz) => match tz {
@@ -423,18 +421,18 @@ pub(super) fn round(s: &[Series], every: &str, offset: &str) -> PolarsResult<Ser
             Some(tz) => time_series
                 .datetime()
                 .unwrap()
-                .round(every, offset, tz.parse::<Tz>().ok().as_ref(), ambiguous)?
+                .round(every, offset, tz.parse::<Tz>().ok().as_ref())?
                 .into_series(),
             _ => time_series
                 .datetime()
                 .unwrap()
-                .round(every, offset, None, ambiguous)?
+                .round(every, offset, None)?
                 .into_series(),
         },
         DataType::Date => time_series
             .date()
             .unwrap()
-            .round(every, offset, None, ambiguous)?
+            .round(every, offset, None)?
             .into_series(),
         dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
     })

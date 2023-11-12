@@ -25,7 +25,7 @@ either = { workspace = true }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
 itoap = { version = "1", optional = true, features = ["simd"] }
-ndarray = { version = "0.15", optional = true, default_features = false }
+ndarray = { workspace = true, optional = true }
 num-traits = { workspace = true }
 once_cell = { workspace = true }
 rand = { workspace = true, optional = true, features = ["small_rng", "std"] }

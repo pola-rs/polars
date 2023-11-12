@@ -752,3 +752,17 @@ def test_sort_with_null_12139() -> None:
         "bool": [None, True, True, False, False],
         "float": [3.0, 1.0, 4.0, 2.0, 5.0],
     }
+
+
+def test_sort_with_null_12272() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1.0, 1.0, 1.0],
+            "b": [2.0, -1.0, None],
+        }
+    )
+    out = df.select((pl.col("a") * pl.col("b")).alias("product"))
+
+    assert out.sort("product").to_dict(as_series=False) == {
+        "product": [None, -1.0, 2.0]
+    }

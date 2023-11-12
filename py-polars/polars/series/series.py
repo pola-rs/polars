@@ -4696,6 +4696,29 @@ class Series:
 
         """
 
+    def round_sig_figs(self, digits: int) -> Series:
+        """
+        Round to a number of significant figures.
+
+        Parameters
+        ----------
+        digits
+            Number of significant figures to round to.
+
+        Examples
+        --------
+        >>> s = pl.Series([0.01234, 3.333, 1234.0])
+        >>> s.round_sig_figs(2)
+        shape: (3,)
+        Series: '' [f64]
+        [
+                0.012
+                3.3
+                1200.0
+        ]
+
+        """
+
     def dot(self, other: Series | ArrayLike) -> float | None:
         """
         Compute the dot/inner product between two Series.
@@ -5026,7 +5049,7 @@ class Series:
         If the function returns a different datatype, the return_dtype arg should
         be set, otherwise the method will fail.
 
-        Implementing logic using a Python function is almost always _significantly_
+        Implementing logic using a Python function is almost always *significantly*
         slower and more memory intensive than implementing the same logic using
         the native expression API because:
 
@@ -5210,7 +5233,7 @@ class Series:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their min.
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
@@ -5266,7 +5289,7 @@ class Series:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their max.
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
@@ -5322,7 +5345,7 @@ class Series:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their mean.
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
@@ -5435,7 +5458,7 @@ class Series:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their std dev.
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
@@ -5495,7 +5518,7 @@ class Series:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their variance.
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.

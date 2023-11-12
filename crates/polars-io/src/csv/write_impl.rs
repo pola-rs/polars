@@ -64,6 +64,7 @@ fn write_integer<I: itoa::Integer>(f: &mut Vec<u8>, val: I) {
     f.extend_from_slice(value.as_bytes())
 }
 
+#[allow(unused_variables)]
 unsafe fn write_anyvalue(
     f: &mut Vec<u8>,
     value: AnyValue,

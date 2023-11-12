@@ -10,7 +10,7 @@ use polars_core::POOL;
 use polars_utils::aliases::PlHashSet;
 use tokio::runtime::{Builder, Runtime};
 
-static CONCURRENCY_BUDGET: AtomicI32 = AtomicI32::new(64);
+static CONCURRENCY_BUDGET: AtomicI32 = AtomicI32::new(32);
 
 pub async fn with_concurrency_budget<F, Fut>(requested_budget: u16, callable: F) -> Fut::Output
 where
@@ -33,6 +33,11 @@ where
             return out;
         }
     }
+}
+
+/// Increase/decrease the concurrency budget and return the previous budget
+pub fn increase_concurrency_budget(increase: i32) -> i32 {
+    CONCURRENCY_BUDGET.fetch_add(increase, Ordering::Relaxed)
 }
 
 pub struct RuntimeManager {

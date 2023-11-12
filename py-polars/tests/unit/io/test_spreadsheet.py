@@ -444,7 +444,7 @@ def test_read_excel_all_sheets_with_sheet_name(path_xlsx: Path, engine: str) -> 
             "row_totals": {"tot": True},
             "hidden_columns": ["str"],
             "hide_gridlines": True,
-            "has_header": False,
+            "include_header": False,
         },
     ],
 )
@@ -458,7 +458,7 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
     )
     header_opts = (
         {}
-        if write_params.get("has_header", True)
+        if write_params.get("include_header", True)
         else {"has_header": False, "new_columns": ["dtm", "str", "val"]}
     )
     fmt_strptime = "%Y-%m-%d"

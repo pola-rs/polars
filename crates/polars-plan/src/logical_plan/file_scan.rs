@@ -60,6 +60,7 @@ impl FileScan {
         }
     }
 
+    #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv", feature = "cse"))]
     pub(crate) fn skip_rows(&self) -> usize {
         #[allow(unreachable_patterns)]
         match self {

@@ -8,13 +8,13 @@ import pytest
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.exceptions import ComputeError, TimeZoneAwareConstructorWarning
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
     from polars.datatypes import PolarsDataType
-    from polars.type_aliases import TimeUnit
+    from polars.type_aliases import ClosedInterval, TimeUnit
 else:
     from polars.utils.convert import get_zoneinfo as ZoneInfo
 
@@ -475,3 +475,22 @@ def test_datetime_range_invalid_interval(interval: timedelta) -> None:
         pl.datetime_range(
             datetime(2000, 3, 20), datetime(2000, 3, 21), interval="-1h", eager=True
         )
+
+
+@pytest.mark.parametrize(
+    ("closed", "expected_values"),
+    [
+        ("right", [datetime(2020, 2, 29), datetime(2020, 3, 31)]),
+        ("left", [datetime(2020, 1, 31), datetime(2020, 2, 29)]),
+        ("none", [datetime(2020, 2, 29)]),
+        ("both", [datetime(2020, 1, 31), datetime(2020, 2, 29), datetime(2020, 3, 31)]),
+    ],
+)
+def test_datetime_range_end_of_month_5441(
+    closed: ClosedInterval, expected_values: list[datetime]
+) -> None:
+    start = date(2020, 1, 31)
+    stop = date(2020, 3, 31)
+    result = pl.datetime_range(start, stop, interval="1mo", closed=closed, eager=True)
+    expected = pl.Series("datetime", expected_values)
+    assert_series_equal(result, expected)

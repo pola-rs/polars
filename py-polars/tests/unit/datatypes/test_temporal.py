@@ -1809,17 +1809,15 @@ def test_use_earliest_deprecation() -> None:
     )
     with pytest.warns(
         DeprecationWarning,
-        match="Please replace `use_earliest=True` with `ambiguous='earliest'`",
     ):
         result = ser.dt.truncate("1h", use_earliest=True)
-    expected = ser.dt.truncate("1h", ambiguous="earliest")
+    expected = ser.dt.truncate("1h")
     assert_series_equal(result, expected)
     with pytest.warns(
         DeprecationWarning,
-        match="Please replace `use_earliest=True` with `ambiguous='earliest'`",
     ):
         result = ser.dt.truncate("1h", use_earliest=True)
-    expected = ser.dt.truncate("1h", ambiguous="earliest")
+    expected = ser.dt.truncate("1h")
     assert_series_equal(result, expected)
 
     # replace_time_zone
@@ -1886,9 +1884,10 @@ def test_ambiguous_expressions() -> None:
             "Europe/London", ambiguous=pl.col("ambiguous")
         )
     )
-    result = df.select(pl.col("ts").dt.truncate("1h", ambiguous=pl.col("ambiguous")))[
-        "ts"
-    ]
+    with pytest.deprecated_call():
+        result = df.select(
+            pl.col("ts").dt.truncate("1h", ambiguous=pl.col("ambiguous"))
+        )["ts"]
     expected = pl.Series("ts", [1603584000000000, 1603587600000000]).cast(
         pl.Datetime("us", "Europe/London")
     )
@@ -2166,13 +2165,10 @@ def test_truncate_expr() -> None:
                 datetime(2022, 4, 3, 13, 30, 32),
             ],
             "every": ["1y", "1mo", "1m", "1s"],
-            "ambiguous": ["earliest", "latest", "latest", "raise"],
         }
     )
 
-    every_expr = df.select(
-        pl.col("date").dt.truncate(every=pl.col("every"), ambiguous=pl.lit("raise"))
-    )
+    every_expr = df.select(pl.col("date").dt.truncate(every=pl.col("every")))
     assert every_expr.to_dict(as_series=False) == {
         "date": [
             datetime(2022, 1, 1),
@@ -2182,9 +2178,7 @@ def test_truncate_expr() -> None:
         ]
     }
 
-    all_lit = df.select(
-        pl.col("date").dt.truncate(every=pl.lit("1mo"), ambiguous=pl.lit("raise"))
-    )
+    all_lit = df.select(pl.col("date").dt.truncate(every=pl.lit("1mo")))
     assert all_lit.to_dict(as_series=False) == {
         "date": [
             datetime(2022, 11, 1),
@@ -2204,21 +2198,11 @@ def test_truncate_expr() -> None:
                 time_zone="Europe/London",
             ).dt.offset_by("15m"),
             "every": ["30m", "15m", "30m", "15m", "30m", "15m", "30m"],
-            "ambiguous": [
-                "raise",
-                "earliest",
-                "earliest",
-                "latest",
-                "latest",
-                "latest",
-                "raise",
-            ],
         }
     )
 
-    ambiguous_expr = df.select(
-        pl.col("date").dt.truncate(every=pl.lit("30m"), ambiguous=pl.col("ambiguous"))
-    )
+    # How to deal with ambiguousness is auto-inferred
+    ambiguous_expr = df.select(pl.col("date").dt.truncate(every=pl.lit("30m")))
     assert ambiguous_expr.to_dict(as_series=False) == {
         "date": [
             datetime(2020, 10, 25, tzinfo=ZoneInfo(key="Europe/London")),
@@ -2231,9 +2215,7 @@ def test_truncate_expr() -> None:
         ]
     }
 
-    all_expr = df.select(
-        pl.col("date").dt.truncate(every=pl.col("every"), ambiguous=pl.col("ambiguous"))
-    )
+    all_expr = df.select(pl.col("date").dt.truncate(every=pl.col("every")))
     assert all_expr.to_dict(as_series=False) == {
         "date": [
             datetime(2020, 10, 25, tzinfo=ZoneInfo(key="Europe/London")),
@@ -2256,21 +2238,14 @@ def test_truncate_propagate_null() -> None:
                 datetime(2022, 3, 20, 5, 7, 18),
             ],
             "every": ["1y", None, "1m"],
-            "ambiguous": ["earliest", "latest", None],
         }
     )
-    assert df.select(
-        pl.col("date").dt.truncate(every=pl.col("every"), ambiguous="raise")
-    ).to_dict(as_series=False) == {"date": [None, None, datetime(2022, 3, 20, 5, 7, 0)]}
-    assert df.select(
-        pl.col("date").dt.truncate(every="1mo", ambiguous=pl.col("ambiguous"))
-    ).to_dict(as_series=False) == {"date": [None, datetime(2022, 11, 1), None]}
-    assert df.select(
-        pl.col("date").dt.truncate(every=pl.col("every"), ambiguous=pl.col("ambiguous"))
-    ).to_dict(as_series=False) == {"date": [None, None, None]}
+    assert df.select(pl.col("date").dt.truncate(every=pl.col("every"))).to_dict(
+        as_series=False
+    ) == {"date": [None, None, datetime(2022, 3, 20, 5, 7, 0)]}
     assert df.select(
         pl.col("date").dt.truncate(
-            every=pl.lit(None, dtype=pl.Utf8), ambiguous=pl.lit(None, dtype=pl.Utf8)
+            every=pl.lit(None, dtype=pl.Utf8),
         )
     ).to_dict(as_series=False) == {"date": [None, None, None]}
 
@@ -2357,11 +2332,7 @@ def test_truncate_use_earliest() -> None:
     df = df.with_columns(
         use_earliest=pl.col("datetime").dt.dst_offset() == pl.duration(hours=1)
     )
-    result = df.select(
-        pl.when(pl.col("use_earliest"))
-        .then(pl.col("datetime").dt.truncate("30m", ambiguous="earliest"))
-        .otherwise(pl.col("datetime").dt.truncate("30m", ambiguous="latest"))
-    )
+    result = df.select(pl.col("datetime").dt.truncate("30m"))
     expected = pl.datetime_range(
         date(2020, 10, 25),
         datetime(2020, 10, 25, 2),
@@ -2380,11 +2351,24 @@ def test_truncate_ambiguous() -> None:
         eager=True,
         time_zone="Europe/London",
     ).dt.offset_by("15m")
-    with pytest.raises(
-        ComputeError,
-        match="datetime '2020-10-25 01:00:00' is ambiguous in time zone 'Europe/London'",
-    ):
-        ser.dt.truncate("30m")
+    result = ser.dt.truncate("30m")
+    expected = (
+        pl.Series(
+            [
+                "2020-10-25T00:00:00+0100",
+                "2020-10-25T00:30:00+0100",
+                "2020-10-25T01:00:00+0100",
+                "2020-10-25T01:30:00+0100",
+                "2020-10-25T01:00:00+0000",
+                "2020-10-25T01:30:00+0000",
+                "2020-10-25T02:00:00+0000",
+            ]
+        )
+        .str.to_datetime()
+        .dt.convert_time_zone("Europe/London")
+        .rename("datetime")
+    )
+    assert_series_equal(result, expected)
 
 
 def test_round_ambiguous() -> None:
@@ -2395,12 +2379,24 @@ def test_round_ambiguous() -> None:
         eager=True,
         time_zone="Europe/London",
     ).dt.offset_by("15m")
-
-    with pytest.raises(
-        ComputeError,
-        match="datetime '2020-10-25 01:00:00' is ambiguous in time zone 'Europe/London'",
-    ):
-        t.dt.round("30m", ambiguous="raise")
+    result = t.dt.round("30m")
+    expected = (
+        pl.Series(
+            [
+                "2020-10-25T00:30:00+0100",
+                "2020-10-25T01:00:00+0100",
+                "2020-10-25T01:30:00+0100",
+                "2020-10-25T01:00:00+0000",
+                "2020-10-25T01:30:00+0000",
+                "2020-10-25T02:00:00+0000",
+                "2020-10-25T02:30:00+0000",
+            ]
+        )
+        .str.to_datetime()
+        .dt.convert_time_zone("Europe/London")
+        .rename("datetime")
+    )
+    assert_series_equal(result, expected)
 
     df = pl.DataFrame(
         {
@@ -2423,7 +2419,8 @@ def test_round_ambiguous() -> None:
         }
     )
 
-    df = df.select(pl.col("date").dt.round("30m", ambiguous=pl.col("ambiguous")))
+    with pytest.deprecated_call():
+        df = df.select(pl.col("date").dt.round("30m", ambiguous=pl.col("ambiguous")))
     assert df.to_dict(as_series=False) == {
         "date": [
             datetime(2020, 10, 25, 0, 30, tzinfo=ZoneInfo(key="Europe/London")),

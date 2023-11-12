@@ -47,7 +47,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .list()
                 .slice(lit(-3), lit(3))
                 .alias("bottom_3"),
-            col("temperatures").list().lengths().alias("obs"),
+            col("temperatures").list().len().alias("obs"),
         ])
         .collect()?;
     println!("{}", &out);

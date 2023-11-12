@@ -300,12 +300,16 @@ impl ToPyObject for Wrap<DataType> {
             DataType::UInt64 => pl.getattr(intern!(py, "UInt64")).unwrap().into(),
             DataType::Float32 => pl.getattr(intern!(py, "Float32")).unwrap().into(),
             DataType::Float64 => pl.getattr(intern!(py, "Float64")).unwrap().into(),
-            DataType::Decimal(precision, scale) => pl
-                .getattr(intern!(py, "Decimal"))
-                .unwrap()
-                .call1((*scale, *precision))
-                .unwrap()
-                .into(),
+            DataType::Decimal(precision, scale) => {
+                let kwargs = PyDict::new(py);
+                kwargs.set_item("precision", *precision).unwrap();
+                kwargs.set_item("scale", *scale).unwrap();
+                pl.getattr(intern!(py, "Decimal"))
+                    .unwrap()
+                    .call((), Some(kwargs))
+                    .unwrap()
+                    .into()
+            },
             DataType::Boolean => pl.getattr(intern!(py, "Boolean")).unwrap().into(),
             DataType::Utf8 => pl.getattr(intern!(py, "Utf8")).unwrap().into(),
             DataType::Binary => pl.getattr(intern!(py, "Binary")).unwrap().into(),
@@ -834,7 +838,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                         if ob.is_instance_of::<PyBool>() {
                             get_bool
                             // TODO: this heap allocs on failure
-                        } else if ob.extract::<i64>().is_ok() {
+                        } else if ob.extract::<i64>().is_ok() || ob.extract::<u64>().is_ok() {
                             get_int
                         } else if ob.is_instance_of::<PyFloat>() {
                             get_float

@@ -18,9 +18,7 @@ use ahash::RandomState;
 pub use args::*;
 use arrow::legacy::trusted_len::TrustedLen;
 #[cfg(feature = "asof_join")]
-use asof::AsofJoinBy;
-#[cfg(feature = "asof_join")]
-pub use asof::{AsOfOptions, AsofJoin, AsofStrategy};
+pub use asof::{AsOfOptions, AsofJoin, AsofJoinBy, AsofStrategy};
 #[cfg(feature = "dtype-categorical")]
 pub(crate) use checks::*;
 pub use cross_join::CrossJoin;
@@ -31,15 +29,14 @@ use general::create_chunked_index_mapping;
 pub use general::{_finish_join, _join_suffix_name};
 pub use hash_join::*;
 use hashbrown::hash_map::{Entry, RawEntryMut};
-use hashbrown::HashMap;
 #[cfg(feature = "merge_sorted")]
 pub use merge_sorted::_merge_sorted_dfs;
-use polars_core::hashing::partition::{this_partition, AsU64};
-use polars_core::hashing::{BytesHash, _df_rows_to_hashes_threaded_vertical, _HASHMAP_INIT_SIZE};
+use polars_core::hashing::{_df_rows_to_hashes_threaded_vertical, _HASHMAP_INIT_SIZE};
 use polars_core::prelude::*;
 pub(super) use polars_core::series::IsSorted;
 use polars_core::utils::{_to_physical_and_bit_repr, slice_slice};
 use polars_core::POOL;
+use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;
 
 use super::hashing::{create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded};

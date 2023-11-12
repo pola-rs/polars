@@ -385,6 +385,7 @@ impl ProjectionPushDown {
                 mut output_schema,
             } => {
                 let mut do_optimization = true;
+                #[allow(irrefutable_let_patterns)]
                 if let FileScan::Anonymous { ref function, .. } = scan_type {
                     do_optimization = function.allows_projection_pushdown();
                 }

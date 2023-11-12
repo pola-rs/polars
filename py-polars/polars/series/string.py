@@ -308,15 +308,15 @@ class StringNameSpace:
         ... )
         >>> s.str.to_decimal()
         shape: (7,)
-        Series: '' [decimal[2]]
+        Series: '' [decimal[*,2]]
         [
             40.12
             3420.13
             120134.19
             3212.98
-            12.9
+            12.90
             143.09
-            143.9
+            143.90
         ]
 
         """

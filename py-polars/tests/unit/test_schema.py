@@ -545,3 +545,17 @@ def test_lit_iter_schema() -> None:
         "dates": [[date(1970, 1, 2), date(1970, 1, 3), date(1970, 1, 4)]],
     }
     assert result.to_dict(as_series=False) == expected
+
+
+def test_nested_binary_literal_super_type_12227() -> None:
+    # The `.alias` is important here to trigger the bug.
+    assert (
+        pl.select(x=1).select((pl.lit(0) + ((pl.col("x") > 0) * 0.1)).alias("x")).item()
+        == 0.1
+    )
+    assert (
+        pl.select(
+            (pl.lit(0) + (pl.lit(0) == pl.lit(0)) * pl.lit(0.1)) + pl.lit(0)
+        ).item()
+        == 0.1
+    )

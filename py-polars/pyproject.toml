@@ -1,5 +1,6 @@
 [build-system]
-requires = ["maturin>=1.2.1,<2"]
+# TODO: Set to maturin>=1.3.2 when new maturion version is released
+requires = ["maturin @ git+https://github.com/PyO3/maturin.git@main"]
 build-backend = "maturin"
 
 [project]
@@ -40,8 +41,8 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
 adbc = ["adbc_driver_sqlite"]
 cloudpickle = ["cloudpickle"]
-connectorx = ["connectorx"]
-deltalake = ["deltalake >= 0.10.0"]
+connectorx = ["connectorx >= 0.3.2"]
+deltalake = ["deltalake >= 0.13.0"]
 fsspec = ["fsspec"]
 gevent = ["gevent"]
 matplotlib = ["matplotlib"]
@@ -207,12 +208,15 @@ markers = [
   "docs: Documentation code snippets",
 ]
 filterwarnings = [
-  # Fail on warnings...
+  # Fail on warnings
   "error",
-  # ...except where it prevents test debugging in an IPython console
+  # Allow debugging in an IPython console
   "ignore:.*unrecognized arguments.*PyDevIPCompleter:DeprecationWarning",
+  # Ignore warnings issued by dependency internals
   "ignore:.*is_sparse is deprecated.*:FutureWarning",
   "ignore:FigureCanvasAgg is non-interactive:UserWarning",
+  # Introspection under PyCharm IDE can generate this in 3.12
+  "ignore:.*co_lnotab is deprecated, use co_lines.*:DeprecationWarning",
 ]
 xfail_strict = true
 

@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use arrow::array::Array;
 use arrow::legacy::bit_util::round_upto_multiple_of_64;
 use num_traits::{FromPrimitive, ToPrimitive};
+use polars_utils::idx_vec::IdxVec;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::sync::SyncPtr;
 use polars_utils::IdxSize;
@@ -40,8 +41,8 @@ where
         let chunk_size = len / n_threads;
 
         let (groups, first) = if multithreaded && chunk_size > 1 {
-            let mut groups: Vec<Vec<IdxSize>> = unsafe { aligned_vec(len) };
-            groups.resize_with(len, || Vec::with_capacity(group_capacity));
+            let mut groups: Vec<IdxVec> = unsafe { aligned_vec(len) };
+            groups.resize_with(len, || IdxVec::with_capacity(group_capacity));
             let mut first: Vec<IdxSize> = unsafe { aligned_vec(len) };
 
             // ensure we keep aligned to cache lines
@@ -148,7 +149,7 @@ where
         } else {
             let mut groups = Vec::with_capacity(len);
             let mut first = vec![IdxSize::MAX; len];
-            groups.resize_with(len, || Vec::with_capacity(group_capacity));
+            groups.resize_with(len, || IdxVec::with_capacity(group_capacity));
 
             let mut row_nr = 0 as IdxSize;
             for arr in self.downcast_iter() {

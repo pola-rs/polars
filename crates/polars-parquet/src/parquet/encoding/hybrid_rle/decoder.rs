@@ -72,7 +72,7 @@ mod tests {
     fn basics_1() {
         let bit_width = 1usize;
         let length = 5;
-        let values = vec![
+        let values = [
             2, 0, 0, 0, // length
             0b00000011, 0b00001011, // data
         ];
@@ -97,7 +97,7 @@ mod tests {
         // This test was validated by the result of what pyarrow3 outputs when
         // the bitmap is used.
         let bit_width = 1;
-        let values = vec![
+        let values = [
             3, 0, 0, 0, // length
             0b00000101, 0b11101011, 0b00000010, // data
         ];
@@ -122,7 +122,7 @@ mod tests {
     fn basics_3() {
         let bit_width = 1;
         let length = 8;
-        let values = vec![
+        let values = [
             2, 0, 0, 0,          // length
             0b00010000, // data
             0b00000001,

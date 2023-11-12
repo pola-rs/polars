@@ -597,6 +597,10 @@ def test_rolling_weighted_quantile_10031() -> None:
     )
 
 
+def test_rolling_meta_eq_10101() -> None:
+    assert pl.col("A").rolling_sum(10).meta.eq(pl.col("A").rolling_sum(10)) is True
+
+
 def test_rolling_aggregations_unsorted_raise_10991() -> None:
     df = pl.DataFrame(
         {
@@ -711,3 +715,73 @@ def test_rolling_nanoseconds_11003() -> None:
     )
     expected = df.with_columns(val=pl.Series([1, 3, 6]))
     assert_frame_equal(result, expected)
+
+
+def test_rolling_by_1mo_saturating_12216() -> None:
+    df = pl.DataFrame(
+        {
+            "date": [
+                date(2020, 6, 29),
+                date(2020, 6, 30),
+                date(2020, 7, 30),
+                date(2020, 7, 31),
+                date(2020, 8, 1),
+            ],
+            "val": [1, 2, 3, 4, 5],
+        }
+    ).set_sorted("date")
+    with pytest.deprecated_call(match="The '_saturating' suffix is deprecated"):
+        result = df.rolling(index_column="date", period="1mo_saturating").agg(
+            vals=pl.col("val")
+        )
+    expected = pl.DataFrame(
+        {
+            "date": [
+                date(2020, 6, 29),
+                date(2020, 6, 30),
+                date(2020, 7, 30),
+                date(2020, 7, 31),
+                date(2020, 8, 1),
+            ],
+            "vals": [[1], [1, 2], [3], [3, 4], [3, 4, 5]],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+    # check with `closed='both'` against DuckDB output
+    result = df.rolling(index_column="date", period="1mo", closed="both").agg(
+        vals=pl.col("val")
+    )
+    expected = pl.DataFrame(
+        {
+            "date": [
+                date(2020, 6, 29),
+                date(2020, 6, 30),
+                date(2020, 7, 30),
+                date(2020, 7, 31),
+                date(2020, 8, 1),
+            ],
+            "vals": [[1], [1, 2], [2, 3], [2, 3, 4], [3, 4, 5]],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_index_expr_with_literal() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).sort("a")
+    out = df.rolling(index_column=(5 * pl.col("a")).set_sorted(), period="2i").agg(
+        pl.col("b")
+    )
+    expected = pl.DataFrame({"literal": [5, 10, 15], "b": [["a"], ["b"], ["c"]]})
+    assert_frame_equal(out, expected)
+
+
+def test_index_expr_output_name_12244() -> None:
+    df = pl.DataFrame({"A": [1, 2, 3]})
+
+    # pl.int_range's output name is: `int`.
+    out = df.rolling(pl.int_range(0, pl.count()), period="2i").agg("A")
+    assert out.to_dict(as_series=False) == {
+        "int": [0, 1, 2],
+        "A": [[1], [1, 2], [2, 3]],
+    }

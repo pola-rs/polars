@@ -10,17 +10,15 @@ repo_name: pola-rs/polars
 nav:
   - Home: index.md
 
-  - Getting started:
-    - getting-started/intro.md
-    - getting-started/installation.md
-    - getting-started/series-dataframes.md
-    - getting-started/reading-writing.md
-    - getting-started/expressions.md
-    - getting-started/joins.md
-
   - User guide:
     - user-guide/index.md
     - user-guide/installation.md
+    - Basics:
+      - user-guide/basics/index.md
+      - user-guide/basics/series-dataframes.md
+      - user-guide/basics/reading-writing.md
+      - user-guide/basics/expressions.md
+      - user-guide/basics/joins.md
     - Concepts:
       - user-guide/concepts/data-types.md
       - user-guide/concepts/data-structures.md

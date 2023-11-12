@@ -296,3 +296,22 @@ def test_horizontal_sum_null_to_identity() -> None:
     assert pl.DataFrame({"a": [1, 5], "b": [10, None]}).select(
         [pl.sum_horizontal(["a", "b"])]
     ).to_series().to_list() == [11, 5]
+
+
+def test_first_last_unit_length_12363() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [None, None],
+        }
+    )
+
+    assert df.select(
+        pl.all().drop_nulls().first().name.suffix("_first"),
+        pl.all().drop_nulls().last().name.suffix("_last"),
+    ).to_dict(as_series=False) == {
+        "a_first": [1],
+        "b_first": [None],
+        "a_last": [2],
+        "b_last": [None],
+    }

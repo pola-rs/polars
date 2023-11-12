@@ -36,6 +36,12 @@ impl TernaryExpr {
 }
 
 fn expand_lengths(truthy: &mut Series, falsy: &mut Series, mask: &mut BooleanChunked) {
+    if mask.is_empty() {
+        *truthy = truthy.clear();
+        *falsy = falsy.clear();
+        return;
+    };
+
     let len = std::cmp::max(std::cmp::max(truthy.len(), falsy.len()), mask.len());
     if len > 1 {
         if falsy.len() == 1 {
@@ -114,16 +120,6 @@ impl PhysicalExpr for TernaryExpr {
         let mut truthy = truthy?;
         let mut falsy = falsy?;
 
-        if truthy.is_empty() {
-            return Ok(truthy);
-        }
-        if falsy.is_empty() {
-            return Ok(falsy);
-        }
-        if mask.is_empty() {
-            return Ok(Series::new_empty(truthy.name(), truthy.dtype()));
-        }
-
         expand_lengths(&mut truthy, &mut falsy, &mut mask);
         truthy.zip_with(&mask, &falsy)
     }
@@ -140,12 +136,6 @@ impl PhysicalExpr for TernaryExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let aggregation_predicate = self.predicate.is_valid_aggregation();
-        if !aggregation_predicate {
-            // Unwrap will not fail as it is not an aggregation expression.
-            eprintln!(
-                "The predicate '{}' in 'when->then->otherwise' is not a valid aggregation and might produce a different number of rows than the group_by operation would. This behavior is experimental and may be subject to change", self.predicate.as_expression().unwrap()
-            )
-        }
 
         let op_mask = || self.predicate.evaluate_on_groups(df, groups, state);
         let op_truthy = || self.truthy.evaluate_on_groups(df, groups, state);
@@ -197,7 +187,6 @@ impl PhysicalExpr for TernaryExpr {
             //     None
             (AggregatedList(_), Literal(_)) | (Literal(_), AggregatedList(_)) => {
                 if !aggregation_predicate {
-                    // Experimental elementwise behavior tested in `test_binary_agg_context_1`.
                     return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
                 }
                 let mask = mask_s.bool()?;
@@ -299,7 +288,6 @@ impl PhysicalExpr for TernaryExpr {
                 }
 
                 if !aggregation_predicate {
-                    // Experimental elementwise behavior tested in `test_binary_agg_context_1`.
                     return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
                 }
                 let mut mask = mask_s.bool()?.clone();

@@ -9,7 +9,7 @@ use polars_core::utils::arrow::temporal_conversions::{
 };
 
 #[cfg(feature = "timezones")]
-use crate::utils::{localize_datetime, unlocalize_datetime};
+use crate::utils::{try_localize_datetime, unlocalize_datetime};
 
 // roll backward to the first day of the month
 pub(crate) fn roll_backward(
@@ -47,7 +47,7 @@ pub(crate) fn roll_backward(
     let ndt = NaiveDateTime::new(date, time);
     let t = match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => datetime_to_timestamp(localize_datetime(ndt, tz, Ambiguous::Raise)?),
+        Some(tz) => datetime_to_timestamp(try_localize_datetime(ndt, tz, Ambiguous::Raise)?),
         _ => datetime_to_timestamp(ndt),
     };
     Ok(t)

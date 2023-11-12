@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
+#[cfg(feature = "cloud")]
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_parquet::read;
 use polars_parquet::write::FileMetaData;
@@ -17,8 +18,10 @@ use crate::mmap::MmapBytesReader;
 use crate::parquet::async_impl::FetchRowGroupsFromObjectStore;
 #[cfg(feature = "cloud")]
 use crate::parquet::async_impl::ParquetObjectStore;
+#[cfg(feature = "cloud")]
+use crate::parquet::read_impl::materialize_empty_df;
+use crate::parquet::read_impl::read_parquet;
 pub use crate::parquet::read_impl::BatchedParquetReader;
-use crate::parquet::read_impl::{materialize_hive_partitions, read_parquet};
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::RowCount;
@@ -365,8 +368,10 @@ impl ParquetAsyncReader {
     pub async fn finish(mut self) -> PolarsResult<DataFrame> {
         let rechunk = self.rechunk;
         let metadata = self.get_metadata().await?.clone();
-        let schema = self.schema().await?;
+        let reader_schema = self.schema().await?;
+        let row_count = self.row_count.clone();
         let hive_partition_columns = self.hive_partition_columns.clone();
+        let projection = self.projection.clone();
 
         // batched reader deals with slice pushdown
         let reader = self.batched(usize::MAX).await?;
@@ -378,9 +383,12 @@ impl ParquetAsyncReader {
             chunks.push(result?)
         }
         if chunks.is_empty() {
-            let mut df = DataFrame::from(schema.as_ref());
-            materialize_hive_partitions(&mut df, hive_partition_columns.as_deref(), 0);
-            return Ok(df);
+            return Ok(materialize_empty_df(
+                projection.as_deref(),
+                reader_schema.as_ref(),
+                hive_partition_columns.as_deref(),
+                row_count.as_ref(),
+            ));
         }
         let mut df = accumulate_dataframes_vertical_unchecked(chunks);
 

@@ -192,11 +192,14 @@ impl ApplyExpr {
                 let out = ca.apply_to_inner(&|s| self.eval_and_flatten(&mut [s]))?;
                 (out.into_series(), true)
             },
-            AggState::AggregatedScalar(s) => (self.eval_and_flatten(&mut [s.clone()])?, true),
-            AggState::NotAggregated(s) | AggState::Literal(s) => {
+            AggState::NotAggregated(s) => {
                 let (out, aggregated) = (self.eval_and_flatten(&mut [s.clone()])?, false);
                 check_map_output_len(s.len(), out.len(), &self.expr)?;
                 (out, aggregated)
+            },
+            agg_state => {
+                ac.with_agg_state(agg_state.try_map(|s| self.eval_and_flatten(&mut [s.clone()]))?);
+                return Ok(ac);
             },
         };
 
@@ -230,7 +233,19 @@ impl ApplyExpr {
 
             // Take the first aggregation context that as that is the input series.
             let mut ac = acs.swap_remove(0);
-            ac.with_series(out, true, Some(&self.expr))?;
+
+            let agg_state = if self.returns_scalar {
+                AggState::AggregatedScalar(out)
+            } else {
+                match self.collect_groups {
+                    ApplyOptions::ElementWise | ApplyOptions::ApplyList => {
+                        ac.agg_state().map(|_| out)
+                    },
+                    ApplyOptions::GroupWise => AggState::AggregatedList(out),
+                }
+            };
+
+            ac.with_agg_state(agg_state);
             return Ok(ac);
         }
 

@@ -90,6 +90,7 @@ def scan_iceberg(
     <https://py.iceberg.apache.org/configuration/#azure-data-lake>`__.
 
     Following type of table paths are supported:
+
     * az://<container>/<path>/metadata.json
     * adl://<container>/<path>/metadata.json
     * abfs[s]://<container>/<path>/metadata.json

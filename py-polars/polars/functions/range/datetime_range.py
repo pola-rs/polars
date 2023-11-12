@@ -7,6 +7,7 @@ from polars import functions as F
 from polars.functions.range._utils import parse_interval_argument
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
+from polars.utils.deprecation import deprecate_saturating
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -117,10 +118,6 @@ def datetime_range(
     Or combine them:
     "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
-    Suffix with `"_saturating"` to indicate that dates too large for
-    their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-    instead of erroring.
-
     By "calendar day", we mean the corresponding time on the next day (which may
     not be 24 hours, due to daylight savings). Similarly for "calendar week",
     "calendar month", "calendar quarter", and "calendar year".
@@ -179,6 +176,7 @@ def datetime_range(
     ]
 
     """
+    interval = deprecate_saturating(interval)
     interval = parse_interval_argument(interval)
     if time_unit is None and "ns" in interval:
         time_unit = "ns"
@@ -290,10 +288,6 @@ def datetime_ranges(
     Or combine them:
     "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
-    Suffix with `"_saturating"` to indicate that dates too large for
-    their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-    instead of erroring.
-
     By "calendar day", we mean the corresponding time on the next day (which may
     not be 24 hours, due to daylight savings). Similarly for "calendar week",
     "calendar month", "calendar quarter", and "calendar year".
@@ -304,6 +298,7 @@ def datetime_ranges(
         Column of data type `List(Datetime)`.
 
     """
+    interval = deprecate_saturating(interval)
     interval = parse_interval_argument(interval)
     if time_unit is None and "ns" in interval:
         time_unit = "ns"

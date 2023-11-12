@@ -256,3 +256,119 @@ def test_when_then_deprecated_string_input() -> None:
 
     expected = pl.Series("when", ["b", "c"])
     assert_series_equal(result.to_series(), expected)
+
+
+def test_predicate_broadcast() -> None:
+    df = pl.DataFrame(
+        {
+            "key": ["a", "a", "b", "b", "c", "c"],
+            "val": [1, 2, 3, 4, 5, 6],
+        }
+    )
+    out = df.group_by("key", maintain_order=True).agg(
+        agg=pl.when(pl.col("val").min() >= 3).then(pl.col("val")),
+    )
+    assert out.to_dict(as_series=False) == {
+        "key": ["a", "b", "c"],
+        "agg": [[None, None], [3, 4], [5, 6]],
+    }
+
+
+@pytest.mark.parametrize(
+    "mask_expr",
+    [
+        pl.lit(True),
+        pl.first("true"),
+        pl.lit(False),
+        pl.first("false"),
+        pl.lit(None, dtype=pl.Boolean),
+        pl.col("null_bool"),
+        pl.col("true"),
+        pl.col("false"),
+    ],
+)
+@pytest.mark.parametrize(
+    "truthy_expr",
+    [
+        pl.lit(1),
+        pl.first("x"),
+        pl.col("x"),
+    ],
+)
+@pytest.mark.parametrize(
+    "falsy_expr",
+    [
+        pl.lit(1),
+        pl.first("x"),
+        pl.col("x"),
+    ],
+)
+@pytest.mark.parametrize(
+    "df",
+    [
+        pl.Series("x", 5 * [1], dtype=pl.Int32)
+        .to_frame()
+        .with_columns(true=True, false=False, null_bool=pl.lit(None, dtype=pl.Boolean))
+    ],
+)
+def test_single_element_broadcast(
+    mask_expr: pl.Expr,
+    truthy_expr: pl.Expr,
+    falsy_expr: pl.Expr,
+    df: pl.DataFrame,
+) -> None:
+    # Given that the lengths of the mask, truthy and falsy are all either:
+    # - Length 1
+    # - Equal length to the maximum length of the 3.
+
+    # This test checks that all length-1 exprs are broadcasted to the max length.
+    expect = df.select("x").head(
+        df.select(
+            pl.max_horizontal(mask_expr.len(), truthy_expr.len(), falsy_expr.len())
+        ).item()
+    )
+
+    assert_frame_equal(
+        expect,
+        df.select(
+            pl.when(mask_expr).then(truthy_expr.alias("x")).otherwise(falsy_expr)
+        ),
+    )
+
+
+def test_mismatched_height_should_raise() -> None:
+    with pytest.raises(pl.ShapeError):
+        pl.DataFrame({"x": range(5)}).select(
+            pl.when(True).then(pl.col("x").head(2)).otherwise(pl.col("x"))
+        )
+
+    with pytest.raises(pl.ShapeError):
+        pl.DataFrame({"x": 5 * [[*range(5)]]}).select(
+            pl.when(True).then(pl.col("x").head(2)).otherwise(pl.col("x"))
+        )
+
+
+def test_when_then_output_name_12380() -> None:
+    df = pl.DataFrame(
+        {"x": range(5), "y": range(5, 10)}, schema={"x": pl.Int8, "y": pl.Int64}
+    ).with_columns(true=True, false=False, null_bool=pl.lit(None, dtype=pl.Boolean))
+
+    expect = df.select(pl.col("x").cast(pl.Int64))
+    for true_expr in (pl.first("true"), pl.col("true"), pl.lit(True)):
+        assert_frame_equal(
+            expect,
+            df.select(pl.when(true_expr).then(pl.col("x")).otherwise(pl.col("y"))),
+        )
+    expect = df.select(pl.col("y").alias("x"))
+    for false_expr in (
+        pl.first("false"),
+        pl.col("false"),
+        pl.lit(False),
+        pl.first("null_bool"),
+        pl.col("null_bool"),
+        pl.lit(None, dtype=pl.Boolean),
+    ):
+        assert_frame_equal(
+            expect,
+            df.select(pl.when(false_expr).then(pl.col("x")).otherwise(pl.col("y"))),
+        )

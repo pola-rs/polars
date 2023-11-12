@@ -7,6 +7,7 @@ use polars_core::series::IsSorted;
 use polars_core::utils::ensure_sorted_arg;
 use polars_core::utils::flatten::flatten_par;
 use polars_core::POOL;
+use polars_utils::idx_vec::IdxVec;
 use polars_utils::slice::{GetSaferUnchecked, SortedSlice};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -633,8 +634,8 @@ fn update_subgroups_slice(sub_groups: &[[IdxSize; 2]], base_g: [IdxSize; 2]) -> 
 
 fn update_subgroups_idx(
     sub_groups: &[[IdxSize; 2]],
-    base_g: (IdxSize, &Vec<IdxSize>),
-) -> Vec<(IdxSize, Vec<IdxSize>)> {
+    base_g: (IdxSize, &IdxVec),
+) -> Vec<(IdxSize, IdxVec)> {
     sub_groups
         .iter()
         .map(|&[first, len]| {
@@ -650,7 +651,7 @@ fn update_subgroups_idx(
             let len = len as usize;
             let idx = (first..first + len)
                 .map(|i| unsafe { *base_g.1.get_unchecked_release(i) })
-                .collect_trusted::<Vec<_>>();
+                .collect::<IdxVec>();
             (new_first, idx)
         })
         .collect_trusted::<Vec<_>>()
@@ -660,6 +661,7 @@ fn update_subgroups_idx(
 mod test {
     use chrono::prelude::*;
     use polars_ops::prelude::*;
+    use polars_utils::idxvec;
 
     use super::*;
 
@@ -897,12 +899,12 @@ mod test {
 
         let expected = GroupsProxy::Idx(
             vec![
-                (0 as IdxSize, vec![0 as IdxSize, 1, 2]),
-                (2, vec![2]),
-                (5, vec![5, 6]),
-                (6, vec![6]),
-                (3, vec![3, 4]),
-                (4, vec![4]),
+                (0 as IdxSize, idxvec![0 as IdxSize, 1, 2]),
+                (2, idxvec![2]),
+                (5, idxvec![5, 6]),
+                (6, idxvec![6]),
+                (3, idxvec![3, 4]),
+                (4, idxvec![4]),
             ]
             .into(),
         );
