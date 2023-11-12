@@ -8,7 +8,6 @@ from polars.convert import from_arrow
 from polars.datatypes import Categorical, Null, Time
 from polars.datatypes.convert import unpack_dtypes
 from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
-from polars.dependencies import pyarrow as pa
 from polars.io.pyarrow_dataset import scan_pyarrow_dataset
 
 if TYPE_CHECKING:
@@ -325,42 +324,4 @@ def _check_for_unsupported_types(dtypes: list[DataType]) -> None:
     overlap = schema_dtypes & unsupported_types
 
     if overlap:
-        raise TypeError(f"DataFrame contains unsupported data types: {overlap!r}")
-
-
-def _convert_pa_schema_to_delta(schema: pa.schema) -> pa.schema:
-    """Convert a PyArrow schema to a schema compatible with Delta Lake."""
-    # TODO: Add time zone support
-    dtype_map = {
-        pa.uint8(): pa.int8(),
-        pa.uint16(): pa.int16(),
-        pa.uint32(): pa.int32(),
-        pa.uint64(): pa.int64(),
-    }
-
-    def dtype_to_delta_dtype(dtype: pa.DataType) -> pa.DataType:
-        # Handle nested types
-        if isinstance(dtype, pa.LargeListType):
-            return list_to_delta_dtype(dtype)
-        elif isinstance(dtype, pa.StructType):
-            return struct_to_delta_dtype(dtype)
-        elif isinstance(dtype, pa.TimestampType):
-            # TODO: Support time zones when implemented by delta-rs. See:
-            # https://github.com/delta-io/delta-rs/issues/1598
-            return pa.timestamp("us")
-        try:
-            return dtype_map[dtype]
-        except KeyError:
-            return dtype
-
-    def list_to_delta_dtype(dtype: pa.LargeListType) -> pa.LargeListType:
-        nested_dtype = dtype.value_type
-        nested_dtype_cast = dtype_to_delta_dtype(nested_dtype)
-        return pa.large_list(nested_dtype_cast)
-
-    def struct_to_delta_dtype(dtype: pa.StructType) -> pa.StructType:
-        fields = [dtype.field(i) for i in range(dtype.num_fields)]
-        fields_cast = [pa.field(f.name, dtype_to_delta_dtype(f.type)) for f in fields]
-        return pa.struct(fields_cast)
-
-    return pa.schema([pa.field(f.name, dtype_to_delta_dtype(f.type)) for f in schema])
+        raise TypeError(f"dataframe contains unsupported data types: {overlap!r}")
