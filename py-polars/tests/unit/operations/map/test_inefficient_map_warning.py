@@ -153,12 +153,12 @@ TEST_CASES = [
     (
         "a",
         "lambda x: ((32-x) >> (3)) & 3",
-        '((32 - pl.col("a")) / (2**3)).cast(pl.Int64) & 3',
+        '((32 - pl.col("a")) / 2**3).cast(pl.Int64) & 3',
     ),
     (
         "a",
         "lambda x: (32 >> (3-x)) & 3",
-        '(32 / (2**(3 - pl.col("a")))).cast(pl.Int64) & 3',
+        '(32 / 2**(3 - pl.col("a"))).cast(pl.Int64) & 3',
     ),
 ]
 

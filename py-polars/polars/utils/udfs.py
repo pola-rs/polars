@@ -534,7 +534,7 @@ class InstructionTranslator:
                     return f"({e1}*2**{e2}).cast(pl.Int64)"
                 elif op == ">>":
                     # Motivation for the cast is the same as in the '<<' case above.
-                    return f"({e1} / (2**{e2})).cast(pl.Int64)"
+                    return f"({e1} / 2**{e2}).cast(pl.Int64)"
                 else:
                     expr = f"{e1} {op} {e2}"
                     return f"({expr})" if depth else expr
