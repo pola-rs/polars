@@ -47,14 +47,12 @@ where
     let len = values.len();
     let (start, end) = det_offsets_fn(0, window_size, len);
     let mut agg_window = Agg::new(values, start, end, params);
-    let mut validity = match create_validity(min_periods, len, window_size, &det_offsets_fn) {
-        Some(v) => v,
-        None => {
+    let mut validity = create_validity(min_periods, len, window_size, &det_offsets_fn)
+        .unwrap_or_else(|| {
             let mut validity = MutableBitmap::with_capacity(len);
             validity.extend_constant(len, true);
             validity
-        },
-    };
+        });
 
     let out = (0..len)
         .map(|idx| {
