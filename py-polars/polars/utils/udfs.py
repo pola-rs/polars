@@ -527,7 +527,7 @@ class InstructionTranslator:
                             raise NotImplementedError("require dict mapping")
                     return f"{e2}.{op}({e1})"
                 elif op == "<<":
-                    # Result of 2**e2 might be float is x was negative.
+                    # Result of 2**e2 might be float is e2 was negative.
                     # But, if e1 << e2 was valid, then e2 must have been positive.
                     # Hence, the output of 2**e2 can be safely cast to Int64 (and this
                     # may be necessary if chaining operations which require Int64 output)
