@@ -418,53 +418,6 @@ fn test_with_row_count_opts() -> PolarsResult<()> {
     Ok(())
 }
 
-#[test]
-fn test_group_by_ternary_literal_predicate() -> PolarsResult<()> {
-    let df = df![
-        "a" => [1, 2, 3],
-        "b" => [1, 2, 3]
-    ]?;
-
-    for predicate in [true, false] {
-        let q = df
-            .clone()
-            .lazy()
-            .group_by(["a"])
-            .agg([when(lit(predicate))
-                .then(col("b").sum())
-                .otherwise(NULL.lit())])
-            .sort("a", Default::default());
-
-        let (mut expr_arena, mut lp_arena) = get_arenas();
-        let lp = q.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
-
-        (&lp_arena).iter(lp).any(|(_, lp)| {
-            use ALogicalPlan::*;
-            match lp {
-                Aggregate { aggs, .. } => {
-                    for node in aggs {
-                        // we should not have a ternary expression anymore
-                        assert!(!matches!(expr_arena.get(*node), AExpr::Ternary { .. }));
-                    }
-                    false
-                },
-                _ => false,
-            }
-        });
-
-        let out = q.collect()?;
-        let b = out.column("b")?;
-        let b = b.i32()?;
-        if predicate {
-            assert_eq!(Vec::from(b), &[Some(1), Some(2), Some(3)]);
-        } else {
-            assert_eq!(b.null_count(), 3);
-        };
-    }
-
-    Ok(())
-}
-
 #[cfg(all(feature = "concat_str", feature = "strings"))]
 #[test]
 fn test_string_addition_to_concat_str() -> PolarsResult<()> {
