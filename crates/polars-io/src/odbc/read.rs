@@ -24,5 +24,7 @@ where
         self
     }
 
-    fn finish(mut self) -> PolarsResult<DataFrame> {}
+    fn finish(mut self) -> PolarsResult<DataFrame> {
+        todo!()
+    }
 }
