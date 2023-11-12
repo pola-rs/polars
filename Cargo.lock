@@ -2658,6 +2658,7 @@ dependencies = [
  "multiversion",
  "num-traits",
  "polars-error",
+ "polars-utils",
  "proptest",
  "rand 0.8.5",
  "regex",
