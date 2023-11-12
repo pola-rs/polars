@@ -113,7 +113,7 @@ impl<
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
         let count: T = NumCast::from(end - start).unwrap();
         let sum_of_squares = self.sum_of_squares.update(start, end).unwrap();
-        let mean = self.mean.update(start, end).unwrap();
+        let mean = self.mean.update_unchecked(start, end);
 
         let denom = count - NumCast::from(self.ddof).unwrap();
         if denom <= T::zero() {
