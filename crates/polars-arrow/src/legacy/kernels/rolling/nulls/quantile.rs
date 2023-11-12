@@ -1,5 +1,6 @@
-use super::*;
 use polars_utils::slice::GetSaferUnchecked;
+
+use super::*;
 
 pub struct QuantileWindow<'a, T: NativeType + IsFloat + PartialOrd> {
     sorted: SortedBufNulls<'a, T>,
@@ -66,7 +67,8 @@ impl<
             QuantileInterpolOptions::Midpoint => {
                 let top_idx = ((length as f64 - 1.0) * self.prob).ceil() as usize;
                 Some(
-                    (values.get_unchecked_release(idx).unwrap() + values.get_unchecked_release(top_idx).unwrap())
+                    (values.get_unchecked_release(idx).unwrap()
+                        + values.get_unchecked_release(top_idx).unwrap())
                         / T::from::<f64>(2.0f64).unwrap(),
                 )
             },
@@ -79,7 +81,9 @@ impl<
                 } else {
                     let proportion = T::from(float_idx - idx as f64).unwrap();
                     Some(
-                        proportion * (values.get_unchecked_release(top_idx).unwrap() - values.get_unchecked_release(idx).unwrap())
+                        proportion
+                            * (values.get_unchecked_release(top_idx).unwrap()
+                                - values.get_unchecked_release(idx).unwrap())
                             + values.get_unchecked_release(idx).unwrap(),
                     )
                 }

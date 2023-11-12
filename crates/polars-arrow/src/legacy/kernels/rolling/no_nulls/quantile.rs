@@ -1,8 +1,8 @@
 use std::fmt::Debug;
-use polars_utils::slice::GetSaferUnchecked;
 
 use num_traits::ToPrimitive;
 use polars_error::polars_ensure;
+use polars_utils::slice::GetSaferUnchecked;
 
 use super::QuantileInterpolOptions::*;
 use super::*;
@@ -65,8 +65,12 @@ impl<
                 } else {
                     // safety
                     // we are in bounds
-                    let (mid, mid_plus_1) =
-                        unsafe { (*vals.get_unchecked_release(idx), *vals.get_unchecked_release(idx + 1)) };
+                    let (mid, mid_plus_1) = unsafe {
+                        (
+                            *vals.get_unchecked_release(idx),
+                            *vals.get_unchecked_release(idx + 1),
+                        )
+                    };
 
                     Some((mid + mid_plus_1) / T::from::<f64>(2.0f64).unwrap())
                 }
@@ -81,7 +85,12 @@ impl<
                     Some(unsafe { *vals.get_unchecked_release(idx) })
                 } else {
                     let proportion = T::from(float_idx - idx as f64).unwrap();
-                    Some(proportion * (*vals.get_unchecked_release(top_idx) - *vals.get_unchecked_release(idx)) + *vals.get_unchecked_release(idx))
+                    Some(
+                        proportion
+                            * (*vals.get_unchecked_release(top_idx)
+                                - *vals.get_unchecked_release(idx))
+                            + *vals.get_unchecked_release(idx),
+                    )
                 }
             },
             _ => {
