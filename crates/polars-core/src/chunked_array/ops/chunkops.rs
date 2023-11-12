@@ -120,13 +120,21 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// and will slice the best match when offset, or length is out of bounds
     #[inline]
     pub fn slice(&self, offset: i64, length: usize) -> Self {
-        if length == 0 {
-            return self.clear();
+        // The len: 0 and 1 special cases ensure we release memory.
+        // A normal slice, slice the buffers and thus keep the whole memory allocated.
+        match length {
+            0 => self.clear(),
+            1 => {
+                let (offset, _) = slice_offsets(offset, length, self.len());
+                return std::iter::once(self.get(offset)).collect_ca_like(self);
+            },
+            _ => {
+                let (chunks, len) = slice(&self.chunks, offset, length, self.len());
+                let mut out = unsafe { self.copy_with_chunks(chunks, true, true) };
+                out.length = len as IdxSize;
+                out
+            },
         }
-        let (chunks, len) = slice(&self.chunks, offset, length, self.len());
-        let mut out = unsafe { self.copy_with_chunks(chunks, true, true) };
-        out.length = len as IdxSize;
-        out
     }
 
     /// Take a view of top n elements
