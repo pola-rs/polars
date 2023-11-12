@@ -122,11 +122,13 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     pub fn slice(&self, offset: i64, length: usize) -> Self {
         // The len: 0 and 1 special cases ensure we release memory.
         // A normal slice, slice the buffers and thus keep the whole memory allocated.
+        let own_length = self.len();
         match length {
             0 => self.clear(),
-            1 => {
-                let (offset, _) = slice_offsets(offset, length, self.len());
-                return std::iter::once(self.get(offset)).collect_ca_like(self);
+            1 if offset.is_positive() && (offset as usize) < own_length => {
+                let arr: T::Array = std::iter::once(self.get(offset as usize))
+                    .collect_arr_with_dtype(self.field.dtype.clone());
+                unsafe { self.copy_with_chunks(vec![arr.to_boxed()], true, true) }
             },
             _ => {
                 let (chunks, len) = slice(&self.chunks, offset, length, self.len());
