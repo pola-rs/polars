@@ -18,7 +18,7 @@ struct PrivateData<T> {
 }
 
 pub(crate) unsafe fn create_array<
-    T: AsRef<[u8]>,
+    T,
     I: Iterator<Item = Option<*const u8>>,
     II: Iterator<Item = ArrowArray>,
 >(
@@ -97,13 +97,26 @@ unsafe extern "C" fn release<T>(array: *mut ArrowArray) {
 /// Using this function is not unsafe, but the returned PrimitiveArray's lifetime is bound to the lifetime
 /// of the slice. The returned [`PrimitiveArray`] _must not_ outlive the passed slice.
 pub unsafe fn slice<T: NativeType>(slice: &[T]) -> PrimitiveArray<T> {
+    slice_and_owner(slice, ())
+}
+
+/// Creates a (non-null) [`PrimitiveArray`] from a slice of values.
+/// This does not have memcopy and is the fastest way to create a [`PrimitiveArray`].
+///
+/// This can be useful if you want to apply arrow kernels on slices without incurring
+/// a memcopy cost.
+///
+/// # Safety
+///
+/// The caller must ensure the passed `owner` ensures the data remains alive.
+pub unsafe fn slice_and_owner<T: NativeType, O>(slice: &[T], owner: O) -> PrimitiveArray<T> {
     let num_rows = slice.len();
     let null_count = 0;
     let validity = None;
 
     let data: &[u8] = bytemuck::cast_slice(slice);
     let ptr = data.as_ptr();
-    let data = Arc::new(data);
+    let data = Arc::new(owner);
 
     // safety: the underlying assumption of this function: the array will not be used
     // beyond the
