@@ -669,7 +669,7 @@ def _post_apply_columns(
     structs: dict[str, Struct] | None = None,
     schema_overrides: SchemaDict | None = None,
 ) -> PyDataFrame:
-    """Apply 'columns' param _after_ PyDataFrame creation (if no alternative)."""
+    """Apply 'columns' param *after* PyDataFrame creation (if no alternative)."""
     pydf_columns, pydf_dtypes = pydf.columns(), pydf.dtypes()
     columns, dtypes = _unpack_schema(
         (columns or pydf_columns), schema_overrides=schema_overrides
