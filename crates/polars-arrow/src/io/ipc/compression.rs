@@ -1,4 +1,6 @@
-use polars_error::{to_compute_err, PolarsResult};
+#[cfg(feature = "io_ipc_compression")]
+use polars_error::to_compute_err;
+use polars_error::PolarsResult;
 
 #[cfg(feature = "io_ipc_compression")]
 #[cfg_attr(docsrs, doc(cfg(feature = "io_ipc_compression")))]

@@ -90,6 +90,7 @@ from polars.utils.convert import (
     _time_to_pl_time,
 )
 from polars.utils.deprecation import (
+    deprecate_function,
     deprecate_nonkeyword_arguments,
     deprecate_renamed_function,
     deprecate_renamed_parameter,
@@ -358,7 +359,7 @@ class Series:
         """
         Get a pointer to the start of the values buffer of a numeric Series.
 
-        This will raise an error if the ``Series`` contains multiple chunks.
+        This will raise an error if the `Series` contains multiple chunks.
 
         This will return the offset, length and the pointer itself.
 
@@ -481,14 +482,30 @@ class Series:
                 return self.clone()
             elif (other is False and op == "eq") or (other is True and op == "neq"):
                 return ~self
-
-        if isinstance(other, datetime) and self.dtype == Datetime:
-            time_zone = self.dtype.time_zone  # type: ignore[union-attr]
-            if str(other.tzinfo) != str(time_zone):
-                raise TypeError(
-                    f"Datetime time zone {other.tzinfo!r} does not match Series timezone {time_zone!r}"
+        elif isinstance(other, float) and self.dtype in INTEGER_DTYPES:
+            # require upcast when comparing int series to float value
+            self = self.cast(Float64)
+            f = get_ffi_func(op + "_<>", Float64, self._s)
+            assert f is not None
+            return self._from_pyseries(f(other))
+        elif isinstance(other, datetime):
+            if self.dtype == Date:
+                # require upcast when comparing date series to datetime
+                self = self.cast(Datetime("us"))
+                time_unit = "us"
+            elif self.dtype == Datetime:
+                # Use local time zone info
+                time_zone = self.dtype.time_zone  # type: ignore[union-attr]
+                if str(other.tzinfo) != str(time_zone):
+                    raise TypeError(
+                        f"Datetime time zone {other.tzinfo!r} does not match Series timezone {time_zone!r}"
+                    )
+                time_unit = self.dtype.time_unit  # type: ignore[union-attr]
+            else:
+                raise ValueError(
+                    f"cannot compare datetime.datetime to series of type {self.dtype}"
                 )
-            ts = _datetime_to_pl_timestamp(other, self.dtype.time_unit)  # type: ignore[union-attr]
+            ts = _datetime_to_pl_timestamp(other, time_unit)  # type: ignore[arg-type]
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(ts))
@@ -497,14 +514,13 @@ class Series:
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(d))
+        elif self.dtype == Categorical and not isinstance(other, Series):
+            other = Series([other])
         elif isinstance(other, date) and self.dtype == Date:
             d = _date_to_pl_date(other)
             f = get_ffi_func(op + "_<>", Int32, self._s)
             assert f is not None
             return self._from_pyseries(f(d))
-        elif self.dtype == Categorical and not isinstance(other, Series):
-            other = Series([other])
-
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, dtype_if_empty=self.dtype)
         if isinstance(other, Series):
@@ -597,15 +613,15 @@ class Series:
         return self._comp(other, "lt_eq")
 
     def le(self, other: Any) -> Self | Expr:
-        """Method equivalent of operator expression ``series <= other``."""
+        """Method equivalent of operator expression `series <= other`."""
         return self.__le__(other)
 
     def lt(self, other: Any) -> Self | Expr:
-        """Method equivalent of operator expression ``series < other``."""
+        """Method equivalent of operator expression `series < other`."""
         return self.__lt__(other)
 
     def eq(self, other: Any) -> Self | Expr:
-        """Method equivalent of operator expression ``series == other``."""
+        """Method equivalent of operator expression `series == other`."""
         return self.__eq__(other)
 
     @overload
@@ -618,9 +634,9 @@ class Series:
 
     def eq_missing(self, other: Any) -> Self | Expr:
         """
-        Method equivalent of equality operator ``series == other`` where `None` == None`.
+        Method equivalent of equality operator `series == other` where `None == None`.
 
-        This differs from the standard ``ne`` where null values are propagated.
+        This differs from the standard `ne` where null values are propagated.
 
         Parameters
         ----------
@@ -653,10 +669,10 @@ class Series:
             true
         ]
 
-        """  # noqa: W505
+        """
 
     def ne(self, other: Any) -> Self | Expr:
-        """Method equivalent of operator expression ``series != other``."""
+        """Method equivalent of operator expression `series != other`."""
         return self.__ne__(other)
 
     @overload
@@ -669,9 +685,9 @@ class Series:
 
     def ne_missing(self, other: Any) -> Self | Expr:
         """
-        Method equivalent of equality operator ``series != other`` where `None` == None`.
+        Method equivalent of equality operator `series != other` where `None == None`.
 
-        This differs from the standard ``ne`` where null values are propagated.
+        This differs from the standard `ne` where null values are propagated.
 
         Parameters
         ----------
@@ -704,14 +720,14 @@ class Series:
             false
         ]
 
-        """  # noqa: W505
+        """
 
     def ge(self, other: Any) -> Self | Expr:
-        """Method equivalent of operator expression ``series >= other``."""
+        """Method equivalent of operator expression `series >= other`."""
         return self.__ge__(other)
 
     def gt(self, other: Any) -> Self | Expr:
-        """Method equivalent of operator expression ``series > other``."""
+        """Method equivalent of operator expression `series > other`."""
         return self.__gt__(other)
 
     def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> Self:
@@ -937,7 +953,7 @@ class Series:
         return self.implode().list.contains(item).item()
 
     def __iter__(self) -> Generator[Any, None, None]:
-        if self.dtype == List:
+        if self.dtype in (List, Array):
             # TODO: either make a change and return py-native list data here, or find
             #  a faster way to return nested/List series; sequential 'get_index' calls
             #  make this path a lot slower (~10x) than it needs to be.
@@ -1125,10 +1141,12 @@ class Series:
 
             args: list[int | float | np.ndarray[Any, Any]] = []
 
+            validity_mask = self.is_not_null()
             for arg in inputs:
                 if isinstance(arg, (int, float, np.ndarray)):
                     args.append(arg)
                 elif isinstance(arg, Series):
+                    validity_mask &= arg.is_not_null()
                     args.append(arg.view(ignore_nulls=True))
                 else:
                     raise TypeError(
@@ -1171,7 +1189,12 @@ class Series:
                 )
 
             series = f(lambda out: ufunc(*args, out=out, dtype=dtype_char, **kwargs))
-            return self._from_pyseries(series)
+            return (
+                self._from_pyseries(series)
+                .to_frame()
+                .select(F.when(validity_mask).then(F.col(self.name)))
+                .to_series(0)
+            )
         else:
             raise NotImplementedError(
                 "only `__call__` is implemented for numpy ufuncs on a Series, got "
@@ -1200,8 +1223,8 @@ class Series:
         """
         Return the series as a scalar, or return the element at the given index.
 
-        If no index is provided, this is equivalent to ``s[0]``, with a check
-        that the shape is (1,). With an index, this is equivalent to ``s[index]``.
+        If no index is provided, this is equivalent to `s[0]`, with a check
+        that the shape is (1,). With an index, this is equivalent to `s[index]`.
 
         Examples
         --------
@@ -1300,7 +1323,7 @@ class Series:
     @deprecate_renamed_parameter("drop_nulls", "ignore_nulls", version="0.19.0")
     def any(self, *, ignore_nulls: bool = True) -> bool | None:
         """
-        Return whether any of the values in the column are ``True``.
+        Return whether any of the values in the column are `True`.
 
         Only works on columns of data type :class:`Boolean`.
 
@@ -1309,9 +1332,9 @@ class Series:
         ignore_nulls
             Ignore null values (default).
 
-            If set to ``False``, `Kleene logic`_ is used to deal with nulls:
-            if the column contains any null values and no ``True`` values,
-            the output is ``None``.
+            If set to `False`, `Kleene logic`_ is used to deal with nulls:
+            if the column contains any null values and no `True` values,
+            the output is `None`.
 
             .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
@@ -1328,7 +1351,7 @@ class Series:
         >>> pl.Series([None, False]).any()
         False
 
-        Enable Kleene logic by setting ``ignore_nulls=False``.
+        Enable Kleene logic by setting `ignore_nulls=False`.
 
         >>> pl.Series([None, False]).any(ignore_nulls=False)  # Returns None
 
@@ -1350,7 +1373,7 @@ class Series:
     @deprecate_renamed_parameter("drop_nulls", "ignore_nulls", version="0.19.0")
     def all(self, *, ignore_nulls: bool = True) -> bool | None:
         """
-        Return whether all values in the column are ``True``.
+        Return whether all values in the column are `True`.
 
         Only works on columns of data type :class:`Boolean`.
 
@@ -1359,9 +1382,9 @@ class Series:
         ignore_nulls
             Ignore null values (default).
 
-            If set to ``False``, `Kleene logic`_ is used to deal with nulls:
-            if the column contains any null values and no ``True`` values,
-            the output is ``None``.
+            If set to `False`, `Kleene logic`_ is used to deal with nulls:
+            if the column contains any null values and no `True` values,
+            the output is `None`.
 
             .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
@@ -1378,7 +1401,7 @@ class Series:
         >>> pl.Series([None, True]).all()
         True
 
-        Enable Kleene logic by setting ``ignore_nulls=False``.
+        Enable Kleene logic by setting `ignore_nulls=False`.
 
         >>> pl.Series([None, True]).all(ignore_nulls=False)  # Returns None
 
@@ -1899,18 +1922,18 @@ class Series:
             Names of the categories. The number of labels must be equal to the number
             of cut points plus one.
         break_point_label
-            Name of the breakpoint column. Only used if ``include_breaks`` is set to
-            ``True``.
+            Name of the breakpoint column. Only used if `include_breaks` is set to
+            `True`.
 
             .. deprecated:: 0.19.0
-                This parameter will be removed. Use ``Series.struct.rename_fields`` to
+                This parameter will be removed. Use `Series.struct.rename_fields` to
                 rename the field instead.
         category_label
-            Name of the category column. Only used if ``include_breaks`` is set to
-            ``True``.
+            Name of the category column. Only used if `include_breaks` is set to
+            `True`.
 
             .. deprecated:: 0.19.0
-                This parameter will be removed. Use ``Series.struct.rename_fields`` to
+                This parameter will be removed. Use `Series.struct.rename_fields` to
                 rename the field instead.
         left_closed
             Set the intervals to be left-closed instead of right-closed.
@@ -1919,19 +1942,19 @@ class Series:
             in. This will change the data type of the output from a
             :class:`Categorical` to a :class:`Struct`.
         as_series
-            If set to ``False``, return a DataFrame containing the original values,
+            If set to `False`, return a DataFrame containing the original values,
             the breakpoints, and the categories.
 
             .. deprecated:: 0.19.0
                 This parameter will be removed. The same behavior can be achieved by
-                setting ``include_breaks=True``, unnesting the resulting struct Series,
+                setting `include_breaks=True`, unnesting the resulting struct Series,
                 and adding the result to the original Series.
 
         Returns
         -------
         Series
-            Series of data type :class:`Categorical` if ``include_breaks`` is set to
-            ``False`` (default), otherwise a Series of data type :class:`Struct`.
+            Series of data type :class:`Categorical` if `include_breaks` is set to
+            `False` (default), otherwise a Series of data type :class:`Struct`.
 
         See Also
         --------
@@ -1986,7 +2009,7 @@ class Series:
         if not as_series:
             issue_deprecation_warning(
                 "The `as_series` parameter for `Series.cut` will be removed."
-                " The same behavior can be achieved by setting ``include_breaks=True`,"
+                " The same behavior can be achieved by setting `include_breaks=True`,"
                 " unnesting the resulting struct Series,"
                 " and adding the result to the original Series.",
                 version="0.19.0",
@@ -2099,7 +2122,7 @@ class Series:
         left_closed
             Set the intervals to be left-closed instead of right-closed.
         allow_duplicates
-            If set to ``True``, duplicates in the resulting quantiles are dropped,
+            If set to `True`, duplicates in the resulting quantiles are dropped,
             rather than raising a `DuplicateError`. This can happen even with unique
             probabilities, depending on the data.
         include_breaks
@@ -2107,33 +2130,33 @@ class Series:
             in. This will change the data type of the output from a
             :class:`Categorical` to a :class:`Struct`.
         break_point_label
-            Name of the breakpoint column. Only used if ``include_breaks`` is set to
-            ``True``.
+            Name of the breakpoint column. Only used if `include_breaks` is set to
+            `True`.
 
             .. deprecated:: 0.19.0
-                This parameter will be removed. Use ``Series.struct.rename_fields`` to
+                This parameter will be removed. Use `Series.struct.rename_fields` to
                 rename the field instead.
         category_label
-            Name of the category column. Only used if ``include_breaks`` is set to
-            ``True``.
+            Name of the category column. Only used if `include_breaks` is set to
+            `True`.
 
             .. deprecated:: 0.19.0
-                This parameter will be removed. Use ``Series.struct.rename_fields`` to
+                This parameter will be removed. Use `Series.struct.rename_fields` to
                 rename the field instead.
         as_series
-            If set to ``False``, return a DataFrame containing the original values,
+            If set to `False`, return a DataFrame containing the original values,
             the breakpoints, and the categories.
 
             .. deprecated:: 0.19.0
                 This parameter will be removed. The same behavior can be achieved by
-                setting ``include_breaks=True``, unnesting the resulting struct Series,
+                setting `include_breaks=True`, unnesting the resulting struct Series,
                 and adding the result to the original Series.
 
         Returns
         -------
         Series
-            Series of data type :class:`Categorical` if ``include_breaks`` is set to
-            ``False`` (default), otherwise a Series of data type :class:`Struct`.
+            Series of data type :class:`Categorical` if `include_breaks` is set to
+            `False` (default), otherwise a Series of data type :class:`Struct`.
 
         Warnings
         --------
@@ -2207,7 +2230,7 @@ class Series:
         if not as_series:
             issue_deprecation_warning(
                 "the `as_series` parameter for `Series.qcut` will be removed."
-                " The same behavior can be achieved by setting ``include_breaks=True`,"
+                " The same behavior can be achieved by setting `include_breaks=True`,"
                 " unnesting the resulting struct Series,"
                 " and adding the result to the original Series.",
                 version="0.18.14",
@@ -2368,7 +2391,7 @@ class Series:
         ----------
         sort
             Sort the output by count in descending order.
-            If set to ``False`` (default), the order of the output is random.
+            If set to `False` (default), the order of the output is random.
         parallel
             Execute the computation in parallel.
 
@@ -2438,7 +2461,7 @@ class Series:
         """
         Computes the entropy.
 
-        Uses the formula ``-sum(pk * log(pk)`` where ``pk`` are discrete probabilities.
+        Uses the formula `-sum(pk * log(pk)` where `pk` are discrete probabilities.
 
         Parameters
         ----------
@@ -2714,7 +2737,7 @@ class Series:
         offset
             Start index. Negative indexing is supported.
         length
-            Length of the slice. If set to ``None``, all rows starting at the offset
+            Length of the slice. If set to `None`, all rows starting at the offset
             will be selected.
 
         Examples
@@ -2740,9 +2763,9 @@ class Series:
             Series to append.
         append_chunks
             .. deprecated:: 0.18.8
-                This argument will be removed and ``append`` will change to always
-                behave like ``append_chunks=True`` (the previous default). For the
-                behavior of ``append_chunks=False``, use ``Series.extend``.
+                This argument will be removed and `append` will change to always
+                behave like `append_chunks=True` (the previous default). For the
+                behavior of `append_chunks=False`, use `Series.extend`.
 
             If set to `True` the append operation will add the chunks from `other` to
             self. This is super cheap.
@@ -2823,21 +2846,21 @@ class Series:
         """
         Extend the memory backed by this Series with the values from another.
 
-        Different from ``append``, which adds the chunks from ``other`` to the chunks of
-        this series, ``extend`` appends the data from ``other`` to the underlying memory
+        Different from `append`, which adds the chunks from `other` to the chunks of
+        this series, `extend` appends the data from `other` to the underlying memory
         locations and thus may cause a reallocation (which is expensive).
 
         If this does `not` cause a reallocation, the resulting data structure will not
         have any extra chunks and thus will yield faster queries.
 
-        Prefer ``extend`` over ``append`` when you want to do a query after a single
+        Prefer `extend` over `append` when you want to do a query after a single
         append. For instance, during online operations where you add `n` rows
         and rerun a query.
 
-        Prefer ``append`` over ``extend`` when you want to append many times
+        Prefer `append` over `extend` when you want to append many times
         before doing a query. For instance, when you read in multiple files and want
-        to store them in a single ``Series``. In the latter case, finish the sequence
-        of ``append`` operations with a `rechunk`.
+        to store them in a single `Series`. In the latter case, finish the sequence
+        of `append` operations with a `rechunk`.
 
         Parameters
         ----------
@@ -2919,7 +2942,7 @@ class Series:
         ----------
         n
             Number of elements to return. If a negative value is passed, return all
-            elements except the last ``abs(n)``.
+            elements except the last `abs(n)`.
 
         See Also
         --------
@@ -2937,7 +2960,7 @@ class Series:
                 3
         ]
 
-        Pass a negative value to get all rows `except` the last ``abs(n)``.
+        Pass a negative value to get all rows `except` the last `abs(n)`.
 
         >>> s.head(-3)
         shape: (2,)
@@ -2960,7 +2983,7 @@ class Series:
         ----------
         n
             Number of elements to return. If a negative value is passed, return all
-            elements except the first ``abs(n)``.
+            elements except the first `abs(n)`.
 
         See Also
         --------
@@ -2978,7 +3001,7 @@ class Series:
                 5
         ]
 
-        Pass a negative value to get all rows `except` the first ``abs(n)``.
+        Pass a negative value to get all rows `except` the first `abs(n)`.
 
         >>> s.tail(-3)
         shape: (2,)
@@ -3003,7 +3026,7 @@ class Series:
         ----------
         n
             Number of elements to return. If a negative value is passed, return all
-            elements except the last ``abs(n)``.
+            elements except the last `abs(n)`.
 
         See Also
         --------
@@ -3306,16 +3329,16 @@ class Series:
         """
         Return True if the Series has a validity bitmask.
 
-        If there is no mask, it means that there are no ``null`` values.
+        If there is no mask, it means that there are no `null` values.
 
         Notes
         -----
         While the *absence* of a validity bitmask guarantees that a Series does not
-        have ``null`` values, the converse is not true, eg: the *presence* of a
+        have `null` values, the converse is not true, eg: the *presence* of a
         bitmask does not mean that there are null values, as every value of the
-        bitmask could be ``false``.
+        bitmask could be `false`.
 
-        To confirm that a column has ``null`` values use :func:`null_count`.
+        To confirm that a column has `null` values use :func:`null_count`.
 
         """
         return self._s.has_validity()
@@ -3798,7 +3821,7 @@ class Series:
         - :func:`polars.datatypes.Time` -> :func:`polars.datatypes.Int64`
         - :func:`polars.datatypes.Duration` -> :func:`polars.datatypes.Int64`
         - :func:`polars.datatypes.Categorical` -> :func:`polars.datatypes.UInt32`
-        - ``List(inner)`` -> ``List(physical of inner)``
+        - `List(inner)` -> `List(physical of inner)`
         - Other data types will be left unchanged.
 
         Examples
@@ -3821,7 +3844,7 @@ class Series:
 
         """
 
-    def to_list(self, *, use_pyarrow: bool = False) -> list[Any]:
+    def to_list(self, *, use_pyarrow: bool | None = None) -> list[Any]:
         """
         Convert this Series to a Python List. This operation clones data.
 
@@ -3839,8 +3862,15 @@ class Series:
         <class 'list'>
 
         """
-        if use_pyarrow:
-            return self.to_arrow().to_pylist()
+        if use_pyarrow is not None:
+            issue_deprecation_warning(
+                "The parameter `use_pyarrow` for `Series.to_list` is deprecated."
+                " Call the method without `use_pyarrow` to silence this warning.",
+                version="0.19.9",
+            )
+            if use_pyarrow:
+                return self.to_arrow().to_pylist()
+
         return self._s.to_list()
 
     def rechunk(self, *, in_place: bool = False) -> Self:
@@ -3908,7 +3938,7 @@ class Series:
             false
         ]
 
-        Use the ``closed`` argument to include or exclude the values at the bounds:
+        Use the `closed` argument to include or exclude the values at the bounds:
 
         >>> s.is_between(2, 4, closed="left")
         shape: (5,)
@@ -4101,10 +4131,10 @@ class Series:
         This operation may clone data but is completely safe. Note that:
 
         - data which is purely numeric AND without null values is not cloned;
-        - floating point ``nan`` values can be zero-copied;
+        - floating point `nan` values can be zero-copied;
         - booleans can't be zero-copied.
 
-        To ensure that no data is cloned, set ``zero_copy_only=True``.
+        To ensure that no data is cloned, set `zero_copy_only=True`.
 
         Alternatively, if you want a zero-copy view and know what you are doing,
         use `.view()`.
@@ -4331,7 +4361,7 @@ class Series:
             f'pl.Series("{self.name}", {self.head(n).to_list()}, dtype=pl.{self.dtype})'
         )
 
-    def set(self, filter: Series, value: int | float | str) -> Series:
+    def set(self, filter: Series, value: int | float | str | bool | None) -> Series:
         """
         Set masked values.
 
@@ -4676,6 +4706,29 @@ class Series:
 
         """
 
+    def round_sig_figs(self, digits: int) -> Series:
+        """
+        Round to a number of significant figures.
+
+        Parameters
+        ----------
+        digits
+            Number of significant figures to round to.
+
+        Examples
+        --------
+        >>> s = pl.Series([0.01234, 3.333, 1234.0])
+        >>> s.round_sig_figs(2)
+        shape: (3,)
+        Series: '' [f64]
+        [
+                0.012
+                3.3
+                1200.0
+        ]
+
+        """
+
     def dot(self, other: Series | ArrayLike) -> float | None:
         """
         Compute the dot/inner product between two Series.
@@ -5006,7 +5059,7 @@ class Series:
         If the function returns a different datatype, the return_dtype arg should
         be set, otherwise the method will fail.
 
-        Implementing logic using a Python function is almost always _significantly_
+        Implementing logic using a Python function is almost always *significantly*
         slower and more memory intensive than implementing the same logic using
         the native expression API because:
 
@@ -5032,13 +5085,13 @@ class Series:
 
         Warnings
         --------
-        If ``return_dtype`` is not provided, this may lead to unexpected results.
+        If `return_dtype` is not provided, this may lead to unexpected results.
         We allow this, but it is considered a bug in the user's query.
 
         Notes
         -----
         If your function is expensive and you don't want it to be called more than
-        once for a given input, consider applying an ``@lru_cache`` decorator to it.
+        once for a given input, consider applying an `@lru_cache` decorator to it.
         If your data is suitable you may achieve *significant* speedups.
 
         Examples
@@ -5070,52 +5123,63 @@ class Series:
             self._s.apply_lambda(function, pl_return_dtype, skip_nulls)
         )
 
-    def shift(self, periods: int = 1) -> Series:
+    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
+    def shift(self, n: int = 1, *, fill_value: IntoExpr | None = None) -> Series:
         """
-        Shift the values by a given period.
+        Shift values by the given number of indices.
+
+        Parameters
+        ----------
+        n
+            Number of indices to shift forward. If a negative value is passed, values
+            are shifted in the opposite direction instead.
+        fill_value
+            Fill the resulting null values with this value. Accepts expression input.
+            Non-expression inputs are parsed as literals.
+
+        Notes
+        -----
+        This method is similar to the `LAG` operation in SQL when the value for `n`
+        is positive. With a negative value for `n`, it is similar to `LEAD`.
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.shift(periods=1)
-        shape: (3,)
-        Series: 'a' [i64]
+        By default, values are shifted forward by one index.
+
+        >>> s = pl.Series([1, 2, 3, 4])
+        >>> s.shift()
+        shape: (4,)
+        Series: '' [i64]
         [
                 null
                 1
                 2
-        ]
-        >>> s.shift(periods=-1)
-        shape: (3,)
-        Series: 'a' [i64]
-        [
-                2
                 3
+        ]
+
+        Pass a negative value to shift in the opposite direction instead.
+
+        >>> s.shift(-2)
+        shape: (4,)
+        Series: '' [i64]
+        [
+                3
+                4
+                null
                 null
         ]
 
-        Parameters
-        ----------
-        periods
-            Number of places to shift (may be negative).
+        Specify `fill_value` to fill the resulting null values.
 
-        """
-
-    def shift_and_fill(
-        self,
-        fill_value: int | Expr,
-        *,
-        periods: int = 1,
-    ) -> Series:
-        """
-        Shift the values by a given period and fill the resulting null values.
-
-        Parameters
-        ----------
-        fill_value
-            Fill None values with the result of this expression.
-        periods
-            Number of places to shift (may be negative).
+        >>> s.shift(-2, fill_value=100)
+        shape: (4,)
+        Series: '' [i64]
+        [
+                3
+                4
+                100
+                100
+        ]
 
         """
 
@@ -5179,7 +5243,7 @@ class Series:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their min.
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
@@ -5235,7 +5299,7 @@ class Series:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their max.
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
@@ -5291,7 +5355,7 @@ class Series:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their mean.
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
@@ -5404,7 +5468,7 @@ class Series:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their std dev.
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
@@ -5464,7 +5528,7 @@ class Series:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their variance.
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
@@ -5532,7 +5596,7 @@ class Series:
             Custom aggregation function.
         window_size
             Size of the window. The window at a given row will include the row
-            itself and the ``window_size - 1`` elements before it.
+            itself and the `window_size - 1` elements before it.
         weights
             A list of weights with the same length as the window that will be multiplied
             elementwise with the values in the window.
@@ -5991,7 +6055,7 @@ class Series:
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Series:
         """
-        Calculate the n-th discrete difference.
+        Calculate the first discrete difference between shifted items.
 
         Parameters
         ----------
@@ -6036,12 +6100,12 @@ class Series:
 
         """
 
-    def pct_change(self, n: int = 1) -> Series:
+    def pct_change(self, n: int | IntoExprColumn = 1) -> Series:
         """
         Computes percentage change between values.
 
         Percentage change (as fraction) between current element and most-recent
-        non-null element at least ``n`` period(s) before the current element.
+        non-null element at least `n` period(s) before the current element.
 
         Computes the change from the previous row by default.
 
@@ -6117,7 +6181,7 @@ class Series:
 
         is the biased sample :math:`i\texttt{th}` central moment, and
         :math:`\bar{x}` is
-        the sample mean.  If ``bias`` is False, the calculations are
+        the sample mean.  If `bias` is False, the calculations are
         corrected for bias and the value computed is the adjusted
         Fisher-Pearson standardized moment coefficient, i.e.
 
@@ -6152,72 +6216,58 @@ class Series:
 
     def clip(
         self,
-        lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn,
-        upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn,
+        lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn | None = None,
+        upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn | None = None,
     ) -> Series:
         """
-        Clip (limit) the values in an array to a `min` and `max` boundary.
-
-        Only works for physical numerical types.
-
-        If you want to clip other dtypes, consider writing a "when, then, otherwise"
-        expression. See :func:`when` for more information.
+        Set values outside the given boundaries to the boundary value.
 
         Parameters
         ----------
         lower_bound
-            Minimum value.
+            Lower bound. Accepts expression input.
+            Non-expression inputs are parsed as literals.
+            If set to `None` (default), no lower bound is applied.
         upper_bound
-            Maximum value.
+            Upper bound. Accepts expression input.
+            Non-expression inputs are parsed as literals.
+            If set to `None` (default), no upper bound is applied.
+
+        See Also
+        --------
+        when
+
+        Notes
+        -----
+        This method only works for numeric and temporal columns. To clip other data
+        types, consider writing a `when-then-otherwise` expression. See :func:`when`.
 
         Examples
         --------
-        >>> s = pl.Series("foo", [-50, 5, None, 50])
+        Specifying both a lower and upper bound:
+
+        >>> s = pl.Series([-50, 5, 50, None])
         >>> s.clip(1, 10)
         shape: (4,)
-        Series: 'foo' [i64]
+        Series: '' [i64]
         [
-            1
-            5
-            null
-            10
+                1
+                5
+                10
+                null
         ]
 
-        """
+        Specifying only a single bound:
 
-    def clip_min(
-        self, lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
-    ) -> Series:
-        """
-        Clip (limit) the values in an array to a `min` boundary.
-
-        Only works for physical numerical types.
-
-        If you want to clip other dtypes, consider writing a "when, then, otherwise"
-        expression. See :func:`when` for more information.
-
-        Parameters
-        ----------
-        lower_bound
-            Lower bound.
-
-        """
-
-    def clip_max(
-        self, upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
-    ) -> Series:
-        """
-        Clip (limit) the values in an array to a `max` boundary.
-
-        Only works for physical numerical types.
-
-        If you want to clip other dtypes, consider writing a "when, then, otherwise"
-        expression. See :func:`when` for more information.
-
-        Parameters
-        ----------
-        upper_bound
-            Upper bound.
+        >>> s.clip(upper_bound=10)
+        shape: (4,)
+        Series: '' [i64]
+        [
+                -50
+                5
+                10
+                null
+        ]
 
         """
 
@@ -6293,7 +6343,7 @@ class Series:
             Dictionary containing the before/after values to map.
         default
             Value to use when the remapping dict does not contain the lookup value.
-            Use ``pl.first()``, to keep the original value.
+            Use `pl.first()`, to keep the original value.
         return_dtype
             Set return dtype to override automatic return dtype determination.
 
@@ -6318,7 +6368,7 @@ class Series:
             "Netherlands"
         ]
 
-        ...or keep the original value, by making use of ``pl.first()``:
+        ...or keep the original value, by making use of `pl.first()`:
 
         >>> s.map_dict(country_lookup, default=pl.first()).alias("country_name")
         shape: (4,)
@@ -6416,6 +6466,7 @@ class Series:
 
         """
 
+    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_mean(
         self,
         com: float | None = None,
@@ -6454,9 +6505,9 @@ class Series:
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
 
-                - When ``adjust=True`` the EW function is calculated
+                - When `adjust=True` the EW function is calculated
                   using weights :math:`w_i = (1 - \alpha)^i`
-                - When ``adjust=False`` the EW function is calculated
+                - When `adjust=False` the EW function is calculated
                   recursively by
 
                   .. math::
@@ -6468,23 +6519,36 @@ class Series:
         ignore_nulls
             Ignore missing values when calculating weights.
 
-                - When ``ignore_nulls=False`` (default), weights are based on absolute
+                - When `ignore_nulls=False` (default), weights are based on absolute
                   positions.
                   For example, the weights of :math:`x_0` and :math:`x_2` used in
                   calculating the final weighted average of
                   [:math:`x_0`, None, :math:`x_2`] are
-                  :math:`(1-\alpha)^2` and :math:`1` if ``adjust=True``, and
-                  :math:`(1-\alpha)^2` and :math:`\alpha` if ``adjust=False``.
+                  :math:`(1-\alpha)^2` and :math:`1` if `adjust=True`, and
+                  :math:`(1-\alpha)^2` and :math:`\alpha` if `adjust=False`.
 
-                - When ``ignore_nulls=True``, weights are based
+                - When `ignore_nulls=True`, weights are based
                   on relative positions. For example, the weights of
                   :math:`x_0` and :math:`x_2` used in calculating the final weighted
                   average of [:math:`x_0`, None, :math:`x_2`] are
-                  :math:`1-\alpha` and :math:`1` if ``adjust=True``,
-                  and :math:`1-\alpha` and :math:`\alpha` if ``adjust=False``.
+                  :math:`1-\alpha` and :math:`1` if `adjust=True`,
+                  and :math:`1-\alpha` and :math:`\alpha` if `adjust=False`.
+
+        Examples
+        --------
+        >>> s = pl.Series([1, 2, 3])
+        >>> s.ewm_mean(com=1)
+        shape: (3,)
+        Series: '' [f64]
+        [
+                1.0
+                1.666667
+                2.428571
+        ]
 
         """
 
+    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_std(
         self,
         com: float | None = None,
@@ -6524,16 +6588,16 @@ class Series:
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
 
-                - When ``adjust=True`` the EW function is calculated
+                - When `adjust=True` the EW function is calculated
                   using weights :math:`w_i = (1 - \alpha)^i`
-                - When ``adjust=False`` the EW function is calculated
+                - When `adjust=False` the EW function is calculated
                   recursively by
 
                   .. math::
                     y_0 &= x_0 \\
                     y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
         bias
-            When ``bias=False``, apply a correction to make the estimate statistically
+            When `bias=False`, apply a correction to make the estimate statistically
             unbiased.
         min_periods
             Minimum number of observations in window required to have a value
@@ -6541,20 +6605,20 @@ class Series:
         ignore_nulls
             Ignore missing values when calculating weights.
 
-                - When ``ignore_nulls=False`` (default), weights are based on absolute
+                - When `ignore_nulls=False` (default), weights are based on absolute
                   positions.
                   For example, the weights of :math:`x_0` and :math:`x_2` used in
                   calculating the final weighted average of
                   [:math:`x_0`, None, :math:`x_2`] are
-                  :math:`(1-\alpha)^2` and :math:`1` if ``adjust=True``, and
-                  :math:`(1-\alpha)^2` and :math:`\alpha` if ``adjust=False``.
+                  :math:`(1-\alpha)^2` and :math:`1` if `adjust=True`, and
+                  :math:`(1-\alpha)^2` and :math:`\alpha` if `adjust=False`.
 
-                - When ``ignore_nulls=True``, weights are based
+                - When `ignore_nulls=True`, weights are based
                   on relative positions. For example, the weights of
                   :math:`x_0` and :math:`x_2` used in calculating the final weighted
                   average of [:math:`x_0`, None, :math:`x_2`] are
-                  :math:`1-\alpha` and :math:`1` if ``adjust=True``,
-                  and :math:`1-\alpha` and :math:`\alpha` if ``adjust=False``.
+                  :math:`1-\alpha` and :math:`1` if `adjust=True`,
+                  and :math:`1-\alpha` and :math:`\alpha` if `adjust=False`.
 
         Examples
         --------
@@ -6570,6 +6634,7 @@ class Series:
 
         """
 
+    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_var(
         self,
         com: float | None = None,
@@ -6609,16 +6674,16 @@ class Series:
             Divide by decaying adjustment factor in beginning periods to account for
             imbalance in relative weightings
 
-                - When ``adjust=True`` the EW function is calculated
+                - When `adjust=True` the EW function is calculated
                   using weights :math:`w_i = (1 - \alpha)^i`
-                - When ``adjust=False`` the EW function is calculated
+                - When `adjust=False` the EW function is calculated
                   recursively by
 
                   .. math::
                     y_0 &= x_0 \\
                     y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
         bias
-            When ``bias=False``, apply a correction to make the estimate statistically
+            When `bias=False`, apply a correction to make the estimate statistically
             unbiased.
         min_periods
             Minimum number of observations in window required to have a value
@@ -6626,20 +6691,20 @@ class Series:
         ignore_nulls
             Ignore missing values when calculating weights.
 
-                - When ``ignore_nulls=False`` (default), weights are based on absolute
+                - When `ignore_nulls=False` (default), weights are based on absolute
                   positions.
                   For example, the weights of :math:`x_0` and :math:`x_2` used in
                   calculating the final weighted average of
                   [:math:`x_0`, None, :math:`x_2`] are
-                  :math:`(1-\alpha)^2` and :math:`1` if ``adjust=True``, and
-                  :math:`(1-\alpha)^2` and :math:`\alpha` if ``adjust=False``.
+                  :math:`(1-\alpha)^2` and :math:`1` if `adjust=True`, and
+                  :math:`(1-\alpha)^2` and :math:`\alpha` if `adjust=False`.
 
-                - When ``ignore_nulls=True``, weights are based
+                - When `ignore_nulls=True`, weights are based
                   on relative positions. For example, the weights of
                   :math:`x_0` and :math:`x_2` used in calculating the final weighted
                   average of [:math:`x_0`, None, :math:`x_2`] are
-                  :math:`1-\alpha` and :math:`1` if ``adjust=True``,
-                  and :math:`1-\alpha` and :math:`\alpha` if ``adjust=False``.
+                  :math:`1-\alpha` and :math:`1` if `adjust=True`,
+                  and :math:`1-\alpha` and :math:`\alpha` if `adjust=False`.
 
         Examples
         --------
@@ -6816,6 +6881,63 @@ class Series:
         -------
         Series
             Series of data type :class:`Boolean`.
+
+        """
+
+    @deprecate_function("Use `clip` instead.", version="0.19.12")
+    def clip_min(
+        self, lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
+    ) -> Series:
+        """
+        Clip (limit) the values in an array to a `min` boundary.
+
+        .. deprecated:: 0.19.12
+            Use :func:`clip` instead.
+
+        Parameters
+        ----------
+        lower_bound
+            Lower bound.
+
+        """
+
+    @deprecate_function("Use `clip` instead.", version="0.19.12")
+    def clip_max(
+        self, upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
+    ) -> Series:
+        """
+        Clip (limit) the values in an array to a `max` boundary.
+
+        .. deprecated:: 0.19.12
+            Use :func:`clip` instead.
+
+        Parameters
+        ----------
+        upper_bound
+            Upper bound.
+
+        """
+
+    @deprecate_function("Use `shift` instead.", version="0.19.12")
+    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
+    def shift_and_fill(
+        self,
+        fill_value: int | Expr,
+        *,
+        n: int = 1,
+    ) -> Series:
+        """
+        Shift values by the given number of places and fill the resulting null values.
+
+        .. deprecated:: 0.19.12
+            Use :func:`shift` instead.
+
+        Parameters
+        ----------
+        fill_value
+            Fill None values with the result of this expression.
+        n
+            Number of places to shift (may be negative).
 
         """
 

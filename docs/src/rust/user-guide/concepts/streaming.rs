@@ -1,6 +1,4 @@
-use chrono::prelude::*;
 use polars::prelude::*;
-use rand::Rng;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:streaming]

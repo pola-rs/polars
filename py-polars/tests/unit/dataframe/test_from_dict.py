@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_from_dict_with_column_order() -> None:
@@ -40,7 +41,7 @@ def test_from_dict_with_scalars() -> None:
     df1 = pl.DataFrame(
         {"key": ["aa", "bb", "cc"], "misc": "xyz", "other": None, "value": 0}
     )
-    assert df1.to_dict(False) == {
+    assert df1.to_dict(as_series=False) == {
         "key": ["aa", "bb", "cc"],
         "misc": ["xyz", "xyz", "xyz"],
         "other": [None, None, None],
@@ -49,7 +50,7 @@ def test_from_dict_with_scalars() -> None:
 
     # edge-case: all scalars
     df2 = pl.DataFrame({"key": "aa", "misc": "xyz", "other": None, "value": 0})
-    assert df2.to_dict(False) == {
+    assert df2.to_dict(as_series=False) == {
         "key": ["aa"],
         "misc": ["xyz"],
         "other": [None],
@@ -58,7 +59,7 @@ def test_from_dict_with_scalars() -> None:
 
     # edge-case: single unsized generator
     df3 = pl.DataFrame({"vals": map(float, [1, 2, 3])})
-    assert df3.to_dict(False) == {"vals": [1.0, 2.0, 3.0]}
+    assert df3.to_dict(as_series=False) == {"vals": [1.0, 2.0, 3.0]}
 
     # ensure we don't accidentally consume or expand map/range/generator
     # cols, and can properly apply schema dtype/ordering directives
@@ -77,7 +78,7 @@ def test_from_dict_with_scalars() -> None:
         },
     )
     assert df4.columns == ["value", "other", "misc", "key"]
-    assert df4.to_dict(False) == {
+    assert df4.to_dict(as_series=False) == {
         "value": ["x", "y", "z"],
         "other": [7.0, 8.0, 9.0],
         "misc": [4, 5, 6],
@@ -190,3 +191,10 @@ def test_from_dict_with_scalars_mixed() -> None:
     assert dfx[:5].rows() == dfx[5:10].rows()
     assert dfx[-10:-5].rows() == dfx[-5:].rows()
     assert dfx.row(n_range // 2, named=True) == mixed_dtype_data
+
+
+def test_from_dict_duration_subseconds() -> None:
+    d = {"duration": [timedelta(seconds=1, microseconds=1000)]}
+    result = pl.from_dict(d)
+    expected = pl.select(pl.duration(seconds=1, microseconds=1000))
+    assert_frame_equal(result, expected)

@@ -1,4 +1,5 @@
 use num_traits::NumCast;
+use polars_utils::hashing::DirtyHash;
 
 use super::*;
 use crate::series::SeriesSealed;
@@ -186,7 +187,7 @@ fn group_join_inner<T>(
 where
     T: PolarsDataType,
     for<'a> &'a T::Array: IntoIterator<Item = Option<&'a T::Physical<'a>>>,
-    for<'a> T::Physical<'a>: Hash + Eq + Send + AsU64 + Copy + Send + Sync,
+    for<'a> T::Physical<'a>: Hash + Eq + Send + DirtyHash + Copy + Send + Sync,
 {
     let n_threads = POOL.current_num_threads();
     let (a, b, swapped) = det_hash_prone_order!(left, right);
@@ -268,8 +269,8 @@ fn num_group_join_left<T>(
 ) -> PolarsResult<LeftJoinIds>
 where
     T: PolarsIntegerType,
-    T::Native: Hash + Eq + Send + AsU64,
-    Option<T::Native>: AsU64,
+    T::Native: Hash + Eq + Send + DirtyHash,
+    Option<T::Native>: DirtyHash,
 {
     let n_threads = POOL.current_num_threads();
     let splitted_a = split_ca(left, n_threads).unwrap();
@@ -417,8 +418,8 @@ fn num_group_join_anti_semi<T>(
 ) -> Vec<IdxSize>
 where
     T: PolarsIntegerType,
-    T::Native: Hash + Eq + Send + AsU64,
-    Option<T::Native>: AsU64,
+    T::Native: Hash + Eq + Send + DirtyHash,
+    Option<T::Native>: DirtyHash,
 {
     let n_threads = POOL.current_num_threads();
     let splitted_a = split_ca(left, n_threads).unwrap();

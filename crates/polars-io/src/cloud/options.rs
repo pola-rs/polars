@@ -83,12 +83,9 @@ pub enum CloudType {
     Gcp,
 }
 
-impl FromStr for CloudType {
-    type Err = PolarsError;
-
+impl CloudType {
     #[cfg(feature = "cloud")]
-    fn from_str(url: &str) -> Result<Self, Self::Err> {
-        let parsed = Url::parse(url).map_err(to_compute_err)?;
+    pub(crate) fn from_url(parsed: &Url) -> PolarsResult<Self> {
         Ok(match parsed.scheme() {
             "s3" | "s3a" => Self::Aws,
             "az" | "azure" | "adl" | "abfs" | "abfss" => Self::Azure,
@@ -96,6 +93,34 @@ impl FromStr for CloudType {
             "file" => Self::File,
             _ => polars_bail!(ComputeError: "unknown url scheme"),
         })
+    }
+}
+
+#[cfg(feature = "cloud")]
+pub(crate) fn parse_url(url: &str) -> std::result::Result<Url, url::ParseError> {
+    match Url::parse(url) {
+        Err(err) => match err {
+            url::ParseError::RelativeUrlWithoutBase => {
+                let parsed = Url::parse(&format!(
+                    "file://{}/",
+                    std::env::current_dir().unwrap().to_string_lossy()
+                ))
+                .unwrap();
+                parsed.join(url)
+            },
+            err => Err(err),
+        },
+        parsed => parsed,
+    }
+}
+
+impl FromStr for CloudType {
+    type Err = PolarsError;
+
+    #[cfg(feature = "cloud")]
+    fn from_str(url: &str) -> Result<Self, Self::Err> {
+        let parsed = parse_url(url).map_err(to_compute_err)?;
+        Self::from_url(&parsed)
     }
 
     #[cfg(not(feature = "cloud"))]

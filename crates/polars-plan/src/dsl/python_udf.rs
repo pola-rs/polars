@@ -205,7 +205,7 @@ impl Expr {
         let (collect_groups, name) = if agg_list {
             (ApplyOptions::ApplyList, MAP_LIST_NAME)
         } else {
-            (ApplyOptions::ApplyFlat, "python_udf")
+            (ApplyOptions::ElementWise, "python_udf")
         };
 
         let return_dtype = func.output_type.clone();

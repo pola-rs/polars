@@ -85,7 +85,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
                 }
 
                 let schema = if let Some(projection) = &self.projection {
-                    apply_projection(&metadata.schema, projection)
+                    Arc::new(apply_projection(&metadata.schema, projection))
                 } else {
                     metadata.schema.clone()
                 };

@@ -4,7 +4,7 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 @pytest.mark.parametrize(
@@ -125,3 +125,32 @@ def test_zeros(
 
     result_lazy = pl.select(pl.zeros(n=n, dtype=dtype, eager=False)).to_series()
     assert_series_equal(result_lazy, expected)
+
+
+def test_repeat_by_logical_dtype() -> None:
+    with pl.StringCache():
+        df = pl.DataFrame(
+            {
+                "repeat": [1, 2, 3],
+                "date": [date(2021, 1, 1)] * 3,
+                "cat": ["a", "b", "c"],
+            },
+            schema={"repeat": pl.Int32, "date": pl.Date, "cat": pl.Categorical},
+        )
+        out = df.select(
+            pl.col("date").repeat_by("repeat"), pl.col("cat").repeat_by("repeat")
+        )
+
+        expected_df = pl.DataFrame(
+            {
+                "date": [
+                    [date(2021, 1, 1)],
+                    [date(2021, 1, 1), date(2021, 1, 1)],
+                    [date(2021, 1, 1), date(2021, 1, 1), date(2021, 1, 1)],
+                ],
+                "cat": [["a"], ["b", "b"], ["c", "c", "c"]],
+            },
+            schema={"date": pl.List(pl.Date), "cat": pl.List(pl.Categorical)},
+        )
+
+        assert_frame_equal(out, expected_df)

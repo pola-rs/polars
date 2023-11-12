@@ -39,7 +39,7 @@ print(df_small)
 # --8<-- [end:execute]
 
 # --8<-- [start:prepare_multiple_sources]
-with open("products_categories.json", "w") as temp_file:
+with open("docs/data/products_categories.json", "w") as temp_file:
     json_data = """{"product_id": 1, "category": "Category 1"}
 {"product_id": 2, "category": "Category 1"}
 {"product_id": 3, "category": "Category 2"}
@@ -48,7 +48,7 @@ with open("products_categories.json", "w") as temp_file:
 
     temp_file.write(json_data)
 
-with open("products_masterdata.csv", "w") as temp_file:
+with open("docs/data/products_masterdata.csv", "w") as temp_file:
     csv_data = """product_id,product_name
 1,Product A
 2,Product B
@@ -73,19 +73,19 @@ sales_data = pd.DataFrame(
 # sales_data is a Pandas DataFrame with schema {'product_id': Int64, 'sales': Int64}
 
 ctx = pl.SQLContext(
-    products_masterdata=pl.scan_csv("products_masterdata.csv"),
-    products_categories=pl.scan_ndjson("products_categories.json"),
+    products_masterdata=pl.scan_csv("docs/data/products_masterdata.csv"),
+    products_categories=pl.scan_ndjson("docs/data/products_categories.json"),
     sales_data=pl.from_pandas(sales_data),
     eager_execution=True,
 )
 
 query = """
-SELECT 
+SELECT
     product_id,
     product_name,
     category,
     sales
-FROM 
+FROM
     products_masterdata
 LEFT JOIN products_categories USING (product_id)
 LEFT JOIN sales_data USING (product_id)
@@ -95,6 +95,6 @@ print(ctx.execute(query))
 # --8<-- [end:execute_multiple_sources]
 
 # --8<-- [start:clean_multiple_sources]
-os.remove("products_categories.json")
-os.remove("products_masterdata.csv")
+os.remove("docs/data/products_categories.json")
+os.remove("docs/data/products_masterdata.csv")
 # --8<-- [end:clean_multiple_sources]

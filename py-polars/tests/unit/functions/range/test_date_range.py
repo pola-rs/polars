@@ -10,7 +10,7 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import TimeUnit
+    from polars.type_aliases import ClosedInterval, TimeUnit
 
 
 def test_date_range() -> None:
@@ -101,7 +101,7 @@ def test_date_range_lazy_with_expressions(
 
     result_df = df.with_columns(pl.date_ranges(low, high, interval="1d").alias("dts"))
 
-    assert result_df.to_dict(False) == {
+    assert result_df.to_dict(as_series=False) == {
         "start": [date(2000, 1, 1), date(2022, 6, 1)],
         "stop": [date(2000, 1, 2), date(2022, 6, 2)],
         "dts": [
@@ -138,13 +138,23 @@ def test_date_ranges_single_row_lazy_7110() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_date_range_end_of_month_5441() -> None:
+@pytest.mark.parametrize(
+    ("closed", "expected_values"),
+    [
+        ("right", [date(2020, 2, 29), date(2020, 3, 31)]),
+        ("left", [date(2020, 1, 31), date(2020, 2, 29)]),
+        ("none", [date(2020, 2, 29)]),
+        ("both", [date(2020, 1, 31), date(2020, 2, 29), date(2020, 3, 31)]),
+    ],
+)
+def test_date_range_end_of_month_5441(
+    closed: ClosedInterval, expected_values: list[date]
+) -> None:
     start = date(2020, 1, 31)
-    stop = date(2021, 1, 31)
-    with pytest.raises(
-        pl.ComputeError, match=r"cannot advance '2020-01-31 00:00:00' by 1 month\(s\)"
-    ):
-        pl.date_range(start, stop, interval="1mo", eager=True)
+    stop = date(2020, 3, 31)
+    result = pl.date_range(start, stop, interval="1mo", closed=closed, eager=True)
+    expected = pl.Series("date", expected_values)
+    assert_series_equal(result, expected)
 
 
 def test_date_range_name() -> None:

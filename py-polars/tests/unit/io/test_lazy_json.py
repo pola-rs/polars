@@ -107,7 +107,7 @@ def test_glob_n_rows(io_files_path: Path) -> None:
     assert df.shape == (40, 4)
 
     # take first and last rows
-    assert df[[0, 39]].to_dict(False) == {
+    assert df[[0, 39]].to_dict(as_series=False) == {
         "category": ["vegetables", "seafood"],
         "calories": [45, 146],
         "fats_g": [0.5, 6.0],
@@ -128,3 +128,10 @@ def test_ndjson_list_arg(io_files_path: Path) -> None:
     assert df.shape == (54, 4)
     assert df.row(-1) == ("seafood", 194, 12.0, 1)
     assert df.row(0) == ("vegetables", 45, 0.5, 2)
+
+
+def test_anonymous_scan_explain(io_files_path: Path) -> None:
+    file = io_files_path / "foods1.ndjson"
+    q = pl.scan_ndjson(source=file)
+    assert "Anonymous" in q.explain()
+    assert "Anonymous" in q.show_graph(raw_output=True)  # type: ignore[operator]

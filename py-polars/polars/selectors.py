@@ -311,9 +311,9 @@ class _selector_proxy_(Expr):
 
     def as_expr(self) -> Expr:
         """
-        Materialize the ``selector`` into a normal expression.
+        Materialize the `selector` into a normal expression.
 
-        This ensures that the operators ``|``, ``&``, ``~`` and ``-``
+        This ensures that the operators `|`, `&`, `~` and `-`
         are applied on the data and not on the selector sets.
         """
         return Expr._from_pyexpr(self._pyexpr)
@@ -410,12 +410,12 @@ def binary() -> SelectorType:
 
     Select binary columns and export as a dict:
 
-    >>> df.select(cs.binary()).to_dict(False)
+    >>> df.select(cs.binary()).to_dict(as_series=False)
     {'a': [b'hello'], 'c': [b'!']}
 
     Select all columns *except* for those that are binary:
 
-    >>> df.select(~cs.binary()).to_dict(False)
+    >>> df.select(~cs.binary()).to_dict(as_series=False)
     {'b': ['world'], 'd': [':)']}
 
     """
@@ -684,7 +684,7 @@ def categorical() -> SelectorType:
 
 def contains(substring: str | Collection[str]) -> SelectorType:
     """
-    Select columns that contain the given literal substring(s).
+    Select columns whose names contain the given literal substring(s).
 
     Parameters
     ----------
@@ -829,8 +829,8 @@ def datetime(
         Omit to select columns with any valid timeunit.
     time_zone
         * One or more timezone strings, as defined in zoneinfo (to see valid options
-          run ``import zoneinfo; zoneinfo.available_timezones()`` for a full list).
-        * Set ``None`` to select Datetime columns that do not have a timezone.
+          run `import zoneinfo; zoneinfo.available_timezones()` for a full list).
+        * Set `None` to select Datetime columns that do not have a timezone.
         * Set "*" to select Datetime columns that have *any* timezone.
 
     See Also
@@ -1484,7 +1484,7 @@ def last() -> SelectorType:
 
     Select everything  *except* for the last column:
 
-    >> df.select(~cs.last())
+    >>> df.select(~cs.last())
     shape: (2, 3)
     ┌─────┬─────┬─────┐
     │ foo ┆ bar ┆ baz │
@@ -1663,7 +1663,7 @@ def object() -> SelectorType:
 
     Select object columns and export as a dict:
 
-    >>> df.select(cs.object()).to_dict(False)  # doctest: +IGNORE_RESULT
+    >>> df.select(cs.object()).to_dict(as_series=False)  # doctest: +IGNORE_RESULT
     {
         "uuid_obj": [
             UUID("6be063cf-c9c6-43be-878e-e446cfd42981"),

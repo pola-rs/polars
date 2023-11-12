@@ -53,17 +53,6 @@ macro_rules! impl_dyn_series {
                     .into_series()
             }
 
-            #[cfg(feature = "cum_agg")]
-            fn _cummax(&self, reverse: bool) -> Series {
-                self.0.cummax(reverse).$into_logical().into_series()
-            }
-
-            #[cfg(feature = "cum_agg")]
-            fn _cummin(&self, reverse: bool) -> Series {
-                self.0.cummin(reverse).$into_logical().into_series()
-            }
-
-
             #[cfg(feature = "zip_with")]
             fn zip_with_same_type(
                 &self,

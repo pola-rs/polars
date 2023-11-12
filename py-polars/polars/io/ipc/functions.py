@@ -38,14 +38,14 @@ def read_ipc(
     ----------
     source
         Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a ``read()`` method, such as a file handler (e.g. via builtin ``open``
-        function) or ``BytesIO``). If ``fsspec`` is installed, it will be used to open
+        that have a `read()` method, such as a file handler (e.g. via builtin `open`
+        function) or `BytesIO`). If `fsspec` is installed, it will be used to open
         remote files.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
         of column names.
     n_rows
-        Stop reading from IPC file after reading ``n_rows``.
+        Stop reading from IPC file after reading `n_rows`.
         Only valid when `use_pyarrow=False`.
     use_pyarrow
         Use pyarrow or the native Rust reader.
@@ -54,7 +54,7 @@ def read_ipc(
         queries as the OS may cache pages.
         Only uncompressed IPC files can be memory mapped.
     storage_options
-        Extra options that make sense for ``fsspec.open()`` or a particular storage
+        Extra options that make sense for `fsspec.open()` or a particular storage
         connection, e.g. host, port, username, password, etc.
     row_count_name
         If not None, this will insert a row count column with give name into the
@@ -70,9 +70,9 @@ def read_ipc(
 
     Warnings
     --------
-    If ``memory_map`` is set, the bytes on disk are mapped 1:1 to memory.
+    If `memory_map` is set, the bytes on disk are mapped 1:1 to memory.
     That means that you cannot write to the same filename.
-    E.g. ``pl.read_ipc("my_file.arrow").write_ipc("my_file.arrow")`` will fail.
+    E.g. `pl.read_ipc("my_file.arrow").write_ipc("my_file.arrow")` will fail.
 
     """
     if use_pyarrow and n_rows and not memory_map:
@@ -128,19 +128,19 @@ def read_ipc_stream(
     ----------
     source
         Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a ``read()`` method, such as a file handler (e.g. via builtin ``open``
-        function) or ``BytesIO``). If ``fsspec`` is installed, it will be used to open
+        that have a `read()` method, such as a file handler (e.g. via builtin `open`
+        function) or `BytesIO`). If `fsspec` is installed, it will be used to open
         remote files.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
         of column names.
     n_rows
-        Stop reading from IPC stream after reading ``n_rows``.
+        Stop reading from IPC stream after reading `n_rows`.
         Only valid when `use_pyarrow=False`.
     use_pyarrow
         Use pyarrow or the native Rust reader.
     storage_options
-        Extra options that make sense for ``fsspec.open()`` or a particular storage
+        Extra options that make sense for `fsspec.open()` or a particular storage
         connection, e.g. host, port, username, password, etc.
     row_count_name
         If not None, this will insert a row count column with give name into the
@@ -193,8 +193,8 @@ def read_ipc_schema(source: str | BinaryIO | Path | bytes) -> dict[str, PolarsDa
     ----------
     source
         Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a ``read()`` method, such as a file handler (e.g. via builtin ``open``
-        function) or ``BytesIO``).
+        that have a `read()` method, such as a file handler (e.g. via builtin `open`
+        function) or `BytesIO`).
 
     Returns
     -------
@@ -230,7 +230,7 @@ def scan_ipc(
     source
         Path to a IPC file.
     n_rows
-        Stop reading from IPC file after reading ``n_rows``.
+        Stop reading from IPC file after reading `n_rows`.
     cache
         Cache the result after reading.
     rechunk
@@ -241,7 +241,7 @@ def scan_ipc(
     row_count_offset
         Offset to start the row_count column (only use if the name is set)
     storage_options
-        Extra options that make sense for ``fsspec.open()`` or a
+        Extra options that make sense for `fsspec.open()` or a
         particular storage connection.
         e.g. host, port, username, password, etc.
     memory_map

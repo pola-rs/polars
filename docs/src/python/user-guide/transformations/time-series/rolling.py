@@ -31,7 +31,7 @@ df = (
 
 out = df.group_by_dynamic("time", every="1mo", period="1mo", closed="left").agg(
     pl.col("time").cumcount().reverse().head(3).alias("day/eom"),
-    ((pl.col("time") - pl.col("time").first()).last().dt.days() + 1).alias(
+    ((pl.col("time") - pl.col("time").first()).last().dt.total_days() + 1).alias(
         "days_in_month"
     ),
 )

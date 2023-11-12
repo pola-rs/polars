@@ -45,16 +45,19 @@ if sys.version_info >= (3, 11):
     _views: list[Reversible[Any]] = [{}.keys(), {}.values(), {}.items()]
     _reverse_mapping_views = tuple(type(reversed(view)) for view in _views)
 
+SECONDS_PER_DAY = 86_400
+SECONDS_PER_HOUR = 3_600
+NS_PER_SECOND = 1_000_000_000
+US_PER_SECOND = 1_000_000
+MS_PER_SECOND = 1_000
 
 EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
 EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
-_fromtimestamp = datetime.fromtimestamp
-
 
 def _timestamp_in_seconds(dt: datetime) -> int:
     du = dt - EPOCH_UTC
-    return du.days * 86400 + du.seconds
+    return du.days * SECONDS_PER_DAY + du.seconds
 
 
 @overload
@@ -71,24 +74,24 @@ def _timedelta_to_pl_duration(td: timedelta | str | None) -> str | None:
     """Convert python timedelta to a polars duration string."""
     if td is None or isinstance(td, str):
         return td
-    else:
-        if td.days >= 0:
-            d = td.days and f"{td.days}d" or ""
-            s = td.seconds and f"{td.seconds}s" or ""
-            us = td.microseconds and f"{td.microseconds}us" or ""
-        else:
-            if not td.seconds and not td.microseconds:
-                d = td.days and f"{td.days}d" or ""
-                s = ""
-                us = ""
-            else:
-                corrected_d = td.days + 1
-                d = corrected_d and f"{corrected_d}d" or "-"
-                corrected_seconds = 24 * 3600 - (td.seconds + (td.microseconds > 0))
-                s = corrected_seconds and f"{corrected_seconds}s" or ""
-                us = td.microseconds and f"{10**6 - td.microseconds}us" or ""
 
-        return f"{d}{s}{us}"
+    if td.days >= 0:
+        d = td.days and f"{td.days}d" or ""
+        s = td.seconds and f"{td.seconds}s" or ""
+        us = td.microseconds and f"{td.microseconds}us" or ""
+    else:
+        if not td.seconds and not td.microseconds:
+            d = td.days and f"{td.days}d" or ""
+            s = ""
+            us = ""
+        else:
+            corrected_d = td.days + 1
+            d = corrected_d and f"{corrected_d}d" or "-"
+            corrected_seconds = SECONDS_PER_DAY - (td.seconds + (td.microseconds > 0))
+            s = corrected_seconds and f"{corrected_seconds}s" or ""
+            us = td.microseconds and f"{10**6 - td.microseconds}us" or ""
+
+    return f"{d}{s}{us}"
 
 
 def _negate_duration(duration: str) -> str:
@@ -97,50 +100,46 @@ def _negate_duration(duration: str) -> str:
     return f"-{duration}"
 
 
+def _time_to_pl_time(t: time) -> int:
+    t = t.replace(tzinfo=timezone.utc)
+    seconds = t.hour * SECONDS_PER_HOUR + t.minute * 60 + t.second
+    microseconds = t.microsecond
+    return seconds * NS_PER_SECOND + microseconds * 1_000
+
+
+def _date_to_pl_date(d: date) -> int:
+    dt = datetime.combine(d, datetime.min.time()).replace(tzinfo=timezone.utc)
+    return int(dt.timestamp()) // SECONDS_PER_DAY
+
+
 def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
     """Convert a python datetime to a timestamp in given time unit."""
     if dt.tzinfo is None:
         # Make sure to use UTC rather than system time zone.
         dt = dt.replace(tzinfo=timezone.utc)
+    microseconds = dt.microsecond
+    seconds = _timestamp_in_seconds(dt)
     if time_unit == "ns":
-        micros = dt.microsecond
-        return 1_000 * (_timestamp_in_seconds(dt) * 1_000_000 + micros)
+        return seconds * NS_PER_SECOND + microseconds * 1_000
     elif time_unit == "us" or time_unit is None:
-        micros = dt.microsecond
-        return _timestamp_in_seconds(dt) * 1_000_000 + micros
+        return seconds * US_PER_SECOND + microseconds
     elif time_unit == "ms":
-        millis = dt.microsecond // 1000
-        return _timestamp_in_seconds(dt) * 1_000 + millis
-    else:
-        raise ValueError(
-            f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
-        )
+        return seconds * MS_PER_SECOND + microseconds // 1_000
+    raise ValueError(
+        f"`time_unit` must be one of {{'ms', 'us', 'ns'}}, got {time_unit!r}"
+    )
 
 
-def _time_to_pl_time(t: time) -> int:
-    t = t.replace(tzinfo=timezone.utc)
-    return int((t.hour * 3_600 + t.minute * 60 + t.second) * 1e9 + t.microsecond * 1e3)
-
-
-def _date_to_pl_date(d: date) -> int:
-    dt = datetime.combine(d, datetime.min.time()).replace(tzinfo=timezone.utc)
-    return int(dt.timestamp()) // (3600 * 24)
-
-
-def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None = None) -> int:
+def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None) -> int:
+    """Convert a Python timedelta object to a total number of subseconds."""
+    microseconds = td.microseconds
+    seconds = td.days * SECONDS_PER_DAY + td.seconds
     if time_unit == "ns":
-        return int(td.total_seconds() * 1e9)
-    elif time_unit == "us":
-        return int(td.total_seconds() * 1e6)
+        return seconds * NS_PER_SECOND + microseconds * 1_000
+    elif time_unit == "us" or time_unit is None:
+        return seconds * US_PER_SECOND + microseconds
     elif time_unit == "ms":
-        return int(td.total_seconds() * 1e3)
-    elif time_unit is None:
-        # python has us precision
-        return int(td.total_seconds() * 1e6)
-    else:
-        raise ValueError(
-            f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
-        )
+        return seconds * MS_PER_SECOND + microseconds // 1_000
 
 
 def _to_python_time(value: int) -> time:
@@ -148,17 +147,19 @@ def _to_python_time(value: int) -> time:
     if value == 0:
         return time(microsecond=0)
     else:
-        seconds, nanoseconds = divmod(value, 1_000_000_000)
+        seconds, nanoseconds = divmod(value, NS_PER_SECOND)
         minutes, seconds = divmod(seconds, 60)
         hours, minutes = divmod(minutes, 60)
         return time(
-            hour=hours, minute=minutes, second=seconds, microsecond=nanoseconds // 1000
+            hour=hours, minute=minutes, second=seconds, microsecond=nanoseconds // 1_000
         )
 
 
-def _to_python_timedelta(value: int | float, time_unit: TimeUnit = "ns") -> timedelta:
+def _to_python_timedelta(
+    value: int | float, time_unit: TimeUnit | None = "ns"
+) -> timedelta:
     if time_unit == "ns":
-        return timedelta(microseconds=value // 1e3)
+        return timedelta(microseconds=value // 1_000)
     elif time_unit == "us":
         return timedelta(microseconds=value)
     elif time_unit == "ms":
@@ -172,7 +173,7 @@ def _to_python_timedelta(value: int | float, time_unit: TimeUnit = "ns") -> time
 @lru_cache(256)
 def _to_python_date(value: int | float) -> date:
     """Convert polars int64 timestamp to Python date."""
-    return (EPOCH_UTC + timedelta(seconds=value * 86400)).date()
+    return (EPOCH_UTC + timedelta(seconds=value * SECONDS_PER_DAY)).date()
 
 
 def _to_python_datetime(
@@ -185,23 +186,23 @@ def _to_python_datetime(
         if time_unit == "us":
             return EPOCH + timedelta(microseconds=value)
         elif time_unit == "ns":
-            return EPOCH + timedelta(microseconds=value // 1000)
+            return EPOCH + timedelta(microseconds=value // 1_000)
         elif time_unit == "ms":
             return EPOCH + timedelta(milliseconds=value)
         else:
             raise ValueError(
-                f"`time_unit` must be one of {{'ns','us','ms'}}, got {time_unit!r}"
+                f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
             )
     elif _ZONEINFO_AVAILABLE:
         if time_unit == "us":
             dt = EPOCH_UTC + timedelta(microseconds=value)
         elif time_unit == "ns":
-            dt = EPOCH_UTC + timedelta(microseconds=value // 1000)
+            dt = EPOCH_UTC + timedelta(microseconds=value // 1_000)
         elif time_unit == "ms":
             dt = EPOCH_UTC + timedelta(milliseconds=value)
         else:
             raise ValueError(
-                f"`time_unit` must be one of {{'ns','us','ms'}}, got {time_unit!r}"
+                f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
             )
         return _localize(dt, time_zone)
     else:

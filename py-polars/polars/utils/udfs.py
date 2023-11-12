@@ -45,6 +45,7 @@ MapTarget: TypeAlias = Literal["expr", "frame", "series"]
 StackEntry: TypeAlias = Union[str, StackValue]
 
 _MIN_PY311 = sys.version_info >= (3, 11)
+_MIN_PY312 = _MIN_PY311 and sys.version_info >= (3, 12)
 
 
 class OpNames:
@@ -60,10 +61,7 @@ class OpNames:
         "BINARY_TRUE_DIVIDE": "/",
         "BINARY_XOR": "^",
     }
-
-    CALL: ClassVar[set[str]] = (
-        {"CALL"} if _MIN_PY311 else {"CALL_FUNCTION", "CALL_METHOD"}
-    )
+    CALL = frozenset({"CALL"} if _MIN_PY311 else {"CALL_FUNCTION", "CALL_METHOD"})
     CONTROL_FLOW: ClassVar[dict[str, str]] = (
         {
             "POP_JUMP_FORWARD_IF_FALSE": "&",
@@ -71,7 +69,8 @@ class OpNames:
             "JUMP_IF_FALSE_OR_POP": "&",
             "JUMP_IF_TRUE_OR_POP": "|",
         }
-        if _MIN_PY311
+        # note: 3.12 dropped POP_JUMP_FORWARD_IF_* opcodes
+        if _MIN_PY311 and not _MIN_PY312
         else {
             "POP_JUMP_IF_FALSE": "&",
             "POP_JUMP_IF_TRUE": "|",
@@ -80,10 +79,8 @@ class OpNames:
         }
     )
     LOAD_VALUES = frozenset(("LOAD_CONST", "LOAD_DEREF", "LOAD_FAST", "LOAD_GLOBAL"))
-    LOAD_ATTR: ClassVar[set[str]] = (
-        {"LOAD_METHOD", "LOAD_ATTR"} if _MIN_PY311 else {"LOAD_METHOD"}
-    )
-    LOAD = LOAD_VALUES | {"LOAD_METHOD", "LOAD_ATTR"}
+    LOAD_ATTR = frozenset({"LOAD_METHOD", "LOAD_ATTR"})
+    LOAD = LOAD_VALUES | LOAD_ATTR
     SYNTHETIC: ClassVar[dict[str, int]] = {
         "POLARS_EXPRESSION": 1,
     }
@@ -92,8 +89,7 @@ class OpNames:
         "UNARY_POSITIVE": "+",
         "UNARY_NOT": "~",
     }
-
-    PARSEABLE_OPS = (
+    PARSEABLE_OPS = frozenset(
         {"BINARY_OP", "BINARY_SUBSCR", "COMPARE_OP", "CONTAINS_OP", "IS_OP"}
         | set(UNARY)
         | set(CONTROL_FLOW)
@@ -163,7 +159,7 @@ FUNCTION_KINDS: list[dict[str, list[AbstractSet[str]]]] = [
         "argument_1_opname": [{"LOAD_FAST"}],
         "argument_2_opname": [{"LOAD_CONST"}],
         "module_opname": [{"LOAD_ATTR"}],
-        "attribute_opname": [{"LOAD_METHOD"}],
+        "attribute_opname": [OpNames.LOAD_ATTR],
         "module_name": [{"datetime", "dt"}],
         "attribute_name": [{"datetime"}],
         "function_name": [{"strptime"}],
@@ -243,43 +239,22 @@ class BytecodeParser:
     ) -> list[tuple[int, str]]:
         """Inject nesting boundaries into expression blocks (as parentheses)."""
         if logical_instructions:
-            # reconstruct nesting boundaries for mixed and/or ops by associating
-            # control flow jump offsets with their target expression blocks and
-            # injecting appropriate parentheses
-            combined_offset_idxs = set()
+            # reconstruct nesting boundaries for mixed and/or ops by associating control
+            # flow jump offsets with their target expression blocks and applying parens
             if len({inst.opname for inst in logical_instructions}) > 1:
                 block_offsets: list[int] = list(expression_blocks.keys())
-                previous_logical_opname = ""
-                for i, inst in enumerate(logical_instructions):
-                    # operator precedence means that we can combine logically connected
-                    # 'and' blocks into one (depending on follow-on logic) and should
-                    # parenthesise nested 'or' blocks
-                    logical_op = OpNames.CONTROL_FLOW[inst.opname]
+                prev_end = -1
+                for inst in logical_instructions:
                     start = block_offsets[bisect_left(block_offsets, inst.offset) - 1]
-                    if previous_logical_opname == (
-                        "POP_JUMP_FORWARD_IF_FALSE"
-                        if _MIN_PY311
-                        else "POP_JUMP_IF_FALSE"
-                    ):
-                        # combine logical '&' blocks (and update start/block_offsets)
-                        prev = block_offsets[bisect_left(block_offsets, start) - 1]
-                        expression_blocks[prev] += f" & {expression_blocks.pop(start)}"
-                        combined_offset_idxs.add(i - 1)
-                        block_offsets.remove(start)
-                        start = prev
-
-                    if logical_op == "|":
-                        # parenthesise connected 'or' blocks
-                        end = block_offsets[bisect_left(block_offsets, inst.argval) - 1]
-                        if not (start == 0 and end == block_offsets[-1]):
+                    end = block_offsets[bisect_left(block_offsets, inst.argval) - 1]
+                    if not (start == 0 and end == block_offsets[-1]):
+                        if prev_end not in (start, end):
                             expression_blocks[start] = "(" + expression_blocks[start]
                             expression_blocks[end] += ")"
+                            prev_end = end
 
-                    previous_logical_opname = inst.opname
-
-            for i, inst in enumerate(logical_instructions):
-                if i not in combined_offset_idxs:
-                    expression_blocks[inst.offset] = OpNames.CONTROL_FLOW[inst.opname]
+            for inst in logical_instructions:  # inject connecting "&" and "|" ops
+                expression_blocks[inst.offset] = OpNames.CONTROL_FLOW[inst.opname]
 
         return sorted(expression_blocks.items())
 
@@ -415,10 +390,8 @@ class BytecodeParser:
         if "pl.col(" not in polars_expr:
             return None
         elif self._map_target == "series":
-            return polars_expr.replace(
-                f'pl.col("{col}")',
-                self._get_target_name(col, polars_expr),
-            )
+            target_name = self._get_target_name(col, polars_expr)
+            return polars_expr.replace(f'pl.col("{col}")', target_name)
         else:
             return polars_expr
 
@@ -606,7 +579,15 @@ class RewrittenInstructions:
     """
 
     _ignored_ops = frozenset(
-        ["COPY_FREE_VARS", "PRECALL", "PUSH_NULL", "RESUME", "RETURN_VALUE"]
+        [
+            "COPY",
+            "COPY_FREE_VARS",
+            "POP_TOP",
+            "PRECALL",
+            "PUSH_NULL",
+            "RESUME",
+            "RETURN_VALUE",
+        ]
     )
     _caller_variables: ClassVar[dict[str, Any]] = {}
 
@@ -769,7 +750,10 @@ class RewrittenInstructions:
         """Replace python method calls with synthetic POLARS_EXPRESSION op."""
         if matching_instructions := self._matches(
             idx,
-            opnames=[{"LOAD_METHOD"}, OpNames.CALL],
+            opnames=[
+                OpNames.LOAD_ATTR if _MIN_PY312 else {"LOAD_METHOD"},
+                OpNames.CALL,
+            ],
             argvals=[_PYTHON_METHODS_MAP],
         ):
             inst = matching_instructions[0]
@@ -832,18 +816,18 @@ def warn_on_inefficient_map(
     function: Callable[[Any], Any], columns: list[str], map_target: MapTarget
 ) -> None:
     """
-    Generate ``PolarsInefficientMapWarning`` on poor usage of a ``map`` function.
+    Generate `PolarsInefficientMapWarning` on poor usage of a `map` function.
 
     Parameters
     ----------
     function
-        The function passed to ``map``.
+        The function passed to `map`.
     columns
-        The column names of the original object; in the case of an ``Expr`` this
+        The column names of the original object; in the case of an `Expr` this
         will be a list of length 1 containing the expression's root name.
     map_target
-        The target of the ``map`` call. One of ``"expr"``, ``"frame"``,
-        or ``"series"``.
+        The target of the `map` call. One of `"expr"`, `"frame"`,
+        or `"series"`.
     """
     if map_target == "frame":
         raise NotImplementedError("TODO: 'frame' map-function parsing")
@@ -870,7 +854,7 @@ def warn_on_inefficient_map(
 
 
 def is_shared_lib(file: str) -> bool:
-    return file.endswith((".so", ".dll"))
+    return file.endswith((".so", ".dll", ".pyd"))
 
 
 def _get_shared_lib_location(main_file: Any) -> str:

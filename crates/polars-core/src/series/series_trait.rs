@@ -12,7 +12,7 @@ use crate::chunked_array::object::PolarsObjectSafe;
 pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum IsSorted {
     Ascending,
@@ -86,18 +86,6 @@ pub(crate) mod private {
 
         fn explode_by_offsets(&self, _offsets: &[i64]) -> Series {
             invalid_operation_panic!(explode_by_offsets, self)
-        }
-
-        /// Get an array with the cumulative max computed at every element
-        #[cfg(feature = "cum_agg")]
-        fn _cummax(&self, _reverse: bool) -> Series {
-            panic!("operation cummax not supported for this dtype")
-        }
-
-        /// Get an array with the cumulative min computed at every element
-        #[cfg(feature = "cum_agg")]
-        fn _cummin(&self, _reverse: bool) -> Series {
-            panic!("operation cummin not supported for this dtype")
         }
 
         unsafe fn equal_element(

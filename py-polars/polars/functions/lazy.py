@@ -106,9 +106,9 @@ def count(column: str | Series | None = None) -> Expr | int:
     column
         If dtype is:
 
-        * ``pl.Series`` : count the values in the series.
-        * ``str`` : count the values in this column.
-        * ``None`` : count the number of values in this context.
+        * `pl.Series` : count the values in the series.
+        * `str` : count the values in this column.
+        * `None` : count the number of values in this context.
 
     Examples
     --------
@@ -308,7 +308,7 @@ def avg(column: str | Series) -> Expr | float:
     Alias for mean.
 
     .. deprecated:: 0.18.12
-        Use ``mean`` instead.
+        Use `mean` instead.
 
     Examples
     --------
@@ -802,7 +802,7 @@ def map_batches(
     Returns
     -------
     Expr
-        Expression with the data type given by ``return_dtype``.
+        Expression with the data type given by `return_dtype`.
 
     Examples
     --------
@@ -868,7 +868,7 @@ def map(
     Returns
     -------
     Expr
-        Expression with the data type given by ``return_dtype``.
+        Expression with the data type given by `return_dtype`.
 
     """
     return map_batches(exprs, function, return_dtype)
@@ -902,7 +902,7 @@ def map_groups(
     Returns
     -------
     Expr
-        Expression with the data type given by ``return_dtype``.
+        Expression with the data type given by `return_dtype`.
 
     Examples
     --------
@@ -990,7 +990,7 @@ def apply(
     Returns
     -------
     Expr
-        Expression with the data type given by ``return_dtype``.
+        Expression with the data type given by `return_dtype`.
 
     """
     return map_groups(exprs, function, return_dtype, returns_scalar=returns_scalar)
@@ -1018,7 +1018,7 @@ def fold(
     Notes
     -----
     If you simply want the first encountered expression as accumulator,
-    consider using ``reduce``.
+    consider using `reduce`.
 
     Examples
     --------
@@ -1121,7 +1121,7 @@ def reduce(
 
     Notes
     -----
-    See ``fold`` for the version with an explicit accumulator.
+    See `fold` for the version with an explicit accumulator.
 
     Examples
     --------
@@ -1196,7 +1196,7 @@ def cumfold(
     Notes
     -----
     If you simply want the first encountered expression as accumulator,
-    consider using ``cumreduce``.
+    consider using `cumreduce`.
 
     Examples
     --------
@@ -1408,13 +1408,13 @@ def exclude(
     """
     Represent all columns except for the given columns.
 
-    Syntactic sugar for ``pl.all().exclude(columns)``.
+    Syntactic sugar for `pl.all().exclude(columns)`.
 
     Parameters
     ----------
     columns
         The name or datatype of the column(s) to exclude. Accepts regular expression
-        input. Regular expressions should start with ``^`` and end with ``$``.
+        input. Regular expressions should start with `^` and end with `$`.
     *more_columns
         Additional names or datatypes of columns to exclude, specified as positional
         arguments.
@@ -1790,7 +1790,7 @@ def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> Da
     """
     Run polars expressions without a context.
 
-    This is syntactic sugar for running ``df.select`` on an empty DataFrame.
+    This is syntactic sugar for running `df.select` on an empty DataFrame.
 
     Parameters
     ----------
@@ -1850,7 +1850,7 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
     condition
         Boolean expression to evaluate
     eager
-        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        Evaluate immediately and return a `Series`. If set to `False` (default),
         return an expression instead.
 
     See Also
@@ -2039,7 +2039,7 @@ def rolling_cov(
         a result. If None, it will be set equal to window size.
     ddof
         Delta degrees of freedom.  The divisor used in calculations
-        is ``N - ddof``, where ``N`` represents the number of elements.
+        is `N - ddof`, where `N` represents the number of elements.
 
     """
     if min_periods is None:
@@ -2080,7 +2080,7 @@ def rolling_corr(
         a result. If None, it will be set equal to window size.
     ddof
         Delta degrees of freedom.  The divisor used in calculations
-        is ``N - ddof``, where ``N`` represents the number of elements.
+        is `N - ddof`, where `N` represents the number of elements.
 
     """
     if min_periods is None:

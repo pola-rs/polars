@@ -25,13 +25,12 @@ pub use parquet::*;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_io::RowCount;
-use polars_plan::dsl::all_horizontal;
 pub use polars_plan::frame::{AllowedOptimizations, OptState};
 use polars_plan::global::FETCH_ROWS;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
 use polars_plan::logical_plan::collect_fingerprints;
 use polars_plan::logical_plan::optimize;
-use polars_plan::utils::expr_to_leaf_column_names;
+use polars_plan::utils::expr_output_name;
 use smartstring::alias::String as SmartString;
 
 use crate::fallible;
@@ -442,16 +441,16 @@ impl LazyFrame {
     /// with `Nones`.
     ///
     /// See the method on [Series](polars_core::series::SeriesTrait::shift) for more info on the `shift` operation.
-    pub fn shift(self, periods: i64) -> Self {
-        self.select(vec![col("*").shift(periods)])
+    pub fn shift<E: Into<Expr>>(self, n: E) -> Self {
+        self.select(vec![col("*").shift(n.into())])
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
     /// with the result of the `fill_value` expression.
     ///
     /// See the method on [Series](polars_core::series::SeriesTrait::shift) for more info on the `shift` operation.
-    pub fn shift_and_fill<E: Into<Expr>>(self, periods: i64, fill_value: E) -> Self {
-        self.select(vec![col("*").shift_and_fill(periods, fill_value.into())])
+    pub fn shift_and_fill<E: Into<Expr>>(self, n: E, fill_value: E) -> Self {
+        self.select(vec![col("*").shift_and_fill(n.into(), fill_value.into())])
     }
 
     /// Fill None values in the DataFrame with an expression.
@@ -908,9 +907,11 @@ impl LazyFrame {
         if let Expr::Column(name) = index_column {
             options.index_column = name.as_ref().into();
         } else {
-            let name = expr_output_name(&index_column).unwrap();
+            let output_field = index_column
+                .to_field(&self.schema().unwrap(), Context::Default)
+                .unwrap();
             return self.with_column(index_column).group_by_rolling(
-                Expr::Column(name),
+                Expr::Column(Arc::from(output_field.name().as_str())),
                 by,
                 options,
             );
@@ -951,9 +952,11 @@ impl LazyFrame {
         if let Expr::Column(name) = index_column {
             options.index_column = name.as_ref().into();
         } else {
-            let name = expr_output_name(&index_column).unwrap();
+            let output_field = index_column
+                .to_field(&self.schema().unwrap(), Context::Default)
+                .unwrap();
             return self.with_column(index_column).group_by_dynamic(
-                Expr::Column(name),
+                Expr::Column(Arc::from(output_field.name().as_str())),
                 by,
                 options,
             );
@@ -1182,7 +1185,7 @@ impl LazyFrame {
         JoinBuilder::new(self)
     }
 
-    /// Add a column, given as an expression, to a DataFrame.
+    /// Add or replace a column, given as an expression, to a DataFrame.
     ///
     /// # Example
     ///
@@ -1214,7 +1217,7 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Add multiple columns, given as expressions, to a DataFrame.
+    /// Add or replace multiple columns, given as expressions, to a DataFrame.
     ///
     /// # Example
     ///
@@ -1239,7 +1242,7 @@ impl LazyFrame {
         )
     }
 
-    /// Add multiple columns to a DataFrame, but evaluate them sequentially.
+    /// Add or replace multiple columns to a DataFrame, but evaluate them sequentially.
     pub fn with_columns_seq<E: AsRef<[Expr]>>(self, exprs: E) -> LazyFrame {
         let exprs = exprs.as_ref().to_vec();
         self.with_columns_impl(
@@ -1411,18 +1414,9 @@ impl LazyFrame {
     /// `subset` is an optional `Vec` of column names to consider for nulls; if None, all
     /// columns are considered.
     pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> LazyFrame {
-        match subset {
-            None => self.filter(all_horizontal([col("*").is_not_null()])),
-            Some(subset) => {
-                let predicate = all_horizontal(
-                    subset
-                        .into_iter()
-                        .map(|e| e.is_not_null())
-                        .collect::<Vec<_>>(),
-                );
-                self.filter(predicate)
-            },
-        }
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().drop_nulls(subset).build();
+        Self::from_logical_plan(lp, opt_state)
     }
 
     /// Slice the DataFrame using an offset (starting row) and a length.
@@ -1674,10 +1668,10 @@ impl LazyGroupBy {
         let keys = self
             .keys
             .iter()
-            .flat_map(|k| expr_to_leaf_column_names(k).into_iter())
+            .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([col("*").exclude(&keys).head(n).keep_name()])
+        self.agg([col("*").exclude(&keys).head(n)])
             .explode([col("*").exclude(&keys)])
     }
 
@@ -1686,10 +1680,10 @@ impl LazyGroupBy {
         let keys = self
             .keys
             .iter()
-            .flat_map(|k| expr_to_leaf_column_names(k).into_iter())
+            .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([col("*").exclude(&keys).tail(n).keep_name()])
+        self.agg([col("*").exclude(&keys).tail(n)])
             .explode([col("*").exclude(&keys)])
     }
 

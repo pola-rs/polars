@@ -117,13 +117,13 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
         ) => Arc::ptr_eq(left_df, right_df),
         (
             Scan {
-                path: path_left,
+                paths: path_left,
                 predicate: predicate_left,
                 scan_type: scan_type_left,
                 ..
             },
             Scan {
-                path: path_right,
+                paths: path_right,
                 predicate: predicate_right,
                 scan_type: scan_type_right,
                 ..

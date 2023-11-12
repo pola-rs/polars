@@ -3,7 +3,6 @@ use chrono::prelude::*;
 use polars::io::prelude::*;
 use polars::lazy::dsl::GetOutput;
 use polars::prelude::*;
-use polars::time::prelude::*;
 // --8<-- [end:setup]
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -21,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let annual_average_df = df
         .clone()
         .lazy()
-        .groupby_dynamic(
+        .group_by_dynamic(
             col("Date"),
             [],
             DynamicGroupOptions {
@@ -42,19 +41,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:group_by]
 
     // --8<-- [start:group_by_dyn]
+    let time = polars::time::date_range(
+        "time",
+        NaiveDate::from_ymd_opt(2021, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap(),
+        NaiveDate::from_ymd_opt(2021, 12, 31)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap(),
+        Duration::parse("1d"),
+        ClosedWindow::Both,
+        TimeUnit::Milliseconds,
+        None,
+    )?
+    .cast(&DataType::Date)?;
+
     let df = df!(
-	"time" => date_range(
-	    "time",
-	    NaiveDate::from_ymd_opt(2021, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap(),
-	    NaiveDate::from_ymd_opt(2021, 12, 31).unwrap().and_hms_opt(0, 0, 0).unwrap(),
-	    Duration::parse("1d"),
-	    ClosedWindow::Both,
-	    TimeUnit::Milliseconds, None)?.cast(&DataType::Date)?)?;
+        "time" => time,
+    )?;
 
     let out = df
         .clone()
         .lazy()
-        .groupby_dynamic(
+        .group_by_dynamic(
             col("time"),
             [],
             DynamicGroupOptions {
@@ -91,15 +102,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:group_by_dyn]
 
     // --8<-- [start:group_by_roll]
-    let df = df!(
-    "time" => date_range(
+    let time = polars::time::date_range(
         "time",
-        NaiveDate::from_ymd_opt(2021, 12, 16).unwrap().and_hms_opt(0, 0, 0).unwrap(),
-        NaiveDate::from_ymd_opt(2021, 12, 16).unwrap().and_hms_opt(3, 0, 0).unwrap(),
+        NaiveDate::from_ymd_opt(2021, 12, 16)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap(),
+        NaiveDate::from_ymd_opt(2021, 12, 16)
+            .unwrap()
+            .and_hms_opt(3, 0, 0)
+            .unwrap(),
         Duration::parse("30m"),
         ClosedWindow::Both,
-        TimeUnit::Milliseconds, None)?,
-            "groups"=> ["a", "a", "a", "b", "b", "a", "a"],
+        TimeUnit::Milliseconds,
+        None,
+    )?;
+    let df = df!(
+        "time" => time,
+        "groups"=> ["a", "a", "a", "b", "b", "a", "a"],
     )?;
     println!("{}", &df);
     // --8<-- [end:group_by_roll]
@@ -108,7 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = df
         .clone()
         .lazy()
-        .groupby_dynamic(
+        .group_by_dynamic(
             col("time"),
             [col("groups")],
             DynamicGroupOptions {

@@ -86,12 +86,10 @@ def parse_as_expression(
     input
         The input to be parsed as an expression.
     str_as_lit
-        Interpret string input as a string literal. If set to ``False`` (default),
+        Interpret string input as a string literal. If set to `False` (default),
         strings are parsed as column names.
     structify
         Convert multi-column expressions to a single struct expression.
-    wrap
-        Return an ``Expr`` object rather than a ``PyExpr`` object.
 
     """
     if isinstance(input, pl.Expr):

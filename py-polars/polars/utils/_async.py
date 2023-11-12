@@ -24,8 +24,8 @@ class _GeventDataFrameResult(Generic[T]):
                 "polars.collect_all_async(gevent=True)"
             )
 
-        from gevent.event import AsyncResult  # type: ignore[import]
-        from gevent.hub import get_hub  # type: ignore[import]
+        from gevent.event import AsyncResult  # type: ignore[import-untyped]
+        from gevent.hub import get_hub  # type: ignore[import-untyped]
 
         self._value: None | Exception | PyDataFrame | list[PyDataFrame] = None
         self._result = AsyncResult()
@@ -34,7 +34,9 @@ class _GeventDataFrameResult(Generic[T]):
         self._watcher.start(self._watcher_callback)
 
     def get(
-        self, block: bool = True, timeout: float | int | None = None  # noqa: FBT001
+        self,
+        block: bool = True,  # noqa: FBT001
+        timeout: float | int | None = None,
     ) -> T:
         return self.result.get(block=block, timeout=timeout)
 

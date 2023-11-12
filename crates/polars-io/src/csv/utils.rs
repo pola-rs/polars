@@ -306,6 +306,10 @@ pub fn infer_file_schema_inner(
         // keep track so that we can determine the amount of bytes read
         end_ptr = line.as_ptr() as usize + line.len();
 
+        if line.is_empty() {
+            continue;
+        }
+
         if let Some(c) = comment_char {
             // line is a comment -> skip
             if line[0] == c {
@@ -503,6 +507,7 @@ const GZIP: [u8; 2] = [31, 139];
 const ZLIB0: [u8; 2] = [0x78, 0x01];
 const ZLIB1: [u8; 2] = [0x78, 0x9C];
 const ZLIB2: [u8; 2] = [0x78, 0xDA];
+const ZSTD: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
 
 /// check if csv file is compressed
 pub fn is_compressed(bytes: &[u8]) -> bool {
@@ -510,6 +515,7 @@ pub fn is_compressed(bytes: &[u8]) -> bool {
         || bytes.starts_with(&ZLIB1)
         || bytes.starts_with(&ZLIB2)
         || bytes.starts_with(&GZIP)
+        || bytes.starts_with(&ZSTD)
 }
 
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
@@ -598,6 +604,9 @@ pub(crate) fn decompress(
         decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
     } else if bytes.starts_with(&ZLIB0) || bytes.starts_with(&ZLIB1) || bytes.starts_with(&ZLIB2) {
         let mut decoder = flate2::read::ZlibDecoder::new(bytes);
+        decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
+    } else if bytes.starts_with(&ZSTD) {
+        let mut decoder = zstd::Decoder::new(bytes).ok()?;
         decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
     } else {
         None

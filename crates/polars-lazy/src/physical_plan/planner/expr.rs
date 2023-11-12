@@ -192,13 +192,18 @@ pub(crate) fn create_physical_expr(
                 node_to_expr(expression, expr_arena),
             )))
         },
-        Take { expr, idx } => {
+        Take {
+            expr,
+            idx,
+            returns_scalar,
+        } => {
             let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
             let phys_idx = create_physical_expr(idx, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(TakeExpr {
                 phys_expr,
                 idx: phys_idx,
                 expr: node_to_expr(expression, expr_arena),
+                returns_scalar,
             }))
         },
         SortBy {
@@ -329,6 +334,7 @@ pub(crate) fn create_physical_expr(
                         },
                         AAggExpr::First(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                             let s = std::mem::take(&mut s[0]);
+<<<<<<< HEAD
                             Ok(Some(s.head(Some(1))))
                         }) as Arc<dyn SeriesUdf>),
                         AAggExpr::Last(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
@@ -347,6 +353,31 @@ pub(crate) fn create_physical_expr(
                                 Ok(Some(s.median_as_series()))
                             }) as Arc<dyn SeriesUdf>)
                         },
+=======
+                            let out = if s.is_empty() {
+                                Series::full_null(s.name(), 1, s.dtype())
+                            } else {
+                                s.head(Some(1))
+                            };
+                            Ok(Some(out))
+                        })
+                            as Arc<dyn SeriesUdf>),
+                        AAggExpr::Last(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                            let s = std::mem::take(&mut s[0]);
+                            let out = if s.is_empty() {
+                                Series::full_null(s.name(), 1, s.dtype())
+                            } else {
+                                s.tail(Some(1))
+                            };
+                            Ok(Some(out))
+                        })
+                            as Arc<dyn SeriesUdf>),
+                        AAggExpr::Mean(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                            let s = std::mem::take(&mut s[0]);
+                            Ok(Some(s.mean_as_series()))
+                        })
+                            as Arc<dyn SeriesUdf>),
+>>>>>>> main
                         AAggExpr::Implode(_) => {
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = &s[0];
@@ -390,7 +421,7 @@ pub(crate) fn create_physical_expr(
                         vec![input],
                         function,
                         node_to_expr(expression, expr_arena),
-                        ApplyOptions::ApplyFlat,
+                        ApplyOptions::ElementWise,
                     )))
                 },
                 _ => {
@@ -462,7 +493,7 @@ pub(crate) fn create_physical_expr(
             options,
         } => {
             let is_reducing_aggregation =
-                options.auto_explode && matches!(options.collect_groups, ApplyOptions::ApplyGroups);
+                options.returns_scalar && matches!(options.collect_groups, ApplyOptions::GroupWise);
             // will be reset in the function so get that here
             let has_window = state.local.has_window;
             let input = create_physical_expressions_check_state(
@@ -477,19 +508,14 @@ pub(crate) fn create_physical_expr(
                 },
             )?;
 
-            Ok(Arc::new(ApplyExpr {
-                inputs: input,
+            Ok(Arc::new(ApplyExpr::new(
+                input,
                 function,
-                expr: node_to_expr(expression, expr_arena),
-                collect_groups: options.collect_groups,
-                auto_explode: options.auto_explode,
-                allow_rename: options.allow_rename,
-                pass_name_to_apply: options.pass_name_to_apply,
-                input_schema: schema.cloned(),
-                allow_threading: !state.has_cache,
-                check_lengths: options.check_lengths(),
-                allow_group_aware: options.allow_group_aware,
-            }))
+                node_to_expr(expression, expr_arena),
+                options,
+                !state.has_cache,
+                schema.cloned(),
+            )))
         },
         Function {
             input,
@@ -498,7 +524,7 @@ pub(crate) fn create_physical_expr(
             ..
         } => {
             let is_reducing_aggregation =
-                options.auto_explode && matches!(options.collect_groups, ApplyOptions::ApplyGroups);
+                options.returns_scalar && matches!(options.collect_groups, ApplyOptions::GroupWise);
             // will be reset in the function so get that here
             let has_window = state.local.has_window;
             let input = create_physical_expressions_check_state(
@@ -513,19 +539,14 @@ pub(crate) fn create_physical_expr(
                 },
             )?;
 
-            Ok(Arc::new(ApplyExpr {
-                inputs: input,
-                function: function.into(),
-                expr: node_to_expr(expression, expr_arena),
-                collect_groups: options.collect_groups,
-                auto_explode: options.auto_explode,
-                allow_rename: options.allow_rename,
-                pass_name_to_apply: options.pass_name_to_apply,
-                input_schema: schema.cloned(),
-                allow_threading: !state.has_cache,
-                check_lengths: options.check_lengths(),
-                allow_group_aware: options.allow_group_aware,
-            }))
+            Ok(Arc::new(ApplyExpr::new(
+                input,
+                function.into(),
+                node_to_expr(expression, expr_arena),
+                options,
+                !state.has_cache,
+                schema.cloned(),
+            )))
         },
         Slice {
             input,
@@ -552,7 +573,7 @@ pub(crate) fn create_physical_expr(
                 vec![input],
                 function,
                 node_to_expr(expression, expr_arena),
-                ApplyOptions::ApplyGroups,
+                ApplyOptions::GroupWise,
             )))
         },
         Wildcard => panic!("should be no wildcard at this point"),
@@ -602,10 +623,11 @@ where
 
     let mut iter = chunks.into_iter();
     let first = iter.next().unwrap();
-    let out = iter.fold(first, |mut acc, s| {
-        acc.append(&s).unwrap();
+    let dtype = first.dtype();
+    let out = iter.fold(first.to_physical_repr().into_owned(), |mut acc, s| {
+        acc.append(&s.to_physical_repr()).unwrap();
         acc
     });
 
-    f(out).map(Some)
+    unsafe { f(out.cast_unchecked(dtype).unwrap()).map(Some) }
 }

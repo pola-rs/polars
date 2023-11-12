@@ -67,10 +67,14 @@ def deprecate_function(
 
 
 def deprecate_renamed_function(
-    new_name: str, *, version: str
+    new_name: str, *, version: str, moved: bool = False
 ) -> Callable[[Callable[P, T]], Callable[P, T]]:
-    """Decorator to mark a function as deprecated due to being renamed."""
-    return deprecate_function(f"It has been renamed to `{new_name}`.", version=version)
+    """Decorator to mark a function as deprecated due to being renamed (or moved)."""
+    moved_or_renamed = "moved" if moved else "renamed"
+    return deprecate_function(
+        f"It has been {moved_or_renamed} to `{new_name}`.",
+        version=version,
+    )
 
 
 def deprecate_renamed_parameter(
@@ -196,7 +200,7 @@ def deprecate_nonkeyword_arguments(
 def _format_argument_list(allowed_args: list[str]) -> str:
     """
     Format allowed arguments list for use in the warning message of
-    ``deprecate_nonkeyword_arguments``.
+    `deprecate_nonkeyword_arguments`.
     """  # noqa: D205
     if "self" in allowed_args:
         allowed_args.remove("self")
@@ -256,3 +260,14 @@ def rename_use_earliest_to_ambiguous(
         )
         return ambiguous
     return ambiguous
+
+
+def deprecate_saturating(duration: T) -> T:
+    """Deprecate `_saturating` suffix in duration strings, apply it by default."""
+    if isinstance(duration, str) and duration.endswith("_saturating"):
+        issue_deprecation_warning(
+            "The '_saturating' suffix is deprecated and is now done by default, you can safely remove it.",
+            version="0.19.3",
+        )
+        return duration[:-11]  # type: ignore[return-value]
+    return duration

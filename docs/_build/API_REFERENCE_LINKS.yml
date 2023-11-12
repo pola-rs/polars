@@ -10,6 +10,8 @@ python:
   hstack: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.hstack.html
   read_csv: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.read_csv.html
   write_csv: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.DataFrame.write_csv.html
+  read_excel: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.read_excel.html
+  write_excel: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.DataFrame.write_excel.html
   read_json: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.read_json.html
   write_json: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.DataFrame.write_json.html
   read_ipc: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.read_ipc.html
@@ -121,7 +123,7 @@ python:
   cs.contains: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.contains
   cs.matches: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.matches
   is_selector: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.is_selector
-  selector_column_names: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.selector_column_names
+  expand_selector: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.expand_selector
 
   dt.convert_time_zone:
     name: dt.convert_time_zone
@@ -229,7 +231,7 @@ rust:
     link: https://pola-rs.github.io/polars/docs/rust/dev/polars_io/prelude/struct.IpcReader.html
     feature_flags: ['ipc']
   scan_pyarrow_dataset: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.scan_pyarrow_dataset.html
-  
+
   min: https://pola-rs.github.io/polars/docs/rust/dev/polars/series/struct.Series.html#method.min
   max: https://pola-rs.github.io/polars/docs/rust/dev/polars/series/struct.Series.html#method.max
   struct:
@@ -308,7 +310,7 @@ rust:
   cs.contains: https://github.com/pola-rs/polars/issues/10594
   cs.matches: https://github.com/pola-rs/polars/issues/10594
   is_selector: https://github.com/pola-rs/polars/issues/10594
-  selector_column_names: https://github.com/pola-rs/polars/issues/10594
+  expand_selector: https://github.com/pola-rs/polars/issues/10594
 
   dt.convert_time_zone:
     name: dt.convert_time_zone
@@ -328,8 +330,11 @@ rust:
     link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/dt/struct.DateLikeNameSpace.html#method.day
     feature_flags: [temporal]
 
-  list.eval: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/trait.ListNameSpaceExtension.html#method.eval
-
+  list.eval: 
+    name: list.eval
+    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/trait.ListNameSpaceExtension.html#method.eval
+    feature_flags: [list_eval]
+    
   str.contains:
     name: str.contains
     link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.contains

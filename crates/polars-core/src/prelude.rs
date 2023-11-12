@@ -2,7 +2,7 @@
 pub use std::sync::Arc;
 
 pub(crate) use arrow::array::*;
-pub use arrow::datatypes::{Field as ArrowField, Schema as ArrowSchema};
+pub use arrow::datatypes::{ArrowSchema, Field as ArrowField};
 #[cfg(feature = "ewma")]
 pub use arrow::legacy::kernels::ewm::EWMOptions;
 pub use arrow::legacy::prelude::*;
@@ -30,6 +30,8 @@ pub use crate::chunked_array::ops::*;
 pub use crate::chunked_array::temporal::conversion::*;
 pub(crate) use crate::chunked_array::ChunkIdIter;
 pub use crate::chunked_array::ChunkedArray;
+#[cfg(feature = "dtype-categorical")]
+pub use crate::datatypes::string_cache::StringCacheHolder;
 pub use crate::datatypes::{ArrayCollectIterExt, *};
 pub use crate::error::{
     polars_bail, polars_ensure, polars_err, polars_warn, PolarsError, PolarsResult,
@@ -40,7 +42,7 @@ pub(crate) use crate::frame::group_by::aggregations::*;
 #[cfg(feature = "algorithm_group_by")]
 pub use crate::frame::group_by::{GroupsIdx, GroupsProxy, GroupsSlice, IntoGroupsProxy};
 pub use crate::frame::{DataFrame, UniqueKeepStrategy};
-pub use crate::hashing::{FxHash, VecHash};
+pub use crate::hashing::VecHash;
 pub use crate::named_from::{NamedFrom, NamedFromOwned};
 pub use crate::schema::*;
 #[cfg(feature = "checked_arithmetic")]

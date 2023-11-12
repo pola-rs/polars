@@ -12,4 +12,5 @@ The following methods are available under the `Series.arr` attribute.
     Series.arr.max
     Series.arr.min
     Series.arr.sum
+    Series.arr.to_list
     Series.arr.unique

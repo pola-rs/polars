@@ -17,6 +17,7 @@ pub(crate) struct GroupByRollingExec {
     pub(crate) apply: Option<Arc<dyn DataFrameUdf>>,
 }
 
+#[cfg(feature = "dynamic_group_by")]
 unsafe fn update_keys(keys: &mut [Series], groups: &GroupsProxy) {
     match groups {
         GroupsProxy::Idx(groups) => {

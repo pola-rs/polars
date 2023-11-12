@@ -86,18 +86,16 @@ pub struct CloudLocation {
 }
 
 impl CloudLocation {
-    /// Parse a CloudLocation from an url.
-    pub fn new(url: &str) -> PolarsResult<CloudLocation> {
-        let parsed = Url::parse(url).map_err(to_compute_err)?;
+    pub fn from_url(parsed: &Url) -> PolarsResult<CloudLocation> {
         let is_local = parsed.scheme() == "file";
         let (bucket, key) = if is_local {
-            ("".into(), url[7..].into())
+            ("".into(), parsed.path())
         } else {
             let key = parsed.path();
             let bucket = parsed
                 .host()
                 .ok_or_else(
-                    || polars_err!(ComputeError: "cannot parse bucket (host) from url: {}", url),
+                    || polars_err!(ComputeError: "cannot parse bucket (host) from url: {}", parsed),
                 )?
                 .to_string();
             (bucket, key)
@@ -116,6 +114,12 @@ impl CloudLocation {
             prefix,
             expansion,
         })
+    }
+
+    /// Parse a CloudLocation from an url.
+    pub fn new(url: &str) -> PolarsResult<CloudLocation> {
+        let parsed = Url::parse(url).map_err(to_compute_err)?;
+        Self::from_url(&parsed)
     }
 }
 
@@ -171,8 +175,7 @@ pub async fn glob(url: &str, cloud_options: Option<&CloudOptions>) -> PolarsResu
 
     let list_stream = store
         .list(Some(&Path::from(prefix)))
-        .await
-        .map_err(to_compute_err)?;
+        .map_err(to_compute_err);
     let locations: Vec<Path> = list_stream
         .then(|entry| async { Ok::<_, PolarsError>(entry.map_err(to_compute_err)?.location) })
         .filter(|name| ready(name.as_ref().map_or(true, |name| matcher.is_matching(name))))

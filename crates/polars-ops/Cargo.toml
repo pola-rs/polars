@@ -9,10 +9,10 @@ repository = { workspace = true }
 description = "More operations on Polars data structures"
 
 [dependencies]
-polars-core = { workspace = true, features = ["algorithm_group_by"], default-features = false }
+polars-core = { workspace = true, features = ["algorithm_group_by"] }
 polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
-polars-utils = { workspace = true, default-features = false }
+polars-utils = { workspace = true }
 
 ahash = { workspace = true }
 argminmax = { version = "0.6.1", default-features = false, features = ["float"] }
@@ -65,6 +65,7 @@ round_series = []
 is_first_distinct = []
 is_last_distinct = []
 is_unique = []
+unique_counts = []
 approx_unique = []
 fused = []
 cutqcut = ["dtype-categorical", "dtype-struct"]
@@ -82,9 +83,10 @@ to_dummies = []
 interpolate = []
 list_to_struct = ["polars-core/dtype-struct"]
 list_count = []
-diff = ["polars-core/diff"]
+diff = []
+pct_change = ["diff"]
 strings = ["polars-core/strings"]
-string_justify = ["polars-core/strings"]
+string_pad = ["polars-core/strings"]
 string_from_radix = ["polars-core/strings"]
 extract_jsonpath = ["serde_json", "jsonpath_lib", "polars-json"]
 log = []
@@ -92,7 +94,7 @@ hash = []
 zip_with = ["polars-core/zip_with"]
 group_by_list = ["polars-core/group_by_list"]
 rolling_window = ["polars-core/rolling_window"]
-moment = ["polars-core/moment"]
+moment = []
 mode = []
 search_sorted = []
 merge_sorted = []
@@ -106,8 +108,12 @@ list_take = []
 list_sets = []
 list_any_all = []
 list_drop_nulls = []
+list_sample = []
 extract_groups = ["dtype-struct", "polars-core/regex"]
 is_in = ["polars-core/reinterpret"]
 convert_index = []
 repeat_by = []
 peaks = []
+cum_agg = []
+ewma = []
+abs = []

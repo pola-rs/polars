@@ -1,6 +1,6 @@
 # Query plan
 
-For any lazy query `Polars` has both:
+For any lazy query Polars has both:
 
 - a non-optimized plan with the set of steps code as we provided it and
 - an optimized plan with changes made by the query optimizer

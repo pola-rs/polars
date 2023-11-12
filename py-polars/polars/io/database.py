@@ -31,42 +31,49 @@ if TYPE_CHECKING:
         Selectable: TypeAlias = Any  # type: ignore[no-redef]
 
 
-class _DriverProperties_(TypedDict):
-    fetch_all: str
-    fetch_batches: str | None
-    exact_batch_size: bool | None
+class _ArrowDriverProperties_(TypedDict):
+    fetch_all: str  # name of the method that fetches all arrow data
+    fetch_batches: str | None  # name of the method that fetches arrow data in batches
+    exact_batch_size: bool | None  # whether indicated batch size is respected exactly
+    repeat_batch_calls: bool  # repeat batch calls (if False, batch call is generator)
 
 
-_ARROW_DRIVER_REGISTRY_: dict[str, _DriverProperties_] = {
+_ARROW_DRIVER_REGISTRY_: dict[str, _ArrowDriverProperties_] = {
     "adbc_.*": {
         "fetch_all": "fetch_arrow_table",
         "fetch_batches": None,
         "exact_batch_size": None,
+        "repeat_batch_calls": False,
     },
     "arrow_odbc_proxy": {
         "fetch_all": "fetch_record_batches",
         "fetch_batches": "fetch_record_batches",
         "exact_batch_size": True,
+        "repeat_batch_calls": False,
     },
     "databricks": {
         "fetch_all": "fetchall_arrow",
         "fetch_batches": "fetchmany_arrow",
         "exact_batch_size": True,
+        "repeat_batch_calls": True,
     },
     "duckdb": {
         "fetch_all": "fetch_arrow_table",
         "fetch_batches": "fetch_record_batch",
         "exact_batch_size": True,
+        "repeat_batch_calls": False,
     },
     "snowflake": {
         "fetch_all": "fetch_arrow_all",
         "fetch_batches": "fetch_arrow_batches",
         "exact_batch_size": False,
+        "repeat_batch_calls": False,
     },
     "turbodbc": {
         "fetch_all": "fetchallarrow",
         "fetch_batches": "fetcharrowbatches",
         "exact_batch_size": False,
+        "repeat_batch_calls": False,
     },
 }
 
@@ -121,10 +128,9 @@ class ODBCCursorProxy:
 class ConnectionExecutor:
     """Abstraction for querying databases with user-supplied connection objects."""
 
-    # indicate that we acquired a cursor (and are therefore responsible for closing
-    # it on scope-exit). note that we should never close the underlying connection,
-    # or a user-supplied cursor.
-    acquired_cursor: bool = False
+    # indicate if we can/should close the cursor on scope exit. note that we
+    # should never close the underlying connection, or a user-supplied cursor.
+    can_close_cursor: bool = False
 
     def __init__(self, connection: ConnectionOrCursor) -> None:
         self.driver_name = (
@@ -144,24 +150,57 @@ class ConnectionExecutor:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        # iif we created it, close the cursor (NOT the connection)
-        if self.acquired_cursor:
+        # iif we created it and are finished with it, we can
+        # close the cursor (but NOT the connection)
+        if self.can_close_cursor:
             self.cursor.close()
 
     def __repr__(self) -> str:
         return f"<{type(self).__name__} module={self.driver_name!r}>"
 
+    def _arrow_batches(
+        self,
+        driver_properties: _ArrowDriverProperties_,
+        *,
+        batch_size: int | None,
+        iter_batches: bool,
+    ) -> Iterable[pa.RecordBatch]:
+        """Yield Arrow data in batches, or as a single 'fetchall' batch."""
+        fetch_batches = driver_properties["fetch_batches"]
+        if not iter_batches or fetch_batches is None:
+            fetch_method = driver_properties["fetch_all"]
+            yield getattr(self.result, fetch_method)()
+        else:
+            size = batch_size if driver_properties["exact_batch_size"] else None
+            repeat_batch_calls = driver_properties["repeat_batch_calls"]
+            fetchmany_arrow = getattr(self.result, fetch_batches)
+            if not repeat_batch_calls:
+                yield from fetchmany_arrow(size)
+            else:
+                while True:
+                    arrow = fetchmany_arrow(size)
+                    if not arrow:
+                        break
+                    yield arrow
+
     def _normalise_cursor(self, conn: ConnectionOrCursor) -> Cursor:
         """Normalise a connection object such that we have the query executor."""
         if self.driver_name == "sqlalchemy" and type(conn).__name__ == "Engine":
-            # sqlalchemy engine; direct use is deprecated, so prefer the connection
-            self.acquired_cursor = True
-            return conn.connect()  # type: ignore[union-attr]
+            self.can_close_cursor = True
+            if conn.driver == "databricks-sql-python":  # type: ignore[union-attr]
+                # take advantage of the raw connection to get arrow integration
+                self.driver_name = "databricks"
+                return conn.raw_connection().cursor()  # type: ignore[union-attr]
+            else:
+                # sqlalchemy engine; direct use is deprecated, so prefer the connection
+                return conn.connect()  # type: ignore[union-attr]
+
         elif hasattr(conn, "cursor"):
             # connection has a dedicated cursor; prefer over direct execute
             cursor = cursor() if callable(cursor := conn.cursor) else cursor
-            self.acquired_cursor = True
+            self.can_close_cursor = True
             return cursor
+
         elif hasattr(conn, "execute"):
             # can execute directly (given cursor, sqlalchemy connection, etc)
             return conn  # type: ignore[return-value]
@@ -206,22 +245,20 @@ class ConnectionExecutor:
         try:
             for driver, driver_properties in _ARROW_DRIVER_REGISTRY_.items():
                 if re.match(f"^{driver}$", self.driver_name):
-                    size = batch_size if driver_properties["exact_batch_size"] else None
                     fetch_batches = driver_properties["fetch_batches"]
+                    self.can_close_cursor = fetch_batches is None or not iter_batches
                     frames = (
                         from_arrow(batch, schema_overrides=schema_overrides)
-                        for batch in (
-                            getattr(self.result, fetch_batches)(size)
-                            if (iter_batches and fetch_batches is not None)
-                            else [
-                                getattr(self.result, driver_properties["fetch_all"])()
-                            ]
+                        for batch in self._arrow_batches(
+                            driver_properties,
+                            iter_batches=iter_batches,
+                            batch_size=batch_size,
                         )
                     )
                     return frames if iter_batches else next(frames)  # type: ignore[arg-type,return-value]
         except Exception as err:
             # eg: valid turbodbc/snowflake connection, but no arrow support
-            # available in the underlying driver or this connection
+            # compiled in to the underlying driver (or on this connection)
             arrow_not_supported = (
                 "does not support Apache Arrow",
                 "Apache Arrow format is not supported",
@@ -385,7 +422,7 @@ def read_database(  # noqa: D417
     connection
         An instantiated connection (or cursor/client object) that the query can be
         executed against. Can also pass a valid ODBC connection string, starting with
-        "Driver=", in which case the ``arrow-odbc`` package will be used to establish
+        "Driver=", in which case the `arrow-odbc` package will be used to establish
         the connection and return Arrow-native data to Polars.
     iter_batches
         Return an iterator of DataFrames, where each DataFrame represents a batch of
@@ -396,8 +433,8 @@ def read_database(  # noqa: D417
         the database as the data is returned). If the backend does not support changing
         the batch size then a single DataFrame is yielded from the iterator.
     batch_size
-        Indicate the size of each batch when ``iter_batches`` is True (note that you can
-        still set this when ``iter_batches`` is False, in which case the resulting
+        Indicate the size of each batch when `iter_batches` is True (note that you can
+        still set this when `iter_batches` is False, in which case the resulting
         DataFrame is constructed internally using batched return before being returned
         to you. Note that some backends may support batched operation but not allow for
         an explicit size; in this case you will still receive batches, but their exact
@@ -407,11 +444,11 @@ def read_database(  # noqa: D417
         inferred from the query cursor or given by the incoming Arrow data (depending
         on driver/backend). This can be useful if the given types can be more precisely
         defined (for example, if you know that a given column can be declared as `u32`
-        instead of ``i64``).
+        instead of `i64`).
     execute_options
         These options will be passed through into the underlying query execution method
         as kwargs. In the case of connections made using an ODBC string (which use
-        `arrow-odbc`) these options are passed to the ``read_arrow_batches_from_odbc``
+        `arrow-odbc`) these options are passed to the `read_arrow_batches_from_odbc`
         method.
 
     Notes
@@ -423,17 +460,17 @@ def read_database(  # noqa: D417
       efficiently instantiate the DataFrame; otherwise, the DataFrame is initialised
       from row-wise data.
 
-    * Support for Arrow Flight SQL data is available via the ``adbc-driver-flightsql``
+    * Support for Arrow Flight SQL data is available via the `adbc-driver-flightsql`
       package; see https://arrow.apache.org/adbc/current/driver/flight_sql.html for
       more details about using this driver (notable databases implementing Flight SQL
       include Dremio and InfluxDB).
 
-    * The ``read_database_uri`` function is likely to be noticeably faster than
-      ``read_database`` if you are using a SQLAlchemy or DBAPI2 connection, as
-      ``connectorx`` will optimise translation of the result set into Arrow format
+    * The `read_database_uri` function is likely to be noticeably faster than
+      `read_database` if you are using a SQLAlchemy or DBAPI2 connection, as
+      `connectorx` will optimise translation of the result set into Arrow format
       in Rust, whereas these libraries will return row-wise data to Python *before*
       we can load into Arrow. Note that you can easily determine the connection's
-      URI from a SQLAlchemy engine object by calling ``str(conn.engine.url)``.
+      URI from a SQLAlchemy engine object by calling `str(conn.engine.url)`.
 
     * If polars has to create a cursor from your connection in order to execute the
       query then that cursor will be automatically closed when the query completes;
@@ -453,7 +490,7 @@ def read_database(  # noqa: D417
     ...     schema_overrides={"normalised_score": pl.UInt8},
     ... )  # doctest: +SKIP
 
-    Use a parameterised SQLAlchemy query, passing named values via ``execute_options``:
+    Use a parameterised SQLAlchemy query, passing named values via `execute_options`:
 
     >>> df = pl.read_database(
     ...     query="SELECT * FROM test_data WHERE metric > :value",
@@ -461,7 +498,7 @@ def read_database(  # noqa: D417
     ...     execute_options={"parameters": {"value": 0}},
     ... )  # doctest: +SKIP
 
-    Use 'qmark' style parameterisation; values are still passed via ``execute_options``,
+    Use 'qmark' style parameterisation; values are still passed via `execute_options`,
     but in this case the "parameters" value is a sequence of literals, not a dict:
 
     >>> df = pl.read_database(
@@ -470,7 +507,7 @@ def read_database(  # noqa: D417
     ...     execute_options={"parameters": [0]},
     ... )  # doctest: +SKIP
 
-    Instantiate a DataFrame using an ODBC connection string (requires ``arrow-odbc``)
+    Instantiate a DataFrame using an ODBC connection string (requires `arrow-odbc`)
     setting upper limits on the buffer size of variadic text/binary columns, returning
     the result as an iterator over DataFrames containing batches of 1000 rows:
 
@@ -572,14 +609,14 @@ def read_database_uri(
     engine : {'connectorx', 'adbc'}
         Selects the engine used for reading the database (defaulting to connectorx):
 
-        * ``'connectorx'``
+        * `'connectorx'`
           Supports a range of databases, such as PostgreSQL, Redshift, MySQL, MariaDB,
           Clickhouse, Oracle, BigQuery, SQL Server, and so on. For an up-to-date list
           please see the connectorx docs:
 
           * https://github.com/sfu-db/connector-x#supported-sources--destinations
 
-        * ``'adbc'``
+        * `'adbc'`
           Currently there is limited support for this engine, with a relatively small
           number of drivers available, most of which are still in development. For
           an up-to-date list of drivers please see the ADBC docs:
@@ -591,11 +628,11 @@ def read_database_uri(
 
     Notes
     -----
-    For ``connectorx``, ensure that you have ``connectorx>=0.3.2``. The documentation
+    For `connectorx`, ensure that you have `connectorx>=0.3.2`. The documentation
     is available `here <https://sfu-db.github.io/connector-x/intro.html>`_.
 
-    For ``adbc`` you will need to have installed ``pyarrow`` and the ADBC driver associated
-    with the backend you are connecting to, eg: ``adbc-driver-postgresql``.
+    For `adbc` you will need to have installed `pyarrow` and the ADBC driver associated
+    with the backend you are connecting to, eg: `adbc-driver-postgresql`.
 
     See Also
     --------
@@ -640,7 +677,7 @@ def read_database_uri(
     ...     engine="adbc",
     ... )  # doctest: +SKIP
 
-    """  # noqa: W505
+    """
     if not isinstance(uri, str):
         raise TypeError(
             f"expected connection to be a URI string; found {type(uri).__name__!r}"
@@ -681,8 +718,7 @@ def _read_sql_connectorx(
         import connectorx as cx
     except ModuleNotFoundError:
         raise ModuleNotFoundError(
-            "connectorx is not installed"
-            "\n\nPlease run: pip install connectorx>=0.3.2"
+            "connectorx is not installed" "\n\nPlease run: pip install connectorx"
         ) from None
 
     try:

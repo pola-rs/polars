@@ -5,7 +5,7 @@ mod arity;
 mod coerce;
 mod concat;
 mod correlation;
-mod horizontal;
+pub(crate) mod horizontal;
 mod index;
 #[cfg(feature = "range")]
 mod range;

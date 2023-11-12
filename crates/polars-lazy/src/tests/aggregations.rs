@@ -1,6 +1,26 @@
 use polars_ops::prelude::ListNameSpaceImpl;
+use polars_utils::idxvec;
 
 use super::*;
+
+#[test]
+#[cfg(feature = "dtype-datetime")]
+fn test_agg_list_type() -> PolarsResult<()> {
+    let s = Series::new("foo", &[1, 2, 3]);
+    let s = s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
+
+    let l = unsafe { s.agg_list(&GroupsProxy::Idx(vec![(0, idxvec![0, 1, 2])].into())) };
+
+    let result = match l.dtype() {
+        DataType::List(inner) => {
+            matches!(&**inner, DataType::Datetime(TimeUnit::Nanoseconds, None))
+        },
+        _ => false,
+    };
+    assert!(result);
+
+    Ok(())
+}
 
 #[test]
 fn test_agg_exprs() -> PolarsResult<()> {
@@ -75,10 +95,10 @@ fn test_cumsum_agg_as_key() -> PolarsResult<()> {
     let out = df
         .lazy()
         .group_by([col("soil")
-            .neq(col("soil").shift_and_fill(1, col("soil").first()))
+            .neq(col("soil").shift_and_fill(lit(1), col("soil").first()))
             .cumsum(false)
             .alias("key")])
-        .agg([col("depth").max().keep_name()])
+        .agg([col("depth").max().name().keep()])
         .sort("depth", SortOptions::default())
         .collect()?;
 
@@ -123,7 +143,7 @@ fn test_auto_list_agg() -> PolarsResult<()> {
         .clone()
         .lazy()
         .group_by([col("fruits")])
-        .agg([col("B").shift_and_fill(-1, lit(-1)).alias("foo")])
+        .agg([col("B").shift_and_fill(lit(-1), lit(-1)).alias("foo")])
         .collect()?;
 
     assert!(matches!(out.column("foo")?.dtype(), DataType::List(_)));
@@ -133,19 +153,19 @@ fn test_auto_list_agg() -> PolarsResult<()> {
         .clone()
         .lazy()
         .group_by([col("fruits")])
-        .agg([col("B").shift_and_fill(-1, lit(-1))])
+        .agg([col("B").shift_and_fill(lit(-1), lit(-1))])
         .collect()?;
 
     // test if window expr executor adds list
     let _out = df
         .clone()
         .lazy()
-        .select([col("B").shift_and_fill(-1, lit(-1)).alias("foo")])
+        .select([col("B").shift_and_fill(lit(-1), lit(-1)).alias("foo")])
         .collect()?;
 
     let _out = df
         .lazy()
-        .select([col("B").shift_and_fill(-1, lit(-1))])
+        .select([col("B").shift_and_fill(lit(-1), lit(-1))])
         .collect()?;
     Ok(())
 }
@@ -393,7 +413,7 @@ fn test_shift_elementwise_issue_2509() -> PolarsResult<()> {
         .lazy()
         // Don't use maintain order here! That hides the bug
         .group_by([col("x")])
-        .agg(&[(col("y").shift(-1) + col("x")).alias("sum")])
+        .agg(&[(col("y").shift(lit(-1)) + col("x")).alias("sum")])
         .sort("x", Default::default())
         .collect()?;
 
@@ -421,7 +441,7 @@ fn take_aggregations() -> PolarsResult<()> {
         .clone()
         .lazy()
         .group_by([col("user")])
-        .agg([col("book").take(col("count").arg_max()).alias("fav_book")])
+        .agg([col("book").get(col("count").arg_max()).alias("fav_book")])
         .sort("user", Default::default())
         .collect()?;
 
@@ -460,7 +480,7 @@ fn take_aggregations() -> PolarsResult<()> {
     let out = df
         .lazy()
         .group_by([col("user")])
-        .agg([col("book").take(lit(0)).alias("take_lit")])
+        .agg([col("book").get(lit(0)).alias("take_lit")])
         .sort("user", Default::default())
         .collect()?;
 
@@ -484,7 +504,7 @@ fn test_take_consistency() -> PolarsResult<()> {
                 multithreaded: true,
                 maintain_order: false,
             })
-            .take(lit(0))])
+            .get(lit(0))])
         .collect()?;
 
     let a = out.column("A")?;
@@ -502,7 +522,7 @@ fn test_take_consistency() -> PolarsResult<()> {
                 multithreaded: true,
                 maintain_order: false,
             })
-            .take(lit(0))])
+            .get(lit(0))])
         .collect()?;
 
     let out = out.column("A")?;
@@ -521,10 +541,10 @@ fn test_take_consistency() -> PolarsResult<()> {
                     multithreaded: true,
                     maintain_order: false,
                 })
-                .take(lit(0))
+                .get(lit(0))
                 .alias("1"),
             col("A")
-                .take(
+                .get(
                     col("A")
                         .arg_sort(SortOptions {
                             descending: true,
@@ -532,7 +552,7 @@ fn test_take_consistency() -> PolarsResult<()> {
                             multithreaded: true,
                             maintain_order: false,
                         })
-                        .take(lit(0)),
+                        .get(lit(0)),
                 )
                 .alias("2"),
         ])
@@ -556,10 +576,7 @@ fn test_take_in_groups() -> PolarsResult<()> {
     let out = df
         .lazy()
         .sort("fruits", Default::default())
-        .select([col("B")
-            .take(lit(Series::new("", &[0u32])))
-            .over([col("fruits")])
-            .alias("taken")])
+        .select([col("B").get(lit(0u32)).over([col("fruits")]).alias("taken")])
         .collect()?;
 
     assert_eq!(

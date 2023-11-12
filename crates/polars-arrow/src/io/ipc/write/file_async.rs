@@ -21,46 +21,6 @@ type WriteOutput<W> = (usize, Option<Block>, Vec<Block>, Option<W>);
 ///
 /// The file header is automatically written before writing the first chunk, and the file footer is
 /// automatically written when the sink is closed.
-///
-/// # Examples
-///
-/// ```
-/// use futures::{SinkExt, TryStreamExt, io::Cursor};
-/// use polars_arrow::array::{Array, Int32Array};
-/// use polars_arrow::datatypes::{DataType, Field, Schema};
-/// use polars_arrow::chunk::Chunk;
-/// use polars_arrow::io::ipc::write::file_async::FileSink;
-/// use polars_arrow::io::ipc::read::file_async::{read_file_metadata_async, FileStream};
-/// # futures::executor::block_on(async move {
-/// let schema = Schema::from(vec![
-///     Field::new("values", DataType::Int32, true),
-/// ]);
-///
-/// let mut buffer = Cursor::new(vec![]);
-/// let mut sink = FileSink::new(
-///     &mut buffer,
-///     schema,
-///     None,
-///     Default::default(),
-/// );
-///
-/// // Write chunks to file
-/// for i in 0..3 {
-///     let values = Int32Array::from(&[Some(i), None]);
-///     let chunk = Chunk::new(vec![values.boxed()]);
-///     sink.feed(chunk.into()).await?;
-/// }
-/// sink.close().await?;
-/// drop(sink);
-///
-/// // Read chunks from file
-/// buffer.set_position(0);
-/// let metadata = read_file_metadata_async(&mut buffer).await?;
-/// let mut stream = FileStream::new(buffer, metadata, None, None);
-/// let chunks = stream.try_collect::<Vec<_>>().await?;
-/// # polars_arrow::error::Result::Ok(())
-/// # }).unwrap();
-/// ```
 pub struct FileSink<'a, W: AsyncWrite + Unpin + Send + 'a> {
     writer: Option<W>,
     task: Option<BoxFuture<'a, PolarsResult<WriteOutput<W>>>>,
@@ -70,7 +30,7 @@ pub struct FileSink<'a, W: AsyncWrite + Unpin + Send + 'a> {
     fields: Vec<IpcField>,
     record_blocks: Vec<Block>,
     dictionary_blocks: Vec<Block>,
-    schema: Schema,
+    schema: ArrowSchema,
 }
 
 impl<'a, W> FileSink<'a, W>
@@ -80,7 +40,7 @@ where
     /// Create a new file writer.
     pub fn new(
         writer: W,
-        schema: Schema,
+        schema: ArrowSchema,
         ipc_fields: Option<Vec<IpcField>>,
         options: WriteOptions,
     ) -> Self {

@@ -52,6 +52,13 @@ def test_sample_df() -> None:
 
     assert df.sample(n=2, seed=0).shape == (2, 3)
     assert df.sample(fraction=0.4, seed=0).shape == (1, 3)
+    assert df.sample(n=pl.Series([2]), seed=0).shape == (2, 3)
+    assert df.sample(fraction=pl.Series([0.4]), seed=0).shape == (1, 3)
+    assert df.select(pl.col("foo").sample(n=pl.Series([2]), seed=0)).shape == (2, 1)
+    assert df.select(pl.col("foo").sample(fraction=pl.Series([0.4]), seed=0)).shape == (
+        1,
+        1,
+    )
 
 
 def test_sample_n_expr() -> None:
