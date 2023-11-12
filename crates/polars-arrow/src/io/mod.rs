@@ -14,4 +14,8 @@ pub mod flight;
 #[cfg_attr(docsrs, doc(cfg(feature = "io_avro")))]
 pub mod avro;
 
+#[cfg(feature = "io_odbc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "io_odbc")))]
+pub mod avro;
+
 pub mod iterator;

@@ -97,7 +97,6 @@ rustc_version = "0.4.0"
 getrandom = { version = "0.2", features = ["js"] }
 
 [features]
-default = []
 full = [
   "arrow_rs",
   "io_ipc",
@@ -108,11 +107,13 @@ full = [
   "io_avro",
   "io_avro_compression",
   "io_avro_async",
+  "io_odbc",
   "regex-syntax",
   "compute",
   # parses timezones used in timestamp conversions
   "chrono-tz",
 ]
+default = []
 arrow_rs = ["arrow-buffer", "arrow-schema", "arrow-data", "arrow-array"]
 io_ipc = ["arrow-format", "polars-error/arrow-format"]
 io_ipc_write_async = ["io_ipc", "futures"]
@@ -121,10 +122,10 @@ io_ipc_compression = ["lz4", "zstd"]
 io_flight = ["io_ipc", "arrow-format/flight-data"]
 
 io_avro = ["avro-schema", "polars-error/avro-schema"]
-io_avro_compression = [
-  "avro-schema/compression",
-]
+io_avro_compression = ["avro-schema/compression"]
 io_avro_async = ["avro-schema/async"]
+
+io_odbc = []
 
 # the compute kernels. Disabling this significantly reduces compile time.
 compute_aggregate = ["multiversion"]
