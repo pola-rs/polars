@@ -16,6 +16,6 @@ pub mod avro;
 
 #[cfg(feature = "io_odbc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "io_odbc")))]
-pub mod avro;
+pub mod odbc;
 
 pub mod iterator;
