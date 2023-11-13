@@ -7,13 +7,13 @@ def test_melt() -> None:
     df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5], "C": [2, 4, 6]})
     for _idv, _vv in (("A", ("B", "C")), (cs.string(), cs.integer())):
         melted_eager = df.melt(id_vars="A", value_vars=["B", "C"])
-        assert all(melted_eager["value"] == [1, 3, 5, 2, 4, 6])
+        assert all(melted_eager["value"] == pl.Series([1, 3, 5, 2, 4, 6]))
 
         melted_lazy = df.lazy().melt(id_vars="A", value_vars=["B", "C"])
-        assert all(melted_lazy.collect()["value"] == [1, 3, 5, 2, 4, 6])
+        assert all(melted_lazy.collect()["value"] == pl.Series([1, 3, 5, 2, 4, 6]))
 
     melted = df.melt(id_vars="A", value_vars="B")
-    assert all(melted["value"] == [1, 3, 5])
+    assert all(melted["value"] == pl.Series([1, 3, 5]))
     n = 3
 
     for melted in [df.melt(), df.lazy().melt().collect()]:

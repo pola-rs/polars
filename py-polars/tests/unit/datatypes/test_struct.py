@@ -68,8 +68,11 @@ def test_struct_equality() -> None:
 
     s7 = pl.Series("misc", [{"x": "a", "y": 0}, {"x": "b", "y": 0}])
     s8 = pl.Series("misc", [{"x": "a", "y": 0}, {"x": "b", "y": 0}, {"x": "c", "y": 0}])
-    assert (s7 != s8).all()
-    assert (~(s7 == s8)).all()
+    with pytest.raises(pl.ShapeError):
+        (s7 != s8).all()
+        
+    with pytest.raises(pl.ShapeError):
+        (~(s7 == s8)).all()
 
 
 def test_struct_equality_strict() -> None:

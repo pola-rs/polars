@@ -716,7 +716,7 @@ def from_pandas(
     ]
 
     """
-    if isinstance(data, (pd.Series, pd.DatetimeIndex)):
+    if isinstance(data, (pd.Series, pd.Index, pd.DatetimeIndex)):
         return pl.Series._from_pandas("", data, nan_to_null=nan_to_null)
     elif isinstance(data, pd.DataFrame):
         return pl.DataFrame._from_pandas(

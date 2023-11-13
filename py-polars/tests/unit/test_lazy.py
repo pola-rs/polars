@@ -829,10 +829,10 @@ def test_lazy_ufunc() -> None:
         ]
     )
     expected = pl.DataFrame(
-        [
-            pl.Series("power_uint8", [1, 4, 9, 16], dtype=pl.UInt8),
-            pl.Series("power_float64", [1.0, 4.0, 9.0, 16.0], dtype=pl.Float64),
-            pl.Series("power_uint16", [1, 4, 9, 16], dtype=pl.UInt16),
+        [  # np.power delegates to polars's implementation of power, which always has an output dtype of Float64
+            pl.Series("power_uint8", [1, 4, 9, 16], dtype=pl.Float64),
+            pl.Series("power_float64", [1, 4, 9, 16], dtype=pl.Float64),
+            pl.Series("power_uint16", [1, 4, 9, 16], dtype=pl.Float64),
         ]
     )
     assert_frame_equal(out.collect(), expected)

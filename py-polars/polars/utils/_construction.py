@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import warnings
 from datetime import date, datetime, time, timedelta
-from decimal import Decimal as PyDecimal
+from decimal import Decimal
 from functools import lru_cache, singledispatch
 from itertools import islice, zip_longest
 from operator import itemgetter
@@ -56,6 +56,7 @@ from polars.dependencies import (
     _NUMPY_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
+    _check_for_pyarrow,
     _check_for_pydantic,
     dataclasses,
     pydantic,
@@ -371,7 +372,7 @@ def _construct_series_with_fallbacks(
                 constructor = py_type_to_constructor(int)
 
             elif "decimal.Decimal" in str_exc:
-                constructor = py_type_to_constructor(PyDecimal)
+                constructor = py_type_to_constructor(Decimal)
             else:
                 raise
 
@@ -619,7 +620,8 @@ def _pandas_series_to_arrow(
 
 
 def pandas_to_pyseries(
-    name: str, values: pd.Series[Any] | pd.DatetimeIndex, *, nan_to_null: bool = True
+    name: str, values: pd.Series[Any] | pd.Index | pd.DatetimeIndex, *,
+    nan_to_null: bool = True
 ) -> PySeries:
     """Construct a PySeries from a pandas Series or DatetimeIndex."""
     # TODO: Change `if not name` to `if name is not None` once name is Optional[str]
@@ -1005,7 +1007,7 @@ def _sequence_to_pydf_dispatcher(
         to_pydf = _sequence_of_numpy_to_pydf
 
     elif _check_for_pandas(first_element) and isinstance(
-        first_element, (pd.Series, pd.DatetimeIndex)
+        first_element, (pd.Series, pd.Index, pd.DatetimeIndex)
     ):
         to_pydf = _sequence_of_pandas_to_pydf
 
@@ -1196,7 +1198,7 @@ def _sequence_of_numpy_to_pydf(
 
 
 def _sequence_of_pandas_to_pydf(
-    first_element: pd.Series[Any] | pd.DatetimeIndex,
+    first_element: pd.Series[Any] | pd.Index | pd.DatetimeIndex,
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     schema_overrides: SchemaDict | None,
@@ -1773,3 +1775,49 @@ def numpy_to_idxs(idxs: np.ndarray[Any, Any], size: int) -> pl.Series:
     idxs = idxs.astype(np.uint32) if idx_type == UInt32 else idxs.astype(np.uint64)
 
     return pl.Series("", idxs, dtype=idx_type)
+
+
+def _prepare_other_arg(other: Any, prefix: str) -> \
+        pl.Series | pl.DataFrame | int | float | bool | str | bytes | date | \
+        datetime | timedelta | time:
+    """
+    For Series and DataFrame binary operators, autoconvert the other (non-self)
+    argument to a Series (if a one-dimensional NumPy array, NumPy generic like
+    np.float32(0), PyArrow Array or ChunkedArray, or pandas Series or Index),
+    or DataFrame (if a two-dimensional NumPy array, PyArrow Table, or pandas
+    DataFrame).
+    
+    Return Series/DataFrame and scalar types (int, float, bool, str, bytes,
+    date, datetime, timedelta, time) as-is. Return None for all other types.
+    
+    Prefix says what `other` is (e.g. 'Left-hand operand of "*"') when
+    raising an error, for more descriptive error messages.
+    
+    This function copies much of the logic in pl.DataFrame.__init__() and
+    pl.Series.__init__().
+    """
+    if _check_for_numpy(other) and isinstance(other, (np.generic, np.ndarray)):
+        if isinstance(other, np.generic):
+            other = np.array([other])  # convert to 1D array
+        if other.ndim == 1:
+            return pl.Series._from_pyseries(numpy_to_pyseries('', other))
+        elif other.ndim == 2:
+            return pl.DataFrame._from_pydf(numpy_to_pydf(other))
+        else:
+            raise ShapeError(f'{prefix} is a {other.ndim}-dimensional NumPy '
+                             f'array, but must be one- or two-dimensional')
+    if isinstance(other, (pl.Series, pl.DataFrame, int, float, bool, str,
+                          bytes, date, datetime, timedelta, time)):
+        # This has to go after the NumPy check because NumPy generics inherit
+        # from Python scalar types as well as np.generic.
+        return other
+    if _check_for_pyarrow(other):
+        if isinstance(other, (pa.Array, pa.ChunkedArray)):
+            return pl.Series._from_pyseries(arrow_to_pyseries('', other))
+        elif isinstance(other, pa.Table):
+            return pl.DataFrame._from_pydf(arrow_to_pydf(other))
+    if _check_for_pandas(other):
+        if isinstance(other, (pd.Series, pd.Index, pd.DatetimeIndex)):
+            return pl.Series._from_pyseries(pandas_to_pyseries('', other))
+        elif isinstance(other, pd.DataFrame):
+            return pl.DataFrame._from_pydf(pandas_to_pydf(other))

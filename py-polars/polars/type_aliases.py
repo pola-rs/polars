@@ -21,7 +21,7 @@ from typing import (
 if TYPE_CHECKING:
     import sys
 
-    from polars import DataFrame, Expr, LazyFrame, Series
+    from polars import Expr, Series
     from polars.datatypes import DataType, DataTypeClass, IntegerType, TemporalType
     from polars.dependencies import numpy as np
     from polars.dependencies import pandas as pd
@@ -70,8 +70,6 @@ PythonLiteral: TypeAlias = Union[
 IntoExprColumn: TypeAlias = Union["Expr", "Series", str]
 # Inputs that can convert into an expression
 IntoExpr: TypeAlias = Union[PythonLiteral, IntoExprColumn, None]
-
-ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
 
 # selector type, and related collection/sequence
 SelectorType: TypeAlias = "_selector_proxy_"

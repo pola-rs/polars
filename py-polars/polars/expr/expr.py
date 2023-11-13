@@ -151,54 +151,76 @@ class Expr:
 
     # operators
     def __add__(self, other: Any) -> Self:
+        if isinstance(other, pl.DataFrame):
+            return NotImplemented
         return self._from_pyexpr(self._pyexpr + self._to_pyexpr(other))
 
     def __radd__(self, other: Any) -> Self:
         return self._from_pyexpr(self._to_pyexpr(other) + self._pyexpr)
 
     def __and__(self, other: Expr | int | bool) -> Self:
+        if isinstance(other, pl.DataFrame):
+            return NotImplemented
         return self._from_pyexpr(self._pyexpr._and(self._to_pyexpr(other)))
 
     def __rand__(self, other: Any) -> Self:
         return self._from_pyexpr(self._to_pyexpr(other)._and(self._pyexpr))
 
     def __eq__(self, other: Any) -> Self:  # type: ignore[override]
+        if isinstance(other, pl.DataFrame):
+            return NotImplemented
         return self._from_pyexpr(self._pyexpr.eq(self._to_expr(other)._pyexpr))
 
     def __floordiv__(self, other: Any) -> Self:
+        if isinstance(other, pl.DataFrame):
+            return NotImplemented
         return self._from_pyexpr(self._pyexpr // self._to_pyexpr(other))
 
     def __rfloordiv__(self, other: Any) -> Self:
         return self._from_pyexpr(self._to_pyexpr(other) // self._pyexpr)
 
     def __ge__(self, other: Any) -> Self:
+        if isinstance(other, pl.DataFrame):
+            return NotImplemented
         return self._from_pyexpr(self._pyexpr.gt_eq(self._to_expr(other)._pyexpr))
 
     def __gt__(self, other: Any) -> Self:
+        if isinstance(other, pl.DataFrame):
+            return NotImplemented
         return self._from_pyexpr(self._pyexpr.gt(self._to_expr(other)._pyexpr))
 
     def __invert__(self) -> Self:
         return self.not_()
 
     def __le__(self, other: Any) -> Self:
+        if isinstance(other, pl.DataFrame):
+            return NotImplemented
         return self._from_pyexpr(self._pyexpr.lt_eq(self._to_expr(other)._pyexpr))
 
     def __lt__(self, other: Any) -> Self:
+        if isinstance(other, pl.DataFrame):
+            return NotImplemented
         return self._from_pyexpr(self._pyexpr.lt(self._to_expr(other)._pyexpr))
 
     def __mod__(self, other: Any) -> Self:
+        if isinstance(other, pl.DataFrame):
+            return NotImplemented
         return self._from_pyexpr(self._pyexpr % self._to_pyexpr(other))
 
     def __rmod__(self, other: Any) -> Self:
         return self._from_pyexpr(self._to_pyexpr(other) % self._pyexpr)
 
     def __mul__(self, other: Any) -> Self:
+        if isinstance(other, pl.DataFrame):
+            return NotImplemented
         return self._from_pyexpr(self._pyexpr * self._to_pyexpr(other))
 
     def __rmul__(self, other: Any) -> Self:
         return self._from_pyexpr(self._to_pyexpr(other) * self._pyexpr)
 
     def __ne__(self, other: Any) -> Self:  # type: ignore[override]
+        if isinstance(other, pl.DataFrame):
+            return NotImplemented
         return self._from_pyexpr(self._pyexpr.neq(self._to_expr(other)._pyexpr))
 
     def __neg__(self) -> Expr:
@@ -208,6 +230,8 @@ class Expr:
         return neg_expr
 
     def __or__(self, other: Expr | int | bool) -> Self:
+        if isinstance(other, pl.DataFrame):
+            return NotImplemented
         return self._from_pyexpr(self._pyexpr._or(self._to_pyexpr(other)))
 
     def __ror__(self, other: Any) -> Self:
@@ -226,22 +250,36 @@ class Expr:
         return self._from_pyexpr(parse_as_expression(base)) ** self
 
     def __sub__(self, other: Any) -> Self:
+        if isinstance(other, pl.DataFrame):
+            return NotImplemented
         return self._from_pyexpr(self._pyexpr - self._to_pyexpr(other))
 
     def __rsub__(self, other: Any) -> Self:
         return self._from_pyexpr(self._to_pyexpr(other) - self._pyexpr)
 
     def __truediv__(self, other: Any) -> Self:
+        if isinstance(other, pl.DataFrame):
+            return NotImplemented
         return self._from_pyexpr(self._pyexpr / self._to_pyexpr(other))
 
     def __rtruediv__(self, other: Any) -> Self:
         return self._from_pyexpr(self._to_pyexpr(other) / self._pyexpr)
 
     def __xor__(self, other: Expr | int | bool) -> Self:
+        if isinstance(other, pl.DataFrame):
+            return NotImplemented
         return self._from_pyexpr(self._pyexpr._xor(self._to_pyexpr(other)))
 
     def __rxor__(self, other: Any) -> Self:
         return self._from_pyexpr(self._to_pyexpr(other)._xor(self._pyexpr))
+
+    def __matmul__(self, other: Expr | str) -> Self:
+        if isinstance(other, pl.DataFrame):
+            return NotImplemented
+        return self._from_pyexpr(self._pyexpr.dot(parse_as_expression(other)))
+    
+    def __rmatmul__(self, other: Any) -> Self:
+        return self._from_pyexpr(parse_as_expression(other).dot(self._pyexpr))
 
     def __getstate__(self) -> bytes:
         return self._pyexpr.__getstate__()
@@ -1841,8 +1879,7 @@ class Expr:
         └─────┘
 
         """
-        other = parse_as_expression(other)
-        return self._from_pyexpr(self._pyexpr.dot(other))
+        return self @ other
 
     def mode(self) -> Self:
         """

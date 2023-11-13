@@ -3,7 +3,9 @@ from __future__ import annotations
 import contextlib
 import math
 import os
+from collections.abc import Set
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -30,10 +32,8 @@ from polars.datatypes import (
     UNSIGNED_INTEGER_DTYPES,
     Array,
     Boolean,
-    Categorical,
     Date,
     Datetime,
-    Decimal,
     Duration,
     Float64,
     Int8,
@@ -41,6 +41,7 @@ from polars.datatypes import (
     Int32,
     Int64,
     List,
+    Null,
     Object,
     Time,
     UInt32,
@@ -48,8 +49,8 @@ from polars.datatypes import (
     Unknown,
     Utf8,
     dtype_to_ctype,
+    dtype_to_py_type,
     is_polars_dtype,
-    maybe_cast,
     numpy_char_code_to_dtype,
     py_type_to_dtype,
     supported_numpy_char_code,
@@ -75,6 +76,7 @@ from polars.series.struct import StructNameSpace
 from polars.series.utils import expr_dispatch, get_ffi_func
 from polars.slice import PolarsSlice
 from polars.utils._construction import (
+    _prepare_other_arg,
     arrow_to_pyseries,
     iterable_to_pyseries,
     numpy_to_idxs,
@@ -84,11 +86,6 @@ from polars.utils._construction import (
     series_to_pyseries,
 )
 from polars.utils._wrap import wrap_df
-from polars.utils.convert import (
-    _date_to_pl_date,
-    _datetime_to_pl_timestamp,
-    _time_to_pl_time,
-)
 from polars.utils.deprecation import (
     deprecate_function,
     deprecate_nonkeyword_arguments,
@@ -118,7 +115,6 @@ if TYPE_CHECKING:
     from polars.series._numpy import SeriesView
     from polars.type_aliases import (
         ClosedInterval,
-        ComparisonOperator,
         FillNullStrategy,
         InterpolationMethod,
         IntoExpr,
@@ -149,6 +145,7 @@ ArrayLike = Union[
     "pa.ChunkedArray",
     "np.ndarray",
     "pd.Series",
+    "pd.Index",
     "pd.DatetimeIndex",
 ]
 
@@ -313,7 +310,7 @@ class Series:
             self._s = arrow_to_pyseries(name, values)
 
         elif _check_for_pandas(values) and isinstance(
-            values, (pd.Series, pd.DatetimeIndex)
+            values, (pd.Series, pd.Index, pd.DatetimeIndex)
         ):
             self._s = pandas_to_pyseries(name, values)
 
@@ -346,7 +343,7 @@ class Series:
     def _from_pandas(
         cls,
         name: str,
-        values: pd.Series[Any] | pd.DatetimeIndex,
+        values: pd.Series[Any] | pd.Index | pd.DatetimeIndex,
         *,
         nan_to_null: bool = True,
     ) -> Self:
@@ -445,184 +442,97 @@ class Series:
     def __len__(self) -> int:
         return self.len()
 
-    def __and__(self, other: Series) -> Self:
-        if not isinstance(other, Series):
-            other = Series([other])
-        return self._from_pyseries(self._s.bitand(other._s))
-
-    def __rand__(self, other: Series) -> Series:
-        if not isinstance(other, Series):
-            other = Series([other])
-        return other & self
-
-    def __or__(self, other: Series) -> Self:
-        if not isinstance(other, Series):
-            other = Series([other])
-        return self._from_pyseries(self._s.bitor(other._s))
-
-    def __ror__(self, other: Series) -> Series:
-        if not isinstance(other, Series):
-            other = Series([other])
-        return other | self
-
-    def __xor__(self, other: Series) -> Self:
-        if not isinstance(other, Series):
-            other = Series([other])
-        return self._from_pyseries(self._s.bitxor(other._s))
-
-    def __rxor__(self, other: Series) -> Series:
-        if not isinstance(other, Series):
-            other = Series([other])
-        return other ^ self
-
-    def _comp(self, other: Any, op: ComparisonOperator) -> Series:
-        # special edge-case; boolean broadcast series (eq/neq) is its own result
-        if self.dtype == Boolean and isinstance(other, bool) and op in ("eq", "neq"):
-            if (other is True and op == "eq") or (other is False and op == "neq"):
-                return self.clone()
-            elif (other is False and op == "eq") or (other is True and op == "neq"):
-                return ~self
-        elif isinstance(other, float) and self.dtype in INTEGER_DTYPES:
-            # require upcast when comparing int series to float value
-            self = self.cast(Float64)
-            f = get_ffi_func(op + "_<>", Float64, self._s)
-            assert f is not None
-            return self._from_pyseries(f(other))
-        elif isinstance(other, datetime):
-            if self.dtype == Date:
-                # require upcast when comparing date series to datetime
-                self = self.cast(Datetime("us"))
-                time_unit = "us"
-            elif self.dtype == Datetime:
-                # Use local time zone info
-                time_zone = self.dtype.time_zone  # type: ignore[union-attr]
-                if str(other.tzinfo) != str(time_zone):
+    def _binary_op(self, other: Any, op: str, right_hand: bool = False,
+                   allowed_dtypes: list[list[list[Set], list[Set]]] |
+                                   None = None) -> Self:
+        """Perform a binary operation on a Series and another object."""
+        if isinstance(other, pl.Expr):
+            return eval(f'F.lit(self) {op} other')
+        other_type = type(other).__name__
+        other = _prepare_other_arg(
+            other, prefix=f'{"Left" if right_hand else "Right"}-hand operand '
+                          f'of "{op}" operation')
+        if isinstance(other, pl.DataFrame):
+            return other._binary_op(self, op=op, right_hand=not right_hand,
+                                    allowed_dtypes=allowed_dtypes)
+        left_type, right_type = (other_type, 'Series') if right_hand else \
+            ('Series', other_type)
+        if other is None:
+            raise TypeError(f"unsupported operand type(s) for {op}: "
+                            f"'{left_type}' and '{right_type}'")
+        left, right = (other, self) if right_hand else (self, other)
+        if isinstance(other, Series) and len(self) != len(other) and \
+                len(self) > 1 and len(other) > 1:
+            raise ShapeError(
+                f'Cannot perform Series {op} Series operation because the two '
+                f'Series have different lengths: the left Series has length '
+                f'{len(left)}, while the right Series has length {len(right)}')
+        if allowed_dtypes is not None:
+            self_dtype = dtype_to_py_type(self.dtype)
+            other_dtype = dtype_to_py_type(other.dtype) \
+                if isinstance(other, pl.Series) else type(other)
+            NoneType = None.__class__
+            if not any((self_dtype is NoneType or
+                        self_dtype in allowed_dtype_pair[right_hand]) and
+                       (other_dtype is NoneType or
+                        other_dtype in allowed_dtype_pair[1 - right_hand])
+                       for allowed_dtype_pairs in allowed_dtypes
+                       for allowed_dtype_pair in allowed_dtype_pairs):
+                if isinstance(other, Series):
+                    left_dtype = left.dtype.base_type()
+                    right_dtype = right.dtype.base_type()
                     raise TypeError(
-                        f"Datetime time zone {other.tzinfo!r} does not match Series timezone {time_zone!r}"
-                    )
-                time_unit = self.dtype.time_unit  # type: ignore[union-attr]
-            else:
-                raise ValueError(
-                    f"cannot compare datetime.datetime to series of type {self.dtype}"
-                )
-            ts = _datetime_to_pl_timestamp(other, time_unit)  # type: ignore[arg-type]
-            f = get_ffi_func(op + "_<>", Int64, self._s)
-            assert f is not None
-            return self._from_pyseries(f(ts))
-        elif isinstance(other, time) and self.dtype == Time:
-            d = _time_to_pl_time(other)
-            f = get_ffi_func(op + "_<>", Int64, self._s)
-            assert f is not None
-            return self._from_pyseries(f(d))
-        elif self.dtype == Categorical and not isinstance(other, Series):
-            other = Series([other])
-        elif isinstance(other, date) and self.dtype == Date:
-            d = _date_to_pl_date(other)
-            f = get_ffi_func(op + "_<>", Int32, self._s)
-            assert f is not None
-            return self._from_pyseries(f(d))
-        if isinstance(other, Sequence) and not isinstance(other, str):
-            other = Series("", other, dtype_if_empty=self.dtype)
-        if isinstance(other, Series):
-            return self._from_pyseries(getattr(self._s, op)(other._s))
-
-        if other is not None:
-            other = maybe_cast(other, self.dtype)
-        f = get_ffi_func(op + "_<>", self.dtype, self._s)
-        if f is None:
-            return NotImplemented
-
-        return self._from_pyseries(f(other))
-
-    @overload  # type: ignore[override]
-    def __eq__(self, other: Expr) -> Expr:  # type: ignore[misc]
-        ...
+                        f'Cannot perform Series {op} Series operation due to '
+                        f'incompatible dtypes: '
+                        f'{left_dtype} {op} {right_dtype}')
+                else:
+                    if not any(other_dtype in
+                               allowed_dtype_pair[1 - right_hand]
+                               for allowed_dtype_pairs in allowed_dtypes
+                               for allowed_dtype_pair in allowed_dtype_pairs):
+                        raise TypeError(
+                            f'Cannot perform {left_type} {op} {right_type} '
+                            f'operation because {other_type} does not support '
+                            f'the "{op}" operation')
+                    left_dtype = self.dtype.base_type()
+                    right_dtype = type(other).__name__
+                    if right_hand:
+                        left_dtype, right_dtype = right_dtype, left_dtype
+                    raise TypeError(
+                        f'Cannot perform {left_type} {op} {right_type} '
+                        f'operation because Series has an incompatible dtype: '
+                        f'{left_dtype} {op} {right_dtype}')
+        return self.to_frame()\
+            .select(eval(f'other {op} F.col("{self.name}")').name.keep()
+                    if right_hand else
+                    eval(f'F.col("{self.name}") {op} other'))\
+            .to_series()
 
     @overload
-    def __eq__(self, other: Any) -> Series:
+    def __eq__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
+                            pd.Series | pd.Index | pd.DatetimeIndex | int |
+                            float | bool | str | bytes) -> Self:
         ...
-
-    def __eq__(self, other: Any) -> Series | Expr:
-        if isinstance(other, pl.Expr):
-            return F.lit(self).__eq__(other)
-        return self._comp(other, "eq")
-
-    @overload  # type: ignore[override]
-    def __ne__(self, other: Expr) -> Expr:  # type: ignore[misc]
-        ...
-
+    
     @overload
-    def __ne__(self, other: Any) -> Series:
+    def __eq__(self, other: DataFrame | np.ndarray | pa.Table |
+                            pd.DataFrame) -> DataFrame:
         ...
-
-    def __ne__(self, other: Any) -> Series | Expr:
-        if isinstance(other, pl.Expr):
-            return F.lit(self).__ne__(other)
-        return self._comp(other, "neq")
-
-    @overload
-    def __gt__(self, other: Expr) -> Expr:  # type: ignore[misc]
-        ...
-
-    @overload
-    def __gt__(self, other: Any) -> Series:
-        ...
-
-    def __gt__(self, other: Any) -> Series | Expr:
-        if isinstance(other, pl.Expr):
-            return F.lit(self).__gt__(other)
-        return self._comp(other, "gt")
-
-    @overload
-    def __lt__(self, other: Expr) -> Expr:  # type: ignore[misc]
-        ...
-
-    @overload
-    def __lt__(self, other: Any) -> Series:
-        ...
-
-    def __lt__(self, other: Any) -> Series | Expr:
-        if isinstance(other, pl.Expr):
-            return F.lit(self).__lt__(other)
-        return self._comp(other, "lt")
-
-    @overload
-    def __ge__(self, other: Expr) -> Expr:  # type: ignore[misc]
-        ...
-
-    @overload
-    def __ge__(self, other: Any) -> Series:
-        ...
-
-    def __ge__(self, other: Any) -> Series | Expr:
-        if isinstance(other, pl.Expr):
-            return F.lit(self).__ge__(other)
-        return self._comp(other, "gt_eq")
-
-    @overload
-    def __le__(self, other: Expr) -> Expr:  # type: ignore[misc]
-        ...
-
-    @overload
-    def __le__(self, other: Any) -> Series:
-        ...
-
-    def __le__(self, other: Any) -> Series | Expr:
-        if isinstance(other, pl.Expr):
-            return F.lit(self).__le__(other)
-        return self._comp(other, "lt_eq")
-
-    def le(self, other: Any) -> Self | Expr:
-        """Method equivalent of operator expression `series <= other`."""
-        return self.__le__(other)
-
-    def lt(self, other: Any) -> Self | Expr:
-        """Method equivalent of operator expression `series < other`."""
-        return self.__lt__(other)
-
-    def eq(self, other: Any) -> Self | Expr:
-        """Method equivalent of operator expression `series == other`."""
-        return self.__eq__(other)
+    
+    def __eq__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                            pa.Array | pa.ChunkedArray | pd.DataFrame |
+                            pd.Series | pd.Index | pd.DatetimeIndex | int |
+                            float | bool | str | bytes) -> Self | DataFrame:
+        return self._binary_op(other, '==', allowed_dtypes=[
+            # mix of numeric == numeric, bool == bool, str == str,
+            # bytes == bytes, date == date, datetime == datetime, time == time,
+            # timedelta == timedelta, dict == dict (including pl.Struct), and
+            # list-or-tuple == list-or-tuple (including pl.List and pl.Array)
+            [[{int, float, Decimal}, {int, float, Decimal}], [{bool}, {bool}],
+             [{str}, {str}], [{bytes}, {bytes}], [{date}, {date}],
+             [{datetime}, {datetime}], [{time}, {time}],
+             [{timedelta}, {timedelta}], [{dict}, {dict}],
+             [{list, tuple}, {list, tuple}]]])
 
     @overload
     def eq_missing(self, other: Any) -> Self:
@@ -671,10 +581,28 @@ class Series:
 
         """
 
-    def ne(self, other: Any) -> Self | Expr:
-        """Method equivalent of operator expression `series != other`."""
-        return self.__ne__(other)
+    @overload
+    def __ne__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
+                            pd.Series | pd.Index | pd.DatetimeIndex | int |
+                            float | bool | str | bytes) -> Self:
+        ...
+    
+    @overload
+    def __ne__(self, other: DataFrame | np.ndarray | pa.Table |
+                            pd.DataFrame) -> DataFrame:
+        ...
 
+    def __ne__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                            pa.Array | pa.ChunkedArray | pd.DataFrame |
+                            pd.Series | pd.Index | pd.DatetimeIndex | int |
+                            float | bool | str | bytes) -> Self | DataFrame:
+        return self._binary_op(other, '!=', allowed_dtypes=[
+            [[{int, float, Decimal}, {int, float, Decimal}], [{bool}, {bool}],
+             [{str}, {str}], [{bytes}, {bytes}], [{date}, {date}],
+             [{datetime}, {datetime}], [{time}, {time}],
+             [{timedelta}, {timedelta}], [{dict}, {dict}],
+             [{list, tuple}, {list, tuple}]]])
+    
     @overload
     def ne_missing(self, other: Expr) -> Expr:  # type: ignore[misc]
         ...
@@ -722,224 +650,612 @@ class Series:
 
         """
 
-    def ge(self, other: Any) -> Self | Expr:
-        """Method equivalent of operator expression `series >= other`."""
-        return self.__ge__(other)
+    @overload
+    def __gt__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
+                            pd.Series | pd.Index | pd.DatetimeIndex | int |
+                            float | bool | str | bytes) -> Self:
+        ...
+    
+    @overload
+    def __gt__(self, other: DataFrame | np.ndarray | pa.Table |
+                            pd.DataFrame) -> DataFrame:
+        ...
 
-    def gt(self, other: Any) -> Self | Expr:
-        """Method equivalent of operator expression `series > other`."""
-        return self.__gt__(other)
+    def __gt__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                            pa.Array | pa.ChunkedArray | pd.DataFrame |
+                            pd.Series | pd.Index | pd.DatetimeIndex | int |
+                            float | bool | str | bytes) -> Self | DataFrame:
+        return self._binary_op(other, '>', allowed_dtypes=[
+            [[{int, float, Decimal}, {int, float, Decimal}], [{bool}, {bool}],
+             [{str}, {str}], [{bytes}, {bytes}], [{date}, {date}],
+             [{datetime}, {datetime}], [{time}, {time}],
+             [{timedelta}, {timedelta}], [{dict}, {dict}],
+             [{list, tuple}, {list, tuple}]]])
+    
+    @overload
+    def __lt__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
+                            pd.Series | pd.Index | pd.DatetimeIndex | int |
+                            float | bool | str | bytes) -> Self:
+        ...
+    
+    @overload
+    def __lt__(self, other: DataFrame | np.ndarray | pa.Table |
+                            pd.DataFrame) -> DataFrame:
+        ...
 
-    def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> Self:
-        if isinstance(other, pl.Expr):
-            # expand pl.lit, pl.datetime, pl.duration Exprs to compatible Series
-            other = self.to_frame().select(other).to_series()
-        if isinstance(other, Series):
-            return self._from_pyseries(getattr(self._s, op_s)(other._s))
-        if _check_for_numpy(other) and isinstance(other, np.ndarray):
-            return self._from_pyseries(getattr(self._s, op_s)(Series(other)._s))
-        if (
-            isinstance(other, (float, date, datetime, timedelta, str))
-            and not self.is_float()
-        ):
-            _s = sequence_to_pyseries(self.name, [other])
-            if "rhs" in op_ffi:
-                return self._from_pyseries(getattr(_s, op_s)(self._s))
-            else:
-                return self._from_pyseries(getattr(self._s, op_s)(_s))
-        else:
-            other = maybe_cast(other, self.dtype)
-            f = get_ffi_func(op_ffi, self.dtype, self._s)
-        if f is None:
-            raise TypeError(
-                f"cannot do arithmetic with series of dtype: {self.dtype!r} and argument"
-                f" of type: {type(other).__name__!r}"
-            )
-        return self._from_pyseries(f(other))
+    def __lt__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                            pa.Array | pa.ChunkedArray | pd.DataFrame |
+                            pd.Series | pd.Index | pd.DatetimeIndex | int |
+                            float | bool | str | bytes) -> Self | DataFrame:
+        return self._binary_op(other, '<', allowed_dtypes=[
+            [[{int, float, Decimal}, {int, float, Decimal}], [{bool}, {bool}],
+             [{str}, {str}], [{bytes}, {bytes}], [{date}, {date}],
+             [{datetime}, {datetime}], [{time}, {time}],
+             [{timedelta}, {timedelta}], [{dict}, {dict}],
+             [{list, tuple}, {list, tuple}]]])
 
     @overload
-    def __add__(self, other: DataFrame) -> DataFrame:  # type: ignore[misc]
+    def __ge__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
+                            pd.Series | pd.Index | pd.DatetimeIndex | int |
+                            float | bool | str | bytes) -> Self:
+        ...
+    
+    @overload
+    def __ge__(self, other: DataFrame | np.ndarray | pa.Table |
+                            pd.DataFrame) -> DataFrame:
+        ...
+
+    def __ge__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                            pa.Array | pa.ChunkedArray | pd.DataFrame |
+                            pd.Series | pd.Index | pd.DatetimeIndex | int |
+                            float | bool | str | bytes) -> Self | DataFrame:
+        return self._binary_op(other, '>=', allowed_dtypes=[
+            [[{int, float, Decimal}, {int, float, Decimal}], [{bool}, {bool}],
+             [{str}, {str}], [{bytes}, {bytes}], [{date}, {date}],
+             [{datetime}, {datetime}], [{time}, {time}],
+             [{timedelta}, {timedelta}], [{dict}, {dict}],
+             [{list, tuple}, {list, tuple}]]])
+
+    @overload
+    def __le__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
+                            pd.Series | pd.Index | pd.DatetimeIndex | int |
+                            float | bool | str | bytes) -> Self:
+        ...
+    
+    @overload
+    def __le__(self, other: DataFrame | np.ndarray | pa.Table |
+                            pd.DataFrame) -> DataFrame:
+        ...
+
+    def __le__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                            pa.Array | pa.ChunkedArray | pd.DataFrame |
+                            pd.Series | pd.Index | pd.DatetimeIndex | int |
+                            float | bool | str | bytes) -> Self | DataFrame:
+        return self._binary_op(other, '<=', allowed_dtypes=[
+            [[{int, float, Decimal}, {int, float, Decimal}], [{bool}, {bool}],
+             [{str}, {str}], [{bytes}, {bytes}], [{date}, {date}],
+             [{datetime}, {datetime}], [{time}, {time}],
+             [{timedelta}, {timedelta}], [{dict}, {dict}],
+             [{list, tuple}, {list, tuple}]]])
+    
+    @overload
+    def __add__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
+                             pd.Series | pd.Index | int | float | str | bytes |
+                             date | datetime | timedelta) -> Self:
+        ...
+    
+    @overload
+    def __add__(self, other: DataFrame | np.ndarray | pa.Table |
+                             pd.DataFrame) -> DataFrame:
+        ...
+
+    def __add__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                             pa.Array | pa.ChunkedArray | pd.DataFrame |
+                             pd.Series | pd.Index | int | float | str | bytes |
+                             date | datetime | timedelta) -> Self | DataFrame:
+        return self._binary_op(other, '+', allowed_dtypes=[
+            # numeric + numeric
+            [[{int, float, Decimal}, {int, float, Decimal}]],
+            # str + str
+            [[{str}, {str}]],
+            # bytes + bytes
+            [[{bytes}, {bytes}]],
+            # mix of date + timedelta and datetime + timedelta
+            [[{date}, {timedelta}], [{datetime}, {timedelta}]],
+            # mix of timedelta + date and timedelta + datetime
+            [[{timedelta}, {date}], [{timedelta}, {datetime}]],
+            # timedelta + timedelta
+            [[{timedelta}, {timedelta}]]])
+
+    @overload
+    def __radd__(self, other: Series | np.ndarray | pa.Array |
+                              pa.ChunkedArray | pd.Series | pd.Index | int |
+                              float | str | bytes | date | datetime |
+                              timedelta) -> Self:
+        ...
+    
+    @overload
+    def __radd__(self, other: DataFrame | np.ndarray | pa.Table |
+                              pd.DataFrame) -> DataFrame:
+        ...
+    
+    def __radd__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                              pa.Array | pa.ChunkedArray | pd.DataFrame |
+                              pd.Series | pd.Index | int | float |
+                              str | bytes | date | datetime |
+                              timedelta) -> Self | DataFrame:
+        return self._binary_op(other, '+', right_hand=True, allowed_dtypes=[
+            [[{int, float, Decimal}, {int, float, Decimal}]],
+            [[{str}, {str}]],
+            [[{bytes}, {bytes}]],
+            [[{date}, {timedelta}], [{datetime}, {timedelta}]],
+            [[{timedelta}, {date}], [{timedelta}, {datetime}]],
+            [[{timedelta}, {timedelta}]]])
+    
+    @overload
+    def __sub__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
+                             pd.Series | pd.Index | pd.DatetimeIndex | int |
+                             float | date | datetime | timedelta) -> Self:
+        ...
+    
+    @overload
+    def __sub__(self, other: DataFrame | np.ndarray | pa.Table |
+                             pd.DataFrame) -> DataFrame:
+        ...
+    
+    def __sub__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                             pa.Array | pa.ChunkedArray | pd.DataFrame |
+                             pd.Series | pd.Index | pd.DatetimeIndex | int |
+                             float | date | datetime |
+                             timedelta) -> Self | DataFrame:
+        return self._binary_op(other, '-', allowed_dtypes=[
+            # numeric - numeric
+            [[{int, float, Decimal}, {int, float, Decimal}]],
+            # mix of date - date and datetime - datetime
+            [[{date}, {date}], [{datetime}, {datetime}]],
+            # mix of date - timedelta and datetime - timedelta
+            [[{date}, {timedelta}], [{datetime}, {timedelta}]],
+            # timedelta - timedelta
+            [[{timedelta}, {timedelta}]]])
+    
+    @overload
+    def __rsub__(self, other: Series | np.ndarray | pa.Array |
+                              pa.ChunkedArray | pd.Series | pd.Index |
+                              pd.DatetimeIndex | int | float | date |
+                              datetime | timedelta) -> Self:
+        ...
+    
+    @overload
+    def __rsub__(self, other: DataFrame | np.ndarray | pa.Table |
+                              pd.DataFrame) -> DataFrame:
+        ...
+    
+    def __rsub__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                              pa.Array | pa.ChunkedArray | pd.DataFrame |
+                              pd.Series | pd.Index | pd.DatetimeIndex | int |
+                              float | date | datetime |
+                              timedelta) -> Self | DataFrame:
+        return self._binary_op(other, '-', right_hand=True, allowed_dtypes=[
+            [[{int, float, Decimal}, {int, float, Decimal}]],
+            [[{date}, {date}], [{datetime}, {datetime}]],
+            [[{date}, {timedelta}], [{datetime}, {timedelta}]],
+            [[{timedelta}, {timedelta}]]])
+
+    @overload
+    def __mul__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
+                             pd.Series | pd.Index | int | float |
+                             timedelta) -> Self:
+        ...
+    
+    @overload
+    def __mul__(self, other: DataFrame | np.ndarray | pa.Table |
+                             pd.DataFrame) -> DataFrame:
+        ...
+    
+    def __mul__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                             pa.Array | pa.ChunkedArray | pd.DataFrame |
+                             pd.Series | pd.Index | int | float |
+                             timedelta) -> Self | DataFrame:
+        return self._binary_op(other, '*', allowed_dtypes=[
+            # numeric * numeric
+            [[{int, float, Decimal}, {int, float, Decimal}]],
+            # timedelta * numeric
+            [[{timedelta}, {int, float, Decimal}]],
+            # numeric * timedelta
+            [[{int, float, Decimal}, {timedelta}]]])
+    
+    @overload
+    def __rmul__(self, other: Series | np.ndarray | pa.Array |
+                              pa.ChunkedArray | pd.Series | pd.Index | int |
+                              float | timedelta) -> Self:
+        ...
+    
+    @overload
+    def __rmul__(self, other: DataFrame | np.ndarray | pa.Table |
+                              pd.DataFrame) -> DataFrame:
+        ...
+    
+    def __rmul__(self, other: DataFrame | np.ndarray | Series | pa.Table |
+                              pa.Array | pa.ChunkedArray | pd.DataFrame |
+                              pd.Series | pd.Index | int | float |
+                              timedelta) -> Self | DataFrame:
+        return self._binary_op(other, '*', allowed_dtypes=[
+            [[{int, float, Decimal}, {int, float, Decimal}]],
+            [[{int, float, Decimal}, {timedelta}]],
+            [[{timedelta}, {int, float, Decimal}]]])
+
+    @overload
+    def __truediv__(self, other: Series | np.ndarray | pa.Array |
+                                 pa.ChunkedArray | pd.Series | pd.Index | int |
+                                 float) -> Self:
+        ...
+    
+    @overload
+    def __truediv__(self, other: DataFrame | np.ndarray | pa.Table |
+                                 pd.DataFrame) -> DataFrame:
+        ...
+    
+    def __truediv__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                                 pa.Array | pa.ChunkedArray | pd.DataFrame |
+                                 pd.Series | pd.Index | int |
+                                 float) -> Self | DataFrame:
+        return self._binary_op(other, '/', allowed_dtypes=[
+            # numeric / numeric
+            [[{int, float, Decimal}, {int, float, Decimal}]],
+            # timedelta / numeric
+            [[{timedelta}, {int, float, Decimal}]]])
+
+    @overload
+    def __rtruediv__(self, other: Series | np.ndarray | pa.Array |
+                                  pa.ChunkedArray | pd.Series | pd.Index |
+                                  int | float | timedelta) -> Self:
+        ...
+    
+    @overload
+    def __rtruediv__(self, other: DataFrame | np.ndarray | pa.Table |
+                                  pd.DataFrame) -> DataFrame:
+        ...
+    
+    def __rtruediv__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                                  pa.Array | pa.ChunkedArray | pd.DataFrame |
+                                  pd.Series | pd.Index | int | float |
+                                  timedelta) -> Self | DataFrame:
+        return self._binary_op(other, '/', right_hand=True, allowed_dtypes=[
+            [[{int, float, Decimal}, {int, float, Decimal}]],
+            [[{timedelta}, {int, float, Decimal}]]])
+
+    @overload
+    def __floordiv__(self, other: Series | np.ndarray | pa.Array |
+                                  pa.ChunkedArray | pd.Series | pd.Index |
+                                  int | float) -> Self:
+        ...
+    
+    @overload
+    def __floordiv__(self, other: DataFrame | np.ndarray | pa.Table |
+                                  pd.DataFrame) -> DataFrame:
+        ...
+    
+    def __floordiv__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                                  pa.Array | pa.ChunkedArray | pd.DataFrame |
+                                  pd.Series | pd.Index | int |
+                                  float) -> Self | DataFrame:
+        return self._binary_op(other, '//', allowed_dtypes=[
+            # numeric // numeric
+            [[{int, float, Decimal}, {int, float, Decimal}]],
+            # timedelta // numeric
+            [[{timedelta}, {int, float, Decimal}]]])
+
+    @overload
+    def __rfloordiv__(self, other: Series | np.ndarray | pa.Array |
+                                   pa.ChunkedArray | pd.Series | pd.Index |
+                                   int | float | timedelta) -> Self:
         ...
 
     @overload
-    def __add__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __rfloordiv__(self, other: DataFrame | np.ndarray | pa.Table |
+                                   pd.DataFrame) -> DataFrame:
+        ...    
+
+    def __rfloordiv__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                                   pa.Array | pa.ChunkedArray | pd.DataFrame |
+                                   pd.Series | pd.Index | int | float |
+                                   timedelta) -> Self | DataFrame:
+        return self._binary_op(other, '//', right_hand=True, allowed_dtypes=[
+            [[{int, float, Decimal}, {int, float, Decimal}]],
+            [[{timedelta}, {int, float, Decimal}]]])
+    
+    @overload
+    def __pow__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
+                             pd.Series | pd.Index | int | float) -> Self:
         ...
+    
+    @overload
+    def __pow__(self, other: DataFrame | np.ndarray | pa.Table |
+                             pd.DataFrame) -> DataFrame:
+        ...
+    
+    def __pow__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                             pa.Array | pa.ChunkedArray | pd.DataFrame |
+                             pd.Series | pd.Index | int |
+                             float) -> Self | DataFrame:
+        return self._binary_op(other, '**', allowed_dtypes=[
+            # numeric ** numeric
+            [[{int, float, Decimal}, {int, float, Decimal}]]])
+    
+    @overload
+    def __rpow__(self, other: Series | np.ndarray | pa.Array |
+                              pa.ChunkedArray | pd.Series | pd.Index | int |
+                              float) -> Self:
+        ...
+    
+    @overload
+    def __rpow__(self, other: DataFrame | np.ndarray | pa.Table |
+                              pd.DataFrame) -> DataFrame:
+        ...
+    
+    def __rpow__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                              pa.Array | pa.ChunkedArray | pd.DataFrame |
+                              pd.Series | pd.Index | int |
+                              float) -> Self | DataFrame:
+        return self._binary_op(other, '**', right_hand=True, allowed_dtypes=[
+            [[{int, float, Decimal}, {int, float, Decimal}]]])
 
     @overload
-    def __add__(self, other: Any) -> Self:
+    def __mod__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
+                             pd.Series | pd.Index | int | float) -> Self:
         ...
-
-    def __add__(self, other: Any) -> Self | DataFrame | Expr:
-        if isinstance(other, str):
-            other = Series("", [other])
-        elif isinstance(other, pl.DataFrame):
-            return other + self
-        elif isinstance(other, pl.Expr):
-            return F.lit(self) + other
-        return self._arithmetic(other, "add", "add_<>")
+    
+    @overload
+    def __mod__(self, other: DataFrame | np.ndarray | pa.Table |
+                             pd.DataFrame) -> DataFrame:
+        ...
+    
+    def __mod__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                             pa.Array | pa.ChunkedArray | pd.DataFrame |
+                             pd.Series | pd.Index | int |
+                             float) -> Self | DataFrame:
+        return self._binary_op(other, '%', allowed_dtypes=[
+            # numeric % numeric
+            [[{int, float, Decimal}, {int, float, Decimal}]]])
+    
+    @overload
+    def __rmod__(self, other: Series | np.ndarray | pa.Array |
+                              pa.ChunkedArray | pd.Series | pd.Index | int |
+                              float) -> Self:
+        ...
+    
+    @overload
+    def __rmod__(self, other: DataFrame | np.ndarray | pa.Table |
+                              pd.DataFrame) -> DataFrame:
+        ...
+    
+    def __rmod__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                              pa.Array | pa.ChunkedArray | pd.DataFrame |
+                              pd.Series | pd.Index | int |
+                              float) -> Self | DataFrame:
+        return self._binary_op(other, '%', right_hand=True, allowed_dtypes=[
+            [[{int, float, Decimal}, {int, float, Decimal}]]])
 
     @overload
-    def __sub__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __and__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
+                             pd.Series | pd.Index | int | bool) -> Self:
         ...
+    
+    @overload
+    def __and__(self, other: DataFrame | np.ndarray | pa.Table |
+                             pd.DataFrame) -> DataFrame:
+        ...
+
+    def __and__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                             pa.Array | pa.ChunkedArray | pd.DataFrame |
+                             pd.Series | pd.Index | int |
+                             bool) -> Self | DataFrame:
+        return self._binary_op(other, '&', allowed_dtypes=[
+            # (integer-or-boolean) & (integer-or-boolean)
+            [[{int, bool}, {int, bool}]]])
 
     @overload
-    def __sub__(self, other: Any) -> Self:
+    def __rand__(self, other: Series | np.ndarray | pa.Array |
+                              pa.ChunkedArray | pd.Series | pd.Index | int |
+                              bool) -> Self:
+        ...
+    
+    @overload
+    def __rand__(self, other: DataFrame | np.ndarray | pa.Table |
+                              pd.DataFrame) -> DataFrame:
         ...
 
-    def __sub__(self, other: Any) -> Self | Expr:
-        if isinstance(other, pl.Expr):
-            return F.lit(self) - other
-        return self._arithmetic(other, "sub", "sub_<>")
+    def __rand__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                              pa.Array | pa.ChunkedArray | pd.DataFrame |
+                              pd.Series | pd.Index | int |
+                              bool) -> Self | DataFrame:
+        return self._binary_op(other, '&', right_hand=True, allowed_dtypes=[
+            [[{int, bool}, {int, bool}]]])
 
     @overload
-    def __truediv__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __or__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
+                            pd.Series | pd.Index | int | bool) -> Self:
         ...
+    
+    @overload
+    def __or__(self, other: DataFrame | np.ndarray | pa.Table |
+                            pd.DataFrame) -> DataFrame:
+        ...
+
+    def __or__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                            pa.Array | pa.ChunkedArray | pd.DataFrame |
+                            pd.Series | pd.Index | int |
+                            bool) -> Self | DataFrame:
+        return self._binary_op(other, '|', allowed_dtypes=[
+            # (integer-or-boolean) & (integer-or-boolean)
+            [[{int, bool}, {int, bool}]]])
 
     @overload
-    def __truediv__(self, other: Any) -> Series:
+    def __ror__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
+                             pd.Series | pd.Index | int | bool) -> Self:
+        ...
+    
+    @overload
+    def __ror__(self, other: DataFrame | np.ndarray | pa.Table |
+                             pd.DataFrame) -> DataFrame:
         ...
 
-    def __truediv__(self, other: Any) -> Series | Expr:
-        if isinstance(other, pl.Expr):
-            return F.lit(self) / other
-        if self.is_temporal():
-            raise TypeError("first cast to integer before dividing datelike dtypes")
-
-        # this branch is exactly the floordiv function without rounding the floats
-        if self.is_float() or self.dtype == Decimal:
-            return self._arithmetic(other, "div", "div_<>")
-
-        return self.cast(Float64) / other
+    def __ror__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                             pa.Array | pa.ChunkedArray | pd.DataFrame |
+                             pd.Series | pd.Index | int |
+                             bool) -> Self | DataFrame:
+        return self._binary_op(other, '|', right_hand=True, allowed_dtypes=[
+            [[{int, bool}, {int, bool}]]])
 
     @overload
-    def __floordiv__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __xor__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
+                             pd.Series | pd.Index | int | bool) -> Self:
         ...
+    
+    @overload
+    def __xor__(self, other: DataFrame | np.ndarray | pa.Table |
+                             pd.DataFrame) -> DataFrame:
+        ...
+
+    def __xor__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                             pa.Array | pa.ChunkedArray | pd.DataFrame |
+                             pd.Series | pd.Index | int |
+                             bool) -> Self | DataFrame:
+        return self._binary_op(other, '^', allowed_dtypes=[
+            # (integer-or-boolean) & (integer-or-boolean)
+            [[{int, bool}, {int, bool}]]])
 
     @overload
-    def __floordiv__(self, other: Any) -> Series:
+    def __rxor__(self, other: Series | np.ndarray | pa.Array |
+                              pa.ChunkedArray | pd.Series | pd.Index | int |
+                              bool) -> Self:
+        ...
+    
+    @overload
+    def __rxor__(self, other: DataFrame | np.ndarray | pa.Table |
+                              pd.DataFrame) -> DataFrame:
         ...
 
-    def __floordiv__(self, other: Any) -> Series | Expr:
-        if isinstance(other, pl.Expr):
-            return F.lit(self) // other
-        if self.is_temporal():
-            raise TypeError("first cast to integer before dividing datelike dtypes")
-
-        if not isinstance(other, pl.Expr):
-            other = F.lit(other)
-        return self.to_frame().select(F.col(self.name) // other).to_series()
+    def __rxor__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                              pa.Array | pa.ChunkedArray | pd.DataFrame |
+                              pd.Series | pd.Index | int |
+                              bool) -> Self | DataFrame:
+        return self._binary_op(other, '^', right_hand=True, allowed_dtypes=[
+            [[{int, bool}, {int, bool}]]])
 
     def __invert__(self) -> Series:
+        if self.dtype not in INTEGER_DTYPES | {Boolean, Null}:
+            raise TypeError(f'Series in unary "~" operation does not have '
+                            f'integer or Boolean dtype')
         return self.not_()
-
-    @overload
-    def __mul__(self, other: Expr) -> Expr:  # type: ignore[misc]
-        ...
-
-    @overload
-    def __mul__(self, other: DataFrame) -> DataFrame:  # type: ignore[misc]
-        ...
-
-    @overload
-    def __mul__(self, other: Any) -> Series:
-        ...
-
-    def __mul__(self, other: Any) -> Series | DataFrame | Expr:
-        if isinstance(other, pl.Expr):
-            return F.lit(self) * other
-        if self.is_temporal():
-            raise TypeError("first cast to integer before multiplying datelike dtypes")
-        elif isinstance(other, pl.DataFrame):
-            return other * self
-        else:
-            return self._arithmetic(other, "mul", "mul_<>")
-
-    @overload
-    def __mod__(self, other: Expr) -> Expr:  # type: ignore[misc]
-        ...
-
-    @overload
-    def __mod__(self, other: Any) -> Series:
-        ...
-
-    def __mod__(self, other: Any) -> Series | Expr:
-        if isinstance(other, pl.Expr):
-            return F.lit(self).__mod__(other)
-        if self.is_temporal():
-            raise TypeError(
-                "first cast to integer before applying modulo on datelike dtypes"
-            )
-        return self._arithmetic(other, "rem", "rem_<>")
-
-    def __rmod__(self, other: Any) -> Series:
-        if self.is_temporal():
-            raise TypeError(
-                "first cast to integer before applying modulo on datelike dtypes"
-            )
-        return self._arithmetic(other, "rem", "rem_<>_rhs")
-
-    def __radd__(self, other: Any) -> Series:
-        if isinstance(other, str):
-            return (other + self.to_frame()).to_series()
-        return self._arithmetic(other, "add", "add_<>_rhs")
-
-    def __rsub__(self, other: Any) -> Series:
-        return self._arithmetic(other, "sub", "sub_<>_rhs")
-
-    def __rtruediv__(self, other: Any) -> Series:
-        if self.is_temporal():
-            raise TypeError("first cast to integer before dividing datelike dtypes")
-        if self.is_float():
-            self.__rfloordiv__(other)
-
-        if isinstance(other, int):
-            other = float(other)
-        return self.cast(Float64).__rfloordiv__(other)
-
-    def __rfloordiv__(self, other: Any) -> Series:
-        if self.is_temporal():
-            raise TypeError("first cast to integer before dividing datelike dtypes")
-        return self._arithmetic(other, "div", "div_<>_rhs")
-
-    def __rmul__(self, other: Any) -> Series:
-        if self.is_temporal():
-            raise TypeError("first cast to integer before multiplying datelike dtypes")
-        return self._arithmetic(other, "mul", "mul_<>")
-
-    def __pow__(self, exponent: int | float | None | Series) -> Series:
-        return self.pow(exponent)
-
-    def __rpow__(self, other: Any) -> Series:
-        if self.is_temporal():
-            raise TypeError(
-                "first cast to integer before raising datelike dtypes to a power"
-            )
-        return self.to_frame().select(other ** F.col(self.name)).to_series()
-
-    def __matmul__(self, other: Any) -> float | Series | None:
-        if isinstance(other, Sequence) or (
-            _check_for_numpy(other) and isinstance(other, np.ndarray)
-        ):
-            other = Series(other)
-        # elif isinstance(other, pl.DataFrame):
-        #     return other.__rmatmul__(self)  # type: ignore[return-value]
-        return self.dot(other)
-
-    def __rmatmul__(self, other: Any) -> float | Series | None:
-        if isinstance(other, Sequence) or (
-            _check_for_numpy(other) and isinstance(other, np.ndarray)
-        ):
-            other = Series(other)
-        return other.dot(self)
-
+    
     def __neg__(self) -> Series:
-        return 0 - self
-
+        if self.dtype not in NUMERIC_DTYPES | {Duration, Null}:
+            raise TypeError(f'Series in unary "-" operation does not have '
+                            f'numeric or Duration dtype')
+        return self.to_frame().select((-F.all()).name.keep()).to_series()
+    
     def __pos__(self) -> Series:
-        return 0 + self
+        if self.dtype not in NUMERIC_DTYPES | {Duration, Null}:
+            raise TypeError(f'Series in unary "+" operation does not have '
+                            f'numeric or Duration dtype')
+        return self.to_frame().select((+F.all()).name.keep()).to_series()
 
     def __abs__(self) -> Series:
+        if self.dtype not in NUMERIC_DTYPES | {Duration, Null}:
+            raise TypeError(f'Series in abs() operation does not have '
+                            f'numeric or Duration dtype')
         return self.abs()
+
+    @overload
+    def __matmul__(self, other: Series | np.ndarray | pa.Array |
+                                pa.ChunkedArray | pd.Series |
+                                pd.Index) -> int | float:
+        ...
+        
+    @overload
+    def __matmul__(self, other: DataFrame | np.ndarray | pa.Table |
+                                pd.DataFrame) -> Self:
+        ...
+
+    def __matmul__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                                pa.Array | pa.ChunkedArray | pd.DataFrame |
+                                pd.Series | pd.Index) -> int | float | Self:
+        if self.dtype not in NUMERIC_DTYPES:
+            raise ValueError(f'Left-hand operand of "@" has non-numeric dtype '
+                             f'"{self.dtype}"')
+        other = _prepare_other_arg(other, 'Right-hand operand of "@"')
+        if isinstance(other, pl.DataFrame):
+            if not set(other.dtypes).issubset(NUMERIC_DTYPES):
+                raise ValueError('Right-hand operand of "@" contains '
+                                 'non-numeric columns')
+            if len(self) != len(other):
+                raise ShapeError(
+                    f'Length mismatch in vector-matrix multiplication: '
+                    f'left-hand operand of "@" has length {len(self)}, but '
+                    f'right-hand operand has length {len(other)}')
+            return Series(self.name, self.to_numpy().dot(other.to_numpy()))
+        elif isinstance(other, Series):
+            if len(self) != len(other):
+                raise ShapeError(
+                    f'Length mismatch in dot product: left-hand operand of '
+                    f'"@" has length {len(self)}, but right-hand operand has '
+                    f'length {(len(other))}')
+            return pl.DataFrame({self.name: self,
+                                 other.name + '__POLARS_SERIES_DOT': other})\
+                .select(F.col(self.name)
+                        .dot(F.col(other.name + '__POLARS_SERIES_DOT')))\
+                .item()
+        else:
+            raise TypeError(f'Right-hand operand of "@" has unsupported type '
+                            f'"{type(other).__name__}"')
+        
+    @overload
+    def __rmatmul__(self, other: Series | np.ndarray | pa.Array |
+                                 pa.ChunkedArray | pd.Series |
+                                 pd.Index) -> int | float:
+        ...
+        
+    @overload
+    def __rmatmul__(self, other: DataFrame | np.ndarray | pa.Table |
+                                 pd.DataFrame) -> Self:
+        ...
+
+    def __rmatmul__(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                                 pa.Array | pa.ChunkedArray | pd.DataFrame |
+                                 pd.Series | pd.Index) -> int | float | Self:
+        if self.dtype not in NUMERIC_DTYPES:
+            raise ValueError(f'Right-hand operand of "@" has non-numeric '
+                             f'dtype "{self.dtype}"')
+        other = _prepare_other_arg(other, 'Left-hand operand of "@"')
+        if isinstance(other, pl.DataFrame):
+            if not set(other.dtypes).issubset(NUMERIC_DTYPES):
+                raise ValueError('Left-hand operand of "@" contains '
+                                 'non-numeric columns')
+            if other.width != len(self):
+                raise ShapeError(
+                    f'Incompatible shapes for matrix-vector multiplication: '
+                    f'left-hand operand of "@" has {other.width} columns, but '
+                    f'right-hand operand has {len(self)} rows')
+            return Series(self.name, other.to_numpy().dot(self.to_numpy()),
+                          schema=other.columns)
+        elif isinstance(other, Series):
+            if other.dtype not in NUMERIC_DTYPES:
+                raise ValueError(f'Left-hand operand of "@" has non-numeric '
+                                 f'dtype "{other.dtype}"')
+            if len(self) != len(other):
+                raise ShapeError(
+                    f'Length mismatch in dot product: left-hand operand of '
+                    f'"@" has length {len(other)}, but right-hand operand has '
+                    f'length {(len(self))}')
+            return pl.DataFrame({other.name: other,
+                                 self.name + '__POLARS_SERIES_DOT': self})\
+                .select(F.col(other.name)
+                        .dot(F.col(self.name + '__POLARS_SERIES_DOT')))\
+                .item()
+        else:
+            raise TypeError(f'Left-hand operand of "@" has unsupported type '
+                            f'"{type(other).__name__}"')
 
     def __copy__(self) -> Self:
         return self.clone()
@@ -1124,9 +1440,30 @@ class Series:
         else:
             return self.to_numpy().__array__()
 
-    def __array_ufunc__(
-        self, ufunc: np.ufunc, method: str, *inputs: Any, **kwargs: Any
-    ) -> Series:
+    _operator_ufuncs = {np.equal: ['__eq__', '__eq__'],
+                        np.not_equal: ['__ne__', '__ne__'],
+                        np.greater: ['__gt__', '__lt__'],
+                        np.greater_equal: ['__ge__', '__le__'],
+                        np.less: ['__lt__', '__gt__'],
+                        np.less_equal: ['__le__', '__ge__'],
+                        np.add: ['__add__', '__radd__'],
+                        np.subtract: ['__sub__', '__rsub__'],
+                        np.multiply: ['__mul__', '__rmul__'],
+                        np.divide: ['__truediv__', '__rtruediv__'],
+                        np.true_divide: ['__truediv__', '__rtruediv__'],
+                        np.floor_divide: ['__floordiv__', '__rfloordiv__'],
+                        np.power: ['__pow__', '__rpow__'],
+                        np.remainder: ['__mod__', '__rmod__'],
+                        np.mod: ['__mod__', '__rmod__'],
+                        np.bitwise_and: ['__and__', '__rand__'],
+                        np.bitwise_or: ['__or__', '__ror__'],
+                        np.bitwise_xor: ['__xor__', '__rxor__'],
+                        np.matmul: ['__matmul__', '__rmatmul__']}
+
+    def __array_ufunc__(self, ufunc: np.ufunc,
+                        method: Literal['__call__', 'reduce', 'reduceat',
+                                        'accumulate', 'outer', 'inner'],
+                        *inputs: tuple, **kwargs: dict[str, Any]) -> Self:
         """Numpy universal functions."""
         if self._s.n_chunks() > 1:
             self._s.rechunk(in_place=True)
@@ -1134,6 +1471,22 @@ class Series:
         s = self._s
 
         if method == "__call__":
+            # For ufuncs that correspond to operators, delegate to the polars
+            # implementation of those operators. This ensures operators are
+            # commutative, i.e. that they have the same behavior regardless of
+            # whether the NumPy array is the left-hand or the right-hand
+            # operand. It also ensures correct broadcasting of 2D NumPy arrays
+            # with polars Series.
+            if ufunc in self._operator_ufuncs:
+                if self is inputs[0]:
+                    # self is left-hand argument
+                    return getattr(self,
+                                   self._operator_ufuncs[ufunc][0])(inputs[1])
+                else:
+                    # self is right-hand argument
+                    return getattr(self,
+                                   self._operator_ufuncs[ufunc][1])(inputs[0])
+            
             if not ufunc.nout == 1:
                 raise NotImplementedError(
                     "only ufuncs that return one 1D array are supported"
@@ -1200,6 +1553,8 @@ class Series:
                 "only `__call__` is implemented for numpy ufuncs on a Series, got "
                 f"`{method!r}`"
             )
+
+    __pandas_priority__ = 5000
 
     def __column_consortium_standard__(self, *, api_version: str | None = None) -> Any:
         """
@@ -1662,14 +2017,16 @@ class Series:
         """Reduce this Series to the product value."""
         return self.to_frame().select(F.col(self.name).product()).to_series().item()
 
-    def pow(self, exponent: int | float | None | Series) -> Series:
+    def pow(self, exponent: int | float | Series | np.ndarray) -> Series:
         """
         Raise to the power of the given exponent.
+        
+        Alias for `self ** exponent`.
 
         Parameters
         ----------
         exponent
-            The exponent. Accepts Series input.
+            The exponent. Accepts Series or NumPy array input.
 
         Examples
         --------
@@ -1685,13 +2042,7 @@ class Series:
         ]
 
         """
-        if self.is_temporal():
-            raise TypeError(
-                "first cast to integer before raising datelike dtypes to a power"
-            )
-        if _check_for_numpy(exponent) and isinstance(exponent, np.ndarray):
-            exponent = Series(exponent)
-        return self.to_frame().select(F.col(self.name).pow(exponent)).to_series()
+        return self ** exponent
 
     def min(self) -> PythonLiteral | None:
         """
@@ -4719,29 +5070,50 @@ class Series:
 
         """
 
-    def dot(self, other: Series | ArrayLike) -> float | None:
+    @overload
+    def dot(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
+                         pd.Series) -> int | float:
+        ...
+        
+    @overload
+    def dot(self, other: DataFrame | np.ndarray | pa.Table |
+                         pd.DataFrame) -> Self:
+        ...
+
+    def dot(self, other: DataFrame | Series | np.ndarray | pa.Table |
+                         pa.Array | pa.ChunkedArray | pd.DataFrame |
+                         pd.Series) -> int | float | Self:
         """
-        Compute the dot/inner product between two Series.
+        Compute the dot/inner product with another Series (or Series-like), or
+        the vector-matrix product with a DataFrame (or DataFrame-like).
+        
+        Alias for `self @ other`.
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s2 = pl.Series("b", [4.0, 5.0, 6.0])
+        >>> s = pl.Series('a', [1, 2])
+        >>> s2 = pl.Series('b', [3, 4])
         >>> s.dot(s2)
-        32.0
-
+        11
+        >>> df = pl.DataFrame({'c': [0, 1], 'd': [0, 0], 'e': [1, 0]})
+        >>> s.dot(df)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+                2
+                0
+                1
+        ]
+        
         Parameters
         ----------
         other
-            Series (or array) to compute dot product with.
+            The Series (or Series-like) to compute the dot/inner product with,
+            or the DataFrame (or DataFrame-like) to compute the vector-matrix
+            product with.
 
         """
-        if not isinstance(other, Series):
-            other = Series(other)
-        if len(self) != len(other):
-            n, m = len(self), len(other)
-            raise ShapeError(f"Series length mismatch: expected {n!r}, found {m!r}")
-        return self._s.dot(other._s)
+        return self @ other
 
     def mode(self) -> Series:
         """

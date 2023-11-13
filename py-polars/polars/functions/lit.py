@@ -77,11 +77,11 @@ def lit(
     time_unit: TimeUnit
 
     if isinstance(value, datetime):
-        time_unit = "us" if dtype is None else getattr(dtype, "time_unit", "us")
+        time_unit = getattr(dtype, "time_unit", "us")
         time_zone = (
             value.tzinfo
             if getattr(dtype, "time_zone", None) is None
-            else getattr(dtype, "time_zone", None)
+            else dtype.time_zone
         )
         if (
             value.tzinfo is not None
@@ -102,7 +102,7 @@ def lit(
             return e
 
     elif isinstance(value, timedelta):
-        time_unit = "us" if dtype is None else getattr(dtype, "time_unit", "us")
+        time_unit = getattr(dtype, "time_unit", "us")
         return lit(_timedelta_to_pl_timedelta(value, time_unit)).cast(
             Duration(time_unit)
         )

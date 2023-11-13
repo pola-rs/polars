@@ -277,6 +277,7 @@ class _DataTypeMappings:
             Int16: int,
             Int8: int,
             Utf8: str,
+            Categorical: str,
             UInt8: int,
             UInt16: int,
             UInt32: int,
@@ -289,6 +290,8 @@ class _DataTypeMappings:
             Time: time,
             Binary: bytes,
             List: list,
+            Array: tuple,
+            Struct: dict,
             Null: None.__class__,
         }
 

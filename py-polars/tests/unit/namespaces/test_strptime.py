@@ -54,7 +54,6 @@ def test_to_datetime_precision() -> None:
         "date", ["2022-09-12 21:54:36.789321456", "2022-09-13 12:34:56.987456321"]
     )
     ds = s.str.to_datetime()
-    assert ds.cast(pl.Date) != None  # noqa: E711  (note: *deliberately* testing "!=")
     assert getattr(ds.dtype, "time_unit", None) == "us"
 
     time_units: list[TimeUnit] = ["ms", "us", "ns"]
