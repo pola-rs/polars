@@ -136,22 +136,8 @@ impl BinaryExpr {
                 .with_name(&name)
         };
 
-        // Try if we can reuse the groups.
-        use AggState::*;
-        match (ac_l.agg_state(), ac_r.agg_state()) {
-            // No need to change update groups.
-            (AggregatedList(_), _) => {},
-            // We can take the groups of the rhs.
-            (_, AggregatedList(_)) if matches!(ac_r.update_groups, UpdateGroups::No) => {
-                ac_l.groups = ac_r.groups
-            },
-            // We must update the groups.
-            _ => {
-                ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
-            },
-        }
-
-        ac_l.with_series(ca.into_series(), true, Some(&self.expr))?;
+        ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
+        ac_l.with_agg_state(AggState::AggregatedList(ca.into_series()));
         Ok(ac_l)
     }
 }
