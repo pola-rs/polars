@@ -274,6 +274,7 @@
 //!     - `sign` - Compute the element-wise sign of a [`Series`].
 //!     - `propagate_nans` - NaN propagating min/max aggregations.
 //!     - `extract_groups` - Extract multiple regex groups from strings.
+//!     - `cov` - Covariance and correlation functions.
 //! * [`DataFrame`] pretty printing
 //!     - `fmt` - Activate [`DataFrame`] formatting
 //!

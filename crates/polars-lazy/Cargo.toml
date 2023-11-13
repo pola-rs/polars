@@ -144,6 +144,7 @@ cutqcut = ["polars-plan/cutqcut", "polars-ops/cutqcut"]
 rle = ["polars-plan/rle", "polars-ops/rle"]
 extract_groups = ["polars-plan/extract_groups"]
 peaks = ["polars-plan/peaks"]
+cov = ["polars-ops/cov", "polars-plan/cov"]
 
 binary_encoding = ["polars-plan/binary_encoding"]
 string_encoding = ["polars-plan/string_encoding"]

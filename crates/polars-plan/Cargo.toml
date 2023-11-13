@@ -146,6 +146,7 @@ extract_groups = ["regex", "dtype-struct", "polars-ops/extract_groups"]
 ffi_plugin = ["libloading", "polars-ffi"]
 hive_partitions = []
 peaks = ["polars-ops/peaks"]
+cov = ["polars-ops/cov"]
 
 bigidx = ["polars-core/bigidx"]
 

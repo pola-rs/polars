@@ -83,6 +83,7 @@ features = [
   "true_div",
   "unique_counts",
   "zip_with",
+  "cov",
 ]
 
 [build-dependencies]

@@ -162,6 +162,7 @@ impl FunctionExpr {
             #[cfg(feature = "fused")]
             Fused(_) => mapper.map_to_supertype(),
             ConcatExpr(_) => mapper.map_to_supertype(),
+            #[cfg(feature = "cov")]
             Correlation { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "peaks")]
             PeakMin => mapper.with_same_dtype(),

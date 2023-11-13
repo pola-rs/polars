@@ -41,7 +41,7 @@ fn covariance(s: &[Series]) -> PolarsResult<Series> {
     let b = &s[1];
     let name = "cov";
 
-    use polars_core::functions::cov;
+    use polars_ops::chunked_array::cov::cov;
     let ret = match a.dtype() {
         DataType::Float32 => cov(a.f32().unwrap(), b.f32().unwrap()),
         DataType::Float64 => cov(a.f64().unwrap(), b.f64().unwrap()),
@@ -63,7 +63,7 @@ fn pearson_corr(s: &[Series], ddof: u8) -> PolarsResult<Series> {
     let b = &s[1];
     let name = "pearson_corr";
 
-    use polars_core::functions::pearson_corr;
+    use polars_ops::chunked_array::cov::pearson_corr;
     let ret = match a.dtype() {
         DataType::Float32 => pearson_corr(a.f32().unwrap(), b.f32().unwrap(), ddof),
         DataType::Float64 => pearson_corr(a.f64().unwrap(), b.f64().unwrap(), ddof),

@@ -14,6 +14,7 @@ mod clip;
 #[cfg(feature = "dtype-struct")]
 mod coerce;
 mod concat;
+#[cfg(feature = "cov")]
 mod correlation;
 #[cfg(feature = "cum_agg")]
 mod cum;
@@ -66,6 +67,7 @@ use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "dtype-array")]
 pub(super) use array::ArrayFunction;
+#[cfg(feature = "cov")]
 pub(crate) use correlation::CorrelationMethod;
 #[cfg(feature = "fused")]
 pub(crate) use fused::FusedOperator;
@@ -241,6 +243,7 @@ pub enum FunctionExpr {
     #[cfg(feature = "fused")]
     Fused(fused::FusedOperator),
     ConcatExpr(bool),
+    #[cfg(feature = "cov")]
     Correlation {
         method: correlation::CorrelationMethod,
         ddof: u8,
@@ -335,6 +338,7 @@ impl Hash for FunctionExpr {
             SearchSorted(f) => f.hash(state),
             #[cfg(feature = "random")]
             Random { method, .. } => method.hash(state),
+            #[cfg(feature = "cov")]
             Correlation { method, .. } => method.hash(state),
             #[cfg(feature = "range")]
             Range(f) => f.hash(state),
@@ -625,6 +629,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "fused")]
             Fused(fused) => return Display::fmt(fused, f),
             ConcatExpr(_) => "concat_expr",
+            #[cfg(feature = "cov")]
             Correlation { method, .. } => return Display::fmt(method, f),
             #[cfg(feature = "peaks")]
             PeakMin => "peak_min",
@@ -909,6 +914,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "fused")]
             Fused(op) => map_as_slice!(fused::fused, op),
             ConcatExpr(rechunk) => map_as_slice!(concat::concat_expr, rechunk),
+            #[cfg(feature = "cov")]
             Correlation { method, ddof } => map_as_slice!(correlation::corr, ddof, method),
             #[cfg(feature = "peaks")]
             PeakMin => map!(peaks::peak_min),
