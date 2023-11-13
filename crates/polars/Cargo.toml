@@ -195,6 +195,7 @@ cutqcut = ["polars-lazy?/cutqcut"]
 rle = ["polars-lazy?/rle"]
 extract_groups = ["polars-lazy?/extract_groups"]
 peaks = ["polars-lazy/peaks"]
+cov = ["polars-lazy/cov"]
 
 test = [
   "lazy",

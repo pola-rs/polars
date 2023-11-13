@@ -14,6 +14,7 @@ mod clip;
 #[cfg(feature = "dtype-struct")]
 mod coerce;
 mod concat;
+#[cfg(feature = "cov")]
 mod correlation;
 #[cfg(feature = "cum_agg")]
 mod cum;
