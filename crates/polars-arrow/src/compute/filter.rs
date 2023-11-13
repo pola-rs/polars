@@ -9,7 +9,7 @@ use crate::chunk::Chunk;
 use crate::datatypes::DataType;
 use crate::types::simd::Simd;
 use crate::types::{BitChunkOnes, NativeType};
-use crate::with_match_primitive_type;
+use crate::with_match_primitive_type_full;
 
 /// Function that can filter arbitrary arrays
 pub type Filter<'a> = Box<dyn Fn(&dyn Array) -> Box<dyn Array> + 'a + Send + Sync>;
@@ -220,7 +220,7 @@ pub fn build_filter(filter: &BooleanArray) -> PolarsResult<Filter> {
     use crate::datatypes::PhysicalType::*;
     Ok(Box::new(move |array: &dyn Array| {
         match array.data_type().to_physical_type() {
-            Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+            Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
                 let array = array.as_any().downcast_ref().unwrap();
                 let mut growable =
                     growable::GrowablePrimitive::<$T>::new(vec![array], false, filter_count);
@@ -287,7 +287,7 @@ pub fn filter(array: &dyn Array, filter: &BooleanArray) -> PolarsResult<Box<dyn 
 
     use crate::datatypes::PhysicalType::*;
     match array.data_type().to_physical_type() {
-        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             let array = array.as_any().downcast_ref().unwrap();
             Ok(Box::new(filter_primitive::<$T>(array, filter)))
         }),
