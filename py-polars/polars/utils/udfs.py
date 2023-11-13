@@ -53,6 +53,8 @@ class OpNames:
         "BINARY_ADD": "+",
         "BINARY_AND": "&",
         "BINARY_FLOOR_DIVIDE": "//",
+        "BINARY_LSHIFT": "<<",
+        "BINARY_RSHIFT": ">>",
         "BINARY_MODULO": "%",
         "BINARY_MULTIPLY": "*",
         "BINARY_OR": "|",
@@ -524,6 +526,15 @@ class InstructionTranslator:
                         if not isinstance(self._caller_variables.get(e1, None), dict):
                             raise NotImplementedError("require dict mapping")
                     return f"{e2}.{op}({e1})"
+                elif op == "<<":
+                    # Result of 2**e2 might be float is e2 was negative.
+                    # But, if e1 << e2 was valid, then e2 must have been positive.
+                    # Hence, the output of 2**e2 can be safely cast to Int64, which
+                    # may be necessary if chaining operations which assume Int64 output.
+                    return f"({e1}*2**{e2}).cast(pl.Int64)"
+                elif op == ">>":
+                    # Motivation for the cast is the same as in the '<<' case above.
+                    return f"({e1} / 2**{e2}).cast(pl.Int64)"
                 else:
                     expr = f"{e1} {op} {e2}"
                     return f"({expr})" if depth else expr
