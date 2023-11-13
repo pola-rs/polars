@@ -676,8 +676,8 @@ def tail(column: str | Series, n: int = 10) -> Expr | Series:
 
 
 def corr(
-    a: str | Expr,
-    b: str | Expr,
+    a: IntoExpr,
+    b: IntoExpr,
     *,
     method: CorrelationMethod = "pearson",
     ddof: int = 1,
@@ -731,24 +731,20 @@ def corr(
     │ 0.5 │
     └─────┘
     """
-    if isinstance(a, str):
-        a = F.col(a)
-    if isinstance(b, str):
-        b = F.col(b)
+    a = parse_as_expression(a)
+    b = parse_as_expression(b)
 
     if method == "pearson":
-        return wrap_expr(plr.pearson_corr(a._pyexpr, b._pyexpr, ddof))
+        return wrap_expr(plr.pearson_corr(a, b, ddof))
     elif method == "spearman":
-        return wrap_expr(
-            plr.spearman_rank_corr(a._pyexpr, b._pyexpr, ddof, propagate_nans)
-        )
+        return wrap_expr(plr.spearman_rank_corr(a, b, ddof, propagate_nans))
     else:
         raise ValueError(
             f"method must be one of {{'pearson', 'spearman'}}, got {method!r}"
         )
 
 
-def cov(a: str | Expr, b: str | Expr) -> Expr:
+def cov(a: IntoExpr, b: IntoExpr, ddof: int = 1) -> Expr:
     """
     Compute the covariance between two columns/ expressions.
 
@@ -758,6 +754,10 @@ def cov(a: str | Expr, b: str | Expr) -> Expr:
         Column name or Expression.
     b
         Column name or Expression.
+    ddof
+        "Delta Degrees of Freedom": the divisor used in the calculation is N - ddof,
+        where N represents the number of elements.
+        By default ddof is 1.
 
     Examples
     --------
@@ -773,11 +773,9 @@ def cov(a: str | Expr, b: str | Expr) -> Expr:
     └─────┘
 
     """
-    if isinstance(a, str):
-        a = F.col(a)
-    if isinstance(b, str):
-        b = F.col(b)
-    return wrap_expr(plr.cov(a._pyexpr, b._pyexpr))
+    a = parse_as_expression(a)
+    b = parse_as_expression(b)
+    return wrap_expr(plr.cov(a, b, ddof))
 
 
 def map_batches(
