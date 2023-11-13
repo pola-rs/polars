@@ -2,7 +2,7 @@
 //!
 //! Functions that might be useful.
 //!
-#[cfg(feature = "diagonal_concat")]
+#[cfg(any(feature = "diagonal_concat", feature = "horizontal_concat"))]
 use crate::prelude::*;
 #[cfg(feature = "diagonal_concat")]
 use crate::utils::concat_df;
