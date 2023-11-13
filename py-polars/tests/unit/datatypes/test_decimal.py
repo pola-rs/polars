@@ -241,3 +241,17 @@ def test_decimal_aggregations() -> None:
         "min": [D("0.10")],
         "max": [D("9000.12")],
     }
+
+
+def test_decimal_in_filter() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": ["6", "7", "8"],
+        }
+    )
+    df = df.with_columns(pl.col("bar").cast(pl.Decimal))
+    assert df.filter(pl.col("foo") > 1).to_dict(as_series=False) == {
+        "foo": [2, 3],
+        "bar": [D("7"), D("8")],
+    }

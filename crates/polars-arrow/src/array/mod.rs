@@ -301,7 +301,7 @@ pub fn new_empty_array(data_type: DataType) -> Box<dyn Array> {
     match data_type.to_physical_type() {
         Null => Box::new(NullArray::new_empty(data_type)),
         Boolean => Box::new(BooleanArray::new_empty(data_type)),
-        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             Box::new(PrimitiveArray::<$T>::new_empty(data_type))
         }),
         Binary => Box::new(BinaryArray::<i32>::new_empty(data_type)),
@@ -331,7 +331,7 @@ pub fn new_null_array(data_type: DataType, length: usize) -> Box<dyn Array> {
     match data_type.to_physical_type() {
         Null => Box::new(NullArray::new_null(data_type, length)),
         Boolean => Box::new(BooleanArray::new_null(data_type, length)),
-        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             Box::new(PrimitiveArray::<$T>::new_null(data_type, length))
         }),
         Binary => Box::new(BinaryArray::<i32>::new_null(data_type, length)),
