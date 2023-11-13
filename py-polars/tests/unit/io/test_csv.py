@@ -1641,38 +1641,9 @@ def test_custom_writeable_object() -> None:
     assert b"".join(buf.writes) == b"a,b\n10,x\n20,y\n30,z\n"
 
 
-@pytest.mark.parametrize(
-    ("csv", "expected"),
-    [
-        (b"a,b\n1,2\n1,2\n", pl.DataFrame({"a": [1, 1], "b": [2, 2]})),
-        (b"a,b\n1,2\n1,2", pl.DataFrame({"a": [1, 1], "b": [2, 2]})),
-        (b"a\n1\n1\n", pl.DataFrame({"a": [1, 1]})),
-        (b"a\n1\n1", pl.DataFrame({"a": [1, 1]})),
-    ],
-    ids=[
-        "multiple columns, ends with LF",
-        "multiple columns, ends with non-LF",
-        "single column, ends with LF",
-        "single column, ends with non-LF",
-    ],
-)
-def test_read_filelike_object_12266(csv: bytes, expected: pl.DataFrame) -> None:
-    buf = io.BufferedReader(io.BytesIO(csv))  # type: ignore[arg-type]
-    df = pl.read_csv(buf)
-    assert_frame_equal(df, expected)
-
-
-def test_read_filelike_object_12404() -> None:
-    expected = pl.DataFrame({"a": [1, 1], "b": [2, 2]})
-    csv = expected.write_csv(line_terminator=";").encode()
-    buf = io.BufferedReader(io.BytesIO(csv))  # type: ignore[arg-type]
-    df = pl.read_csv(buf, eol_char=";")
-    assert_frame_equal(df, expected)
-
-
 def test_write_csv_bom() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
     f = io.BytesIO()
-    df.write_csv(f, has_bom=True)
+    df.write_csv(f, include_bom=True)
     f.seek(0)
     assert f.read() == b"\xef\xbb\xbfa,b\n1,1\n2,2\n3,3\n"

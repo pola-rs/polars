@@ -2139,6 +2139,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         path
             File path to which the file should be written.
+        include_bom
+            Whether to include UTF-8 BOM in the CSV output.
         include_header
             Whether to include header in the CSV output.
         has_bom

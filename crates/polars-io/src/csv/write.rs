@@ -68,6 +68,12 @@ impl<W> CsvWriter<W>
 where
     W: Write,
 {
+    /// Set whether to write UTF-8 BOM.
+    pub fn include_bom(mut self, include_bom: bool) -> Self {
+        self.bom = include_bom;
+        self
+    }
+
     /// Set whether to write headers.
     pub fn include_header(mut self, include_header: bool) -> Self {
         self.header = include_header;
