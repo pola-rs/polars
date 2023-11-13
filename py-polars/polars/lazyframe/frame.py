@@ -2143,8 +2143,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Whether to include UTF-8 BOM in the CSV output.
         include_header
             Whether to include header in the CSV output.
-        has_bom
-            Whether to include UTF-8 BOM in the CSV output.
         separator
             Separate CSV fields with this symbol.
         line_terminator

@@ -80,12 +80,6 @@ where
         self
     }
 
-    /// Set whether to write UTF-8 BOM.
-    pub fn has_bom(mut self, has_bom: bool) -> Self {
-        self.bom = has_bom;
-        self
-    }
-
     /// Set the CSV file's column separator as a byte character.
     pub fn with_separator(mut self, separator: u8) -> Self {
         self.options.separator = separator;
