@@ -34,6 +34,15 @@ def test_read_missing_file(read_function: Callable[[Any], pl.DataFrame]) -> None
         read_function("fake_file_path")
 
 
+def test_read_missing_file_path_truncated() -> None:
+    content = "lskdfj".join(str(i) for i in range(25))
+    with pytest.raises(
+        FileNotFoundError,
+        match="\\.\\.\\.lskdfj14lskdfj15lskdfj16lskdfj17lskdfj18lskdfj19lskdfj20lskdfj21lskdfj22lskdfj23lskdfj24",
+    ):
+        pl.read_csv(content)
+
+
 def test_copy() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": ["a", None], "c": [True, False]})
     assert_frame_equal(copy.copy(df), df)
