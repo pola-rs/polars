@@ -7,7 +7,7 @@ import pyarrow as pa
 import pyarrow.fs
 import pytest
 from deltalake import DeltaTable
-from deltalake._internal import TableNotFoundError
+from deltalake.exceptions import TableNotFoundError
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_frame_not_equal
