@@ -18,24 +18,19 @@ where
         let (a, b) = align_chunks_binary(a, b);
 
         let out = if a.null_count() > 0 || b.null_count() > 0 {
-            let iters = a
-                .downcast_iter()
-                .zip(b.downcast_iter())
-                .map(|(a, b)| {
-                    a.into_iter().zip(b).filter_map(|(a, b)| match (a, b) {
-                        (Some(a), Some(b)) => Some((*a, *b)),
-                        _ => None,
-                    })
+            let iters = a.downcast_iter().zip(b.downcast_iter()).map(|(a, b)| {
+                a.into_iter().zip(b).filter_map(|(a, b)| match (a, b) {
+                    (Some(a), Some(b)) => Some((*a, *b)),
+                    _ => None,
                 })
-                .collect::<Vec<_>>();
-            online_cov(iters.as_slice(), ddof)
+            });
+            online_cov(iters, ddof)
         } else {
             let iters = a
                 .downcast_iter()
                 .zip(b.downcast_iter())
-                .map(|(a, b)| a.values_iter().copied().zip(b.values_iter().copied()))
-                .collect::<Vec<_>>();
-            online_cov(iters.as_slice(), ddof)
+                .map(|(a, b)| a.values_iter().copied().zip(b.values_iter().copied()));
+            online_cov(iters, ddof)
         };
         Some(out)
     }
@@ -43,9 +38,10 @@ where
 
 /// # Arguments
 /// `iter` - Iterator over `T` tuple where any `Option<T>` would skip the tuple.
-fn online_cov<I, T>(iters: &[I], ddof: u8) -> f64
+fn online_cov<I, J, T>(iters: I, ddof: u8) -> f64
 where
-    I: IntoIterator<Item = (T, T)> + Clone,
+    I: Iterator<Item = J>,
+    J: IntoIterator<Item = (T, T)> + Clone,
     T: ToPrimitive,
 {
     let mut mean_x = 0.0;
@@ -84,33 +80,29 @@ where
     let (a, b) = align_chunks_binary(a, b);
 
     let out = if a.null_count() > 0 || b.null_count() > 0 {
-        let iters = a
-            .downcast_iter()
-            .zip(b.downcast_iter())
-            .map(|(a, b)| {
-                a.into_iter().zip(b).filter_map(|(a, b)| match (a, b) {
-                    (Some(a), Some(b)) => Some((*a, *b)),
-                    _ => None,
-                })
+        let iters = a.downcast_iter().zip(b.downcast_iter()).map(|(a, b)| {
+            a.into_iter().zip(b).filter_map(|(a, b)| match (a, b) {
+                (Some(a), Some(b)) => Some((*a, *b)),
+                _ => None,
             })
-            .collect::<Vec<_>>();
-        online_pearson_corr(iters.as_slice(), ddof)
+        });
+        online_pearson_corr(iters, ddof)
     } else {
         let iters = a
             .downcast_iter()
             .zip(b.downcast_iter())
-            .map(|(a, b)| a.values_iter().copied().zip(b.values_iter().copied()))
-            .collect::<Vec<_>>();
-        online_pearson_corr(iters.as_slice(), ddof)
+            .map(|(a, b)| a.values_iter().copied().zip(b.values_iter().copied()));
+        online_pearson_corr(iters, ddof)
     };
     Some(out)
 }
 
 /// # Arguments
 /// `iter` - Iterator over `T` tuple where any `Option<T>` would skip the tuple.
-fn online_pearson_corr<I, T>(iters: &[I], ddof: u8) -> f64
+fn online_pearson_corr<I, J, T>(iters: I, ddof: u8) -> f64
 where
-    I: IntoIterator<Item = (T, T)> + Clone,
+    I: Iterator<Item = J>,
+    J: IntoIterator<Item = (T, T)> + Clone,
     T: ToPrimitive,
 {
     let mut mean_x = 0.0;
