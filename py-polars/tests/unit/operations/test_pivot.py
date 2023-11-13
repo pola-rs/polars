@@ -77,6 +77,14 @@ def test_pivot_missing_arg() -> None:
     )
     assert_frame_equal(result, expected)
 
+    # failing tests: only one of values/index/columns supplied
+    with pytest.raises(ValueError, match="must provide at least two of "):
+        df.pivot(values="N", index=None, columns=None, aggregate_function=None)
+    with pytest.raises(ValueError, match="must provide at least two of "):
+        df.pivot(values=None, index="foo", columns=None, aggregate_function=None)
+    with pytest.raises(ValueError, match="must provide at least two of "):
+        df.pivot(values=None, index=None, columns="bar", aggregate_function=None)
+
 
 def test_pivot_list() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [[1, 1], [2, 2], [3, 3]]})
@@ -366,7 +374,7 @@ def test_aggregate_function_deprecation_warning() -> None:
     with pytest.raises(
         pl.ComputeError, match="found multiple elements in the same group"
     ):
-        df.pivot("a", "b", "c")
+        df.pivot(values="a", index="b", columns="c")
 
 
 def test_pivot_struct() -> None:

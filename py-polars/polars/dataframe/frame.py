@@ -6915,6 +6915,7 @@ class DataFrame:
         """
         return self.lazy().explode(columns, *more_columns).collect(_eager=True)
 
+    @deprecate_nonkeyword_arguments(allowed_args=None, version="0.19.14")
     def pivot(
         self,
         values: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
@@ -7067,25 +7068,27 @@ class DataFrame:
         └──────┴──────────┴──────────┘
 
         """  # noqa: W505
+        values = _expand_selectors(self, values)
         index = _expand_selectors(self, index)
         columns = _expand_selectors(self, columns)
-        values = _expand_selectors(self, values)
+
+        # If only two of three values/index/columns are supplied, infer the third.
         val_err_str = "must provide at least two of `values`, `index`, and `columns`"
-        if index == [None]:
-            if not columns or not values:
+        if values == [None]:
+            if (index == [None]) or (columns == [None]):
+                raise ValueError(val_err_str)
+            used = list(set(index).union(columns))
+            values = [x for x in self.columns if x not in used and x not in used]
+        elif index == [None]:
+            if (columns == [None]) or (values == [None]):
                 raise ValueError(val_err_str)
             used = list(set(columns).union(values))
             index = [x for x in self.columns if x not in used and x not in used]
         elif columns == [None]:
-            if not index or not values:
+            if (index == [None]) or (values == [None]):
                 raise ValueError(val_err_str)
             used = list(set(index).union(values))
             columns = [x for x in self.columns if x not in used and x not in used]
-        elif values == [None]:
-            if not index or not columns:
-                raise ValueError(val_err_str)
-            used = list(set(index).union(columns))
-            values = [x for x in self.columns if x not in used and x not in used]
 
         if isinstance(aggregate_function, str):
             if aggregate_function == "first":
