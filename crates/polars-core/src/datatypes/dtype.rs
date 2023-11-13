@@ -258,7 +258,7 @@ impl DataType {
             ))),
             Null => ArrowDataType::Null,
             #[cfg(feature = "object")]
-            Object(_) => panic!("cannot convert object to arrow"),
+            Object(_) => panic!("cannot convert data with Object dtype to Arrow"),
             #[cfg(feature = "dtype-categorical")]
             Categorical(_) => ArrowDataType::Dictionary(
                 IntegerType::UInt32,
@@ -270,7 +270,7 @@ impl DataType {
                 let fields = fields.iter().map(|fld| fld.to_arrow()).collect();
                 ArrowDataType::Struct(fields)
             },
-            Unknown => unreachable!(),
+            Unknown => panic!("cannot convert data with Unknown dtype to Arrow"),
         }
     }
 
