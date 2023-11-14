@@ -1668,3 +1668,10 @@ def test_read_filelike_object_12404() -> None:
     buf = io.BufferedReader(io.BytesIO(csv))  # type: ignore[arg-type]
     df = pl.read_csv(buf, eol_char=";")
     assert_frame_equal(df, expected)
+
+
+def test_empty_csv_no_raise() -> None:
+    assert pl.read_csv(io.StringIO(), raise_if_empty=False, has_header=False).shape == (
+        0,
+        0,
+    )

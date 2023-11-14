@@ -432,7 +432,11 @@ pub fn infer_file_schema_inner(
     // if there is a single line after the header without an eol
     // we copy the bytes add an eol and rerun this function
     // so that the inference is consistent with and without eol char
-    if rows_count == 0 && reader_bytes[reader_bytes.len() - 1] != eol_char && recursion_count == 0 {
+    if rows_count == 0
+        && !reader_bytes.is_empty()
+        && reader_bytes[reader_bytes.len() - 1] != eol_char
+        && recursion_count == 0
+    {
         let mut rb = Vec::with_capacity(reader_bytes.len() + 1);
         rb.extend_from_slice(reader_bytes);
         rb.push(eol_char);
