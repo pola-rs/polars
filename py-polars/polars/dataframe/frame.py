@@ -7759,7 +7759,7 @@ class DataFrame:
         └───────────┘
 
         Expressions with multiple outputs can be automatically instantiated as Structs
-        by enabling the experimental setting `Config.set_auto_structify(True)`:
+        by enabling the setting `Config.set_auto_structify(True)`:
 
         >>> with pl.Config(auto_structify=True):
         ...     df.select(
@@ -7934,7 +7934,7 @@ class DataFrame:
         └─────┴──────┴───────┴──────┴───────┘
 
         Expressions with multiple outputs can be automatically instantiated as Structs
-        by enabling the experimental setting `Config.set_auto_structify(True)`:
+        by enabling the setting `Config.set_auto_structify(True)`:
 
         >>> with pl.Config(auto_structify=True):
         ...     df.drop("c").with_columns(
