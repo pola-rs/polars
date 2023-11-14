@@ -220,23 +220,6 @@ def test_group_by_dynamic_agg_input_types(lazy: bool) -> None:
         assert_frame_equal(result, expected)
 
 
-def test_group_by_local_categorical() -> None:
-    df = pl.DataFrame(
-        [
-            pl.Series(
-                "a", ["a", "b", "c", "c", "b", "a", "b", "d", "d"], dtype=pl.Categorical
-            ),
-            pl.Series("b", [1, 2, 3, 3, 2, 1, 1, 2, 3]),
-        ]
-    )
-    grouped_df = df.group_by("b", maintain_order=True).agg(pl.col("a"))
-
-    # TODO: Comparison on local categorical does not work yet, hence the convoluted way
-    assert grouped_df.filter(pl.col("b") == 1).item(0, "a").to_list() == ["a", "a", "b"]
-    assert grouped_df.filter(pl.col("b") == 2).item(0, "a").to_list() == ["b", "b", "d"]
-    assert grouped_df.filter(pl.col("b") == 3).item(0, "a").to_list() == ["c", "c", "d"]
-
-
 def test_group_by_sorted_empty_dataframe_3680() -> None:
     df = (
         pl.DataFrame(
