@@ -77,13 +77,6 @@ class DataTypeClass(type):
 class DataType(metaclass=DataTypeClass):
     """Base class for all Polars data types."""
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> PolarsDataType:  # type: ignore[misc]  # noqa: D102
-        # this formulation allows for equivalent use of "pl.Type" and "pl.Type()", while
-        # still respecting types that take initialisation params (eg: Duration/Datetime)
-        if args or kwargs:
-            return super().__new__(cls)
-        return cls
-
     def __reduce__(self) -> Any:
         return (_custom_reconstruct, (type(self), object, None), self.__dict__)
 
@@ -252,6 +245,10 @@ class NumericType(DataType):
 class IntegerType(NumericType):
     """Base class for integer data types."""
 
+    def __new__(cls) -> DataTypeClass:  # type: ignore[misc]
+        """Convert new instances of this class to a class object."""
+        return cls
+
 
 class SignedIntegerType(IntegerType):
     """Base class for signed integer data types."""
@@ -263,6 +260,10 @@ class UnsignedIntegerType(IntegerType):
 
 class FloatType(NumericType):
     """Base class for float data types."""
+
+    def __new__(cls) -> DataTypeClass:  # type: ignore[misc]
+        """Convert new instances of this class to a class object."""
+        return cls
 
 
 class TemporalType(DataType):
@@ -354,21 +355,41 @@ class Decimal(NumericType):
 class Boolean(DataType):
     """Boolean type."""
 
+    def __new__(cls) -> DataTypeClass:  # type: ignore[misc]
+        """Convert new instances of this class to a class object."""
+        return cls
+
 
 class Utf8(DataType):
     """UTF-8 encoded string type."""
+
+    def __new__(cls) -> DataTypeClass:  # type: ignore[misc]
+        """Convert new instances of this class to a class object."""
+        return cls
 
 
 class Binary(DataType):
     """Binary type."""
 
+    def __new__(cls) -> DataTypeClass:  # type: ignore[misc]
+        """Convert new instances of this class to a class object."""
+        return cls
+
 
 class Date(TemporalType):
     """Calendar date type."""
 
+    def __new__(cls) -> DataTypeClass:  # type: ignore[misc]
+        """Convert new instances of this class to a class object."""
+        return cls
+
 
 class Time(TemporalType):
     """Time of day type."""
+
+    def __new__(cls) -> DataTypeClass:  # type: ignore[misc]
+        """Convert new instances of this class to a class object."""
+        return cls
 
 
 class Datetime(TemporalType):
@@ -469,6 +490,10 @@ class Duration(TemporalType):
 class Categorical(DataType):
     """A categorical encoding of a set of strings."""
 
+    def __new__(cls) -> DataTypeClass:  # type: ignore[misc]
+        """Convert new instances of this class to a class object."""
+        return cls
+
 
 class Enum(DataType):
     """
@@ -513,13 +538,25 @@ class Enum(DataType):
 class Object(DataType):
     """Type for wrapping arbitrary Python objects."""
 
+    def __new__(cls) -> DataTypeClass:  # type: ignore[misc]
+        """Convert new instances of this class to a class object."""
+        return cls
+
 
 class Null(DataType):
     """Type representing Null / None values."""
 
+    def __new__(cls) -> DataTypeClass:  # type: ignore[misc]
+        """Convert new instances of this class to a class object."""
+        return cls
+
 
 class Unknown(DataType):
     """Type representing Datatype values that could not be determined statically."""
+
+    def __new__(cls) -> DataTypeClass:  # type: ignore[misc]
+        """Convert new instances of this class to a class object."""
+        return cls
 
 
 class List(NestedType):
