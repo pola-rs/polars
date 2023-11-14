@@ -114,9 +114,13 @@ impl BinaryExpr {
         let left_s = ac_l.series().rechunk();
         let right_s = ac_r.series().rechunk();
         let res_s = apply_operator(&left_s, &right_s, self.op)?;
-        let ca = ListChunked::full(&name, &res_s, ac_l.groups.len());
         ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
-        ac_l.with_series(ca.into_series(), true, Some(&self.expr))?;
+        let res_s = if res_s.len() == 1 {
+            res_s.new_from_index(0, ac_l.groups.len())
+        } else {
+            ListChunked::full(&name, &res_s, ac_l.groups.len()).into_series()
+        };
+        ac_l.with_series(res_s, true, Some(&self.expr))?;
         Ok(ac_l)
     }
 

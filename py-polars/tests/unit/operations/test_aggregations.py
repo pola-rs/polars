@@ -315,3 +315,16 @@ def test_first_last_unit_length_12363() -> None:
         "a_last": [2],
         "b_last": [None],
     }
+
+
+def test_binary_op_agg_context_no_simplify_expr_12423() -> None:
+    expect = pl.DataFrame({"x": [1], "y": [1]}, schema={"x": pl.Int64, "y": pl.Int32})
+
+    for simplify_expression in (True, False):
+        assert_frame_equal(
+            expect,
+            pl.LazyFrame({"x": [1]})
+            .group_by("x")
+            .agg(y=pl.lit(1) * pl.lit(1))
+            .collect(simplify_expression=simplify_expression),
+        )
