@@ -3,7 +3,6 @@ from __future__ import annotations
 import contextlib
 import math
 import os
-from collections.abc import Set
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import (
@@ -110,6 +109,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Set
 
     from polars import DataFrame, Expr
     from polars.series._numpy import SeriesView
@@ -335,7 +335,9 @@ class Series:
         return series
 
     @classmethod
-    def _from_arrow(cls, name: str, values: pa.Array, *, rechunk: bool = True) -> Self:
+    def _from_arrow(
+        cls, name: str, values: pa.Array, *, rechunk: bool = True
+    ) -> Series:
         """Construct a Series from an Arrow Array."""
         return cls._from_pyseries(arrow_to_pyseries(name, values, rechunk=rechunk))
 
@@ -343,10 +345,10 @@ class Series:
     def _from_pandas(
         cls,
         name: str,
-        values: pd.Series[Any] | pd.Index | pd.DatetimeIndex,
+        values: pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex,
         *,
         nan_to_null: bool = True,
-    ) -> Self:
+    ) -> Series:
         """Construct a Series from a pandas Series or DatetimeIndex."""
         return cls._from_pyseries(
             pandas_to_pyseries(name, values, nan_to_null=nan_to_null)
@@ -442,107 +444,186 @@ class Series:
     def __len__(self) -> int:
         return self.len()
 
-    def _binary_op(self, other: Any, op: str, right_hand: bool = False,
-                   allowed_dtypes: list[list[list[Set], list[Set]]] |
-                                   None = None) -> Self:
+    def _binary_op(
+        self,
+        other: Any,
+        op: str,
+        *,
+        right_hand: bool = False,
+        allowed_types: list[list[tuple[Set[type], Set[type]]]] | None = None,
+    ) -> Series | DataFrame | Expr:
         """Perform a binary operation on a Series and another object."""
         if isinstance(other, pl.Expr):
-            return eval(f'F.lit(self) {op} other')
+            return eval(f"F.lit(self) {op} other")
         other_type = type(other).__name__
         other = _prepare_other_arg(
-            other, prefix=f'{"Left" if right_hand else "Right"}-hand operand '
-                          f'of "{op}" operation')
+            other,
+            prefix=f'{"Left" if right_hand else "Right"}-hand operand '
+            f'of "{op}" operation',
+        )
         if isinstance(other, pl.DataFrame):
-            return other._binary_op(self, op=op, right_hand=not right_hand,
-                                    allowed_dtypes=allowed_dtypes)
-        left_type, right_type = (other_type, 'Series') if right_hand else \
-            ('Series', other_type)
+            return other._binary_op(
+                self, op=op, right_hand=not right_hand, allowed_types=allowed_types
+            )
+        left_type, right_type = (
+            (other_type, "Series") if right_hand else ("Series", other_type)
+        )
         if other is None:
-            raise TypeError(f"unsupported operand type(s) for {op}: "
-                            f"'{left_type}' and '{right_type}'")
+            raise TypeError(
+                f"unsupported operand type(s) for {op}: "
+                f"'{left_type}' and '{right_type}'"
+            )
         left, right = (other, self) if right_hand else (self, other)
-        if isinstance(other, Series) and len(self) != len(other) and \
-                len(self) > 1 and len(other) > 1:
+        if (
+            isinstance(other, Series)
+            and len(self) != len(other)
+            and len(self) > 1
+            and len(other) > 1
+        ):
             raise ShapeError(
-                f'Cannot perform Series {op} Series operation because the two '
-                f'Series have different lengths: the left Series has length '
-                f'{len(left)}, while the right Series has length {len(right)}')
-        if allowed_dtypes is not None:
+                f"Cannot perform Series {op} Series operation because the two "
+                f"Series have different lengths: the left Series has length "
+                f"{len(left)}, while the right Series has length {len(right)}"
+            )
+        if allowed_types is not None:
             self_dtype = dtype_to_py_type(self.dtype)
-            other_dtype = dtype_to_py_type(other.dtype) \
-                if isinstance(other, pl.Series) else type(other)
+            other_dtype = (
+                dtype_to_py_type(other.dtype)
+                if isinstance(other, pl.Series)
+                else type(other)
+            )
             NoneType = None.__class__
-            if not any((self_dtype is NoneType or
-                        self_dtype in allowed_dtype_pair[right_hand]) and
-                       (other_dtype is NoneType or
-                        other_dtype in allowed_dtype_pair[1 - right_hand])
-                       for allowed_dtype_pairs in allowed_dtypes
-                       for allowed_dtype_pair in allowed_dtype_pairs):
+            if not any(
+                (self_dtype is NoneType or self_dtype in allowed_type_pair[right_hand])
+                and (
+                    other_dtype is NoneType
+                    or other_dtype in allowed_type_pair[1 - right_hand]
+                )
+                for allowed_type_pairs in allowed_types
+                for allowed_type_pair in allowed_type_pairs
+            ):
                 if isinstance(other, Series):
                     left_dtype = left.dtype.base_type()
                     right_dtype = right.dtype.base_type()
                     raise TypeError(
-                        f'Cannot perform Series {op} Series operation due to '
-                        f'incompatible dtypes: '
-                        f'{left_dtype} {op} {right_dtype}')
+                        f"Cannot perform Series {op} Series operation due to "
+                        f"incompatible dtypes: "
+                        f"{left_dtype} {op} {right_dtype}"
+                    )
                 else:
-                    if not any(other_dtype in
-                               allowed_dtype_pair[1 - right_hand]
-                               for allowed_dtype_pairs in allowed_dtypes
-                               for allowed_dtype_pair in allowed_dtype_pairs):
+                    if not any(
+                        other_dtype in allowed_type_pair[1 - right_hand]
+                        for allowed_type_pairs in allowed_types
+                        for allowed_type_pair in allowed_type_pairs
+                    ):
                         raise TypeError(
-                            f'Cannot perform {left_type} {op} {right_type} '
-                            f'operation because {other_type} does not support '
-                            f'the "{op}" operation')
+                            f"Cannot perform {left_type} {op} {right_type} "
+                            f"operation because {other_type} does not support "
+                            f'the "{op}" operation'
+                        )
                     left_dtype = self.dtype.base_type()
                     right_dtype = type(other).__name__
                     if right_hand:
                         left_dtype, right_dtype = right_dtype, left_dtype
                     raise TypeError(
-                        f'Cannot perform {left_type} {op} {right_type} '
-                        f'operation because Series has an incompatible dtype: '
-                        f'{left_dtype} {op} {right_dtype}')
-        return self.to_frame()\
-            .select(eval(f'other {op} F.col("{self.name}")').name.keep()
-                    if right_hand else
-                    eval(f'F.col("{self.name}") {op} other'))\
+                        f"Cannot perform {left_type} {op} {right_type} "
+                        f"operation because Series has an incompatible dtype: "
+                        f"{left_dtype} {op} {right_dtype}"
+                    )
+        return (
+            self.to_frame()
+            .select(
+                eval(f'other {op} F.col("{self.name}")').name.keep()
+                if right_hand
+                else eval(f'F.col("{self.name}") {op} other')
+            )
             .to_series()
+        )
+
+    @overload  # type: ignore[override]
+    def __eq__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | pd.DatetimeIndex
+        | int
+        | float
+        | bool
+        | str
+        | bytes
+        | date
+        | datetime
+        | time
+        | timedelta,
+    ) -> Series:
+        ...
 
     @overload
-    def __eq__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
-                            pd.Series | pd.Index | pd.DatetimeIndex | int |
-                            float | bool | str | bytes) -> Self:
+    def __eq__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
         ...
-    
-    @overload
-    def __eq__(self, other: DataFrame | np.ndarray | pa.Table |
-                            pd.DataFrame) -> DataFrame:
-        ...
-    
-    def __eq__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                            pa.Array | pa.ChunkedArray | pd.DataFrame |
-                            pd.Series | pd.Index | pd.DatetimeIndex | int |
-                            float | bool | str | bytes) -> Self | DataFrame:
-        return self._binary_op(other, '==', allowed_dtypes=[
-            # mix of numeric == numeric, bool == bool, str == str,
-            # bytes == bytes, date == date, datetime == datetime, time == time,
-            # timedelta == timedelta, dict == dict (including pl.Struct), and
-            # list-or-tuple == list-or-tuple (including pl.List and pl.Array)
-            [[{int, float, Decimal}, {int, float, Decimal}], [{bool}, {bool}],
-             [{str}, {str}], [{bytes}, {bytes}], [{date}, {date}],
-             [{datetime}, {datetime}], [{time}, {time}],
-             [{timedelta}, {timedelta}], [{dict}, {dict}],
-             [{list, tuple}, {list, tuple}]]])
 
     @overload
-    def eq_missing(self, other: Any) -> Self:
+    def __eq__(self, other: Expr) -> Expr:
+        ...
+
+    def __eq__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | pd.DatetimeIndex
+        | int
+        | float
+        | bool
+        | str
+        | bytes
+        | date
+        | datetime
+        | time
+        | timedelta,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other,
+            "==",
+            allowed_types=[
+                # mix of numeric == numeric, bool == bool, str == str,
+                # bytes == bytes, date == date, datetime == datetime, time == time,
+                # timedelta == timedelta, dict == dict (including pl.Struct), and
+                # list-or-tuple == list-or-tuple (including pl.List and pl.Array)
+                [
+                    ({int, float, Decimal}, {int, float, Decimal}),
+                    ({bool}, {bool}),
+                    ({str}, {str}),
+                    ({bytes}, {bytes}),
+                    ({date}, {date}),
+                    ({datetime}, {datetime}),
+                    ({time}, {time}),
+                    ({timedelta}, {timedelta}),
+                    ({dict}, {dict}),
+                    ({list, tuple}, {list, tuple}),
+                ]
+            ],
+        )
+
+    @overload
+    def eq_missing(self, other: Any) -> Series:
         ...
 
     @overload
     def eq_missing(self, other: Expr) -> Expr:  # type: ignore[misc]
         ...
 
-    def eq_missing(self, other: Any) -> Self | Expr:
+    def eq_missing(self, other: Any) -> Series | Expr:
         """
         Method equivalent of equality operator `series == other` where `None == None`.
 
@@ -581,37 +662,86 @@ class Series:
 
         """
 
-    @overload
-    def __ne__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
-                            pd.Series | pd.Index | pd.DatetimeIndex | int |
-                            float | bool | str | bytes) -> Self:
-        ...
-    
-    @overload
-    def __ne__(self, other: DataFrame | np.ndarray | pa.Table |
-                            pd.DataFrame) -> DataFrame:
+    @overload  # type: ignore[override]
+    def __ne__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | pd.DatetimeIndex
+        | int
+        | float
+        | bool
+        | str
+        | bytes
+        | date
+        | datetime
+        | time
+        | timedelta,
+    ) -> Series:
         ...
 
-    def __ne__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                            pa.Array | pa.ChunkedArray | pd.DataFrame |
-                            pd.Series | pd.Index | pd.DatetimeIndex | int |
-                            float | bool | str | bytes) -> Self | DataFrame:
-        return self._binary_op(other, '!=', allowed_dtypes=[
-            [[{int, float, Decimal}, {int, float, Decimal}], [{bool}, {bool}],
-             [{str}, {str}], [{bytes}, {bytes}], [{date}, {date}],
-             [{datetime}, {datetime}], [{time}, {time}],
-             [{timedelta}, {timedelta}], [{dict}, {dict}],
-             [{list, tuple}, {list, tuple}]]])
-    
+    @overload
+    def __ne__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __ne__(self, other: Expr) -> Expr:
+        ...
+
+    def __ne__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | pd.DatetimeIndex
+        | int
+        | float
+        | bool
+        | str
+        | bytes
+        | date
+        | datetime
+        | time
+        | timedelta,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other,
+            "!=",
+            allowed_types=[
+                [
+                    ({int, float, Decimal}, {int, float, Decimal}),
+                    ({bool}, {bool}),
+                    ({str}, {str}),
+                    ({bytes}, {bytes}),
+                    ({date}, {date}),
+                    ({datetime}, {datetime}),
+                    ({time}, {time}),
+                    ({timedelta}, {timedelta}),
+                    ({dict}, {dict}),
+                    ({list, tuple}, {list, tuple}),
+                ]
+            ],
+        )
+
     @overload
     def ne_missing(self, other: Expr) -> Expr:  # type: ignore[misc]
         ...
 
     @overload
-    def ne_missing(self, other: Any) -> Self:
+    def ne_missing(self, other: Any) -> Series:
         ...
 
-    def ne_missing(self, other: Any) -> Self | Expr:
+    def ne_missing(self, other: Any) -> Series | Expr:
         """
         Method equivalent of equality operator `series != other` where `None == None`.
 
@@ -651,611 +781,1409 @@ class Series:
         """
 
     @overload
-    def __gt__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
-                            pd.Series | pd.Index | pd.DatetimeIndex | int |
-                            float | bool | str | bytes) -> Self:
-        ...
-    
-    @overload
-    def __gt__(self, other: DataFrame | np.ndarray | pa.Table |
-                            pd.DataFrame) -> DataFrame:
-        ...
-
-    def __gt__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                            pa.Array | pa.ChunkedArray | pd.DataFrame |
-                            pd.Series | pd.Index | pd.DatetimeIndex | int |
-                            float | bool | str | bytes) -> Self | DataFrame:
-        return self._binary_op(other, '>', allowed_dtypes=[
-            [[{int, float, Decimal}, {int, float, Decimal}], [{bool}, {bool}],
-             [{str}, {str}], [{bytes}, {bytes}], [{date}, {date}],
-             [{datetime}, {datetime}], [{time}, {time}],
-             [{timedelta}, {timedelta}], [{dict}, {dict}],
-             [{list, tuple}, {list, tuple}]]])
-    
-    @overload
-    def __lt__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
-                            pd.Series | pd.Index | pd.DatetimeIndex | int |
-                            float | bool | str | bytes) -> Self:
-        ...
-    
-    @overload
-    def __lt__(self, other: DataFrame | np.ndarray | pa.Table |
-                            pd.DataFrame) -> DataFrame:
-        ...
-
-    def __lt__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                            pa.Array | pa.ChunkedArray | pd.DataFrame |
-                            pd.Series | pd.Index | pd.DatetimeIndex | int |
-                            float | bool | str | bytes) -> Self | DataFrame:
-        return self._binary_op(other, '<', allowed_dtypes=[
-            [[{int, float, Decimal}, {int, float, Decimal}], [{bool}, {bool}],
-             [{str}, {str}], [{bytes}, {bytes}], [{date}, {date}],
-             [{datetime}, {datetime}], [{time}, {time}],
-             [{timedelta}, {timedelta}], [{dict}, {dict}],
-             [{list, tuple}, {list, tuple}]]])
-
-    @overload
-    def __ge__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
-                            pd.Series | pd.Index | pd.DatetimeIndex | int |
-                            float | bool | str | bytes) -> Self:
-        ...
-    
-    @overload
-    def __ge__(self, other: DataFrame | np.ndarray | pa.Table |
-                            pd.DataFrame) -> DataFrame:
-        ...
-
-    def __ge__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                            pa.Array | pa.ChunkedArray | pd.DataFrame |
-                            pd.Series | pd.Index | pd.DatetimeIndex | int |
-                            float | bool | str | bytes) -> Self | DataFrame:
-        return self._binary_op(other, '>=', allowed_dtypes=[
-            [[{int, float, Decimal}, {int, float, Decimal}], [{bool}, {bool}],
-             [{str}, {str}], [{bytes}, {bytes}], [{date}, {date}],
-             [{datetime}, {datetime}], [{time}, {time}],
-             [{timedelta}, {timedelta}], [{dict}, {dict}],
-             [{list, tuple}, {list, tuple}]]])
-
-    @overload
-    def __le__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
-                            pd.Series | pd.Index | pd.DatetimeIndex | int |
-                            float | bool | str | bytes) -> Self:
-        ...
-    
-    @overload
-    def __le__(self, other: DataFrame | np.ndarray | pa.Table |
-                            pd.DataFrame) -> DataFrame:
-        ...
-
-    def __le__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                            pa.Array | pa.ChunkedArray | pd.DataFrame |
-                            pd.Series | pd.Index | pd.DatetimeIndex | int |
-                            float | bool | str | bytes) -> Self | DataFrame:
-        return self._binary_op(other, '<=', allowed_dtypes=[
-            [[{int, float, Decimal}, {int, float, Decimal}], [{bool}, {bool}],
-             [{str}, {str}], [{bytes}, {bytes}], [{date}, {date}],
-             [{datetime}, {datetime}], [{time}, {time}],
-             [{timedelta}, {timedelta}], [{dict}, {dict}],
-             [{list, tuple}, {list, tuple}]]])
-    
-    @overload
-    def __add__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
-                             pd.Series | pd.Index | int | float | str | bytes |
-                             date | datetime | timedelta) -> Self:
-        ...
-    
-    @overload
-    def __add__(self, other: DataFrame | np.ndarray | pa.Table |
-                             pd.DataFrame) -> DataFrame:
-        ...
-
-    def __add__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                             pa.Array | pa.ChunkedArray | pd.DataFrame |
-                             pd.Series | pd.Index | int | float | str | bytes |
-                             date | datetime | timedelta) -> Self | DataFrame:
-        return self._binary_op(other, '+', allowed_dtypes=[
-            # numeric + numeric
-            [[{int, float, Decimal}, {int, float, Decimal}]],
-            # str + str
-            [[{str}, {str}]],
-            # bytes + bytes
-            [[{bytes}, {bytes}]],
-            # mix of date + timedelta and datetime + timedelta
-            [[{date}, {timedelta}], [{datetime}, {timedelta}]],
-            # mix of timedelta + date and timedelta + datetime
-            [[{timedelta}, {date}], [{timedelta}, {datetime}]],
-            # timedelta + timedelta
-            [[{timedelta}, {timedelta}]]])
-
-    @overload
-    def __radd__(self, other: Series | np.ndarray | pa.Array |
-                              pa.ChunkedArray | pd.Series | pd.Index | int |
-                              float | str | bytes | date | datetime |
-                              timedelta) -> Self:
-        ...
-    
-    @overload
-    def __radd__(self, other: DataFrame | np.ndarray | pa.Table |
-                              pd.DataFrame) -> DataFrame:
-        ...
-    
-    def __radd__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                              pa.Array | pa.ChunkedArray | pd.DataFrame |
-                              pd.Series | pd.Index | int | float |
-                              str | bytes | date | datetime |
-                              timedelta) -> Self | DataFrame:
-        return self._binary_op(other, '+', right_hand=True, allowed_dtypes=[
-            [[{int, float, Decimal}, {int, float, Decimal}]],
-            [[{str}, {str}]],
-            [[{bytes}, {bytes}]],
-            [[{date}, {timedelta}], [{datetime}, {timedelta}]],
-            [[{timedelta}, {date}], [{timedelta}, {datetime}]],
-            [[{timedelta}, {timedelta}]]])
-    
-    @overload
-    def __sub__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
-                             pd.Series | pd.Index | pd.DatetimeIndex | int |
-                             float | date | datetime | timedelta) -> Self:
-        ...
-    
-    @overload
-    def __sub__(self, other: DataFrame | np.ndarray | pa.Table |
-                             pd.DataFrame) -> DataFrame:
-        ...
-    
-    def __sub__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                             pa.Array | pa.ChunkedArray | pd.DataFrame |
-                             pd.Series | pd.Index | pd.DatetimeIndex | int |
-                             float | date | datetime |
-                             timedelta) -> Self | DataFrame:
-        return self._binary_op(other, '-', allowed_dtypes=[
-            # numeric - numeric
-            [[{int, float, Decimal}, {int, float, Decimal}]],
-            # mix of date - date and datetime - datetime
-            [[{date}, {date}], [{datetime}, {datetime}]],
-            # mix of date - timedelta and datetime - timedelta
-            [[{date}, {timedelta}], [{datetime}, {timedelta}]],
-            # timedelta - timedelta
-            [[{timedelta}, {timedelta}]]])
-    
-    @overload
-    def __rsub__(self, other: Series | np.ndarray | pa.Array |
-                              pa.ChunkedArray | pd.Series | pd.Index |
-                              pd.DatetimeIndex | int | float | date |
-                              datetime | timedelta) -> Self:
-        ...
-    
-    @overload
-    def __rsub__(self, other: DataFrame | np.ndarray | pa.Table |
-                              pd.DataFrame) -> DataFrame:
-        ...
-    
-    def __rsub__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                              pa.Array | pa.ChunkedArray | pd.DataFrame |
-                              pd.Series | pd.Index | pd.DatetimeIndex | int |
-                              float | date | datetime |
-                              timedelta) -> Self | DataFrame:
-        return self._binary_op(other, '-', right_hand=True, allowed_dtypes=[
-            [[{int, float, Decimal}, {int, float, Decimal}]],
-            [[{date}, {date}], [{datetime}, {datetime}]],
-            [[{date}, {timedelta}], [{datetime}, {timedelta}]],
-            [[{timedelta}, {timedelta}]]])
-
-    @overload
-    def __mul__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
-                             pd.Series | pd.Index | int | float |
-                             timedelta) -> Self:
-        ...
-    
-    @overload
-    def __mul__(self, other: DataFrame | np.ndarray | pa.Table |
-                             pd.DataFrame) -> DataFrame:
-        ...
-    
-    def __mul__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                             pa.Array | pa.ChunkedArray | pd.DataFrame |
-                             pd.Series | pd.Index | int | float |
-                             timedelta) -> Self | DataFrame:
-        return self._binary_op(other, '*', allowed_dtypes=[
-            # numeric * numeric
-            [[{int, float, Decimal}, {int, float, Decimal}]],
-            # timedelta * numeric
-            [[{timedelta}, {int, float, Decimal}]],
-            # numeric * timedelta
-            [[{int, float, Decimal}, {timedelta}]]])
-    
-    @overload
-    def __rmul__(self, other: Series | np.ndarray | pa.Array |
-                              pa.ChunkedArray | pd.Series | pd.Index | int |
-                              float | timedelta) -> Self:
-        ...
-    
-    @overload
-    def __rmul__(self, other: DataFrame | np.ndarray | pa.Table |
-                              pd.DataFrame) -> DataFrame:
-        ...
-    
-    def __rmul__(self, other: DataFrame | np.ndarray | Series | pa.Table |
-                              pa.Array | pa.ChunkedArray | pd.DataFrame |
-                              pd.Series | pd.Index | int | float |
-                              timedelta) -> Self | DataFrame:
-        return self._binary_op(other, '*', allowed_dtypes=[
-            [[{int, float, Decimal}, {int, float, Decimal}]],
-            [[{int, float, Decimal}, {timedelta}]],
-            [[{timedelta}, {int, float, Decimal}]]])
-
-    @overload
-    def __truediv__(self, other: Series | np.ndarray | pa.Array |
-                                 pa.ChunkedArray | pd.Series | pd.Index | int |
-                                 float) -> Self:
-        ...
-    
-    @overload
-    def __truediv__(self, other: DataFrame | np.ndarray | pa.Table |
-                                 pd.DataFrame) -> DataFrame:
-        ...
-    
-    def __truediv__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                                 pa.Array | pa.ChunkedArray | pd.DataFrame |
-                                 pd.Series | pd.Index | int |
-                                 float) -> Self | DataFrame:
-        return self._binary_op(other, '/', allowed_dtypes=[
-            # numeric / numeric
-            [[{int, float, Decimal}, {int, float, Decimal}]],
-            # timedelta / numeric
-            [[{timedelta}, {int, float, Decimal}]]])
-
-    @overload
-    def __rtruediv__(self, other: Series | np.ndarray | pa.Array |
-                                  pa.ChunkedArray | pd.Series | pd.Index |
-                                  int | float | timedelta) -> Self:
-        ...
-    
-    @overload
-    def __rtruediv__(self, other: DataFrame | np.ndarray | pa.Table |
-                                  pd.DataFrame) -> DataFrame:
-        ...
-    
-    def __rtruediv__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                                  pa.Array | pa.ChunkedArray | pd.DataFrame |
-                                  pd.Series | pd.Index | int | float |
-                                  timedelta) -> Self | DataFrame:
-        return self._binary_op(other, '/', right_hand=True, allowed_dtypes=[
-            [[{int, float, Decimal}, {int, float, Decimal}]],
-            [[{timedelta}, {int, float, Decimal}]]])
-
-    @overload
-    def __floordiv__(self, other: Series | np.ndarray | pa.Array |
-                                  pa.ChunkedArray | pd.Series | pd.Index |
-                                  int | float) -> Self:
-        ...
-    
-    @overload
-    def __floordiv__(self, other: DataFrame | np.ndarray | pa.Table |
-                                  pd.DataFrame) -> DataFrame:
-        ...
-    
-    def __floordiv__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                                  pa.Array | pa.ChunkedArray | pd.DataFrame |
-                                  pd.Series | pd.Index | int |
-                                  float) -> Self | DataFrame:
-        return self._binary_op(other, '//', allowed_dtypes=[
-            # numeric // numeric
-            [[{int, float, Decimal}, {int, float, Decimal}]],
-            # timedelta // numeric
-            [[{timedelta}, {int, float, Decimal}]]])
-
-    @overload
-    def __rfloordiv__(self, other: Series | np.ndarray | pa.Array |
-                                   pa.ChunkedArray | pd.Series | pd.Index |
-                                   int | float | timedelta) -> Self:
+    def __gt__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | pd.DatetimeIndex
+        | int
+        | float
+        | bool
+        | str
+        | bytes
+        | date
+        | datetime
+        | time
+        | timedelta,
+    ) -> Series:
         ...
 
     @overload
-    def __rfloordiv__(self, other: DataFrame | np.ndarray | pa.Table |
-                                   pd.DataFrame) -> DataFrame:
-        ...    
-
-    def __rfloordiv__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                                   pa.Array | pa.ChunkedArray | pd.DataFrame |
-                                   pd.Series | pd.Index | int | float |
-                                   timedelta) -> Self | DataFrame:
-        return self._binary_op(other, '//', right_hand=True, allowed_dtypes=[
-            [[{int, float, Decimal}, {int, float, Decimal}]],
-            [[{timedelta}, {int, float, Decimal}]]])
-    
-    @overload
-    def __pow__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
-                             pd.Series | pd.Index | int | float) -> Self:
-        ...
-    
-    @overload
-    def __pow__(self, other: DataFrame | np.ndarray | pa.Table |
-                             pd.DataFrame) -> DataFrame:
-        ...
-    
-    def __pow__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                             pa.Array | pa.ChunkedArray | pd.DataFrame |
-                             pd.Series | pd.Index | int |
-                             float) -> Self | DataFrame:
-        return self._binary_op(other, '**', allowed_dtypes=[
-            # numeric ** numeric
-            [[{int, float, Decimal}, {int, float, Decimal}]]])
-    
-    @overload
-    def __rpow__(self, other: Series | np.ndarray | pa.Array |
-                              pa.ChunkedArray | pd.Series | pd.Index | int |
-                              float) -> Self:
-        ...
-    
-    @overload
-    def __rpow__(self, other: DataFrame | np.ndarray | pa.Table |
-                              pd.DataFrame) -> DataFrame:
-        ...
-    
-    def __rpow__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                              pa.Array | pa.ChunkedArray | pd.DataFrame |
-                              pd.Series | pd.Index | int |
-                              float) -> Self | DataFrame:
-        return self._binary_op(other, '**', right_hand=True, allowed_dtypes=[
-            [[{int, float, Decimal}, {int, float, Decimal}]]])
-
-    @overload
-    def __mod__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
-                             pd.Series | pd.Index | int | float) -> Self:
-        ...
-    
-    @overload
-    def __mod__(self, other: DataFrame | np.ndarray | pa.Table |
-                             pd.DataFrame) -> DataFrame:
-        ...
-    
-    def __mod__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                             pa.Array | pa.ChunkedArray | pd.DataFrame |
-                             pd.Series | pd.Index | int |
-                             float) -> Self | DataFrame:
-        return self._binary_op(other, '%', allowed_dtypes=[
-            # numeric % numeric
-            [[{int, float, Decimal}, {int, float, Decimal}]]])
-    
-    @overload
-    def __rmod__(self, other: Series | np.ndarray | pa.Array |
-                              pa.ChunkedArray | pd.Series | pd.Index | int |
-                              float) -> Self:
-        ...
-    
-    @overload
-    def __rmod__(self, other: DataFrame | np.ndarray | pa.Table |
-                              pd.DataFrame) -> DataFrame:
-        ...
-    
-    def __rmod__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                              pa.Array | pa.ChunkedArray | pd.DataFrame |
-                              pd.Series | pd.Index | int |
-                              float) -> Self | DataFrame:
-        return self._binary_op(other, '%', right_hand=True, allowed_dtypes=[
-            [[{int, float, Decimal}, {int, float, Decimal}]]])
-
-    @overload
-    def __and__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
-                             pd.Series | pd.Index | int | bool) -> Self:
-        ...
-    
-    @overload
-    def __and__(self, other: DataFrame | np.ndarray | pa.Table |
-                             pd.DataFrame) -> DataFrame:
+    def __gt__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
         ...
 
-    def __and__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                             pa.Array | pa.ChunkedArray | pd.DataFrame |
-                             pd.Series | pd.Index | int |
-                             bool) -> Self | DataFrame:
-        return self._binary_op(other, '&', allowed_dtypes=[
-            # (integer-or-boolean) & (integer-or-boolean)
-            [[{int, bool}, {int, bool}]]])
-
     @overload
-    def __rand__(self, other: Series | np.ndarray | pa.Array |
-                              pa.ChunkedArray | pd.Series | pd.Index | int |
-                              bool) -> Self:
-        ...
-    
-    @overload
-    def __rand__(self, other: DataFrame | np.ndarray | pa.Table |
-                              pd.DataFrame) -> DataFrame:
+    def __gt__(self, other: Expr) -> Expr:
         ...
 
-    def __rand__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                              pa.Array | pa.ChunkedArray | pd.DataFrame |
-                              pd.Series | pd.Index | int |
-                              bool) -> Self | DataFrame:
-        return self._binary_op(other, '&', right_hand=True, allowed_dtypes=[
-            [[{int, bool}, {int, bool}]]])
+    def __gt__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | pd.DatetimeIndex
+        | int
+        | float
+        | bool
+        | str
+        | bytes
+        | date
+        | datetime
+        | time
+        | timedelta,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other,
+            ">",
+            allowed_types=[
+                [
+                    ({int, float, Decimal}, {int, float, Decimal}),
+                    ({bool}, {bool}),
+                    ({str}, {str}),
+                    ({bytes}, {bytes}),
+                    ({date}, {date}),
+                    ({datetime}, {datetime}),
+                    ({time}, {time}),
+                    ({timedelta}, {timedelta}),
+                    ({dict}, {dict}),
+                    ({list, tuple}, {list, tuple}),
+                ]
+            ],
+        )
 
     @overload
-    def __or__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
-                            pd.Series | pd.Index | int | bool) -> Self:
-        ...
-    
-    @overload
-    def __or__(self, other: DataFrame | np.ndarray | pa.Table |
-                            pd.DataFrame) -> DataFrame:
-        ...
-
-    def __or__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                            pa.Array | pa.ChunkedArray | pd.DataFrame |
-                            pd.Series | pd.Index | int |
-                            bool) -> Self | DataFrame:
-        return self._binary_op(other, '|', allowed_dtypes=[
-            # (integer-or-boolean) & (integer-or-boolean)
-            [[{int, bool}, {int, bool}]]])
-
-    @overload
-    def __ror__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
-                             pd.Series | pd.Index | int | bool) -> Self:
-        ...
-    
-    @overload
-    def __ror__(self, other: DataFrame | np.ndarray | pa.Table |
-                             pd.DataFrame) -> DataFrame:
+    def __lt__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | pd.DatetimeIndex
+        | int
+        | float
+        | bool
+        | str
+        | bytes
+        | date
+        | datetime
+        | time
+        | timedelta,
+    ) -> Series:
         ...
 
-    def __ror__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                             pa.Array | pa.ChunkedArray | pd.DataFrame |
-                             pd.Series | pd.Index | int |
-                             bool) -> Self | DataFrame:
-        return self._binary_op(other, '|', right_hand=True, allowed_dtypes=[
-            [[{int, bool}, {int, bool}]]])
-
     @overload
-    def __xor__(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
-                             pd.Series | pd.Index | int | bool) -> Self:
-        ...
-    
-    @overload
-    def __xor__(self, other: DataFrame | np.ndarray | pa.Table |
-                             pd.DataFrame) -> DataFrame:
+    def __lt__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
         ...
 
-    def __xor__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                             pa.Array | pa.ChunkedArray | pd.DataFrame |
-                             pd.Series | pd.Index | int |
-                             bool) -> Self | DataFrame:
-        return self._binary_op(other, '^', allowed_dtypes=[
-            # (integer-or-boolean) & (integer-or-boolean)
-            [[{int, bool}, {int, bool}]]])
-
     @overload
-    def __rxor__(self, other: Series | np.ndarray | pa.Array |
-                              pa.ChunkedArray | pd.Series | pd.Index | int |
-                              bool) -> Self:
-        ...
-    
-    @overload
-    def __rxor__(self, other: DataFrame | np.ndarray | pa.Table |
-                              pd.DataFrame) -> DataFrame:
+    def __lt__(self, other: Expr) -> Expr:
         ...
 
-    def __rxor__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                              pa.Array | pa.ChunkedArray | pd.DataFrame |
-                              pd.Series | pd.Index | int |
-                              bool) -> Self | DataFrame:
-        return self._binary_op(other, '^', right_hand=True, allowed_dtypes=[
-            [[{int, bool}, {int, bool}]]])
+    def __lt__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | pd.DatetimeIndex
+        | int
+        | float
+        | bool
+        | str
+        | bytes
+        | date
+        | datetime
+        | time
+        | timedelta,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other,
+            "<",
+            allowed_types=[
+                [
+                    ({int, float, Decimal}, {int, float, Decimal}),
+                    ({bool}, {bool}),
+                    ({str}, {str}),
+                    ({bytes}, {bytes}),
+                    ({date}, {date}),
+                    ({datetime}, {datetime}),
+                    ({time}, {time}),
+                    ({timedelta}, {timedelta}),
+                    ({dict}, {dict}),
+                    ({list, tuple}, {list, tuple}),
+                ]
+            ],
+        )
+
+    @overload
+    def __ge__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | pd.DatetimeIndex
+        | int
+        | float
+        | bool
+        | str
+        | bytes
+        | date
+        | datetime
+        | time
+        | timedelta,
+    ) -> Series:
+        ...
+
+    @overload
+    def __ge__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __ge__(self, other: Expr) -> Expr:
+        ...
+
+    def __ge__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | pd.DatetimeIndex
+        | int
+        | float
+        | bool
+        | str
+        | bytes
+        | date
+        | datetime
+        | time
+        | timedelta,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other,
+            ">=",
+            allowed_types=[
+                [
+                    ({int, float, Decimal}, {int, float, Decimal}),
+                    ({bool}, {bool}),
+                    ({str}, {str}),
+                    ({bytes}, {bytes}),
+                    ({date}, {date}),
+                    ({datetime}, {datetime}),
+                    ({time}, {time}),
+                    ({timedelta}, {timedelta}),
+                    ({dict}, {dict}),
+                    ({list, tuple}, {list, tuple}),
+                ]
+            ],
+        )
+
+    @overload
+    def __le__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | pd.DatetimeIndex
+        | int
+        | float
+        | bool
+        | str
+        | bytes
+        | date
+        | datetime
+        | time
+        | timedelta,
+    ) -> Series:
+        ...
+
+    @overload
+    def __le__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __le__(self, other: Expr) -> Expr:
+        ...
+
+    def __le__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | pd.DatetimeIndex
+        | int
+        | float
+        | bool
+        | str
+        | bytes
+        | date
+        | datetime
+        | time
+        | timedelta,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other,
+            "<=",
+            allowed_types=[
+                [
+                    ({int, float, Decimal}, {int, float, Decimal}),
+                    ({bool}, {bool}),
+                    ({str}, {str}),
+                    ({bytes}, {bytes}),
+                    ({date}, {date}),
+                    ({datetime}, {datetime}),
+                    ({time}, {time}),
+                    ({timedelta}, {timedelta}),
+                    ({dict}, {dict}),
+                    ({list, tuple}, {list, tuple}),
+                ]
+            ],
+        )
+
+    @overload
+    def __add__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float
+        | str
+        | bytes
+        | date
+        | datetime
+        | timedelta,
+    ) -> Series:
+        ...
+
+    @overload
+    def __add__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __add__(self, other: Expr) -> Expr:
+        ...
+
+    def __add__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float
+        | str
+        | bytes
+        | date
+        | datetime
+        | timedelta,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other,
+            "+",
+            allowed_types=[
+                # numeric + numeric
+                [({int, float, Decimal}, {int, float, Decimal})],
+                # str + str
+                [({str}, {str})],
+                # bytes + bytes
+                [({bytes}, {bytes})],
+                # mix of date + timedelta and datetime + timedelta
+                [({date}, {timedelta}), ({datetime}, {timedelta})],
+                # mix of timedelta + date and timedelta + datetime
+                [({timedelta}, {date}), ({timedelta}, {datetime})],
+                # timedelta + timedelta
+                [({timedelta}, {timedelta})],
+            ],
+        )
+
+    @overload
+    def __radd__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float
+        | str
+        | bytes
+        | date
+        | datetime
+        | timedelta,
+    ) -> Series:
+        ...
+
+    @overload
+    def __radd__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __radd__(self, other: Expr) -> Expr:
+        ...
+
+    def __radd__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float
+        | str
+        | bytes
+        | date
+        | datetime
+        | timedelta,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other,
+            "+",
+            right_hand=True,
+            allowed_types=[
+                [({int, float, Decimal}, {int, float, Decimal})],
+                [({str}, {str})],
+                [({bytes}, {bytes})],
+                [({date}, {timedelta}), ({datetime}, {timedelta})],
+                [({timedelta}, {date}), ({timedelta}, {datetime})],
+                [({timedelta}, {timedelta})],
+            ],
+        )
+
+    @overload
+    def __sub__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | pd.DatetimeIndex
+        | int
+        | float
+        | date
+        | datetime
+        | timedelta,
+    ) -> Series:
+        ...
+
+    @overload
+    def __sub__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __sub__(self, other: Expr) -> Expr:
+        ...
+
+    def __sub__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | pd.DatetimeIndex
+        | int
+        | float
+        | date
+        | datetime
+        | timedelta,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other,
+            "-",
+            allowed_types=[
+                # numeric - numeric
+                [({int, float, Decimal}, {int, float, Decimal})],
+                # mix of date - date and datetime - datetime
+                [({date}, {date}), ({datetime}, {datetime})],
+                # mix of date - timedelta and datetime - timedelta
+                [({date}, {timedelta}), ({datetime}, {timedelta})],
+                # timedelta - timedelta
+                [({timedelta}, {timedelta})],
+            ],
+        )
+
+    @overload
+    def __rsub__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | pd.DatetimeIndex
+        | int
+        | float
+        | date
+        | datetime
+        | timedelta,
+    ) -> Series:
+        ...
+
+    @overload
+    def __rsub__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __rsub__(self, other: Expr) -> Expr:
+        ...
+
+    def __rsub__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | pd.DatetimeIndex
+        | int
+        | float
+        | date
+        | datetime
+        | timedelta,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other,
+            "-",
+            right_hand=True,
+            allowed_types=[
+                [({int, float, Decimal}, {int, float, Decimal})],
+                [({date}, {date}), ({datetime}, {datetime})],
+                [({date}, {timedelta}), ({datetime}, {timedelta})],
+                [({timedelta}, {timedelta})],
+            ],
+        )
+
+    @overload
+    def __mul__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float
+        | timedelta,
+    ) -> Series:
+        ...
+
+    @overload
+    def __mul__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __mul__(self, other: Expr) -> Expr:
+        ...
+
+    def __mul__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float
+        | timedelta,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other,
+            "*",
+            allowed_types=[
+                # numeric * numeric
+                [({int, float, Decimal}, {int, float, Decimal})],
+                # timedelta * numeric
+                [({timedelta}, {int, float, Decimal})],
+                # numeric * timedelta
+                [({int, float, Decimal}, {timedelta})],
+            ],
+        )
+
+    @overload
+    def __rmul__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float
+        | timedelta,
+    ) -> Series:
+        ...
+
+    @overload
+    def __rmul__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __rmul__(self, other: Expr) -> Expr:
+        ...
+
+    def __rmul__(
+        self,
+        other: DataFrame
+        | np.ndarray[Any, Any]
+        | Series
+        | Expr
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float
+        | timedelta,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other,
+            "*",
+            allowed_types=[
+                [({int, float, Decimal}, {int, float, Decimal})],
+                [({int, float, Decimal}, {timedelta})],
+                [({timedelta}, {int, float, Decimal})],
+            ],
+        )
+
+    @overload
+    def __truediv__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float,
+    ) -> Series:
+        ...
+
+    @overload
+    def __truediv__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __truediv__(self, other: Expr) -> Expr:
+        ...
+
+    def __truediv__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other,
+            "/",
+            allowed_types=[
+                # numeric / numeric
+                [({int, float, Decimal}, {int, float, Decimal})],
+                # timedelta / numeric
+                [({timedelta}, {int, float, Decimal})],
+            ],
+        )
+
+    @overload
+    def __rtruediv__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float
+        | timedelta,
+    ) -> Series:
+        ...
+
+    @overload
+    def __rtruediv__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __rtruediv__(self, other: Expr) -> Expr:
+        ...
+
+    def __rtruediv__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float
+        | timedelta,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other,
+            "/",
+            right_hand=True,
+            allowed_types=[
+                [({int, float, Decimal}, {int, float, Decimal})],
+                [({timedelta}, {int, float, Decimal})],
+            ],
+        )
+
+    @overload
+    def __floordiv__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float,
+    ) -> Series:
+        ...
+
+    @overload
+    def __floordiv__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __floordiv__(self, other: Expr) -> Expr:
+        ...
+
+    def __floordiv__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other,
+            "//",
+            allowed_types=[
+                # numeric // numeric
+                [({int, float, Decimal}, {int, float, Decimal})],
+                # timedelta // numeric
+                [({timedelta}, {int, float, Decimal})],
+            ],
+        )
+
+    @overload
+    def __rfloordiv__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float
+        | timedelta,
+    ) -> Series:
+        ...
+
+    @overload
+    def __rfloordiv__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __rfloordiv__(self, other: Expr) -> Expr:
+        ...
+
+    def __rfloordiv__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float
+        | timedelta,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other,
+            "//",
+            right_hand=True,
+            allowed_types=[
+                [({int, float, Decimal}, {int, float, Decimal})],
+                [({timedelta}, {int, float, Decimal})],
+            ],
+        )
+
+    @overload
+    def __pow__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float,
+    ) -> Series:
+        ...
+
+    @overload
+    def __pow__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __pow__(self, other: Expr) -> Expr:
+        ...
+
+    def __pow__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other,
+            "**",
+            allowed_types=[
+                # numeric ** numeric
+                [({int, float, Decimal}, {int, float, Decimal})]
+            ],
+        )
+
+    @overload
+    def __rpow__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float,
+    ) -> Series:
+        ...
+
+    @overload
+    def __rpow__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __rpow__(self, other: Expr) -> Expr:
+        ...
+
+    def __rpow__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other,
+            "**",
+            right_hand=True,
+            allowed_types=[[({int, float, Decimal}, {int, float, Decimal})]],
+        )
+
+    @overload
+    def __mod__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float,
+    ) -> Series:
+        ...
+
+    @overload
+    def __mod__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __mod__(self, other: Expr) -> Expr:
+        ...
+
+    def __mod__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other,
+            "%",
+            allowed_types=[
+                # numeric % numeric
+                [({int, float, Decimal}, {int, float, Decimal})]
+            ],
+        )
+
+    @overload
+    def __rmod__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float,
+    ) -> Series:
+        ...
+
+    @overload
+    def __rmod__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __rmod__(self, other: Expr) -> Expr:
+        ...
+
+    def __rmod__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | float,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other,
+            "%",
+            right_hand=True,
+            allowed_types=[[({int, float, Decimal}, {int, float, Decimal})]],
+        )
+
+    @overload
+    def __and__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | bool,
+    ) -> Series:
+        ...
+
+    @overload
+    def __and__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __and__(self, other: Expr) -> Expr:
+        ...
+
+    def __and__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | bool,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other,
+            "&",
+            allowed_types=[
+                # (integer-or-boolean) & (integer-or-boolean)
+                [({int, bool}, {int, bool})]
+            ],
+        )
+
+    @overload
+    def __rand__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | bool,
+    ) -> Series:
+        ...
+
+    @overload
+    def __rand__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __rand__(self, other: Expr) -> Expr:
+        ...
+
+    def __rand__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | bool,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other, "&", right_hand=True, allowed_types=[[({int, bool}, {int, bool})]]
+        )
+
+    @overload
+    def __or__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | bool,
+    ) -> Series:
+        ...
+
+    @overload
+    def __or__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __or__(self, other: Expr) -> Expr:
+        ...
+
+    def __or__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | bool,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other,
+            "|",
+            allowed_types=[
+                # (integer-or-boolean) & (integer-or-boolean)
+                [({int, bool}, {int, bool})]
+            ],
+        )
+
+    @overload
+    def __ror__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | bool,
+    ) -> Series:
+        ...
+
+    @overload
+    def __ror__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __ror__(self, other: Expr) -> Expr:
+        ...
+
+    def __ror__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | bool,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other, "|", right_hand=True, allowed_types=[[({int, bool}, {int, bool})]]
+        )
+
+    @overload
+    def __xor__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | bool,
+    ) -> Series:
+        ...
+
+    @overload
+    def __xor__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __xor__(self, other: Expr) -> Expr:
+        ...
+
+    def __xor__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | bool,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other,
+            "^",
+            allowed_types=[
+                # (integer-or-boolean) & (integer-or-boolean)
+                [({int, bool}, {int, bool})]
+            ],
+        )
+
+    @overload
+    def __rxor__(
+        self,
+        other: Series
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | bool,
+    ) -> Series:
+        ...
+
+    @overload
+    def __rxor__(self, other: DataFrame | pa.Table | pd.DataFrame) -> DataFrame:
+        ...
+
+    @overload
+    def __rxor__(self, other: Expr) -> Expr:
+        ...
+
+    def __rxor__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any]
+        | int
+        | bool,
+    ) -> Series | DataFrame | Expr:
+        return self._binary_op(
+            other, "^", right_hand=True, allowed_types=[[({int, bool}, {int, bool})]]
+        )
 
     def __invert__(self) -> Series:
         if self.dtype not in INTEGER_DTYPES | {Boolean, Null}:
-            raise TypeError(f'Series in unary "~" operation does not have '
-                            f'integer or Boolean dtype')
+            raise TypeError(
+                'Series in unary "~" operation does not have '
+                "integer or Boolean dtype"
+            )
         return self.not_()
-    
+
     def __neg__(self) -> Series:
         if self.dtype not in NUMERIC_DTYPES | {Duration, Null}:
-            raise TypeError(f'Series in unary "-" operation does not have '
-                            f'numeric or Duration dtype')
+            raise TypeError(
+                'Series in unary "-" operation does not have '
+                "numeric or Duration dtype"
+            )
         return self.to_frame().select((-F.all()).name.keep()).to_series()
-    
+
     def __pos__(self) -> Series:
         if self.dtype not in NUMERIC_DTYPES | {Duration, Null}:
-            raise TypeError(f'Series in unary "+" operation does not have '
-                            f'numeric or Duration dtype')
+            raise TypeError(
+                'Series in unary "+" operation does not have '
+                "numeric or Duration dtype"
+            )
         return self.to_frame().select((+F.all()).name.keep()).to_series()
 
     def __abs__(self) -> Series:
         if self.dtype not in NUMERIC_DTYPES | {Duration, Null}:
-            raise TypeError(f'Series in abs() operation does not have '
-                            f'numeric or Duration dtype')
+            raise TypeError(
+                "Series in abs() operation does not have " "numeric or Duration dtype"
+            )
         return self.abs()
 
     @overload
-    def __matmul__(self, other: Series | np.ndarray | pa.Array |
-                                pa.ChunkedArray | pd.Series |
-                                pd.Index) -> int | float:
-        ...
-        
-    @overload
-    def __matmul__(self, other: DataFrame | np.ndarray | pa.Table |
-                                pd.DataFrame) -> Self:
+    def __matmul__(
+        self,
+        other: Series | pa.Array | pa.ChunkedArray | pd.Series[Any] | pd.Index[Any],
+    ) -> int | float:
         ...
 
-    def __matmul__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                                pa.Array | pa.ChunkedArray | pd.DataFrame |
-                                pd.Series | pd.Index) -> int | float | Self:
+    @overload
+    def __matmul__(self, other: DataFrame | pa.Table | pd.DataFrame) -> Series:
+        ...
+
+    def __matmul__(
+        self,
+        other: DataFrame
+        | Series
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any],
+    ) -> int | float | Series:
         if self.dtype not in NUMERIC_DTYPES:
-            raise ValueError(f'Left-hand operand of "@" has non-numeric dtype '
-                             f'"{self.dtype}"')
+            raise ValueError(
+                f'Left-hand operand of "@" has non-numeric dtype "{self.dtype}"'
+            )
         other = _prepare_other_arg(other, 'Right-hand operand of "@"')
         if isinstance(other, pl.DataFrame):
             if not set(other.dtypes).issubset(NUMERIC_DTYPES):
-                raise ValueError('Right-hand operand of "@" contains '
-                                 'non-numeric columns')
+                raise ValueError(
+                    'Right-hand operand of "@" contains ' "non-numeric columns"
+                )
             if len(self) != len(other):
                 raise ShapeError(
-                    f'Length mismatch in vector-matrix multiplication: '
+                    f"Length mismatch in vector-matrix multiplication: "
                     f'left-hand operand of "@" has length {len(self)}, but '
-                    f'right-hand operand has length {len(other)}')
+                    f"right-hand operand has length {len(other)}"
+                )
             return Series(self.name, self.to_numpy().dot(other.to_numpy()))
         elif isinstance(other, Series):
             if len(self) != len(other):
                 raise ShapeError(
-                    f'Length mismatch in dot product: left-hand operand of '
+                    f"Length mismatch in dot product: left-hand operand of "
                     f'"@" has length {len(self)}, but right-hand operand has '
-                    f'length {(len(other))}')
-            return pl.DataFrame({self.name: self,
-                                 other.name + '__POLARS_SERIES_DOT': other})\
-                .select(F.col(self.name)
-                        .dot(F.col(other.name + '__POLARS_SERIES_DOT')))\
+                    f"length {(len(other))}"
+                )
+            return (
+                pl.DataFrame(
+                    {self.name: self, other.name + "__POLARS_SERIES_DOT": other}
+                )
+                .select(F.col(self.name).dot(F.col(other.name + "__POLARS_SERIES_DOT")))
                 .item()
+            )
         else:
-            raise TypeError(f'Right-hand operand of "@" has unsupported type '
-                            f'"{type(other).__name__}"')
-        
+            raise TypeError(
+                f'Right-hand operand of "@" has unsupported type '
+                f'"{type(other).__name__}"'
+            )
+
     @overload
-    def __rmatmul__(self, other: Series | np.ndarray | pa.Array |
-                                 pa.ChunkedArray | pd.Series |
-                                 pd.Index) -> int | float:
-        ...
-        
-    @overload
-    def __rmatmul__(self, other: DataFrame | np.ndarray | pa.Table |
-                                 pd.DataFrame) -> Self:
+    def __rmatmul__(
+        self,
+        other: Series | pa.Array | pa.ChunkedArray | pd.Series[Any] | pd.Index[Any],
+    ) -> int | float:
         ...
 
-    def __rmatmul__(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                                 pa.Array | pa.ChunkedArray | pd.DataFrame |
-                                 pd.Series | pd.Index) -> int | float | Self:
+    @overload
+    def __rmatmul__(self, other: DataFrame | pa.Table | pd.DataFrame) -> Series:
+        ...
+
+    @overload
+    def __rmatmul__(self, other: Expr) -> Expr:
+        ...
+
+    def __rmatmul__(
+        self,
+        other: DataFrame
+        | Series
+        | Expr
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any],
+    ) -> int | float | Series | Expr:
         if self.dtype not in NUMERIC_DTYPES:
-            raise ValueError(f'Right-hand operand of "@" has non-numeric '
-                             f'dtype "{self.dtype}"')
+            raise ValueError(
+                f'Right-hand operand of "@" has non-numeric dtype "{self.dtype}"'
+            )
         other = _prepare_other_arg(other, 'Left-hand operand of "@"')
         if isinstance(other, pl.DataFrame):
             if not set(other.dtypes).issubset(NUMERIC_DTYPES):
-                raise ValueError('Left-hand operand of "@" contains '
-                                 'non-numeric columns')
+                raise ValueError(
+                    'Left-hand operand of "@" contains non-numeric columns'
+                )
             if other.width != len(self):
                 raise ShapeError(
-                    f'Incompatible shapes for matrix-vector multiplication: '
+                    f"Incompatible shapes for matrix-vector multiplication: "
                     f'left-hand operand of "@" has {other.width} columns, but '
-                    f'right-hand operand has {len(self)} rows')
-            return Series(self.name, other.to_numpy().dot(self.to_numpy()),
-                          schema=other.columns)
+                    f"right-hand operand has {len(self)} rows"
+                )
+            return Series(self.name, other.to_numpy().dot(self.to_numpy()))
         elif isinstance(other, Series):
             if other.dtype not in NUMERIC_DTYPES:
-                raise ValueError(f'Left-hand operand of "@" has non-numeric '
-                                 f'dtype "{other.dtype}"')
+                raise ValueError(
+                    f'Left-hand operand of "@" has non-numeric '
+                    f'dtype "{other.dtype}"'
+                )
             if len(self) != len(other):
                 raise ShapeError(
-                    f'Length mismatch in dot product: left-hand operand of '
+                    f"Length mismatch in dot product: left-hand operand of "
                     f'"@" has length {len(other)}, but right-hand operand has '
-                    f'length {(len(self))}')
-            return pl.DataFrame({other.name: other,
-                                 self.name + '__POLARS_SERIES_DOT': self})\
-                .select(F.col(other.name)
-                        .dot(F.col(self.name + '__POLARS_SERIES_DOT')))\
+                    f"length {(len(self))}"
+                )
+            return (
+                pl.DataFrame(
+                    {other.name: other, self.name + "__POLARS_SERIES_DOT": self}
+                )
+                .select(F.col(other.name).dot(F.col(self.name + "__POLARS_SERIES_DOT")))
                 .item()
+            )
         else:
-            raise TypeError(f'Left-hand operand of "@" has unsupported type '
-                            f'"{type(other).__name__}"')
+            raise TypeError(
+                f'Left-hand operand of "@" has unsupported type '
+                f'"{type(other).__name__}"'
+            )
 
     def __copy__(self) -> Self:
         return self.clone()
@@ -1440,30 +2368,37 @@ class Series:
         else:
             return self.to_numpy().__array__()
 
-    _operator_ufuncs = {np.equal: ['__eq__', '__eq__'],
-                        np.not_equal: ['__ne__', '__ne__'],
-                        np.greater: ['__gt__', '__lt__'],
-                        np.greater_equal: ['__ge__', '__le__'],
-                        np.less: ['__lt__', '__gt__'],
-                        np.less_equal: ['__le__', '__ge__'],
-                        np.add: ['__add__', '__radd__'],
-                        np.subtract: ['__sub__', '__rsub__'],
-                        np.multiply: ['__mul__', '__rmul__'],
-                        np.divide: ['__truediv__', '__rtruediv__'],
-                        np.true_divide: ['__truediv__', '__rtruediv__'],
-                        np.floor_divide: ['__floordiv__', '__rfloordiv__'],
-                        np.power: ['__pow__', '__rpow__'],
-                        np.remainder: ['__mod__', '__rmod__'],
-                        np.mod: ['__mod__', '__rmod__'],
-                        np.bitwise_and: ['__and__', '__rand__'],
-                        np.bitwise_or: ['__or__', '__ror__'],
-                        np.bitwise_xor: ['__xor__', '__rxor__'],
-                        np.matmul: ['__matmul__', '__rmatmul__']}
+    _operator_ufuncs: ClassVar[dict[np.ufunc, tuple[str, str]]] = {
+        np.equal: ("__eq__", "__eq__"),
+        np.not_equal: ("__ne__", "__ne__"),
+        np.greater: ("__gt__", "__lt__"),
+        np.greater_equal: ("__ge__", "__le__"),
+        np.less: ("__lt__", "__gt__"),
+        np.less_equal: ("__le__", "__ge__"),
+        np.add: ("__add__", "__radd__"),
+        np.subtract: ("__sub__", "__rsub__"),
+        np.multiply: ("__mul__", "__rmul__"),
+        np.divide: ("__truediv__", "__rtruediv__"),
+        np.true_divide: ("__truediv__", "__rtruediv__"),
+        np.floor_divide: ("__floordiv__", "__rfloordiv__"),
+        np.power: ("__pow__", "__rpow__"),
+        np.remainder: ("__mod__", "__rmod__"),
+        np.mod: ("__mod__", "__rmod__"),
+        np.bitwise_and: ("__and__", "__rand__"),
+        np.bitwise_or: ("__or__", "__ror__"),
+        np.bitwise_xor: ("__xor__", "__rxor__"),
+        np.matmul: ("__matmul__", "__rmatmul__"),
+    }
 
-    def __array_ufunc__(self, ufunc: np.ufunc,
-                        method: Literal['__call__', 'reduce', 'reduceat',
-                                        'accumulate', 'outer', 'inner'],
-                        *inputs: tuple, **kwargs: dict[str, Any]) -> Self:
+    def __array_ufunc__(
+        self,
+        ufunc: np.ufunc,
+        method: Literal[
+            "__call__", "reduce", "reduceat", "accumulate", "outer", "inner"
+        ],
+        *inputs: Any,
+        **kwargs: Any,
+    ) -> Series:
         """Numpy universal functions."""
         if self._s.n_chunks() > 1:
             self._s.rechunk(in_place=True)
@@ -1480,13 +2415,11 @@ class Series:
             if ufunc in self._operator_ufuncs:
                 if self is inputs[0]:
                     # self is left-hand argument
-                    return getattr(self,
-                                   self._operator_ufuncs[ufunc][0])(inputs[1])
+                    return getattr(self, self._operator_ufuncs[ufunc][0])(inputs[1])
                 else:
                     # self is right-hand argument
-                    return getattr(self,
-                                   self._operator_ufuncs[ufunc][1])(inputs[0])
-            
+                    return getattr(self, self._operator_ufuncs[ufunc][1])(inputs[0])
+
             if not ufunc.nout == 1:
                 raise NotImplementedError(
                     "only ufuncs that return one 1D array are supported"
@@ -2017,10 +2950,10 @@ class Series:
         """Reduce this Series to the product value."""
         return self.to_frame().select(F.col(self.name).product()).to_series().item()
 
-    def pow(self, exponent: int | float | Series | np.ndarray) -> Series:
+    def pow(self, exponent: int | float | Series | np.ndarray[Any, Any]) -> Series:
         """
         Raise to the power of the given exponent.
-        
+
         Alias for `self ** exponent`.
 
         Parameters
@@ -2042,7 +2975,7 @@ class Series:
         ]
 
         """
-        return self ** exponent
+        return self**exponent
 
     def min(self) -> PythonLiteral | None:
         """
@@ -2251,7 +3184,7 @@ class Series:
         left_closed: bool = False,
         include_breaks: bool = False,
         as_series: bool = True,
-    ) -> Series | DataFrame:
+    ) -> Series | DataFrame | Expr:
         """
         Bin continuous values into discrete categories.
 
@@ -5071,31 +6004,43 @@ class Series:
         """
 
     @overload
-    def dot(self, other: Series | np.ndarray | pa.Array | pa.ChunkedArray |
-                         pd.Series) -> int | float:
-        ...
-        
-    @overload
-    def dot(self, other: DataFrame | np.ndarray | pa.Table |
-                         pd.DataFrame) -> Self:
+    def dot(
+        self,
+        other: Series | pa.Array | pa.ChunkedArray | pd.Series[Any] | pd.Index[Any],
+    ) -> int | float:
         ...
 
-    def dot(self, other: DataFrame | Series | np.ndarray | pa.Table |
-                         pa.Array | pa.ChunkedArray | pd.DataFrame |
-                         pd.Series) -> int | float | Self:
+    @overload
+    def dot(self, other: DataFrame | pa.Table | pd.DataFrame) -> Series:
+        ...
+
+    def dot(
+        self,
+        other: DataFrame
+        | Series
+        | np.ndarray[Any, Any]
+        | pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pd.Index[Any],
+    ) -> int | float | Series:
         """
-        Compute the dot/inner product with another Series (or Series-like), or
+        Compute dot/inner products or vector-matrix products.
+
+        Computes the dot/inner product with another Series (or Series-like), or
         the vector-matrix product with a DataFrame (or DataFrame-like).
-        
+
         Alias for `self @ other`.
 
         Examples
         --------
-        >>> s = pl.Series('a', [1, 2])
-        >>> s2 = pl.Series('b', [3, 4])
+        >>> s = pl.Series("a", [1, 2])
+        >>> s2 = pl.Series("b", [3, 4])
         >>> s.dot(s2)
         11
-        >>> df = pl.DataFrame({'c': [0, 1], 'd': [0, 0], 'e': [1, 0]})
+        >>> df = pl.DataFrame({"c": [0, 1], "d": [0, 0], "e": [1, 0]})
         >>> s.dot(df)
         shape: (3,)
         Series: 'a' [i64]
@@ -5104,7 +6049,7 @@ class Series:
                 0
                 1
         ]
-        
+
         Parameters
         ----------
         other

@@ -304,15 +304,15 @@ def test_bitwise_ops() -> None:
     # Note that the type annotations only allow Series to be passed in, but there is
     # specific code to deal with non-Series inputs.
     assert_series_equal(
-        (True & a),  # type: ignore[operator]
+        (True & a),
         pl.Series([True, False, True]),
     )
     assert_series_equal(
-        (True | a),  # type: ignore[operator]
+        (True | a),
         pl.Series([True, True, True]),
     )
     assert_series_equal(
-        (True ^ a),  # type: ignore[operator]
+        (True ^ a),
         pl.Series([False, True, False]),
     )
 
@@ -448,7 +448,7 @@ def test_power() -> None:
     with pytest.raises(TypeError):
         c**2
     with pytest.raises(TypeError):
-        a ** "hi"  # type: ignore[operator]
+        a ** "hi"
 
     # rpow
     assert_series_equal(2.0**a, pl.Series([2.0, 4.0], dtype=Float64))
@@ -759,96 +759,104 @@ def test_ufunc() -> None:
     # test if output dtype is calculated correctly.
     s_float32 = pl.Series("a", [1.0, 2.0, 3.0, 4.0], dtype=pl.Float32)
     assert_series_equal(
-        np.multiply(s_float32, 4),
+        np.multiply(s_float32, 4),  # type: ignore[arg-type]
         pl.Series("a", [4.0, 8.0, 12.0, 16.0], dtype=pl.Float32),
     )
 
     s_float64 = pl.Series("a", [1.0, 2.0, 3.0, 4.0], dtype=pl.Float64)
     assert_series_equal(
-        np.multiply(s_float64, 4),
+        np.multiply(s_float64, 4),  # type: ignore[arg-type]
         pl.Series("a", [4.0, 8.0, 12.0, 16.0], dtype=pl.Float64),
     )
 
     s_uint8 = pl.Series("a", [1, 2, 3, 4], dtype=pl.UInt8)
     assert_series_equal(
-        np.power(s_uint8, 2),
-        # np.power delegates to polars's implementation of power, which always has an output dtype of Float64
+        np.power(s_uint8, 2),  # type: ignore[arg-type]
+        # np.power delegates to polars's implementation of power,
+        # which always has an output dtype of Float64
         pl.Series("a", [1, 4, 9, 16], dtype=pl.Float64),  # should be UInt8
     )
     assert_series_equal(
-        np.power(s_uint8, 2.0),
+        np.power(s_uint8, 2.0),  # type: ignore[arg-type]
         pl.Series("a", [1.0, 4.0, 9.0, 16.0], dtype=pl.Float64),
     )
     assert_series_equal(
-        np.power(s_uint8, 2, dtype=np.uint16),
-        # np.power delegates to polars's implementation of power, which always has an output dtype of Float64
+        np.power(s_uint8, 2, dtype=np.uint16),  # type: ignore[arg-type]
+        # np.power delegates to polars's implementation of power,
+        # which always has an output dtype of Float64
         pl.Series("a", [1, 4, 9, 16], dtype=pl.Float64),  # should be UInt16
     )
 
     s_int8 = pl.Series("a", [1, -2, 3, -4], dtype=pl.Int8)
     assert_series_equal(
-        np.power(s_int8, 2),
-        # np.power delegates to polars's implementation of power, which always has an output dtype of Float64
+        np.power(s_int8, 2),  # type: ignore[arg-type]
+        # np.power delegates to polars's implementation of power,
+        # which always has an output dtype of Float64
         pl.Series("a", [1, 4, 9, 16], dtype=pl.Float64),  # should be Int8
     )
     assert_series_equal(
-        np.power(s_int8, 2.0),
+        np.power(s_int8, 2.0),  # type: ignore[arg-type]
         pl.Series("a", [1.0, 4.0, 9.0, 16.0], dtype=pl.Float64),
     )
     assert_series_equal(
-        np.power(s_int8, 2, dtype=np.int16),
-        # np.power delegates to polars's implementation of power, which always has an output dtype of Float64
+        np.power(s_int8, 2, dtype=np.int16),  # type: ignore[arg-type]
+        # np.power delegates to polars's implementation of power,
+        # which always has an output dtype of Float64
         pl.Series("a", [1, 4, 9, 16], dtype=pl.Float64),
     )
 
     s_uint32 = pl.Series("a", [1, 2, 3, 4], dtype=pl.UInt32)
     assert_series_equal(
-        np.power(s_uint32, 2),
-        # np.power delegates to polars's implementation of power, which always has an output dtype of Float64
+        np.power(s_uint32, 2),  # type: ignore[arg-type]
+        # np.power delegates to polars's implementation of power,
+        # which always has an output dtype of Float64
         pl.Series("a", [1, 4, 9, 16], dtype=pl.Float64),  # should be UInt32
     )
     assert_series_equal(
-        np.power(s_uint32, 2.0),
+        np.power(s_uint32, 2.0),  # type: ignore[arg-type]
         pl.Series("a", [1.0, 4.0, 9.0, 16.0], dtype=pl.Float64),
     )
 
     s_int32 = pl.Series("a", [1, -2, 3, -4], dtype=pl.Int32)
     assert_series_equal(
-        np.power(s_int32, 2),
-        # np.power delegates to polars's implementation of power, which always has an output dtype of Float64
+        np.power(s_int32, 2),  # type: ignore[arg-type]
+        # np.power delegates to polars's implementation of power,
+        # which always has an output dtype of Float64
         pl.Series("a", [1, 4, 9, 16], dtype=pl.Float64),  # should be Int32
     )
     assert_series_equal(
-        np.power(s_int32, 2.0),
+        np.power(s_int32, 2.0),  # type: ignore[arg-type]
         pl.Series("a", [1.0, 4.0, 9.0, 16.0], dtype=pl.Float64),
     )
 
     s_uint64 = pl.Series("a", [1, 2, 3, 4], dtype=pl.UInt64)
     assert_series_equal(
-        np.power(s_uint64, 2),
-        # np.power delegates to polars's implementation of power, which always has an output dtype of Float64
+        np.power(s_uint64, 2),  # type: ignore[arg-type]
+        # np.power delegates to polars's implementation of power,
+        # which always has an output dtype of Float64
         pl.Series("a", [1, 4, 9, 16], dtype=pl.Float64),  # should be UInt64
     )
     assert_series_equal(
-        np.power(s_uint64, 2.0),
+        np.power(s_uint64, 2.0),  # type: ignore[arg-type]
         pl.Series("a", [1.0, 4.0, 9.0, 16.0], dtype=pl.Float64),
     )
 
     s_int64 = pl.Series("a", [1, -2, 3, -4], dtype=pl.Int64)
     assert_series_equal(
-        np.power(s_int64, 2),
-        # np.power delegates to polars's implementation of power, which always has an output dtype of Float64
+        np.power(s_int64, 2),  # type: ignore[arg-type]
+        # np.power delegates to polars's implementation of power,
+        # which always has an output dtype of Float64
         pl.Series("a", [1, 4, 9, 16], dtype=pl.Float64),  # should be Int64
     )
     assert_series_equal(
-        np.power(s_int64, 2.0),
+        np.power(s_int64, 2.0),  # type: ignore[arg-type]
         pl.Series("a", [1.0, 4.0, 9.0, 16.0], dtype=pl.Float64),
     )
 
     # test if null bitmask is preserved
     a1 = pl.Series("a", [1.0, None, 3.0])
     b1 = np.exp(a1)
-    assert b1.null_count() == 1
+    assert b1.null_count() == 1  # type: ignore[attr-defined]
 
     # test if it works with chunked series.
     a2 = pl.Series("a", [1.0, None, 3.0])
@@ -857,7 +865,7 @@ def test_ufunc() -> None:
     assert a2.n_chunks() == 2
     c2 = np.multiply(a2, 3)
     assert_series_equal(
-        c2,
+        c2,  # type: ignore[arg-type]
         pl.Series("a", [3.0, None, 9.0, 12.0, 15.0, None]),
     )
 
@@ -865,7 +873,8 @@ def test_ufunc() -> None:
     a3 = pl.Series("a", [None, None, 3, 3])
     b3 = pl.Series("b", [None, 3, None, 3])
     assert_series_equal(
-        np.maximum(a3, b3), pl.Series("a", [None, None, None, 3])
+        np.maximum(a3, b3),  # type: ignore[arg-type]
+        pl.Series("a", [None, None, None, 3]),
     )
 
 
@@ -1633,10 +1642,10 @@ def test_comparisons_datetime_series_to_date_scalar() -> None:
     dt = datetime(2023, 1, 1, 12, 0, 0)
 
     with pytest.raises(TypeError):
-        srs_date < dt
-    
+        _ = srs_date < dt
+
     with pytest.raises(TypeError):
-        srs_date > dt
+        _ = srs_date > dt
 
 
 def test_comparisons_float_series_to_int() -> None:
@@ -1664,7 +1673,7 @@ def test_comparisons_bool_series_to_int() -> None:
     for t, f in ((True, False), (False, True)):
         assert list(srs_bool == t) == list(srs_bool != f) == [t, f]
 
-    match = 'Series has an incompatible dtype'
+    match = "Series has an incompatible dtype"
     with pytest.raises(TypeError, match=match):
         srs_bool - 1
     with pytest.raises(TypeError, match=match):
@@ -1679,10 +1688,10 @@ def test_comparisons_bool_series_to_int() -> None:
     for op in (ge, gt, le, lt):
         for scalar in True, False:
             op(srs_bool, scalar)
-        for scalar in 0, 1.0:
+        for scalar in 0, 1.0:  # type: ignore[assignment]
             with pytest.raises(TypeError):
                 op(srs_bool, scalar)
-                
+
 
 def test_abs() -> None:
     # ints
@@ -2781,7 +2790,7 @@ def test_numpy_series_arithmetic() -> None:
     assert_series_equal(result_pow1, expected)  # type: ignore[arg-type]
     result_pow2 = sx**y
     expected = pl.Series([1.0, 16.0], dtype=pl.Float64)
-    assert_series_equal(result_pow2, expected)  # type: ignore[arg-type]
+    assert_series_equal(result_pow2, expected)
 
 
 def test_from_epoch_seq_input() -> None:

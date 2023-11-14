@@ -6,6 +6,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Collection,
+    Dict,
     Iterable,
     List,
     Literal,
@@ -21,7 +22,7 @@ from typing import (
 if TYPE_CHECKING:
     import sys
 
-    from polars import Expr, Series
+    from polars import DataFrame, Expr, LazyFrame, Series
     from polars.datatypes import DataType, DataTypeClass, IntegerType, TemporalType
     from polars.dependencies import numpy as np
     from polars.dependencies import pandas as pd
@@ -49,6 +50,7 @@ PythonDataType: TypeAlias = Union[
     Type[timedelta],
     Type[List[Any]],
     Type[Tuple[Any, ...]],
+    Type[Dict[Any, Any]],
     Type[bytes],
     Type[Decimal],
     Type[None],

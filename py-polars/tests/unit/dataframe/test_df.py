@@ -2153,7 +2153,7 @@ def test_arithmetic() -> None:
 
     with pytest.raises(ValueError):
         df + df2
-        
+
     with pytest.raises(ValueError):
         df - df2
 
@@ -2162,13 +2162,13 @@ def test_arithmetic() -> None:
 
     with pytest.raises(ValueError):
         df * df2
-    
+
     with pytest.raises(ValueError):
         df % df2
-    
+
     # cannot do arithmetic with a sequence
     with pytest.raises(TypeError):
-        _ = df + [1]  # type: ignore[operator]
+        _ = df + [1]
 
 
 def test_df_series_division() -> None:

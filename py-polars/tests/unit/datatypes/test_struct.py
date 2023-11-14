@@ -70,7 +70,7 @@ def test_struct_equality() -> None:
     s8 = pl.Series("misc", [{"x": "a", "y": 0}, {"x": "b", "y": 0}, {"x": "c", "y": 0}])
     with pytest.raises(pl.ShapeError):
         (s7 != s8).all()
-        
+
     with pytest.raises(pl.ShapeError):
         (~(s7 == s8)).all()
 

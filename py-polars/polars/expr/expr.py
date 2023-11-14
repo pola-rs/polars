@@ -277,7 +277,7 @@ class Expr:
         if isinstance(other, pl.DataFrame):
             return NotImplemented
         return self._from_pyexpr(self._pyexpr.dot(parse_as_expression(other)))
-    
+
     def __rmatmul__(self, other: Any) -> Self:
         return self._from_pyexpr(parse_as_expression(other).dot(self._pyexpr))
 

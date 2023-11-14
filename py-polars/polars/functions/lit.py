@@ -81,7 +81,7 @@ def lit(
         time_zone = (
             value.tzinfo
             if getattr(dtype, "time_zone", None) is None
-            else dtype.time_zone
+            else dtype.time_zone  # type: ignore[union-attr]
         )
         if (
             value.tzinfo is not None
