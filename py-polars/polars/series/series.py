@@ -403,7 +403,14 @@ class Series:
         DataType
 
         """
-        return self._s.inner_dtype()
+        issue_deprecation_warning(
+            "`Series.inner_dtype` is deprecated. Use `Series.dtype.inner` instead.",
+            version="0.19.14",
+        )
+        try:
+            return self.dtype.inner  # type: ignore[union-attr]
+        except AttributeError:
+            return None
 
     @property
     def name(self) -> str:
