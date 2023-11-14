@@ -6,46 +6,37 @@ pub fn create_categorical_chunked_listbuilder(
     name: &str,
     capacity: usize,
     values_capacity: usize,
-    logical_type: DataType,
+    rev_map: Arc<RevMapping>,
 ) -> Box<dyn ListBuilderTrait> {
-    let DataType::Categorical(Some(rev_map)) = &logical_type else {
-        panic!("expected categorical type")
-    };
-    match &**rev_map {
+    match &*rev_map {
         RevMapping::Local(_) => Box::new(ListLocalCategoricalChunkedBuilder::new(
             name,
             capacity,
             values_capacity,
-            logical_type,
         )),
         RevMapping::Global(_, _, _) => Box::new(ListGlobalCategoricalChunkedBuilder::new(
             name,
             capacity,
             values_capacity,
-            logical_type,
+            rev_map,
         )),
     }
 }
 
 struct ListLocalCategoricalChunkedBuilder {
     inner: ListPrimitiveChunkedBuilder<UInt32Type>,
-    idx_lookup: PlHashMap<usize, ()>,
+    idx_lookup: PlHashMap<u32, ()>,
     categories: MutableUtf8Array<i64>,
 }
 
 impl ListLocalCategoricalChunkedBuilder {
-    pub(super) fn new(
-        name: &str,
-        capacity: usize,
-        values_capacity: usize,
-        logical_type: DataType,
-    ) -> Self {
+    pub(super) fn new(name: &str, capacity: usize, values_capacity: usize) -> Self {
         Self {
             inner: ListPrimitiveChunkedBuilder::new(
                 name,
                 capacity,
                 values_capacity,
-                logical_type.clone(),
+                DataType::UInt32,
             ),
             idx_lookup: PlHashMap::with_capacity(capacity),
             categories: MutableUtf8Array::with_capacity(capacity),
@@ -61,28 +52,28 @@ impl ListBuilderTrait for ListLocalCategoricalChunkedBuilder {
         let RevMapping::Local(cats_right) = &**rev_map else {
             polars_bail!(string_cache_mismatch)
         };
-        let ca = s.categorical()?;
+        let ca = s.categorical().unwrap();
 
         // Map the physical of the appended series to be compatible with the existing rev map
         let mut idx_mapping = PlHashMap::with_capacity(ca.len());
         for (idx, cat) in cats_right.values_iter().enumerate() {
             let hash_cat = self.idx_lookup.hasher().hash_one(cat);
-            let entry = self
-                .idx_lookup
-                .raw_entry_mut()
-                .from_hash(hash_cat, |k| self.categories.value(*k) == cat);
+            let len = self.idx_lookup.len();
+            let entry = self.idx_lookup.raw_entry_mut().from_hash(hash_cat, |k| {
+                // Safety: All keys in idx_lookup are in bounds
+                unsafe { self.categories.value_unchecked(*k as usize) == cat }
+            });
 
             match entry {
                 // New Category
-                RawEntryMut::Vacant(_) => {
-                    let len = self.idx_lookup.len();
-                    idx_mapping.insert(idx as u32, len);
-                    self.idx_lookup.insert(len, ());
+                RawEntryMut::Vacant(e) => {
+                    idx_mapping.insert_unique_unchecked(idx as u32, len as u32);
+                    e.insert(len as u32, ());
                     self.categories.push(Some(cat))
                 },
                 // Already Existing Category
                 RawEntryMut::Occupied(e) => {
-                    idx_mapping.insert(idx as u32, *e.key());
+                    idx_mapping.insert_unique_unchecked(idx as u32, *e.key());
                 },
             }
         }
@@ -90,7 +81,7 @@ impl ListBuilderTrait for ListLocalCategoricalChunkedBuilder {
         let new_physical = ca
             .physical()
             .into_iter()
-            .map(move |i: Option<u32>| i.map(|i| *idx_mapping.get(&i).unwrap() as u32));
+            .map(move |i: Option<u32>| i.map(|i| *idx_mapping.get(&i).unwrap()));
 
         self.inner.append_iter(new_physical);
 
@@ -120,13 +111,10 @@ impl ListGlobalCategoricalChunkedBuilder {
         name: &str,
         capacity: usize,
         values_capacity: usize,
-        logical_type: DataType,
+        rev_map: Arc<RevMapping>,
     ) -> Self {
         let inner =
-            ListPrimitiveChunkedBuilder::new(name, capacity, values_capacity, logical_type.clone());
-        let DataType::Categorical(Some(rev_map)) = logical_type else {
-            panic!("expected categorical type")
-        };
+            ListPrimitiveChunkedBuilder::new(name, capacity, values_capacity, DataType::UInt32);
         Self {
             inner,
             map_merger: GlobalRevMapMerger::new(rev_map),

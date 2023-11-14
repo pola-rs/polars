@@ -142,8 +142,9 @@ pub fn merge_local_rhs_categorical<'a>(
     Ok((
         ca_right
             .physical()
-            .into_iter()
-            .map(move |v: Option<u32>| v.map(|v2| *idx_mapping.get(&v2).unwrap())),
+            .downcast_iter()
+            .flatten()
+            .map(move |v: Option<&u32>| v.map(|v2| *idx_mapping.get(v2).unwrap())),
         new_rev_map,
     ))
 }

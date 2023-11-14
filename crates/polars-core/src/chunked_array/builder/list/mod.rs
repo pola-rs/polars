@@ -96,12 +96,12 @@ pub fn get_list_builder(
 ) -> PolarsResult<Box<dyn ListBuilderTrait>> {
     match inner_type_logical {
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(_) => {
+        DataType::Categorical(Some(rev_map)) => {
             return Ok(create_categorical_chunked_listbuilder(
                 name,
                 list_capacity,
                 value_capacity,
-                inner_type_logical.clone(),
+                rev_map.clone(),
             ))
         },
         _ => {},
