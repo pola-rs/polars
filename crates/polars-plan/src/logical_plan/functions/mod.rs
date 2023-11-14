@@ -152,6 +152,15 @@ impl FunctionNode {
         }
     }
 
+    /// The functions's streaming status, for use in Display.
+    fn streaming_status(&self) -> &'static str {
+        if self.is_streamable() {
+            "(streaming)"
+        } else {
+            "(not streaming)"
+        }
+    }
+
     /// Whether this function will increase the number of rows
     pub fn expands_rows(&self) -> bool {
         use FunctionNode::*;
@@ -361,31 +370,32 @@ impl Debug for FunctionNode {
 impl Display for FunctionNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use FunctionNode::*;
+        let streaming = self.streaming_status();
         match self {
-            Opaque { fmt_str, .. } => write!(f, "{fmt_str}"),
+            Opaque { fmt_str, .. } => write!(f, "{fmt_str} {streaming}"),
             #[cfg(feature = "python")]
-            OpaquePython { .. } => write!(f, "python dataframe udf"),
+            OpaquePython { .. } => write!(f, "python dataframe udf {streaming}"),
             FastProjection { columns, .. } => {
-                write!(f, "FAST_PROJECT: ")?;
+                write!(f, "FAST_PROJECT {streaming}: ")?;
                 let columns = columns.as_ref();
                 fmt_column_delimited(f, columns, "[", "]")
             },
             DropNulls { subset } => {
-                write!(f, "DROP_NULLS by: ")?;
+                write!(f, "DROP_NULLS {streaming} by: ")?;
                 let subset = subset.as_ref();
                 fmt_column_delimited(f, subset, "[", "]")
             },
-            Rechunk => write!(f, "RECHUNK"),
+            Rechunk => write!(f, "RECHUNK {streaming}"),
             Unnest { columns } => {
-                write!(f, "UNNEST by:")?;
+                write!(f, "UNNEST {streaming} by:")?;
                 let columns = columns.as_ref();
                 fmt_column_delimited(f, columns, "[", "]")
             },
             #[cfg(feature = "merge_sorted")]
-            MergeSorted { .. } => write!(f, "MERGE SORTED"),
+            MergeSorted { .. } => write!(f, "MERGE SORTED {streaming}"),
             Pipeline { original, .. } => {
                 if let Some(original) = original {
-                    writeln!(f, "--- PIPELINE")?;
+                    writeln!(f, "--- PIPELINE {streaming}")?;
                     write!(f, "{:?}", original.as_ref())?;
                     let indent = 2;
                     writeln!(f, "{:indent$}--- END PIPELINE", "")
@@ -393,10 +403,10 @@ impl Display for FunctionNode {
                     writeln!(f, "PIPELINE")
                 }
             },
-            Rename { .. } => write!(f, "RENAME"),
-            Explode { .. } => write!(f, "EXPLODE"),
-            Melt { .. } => write!(f, "MELT"),
-            RowCount { .. } => write!(f, "WITH ROW COUNT"),
+            Rename { .. } => write!(f, "RENAME {streaming}"),
+            Explode { .. } => write!(f, "EXPLODE {streaming}"),
+            Melt { .. } => write!(f, "MELT {streaming}"),
+            RowCount { .. } => write!(f, "WITH ROW COUNT {streaming}"),
         }
     }
 }
