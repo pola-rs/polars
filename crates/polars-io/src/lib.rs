@@ -113,7 +113,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
         }
 
         if let Some(predicate) = &predicate {
-            let s = predicate.evaluate(&df)?;
+            let s = predicate.evaluate_io(&df)?;
             let mask = s.bool().expect("filter predicates was not of type boolean");
             df = df.filter(mask)?;
         }

@@ -134,10 +134,9 @@ impl ParquetExec {
                             reader
                                 .with_n_rows(remaining_rows_to_read)
                                 .with_row_count(row_count)
-                                ._finish_with_scan_ops(
-                                    predicate.clone(),
-                                    projection.as_ref().map(|v| v.as_ref()),
-                                )
+                                .with_predicate(predicate.clone())
+                                .with_projection(projection.clone())
+                                .finish()
                         },
                     )
                     .collect::<PolarsResult<Vec<_>>>()

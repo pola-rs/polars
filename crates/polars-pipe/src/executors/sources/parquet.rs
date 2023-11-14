@@ -9,6 +9,7 @@ use polars_core::POOL;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::{BatchedParquetReader, FileMetaData, ParquetReader};
 use polars_io::pl_async::get_runtime;
+use polars_io::predicates::PhysicalIoExpr;
 use polars_io::prelude::materialize_projection;
 #[cfg(feature = "async")]
 use polars_io::prelude::ParquetAsyncReader;
@@ -35,6 +36,7 @@ pub struct ParquetSource {
     file_info: FileInfo,
     verbose: bool,
     prefetch_size: usize,
+    predicate: Option<Arc<dyn PhysicalIoExpr>>,
 }
 
 impl ParquetSource {
@@ -103,6 +105,7 @@ impl ParquetSource {
                     .with_n_rows(file_options.n_rows)
                     .with_row_count(file_options.row_count)
                     .with_projection(projection)
+                    .with_predicate(self.predicate.clone())
                     .use_statistics(options.use_statistics)
                     .with_hive_partition_columns(hive_partitions)
                     .batched(chunk_size)
@@ -116,6 +119,7 @@ impl ParquetSource {
                 .with_schema(reader_schema)
                 .with_n_rows(file_options.n_rows)
                 .with_row_count(file_options.row_count)
+                .with_predicate(self.predicate.clone())
                 .with_projection(projection)
                 .use_statistics(options.use_statistics)
                 .with_hive_partition_columns(hive_partitions)
@@ -130,6 +134,7 @@ impl ParquetSource {
     }
 
     #[allow(unused_variables)]
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         paths: Arc<[PathBuf]>,
         options: ParquetOptions,
@@ -138,6 +143,7 @@ impl ParquetSource {
         file_options: FileScanOptions,
         file_info: FileInfo,
         verbose: bool,
+        predicate: Option<Arc<dyn PhysicalIoExpr>>,
     ) -> PolarsResult<Self> {
         let n_threads = POOL.current_num_threads();
 
@@ -162,6 +168,7 @@ impl ParquetSource {
             file_info,
             verbose,
             prefetch_size,
+            predicate,
         };
         // Already start downloading when we deal with cloud urls.
         if !source.paths.first().unwrap().is_file() {

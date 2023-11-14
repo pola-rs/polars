@@ -284,7 +284,8 @@ fn rg_to_dfs_par_over_rg(
         .collect::<Vec<_>>();
 
     let dfs = row_groups
-        .into_par_iter()
+        // .into_par_iter()
+        .into_iter()
         .map(|(rg_idx, md, projection_height, row_count_start)| {
             if projection_height == 0
                 || use_statistics
@@ -602,8 +603,9 @@ impl BatchedParquetReader {
             return Ok(None);
         }
 
+        let mut skipped_all_rgs = false;
         // fill up fifo stack
-        if self.row_group_offset <= self.n_row_groups && self.chunks_fifo.len() < n {
+        if self.row_group_offset < self.n_row_groups && self.chunks_fifo.len() < n {
             // Ensure we apply the limit on the metadata, before we download the row-groups.
             let row_group_start = self.row_group_offset;
             let row_group_end = compute_row_group_range(
@@ -650,6 +652,7 @@ impl BatchedParquetReader {
             // TODO! this is slower than it needs to be
             // we also need to parallelize over row groups here.
 
+            skipped_all_rgs |= dfs.is_empty();
             for mut df in dfs {
                 // make sure that the chunks are not too large
                 let n = df.shape().0 / self.chunk_size;
@@ -664,7 +667,16 @@ impl BatchedParquetReader {
         };
 
         if self.chunks_fifo.is_empty() {
-            Ok(None)
+            if skipped_all_rgs {
+                Ok(Some(vec![materialize_empty_df(
+                    Some(self.projection.as_slice()),
+                    self.schema(),
+                    self.hive_partition_columns.as_deref(),
+                    self.row_count.as_ref(),
+                )]))
+            } else {
+                Ok(None)
+            }
         } else {
             let mut chunks = Vec::with_capacity(n);
             let mut i = 0;
