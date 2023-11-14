@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import inspect
 import pickle
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -9,7 +11,6 @@ import polars as pl
 from polars import datatypes
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
-    DataTypeClass,
     DataTypeGroup,
     Field,
     Int64,
@@ -18,16 +19,42 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 
+if TYPE_CHECKING:
+    from polars.datatypes import DataTypeClass
 
-def test_dtype_init_equivalence() -> None:
-    # check "DataType.__new__" behaviour for all datatypes
-    all_datatypes = {
-        dtype
-        for dtype in (getattr(datatypes, attr) for attr in dir(datatypes))
-        if isinstance(dtype, DataTypeClass)
+SIMPLE_DTYPES: list[DataTypeClass] = list(
+    pl.INTEGER_DTYPES  # type: ignore[arg-type]
+    | pl.FLOAT_DTYPES
+    | {
+        pl.Boolean,
+        pl.Utf8,
+        pl.Binary,
+        pl.Time,
+        pl.Date,
+        pl.Categorical,
+        pl.Object,
+        pl.Null,
+        pl.Unknown,
     }
-    for dtype in all_datatypes:
-        assert dtype == dtype()
+)
+
+
+def test_simple_dtype_init_returns_class() -> None:
+    for dtype in SIMPLE_DTYPES:
+        result = dtype()
+        assert inspect.isclass(result)
+
+
+def test_simple_dtype_init_takes_no_args() -> None:
+    for dtype in SIMPLE_DTYPES:
+        with pytest.raises(TypeError):
+            dtype(10)
+
+
+def test_complex_dtype_init_returns_instance() -> None:
+    dtype = pl.Datetime()
+    assert isinstance(dtype, pl.Datetime)
+    assert dtype.time_unit == "us"
 
 
 def test_dtype_temporal_units() -> None:
@@ -36,8 +63,8 @@ def test_dtype_temporal_units() -> None:
         assert pl.Datetime == pl.Datetime(time_unit)
         assert pl.Duration == pl.Duration(time_unit)
 
-        assert pl.Datetime(time_unit) == pl.Datetime()
-        assert pl.Duration(time_unit) == pl.Duration()
+        assert pl.Datetime(time_unit) == pl.Datetime
+        assert pl.Duration(time_unit) == pl.Duration
 
     assert pl.Datetime("ms") != pl.Datetime("ns")
     assert pl.Duration("ns") != pl.Duration("us")

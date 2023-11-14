@@ -187,8 +187,8 @@ def test_getitem_errs() -> None:
 def test_err_bubbling_up_to_lit() -> None:
     df = pl.DataFrame({"date": [date(2020, 1, 1)], "value": [42]})
 
-    with pytest.raises(ValueError):
-        df.filter(pl.col("date") == pl.Date("2020-01-01"))
+    with pytest.raises(TypeError):
+        df.filter(pl.col("date") == pl.Date("2020-01-01"))  # type: ignore[call-arg]
 
 
 def test_error_on_double_agg() -> None:
