@@ -545,7 +545,10 @@ def test_series_dtype_is() -> None:
     assert not s.dtype.is_numeric()
 
     s = pl.Series("s", ["testing..."])
-    assert s.is_utf8()
+    with pytest.deprecated_call():
+        assert s.is_utf8() is True
+    with pytest.deprecated_call():
+        assert s.is_boolean() is False
 
     s = pl.Series("s", [], dtype=pl.Decimal(precision=20, scale=15))
     assert not s.dtype.is_float()

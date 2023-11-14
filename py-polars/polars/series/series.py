@@ -1594,13 +1594,13 @@ class Series:
                 stats[f"{p:.0%}"] = s.quantile(p)
             stats["max"] = s.max()
 
-        elif self.is_boolean():
+        elif self.dtype == Boolean:
             stats = {
                 "count": self.len(),
                 "null_count": self.null_count(),
                 "sum": self.sum(),
             }
-        elif self.is_utf8():
+        elif self.dtype == Utf8:
             stats = {
                 "count": self.len(),
                 "null_count": self.null_count(),
@@ -3960,32 +3960,6 @@ class Series:
             .select(F.col(self.name).is_between(lower_bound, upper_bound, closed))
             .to_series()
         )
-
-    def is_boolean(self) -> bool:
-        """
-        Check if this Series is a Boolean.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [True, False, True])
-        >>> s.is_boolean()
-        True
-
-        """
-        return self.dtype is Boolean
-
-    def is_utf8(self) -> bool:
-        """
-        Check if this Series datatype is a Utf8.
-
-        Examples
-        --------
-        >>> s = pl.Series("x", ["a", "b", "c"])
-        >>> s.is_utf8()
-        True
-
-        """
-        return self.dtype is Utf8
 
     def view(self, *, ignore_nulls: bool = False) -> SeriesView:
         """
@@ -6947,6 +6921,40 @@ class Series:
                 return False
 
         return self.dtype.is_temporal()
+
+    @deprecate_function("Use `Series.dtype == pl.Boolean` instead.", version="0.19.14")
+    def is_boolean(self) -> bool:
+        """
+        Check if this Series is a Boolean.
+
+        .. deprecated:: 0.19.14
+            Use `Series.dtype == pl.Boolean` instead.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [True, False, True])
+        >>> s.is_boolean()  # doctest: +SKIP
+        True
+
+        """
+        return self.dtype is Boolean
+
+    @deprecate_function("Use `Series.dtype == pl.Utf8` instead.", version="0.19.14")
+    def is_utf8(self) -> bool:
+        """
+        Check if this Series datatype is a Utf8.
+
+        .. deprecated:: 0.19.14
+            Use `Series.dtype == pl.Utf8` instead.
+
+        Examples
+        --------
+        >>> s = pl.Series("x", ["a", "b", "c"])
+        >>> s.is_utf8()  # doctest: +SKIP
+        True
+
+        """
+        return self.dtype is Utf8
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`
