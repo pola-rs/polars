@@ -921,3 +921,32 @@ def test_group_by_dynamic_lazy_schema(include_boundaries: bool) -> None:
     ).agg(pl.col("dt").min().alias("dt_min"))
 
     assert list(result.schema.items()) == list(result.collect().schema.items())
+
+
+def test_group_by_dynamic_12414() -> None:
+    df = pl.DataFrame(
+        {
+            "today": [
+                date(2023, 3, 3),
+                date(2023, 8, 31),
+                date(2023, 9, 1),
+                date(2023, 9, 4),
+            ],
+            "b": [1, 2, 3, 4],
+        }
+    ).sort("today")
+    assert df.group_by_dynamic(
+        "today",
+        every="6mo",
+        period="3d",
+        closed="left",
+        start_by="datapoint",
+        include_boundaries=True,
+    ).agg(
+        gt_min_count=(pl.col.b >= (pl.col.b.min())).sum(),
+    ).to_dict(as_series=False) == {
+        "_lower_boundary": [datetime(2023, 3, 3, 0, 0), datetime(2023, 9, 3, 0, 0)],
+        "_upper_boundary": [datetime(2023, 3, 6, 0, 0), datetime(2023, 9, 6, 0, 0)],
+        "today": [date(2023, 3, 3), date(2023, 9, 3)],
+        "gt_min_count": [1, 1],
+    }
