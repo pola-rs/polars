@@ -85,8 +85,9 @@ def test_struct_equality_strict() -> None:
     )
 
     # strict
-    assert not (s1.is_(s2))
-    assert s1.is_not(s2)
+    assert s1.is_(s2) is False
+    with pytest.deprecated_call():
+        assert s1.is_not(s2) is True
 
     # permissive (default)
     assert s1 == s2

@@ -148,6 +148,9 @@ class DataType(metaclass=DataTypeClass):
         """
         Check if this DataType is NOT the same as another DataType.
 
+        .. deprecated:: 0.19.14
+            Use `not dtype.is_(...)` instead.
+
         This is a stricter check than `self != other`, as it enforces an exact
         match of all dtype attributes for nested and/or uninitialised dtypes.
 
@@ -160,10 +163,17 @@ class DataType(metaclass=DataTypeClass):
         --------
         >>> pl.List != pl.List(pl.Int32)
         False
-        >>> pl.List.is_not(pl.List(pl.Int32))
+        >>> pl.List.is_not(pl.List(pl.Int32))  # doctest: +SKIP
         True
 
         """
+        from polars.utils.deprecation import issue_deprecation_warning
+
+        issue_deprecation_warning(
+            "`DataType.is_not` is deprecated and will be removed in the next breaking release."
+            " Use `not dtype.is_(...)` instead.",
+            version="0.19.14",
+        )
         return not self.is_(other)
 
     @classproperty
