@@ -8,13 +8,14 @@ name = "polars"
 crate-type = ["cdylib"]
 
 [dependencies]
-polars-algo = { path = "../crates/polars-algo", default-features = false }
-polars-core = { path = "../crates/polars-core", default-features = false, features = ["python"] }
-polars-error = { path = "../crates/polars-error" }
-polars-lazy = { path = "../crates/polars-lazy", default-features = false, features = ["python"] }
-polars-ops = { path = "../crates/polars-ops", default-features = false, features = ["convert_index"] }
-polars-parquet = { path = "../crates/polars-parquet", default-features = false, optional = true }
-polars-plan = { path = "../crates/polars-plan", default-features = false }
+polars-algo = { workspace = true }
+polars-core = { workspace = true, features = ["python"] }
+polars-error = { workspace = true }
+polars-lazy = { workspace = true, features = ["python"] }
+polars-ops = { workspace = true, features = ["convert_index"] }
+polars-parquet = { workspace = true, optional = true }
+polars-plan = { workspace = true }
+polars-utils = { workspace = true }
 
 ahash = { workspace = true }
 ciborium = { workspace = true }

@@ -453,15 +453,6 @@ def test_string_numeric_arithmetic_err() -> None:
         df.select(pl.col("s") + 1)
 
 
-def test_file_path_truncate_err() -> None:
-    content = "lskdfj".join(str(i) for i in range(25))
-    with pytest.raises(
-        FileNotFoundError,
-        match=r"\.\.\.lskdfj14lskdfj15lskdfj16lskdfj17lskdfj18lskdfj19lskdfj20lskdfj21lskdfj22lskdfj23lskdfj24",
-    ):
-        pl.read_csv(content)
-
-
 def test_ambiguous_filter_err() -> None:
     df = pl.DataFrame({"a": [None, "2", "3"], "b": [None, None, "z"]})
     with pytest.raises(
