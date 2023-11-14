@@ -187,7 +187,7 @@ impl PhysicalExpr for BinaryExpr {
         polars_ensure!(
             lhs.len() == rhs.len() || lhs.len() == 1 || rhs.len() == 1,
             expr = self.expr,
-            ComputeError: "cannot evaluate two series of different lengths ({} and {})",
+            ComputeError: "cannot evaluate two Series of different lengths ({} and {})",
             lhs.len(), rhs.len(),
         );
         apply_operator_owned(lhs, rhs, self.op)

@@ -113,7 +113,7 @@ impl DataFrame {
         }
         polars_ensure!(
             df.height() != 0 && df.width() != 0,
-            NoData: "unable to transpose an empty dataframe"
+            NoData: "unable to transpose an empty DataFrame"
         );
         let dtype = df.get_supertype().unwrap()?;
         match dtype {

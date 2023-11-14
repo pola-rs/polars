@@ -67,7 +67,7 @@ def read_delta(
 
     Use the `pyarrow_options` parameter to read only certain partitions.
     Note: This should be preferred over using an equivalent `.filter()` on the resulting
-    dataframe, as this avoids reading the data at all.
+    DataFrame, as this avoids reading the data at all.
 
     >>> pl.read_delta(  # doctest: +SKIP
     ...     table_path,
@@ -326,7 +326,7 @@ def _check_for_unsupported_types(dtypes: list[PolarsDataType]) -> None:
     overlap = schema_dtypes & unsupported_types
 
     if overlap:
-        raise TypeError(f"dataframe contains unsupported data types: {overlap!r}")
+        raise TypeError(f"DataFrame contains unsupported data types: {overlap!r}")
 
 
 def _convert_pa_schema_to_delta(schema: pa.schema) -> pa.schema:

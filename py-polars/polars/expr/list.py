@@ -946,7 +946,7 @@ class ExprListNameSpace:
         upper_bound: int = 0,
     ) -> Expr:
         """
-        Convert the series of type `List` to a series of type `Struct`.
+        Convert the Series of type `List` to a Series of type `Struct`.
 
         Parameters
         ----------

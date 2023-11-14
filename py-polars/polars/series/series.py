@@ -155,7 +155,7 @@ class Series:
     Parameters
     ----------
     name : str, default None
-        Name of the series. Will be used as a column name when used in a DataFrame.
+        Name of the Series. Will be used as a column name when used in a DataFrame.
         When not specified, name is set to an empty string.
     values : ArrayLike, default None
         One-dimensional data in various forms. Supported are: Sequence, Series,
@@ -497,7 +497,7 @@ class Series:
                 time_unit = self.dtype.time_unit  # type: ignore[union-attr]
             else:
                 raise ValueError(
-                    f"cannot compare datetime.datetime to series of type {self.dtype}"
+                    f"cannot compare datetime.datetime to Series of type {self.dtype}"
                 )
             ts = _datetime_to_pl_timestamp(other, time_unit)  # type: ignore[arg-type]
             f = get_ffi_func(op + "_<>", Int64, self._s)
@@ -746,7 +746,7 @@ class Series:
             f = get_ffi_func(op_ffi, self.dtype, self._s)
         if f is None:
             raise TypeError(
-                f"cannot do arithmetic with series of dtype: {self.dtype!r} and argument"
+                f"cannot do arithmetic with Series of dtype: {self.dtype!r} and argument"
                 f" of type: {type(other).__name__!r}"
             )
         return self._from_pyseries(f(other))
@@ -1215,7 +1215,7 @@ class Series:
     @deprecate_renamed_parameter("row", "index", version="0.19.3")
     def item(self, index: int | None = None) -> Any:
         """
-        Return the series as a scalar, or return the element at the given index.
+        Return the Series as a scalar, or return the element at the given index.
 
         If no index is provided, this is equivalent to `s[0]`, with a check
         that the shape is (1,). With an index, this is equivalent to `s[index]`.
@@ -1233,8 +1233,8 @@ class Series:
         if index is None:
             if len(self) != 1:
                 raise ValueError(
-                    "can only call '.item()' if the series is of length 1,"
-                    f" or an explicit index is provided (series is of length {len(self)})"
+                    "can only call '.item()' if the Series is of length 1,"
+                    f" or an explicit index is provided (Series is of length {len(self)})"
                 )
             return self._s.get_index(0)
 
@@ -1521,7 +1521,7 @@ class Series:
         self, percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75)
     ) -> DataFrame:
         """
-        Quick summary statistics of a series.
+        Quick summary statistics of a Series.
 
         Series with mixed datatypes will return summary statistics for the datatype of
         the first value.
@@ -1530,7 +1530,7 @@ class Series:
         ----------
         percentiles
             One or more percentiles to include in the summary statistics (if the
-            series has a numeric dtype). All values must be in the range `[0, 1]`.
+            Series has a numeric dtype). All values must be in the range `[0, 1]`.
 
         Notes
         -----

@@ -609,7 +609,7 @@ def _pandas_series_to_arrow(
     elif dtype:
         return pa.array(values, from_pandas=nan_to_null)
     else:
-        # Pandas Series is actually a Pandas DataFrame when the original dataframe
+        # Pandas Series is actually a Pandas DataFrame when the original DataFrame
         # contains duplicated columns and a duplicated column is requested with df["a"].
         raise ValueError(
             "duplicate column names found: ",

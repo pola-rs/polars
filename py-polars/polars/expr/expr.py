@@ -9160,9 +9160,9 @@ class Expr:
             Parameters
             ----------
             name
-                Name of the keys or values series.
+                Name of the keys or values Series.
             values
-                Values for the series: `remapping.keys()` or `remapping.values()`.
+                Values for the Series: `remapping.keys()` or `remapping.values()`.
             dtype
                 User specified dtype. If None,
             dtype_if_empty
