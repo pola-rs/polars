@@ -7073,22 +7073,16 @@ class DataFrame:
         columns = _expand_selectors(self, columns)
 
         # If only two of three values/index/columns are supplied, infer the third.
-        val_err_str = "must provide at least two of `values`, `index`, and `columns`"
-        if values == [None]:
-            if (index == [None]) or (columns == [None]):
-                raise ValueError(val_err_str)
-            used = list(set(index).union(columns))
-            values = [x for x in self.columns if x not in used and x not in used]
-        elif index == [None]:
-            if (columns == [None]) or (values == [None]):
-                raise ValueError(val_err_str)
-            used = list(set(columns).union(values))
-            index = [x for x in self.columns if x not in used and x not in used]
-        elif columns == [None]:
-            if (index == [None]) or (values == [None]):
-                raise ValueError(val_err_str)
-            used = list(set(index).union(values))
-            columns = [x for x in self.columns if x not in used and x not in used]
+        if (not values) + (not index) + (not columns) > 1:
+            raise ValueError(
+                "must provide at least two of `values`, `index`, and `columns`"
+            )
+        if not values:
+            values = [x for x in self.columns if x not in set(index).union(columns)]
+        elif not index:
+            index = [x for x in self.columns if x not in set(values).union(columns)]
+        elif not columns:
+            columns = [x for x in self.columns if x not in set(values).union(index)]
 
         if isinstance(aggregate_function, str):
             if aggregate_function == "first":

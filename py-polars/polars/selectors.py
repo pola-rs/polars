@@ -183,7 +183,7 @@ def _expand_selectors(
         if is_selector(item):
             selector_cols = expand_selector(frame, item)
             expanded.extend(selector_cols)
-        else:
+        elif item is not None:
             expanded.append(item)
     return expanded
 
