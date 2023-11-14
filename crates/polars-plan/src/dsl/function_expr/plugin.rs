@@ -27,7 +27,7 @@ fn get_lib(lib: &str) -> PolarsResult<&'static PluginAndVersion> {
 
         let version = unsafe { version_function() };
         let major = (version >> 16) as u16;
-        let minor = (((u32::MAX as u32) >> 16) & version) as u16;
+        let minor = ((u32::MAX >> 16) & version) as u16;
 
         let mut lib_map = LOADED.write().unwrap();
         lib_map.insert(lib.to_string(), (library, major, minor));
