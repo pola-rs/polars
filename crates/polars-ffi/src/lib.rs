@@ -5,6 +5,13 @@ use arrow::ffi::{ArrowArray, ArrowSchema};
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{ArrayRef, ArrowField, Series};
 
+pub const MAJOR: u16 = 0;
+pub const MINOR: u16 = 0;
+
+pub const fn get_version() -> (u16, u16) {
+    (MAJOR, MINOR)
+}
+
 // A utility that helps releasing/owning memory.
 #[allow(dead_code)]
 struct PrivateData {
@@ -120,6 +127,15 @@ unsafe fn import_array(
     let field = ffi::import_field_from_c(schema)?;
     let out = ffi::import_array_from_c(array, field.data_type)?;
     Ok(out)
+}
+
+/// Passed to an expression.
+/// This contains information for the implementer of the expression on what it is allowed to do.
+#[derive(Copy, Clone, Debug, Default)]
+#[repr(C)]
+pub struct CallerContext {
+    /// The expression may implement their own parallelism.
+    pub parallelized: bool,
 }
 
 #[cfg(test)]

@@ -8,13 +8,14 @@ use polars_ffi::*;
 
 use super::*;
 
-static LOADED: Lazy<RwLock<PlHashMap<String, Library>>> = Lazy::new(Default::default);
+type PluginAndVersion = (Library, u16, u16);
+static LOADED: Lazy<RwLock<PlHashMap<String, PluginAndVersion>>> = Lazy::new(Default::default);
 
-fn get_lib(lib: &str) -> PolarsResult<&'static Library> {
+fn get_lib(lib: &str) -> PolarsResult<&'static PluginAndVersion> {
     let lib_map = LOADED.read().unwrap();
     if let Some(library) = lib_map.get(lib) {
         // lifetime is static as we never remove libraries.
-        Ok(unsafe { std::mem::transmute::<&Library, &'static Library>(library) })
+        Ok(unsafe { std::mem::transmute::<&PluginAndVersion, &'static PluginAndVersion>(library) })
     } else {
         drop(lib_map);
         let library = unsafe {
@@ -22,9 +23,15 @@ fn get_lib(lib: &str) -> PolarsResult<&'static Library> {
                 PolarsError::ComputeError(format!("error loading dynamic library: {e}").into())
             })?
         };
+        let version_function: libloading::Symbol<unsafe extern "C" fn() -> u32> =
+            unsafe { library.get("get_version".as_bytes()).unwrap() };
+
+        let version = version_function();
+        let major = (version >> 16) as u16;
+        let minor = (((u32::MAX as u32) >> 16) & version) as u16;
 
         let mut lib_map = LOADED.write().unwrap();
-        lib_map.insert(lib.to_string(), library);
+        lib_map.insert(lib.to_string(), (library, major, minor));
         drop(lib_map);
 
         get_lib(lib)
@@ -44,15 +51,29 @@ pub(super) unsafe fn call_plugin(
     symbol: &str,
     kwargs: &[u8],
 ) -> PolarsResult<Series> {
-    let lib = get_lib(lib)?;
+    let plugin = get_lib(lib)?;
+    let lib = &plugin.0;
+    let major = plugin.1;
+    let minor = plugin.2;
+
+    // Not much important yet.
+    assert_eq!(major, 0);
 
     // *const SeriesExport: pointer to Box<SeriesExport>
     // * usize: length of that pointer
     // *const u8: pointer to &[u8]
     // usize: length of the u8 slice
     // *mut SeriesExport: pointer where return value should be written.
+    // *const CallerContext
     let symbol: libloading::Symbol<
-        unsafe extern "C" fn(*const SeriesExport, usize, *const u8, usize, *mut SeriesExport),
+        unsafe extern "C" fn(
+            *const SeriesExport,
+            usize,
+            *const u8,
+            usize,
+            *mut SeriesExport,
+            *const CallerContext,
+        ),
     > = lib.get(symbol.as_bytes()).unwrap();
 
     let input = s.iter().map(export_series).collect::<Vec<_>>();
@@ -64,12 +85,15 @@ pub(super) unsafe fn call_plugin(
 
     let mut return_value = SeriesExport::empty();
     let return_value_ptr = &mut return_value as *mut SeriesExport;
+    let context = CallerContext::default();
+    let context_ptr = &context as *const CallerContext;
     symbol(
         slice_ptr,
         input_len,
         kwargs_ptr,
         kwargs_len,
         return_value_ptr,
+        context_ptr,
     );
 
     // The inputs get dropped when the ffi side calls the drop callback.
@@ -81,6 +105,7 @@ pub(super) unsafe fn call_plugin(
         import_series(return_value)
     } else {
         let msg = retrieve_error_msg(lib);
+        assert_ne!(msg, "PANIC", "plugin panicked");
         let msg = msg.to_string_lossy();
         polars_bail!(ComputeError: "the plugin failed with message: {}", msg)
     }
@@ -119,6 +144,7 @@ pub(super) unsafe fn plugin_field(
         Ok(out)
     } else {
         let msg = retrieve_error_msg(lib);
+        assert_ne!(msg, "PANIC", "plugin panicked");
         let msg = msg.to_string_lossy();
         polars_bail!(ComputeError: "the plugin failed with message: {}", msg)
     }
