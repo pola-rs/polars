@@ -18,7 +18,7 @@ from numpy.testing import assert_array_equal, assert_equal
 
 import polars as pl
 import polars.selectors as cs
-from polars.datatypes import DTYPE_TEMPORAL_UNITS, FLOAT_DTYPES, INTEGER_DTYPES
+from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
 from polars.exceptions import ComputeError, TimeZoneAwareConstructorWarning
 from polars.testing import (
     assert_frame_equal,
@@ -502,14 +502,6 @@ def test_file_buffer() -> None:
     # check if not fails on TryClone and Length impl in file.rs
     with pytest.raises(pl.ComputeError):
         pl.read_parquet(f)
-
-
-@pytest.mark.parametrize(
-    "read_function", [pl.read_parquet, pl.read_csv, pl.read_ipc, pl.read_avro]
-)
-def test_read_missing_file(read_function: Callable[[Any], pl.DataFrame]) -> None:
-    with pytest.raises(FileNotFoundError, match="fake_file"):
-        read_function("fake_file")
 
 
 def test_shift() -> None:
@@ -1145,7 +1137,7 @@ def test_to_numpy_structured() -> None:
             list(exported_array[name]),
             (
                 df[name].fill_null(float("nan"))
-                if df.schema[name] in FLOAT_DTYPES
+                if df.schema[name].is_float()
                 else df[name]
             ).to_list(),
         )

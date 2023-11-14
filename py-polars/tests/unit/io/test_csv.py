@@ -1676,3 +1676,10 @@ def test_write_csv_bom() -> None:
     df.write_csv(f, include_bom=True)
     f.seek(0)
     assert f.read() == b"\xef\xbb\xbfa,b\n1,1\n2,2\n3,3\n"
+
+
+def test_empty_csv_no_raise() -> None:
+    assert pl.read_csv(io.StringIO(), raise_if_empty=False, has_header=False).shape == (
+        0,
+        0,
+    )

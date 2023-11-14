@@ -69,7 +69,7 @@ impl DataFrame {
         if (minimal_by_len != df_height) && (self.width() > 0) {
             polars_ensure!(
                 minimal_by_len == 1,
-                ShapeMismatch: "series used as keys should have the same length as the dataframe"
+                ShapeMismatch: "series used as keys should have the same length as the DataFrame"
             );
             for by_key in by.iter_mut() {
                 if by_key.len() == minimal_by_len {

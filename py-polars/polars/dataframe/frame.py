@@ -33,7 +33,6 @@ from polars import functions as F
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.datatypes import (
-    FLOAT_DTYPES,
     INTEGER_DTYPES,
     N_INFER_DEFAULT,
     NUMERIC_DTYPES,
@@ -1307,7 +1306,7 @@ class DataFrame:
 
         Examples
         --------
-        Convert a Polars dataframe to a generic dataframe object and access some
+        Convert a Polars DataFrame to a generic dataframe object and access some
         properties.
 
         >>> df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["x", "y"]})
@@ -1419,13 +1418,13 @@ class DataFrame:
         df = (
             df
             if not floordiv
-            else df.with_columns([s.floor() for s in df if s.dtype in FLOAT_DTYPES])
+            else df.with_columns([s.floor() for s in df if s.dtype.is_float()])
         )
         if floordiv:
             int_casts = [
                 col(column).cast(tp)
                 for i, (column, tp) in enumerate(self.schema.items())
-                if tp in INTEGER_DTYPES and orig_dtypes[i] in INTEGER_DTYPES
+                if tp.is_integer() and orig_dtypes[i].is_integer()
             ]
             if int_casts:
                 return df.with_columns(int_casts)
@@ -1711,7 +1710,7 @@ class DataFrame:
             dtype = item.dtype
             if dtype == Utf8:
                 return self._from_pydf(self._df.select(item))
-            elif dtype in INTEGER_DTYPES:
+            elif dtype.is_integer():
                 return self._take_with_series(item._pos_idxs(self.shape[0]))
 
         # if no data has been returned, the operation is not supported
@@ -1828,7 +1827,7 @@ class DataFrame:
 
     def item(self, row: int | None = None, column: int | str | None = None) -> Any:
         """
-        Return the dataframe as a scalar, or return the element at the given row/column.
+        Return the DataFrame as a scalar, or return the element at the given row/column.
 
         Parameters
         ----------
@@ -1933,7 +1932,7 @@ class DataFrame:
         Parameters
         ----------
         as_series
-            True -> Values are series
+            True -> Values are Series
             False -> Values are List[Any]
 
         Examples
@@ -2852,7 +2851,7 @@ class DataFrame:
 
         Examples
         --------
-        Instantiate a basic dataframe:
+        Instantiate a basic DataFrame:
 
         >>> from random import uniform
         >>> from datetime import date
@@ -7766,7 +7765,7 @@ class DataFrame:
         └───────────┘
 
         Expressions with multiple outputs can be automatically instantiated as Structs
-        by enabling the experimental setting `Config.set_auto_structify(True)`:
+        by enabling the setting `Config.set_auto_structify(True)`:
 
         >>> with pl.Config(auto_structify=True):
         ...     df.select(
@@ -7941,7 +7940,7 @@ class DataFrame:
         └─────┴──────┴───────┴──────┴───────┘
 
         Expressions with multiple outputs can be automatically instantiated as Structs
-        by enabling the experimental setting `Config.set_auto_structify(True)`:
+        by enabling the setting `Config.set_auto_structify(True)`:
 
         >>> with pl.Config(auto_structify=True):
         ...     df.drop("c").with_columns(

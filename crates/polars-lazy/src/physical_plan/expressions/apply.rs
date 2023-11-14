@@ -228,11 +228,12 @@ impl ApplyExpr {
         let len = iters[0].size_hint().0;
 
         if len == 0 {
-            let out = Series::full_null(field.name(), 0, &field.dtype);
+            let out = Series::new_empty(field.name(), &field.dtype);
             drop(iters);
 
             // Take the first aggregation context that as that is the input series.
             let mut ac = acs.swap_remove(0);
+            ac.with_update_groups(UpdateGroups::No);
 
             let agg_state = if self.returns_scalar {
                 AggState::AggregatedScalar(out)

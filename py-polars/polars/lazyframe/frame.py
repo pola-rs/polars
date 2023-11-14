@@ -1839,7 +1839,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Collect DataFrame asynchronously in thread pool.
 
         Collects into a DataFrame (like :func:`collect`), but instead of returning
-        dataframe directly, they are scheduled to be collected inside thread pool,
+        DataFrame directly, they are scheduled to be collected inside thread pool,
         while this method returns almost instantly.
 
         May be useful if you use gevent or asyncio and want to release control to other
@@ -2820,7 +2820,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └───────────┘
 
         Expressions with multiple outputs can be automatically instantiated as Structs
-        by enabling the experimental setting `Config.set_auto_structify(True)`:
+        by enabling the setting `Config.set_auto_structify(True)`:
 
         >>> with pl.Config(auto_structify=True):
         ...     lf.select(
@@ -3971,7 +3971,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴──────┴───────┴──────┴───────┘
 
         Expressions with multiple outputs can be automatically instantiated as Structs
-        by enabling the experimental setting `Config.set_auto_structify(True)`:
+        by enabling the setting `Config.set_auto_structify(True)`:
 
         >>> with pl.Config(auto_structify=True):
         ...     lf.drop("c").with_columns(
@@ -4068,7 +4068,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ null │
         └──────┘
 
-        Fill nulls with the median from another dataframe:
+        Fill nulls with the median from another DataFrame:
 
         >>> train_lf = pl.LazyFrame(
         ...     {"feature_0": [-1.0, 0, 1], "feature_1": [-1.0, 0, 1]}
@@ -4104,12 +4104,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *more_columns: ColumnNameOrSelector,
     ) -> Self:
         """
-        Remove columns from the dataframe.
+        Remove columns from the DataFrame.
 
         Parameters
         ----------
         columns
-            Name of the column(s) that should be removed from the dataframe.
+            Name of the column(s) that should be removed from the DataFrame.
         *more_columns
             Additional columns to drop, specified as positional arguments.
 
@@ -4180,8 +4180,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Notes
         -----
-        If names are swapped. E.g. 'A' points to 'B' and 'B' points to 'A', polars
-        will block projection and predicate pushdowns at this node.
+        If existing names are swapped (e.g. 'A' points to 'B' and 'B' points to 'A'),
+        polars will block projection and predicate pushdowns at this node.
 
         Examples
         --------
@@ -5099,7 +5099,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *more_columns: str | Expr,
     ) -> Self:
         """
-        Explode the dataframe to long format by exploding the given columns.
+        Explode the DataFrame to long format by exploding the given columns.
 
         Parameters
         ----------
@@ -5148,7 +5148,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         maintain_order: bool = False,
     ) -> Self:
         """
-        Drop duplicate rows from this dataframe.
+        Drop duplicate rows from this DataFrame.
 
         Parameters
         ----------
@@ -5527,7 +5527,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Decompose struct columns into separate columns for each of their fields.
 
-        The new columns will be inserted into the dataframe at the location of the
+        The new columns will be inserted into the DataFrame at the location of the
         struct column.
 
         Parameters
@@ -5694,8 +5694,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * 'outer' will update existing rows where the key matches while also
               adding any new rows contained in the given frame.
         include_nulls
-            If True, null values from the right dataframe will be used to update the
-            left dataframe.
+            If True, null values from the right DataFrame will be used to update the
+            left DataFrame.
 
         Notes
         -----

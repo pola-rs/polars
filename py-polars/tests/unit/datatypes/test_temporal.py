@@ -2673,11 +2673,7 @@ def test_series_is_temporal() -> None:
         pl.Datetime("ns", "Europe/Amsterdam"),
     }:
         s = pl.Series([None], dtype=tp)
-        assert s.is_temporal() is True
-
-    s = pl.Series([datetime(2023, 2, 14, 11, 12, 13)], dtype=pl.Datetime)
-    for tp in (pl.Datetime, [pl.Datetime], [pl.Time, pl.Datetime]):  # type: ignore[assignment]
-        assert s.is_temporal(excluding=tp) is False
+        assert s.dtype.is_temporal() is True
 
 
 @pytest.mark.parametrize(
