@@ -63,6 +63,30 @@ class DataTypeClass(type):
     def is_nested(self) -> bool:  # noqa: D102
         ...
 
+    @classmethod
+    def is_numeric(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
+    def is_integer(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
+    def is_signed_integer(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
+    def is_unsigned_integer(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
+    def is_float(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
+    def is_temporal(cls) -> bool:  # noqa: D102
+        ...
+
 
 class DataType(metaclass=DataTypeClass):
     """Base class for all Polars data types."""
@@ -161,6 +185,36 @@ class DataType(metaclass=DataTypeClass):
         issue_deprecation_warning(message, version="0.19.10")
         return False
 
+    @classmethod
+    def is_numeric(cls) -> bool:
+        """Check whether the data type is a numeric type."""
+        return issubclass(cls, NumericType)
+
+    @classmethod
+    def is_integer(cls) -> bool:
+        """Check whether the data type is an integer type."""
+        return issubclass(cls, IntegerType)
+
+    @classmethod
+    def is_signed_integer(cls) -> bool:
+        """Check whether the data type is a signed integer type."""
+        return issubclass(cls, SignedIntegerType)
+
+    @classmethod
+    def is_unsigned_integer(cls) -> bool:
+        """Check whether the data type is an unsigned integer type."""
+        return issubclass(cls, UnsignedIntegerType)
+
+    @classmethod
+    def is_float(cls) -> bool:
+        """Check whether the data type is a temporal type."""
+        return issubclass(cls, FloatType)
+
+    @classmethod
+    def is_temporal(cls) -> bool:
+        """Check whether the data type is a temporal type."""
+        return issubclass(cls, TemporalType)
+
 
 def _custom_reconstruct(
     cls: type[Any], base: type[Any], state: Any
@@ -214,14 +268,18 @@ class NumericType(DataType):
 
 
 class IntegerType(NumericType):
-    """Base class for integral data types."""
+    """Base class for integer data types."""
 
 
-class FractionalType(NumericType):
-    """Base class for fractional data types."""
+class SignedIntegerType(IntegerType):
+    """Base class for signed integer data types."""
 
 
-class FloatType(FractionalType):
+class UnsignedIntegerType(IntegerType):
+    """Base class for unsigned integer data types."""
+
+
+class FloatType(NumericType):
     """Base class for float data types."""
 
 
@@ -252,35 +310,35 @@ class NestedType(DataType):
         return True
 
 
-class Int8(IntegerType):
+class Int8(SignedIntegerType):
     """8-bit signed integer type."""
 
 
-class Int16(IntegerType):
+class Int16(SignedIntegerType):
     """16-bit signed integer type."""
 
 
-class Int32(IntegerType):
+class Int32(SignedIntegerType):
     """32-bit signed integer type."""
 
 
-class Int64(IntegerType):
+class Int64(SignedIntegerType):
     """64-bit signed integer type."""
 
 
-class UInt8(IntegerType):
+class UInt8(UnsignedIntegerType):
     """8-bit unsigned integer type."""
 
 
-class UInt16(IntegerType):
+class UInt16(UnsignedIntegerType):
     """16-bit unsigned integer type."""
 
 
-class UInt32(IntegerType):
+class UInt32(UnsignedIntegerType):
     """32-bit unsigned integer type."""
 
 
-class UInt64(IntegerType):
+class UInt64(UnsignedIntegerType):
     """64-bit unsigned integer type."""
 
 
@@ -292,7 +350,7 @@ class Float64(FloatType):
     """64-bit floating point type."""
 
 
-class Decimal(FractionalType):
+class Decimal(NumericType):
     """
     Decimal 128-bit type with an optional precision and non-negative scale.
 

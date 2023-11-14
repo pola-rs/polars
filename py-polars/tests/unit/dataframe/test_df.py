@@ -18,7 +18,7 @@ from numpy.testing import assert_array_equal, assert_equal
 
 import polars as pl
 import polars.selectors as cs
-from polars.datatypes import DTYPE_TEMPORAL_UNITS, FLOAT_DTYPES, INTEGER_DTYPES
+from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
 from polars.exceptions import ComputeError, TimeZoneAwareConstructorWarning
 from polars.testing import (
     assert_frame_equal,
@@ -1145,7 +1145,7 @@ def test_to_numpy_structured() -> None:
             list(exported_array[name]),
             (
                 df[name].fill_null(float("nan"))
-                if df.schema[name] in FLOAT_DTYPES
+                if df.schema[name].is_float()
                 else df[name]
             ).to_list(),
         )

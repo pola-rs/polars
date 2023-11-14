@@ -94,12 +94,12 @@ def test_to_from_pydecimal_and_format(trim_zeros: bool, expected: str) -> None:
 
 def test_init_decimal_dtype() -> None:
     s = pl.Series("a", [D("-0.01"), D("1.2345678"), D("500")], dtype=pl.Decimal)
-    assert s.is_numeric()
+    assert s.dtype.is_numeric()
 
     df = pl.DataFrame(
         {"a": [D("-0.01"), D("1.2345678"), D("500")]}, schema={"a": pl.Decimal}
     )
-    assert df["a"].is_numeric()
+    assert df["a"].dtype.is_numeric()
 
 
 def test_decimal_convert_to_float_by_schema() -> None:

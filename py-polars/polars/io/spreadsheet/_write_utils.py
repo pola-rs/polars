@@ -8,7 +8,6 @@ from polars import functions as F
 from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
-    NUMERIC_DTYPES,
     Date,
     Datetime,
     Float64,
@@ -371,9 +370,7 @@ def _xl_setup_table_columns(
     if not row_totals:
         row_total_funcs = {}
     else:
-        numeric_cols = {
-            col for col, tp in df.schema.items() if tp.base_type() in NUMERIC_DTYPES
-        }
+        numeric_cols = {col for col, tp in df.schema.items() if tp.is_numeric()}
         if not isinstance(row_totals, dict):
             sum_cols = (
                 numeric_cols
@@ -450,7 +447,7 @@ def _xl_setup_table_columns(
         if base_type in dtype_formats:
             fmt = dtype_formats.get(tp, dtype_formats[base_type])
             column_formats.setdefault(col, fmt)
-        if base_type in NUMERIC_DTYPES:
+        if base_type.is_numeric():
             if column_totals is True:
                 column_total_funcs.setdefault(col, "sum")
             elif isinstance(column_totals, str):

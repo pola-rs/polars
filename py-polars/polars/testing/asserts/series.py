@@ -3,9 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars.datatypes import (
-    FLOAT_DTYPES,
     NUMERIC_DTYPES,
-    UNSIGNED_INTEGER_DTYPES,
     Array,
     Categorical,
     Decimal,
@@ -206,11 +204,7 @@ def _assert_series_values_equal(
         return
 
     # Only do inexact checking for numeric types
-    if (
-        check_exact
-        or left.dtype not in NUMERIC_DTYPES
-        or right.dtype not in NUMERIC_DTYPES
-    ):
+    if check_exact or not left.dtype.is_numeric() or not right.dtype.is_numeric():
         raise_assertion_error(
             "Series", "exact value mismatch", left=left.to_list(), right=right.to_list()
         )
@@ -301,7 +295,7 @@ def _assert_series_nan_values_match(
 
 
 def _comparing_floats(left: PolarsDataType, right: PolarsDataType) -> bool:
-    return left in FLOAT_DTYPES and right in FLOAT_DTYPES
+    return left.is_float() and right.is_float()
 
 
 def _comparing_lists(left: PolarsDataType, right: PolarsDataType) -> bool:
@@ -343,7 +337,7 @@ def _assert_series_values_within_tolerance(
 
 
 def _calc_absolute_diff(left: Series, right: Series) -> Series:
-    if left.dtype in UNSIGNED_INTEGER_DTYPES and right.dtype in UNSIGNED_INTEGER_DTYPES:
+    if left.dtype.is_unsigned_integer() and right.dtype.is_unsigned_integer():
         try:
             left = left.cast(Int64)
             right = right.cast(Int64)

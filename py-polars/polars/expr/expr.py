@@ -24,8 +24,6 @@ from typing import (
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import (
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
     Categorical,
     Null,
     Struct,
@@ -9196,8 +9194,8 @@ class Expr:
                             # Values Series has same dtype as keys Series.
                             dtype = s.dtype
                         elif (
-                            (s.dtype in INTEGER_DTYPES and dtype_keys in INTEGER_DTYPES)
-                            or (s.dtype in FLOAT_DTYPES and dtype_keys in FLOAT_DTYPES)
+                            (s.dtype.is_integer() and dtype_keys.is_integer())
+                            or (s.dtype.is_float() and dtype_keys.is_float())
                             or (s.dtype == Utf8 and dtype_keys == Categorical)
                         ):
                             # Values Series and keys Series are of similar dtypes,
