@@ -110,7 +110,7 @@ impl GlobalRevMapMerger {
     }
 }
 
-pub fn merge_local_rhs_categorical<'a>(
+fn merge_local_rhs_categorical<'a>(
     categories: &'a Utf8Array<i64>,
     ca_right: &'a CategoricalChunked,
 ) -> Result<(impl Iterator<Item = Option<u32>> + 'a, Arc<RevMapping>), PolarsError> {
