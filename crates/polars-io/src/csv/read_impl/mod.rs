@@ -624,7 +624,7 @@ impl<'a> CoreReader<'a> {
                             };
 
                             cast_columns(&mut local_df, &self.to_cast, false, self.ignore_errors)?;
-                            let s = predicate.evaluate(&local_df)?;
+                            let s = predicate.evaluate_io(&local_df)?;
                             let mask = s.bool()?;
                             local_df = local_df.filter(mask)?;
 

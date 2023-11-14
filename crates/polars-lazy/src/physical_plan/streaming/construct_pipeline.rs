@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use polars_core::config::verbose;
 use polars_core::prelude::*;
+use polars_io::predicates::{PhysicalIoExpr, StatsEvaluator};
 use polars_pipe::expressions::PhysicalPipedExpr;
 use polars_pipe::operators::chunks::DataChunk;
 use polars_pipe::pipeline::{create_pipeline, get_dummy_operator, get_operator, PipeLine};
@@ -18,6 +19,18 @@ use crate::prelude::*;
 
 pub struct Wrap(Arc<dyn PhysicalExpr>);
 
+impl PhysicalIoExpr for Wrap {
+    fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series> {
+        let h = PhysicalIoHelper {
+            expr: self.0.clone(),
+            has_window_function: false,
+        };
+        h.evaluate_io(df)
+    }
+    fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
+        self.0.as_stats_evaluator()
+    }
+}
 impl PhysicalPipedExpr for Wrap {
     fn evaluate(&self, chunk: &DataChunk, state: &dyn Any) -> PolarsResult<Series> {
         let state = state.downcast_ref::<ExecutionState>().unwrap();

@@ -639,7 +639,7 @@ pub struct PhysicalIoHelper {
 }
 
 impl PhysicalIoExpr for PhysicalIoHelper {
-    fn evaluate(&self, df: &DataFrame) -> PolarsResult<Series> {
+    fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series> {
         let mut state: ExecutionState = Default::default();
         if self.has_window_function {
             state.insert_has_window_function_flag();

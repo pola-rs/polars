@@ -5,6 +5,7 @@ use std::sync::Arc;
 use hashbrown::hash_map::Entry;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
+use polars_io::predicates::{PhysicalIoExpr, StatsEvaluator};
 use polars_ops::prelude::JoinType;
 use polars_plan::prelude::*;
 
@@ -76,8 +77,16 @@ where
             output_schema,
             scan_type,
         } => {
-            // add predicate to operators
-            if let (true, Some(predicate)) = (push_predicate, predicate) {
+            // Add predicate to operators.
+            // Except for parquet, as that format can use statistics to prune file/row-groups.
+            #[cfg(feature = "parquet")]
+            let is_parquet = matches!(scan_type, FileScan::Parquet { .. });
+            #[cfg(not(feature = "parquet"))]
+            let is_parquet = false;
+
+            if let (false, true, Some(predicate)) = (is_parquet, push_predicate, predicate) {
+                #[cfg(feature = "parquet")]
+                debug_assert!(!matches!(scan_type, FileScan::Parquet { .. }));
                 let predicate = to_physical(predicate, expr_arena, output_schema.as_ref())?;
                 let op = operators::FilterOperator { predicate };
                 let op = Box::new(op) as Box<dyn Operator>;
@@ -104,6 +113,27 @@ where
                     cloud_options,
                     metadata,
                 } => {
+                    let predicate = predicate
+                        .map(|predicate| {
+                            let p = to_physical(predicate, expr_arena, output_schema.as_ref())?;
+                            // Arc's all the way down. :(
+                            // Temporarily until: https://github.com/rust-lang/rust/issues/65991
+                            // stabilizes
+                            struct Wrap {
+                                p: Arc<dyn PhysicalPipedExpr>,
+                            }
+                            impl PhysicalIoExpr for Wrap {
+                                fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series> {
+                                    self.p.evaluate_io(df)
+                                }
+                                fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
+                                    self.p.as_stats_evaluator()
+                                }
+                            }
+
+                            PolarsResult::Ok(Arc::new(Wrap { p }) as Arc<dyn PhysicalIoExpr>)
+                        })
+                        .transpose()?;
                     let src = sources::ParquetSource::new(
                         paths,
                         parquet_options,
@@ -112,6 +142,7 @@ where
                         file_options,
                         file_info,
                         verbose,
+                        predicate,
                     )?;
                     Ok(Box::new(src) as Box<dyn Source>)
                 },
