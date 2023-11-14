@@ -9260,12 +9260,9 @@ class Expr:
                     raise ValueError(
                         f"remapping values for `map_dict` could not be converted to {dtype!r} without losing values in the conversion"
                     )
-
             return s
 
-        # Use two functions to save unneeded work.
-        # This factors out allocations and branches.
-        def inner_with_default(s: Series) -> Series:
+        def inner_func(s: Series, default_value: Any = None) -> Series:
             # Convert Series to:
             #   - multicolumn DataFrame, if Series is a Struct.
             #   - one column DataFrame in other cases.
@@ -9287,7 +9284,6 @@ class Expr:
                 if return_dtype is None and isinstance(default, Expr)
                 else return_dtype
             )
-
             remap_key_s = _remap_key_or_value_series(
                 name=remap_key_column,
                 values=remapping.keys(),
@@ -9296,7 +9292,6 @@ class Expr:
                 dtype_keys=input_dtype,
                 is_keys=True,
             )
-
             if return_dtype_:
                 # Create remap value Series with specified output dtype.
                 remap_value_s = pl.Series(
@@ -9318,97 +9313,29 @@ class Expr:
                     is_keys=False,
                 )
 
-            default_parsed = self._from_pyexpr(
-                parse_as_expression(default, str_as_lit=True)
+            remap_frame = pl.LazyFrame(data=[remap_key_s, remap_value_s]).with_columns(
+                F.lit(True).alias(is_remapped_column)
             )
-            return (
-                (
-                    df.lazy()
-                    .join(
-                        pl.DataFrame(
-                            [
-                                remap_key_s,
-                                remap_value_s,
-                            ]
-                        )
-                        .lazy()
-                        .with_columns(F.lit(True).alias(is_remapped_column)),
-                        how="left",
-                        left_on=column,
-                        right_on=remap_key_column,
-                    )
-                    .select(
-                        F.when(F.col(is_remapped_column).is_not_null())
-                        .then(F.col(remap_value_column))
-                        .otherwise(default_parsed)
-                        .alias(column)
-                    )
-                )
-                .collect(no_optimization=True)
-                .to_series()
+            mapped = df.lazy().join(
+                other=remap_frame, how="left", left_on=column, right_on=remap_key_column
             )
-
-        def inner(s: Series) -> Series:
-            column = s.name
-            input_dtype = s.dtype
-            remap_key_column = f"__POLARS_REMAP_KEY_{column}"
-            remap_value_column = f"__POLARS_REMAP_VALUE_{column}"
-            is_remapped_column = f"__POLARS_REMAP_IS_REMAPPED_{column}"
-
-            remap_key_s = _remap_key_or_value_series(
-                name=remap_key_column,
-                values=list(remapping.keys()),
-                dtype=input_dtype,
-                dtype_if_empty=input_dtype,
-                dtype_keys=input_dtype,
-                is_keys=True,
-            )
-
-            if return_dtype:
-                # Create remap value Series with specified output dtype.
-                remap_value_s = pl.Series(
-                    remap_value_column,
-                    remapping.values(),
-                    dtype=return_dtype,
-                    dtype_if_empty=input_dtype,
-                )
+            if default_value is None:
+                result_index = 1
             else:
-                # Create remap value Series with same output dtype as remap key Series,
-                # if possible (if both are integers, both are floats or remap value
-                # Series is pl.Utf8 and remap key Series is pl.Categorical).
-                remap_value_s = _remap_key_or_value_series(
-                    name=remap_value_column,
-                    values=remapping.values(),
-                    dtype=None,
-                    dtype_if_empty=input_dtype,
-                    dtype_keys=input_dtype,
-                    is_keys=False,
+                expr_default = parse_as_expression(default_value, str_as_lit=True)
+                default_parsed = self._from_pyexpr(expr_default)
+                mapped = mapped.select(
+                    F.when(F.col(is_remapped_column).is_not_null())
+                    .then(F.col(remap_value_column))
+                    .otherwise(default_parsed)
+                    .alias(column)
                 )
+                result_index = 0
 
-            return (
-                (
-                    s.to_frame()
-                    .lazy()
-                    .join(
-                        pl.DataFrame(
-                            [
-                                remap_key_s,
-                                remap_value_s,
-                            ]
-                        )
-                        .lazy()
-                        .with_columns(F.lit(True).alias(is_remapped_column)),
-                        how="left",
-                        left_on=column,
-                        right_on=remap_key_column,
-                    )
-                )
-                .collect(no_optimization=True)
-                .to_series(1)
-            )
+            return mapped.collect(no_optimization=True).to_series(index=result_index)
 
-        func = inner_with_default if default is not None else inner
-        return self.map_batches(func)
+        remapping_func = partial(inner_func, default_value=default)
+        return self.map_batches(function=remapping_func, return_dtype=return_dtype)
 
     @deprecate_renamed_function("map_batches", version="0.19.0")
     def map(
