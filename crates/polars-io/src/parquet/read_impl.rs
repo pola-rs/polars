@@ -605,7 +605,7 @@ impl BatchedParquetReader {
 
         let mut skipped_all_rgs = false;
         // fill up fifo stack
-        if self.row_group_offset <= self.n_row_groups && self.chunks_fifo.len() < n {
+        if self.row_group_offset < self.n_row_groups && self.chunks_fifo.len() < n {
             // Ensure we apply the limit on the metadata, before we download the row-groups.
             let row_group_start = self.row_group_offset;
             let row_group_end = compute_row_group_range(
