@@ -1285,7 +1285,7 @@ class DataFrame:
         allow_copy: bool = True,  # noqa: FBT001
     ) -> PolarsDataFrame:
         """
-        Convert to a DataFrame object implementing the dataframe interchange protocol.
+        Convert to a dataframe object implementing the dataframe interchange protocol.
 
         Parameters
         ----------
