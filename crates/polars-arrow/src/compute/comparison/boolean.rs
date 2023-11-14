@@ -3,7 +3,7 @@ use super::super::utils::combine_validities;
 use crate::array::BooleanArray;
 use crate::bitmap::{binary, unary, Bitmap};
 use crate::compute::comparison::{finish_eq_validities, finish_neq_validities};
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 /// Evaluate `op(lhs, rhs)` for [`BooleanArray`]s using a specified
 /// comparison function.
@@ -16,7 +16,7 @@ where
 
     let values = binary(lhs.values(), rhs.values(), op);
 
-    BooleanArray::new(DataType::Boolean, values, validity)
+    BooleanArray::new(ArrowDataType::Boolean, values, validity)
 }
 
 /// Evaluate `op(left, right)` for [`BooleanArray`] and scalar using
@@ -28,7 +28,7 @@ where
     let rhs = if rhs { !0 } else { 0 };
 
     let values = unary(lhs.values(), |x| op(x, rhs));
-    BooleanArray::new(DataType::Boolean, values, lhs.validity().cloned())
+    BooleanArray::new(ArrowDataType::Boolean, values, lhs.validity().cloned())
 }
 
 /// Perform `lhs == rhs` operation on two [`BooleanArray`]s.
@@ -111,7 +111,7 @@ pub fn lt_scalar(lhs: &BooleanArray, rhs: bool) -> BooleanArray {
         compare_op_scalar(lhs, rhs, |a, _| !a)
     } else {
         BooleanArray::new(
-            DataType::Boolean,
+            ArrowDataType::Boolean,
             Bitmap::new_zeroed(lhs.len()),
             lhs.validity().cloned(),
         )
@@ -145,7 +145,7 @@ pub fn gt(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
 pub fn gt_scalar(lhs: &BooleanArray, rhs: bool) -> BooleanArray {
     if rhs {
         BooleanArray::new(
-            DataType::Boolean,
+            ArrowDataType::Boolean,
             Bitmap::new_zeroed(lhs.len()),
             lhs.validity().cloned(),
         )

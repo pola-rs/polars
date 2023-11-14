@@ -1,5 +1,5 @@
 use super::Scalar;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::offset::Offset;
 
 /// The [`Scalar`] implementation of binary ([`Option<Vec<u8>>`]).
@@ -45,11 +45,11 @@ impl<O: Offset> Scalar for BinaryScalar<O> {
     }
 
     #[inline]
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         if O::IS_LARGE {
-            &DataType::LargeBinary
+            &ArrowDataType::LargeBinary
         } else {
-            &DataType::Binary
+            &ArrowDataType::Binary
         }
     }
 }

@@ -1,5 +1,5 @@
 use super::Scalar;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::offset::Offset;
 
 /// The implementation of [`Scalar`] for utf8, semantically equivalent to [`Option<String>`].
@@ -45,11 +45,11 @@ impl<O: Offset> Scalar for Utf8Scalar<O> {
     }
 
     #[inline]
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         if O::IS_LARGE {
-            &DataType::LargeUtf8
+            &ArrowDataType::LargeUtf8
         } else {
-            &DataType::Utf8
+            &ArrowDataType::Utf8
         }
     }
 }

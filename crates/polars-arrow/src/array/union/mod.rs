@@ -3,7 +3,7 @@ use polars_error::{polars_bail, polars_err, PolarsResult};
 use super::{new_empty_array, new_null_array, Array};
 use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
-use crate::datatypes::{DataType, Field, UnionMode};
+use crate::datatypes::{ArrowDataType, Field, UnionMode};
 use crate::scalar::{new_scalar, Scalar};
 
 #[cfg(feature = "arrow_rs")]
@@ -34,7 +34,7 @@ pub struct UnionArray {
     fields: Vec<Box<dyn Array>>,
     // Invariant: when set, `offsets.len() == types.len()`
     offsets: Option<Buffer<i32>>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     offset: usize,
 }
 
@@ -47,7 +47,7 @@ impl UnionArray {
     /// * The number of `fields` is larger than `i8::MAX`
     /// * any of the values's data type is different from its corresponding children' data type
     pub fn try_new(
-        data_type: DataType,
+        data_type: ArrowDataType,
         types: Buffer<i8>,
         fields: Vec<Box<dyn Array>>,
         offsets: Option<Buffer<i32>>,
@@ -163,7 +163,7 @@ impl UnionArray {
     /// * the fields's len is different from the `data_type`'s children's length
     /// * any of the values's data type is different from its corresponding children' data type
     pub fn new(
-        data_type: DataType,
+        data_type: ArrowDataType,
         types: Buffer<i8>,
         fields: Vec<Box<dyn Array>>,
         offsets: Option<Buffer<i32>>,
@@ -172,8 +172,8 @@ impl UnionArray {
     }
 
     /// Creates a new null [`UnionArray`].
-    pub fn new_null(data_type: DataType, length: usize) -> Self {
-        if let DataType::Union(f, _, mode) = &data_type {
+    pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
+        if let ArrowDataType::Union(f, _, mode) = &data_type {
             let fields = f
                 .iter()
                 .map(|x| new_null_array(x.data_type().clone(), length))
@@ -195,8 +195,8 @@ impl UnionArray {
     }
 
     /// Creates a new empty [`UnionArray`].
-    pub fn new_empty(data_type: DataType) -> Self {
-        if let DataType::Union(f, _, mode) = data_type.to_logical_type() {
+    pub fn new_empty(data_type: ArrowDataType) -> Self {
+        if let ArrowDataType::Union(f, _, mode) = data_type.to_logical_type() {
             let fields = f
                 .iter()
                 .map(|x| new_empty_array(x.data_type().clone()))
@@ -348,9 +348,9 @@ impl Array for UnionArray {
 }
 
 impl UnionArray {
-    fn try_get_all(data_type: &DataType) -> PolarsResult<UnionComponents> {
+    fn try_get_all(data_type: &ArrowDataType) -> PolarsResult<UnionComponents> {
         match data_type.to_logical_type() {
-            DataType::Union(fields, ids, mode) => {
+            ArrowDataType::Union(fields, ids, mode) => {
                 Ok((fields, ids.as_ref().map(|x| x.as_ref()), *mode))
             },
             _ => polars_bail!(ComputeError:
@@ -359,21 +359,21 @@ impl UnionArray {
         }
     }
 
-    fn get_all(data_type: &DataType) -> (&[Field], Option<&[i32]>, UnionMode) {
+    fn get_all(data_type: &ArrowDataType) -> (&[Field], Option<&[i32]>, UnionMode) {
         Self::try_get_all(data_type).unwrap()
     }
 
-    /// Returns all fields from [`DataType::Union`].
+    /// Returns all fields from [`ArrowDataType::Union`].
     /// # Panic
-    /// Panics iff `data_type`'s logical type is not [`DataType::Union`].
-    pub fn get_fields(data_type: &DataType) -> &[Field] {
+    /// Panics iff `data_type`'s logical type is not [`ArrowDataType::Union`].
+    pub fn get_fields(data_type: &ArrowDataType) -> &[Field] {
         Self::get_all(data_type).0
     }
 
-    /// Returns whether the [`DataType::Union`] is sparse or not.
+    /// Returns whether the [`ArrowDataType::Union`] is sparse or not.
     /// # Panic
-    /// Panics iff `data_type`'s logical type is not [`DataType::Union`].
-    pub fn is_sparse(data_type: &DataType) -> bool {
+    /// Panics iff `data_type`'s logical type is not [`ArrowDataType::Union`].
+    pub fn is_sparse(data_type: &ArrowDataType) -> bool {
         Self::get_all(data_type).2.is_sparse()
     }
 }

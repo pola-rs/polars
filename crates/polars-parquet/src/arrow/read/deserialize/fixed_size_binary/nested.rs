@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use arrow::array::FixedSizeBinaryArray;
 use arrow::bitmap::MutableBitmap;
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 use super::super::utils::{not_implemented, MaybeNext, PageState};
@@ -137,7 +137,7 @@ impl<'a> NestedDecoder<'a> for BinaryDecoder {
 
 pub struct NestedIter<I: Pages> {
     iter: I,
-    data_type: DataType,
+    data_type: ArrowDataType,
     size: usize,
     init: Vec<InitNested>,
     items: VecDeque<(NestedState, (FixedSizeBinary, MutableBitmap))>,
@@ -150,7 +150,7 @@ impl<I: Pages> NestedIter<I> {
     pub fn new(
         iter: I,
         init: Vec<InitNested>,
-        data_type: DataType,
+        data_type: ArrowDataType,
         num_rows: usize,
         chunk_size: Option<usize>,
     ) -> Self {

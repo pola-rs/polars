@@ -10,7 +10,7 @@ pub fn add(
 pub fn add_scalar(
     lhs: &PrimitiveArray<i128>,
     rhs: i128,
-    rhs_dtype: &DataType,
+    rhs_dtype: &ArrowDataType,
 ) -> PolarsResult<PrimitiveArray<i128>> {
     commutative_scalar(lhs, rhs, rhs_dtype, |a, b| a + b)
 }

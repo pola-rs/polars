@@ -7,7 +7,7 @@ use super::{check, PrimitiveArray};
 use crate::array::physical_binary::extend_validity;
 use crate::array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
 use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::trusted_len::TrustedLen;
 use crate::types::NativeType;
 
@@ -15,7 +15,7 @@ use crate::types::NativeType;
 /// Converting a [`MutablePrimitiveArray`] into a [`PrimitiveArray`] is `O(1)`.
 #[derive(Debug, Clone)]
 pub struct MutablePrimitiveArray<T: NativeType> {
-    data_type: DataType,
+    data_type: ArrowDataType,
     values: Vec<T>,
     validity: Option<MutableBitmap>,
 }
@@ -61,7 +61,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     /// * The validity is not `None` and its length is different from `values`'s length
     /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to [`crate::datatypes::PhysicalType::Primitive(T::PRIMITIVE)`]
     pub fn try_new(
-        data_type: DataType,
+        data_type: ArrowDataType,
         values: Vec<T>,
         validity: Option<MutableBitmap>,
     ) -> PolarsResult<Self> {
@@ -74,7 +74,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     }
 
     /// Extract the low-end APIs from the [`MutablePrimitiveArray`].
-    pub fn into_inner(self) -> (DataType, Vec<T>, Option<MutableBitmap>) {
+    pub fn into_inner(self) -> (ArrowDataType, Vec<T>, Option<MutableBitmap>) {
         (self.data_type, self.values, self.validity)
     }
 
@@ -98,8 +98,8 @@ impl<T: NativeType> Default for MutablePrimitiveArray<T> {
     }
 }
 
-impl<T: NativeType> From<DataType> for MutablePrimitiveArray<T> {
-    fn from(data_type: DataType) -> Self {
+impl<T: NativeType> From<ArrowDataType> for MutablePrimitiveArray<T> {
+    fn from(data_type: ArrowDataType) -> Self {
         assert!(data_type.to_physical_type().eq_primitive(T::PRIMITIVE));
         Self {
             data_type,
@@ -110,8 +110,8 @@ impl<T: NativeType> From<DataType> for MutablePrimitiveArray<T> {
 }
 
 impl<T: NativeType> MutablePrimitiveArray<T> {
-    /// Creates a new [`MutablePrimitiveArray`] from a capacity and [`DataType`].
-    pub fn with_capacity_from(capacity: usize, data_type: DataType) -> Self {
+    /// Creates a new [`MutablePrimitiveArray`] from a capacity and [`ArrowDataType`].
+    pub fn with_capacity_from(capacity: usize, data_type: ArrowDataType) -> Self {
         assert!(data_type.to_physical_type().eq_primitive(T::PRIMITIVE));
         Self {
             data_type,
@@ -256,12 +256,12 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
         self.validity = Some(validity)
     }
 
-    /// Changes the arrays' [`DataType`], returning a new [`MutablePrimitiveArray`].
+    /// Changes the arrays' [`ArrowDataType`], returning a new [`MutablePrimitiveArray`].
     /// Use to change the logical type without changing the corresponding physical Type.
     /// # Implementation
     /// This operation is `O(1)`.
     #[inline]
-    pub fn to(self, data_type: DataType) -> Self {
+    pub fn to(self, data_type: ArrowDataType) -> Self {
         Self::try_new(data_type, self.values, self.validity).unwrap()
     }
 
@@ -403,7 +403,7 @@ impl<T: NativeType> MutableArray for MutablePrimitiveArray<T> {
         .arced()
     }
 
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 

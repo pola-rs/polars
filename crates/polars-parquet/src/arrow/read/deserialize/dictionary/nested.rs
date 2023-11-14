@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use arrow::array::{Array, DictionaryArray, DictionaryKey};
 use arrow::bitmap::MutableBitmap;
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 use polars_error::{polars_err, PolarsResult};
 
 use super::super::super::Pages;
@@ -149,7 +149,7 @@ pub fn next_dict<K: DictionaryKey, I: Pages, F: Fn(&DictPage) -> Box<dyn Array>>
     remaining: &mut usize,
     init: &[InitNested],
     dict: &mut Option<Box<dyn Array>>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     chunk_size: Option<usize>,
     read_dict: F,
 ) -> MaybeNext<PolarsResult<(NestedState, DictionaryArray<K>)>> {

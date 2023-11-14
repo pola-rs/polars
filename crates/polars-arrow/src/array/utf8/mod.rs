@@ -5,7 +5,7 @@ use super::{Array, GenericBinaryArray};
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
 use crate::trusted_len::TrustedLen;
 
@@ -63,7 +63,7 @@ impl<T: AsRef<str>> AsRef<[u8]> for StrAsBytes<T> {
 /// * `len` is equal to `validity.len()`, when defined.
 #[derive(Clone)]
 pub struct Utf8Array<O: Offset> {
-    data_type: DataType,
+    data_type: ArrowDataType,
     offsets: OffsetsBuffer<O>,
     values: Buffer<u8>,
     validity: Option<Bitmap>,
@@ -82,7 +82,7 @@ impl<O: Offset> Utf8Array<O> {
     /// # Implementation
     /// This function is `O(N)` - checking utf8 is `O(N)`
     pub fn try_new(
-        data_type: DataType,
+        data_type: ArrowDataType,
         offsets: OffsetsBuffer<O>,
         values: Buffer<u8>,
         validity: Option<Bitmap>,
@@ -175,9 +175,9 @@ impl<O: Offset> Utf8Array<O> {
         }
     }
 
-    /// Returns the [`DataType`] of this array.
+    /// Returns the [`ArrowDataType`] of this array.
     #[inline]
-    pub fn data_type(&self) -> &DataType {
+    pub fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 
@@ -232,7 +232,7 @@ impl<O: Offset> Utf8Array<O> {
 
     /// Returns its internal representation
     #[must_use]
-    pub fn into_inner(self) -> (DataType, OffsetsBuffer<O>, Buffer<u8>, Option<Bitmap>) {
+    pub fn into_inner(self) -> (ArrowDataType, OffsetsBuffer<O>, Buffer<u8>, Option<Bitmap>) {
         let Self {
             data_type,
             offsets,
@@ -323,13 +323,13 @@ impl<O: Offset> Utf8Array<O> {
     ///
     /// The array is guaranteed to have no elements nor validity.
     #[inline]
-    pub fn new_empty(data_type: DataType) -> Self {
+    pub fn new_empty(data_type: ArrowDataType) -> Self {
         unsafe { Self::new_unchecked(data_type, OffsetsBuffer::new(), Buffer::new(), None) }
     }
 
     /// Returns a new [`Utf8Array`] whose all slots are null / `None`.
     #[inline]
-    pub fn new_null(data_type: DataType, length: usize) -> Self {
+    pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
         Self::new(
             data_type,
             Offsets::new_zeroed(length).into(),
@@ -338,12 +338,12 @@ impl<O: Offset> Utf8Array<O> {
         )
     }
 
-    /// Returns a default [`DataType`] of this array, which depends on the generic parameter `O`: `DataType::Utf8` or `DataType::LargeUtf8`
-    pub fn default_data_type() -> DataType {
+    /// Returns a default [`ArrowDataType`] of this array, which depends on the generic parameter `O`: `DataType::Utf8` or `DataType::LargeUtf8`
+    pub fn default_data_type() -> ArrowDataType {
         if O::IS_LARGE {
-            DataType::LargeUtf8
+            ArrowDataType::LargeUtf8
         } else {
-            DataType::Utf8
+            ArrowDataType::Utf8
         }
     }
 
@@ -360,7 +360,7 @@ impl<O: Offset> Utf8Array<O> {
     /// # Implementation
     /// This function is `O(1)`
     pub unsafe fn try_new_unchecked(
-        data_type: DataType,
+        data_type: ArrowDataType,
         offsets: OffsetsBuffer<O>,
         values: Buffer<u8>,
         validity: Option<Bitmap>,
@@ -400,7 +400,7 @@ impl<O: Offset> Utf8Array<O> {
     /// # Implementation
     /// This function is `O(N)` - checking utf8 is `O(N)`
     pub fn new(
-        data_type: DataType,
+        data_type: ArrowDataType,
         offsets: OffsetsBuffer<O>,
         values: Buffer<u8>,
         validity: Option<Bitmap>,
@@ -422,7 +422,7 @@ impl<O: Offset> Utf8Array<O> {
     /// # Implementation
     /// This function is `O(1)`
     pub unsafe fn new_unchecked(
-        data_type: DataType,
+        data_type: ArrowDataType,
         offsets: OffsetsBuffer<O>,
         values: Buffer<u8>,
         validity: Option<Bitmap>,
@@ -533,9 +533,9 @@ unsafe impl<O: Offset> GenericBinaryArray<O> for Utf8Array<O> {
 impl<O: Offset> Default for Utf8Array<O> {
     fn default() -> Self {
         let data_type = if O::IS_LARGE {
-            DataType::LargeUtf8
+            ArrowDataType::LargeUtf8
         } else {
-            DataType::Utf8
+            ArrowDataType::Utf8
         };
         Utf8Array::new(data_type, Default::default(), Default::default(), None)
     }

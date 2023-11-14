@@ -1,5 +1,5 @@
 use arrow::array::{Array, MutablePrimitiveArray, PrimitiveArray};
-use arrow::datatypes::{DataType, TimeUnit};
+use arrow::datatypes::{ArrowDataType, TimeUnit};
 use arrow::trusted_len::TrustedLen;
 use arrow::types::{i256, NativeType};
 use ethnum::I256;
@@ -14,9 +14,9 @@ use crate::parquet::types::int96_to_i64_ns;
 #[inline]
 fn deserialize_int32<I: TrustedLen<Item = Option<i32>>>(
     iter: I,
-    data_type: DataType,
+    data_type: ArrowDataType,
 ) -> Box<dyn Array> {
-    use DataType::*;
+    use ArrowDataType::*;
     match data_type.to_logical_type() {
         UInt8 => Box::new(
             PrimitiveArray::<u8>::from_trusted_len_iter(iter.map(|x| x.map(|x| x as u8)))
@@ -106,9 +106,9 @@ fn timestamp(
 fn deserialize_int64<I: TrustedLen<Item = Option<i64>>>(
     iter: I,
     primitive_type: &PrimitiveType,
-    data_type: DataType,
+    data_type: ArrowDataType,
 ) -> Box<dyn Array> {
-    use DataType::*;
+    use ArrowDataType::*;
     match data_type.to_logical_type() {
         UInt64 => Box::new(
             PrimitiveArray::<u64>::from_trusted_len_iter(iter.map(|x| x.map(|x| x as u64)))
@@ -141,7 +141,7 @@ fn deserialize_int64<I: TrustedLen<Item = Option<i64>>>(
 #[inline]
 fn deserialize_int96<I: TrustedLen<Item = Option<[u32; 3]>>>(
     iter: I,
-    data_type: DataType,
+    data_type: ArrowDataType,
 ) -> Box<dyn Array> {
     Box::new(
         PrimitiveArray::<i64>::from_trusted_len_iter(iter.map(|x| x.map(int96_to_i64_ns)))
@@ -152,12 +152,15 @@ fn deserialize_int96<I: TrustedLen<Item = Option<[u32; 3]>>>(
 #[inline]
 fn deserialize_id_s<T: NativeType, I: TrustedLen<Item = Option<T>>>(
     iter: I,
-    data_type: DataType,
+    data_type: ArrowDataType,
 ) -> Box<dyn Array> {
     Box::new(PrimitiveArray::<T>::from_trusted_len_iter(iter).to(data_type))
 }
 
-pub fn deserialize_i32(indexes: &[PageIndex<i32>], data_type: DataType) -> ColumnPageStatistics {
+pub fn deserialize_i32(
+    indexes: &[PageIndex<i32>],
+    data_type: ArrowDataType,
+) -> ColumnPageStatistics {
     ColumnPageStatistics {
         min: deserialize_int32(indexes.iter().map(|index| index.min), data_type.clone()),
         max: deserialize_int32(indexes.iter().map(|index| index.max), data_type),
@@ -172,7 +175,7 @@ pub fn deserialize_i32(indexes: &[PageIndex<i32>], data_type: DataType) -> Colum
 pub fn deserialize_i64(
     indexes: &[PageIndex<i64>],
     primitive_type: &PrimitiveType,
-    data_type: DataType,
+    data_type: ArrowDataType,
 ) -> ColumnPageStatistics {
     ColumnPageStatistics {
         min: deserialize_int64(
@@ -195,7 +198,7 @@ pub fn deserialize_i64(
 
 pub fn deserialize_i96(
     indexes: &[PageIndex<[u32; 3]>],
-    data_type: DataType,
+    data_type: ArrowDataType,
 ) -> ColumnPageStatistics {
     ColumnPageStatistics {
         min: deserialize_int96(indexes.iter().map(|index| index.min), data_type.clone()),
@@ -210,7 +213,7 @@ pub fn deserialize_i96(
 
 pub fn deserialize_id<T: NativeType>(
     indexes: &[PageIndex<T>],
-    data_type: DataType,
+    data_type: ArrowDataType,
 ) -> ColumnPageStatistics {
     ColumnPageStatistics {
         min: deserialize_id_s(indexes.iter().map(|index| index.min), data_type.clone()),

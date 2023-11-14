@@ -33,7 +33,7 @@ pub fn mul(
 pub fn mul_scalar(
     lhs: &PrimitiveArray<i128>,
     rhs: i128,
-    rhs_dtype: &DataType,
+    rhs_dtype: &ArrowDataType,
 ) -> PolarsResult<PrimitiveArray<i128>> {
     let (_, scale) = get_parameters(lhs.data_type(), rhs_dtype)?;
     let scale = 10i128.pow(scale as u32);

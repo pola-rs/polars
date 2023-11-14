@@ -1,5 +1,5 @@
 use arrow::array::*;
-use arrow::datatypes::{DataType, PhysicalType};
+use arrow::datatypes::{ArrowDataType, PhysicalType};
 use arrow::match_integer_type;
 use polars_error::PolarsResult;
 
@@ -7,13 +7,13 @@ use super::make_mutable;
 
 #[derive(Debug)]
 pub struct DynMutableDictionary {
-    data_type: DataType,
+    data_type: ArrowDataType,
     pub inner: Box<dyn MutableArray>,
 }
 
 impl DynMutableDictionary {
-    pub fn try_with_capacity(data_type: DataType, capacity: usize) -> PolarsResult<Self> {
-        let inner = if let DataType::Dictionary(_, inner, _) = &data_type {
+    pub fn try_with_capacity(data_type: ArrowDataType, capacity: usize) -> PolarsResult<Self> {
+        let inner = if let ArrowDataType::Dictionary(_, inner, _) = &data_type {
             inner.as_ref()
         } else {
             unreachable!()
@@ -25,7 +25,7 @@ impl DynMutableDictionary {
 }
 
 impl MutableArray for DynMutableDictionary {
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 

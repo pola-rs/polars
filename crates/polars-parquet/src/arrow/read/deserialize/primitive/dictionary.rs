@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use arrow::array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray};
 use arrow::bitmap::MutableBitmap;
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use polars_error::PolarsResult;
 
@@ -14,14 +14,14 @@ use super::basic::deserialize_plain;
 use crate::parquet::page::DictPage;
 use crate::parquet::types::NativeType as ParquetNativeType;
 
-fn read_dict<P, T, F>(data_type: DataType, op: F, dict: &DictPage) -> Box<dyn Array>
+fn read_dict<P, T, F>(data_type: ArrowDataType, op: F, dict: &DictPage) -> Box<dyn Array>
 where
     T: NativeType,
     P: ParquetNativeType,
     F: Copy + Fn(P) -> T,
 {
     let data_type = match data_type {
-        DataType::Dictionary(_, values, _) => *values,
+        ArrowDataType::Dictionary(_, values, _) => *values,
         _ => data_type,
     };
     let values = deserialize_plain(&dict.buffer, op);
@@ -40,7 +40,7 @@ where
     F: Fn(P) -> T,
 {
     iter: I,
-    data_type: DataType,
+    data_type: ArrowDataType,
     values: Option<Box<dyn Array>>,
     items: VecDeque<(Vec<K>, MutableBitmap)>,
     remaining: usize,
@@ -60,7 +60,7 @@ where
 {
     pub fn new(
         iter: I,
-        data_type: DataType,
+        data_type: ArrowDataType,
         num_rows: usize,
         chunk_size: Option<usize>,
         op: F,
@@ -119,7 +119,7 @@ where
 {
     iter: I,
     init: Vec<InitNested>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     values: Option<Box<dyn Array>>,
     items: VecDeque<(NestedState, (Vec<K>, MutableBitmap))>,
     remaining: usize,
@@ -140,7 +140,7 @@ where
     pub fn new(
         iter: I,
         init: Vec<InitNested>,
-        data_type: DataType,
+        data_type: ArrowDataType,
         num_rows: usize,
         chunk_size: Option<usize>,
         op: F,

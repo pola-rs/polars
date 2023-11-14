@@ -2,7 +2,7 @@ use std::any::Any;
 
 use crate::array::{Array, MutableArray, NullArray};
 use crate::bitmap::MutableBitmap;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 #[derive(Debug, Default, Clone)]
 pub struct MutableNullArray {
@@ -10,8 +10,8 @@ pub struct MutableNullArray {
 }
 
 impl MutableArray for MutableNullArray {
-    fn data_type(&self) -> &DataType {
-        &DataType::Null
+    fn data_type(&self) -> &ArrowDataType {
+        &ArrowDataType::Null
     }
 
     fn len(&self) -> usize {
@@ -23,7 +23,7 @@ impl MutableArray for MutableNullArray {
     }
 
     fn as_box(&mut self) -> Box<dyn Array> {
-        Box::new(NullArray::new_null(DataType::Null, self.len))
+        Box::new(NullArray::new_null(ArrowDataType::Null, self.len))
     }
 
     fn as_any(&self) -> &dyn Any {

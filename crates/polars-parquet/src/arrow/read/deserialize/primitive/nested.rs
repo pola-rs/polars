@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::MutableBitmap;
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use polars_error::PolarsResult;
 
@@ -160,7 +160,7 @@ where
 }
 
 fn finish<T: NativeType>(
-    data_type: &DataType,
+    data_type: &ArrowDataType,
     values: Vec<T>,
     validity: MutableBitmap,
 ) -> PrimitiveArray<T> {
@@ -179,7 +179,7 @@ where
 {
     iter: I,
     init: Vec<InitNested>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     items: VecDeque<(NestedState, (Vec<T>, MutableBitmap))>,
     dict: Option<Vec<T>>,
     remaining: usize,
@@ -198,7 +198,7 @@ where
     pub fn new(
         iter: I,
         init: Vec<InitNested>,
-        data_type: DataType,
+        data_type: ArrowDataType,
         num_rows: usize,
         chunk_size: Option<usize>,
         op: F,

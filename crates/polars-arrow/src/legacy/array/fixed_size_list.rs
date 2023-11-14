@@ -2,7 +2,7 @@ use polars_error::PolarsResult;
 
 use crate::array::FixedSizeListArray;
 use crate::bitmap::MutableBitmap;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use crate::legacy::prelude::ArrayRef;
 
@@ -48,7 +48,7 @@ impl AnonymousBuilder {
         self.validity = Some(validity)
     }
 
-    pub fn finish(self, inner_dtype: Option<&DataType>) -> PolarsResult<FixedSizeListArray> {
+    pub fn finish(self, inner_dtype: Option<&ArrowDataType>) -> PolarsResult<FixedSizeListArray> {
         let values = concatenate_owned_unchecked(&self.arrays)?;
         let inner_dtype = inner_dtype.unwrap_or_else(|| self.arrays[0].data_type());
         let data_type = FixedSizeListArray::default_datatype(inner_dtype.clone(), self.width);

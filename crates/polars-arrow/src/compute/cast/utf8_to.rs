@@ -3,7 +3,7 @@ use polars_error::PolarsResult;
 
 use super::CastOptions;
 use crate::array::*;
-use crate::datatypes::{DataType, TimeUnit};
+use crate::datatypes::{ArrowDataType, TimeUnit};
 use crate::offset::Offset;
 use crate::temporal_conversions::{
     utf8_to_naive_timestamp as utf8_to_naive_timestamp_, utf8_to_timestamp as utf8_to_timestamp_,
@@ -14,7 +14,7 @@ use crate::types::NativeType;
 const RFC3339: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
 
 /// Casts a [`Utf8Array`] to a [`PrimitiveArray`], making any uncastable value a Null.
-pub fn utf8_to_primitive<O: Offset, T>(from: &Utf8Array<O>, to: &DataType) -> PrimitiveArray<T>
+pub fn utf8_to_primitive<O: Offset, T>(from: &Utf8Array<O>, to: &ArrowDataType) -> PrimitiveArray<T>
 where
     T: NativeType + lexical_core::FromLexical,
 {
@@ -28,7 +28,7 @@ where
 /// Casts a [`Utf8Array`] to a [`PrimitiveArray`] at best-effort using `lexical_core::parse_partial`, making any uncastable value as zero.
 pub fn partial_utf8_to_primitive<O: Offset, T>(
     from: &Utf8Array<O>,
-    to: &DataType,
+    to: &ArrowDataType,
 ) -> PrimitiveArray<T>
 where
     T: NativeType + lexical_core::FromLexical,
@@ -42,7 +42,7 @@ where
 
 pub(super) fn utf8_to_primitive_dyn<O: Offset, T>(
     from: &dyn Array,
-    to: &DataType,
+    to: &ArrowDataType,
     options: CastOptions,
 ) -> PolarsResult<Box<dyn Array>>
 where
@@ -65,7 +65,7 @@ pub fn utf8_to_date32<O: Offset>(from: &Utf8Array<O>) -> PrimitiveArray<i32> {
                 .map(|x| x.num_days_from_ce() - EPOCH_DAYS_FROM_CE)
         })
     });
-    PrimitiveArray::<i32>::from_trusted_len_iter(iter).to(DataType::Date32)
+    PrimitiveArray::<i32>::from_trusted_len_iter(iter).to(ArrowDataType::Date32)
 }
 
 pub(super) fn utf8_to_date32_dyn<O: Offset>(from: &dyn Array) -> PolarsResult<Box<dyn Array>> {
@@ -82,7 +82,7 @@ pub fn utf8_to_date64<O: Offset>(from: &Utf8Array<O>) -> PrimitiveArray<i64> {
                 .map(|x| (x.num_days_from_ce() - EPOCH_DAYS_FROM_CE) as i64 * 86400000)
         })
     });
-    PrimitiveArray::from_trusted_len_iter(iter).to(DataType::Date64)
+    PrimitiveArray::from_trusted_len_iter(iter).to(ArrowDataType::Date64)
 }
 
 pub(super) fn utf8_to_date64_dyn<O: Offset>(from: &dyn Array) -> PolarsResult<Box<dyn Array>> {
@@ -169,7 +169,10 @@ pub fn utf8_large_to_utf8(from: &Utf8Array<i64>) -> PolarsResult<Utf8Array<i32>>
 }
 
 /// Conversion to binary
-pub fn utf8_to_binary<O: Offset>(from: &Utf8Array<O>, to_data_type: DataType) -> BinaryArray<O> {
+pub fn utf8_to_binary<O: Offset>(
+    from: &Utf8Array<O>,
+    to_data_type: ArrowDataType,
+) -> BinaryArray<O> {
     // Safety: erasure of an invariant is always safe
     unsafe {
         BinaryArray::<O>::new(

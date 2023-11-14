@@ -13,7 +13,7 @@
 use std::mem::MaybeUninit;
 
 use arrow::array::BinaryArray;
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 use arrow::offset::Offsets;
 use polars_utils::slice::{GetSaferUnchecked, Slice2Uninit};
 
@@ -263,7 +263,7 @@ pub(super) unsafe fn decode_binary(rows: &mut [&[u8]], field: &SortField) -> Bin
     }
 
     BinaryArray::new(
-        DataType::LargeBinary,
+        ArrowDataType::LargeBinary,
         Offsets::new_unchecked(offsets).into(),
         values.into(),
         validity,

@@ -140,14 +140,14 @@ where
 mod test {
     use super::*;
     use crate::buffer::Buffer;
-    use crate::datatypes::DataType;
+    use crate::datatypes::ArrowDataType;
     use crate::legacy::kernels::rolling::nulls::{rolling_max, rolling_min};
 
     #[test]
     fn test_rolling_median_nulls() {
         let buf = Buffer::from(vec![1.0, 2.0, 3.0, 4.0]);
         let arr = &PrimitiveArray::new(
-            DataType::Float64,
+            ArrowDataType::Float64,
             buf,
             Some(Bitmap::from(&[true, false, true, true])),
         );
@@ -187,7 +187,7 @@ mod test {
         // compare quantiles to corresponding min/max/median values
         let buf = Buffer::<f64>::from(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
         let values = &PrimitiveArray::new(
-            DataType::Float64,
+            ArrowDataType::Float64,
             buf,
             Some(Bitmap::from(&[true, false, false, true, true])),
         );

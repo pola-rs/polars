@@ -1,6 +1,6 @@
 use crate::array::BooleanArray;
 use crate::bitmap::MutableBitmap;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::legacy::array::default_arrays::FromData;
 use crate::legacy::bit_util::{set_bit_raw, unset_bit_raw};
 use crate::legacy::trusted_len::{FromIteratorReversed, TrustedLen};
@@ -47,7 +47,7 @@ impl FromIteratorReversed<bool> for BooleanArray {
                 }
             });
         }
-        BooleanArray::new(DataType::Boolean, vals.into(), None)
+        BooleanArray::new(ArrowDataType::Boolean, vals.into(), None)
     }
 }
 
@@ -79,6 +79,6 @@ impl FromIteratorReversed<Option<bool>> for BooleanArray {
                 }
             });
         }
-        BooleanArray::new(DataType::Boolean, vals.into(), Some(validity.into()))
+        BooleanArray::new(ArrowDataType::Boolean, vals.into(), Some(validity.into()))
     }
 }

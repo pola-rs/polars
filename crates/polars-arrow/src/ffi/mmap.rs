@@ -5,7 +5,7 @@ use polars_error::{polars_bail, PolarsResult};
 
 use super::{ArrowArray, InternalArrowArray};
 use crate::array::{BooleanArray, FromFfi, PrimitiveArray};
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::types::NativeType;
 
 #[allow(dead_code)]
@@ -171,7 +171,7 @@ pub unsafe fn bitmap(data: &[u8], offset: usize, length: usize) -> PolarsResult<
         None,
         Some(offset),
     );
-    let array = InternalArrowArray::new(array, DataType::Boolean);
+    let array = InternalArrowArray::new(array, ArrowDataType::Boolean);
 
     // safety: we just created a valid array
     Ok(unsafe { BooleanArray::try_from_ffi(array) }.unwrap())

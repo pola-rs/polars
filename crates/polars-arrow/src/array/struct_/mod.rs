@@ -1,6 +1,6 @@
 use super::{new_empty_array, new_null_array, Array};
 use crate::bitmap::Bitmap;
-use crate::datatypes::{DataType, Field};
+use crate::datatypes::{ArrowDataType, Field};
 
 #[cfg(feature = "arrow_rs")]
 mod data;
@@ -21,15 +21,15 @@ use polars_error::{polars_bail, PolarsResult};
 /// let int = Int32Array::from_slice(&[42, 28, 19, 31]).boxed();
 ///
 /// let fields = vec![
-///     Field::new("b", DataType::Boolean, false),
-///     Field::new("c", DataType::Int32, false),
+///     Field::new("b", ArrowDataType::Boolean, false),
+///     Field::new("c", ArrowDataType::Int32, false),
 /// ];
 ///
-/// let array = StructArray::new(DataType::Struct(fields), vec![boolean, int], None);
+/// let array = StructArray::new(ArrowDataType::Struct(fields), vec![boolean, int], None);
 /// ```
 #[derive(Clone)]
 pub struct StructArray {
-    data_type: DataType,
+    data_type: ArrowDataType,
     values: Vec<Box<dyn Array>>,
     validity: Option<Bitmap>,
 }
@@ -45,7 +45,7 @@ impl StructArray {
     /// * any element of values has a different length than the first element
     /// * the validity's length is not equal to the length of the first element
     pub fn try_new(
-        data_type: DataType,
+        data_type: ArrowDataType,
         values: Vec<Box<dyn Array>>,
         validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
@@ -109,13 +109,17 @@ impl StructArray {
     /// * any of the values's data type is different from its corresponding children' data type
     /// * any element of values has a different length than the first element
     /// * the validity's length is not equal to the length of the first element
-    pub fn new(data_type: DataType, values: Vec<Box<dyn Array>>, validity: Option<Bitmap>) -> Self {
+    pub fn new(
+        data_type: ArrowDataType,
+        values: Vec<Box<dyn Array>>,
+        validity: Option<Bitmap>,
+    ) -> Self {
         Self::try_new(data_type, values, validity).unwrap()
     }
 
     /// Creates an empty [`StructArray`].
-    pub fn new_empty(data_type: DataType) -> Self {
-        if let DataType::Struct(fields) = &data_type.to_logical_type() {
+    pub fn new_empty(data_type: ArrowDataType) -> Self {
+        if let ArrowDataType::Struct(fields) = &data_type.to_logical_type() {
             let values = fields
                 .iter()
                 .map(|field| new_empty_array(field.data_type().clone()))
@@ -127,8 +131,8 @@ impl StructArray {
     }
 
     /// Creates a null [`StructArray`] of length `length`.
-    pub fn new_null(data_type: DataType, length: usize) -> Self {
-        if let DataType::Struct(fields) = &data_type {
+    pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
+        if let ArrowDataType::Struct(fields) = &data_type {
             let values = fields
                 .iter()
                 .map(|field| new_null_array(field.data_type().clone(), length))
@@ -150,7 +154,7 @@ impl StructArray {
             values,
             validity,
         } = self;
-        let fields = if let DataType::Struct(fields) = data_type {
+        let fields = if let ArrowDataType::Struct(fields) = data_type {
             fields
         } else {
             unreachable!()
@@ -220,9 +224,9 @@ impl StructArray {
 
 impl StructArray {
     /// Returns the fields the `DataType::Struct`.
-    pub(crate) fn try_get_fields(data_type: &DataType) -> PolarsResult<&[Field]> {
+    pub(crate) fn try_get_fields(data_type: &ArrowDataType) -> PolarsResult<&[Field]> {
         match data_type.to_logical_type() {
-            DataType::Struct(fields) => Ok(fields),
+            ArrowDataType::Struct(fields) => Ok(fields),
             _ => {
                 polars_bail!(ComputeError: "Struct array must be created with a DataType whose physical type is Struct")
             },
@@ -230,7 +234,7 @@ impl StructArray {
     }
 
     /// Returns the fields the `DataType::Struct`.
-    pub fn get_fields(data_type: &DataType) -> &[Field] {
+    pub fn get_fields(data_type: &ArrowDataType) -> &[Field] {
         Self::try_get_fields(data_type).unwrap()
     }
 }

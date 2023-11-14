@@ -9,12 +9,12 @@ use super::super::read_basic::*;
 use super::super::{Compression, Dictionaries, IpcBuffer, Node, OutOfSpecKind, Version};
 use crate::array::MapArray;
 use crate::buffer::Buffer;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_map<R: Read + Seek>(
     field_nodes: &mut VecDeque<Node>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     ipc_field: &IpcField,
     buffers: &mut VecDeque<IpcBuffer>,
     reader: &mut R,
@@ -84,7 +84,7 @@ pub fn read_map<R: Read + Seek>(
 
 pub fn skip_map(
     field_nodes: &mut VecDeque<Node>,
-    data_type: &DataType,
+    data_type: &ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
 ) -> PolarsResult<()> {
     let _ = field_nodes.pop_front().ok_or_else(|| {

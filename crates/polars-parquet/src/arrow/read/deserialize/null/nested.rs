@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use arrow::array::NullArray;
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
@@ -72,7 +72,7 @@ where
 {
     iter: I,
     init: Vec<InitNested>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     items: VecDeque<(NestedState, usize)>,
     remaining: usize,
     chunk_size: Option<usize>,
@@ -86,7 +86,7 @@ where
     pub fn new(
         iter: I,
         init: Vec<InitNested>,
-        data_type: DataType,
+        data_type: ArrowDataType,
         num_rows: usize,
         chunk_size: Option<usize>,
     ) -> Self {

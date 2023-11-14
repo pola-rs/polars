@@ -26,7 +26,7 @@ pub use any_value::*;
 use arrow::compute::comparison::Simd8;
 #[cfg(feature = "dtype-categorical")]
 use arrow::datatypes::IntegerType;
-pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit as ArrowTimeUnit};
+pub use arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
 use arrow::legacy::data_types::IsFloat;
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;

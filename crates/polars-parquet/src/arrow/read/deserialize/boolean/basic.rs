@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use arrow::array::BooleanArray;
 use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::MutableBitmap;
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 use super::super::utils::{
@@ -183,7 +183,11 @@ impl<'a> Decoder<'a> for BooleanDecoder {
     fn deserialize_dict(&self, _: &DictPage) -> Self::Dict {}
 }
 
-fn finish(data_type: &DataType, values: MutableBitmap, validity: MutableBitmap) -> BooleanArray {
+fn finish(
+    data_type: &ArrowDataType,
+    values: MutableBitmap,
+    validity: MutableBitmap,
+) -> BooleanArray {
     BooleanArray::new(data_type.clone(), values.into(), validity.into())
 }
 
@@ -191,14 +195,19 @@ fn finish(data_type: &DataType, values: MutableBitmap, validity: MutableBitmap) 
 #[derive(Debug)]
 pub struct Iter<I: Pages> {
     iter: I,
-    data_type: DataType,
+    data_type: ArrowDataType,
     items: VecDeque<(MutableBitmap, MutableBitmap)>,
     chunk_size: Option<usize>,
     remaining: usize,
 }
 
 impl<I: Pages> Iter<I> {
-    pub fn new(iter: I, data_type: DataType, chunk_size: Option<usize>, num_rows: usize) -> Self {
+    pub fn new(
+        iter: I,
+        data_type: ArrowDataType,
+        chunk_size: Option<usize>,
+        num_rows: usize,
+    ) -> Self {
         Self {
             iter,
             data_type,

@@ -2,13 +2,13 @@
 //!
 //! # Arrow/Parquet Interoperability
 //! As of [parquet-format v2.9](https://github.com/apache/parquet-format/blob/master/LogicalTypes.md)
-//! there are Arrow [DataTypes](arrow::datatypes::DataType) which do not have a parquet
+//! there are Arrow [DataTypes](arrow::datatypes::ArrowDataType) which do not have a parquet
 //! representation. These include but are not limited to:
-//! * `DataType::Timestamp(TimeUnit::Second, _)`
-//! * `DataType::Int64`
-//! * `DataType::Duration`
-//! * `DataType::Date64`
-//! * `DataType::Time32(TimeUnit::Second)`
+//! * `ArrowDataType::Timestamp(TimeUnit::Second, _)`
+//! * `ArrowDataType::Int64`
+//! * `ArrowDataType::Duration`
+//! * `ArrowDataType::Date64`
+//! * `ArrowDataType::Time32(TimeUnit::Second)`
 //!
 //! The use of these arrow types will result in no logical type being stored within a parquet file.
 
@@ -121,8 +121,8 @@ pub fn to_parquet_schema(schema: &ArrowSchema) -> PolarsResult<SchemaDescriptor>
 /// Checks whether the `data_type` can be encoded as `encoding`.
 /// Note that this is whether this implementation supports it, which is a subset of
 /// what the parquet spec allows.
-pub fn can_encode(data_type: &DataType, encoding: Encoding) -> bool {
-    if let (Encoding::DeltaBinaryPacked, DataType::Decimal(p, _)) =
+pub fn can_encode(data_type: &ArrowDataType, encoding: Encoding) -> bool {
+    if let (Encoding::DeltaBinaryPacked, ArrowDataType::Decimal(p, _)) =
         (encoding, data_type.to_logical_type())
     {
         return *p <= 18;
@@ -133,27 +133,33 @@ pub fn can_encode(data_type: &DataType, encoding: Encoding) -> bool {
         (Encoding::Plain, _)
             | (
                 Encoding::DeltaLengthByteArray,
-                DataType::Binary | DataType::LargeBinary | DataType::Utf8 | DataType::LargeUtf8,
+                ArrowDataType::Binary
+                    | ArrowDataType::LargeBinary
+                    | ArrowDataType::Utf8
+                    | ArrowDataType::LargeUtf8,
             )
-            | (Encoding::RleDictionary, DataType::Dictionary(_, _, _))
-            | (Encoding::PlainDictionary, DataType::Dictionary(_, _, _))
+            | (Encoding::RleDictionary, ArrowDataType::Dictionary(_, _, _))
+            | (
+                Encoding::PlainDictionary,
+                ArrowDataType::Dictionary(_, _, _)
+            )
             | (
                 Encoding::DeltaBinaryPacked,
-                DataType::Null
-                    | DataType::UInt8
-                    | DataType::UInt16
-                    | DataType::UInt32
-                    | DataType::UInt64
-                    | DataType::Int8
-                    | DataType::Int16
-                    | DataType::Int32
-                    | DataType::Date32
-                    | DataType::Time32(_)
-                    | DataType::Int64
-                    | DataType::Date64
-                    | DataType::Time64(_)
-                    | DataType::Timestamp(_, _)
-                    | DataType::Duration(_)
+                ArrowDataType::Null
+                    | ArrowDataType::UInt8
+                    | ArrowDataType::UInt16
+                    | ArrowDataType::UInt32
+                    | ArrowDataType::UInt64
+                    | ArrowDataType::Int8
+                    | ArrowDataType::Int16
+                    | ArrowDataType::Int32
+                    | ArrowDataType::Date32
+                    | ArrowDataType::Time32(_)
+                    | ArrowDataType::Int64
+                    | ArrowDataType::Date64
+                    | ArrowDataType::Time64(_)
+                    | ArrowDataType::Timestamp(_, _)
+                    | ArrowDataType::Duration(_)
             )
     )
 }
@@ -223,7 +229,8 @@ pub fn array_to_pages(
     options: WriteOptions,
     encoding: Encoding,
 ) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
-    if let DataType::Dictionary(key_type, _, _) = primitive_array.data_type().to_logical_type() {
+    if let ArrowDataType::Dictionary(key_type, _, _) = primitive_array.data_type().to_logical_type()
+    {
         return match_integer_type!(key_type, |$T| {
             dictionary::array_to_pages::<$T>(
                 primitive_array.as_any().downcast_ref().unwrap(),
@@ -309,47 +316,47 @@ pub fn array_to_page_simple(
     }
 
     match data_type.to_logical_type() {
-        DataType::Boolean => {
+        ArrowDataType::Boolean => {
             boolean::array_to_page(array.as_any().downcast_ref().unwrap(), options, type_)
         },
         // casts below MUST match the casts done at the metadata (field -> parquet type).
-        DataType::UInt8 => primitive::array_to_page_integer::<u8, i32>(
+        ArrowDataType::UInt8 => primitive::array_to_page_integer::<u8, i32>(
             array.as_any().downcast_ref().unwrap(),
             options,
             type_,
             encoding,
         ),
-        DataType::UInt16 => primitive::array_to_page_integer::<u16, i32>(
+        ArrowDataType::UInt16 => primitive::array_to_page_integer::<u16, i32>(
             array.as_any().downcast_ref().unwrap(),
             options,
             type_,
             encoding,
         ),
-        DataType::UInt32 => primitive::array_to_page_integer::<u32, i32>(
+        ArrowDataType::UInt32 => primitive::array_to_page_integer::<u32, i32>(
             array.as_any().downcast_ref().unwrap(),
             options,
             type_,
             encoding,
         ),
-        DataType::UInt64 => primitive::array_to_page_integer::<u64, i64>(
+        ArrowDataType::UInt64 => primitive::array_to_page_integer::<u64, i64>(
             array.as_any().downcast_ref().unwrap(),
             options,
             type_,
             encoding,
         ),
-        DataType::Int8 => primitive::array_to_page_integer::<i8, i32>(
+        ArrowDataType::Int8 => primitive::array_to_page_integer::<i8, i32>(
             array.as_any().downcast_ref().unwrap(),
             options,
             type_,
             encoding,
         ),
-        DataType::Int16 => primitive::array_to_page_integer::<i16, i32>(
+        ArrowDataType::Int16 => primitive::array_to_page_integer::<i16, i32>(
             array.as_any().downcast_ref().unwrap(),
             options,
             type_,
             encoding,
         ),
-        DataType::Int32 | DataType::Date32 | DataType::Time32(_) => {
+        ArrowDataType::Int32 | ArrowDataType::Date32 | ArrowDataType::Time32(_) => {
             primitive::array_to_page_integer::<i32, i32>(
                 array.as_any().downcast_ref().unwrap(),
                 options,
@@ -357,55 +364,55 @@ pub fn array_to_page_simple(
                 encoding,
             )
         },
-        DataType::Int64
-        | DataType::Date64
-        | DataType::Time64(_)
-        | DataType::Timestamp(_, _)
-        | DataType::Duration(_) => primitive::array_to_page_integer::<i64, i64>(
+        ArrowDataType::Int64
+        | ArrowDataType::Date64
+        | ArrowDataType::Time64(_)
+        | ArrowDataType::Timestamp(_, _)
+        | ArrowDataType::Duration(_) => primitive::array_to_page_integer::<i64, i64>(
             array.as_any().downcast_ref().unwrap(),
             options,
             type_,
             encoding,
         ),
-        DataType::Float32 => primitive::array_to_page_plain::<f32, f32>(
+        ArrowDataType::Float32 => primitive::array_to_page_plain::<f32, f32>(
             array.as_any().downcast_ref().unwrap(),
             options,
             type_,
         ),
-        DataType::Float64 => primitive::array_to_page_plain::<f64, f64>(
+        ArrowDataType::Float64 => primitive::array_to_page_plain::<f64, f64>(
             array.as_any().downcast_ref().unwrap(),
             options,
             type_,
         ),
-        DataType::Utf8 => utf8::array_to_page::<i32>(
-            array.as_any().downcast_ref().unwrap(),
-            options,
-            type_,
-            encoding,
-        ),
-        DataType::LargeUtf8 => utf8::array_to_page::<i64>(
+        ArrowDataType::Utf8 => utf8::array_to_page::<i32>(
             array.as_any().downcast_ref().unwrap(),
             options,
             type_,
             encoding,
         ),
-        DataType::Binary => binary::array_to_page::<i32>(
+        ArrowDataType::LargeUtf8 => utf8::array_to_page::<i64>(
             array.as_any().downcast_ref().unwrap(),
             options,
             type_,
             encoding,
         ),
-        DataType::LargeBinary => binary::array_to_page::<i64>(
+        ArrowDataType::Binary => binary::array_to_page::<i32>(
             array.as_any().downcast_ref().unwrap(),
             options,
             type_,
             encoding,
         ),
-        DataType::Null => {
-            let array = Int32Array::new_null(DataType::Int32, array.len());
+        ArrowDataType::LargeBinary => binary::array_to_page::<i64>(
+            array.as_any().downcast_ref().unwrap(),
+            options,
+            type_,
+            encoding,
+        ),
+        ArrowDataType::Null => {
+            let array = Int32Array::new_null(ArrowDataType::Int32, array.len());
             primitive::array_to_page_plain::<i32, i32>(&array, options, type_)
         },
-        DataType::Interval(IntervalUnit::YearMonth) => {
+        ArrowDataType::Interval(IntervalUnit::YearMonth) => {
             let array = array
                 .as_any()
                 .downcast_ref::<PrimitiveArray<i32>>()
@@ -417,7 +424,7 @@ pub fn array_to_page_simple(
                 values.extend_from_slice(&[0; 8]);
             });
             let array = FixedSizeBinaryArray::new(
-                DataType::FixedSizeBinary(12),
+                ArrowDataType::FixedSizeBinary(12),
                 values.into(),
                 array.validity().cloned(),
             );
@@ -428,7 +435,7 @@ pub fn array_to_page_simple(
             };
             fixed_len_bytes::array_to_page(&array, options, type_, statistics)
         },
-        DataType::Interval(IntervalUnit::DayTime) => {
+        ArrowDataType::Interval(IntervalUnit::DayTime) => {
             let array = array
                 .as_any()
                 .downcast_ref::<PrimitiveArray<days_ms>>()
@@ -440,7 +447,7 @@ pub fn array_to_page_simple(
                 values.extend_from_slice(bytes); // days and seconds
             });
             let array = FixedSizeBinaryArray::new(
-                DataType::FixedSizeBinary(12),
+                ArrowDataType::FixedSizeBinary(12),
                 values.into(),
                 array.validity().cloned(),
             );
@@ -451,7 +458,7 @@ pub fn array_to_page_simple(
             };
             fixed_len_bytes::array_to_page(&array, options, type_, statistics)
         },
-        DataType::FixedSizeBinary(_) => {
+        ArrowDataType::FixedSizeBinary(_) => {
             let array = array.as_any().downcast_ref().unwrap();
             let statistics = if options.write_statistics {
                 Some(fixed_len_bytes::build_statistics(array, type_.clone()))
@@ -461,7 +468,7 @@ pub fn array_to_page_simple(
 
             fixed_len_bytes::array_to_page(array, options, type_, statistics)
         },
-        DataType::Decimal256(precision, _) => {
+        ArrowDataType::Decimal256(precision, _) => {
             let precision = *precision;
             let array = array
                 .as_any()
@@ -475,8 +482,11 @@ pub fn array_to_page_simple(
                     .collect::<Vec<_>>()
                     .into();
 
-                let array =
-                    PrimitiveArray::<i32>::new(DataType::Int32, values, array.validity().cloned());
+                let array = PrimitiveArray::<i32>::new(
+                    ArrowDataType::Int32,
+                    values,
+                    array.validity().cloned(),
+                );
                 primitive::array_to_page_integer::<i32, i32>(&array, options, type_, encoding)
             } else if precision <= 18 {
                 let values = array
@@ -486,8 +496,11 @@ pub fn array_to_page_simple(
                     .collect::<Vec<_>>()
                     .into();
 
-                let array =
-                    PrimitiveArray::<i64>::new(DataType::Int64, values, array.validity().cloned());
+                let array = PrimitiveArray::<i64>::new(
+                    ArrowDataType::Int64,
+                    values,
+                    array.validity().cloned(),
+                );
                 primitive::array_to_page_integer::<i64, i64>(&array, options, type_, encoding)
             } else if precision <= 38 {
                 let size = decimal_length_from_precision(precision);
@@ -508,7 +521,7 @@ pub fn array_to_page_simple(
                     values.extend_from_slice(bytes)
                 });
                 let array = FixedSizeBinaryArray::new(
-                    DataType::FixedSizeBinary(size),
+                    ArrowDataType::FixedSizeBinary(size),
                     values.into(),
                     array.validity().cloned(),
                 );
@@ -532,7 +545,7 @@ pub fn array_to_page_simple(
                     values.extend_from_slice(bytes)
                 });
                 let array = FixedSizeBinaryArray::new(
-                    DataType::FixedSizeBinary(size),
+                    ArrowDataType::FixedSizeBinary(size),
                     values.into(),
                     array.validity().cloned(),
                 );
@@ -540,7 +553,7 @@ pub fn array_to_page_simple(
                 fixed_len_bytes::array_to_page(&array, options, type_, statistics)
             }
         },
-        DataType::Decimal(precision, _) => {
+        ArrowDataType::Decimal(precision, _) => {
             let precision = *precision;
             let array = array
                 .as_any()
@@ -554,8 +567,11 @@ pub fn array_to_page_simple(
                     .collect::<Vec<_>>()
                     .into();
 
-                let array =
-                    PrimitiveArray::<i32>::new(DataType::Int32, values, array.validity().cloned());
+                let array = PrimitiveArray::<i32>::new(
+                    ArrowDataType::Int32,
+                    values,
+                    array.validity().cloned(),
+                );
                 primitive::array_to_page_integer::<i32, i32>(&array, options, type_, encoding)
             } else if precision <= 18 {
                 let values = array
@@ -565,8 +581,11 @@ pub fn array_to_page_simple(
                     .collect::<Vec<_>>()
                     .into();
 
-                let array =
-                    PrimitiveArray::<i64>::new(DataType::Int64, values, array.validity().cloned());
+                let array = PrimitiveArray::<i64>::new(
+                    ArrowDataType::Int64,
+                    values,
+                    array.validity().cloned(),
+                );
                 primitive::array_to_page_integer::<i64, i64>(&array, options, type_, encoding)
             } else {
                 let size = decimal_length_from_precision(precision);
@@ -585,7 +604,7 @@ pub fn array_to_page_simple(
                     values.extend_from_slice(bytes)
                 });
                 let array = FixedSizeBinaryArray::new(
-                    DataType::FixedSizeBinary(size),
+                    ArrowDataType::FixedSizeBinary(size),
                     values.into(),
                     array.validity().cloned(),
                 );
@@ -604,10 +623,10 @@ fn array_to_page_nested(
     options: WriteOptions,
     _encoding: Encoding,
 ) -> PolarsResult<Page> {
-    use DataType::*;
+    use ArrowDataType::*;
     match array.data_type().to_logical_type() {
         Null => {
-            let array = Int32Array::new_null(DataType::Int32, array.len());
+            let array = Int32Array::new_null(ArrowDataType::Int32, array.len());
             primitive::nested_array_to_page::<i32, i32>(&array, options, type_, nested)
         },
         Boolean => {
@@ -684,8 +703,11 @@ fn array_to_page_nested(
                     .collect::<Vec<_>>()
                     .into();
 
-                let array =
-                    PrimitiveArray::<i32>::new(DataType::Int32, values, array.validity().cloned());
+                let array = PrimitiveArray::<i32>::new(
+                    ArrowDataType::Int32,
+                    values,
+                    array.validity().cloned(),
+                );
                 primitive::nested_array_to_page::<i32, i32>(&array, options, type_, nested)
             } else if precision <= 18 {
                 let values = array
@@ -695,8 +717,11 @@ fn array_to_page_nested(
                     .collect::<Vec<_>>()
                     .into();
 
-                let array =
-                    PrimitiveArray::<i64>::new(DataType::Int64, values, array.validity().cloned());
+                let array = PrimitiveArray::<i64>::new(
+                    ArrowDataType::Int64,
+                    values,
+                    array.validity().cloned(),
+                );
                 primitive::nested_array_to_page::<i64, i64>(&array, options, type_, nested)
             } else {
                 let size = decimal_length_from_precision(precision);
@@ -715,7 +740,7 @@ fn array_to_page_nested(
                     values.extend_from_slice(bytes)
                 });
                 let array = FixedSizeBinaryArray::new(
-                    DataType::FixedSizeBinary(size),
+                    ArrowDataType::FixedSizeBinary(size),
                     values.into(),
                     array.validity().cloned(),
                 );
@@ -736,8 +761,11 @@ fn array_to_page_nested(
                     .collect::<Vec<_>>()
                     .into();
 
-                let array =
-                    PrimitiveArray::<i32>::new(DataType::Int32, values, array.validity().cloned());
+                let array = PrimitiveArray::<i32>::new(
+                    ArrowDataType::Int32,
+                    values,
+                    array.validity().cloned(),
+                );
                 primitive::nested_array_to_page::<i32, i32>(&array, options, type_, nested)
             } else if precision <= 18 {
                 let values = array
@@ -747,8 +775,11 @@ fn array_to_page_nested(
                     .collect::<Vec<_>>()
                     .into();
 
-                let array =
-                    PrimitiveArray::<i64>::new(DataType::Int64, values, array.validity().cloned());
+                let array = PrimitiveArray::<i64>::new(
+                    ArrowDataType::Int64,
+                    values,
+                    array.validity().cloned(),
+                );
                 primitive::nested_array_to_page::<i64, i64>(&array, options, type_, nested)
             } else if precision <= 38 {
                 let size = decimal_length_from_precision(precision);
@@ -769,7 +800,7 @@ fn array_to_page_nested(
                     values.extend_from_slice(bytes)
                 });
                 let array = FixedSizeBinaryArray::new(
-                    DataType::FixedSizeBinary(size),
+                    ArrowDataType::FixedSizeBinary(size),
                     values.into(),
                     array.validity().cloned(),
                 );
@@ -793,7 +824,7 @@ fn array_to_page_nested(
                     values.extend_from_slice(bytes)
                 });
                 let array = FixedSizeBinaryArray::new(
-                    DataType::FixedSizeBinary(size),
+                    ArrowDataType::FixedSizeBinary(size),
                     values.into(),
                     array.validity().cloned(),
                 );
@@ -806,8 +837,8 @@ fn array_to_page_nested(
     .map(Page::Data)
 }
 
-fn transverse_recursive<T, F: Fn(&DataType) -> T + Clone>(
-    data_type: &DataType,
+fn transverse_recursive<T, F: Fn(&ArrowDataType) -> T + Clone>(
+    data_type: &ArrowDataType,
     map: F,
     encodings: &mut Vec<T>,
 ) {
@@ -817,18 +848,18 @@ fn transverse_recursive<T, F: Fn(&DataType) -> T + Clone>(
         | Dictionary(_) | LargeUtf8 => encodings.push(map(data_type)),
         List | FixedSizeList | LargeList => {
             let a = data_type.to_logical_type();
-            if let DataType::List(inner) = a {
+            if let ArrowDataType::List(inner) = a {
                 transverse_recursive(&inner.data_type, map, encodings)
-            } else if let DataType::LargeList(inner) = a {
+            } else if let ArrowDataType::LargeList(inner) = a {
                 transverse_recursive(&inner.data_type, map, encodings)
-            } else if let DataType::FixedSizeList(inner, _) = a {
+            } else if let ArrowDataType::FixedSizeList(inner, _) = a {
                 transverse_recursive(&inner.data_type, map, encodings)
             } else {
                 unreachable!()
             }
         },
         Struct => {
-            if let DataType::Struct(fields) = data_type.to_logical_type() {
+            if let ArrowDataType::Struct(fields) = data_type.to_logical_type() {
                 for field in fields {
                     transverse_recursive(&field.data_type, map.clone(), encodings)
                 }
@@ -837,8 +868,8 @@ fn transverse_recursive<T, F: Fn(&DataType) -> T + Clone>(
             }
         },
         Map => {
-            if let DataType::Map(field, _) = data_type.to_logical_type() {
-                if let DataType::Struct(fields) = field.data_type.to_logical_type() {
+            if let ArrowDataType::Map(field, _) = data_type.to_logical_type() {
+                if let ArrowDataType::Struct(fields) = field.data_type.to_logical_type() {
                     for field in fields {
                         transverse_recursive(&field.data_type, map.clone(), encodings)
                     }
@@ -859,17 +890,20 @@ fn transverse_recursive<T, F: Fn(&DataType) -> T + Clone>(
 /// # Example
 /// ```
 /// use polars_arrow::io::parquet::write::{transverse, Encoding};
-/// use polars_arrow::datatypes::{DataType, Field};
+/// use polars_arrow::datatypes::{ArrowDataType, Field};
 ///
-/// let dt = DataType::Struct(vec![
-///     Field::new("a", DataType::Int64, true),
-///     Field::new("b", DataType::List(Box::new(Field::new("item", DataType::Int32, true))), true),
+/// let dt = ArrowDataType::Struct(vec![
+///     Field::new("a", ArrowDataType::Int64, true),
+///     Field::new("b", ArrowDataType::List(Box::new(Field::new("item", ArrowDataType::Int32, true))), true),
 /// ]);
 ///
 /// let encodings = transverse(&dt, |dt| Encoding::Plain);
 /// assert_eq!(encodings, vec![Encoding::Plain, Encoding::Plain]);
 /// ```
-pub fn transverse<T, F: Fn(&DataType) -> T + Clone>(data_type: &DataType, map: F) -> Vec<T> {
+pub fn transverse<T, F: Fn(&ArrowDataType) -> T + Clone>(
+    data_type: &ArrowDataType,
+    map: F,
+) -> Vec<T> {
     let mut encodings = vec![];
     transverse_recursive(data_type, map, &mut encodings);
     encodings

@@ -2,14 +2,14 @@ use std::any::Any;
 
 use super::Scalar;
 use crate::array::*;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 /// The [`DictionaryArray`] equivalent of [`Array`] for [`Scalar`].
 #[derive(Debug, Clone)]
 pub struct DictionaryScalar<K: DictionaryKey> {
     value: Option<Box<dyn Scalar>>,
     phantom: std::marker::PhantomData<K>,
-    data_type: DataType,
+    data_type: ArrowDataType,
 }
 
 impl<K: DictionaryKey> PartialEq for DictionaryScalar<K> {
@@ -25,7 +25,7 @@ impl<K: DictionaryKey> DictionaryScalar<K> {
     /// * the `data_type` is not `List` or `LargeList` (depending on this scalar's offset `O`)
     /// * the child of the `data_type` is not equal to the `values`
     #[inline]
-    pub fn new(data_type: DataType, value: Option<Box<dyn Scalar>>) -> Self {
+    pub fn new(data_type: ArrowDataType, value: Option<Box<dyn Scalar>>) -> Self {
         Self {
             value,
             phantom: std::marker::PhantomData,
@@ -48,7 +48,7 @@ impl<K: DictionaryKey> Scalar for DictionaryScalar<K> {
         self.value.is_some()
     }
 
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 }

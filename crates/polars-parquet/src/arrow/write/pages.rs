@@ -273,12 +273,12 @@ mod tests {
         let int = Int32Array::from_slice([42, 28, 19, 31]).boxed();
 
         let fields = vec![
-            Field::new("b", DataType::Boolean, false),
-            Field::new("c", DataType::Int32, false),
+            Field::new("b", ArrowDataType::Boolean, false),
+            Field::new("c", ArrowDataType::Int32, false),
         ];
 
         let array = StructArray::new(
-            DataType::Struct(fields),
+            ArrowDataType::Struct(fields),
             vec![boolean.clone(), int.clone()],
             Some(Bitmap::from([true, true, false, true])),
         );
@@ -337,12 +337,12 @@ mod tests {
         let int = Int32Array::from_slice([42, 28, 19, 31]).boxed();
 
         let fields = vec![
-            Field::new("b", DataType::Boolean, false),
-            Field::new("c", DataType::Int32, false),
+            Field::new("b", ArrowDataType::Boolean, false),
+            Field::new("c", ArrowDataType::Int32, false),
         ];
 
         let array = StructArray::new(
-            DataType::Struct(fields),
+            ArrowDataType::Struct(fields),
             vec![boolean.clone(), int.clone()],
             Some(Bitmap::from([true, true, false, true])),
         );
@@ -353,7 +353,7 @@ mod tests {
         ];
 
         let array = StructArray::new(
-            DataType::Struct(fields),
+            ArrowDataType::Struct(fields),
             vec![Box::new(array.clone()), Box::new(array)],
             None,
         );
@@ -440,18 +440,18 @@ mod tests {
         let int = Int32Array::from_slice([42, 28, 19, 31]).boxed();
 
         let fields = vec![
-            Field::new("b", DataType::Boolean, false),
-            Field::new("c", DataType::Int32, false),
+            Field::new("b", ArrowDataType::Boolean, false),
+            Field::new("c", ArrowDataType::Int32, false),
         ];
 
         let array = StructArray::new(
-            DataType::Struct(fields),
+            ArrowDataType::Struct(fields),
             vec![boolean.clone(), int.clone()],
             Some(Bitmap::from([true, true, false, true])),
         );
 
         let array = ListArray::new(
-            DataType::List(Box::new(Field::new("l", array.data_type().clone(), true))),
+            ArrowDataType::List(Box::new(Field::new("l", array.data_type().clone(), true))),
             vec![0i32, 2, 4].try_into().unwrap(),
             Box::new(array),
             None,
@@ -538,12 +538,12 @@ mod tests {
 
     #[test]
     fn test_map() {
-        let kv_type = DataType::Struct(vec![
-            Field::new("k", DataType::Utf8, false),
-            Field::new("v", DataType::Int32, false),
+        let kv_type = ArrowDataType::Struct(vec![
+            Field::new("k", ArrowDataType::Utf8, false),
+            Field::new("v", ArrowDataType::Int32, false),
         ]);
         let kv_field = Field::new("kv", kv_type.clone(), false);
-        let map_type = DataType::Map(Box::new(kv_field), false);
+        let map_type = ArrowDataType::Map(Box::new(kv_field), false);
 
         let key_array = Utf8Array::<i32>::from_slice(["k1", "k2", "k3", "k4", "k5", "k6"]).boxed();
         let val_array = Int32Array::from_slice([42, 28, 19, 31, 21, 17]).boxed();

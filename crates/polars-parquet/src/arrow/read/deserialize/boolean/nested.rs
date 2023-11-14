@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use arrow::array::BooleanArray;
 use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::MutableBitmap;
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
@@ -124,7 +124,11 @@ impl<I: Pages> NestedIter<I> {
     }
 }
 
-fn finish(data_type: &DataType, values: MutableBitmap, validity: MutableBitmap) -> BooleanArray {
+fn finish(
+    data_type: &ArrowDataType,
+    values: MutableBitmap,
+    validity: MutableBitmap,
+) -> BooleanArray {
     BooleanArray::new(data_type.clone(), values.into(), validity.into())
 }
 
@@ -142,9 +146,10 @@ impl<I: Pages> Iterator for NestedIter<I> {
             &BooleanDecoder::default(),
         );
         match maybe_state {
-            MaybeNext::Some(Ok((nested, (values, validity)))) => {
-                Some(Ok((nested, finish(&DataType::Boolean, values, validity))))
-            },
+            MaybeNext::Some(Ok((nested, (values, validity)))) => Some(Ok((
+                nested,
+                finish(&ArrowDataType::Boolean, values, validity),
+            ))),
             MaybeNext::Some(Err(e)) => Some(Err(e)),
             MaybeNext::None => None,
             MaybeNext::More => self.next(),

@@ -6,12 +6,12 @@ use super::FixedSizeListArray;
 use crate::array::physical_binary::extend_validity;
 use crate::array::{Array, MutableArray, PushUnchecked, TryExtend, TryExtendFromSelf, TryPush};
 use crate::bitmap::MutableBitmap;
-use crate::datatypes::{DataType, Field};
+use crate::datatypes::{ArrowDataType, Field};
 
 /// The mutable version of [`FixedSizeListArray`].
 #[derive(Debug, Clone)]
 pub struct MutableFixedSizeListArray<M: MutableArray> {
-    data_type: DataType,
+    data_type: ArrowDataType,
     size: usize,
     values: M,
     validity: Option<MutableBitmap>,
@@ -36,18 +36,18 @@ impl<M: MutableArray> MutableFixedSizeListArray<M> {
 
     /// Creates a new [`MutableFixedSizeListArray`] from a [`MutableArray`] and size.
     pub fn new_with_field(values: M, name: &str, nullable: bool, size: usize) -> Self {
-        let data_type = DataType::FixedSizeList(
+        let data_type = ArrowDataType::FixedSizeList(
             Box::new(Field::new(name, values.data_type().clone(), nullable)),
             size,
         );
         Self::new_from(values, data_type, size)
     }
 
-    /// Creates a new [`MutableFixedSizeListArray`] from a [`MutableArray`], [`DataType`] and size.
-    pub fn new_from(values: M, data_type: DataType, size: usize) -> Self {
+    /// Creates a new [`MutableFixedSizeListArray`] from a [`MutableArray`], [`ArrowDataType`] and size.
+    pub fn new_from(values: M, data_type: ArrowDataType, size: usize) -> Self {
         assert_eq!(values.len(), 0);
         match data_type {
-            DataType::FixedSizeList(..) => (),
+            ArrowDataType::FixedSizeList(..) => (),
             _ => panic!("data type must be FixedSizeList (got {data_type:?})"),
         };
         Self {
@@ -162,7 +162,7 @@ impl<M: MutableArray + 'static> MutableArray for MutableFixedSizeListArray<M> {
         .arced()
     }
 
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 

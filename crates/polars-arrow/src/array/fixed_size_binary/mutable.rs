@@ -6,7 +6,7 @@ use super::{FixedSizeBinaryArray, FixedSizeBinaryValues};
 use crate::array::physical_binary::extend_validity;
 use crate::array::{Array, MutableArray, TryExtendFromSelf};
 use crate::bitmap::MutableBitmap;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 /// The Arrow's equivalent to a mutable `Vec<Option<[u8; size]>>`.
 /// Converting a [`MutableFixedSizeBinaryArray`] into a [`FixedSizeBinaryArray`] is `O(1)`.
@@ -14,7 +14,7 @@ use crate::datatypes::DataType;
 /// This struct does not allocate a validity until one is required (i.e. push a null to it).
 #[derive(Debug, Clone)]
 pub struct MutableFixedSizeBinaryArray {
-    data_type: DataType,
+    data_type: ArrowDataType,
     size: usize,
     values: Vec<u8>,
     validity: Option<MutableBitmap>,
@@ -39,7 +39,7 @@ impl MutableFixedSizeBinaryArray {
     /// * The length of `values` is not a multiple of `size` in `data_type`
     /// * the validity's length is not equal to `values.len() / size`.
     pub fn try_new(
-        data_type: DataType,
+        data_type: ArrowDataType,
         values: Vec<u8>,
         validity: Option<MutableBitmap>,
     ) -> PolarsResult<Self> {
@@ -77,7 +77,7 @@ impl MutableFixedSizeBinaryArray {
     /// Creates a new [`MutableFixedSizeBinaryArray`] with capacity for `capacity` entries.
     pub fn with_capacity(size: usize, capacity: usize) -> Self {
         Self::try_new(
-            DataType::FixedSizeBinary(size),
+            ArrowDataType::FixedSizeBinary(size),
             Vec::<u8>::with_capacity(capacity * size),
             None,
         )
@@ -98,7 +98,7 @@ impl MutableFixedSizeBinaryArray {
             .iter()
             .map(|x| x.is_some())
             .collect::<MutableBitmap>();
-        Self::try_new(DataType::FixedSizeBinary(N), values, validity.into()).unwrap()
+        Self::try_new(ArrowDataType::FixedSizeBinary(N), values, validity.into()).unwrap()
     }
 
     /// tries to push a new entry to [`MutableFixedSizeBinaryArray`].
@@ -248,7 +248,7 @@ impl MutableArray for MutableFixedSizeBinaryArray {
 
     fn as_box(&mut self) -> Box<dyn Array> {
         FixedSizeBinaryArray::new(
-            DataType::FixedSizeBinary(self.size),
+            ArrowDataType::FixedSizeBinary(self.size),
             std::mem::take(&mut self.values).into(),
             std::mem::take(&mut self.validity).map(|x| x.into()),
         )
@@ -257,14 +257,14 @@ impl MutableArray for MutableFixedSizeBinaryArray {
 
     fn as_arc(&mut self) -> Arc<dyn Array> {
         FixedSizeBinaryArray::new(
-            DataType::FixedSizeBinary(self.size),
+            ArrowDataType::FixedSizeBinary(self.size),
             std::mem::take(&mut self.values).into(),
             std::mem::take(&mut self.validity).map(|x| x.into()),
         )
         .arced()
     }
 
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 
