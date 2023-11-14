@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 from datetime import timezone
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence
 
 import polars.datatypes
 
@@ -20,20 +20,6 @@ class classinstmethod(classmethod):  # type: ignore[type-arg]
     def __get__(self, instance: Any, type_: type) -> Any:  # type: ignore[override]
         get = super().__get__ if instance is None else self.__func__.__get__
         return get(instance, type_)
-
-
-class classproperty:
-    """Equivalent to @property, but works on a class (doesn't require an instance)."""
-
-    def __init__(self, method: Callable[..., Any] | None = None) -> None:
-        self.fget = method
-
-    def __get__(self, instance: Any, cls: type | None = None) -> Any:
-        return self.fget(cls)  # type: ignore[misc]
-
-    def getter(self, method: Callable[..., Any]) -> Any:  # noqa: D102
-        self.fget = method
-        return self
 
 
 class DataTypeClass(type):
@@ -59,10 +45,6 @@ class DataTypeClass(type):
     def is_not(cls, other: PolarsDataType) -> bool:  # noqa: D102
         ...
 
-    @classproperty
-    def is_nested(self) -> bool:  # noqa: D102
-        ...
-
     @classmethod
     def is_numeric(cls) -> bool:  # noqa: D102
         ...
@@ -85,6 +67,10 @@ class DataTypeClass(type):
 
     @classmethod
     def is_temporal(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
+    def is_nested(self) -> bool:  # noqa: D102
         ...
 
 
@@ -176,25 +162,6 @@ class DataType(metaclass=DataTypeClass):
         )
         return not self.is_(other)
 
-    @classproperty
-    def is_nested(self) -> bool:
-        """
-        Check if this data type is nested.
-
-        .. deprecated:: 0.19.10
-            Use `dtype in pl.NESTED_DTYPES` instead.
-
-        """
-        from polars.utils.deprecation import issue_deprecation_warning
-
-        message = (
-            "`DataType.is_nested` is deprecated and will be removed in the next breaking release."
-            " It will be changed to a classmethod rather than a property."
-            " To silence this warning, use `dtype in pl.NESTED_DTYPES` instead."
-        )
-        issue_deprecation_warning(message, version="0.19.10")
-        return False
-
     @classmethod
     def is_numeric(cls) -> bool:
         """Check whether the data type is a numeric type."""
@@ -224,6 +191,11 @@ class DataType(metaclass=DataTypeClass):
     def is_temporal(cls) -> bool:
         """Check whether the data type is a temporal type."""
         return issubclass(cls, TemporalType)
+
+    @classmethod
+    def is_nested(cls) -> bool:
+        """Check whether the data type is a nested type."""
+        return issubclass(cls, NestedType)
 
 
 def _custom_reconstruct(
@@ -299,25 +271,6 @@ class TemporalType(DataType):
 
 class NestedType(DataType):
     """Base class for nested data types."""
-
-    @classproperty
-    def is_nested(self) -> bool:
-        """
-        Check if this data type is nested.
-
-        .. deprecated:: 0.19.10
-            Use `dtype in pl.NESTED_DTYPES` instead.
-
-        """
-        from polars.utils.deprecation import issue_deprecation_warning
-
-        message = (
-            "`DataType.is_nested` is deprecated and will be removed in the next breaking release."
-            " It will be changed to a classmethod rather than a property."
-            " To silence this warning, use `dtype in pl.NESTED_DTYPES` instead."
-        )
-        issue_deprecation_warning(message, version="0.19.10")
-        return True
 
 
 class Int8(SignedIntegerType):
