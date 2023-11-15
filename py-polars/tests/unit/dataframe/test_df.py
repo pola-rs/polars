@@ -676,10 +676,10 @@ def test_df_fold() -> None:
 
     df = pl.DataFrame({"a": [3, 2, 1], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
     # just check dispatch. values are tested on rust side.
-    assert len(df.sum(axis=1)) == 3
-    assert len(df.mean(axis=1)) == 3
-    assert len(df.min(axis=1)) == 3
-    assert len(df.max(axis=1)) == 3
+    assert len(df.sum_horizontal()) == 3
+    assert len(df.mean_horizontal()) == 3
+    assert len(df.min_horizontal()) == 3
+    assert len(df.max_horizontal()) == 3
 
     df_width_one = df[["a"]]
     assert_series_equal(df_width_one.fold(lambda s1, s2: s1), df["a"])
@@ -1710,17 +1710,15 @@ def test_panic() -> None:
     a.filter(pl.col("col1") != "b")
 
 
-def test_h_agg() -> None:
+def test_horizontal_agg() -> None:
     df = pl.DataFrame({"a": [1, None, 3], "b": [1, 2, 3]})
 
+    assert_series_equal(df.sum_horizontal(), pl.Series("a", [2, 2, 6]))
     assert_series_equal(
-        df.sum(axis=1, null_strategy="ignore"), pl.Series("a", [2, 2, 6])
+        df.sum_horizontal(ignore_nulls=False), pl.Series("a", [2, None, 6])
     )
     assert_series_equal(
-        df.sum(axis=1, null_strategy="propagate"), pl.Series("a", [2, None, 6])
-    )
-    assert_series_equal(
-        df.mean(axis=1, null_strategy="propagate"), pl.Series("a", [1.0, None, 3.0])
+        df.mean_horizontal(ignore_nulls=False), pl.Series("a", [1.0, None, 3.0])
     )
 
 

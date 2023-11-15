@@ -206,7 +206,9 @@ def test_literal_no_upcast() -> None:
 
 
 def test_boolean_addition() -> None:
-    s = pl.DataFrame({"a": [True, False, False], "b": [True, False, True]}).sum(axis=1)
+    s = pl.DataFrame(
+        {"a": [True, False, False], "b": [True, False, True]}
+    ).sum_horizontal()
 
     assert s.dtype == pl.utils.get_index_type()
     assert s.to_list() == [2, 0, 1]

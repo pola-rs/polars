@@ -78,7 +78,7 @@ def test_duration_aggs() -> None:
 def test_mean_horizontal_with_str_column() -> None:
     assert pl.DataFrame(
         {"int": [1, 2, 3], "bool": [True, True, None], "str": ["a", "b", "c"]}
-    ).mean(axis=1).to_list() == [1.0, 1.5, 3.0]
+    ).mean_horizontal().to_list() == [1.0, 1.5, 3.0]
 
 
 def test_list_aggregation_that_filters_all_data_6017() -> None:
