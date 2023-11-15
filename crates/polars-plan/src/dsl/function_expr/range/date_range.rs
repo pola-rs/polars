@@ -48,8 +48,12 @@ fn date_range(s: &[Series], interval: Duration, closed: ClosedWindow) -> PolarsR
     ensure_range_bounds_contain_exactly_one_value(start, end)?;
 
     let dtype = DataType::Date;
-    let start = temporal_series_to_i64_scalar(start) * MILLISECONDS_IN_DAY;
-    let end = temporal_series_to_i64_scalar(end) * MILLISECONDS_IN_DAY;
+    let start = temporal_series_to_i64_scalar(start)
+        .ok_or_else(|| polars_err!(ComputeError: "start is an out-of-range time."))?
+        * MILLISECONDS_IN_DAY;
+    let end = temporal_series_to_i64_scalar(end)
+        .ok_or_else(|| polars_err!(ComputeError: "end is an out-of-range time."))?
+        * MILLISECONDS_IN_DAY;
 
     let result = datetime_range_impl(
         "date",

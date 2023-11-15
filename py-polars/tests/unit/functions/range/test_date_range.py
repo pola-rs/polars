@@ -29,6 +29,11 @@ def test_date_range_invalid_time_unit() -> None:
         )
 
 
+def test_date_range_invalid_time() -> None:
+    with pytest.raises(pl.ComputeError, match="end is an out-of-range time"):
+        pl.date_range(pl.date(2024, 1, 1), pl.date(2024, 2, 30), eager=True)
+
+
 def test_date_range_lazy_with_literals() -> None:
     df = pl.DataFrame({"misc": ["x"]}).with_columns(
         pl.date_ranges(
