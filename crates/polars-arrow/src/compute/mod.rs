@@ -6,7 +6,7 @@
 //! that each operator has two interfaces, a statically-typed version and a dynamically-typed
 //! version.
 //! The statically-typed version expects concrete arrays (such as [`PrimitiveArray`](crate::array::PrimitiveArray));
-//! the dynamically-typed version expects `&dyn Array` and errors if the the type is not
+//! the dynamically-typed version expects `&dyn Array` and errors if the type is not
 //! supported.
 //! Some dynamically-typed operators have an auxiliary function, `can_*`, that returns
 //! true if the operator can be applied to the particular `DataType`.

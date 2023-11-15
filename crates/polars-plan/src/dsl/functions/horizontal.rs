@@ -190,7 +190,7 @@ where
     }
 }
 
-/// Create a new column with the the bitwise-and of the elements in each row.
+/// Create a new column with the bitwise-and of the elements in each row.
 ///
 /// The name of the resulting column will be "all"; use [`alias`](Expr::alias) to choose a different name.
 pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
@@ -211,7 +211,7 @@ pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     })
 }
 
-/// Create a new column with the the bitwise-or of the elements in each row.
+/// Create a new column with the bitwise-or of the elements in each row.
 ///
 /// The name of the resulting column will be "any"; use [`alias`](Expr::alias) to choose a different name.
 pub fn any_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
@@ -232,7 +232,7 @@ pub fn any_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     })
 }
 
-/// Create a new column with the the maximum value per row.
+/// Create a new column with the maximum value per row.
 ///
 /// The name of the resulting column will be `"max"`; use [`alias`](Expr::alias) to choose a different name.
 pub fn max_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
@@ -252,7 +252,7 @@ pub fn max_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     })
 }
 
-/// Create a new column with the the minimum value per row.
+/// Create a new column with the minimum value per row.
 ///
 /// The name of the resulting column will be `"min"`; use [`alias`](Expr::alias) to choose a different name.
 pub fn min_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
@@ -272,9 +272,10 @@ pub fn min_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     })
 }
 
-/// Create a new column with the the sum of the values in each row.
+/// Create a new column with the sum of the values in each row.
 ///
-/// The name of the resulting column will be `"sum"`; use [`alias`](Expr::alias) to choose a different name.
+/// The name of the resulting column will be `"sum"`.
+/// Use [`alias`](Expr::alias) to choose a different name.
 pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
     polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
