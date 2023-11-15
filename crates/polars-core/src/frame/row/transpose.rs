@@ -120,23 +120,34 @@ impl DataFrame {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => {
                 let mut valid = true;
-                let mut cache_id = None;
+                let mut cache_id_global = None;
+                let mut cache_id_local = None;
                 for s in self.columns.iter() {
                     if let DataType::Categorical(Some(rev_map)) = &s.dtype() {
                         match &**rev_map {
-                            RevMapping::Local(_) => valid = false,
-                            RevMapping::Global(_, _, id) => {
-                                if let Some(cache_id) = cache_id {
+                            RevMapping::Local(_, id) => {
+                                if let Some(cache_id) = cache_id_local {
                                     if cache_id != *id {
                                         valid = false;
                                     }
                                 }
-                                cache_id = Some(*id);
+                                cache_id_local = Some(*id);
+                            },
+                            RevMapping::Global(_, _, id) => {
+                                if let Some(cache_id) = cache_id_global {
+                                    if cache_id != *id {
+                                        valid = false;
+                                    }
+                                }
+                                cache_id_global = Some(*id);
                             },
                         }
                     }
                 }
-                polars_ensure!(valid, ComputeError: "'transpose' of categorical can only be done if all are from the same global string cache")
+                if cache_id_local.is_some() && cache_id_global.is_some() {
+                    valid = false;
+                }
+                polars_ensure!(valid, ComputeError: "'transpose' of categorical can only be done if all are from the same local/global string cache")
             },
             _ => {},
         }

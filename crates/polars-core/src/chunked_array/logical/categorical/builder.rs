@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 
+use ahash::RandomState;
 use arrow::array::*;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use hashbrown::hash_map::{Entry, RawEntryMut};
@@ -40,7 +41,7 @@ impl RevMappingBuilder {
     fn finish(self) -> RevMapping {
         use RevMappingBuilder::*;
         match self {
-            Local(b) => RevMapping::Local(b.into()),
+            Local(b) => RevMapping::build_local(b.into()),
             GlobalFinished(map, b, uuid) => RevMapping::Global(map, b, uuid),
         }
     }
@@ -51,8 +52,8 @@ pub enum RevMapping {
     /// Hashmap: maps the indexes from the global cache/categorical array to indexes in the local Utf8Array
     /// Utf8Array: caches the string values
     Global(PlHashMap<u32, u32>, Utf8Array<i64>, u32),
-    /// Utf8Array: caches the string values
-    Local(Utf8Array<i64>),
+    /// Utf8Array: caches the string values and a hash of all values for quick comparison
+    Local(Utf8Array<i64>, u64),
 }
 
 impl Debug for RevMapping {
@@ -61,7 +62,7 @@ impl Debug for RevMapping {
             RevMapping::Global(_, _, _) => {
                 write!(f, "global")
             },
-            RevMapping::Local(_) => {
+            RevMapping::Local(_, _) => {
                 write!(f, "local")
             },
         }
@@ -77,7 +78,7 @@ impl Default for RevMapping {
             let id = cache.uuid;
             RevMapping::Global(Default::default(), cats, id)
         } else {
-            RevMapping::Local(cats)
+            RevMapping::build_local(cats)
         }
     }
 }
@@ -96,8 +97,13 @@ impl RevMapping {
     pub fn get_categories(&self) -> &Utf8Array<i64> {
         match self {
             Self::Global(_, a, _) => a,
-            Self::Local(a) => a,
+            Self::Local(a, _) => a,
         }
+    }
+
+    pub fn build_local(categories: Utf8Array<i64>) -> RevMapping {
+        let hash = RandomState::with_seed(0).hash_one(categories.values().as_slice());
+        RevMapping::Local(categories, hash)
     }
 
     /// Get the length of the [`RevMapping`]
@@ -114,7 +120,7 @@ impl RevMapping {
                 let idx = *map.get(&idx).unwrap();
                 a.value(idx as usize)
             },
-            Self::Local(a) => a.value(idx as usize),
+            Self::Local(a, _) => a.value(idx as usize),
         }
     }
 
@@ -124,7 +130,7 @@ impl RevMapping {
                 let idx = *map.get(&idx)?;
                 a.get(idx as usize)
             },
-            Self::Local(a) => a.get(idx as usize),
+            Self::Local(a, _) => a.get(idx as usize),
         }
     }
 
@@ -140,16 +146,14 @@ impl RevMapping {
                 let idx = *map.get(&idx).unwrap();
                 a.value_unchecked(idx as usize)
             },
-            Self::Local(a) => a.value_unchecked(idx as usize),
+            Self::Local(a, _) => a.value_unchecked(idx as usize),
         }
     }
     /// Check if the categoricals have a compatible mapping
     pub fn same_src(&self, other: &Self) -> bool {
         match (self, other) {
             (RevMapping::Global(_, _, l), RevMapping::Global(_, _, r)) => *l == *r,
-            (RevMapping::Local(l), RevMapping::Local(r)) => {
-                std::ptr::eq(l as *const Utf8Array<_>, r as *const Utf8Array<_>)
-            },
+            (RevMapping::Local(_, l_hash), RevMapping::Local(_, r_hash)) => l_hash == r_hash,
             _ => false,
         }
     }
@@ -175,7 +179,7 @@ impl RevMapping {
                     .find(|(_k, &v)| (unsafe { a.value_unchecked(v as usize) } == value))
                     .map(|(k, _v)| *k)
             },
-            Self::Local(a) => {
+            Self::Local(a, _) => {
                 // Safety: within bounds
                 unsafe { (0..a.len()).find(|idx| a.value_unchecked(*idx) == value) }
                     .map(|idx| idx as u32)

@@ -9,10 +9,11 @@ pub fn create_categorical_chunked_listbuilder(
     rev_map: Arc<RevMapping>,
 ) -> Box<dyn ListBuilderTrait> {
     match &*rev_map {
-        RevMapping::Local(_) => Box::new(ListLocalCategoricalChunkedBuilder::new(
+        RevMapping::Local(_, h) => Box::new(ListLocalCategoricalChunkedBuilder::new(
             name,
             capacity,
             values_capacity,
+            *h,
         )),
         RevMapping::Global(_, _, _) => Box::new(ListGlobalCategoricalChunkedBuilder::new(
             name,
@@ -27,6 +28,7 @@ struct ListLocalCategoricalChunkedBuilder {
     inner: ListPrimitiveChunkedBuilder<UInt32Type>,
     idx_lookup: PlHashMap<KeyWrapper, ()>,
     categories: MutableUtf8Array<i64>,
+    categories_hash: u64,
 }
 
 // Wrap u32 key to avoid incorrect usage of hashmap with custom lookup
@@ -38,7 +40,7 @@ impl ListLocalCategoricalChunkedBuilder {
         RandomState::with_seed(0)
     }
 
-    pub(super) fn new(name: &str, capacity: usize, values_capacity: usize) -> Self {
+    pub(super) fn new(name: &str, capacity: usize, values_capacity: usize, hash: u64) -> Self {
         Self {
             inner: ListPrimitiveChunkedBuilder::new(
                 name,
@@ -51,6 +53,7 @@ impl ListLocalCategoricalChunkedBuilder {
                 ListLocalCategoricalChunkedBuilder::get_hash_builder(),
             ),
             categories: MutableUtf8Array::with_capacity(capacity),
+            categories_hash: hash,
         }
     }
 }
@@ -60,10 +63,15 @@ impl ListBuilderTrait for ListLocalCategoricalChunkedBuilder {
         let DataType::Categorical(Some(rev_map)) = s.dtype() else {
             polars_bail!(ComputeError: "expected categorical type")
         };
-        let RevMapping::Local(cats_right) = &**rev_map else {
+        let RevMapping::Local(cats_right, new_hash) = &**rev_map else {
             polars_bail!(string_cache_mismatch)
         };
         let ca = s.categorical().unwrap();
+
+        // Fast path rev_maps are compatible.
+        if self.categories_hash == *new_hash {
+            return self.inner.append_series(s);
+        }
 
         let hash_builder = ListLocalCategoricalChunkedBuilder::get_hash_builder();
 
@@ -122,7 +130,8 @@ impl ListBuilderTrait for ListLocalCategoricalChunkedBuilder {
 
     fn finish(&mut self) -> ListChunked {
         let categories: Utf8Array<i64> = std::mem::take(&mut self.categories).into();
-        let inner_dtype = DataType::Categorical(Some(Arc::new(RevMapping::Local(categories))));
+        let rev_map = RevMapping::build_local(categories);
+        let inner_dtype = DataType::Categorical(Some(Arc::new(rev_map)));
         let mut ca = self.inner.finish();
         unsafe { ca.set_dtype(DataType::List(Box::new(inner_dtype))) }
         ca

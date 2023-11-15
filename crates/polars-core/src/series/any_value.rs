@@ -427,7 +427,7 @@ impl<'a> From<&AnyValue<'a>> for DataType {
                     DataType::Categorical(Some(Arc::new((*rev_map).clone())))
                 } else {
                     let array = unsafe { arr.deref_unchecked().clone() };
-                    let rev_map = RevMapping::Local(array);
+                    let rev_map = RevMapping::build_local(array);
                     DataType::Categorical(Some(Arc::new(rev_map)))
                 }
             },
