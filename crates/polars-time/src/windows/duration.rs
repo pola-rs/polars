@@ -350,13 +350,15 @@ impl Duration {
     #[doc(hidden)]
     pub const fn duration_us(&self) -> i64 {
         self.months * 28 * 24 * 3600 * MICROSECONDS
-            + (self.weeks * NS_WEEK + self.nsecs + self.days * NS_DAY) / 1000
+            + (self.weeks * NS_WEEK / 1000 + self.nsecs / 1000 + self.days * NS_DAY / 1000)
     }
 
     #[doc(hidden)]
     pub const fn duration_ms(&self) -> i64 {
         self.months * 28 * 24 * 3600 * MILLISECONDS
-            + (self.weeks * NS_WEEK + self.nsecs + self.days * NS_DAY) / 1_000_000
+            + (self.weeks * NS_WEEK / 1_000_000
+                + self.nsecs / 1_000_000
+                + self.days * NS_DAY / 1_000_000)
     }
 
     #[doc(hidden)]
@@ -689,7 +691,7 @@ impl Duration {
         }
 
         if d.weeks > 0 {
-            let t_weeks = nsecs_to_unit(self.weeks * NS_WEEK);
+            let t_weeks = nsecs_to_unit(NS_WEEK) * self.weeks;
             match tz {
                 #[cfg(feature = "timezones")]
                 Some(tz) => {
@@ -707,7 +709,7 @@ impl Duration {
         }
 
         if d.days > 0 {
-            let t_days = nsecs_to_unit(self.days * NS_DAY);
+            let t_days = nsecs_to_unit(NS_DAY) * self.days;
             match tz {
                 #[cfg(feature = "timezones")]
                 Some(tz) => {

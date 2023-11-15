@@ -369,3 +369,10 @@ def test_date_range_24h_interval_results_in_datetime() -> None:
         "date", [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2022, 1, 3)]
     )
     assert_series_equal(result.collect().to_series(), expected)
+
+
+def test_long_date_range_12461() -> None:
+    result = pl.date_range(date(1900, 1, 1), date(2300, 1, 1), "1d", eager=True)
+    assert result[0] == date(1900, 1, 1)
+    assert result[-1] == date(2300, 1, 1)
+    assert (result.diff()[1:].dt.total_days() == 1).all()
