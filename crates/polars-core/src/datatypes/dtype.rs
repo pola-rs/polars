@@ -262,7 +262,7 @@ impl DataType {
             Null => Ok(ArrowDataType::Null),
             #[cfg(feature = "object")]
             Object(_) => {
-                polars_bail!(InvalidOperation: "cannot convert data with Object dtype to Arrow")
+                polars_bail!(InvalidOperation: "cannot convert Object dtype data to Arrow")
             },
             #[cfg(feature = "dtype-categorical")]
             Categorical(_) => Ok(ArrowDataType::Dictionary(
@@ -276,7 +276,7 @@ impl DataType {
                 Ok(ArrowDataType::Struct(fields))
             },
             Unknown => {
-                polars_bail!(InvalidOperation: "cannot convert data with Unknown dtype to Arrow")
+                polars_bail!(InvalidOperation: "cannot convert Unknown dtype data to Arrow")
             },
         }
     }
