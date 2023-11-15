@@ -8123,7 +8123,7 @@ class DataFrame:
                 6.0
         ]
         """
-        return self.select(F.max_horizontal(F.all()))
+        return self.select(F.max_horizontal(F.all())).to_series()
 
     @overload
     def min(self, axis: Literal[0] | None = ...) -> Self:
@@ -8212,7 +8212,7 @@ class DataFrame:
                 3.0
         ]
         """
-        return self.select(F.min_horizontal(F.all()))
+        return self.select(F.min_horizontal(F.all())).to_series()
 
     @overload
     def sum(
@@ -8339,7 +8339,7 @@ class DataFrame:
                 9.0
         ]
         """
-        return wrap_s(self._df.sum_horizontal(ignore_nulls))
+        return wrap_s(self._df.sum_horizontal(ignore_nulls)).alias("sum")
 
     @overload
     def mean(
@@ -8467,7 +8467,7 @@ class DataFrame:
                 4.5
         ]
         """
-        return wrap_s(self._df.mean_horizontal(ignore_nulls))
+        return wrap_s(self._df.mean_horizontal(ignore_nulls)).alias("mean")
 
     def std(self, ddof: int = 1) -> Self:
         """
