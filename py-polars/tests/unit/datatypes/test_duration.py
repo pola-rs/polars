@@ -16,7 +16,7 @@ def test_duration_cum_sum() -> None:
         pl.Duration(time_unit="ms"),
         pl.Duration(time_unit="ns"),
     ):
-        assert df.schema["A"].is_(duration_dtype) is False  # type: ignore[arg-type]
+        assert df.schema["A"].is_(duration_dtype) is False
 
 
 def test_duration_std_var() -> None:

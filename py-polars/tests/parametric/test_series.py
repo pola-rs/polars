@@ -139,7 +139,7 @@ def test_series_duration_timeunits(
         "us": 1_000,
         "ms": 1_000_000,
     }
-    assert nanos == [v * scale[s.dtype.time_unit] for v in s.to_physical()]  # type: ignore[union-attr]
+    assert nanos == [v * scale[s.dtype.time_unit] for v in s.to_physical()]  # type: ignore[attr-defined]
     assert micros == [int(v / 1_000) for v in nanos]
     assert millis == [int(v / 1_000) for v in micros]
 

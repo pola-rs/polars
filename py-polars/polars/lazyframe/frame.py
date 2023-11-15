@@ -87,7 +87,7 @@ if TYPE_CHECKING:
 
     import pyarrow as pa
 
-    from polars import DataFrame, Expr
+    from polars import DataFrame, DataType, Expr
     from polars.dependencies import numpy as np
     from polars.type_aliases import (
         AsofJoinStrategy,
@@ -693,7 +693,7 @@ class LazyFrame:
         return self._ldf.columns()
 
     @property
-    def dtypes(self) -> list[PolarsDataType]:
+    def dtypes(self) -> list[DataType]:
         """
         Get dtypes of columns in LazyFrame.
 
@@ -717,7 +717,7 @@ class LazyFrame:
         return self._ldf.dtypes()
 
     @property
-    def schema(self) -> SchemaDict:
+    def schema(self) -> OrderedDict[str, DataType]:
         """
         Get a dict[column name, DataType].
 

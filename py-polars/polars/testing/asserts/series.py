@@ -18,7 +18,7 @@ from polars.series import Series
 from polars.testing.asserts.utils import raise_assertion_error
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PolarsDataType
+    from polars import DataType
 
 
 def assert_series_equal(
@@ -252,19 +252,19 @@ def _assert_series_nan_values_match(left: Series, right: Series) -> None:
         )
 
 
-def _comparing_floats(left: PolarsDataType, right: PolarsDataType) -> bool:
+def _comparing_floats(left: DataType, right: DataType) -> bool:
     return left.is_float() and right.is_float()
 
 
-def _comparing_lists(left: PolarsDataType, right: PolarsDataType) -> bool:
+def _comparing_lists(left: DataType, right: DataType) -> bool:
     return left in (List, Array) and right in (List, Array)
 
 
-def _comparing_structs(left: PolarsDataType, right: PolarsDataType) -> bool:
+def _comparing_structs(left: DataType, right: DataType) -> bool:
     return left == Struct and right == Struct
 
 
-def _comparing_nested_floats(left: PolarsDataType, right: PolarsDataType) -> bool:
+def _comparing_nested_floats(left: DataType, right: DataType) -> bool:
     if not (_comparing_lists(left, right) or _comparing_structs(left, right)):
         return False
 

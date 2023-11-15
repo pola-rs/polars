@@ -126,7 +126,7 @@ if TYPE_CHECKING:
     import deltalake
     from xlsxwriter import Workbook
 
-    from polars import Expr, LazyFrame, Series
+    from polars import DataType, Expr, LazyFrame, Series
     from polars.interchange.dataframe import PolarsDataFrame
     from polars.type_aliases import (
         AsofJoinStrategy,
@@ -1206,7 +1206,7 @@ class DataFrame:
         self._df.set_column_names(names)
 
     @property
-    def dtypes(self) -> list[PolarsDataType]:
+    def dtypes(self) -> list[DataType]:
         """
         Get the datatypes of the columns of this DataFrame.
 
@@ -1255,7 +1255,7 @@ class DataFrame:
         return {name: self[name].flags for name in self.columns}
 
     @property
-    def schema(self) -> SchemaDict:
+    def schema(self) -> OrderedDict[str, DataType]:
         """
         Get a dict[column name, DataType].
 
