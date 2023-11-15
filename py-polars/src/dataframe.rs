@@ -1278,23 +1278,29 @@ impl PyDataFrame {
         self.df.median().into()
     }
 
-    pub fn hmean(&self, null_strategy: Wrap<NullStrategy>) -> PyResult<Option<PySeries>> {
-        let s = self.df.hmean(null_strategy.0).map_err(PyPolarsErr::from)?;
+    pub fn mean_horizontal(&self, null_strategy: Wrap<NullStrategy>) -> PyResult<Option<PySeries>> {
+        let s = self
+            .df
+            .mean_horizontal(null_strategy.0)
+            .map_err(PyPolarsErr::from)?;
         Ok(s.map(|s| s.into()))
     }
 
-    pub fn hmax(&self) -> PyResult<Option<PySeries>> {
-        let s = self.df.hmax().map_err(PyPolarsErr::from)?;
+    pub fn max_horizontal(&self) -> PyResult<Option<PySeries>> {
+        let s = self.df.max_horizontal().map_err(PyPolarsErr::from)?;
         Ok(s.map(|s| s.into()))
     }
 
-    pub fn hmin(&self) -> PyResult<Option<PySeries>> {
-        let s = self.df.hmin().map_err(PyPolarsErr::from)?;
+    pub fn min_horizontal(&self) -> PyResult<Option<PySeries>> {
+        let s = self.df.min_horizontal().map_err(PyPolarsErr::from)?;
         Ok(s.map(|s| s.into()))
     }
 
-    pub fn hsum(&self, null_strategy: Wrap<NullStrategy>) -> PyResult<Option<PySeries>> {
-        let s = self.df.hsum(null_strategy.0).map_err(PyPolarsErr::from)?;
+    pub fn sum_horizontal(&self, null_strategy: Wrap<NullStrategy>) -> PyResult<Option<PySeries>> {
+        let s = self
+            .df
+            .sum_horizontal(null_strategy.0)
+            .map_err(PyPolarsErr::from)?;
         Ok(s.map(|s| s.into()))
     }
 

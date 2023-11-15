@@ -75,7 +75,7 @@ def test_duration_aggs() -> None:
     }
 
 
-def test_hmean_with_str_column() -> None:
+def test_mean_horizontal_with_str_column() -> None:
     assert pl.DataFrame(
         {"int": [1, 2, 3], "bool": [True, True, None], "str": ["a", "b", "c"]}
     ).mean(axis=1).to_list() == [1.0, 1.5, 3.0]
