@@ -92,7 +92,14 @@ fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
     } else if FLOAT_RE.is_match(string) {
         DataType::Float64
     } else if INTEGER_RE.is_match(string) {
-        DataType::Int64
+        match string.parse::<i64>() {
+            Ok(_) => {
+                DataType::Int64
+            }
+            Err(_) => {
+                DataType::Float64
+            }
+        }
     } else if try_parse_dates {
         #[cfg(feature = "polars-time")]
         {
