@@ -1713,12 +1713,12 @@ def test_panic() -> None:
 def test_horizontal_agg() -> None:
     df = pl.DataFrame({"a": [1, None, 3], "b": [1, 2, 3]})
 
-    assert_series_equal(df.sum_horizontal(), pl.Series("a", [2, 2, 6]))
+    assert_series_equal(df.sum_horizontal(), pl.Series("sum", [2, 2, 6]))
     assert_series_equal(
-        df.sum_horizontal(ignore_nulls=False), pl.Series("a", [2, None, 6])
+        df.sum_horizontal(ignore_nulls=False), pl.Series("sum", [2, None, 6])
     )
     assert_series_equal(
-        df.mean_horizontal(ignore_nulls=False), pl.Series("a", [1.0, None, 3.0])
+        df.mean_horizontal(ignore_nulls=False), pl.Series("mean", [1.0, None, 3.0])
     )
 
 
