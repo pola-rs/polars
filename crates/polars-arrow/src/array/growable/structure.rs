@@ -103,7 +103,7 @@ impl<'a> Growable<'a> for GrowableStruct<'a> {
         // All children should have the same indexing, so just use the first
         // one. If we don't have children, we might still have a validity
         // array, so use that.
-        if let Some(child) = self.values.get(0) {
+        if let Some(child) = self.values.first() {
             child.len()
         } else {
             self.validity.len()

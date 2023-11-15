@@ -626,7 +626,7 @@ impl DataFrame {
 
     /// The number of chunks per column
     pub fn n_chunks(&self) -> usize {
-        match self.columns.get(0) {
+        match self.columns.first() {
             None => 0,
             Some(s) => s.n_chunks(),
         }
@@ -1234,7 +1234,7 @@ impl DataFrame {
     /// }
     /// ```
     pub fn get(&self, idx: usize) -> Option<Vec<AnyValue>> {
-        match self.columns.get(0) {
+        match self.columns.first() {
             Some(s) => {
                 if s.len() <= idx {
                     return None;

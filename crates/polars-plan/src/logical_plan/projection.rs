@@ -46,8 +46,7 @@ fn rewrite_special_aliases(expr: Expr) -> PolarsResult<Expr> {
         match expr {
             Expr::KeepName(expr) => {
                 let roots = expr_to_leaf_column_names(&expr);
-                let name = roots
-                    .get(0)
+                let name = roots.first()
                     .expect("expected root column to keep expression name");
                 Ok(Expr::Alias(expr, name.clone()))
             },
