@@ -1271,8 +1271,9 @@ def test_batched_csv_reader_empty(io_files_path: Path) -> None:
     reader = pl.read_csv_batched(source=empty_csv, raise_if_empty=False)
     assert reader.next_batches(1) is None
 
+
 def test_big_nums_infer_schema(io_files_path: Path) -> None:
-    big_ints_csv = io_files_path / "big_num.csv"
+    big_ints_csv = io_files_path / "big_nums.csv"
     pl.show_versions()
     pl.scan_csv(big_ints_csv, infer_schema_length=None).collect()
 
