@@ -4,6 +4,7 @@ use std::ops::Deref;
 use either::Either;
 use numpy::IntoPyArray;
 use polars::frame::row::{rows_to_schema_supertypes, Row};
+use polars::frame::NullStrategy;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
 #[cfg(feature = "ipc")]
@@ -1278,14 +1279,6 @@ impl PyDataFrame {
         self.df.median().into()
     }
 
-    pub fn mean_horizontal(&self, null_strategy: Wrap<NullStrategy>) -> PyResult<Option<PySeries>> {
-        let s = self
-            .df
-            .mean_horizontal(null_strategy.0)
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.map(|s| s.into()))
-    }
-
     pub fn max_horizontal(&self) -> PyResult<Option<PySeries>> {
         let s = self.df.max_horizontal().map_err(PyPolarsErr::from)?;
         Ok(s.map(|s| s.into()))
@@ -1296,10 +1289,28 @@ impl PyDataFrame {
         Ok(s.map(|s| s.into()))
     }
 
-    pub fn sum_horizontal(&self, null_strategy: Wrap<NullStrategy>) -> PyResult<Option<PySeries>> {
+    pub fn sum_horizontal(&self, ignore_nulls: bool) -> PyResult<Option<PySeries>> {
+        let null_strategy = if ignore_nulls {
+            NullStrategy::Ignore
+        } else {
+            NullStrategy::Propagate
+        };
         let s = self
             .df
-            .sum_horizontal(null_strategy.0)
+            .sum_horizontal(null_strategy)
+            .map_err(PyPolarsErr::from)?;
+        Ok(s.map(|s| s.into()))
+    }
+
+    pub fn mean_horizontal(&self, ignore_nulls: bool) -> PyResult<Option<PySeries>> {
+        let null_strategy = if ignore_nulls {
+            NullStrategy::Ignore
+        } else {
+            NullStrategy::Propagate
+        };
+        let s = self
+            .df
+            .mean_horizontal(null_strategy)
             .map_err(PyPolarsErr::from)?;
         Ok(s.map(|s| s.into()))
     }
