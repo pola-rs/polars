@@ -6972,7 +6972,7 @@ class Series:
         True
 
         """
-        return self.dtype is Boolean
+        return self.dtype == Boolean
 
     @deprecate_function("Use `Series.dtype == pl.Utf8` instead.", version="0.19.14")
     def is_utf8(self) -> bool:
@@ -6989,7 +6989,7 @@ class Series:
         True
 
         """
-        return self.dtype is Utf8
+        return self.dtype == Utf8
 
     @deprecate_renamed_function("gather_every", version="0.19.14")
     def take_every(self, n: int) -> Series:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 import pickle
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
@@ -39,16 +38,15 @@ SIMPLE_DTYPES: list[DataTypeClass] = list(
 )
 
 
-def test_simple_dtype_init_returns_class() -> None:
-    for dtype in SIMPLE_DTYPES:
-        result = dtype()
-        assert inspect.isclass(result)
-
-
 def test_simple_dtype_init_takes_no_args() -> None:
     for dtype in SIMPLE_DTYPES:
         with pytest.raises(TypeError):
             dtype(10)
+
+
+def test_simple_dtype_init_returns_instance() -> None:
+    dtype = pl.Int8()
+    assert isinstance(dtype, pl.Int8)
 
 
 def test_complex_dtype_init_returns_instance() -> None:
