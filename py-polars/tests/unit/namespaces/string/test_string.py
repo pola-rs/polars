@@ -246,8 +246,8 @@ def test_str_to_integer_df() -> None:
     )
     out = df.with_columns(
         [
-            pl.col("bin").str.to_integer(2, strict=False),
-            pl.col("hex").str.to_integer(16, strict=False),
+            pl.col("bin").str.to_integer(base=2, strict=False),
+            pl.col("hex").str.to_integer(base=16, strict=False),
         ]
     )
 
@@ -261,7 +261,10 @@ def test_str_to_integer_df() -> None:
 
     with pytest.raises(pl.ComputeError):
         df.with_columns(
-            [pl.col("bin").str.to_integer(2), pl.col("hex").str.to_integer(16)]
+            [
+                pl.col("bin").str.to_integer(base=2),
+                pl.col("hex").str.to_integer(base=16),
+            ]
         )
 
 

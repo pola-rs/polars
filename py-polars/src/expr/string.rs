@@ -192,7 +192,7 @@ impl PyExpr {
         self.inner
             .clone()
             .str()
-            .from_radix(base, strict)
+            .to_integer(base, strict)
             .with_fmt("str.to_integer")
             .into()
     }

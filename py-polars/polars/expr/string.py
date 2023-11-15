@@ -2029,7 +2029,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_explode())
 
-    def to_integer(self, base: int = 10, *, strict: bool = True) -> Expr:
+    def to_integer(self, *, base: int = 10, strict: bool = True) -> Expr:
         """
         Convert an Utf8 column into an Int64 column with base radix.
 
@@ -2102,7 +2102,7 @@ class ExprStringNameSpace:
         """
         if base is None:
             base = 2
-        return self.to_integer(base, strict=strict).cast(Int32, strict=strict)
+        return self.to_integer(base=base, strict=strict).cast(Int32, strict=strict)
 
     @deprecate_renamed_function("strip_chars", version="0.19.3")
     def strip(self, characters: str | None = None) -> Expr:
