@@ -1116,3 +1116,22 @@ fn test_leading_whitespace_with_quote() -> PolarsResult<()> {
     assert_eq!(col_2.get(0)?, AnyValue::Float64(4.1));
     Ok(())
 }
+
+#[test]
+fn test_quoted_fields_with_line_breaks() -> PolarsResult<()> {
+    let csv = r#"id,description
+1,"This is a description
+with a line break"
+2,"Another description"
+"#;
+    let file = Cursor::new(csv);
+    let df = CsvReader::new(file).finish()?;
+
+    assert_eq!(df.shape(), (2, 2));
+    assert_eq!(
+        df.column("description").unwrap().get(0)?,
+        AnyValue::Utf8("This is a description\nwith a line break")
+    );
+
+    Ok(())
+}
