@@ -6,7 +6,7 @@ use crate::array::*;
 use crate::bitmap::utils::{BitChunkIterExact, BitChunksExact, SlicesIterator};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::chunk::Chunk;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::types::simd::Simd;
 use crate::types::{BitChunkOnes, NativeType};
 use crate::with_match_primitive_type_full;
@@ -271,7 +271,7 @@ pub fn filter(array: &dyn Array, filter: &BooleanArray) -> PolarsResult<Box<dyn 
     if let Some(validities) = filter.validity() {
         let values = filter.values();
         let new_values = values & validities;
-        let filter = BooleanArray::new(DataType::Boolean, new_values, None);
+        let filter = BooleanArray::new(ArrowDataType::Boolean, new_values, None);
         return crate::compute::filter::filter(array, &filter);
     }
 

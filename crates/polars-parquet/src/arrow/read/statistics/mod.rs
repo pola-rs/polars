@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use arrow::array::*;
-use arrow::datatypes::{DataType, Field, IntervalUnit, PhysicalType};
+use arrow::datatypes::{ArrowDataType, Field, IntervalUnit, PhysicalType};
 use arrow::types::i256;
 use arrow::with_match_primitive_type;
 use ethnum::I256;
@@ -154,7 +154,7 @@ impl From<MutableStatistics> for Statistics {
     }
 }
 
-fn make_mutable(data_type: &DataType, capacity: usize) -> PolarsResult<Box<dyn MutableArray>> {
+fn make_mutable(data_type: &ArrowDataType, capacity: usize) -> PolarsResult<Box<dyn MutableArray>> {
     Ok(match data_type.to_physical_type() {
         PhysicalType::Boolean => {
             Box::new(MutableBooleanArray::with_capacity(capacity)) as Box<dyn MutableArray>
@@ -194,7 +194,7 @@ fn make_mutable(data_type: &DataType, capacity: usize) -> PolarsResult<Box<dyn M
             capacity,
         )?),
         PhysicalType::Null => {
-            Box::new(MutableNullArray::new(DataType::Null, 0)) as Box<dyn MutableArray>
+            Box::new(MutableNullArray::new(ArrowDataType::Null, 0)) as Box<dyn MutableArray>
         },
         other => {
             polars_bail!(
@@ -204,33 +204,33 @@ fn make_mutable(data_type: &DataType, capacity: usize) -> PolarsResult<Box<dyn M
     })
 }
 
-fn create_dt(data_type: &DataType) -> DataType {
-    if let DataType::Struct(fields) = data_type.to_logical_type() {
-        DataType::Struct(
+fn create_dt(data_type: &ArrowDataType) -> ArrowDataType {
+    if let ArrowDataType::Struct(fields) = data_type.to_logical_type() {
+        ArrowDataType::Struct(
             fields
                 .iter()
                 .map(|f| Field::new(&f.name, create_dt(&f.data_type), f.is_nullable))
                 .collect(),
         )
-    } else if let DataType::Map(f, ordered) = data_type.to_logical_type() {
-        DataType::Map(
+    } else if let ArrowDataType::Map(f, ordered) = data_type.to_logical_type() {
+        ArrowDataType::Map(
             Box::new(Field::new(&f.name, create_dt(&f.data_type), f.is_nullable)),
             *ordered,
         )
-    } else if let DataType::List(f) = data_type.to_logical_type() {
-        DataType::List(Box::new(Field::new(
+    } else if let ArrowDataType::List(f) = data_type.to_logical_type() {
+        ArrowDataType::List(Box::new(Field::new(
             &f.name,
             create_dt(&f.data_type),
             f.is_nullable,
         )))
-    } else if let DataType::LargeList(f) = data_type.to_logical_type() {
-        DataType::LargeList(Box::new(Field::new(
+    } else if let ArrowDataType::LargeList(f) = data_type.to_logical_type() {
+        ArrowDataType::LargeList(Box::new(Field::new(
             &f.name,
             create_dt(&f.data_type),
             f.is_nullable,
         )))
     } else {
-        DataType::UInt64
+        ArrowDataType::UInt64
     }
 }
 
@@ -439,7 +439,7 @@ fn push(
 
     let physical_type = &type_.physical_type;
 
-    use DataType::*;
+    use ArrowDataType::*;
     match min.data_type().to_logical_type() {
         Boolean => boolean::push(from, min, max),
         Int8 => primitive::push(from, min, max, |x: i32| Ok(x as i8)),

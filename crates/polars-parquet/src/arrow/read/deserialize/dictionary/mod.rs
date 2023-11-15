@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 
 use arrow::array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray};
 use arrow::bitmap::MutableBitmap;
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 
 use super::utils::{
     self, dict_indices_decoder, extend_from_decoder, get_selected_rows, DecodedState, Decoder,
@@ -240,7 +240,7 @@ pub(super) fn next_dict<K: DictionaryKey, I: Pages, F: Fn(&DictPage) -> Box<dyn 
     iter: &mut I,
     items: &mut VecDeque<(Vec<K>, MutableBitmap)>,
     dict: &mut Option<Box<dyn Array>>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     remaining: &mut usize,
     chunk_size: Option<usize>,
     read_dict: F,

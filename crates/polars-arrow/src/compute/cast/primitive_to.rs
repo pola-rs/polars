@@ -7,7 +7,7 @@ use super::CastOptions;
 use crate::array::*;
 use crate::bitmap::Bitmap;
 use crate::compute::arity::unary;
-use crate::datatypes::{DataType, IntervalUnit, TimeUnit};
+use crate::datatypes::{ArrowDataType, IntervalUnit, TimeUnit};
 use crate::offset::{Offset, Offsets};
 use crate::temporal_conversions::*;
 use crate::types::{days_ms, f16, months_days_ns, NativeType};
@@ -61,7 +61,7 @@ where
 /// Validity is preserved.
 pub fn primitive_to_boolean<T: NativeType>(
     from: &PrimitiveArray<T>,
-    to_type: DataType,
+    to_type: ArrowDataType,
 ) -> BooleanArray {
     let iter = from.values().iter().map(|v| *v != T::default());
     let values = Bitmap::from_trusted_len_iter(iter);
@@ -71,7 +71,7 @@ pub fn primitive_to_boolean<T: NativeType>(
 
 pub(super) fn primitive_to_boolean_dyn<T>(
     from: &dyn Array,
-    to_type: DataType,
+    to_type: ArrowDataType,
 ) -> PolarsResult<Box<dyn Array>>
 where
     T: NativeType,
@@ -127,7 +127,7 @@ where
 
 pub(super) fn primitive_to_primitive_dyn<I, O>(
     from: &dyn Array,
-    to_type: &DataType,
+    to_type: &ArrowDataType,
     options: CastOptions,
 ) -> PolarsResult<Box<dyn Array>>
 where
@@ -145,7 +145,7 @@ where
 /// Cast [`PrimitiveArray`] to a [`PrimitiveArray`] of another physical type via numeric conversion.
 pub fn primitive_to_primitive<I, O>(
     from: &PrimitiveArray<I>,
-    to_type: &DataType,
+    to_type: &ArrowDataType,
 ) -> PrimitiveArray<O>
 where
     I: NativeType + num_traits::NumCast,
@@ -183,7 +183,7 @@ pub fn integer_to_decimal<T: NativeType + AsPrimitive<i128>>(
     });
 
     PrimitiveArray::<i128>::from_trusted_len_iter(values)
-        .to(DataType::Decimal(to_precision, to_scale))
+        .to(ArrowDataType::Decimal(to_precision, to_scale))
 }
 
 pub(super) fn integer_to_decimal_dyn<T>(
@@ -228,7 +228,7 @@ where
     });
 
     PrimitiveArray::<i128>::from_trusted_len_iter(values)
-        .to(DataType::Decimal(to_precision, to_scale))
+        .to(ArrowDataType::Decimal(to_precision, to_scale))
 }
 
 pub(super) fn float_to_decimal_dyn<T>(
@@ -248,7 +248,7 @@ where
 /// Same as `number as to_number_type` in rust
 pub fn primitive_as_primitive<I, O>(
     from: &PrimitiveArray<I>,
-    to_type: &DataType,
+    to_type: &ArrowDataType,
 ) -> PrimitiveArray<O>
 where
     I: NativeType + num_traits::AsPrimitive<O>,
@@ -261,7 +261,7 @@ where
 /// This is O(1).
 pub fn primitive_to_same_primitive<T>(
     from: &PrimitiveArray<T>,
-    to_type: &DataType,
+    to_type: &ArrowDataType,
 ) -> PrimitiveArray<T>
 where
     T: NativeType,
@@ -277,7 +277,7 @@ where
 /// This is O(1).
 pub(super) fn primitive_to_same_primitive_dyn<T>(
     from: &dyn Array,
-    to_type: &DataType,
+    to_type: &ArrowDataType,
 ) -> PolarsResult<Box<dyn Array>>
 where
     T: NativeType,
@@ -321,39 +321,59 @@ const fn time_unit_multiple(unit: TimeUnit) -> i64 {
 
 /// Conversion of dates
 pub fn date32_to_date64(from: &PrimitiveArray<i32>) -> PrimitiveArray<i64> {
-    unary(from, |x| x as i64 * MILLISECONDS_IN_DAY, DataType::Date64)
+    unary(
+        from,
+        |x| x as i64 * MILLISECONDS_IN_DAY,
+        ArrowDataType::Date64,
+    )
 }
 
 /// Conversion of dates
 pub fn date64_to_date32(from: &PrimitiveArray<i64>) -> PrimitiveArray<i32> {
-    unary(from, |x| (x / MILLISECONDS_IN_DAY) as i32, DataType::Date32)
+    unary(
+        from,
+        |x| (x / MILLISECONDS_IN_DAY) as i32,
+        ArrowDataType::Date32,
+    )
 }
 
 /// Conversion of times
 pub fn time32s_to_time32ms(from: &PrimitiveArray<i32>) -> PrimitiveArray<i32> {
-    unary(from, |x| x * 1000, DataType::Time32(TimeUnit::Millisecond))
+    unary(
+        from,
+        |x| x * 1000,
+        ArrowDataType::Time32(TimeUnit::Millisecond),
+    )
 }
 
 /// Conversion of times
 pub fn time32ms_to_time32s(from: &PrimitiveArray<i32>) -> PrimitiveArray<i32> {
-    unary(from, |x| x / 1000, DataType::Time32(TimeUnit::Second))
+    unary(from, |x| x / 1000, ArrowDataType::Time32(TimeUnit::Second))
 }
 
 /// Conversion of times
 pub fn time64us_to_time64ns(from: &PrimitiveArray<i64>) -> PrimitiveArray<i64> {
-    unary(from, |x| x * 1000, DataType::Time64(TimeUnit::Nanosecond))
+    unary(
+        from,
+        |x| x * 1000,
+        ArrowDataType::Time64(TimeUnit::Nanosecond),
+    )
 }
 
 /// Conversion of times
 pub fn time64ns_to_time64us(from: &PrimitiveArray<i64>) -> PrimitiveArray<i64> {
-    unary(from, |x| x / 1000, DataType::Time64(TimeUnit::Microsecond))
+    unary(
+        from,
+        |x| x / 1000,
+        ArrowDataType::Time64(TimeUnit::Microsecond),
+    )
 }
 
 /// Conversion of timestamp
 pub fn timestamp_to_date64(from: &PrimitiveArray<i64>, from_unit: TimeUnit) -> PrimitiveArray<i64> {
     let from_size = time_unit_multiple(from_unit);
     let to_size = MILLISECONDS;
-    let to_type = DataType::Date64;
+    let to_type = ArrowDataType::Date64;
 
     // Scale time_array by (to_size / from_size) using a
     // single integer operation, but need to avoid integer
@@ -369,7 +389,7 @@ pub fn timestamp_to_date64(from: &PrimitiveArray<i64>, from_unit: TimeUnit) -> P
 /// Conversion of timestamp
 pub fn timestamp_to_date32(from: &PrimitiveArray<i64>, from_unit: TimeUnit) -> PrimitiveArray<i32> {
     let from_size = time_unit_multiple(from_unit) * SECONDS_IN_DAY;
-    unary(from, |x| (x / from_size) as i32, DataType::Date32)
+    unary(from, |x| (x / from_size) as i32, ArrowDataType::Date32)
 }
 
 /// Conversion of time
@@ -381,7 +401,11 @@ pub fn time32_to_time64(
     let from_size = time_unit_multiple(from_unit);
     let to_size = time_unit_multiple(to_unit);
     let divisor = to_size / from_size;
-    unary(from, |x| (x as i64 * divisor), DataType::Time64(to_unit))
+    unary(
+        from,
+        |x| (x as i64 * divisor),
+        ArrowDataType::Time64(to_unit),
+    )
 }
 
 /// Conversion of time
@@ -393,7 +417,11 @@ pub fn time64_to_time32(
     let from_size = time_unit_multiple(from_unit);
     let to_size = time_unit_multiple(to_unit);
     let divisor = from_size / to_size;
-    unary(from, |x| (x / divisor) as i32, DataType::Time32(to_unit))
+    unary(
+        from,
+        |x| (x / divisor) as i32,
+        ArrowDataType::Time32(to_unit),
+    )
 }
 
 /// Conversion of timestamp
@@ -405,7 +433,7 @@ pub fn timestamp_to_timestamp(
 ) -> PrimitiveArray<i64> {
     let from_size = time_unit_multiple(from_unit);
     let to_size = time_unit_multiple(to_unit);
-    let to_type = DataType::Timestamp(to_unit, tz.clone());
+    let to_type = ArrowDataType::Timestamp(to_unit, tz.clone());
     // we either divide or multiply, depending on size of each unit
     if from_size >= to_size {
         unary(from, |x| (x / (from_size / to_size)), to_type)
@@ -559,7 +587,7 @@ pub fn days_ms_to_months_days_ns(from: &PrimitiveArray<days_ms>) -> PrimitiveArr
     unary(
         from,
         days_ms_to_months_days_ns_scalar,
-        DataType::Interval(IntervalUnit::MonthDayNano),
+        ArrowDataType::Interval(IntervalUnit::MonthDayNano),
     )
 }
 
@@ -573,11 +601,11 @@ pub fn months_to_months_days_ns(from: &PrimitiveArray<i32>) -> PrimitiveArray<mo
     unary(
         from,
         months_to_months_days_ns_scalar,
-        DataType::Interval(IntervalUnit::MonthDayNano),
+        ArrowDataType::Interval(IntervalUnit::MonthDayNano),
     )
 }
 
 /// Casts f16 into f32
 pub fn f16_to_f32(from: &PrimitiveArray<f16>) -> PrimitiveArray<f32> {
-    unary(from, |x| x.to_f32(), DataType::Float32)
+    unary(from, |x| x.to_f32(), ArrowDataType::Float32)
 }

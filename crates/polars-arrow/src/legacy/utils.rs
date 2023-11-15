@@ -2,7 +2,7 @@ use std::ops::{BitAnd, BitOr};
 
 use crate::array::PrimitiveArray;
 use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::legacy::bit_util::unset_bit_raw;
 use crate::legacy::trusted_len::{FromIteratorReversed, TrustedLen, TrustedLenPush};
 use crate::types::NativeType;
@@ -177,7 +177,7 @@ impl<T: NativeType> FromIteratorReversed<T> for PrimitiveArray<T> {
             });
             vals.set_len(size)
         }
-        PrimitiveArray::new(DataType::from(T::PRIMITIVE), vals.into(), None)
+        PrimitiveArray::new(ArrowDataType::from(T::PRIMITIVE), vals.into(), None)
     }
 }
 
@@ -210,7 +210,7 @@ impl<T: NativeType> FromIteratorReversed<Option<T>> for PrimitiveArray<T> {
             vals.set_len(size)
         }
         PrimitiveArray::new(
-            DataType::from(T::PRIMITIVE),
+            ArrowDataType::from(T::PRIMITIVE),
             vals.into(),
             Some(validity.into()),
         )

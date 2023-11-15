@@ -13,7 +13,7 @@ use super::*;
 /// This function errors iff any of the rows is not a valid JSON (i.e. the format is not valid NDJSON).
 pub fn deserialize_iter<'a>(
     rows: impl Iterator<Item = &'a str>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     buf_size: usize,
     count: usize,
 ) -> PolarsResult<ArrayRef> {

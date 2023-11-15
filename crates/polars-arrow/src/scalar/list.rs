@@ -2,7 +2,7 @@ use std::any::Any;
 
 use super::Scalar;
 use crate::array::*;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::offset::Offset;
 
 /// The scalar equivalent of [`ListArray`]. Like [`ListArray`], this struct holds a dynamically-typed
@@ -12,7 +12,7 @@ pub struct ListScalar<O: Offset> {
     values: Box<dyn Array>,
     is_valid: bool,
     phantom: std::marker::PhantomData<O>,
-    data_type: DataType,
+    data_type: ArrowDataType,
 }
 
 impl<O: Offset> PartialEq for ListScalar<O> {
@@ -30,7 +30,7 @@ impl<O: Offset> ListScalar<O> {
     /// * the `data_type` is not `List` or `LargeList` (depending on this scalar's offset `O`)
     /// * the child of the `data_type` is not equal to the `values`
     #[inline]
-    pub fn new(data_type: DataType, values: Option<Box<dyn Array>>) -> Self {
+    pub fn new(data_type: ArrowDataType, values: Option<Box<dyn Array>>) -> Self {
         let inner_data_type = ListArray::<O>::get_child_type(&data_type);
         let (is_valid, values) = match values {
             Some(values) => {
@@ -62,7 +62,7 @@ impl<O: Offset> Scalar for ListScalar<O> {
         self.is_valid
     }
 
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 }

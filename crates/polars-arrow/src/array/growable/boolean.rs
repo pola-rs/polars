@@ -4,12 +4,12 @@ use super::utils::{build_extend_null_bits, ExtendNullBits};
 use super::Growable;
 use crate::array::{Array, BooleanArray};
 use crate::bitmap::MutableBitmap;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 /// Concrete [`Growable`] for the [`BooleanArray`].
 pub struct GrowableBoolean<'a> {
     arrays: Vec<&'a BooleanArray>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     validity: MutableBitmap,
     values: MutableBitmap,
     extend_null_bits: Vec<ExtendNullBits<'a>>,

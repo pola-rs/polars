@@ -1,5 +1,5 @@
 //! This module has entry points, [`parquet_to_arrow_schema`] and the more configurable [`parquet_to_arrow_schema_with_options`].
-use arrow::datatypes::{DataType, Field, IntervalUnit, TimeUnit};
+use arrow::datatypes::{ArrowDataType, Field, IntervalUnit, TimeUnit};
 
 use crate::arrow::read::schema::SchemaInferenceOptions;
 use crate::parquet::schema::types::{
@@ -28,56 +28,58 @@ pub fn parquet_to_arrow_schema_with_options(
 fn from_int32(
     logical_type: Option<PrimitiveLogicalType>,
     converted_type: Option<PrimitiveConvertedType>,
-) -> DataType {
+) -> ArrowDataType {
     use PrimitiveLogicalType::*;
     match (logical_type, converted_type) {
         // handle logical types first
         (Some(Integer(t)), _) => match t {
-            IntegerType::Int8 => DataType::Int8,
-            IntegerType::Int16 => DataType::Int16,
-            IntegerType::Int32 => DataType::Int32,
-            IntegerType::UInt8 => DataType::UInt8,
-            IntegerType::UInt16 => DataType::UInt16,
-            IntegerType::UInt32 => DataType::UInt32,
+            IntegerType::Int8 => ArrowDataType::Int8,
+            IntegerType::Int16 => ArrowDataType::Int16,
+            IntegerType::Int32 => ArrowDataType::Int32,
+            IntegerType::UInt8 => ArrowDataType::UInt8,
+            IntegerType::UInt16 => ArrowDataType::UInt16,
+            IntegerType::UInt32 => ArrowDataType::UInt32,
             // The above are the only possible annotations for parquet's int32. Anything else
             // is a deviation to the parquet specification and we ignore
-            _ => DataType::Int32,
+            _ => ArrowDataType::Int32,
         },
-        (Some(Decimal(precision, scale)), _) => DataType::Decimal(precision, scale),
-        (Some(Date), _) => DataType::Date32,
+        (Some(Decimal(precision, scale)), _) => ArrowDataType::Decimal(precision, scale),
+        (Some(Date), _) => ArrowDataType::Date32,
         (Some(Time { unit, .. }), _) => match unit {
-            ParquetTimeUnit::Milliseconds => DataType::Time32(TimeUnit::Millisecond),
+            ParquetTimeUnit::Milliseconds => ArrowDataType::Time32(TimeUnit::Millisecond),
             // MILLIS is the only possible annotation for parquet's int32. Anything else
             // is a deviation to the parquet specification and we ignore
-            _ => DataType::Int32,
+            _ => ArrowDataType::Int32,
         },
         // handle converted types:
-        (_, Some(PrimitiveConvertedType::Uint8)) => DataType::UInt8,
-        (_, Some(PrimitiveConvertedType::Uint16)) => DataType::UInt16,
-        (_, Some(PrimitiveConvertedType::Uint32)) => DataType::UInt32,
-        (_, Some(PrimitiveConvertedType::Int8)) => DataType::Int8,
-        (_, Some(PrimitiveConvertedType::Int16)) => DataType::Int16,
-        (_, Some(PrimitiveConvertedType::Int32)) => DataType::Int32,
-        (_, Some(PrimitiveConvertedType::Date)) => DataType::Date32,
-        (_, Some(PrimitiveConvertedType::TimeMillis)) => DataType::Time32(TimeUnit::Millisecond),
-        (_, Some(PrimitiveConvertedType::Decimal(precision, scale))) => {
-            DataType::Decimal(precision, scale)
+        (_, Some(PrimitiveConvertedType::Uint8)) => ArrowDataType::UInt8,
+        (_, Some(PrimitiveConvertedType::Uint16)) => ArrowDataType::UInt16,
+        (_, Some(PrimitiveConvertedType::Uint32)) => ArrowDataType::UInt32,
+        (_, Some(PrimitiveConvertedType::Int8)) => ArrowDataType::Int8,
+        (_, Some(PrimitiveConvertedType::Int16)) => ArrowDataType::Int16,
+        (_, Some(PrimitiveConvertedType::Int32)) => ArrowDataType::Int32,
+        (_, Some(PrimitiveConvertedType::Date)) => ArrowDataType::Date32,
+        (_, Some(PrimitiveConvertedType::TimeMillis)) => {
+            ArrowDataType::Time32(TimeUnit::Millisecond)
         },
-        (_, _) => DataType::Int32,
+        (_, Some(PrimitiveConvertedType::Decimal(precision, scale))) => {
+            ArrowDataType::Decimal(precision, scale)
+        },
+        (_, _) => ArrowDataType::Int32,
     }
 }
 
 fn from_int64(
     logical_type: Option<PrimitiveLogicalType>,
     converted_type: Option<PrimitiveConvertedType>,
-) -> DataType {
+) -> ArrowDataType {
     use PrimitiveLogicalType::*;
     match (logical_type, converted_type) {
         // handle logical types first
         (Some(Integer(integer)), _) => match integer {
-            IntegerType::UInt64 => DataType::UInt64,
-            IntegerType::Int64 => DataType::Int64,
-            _ => DataType::Int64,
+            IntegerType::UInt64 => ArrowDataType::UInt64,
+            IntegerType::Int64 => ArrowDataType::Int64,
+            _ => ArrowDataType::Int64,
         },
         (
             Some(Timestamp {
@@ -105,54 +107,58 @@ fn from_int64(
 
             match unit {
                 ParquetTimeUnit::Milliseconds => {
-                    DataType::Timestamp(TimeUnit::Millisecond, timezone)
+                    ArrowDataType::Timestamp(TimeUnit::Millisecond, timezone)
                 },
                 ParquetTimeUnit::Microseconds => {
-                    DataType::Timestamp(TimeUnit::Microsecond, timezone)
+                    ArrowDataType::Timestamp(TimeUnit::Microsecond, timezone)
                 },
-                ParquetTimeUnit::Nanoseconds => DataType::Timestamp(TimeUnit::Nanosecond, timezone),
+                ParquetTimeUnit::Nanoseconds => {
+                    ArrowDataType::Timestamp(TimeUnit::Nanosecond, timezone)
+                },
             }
         },
         (Some(Time { unit, .. }), _) => match unit {
-            ParquetTimeUnit::Microseconds => DataType::Time64(TimeUnit::Microsecond),
-            ParquetTimeUnit::Nanoseconds => DataType::Time64(TimeUnit::Nanosecond),
+            ParquetTimeUnit::Microseconds => ArrowDataType::Time64(TimeUnit::Microsecond),
+            ParquetTimeUnit::Nanoseconds => ArrowDataType::Time64(TimeUnit::Nanosecond),
             // MILLIS is only possible for int32. Appearing in int64 is a deviation
             // to parquet's spec, which we ignore
-            _ => DataType::Int64,
+            _ => ArrowDataType::Int64,
         },
-        (Some(Decimal(precision, scale)), _) => DataType::Decimal(precision, scale),
+        (Some(Decimal(precision, scale)), _) => ArrowDataType::Decimal(precision, scale),
         // handle converted types:
-        (_, Some(PrimitiveConvertedType::TimeMicros)) => DataType::Time64(TimeUnit::Microsecond),
+        (_, Some(PrimitiveConvertedType::TimeMicros)) => {
+            ArrowDataType::Time64(TimeUnit::Microsecond)
+        },
         (_, Some(PrimitiveConvertedType::TimestampMillis)) => {
-            DataType::Timestamp(TimeUnit::Millisecond, None)
+            ArrowDataType::Timestamp(TimeUnit::Millisecond, None)
         },
         (_, Some(PrimitiveConvertedType::TimestampMicros)) => {
-            DataType::Timestamp(TimeUnit::Microsecond, None)
+            ArrowDataType::Timestamp(TimeUnit::Microsecond, None)
         },
-        (_, Some(PrimitiveConvertedType::Int64)) => DataType::Int64,
-        (_, Some(PrimitiveConvertedType::Uint64)) => DataType::UInt64,
+        (_, Some(PrimitiveConvertedType::Int64)) => ArrowDataType::Int64,
+        (_, Some(PrimitiveConvertedType::Uint64)) => ArrowDataType::UInt64,
         (_, Some(PrimitiveConvertedType::Decimal(precision, scale))) => {
-            DataType::Decimal(precision, scale)
+            ArrowDataType::Decimal(precision, scale)
         },
 
-        (_, _) => DataType::Int64,
+        (_, _) => ArrowDataType::Int64,
     }
 }
 
 fn from_byte_array(
     logical_type: &Option<PrimitiveLogicalType>,
     converted_type: &Option<PrimitiveConvertedType>,
-) -> DataType {
+) -> ArrowDataType {
     match (logical_type, converted_type) {
-        (Some(PrimitiveLogicalType::String), _) => DataType::Utf8,
-        (Some(PrimitiveLogicalType::Json), _) => DataType::Binary,
-        (Some(PrimitiveLogicalType::Bson), _) => DataType::Binary,
-        (Some(PrimitiveLogicalType::Enum), _) => DataType::Binary,
-        (_, Some(PrimitiveConvertedType::Json)) => DataType::Binary,
-        (_, Some(PrimitiveConvertedType::Bson)) => DataType::Binary,
-        (_, Some(PrimitiveConvertedType::Enum)) => DataType::Binary,
-        (_, Some(PrimitiveConvertedType::Utf8)) => DataType::Utf8,
-        (_, _) => DataType::Binary,
+        (Some(PrimitiveLogicalType::String), _) => ArrowDataType::Utf8,
+        (Some(PrimitiveLogicalType::Json), _) => ArrowDataType::Binary,
+        (Some(PrimitiveLogicalType::Bson), _) => ArrowDataType::Binary,
+        (Some(PrimitiveLogicalType::Enum), _) => ArrowDataType::Binary,
+        (_, Some(PrimitiveConvertedType::Json)) => ArrowDataType::Binary,
+        (_, Some(PrimitiveConvertedType::Bson)) => ArrowDataType::Binary,
+        (_, Some(PrimitiveConvertedType::Enum)) => ArrowDataType::Binary,
+        (_, Some(PrimitiveConvertedType::Utf8)) => ArrowDataType::Utf8,
+        (_, _) => ArrowDataType::Binary,
     }
 }
 
@@ -160,40 +166,40 @@ fn from_fixed_len_byte_array(
     length: usize,
     logical_type: Option<PrimitiveLogicalType>,
     converted_type: Option<PrimitiveConvertedType>,
-) -> DataType {
+) -> ArrowDataType {
     match (logical_type, converted_type) {
         (Some(PrimitiveLogicalType::Decimal(precision, scale)), _) => {
-            DataType::Decimal(precision, scale)
+            ArrowDataType::Decimal(precision, scale)
         },
         (None, Some(PrimitiveConvertedType::Decimal(precision, scale))) => {
-            DataType::Decimal(precision, scale)
+            ArrowDataType::Decimal(precision, scale)
         },
         (None, Some(PrimitiveConvertedType::Interval)) => {
             // There is currently no reliable way of determining which IntervalUnit
             // to return. Thus without the original Arrow schema, the results
             // would be incorrect if all 12 bytes of the interval are populated
-            DataType::Interval(IntervalUnit::DayTime)
+            ArrowDataType::Interval(IntervalUnit::DayTime)
         },
-        _ => DataType::FixedSizeBinary(length),
+        _ => ArrowDataType::FixedSizeBinary(length),
     }
 }
 
-/// Maps a [`PhysicalType`] with optional metadata to a [`DataType`]
+/// Maps a [`PhysicalType`] with optional metadata to a [`ArrowDataType`]
 fn to_primitive_type_inner(
     primitive_type: &PrimitiveType,
     options: &SchemaInferenceOptions,
-) -> DataType {
+) -> ArrowDataType {
     match primitive_type.physical_type {
-        PhysicalType::Boolean => DataType::Boolean,
+        PhysicalType::Boolean => ArrowDataType::Boolean,
         PhysicalType::Int32 => {
             from_int32(primitive_type.logical_type, primitive_type.converted_type)
         },
         PhysicalType::Int64 => {
             from_int64(primitive_type.logical_type, primitive_type.converted_type)
         },
-        PhysicalType::Int96 => DataType::Timestamp(options.int96_coerce_to_timeunit, None),
-        PhysicalType::Float => DataType::Float32,
-        PhysicalType::Double => DataType::Float64,
+        PhysicalType::Int96 => ArrowDataType::Timestamp(options.int96_coerce_to_timeunit, None),
+        PhysicalType::Float => ArrowDataType::Float32,
+        PhysicalType::Double => ArrowDataType::Float64,
         PhysicalType::ByteArray => {
             from_byte_array(&primitive_type.logical_type, &primitive_type.converted_type)
         },
@@ -208,11 +214,14 @@ fn to_primitive_type_inner(
 /// Entry point for converting parquet primitive type to arrow type.
 ///
 /// This function takes care of repetition.
-fn to_primitive_type(primitive_type: &PrimitiveType, options: &SchemaInferenceOptions) -> DataType {
+fn to_primitive_type(
+    primitive_type: &PrimitiveType,
+    options: &SchemaInferenceOptions,
+) -> ArrowDataType {
     let base_type = to_primitive_type_inner(primitive_type, options);
 
     if primitive_type.field_info.repetition == Repetition::Repeated {
-        DataType::List(Box::new(Field::new(
+        ArrowDataType::List(Box::new(Field::new(
             &primitive_type.field_info.name,
             base_type,
             is_nullable(&primitive_type.field_info),
@@ -228,7 +237,7 @@ fn non_repeated_group(
     fields: &[ParquetType],
     parent_name: &str,
     options: &SchemaInferenceOptions,
-) -> Option<DataType> {
+) -> Option<ArrowDataType> {
     debug_assert!(!fields.is_empty());
     match (logical_type, converted_type) {
         (Some(GroupLogicalType::List), _) => to_list(fields, parent_name, options),
@@ -241,9 +250,9 @@ fn non_repeated_group(
     }
 }
 
-/// Converts a parquet group type to an arrow [`DataType::Struct`].
+/// Converts a parquet group type to an arrow [`ArrowDataType::Struct`].
 /// Returns [`None`] if all its fields are empty
-fn to_struct(fields: &[ParquetType], options: &SchemaInferenceOptions) -> Option<DataType> {
+fn to_struct(fields: &[ParquetType], options: &SchemaInferenceOptions) -> Option<ArrowDataType> {
     let fields = fields
         .iter()
         .filter_map(|f| to_field(f, options))
@@ -251,15 +260,15 @@ fn to_struct(fields: &[ParquetType], options: &SchemaInferenceOptions) -> Option
     if fields.is_empty() {
         None
     } else {
-        Some(DataType::Struct(fields))
+        Some(ArrowDataType::Struct(fields))
     }
 }
 
-/// Converts a parquet group type to an arrow [`DataType::Struct`].
+/// Converts a parquet group type to an arrow [`ArrowDataType::Struct`].
 /// Returns [`None`] if all its fields are empty
-fn to_map(fields: &[ParquetType], options: &SchemaInferenceOptions) -> Option<DataType> {
+fn to_map(fields: &[ParquetType], options: &SchemaInferenceOptions) -> Option<ArrowDataType> {
     let inner = to_field(&fields[0], options)?;
-    Some(DataType::Map(Box::new(inner), false))
+    Some(ArrowDataType::Map(Box::new(inner), false))
 }
 
 /// Entry point for converting parquet group type.
@@ -272,10 +281,10 @@ fn to_group_type(
     fields: &[ParquetType],
     parent_name: &str,
     options: &SchemaInferenceOptions,
-) -> Option<DataType> {
+) -> Option<ArrowDataType> {
     debug_assert!(!fields.is_empty());
     if field_info.repetition == Repetition::Repeated {
-        Some(DataType::List(Box::new(Field::new(
+        Some(ArrowDataType::List(Box::new(Field::new(
             &field_info.name,
             to_struct(fields, options)?,
             is_nullable(field_info),
@@ -313,7 +322,7 @@ fn to_list(
     fields: &[ParquetType],
     parent_name: &str,
     options: &SchemaInferenceOptions,
-) -> Option<DataType> {
+) -> Option<ArrowDataType> {
     let item = fields.first().unwrap();
 
     let item_type = match item {
@@ -352,7 +361,7 @@ fn to_list(
         ),
     };
 
-    Some(DataType::List(Box::new(Field::new(
+    Some(ArrowDataType::List(Box::new(Field::new(
         list_item_name,
         item_type,
         item_is_optional,
@@ -371,7 +380,7 @@ fn to_list(
 pub(crate) fn to_data_type(
     type_: &ParquetType,
     options: &SchemaInferenceOptions,
-) -> Option<DataType> {
+) -> Option<ArrowDataType> {
     match type_ {
         ParquetType::PrimitiveType(primitive) => Some(to_primitive_type(primitive, options)),
         ParquetType::GroupType {
@@ -398,7 +407,7 @@ pub(crate) fn to_data_type(
 
 #[cfg(test)]
 mod tests {
-    use arrow::datatypes::{DataType, Field, TimeUnit};
+    use arrow::datatypes::{ArrowDataType, Field, TimeUnit};
     use polars_error::*;
 
     use super::*;
@@ -422,17 +431,17 @@ mod tests {
         }
         ";
         let expected = &[
-            Field::new("boolean", DataType::Boolean, false),
-            Field::new("int8", DataType::Int8, false),
-            Field::new("int16", DataType::Int16, false),
-            Field::new("uint8", DataType::UInt8, false),
-            Field::new("uint16", DataType::UInt16, false),
-            Field::new("int32", DataType::Int32, false),
-            Field::new("int64", DataType::Int64, false),
-            Field::new("double", DataType::Float64, true),
-            Field::new("float", DataType::Float32, true),
-            Field::new("string", DataType::Utf8, true),
-            Field::new("string_2", DataType::Utf8, true),
+            Field::new("boolean", ArrowDataType::Boolean, false),
+            Field::new("int8", ArrowDataType::Int8, false),
+            Field::new("int16", ArrowDataType::Int16, false),
+            Field::new("uint8", ArrowDataType::UInt8, false),
+            Field::new("uint16", ArrowDataType::UInt16, false),
+            Field::new("int32", ArrowDataType::Int32, false),
+            Field::new("int64", ArrowDataType::Int64, false),
+            Field::new("double", ArrowDataType::Float64, true),
+            Field::new("float", ArrowDataType::Float32, true),
+            Field::new("string", ArrowDataType::Utf8, true),
+            Field::new("string_2", ArrowDataType::Utf8, true),
         ];
 
         let parquet_schema = SchemaDescriptor::try_from_message(message)?;
@@ -451,8 +460,8 @@ mod tests {
         }
         ";
         let expected = vec![
-            Field::new("binary", DataType::Binary, false),
-            Field::new("fixed_binary", DataType::FixedSizeBinary(20), false),
+            Field::new("binary", ArrowDataType::Binary, false),
+            Field::new("fixed_binary", ArrowDataType::FixedSizeBinary(20), false),
         ];
 
         let parquet_schema = SchemaDescriptor::try_from_message(message)?;
@@ -471,8 +480,8 @@ mod tests {
         }
         ";
         let expected = &[
-            Field::new("boolean", DataType::Boolean, false),
-            Field::new("int8", DataType::Int8, false),
+            Field::new("boolean", ArrowDataType::Boolean, false),
+            Field::new("int8", ArrowDataType::Int8, false),
         ];
 
         let parquet_schema = SchemaDescriptor::try_from_message(message)?;
@@ -547,7 +556,7 @@ mod tests {
         {
             arrow_fields.push(Field::new(
                 "my_list",
-                DataType::List(Box::new(Field::new("element", DataType::Utf8, true))),
+                ArrowDataType::List(Box::new(Field::new("element", ArrowDataType::Utf8, true))),
                 false,
             ));
         }
@@ -561,7 +570,7 @@ mod tests {
         {
             arrow_fields.push(Field::new(
                 "my_list",
-                DataType::List(Box::new(Field::new("element", DataType::Utf8, false))),
+                ArrowDataType::List(Box::new(Field::new("element", ArrowDataType::Utf8, false))),
                 true,
             ));
         }
@@ -580,10 +589,10 @@ mod tests {
         // }
         {
             let arrow_inner_list =
-                DataType::List(Box::new(Field::new("element", DataType::Int32, false)));
+                ArrowDataType::List(Box::new(Field::new("element", ArrowDataType::Int32, false)));
             arrow_fields.push(Field::new(
                 "array_of_arrays",
-                DataType::List(Box::new(Field::new("element", arrow_inner_list, false))),
+                ArrowDataType::List(Box::new(Field::new("element", arrow_inner_list, false))),
                 true,
             ));
         }
@@ -597,7 +606,7 @@ mod tests {
         {
             arrow_fields.push(Field::new(
                 "my_list",
-                DataType::List(Box::new(Field::new("element", DataType::Utf8, false))),
+                ArrowDataType::List(Box::new(Field::new("element", ArrowDataType::Utf8, false))),
                 true,
             ));
         }
@@ -609,7 +618,7 @@ mod tests {
         {
             arrow_fields.push(Field::new(
                 "my_list",
-                DataType::List(Box::new(Field::new("element", DataType::Int32, false))),
+                ArrowDataType::List(Box::new(Field::new("element", ArrowDataType::Int32, false))),
                 true,
             ));
         }
@@ -622,13 +631,13 @@ mod tests {
         //   };
         // }
         {
-            let arrow_struct = DataType::Struct(vec![
-                Field::new("str", DataType::Utf8, false),
-                Field::new("num", DataType::Int32, false),
+            let arrow_struct = ArrowDataType::Struct(vec![
+                Field::new("str", ArrowDataType::Utf8, false),
+                Field::new("num", ArrowDataType::Int32, false),
             ]);
             arrow_fields.push(Field::new(
                 "my_list",
-                DataType::List(Box::new(Field::new("element", arrow_struct, false))),
+                ArrowDataType::List(Box::new(Field::new("element", arrow_struct, false))),
                 true,
             ));
         }
@@ -641,10 +650,11 @@ mod tests {
         // }
         // Special case: group is named array
         {
-            let arrow_struct = DataType::Struct(vec![Field::new("str", DataType::Utf8, false)]);
+            let arrow_struct =
+                ArrowDataType::Struct(vec![Field::new("str", ArrowDataType::Utf8, false)]);
             arrow_fields.push(Field::new(
                 "my_list",
-                DataType::List(Box::new(Field::new("array", arrow_struct, false))),
+                ArrowDataType::List(Box::new(Field::new("array", arrow_struct, false))),
                 true,
             ));
         }
@@ -657,10 +667,11 @@ mod tests {
         // }
         // Special case: group named ends in _tuple
         {
-            let arrow_struct = DataType::Struct(vec![Field::new("str", DataType::Utf8, false)]);
+            let arrow_struct =
+                ArrowDataType::Struct(vec![Field::new("str", ArrowDataType::Utf8, false)]);
             arrow_fields.push(Field::new(
                 "my_list",
-                DataType::List(Box::new(Field::new("my_list_tuple", arrow_struct, false))),
+                ArrowDataType::List(Box::new(Field::new("my_list_tuple", arrow_struct, false))),
                 true,
             ));
         }
@@ -670,7 +681,7 @@ mod tests {
         {
             arrow_fields.push(Field::new(
                 "name",
-                DataType::List(Box::new(Field::new("name", DataType::Int32, false))),
+                ArrowDataType::List(Box::new(Field::new("name", ArrowDataType::Int32, false))),
                 false,
             ));
         }
@@ -699,18 +710,18 @@ mod tests {
 
         {
             let struct_fields = vec![
-                Field::new("event_name", DataType::Utf8, false),
+                Field::new("event_name", ArrowDataType::Utf8, false),
                 Field::new(
                     "event_time",
-                    DataType::Timestamp(TimeUnit::Millisecond, Some("+00:00".into())),
+                    ArrowDataType::Timestamp(TimeUnit::Millisecond, Some("+00:00".into())),
                     false,
                 ),
             ];
             arrow_fields.push(Field::new(
                 "events",
-                DataType::List(Box::new(Field::new(
+                ArrowDataType::List(Box::new(Field::new(
                     "array",
-                    DataType::Struct(struct_fields),
+                    ArrowDataType::Struct(struct_fields),
                     false,
                 ))),
                 false,
@@ -757,7 +768,7 @@ mod tests {
         {
             arrow_fields.push(Field::new(
                 "my_list1",
-                DataType::List(Box::new(Field::new("element", DataType::Utf8, true))),
+                ArrowDataType::List(Box::new(Field::new("element", ArrowDataType::Utf8, true))),
                 false,
             ));
         }
@@ -771,7 +782,7 @@ mod tests {
         {
             arrow_fields.push(Field::new(
                 "my_list2",
-                DataType::List(Box::new(Field::new("element", DataType::Utf8, false))),
+                ArrowDataType::List(Box::new(Field::new("element", ArrowDataType::Utf8, false))),
                 true,
             ));
         }
@@ -785,7 +796,7 @@ mod tests {
         {
             arrow_fields.push(Field::new(
                 "my_list3",
-                DataType::List(Box::new(Field::new("element", DataType::Utf8, false))),
+                ArrowDataType::List(Box::new(Field::new("element", ArrowDataType::Utf8, false))),
                 false,
             ));
         }
@@ -802,13 +813,13 @@ mod tests {
         let mut arrow_fields = Vec::new();
         {
             let group1_fields = vec![
-                Field::new("leaf1", DataType::Boolean, false),
-                Field::new("leaf2", DataType::Int32, false),
+                Field::new("leaf1", ArrowDataType::Boolean, false),
+                Field::new("leaf2", ArrowDataType::Int32, false),
             ];
-            let group1_struct = Field::new("group1", DataType::Struct(group1_fields), false);
+            let group1_struct = Field::new("group1", ArrowDataType::Struct(group1_fields), false);
             arrow_fields.push(group1_struct);
 
-            let leaf3_field = Field::new("leaf3", DataType::Int64, false);
+            let leaf3_field = Field::new("leaf3", ArrowDataType::Int64, false);
             arrow_fields.push(leaf3_field);
         }
 
@@ -834,13 +845,13 @@ mod tests {
     fn test_repeated_nested_schema() -> PolarsResult<()> {
         let mut arrow_fields = Vec::new();
         {
-            arrow_fields.push(Field::new("leaf1", DataType::Int32, true));
+            arrow_fields.push(Field::new("leaf1", ArrowDataType::Int32, true));
 
             let inner_group_list = Field::new(
                 "innerGroup",
-                DataType::List(Box::new(Field::new(
+                ArrowDataType::List(Box::new(Field::new(
                     "innerGroup",
-                    DataType::Struct(vec![Field::new("leaf3", DataType::Int32, true)]),
+                    ArrowDataType::Struct(vec![Field::new("leaf3", ArrowDataType::Int32, true)]),
                     false,
                 ))),
                 false,
@@ -848,10 +859,10 @@ mod tests {
 
             let outer_group_list = Field::new(
                 "outerGroup",
-                DataType::List(Box::new(Field::new(
+                ArrowDataType::List(Box::new(Field::new(
                     "outerGroup",
-                    DataType::Struct(vec![
-                        Field::new("leaf2", DataType::Int32, true),
+                    ArrowDataType::Struct(vec![
+                        Field::new("leaf2", ArrowDataType::Int32, true),
                         inner_group_list,
                     ]),
                     false,
@@ -906,38 +917,50 @@ mod tests {
         }
         ";
         let arrow_fields = vec![
-            Field::new("boolean", DataType::Boolean, false),
-            Field::new("int8", DataType::Int8, false),
-            Field::new("uint8", DataType::UInt8, false),
-            Field::new("int16", DataType::Int16, false),
-            Field::new("uint16", DataType::UInt16, false),
-            Field::new("int32", DataType::Int32, false),
-            Field::new("int64", DataType::Int64, false),
-            Field::new("double", DataType::Float64, true),
-            Field::new("float", DataType::Float32, true),
-            Field::new("string", DataType::Utf8, true),
+            Field::new("boolean", ArrowDataType::Boolean, false),
+            Field::new("int8", ArrowDataType::Int8, false),
+            Field::new("uint8", ArrowDataType::UInt8, false),
+            Field::new("int16", ArrowDataType::Int16, false),
+            Field::new("uint16", ArrowDataType::UInt16, false),
+            Field::new("int32", ArrowDataType::Int32, false),
+            Field::new("int64", ArrowDataType::Int64, false),
+            Field::new("double", ArrowDataType::Float64, true),
+            Field::new("float", ArrowDataType::Float32, true),
+            Field::new("string", ArrowDataType::Utf8, true),
             Field::new(
                 "bools",
-                DataType::List(Box::new(Field::new("bools", DataType::Boolean, false))),
+                ArrowDataType::List(Box::new(Field::new("bools", ArrowDataType::Boolean, false))),
                 false,
             ),
-            Field::new("date", DataType::Date32, true),
-            Field::new("time_milli", DataType::Time32(TimeUnit::Millisecond), true),
-            Field::new("time_micro", DataType::Time64(TimeUnit::Microsecond), true),
-            Field::new("time_nano", DataType::Time64(TimeUnit::Nanosecond), true),
+            Field::new("date", ArrowDataType::Date32, true),
+            Field::new(
+                "time_milli",
+                ArrowDataType::Time32(TimeUnit::Millisecond),
+                true,
+            ),
+            Field::new(
+                "time_micro",
+                ArrowDataType::Time64(TimeUnit::Microsecond),
+                true,
+            ),
+            Field::new(
+                "time_nano",
+                ArrowDataType::Time64(TimeUnit::Nanosecond),
+                true,
+            ),
             Field::new(
                 "ts_milli",
-                DataType::Timestamp(TimeUnit::Millisecond, None),
+                ArrowDataType::Timestamp(TimeUnit::Millisecond, None),
                 true,
             ),
             Field::new(
                 "ts_micro",
-                DataType::Timestamp(TimeUnit::Microsecond, None),
+                ArrowDataType::Timestamp(TimeUnit::Microsecond, None),
                 false,
             ),
             Field::new(
                 "ts_nano",
-                DataType::Timestamp(TimeUnit::Nanosecond, Some("+00:00".to_string())),
+                ArrowDataType::Timestamp(TimeUnit::Nanosecond, Some("+00:00".to_string())),
                 false,
             ),
         ];
@@ -990,51 +1013,71 @@ mod tests {
         ";
 
         let arrow_fields = vec![
-            Field::new("boolean", DataType::Boolean, false),
-            Field::new("int8", DataType::Int8, false),
-            Field::new("int16", DataType::Int16, false),
-            Field::new("int32", DataType::Int32, false),
-            Field::new("int64", DataType::Int64, false),
-            Field::new("double", DataType::Float64, true),
-            Field::new("float", DataType::Float32, true),
-            Field::new("string", DataType::Utf8, true),
+            Field::new("boolean", ArrowDataType::Boolean, false),
+            Field::new("int8", ArrowDataType::Int8, false),
+            Field::new("int16", ArrowDataType::Int16, false),
+            Field::new("int32", ArrowDataType::Int32, false),
+            Field::new("int64", ArrowDataType::Int64, false),
+            Field::new("double", ArrowDataType::Float64, true),
+            Field::new("float", ArrowDataType::Float32, true),
+            Field::new("string", ArrowDataType::Utf8, true),
             Field::new(
                 "bools",
-                DataType::List(Box::new(Field::new("element", DataType::Boolean, true))),
+                ArrowDataType::List(Box::new(Field::new(
+                    "element",
+                    ArrowDataType::Boolean,
+                    true,
+                ))),
                 true,
             ),
             Field::new(
                 "bools_non_null",
-                DataType::List(Box::new(Field::new("element", DataType::Boolean, false))),
+                ArrowDataType::List(Box::new(Field::new(
+                    "element",
+                    ArrowDataType::Boolean,
+                    false,
+                ))),
                 false,
             ),
-            Field::new("date", DataType::Date32, true),
-            Field::new("time_milli", DataType::Time32(TimeUnit::Millisecond), true),
-            Field::new("time_micro", DataType::Time64(TimeUnit::Microsecond), true),
+            Field::new("date", ArrowDataType::Date32, true),
+            Field::new(
+                "time_milli",
+                ArrowDataType::Time32(TimeUnit::Millisecond),
+                true,
+            ),
+            Field::new(
+                "time_micro",
+                ArrowDataType::Time64(TimeUnit::Microsecond),
+                true,
+            ),
             Field::new(
                 "ts_milli",
-                DataType::Timestamp(TimeUnit::Millisecond, None),
+                ArrowDataType::Timestamp(TimeUnit::Millisecond, None),
                 true,
             ),
             Field::new(
                 "ts_micro",
-                DataType::Timestamp(TimeUnit::Microsecond, None),
+                ArrowDataType::Timestamp(TimeUnit::Microsecond, None),
                 false,
             ),
             Field::new(
                 "struct",
-                DataType::Struct(vec![
-                    Field::new("bools", DataType::Boolean, false),
-                    Field::new("uint32", DataType::UInt32, false),
+                ArrowDataType::Struct(vec![
+                    Field::new("bools", ArrowDataType::Boolean, false),
+                    Field::new("uint32", ArrowDataType::UInt32, false),
                     Field::new(
                         "int32",
-                        DataType::List(Box::new(Field::new("element", DataType::Int32, true))),
+                        ArrowDataType::List(Box::new(Field::new(
+                            "element",
+                            ArrowDataType::Int32,
+                            true,
+                        ))),
                         false,
                     ),
                 ]),
                 false,
             ),
-            Field::new("dictionary_strings", DataType::Utf8, false),
+            Field::new("dictionary_strings", ArrowDataType::Utf8, false),
         ];
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
@@ -1065,17 +1108,21 @@ mod tests {
                 }
             }
             ";
-            let coerced_to = DataType::Timestamp(tu, None);
+            let coerced_to = ArrowDataType::Timestamp(tu, None);
             let arrow_fields = vec![
                 Field::new("int96_field", coerced_to.clone(), false),
                 Field::new(
                     "int96_list",
-                    DataType::List(Box::new(Field::new("element", coerced_to.clone(), true))),
+                    ArrowDataType::List(Box::new(Field::new("element", coerced_to.clone(), true))),
                     true,
                 ),
                 Field::new(
                     "int96_struct",
-                    DataType::Struct(vec![Field::new("int96_field", coerced_to.clone(), false)]),
+                    ArrowDataType::Struct(vec![Field::new(
+                        "int96_field",
+                        coerced_to.clone(),
+                        false,
+                    )]),
                     false,
                 ),
             ];

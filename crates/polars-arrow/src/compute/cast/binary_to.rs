@@ -2,12 +2,15 @@ use polars_error::PolarsResult;
 
 use super::CastOptions;
 use crate::array::*;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets};
 use crate::types::NativeType;
 
 /// Conversion of binary
-pub fn binary_to_large_binary(from: &BinaryArray<i32>, to_data_type: DataType) -> BinaryArray<i64> {
+pub fn binary_to_large_binary(
+    from: &BinaryArray<i32>,
+    to_data_type: ArrowDataType,
+) -> BinaryArray<i64> {
     let values = from.values().clone();
     BinaryArray::<i64>::new(
         to_data_type,
@@ -20,7 +23,7 @@ pub fn binary_to_large_binary(from: &BinaryArray<i32>, to_data_type: DataType) -
 /// Conversion of binary
 pub fn binary_large_to_binary(
     from: &BinaryArray<i64>,
-    to_data_type: DataType,
+    to_data_type: ArrowDataType,
 ) -> PolarsResult<BinaryArray<i32>> {
     let values = from.values().clone();
     let offsets = from.offsets().try_into()?;
@@ -35,7 +38,7 @@ pub fn binary_large_to_binary(
 /// Conversion to utf8
 pub fn binary_to_utf8<O: Offset>(
     from: &BinaryArray<O>,
-    to_data_type: DataType,
+    to_data_type: ArrowDataType,
 ) -> PolarsResult<Utf8Array<O>> {
     Utf8Array::<O>::try_new(
         to_data_type,
@@ -50,7 +53,7 @@ pub fn binary_to_utf8<O: Offset>(
 /// This function errors if the values are not valid utf8
 pub fn binary_to_large_utf8(
     from: &BinaryArray<i32>,
-    to_data_type: DataType,
+    to_data_type: ArrowDataType,
 ) -> PolarsResult<Utf8Array<i64>> {
     let values = from.values().clone();
     let offsets = from.offsets().into();
@@ -61,7 +64,7 @@ pub fn binary_to_large_utf8(
 /// Casts a [`BinaryArray`] to a [`PrimitiveArray`] at best-effort using `lexical_core::parse_partial`, making any uncastable value as zero.
 pub fn partial_binary_to_primitive<O: Offset, T>(
     from: &BinaryArray<O>,
-    to: &DataType,
+    to: &ArrowDataType,
 ) -> PrimitiveArray<T>
 where
     T: NativeType + lexical_core::FromLexical,
@@ -74,7 +77,10 @@ where
 }
 
 /// Casts a [`BinaryArray`] to a [`PrimitiveArray`], making any uncastable value a Null.
-pub fn binary_to_primitive<O: Offset, T>(from: &BinaryArray<O>, to: &DataType) -> PrimitiveArray<T>
+pub fn binary_to_primitive<O: Offset, T>(
+    from: &BinaryArray<O>,
+    to: &ArrowDataType,
+) -> PrimitiveArray<T>
 where
     T: NativeType + lexical_core::FromLexical,
 {
@@ -87,7 +93,7 @@ where
 
 pub(super) fn binary_to_primitive_dyn<O: Offset, T>(
     from: &dyn Array,
-    to: &DataType,
+    to: &ArrowDataType,
     options: CastOptions,
 ) -> PolarsResult<Box<dyn Array>>
 where
@@ -135,7 +141,7 @@ fn fixed_size_to_offsets<O: Offset>(values_len: usize, fixed_size: usize) -> Off
 /// Conversion of `FixedSizeBinary` to `Binary`.
 pub fn fixed_size_binary_binary<O: Offset>(
     from: &FixedSizeBinaryArray,
-    to_data_type: DataType,
+    to_data_type: ArrowDataType,
 ) -> BinaryArray<O> {
     let values = from.values().clone();
     let offsets = fixed_size_to_offsets(values.len(), from.size());
@@ -148,9 +154,12 @@ pub fn fixed_size_binary_binary<O: Offset>(
 }
 
 /// Conversion of binary
-pub fn binary_to_list<O: Offset>(from: &BinaryArray<O>, to_data_type: DataType) -> ListArray<O> {
+pub fn binary_to_list<O: Offset>(
+    from: &BinaryArray<O>,
+    to_data_type: ArrowDataType,
+) -> ListArray<O> {
     let values = from.values().clone();
-    let values = PrimitiveArray::new(DataType::UInt8, values, None);
+    let values = PrimitiveArray::new(ArrowDataType::UInt8, values, None);
     ListArray::<O>::new(
         to_data_type,
         from.offsets().clone(),

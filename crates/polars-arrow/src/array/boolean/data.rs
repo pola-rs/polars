@@ -3,7 +3,7 @@ use arrow_data::{ArrayData, ArrayDataBuilder};
 
 use crate::array::{Arrow2Arrow, BooleanArray};
 use crate::bitmap::Bitmap;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 impl Arrow2Arrow for BooleanArray {
     fn to_data(&self) -> ArrayData {
@@ -28,7 +28,7 @@ impl Arrow2Arrow for BooleanArray {
         let values = Bitmap::from_null_buffer(NullBuffer::new(buffer));
 
         Self {
-            data_type: DataType::Boolean,
+            data_type: ArrowDataType::Boolean,
             values,
             validity: data.nulls().map(|n| Bitmap::from_null_buffer(n.clone())),
         }

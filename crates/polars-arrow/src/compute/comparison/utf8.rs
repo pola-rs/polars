@@ -3,7 +3,7 @@ use super::super::utils::combine_validities;
 use crate::array::{BooleanArray, Utf8Array};
 use crate::bitmap::Bitmap;
 use crate::compute::comparison::{finish_eq_validities, finish_neq_validities};
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::offset::Offset;
 
 /// Evaluate `op(lhs, rhs)` for [`Utf8Array`]s using a specified
@@ -22,7 +22,7 @@ where
         .map(|(lhs, rhs)| op(lhs, rhs));
     let values = Bitmap::from_trusted_len_iter(values);
 
-    BooleanArray::new(DataType::Boolean, values, validity)
+    BooleanArray::new(ArrowDataType::Boolean, values, validity)
 }
 
 /// Evaluate `op(lhs, rhs)` for [`Utf8Array`] and scalar using
@@ -37,7 +37,7 @@ where
     let values = lhs.values_iter().map(|lhs| op(lhs, rhs));
     let values = Bitmap::from_trusted_len_iter(values);
 
-    BooleanArray::new(DataType::Boolean, values, validity)
+    BooleanArray::new(ArrowDataType::Boolean, values, validity)
 }
 
 /// Perform `lhs == rhs` operation on [`Utf8Array`].

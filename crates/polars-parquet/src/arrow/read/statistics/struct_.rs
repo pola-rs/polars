@@ -1,19 +1,19 @@
 use arrow::array::{Array, MutableArray, StructArray};
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 use super::make_mutable;
 
 #[derive(Debug)]
 pub struct DynMutableStructArray {
-    data_type: DataType,
+    data_type: ArrowDataType,
     pub inner: Vec<Box<dyn MutableArray>>,
 }
 
 impl DynMutableStructArray {
-    pub fn try_with_capacity(data_type: DataType, capacity: usize) -> PolarsResult<Self> {
+    pub fn try_with_capacity(data_type: ArrowDataType, capacity: usize) -> PolarsResult<Self> {
         let inners = match data_type.to_logical_type() {
-            DataType::Struct(inner) => inner,
+            ArrowDataType::Struct(inner) => inner,
             _ => unreachable!(),
         };
         let inner = inners
@@ -25,7 +25,7 @@ impl DynMutableStructArray {
     }
 }
 impl MutableArray for DynMutableStructArray {
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 

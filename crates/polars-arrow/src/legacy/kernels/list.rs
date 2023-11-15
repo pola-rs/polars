@@ -99,13 +99,13 @@ pub fn array_to_unit_list(array: ArrayRef) -> ListArray<i64> {
 mod test {
     use super::*;
     use crate::array::{Array, Int32Array, PrimitiveArray};
-    use crate::datatypes::DataType;
+    use crate::datatypes::ArrowDataType;
 
     fn get_array() -> ListArray<i64> {
         let values = Int32Array::from_slice([1, 2, 3, 4, 5, 6]);
         let offsets = OffsetsBuffer::try_from(vec![0i64, 3, 5, 6]).unwrap();
 
-        let dtype = ListArray::<i64>::default_datatype(DataType::Int32);
+        let dtype = ListArray::<i64>::default_datatype(ArrowDataType::Int32);
         ListArray::<i64>::new(dtype, offsets, Box::new(values), None)
     }
 
@@ -134,7 +134,7 @@ mod test {
         ]);
         let offsets = OffsetsBuffer::try_from(vec![0i64, 1, 2, 3, 6, 9, 11]).unwrap();
 
-        let dtype = ListArray::<i64>::default_datatype(DataType::Int32);
+        let dtype = ListArray::<i64>::default_datatype(ArrowDataType::Int32);
         let arr = ListArray::<i64>::new(dtype, offsets, Box::new(values), None);
 
         let out = sublist_get_indexes(&arr, 1);

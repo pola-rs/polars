@@ -1,5 +1,5 @@
 use arrow::array::{Array, DictionaryKey, MutablePrimitiveArray, PrimitiveArray};
-use arrow::datatypes::{DataType, IntervalUnit, TimeUnit};
+use arrow::datatypes::{ArrowDataType, IntervalUnit, TimeUnit};
 use arrow::match_integer_type;
 use arrow::types::{days_ms, i256, NativeType};
 use ethnum::I256;
@@ -48,15 +48,15 @@ where
 }
 
 /// An iterator adapter that maps an iterator of Pages into an iterator of Arrays
-/// of [`DataType`] `data_type` and length `chunk_size`.
+/// of [`ArrowDataType`] `data_type` and length `chunk_size`.
 pub fn page_iter_to_arrays<'a, I: Pages + 'a>(
     pages: I,
     type_: &PrimitiveType,
-    data_type: DataType,
+    data_type: ArrowDataType,
     chunk_size: Option<usize>,
     num_rows: usize,
 ) -> PolarsResult<ArrayIter<'a>> {
-    use DataType::*;
+    use ArrowDataType::*;
 
     let physical_type = &type_.physical_type;
     let logical_type = &type_.logical_type;
@@ -130,7 +130,7 @@ pub fn page_iter_to_arrays<'a, I: Pages + 'a>(
             let n = 12;
             let pages = fixed_size_binary::Iter::new(
                 pages,
-                DataType::FixedSizeBinary(n),
+                ArrowDataType::FixedSizeBinary(n),
                 num_rows,
                 chunk_size,
             );
@@ -155,7 +155,7 @@ pub fn page_iter_to_arrays<'a, I: Pages + 'a>(
             let n = 12;
             let pages = fixed_size_binary::Iter::new(
                 pages,
-                DataType::FixedSizeBinary(n),
+                ArrowDataType::FixedSizeBinary(n),
                 num_rows,
                 chunk_size,
             );
@@ -200,7 +200,7 @@ pub fn page_iter_to_arrays<'a, I: Pages + 'a>(
 
             let pages = fixed_size_binary::Iter::new(
                 pages,
-                DataType::FixedSizeBinary(n),
+                ArrowDataType::FixedSizeBinary(n),
                 num_rows,
                 chunk_size,
             );
@@ -240,7 +240,7 @@ pub fn page_iter_to_arrays<'a, I: Pages + 'a>(
 
             let pages = fixed_size_binary::Iter::new(
                 pages,
-                DataType::FixedSizeBinary(n),
+                ArrowDataType::FixedSizeBinary(n),
                 num_rows,
                 chunk_size,
             );
@@ -266,7 +266,7 @@ pub fn page_iter_to_arrays<'a, I: Pages + 'a>(
 
             let pages = fixed_size_binary::Iter::new(
                 pages,
-                DataType::FixedSizeBinary(n),
+                ArrowDataType::FixedSizeBinary(n),
                 num_rows,
                 chunk_size,
             );
@@ -424,7 +424,7 @@ fn timestamp<'a, I: Pages + 'a>(
     pages: I,
     physical_type: &PhysicalType,
     logical_type: &Option<PrimitiveLogicalType>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     num_rows: usize,
     chunk_size: Option<usize>,
     time_unit: TimeUnit,
@@ -481,7 +481,7 @@ fn timestamp_dict<'a, K: DictionaryKey, I: Pages + 'a>(
     pages: I,
     physical_type: &PhysicalType,
     logical_type: &Option<PrimitiveLogicalType>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     num_rows: usize,
     chunk_size: Option<usize>,
     time_unit: TimeUnit,
@@ -495,14 +495,14 @@ fn timestamp_dict<'a, K: DictionaryKey, I: Pages + 'a>(
         return match (factor, is_multiplier) {
             (a, true) => Ok(dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
                 pages,
-                DataType::Timestamp(TimeUnit::Nanosecond, None),
+                ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
                 num_rows,
                 chunk_size,
                 move |x| int96_to_i64_ns(x) * a,
             ))),
             (a, false) => Ok(dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
                 pages,
-                DataType::Timestamp(TimeUnit::Nanosecond, None),
+                ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
                 num_rows,
                 chunk_size,
                 move |x| int96_to_i64_ns(x) / a,
@@ -533,11 +533,11 @@ fn dict_read<'a, K: DictionaryKey, I: Pages + 'a>(
     iter: I,
     physical_type: &PhysicalType,
     logical_type: &Option<PrimitiveLogicalType>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     num_rows: usize,
     chunk_size: Option<usize>,
 ) -> PolarsResult<ArrayIter<'a>> {
-    use DataType::*;
+    use ArrowDataType::*;
     let values_data_type = if let Dictionary(_, v, _) = &data_type {
         v.as_ref()
     } else {

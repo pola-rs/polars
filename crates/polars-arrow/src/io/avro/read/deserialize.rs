@@ -13,7 +13,7 @@ use crate::types::months_days_ns;
 use crate::with_match_primitive_type;
 
 fn make_mutable(
-    data_type: &DataType,
+    data_type: &ArrowDataType,
     avro_field: Option<&AvroSchema>,
     capacity: usize,
 ) -> PolarsResult<Box<dyn MutableArray>> {
@@ -41,7 +41,7 @@ fn make_mutable(
             }
         },
         _ => match data_type {
-            DataType::List(inner) => {
+            ArrowDataType::List(inner) => {
                 let values = make_mutable(inner.data_type(), None, 0)?;
                 Box::new(DynMutableListArray::<i32>::new_from(
                     values,
@@ -49,11 +49,11 @@ fn make_mutable(
                     capacity,
                 )) as Box<dyn MutableArray>
             },
-            DataType::FixedSizeBinary(size) => {
+            ArrowDataType::FixedSizeBinary(size) => {
                 Box::new(MutableFixedSizeBinaryArray::with_capacity(*size, capacity))
                     as Box<dyn MutableArray>
             },
-            DataType::Struct(fields) => {
+            ArrowDataType::Struct(fields) => {
                 let values = fields
                     .iter()
                     .map(|field| make_mutable(field.data_type(), None, capacity))
@@ -100,7 +100,7 @@ fn deserialize_value<'a>(
 ) -> PolarsResult<&'a [u8]> {
     let data_type = array.data_type();
     match data_type {
-        DataType::List(inner) => {
+        ArrowDataType::List(inner) => {
             let is_nullable = inner.is_nullable;
             let avro_inner = match avro_field {
                 AvroSchema::Array(inner) => inner.as_ref(),
@@ -144,7 +144,7 @@ fn deserialize_value<'a>(
             }
             array.try_push_valid()?;
         },
-        DataType::Struct(inner_fields) => {
+        ArrowDataType::Struct(inner_fields) => {
             let fields = match avro_field {
                 AvroSchema::Record(Record { fields, .. }) => fields,
                 AvroSchema::Union(u) => match &u.as_slice() {
@@ -334,7 +334,7 @@ fn skip_item<'a>(
         }
     }
     match &field.data_type {
-        DataType::List(inner) => {
+        ArrowDataType::List(inner) => {
             let avro_inner = match avro_field {
                 AvroSchema::Array(inner) => inner.as_ref(),
                 AvroSchema::Union(u) => match &u.as_slice() {
@@ -379,7 +379,7 @@ fn skip_item<'a>(
                 }
             }
         },
-        DataType::Struct(inner_fields) => {
+        ArrowDataType::Struct(inner_fields) => {
             let fields = match avro_field {
                 AvroSchema::Record(Record { fields, .. }) => fields,
                 AvroSchema::Union(u) => match &u.as_slice() {
@@ -446,7 +446,7 @@ fn skip_item<'a>(
                 block = &block[len..];
             },
             PhysicalType::FixedSizeBinary => {
-                let len = if let DataType::FixedSizeBinary(len) = &field.data_type {
+                let len = if let ArrowDataType::FixedSizeBinary(len) = &field.data_type {
                     *len
                 } else {
                     unreachable!()
@@ -489,7 +489,7 @@ pub fn deserialize(
                 make_mutable(&field.data_type, Some(&avro_field.schema), rows)
             } else {
                 // just something; we are not going to use it
-                make_mutable(&DataType::Int32, None, 0)
+                make_mutable(&ArrowDataType::Int32, None, 0)
             }
         })
         .collect::<PolarsResult<_>>()?;

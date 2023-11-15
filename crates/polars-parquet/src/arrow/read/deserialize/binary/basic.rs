@@ -3,7 +3,7 @@ use std::default::Default;
 
 use arrow::array::{Array, BinaryArray, Utf8Array};
 use arrow::bitmap::MutableBitmap;
-use arrow::datatypes::{DataType, PhysicalType};
+use arrow::datatypes::{ArrowDataType, PhysicalType};
 use arrow::offset::Offset;
 use polars_error::{to_compute_err, PolarsResult};
 
@@ -441,7 +441,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
 }
 
 pub(super) fn finish<O: Offset>(
-    data_type: &DataType,
+    data_type: &ArrowDataType,
     mut values: Binary<O>,
     mut validity: MutableBitmap,
 ) -> PolarsResult<Box<dyn Array>> {
@@ -470,7 +470,7 @@ pub(super) fn finish<O: Offset>(
 
 pub struct Iter<O: Offset, I: Pages> {
     iter: I,
-    data_type: DataType,
+    data_type: ArrowDataType,
     items: VecDeque<(Binary<O>, MutableBitmap)>,
     dict: Option<Dict>,
     chunk_size: Option<usize>,
@@ -478,7 +478,12 @@ pub struct Iter<O: Offset, I: Pages> {
 }
 
 impl<O: Offset, I: Pages> Iter<O, I> {
-    pub fn new(iter: I, data_type: DataType, chunk_size: Option<usize>, num_rows: usize) -> Self {
+    pub fn new(
+        iter: I,
+        data_type: ArrowDataType,
+        chunk_size: Option<usize>,
+        num_rows: usize,
+    ) -> Self {
         Self {
             iter,
             data_type,

@@ -1,5 +1,5 @@
 use super::Scalar;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 /// The [`Scalar`] implementation of a boolean.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,8 +33,8 @@ impl Scalar for BooleanScalar {
     }
 
     #[inline]
-    fn data_type(&self) -> &DataType {
-        &DataType::Boolean
+    fn data_type(&self) -> &ArrowDataType {
+        &ArrowDataType::Boolean
     }
 }
 

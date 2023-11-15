@@ -2,7 +2,7 @@ use crate::array::{
     Array, BinaryArray, BooleanArray, FixedSizeListArray, ListArray, PrimitiveArray, Utf8Array,
 };
 use crate::bitmap::MutableBitmap;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::legacy::prelude::*;
 use crate::legacy::utils::CustomIterTools;
 use crate::offset::Offsets;
@@ -52,22 +52,22 @@ impl ValueSize for BinaryArray<i64> {
 impl ValueSize for ArrayRef {
     fn get_values_size(&self) -> usize {
         match self.data_type() {
-            DataType::LargeUtf8 => self
+            ArrowDataType::LargeUtf8 => self
                 .as_any()
                 .downcast_ref::<Utf8Array<i64>>()
                 .unwrap()
                 .get_values_size(),
-            DataType::FixedSizeList(_, _) => self
+            ArrowDataType::FixedSizeList(_, _) => self
                 .as_any()
                 .downcast_ref::<FixedSizeListArray>()
                 .unwrap()
                 .get_values_size(),
-            DataType::LargeList(_) => self
+            ArrowDataType::LargeList(_) => self
                 .as_any()
                 .downcast_ref::<ListArray<i64>>()
                 .unwrap()
                 .get_values_size(),
-            DataType::LargeBinary => self
+            ArrowDataType::LargeBinary => self
                 .as_any()
                 .downcast_ref::<BinaryArray<i64>>()
                 .unwrap()
@@ -106,7 +106,7 @@ pub trait ListFromIter {
     /// Will produce incorrect arrays if size hint is incorrect.
     unsafe fn from_iter_primitive_trusted_len<T, P, I>(
         iter: I,
-        data_type: DataType,
+        data_type: ArrowDataType,
     ) -> ListArray<i64>
     where
         T: NativeType,
@@ -156,7 +156,7 @@ pub trait ListFromIter {
         // Safety:
         // Offsets are monotonically increasing.
         ListArray::new(
-            ListArray::<i64>::default_datatype(DataType::Boolean),
+            ListArray::<i64>::default_datatype(ArrowDataType::Boolean),
             Offsets::new_unchecked(offsets).into(),
             Box::new(values),
             Some(validity.into()),
@@ -202,7 +202,7 @@ pub trait ListFromIter {
         // Safety:
         // offsets are monotonically increasing
         ListArray::new(
-            ListArray::<i64>::default_datatype(DataType::LargeUtf8),
+            ListArray::<i64>::default_datatype(ArrowDataType::LargeUtf8),
             Offsets::new_unchecked(offsets).into(),
             Box::new(values),
             Some(validity.into()),
@@ -248,7 +248,7 @@ pub trait ListFromIter {
         // Safety:
         // offsets are monotonically increasing
         ListArray::new(
-            ListArray::<i64>::default_datatype(DataType::LargeBinary),
+            ListArray::<i64>::default_datatype(ArrowDataType::LargeBinary),
             Offsets::new_unchecked(offsets).into(),
             Box::new(values),
             Some(validity.into()),

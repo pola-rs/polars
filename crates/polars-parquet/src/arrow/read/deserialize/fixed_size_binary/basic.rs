@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use arrow::array::FixedSizeBinaryArray;
 use arrow::bitmap::MutableBitmap;
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 use super::super::utils::{
@@ -270,7 +270,7 @@ impl<'a> Decoder<'a> for BinaryDecoder {
 }
 
 pub fn finish(
-    data_type: &DataType,
+    data_type: &ArrowDataType,
     values: FixedSizeBinary,
     validity: MutableBitmap,
 ) -> FixedSizeBinaryArray {
@@ -279,7 +279,7 @@ pub fn finish(
 
 pub struct Iter<I: Pages> {
     iter: I,
-    data_type: DataType,
+    data_type: ArrowDataType,
     size: usize,
     items: VecDeque<(FixedSizeBinary, MutableBitmap)>,
     dict: Option<Dict>,
@@ -288,7 +288,12 @@ pub struct Iter<I: Pages> {
 }
 
 impl<I: Pages> Iter<I> {
-    pub fn new(iter: I, data_type: DataType, num_rows: usize, chunk_size: Option<usize>) -> Self {
+    pub fn new(
+        iter: I,
+        data_type: ArrowDataType,
+        num_rows: usize,
+        chunk_size: Option<usize>,
+    ) -> Self {
         let size = FixedSizeBinaryArray::get_size(&data_type);
         Self {
             iter,

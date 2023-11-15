@@ -2,7 +2,7 @@ use arrow_data::{ArrayData, ArrayDataBuilder};
 
 use crate::array::{from_data, to_data, Arrow2Arrow, FixedSizeListArray};
 use crate::bitmap::Bitmap;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 impl Arrow2Arrow for FixedSizeListArray {
     fn to_data(&self) -> ArrayData {
@@ -17,9 +17,9 @@ impl Arrow2Arrow for FixedSizeListArray {
     }
 
     fn from_data(data: &ArrayData) -> Self {
-        let data_type: DataType = data.data_type().clone().into();
+        let data_type: ArrowDataType = data.data_type().clone().into();
         let size = match data_type {
-            DataType::FixedSizeList(_, size) => size,
+            ArrowDataType::FixedSizeList(_, size) => size,
             _ => unreachable!("must be FixedSizeList type"),
         };
 

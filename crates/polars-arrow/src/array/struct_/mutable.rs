@@ -5,18 +5,18 @@ use polars_error::{polars_bail, PolarsResult};
 use super::StructArray;
 use crate::array::{Array, MutableArray};
 use crate::bitmap::MutableBitmap;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 /// Converting a [`MutableStructArray`] into a [`StructArray`] is `O(1)`.
 #[derive(Debug)]
 pub struct MutableStructArray {
-    data_type: DataType,
+    data_type: ArrowDataType,
     values: Vec<Box<dyn MutableArray>>,
     validity: Option<MutableBitmap>,
 }
 
 fn check(
-    data_type: &DataType,
+    data_type: &ArrowDataType,
     values: &[Box<dyn MutableArray>],
     validity: Option<usize>,
 ) -> PolarsResult<()> {
@@ -85,18 +85,18 @@ impl From<MutableStructArray> for StructArray {
 
 impl MutableStructArray {
     /// Creates a new [`MutableStructArray`].
-    pub fn new(data_type: DataType, values: Vec<Box<dyn MutableArray>>) -> Self {
+    pub fn new(data_type: ArrowDataType, values: Vec<Box<dyn MutableArray>>) -> Self {
         Self::try_new(data_type, values, None).unwrap()
     }
 
     /// Create a [`MutableStructArray`] out of low-end APIs.
     /// # Errors
     /// This function errors iff:
-    /// * `data_type` is not [`DataType::Struct`]
+    /// * `data_type` is not [`ArrowDataType::Struct`]
     /// * The inner types of `data_type` are not equal to those of `values`
     /// * `validity` is not `None` and its length is different from the `values`'s length
     pub fn try_new(
-        data_type: DataType,
+        data_type: ArrowDataType,
         values: Vec<Box<dyn MutableArray>>,
         validity: Option<MutableBitmap>,
     ) -> PolarsResult<Self> {
@@ -109,7 +109,13 @@ impl MutableStructArray {
     }
 
     /// Extract the low-end APIs from the [`MutableStructArray`].
-    pub fn into_inner(self) -> (DataType, Vec<Box<dyn MutableArray>>, Option<MutableBitmap>) {
+    pub fn into_inner(
+        self,
+    ) -> (
+        ArrowDataType,
+        Vec<Box<dyn MutableArray>>,
+        Option<MutableBitmap>,
+    ) {
         (self.data_type, self.values, self.validity)
     }
 
@@ -218,7 +224,7 @@ impl MutableArray for MutableStructArray {
         .arced()
     }
 
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 

@@ -5,7 +5,7 @@ use super::{Array, GenericBinaryArray};
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
 use crate::trusted_len::TrustedLen;
 
@@ -55,7 +55,7 @@ mod data;
 /// * `len` is equal to `validity.len()`, when defined.
 #[derive(Clone)]
 pub struct BinaryArray<O: Offset> {
-    data_type: DataType,
+    data_type: ArrowDataType,
     offsets: OffsetsBuffer<O>,
     values: Buffer<u8>,
     validity: Option<Bitmap>,
@@ -72,7 +72,7 @@ impl<O: Offset> BinaryArray<O> {
     /// # Implementation
     /// This function is `O(1)`
     pub fn try_new(
-        data_type: DataType,
+        data_type: ArrowDataType,
         offsets: OffsetsBuffer<O>,
         values: Buffer<u8>,
         validity: Option<Bitmap>,
@@ -159,9 +159,9 @@ impl<O: Offset> BinaryArray<O> {
         }
     }
 
-    /// Returns the [`DataType`] of this array.
+    /// Returns the [`ArrowDataType`] of this array.
     #[inline]
-    pub fn data_type(&self) -> &DataType {
+    pub fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 
@@ -216,7 +216,7 @@ impl<O: Offset> BinaryArray<O> {
 
     /// Returns its internal representation
     #[must_use]
-    pub fn into_inner(self) -> (DataType, OffsetsBuffer<O>, Buffer<u8>, Option<Bitmap>) {
+    pub fn into_inner(self) -> (ArrowDataType, OffsetsBuffer<O>, Buffer<u8>, Option<Bitmap>) {
         let Self {
             data_type,
             offsets,
@@ -294,13 +294,13 @@ impl<O: Offset> BinaryArray<O> {
     }
 
     /// Creates an empty [`BinaryArray`], i.e. whose `.len` is zero.
-    pub fn new_empty(data_type: DataType) -> Self {
+    pub fn new_empty(data_type: ArrowDataType) -> Self {
         Self::new(data_type, OffsetsBuffer::new(), Buffer::new(), None)
     }
 
     /// Creates an null [`BinaryArray`], i.e. whose `.null_count() == .len()`.
     #[inline]
-    pub fn new_null(data_type: DataType, length: usize) -> Self {
+    pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
         Self::new(
             data_type,
             Offsets::new_zeroed(length).into(),
@@ -309,18 +309,18 @@ impl<O: Offset> BinaryArray<O> {
         )
     }
 
-    /// Returns the default [`DataType`], `DataType::Binary` or `DataType::LargeBinary`
-    pub fn default_data_type() -> DataType {
+    /// Returns the default [`ArrowDataType`], `DataType::Binary` or `DataType::LargeBinary`
+    pub fn default_data_type() -> ArrowDataType {
         if O::IS_LARGE {
-            DataType::LargeBinary
+            ArrowDataType::LargeBinary
         } else {
-            DataType::Binary
+            ArrowDataType::Binary
         }
     }
 
     /// Alias for unwrapping [`Self::try_new`]
     pub fn new(
-        data_type: DataType,
+        data_type: ArrowDataType,
         offsets: OffsetsBuffer<O>,
         values: Buffer<u8>,
         validity: Option<Bitmap>,

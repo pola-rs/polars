@@ -1,5 +1,5 @@
 use arrow::array::{Array, StructArray};
-use arrow::datatypes::{DataType, Field};
+use arrow::datatypes::{ArrowDataType, Field};
 use polars_error::PolarsResult;
 
 use super::nested_utils::{NestedArrayIter, NestedState};
@@ -50,7 +50,7 @@ impl<'a> Iterator for StructIterator<'a> {
         Some(Ok((
             nested,
             Box::new(StructArray::new(
-                DataType::Struct(self.fields.clone()),
+                ArrowDataType::Struct(self.fields.clone()),
                 new_values,
                 validity.and_then(|x| x.into()),
             )),

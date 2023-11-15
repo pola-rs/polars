@@ -20,7 +20,7 @@ use std::any::Any;
 use std::sync::Arc;
 
 use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 pub mod physical_binary;
 
@@ -42,9 +42,9 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
         self.len() == 0
     }
 
-    /// The [`DataType`] of the [`Array`]. In combination with [`Array::as_any`], this can be
+    /// The [`ArrowDataType`] of the [`Array`]. In combination with [`Array::as_any`], this can be
     /// used to downcast trait objects (`dyn Array`) to concrete arrays.
-    fn data_type(&self) -> &DataType;
+    fn data_type(&self) -> &ArrowDataType;
 
     /// The validity of the [`Array`]: every array has an optional [`Bitmap`] that, when available
     /// specifies whether the array slot is valid or not (null).
@@ -56,7 +56,7 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// This is `O(1)` since the number of null elements is pre-computed.
     #[inline]
     fn null_count(&self) -> usize {
-        if self.data_type() == &DataType::Null {
+        if self.data_type() == &ArrowDataType::Null {
             return self.len();
         };
         self.validity()
@@ -157,8 +157,8 @@ pub(crate) trait Container {
 /// thereby making them useful to perform numeric operations without allocations.
 /// As in [`Array`], concrete arrays (such as [`MutablePrimitiveArray`]) implement how they are mutated.
 pub trait MutableArray: std::fmt::Debug + Send + Sync {
-    /// The [`DataType`] of the array.
-    fn data_type(&self) -> &DataType;
+    /// The [`ArrowDataType`] of the array.
+    fn data_type(&self) -> &ArrowDataType;
 
     /// The length of the array.
     fn len(&self) -> usize;
@@ -226,7 +226,7 @@ impl MutableArray for Box<dyn MutableArray> {
         self.as_mut().as_arc()
     }
 
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         self.as_ref().data_type()
     }
 
@@ -296,7 +296,7 @@ impl std::fmt::Debug for dyn Array + '_ {
 }
 
 /// Creates a new [`Array`] with a [`Array::len`] of 0.
-pub fn new_empty_array(data_type: DataType) -> Box<dyn Array> {
+pub fn new_empty_array(data_type: ArrowDataType) -> Box<dyn Array> {
     use crate::datatypes::PhysicalType::*;
     match data_type.to_physical_type() {
         Null => Box::new(NullArray::new_empty(data_type)),
@@ -323,10 +323,10 @@ pub fn new_empty_array(data_type: DataType) -> Box<dyn Array> {
     }
 }
 
-/// Creates a new [`Array`] of [`DataType`] `data_type` and `length`.
+/// Creates a new [`Array`] of [`ArrowDataType`] `data_type` and `length`.
 /// The array is guaranteed to have [`Array::null_count`] equal to [`Array::len`]
 /// for all types except Union, which does not have a validity.
-pub fn new_null_array(data_type: DataType, length: usize) -> Box<dyn Array> {
+pub fn new_null_array(data_type: ArrowDataType, length: usize) -> Box<dyn Array> {
     use crate::datatypes::PhysicalType::*;
     match data_type.to_physical_type() {
         Null => Box::new(NullArray::new_null(data_type, length)),
@@ -434,7 +434,7 @@ pub fn to_data(array: &dyn Array) -> arrow_data::ArrayData {
 #[cfg(feature = "arrow_rs")]
 pub fn from_data(data: &arrow_data::ArrayData) -> Box<dyn Array> {
     use crate::datatypes::PhysicalType::*;
-    let data_type: DataType = data.data_type().clone().into();
+    let data_type: ArrowDataType = data.data_type().clone().into();
     match data_type.to_physical_type() {
         Null => Box::new(NullArray::from_data(data)),
         Boolean => Box::new(BooleanArray::from_data(data)),
@@ -598,7 +598,7 @@ macro_rules! impl_common_array {
         }
 
         #[inline]
-        fn data_type(&self) -> &DataType {
+        fn data_type(&self) -> &ArrowDataType {
             &self.data_type
         }
 

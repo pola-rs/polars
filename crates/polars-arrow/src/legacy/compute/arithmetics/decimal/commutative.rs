@@ -2,7 +2,7 @@ use polars_error::*;
 
 use super::{get_parameters, max_value};
 use crate::array::PrimitiveArray;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::legacy::compute::{binary_mut, unary_mut};
 
 pub fn commutative<F>(
@@ -30,7 +30,7 @@ where
 pub fn commutative_scalar<F>(
     lhs: &PrimitiveArray<i128>,
     rhs: i128,
-    rhs_dtype: &DataType,
+    rhs_dtype: &ArrowDataType,
     op: F,
 ) -> PolarsResult<PrimitiveArray<i128>>
 where

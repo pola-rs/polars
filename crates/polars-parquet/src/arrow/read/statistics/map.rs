@@ -1,19 +1,19 @@
 use arrow::array::{Array, MapArray, MutableArray};
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 use super::make_mutable;
 
 #[derive(Debug)]
 pub struct DynMutableMapArray {
-    data_type: DataType,
+    data_type: ArrowDataType,
     pub inner: Box<dyn MutableArray>,
 }
 
 impl DynMutableMapArray {
-    pub fn try_with_capacity(data_type: DataType, capacity: usize) -> PolarsResult<Self> {
+    pub fn try_with_capacity(data_type: ArrowDataType, capacity: usize) -> PolarsResult<Self> {
         let inner = match data_type.to_logical_type() {
-            DataType::Map(inner, _) => inner,
+            ArrowDataType::Map(inner, _) => inner,
             _ => unreachable!(),
         };
         let inner = make_mutable(inner.data_type(), capacity)?;
@@ -23,7 +23,7 @@ impl DynMutableMapArray {
 }
 
 impl MutableArray for DynMutableMapArray {
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 

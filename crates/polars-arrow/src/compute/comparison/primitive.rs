@@ -4,7 +4,7 @@ use super::simd::{Simd8, Simd8Lanes, Simd8PartialEq, Simd8PartialOrd};
 use crate::array::{BooleanArray, PrimitiveArray};
 use crate::bitmap::MutableBitmap;
 use crate::compute::comparison::{finish_eq_validities, finish_neq_validities};
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::types::NativeType;
 
 pub(crate) fn compare_values_op<T, F>(lhs: &[T], rhs: &[T], op: F) -> MutableBitmap
@@ -71,7 +71,7 @@ where
 
     let values = compare_values_op(lhs.values(), rhs.values(), op);
 
-    BooleanArray::new(DataType::Boolean, values.into(), validity)
+    BooleanArray::new(ArrowDataType::Boolean, values.into(), validity)
 }
 
 /// Evaluate `op(left, right)` for [`PrimitiveArray`] and scalar using
@@ -85,7 +85,7 @@ where
 
     let values = compare_values_op_scalar(lhs.values(), rhs, op);
 
-    BooleanArray::new(DataType::Boolean, values.into(), validity)
+    BooleanArray::new(ArrowDataType::Boolean, values.into(), validity)
 }
 
 /// Perform `lhs == rhs` operation on two arrays.

@@ -8,7 +8,7 @@ use crate::array::*;
 use crate::bitmap::utils::{bytes_for, count_zeros};
 use crate::bitmap::Bitmap;
 use crate::buffer::{Buffer, Bytes, BytesAllocator};
-use crate::datatypes::{DataType, PhysicalType};
+use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::ffi::schema::get_child;
 use crate::types::NativeType;
 use crate::{match_integer_type, with_match_primitive_type_full};
@@ -175,7 +175,7 @@ impl ArrowArray {
 /// The caller must ensure that the buffer at index `i` is not mutably shared.
 unsafe fn get_buffer_ptr<T: NativeType>(
     array: &ArrowArray,
-    data_type: &DataType,
+    data_type: &ArrowDataType,
     index: usize,
 ) -> PolarsResult<*mut T> {
     if array.buffers.is_null() {
@@ -223,7 +223,7 @@ unsafe fn get_buffer_ptr<T: NativeType>(
 /// * the buffers' pointers are not mutably shared for the lifetime of `owner`
 unsafe fn create_buffer<T: NativeType>(
     array: &ArrowArray,
-    data_type: &DataType,
+    data_type: &ArrowDataType,
     owner: InternalArrowArray,
     index: usize,
 ) -> PolarsResult<Buffer<T>> {
@@ -257,7 +257,7 @@ unsafe fn create_buffer<T: NativeType>(
 /// * the buffers' pointer is not mutable for the lifetime of `owner`
 unsafe fn create_bitmap(
     array: &ArrowArray,
-    data_type: &DataType,
+    data_type: &ArrowDataType,
     owner: InternalArrowArray,
     index: usize,
     // if this is the validity bitmap
@@ -284,12 +284,12 @@ unsafe fn create_bitmap(
     Bitmap::from_inner(Arc::new(bytes), offset, len, null_count)
 }
 
-fn buffer_offset(array: &ArrowArray, data_type: &DataType, i: usize) -> usize {
+fn buffer_offset(array: &ArrowArray, data_type: &ArrowDataType, i: usize) -> usize {
     use PhysicalType::*;
     match (data_type.to_physical_type(), i) {
         (LargeUtf8, 2) | (LargeBinary, 2) | (Utf8, 2) | (Binary, 2) => 0,
         (FixedSizeBinary, 1) => {
-            if let DataType::FixedSizeBinary(size) = data_type.to_logical_type() {
+            if let ArrowDataType::FixedSizeBinary(size) = data_type.to_logical_type() {
                 let offset: usize = array.offset.try_into().expect("Offset to fit in `usize`");
                 offset * *size
             } else {
@@ -301,17 +301,21 @@ fn buffer_offset(array: &ArrowArray, data_type: &DataType, i: usize) -> usize {
 }
 
 /// Returns the length, in slots, of the buffer `i` (indexed according to the C data interface)
-unsafe fn buffer_len(array: &ArrowArray, data_type: &DataType, i: usize) -> PolarsResult<usize> {
+unsafe fn buffer_len(
+    array: &ArrowArray,
+    data_type: &ArrowDataType,
+    i: usize,
+) -> PolarsResult<usize> {
     Ok(match (data_type.to_physical_type(), i) {
         (PhysicalType::FixedSizeBinary, 1) => {
-            if let DataType::FixedSizeBinary(size) = data_type.to_logical_type() {
+            if let ArrowDataType::FixedSizeBinary(size) = data_type.to_logical_type() {
                 *size * (array.offset as usize + array.length as usize)
             } else {
                 unreachable!()
             }
         },
         (PhysicalType::FixedSizeList, 1) => {
-            if let DataType::FixedSizeList(_, size) = data_type.to_logical_type() {
+            if let ArrowDataType::FixedSizeList(_, size) = data_type.to_logical_type() {
                 *size * (array.offset as usize + array.length as usize)
             } else {
                 unreachable!()
@@ -361,7 +365,7 @@ unsafe fn buffer_len(array: &ArrowArray, data_type: &DataType, i: usize) -> Pola
 /// * the pointer of `array.children` at `index` is not mutably shared for the lifetime of `parent`
 unsafe fn create_child(
     array: &ArrowArray,
-    data_type: &DataType,
+    data_type: &ArrowDataType,
     parent: InternalArrowArray,
     index: usize,
 ) -> PolarsResult<ArrowArrayChild<'static>> {
@@ -401,10 +405,10 @@ unsafe fn create_child(
 /// * `array.dictionary` is not mutably shared for the lifetime of `parent`
 unsafe fn create_dictionary(
     array: &ArrowArray,
-    data_type: &DataType,
+    data_type: &ArrowDataType,
     parent: InternalArrowArray,
 ) -> PolarsResult<Option<ArrowArrayChild<'static>>> {
-    if let DataType::Dictionary(_, values, _) = data_type {
+    if let ArrowDataType::Dictionary(_, values, _) = data_type {
         let data_type = values.as_ref().clone();
         // catch what we can
         if array.dictionary.is_null() {
@@ -473,7 +477,7 @@ pub trait ArrowArrayRef: std::fmt::Debug {
 
     fn parent(&self) -> &InternalArrowArray;
     fn array(&self) -> &ArrowArray;
-    fn data_type(&self) -> &DataType;
+    fn data_type(&self) -> &ArrowDataType;
 }
 
 /// Struct used to move an Array from and to the C Data Interface.
@@ -500,11 +504,11 @@ pub struct InternalArrowArray {
     // Arc is used for sharability since this is immutable
     array: Arc<ArrowArray>,
     // Arced to reduce cost of cloning
-    data_type: Arc<DataType>,
+    data_type: Arc<ArrowDataType>,
 }
 
 impl InternalArrowArray {
-    pub fn new(array: ArrowArray, data_type: DataType) -> Self {
+    pub fn new(array: ArrowArray, data_type: ArrowDataType) -> Self {
         Self {
             array: Arc::new(array),
             data_type: Arc::new(data_type),
@@ -514,7 +518,7 @@ impl InternalArrowArray {
 
 impl ArrowArrayRef for InternalArrowArray {
     /// the data_type as declared in the schema
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 
@@ -534,13 +538,13 @@ impl ArrowArrayRef for InternalArrowArray {
 #[derive(Debug)]
 pub struct ArrowArrayChild<'a> {
     array: &'a ArrowArray,
-    data_type: DataType,
+    data_type: ArrowDataType,
     parent: InternalArrowArray,
 }
 
 impl<'a> ArrowArrayRef for ArrowArrayChild<'a> {
     /// the data_type as declared in the schema
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 
@@ -558,7 +562,7 @@ impl<'a> ArrowArrayRef for ArrowArrayChild<'a> {
 }
 
 impl<'a> ArrowArrayChild<'a> {
-    fn new(array: &'a ArrowArray, data_type: DataType, parent: InternalArrowArray) -> Self {
+    fn new(array: &'a ArrowArray, data_type: ArrowDataType, parent: InternalArrowArray) -> Self {
         Self {
             array,
             data_type,

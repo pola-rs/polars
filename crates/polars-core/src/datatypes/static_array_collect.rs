@@ -484,7 +484,7 @@ impl<T: IntoBytes> ArrayFromIter<Option<T>> for BinaryArray<i64> {
 unsafe fn into_utf8array(arr: BinaryArray<i64>) -> Utf8Array<i64> {
     unsafe {
         let (_dt, offsets, values, validity) = arr.into_inner();
-        let dt = arrow::datatypes::DataType::LargeUtf8;
+        let dt = arrow::datatypes::ArrowDataType::LargeUtf8;
         Utf8Array::try_new_unchecked(dt, offsets, values, validity).unwrap_unchecked()
     }
 }
@@ -637,7 +637,7 @@ macro_rules! impl_collect_bool_validity {
 
 impl ArrayFromIter<bool> for BooleanArray {
     fn arr_from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
-        let dt = arrow::datatypes::DataType::Boolean;
+        let dt = arrow::datatypes::ArrowDataType::Boolean;
         let (values, _valid) = impl_collect_bool_validity!(iter, x, x, x, false, false);
         BooleanArray::new(dt, values, None)
     }
@@ -646,7 +646,7 @@ impl ArrayFromIter<bool> for BooleanArray {
     // fn arr_from_iter_trusted<I>(iter: I) -> Self
 
     fn try_arr_from_iter<E, I: IntoIterator<Item = Result<bool, E>>>(iter: I) -> Result<Self, E> {
-        let dt = arrow::datatypes::DataType::Boolean;
+        let dt = arrow::datatypes::ArrowDataType::Boolean;
         let (values, _valid) = impl_collect_bool_validity!(iter, x, x?, x, false, false);
         Ok(BooleanArray::new(dt, values, None))
     }
@@ -656,7 +656,7 @@ impl ArrayFromIter<bool> for BooleanArray {
 
 impl ArrayFromIter<Option<bool>> for BooleanArray {
     fn arr_from_iter<I: IntoIterator<Item = Option<bool>>>(iter: I) -> Self {
-        let dt = arrow::datatypes::DataType::Boolean;
+        let dt = arrow::datatypes::ArrowDataType::Boolean;
         let (values, valid) =
             impl_collect_bool_validity!(iter, x, x, x.unwrap_or(false), x.is_some(), true);
         BooleanArray::new(dt, values, valid)
@@ -667,7 +667,7 @@ impl ArrayFromIter<Option<bool>> for BooleanArray {
     fn try_arr_from_iter<E, I: IntoIterator<Item = Result<Option<bool>, E>>>(
         iter: I,
     ) -> Result<Self, E> {
-        let dt = arrow::datatypes::DataType::Boolean;
+        let dt = arrow::datatypes::ArrowDataType::Boolean;
         let (values, valid) =
             impl_collect_bool_validity!(iter, x, x?, x.unwrap_or(false), x.is_some(), true);
         Ok(BooleanArray::new(dt, values, valid))

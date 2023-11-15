@@ -5,7 +5,7 @@ use commutative::{
 use polars_error::{PolarsError, PolarsResult};
 
 use crate::array::PrimitiveArray;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 mod add;
 mod commutative;
@@ -24,8 +24,8 @@ fn max_value(precision: usize) -> i128 {
     10i128.pow(precision as u32) - 1
 }
 
-fn get_parameters(lhs: &DataType, rhs: &DataType) -> PolarsResult<(usize, usize)> {
-    if let (DataType::Decimal(lhs_p, lhs_s), DataType::Decimal(rhs_p, rhs_s)) =
+fn get_parameters(lhs: &ArrowDataType, rhs: &ArrowDataType) -> PolarsResult<(usize, usize)> {
+    if let (ArrowDataType::Decimal(lhs_p, lhs_s), ArrowDataType::Decimal(rhs_p, rhs_s)) =
         (lhs.to_logical_type(), rhs.to_logical_type())
     {
         if lhs_p == rhs_p && lhs_s == rhs_s {

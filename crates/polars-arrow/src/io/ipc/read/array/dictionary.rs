@@ -8,12 +8,12 @@ use polars_error::{polars_bail, polars_err, PolarsResult};
 use super::super::{Compression, Dictionaries, IpcBuffer, Node};
 use super::{read_primitive, skip_primitive};
 use crate::array::{DictionaryArray, DictionaryKey};
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_dictionary<T: DictionaryKey, R: Read + Seek>(
     field_nodes: &mut VecDeque<Node>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     id: Option<i64>,
     buffers: &mut VecDeque<IpcBuffer>,
     reader: &mut R,

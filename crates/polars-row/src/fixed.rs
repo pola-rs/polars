@@ -3,7 +3,7 @@ use std::mem::MaybeUninit;
 
 use arrow::array::{BooleanArray, PrimitiveArray};
 use arrow::bitmap::Bitmap;
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use arrow::util::total_ord::{canonical_f32, canonical_f64};
 use polars_utils::slice::*;
@@ -223,7 +223,7 @@ pub(super) unsafe fn decode_primitive<T: NativeType + FixedLengthEncoding>(
 where
     T::Encoded: FromSlice,
 {
-    let data_type: DataType = T::PRIMITIVE.into();
+    let data_type: ArrowDataType = T::PRIMITIVE.into();
     let mut has_nulls = false;
     let null_sentinel = get_null_sentinel(field);
 
@@ -291,7 +291,7 @@ pub(super) unsafe fn decode_bool(rows: &mut [&[u8]], field: &SortField) -> Boole
     let increment_len = bool::ENCODED_LEN;
 
     increment_row_counter(rows, increment_len);
-    BooleanArray::new(DataType::Boolean, values, validity)
+    BooleanArray::new(ArrowDataType::Boolean, values, validity)
 }
 unsafe fn increment_row_counter(rows: &mut [&[u8]], fixed_size: usize) {
     for row in rows {

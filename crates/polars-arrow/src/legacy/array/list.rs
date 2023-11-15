@@ -3,7 +3,7 @@ use polars_error::PolarsResult;
 use crate::array::{new_null_array, Array, ListArray, NullArray, StructArray};
 use crate::bitmap::MutableBitmap;
 use crate::compute::concatenate;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use crate::legacy::prelude::*;
 use crate::offset::Offsets;
@@ -100,7 +100,7 @@ impl<'a> AnonymousBuilder<'a> {
         }
     }
 
-    pub fn finish(self, inner_dtype: Option<&DataType>) -> PolarsResult<ListArray<i64>> {
+    pub fn finish(self, inner_dtype: Option<&ArrowDataType>) -> PolarsResult<ListArray<i64>> {
         // Safety:
         // offsets are monotonically increasing
         let offsets = unsafe { Offsets::new_unchecked(self.offsets) };
@@ -108,8 +108,8 @@ impl<'a> AnonymousBuilder<'a> {
             let len = *offsets.last() as usize;
             match inner_dtype {
                 None => {
-                    let values = NullArray::new(DataType::Null, len).boxed();
-                    (DataType::Null, values)
+                    let values = NullArray::new(ArrowDataType::Null, len).boxed();
+                    (ArrowDataType::Null, values)
                 },
                 Some(inner_dtype) => {
                     let values = new_null_array(inner_dtype.clone(), len);
@@ -163,19 +163,21 @@ impl<'a> AnonymousBuilder<'a> {
     }
 }
 
-fn is_nested_null(data_type: &DataType) -> bool {
+fn is_nested_null(data_type: &ArrowDataType) -> bool {
     match data_type {
-        DataType::Null => true,
-        DataType::LargeList(field) => is_nested_null(field.data_type()),
-        DataType::Struct(fields) => fields.iter().all(|field| is_nested_null(field.data_type())),
+        ArrowDataType::Null => true,
+        ArrowDataType::LargeList(field) => is_nested_null(field.data_type()),
+        ArrowDataType::Struct(fields) => {
+            fields.iter().all(|field| is_nested_null(field.data_type()))
+        },
         _ => false,
     }
 }
 
 /// Cast null arrays to inner type and ensure that all offsets remain correct
-pub fn convert_inner_type(array: &dyn Array, dtype: &DataType) -> Box<dyn Array> {
+pub fn convert_inner_type(array: &dyn Array, dtype: &ArrowDataType) -> Box<dyn Array> {
     match dtype {
-        DataType::LargeList(field) => {
+        ArrowDataType::LargeList(field) => {
             let array = array.as_any().downcast_ref::<LargeListArray>().unwrap();
             let inner = array.values();
             let new_values = convert_inner_type(inner.as_ref(), field.data_type());
@@ -188,7 +190,7 @@ pub fn convert_inner_type(array: &dyn Array, dtype: &DataType) -> Box<dyn Array>
             )
             .boxed()
         },
-        DataType::Struct(fields) => {
+        ArrowDataType::Struct(fields) => {
             let array = array.as_any().downcast_ref::<StructArray>().unwrap();
             let inner = array.values();
             let new_values = inner
