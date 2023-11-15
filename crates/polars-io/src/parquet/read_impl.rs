@@ -284,8 +284,7 @@ fn rg_to_dfs_par_over_rg(
         .collect::<Vec<_>>();
 
     let dfs = row_groups
-        // .into_par_iter()
-        .into_iter()
+        .into_par_iter()
         .map(|(rg_idx, md, projection_height, row_count_start)| {
             if projection_height == 0
                 || use_statistics
