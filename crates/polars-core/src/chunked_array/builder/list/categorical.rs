@@ -25,9 +25,12 @@ pub fn create_categorical_chunked_listbuilder(
 
 struct ListLocalCategoricalChunkedBuilder {
     inner: ListPrimitiveChunkedBuilder<UInt32Type>,
-    idx_lookup: PlHashMap<u32, ()>,
+    idx_lookup: PlHashMap<KeyWrapper, ()>,
     categories: MutableUtf8Array<i64>,
 }
+
+// Wrap u32 key to avoid incorrect usage of hashmap with custom lookup
+struct KeyWrapper(u32);
 
 impl ListLocalCategoricalChunkedBuilder {
     #[inline]
@@ -76,9 +79,9 @@ impl ListBuilderTrait for ListLocalCategoricalChunkedBuilder {
             let r = unsafe {
                 self.idx_lookup.raw_table_mut().find_or_find_insert_slot(
                     hash_cat,
-                    |(k, _)| self.categories.value_unchecked(*k as usize) == cat,
-                    |(k, _): &(u32, ())| {
-                        hash_builder.hash_one(self.categories.value_unchecked(*k as usize))
+                    |(k, _)| self.categories.value_unchecked(k.0 as usize) == cat,
+                    |(k, _): &(KeyWrapper, ())| {
+                        hash_builder.hash_one(self.categories.value_unchecked(k.0 as usize))
                     },
                 )
             };
@@ -86,7 +89,7 @@ impl ListBuilderTrait for ListLocalCategoricalChunkedBuilder {
             match r {
                 Ok(v) => {
                     // Safety: Bucket is initialized
-                    idx_mapping.insert_unique_unchecked(idx as u32, unsafe { v.as_ref().0 });
+                    idx_mapping.insert_unique_unchecked(idx as u32, unsafe { v.as_ref().0 .0 });
                 },
                 Err(e) => {
                     idx_mapping.insert_unique_unchecked(idx as u32, len as u32);
@@ -96,7 +99,7 @@ impl ListBuilderTrait for ListLocalCategoricalChunkedBuilder {
                         self.idx_lookup.raw_table_mut().insert_in_slot(
                             hash_cat,
                             e,
-                            (len as u32, ()),
+                            (KeyWrapper(len as u32), ()),
                         )
                     };
                 },
