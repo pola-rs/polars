@@ -188,12 +188,12 @@ impl PyExpr {
         self.inner.clone().str().base64_decode(strict).into()
     }
 
-    fn str_parse_int(&self, radix: u32, strict: bool) -> Self {
+    fn str_to_integer(&self, base: u32, strict: bool) -> Self {
         self.inner
             .clone()
             .str()
-            .from_radix(radix, strict)
-            .with_fmt("str.parse_int")
+            .from_radix(base, strict)
+            .with_fmt("str.to_integer")
             .into()
     }
 

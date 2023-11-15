@@ -805,7 +805,7 @@ pub(super) fn replace(s: &[Series], literal: bool, n: i64) -> PolarsResult<Serie
 #[cfg(feature = "string_from_radix")]
 pub(super) fn from_radix(s: &Series, radix: u32, strict: bool) -> PolarsResult<Series> {
     let ca = s.utf8()?;
-    ca.parse_int(radix, strict).map(|ok| ok.into_series())
+    ca.to_integer(radix, strict).map(|ok| ok.into_series())
 }
 pub(super) fn str_slice(s: &Series, start: i64, length: Option<u64>) -> PolarsResult<Series> {
     let ca = s.utf8()?;

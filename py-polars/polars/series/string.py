@@ -1511,16 +1511,15 @@ class StringNameSpace:
 
         """
 
-    def parse_int(self, radix: int | None = None, *, strict: bool = True) -> Series:
+    def to_integer(self, base: int = 10, *, strict: bool = True) -> Series:
         """
-        Parse integers with base radix from strings.
-
-        ParseError/Overflows become Nulls.
+        Convert an Utf8 column into an Int64 column with base radix.
 
         Parameters
         ----------
-        radix
+        base
             Positive integer which is the base of the string we are parsing.
+            Default: 10.
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
             False silently convert to Null.
@@ -1528,14 +1527,14 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int32`.
+            Series of data type :class:`Int64`.
 
         Examples
         --------
         >>> s = pl.Series("bin", ["110", "101", "010", "invalid"])
-        >>> s.str.parse_int(2, strict=False)
+        >>> s.str.to_integer(base=2, strict=False)
         shape: (4,)
-        Series: 'bin' [i32]
+        Series: 'bin' [i64]
         [
                 6
                 5
@@ -1544,15 +1543,34 @@ class StringNameSpace:
         ]
 
         >>> s = pl.Series("hex", ["fa1e", "ff00", "cafe", None])
-        >>> s.str.parse_int(16)
+        >>> s.str.to_integer(base=16)
         shape: (4,)
-        Series: 'hex' [i32]
+        Series: 'hex' [i64]
         [
                 64030
                 65280
                 51966
                 null
         ]
+
+        """
+
+    @deprecate_renamed_function("to_integer", version="0.19.14")
+    @deprecate_renamed_parameter("radix", "base", version="0.19.14")
+    def parse_int(self, base: int | None = None, *, strict: bool = True) -> Series:
+        """
+        Parse integers with base radix from strings.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :func:`to_integer`.
+
+        Parameters
+        ----------
+        base
+            Positive integer which is the base of the string we are parsing.
+        strict
+            Bool, Default=True will raise any ParseError or overflow as ComputeError.
+            False silently convert to Null.
 
         """
 
