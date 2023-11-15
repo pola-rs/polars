@@ -132,25 +132,32 @@ pub(crate) fn datetime_range_i64(
     }
     let mut ts = Vec::with_capacity(size);
 
-    let mut i = match closed {
-        ClosedWindow::Both | ClosedWindow::Left => 0,
-        ClosedWindow::Right | ClosedWindow::None => 1,
-    };
-    let mut t = offset_fn(&(interval * i), start, tz)?;
-    i += 1;
+    let mut t = start;
     match closed {
-        ClosedWindow::Both | ClosedWindow::Right => {
+        ClosedWindow::Both => {
             while t <= end {
                 ts.push(t);
-                t = offset_fn(&(interval * i), start, tz)?;
-                i += 1;
+                t = offset_fn(&interval, t, tz)?
             }
         },
-        ClosedWindow::Left | ClosedWindow::None => {
+        ClosedWindow::Left => {
             while t < end {
                 ts.push(t);
-                t = offset_fn(&(interval * i), start, tz)?;
-                i += 1;
+                t = offset_fn(&interval, t, tz)?
+            }
+        },
+        ClosedWindow::Right => {
+            t = offset_fn(&interval, t, tz)?;
+            while t <= end {
+                ts.push(t);
+                t = offset_fn(&interval, t, tz)?
+            }
+        },
+        ClosedWindow::None => {
+            t = offset_fn(&interval, t, tz)?;
+            while t < end {
+                ts.push(t);
+                t = offset_fn(&interval, t, tz)?
             }
         },
     }
