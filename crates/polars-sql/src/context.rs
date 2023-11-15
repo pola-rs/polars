@@ -336,7 +336,8 @@ impl SQLContext {
         // Determine involved dataframes.
         // Implicit joins require some more work in query parsers, explicit joins are preferred for now.
         let sql_tbl: &TableWithJoins = select_stmt
-            .from.first()
+            .from
+            .first()
             .ok_or_else(|| polars_err!(ComputeError: "no table name provided in query"))?;
 
         let mut lf = self.execute_from_statement(sql_tbl)?;

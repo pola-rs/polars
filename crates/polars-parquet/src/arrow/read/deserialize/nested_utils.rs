@@ -5,7 +5,6 @@ use arrow::bitmap::MutableBitmap;
 use polars_error::PolarsResult;
 
 use super::super::Pages;
-
 use super::utils::{DecodedState, MaybeNext, PageState};
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::page::{split_buffer, DataPage, DictPage, Page};

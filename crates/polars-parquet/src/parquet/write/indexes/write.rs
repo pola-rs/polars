@@ -8,7 +8,6 @@ use parquet_format_safe::thrift::protocol::TCompactOutputStreamProtocol;
 
 use super::serialize::{serialize_column_index, serialize_offset_index};
 use crate::parquet::error::Result;
-
 use crate::parquet::write::page::PageWriteSpec;
 
 pub fn write_column_index<W: Write>(writer: &mut W, pages: &[PageWriteSpec]) -> Result<u64> {

@@ -103,4 +103,3 @@ mod native;
 
 #[cfg(feature = "simd")]
 mod packed;
-

@@ -1,8 +1,6 @@
 mod from_thrift;
 
-
 mod to_thrift;
-
 
 #[cfg(test)]
 mod tests {

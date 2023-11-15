@@ -273,7 +273,7 @@ impl PyLazyFrame {
             path
         } else {
             paths
-                .get(0)
+                .first()
                 .ok_or_else(|| PyValueError::new_err("expected a path argument"))?
         };
 

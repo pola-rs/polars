@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
-
 use crate::prelude::*;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
