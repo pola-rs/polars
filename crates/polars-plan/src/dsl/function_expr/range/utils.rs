@@ -1,4 +1,4 @@
-use polars_core::prelude::{polars_bail, polars_ensure, polars_err, PolarsResult};
+use polars_core::prelude::{polars_bail, polars_ensure, PolarsResult};
 use polars_core::series::Series;
 
 pub(super) fn temporal_series_to_i64_scalar(s: &Series) -> Option<i64> {
