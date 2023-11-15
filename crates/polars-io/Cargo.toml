@@ -52,7 +52,7 @@ zstd = { workspace = true, optional = true }
 home = "0.5.4"
 
 [dev-dependencies]
-tempdir = "0.3.7"
+tempfile = "3"
 
 [features]
 default = ["decompress"]
