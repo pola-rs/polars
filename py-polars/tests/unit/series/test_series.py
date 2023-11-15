@@ -1709,6 +1709,35 @@ def test_comparisons_bool_series_to_int() -> None:
                 op(srs_bool, scalar)
 
 
+@pytest.mark.parametrize(
+    ("values", "compare_with", "compares_equal"),
+    [
+        (
+            [date(1999, 12, 31), date(2021, 1, 31)],
+            date(2021, 1, 31),
+            [False, True],
+        ),
+        (
+            [datetime(2021, 1, 1, 12, 0, 0), datetime(2021, 1, 2, 12, 0, 0)],
+            datetime(2021, 1, 1, 12, 0, 0),
+            [True, False],
+        ),
+        (
+            [timedelta(days=1), timedelta(days=2)],
+            timedelta(days=1),
+            [True, False],
+        ),
+    ],
+)
+def test_temporal_comparison(
+    values: list[Any], compare_with: Any, compares_equal: list[bool]
+) -> None:
+    assert_series_equal(
+        pl.Series(values) == compare_with,
+        pl.Series(compares_equal, dtype=pl.Boolean),
+    )
+
+
 def test_abs() -> None:
     # ints
     s = pl.Series([1, -2, 3, -4])

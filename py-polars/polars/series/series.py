@@ -82,6 +82,7 @@ from polars.utils.convert import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
+    _timedelta_to_pl_timedelta,
 )
 from polars.utils.deprecation import (
     deprecate_function,
@@ -476,12 +477,14 @@ class Series:
                 return self.clone()
             elif (other is False and op == "eq") or (other is True and op == "neq"):
                 return ~self
+
         elif isinstance(other, float) and self.dtype.is_integer():
             # require upcast when comparing int series to float value
             self = self.cast(Float64)
             f = get_ffi_func(op + "_<>", Float64, self._s)
             assert f is not None
             return self._from_pyseries(f(other))
+
         elif isinstance(other, datetime):
             if self.dtype == Date:
                 # require upcast when comparing date series to datetime
@@ -503,18 +506,29 @@ class Series:
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(ts))
+
         elif isinstance(other, time) and self.dtype == Time:
             d = _time_to_pl_time(other)
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(d))
+
+        elif isinstance(other, timedelta) and self.dtype == Duration:
+            time_unit = self.dtype.time_unit  # type: ignore[union-attr]
+            td = _timedelta_to_pl_timedelta(other, time_unit)  # type: ignore[arg-type]
+            f = get_ffi_func(op + "_<>", Int64, self._s)
+            assert f is not None
+            return self._from_pyseries(f(td))
+
         elif self.dtype == Categorical and not isinstance(other, Series):
             other = Series([other])
+
         elif isinstance(other, date) and self.dtype == Date:
             d = _date_to_pl_date(other)
             f = get_ffi_func(op + "_<>", Int32, self._s)
             assert f is not None
             return self._from_pyseries(f(d))
+
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, dtype_if_empty=self.dtype)
         if isinstance(other, Series):
