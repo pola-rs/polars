@@ -1009,30 +1009,33 @@ class ExprListNameSpace:
         Convert list to struct with default field name assignment:
 
         >>> df = pl.DataFrame({"n": [[0, 1], [0, 1, 2]]})
-        >>> df.with_columns(struct=pl.col("n").list.to_struct())
+        >>> df.with_columns(
+        ...     struct=pl.col("n").list.to_struct()
+        ... )  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌───────────┬───────────┐
         │ n         ┆ struct    │
         │ ---       ┆ ---       │
-        │ list[i64] ┆ struct[2] │
+        │ list[i64] ┆ struct[2] │ # <- struct with 2 fields
         ╞═══════════╪═══════════╡
-        │ [0, 1]    ┆ {0,1}     │
-        │ [0, 1, 2] ┆ {0,1}     │
+        │ [0, 1]    ┆ {0,1}     │ # OK
+        │ [0, 1, 2] ┆ {0,1}     │ # NOT OK - last value missing
         └───────────┴───────────┘
 
-        In this case we must use the `max_width` strategy:
+        As the shorter sublist comes first, we must use the `max_width`
+        strategy to force a search for the longest.
 
         >>> df.with_columns(
         ...     struct=pl.col("n").list.to_struct(n_field_strategy="max_width")
-        ... )
+        ... )  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌───────────┬────────────┐
         │ n         ┆ struct     │
         │ ---       ┆ ---        │
-        │ list[i64] ┆ struct[3]  │
+        │ list[i64] ┆ struct[3]  │ # <- struct with 3 fields
         ╞═══════════╪════════════╡
-        │ [0, 1]    ┆ {0,1,null} │
-        │ [0, 1, 2] ┆ {0,1,2}    │
+        │ [0, 1]    ┆ {0,1,null} │ # OK
+        │ [0, 1, 2] ┆ {0,1,2}    │ # OK
         └───────────┴────────────┘
 
         Convert list to struct with field name assignment by function/index:
