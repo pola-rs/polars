@@ -67,8 +67,10 @@ pub(super) fn datetime_range(
         _ => {},
     };
 
-    let start = temporal_series_to_i64_scalar(&start);
-    let end = temporal_series_to_i64_scalar(&end);
+    let start = temporal_series_to_i64_scalar(&start)
+        .ok_or_else(|| polars_err!(ComputeError: "start is an out-of-range time."))?;
+    let end = temporal_series_to_i64_scalar(&end)
+        .ok_or_else(|| polars_err!(ComputeError: "end is an out-of-range time."))?;
 
     let result = match dtype {
         DataType::Datetime(tu, ref tz) => {
