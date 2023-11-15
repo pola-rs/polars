@@ -77,7 +77,12 @@ jobs:
 
       - name: Run tests and report coverage
         if: github.ref_name != 'main'
-        run: pytest --cov -n auto --dist loadgroup -m "not benchmark and not docs"
+        env:
+          # TODO: Re-enable coverage for for Ubuntu + Python 3.12 tests
+          # Currently skipped due to performance issues in coverage:
+          # https://github.com/nedbat/coveragepy/issues/1665
+          COV: ${{ !(matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12') && '--cov' || '' }}
+        run: pytest $COV -n auto --dist loadgroup -m "not benchmark and not docs"
 
       - name: Run tests async reader tests
         if: github.ref_name != 'main' && matrix.os != 'windows-latest'
