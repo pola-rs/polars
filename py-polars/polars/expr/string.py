@@ -2050,7 +2050,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"bin": ["110", "101", "010", "invalid"]})
-        >>> df.with_columns(parsed=pl.col("bin").str.to_integer(2, strict=False))
+        >>> df.with_columns(parsed=pl.col("bin").str.to_integer(base=2, strict=False))
         shape: (4, 2)
         ┌─────────┬────────┐
         │ bin     ┆ parsed │
@@ -2064,7 +2064,7 @@ class ExprStringNameSpace:
         └─────────┴────────┘
 
         >>> df = pl.DataFrame({"hex": ["fa1e", "ff00", "cafe", None]})
-        >>> df.with_columns(parsed=pl.col("hex").str.to_integer(16, strict=True))
+        >>> df.with_columns(parsed=pl.col("hex").str.to_integer(base=16, strict=True))
         shape: (4, 2)
         ┌──────┬────────┐
         │ hex  ┆ parsed │
