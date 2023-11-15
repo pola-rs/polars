@@ -1,57 +1,83 @@
+from __future__ import annotations
+
+import compileall
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
 import polars as pl
+from polars import selectors as cs
+
+# set a maximum cutoff at 0.2 secs; note that we are typically much faster
+# than this (more like ~0.07 secs, depending on hardware), but we allow a
+# margin of error to account for frequent noise from slow/contended CI.
+MAX_ALLOWED_IMPORT_TIME = 200_000  # << microseconds
+
+
+def _import_time_from_frame(tm: pl.DataFrame) -> int:
+    return int(
+        tm.filter(pl.col("import").str.strip_chars() == "polars")
+        .select("cumulative_time")
+        .item()
+    )
 
 
 def _import_timings() -> bytes:
     # assemble suitable command to get polars module import timing;
     # run in a separate process to ensure clean timing results.
     cmd = f'{sys.executable} -X importtime -c "import polars"'
-    return (
+    output = (
         subprocess.run(cmd, shell=True, capture_output=True)
         .stderr.replace(b"import time:", b"")
         .strip()
     )
+    return output
 
 
-def _import_timings_as_frame(best_of: int) -> pl.DataFrame:
-    # create master frame as minimum of 'best_of' timings.
-    import_timings = [
-        pl.read_csv(
-            source=_import_timings(),
-            separator="|",
-            has_header=True,
-            new_columns=["own_time", "cumulative_time", "import"],
-        ).with_columns(
-            pl.col(["own_time", "cumulative_time"]).str.strip_chars().cast(pl.Int32)
+def _import_timings_as_frame(n_tries: int) -> tuple[pl.DataFrame, int]:
+    import_timings = []
+    for _ in range(n_tries):
+        df_import = (
+            pl.read_csv(
+                source=_import_timings(),
+                separator="|",
+                has_header=True,
+                new_columns=["own_time", "cumulative_time", "import"],
+            )
+            .with_columns(cs.ends_with("_time").str.strip_chars().cast(pl.UInt32))
+            .select("import", "own_time", "cumulative_time")
+            .reverse()
         )
-        for _ in range(best_of)
-    ]
-    return (
-        sorted(
-            import_timings,
-            key=lambda tm: int(tm["cumulative_time"].max()),  # type: ignore[arg-type]
-        )[0]
-        .reverse()
-        .select("import", "own_time", "cumulative_time")
-    )
+        polars_import_time = _import_time_from_frame(df_import)
+        if polars_import_time < MAX_ALLOWED_IMPORT_TIME:
+            return df_import, polars_import_time
+
+        import_timings.append(df_import)
+
+    # note: if a qualifying import time was already achieved, we won't get here
+    df_fastest_import = sorted(import_timings, key=_import_time_from_frame)[0]
+    return df_fastest_import, _import_time_from_frame(df_fastest_import)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Unreliable on Windows")
 @pytest.mark.slow()
 def test_polars_import() -> None:
-    # note: take the fastest of several runs to reduce noise.
-    df_import = _import_timings_as_frame(best_of=3)
+    # up-front compile '.py' -> '.pyc' before timing
+    polars_path = Path(pl.__file__).parent
+    compileall.compile_dir(polars_path, quiet=1)
 
-    with pl.Config() as cfg:
+    # note: reduce noise by allowing up to 'n' tries (but return immediately if/when
+    # a qualifying time is achieved, so we don't waste time running unnecessary tests)
+    df_import, polars_import_time = _import_timings_as_frame(n_tries=5)
+
+    with pl.Config(
         # get a complete view of what's going on in case of failure
-        cfg.set_tbl_rows(250)
-        cfg.set_fmt_str_lengths(100)
-        cfg.set_tbl_hide_dataframe_shape()
-
+        tbl_rows=250,
+        fmt_str_lengths=100,
+        tbl_hide_dataframe_shape=True,
+    ):
         # ensure that we have not broken lazy-loading (numpy, pandas, pyarrow, etc).
         lazy_modules = [
             dep for dep in pl.dependencies.__all__ if not dep.startswith("_")
@@ -62,9 +88,8 @@ def test_polars_import() -> None:
             assert not_imported, f"{if_err}\n{df_import}"
 
         # ensure that we do not have an import speed regression.
-        polars_import = df_import.filter(pl.col("import").str.strip_chars() == "polars")
-        polars_import_time = polars_import["cumulative_time"].item()
-        assert isinstance(polars_import_time, int)
-
-        if_err = f"Possible import speed regression; took {polars_import_time//1_000}ms"
-        assert polars_import_time < 200_000, f"{if_err}\n{df_import}"
+        if polars_import_time > MAX_ALLOWED_IMPORT_TIME:
+            import_time_ms = polars_import_time // 1_000
+            raise AssertionError(
+                f"Possible import speed regression; took {import_time_ms}ms\n{df_import}"
+            )
