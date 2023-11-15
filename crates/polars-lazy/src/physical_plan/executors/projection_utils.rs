@@ -222,7 +222,7 @@ pub(super) fn check_expand_literals(
     mut selected_columns: Vec<Series>,
     zero_length: bool,
 ) -> PolarsResult<DataFrame> {
-    let Some(first_len) = selected_columns.get(0).map(|s| s.len()) else {
+    let Some(first_len) = selected_columns.first().map(|s| s.len()) else {
         return Ok(DataFrame::empty());
     };
     let mut df_height = 0;

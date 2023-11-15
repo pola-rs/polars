@@ -76,7 +76,7 @@ pub fn partition_to_groups_amortized<T>(
 ) where
     T: Debug + NativeType + PartialOrd,
 {
-    if let Some(mut first) = values.get(0) {
+    if let Some(mut first) = values.first() {
         out.clear();
         if nulls_first && first_group_offset > 0 {
             out.push([0, first_group_offset])

@@ -9,7 +9,7 @@ mod data;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
-pub use iterator::*;
+
 use polars_error::{polars_bail, PolarsResult};
 
 /// An array representing a (key, value), both of arbitrary logical types.

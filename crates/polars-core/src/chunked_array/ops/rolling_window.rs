@@ -250,6 +250,3 @@ mod inner_mod {
         }
     }
 }
-
-#[cfg(feature = "rolling_window")]
-pub use inner_mod::*;

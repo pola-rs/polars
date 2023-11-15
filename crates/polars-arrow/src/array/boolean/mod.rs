@@ -14,7 +14,6 @@ mod from;
 mod iterator;
 mod mutable;
 
-pub use iterator::*;
 pub use mutable::*;
 use polars_error::{polars_bail, PolarsResult};
 

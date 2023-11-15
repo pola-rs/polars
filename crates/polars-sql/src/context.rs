@@ -112,7 +112,7 @@ impl SQLContext {
             .parse_statements()
             .map_err(to_compute_err)?;
         polars_ensure!(ast.len() == 1, ComputeError: "One and only one statement at a time please");
-        let res = self.execute_statement(ast.get(0).unwrap());
+        let res = self.execute_statement(ast.first().unwrap());
         // Every execution should clear the CTE map.
         self.cte_map.borrow_mut().clear();
         self.aliases.borrow_mut().clear();
@@ -337,7 +337,7 @@ impl SQLContext {
         // Implicit joins require some more work in query parsers, explicit joins are preferred for now.
         let sql_tbl: &TableWithJoins = select_stmt
             .from
-            .get(0)
+            .first()
             .ok_or_else(|| polars_err!(ComputeError: "no table name provided in query"))?;
 
         let mut lf = self.execute_from_statement(sql_tbl)?;
@@ -548,7 +548,7 @@ impl SQLContext {
             ..
         } = stmt
         {
-            let tbl_name = name.0.get(0).unwrap().value.as_str();
+            let tbl_name = name.0.first().unwrap().value.as_str();
             // CREATE TABLE IF NOT EXISTS
             if *if_not_exists && self.table_map.contains_key(tbl_name) {
                 polars_bail!(ComputeError: "relation {} already exists", tbl_name);
@@ -579,7 +579,7 @@ impl SQLContext {
                 if let Some(args) = args {
                     return self.execute_tbl_function(name, alias, args);
                 }
-                let tbl_name = name.0.get(0).unwrap().value.as_str();
+                let tbl_name = name.0.first().unwrap().value.as_str();
                 if let Some(lf) = self.get_table_from_current_scope(tbl_name) {
                     match alias {
                         Some(alias) => {
@@ -605,7 +605,7 @@ impl SQLContext {
         alias: &Option<TableAlias>,
         args: &[FunctionArg],
     ) -> PolarsResult<(String, LazyFrame)> {
-        let tbl_fn = name.0.get(0).unwrap().value.as_str();
+        let tbl_fn = name.0.first().unwrap().value.as_str();
         let read_fn = tbl_fn.parse::<PolarsTableFunctions>()?;
         let (tbl_name, lf) = read_fn.execute(args)?;
         let tbl_name = alias
