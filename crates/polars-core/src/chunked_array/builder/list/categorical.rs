@@ -1,4 +1,4 @@
-use hashbrown::hash_map::RawEntryMut;
+use ahash::RandomState;
 
 use super::*;
 
@@ -30,6 +30,11 @@ struct ListLocalCategoricalChunkedBuilder {
 }
 
 impl ListLocalCategoricalChunkedBuilder {
+    #[inline]
+    pub fn get_hash_builder() -> RandomState {
+        RandomState::with_seed(0)
+    }
+
     pub(super) fn new(name: &str, capacity: usize, values_capacity: usize) -> Self {
         Self {
             inner: ListPrimitiveChunkedBuilder::new(
@@ -38,7 +43,10 @@ impl ListLocalCategoricalChunkedBuilder {
                 values_capacity,
                 DataType::UInt32,
             ),
-            idx_lookup: PlHashMap::with_capacity(capacity),
+            idx_lookup: PlHashMap::with_capacity_and_hasher(
+                capacity,
+                ListLocalCategoricalChunkedBuilder::get_hash_builder(),
+            ),
             categories: MutableUtf8Array::with_capacity(capacity),
         }
     }
@@ -54,36 +62,53 @@ impl ListBuilderTrait for ListLocalCategoricalChunkedBuilder {
         };
         let ca = s.categorical().unwrap();
 
+        let hash_builder = ListLocalCategoricalChunkedBuilder::get_hash_builder();
+
         // Map the physical of the appended series to be compatible with the existing rev map
         let mut idx_mapping = PlHashMap::with_capacity(ca.len());
-        for (idx, cat) in cats_right.values_iter().enumerate() {
-            let hash_cat = self.idx_lookup.hasher().hash_one(cat);
-            let len = self.idx_lookup.len();
-            let entry = self.idx_lookup.raw_entry_mut().from_hash(hash_cat, |k| {
-                // Safety: All keys in idx_lookup are in bounds
-                unsafe { self.categories.value_unchecked(*k as usize) == cat }
-            });
 
-            match entry {
-                // New Category
-                RawEntryMut::Vacant(e) => {
-                    idx_mapping.insert_unique_unchecked(idx as u32, len as u32);
-                    e.insert(len as u32, ());
-                    self.categories.push(Some(cat))
+        for (idx, cat) in cats_right.values_iter().enumerate() {
+            let hash_cat = hash_builder.hash_one(cat);
+            let len = self.idx_lookup.len();
+
+            // Custom hashing / equality functions for comparing the &str to the idx
+            // Safety: index in hashmap are within bounds of categories
+            let r = unsafe {
+                self.idx_lookup.raw_table_mut().find_or_find_insert_slot(
+                    hash_cat,
+                    |(k, _)| self.categories.value_unchecked(*k as usize) == cat,
+                    |(k, _): &(u32, ())| {
+                        hash_builder.hash_one(self.categories.value_unchecked(*k as usize))
+                    },
+                )
+            };
+
+            match r {
+                Ok(v) => {
+                    // Safety: Bucket is initialized
+                    idx_mapping.insert_unique_unchecked(idx as u32, unsafe { v.as_ref().0 });
                 },
-                // Already Existing Category
-                RawEntryMut::Occupied(e) => {
-                    idx_mapping.insert_unique_unchecked(idx as u32, *e.key());
+                Err(e) => {
+                    idx_mapping.insert_unique_unchecked(idx as u32, len as u32);
+                    self.categories.push(Some(cat));
+                    // Safety: No mutations in hashmap since find_or_find_insert_slot call
+                    unsafe {
+                        self.idx_lookup.raw_table_mut().insert_in_slot(
+                            hash_cat,
+                            e,
+                            (len as u32, ()),
+                        )
+                    };
                 },
             }
         }
 
-        let new_physical = ca
-            .physical()
-            .into_iter()
-            .map(move |i: Option<u32>| i.map(|i| *idx_mapping.get(&i).unwrap()));
+        let op = |opt_v: Option<&u32>| opt_v.map(|v| *idx_mapping.get(v).unwrap());
+        let iters = ca.physical().downcast_iter().map(|arr| arr.iter().map(op));
 
-        self.inner.append_iter(new_physical);
+        for iter in iters {
+            self.inner.append_iter(iter)
+        }
 
         Ok(())
     }
