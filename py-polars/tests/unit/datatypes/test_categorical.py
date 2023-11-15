@@ -417,3 +417,47 @@ def test_categorical_update_lengths() -> None:
     s = pl.concat([s1, s2], rechunk=False)
     assert s.null_count() == 1
     assert s.len() == 5
+
+
+def test_categorical_zip_append_local_different_rev_map() -> None:
+    s1 = pl.Series(["cat1", "cat2", "cat1"], dtype=pl.Categorical)
+    s2 = pl.Series(["cat2", "cat2", "cat3"], dtype=pl.Categorical)
+    s3 = s1.append(s2)
+    categories = s3.cat.get_categories()
+    assert len(categories) == 3
+    assert set(categories) == {"cat1", "cat2", "cat3"}
+
+
+def test_categorical_zip_extend_local_different_rev_map() -> None:
+    s1 = pl.Series(["cat1", "cat2", "cat1"], dtype=pl.Categorical)
+    s2 = pl.Series(["cat2", "cat2", "cat3"], dtype=pl.Categorical)
+    s3 = s1.extend(s2)
+    categories = s3.cat.get_categories()
+    assert len(categories) == 3
+    assert set(categories) == {"cat1", "cat2", "cat3"}
+
+
+def test_categorical_zip_with_local_different_rev_map() -> None:
+    s1 = pl.Series(["cat1", "cat2", "cat1"], dtype=pl.Categorical)
+    mask = pl.Series([True, False, False])
+    s2 = pl.Series(["cat2", "cat2", "cat3"], dtype=pl.Categorical)
+    s3 = s1.zip_with(mask, s2)
+    categories = s3.cat.get_categories()
+    assert len(categories) == 3
+    assert set(categories) == {"cat1", "cat2", "cat3"}
+
+
+def test_categorical_vstack_with_local_different_rev_map() -> None:
+    df1 = pl.DataFrame({"a": pl.Series(["a", "b", "c"], dtype=pl.Categorical)})
+    df2 = pl.DataFrame({"a": pl.Series(["d", "e", "f"], dtype=pl.Categorical)})
+
+    df3 = df1.vstack(df2)
+    assert df3.get_column("a").cat.get_categories().to_list() == [
+        "a",
+        "b",
+        "c",
+        "d",
+        "e",
+        "f",
+    ]
+    assert df3.get_column("a").cast(pl.UInt32).to_list() == [0, 1, 2, 3, 4, 5]

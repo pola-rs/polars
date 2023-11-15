@@ -189,6 +189,21 @@ def test_inner_type_categorical_on_rechunk() -> None:
     assert pl.concat([df, df], rechunk=True).dtypes == [pl.List(pl.Categorical)]
 
 
+def test_local_categorical_list() -> None:
+    values = [["a", "b"], ["c"], ["a", "d", "d"]]
+    s = pl.Series(values, dtype=pl.List(pl.Categorical))
+    assert s.dtype == pl.List
+    assert s.inner_dtype == pl.Categorical
+    assert s.to_list() == values
+
+    # Check that underlying physicals match
+    idx_df = pl.Series([[0, 1], [2], [0, 3, 3]], dtype=pl.List(pl.UInt32))
+    assert_series_equal(s.cast(pl.List(pl.UInt32)), idx_df)
+
+    # Check if the categories array does not overlap
+    assert s.list.explode().cat.get_categories().to_list() == ["a", "b", "c", "d"]
+
+
 def test_group_by_list_column() -> None:
     df = (
         pl.DataFrame({"a": ["a", "b", "a"]})

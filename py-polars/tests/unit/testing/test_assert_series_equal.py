@@ -493,15 +493,6 @@ def test_assert_series_equal_raises_assertion_error(
     assert_series_not_equal(s1, s2, **kwargs)
 
 
-def test_assert_series_equal_categorical() -> None:
-    s1 = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
-    s2 = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
-    with pytest.raises(AssertionError, match="incompatible data types"):
-        assert_series_equal(s1, s2)
-
-    assert_series_equal(s1, s2, categorical_as_str=True)
-
-
 def test_assert_series_equal_categorical_vs_str() -> None:
     s1 = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
     s2 = pl.Series(["a", "b", "a"], dtype=pl.Utf8)

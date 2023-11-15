@@ -2,7 +2,7 @@ use super::*;
 
 pub(super) enum DtypeMerger {
     #[cfg(feature = "dtype-categorical")]
-    Categorical(RevMapMerger),
+    Categorical(GlobalRevMapMerger),
     Other(Option<DataType>),
 }
 
@@ -17,7 +17,7 @@ impl DtypeMerger {
         match dtype {
             #[cfg(feature = "dtype-categorical")]
             Some(DataType::Categorical(Some(rev_map))) if rev_map.is_global() => {
-                DtypeMerger::Categorical(RevMapMerger::new(rev_map))
+                DtypeMerger::Categorical(GlobalRevMapMerger::new(rev_map))
             },
             _ => DtypeMerger::Other(dtype),
         }
@@ -31,6 +31,7 @@ impl DtypeMerger {
                 let DataType::Categorical(Some(rev_map)) = dtype else {
                     polars_bail!(ComputeError: "expected categorical rev-map")
                 };
+                polars_ensure!(rev_map.is_global(), string_cache_mismatch);
                 return merger.merge_map(rev_map);
             },
             DtypeMerger::Other(Some(set_dtype)) => {

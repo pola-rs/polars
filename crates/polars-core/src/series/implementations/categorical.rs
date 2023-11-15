@@ -165,13 +165,21 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), extend);
-        let other = other.categorical()?;
-        self.0.physical_mut().extend(other.physical());
-        let new_rev_map = self.0._merge_categorical_map(other)?;
-        // SAFETY
-        // rev_maps are merged
-        unsafe { self.0.set_rev_map(new_rev_map, false) };
-        Ok(())
+        let other_ca = other.categorical().unwrap();
+        // Fast path for globals of the same source
+        let rev_map_self = self.0.get_rev_map();
+        let rev_map_other = other_ca.get_rev_map();
+        match (&**rev_map_self, &**rev_map_other) {
+            (RevMapping::Global(_, _, idl), RevMapping::Global(_, _, idr)) if idl == idr => {
+                let mut rev_map_merger = GlobalRevMapMerger::new(rev_map_self.clone());
+                rev_map_merger.merge_map(rev_map_other)?;
+                self.0.physical_mut().extend(other_ca.physical());
+                // SAFETY: rev_maps are merged
+                unsafe { self.0.set_rev_map(rev_map_merger.finish(), false) };
+                Ok(())
+            },
+            _ => self.0.append(other_ca),
+        }
     }
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
