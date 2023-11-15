@@ -186,7 +186,7 @@ where
         })
     }
 
-    /// Write the given DataFrame in the the writer `W`. Returns the total size of the file.
+    /// Write the given DataFrame in the writer `W`. Returns the total size of the file.
     pub fn finish(self, df: &mut DataFrame) -> PolarsResult<u64> {
         // ensures all chunks are aligned.
         df.align_chunks();

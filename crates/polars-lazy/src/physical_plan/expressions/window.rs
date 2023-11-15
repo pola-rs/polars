@@ -281,7 +281,7 @@ impl WindowExpr {
         agg_col
     }
 
-    /// check if the the branches have an aggregation
+    /// Check if the branches have an aggregation
     /// when(a > sum)
     /// then (foo)
     /// otherwise(bar - sum)
