@@ -76,7 +76,7 @@ features = [
   "semi_anti_join",
   "serde-lazy",
   "string_encoding",
-  "string_from_radix",
+  "string_to_integer",
   "string_pad",
   "strings",
   "temporal",

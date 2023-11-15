@@ -91,7 +91,7 @@ The opt-in features are:
 - `timezones` - Activate timezone support.
 - `strings` - Extra string utilities for `Utf8Chunked`
     - `string_pad` - `pad_start`, `pad_end`, `zfill`
-    - `string_from_radix` - `parse_int`
+    - `string_to_integer` - `parse_int`
 - `object` - Support for generic ChunkedArrays called `ObjectChunked<T>` (generic over `T`).
   These are downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 - Performance related:

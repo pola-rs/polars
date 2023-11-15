@@ -171,7 +171,7 @@ list_take = ["polars-ops/list_take", "polars-lazy?/list_take"]
 describe = ["polars-core/describe"]
 timezones = ["polars-core/timezones", "polars-lazy?/timezones", "polars-io/timezones"]
 string_pad = ["polars-lazy?/string_pad", "polars-ops/string_pad"]
-string_from_radix = ["polars-lazy?/string_from_radix", "polars-ops/string_from_radix"]
+string_to_integer = ["polars-lazy?/string_to_integer", "polars-ops/string_to_integer"]
 arg_where = ["polars-lazy?/arg_where"]
 search_sorted = ["polars-lazy?/search_sorted"]
 merge_sorted = ["polars-lazy?/merge_sorted"]
@@ -314,7 +314,7 @@ docs-selection = [
   "asof_join",
   "cross_join",
   "concat_str",
-  "string_from_radix",
+  "string_to_integer",
   "decompress",
   "mode",
   "take_opt_iter",

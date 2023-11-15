@@ -399,12 +399,12 @@ impl StringNameSpace {
             .map_private(FunctionExpr::StringExpr(StringFunction::Titlecase))
     }
 
-    #[cfg(feature = "string_from_radix")]
+    #[cfg(feature = "string_to_integer")]
     /// Parse string in base radix into decimal.
-    pub fn from_radix(self, radix: u32, strict: bool) -> Expr {
+    pub fn to_integer(self, base: u32, strict: bool) -> Expr {
         self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::FromRadix(
-                radix, strict,
+            .map_private(FunctionExpr::StringExpr(StringFunction::ToInteger(
+                base, strict,
             )))
     }
 

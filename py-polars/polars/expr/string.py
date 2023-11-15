@@ -5,14 +5,13 @@ from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars import functions as F
-from polars.datatypes import Date, Datetime, Time, py_type_to_dtype
+from polars.datatypes import Date, Datetime, Int32, Time, py_type_to_dtype
 from polars.exceptions import ChronoFormatWarning
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.deprecation import (
     deprecate_renamed_function,
     deprecate_renamed_parameter,
-    issue_deprecation_warning,
     rename_use_earliest_to_ambiguous,
 )
 from polars.utils.various import find_stacklevel
@@ -2030,16 +2029,15 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_explode())
 
-    def parse_int(self, radix: int | None = None, *, strict: bool = True) -> Expr:
+    def to_integer(self, *, base: int = 10, strict: bool = True) -> Expr:
         """
-        Parse integers with base radix from strings.
-
-        ParseError/Overflows become Nulls.
+        Convert an Utf8 column into an Int64 column with base radix.
 
         Parameters
         ----------
-        radix
+        base
             Positive integer which is the base of the string we are parsing.
+            Default: 10.
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
             False silently convert to Null.
@@ -2047,17 +2045,17 @@ class ExprStringNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Int32`.
+            Expression of data type :class:`Int64`.
 
         Examples
         --------
         >>> df = pl.DataFrame({"bin": ["110", "101", "010", "invalid"]})
-        >>> df.with_columns(parsed=pl.col("bin").str.parse_int(2, strict=False))
+        >>> df.with_columns(parsed=pl.col("bin").str.to_integer(base=2, strict=False))
         shape: (4, 2)
         ┌─────────┬────────┐
         │ bin     ┆ parsed │
         │ ---     ┆ ---    │
-        │ str     ┆ i32    │
+        │ str     ┆ i64    │
         ╞═════════╪════════╡
         │ 110     ┆ 6      │
         │ 101     ┆ 5      │
@@ -2066,12 +2064,12 @@ class ExprStringNameSpace:
         └─────────┴────────┘
 
         >>> df = pl.DataFrame({"hex": ["fa1e", "ff00", "cafe", None]})
-        >>> df.with_columns(parsed=pl.col("hex").str.parse_int(16, strict=True))
+        >>> df.with_columns(parsed=pl.col("hex").str.to_integer(base=16, strict=True))
         shape: (4, 2)
         ┌──────┬────────┐
         │ hex  ┆ parsed │
         │ ---  ┆ ---    │
-        │ str  ┆ i32    │
+        │ str  ┆ i64    │
         ╞══════╪════════╡
         │ fa1e ┆ 64030  │
         │ ff00 ┆ 65280  │
@@ -2080,15 +2078,31 @@ class ExprStringNameSpace:
         └──────┴────────┘
 
         """
-        if radix is None:
-            issue_deprecation_warning(
-                "The default value for the `radix` parameter of `parse_int` will be removed in a future version."
-                " Call `parse_int(radix=2)` to keep current behavior and silence this warning.",
-                version="0.19.8",
-            )
-            radix = 2
+        return wrap_expr(self._pyexpr.str_to_integer(base, strict))
 
-        return wrap_expr(self._pyexpr.str_parse_int(radix, strict))
+    @deprecate_renamed_function("to_integer", version="0.19.14")
+    @deprecate_renamed_parameter("radix", "base", version="0.19.14")
+    def parse_int(self, base: int | None = None, *, strict: bool = True) -> Expr:
+        """
+        Parse integers with base radix from strings.
+
+        ParseError/Overflows become Nulls.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :func:`to_integer`.
+
+        Parameters
+        ----------
+        base
+            Positive integer which is the base of the string we are parsing.
+        strict
+            Bool, Default=True will raise any ParseError or overflow as ComputeError.
+            False silently convert to Null.
+
+        """
+        if base is None:
+            base = 2
+        return self.to_integer(base=base, strict=strict).cast(Int32, strict=strict)
 
     @deprecate_renamed_function("strip_chars", version="0.19.3")
     def strip(self, characters: str | None = None) -> Expr:
