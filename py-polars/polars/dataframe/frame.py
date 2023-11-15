@@ -8304,7 +8304,7 @@ class DataFrame:
                 raise ValueError(
                     f"`null_strategy` must be one of {{'ignore', 'propagate'}}, got {null_strategy}"
                 )
-            return self.sum_horizontal(ignore_nulls)
+            return self.sum_horizontal(ignore_nulls=ignore_nulls)
         raise ValueError("axis should be 0 or 1")
 
     def sum_horizontal(self, *, ignore_nulls: bool = True) -> Series:
@@ -8432,7 +8432,7 @@ class DataFrame:
                 raise ValueError(
                     f"`null_strategy` must be one of {{'ignore', 'propagate'}}, got {null_strategy}"
                 )
-            return self.mean_horizontal(ignore_nulls)
+            return self.mean_horizontal(ignore_nulls=ignore_nulls)
         raise ValueError("axis should be 0 or 1")
 
     def mean_horizontal(self, *, ignore_nulls: bool = True) -> Series:
