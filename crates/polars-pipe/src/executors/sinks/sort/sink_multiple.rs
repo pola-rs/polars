@@ -227,6 +227,7 @@ impl SortSinkMultiple {
             )
         };
 
+        debug_assert_eq!(column.chunks().len(), 1);
         // Safety: length is correct
         unsafe { chunk.data.with_column_unchecked(column) };
         Ok(())
