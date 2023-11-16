@@ -5381,6 +5381,14 @@ class Expr:
         seed_3
             Random seed parameter. Defaults to `seed` if not set.
 
+        Notes
+        -----
+        This implementation of :func:`rows` does not guarantee stable results
+        across different Polars versions. Its stability is only guaranteed within a
+        single version.
+        For use-cases where stability across versions is required, you can use
+        the `polars-hash <https://github.com/ion-elgreco/polars-hash>`_ plugin.
+
         Examples
         --------
         >>> df = pl.DataFrame(
