@@ -678,7 +678,7 @@ def test_non_existent_expr_inputs_in_lazy() -> None:
 
     with pytest.raises(pl.ColumnNotFoundError):
         (
-            lf.select(pl.col("foo").cumsum().alias("bar"))
+            lf.select(pl.col("foo").cum_sum().alias("bar"))
             .filter(pl.col("bar") == pl.col("foo"))
             .explain()
         )

@@ -1166,7 +1166,7 @@ def reduce(
     return wrap_expr(plr.reduce(function, exprs))
 
 
-def cumfold(
+def cum_fold(
     acc: IntoExpr,
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
@@ -1174,14 +1174,14 @@ def cumfold(
     include_init: bool = False,
 ) -> Expr:
     """
-    Cumulatively accumulate over multiple columns horizontally/ row wise with a left fold.
+    Cumulatively fold horizontally across columns with a left fold.
 
     Every cumulative result is added as a separate field in a Struct column.
 
     Parameters
     ----------
     acc
-        Accumulator Expression. This is the value that will be initialized when the fold
+        Accumulator expression. This is the value that will be initialized when the fold
         starts. For a sum this could for instance be lit(0).
     function
         Function to apply over the accumulator and the value.
@@ -1194,7 +1194,7 @@ def cumfold(
     Notes
     -----
     If you simply want the first encountered expression as accumulator,
-    consider using `cumreduce`.
+    consider using :func:`cum_reduce`.
 
     Examples
     --------
@@ -1205,50 +1205,36 @@ def cumfold(
     ...         "c": [5, 6, 7],
     ...     }
     ... )
-    >>> df
-    shape: (3, 3)
-    ┌─────┬─────┬─────┐
-    │ a   ┆ b   ┆ c   │
-    │ --- ┆ --- ┆ --- │
-    │ i64 ┆ i64 ┆ i64 │
-    ╞═════╪═════╪═════╡
-    │ 1   ┆ 3   ┆ 5   │
-    │ 2   ┆ 4   ┆ 6   │
-    │ 3   ┆ 5   ┆ 7   │
-    └─────┴─────┴─────┘
-
-    >>> df.select(
-    ...     pl.cumfold(
-    ...         acc=pl.lit(1), function=lambda acc, x: acc + x, exprs=pl.col("*")
-    ...     ).alias("cumfold"),
+    >>> df.with_columns(
+    ...     pl.cum_fold(acc=pl.lit(1), function=lambda acc, x: acc + x, exprs=pl.all())
     ... )
-    shape: (3, 1)
-    ┌───────────┐
-    │ cumfold   │
-    │ ---       │
-    │ struct[3] │
-    ╞═══════════╡
-    │ {2,5,10}  │
-    │ {3,7,13}  │
-    │ {4,9,16}  │
-    └───────────┘
+    shape: (3, 4)
+    ┌─────┬─────┬─────┬───────────┐
+    │ a   ┆ b   ┆ c   ┆ cum_fold  │
+    │ --- ┆ --- ┆ --- ┆ ---       │
+    │ i64 ┆ i64 ┆ i64 ┆ struct[3] │
+    ╞═════╪═════╪═════╪═══════════╡
+    │ 1   ┆ 3   ┆ 5   ┆ {2,5,10}  │
+    │ 2   ┆ 4   ┆ 6   ┆ {3,7,13}  │
+    │ 3   ┆ 5   ┆ 7   ┆ {4,9,16}  │
+    └─────┴─────┴─────┴───────────┘
 
-    """  # noqa: W505
+    """
     # in case of col("*")
     acc = parse_as_expression(acc, str_as_lit=True)
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
     exprs = parse_as_list_of_expressions(exprs)
-    return wrap_expr(plr.cumfold(acc, function, exprs, include_init))
+    return wrap_expr(plr.cum_fold(acc, function, exprs, include_init).alias("cum_fold"))
 
 
-def cumreduce(
+def cum_reduce(
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
 ) -> Expr:
     """
-    Cumulatively accumulate over multiple columns horizontally/ row wise with a left fold.
+    Cumulatively reduce horizontally across columns with a left fold.
 
     Every cumulative result is added as a separate field in a Struct column.
 
@@ -1269,40 +1255,24 @@ def cumreduce(
     ...         "c": [5, 6, 7],
     ...     }
     ... )
-    >>> df
-    shape: (3, 3)
-    ┌─────┬─────┬─────┐
-    │ a   ┆ b   ┆ c   │
-    │ --- ┆ --- ┆ --- │
-    │ i64 ┆ i64 ┆ i64 │
-    ╞═════╪═════╪═════╡
-    │ 1   ┆ 3   ┆ 5   │
-    │ 2   ┆ 4   ┆ 6   │
-    │ 3   ┆ 5   ┆ 7   │
-    └─────┴─────┴─────┘
-
-    >>> df.select(
-    ...     pl.cumreduce(function=lambda acc, x: acc + x, exprs=pl.col("*")).alias(
-    ...         "cumreduce"
-    ...     ),
-    ... )
-    shape: (3, 1)
-    ┌───────────┐
-    │ cumreduce │
-    │ ---       │
-    │ struct[3] │
-    ╞═══════════╡
-    │ {1,4,9}   │
-    │ {2,6,12}  │
-    │ {3,8,15}  │
-    └───────────┘
-    """  # noqa: W505
+    >>> df.with_columns(pl.cum_reduce(function=lambda acc, x: acc + x, exprs=pl.all()))
+    shape: (3, 4)
+    ┌─────┬─────┬─────┬────────────┐
+    │ a   ┆ b   ┆ c   ┆ cum_reduce │
+    │ --- ┆ --- ┆ --- ┆ ---        │
+    │ i64 ┆ i64 ┆ i64 ┆ struct[3]  │
+    ╞═════╪═════╪═════╪════════════╡
+    │ 1   ┆ 3   ┆ 5   ┆ {1,4,9}    │
+    │ 2   ┆ 4   ┆ 6   ┆ {2,6,12}   │
+    │ 3   ┆ 5   ┆ 7   ┆ {3,8,15}   │
+    └─────┴─────┴─────┴────────────┘
+    """
     # in case of col("*")
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
     exprs = parse_as_list_of_expressions(exprs)
-    return wrap_expr(plr.cumreduce(function, exprs))
+    return wrap_expr(plr.cum_reduce(function, exprs).alias("cum_reduce"))
 
 
 def arctan2(y: str | Expr, x: str | Expr) -> Expr:
@@ -2146,3 +2116,64 @@ def sql_expr(sql: str | Sequence[str]) -> Expr | list[Expr]:
         return wrap_expr(plr.sql_expr(sql))
     else:
         return [wrap_expr(plr.sql_expr(q)) for q in sql]
+
+
+@deprecate_renamed_function("cum_fold", version="0.19.14")
+def cumfold(
+    acc: IntoExpr,
+    function: Callable[[Series, Series], Series],
+    exprs: Sequence[Expr | str] | Expr,
+    *,
+    include_init: bool = False,
+) -> Expr:
+    """
+    Cumulatively accumulate over multiple columns horizontally/ row wise with a left fold.
+
+    Every cumulative result is added as a separate field in a Struct column.
+
+    Parameters
+    ----------
+    acc
+        Accumulator Expression. This is the value that will be initialized when the fold
+        starts. For a sum this could for instance be lit(0).
+    function
+        Function to apply over the accumulator and the value.
+        Fn(acc, value) -> new_value
+    exprs
+        Expressions to aggregate over. May also be a wildcard expression.
+    include_init
+        Include the initial accumulator state as struct field.
+    """  # noqa: W505
+    # in case of col("*")
+    acc = parse_as_expression(acc, str_as_lit=True)
+    if isinstance(exprs, pl.Expr):
+        exprs = [exprs]
+
+    exprs = parse_as_list_of_expressions(exprs)
+    return wrap_expr(plr.cum_fold(acc, function, exprs, include_init))
+
+
+@deprecate_renamed_function("cum_reduce", version="0.19.14")
+def cumreduce(
+    function: Callable[[Series, Series], Series],
+    exprs: Sequence[Expr | str] | Expr,
+) -> Expr:
+    """
+    Cumulatively accumulate over multiple columns horizontally/ row wise with a left fold.
+
+    Every cumulative result is added as a separate field in a Struct column.
+
+    Parameters
+    ----------
+    function
+        Function to apply over the accumulator and the value.
+        Fn(acc, value) -> new_value
+    exprs
+        Expressions to aggregate over. May also be a wildcard expression.
+    """  # noqa: W505
+    # in case of col("*")
+    if isinstance(exprs, pl.Expr):
+        exprs = [exprs]
+
+    exprs = parse_as_list_of_expressions(exprs)
+    return wrap_expr(plr.cum_reduce(function, exprs))

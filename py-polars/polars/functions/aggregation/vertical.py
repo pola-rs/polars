@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import polars.functions as F
+from polars.utils.deprecation import deprecate_renamed_function
 
 if TYPE_CHECKING:
     from polars import Expr
@@ -299,11 +300,11 @@ def sum(*names: str) -> Expr:
     return F.col(*names).sum()
 
 
-def cumsum(*names: str) -> Expr:
+def cum_sum(*names: str) -> Expr:
     """
     Cumulatively sum all values.
 
-    Syntactic sugar for `col(names).cumsum()`.
+    Syntactic sugar for `col(names).cum_sum()`.
 
     Parameters
     ----------
@@ -322,7 +323,7 @@ def cumsum(*names: str) -> Expr:
     ...         "b": [4, 5, 6],
     ...     }
     ... )
-    >>> df.select(pl.cumsum("a"))
+    >>> df.select(pl.cum_sum("a"))
     shape: (3, 1)
     ┌─────┐
     │ a   │
@@ -335,4 +336,21 @@ def cumsum(*names: str) -> Expr:
     └─────┘
 
     """
-    return F.col(*names).cumsum()
+    return F.col(*names).cum_sum()
+
+
+@deprecate_renamed_function("cum_sum", version="0.19.14")
+def cumsum(*names: str) -> Expr:
+    """
+    Cumulatively sum all values.
+
+    .. deprecated:: 0.19.14
+        This function has been renamed to :func:`cum_sum`.
+
+    Parameters
+    ----------
+    *names
+        Name(s) of the columns to use in the aggregation.
+
+    """
+    return cum_sum(*names)

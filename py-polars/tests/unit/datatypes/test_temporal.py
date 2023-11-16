@@ -2525,12 +2525,12 @@ def test_datetime_cum_agg_schema() -> None:
     assert (
         df.lazy()
         .with_columns(
-            (pl.col("timestamp").cummin()).alias("cummin"),
-            (pl.col("timestamp").cummax()).alias("cummax"),
+            (pl.col("timestamp").cum_min()).alias("cum_min"),
+            (pl.col("timestamp").cum_max()).alias("cum_max"),
         )
         .with_columns(
-            (pl.col("cummin") + pl.duration(hours=24)).alias("cummin+24"),
-            (pl.col("cummax") + pl.duration(hours=24)).alias("cummax+24"),
+            (pl.col("cum_min") + pl.duration(hours=24)).alias("cum_min+24"),
+            (pl.col("cum_max") + pl.duration(hours=24)).alias("cum_max+24"),
         )
         .collect()
     ).to_dict(as_series=False) == {
@@ -2539,22 +2539,22 @@ def test_datetime_cum_agg_schema() -> None:
             datetime(2023, 1, 2, 0, 0),
             datetime(2023, 1, 3, 0, 0),
         ],
-        "cummin": [
+        "cum_min": [
             datetime(2023, 1, 1, 0, 0),
             datetime(2023, 1, 1, 0, 0),
             datetime(2023, 1, 1, 0, 0),
         ],
-        "cummax": [
+        "cum_max": [
             datetime(2023, 1, 1, 0, 0),
             datetime(2023, 1, 2, 0, 0),
             datetime(2023, 1, 3, 0, 0),
         ],
-        "cummin+24": [
+        "cum_min+24": [
             datetime(2023, 1, 2, 0, 0),
             datetime(2023, 1, 2, 0, 0),
             datetime(2023, 1, 2, 0, 0),
         ],
-        "cummax+24": [
+        "cum_max+24": [
             datetime(2023, 1, 2, 0, 0),
             datetime(2023, 1, 3, 0, 0),
             datetime(2023, 1, 4, 0, 0),

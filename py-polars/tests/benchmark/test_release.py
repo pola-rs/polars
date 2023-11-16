@@ -101,7 +101,7 @@ def test_windows_not_cached() -> None:
         )
         .lazy()
         .filter(
-            (pl.col("key").cumcount().over("key") == 0)
+            (pl.col("key").cum_count().over("key") == 0)
             | (pl.col("val").shift(1).over("key").is_not_null())
             | (pl.col("val") != pl.col("val").shift(1).over("key"))
         )

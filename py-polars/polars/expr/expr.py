@@ -1473,7 +1473,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.drop_nans())
 
-    def cumsum(self, *, reverse: bool = False) -> Self:
+    def cum_sum(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative sum computed at every element.
 
@@ -1490,56 +1490,52 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
-        >>> df.select(
-        ...     [
-        ...         pl.col("a").cumsum(),
-        ...         pl.col("a").cumsum(reverse=True).alias("a_reverse"),
-        ...     ]
+        >>> df.with_columns(
+        ...     pl.col("a").cum_sum().alias("cum_sum"),
+        ...     pl.col("a").cum_sum(reverse=True).alias("cum_sum_reverse"),
         ... )
-        shape: (4, 2)
-        ┌─────┬───────────┐
-        │ a   ┆ a_reverse │
-        │ --- ┆ ---       │
-        │ i64 ┆ i64       │
-        ╞═════╪═══════════╡
-        │ 1   ┆ 10        │
-        │ 3   ┆ 9         │
-        │ 6   ┆ 7         │
-        │ 10  ┆ 4         │
-        └─────┴───────────┘
+        shape: (4, 3)
+        ┌─────┬─────────┬─────────────────┐
+        │ a   ┆ cum_sum ┆ cum_sum_reverse │
+        │ --- ┆ ---     ┆ ---             │
+        │ i64 ┆ i64     ┆ i64             │
+        ╞═════╪═════════╪═════════════════╡
+        │ 1   ┆ 1       ┆ 10              │
+        │ 2   ┆ 3       ┆ 9               │
+        │ 3   ┆ 6       ┆ 7               │
+        │ 4   ┆ 10      ┆ 4               │
+        └─────┴─────────┴─────────────────┘
 
         Null values are excluded, but can also be filled by calling `forward_fill`.
 
         >>> df = pl.DataFrame({"values": [None, 10, None, 8, 9, None, 16, None]})
         >>> df.with_columns(
-        ...     [
-        ...         pl.col("values").cumsum().alias("value_cumsum"),
-        ...         pl.col("values")
-        ...         .cumsum()
-        ...         .forward_fill()
-        ...         .alias("value_cumsum_all_filled"),
-        ...     ]
+        ...     pl.col("values").cum_sum().alias("value_cum_sum"),
+        ...     pl.col("values")
+        ...     .cum_sum()
+        ...     .forward_fill()
+        ...     .alias("value_cum_sum_all_filled"),
         ... )
         shape: (8, 3)
-        ┌────────┬──────────────┬─────────────────────────┐
-        │ values ┆ value_cumsum ┆ value_cumsum_all_filled │
-        │ ---    ┆ ---          ┆ ---                     │
-        │ i64    ┆ i64          ┆ i64                     │
-        ╞════════╪══════════════╪═════════════════════════╡
-        │ null   ┆ null         ┆ null                    │
-        │ 10     ┆ 10           ┆ 10                      │
-        │ null   ┆ null         ┆ 10                      │
-        │ 8      ┆ 18           ┆ 18                      │
-        │ 9      ┆ 27           ┆ 27                      │
-        │ null   ┆ null         ┆ 27                      │
-        │ 16     ┆ 43           ┆ 43                      │
-        │ null   ┆ null         ┆ 43                      │
-        └────────┴──────────────┴─────────────────────────┘
+        ┌────────┬───────────────┬──────────────────────────┐
+        │ values ┆ value_cum_sum ┆ value_cum_sum_all_filled │
+        │ ---    ┆ ---           ┆ ---                      │
+        │ i64    ┆ i64           ┆ i64                      │
+        ╞════════╪═══════════════╪══════════════════════════╡
+        │ null   ┆ null          ┆ null                     │
+        │ 10     ┆ 10            ┆ 10                       │
+        │ null   ┆ null          ┆ 10                       │
+        │ 8      ┆ 18            ┆ 18                       │
+        │ 9      ┆ 27            ┆ 27                       │
+        │ null   ┆ null          ┆ 27                       │
+        │ 16     ┆ 43            ┆ 43                       │
+        │ null   ┆ null          ┆ 43                       │
+        └────────┴───────────────┴──────────────────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.cumsum(reverse))
+        return self._from_pyexpr(self._pyexpr.cum_sum(reverse))
 
-    def cumprod(self, *, reverse: bool = False) -> Self:
+    def cum_prod(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative product computed at every element.
 
@@ -1556,28 +1552,26 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
-        >>> df.select(
-        ...     [
-        ...         pl.col("a").cumprod(),
-        ...         pl.col("a").cumprod(reverse=True).alias("a_reverse"),
-        ...     ]
+        >>> df.with_columns(
+        ...     pl.col("a").cum_prod().alias("cum_prod"),
+        ...     pl.col("a").cum_prod(reverse=True).alias("cum_prod_reverse"),
         ... )
-        shape: (4, 2)
-        ┌─────┬───────────┐
-        │ a   ┆ a_reverse │
-        │ --- ┆ ---       │
-        │ i64 ┆ i64       │
-        ╞═════╪═══════════╡
-        │ 1   ┆ 24        │
-        │ 2   ┆ 24        │
-        │ 6   ┆ 12        │
-        │ 24  ┆ 4         │
-        └─────┴───────────┘
+        shape: (4, 3)
+        ┌─────┬──────────┬──────────────────┐
+        │ a   ┆ cum_prod ┆ cum_prod_reverse │
+        │ --- ┆ ---      ┆ ---              │
+        │ i64 ┆ i64      ┆ i64              │
+        ╞═════╪══════════╪══════════════════╡
+        │ 1   ┆ 1        ┆ 24               │
+        │ 2   ┆ 2        ┆ 24               │
+        │ 3   ┆ 6        ┆ 12               │
+        │ 4   ┆ 24       ┆ 4                │
+        └─────┴──────────┴──────────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.cumprod(reverse))
+        return self._from_pyexpr(self._pyexpr.cum_prod(reverse))
 
-    def cummin(self, *, reverse: bool = False) -> Self:
+    def cum_min(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative min computed at every element.
 
@@ -1589,28 +1583,26 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
-        >>> df.select(
-        ...     [
-        ...         pl.col("a").cummin(),
-        ...         pl.col("a").cummin(reverse=True).alias("a_reverse"),
-        ...     ]
+        >>> df.with_columns(
+        ...     pl.col("a").cum_min().alias("cum_min"),
+        ...     pl.col("a").cum_min(reverse=True).alias("cum_min_reverse"),
         ... )
-        shape: (4, 2)
-        ┌─────┬───────────┐
-        │ a   ┆ a_reverse │
-        │ --- ┆ ---       │
-        │ i64 ┆ i64       │
-        ╞═════╪═══════════╡
-        │ 1   ┆ 1         │
-        │ 1   ┆ 2         │
-        │ 1   ┆ 3         │
-        │ 1   ┆ 4         │
-        └─────┴───────────┘
+        shape: (4, 3)
+        ┌─────┬─────────┬─────────────────┐
+        │ a   ┆ cum_min ┆ cum_min_reverse │
+        │ --- ┆ ---     ┆ ---             │
+        │ i64 ┆ i64     ┆ i64             │
+        ╞═════╪═════════╪═════════════════╡
+        │ 1   ┆ 1       ┆ 1               │
+        │ 2   ┆ 1       ┆ 2               │
+        │ 3   ┆ 1       ┆ 3               │
+        │ 4   ┆ 1       ┆ 4               │
+        └─────┴─────────┴─────────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.cummin(reverse))
+        return self._from_pyexpr(self._pyexpr.cum_min(reverse))
 
-    def cummax(self, *, reverse: bool = False) -> Self:
+    def cum_max(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative max computed at every element.
 
@@ -1622,56 +1614,49 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
-        >>> df.select(
-        ...     [
-        ...         pl.col("a").cummax(),
-        ...         pl.col("a").cummax(reverse=True).alias("a_reverse"),
-        ...     ]
+        >>> df.with_columns(
+        ...     pl.col("a").cum_max().alias("cum_max"),
+        ...     pl.col("a").cum_max(reverse=True).alias("cum_max_reverse"),
         ... )
-        shape: (4, 2)
-        ┌─────┬───────────┐
-        │ a   ┆ a_reverse │
-        │ --- ┆ ---       │
-        │ i64 ┆ i64       │
-        ╞═════╪═══════════╡
-        │ 1   ┆ 4         │
-        │ 2   ┆ 4         │
-        │ 3   ┆ 4         │
-        │ 4   ┆ 4         │
-        └─────┴───────────┘
+        shape: (4, 3)
+        ┌─────┬─────────┬─────────────────┐
+        │ a   ┆ cum_max ┆ cum_max_reverse │
+        │ --- ┆ ---     ┆ ---             │
+        │ i64 ┆ i64     ┆ i64             │
+        ╞═════╪═════════╪═════════════════╡
+        │ 1   ┆ 1       ┆ 4               │
+        │ 2   ┆ 2       ┆ 4               │
+        │ 3   ┆ 3       ┆ 4               │
+        │ 4   ┆ 4       ┆ 4               │
+        └─────┴─────────┴─────────────────┘
 
         Null values are excluded, but can also be filled by calling `forward_fill`.
 
         >>> df = pl.DataFrame({"values": [None, 10, None, 8, 9, None, 16, None]})
         >>> df.with_columns(
-        ...     [
-        ...         pl.col("values").cummax().alias("value_cummax"),
-        ...         pl.col("values")
-        ...         .cummax()
-        ...         .forward_fill()
-        ...         .alias("value_cummax_all_filled"),
-        ...     ]
+        ...     pl.col("values").cum_max().alias("cum_max"),
+        ...     pl.col("values").cum_max().forward_fill().alias("cum_max_all_filled"),
         ... )
         shape: (8, 3)
-        ┌────────┬──────────────┬─────────────────────────┐
-        │ values ┆ value_cummax ┆ value_cummax_all_filled │
-        │ ---    ┆ ---          ┆ ---                     │
-        │ i64    ┆ i64          ┆ i64                     │
-        ╞════════╪══════════════╪═════════════════════════╡
-        │ null   ┆ null         ┆ null                    │
-        │ 10     ┆ 10           ┆ 10                      │
-        │ null   ┆ null         ┆ 10                      │
-        │ 8      ┆ 10           ┆ 10                      │
-        │ 9      ┆ 10           ┆ 10                      │
-        │ null   ┆ null         ┆ 10                      │
-        │ 16     ┆ 16           ┆ 16                      │
-        │ null   ┆ null         ┆ 16                      │
-        └────────┴──────────────┴─────────────────────────┘
+        ┌────────┬─────────┬────────────────────┐
+        │ values ┆ cum_max ┆ cum_max_all_filled │
+        │ ---    ┆ ---     ┆ ---                │
+        │ i64    ┆ i64     ┆ i64                │
+        ╞════════╪═════════╪════════════════════╡
+        │ null   ┆ null    ┆ null               │
+        │ 10     ┆ 10      ┆ 10                 │
+        │ null   ┆ null    ┆ 10                 │
+        │ 8      ┆ 10      ┆ 10                 │
+        │ 9      ┆ 10      ┆ 10                 │
+        │ null   ┆ null    ┆ 10                 │
+        │ 16     ┆ 16      ┆ 16                 │
+        │ null   ┆ null    ┆ 16                 │
+        └────────┴─────────┴────────────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.cummax(reverse))
+        return self._from_pyexpr(self._pyexpr.cum_max(reverse))
 
-    def cumcount(self, *, reverse: bool = False) -> Self:
+    def cum_count(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative count computed at every element.
 
@@ -1685,26 +1670,24 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
-        >>> df.select(
-        ...     [
-        ...         pl.col("a").cumcount(),
-        ...         pl.col("a").cumcount(reverse=True).alias("a_reverse"),
-        ...     ]
+        >>> df.with_columns(
+        ...     pl.col("a").cum_count().alias("cum_count"),
+        ...     pl.col("a").cum_count(reverse=True).alias("cum_count_reverse"),
         ... )
-        shape: (4, 2)
-        ┌─────┬───────────┐
-        │ a   ┆ a_reverse │
-        │ --- ┆ ---       │
-        │ u32 ┆ u32       │
-        ╞═════╪═══════════╡
-        │ 0   ┆ 3         │
-        │ 1   ┆ 2         │
-        │ 2   ┆ 1         │
-        │ 3   ┆ 0         │
-        └─────┴───────────┘
+        shape: (4, 3)
+        ┌─────┬───────────┬───────────────────┐
+        │ a   ┆ cum_count ┆ cum_count_reverse │
+        │ --- ┆ ---       ┆ ---               │
+        │ i64 ┆ u32       ┆ u32               │
+        ╞═════╪═══════════╪═══════════════════╡
+        │ 1   ┆ 0         ┆ 3                 │
+        │ 2   ┆ 1         ┆ 2                 │
+        │ 3   ┆ 2         ┆ 1                 │
+        │ 4   ┆ 3         ┆ 0                 │
+        └─────┴───────────┴───────────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.cumcount(reverse))
+        return self._from_pyexpr(self._pyexpr.cum_count(reverse))
 
     def floor(self) -> Self:
         """
@@ -4882,7 +4865,7 @@ class Expr:
         >>> df = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
         >>> df.with_columns(
         ...     pl.col("x").add(2).alias("x+int"),
-        ...     pl.col("x").add(pl.col("x").cumprod()).alias("x+expr"),
+        ...     pl.col("x").add(pl.col("x").cum_prod()).alias("x+expr"),
         ... )
         shape: (5, 3)
         ┌─────┬───────┬────────┐
@@ -5026,7 +5009,7 @@ class Expr:
         >>> df = pl.DataFrame({"x": [0, 1, 2, 3, 4]})
         >>> df.with_columns(
         ...     pl.col("x").sub(2).alias("x-2"),
-        ...     pl.col("x").sub(pl.col("x").cumsum()).alias("x-expr"),
+        ...     pl.col("x").sub(pl.col("x").cum_sum()).alias("x-expr"),
         ... )
         shape: (5, 3)
         ┌─────┬─────┬────────┐
@@ -5463,7 +5446,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 1, 2]})
-        >>> df.select(pl.col("foo").cumsum().inspect("value is: {}").alias("bar"))
+        >>> df.select(pl.col("foo").cum_sum().inspect("value is: {}").alias("bar"))
         value is: shape: (3,)
         Series: 'foo' [i64]
         [
@@ -9691,6 +9674,81 @@ class Expr:
             An expression that leads to a UInt32 dtyped Series.
         """
         return self.gather(indices)
+
+    @deprecate_renamed_function("cum_sum", version="0.19.14")
+    def cumsum(self, *, reverse: bool = False) -> Self:
+        """
+        Get an array with the cumulative sum computed at every element.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`cum_sum`.
+
+        Parameters
+        ----------
+        reverse
+            Reverse the operation.
+        """
+        return self.cum_sum(reverse=reverse)
+
+    @deprecate_renamed_function("cum_prod", version="0.19.14")
+    def cumprod(self, *, reverse: bool = False) -> Self:
+        """
+        Get an array with the cumulative product computed at every element.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`cum_prod`.
+
+        Parameters
+        ----------
+        reverse
+            Reverse the operation.
+        """
+        return self.cum_prod(reverse=reverse)
+
+    @deprecate_renamed_function("cum_min", version="0.19.14")
+    def cummin(self, *, reverse: bool = False) -> Self:
+        """
+        Get an array with the cumulative min computed at every element.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`cum_min`.
+
+        Parameters
+        ----------
+        reverse
+            Reverse the operation.
+        """
+        return self.cum_min(reverse=reverse)
+
+    @deprecate_renamed_function("cum_max", version="0.19.14")
+    def cummax(self, *, reverse: bool = False) -> Self:
+        """
+        Get an array with the cumulative max computed at every element.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`cum_max`.
+
+        Parameters
+        ----------
+        reverse
+            Reverse the operation.
+        """
+        return self.cum_max(reverse=reverse)
+
+    @deprecate_renamed_function("cum_count", version="0.19.14")
+    def cumcount(self, *, reverse: bool = False) -> Self:
+        """
+        Get an array with the cumulative count computed at every element.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`cum_count`.
+
+        Parameters
+        ----------
+        reverse
+            Reverse the operation.
+        """
+        return self.cum_count(reverse=reverse)
 
     @property
     def bin(self) -> ExprBinaryNameSpace:

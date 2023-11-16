@@ -1247,7 +1247,7 @@ class Series:
         >>> s1.item()
         1
         >>> s2 = pl.Series("a", [9, 8, 7])
-        >>> s2.cumsum().item(-1)
+        >>> s2.cum_sum().item(-1)
         24
 
         """
@@ -2631,7 +2631,7 @@ class Series:
         """
         return self._s.n_chunks()
 
-    def cummax(self, *, reverse: bool = False) -> Series:
+    def cum_max(self, *, reverse: bool = False) -> Series:
         """
         Get an array with the cumulative max computed at every element.
 
@@ -2643,7 +2643,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("s", [3, 5, 1])
-        >>> s.cummax()
+        >>> s.cum_max()
         shape: (3,)
         Series: 's' [i64]
         [
@@ -2654,7 +2654,7 @@ class Series:
 
         """
 
-    def cummin(self, *, reverse: bool = False) -> Series:
+    def cum_min(self, *, reverse: bool = False) -> Series:
         """
         Get an array with the cumulative min computed at every element.
 
@@ -2666,7 +2666,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("s", [1, 2, 3])
-        >>> s.cummin()
+        >>> s.cum_min()
         shape: (3,)
         Series: 's' [i64]
         [
@@ -2677,7 +2677,7 @@ class Series:
 
         """
 
-    def cumprod(self, *, reverse: bool = False) -> Series:
+    def cum_prod(self, *, reverse: bool = False) -> Series:
         """
         Get an array with the cumulative product computed at every element.
 
@@ -2694,7 +2694,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.cumprod()
+        >>> s.cum_prod()
         shape: (3,)
         Series: 'a' [i64]
         [
@@ -2705,7 +2705,7 @@ class Series:
 
         """
 
-    def cumsum(self, *, reverse: bool = False) -> Series:
+    def cum_sum(self, *, reverse: bool = False) -> Series:
         """
         Get an array with the cumulative sum computed at every element.
 
@@ -2722,7 +2722,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.cumsum()
+        >>> s.cum_sum()
         shape: (3,)
         Series: 'a' [i64]
         [
@@ -7019,6 +7019,67 @@ class Series:
             Index location used for selection.
         """
         return self.gather(indices)
+
+    @deprecate_renamed_function("cum_sum", version="0.19.14")
+    def cumsum(self, *, reverse: bool = False) -> Series:
+        """
+        Get an array with the cumulative sum computed at every element.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`cum_sum`.
+
+        Parameters
+        ----------
+        reverse
+            reverse the operation.
+
+        """
+        return self.cum_sum(reverse=reverse)
+
+    @deprecate_renamed_function("cum_max", version="0.19.14")
+    def cummax(self, *, reverse: bool = False) -> Series:
+        """
+        Get an array with the cumulative max computed at every element.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`cum_max`.
+
+        Parameters
+        ----------
+        reverse
+            reverse the operation.
+        """
+        return self.cum_max(reverse=reverse)
+
+    @deprecate_renamed_function("cum_min", version="0.19.14")
+    def cummin(self, *, reverse: bool = False) -> Series:
+        """
+        Get an array with the cumulative min computed at every element.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`cum_min`.
+
+        Parameters
+        ----------
+        reverse
+            reverse the operation.
+        """
+        return self.cum_min(reverse=reverse)
+
+    @deprecate_renamed_function("cum_prod", version="0.19.14")
+    def cumprod(self, *, reverse: bool = False) -> Series:
+        """
+        Get an array with the cumulative product computed at every element.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`cum_prod`.
+
+        Parameters
+        ----------
+        reverse
+            reverse the operation.
+        """
+        return self.cum_prod(reverse=reverse)
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`
