@@ -27,11 +27,6 @@ fast-float = { workspace = true, optional = true }
 flate2 = { version = "1", optional = true, default-features = false }
 futures = { workspace = true, optional = true }
 itoa = { workspace = true, optional = true }
-lexical = { version = "6", optional = true, default-features = false, features = [
-  "std",
-  "parse-integers",
-] }
-lexical-core = { workspace = true, optional = true }
 memchr = { workspace = true }
 memmap = { package = "memmap2", version = "0.7" }
 num-traits = { workspace = true }
@@ -80,17 +75,13 @@ json = [
 serde = ["dep:serde", "polars-core/serde-lazy"]
 # support for arrows ipc file parsing
 ipc = ["arrow/io_ipc", "arrow/io_ipc_compression"]
-
-
-
-
-csv = ["lexical", "polars-core/rows", "itoa", "ryu", "fast-float", "simdutf8"]
-decompress = ["flate2/rust_backend", "zstd"]
-avro = ["arrow/io_avro", "arrow/io_avro_compression"]
 # support for arrows streaming ipc file parsing
 ipc_streaming = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # support for arrow avro parsing
+avro = ["arrow/io_avro", "arrow/io_avro_compression"]
+csv = ["atoi_simd", "polars-core/rows", "itoa", "ryu", "fast-float", "simdutf8"]
 odbc = ["arrow/io_odbc"]
+decompress = ["flate2/rust_backend", "zstd"]
 decompress-fast = ["flate2/zlib-ng", "zstd"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date"]
