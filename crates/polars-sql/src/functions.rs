@@ -790,10 +790,10 @@ impl SqlFunctionVisitor<'_> {
             Count => self.visit_count(),
             First => self.visit_unary(Expr::first),
             Last => self.visit_unary(Expr::last),
-            Max => self.visit_unary_with_opt_cumulative(Expr::max, Expr::cummax),
-            Min => self.visit_unary_with_opt_cumulative(Expr::min, Expr::cummin),
+            Max => self.visit_unary_with_opt_cumulative(Expr::max, Expr::cum_max),
+            Min => self.visit_unary_with_opt_cumulative(Expr::min, Expr::cum_min),
             StdDev => self.visit_unary(|e| e.std(1)),
-            Sum => self.visit_unary_with_opt_cumulative(Expr::sum, Expr::cumsum),
+            Sum => self.visit_unary_with_opt_cumulative(Expr::sum, Expr::cum_sum),
             Variance => self.visit_unary(|e| e.var(1)),
             // ----
             // Array functions

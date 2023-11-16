@@ -24,7 +24,7 @@
 //!             .last()
 //!             .alias("last_foo_ranked_by_ham"),
 //!         // every expression runs in parallel
-//!         col("foo").cummin(false).alias("cumulative_min_per_group"),
+//!         col("foo").cum_min(false).alias("cumulative_min_per_group"),
 //!         // every expression runs in parallel
 //!         col("foo").reverse().implode().alias("reverse_group"),
 //!     ]);
@@ -246,7 +246,7 @@
 //!     - `reinterpret` - Utility to reinterpret bits to signed/unsigned
 //!     - `take_opt_iter` - Take from a [`Series`] with [`Iterator<Item=Option<usize>>`](std::iter::Iterator).
 //!     - `mode` - [Return the most occurring value(s)](polars_ops::chunked_array::mode)
-//!     - `cum_agg` - [`cumsum`], [`cummin`], [`cummax`] aggregation.
+//!     - `cum_agg` - [`cum_sum`], [`cum_min`], [`cum_max`] aggregation.
 //!     - `rolling_window` - rolling window functions, like [`rolling_mean`]
 //!     - `interpolate` [interpolate None values](polars_ops::chunked_array::interpolate)
 //!     - `extract_jsonpath` - [Run jsonpath queries on Utf8Chunked](https://goessner.net/articles/JsonPath/)
@@ -279,9 +279,9 @@
 //!     - `fmt` - Activate [`DataFrame`] formatting
 //!
 //! [`UInt64Chunked`]: crate::datatypes::UInt64Chunked
-//! [`cumsum`]: polars_ops::prelude::cumsum
-//! [`cummin`]: polars_ops::prelude::cummin
-//! [`cummax`]: polars_ops::prelude::cummax
+//! [`cum_sum`]: polars_ops::prelude::cum_sum
+//! [`cum_min`]: polars_ops::prelude::cum_min
+//! [`cum_max`]: polars_ops::prelude::cum_max
 //! [`rolling_mean`]: crate::series::Series#method.rolling_mean
 //! [`diff`]: polars_ops::prelude::diff
 //! [`List`]: crate::datatypes::DataType::List

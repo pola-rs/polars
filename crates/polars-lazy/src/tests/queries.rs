@@ -997,7 +997,7 @@ fn test_group_by_sort_slice() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_group_by_cumsum() -> PolarsResult<()> {
+fn test_group_by_cum_sum() -> PolarsResult<()> {
     let df = df![
         "groups" => [1, 2, 2, 3, 3, 3],
         "vals" => [1, 5, 6, 3, 9, 8]
@@ -1006,7 +1006,7 @@ fn test_group_by_cumsum() -> PolarsResult<()> {
     let out = df
         .lazy()
         .group_by([col("groups")])
-        .agg([col("vals").cumsum(false)])
+        .agg([col("vals").cum_sum(false)])
         .sort("groups", Default::default())
         .collect()?;
 
@@ -1685,10 +1685,10 @@ fn empty_df() -> PolarsResult<()> {
             col("A").shift_and_fill(lit(1), lit(1)).alias("2"),
             col("A").shift_and_fill(lit(-1), lit(1)).alias("3"),
             col("A").fill_null(lit(1)).alias("4"),
-            col("A").cumcount(false).alias("5"),
+            col("A").cum_count(false).alias("5"),
             col("A").diff(1, NullBehavior::Ignore).alias("6"),
-            col("A").cummax(false).alias("7"),
-            col("A").cummin(false).alias("8"),
+            col("A").cum_max(false).alias("7"),
+            col("A").cum_min(false).alias("8"),
         ])
         .collect()?;
 

@@ -70,7 +70,7 @@ fn test_expand_list() -> PolarsResult<()> {
         "b" => [2, 3],
     ]?
     .lazy()
-    .select([cols(["a", "b"]).cumsum(false)])
+    .select([cols(["a", "b"]).cum_sum(false)])
     .collect()?;
 
     let expected = df![

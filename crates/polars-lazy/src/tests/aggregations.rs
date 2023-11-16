@@ -85,7 +85,7 @@ fn test_lazy_agg_scan() {
 }
 
 #[test]
-fn test_cumsum_agg_as_key() -> PolarsResult<()> {
+fn test_cum_sum_agg_as_key() -> PolarsResult<()> {
     let df = df![
         "depth" => &[0i32, 1, 2, 3, 4, 5, 6, 7, 8, 9],
         "soil" => &["peat", "peat", "peat", "silt", "silt", "silt", "sand", "sand", "peat", "peat"]
@@ -96,7 +96,7 @@ fn test_cumsum_agg_as_key() -> PolarsResult<()> {
         .lazy()
         .group_by([col("soil")
             .neq(col("soil").shift_and_fill(lit(1), col("soil").first()))
-            .cumsum(false)
+            .cum_sum(false)
             .alias("key")])
         .agg([col("depth").max().name().keep()])
         .sort("depth", SortOptions::default())
