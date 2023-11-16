@@ -19,6 +19,7 @@ polars-utils = { workspace = true }
 ahash = { workspace = true }
 arrow = { workspace = true }
 async-trait = { version = "0.1.59", optional = true }
+atoi_simd = { workspace = true, optional = true }
 bytes = { version = "1.3" }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
@@ -26,8 +27,6 @@ fast-float = { version = "0.2", optional = true }
 flate2 = { version = "1", optional = true, default-features = false }
 futures = { workspace = true, optional = true }
 itoa = { workspace = true, optional = true }
-lexical = { version = "6", optional = true, default-features = false, features = ["std", "parse-integers"] }
-lexical-core = { workspace = true, optional = true }
 memchr = { workspace = true }
 memmap = { package = "memmap2", version = "0.7" }
 num-traits = { workspace = true }
@@ -60,8 +59,7 @@ default = ["decompress"]
 json = [
   "polars-json",
   "simd-json",
-  "lexical",
-  "lexical-core",
+  "atoi_simd",
   "serde_json",
   "dtype-struct",
   "csv",
@@ -73,7 +71,7 @@ ipc = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 ipc_streaming = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # support for arrow avro parsing
 avro = ["arrow/io_avro", "arrow/io_avro_compression"]
-csv = ["lexical", "polars-core/rows", "itoa", "ryu", "fast-float", "simdutf8"]
+csv = ["atoi_simd", "polars-core/rows", "itoa", "ryu", "fast-float", "simdutf8"]
 decompress = ["flate2/rust_backend", "zstd"]
 decompress-fast = ["flate2/zlib-ng", "zstd"]
 dtype-categorical = ["polars-core/dtype-categorical"]

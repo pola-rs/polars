@@ -570,42 +570,19 @@ pub fn cast(
         },
 
         (Utf8, _) => match to_type {
-            UInt8 => utf8_to_primitive_dyn::<i32, u8>(array, to_type, options),
-            UInt16 => utf8_to_primitive_dyn::<i32, u16>(array, to_type, options),
-            UInt32 => utf8_to_primitive_dyn::<i32, u32>(array, to_type, options),
-            UInt64 => utf8_to_primitive_dyn::<i32, u64>(array, to_type, options),
-            Int8 => utf8_to_primitive_dyn::<i32, i8>(array, to_type, options),
-            Int16 => utf8_to_primitive_dyn::<i32, i16>(array, to_type, options),
-            Int32 => utf8_to_primitive_dyn::<i32, i32>(array, to_type, options),
-            Int64 => utf8_to_primitive_dyn::<i32, i64>(array, to_type, options),
-            Float32 => utf8_to_primitive_dyn::<i32, f32>(array, to_type, options),
-            Float64 => utf8_to_primitive_dyn::<i32, f64>(array, to_type, options),
-            Date32 => utf8_to_date32_dyn::<i32>(array),
-            Date64 => utf8_to_date64_dyn::<i32>(array),
             LargeUtf8 => Ok(Box::new(utf8_to_large_utf8(
                 array.as_any().downcast_ref().unwrap(),
             ))),
-            Timestamp(time_unit, None) => {
-                utf8_to_naive_timestamp_dyn::<i32>(array, time_unit.to_owned())
-            },
-            Timestamp(time_unit, Some(time_zone)) => {
-                utf8_to_timestamp_dyn::<i32>(array, time_zone.clone(), time_unit.to_owned())
-            },
             _ => polars_bail!(InvalidOperation:
                 "casting from {from_type:?} to {to_type:?} not supported",
             ),
         },
         (LargeUtf8, _) => match to_type {
-            UInt8 => utf8_to_primitive_dyn::<i64, u8>(array, to_type, options),
-            UInt16 => utf8_to_primitive_dyn::<i64, u16>(array, to_type, options),
-            UInt32 => utf8_to_primitive_dyn::<i64, u32>(array, to_type, options),
-            UInt64 => utf8_to_primitive_dyn::<i64, u64>(array, to_type, options),
-            Int8 => utf8_to_primitive_dyn::<i64, i8>(array, to_type, options),
-            Int16 => utf8_to_primitive_dyn::<i64, i16>(array, to_type, options),
-            Int32 => utf8_to_primitive_dyn::<i64, i32>(array, to_type, options),
-            Int64 => utf8_to_primitive_dyn::<i64, i64>(array, to_type, options),
-            Float32 => utf8_to_primitive_dyn::<i64, f32>(array, to_type, options),
-            Float64 => utf8_to_primitive_dyn::<i64, f64>(array, to_type, options),
+            UInt8 | UInt16 | UInt32 | UInt64 | Int8 | Int16 | Int32 | Int64 | Float32 | Float64 => {
+                let binary =
+                    utf8_to_binary::<i64>(array.as_any().downcast_ref().unwrap(), to_type.clone());
+                cast(&binary, to_type, options)
+            },
             Date32 => utf8_to_date32_dyn::<i64>(array),
             Date64 => utf8_to_date64_dyn::<i64>(array),
             Utf8 => utf8_large_to_utf8(array.as_any().downcast_ref().unwrap()).map(|x| x.boxed()),
