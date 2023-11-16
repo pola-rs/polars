@@ -125,7 +125,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
                     .map(|df: &DataFrame| df.height())
                     .sum::<usize>();
                 if polars_core::config::verbose() {
-                    eprintln!("sliced off {} rows of the 'DataFrame'. These lines were read because they were in a single chunk.", df.height() - n)
+                    eprintln!("sliced off {} rows of the 'DataFrame'. These lines were read because they were in a single chunk.", df.height().saturating_sub(n))
                 }
                 parsed_dfs.push(df.slice(0, len));
                 break;
