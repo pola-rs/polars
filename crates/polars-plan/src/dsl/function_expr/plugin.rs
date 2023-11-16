@@ -1,4 +1,5 @@
 use std::ffi::CString;
+use std::process::abort;
 use std::sync::RwLock;
 
 use arrow::ffi::{import_field_from_c, ArrowSchema};
@@ -22,12 +23,15 @@ fn get_lib(lib: &str) -> PolarsResult<&'static PluginAndVersion> {
                 PolarsError::ComputeError(format!("error loading dynamic library: {e}").into())
             })?
         };
-        let version_function: libloading::Symbol<unsafe extern "C" fn() -> u32> =
-            unsafe { library.get("get_version".as_bytes()).unwrap() };
+        let version_function: libloading::Symbol<unsafe extern "C" fn() -> u32> = unsafe {
+            library
+                .get("_polars_plugin_get_version".as_bytes())
+                .unwrap()
+        };
 
         let version = unsafe { version_function() };
         let major = (version >> 16) as u16;
-        let minor = ((u32::MAX >> 16) & version) as u16;
+        let minor = version as u16;
 
         let mut lib_map = LOADED.write().unwrap();
         lib_map.insert(lib.to_string(), (library, major, minor));
@@ -39,7 +43,7 @@ fn get_lib(lib: &str) -> PolarsResult<&'static PluginAndVersion> {
 
 unsafe fn retrieve_error_msg(lib: &Library) -> CString {
     let symbol: libloading::Symbol<unsafe extern "C" fn() -> *mut std::os::raw::c_char> =
-        lib.get(b"get_last_error_message\0").unwrap();
+        lib.get(b"_polars_plugin_get_last_error_message\0").unwrap();
     let msg_ptr = symbol();
     CString::from_raw(msg_ptr)
 }
@@ -72,7 +76,7 @@ pub(super) unsafe fn call_plugin(
                 *const CallerContext,
             ),
         > = lib
-            .get(format!("{}_v{}", symbol, major).as_bytes())
+            .get(format!("_polars_plugin_{}", symbol).as_bytes())
             .unwrap();
 
         let input = s.iter().map(export_series).collect::<Vec<_>>();
@@ -105,7 +109,7 @@ pub(super) unsafe fn call_plugin(
         } else {
             let msg = retrieve_error_msg(lib);
             let msg = msg.to_string_lossy();
-            assert_ne!(msg, "PANIC", "plugin panicked");
+            check_panic(msg.as_ref());
             polars_bail!(ComputeError: "the plugin failed with message: {}", msg)
         }
     } else {
@@ -129,7 +133,7 @@ pub(super) unsafe fn plugin_field(
         let symbol: libloading::Symbol<
             unsafe extern "C" fn(*const ArrowSchema, usize, *mut ArrowSchema),
         > = lib
-            .get((format!("__polars_field_{}_v{}", symbol, major)).as_bytes())
+            .get((format!("_polars_plugin_field_{}", symbol)).as_bytes())
             .unwrap();
 
         // we deallocate the fields buffer
@@ -152,10 +156,17 @@ pub(super) unsafe fn plugin_field(
         } else {
             let msg = retrieve_error_msg(lib);
             let msg = msg.to_string_lossy();
-            assert_ne!(msg, "PANIC", "plugin panicked");
+            check_panic(msg.as_ref());
             polars_bail!(ComputeError: "the plugin failed with message: {}", msg)
         }
     } else {
         polars_bail!(ComputeError: "this polars engine doesn't support plugin version: {}", major)
+    }
+}
+
+fn check_panic(msg: &str) {
+    if msg == "PANIC" {
+        eprintln!("The plugin panicked which is unrecoverable. Polars will abort");
+        abort()
     }
 }
