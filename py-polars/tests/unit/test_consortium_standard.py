@@ -24,8 +24,6 @@ def test_lazyframe() -> None:
 
 
 def test_series() -> None:
-    ser = pl.Series([1, 2, 3])
+    ser = pl.Series("a", [1, 2, 3])
     col = ser.__column_consortium_standard__()
-    result = col.get_value(1)
-    expected = 2
-    assert result == expected
+    assert col.name == "a"
