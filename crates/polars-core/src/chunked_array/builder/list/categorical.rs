@@ -68,8 +68,8 @@ impl ListBuilderTrait for ListLocalCategoricalChunkedBuilder {
         };
         let ca = s.categorical().unwrap();
 
-        // Fast path rev_maps are compatible.
-        if self.categories_hash == *new_hash {
+        // Fast path rev_maps are compatible & lookup is initialized
+        if self.categories_hash == *new_hash && !self.idx_lookup.is_empty() {
             return self.inner.append_series(s);
         }
 

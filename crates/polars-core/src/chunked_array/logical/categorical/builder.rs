@@ -150,6 +150,7 @@ impl RevMapping {
         }
     }
     /// Check if the categoricals have a compatible mapping
+    #[inline]
     pub fn same_src(&self, other: &Self) -> bool {
         match (self, other) {
             (RevMapping::Global(_, _, l), RevMapping::Global(_, _, r)) => *l == *r,

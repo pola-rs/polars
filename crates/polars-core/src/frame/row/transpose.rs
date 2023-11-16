@@ -72,7 +72,8 @@ impl DataFrame {
                     });
                 }
                 cols_t.extend(buffers.into_iter().zip(names_out).map(|(buf, name)| {
-                    let mut s = buf.into_series().cast(dtype).unwrap();
+                    // Safety: we are casting back to the supertype
+                    let mut s = unsafe { buf.into_series().cast_unchecked(dtype).unwrap() };
                     s.rename(name);
                     s
                 }));
@@ -120,34 +121,18 @@ impl DataFrame {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => {
                 let mut valid = true;
-                let mut cache_id_global = None;
-                let mut cache_id_local = None;
+                let mut rev_map: Option<&Arc<RevMapping>> = None;
                 for s in self.columns.iter() {
-                    if let DataType::Categorical(Some(rev_map)) = &s.dtype() {
-                        match &**rev_map {
-                            RevMapping::Local(_, id) => {
-                                if let Some(cache_id) = cache_id_local {
-                                    if cache_id != *id {
-                                        valid = false;
-                                    }
-                                }
-                                cache_id_local = Some(*id);
-                            },
-                            RevMapping::Global(_, _, id) => {
-                                if let Some(cache_id) = cache_id_global {
-                                    if cache_id != *id {
-                                        valid = false;
-                                    }
-                                }
-                                cache_id_global = Some(*id);
+                    if let DataType::Categorical(Some(col_rev_map)) = &s.dtype() {
+                        match rev_map {
+                            Some(rev_map) => valid = valid && rev_map.same_src(col_rev_map),
+                            None => {
+                                rev_map = Some(col_rev_map);
                             },
                         }
                     }
                 }
-                if cache_id_local.is_some() && cache_id_global.is_some() {
-                    valid = false;
-                }
-                polars_ensure!(valid, ComputeError: "'transpose' of categorical can only be done if all are from the same local/global string cache")
+                polars_ensure!(valid, string_cache_mismatch);
             },
             _ => {},
         }
