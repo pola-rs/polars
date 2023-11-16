@@ -32,6 +32,7 @@ pub mod temporal_conversions;
 
 pub mod datatypes;
 
+pub mod error;
 pub mod ffi;
 pub mod legacy;
 pub mod util;

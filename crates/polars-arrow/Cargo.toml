@@ -32,6 +32,8 @@ simdutf8 = { workspace = true }
 
 ethnum = { workspace = true }
 
+odbc-api = { workspace = true }
+
 # To efficiently cast numbers to strings
 atoi_simd = { workspace = true, optional = true }
 fast-float = { workspace = true, optional = true }

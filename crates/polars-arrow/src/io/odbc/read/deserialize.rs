@@ -1,5 +1,5 @@
 use chrono::{NaiveDate, NaiveDateTime};
-use odbc_api::buffers::{BinColumnView, TextColumnView};
+use odbc_api::buffers::{AnySlice, BinColumnView, TextColumnView};
 use odbc_api::Bit;
 
 use crate::array::{Array, BinaryArray, BooleanArray, PrimitiveArray, Utf8Array};
@@ -9,77 +9,75 @@ use crate::datatypes::{DataType, TimeUnit};
 use crate::offset::{Offsets, OffsetsBuffer};
 use crate::types::NativeType;
 
-use super::super::api::buffers::AnyColumnView;
-
-/// Deserializes a [`AnyColumnView`] into an array of [`DataType`].
+/// Deserializes a [`AnySlice`] into an array of [`DataType`].
 /// This is CPU-bounded
-pub fn deserialize(column: AnyColumnView, data_type: DataType) -> Box<dyn Array> {
+pub fn deserialize(column: AnySlice, data_type: DataType) -> Box<dyn Array> {
     match column {
-        AnyColumnView::Text(view) => Box::new(utf8(data_type, view)) as _,
-        AnyColumnView::WText(_) => todo!(),
-        AnyColumnView::Binary(view) => Box::new(binary(data_type, view)) as _,
-        AnyColumnView::Date(values) => Box::new(date(data_type, values)) as _,
-        AnyColumnView::Time(values) => Box::new(time(data_type, values)) as _,
-        AnyColumnView::Timestamp(values) => Box::new(timestamp(data_type, values)) as _,
-        AnyColumnView::F64(values) => Box::new(primitive(data_type, values)) as _,
-        AnyColumnView::F32(values) => Box::new(primitive(data_type, values)) as _,
-        AnyColumnView::I8(values) => Box::new(primitive(data_type, values)) as _,
-        AnyColumnView::I16(values) => Box::new(primitive(data_type, values)) as _,
-        AnyColumnView::I32(values) => Box::new(primitive(data_type, values)) as _,
-        AnyColumnView::I64(values) => Box::new(primitive(data_type, values)) as _,
-        AnyColumnView::U8(values) => Box::new(primitive(data_type, values)) as _,
-        AnyColumnView::Bit(values) => Box::new(bool(data_type, values)) as _,
-        AnyColumnView::NullableDate(slice) => Box::new(date_optional(
+        AnySlice::Text(view) => Box::new(utf8(data_type, view)) as _,
+        AnySlice::WText(_) => todo!(),
+        AnySlice::Binary(view) => Box::new(binary(data_type, view)) as _,
+        AnySlice::Date(values) => Box::new(date(data_type, values)) as _,
+        AnySlice::Time(values) => Box::new(time(data_type, values)) as _,
+        AnySlice::Timestamp(values) => Box::new(timestamp(data_type, values)) as _,
+        AnySlice::F64(values) => Box::new(primitive(data_type, values)) as _,
+        AnySlice::F32(values) => Box::new(primitive(data_type, values)) as _,
+        AnySlice::I8(values) => Box::new(primitive(data_type, values)) as _,
+        AnySlice::I16(values) => Box::new(primitive(data_type, values)) as _,
+        AnySlice::I32(values) => Box::new(primitive(data_type, values)) as _,
+        AnySlice::I64(values) => Box::new(primitive(data_type, values)) as _,
+        AnySlice::U8(values) => Box::new(primitive(data_type, values)) as _,
+        AnySlice::Bit(values) => Box::new(bool(data_type, values)) as _,
+        AnySlice::NullableDate(slice) => Box::new(date_optional(
             data_type,
             slice.raw_values().0,
             slice.raw_values().1,
         )) as _,
-        AnyColumnView::NullableTime(slice) => Box::new(time_optional(
+        AnySlice::NullableTime(slice) => Box::new(time_optional(
             data_type,
             slice.raw_values().0,
             slice.raw_values().1,
         )) as _,
-        AnyColumnView::NullableTimestamp(slice) => Box::new(timestamp_optional(
+        AnySlice::NullableTimestamp(slice) => Box::new(timestamp_optional(
             data_type,
             slice.raw_values().0,
             slice.raw_values().1,
         )) as _,
-        AnyColumnView::NullableF64(slice) => Box::new(primitive_optional(
+        AnySlice::NullableF64(slice) => Box::new(primitive_optional(
             data_type,
             slice.raw_values().0,
             slice.raw_values().1,
         )) as _,
-        AnyColumnView::NullableF32(slice) => Box::new(primitive_optional(
+        AnySlice::NullableF32(slice) => Box::new(primitive_optional(
             data_type,
             slice.raw_values().0,
             slice.raw_values().1,
         )) as _,
-        AnyColumnView::NullableI8(slice) => Box::new(primitive_optional(
+        AnySlice::NullableI8(slice) => Box::new(primitive_optional(
             data_type,
             slice.raw_values().0,
             slice.raw_values().1,
         )) as _,
-        AnyColumnView::NullableI16(slice) => Box::new(primitive_optional(
+        AnySlice::NullableI16(slice) => Box::new(primitive_optional(
             data_type,
             slice.raw_values().0,
             slice.raw_values().1,
         )) as _,
-        AnyColumnView::NullableI32(slice) => Box::new(primitive_optional(
+        AnySlice::NullableI32(slice) => Box::new(primitive_optional(
             data_type,
             slice.raw_values().0,
             slice.raw_values().1,
         )) as _,
-        AnyColumnView::NullableI64(slice) => Box::new(primitive_optional(
+        AnySlice::NullableI64(slice) => Box::new(primitive_optional(
             data_type,
             slice.raw_values().0,
             slice.raw_values().1,
         )) as _,
-        AnyColumnView::NullableU8(slice) => Box::new(primitive_optional(
+        AnySlice::NullableU8(slice) => Box::new(primitive_optional(
             data_type,
             slice.raw_values().0,
             slice.raw_values().1,
         )) as _,
-        AnyColumnView::NullableBit(slice) => Box::new(bool_optional(
+        AnySlice::NullableBit(slice) => Box::new(bool_optional(
             data_type,
             slice.raw_values().0,
             slice.raw_values().1,
