@@ -139,21 +139,21 @@ async fn download_projection(
     let mut offsets = Vec::with_capacity(fields.len());
     fields.iter().for_each(|name| {
         let columns = row_group.columns();
-        let (offset, range) = columns
-            .iter()
-            .filter_map(|meta| {
-                if meta.descriptor().path_in_schema[0] == name.as_str() {
-                    let (offset, len) = meta.byte_range();
-                    Some((offset, offset as usize..(offset + len) as usize))
-                } else {
-                    None
-                }
-            })
-            .next()
-            .unwrap();
 
-        offsets.push(offset);
-        ranges.push(range);
+        // A single column can have multiple matches (structs).
+        let iter = columns.iter().filter_map(|meta| {
+            if meta.descriptor().path_in_schema[0] == name.as_str() {
+                let (offset, len) = meta.byte_range();
+                Some((offset, offset as usize..(offset + len) as usize))
+            } else {
+                None
+            }
+        });
+
+        for (offset, range) in iter {
+            offsets.push(offset);
+            ranges.push(range);
+        }
     });
 
     let result = async_reader.get_ranges(&ranges).await.map(|bytes| {

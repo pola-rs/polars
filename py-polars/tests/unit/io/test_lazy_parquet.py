@@ -439,3 +439,17 @@ def test_row_count_empty_file(tmp_path: Path) -> None:
     assert pl.scan_parquet(file_path).with_row_count(
         "idx"
     ).collect().schema == OrderedDict([("idx", pl.UInt32), ("a", pl.Float32)])
+
+
+@pytest.mark.write_disk()
+def test_io_struct_async_12500(tmp_path: Path) -> None:
+    file_path = tmp_path / "test.parquet"
+    pl.DataFrame(
+        [
+            pl.Series("c1", [{"a": "foo", "b": "bar"}], dtype=pl.Struct),
+            pl.Series("c2", [18]),
+        ]
+    ).write_parquet(file_path)
+    assert pl.scan_parquet(file_path).select("c1").collect().to_dict(
+        as_series=False
+    ) == {"c1": [{"a": "foo", "b": "bar"}]}
