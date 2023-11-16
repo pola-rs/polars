@@ -9485,6 +9485,10 @@ class DataFrame:
         seed_3
             Random seed parameter. Defaults to `seed` if not set.
 
+        .. note::
+            This implementation of :func:`hash_rows` does not guarantee stable results
+            across Polars versions. It only has guaranteed stability within one version.
+
         Examples
         --------
         >>> df = pl.DataFrame(

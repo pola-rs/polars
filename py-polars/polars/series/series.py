@@ -5800,6 +5800,10 @@ class Series:
         seed_3
             Random seed parameter. Defaults to `seed` if not set.
 
+        .. note::
+            This implementation of :func:`hash` does not guarantee stable results
+            across Polars versions. It only has guaranteed stability within one version.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
