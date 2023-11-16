@@ -237,13 +237,6 @@ impl PySeries {
         Wrap(self.series.dtype().clone()).to_object(py)
     }
 
-    fn inner_dtype(&self, py: Python) -> Option<PyObject> {
-        self.series
-            .dtype()
-            .inner_dtype()
-            .map(|dt| Wrap(dt.clone()).to_object(py))
-    }
-
     fn set_sorted_flag(&self, descending: bool) -> Self {
         let mut out = self.series.clone();
         if descending {

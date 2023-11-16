@@ -18,7 +18,6 @@ def test_dtype() -> None:
     # inferred
     a = pl.Series("a", [[1, 2, 3], [2, 5], [6, 7, 8, 9]])
     assert a.dtype == pl.List
-    assert a.inner_dtype == pl.Int64
     assert a.dtype.inner == pl.Int64  # type: ignore[union-attr]
     assert a.dtype.is_(pl.List(pl.Int64))
 
@@ -76,8 +75,8 @@ def test_categorical() -> None:
         .to_series(3)
     )
 
-    assert out.inner_dtype == pl.Categorical
-    assert out.inner_dtype not in pl.NESTED_DTYPES
+    assert out.dtype.inner == pl.Categorical  # type: ignore[union-attr]
+    assert out.dtype.inner not in pl.NESTED_DTYPES  # type: ignore[union-attr]
 
 
 def test_cast_inner() -> None:
@@ -193,7 +192,7 @@ def test_local_categorical_list() -> None:
     values = [["a", "b"], ["c"], ["a", "d", "d"]]
     s = pl.Series(values, dtype=pl.List(pl.Categorical))
     assert s.dtype == pl.List
-    assert s.inner_dtype == pl.Categorical
+    assert s.dtype.inner == pl.Categorical  # type: ignore[union-attr]
     assert s.to_list() == values
 
     # Check that underlying physicals match
