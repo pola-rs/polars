@@ -148,7 +148,7 @@ The opt-in features are:
     - `interpolate` [interpolate None values](crate::chunked_array::ops::Interpolate)
     - `extract_jsonpath` - [Run jsonpath queries on Utf8Chunked](https://goessner.net/articles/JsonPath/)
     - `list` - List utils.
-      - `list_take` take sublist by multiple indices
+      - `list_gather` take sublist by multiple indices
     - `rank` - Ranking algorithms.
     - `moment` - kurtosis and skew statistics
     - `ewma` - Exponential moving average windows

@@ -319,7 +319,7 @@ impl PyExpr {
             .into()
     }
     fn gather(&self, idx: Self) -> Self {
-        self.inner.clone().take(idx.inner).into()
+        self.inner.clone().gather(idx.inner).into()
     }
 
     fn get(&self, idx: Self) -> Self {

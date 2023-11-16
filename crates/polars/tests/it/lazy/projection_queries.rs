@@ -131,7 +131,11 @@ fn test_projection_5086() -> PolarsResult<()> {
         .lazy()
         .select([
             col("a"),
-            col("b").take("c").cumsum(false).over([col("a")]).gt(lit(0)),
+            col("b")
+                .gather("c")
+                .cumsum(false)
+                .over([col("a")])
+                .gt(lit(0)),
         ])
         .select([
             col("a"),

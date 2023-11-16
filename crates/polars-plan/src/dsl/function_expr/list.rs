@@ -22,8 +22,8 @@ pub enum ListFunction {
     Slice,
     Shift,
     Get,
-    #[cfg(feature = "list_take")]
-    Take(bool),
+    #[cfg(feature = "list_gather")]
+    Gather(bool),
     #[cfg(feature = "list_count")]
     CountMatches,
     Sum,
@@ -66,8 +66,8 @@ impl ListFunction {
             Slice => mapper.with_same_dtype(),
             Shift => mapper.with_same_dtype(),
             Get => mapper.map_to_list_and_array_inner_dtype(),
-            #[cfg(feature = "list_take")]
-            Take(_) => mapper.with_same_dtype(),
+            #[cfg(feature = "list_gather")]
+            Gather(_) => mapper.with_same_dtype(),
             #[cfg(feature = "list_count")]
             CountMatches => mapper.with_dtype(IDX_DTYPE),
             Sum => mapper.nested_sum_type(),
@@ -125,8 +125,8 @@ impl Display for ListFunction {
             Slice => "slice",
             Shift => "shift",
             Get => "get",
-            #[cfg(feature = "list_take")]
-            Take(_) => "take",
+            #[cfg(feature = "list_gather")]
+            Gather(_) => "gather",
             #[cfg(feature = "list_count")]
             CountMatches => "count",
             Sum => "sum",
@@ -186,8 +186,8 @@ impl From<ListFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Slice => wrap!(slice),
             Shift => map_as_slice!(shift),
             Get => wrap!(get),
-            #[cfg(feature = "list_take")]
-            Take(null_ob_oob) => map_as_slice!(take, null_ob_oob),
+            #[cfg(feature = "list_gather")]
+            Gather(null_ob_oob) => map_as_slice!(gather, null_ob_oob),
             #[cfg(feature = "list_count")]
             CountMatches => map_as_slice!(count_matches),
             Sum => map!(sum),
@@ -434,8 +434,8 @@ pub(super) fn get(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     }
 }
 
-#[cfg(feature = "list_take")]
-pub(super) fn take(args: &[Series], null_on_oob: bool) -> PolarsResult<Series> {
+#[cfg(feature = "list_gather")]
+pub(super) fn gather(args: &[Series], null_on_oob: bool) -> PolarsResult<Series> {
     let ca = &args[0];
     let idx = &args[1];
     let ca = ca.list()?;
@@ -447,7 +447,7 @@ pub(super) fn take(args: &[Series], null_on_oob: bool) -> PolarsResult<Series> {
         // make sure we return a list
         out.reshape(&[-1, 1])
     } else {
-        ca.lst_take(idx, null_on_oob)
+        ca.lst_gather(idx, null_on_oob)
     }
 }
 
