@@ -117,7 +117,7 @@ fn merge_local_rhs_categorical<'a>(
     // Counterpart of the GlobalRevmapMerger.
     // In case of local categorical we also need to change the physicals not only the revmap
 
-    let RevMapping::Local(cats_right) = &**ca_right.get_rev_map() else {
+    let RevMapping::Local(cats_right, _) = &**ca_right.get_rev_map() else {
         unreachable!()
     };
 
@@ -138,7 +138,7 @@ fn merge_local_rhs_categorical<'a>(
             new_categories.push(Some(s));
         }
     }
-    let new_rev_map = Arc::new(RevMapping::Local(new_categories.into()));
+    let new_rev_map = Arc::new(RevMapping::build_local(new_categories.into()));
     Ok((
         ca_right
             .physical()
@@ -169,11 +169,11 @@ pub fn call_categorical_merge_operation<I: CategoricalMergeOperation>(
                 rev_map_merger.finish(),
             )
         },
-        (RevMapping::Local(_), RevMapping::Local(_)) if rev_map_left.same_src(rev_map_right) => (
+        (RevMapping::Local(_, idl), RevMapping::Local(_, idr)) if idl == idr => (
             merge_ops.finish(cat_left.physical(), cat_right.physical())?,
             rev_map_left.clone(),
         ),
-        (RevMapping::Local(categorical), RevMapping::Local(_)) => {
+        (RevMapping::Local(categorical, _), RevMapping::Local(_, _)) => {
             let (rhs_iter, rev_map) = merge_local_rhs_categorical(categorical, cat_right)?;
             let rhs_physical = rhs_iter.collect();
             (

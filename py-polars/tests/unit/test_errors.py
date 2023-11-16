@@ -577,16 +577,6 @@ def test_serde_validation() -> None:
         pl.read_json(f)
 
 
-def test_transpose_categorical_cached() -> None:
-    with pytest.raises(
-        pl.ComputeError,
-        match=r"'transpose' of categorical can only be done if all are from the same global string cache",
-    ):
-        pl.DataFrame(
-            {"b": pl.Series(["a", "b", "c"], dtype=pl.Categorical)}
-        ).transpose()
-
-
 def test_overflow_msg() -> None:
     with pytest.raises(
         pl.ComputeError,

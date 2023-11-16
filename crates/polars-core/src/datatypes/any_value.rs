@@ -825,8 +825,8 @@ impl PartialEq for AnyValue<'_> {
                 (RevMapping::Global(_, _, id_l), RevMapping::Global(_, _, id_r)) => {
                     id_l == id_r && idx_l == idx_r
                 },
-                (RevMapping::Local(arr_l), RevMapping::Local(arr_r)) => {
-                    std::ptr::eq(arr_l, arr_r) && idx_l == idx_r
+                (RevMapping::Local(_, id_l), RevMapping::Local(_, id_r)) => {
+                    id_l == id_r && idx_l == idx_r
                 },
                 _ => false,
             },
