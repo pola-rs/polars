@@ -89,7 +89,7 @@ jobs:
         run: POLARS_FORCE_ASYNC=1 pytest -m "not benchmark and not docs" tests/unit/io/
 
       - name: Run doctests
-        if: github.ref_name != 'main' && matrix.os != 'windows-latest'
+        if: github.ref_name != 'main' && matrix.python-version == '3.12' && matrix.os == 'ubuntu-latest'
         run: |
           python tests/docs/run_doctest.py
           pytest tests/docs/test_user_guide.py -m docs
