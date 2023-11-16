@@ -1261,7 +1261,7 @@ class DataFrame:
         ...     }
         ... )
         >>> df.schema
-        OrderedDict([('foo', Int64), ('bar', Float64), ('ham', Utf8)])
+        OrderedDict({'foo': Int64, 'bar': Float64, 'ham': Utf8})
 
         """
         return OrderedDict(zip(self.columns, self.dtypes))
