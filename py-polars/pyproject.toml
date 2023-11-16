@@ -26,6 +26,7 @@ classifiers = [
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
   "Programming Language :: Rust",
   "Topic :: Scientific/Engineering",
 ]
@@ -214,7 +215,9 @@ filterwarnings = [
   # Ignore warnings issued by dependency internals
   "ignore:.*is_sparse is deprecated.*:FutureWarning",
   "ignore:FigureCanvasAgg is non-interactive:UserWarning",
-  # Introspection under PyCharm IDE can generate this in 3.12
+  "ignore:datetime.datetime.utcfromtimestamp\\(\\) is deprecated.*:DeprecationWarning",
+  "ignore:datetime.datetime.utcnow\\(\\) is deprecated.*:DeprecationWarning",
+  # Introspection under PyCharm IDE can generate this in Python 3.12
   "ignore:.*co_lnotab is deprecated, use co_lines.*:DeprecationWarning",
 ]
 xfail_strict = true

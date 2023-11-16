@@ -72,6 +72,16 @@ if __name__ == "__main__":
 
     # Set doctests to fail on warnings
     warnings.simplefilter("error", DeprecationWarning)
+    warnings.filterwarnings(
+        "ignore",
+        message="datetime.datetime.utcfromtimestamp\\(\\) is deprecated.*",
+        category=DeprecationWarning,
+    )
+    warnings.filterwarnings(
+        "ignore",
+        message="datetime.datetime.utcnow\\(\\) is deprecated.*",
+        category=DeprecationWarning,
+    )
 
     OutputChecker = doctest.OutputChecker
 

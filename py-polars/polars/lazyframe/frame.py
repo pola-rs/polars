@@ -731,7 +731,7 @@ class LazyFrame:
         ...     }
         ... )
         >>> lf.schema
-        OrderedDict([('foo', Int64), ('bar', Float64), ('ham', Utf8)])
+        OrderedDict({'foo': Int64, 'bar': Float64, 'ham': Utf8})
 
         """
         return OrderedDict(self._ldf.schema())

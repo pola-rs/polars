@@ -28,12 +28,11 @@ def _import_timings() -> bytes:
     # assemble suitable command to get polars module import timing;
     # run in a separate process to ensure clean timing results.
     cmd = f'{sys.executable} -X importtime -c "import polars"'
-    output = (
+    return (
         subprocess.run(cmd, shell=True, capture_output=True)
         .stderr.replace(b"import time:", b"")
         .strip()
     )
-    return output
 
 
 def _import_timings_as_frame(n_tries: int) -> tuple[pl.DataFrame, int]:
@@ -56,9 +55,15 @@ def _import_timings_as_frame(n_tries: int) -> tuple[pl.DataFrame, int]:
 
         import_timings.append(df_import)
 
-    # note: if a qualifying import time was already achieved, we won't get here
-    df_fastest_import = sorted(import_timings, key=_import_time_from_frame)[0]
-    return df_fastest_import, _import_time_from_frame(df_fastest_import)
+    # note: if a qualifying import time was already achieved, we won't get here.
+    # if we do, let's see all the failed timings to help see what's going on:
+    import_times = [_import_time_from_frame(df) for df in import_timings]
+    msg = "\n".join(f"({idx}) {tm:,}μs" for idx, tm in enumerate(import_times))
+    min_max = f"Min => {min(import_times):,}μs, Max => {max(import_times):,}μs)"
+    print(f"\nImport times achieved over {n_tries} tries:\n{min_max}\n\n{msg}")
+
+    sorted_timing_frames = sorted(import_timings, key=_import_time_from_frame)
+    return sorted_timing_frames[0], min(import_times)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Unreliable on Windows")
@@ -70,7 +75,7 @@ def test_polars_import() -> None:
 
     # note: reduce noise by allowing up to 'n' tries (but return immediately if/when
     # a qualifying time is achieved, so we don't waste time running unnecessary tests)
-    df_import, polars_import_time = _import_timings_as_frame(n_tries=5)
+    df_import, polars_import_time = _import_timings_as_frame(n_tries=10)
 
     with pl.Config(
         # get a complete view of what's going on in case of failure
