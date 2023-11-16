@@ -250,3 +250,4 @@ Here is a curated (non-exhaustive) list of community implemented plugins.
 
 - [polars-business](https://github.com/MarcoGorelli/polars-business) Polars extension offering utilities for business day operations
 - [polars-hash](https://github.com/ion-elgreco/polars-hash) Stable non-cryptographic and cryptographic hashing functions for Polars
+- [polars-ds](https://github.com/abstractqqq/polars_ds_extension) Polars extension aiming to simplify common numerical/string data analysis procedures
