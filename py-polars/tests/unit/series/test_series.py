@@ -523,7 +523,7 @@ def test_various() -> None:
     a = pl.Series("a", [2, 1, 1, 4, 4, 4])
     assert_series_equal(a.arg_unique(), pl.Series("a", [0, 1, 3], dtype=UInt32))
 
-    assert_series_equal(a.take([2, 3]), pl.Series("a", [1, 4]))
+    assert_series_equal(a.gather([2, 3]), pl.Series("a", [1, 4]))
 
 
 def test_series_dtype_is() -> None:

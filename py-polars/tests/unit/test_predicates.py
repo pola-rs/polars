@@ -261,7 +261,7 @@ def test_take_can_block_predicate_pushdown() -> None:
     lf = (
         df.lazy()
         .filter(pl.col("y"))
-        .filter(pl.col("x") == pl.col("x").take(0))
+        .filter(pl.col("x") == pl.col("x").gather(0))
         .filter(pl.col("y"))
     )
     result = lf.collect(predicate_pushdown=True)

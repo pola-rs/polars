@@ -394,15 +394,14 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
 
     # Out of bounds error.
     with pytest.raises(pl.ComputeError):
-        (
-            df.sort("fruits").select(
-                [pl.col("B").reverse().take([1, 2]).implode().over("fruits"), "fruits"]
-            )
+        df.sort("fruits").select(
+            pl.col("B").reverse().gather([1, 2]).implode().over("fruits"),
+            "fruits",
         )
 
     # Null indices.
     assert_frame_equal(
-        df.select(pl.col("fruits").take(pl.Series([0, None]))),
+        df.select(pl.col("fruits").gather(pl.Series([0, None]))),
         pl.DataFrame({"fruits": ["banana", None]}),
     )
 
@@ -411,7 +410,7 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
             [
                 pl.col("B")
                 .reverse()
-                .take(index)  # type: ignore[arg-type]
+                .gather(index)  # type: ignore[arg-type]
                 .over("fruits", mapping_strategy="join"),
                 "fruits",
             ]
@@ -2541,7 +2540,7 @@ def test_explode_empty() -> None:
     df = (
         pl.DataFrame({"x": ["a", "a", "b", "b"], "y": [1, 1, 2, 2]})
         .group_by("x", maintain_order=True)
-        .agg(pl.col("y").take([]))
+        .agg(pl.col("y").gather([]))
     )
     assert df.explode("y").to_dict(as_series=False) == {
         "x": ["a", "b"],

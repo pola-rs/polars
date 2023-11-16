@@ -474,10 +474,10 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [[3, 2, 1], [], [1, 2, 3, 4, 5]]})
-        >>> df.with_columns(take=pl.col("a").list.take([0, 4], null_on_oob=True))
+        >>> df.with_columns(gather=pl.col("a").list.gather([0, 4], null_on_oob=True))
         shape: (3, 2)
         ┌─────────────┬──────────────┐
-        │ a           ┆ take         │
+        │ a           ┆ gather       │
         │ ---         ┆ ---          │
         │ list[i64]   ┆ list[i64]    │
         ╞═════════════╪══════════════╡

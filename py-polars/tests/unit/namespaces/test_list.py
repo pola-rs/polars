@@ -384,31 +384,31 @@ def test_list_slice_5866() -> None:
     assert s.list.slice(1).to_list() == [[2, 3, 4], [2, 1]]
 
 
-def test_list_take() -> None:
+def test_list_gather() -> None:
     s = pl.Series("a", [[1, 2, 3], [4, 5], [6, 7, 8]])
     # mypy: we make it work, but idomatic is `arr.get`.
-    assert s.list.take(0).to_list() == [[1], [4], [6]]  # type: ignore[arg-type]
-    assert s.list.take([0, 1]).to_list() == [[1, 2], [4, 5], [6, 7]]
+    assert s.list.gather(0).to_list() == [[1], [4], [6]]  # type: ignore[arg-type]
+    assert s.list.gather([0, 1]).to_list() == [[1, 2], [4, 5], [6, 7]]
 
-    assert s.list.take([-1, 1]).to_list() == [[3, 2], [5, 5], [8, 7]]
+    assert s.list.gather([-1, 1]).to_list() == [[3, 2], [5, 5], [8, 7]]
 
     # use another list to make sure negative indices are respected
-    taker = pl.Series([[-1, 1], [-1, 1], [-1, -2]])
-    assert s.list.take(taker).to_list() == [[3, 2], [5, 5], [8, 7]]
-    with pytest.raises(pl.ComputeError, match=r"take indices are out of bounds"):
-        s.list.take([1, 2])
+    gatherer = pl.Series([[-1, 1], [-1, 1], [-1, -2]])
+    assert s.list.gather(gatherer).to_list() == [[3, 2], [5, 5], [8, 7]]
+    with pytest.raises(pl.ComputeError, match=r"gather indices are out of bounds"):
+        s.list.gather([1, 2])
     s = pl.Series(
         [["A", "B", "C"], ["A"], ["B"], ["1", "2"], ["e"]],
     )
 
-    assert s.list.take([0, 2], null_on_oob=True).to_list() == [
+    assert s.list.gather([0, 2], null_on_oob=True).to_list() == [
         ["A", "C"],
         ["A", None],
         ["B", None],
         ["1", None],
         ["e", None],
     ]
-    assert s.list.take([0, 1, 2], null_on_oob=True).to_list() == [
+    assert s.list.gather([0, 1, 2], null_on_oob=True).to_list() == [
         ["A", "B", "C"],
         ["A", None, None],
         ["B", None, None],
@@ -417,10 +417,10 @@ def test_list_take() -> None:
     ]
     s = pl.Series([[42, 1, 2], [5, 6, 7]])
 
-    with pytest.raises(pl.ComputeError, match=r"take indices are out of bounds"):
-        s.list.take([[0, 1, 2, 3], [0, 1, 2, 3]])
+    with pytest.raises(pl.ComputeError, match=r"gather indices are out of bounds"):
+        s.list.gather([[0, 1, 2, 3], [0, 1, 2, 3]])
 
-    assert s.list.take([0, 1, 2, 3], null_on_oob=True).to_list() == [
+    assert s.list.gather([0, 1, 2, 3], null_on_oob=True).to_list() == [
         [42, 1, 2, None],
         [5, 6, 7, None],
     ]
@@ -447,9 +447,9 @@ def test_list_function_group_awareness() -> None:
     assert df.group_by("group").agg(
         [
             pl.col("a").get(0).alias("get_scalar"),
-            pl.col("a").take([0]).alias("take_no_implode"),
+            pl.col("a").gather([0]).alias("take_no_implode"),
             pl.col("a").implode().list.get(0).alias("implode_get"),
-            pl.col("a").implode().list.take([0]).alias("implode_take"),
+            pl.col("a").implode().list.gather([0]).alias("implode_take"),
             pl.col("a").implode().list.slice(0, 3).alias("implode_slice"),
         ]
     ).sort("group").to_dict(as_series=False) == {
@@ -478,14 +478,14 @@ def test_list_get_logical_types() -> None:
     }
 
 
-def test_list_take_logical_type() -> None:
+def test_list_gather_logical_type() -> None:
     df = pl.DataFrame(
         {"foo": [["foo", "foo", "bar"]], "bar": [[5.0, 10.0, 12.0]]}
     ).with_columns(pl.col("foo").cast(pl.List(pl.Categorical)))
 
     df = pl.concat([df, df], rechunk=False)
     assert df.n_chunks() == 2
-    assert df.select(pl.all().take([0, 1])).to_dict(as_series=False) == {
+    assert df.select(pl.all().gather([0, 1])).to_dict(as_series=False) == {
         "foo": [["foo", "foo", "bar"], ["foo", "foo", "bar"]],
         "bar": [[5.0, 10.0, 12.0], [5.0, 10.0, 12.0]],
     }
@@ -626,15 +626,15 @@ def test_list_set_operations_broadcast() -> None:
     ).to_dict(as_series=False) == {"a": [[1], [2], []]}
 
 
-def test_list_take_oob_10079() -> None:
+def test_list_gather_oob_10079() -> None:
     df = pl.DataFrame(
         {
             "a": [[1, 2, 3], [], [None, 3], [5, 6, 7]],
             "b": [["2"], ["3"], [None], ["3", "Hi"]],
         }
     )
-    with pytest.raises(pl.ComputeError, match="take indices are out of bounds"):
-        df.select(pl.col("a").take(999))
+    with pytest.raises(pl.ComputeError, match="gather indices are out of bounds"):
+        df.select(pl.col("a").gather(999))
 
 
 def test_utf8_empty_series_arg_min_max_10703() -> None:
