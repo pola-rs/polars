@@ -166,6 +166,12 @@ impl ParquetExec {
             .expect("should be set");
         let first_metadata = &self.metadata;
         let cloud_options = self.cloud_options.as_ref();
+        let with_columns = self
+            .file_options
+            .with_columns
+            .as_ref()
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
 
         let mut result = vec![];
         let batch_size = get_file_prefetch_size();
@@ -194,7 +200,11 @@ impl ParquetExec {
             let iter = paths.iter().enumerate().map(|(i, path)| async move {
                 let first_file = batch_idx == 0 && i == 0;
                 // use the cached one as this saves a cloud call
-                let (metadata, schema) = if first_file { (first_metadata.clone(), Some((*first_schema).clone())) } else { (None, None) };
+                let (metadata, schema) = if first_file {
+                    (first_metadata.clone(), Some((*first_schema).clone()))
+                } else {
+                    (None, None)
+                };
                 let mut reader = ParquetAsyncReader::from_uri(
                     &path.to_string_lossy(),
                     cloud_options,
@@ -205,7 +215,13 @@ impl ParquetExec {
                 .await?;
 
                 if !first_file {
-                    polars_ensure!(reader.schema().await?.as_ref() == first_schema.as_ref(), ComputeError: "schema of all files in a single scan_parquet must be equal");
+                    let schema = reader.schema().await?;
+                    check_projected_arrow_schema(
+                        first_schema.as_ref(),
+                        schema.as_ref(),
+                        with_columns,
+                        "schema of all files in a single scan_parquet must be equal",
+                    )?
                 }
 
                 let num_rows = reader.num_rows().await?;
