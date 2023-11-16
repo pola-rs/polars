@@ -23,6 +23,7 @@ The following methods are available under the `Series.list` attribute.
     Series.list.eval
     Series.list.explode
     Series.list.first
+    Series.list.gather
     Series.list.get
     Series.list.head
     Series.list.join
