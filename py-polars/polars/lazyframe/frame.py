@@ -2110,6 +2110,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         path: str | Path,
         *,
+        include_bom: bool = False,
         include_header: bool = True,
         separator: str = ",",
         line_terminator: str = "\n",
@@ -2138,6 +2139,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         path
             File path to which the file should be written.
+        include_bom
+            Whether to include UTF-8 BOM in the CSV output.
         include_header
             Whether to include header in the CSV output.
         separator
@@ -2226,6 +2229,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return lf.sink_csv(
             path=path,
+            include_bom=include_bom,
             include_header=include_header,
             separator=ord(separator),
             line_terminator=line_terminator,

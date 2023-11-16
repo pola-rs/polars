@@ -2454,6 +2454,7 @@ class DataFrame:
         self,
         file: None = None,
         *,
+        include_bom: bool = ...,
         include_header: bool = ...,
         separator: str = ...,
         line_terminator: str = ...,
@@ -2473,6 +2474,7 @@ class DataFrame:
         self,
         file: BytesIO | TextIOWrapper | str | Path,
         *,
+        include_bom: bool = ...,
         include_header: bool = ...,
         separator: str = ...,
         line_terminator: str = ...,
@@ -2493,6 +2495,7 @@ class DataFrame:
         self,
         file: BytesIO | TextIOWrapper | str | Path | None = None,
         *,
+        include_bom: bool = False,
         include_header: bool = True,
         separator: str = ",",
         line_terminator: str = "\n",
@@ -2513,6 +2516,8 @@ class DataFrame:
         file
             File path or writeable file-like object to which the result will be written.
             If set to `None` (default), the output is returned as a string instead.
+        include_bom
+            Whether to include UTF-8 BOM in the CSV output.
         include_header
             Whether to include header in the CSV output.
         separator
@@ -2590,6 +2595,7 @@ class DataFrame:
 
         self._df.write_csv(
             file,
+            include_bom,
             include_header,
             ord(separator),
             line_terminator,
