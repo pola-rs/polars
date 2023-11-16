@@ -91,7 +91,7 @@ impl Operator for CrossJoinProbe {
 
         if self.in_process_left.is_none() {
             let mut iter_left = (0..self.df.height()).step_by(size);
-            let offset = iter_left.next().unwrap();
+            let offset = iter_left.next().unwrap_or(0);
             self.in_process_left_df = self.df.slice(offset as i64, size);
             self.in_process_left = Some(iter_left);
         }

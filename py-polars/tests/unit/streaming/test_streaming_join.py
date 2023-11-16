@@ -70,3 +70,28 @@ def test_sorted_flag_after_streaming_join() -> None:
         .collect(streaming=True)["x"]
         .flags["SORTED_ASC"]
     )
+
+
+def test_streaming_cross_join_empty() -> None:
+    df1 = pl.LazyFrame(
+        data={
+            "col1": ["a"],
+        }
+    )
+
+    df2 = pl.LazyFrame(
+        data={
+            "col1": [],
+        },
+        schema={
+            "col1": str,
+        },
+    )
+
+    out = df1.join(
+        df2,
+        how="cross",
+        on="col1",
+    ).collect(streaming=True)
+    assert out.shape == (0, 2)
+    assert out.columns == ["col1", "col1_right"]
