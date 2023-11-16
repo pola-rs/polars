@@ -37,15 +37,12 @@ type Predicate = Option<Arc<dyn PhysicalIoExpr>>;
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 fn prepare_scan_args(
-    path: &std::path::Path,
     predicate: &Option<Arc<dyn PhysicalExpr>>,
     with_columns: &mut Option<Arc<Vec<String>>>,
     schema: &mut SchemaRef,
     has_row_count: bool,
     hive_partitions: Option<&[Series]>,
-) -> (std::io::Result<std::fs::File>, Projection, Predicate) {
-    let file = std::fs::File::open(path);
-
+) -> (Projection, Predicate) {
     let with_columns = mem::take(with_columns);
     let schema = mem::take(schema);
 
@@ -58,7 +55,7 @@ fn prepare_scan_args(
 
     let predicate = predicate.clone().map(phys_expr_to_io_expr);
 
-    (file, projection, predicate)
+    (projection, predicate)
 }
 
 /// Producer of an in memory DataFrame

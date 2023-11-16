@@ -218,17 +218,38 @@ pub fn materialize_projection(
     }
 }
 
+pub fn check_projected_schema_impl(
+    a: &Schema,
+    b: &Schema,
+    projected_names: Option<&[String]>,
+    msg: &str,
+) -> PolarsResult<()> {
+    if !projected_names
+        .map(|projected_names| {
+            projected_names
+                .iter()
+                .all(|name| a.get(name) == b.get(name))
+        })
+        .unwrap_or_else(|| a == b)
+    {
+        polars_bail!(ComputeError: "{msg}\n\n\
+                    Expected: {:?}\n\n\
+                    Got: {:?}", a, b)
+    }
+    Ok(())
+}
+
 /// Checks if the projected columns are equal
 pub fn check_projected_arrow_schema(
     a: &ArrowSchema,
     b: &ArrowSchema,
-    projected_names: &[String],
+    projected_names: Option<&[String]>,
     msg: &str,
 ) -> PolarsResult<()> {
     if a != b {
         let a = Schema::from(a);
         let b = Schema::from(b);
-        check_projected_schema(&a, &b, projected_names, msg)
+        check_projected_schema_impl(&a, &b, projected_names, msg)
     } else {
         Ok(())
     }
@@ -238,19 +259,10 @@ pub fn check_projected_arrow_schema(
 pub fn check_projected_schema(
     a: &Schema,
     b: &Schema,
-    projected_names: &[String],
+    projected_names: Option<&[String]>,
     msg: &str,
 ) -> PolarsResult<()> {
-    if !projected_names
-        .iter()
-        .all(|name| a.get(name) == b.get(name))
-    {
-        polars_bail!(ComputeError: "{msg}\n\n\
-                    Expected: {:?}\n\n\
-                    Got: {:?}", a, b)
-    } else {
-        Ok(())
-    }
+    check_projected_schema_impl(a, b, projected_names, msg)
 }
 
 #[cfg(test)]

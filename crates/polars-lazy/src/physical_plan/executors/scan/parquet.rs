@@ -1,5 +1,3 @@
-#[cfg(feature = "cloud")]
-use std::path::Path;
 use std::path::PathBuf;
 
 #[cfg(feature = "cloud")]
@@ -80,8 +78,8 @@ impl ParquetExec {
                         .as_ref()
                         .map(|hive| hive.materialize_partition_columns());
 
-                    let (file, projection, predicate) = prepare_scan_args(
-                        path,
+                    let file = std::fs::File::open(path)?;
+                    let (projection, predicate) = prepare_scan_args(
                         &self.predicate,
                         &mut self.file_options.with_columns.clone(),
                         &mut self.file_info.schema.clone(),
@@ -89,7 +87,6 @@ impl ParquetExec {
                         hive_partitions.as_deref(),
                     );
 
-                    let file = file?;
                     let mut reader = ParquetReader::new(file)
                         .with_schema(self.file_info.reader_schema.clone())
                         .read_parallel(parallel)
@@ -170,8 +167,7 @@ impl ParquetExec {
             .file_options
             .with_columns
             .as_ref()
-            .map(|v| v.as_slice())
-            .unwrap_or(&[]);
+            .map(|v| v.as_slice());
 
         let mut result = vec![];
         let batch_size = get_file_prefetch_size();
@@ -278,8 +274,7 @@ impl ParquetExec {
                             .as_ref()
                             .map(|hive| hive.materialize_partition_columns());
 
-                        let (_, projection, predicate) = prepare_scan_args(
-                            Path::new(""),
+                        let (projection, predicate) = prepare_scan_args(
                             predicate,
                             &mut file_options.with_columns.clone(),
                             &mut file_info.schema.clone(),

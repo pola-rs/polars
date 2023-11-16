@@ -131,8 +131,7 @@ impl ParquetSource {
                 .file_options
                 .with_columns
                 .as_ref()
-                .map(|v| v.as_slice())
-                .unwrap_or(&[]);
+                .map(|v| v.as_slice());
             check_projected_arrow_schema(
                 batched_reader.schema().as_ref(),
                 self.file_info.reader_schema.as_ref().unwrap(),
