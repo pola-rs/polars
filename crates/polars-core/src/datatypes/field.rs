@@ -103,7 +103,7 @@ impl Field {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// let f = Field::new("Value", DataType::Int64);
-    /// let af = arrow::datatypes::Field::new("Value", arrow::datatypes::DataType::Int64, true);
+    /// let af = arrow::datatypes::Field::new("Value", arrow::datatypes::ArrowDataType::Int64, true);
     ///
     /// assert_eq!(f.to_arrow(), af);
     /// ```

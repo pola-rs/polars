@@ -10,6 +10,7 @@ from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.deprecation import (
     deprecate_renamed_parameter,
+    deprecate_saturating,
     issue_deprecation_warning,
 )
 
@@ -94,9 +95,6 @@ def date_range(
     interval
         Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
-
-        To create a month-end date series, combine with :meth:`Expr.dt.month_end` (see
-        "Examples" section below).
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     time_unit : {None, 'ns', 'us', 'ms'}
@@ -146,10 +144,6 @@ def date_range(
        Or combine them:
        "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
-       Suffix with `"_saturating"` to indicate that dates too large for
-       their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-       instead of erroring.
-
        By "calendar day", we mean the corresponding time on the next day (which may
        not be 24 hours, due to daylight savings). Similarly for "calendar week",
        "calendar month", "calendar quarter", and "calendar year".
@@ -187,20 +181,8 @@ def date_range(
         1985-01-09
     ]
 
-    Combine with :meth:`Expr.dt.month_end` to get the last day of the month:
-
-    >>> pl.date_range(
-    ...     date(2022, 1, 1), date(2022, 3, 1), "1mo", eager=True
-    ... ).dt.month_end()
-    shape: (3,)
-    Series: 'date' [date]
-    [
-        2022-01-31
-        2022-02-28
-        2022-03-31
-    ]
-
     """
+    interval = deprecate_saturating(interval)
     if name is not None:
         issue_deprecation_warning(
             "the `name` argument is deprecated. Use the `alias` method instead.",
@@ -328,10 +310,6 @@ def date_ranges(
     Or combine them:
     "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
-    Suffix with `"_saturating"` to indicate that dates too large for
-    their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-    instead of erroring.
-
     By "calendar day", we mean the corresponding time on the next day (which may
     not be 24 hours, due to daylight savings). Similarly for "calendar week",
     "calendar month", "calendar quarter", and "calendar year".
@@ -357,6 +335,7 @@ def date_ranges(
     └────────────┴────────────┴───────────────────────────────────┘
 
     """
+    interval = deprecate_saturating(interval)
     interval = parse_interval_argument(interval)
     if time_unit is None and "ns" in interval:
         time_unit = "ns"
@@ -389,11 +368,11 @@ def _warn_for_deprecated_date_range_use(
     if (
         isinstance(start, datetime)
         or isinstance(end, datetime)
-        or "s" in interval
-        or "h" in interval
-        or ("m" in interval and "mo" not in interval)
         or time_unit is not None
         or time_zone is not None
+        or ("h" in interval)
+        or ("m" in interval.replace("mo", ""))
+        or ("s" in interval.replace("saturating", ""))
     ):
         issue_deprecation_warning(
             "Creating Datetime ranges using `date_range(s)` is deprecated."

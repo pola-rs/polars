@@ -24,8 +24,6 @@ from typing import (
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import (
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
     Categorical,
     Null,
     Struct,
@@ -56,6 +54,7 @@ from polars.utils.deprecation import (
     deprecate_nonkeyword_arguments,
     deprecate_renamed_function,
     deprecate_renamed_parameter,
+    deprecate_saturating,
     warn_closed_future_change,
 )
 from polars.utils.meta import threadpool_size
@@ -632,6 +631,9 @@ class Expr:
         """
         Rename the output of an expression by mapping a function over the root name.
 
+        .. deprecated:: 0.19.12
+            This method has been renamed to :func:`name.map`.
+
         Parameters
         ----------
         function
@@ -639,7 +641,7 @@ class Expr:
 
         See Also
         --------
-        alias
+        keep_name
         prefix
         suffix
 
@@ -674,6 +676,9 @@ class Expr:
     def prefix(self, prefix: str) -> Self:
         """
         Add a prefix to the root column name of the expression.
+
+        .. deprecated:: 0.19.12
+            This method has been renamed to :func:`name.prefix`.
 
         Parameters
         ----------
@@ -719,6 +724,9 @@ class Expr:
         """
         Add a suffix to the root column name of the expression.
 
+        .. deprecated:: 0.19.12
+            This method has been renamed to :func:`name.suffix`.
+
         Parameters
         ----------
         suffix
@@ -762,6 +770,9 @@ class Expr:
     def keep_name(self) -> Self:
         """
         Keep the original root name of the expression.
+
+        .. deprecated:: 0.19.12
+            This method has been renamed to :func:`name.keep`.
 
         Notes
         -----
@@ -1772,6 +1783,33 @@ class Expr:
 
         """
         return self._from_pyexpr(self._pyexpr.round(decimals))
+
+    def round_sig_figs(self, digits: int) -> Self:
+        """
+        Round to a number of significant figures.
+
+        Parameters
+        ----------
+        digits
+            Number of significant figures to round to.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [0.01234, 3.333, 1234.0]})
+        >>> df.with_columns(pl.col("a").round_sig_figs(2).alias("round_sig_figs"))
+        shape: (3, 2)
+        ┌─────────┬────────────────┐
+        │ a       ┆ round_sig_figs │
+        │ ---     ┆ ---            │
+        │ f64     ┆ f64            │
+        ╞═════════╪════════════════╡
+        │ 0.01234 ┆ 0.012          │
+        │ 3.333   ┆ 3.3            │
+        │ 1234.0  ┆ 1200.0         │
+        └─────────┴────────────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.round_sig_figs(digits))
 
     def dot(self, other: Expr | str) -> Self:
         """
@@ -3272,6 +3310,13 @@ class Expr:
             * ...
             * (t_n - period, t_n]
 
+        whereas if you pass a non-default `offset`, then the windows will be
+
+            * (t_0 + offset, t_0 + offset + period]
+            * (t_1 + offset, t_1 + offset + period]
+            * ...
+            * (t_n + offset, t_n + offset + period]
+
         The `period` and `offset` arguments are created either from a timedelta, or
         by using the following string language:
 
@@ -3290,10 +3335,6 @@ class Expr:
 
         Or combine them:
         "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
-
-        Suffix with `"_saturating"` to indicate that dates too large for
-        their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-        instead of erroring.
 
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
@@ -3359,6 +3400,8 @@ class Expr:
         └─────────────────────┴─────┴───────┴───────┴───────┘
 
         """
+        period = deprecate_saturating(period)
+        offset = deprecate_saturating(offset)
         if offset is None:
             offset = _negate_duration(_timedelta_to_pl_duration(period))
 
@@ -5149,17 +5192,17 @@ class Expr:
         >>> df = pl.DataFrame(
         ...     {"sets": [[1, 2, 3], [1, 2], [9, 10]], "optional_members": [1, 2, 3]}
         ... )
-        >>> df.select(pl.col("optional_members").is_in("sets").alias("contains"))
-        shape: (3, 1)
-        ┌──────────┐
-        │ contains │
-        │ ---      │
-        │ bool     │
-        ╞══════════╡
-        │ true     │
-        │ true     │
-        │ false    │
-        └──────────┘
+        >>> df.with_columns(contains=pl.col("optional_members").is_in("sets"))
+        shape: (3, 3)
+        ┌───────────┬──────────────────┬──────────┐
+        │ sets      ┆ optional_members ┆ contains │
+        │ ---       ┆ ---              ┆ ---      │
+        │ list[i64] ┆ i64              ┆ bool     │
+        ╞═══════════╪══════════════════╪══════════╡
+        │ [1, 2, 3] ┆ 1                ┆ true     │
+        │ [1, 2]    ┆ 2                ┆ true     │
+        │ [9, 10]   ┆ 3                ┆ false    │
+        └───────────┴──────────────────┴──────────┘
 
         """
         if isinstance(other, Collection) and not isinstance(other, str):
@@ -5337,6 +5380,12 @@ class Expr:
             Random seed parameter. Defaults to `seed` if not set.
         seed_3
             Random seed parameter. Defaults to `seed` if not set.
+
+        Notes
+        -----
+        This implementation of :func:`rows` does not guarantee stable results
+        across different Polars versions. Its stability is only guaranteed within a
+        single version.
 
         Examples
         --------
@@ -5528,7 +5577,7 @@ class Expr:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their min.
 
         If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
@@ -5562,10 +5611,6 @@ class Expr:
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
-
-            Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date
-            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -5713,6 +5758,7 @@ class Expr:
         └────────┴─────────────────────┴─────────────────┘
 
         """
+        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
@@ -5738,7 +5784,7 @@ class Expr:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their max.
 
         If `by` has not been specified (the default), the window at a given row will
         include the row itself, and the `window_size - 1` elements before it.
@@ -5772,10 +5818,6 @@ class Expr:
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
-
-            Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date
-            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -5946,6 +5988,7 @@ class Expr:
         └────────┴─────────────────────┴─────────────────┘
 
         """
+        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
@@ -6005,10 +6048,6 @@ class Expr:
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
-
-            Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date
-            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -6183,6 +6222,7 @@ class Expr:
         └────────┴─────────────────────┴──────────────────┘
 
         """
+        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
@@ -6242,10 +6282,6 @@ class Expr:
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
-
-            Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date
-            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -6416,6 +6452,7 @@ class Expr:
         └────────┴─────────────────────┴─────────────────┘
 
         """
+        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
@@ -6472,10 +6509,6 @@ class Expr:
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
-
-            Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date
-            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -6652,6 +6685,7 @@ class Expr:
         └────────┴─────────────────────┴─────────────────┘
 
         """
+        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
@@ -6708,10 +6742,6 @@ class Expr:
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
-
-            Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date
-            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -6888,6 +6918,7 @@ class Expr:
         └────────┴─────────────────────┴─────────────────┘
 
         """
+        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
@@ -6949,10 +6980,6 @@ class Expr:
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
-
-            Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date
-            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -7053,6 +7080,7 @@ class Expr:
         └─────┴────────────────┘
 
         """
+        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
@@ -7114,10 +7142,6 @@ class Expr:
             - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
-
-            Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date
-            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             By "calendar day", we mean the corresponding time on the next day
             (which may not be 24 hours, due to daylight savings). Similarly for
@@ -7246,6 +7270,7 @@ class Expr:
         └─────┴──────────────────┘
 
         """
+        window_size = deprecate_saturating(window_size)
         window_size, min_periods = _prepare_rolling_window_args(
             window_size, min_periods
         )
@@ -9141,9 +9166,9 @@ class Expr:
             Parameters
             ----------
             name
-                Name of the keys or values series.
+                Name of the keys or values Series.
             values
-                Values for the series: `remapping.keys()` or `remapping.values()`.
+                Values for the Series: `remapping.keys()` or `remapping.values()`.
             dtype
                 User specified dtype. If None,
             dtype_if_empty
@@ -9175,8 +9200,8 @@ class Expr:
                             # Values Series has same dtype as keys Series.
                             dtype = s.dtype
                         elif (
-                            (s.dtype in INTEGER_DTYPES and dtype_keys in INTEGER_DTYPES)
-                            or (s.dtype in FLOAT_DTYPES and dtype_keys in FLOAT_DTYPES)
+                            (s.dtype.is_integer() and dtype_keys.is_integer())
+                            or (s.dtype.is_float() and dtype_keys.is_float())
                             or (s.dtype == Utf8 and dtype_keys == Categorical)
                         ):
                             # Values Series and keys Series are of similar dtypes,
@@ -9241,12 +9266,9 @@ class Expr:
                     raise ValueError(
                         f"remapping values for `map_dict` could not be converted to {dtype!r} without losing values in the conversion"
                     )
-
             return s
 
-        # Use two functions to save unneeded work.
-        # This factors out allocations and branches.
-        def inner_with_default(s: Series) -> Series:
+        def inner_func(s: Series, default_value: Any = None) -> Series:
             # Convert Series to:
             #   - multicolumn DataFrame, if Series is a Struct.
             #   - one column DataFrame in other cases.
@@ -9268,7 +9290,6 @@ class Expr:
                 if return_dtype is None and isinstance(default, Expr)
                 else return_dtype
             )
-
             remap_key_s = _remap_key_or_value_series(
                 name=remap_key_column,
                 values=remapping.keys(),
@@ -9277,7 +9298,6 @@ class Expr:
                 dtype_keys=input_dtype,
                 is_keys=True,
             )
-
             if return_dtype_:
                 # Create remap value Series with specified output dtype.
                 remap_value_s = pl.Series(
@@ -9299,97 +9319,29 @@ class Expr:
                     is_keys=False,
                 )
 
-            default_parsed = self._from_pyexpr(
-                parse_as_expression(default, str_as_lit=True)
+            remap_frame = pl.LazyFrame(data=[remap_key_s, remap_value_s]).with_columns(
+                F.lit(True).alias(is_remapped_column)
             )
-            return (
-                (
-                    df.lazy()
-                    .join(
-                        pl.DataFrame(
-                            [
-                                remap_key_s,
-                                remap_value_s,
-                            ]
-                        )
-                        .lazy()
-                        .with_columns(F.lit(True).alias(is_remapped_column)),
-                        how="left",
-                        left_on=column,
-                        right_on=remap_key_column,
-                    )
-                    .select(
-                        F.when(F.col(is_remapped_column).is_not_null())
-                        .then(F.col(remap_value_column))
-                        .otherwise(default_parsed)
-                        .alias(column)
-                    )
-                )
-                .collect(no_optimization=True)
-                .to_series()
+            mapped = df.lazy().join(
+                other=remap_frame, how="left", left_on=column, right_on=remap_key_column
             )
-
-        def inner(s: Series) -> Series:
-            column = s.name
-            input_dtype = s.dtype
-            remap_key_column = f"__POLARS_REMAP_KEY_{column}"
-            remap_value_column = f"__POLARS_REMAP_VALUE_{column}"
-            is_remapped_column = f"__POLARS_REMAP_IS_REMAPPED_{column}"
-
-            remap_key_s = _remap_key_or_value_series(
-                name=remap_key_column,
-                values=list(remapping.keys()),
-                dtype=input_dtype,
-                dtype_if_empty=input_dtype,
-                dtype_keys=input_dtype,
-                is_keys=True,
-            )
-
-            if return_dtype:
-                # Create remap value Series with specified output dtype.
-                remap_value_s = pl.Series(
-                    remap_value_column,
-                    remapping.values(),
-                    dtype=return_dtype,
-                    dtype_if_empty=input_dtype,
-                )
+            if default_value is None:
+                result_index = 1
             else:
-                # Create remap value Series with same output dtype as remap key Series,
-                # if possible (if both are integers, both are floats or remap value
-                # Series is pl.Utf8 and remap key Series is pl.Categorical).
-                remap_value_s = _remap_key_or_value_series(
-                    name=remap_value_column,
-                    values=remapping.values(),
-                    dtype=None,
-                    dtype_if_empty=input_dtype,
-                    dtype_keys=input_dtype,
-                    is_keys=False,
+                expr_default = parse_as_expression(default_value, str_as_lit=True)
+                default_parsed = self._from_pyexpr(expr_default)
+                mapped = mapped.select(
+                    F.when(F.col(is_remapped_column).is_not_null())
+                    .then(F.col(remap_value_column))
+                    .otherwise(default_parsed)
+                    .alias(column)
                 )
+                result_index = 0
 
-            return (
-                (
-                    s.to_frame()
-                    .lazy()
-                    .join(
-                        pl.DataFrame(
-                            [
-                                remap_key_s,
-                                remap_value_s,
-                            ]
-                        )
-                        .lazy()
-                        .with_columns(F.lit(True).alias(is_remapped_column)),
-                        how="left",
-                        left_on=column,
-                        right_on=remap_key_column,
-                    )
-                )
-                .collect(no_optimization=True)
-                .to_series(1)
-            )
+            return mapped.collect(no_optimization=True).to_series(index=result_index)
 
-        func = inner_with_default if default is not None else inner
-        return self.map_batches(func)
+        remapping_func = partial(inner_func, default_value=default)
+        return self.map_batches(function=remapping_func, return_dtype=return_dtype)
 
     @deprecate_renamed_function("map_batches", version="0.19.0")
     def map(

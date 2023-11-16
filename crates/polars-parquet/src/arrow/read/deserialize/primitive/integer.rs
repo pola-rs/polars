@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use arrow::array::MutablePrimitiveArray;
 use arrow::bitmap::MutableBitmap;
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use num_traits::AsPrimitive;
 use polars_error::{to_compute_err, PolarsResult};
@@ -198,7 +198,7 @@ where
     F: Fn(P) -> T,
 {
     iter: I,
-    data_type: DataType,
+    data_type: ArrowDataType,
     items: VecDeque<(Vec<T>, MutableBitmap)>,
     remaining: usize,
     chunk_size: Option<usize>,
@@ -217,7 +217,7 @@ where
 {
     pub fn new(
         iter: I,
-        data_type: DataType,
+        data_type: ArrowDataType,
         num_rows: usize,
         chunk_size: Option<usize>,
         op: F,

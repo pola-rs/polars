@@ -136,21 +136,21 @@ mod test {
         use std::io::BufReader;
         use std::path::PathBuf;
 
-        use tempdir::TempDir;
+        use tempfile;
 
         use crate::ipc::IpcReader;
         use crate::prelude::IpcWriterOption;
         use crate::SerReader;
 
-        let tempdir = TempDir::new("ipc-partition")?;
+        let tmp_dir = tempfile::tempdir()?;
 
         let df = df!("a" => [1, 1, 2, 3], "b" => [2, 2, 3, 4], "c" => [2, 3, 4, 5]).unwrap();
         let by = ["a", "b"];
-        let rootdir = tempdir.path();
+        let rootdir = tmp_dir.path().join("ipc-partition");
 
         let option = IpcWriterOption::new();
 
-        PartitionedWriter::new(option, rootdir, by).finish(&df)?;
+        PartitionedWriter::new(option, rootdir.clone(), by).finish(&df)?;
 
         let expected_dfs = [
             df!("a" => [1, 1], "b" => [2, 2], "c" => [2, 3])?,

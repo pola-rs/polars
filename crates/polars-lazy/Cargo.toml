@@ -115,7 +115,7 @@ list_to_struct = ["polars-plan/list_to_struct"]
 python = ["pyo3", "polars-plan/python", "polars-core/python", "polars-io/python"]
 row_hash = ["polars-plan/row_hash"]
 string_pad = ["polars-plan/string_pad"]
-string_from_radix = ["polars-plan/string_from_radix"]
+string_to_integer = ["polars-plan/string_to_integer"]
 arg_where = ["polars-plan/arg_where"]
 search_sorted = ["polars-plan/search_sorted"]
 merge_sorted = ["polars-plan/merge_sorted"]
@@ -144,6 +144,7 @@ cutqcut = ["polars-plan/cutqcut", "polars-ops/cutqcut"]
 rle = ["polars-plan/rle", "polars-ops/rle"]
 extract_groups = ["polars-plan/extract_groups"]
 peaks = ["polars-plan/peaks"]
+cov = ["polars-ops/cov", "polars-plan/cov"]
 
 binary_encoding = ["polars-plan/binary_encoding"]
 string_encoding = ["polars-plan/string_encoding"]
@@ -177,7 +178,7 @@ test_all = [
   "ipc",
   "row_hash",
   "string_pad",
-  "string_from_radix",
+  "string_to_integer",
   "search_sorted",
   "top_k",
   "pivot",

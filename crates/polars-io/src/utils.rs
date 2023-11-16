@@ -2,6 +2,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use once_cell::sync::Lazy;
+#[cfg(any(feature = "csv", feature = "json"))]
 use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
 use regex::{Regex, RegexBuilder};
@@ -36,11 +37,6 @@ pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
             // we have to read to an owned buffer to get the bytes.
             let mut bytes = Vec::with_capacity(1024 * 128);
             reader.read_to_end(&mut bytes)?;
-            if !bytes.is_empty()
-                && (bytes[bytes.len() - 1] != b'\n' || bytes[bytes.len() - 1] != b'\r')
-            {
-                bytes.push(b'\n')
-            }
             Ok(ReaderBytes::Owned(bytes))
         }
     }
@@ -113,6 +109,7 @@ pub(crate) fn columns_to_projection(
 
 /// Because of threading every row starts from `0` or from `offset`.
 /// We must correct that so that they are monotonically increasing.
+#[cfg(any(feature = "csv", feature = "json"))]
 pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, IdxSize)], offset: IdxSize) {
     if !dfs.is_empty() {
         let mut previous = dfs[0].1 + offset;
@@ -127,6 +124,7 @@ pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, IdxSize)], offset: IdxSiz
 
 /// Because of threading every row starts from `0` or from `offset`.
 /// We must correct that so that they are monotonically increasing.
+#[cfg(any(feature = "csv", feature = "json"))]
 pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
     if !dfs.is_empty() {
         let mut previous = dfs[0].height() as IdxSize + offset;

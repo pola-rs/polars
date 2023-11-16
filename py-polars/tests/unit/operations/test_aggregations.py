@@ -296,3 +296,35 @@ def test_horizontal_sum_null_to_identity() -> None:
     assert pl.DataFrame({"a": [1, 5], "b": [10, None]}).select(
         [pl.sum_horizontal(["a", "b"])]
     ).to_series().to_list() == [11, 5]
+
+
+def test_first_last_unit_length_12363() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [None, None],
+        }
+    )
+
+    assert df.select(
+        pl.all().drop_nulls().first().name.suffix("_first"),
+        pl.all().drop_nulls().last().name.suffix("_last"),
+    ).to_dict(as_series=False) == {
+        "a_first": [1],
+        "b_first": [None],
+        "a_last": [2],
+        "b_last": [None],
+    }
+
+
+def test_binary_op_agg_context_no_simplify_expr_12423() -> None:
+    expect = pl.DataFrame({"x": [1], "y": [1]}, schema={"x": pl.Int64, "y": pl.Int32})
+
+    for simplify_expression in (True, False):
+        assert_frame_equal(
+            expect,
+            pl.LazyFrame({"x": [1]})
+            .group_by("x")
+            .agg(y=pl.lit(1) * pl.lit(1))
+            .collect(simplify_expression=simplify_expression),
+        )

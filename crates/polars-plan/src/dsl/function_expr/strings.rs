@@ -47,8 +47,8 @@ pub enum StringFunction {
         dtype: DataType,
         pat: String,
     },
-    #[cfg(feature = "string_from_radix")]
-    FromRadix(u32, bool),
+    #[cfg(feature = "string_to_integer")]
+    ToInteger(u32, bool),
     LenBytes,
     LenChars,
     Lowercase,
@@ -123,8 +123,8 @@ impl StringFunction {
             ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::Utf8))),
             #[cfg(feature = "extract_groups")]
             ExtractGroups { dtype, .. } => mapper.with_dtype(dtype.clone()),
-            #[cfg(feature = "string_from_radix")]
-            FromRadix { .. } => mapper.with_dtype(DataType::Int32),
+            #[cfg(feature = "string_to_integer")]
+            ToInteger { .. } => mapper.with_dtype(DataType::Int64),
             #[cfg(feature = "extract_jsonpath")]
             JsonExtract { dtype, .. } => mapper.with_opt_dtype(dtype.clone()),
             LenBytes => mapper.with_dtype(DataType::UInt32),
@@ -189,8 +189,8 @@ impl Display for StringFunction {
             ExtractAll => "extract_all",
             #[cfg(feature = "extract_groups")]
             ExtractGroups { .. } => "extract_groups",
-            #[cfg(feature = "string_from_radix")]
-            FromRadix { .. } => "from_radix",
+            #[cfg(feature = "string_to_integer")]
+            ToInteger { .. } => "to_integer",
             #[cfg(feature = "extract_jsonpath")]
             JsonExtract { .. } => "json_extract",
             LenBytes => "len_bytes",
@@ -312,8 +312,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             StripCharsEnd => map_as_slice!(strings::strip_chars_end),
             StripPrefix => map_as_slice!(strings::strip_prefix),
             StripSuffix => map_as_slice!(strings::strip_suffix),
-            #[cfg(feature = "string_from_radix")]
-            FromRadix(radix, strict) => map!(strings::from_radix, radix, strict),
+            #[cfg(feature = "string_to_integer")]
+            ToInteger(base, strict) => map!(strings::to_integer, base, strict),
             Slice(start, length) => map!(strings::str_slice, start, length),
             #[cfg(feature = "string_encoding")]
             HexEncode => map!(strings::hex_encode),
@@ -802,10 +802,10 @@ pub(super) fn replace(s: &[Series], literal: bool, n: i64) -> PolarsResult<Serie
     .map(|ca| ca.into_series())
 }
 
-#[cfg(feature = "string_from_radix")]
-pub(super) fn from_radix(s: &Series, radix: u32, strict: bool) -> PolarsResult<Series> {
+#[cfg(feature = "string_to_integer")]
+pub(super) fn to_integer(s: &Series, base: u32, strict: bool) -> PolarsResult<Series> {
     let ca = s.utf8()?;
-    ca.parse_int(radix, strict).map(|ok| ok.into_series())
+    ca.to_integer(base, strict).map(|ok| ok.into_series())
 }
 pub(super) fn str_slice(s: &Series, start: i64, length: Option<u64>) -> PolarsResult<Series> {
     let ca = s.utf8()?;

@@ -907,9 +907,11 @@ impl LazyFrame {
         if let Expr::Column(name) = index_column {
             options.index_column = name.as_ref().into();
         } else {
-            let name = expr_output_name(&index_column).unwrap();
+            let output_field = index_column
+                .to_field(&self.schema().unwrap(), Context::Default)
+                .unwrap();
             return self.with_column(index_column).group_by_rolling(
-                Expr::Column(name),
+                Expr::Column(Arc::from(output_field.name().as_str())),
                 by,
                 options,
             );
@@ -950,9 +952,11 @@ impl LazyFrame {
         if let Expr::Column(name) = index_column {
             options.index_column = name.as_ref().into();
         } else {
-            let name = expr_output_name(&index_column).unwrap();
+            let output_field = index_column
+                .to_field(&self.schema().unwrap(), Context::Default)
+                .unwrap();
             return self.with_column(index_column).group_by_dynamic(
-                Expr::Column(name),
+                Expr::Column(Arc::from(output_field.name().as_str())),
                 by,
                 options,
             );

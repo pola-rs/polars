@@ -3,7 +3,7 @@ use arrow::legacy::kernels::string::*;
 use base64::engine::general_purpose;
 #[cfg(feature = "string_encoding")]
 use base64::Engine as _;
-#[cfg(feature = "string_from_radix")]
+#[cfg(feature = "string_to_integer")]
 use polars_core::export::num::Num;
 use polars_core::export::regex::Regex;
 use polars_core::prelude::arity::*;
@@ -60,15 +60,14 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         ca.apply_values(|s| general_purpose::STANDARD.encode(s).into())
     }
 
-    #[cfg(feature = "string_from_radix")]
-    // Parse a string number with base _radix_ into a decimal (i32)
-    fn parse_int(&self, radix: u32, strict: bool) -> PolarsResult<Int32Chunked> {
-        use arrow::legacy::utils::CustomIterTools;
+    #[cfg(feature = "string_to_integer")]
+    // Parse a string number with base _radix_ into a decimal (i64)
+    fn to_integer(&self, base: u32, strict: bool) -> PolarsResult<Int64Chunked> {
         let ca = self.as_utf8();
-        let f = |opt_s: Option<&str>| -> Option<i32> {
-            opt_s.and_then(|s| <i32 as Num>::from_str_radix(s, radix).ok())
+        let f = |opt_s: Option<&str>| -> Option<i64> {
+            opt_s.and_then(|s| <i64 as Num>::from_str_radix(s, base).ok())
         };
-        let out: Int32Chunked = ca.into_iter().map(f).collect_trusted();
+        let out: Int64Chunked = ca.apply_generic(f);
 
         if strict && ca.null_count() != out.null_count() {
             let failure_mask = !ca.is_null() & out.is_null();
@@ -77,7 +76,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             let some_failures = all_failures.unique()?.slice(0, 10).sort(false);
             let some_error_msg = some_failures
                 .get(0)
-                .and_then(|s| <i32 as Num>::from_str_radix(s, radix).err())
+                .and_then(|s| <i64 as Num>::from_str_radix(s, base).err())
                 .map_or_else(
                     || unreachable!("failed to extract ParseIntError"),
                     |e| format!("{}", e),

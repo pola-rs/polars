@@ -709,6 +709,8 @@ impl Series {
             dt => panic!("date not implemented for {dt:?}"),
         }
     }
+
+    #[allow(unused_variables)]
     pub(crate) fn into_datetime(self, timeunit: TimeUnit, tz: Option<TimeZone>) -> Series {
         #[cfg(not(feature = "dtype-datetime"))]
         {
@@ -734,6 +736,7 @@ impl Series {
         }
     }
 
+    #[allow(unused_variables)]
     pub(crate) fn into_duration(self, timeunit: TimeUnit) -> Series {
         #[cfg(not(feature = "dtype-duration"))]
         {
@@ -852,7 +855,7 @@ impl Series {
         match self.dtype() {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(Some(rv)) => match &**rv {
-                RevMapping::Local(arr) => size += estimated_bytes_size(arr),
+                RevMapping::Local(arr, _) => size += estimated_bytes_size(arr),
                 RevMapping::Global(map, arr, _) => {
                     size +=
                         map.capacity() * std::mem::size_of::<u32>() * 2 + estimated_bytes_size(arr);
@@ -872,13 +875,11 @@ impl Series {
         let offsets = (0i64..(s.len() as i64 + 1)).collect::<Vec<_>>();
         let offsets = unsafe { Offsets::new_unchecked(offsets) };
 
-        let new_arr = LargeListArray::new(
-            DataType::List(Box::new(s.dtype().clone())).to_arrow(),
-            offsets.into(),
-            values,
-            None,
-        );
-        ListChunked::with_chunk(s.name(), new_arr)
+        let data_type = LargeListArray::default_datatype(s.dtype().to_physical().to_arrow());
+        let new_arr = LargeListArray::new(data_type, offsets.into(), values, None);
+        let mut out = ListChunked::with_chunk(s.name(), new_arr);
+        out.set_inner_dtype(s.dtype().clone());
+        out
     }
 }
 

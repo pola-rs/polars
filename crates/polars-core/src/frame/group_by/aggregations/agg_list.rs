@@ -59,7 +59,7 @@ where
 
                     let mut count = 0;
                     groups.iter().for_each(|(_, idx)| {
-                        for i in idx {
+                        for i in idx.as_slice() {
                             if !old_validity.get_bit_unchecked(*i as usize) {
                                 validity.set_bit_unchecked(count, false)
                             }

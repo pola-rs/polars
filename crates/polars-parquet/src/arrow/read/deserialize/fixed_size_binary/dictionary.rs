@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use arrow::array::{Array, DictionaryArray, DictionaryKey, FixedSizeBinaryArray};
 use arrow::bitmap::MutableBitmap;
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 use super::super::dictionary::*;
@@ -19,7 +19,7 @@ where
     K: DictionaryKey,
 {
     iter: I,
-    data_type: DataType,
+    data_type: ArrowDataType,
     values: Option<Box<dyn Array>>,
     items: VecDeque<(Vec<K>, MutableBitmap)>,
     remaining: usize,
@@ -31,7 +31,12 @@ where
     K: DictionaryKey,
     I: Pages,
 {
-    pub fn new(iter: I, data_type: DataType, num_rows: usize, chunk_size: Option<usize>) -> Self {
+    pub fn new(
+        iter: I,
+        data_type: ArrowDataType,
+        num_rows: usize,
+        chunk_size: Option<usize>,
+    ) -> Self {
         Self {
             iter,
             data_type,
@@ -43,9 +48,9 @@ where
     }
 }
 
-fn read_dict(data_type: DataType, dict: &DictPage) -> Box<dyn Array> {
+fn read_dict(data_type: ArrowDataType, dict: &DictPage) -> Box<dyn Array> {
     let data_type = match data_type {
-        DataType::Dictionary(_, values, _) => *values,
+        ArrowDataType::Dictionary(_, values, _) => *values,
         _ => data_type,
     };
 
@@ -91,7 +96,7 @@ where
 {
     iter: I,
     init: Vec<InitNested>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     values: Option<Box<dyn Array>>,
     items: VecDeque<(NestedState, (Vec<K>, MutableBitmap))>,
     remaining: usize,
@@ -106,7 +111,7 @@ where
     pub fn new(
         iter: I,
         init: Vec<InitNested>,
-        data_type: DataType,
+        data_type: ArrowDataType,
         num_rows: usize,
         chunk_size: Option<usize>,
     ) -> Self {

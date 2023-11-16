@@ -5,7 +5,7 @@ use polars_error::{polars_bail, PolarsResult};
 use crate::array::{Array, BinaryArray, BooleanArray, PrimitiveArray, Utf8Array};
 use crate::bitmap::utils::{BitChunkIterExact, BitChunksExact};
 use crate::bitmap::Bitmap;
-use crate::datatypes::{DataType, PhysicalType, PrimitiveType};
+use crate::datatypes::{ArrowDataType, PhysicalType, PrimitiveType};
 use crate::offset::Offset;
 use crate::scalar::*;
 use crate::types::simd::*;
@@ -367,7 +367,7 @@ pub fn min(array: &dyn Array) -> PolarsResult<Box<dyn Scalar>> {
 }
 
 /// Whether [`min`] supports `data_type`
-pub fn can_min(data_type: &DataType) -> bool {
+pub fn can_min(data_type: &ArrowDataType) -> bool {
     let physical = data_type.to_physical_type();
     if let PhysicalType::Primitive(primitive) = physical {
         use PrimitiveType::*;
@@ -382,6 +382,6 @@ pub fn can_min(data_type: &DataType) -> bool {
 }
 
 /// Whether [`max`] supports `data_type`
-pub fn can_max(data_type: &DataType) -> bool {
+pub fn can_max(data_type: &ArrowDataType) -> bool {
     can_min(data_type)
 }

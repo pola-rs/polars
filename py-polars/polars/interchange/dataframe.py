@@ -82,7 +82,7 @@ class PolarsDataFrame(InterchangeDataFrame):
         """
         Return the number of chunks the dataframe consists of.
 
-        It is possible for a Polars dataframe to consist of columns with a varying
+        It is possible for a Polars DataFrame to consist of columns with a varying
         number of chunks. This method returns the number of chunks of the first
         column.
 

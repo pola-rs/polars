@@ -816,6 +816,12 @@ impl Expr {
         self.map_private(FunctionExpr::Round { decimals })
     }
 
+    /// Round to a number of significant figures.
+    #[cfg(feature = "round_series")]
+    pub fn round_sig_figs(self, digits: i32) -> Self {
+        self.map_private(FunctionExpr::RoundSF { digits })
+    }
+
     /// Floor underlying floating point array to the lowest integers smaller or equal to the float value.
     #[cfg(feature = "round_series")]
     pub fn floor(self) -> Self {
@@ -1182,72 +1188,22 @@ impl Expr {
     fn finish_rolling(
         self,
         options: RollingOptions,
-        expr_name: &'static str,
-        expr_name_by: &'static str,
-        rolling_fn: Arc<
-            dyn (Fn(&Series, RollingOptionsImpl) -> PolarsResult<Series>) + Send + Sync,
-        >,
-        output_type: GetOutput,
+        rolling_function: fn(RollingOptions) -> RollingFunction,
+        rolling_function_by: fn(RollingOptions) -> RollingFunction,
     ) -> Expr {
         if let Some(ref by) = options.by {
-            self.apply_many(
-                move |s| {
-                    let mut by = s[1].clone();
-                    by = by.rechunk();
-                    let s = &s[0];
-
-                    polars_ensure!(
-                        options.weights.is_none(),
-                        ComputeError: "`weights` is not supported in 'rolling by' expression"
-                    );
-                    let (by, tz) = match by.dtype() {
-                        DataType::Datetime(tu, tz) => {
-                            (by.cast(&DataType::Datetime(*tu, None))?, tz)
-                        },
-                        DataType::Date => (
-                            by.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
-                            &None,
-                        ),
-                        dt => polars_bail!(opq = expr_name, got = dt, expected = "date/datetime"),
-                    };
-                    ensure_sorted_arg(&by, expr_name)?;
-                    let by = by.datetime().unwrap();
-                    let by_values = by.cont_slice().map_err(|_| {
-                        polars_err!(
-                            ComputeError:
-                            "`by` column should not have null values in 'rolling by' expression"
-                        )
-                    })?;
-                    let tu = by.time_unit();
-
-                    let options = RollingOptionsImpl {
-                        window_size: options.window_size,
-                        min_periods: options.min_periods,
-                        weights: None,
-                        center: options.center,
-                        by: Some(by_values),
-                        tu: Some(tu),
-                        tz: tz.as_ref(),
-                        closed_window: options.closed_window,
-                        fn_params: options.fn_params.clone(),
-                    };
-
-                    rolling_fn(s, options).map(Some)
-                },
-                &[col(by)],
-                output_type,
+            let name = by.clone();
+            self.apply_many_private(
+                FunctionExpr::RollingExpr(rolling_function_by(options)),
+                &[col(&name)],
+                true,
+                false,
             )
-            .with_fmt(expr_name_by)
         } else {
             if !options.window_size.parsed_int {
                 panic!("if dynamic windows are used in a rolling aggregation, the 'by' argument must be set")
             }
-
-            self.apply(
-                move |s| rolling_fn(&s, options.clone().into()).map(Some),
-                output_type,
-            )
-            .with_fmt(expr_name)
+            self.apply_private(FunctionExpr::RollingExpr(rolling_function(options)))
         }
     }
 
@@ -1256,13 +1212,7 @@ impl Expr {
     /// See: [`RollingAgg::rolling_min`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_min(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(
-            options,
-            "rolling_min",
-            "rolling_min_by",
-            Arc::new(|s, options| s.rolling_min(options)),
-            GetOutput::same_type(),
-        )
+        self.finish_rolling(options, RollingFunction::Min, RollingFunction::MinBy)
     }
 
     /// Apply a rolling maximum.
@@ -1270,13 +1220,7 @@ impl Expr {
     /// See: [`RollingAgg::rolling_max`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_max(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(
-            options,
-            "rolling_max",
-            "rolling_max_by",
-            Arc::new(|s, options| s.rolling_max(options)),
-            GetOutput::same_type(),
-        )
+        self.finish_rolling(options, RollingFunction::Max, RollingFunction::MaxBy)
     }
 
     /// Apply a rolling mean.
@@ -1284,13 +1228,7 @@ impl Expr {
     /// See: [`RollingAgg::rolling_mean`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_mean(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(
-            options,
-            "rolling_mean",
-            "rolling_mean_by",
-            Arc::new(|s, options| s.rolling_mean(options)),
-            GetOutput::float_type(),
-        )
+        self.finish_rolling(options, RollingFunction::Mean, RollingFunction::MeanBy)
     }
 
     /// Apply a rolling sum.
@@ -1298,13 +1236,7 @@ impl Expr {
     /// See: [`RollingAgg::rolling_sum`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_sum(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(
-            options,
-            "rolling_sum",
-            "rolling_sum_by",
-            Arc::new(|s, options| s.rolling_sum(options)),
-            GetOutput::same_type(),
-        )
+        self.finish_rolling(options, RollingFunction::Sum, RollingFunction::SumBy)
     }
 
     /// Apply a rolling median.
@@ -1312,13 +1244,7 @@ impl Expr {
     /// See: [`RollingAgg::rolling_median`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_median(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(
-            options,
-            "rolling_median",
-            "rolling_median_by",
-            Arc::new(|s, options| s.rolling_median(options)),
-            GetOutput::same_type(),
-        )
+        self.finish_rolling(options, RollingFunction::Median, RollingFunction::MedianBy)
     }
 
     /// Apply a rolling quantile.
@@ -1328,42 +1254,31 @@ impl Expr {
     pub fn rolling_quantile(self, options: RollingOptions) -> Expr {
         self.finish_rolling(
             options,
-            "rolling_quantile",
-            "rolling_quantile_by",
-            Arc::new(|s, options| s.rolling_quantile(options)),
-            GetOutput::float_type(),
+            RollingFunction::Quantile,
+            RollingFunction::QuantileBy,
         )
     }
 
     /// Apply a rolling variance.
     #[cfg(feature = "rolling_window")]
     pub fn rolling_var(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(
-            options,
-            "rolling_var",
-            "rolling_var_by",
-            Arc::new(|s, options| s.rolling_var(options)),
-            GetOutput::float_type(),
-        )
+        self.finish_rolling(options, RollingFunction::Var, RollingFunction::VarBy)
     }
 
     /// Apply a rolling std-dev.
     #[cfg(feature = "rolling_window")]
     pub fn rolling_std(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(
-            options,
-            "rolling_std",
-            "rolling_std_by",
-            Arc::new(|s, options| s.rolling_std(options)),
-            GetOutput::float_type(),
-        )
+        self.finish_rolling(options, RollingFunction::Std, RollingFunction::StdBy)
     }
 
     /// Apply a rolling skew.
     #[cfg(feature = "rolling_window")]
     #[cfg(feature = "moment")]
     pub fn rolling_skew(self, window_size: usize, bias: bool) -> Expr {
-        self.apply_private(FunctionExpr::RollingSkew { window_size, bias })
+        self.apply_private(FunctionExpr::RollingExpr(RollingFunction::Skew(
+            window_size,
+            bias,
+        )))
     }
 
     #[cfg(feature = "rolling_window")]

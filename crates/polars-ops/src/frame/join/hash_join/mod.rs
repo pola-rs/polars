@@ -9,7 +9,6 @@ mod single_keys_semi_anti;
 pub(super) mod sort_merge;
 mod zip_outer;
 
-pub use args::*;
 pub use multiple_keys::private_left_join_multiple_keys;
 pub(super) use multiple_keys::*;
 use polars_core::utils::{_set_partition_size, slice_slice, split_ca};
@@ -42,44 +41,17 @@ pub fn default_join_ids() -> ChunkJoinOptIds {
 macro_rules! det_hash_prone_order {
     ($self:expr, $other:expr) => {{
         // The shortest relation will be used to create a hash table.
-        let left_first = $self.len() > $other.len();
-        let a;
-        let b;
-        if left_first {
-            a = $self;
-            b = $other;
+        if $self.len() > $other.len() {
+            ($self, $other, false)
         } else {
-            b = $self;
-            a = $other;
+            ($other, $self, true)
         }
-
-        (a, b, !left_first)
     }};
 }
 
 #[cfg(feature = "performant")]
 use arrow::legacy::conversion::primitive_to_vec;
 pub(super) use det_hash_prone_order;
-use polars_utils::hash_to_partition;
-
-pub(super) unsafe fn get_hash_tbl_threaded_join_partitioned<Item>(
-    h: u64,
-    hash_tables: &[Item],
-    len: u64,
-) -> &Item {
-    let i = hash_to_partition(h, len as usize);
-    hash_tables.get_unchecked(i)
-}
-
-#[allow(clippy::type_complexity)]
-unsafe fn get_hash_tbl_threaded_join_mut_partitioned<T, H>(
-    h: u64,
-    hash_tables: &mut [HashMap<T, (bool, Vec<IdxSize>), H>],
-    len: u64,
-) -> &mut HashMap<T, (bool, Vec<IdxSize>), H> {
-    let i = hash_to_partition(h, len as usize);
-    hash_tables.get_unchecked_mut(i)
-}
 
 pub trait JoinDispatch: IntoDf {
     /// # Safety
@@ -310,31 +282,7 @@ pub trait JoinDispatch: IntoDf {
         );
 
         let s = unsafe {
-            zip_outer_join_column(
-                &s_left.to_physical_repr(),
-                &s_right.to_physical_repr(),
-                opt_join_tuples,
-            )
-            .with_name(s_left.name())
-        };
-        let s = match s_left.dtype() {
-            #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => {
-                let ca_left = s_left.categorical().unwrap();
-                let new_rev_map = ca_left._merge_categorical_map(s_right.categorical().unwrap())?;
-                let logical = s.u32().unwrap().clone();
-                // safety:
-                // categorical maps are merged
-                unsafe {
-                    CategoricalChunked::from_cats_and_rev_map_unchecked(logical, new_rev_map)
-                        .into_series()
-                }
-            },
-            dt @ DataType::Datetime(_, _)
-            | dt @ DataType::Time
-            | dt @ DataType::Date
-            | dt @ DataType::Duration(_) => s.cast(dt).unwrap(),
-            _ => s,
+            zip_outer_join_column(s_left, s_right, opt_join_tuples).with_name(s_left.name())
         };
 
         unsafe { df_left.get_columns_mut().insert(join_column_index, s) };

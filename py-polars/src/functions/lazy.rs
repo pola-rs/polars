@@ -188,8 +188,8 @@ pub fn count() -> PyExpr {
 }
 
 #[pyfunction]
-pub fn cov(a: PyExpr, b: PyExpr) -> PyExpr {
-    dsl::cov(a.inner, b.inner).into()
+pub fn cov(a: PyExpr, b: PyExpr, ddof: u8) -> PyExpr {
+    dsl::cov(a.inner, b.inner, ddof).into()
 }
 
 #[pyfunction]

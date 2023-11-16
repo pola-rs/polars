@@ -42,14 +42,13 @@ pub(crate) use crate::frame::group_by::aggregations::*;
 #[cfg(feature = "algorithm_group_by")]
 pub use crate::frame::group_by::{GroupsIdx, GroupsProxy, GroupsSlice, IntoGroupsProxy};
 pub use crate::frame::{DataFrame, UniqueKeepStrategy};
-pub use crate::hashing::{FxHash, VecHash};
+pub use crate::hashing::VecHash;
 pub use crate::named_from::{NamedFrom, NamedFromOwned};
 pub use crate::schema::*;
 #[cfg(feature = "checked_arithmetic")]
 pub use crate::series::arithmetic::checked::NumOpsDispatchChecked;
 pub use crate::series::arithmetic::{LhsNumOps, NumOpsDispatch};
 pub use crate::series::{IntoSeries, Series, SeriesTrait};
-pub use crate::testing::*;
 pub(crate) use crate::utils::CustomIterTools;
 pub use crate::utils::IntoVec;
 pub use crate::{datatypes, df};

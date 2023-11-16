@@ -64,7 +64,7 @@ rustup toolchain install nightly --component miri
 ```
 
 Next, install Python, for example using [pyenv](https://github.com/pyenv/pyenv#installation).
-We recommend using the latest Python version (`3.11`).
+We recommend using the latest Python version (`3.12`).
 Make sure you deactivate any active virtual environments or conda environments, as the steps below will create a new virtual environment for Polars.
 You will need Python even if you intend to work on the Rust code only, as we rely on the Python tests to verify all functionality.
 

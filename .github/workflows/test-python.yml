@@ -26,14 +26,19 @@ env:
 defaults:
   run:
     working-directory: py-polars
+    shell: bash
 
 jobs:
   ubuntu:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.8', '3.11']
+        os: [ubuntu-latest]
+        python-version: ['3.8', '3.11', '3.12']
+        include:
+          - os: windows-latest
+            python-version: '3.12'
 
     steps:
       - uses: actions/checkout@v4
@@ -47,9 +52,11 @@ jobs:
         uses: ts-graphviz/setup-graphviz@v1
 
       - name: Create virtual environment
+        env:
+          BIN: ${{ matrix.os == 'windows-latest' && 'Scripts' || 'bin' }}
         run: |
           python -m venv .venv
-          echo "$GITHUB_WORKSPACE/py-polars/.venv/bin" >> $GITHUB_PATH
+          echo "$GITHUB_WORKSPACE/py-polars/.venv/$BIN" >> $GITHUB_PATH
 
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
@@ -70,20 +77,25 @@ jobs:
 
       - name: Run tests and report coverage
         if: github.ref_name != 'main'
-        run: pytest --cov -n auto --dist loadgroup -m "not benchmark and not docs"
+        env:
+          # TODO: Re-enable coverage for for Ubuntu + Python 3.12 tests
+          # Currently skipped due to performance issues in coverage:
+          # https://github.com/nedbat/coveragepy/issues/1665
+          COV: ${{ !(matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12') && '--cov' || '' }}
+        run: pytest $COV -n auto --dist loadgroup -m "not benchmark and not docs"
 
       - name: Run tests async reader tests
-        if: github.ref_name != 'main'
+        if: github.ref_name != 'main' && matrix.os != 'windows-latest'
         run: POLARS_FORCE_ASYNC=1 pytest -m "not benchmark and not docs" tests/unit/io/
 
       - name: Run doctests
-        if: github.ref_name != 'main'
+        if: github.ref_name != 'main' && matrix.python-version == '3.12' && matrix.os == 'ubuntu-latest'
         run: |
           python tests/docs/run_doctest.py
           pytest tests/docs/test_user_guide.py -m docs
 
       - name: Check import without optional dependencies
-        if: github.ref_name != 'main'
+        if: github.ref_name != 'main' && matrix.python-version == '3.12' && matrix.os == 'ubuntu-latest'
         run: |
           declare -a deps=("pandas"
           "pyarrow"
@@ -101,50 +113,3 @@ jobs:
             pip uninstall "$d" -y
             python -c 'import polars'
           done
-
-  windows:
-    runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ['3.11']
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install Python dependencies
-        run: pip install -r requirements-dev.txt
-
-      - name: Set up Rust
-        run: rustup show
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: py-polars
-          save-if: ${{ github.ref_name == 'main' }}
-
-      - name: Install Polars
-        shell: bash
-        run: |
-          maturin build
-          pip install target/wheels/polars-*.whl
-
-      - name: Run tests
-        if: github.ref_name != 'main'
-        run: pytest -n auto --dist loadgroup -m "not benchmark and not docs"
-
-      - name: Check import without optional dependencies
-        if: github.ref_name != 'main'
-        run: |
-          pip uninstall pandas -y
-          python -c 'import polars'
-          pip uninstall numpy -y
-          python -c 'import polars'
-          pip uninstall pyarrow -y
-          python -c 'import polars'

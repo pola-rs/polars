@@ -9,11 +9,11 @@ use crate::array::indexable::{AsIndexed, Indexable};
 use crate::array::primitive::MutablePrimitiveArray;
 use crate::array::{Array, MutableArray, TryExtend, TryPush};
 use crate::bitmap::MutableBitmap;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 #[derive(Debug)]
 pub struct MutableDictionaryArray<K: DictionaryKey, M: MutableArray> {
-    data_type: DataType,
+    data_type: ArrowDataType,
     map: ValueMap<K, M>,
     // invariant: `max(keys) < map.values().len()`
     keys: MutablePrimitiveArray<K>,
@@ -70,7 +70,7 @@ impl<K: DictionaryKey, M: MutableArray> MutableDictionaryArray<K, M> {
     fn from_value_map(value_map: ValueMap<K, M>) -> Self {
         let keys = MutablePrimitiveArray::<K>::new();
         let data_type =
-            DataType::Dictionary(K::KEY_TYPE, Box::new(value_map.data_type().clone()), false);
+            ArrowDataType::Dictionary(K::KEY_TYPE, Box::new(value_map.data_type().clone()), false);
         Self {
             data_type,
             map: value_map,
@@ -159,7 +159,7 @@ impl<K: DictionaryKey, M: 'static + MutableArray> MutableArray for MutableDictio
         Arc::new(self.take_into())
     }
 
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 

@@ -18,7 +18,6 @@ def test_dtype() -> None:
     # inferred
     a = pl.Series("a", [[1, 2, 3], [2, 5], [6, 7, 8, 9]])
     assert a.dtype == pl.List
-    assert a.inner_dtype == pl.Int64
     assert a.dtype.inner == pl.Int64  # type: ignore[union-attr]
     assert a.dtype.is_(pl.List(pl.Int64))
 
@@ -76,8 +75,8 @@ def test_categorical() -> None:
         .to_series(3)
     )
 
-    assert out.inner_dtype == pl.Categorical
-    assert out.inner_dtype not in pl.NESTED_DTYPES
+    assert out.dtype.inner == pl.Categorical  # type: ignore[union-attr]
+    assert out.dtype.inner not in pl.NESTED_DTYPES  # type: ignore[union-attr]
 
 
 def test_cast_inner() -> None:
@@ -187,6 +186,21 @@ def test_inner_type_categorical_on_rechunk() -> None:
     )
 
     assert pl.concat([df, df], rechunk=True).dtypes == [pl.List(pl.Categorical)]
+
+
+def test_local_categorical_list() -> None:
+    values = [["a", "b"], ["c"], ["a", "d", "d"]]
+    s = pl.Series(values, dtype=pl.List(pl.Categorical))
+    assert s.dtype == pl.List
+    assert s.dtype.inner == pl.Categorical  # type: ignore[union-attr]
+    assert s.to_list() == values
+
+    # Check that underlying physicals match
+    idx_df = pl.Series([[0, 1], [2], [0, 3, 3]], dtype=pl.List(pl.UInt32))
+    assert_series_equal(s.cast(pl.List(pl.UInt32)), idx_df)
+
+    # Check if the categories array does not overlap
+    assert s.list.explode().cat.get_categories().to_list() == ["a", "b", "c", "d"]
 
 
 def test_group_by_list_column() -> None:
@@ -603,3 +617,10 @@ def test_list_series_construction_with_dtype_11849_11878() -> None:
         [{"1": "A", "2": None}],
         [{"1": "B", "2": "C"}, {"1": "D", "2": "E"}],
     ]
+
+
+def test_as_list_logical_type() -> None:
+    df = pl.select(timestamp=pl.date(2000, 1, 1), value=0)
+    assert df.group_by(True).agg(
+        pl.col("timestamp").take(pl.col("value").arg_max())
+    ).to_dict(as_series=False) == {"literal": [True], "timestamp": [[date(2000, 1, 1)]]}

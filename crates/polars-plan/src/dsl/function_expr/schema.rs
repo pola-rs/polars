@@ -49,8 +49,18 @@ impl FunctionExpr {
             #[cfg(feature = "sign")]
             Sign => mapper.with_dtype(DataType::Int64),
             FillNull { super_type, .. } => mapper.with_dtype(super_type.clone()),
-            #[cfg(all(feature = "rolling_window", feature = "moment"))]
-            RollingSkew { .. } => mapper.map_to_float_dtype(),
+            #[cfg(feature = "rolling_window")]
+            RollingExpr(rolling_func, ..) => {
+                use RollingFunction::*;
+                match rolling_func {
+                    Min(_) | MinBy(_) | Max(_) | MaxBy(_) | Sum(_) | SumBy(_) | Median(_)
+                    | MedianBy(_) => mapper.with_same_dtype(),
+                    Mean(_) | MeanBy(_) | Quantile(_) | QuantileBy(_) | Var(_) | VarBy(_)
+                    | Std(_) | StdBy(_) => mapper.map_to_float_dtype(),
+                    #[cfg(feature = "moment")]
+                    Skew(..) => mapper.map_to_float_dtype(),
+                }
+            },
             ShiftAndFill => mapper.with_same_dtype(),
             DropNans => mapper.with_same_dtype(),
             DropNulls => mapper.with_same_dtype(),
@@ -133,7 +143,7 @@ impl FunctionExpr {
                     if dt.is_numeric() {
                         if dt.is_float() {
                             DataType::Float32
-                        } else if dt.is_unsigned() {
+                        } else if dt.is_unsigned_integer() {
                             DataType::Int8
                         } else {
                             DataType::UInt8
@@ -147,11 +157,12 @@ impl FunctionExpr {
             Entropy { .. } | Log { .. } | Log1p | Exp => mapper.map_to_float_dtype(),
             Unique(_) => mapper.with_same_dtype(),
             #[cfg(feature = "round_series")]
-            Round { .. } | Floor | Ceil => mapper.with_same_dtype(),
+            Round { .. } | RoundSF { .. } | Floor | Ceil => mapper.with_same_dtype(),
             UpperBound | LowerBound => mapper.with_same_dtype(),
             #[cfg(feature = "fused")]
             Fused(_) => mapper.map_to_supertype(),
             ConcatExpr(_) => mapper.map_to_supertype(),
+            #[cfg(feature = "cov")]
             Correlation { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "peaks")]
             PeakMin => mapper.with_same_dtype(),
@@ -218,7 +229,7 @@ impl FunctionExpr {
             SetSortedFlag(_) => mapper.with_same_dtype(),
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => unsafe {
-                plugin::plugin_field(fields, lib, &format!("__polars_field_{}", symbol.as_ref()))
+                plugin::plugin_field(fields, lib, symbol.as_ref())
             },
             BackwardFill { .. } => mapper.with_same_dtype(),
             ForwardFill { .. } => mapper.with_same_dtype(),

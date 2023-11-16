@@ -23,12 +23,16 @@ def adbc_sqlite_driver_version(*args: Any, **kwargs: Any) -> str:
     return "n/a"
 
 
-@pytest.mark.write_disk()
-@pytest.mark.parametrize("engine", ["adbc", "sqlalchemy"])
+@pytest.mark.skipif(
+    sys.version_info > (3, 11),
+    reason="connectorx cannot be installed on Python 3.12 yet.",
+)
 @pytest.mark.skipif(
     sys.version_info < (3, 9) or sys.platform == "win32",
     reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
 )
+@pytest.mark.write_disk()
+@pytest.mark.parametrize("engine", ["adbc", "sqlalchemy"])
 def test_write_database_create(engine: DbWriteEngine, tmp_path: Path) -> None:
     df = pl.DataFrame(
         {
@@ -51,12 +55,16 @@ def test_write_database_create(engine: DbWriteEngine, tmp_path: Path) -> None:
     assert_frame_equal(result, df)
 
 
-@pytest.mark.write_disk()
-@pytest.mark.parametrize("engine", ["adbc", "sqlalchemy"])
+@pytest.mark.skipif(
+    sys.version_info > (3, 11),
+    reason="connectorx cannot be installed on Python 3.12 yet.",
+)
 @pytest.mark.skipif(
     sys.version_info < (3, 9) or sys.platform == "win32",
     reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
 )
+@pytest.mark.write_disk()
+@pytest.mark.parametrize("engine", ["adbc", "sqlalchemy"])
 def test_write_database_append(engine: DbWriteEngine, tmp_path: Path) -> None:
     df = pl.DataFrame(
         {
@@ -96,6 +104,10 @@ def test_write_database_append(engine: DbWriteEngine, tmp_path: Path) -> None:
     assert_frame_equal(result, pl.concat([df, df]))
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 9) or sys.platform == "win32",
+    reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
+)
 @pytest.mark.write_disk()
 @pytest.mark.parametrize(
     "engine",
@@ -106,12 +118,14 @@ def test_write_database_append(engine: DbWriteEngine, tmp_path: Path) -> None:
                 reason="ADBC SQLite driver has a bug with quoted/qualified table names",
             ),
         ),
-        "sqlalchemy",
+        pytest.param(
+            "sqlalchemy",
+            marks=pytest.mark.skipif(
+                sys.version_info > (3, 11),
+                reason="connectorx cannot be installed on Python 3.12 yet.",
+            ),
+        ),
     ],
-)
-@pytest.mark.skipif(
-    sys.version_info < (3, 9) or sys.platform == "win32",
-    reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
 )
 def test_write_database_create_quoted_tablename(
     engine: DbWriteEngine, tmp_path: Path

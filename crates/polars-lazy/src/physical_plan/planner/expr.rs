@@ -339,12 +339,22 @@ pub(crate) fn create_physical_expr(
                         },
                         AAggExpr::First(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                             let s = std::mem::take(&mut s[0]);
-                            Ok(Some(s.head(Some(1))))
+                            let out = if s.is_empty() {
+                                Series::full_null(s.name(), 1, s.dtype())
+                            } else {
+                                s.head(Some(1))
+                            };
+                            Ok(Some(out))
                         })
                             as Arc<dyn SeriesUdf>),
                         AAggExpr::Last(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                             let s = std::mem::take(&mut s[0]);
-                            Ok(Some(s.tail(Some(1))))
+                            let out = if s.is_empty() {
+                                Series::full_null(s.name(), 1, s.dtype())
+                            } else {
+                                s.tail(Some(1))
+                            };
+                            Ok(Some(out))
                         })
                             as Arc<dyn SeriesUdf>),
                         AAggExpr::Mean(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {

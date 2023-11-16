@@ -22,12 +22,6 @@ from typing import (
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import (
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
-    NUMERIC_DTYPES,
-    SIGNED_INTEGER_DTYPES,
-    TEMPORAL_DTYPES,
-    UNSIGNED_INTEGER_DTYPES,
     Array,
     Boolean,
     Categorical,
@@ -88,6 +82,7 @@ from polars.utils.convert import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
+    _timedelta_to_pl_timedelta,
 )
 from polars.utils.deprecation import (
     deprecate_function,
@@ -161,7 +156,7 @@ class Series:
     Parameters
     ----------
     name : str, default None
-        Name of the series. Will be used as a column name when used in a DataFrame.
+        Name of the Series. Will be used as a column name when used in a DataFrame.
         When not specified, name is set to an empty string.
     values : ArrayLike, default None
         One-dimensional data in various forms. Supported are: Sequence, Series,
@@ -409,7 +404,14 @@ class Series:
         DataType
 
         """
-        return self._s.inner_dtype()
+        issue_deprecation_warning(
+            "`Series.inner_dtype` is deprecated. Use `Series.dtype.inner` instead.",
+            version="0.19.14",
+        )
+        try:
+            return self.dtype.inner  # type: ignore[union-attr]
+        except AttributeError:
+            return None
 
     @property
     def name(self) -> str:
@@ -482,12 +484,14 @@ class Series:
                 return self.clone()
             elif (other is False and op == "eq") or (other is True and op == "neq"):
                 return ~self
-        elif isinstance(other, float) and self.dtype in INTEGER_DTYPES:
+
+        elif isinstance(other, float) and self.dtype.is_integer():
             # require upcast when comparing int series to float value
             self = self.cast(Float64)
             f = get_ffi_func(op + "_<>", Float64, self._s)
             assert f is not None
             return self._from_pyseries(f(other))
+
         elif isinstance(other, datetime):
             if self.dtype == Date:
                 # require upcast when comparing date series to datetime
@@ -503,24 +507,35 @@ class Series:
                 time_unit = self.dtype.time_unit  # type: ignore[union-attr]
             else:
                 raise ValueError(
-                    f"cannot compare datetime.datetime to series of type {self.dtype}"
+                    f"cannot compare datetime.datetime to Series of type {self.dtype}"
                 )
             ts = _datetime_to_pl_timestamp(other, time_unit)  # type: ignore[arg-type]
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(ts))
+
         elif isinstance(other, time) and self.dtype == Time:
             d = _time_to_pl_time(other)
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(d))
+
+        elif isinstance(other, timedelta) and self.dtype == Duration:
+            time_unit = self.dtype.time_unit  # type: ignore[union-attr]
+            td = _timedelta_to_pl_timedelta(other, time_unit)  # type: ignore[arg-type]
+            f = get_ffi_func(op + "_<>", Int64, self._s)
+            assert f is not None
+            return self._from_pyseries(f(td))
+
         elif self.dtype == Categorical and not isinstance(other, Series):
             other = Series([other])
+
         elif isinstance(other, date) and self.dtype == Date:
             d = _date_to_pl_date(other)
             f = get_ffi_func(op + "_<>", Int32, self._s)
             assert f is not None
             return self._from_pyseries(f(d))
+
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, dtype_if_empty=self.dtype)
         if isinstance(other, Series):
@@ -740,7 +755,7 @@ class Series:
             return self._from_pyseries(getattr(self._s, op_s)(Series(other)._s))
         if (
             isinstance(other, (float, date, datetime, timedelta, str))
-            and not self.is_float()
+            and not self.dtype.is_float()
         ):
             _s = sequence_to_pyseries(self.name, [other])
             if "rhs" in op_ffi:
@@ -752,7 +767,7 @@ class Series:
             f = get_ffi_func(op_ffi, self.dtype, self._s)
         if f is None:
             raise TypeError(
-                f"cannot do arithmetic with series of dtype: {self.dtype!r} and argument"
+                f"cannot do arithmetic with Series of dtype: {self.dtype!r} and argument"
                 f" of type: {type(other).__name__!r}"
             )
         return self._from_pyseries(f(other))
@@ -802,11 +817,11 @@ class Series:
     def __truediv__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self) / other
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError("first cast to integer before dividing datelike dtypes")
 
         # this branch is exactly the floordiv function without rounding the floats
-        if self.is_float() or self.dtype == Decimal:
+        if self.dtype.is_float() or self.dtype == Decimal:
             return self._arithmetic(other, "div", "div_<>")
 
         return self.cast(Float64) / other
@@ -822,7 +837,7 @@ class Series:
     def __floordiv__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self) // other
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError("first cast to integer before dividing datelike dtypes")
 
         if not isinstance(other, pl.Expr):
@@ -847,7 +862,7 @@ class Series:
     def __mul__(self, other: Any) -> Series | DataFrame | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self) * other
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError("first cast to integer before multiplying datelike dtypes")
         elif isinstance(other, pl.DataFrame):
             return other * self
@@ -865,14 +880,14 @@ class Series:
     def __mod__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__mod__(other)
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError(
                 "first cast to integer before applying modulo on datelike dtypes"
             )
         return self._arithmetic(other, "rem", "rem_<>")
 
     def __rmod__(self, other: Any) -> Series:
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError(
                 "first cast to integer before applying modulo on datelike dtypes"
             )
@@ -887,9 +902,9 @@ class Series:
         return self._arithmetic(other, "sub", "sub_<>_rhs")
 
     def __rtruediv__(self, other: Any) -> Series:
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError("first cast to integer before dividing datelike dtypes")
-        if self.is_float():
+        if self.dtype.is_float():
             self.__rfloordiv__(other)
 
         if isinstance(other, int):
@@ -897,12 +912,12 @@ class Series:
         return self.cast(Float64).__rfloordiv__(other)
 
     def __rfloordiv__(self, other: Any) -> Series:
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError("first cast to integer before dividing datelike dtypes")
         return self._arithmetic(other, "div", "div_<>_rhs")
 
     def __rmul__(self, other: Any) -> Series:
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError("first cast to integer before multiplying datelike dtypes")
         return self._arithmetic(other, "mul", "mul_<>")
 
@@ -910,7 +925,7 @@ class Series:
         return self.pow(exponent)
 
     def __rpow__(self, other: Any) -> Series:
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
@@ -980,7 +995,7 @@ class Series:
         if self.dtype == idx_type:
             return self
 
-        if self.dtype not in INTEGER_DTYPES:
+        if not self.dtype.is_integer():
             raise NotImplementedError("unsupported idxs datatype")
 
         if self.len() == 0:
@@ -994,7 +1009,7 @@ class Series:
                 if self.min() < -(2**32):  # type: ignore[operator]
                     raise ValueError("index positions should be bigger than -2^32 + 1")
 
-        if self.dtype in SIGNED_INTEGER_DTYPES:
+        if self.dtype.is_signed_integer():
             if self.min() < 0:  # type: ignore[operator]
                 if idx_type == UInt32:
                     idxs = self.cast(Int32) if self.dtype in {Int8, Int16} else self
@@ -1035,7 +1050,7 @@ class Series:
         self,
         item: (int | Series | range | slice | np.ndarray[Any, Any] | list[int]),
     ) -> Any:
-        if isinstance(item, Series) and item.dtype in INTEGER_DTYPES:
+        if isinstance(item, Series) and item.dtype.is_integer():
             return self._take_with_series(item._pos_idxs(self.len()))
 
         elif _check_for_numpy(item) and isinstance(item, np.ndarray):
@@ -1079,7 +1094,7 @@ class Series:
             self.set_at_idx(key, value)
             return None
         elif isinstance(value, Sequence) and not isinstance(value, str):
-            if self.is_numeric() or self.is_temporal():
+            if self.dtype.is_numeric() or self.dtype.is_temporal():
                 self.set_at_idx(key, value)  # type: ignore[arg-type]
                 return None
             raise TypeError(
@@ -1141,10 +1156,12 @@ class Series:
 
             args: list[int | float | np.ndarray[Any, Any]] = []
 
+            validity_mask = self.is_not_null()
             for arg in inputs:
                 if isinstance(arg, (int, float, np.ndarray)):
                     args.append(arg)
                 elif isinstance(arg, Series):
+                    validity_mask &= arg.is_not_null()
                     args.append(arg.view(ignore_nulls=True))
                 else:
                     raise TypeError(
@@ -1187,7 +1204,12 @@ class Series:
                 )
 
             series = f(lambda out: ufunc(*args, out=out, dtype=dtype_char, **kwargs))
-            return self._from_pyseries(series)
+            return (
+                self._from_pyseries(series)
+                .to_frame()
+                .select(F.when(validity_mask).then(F.col(self.name)))
+                .to_series(0)
+            )
         else:
             raise NotImplementedError(
                 "only `__call__` is implemented for numpy ufuncs on a Series, got "
@@ -1214,7 +1236,7 @@ class Series:
     @deprecate_renamed_parameter("row", "index", version="0.19.3")
     def item(self, index: int | None = None) -> Any:
         """
-        Return the series as a scalar, or return the element at the given index.
+        Return the Series as a scalar, or return the element at the given index.
 
         If no index is provided, this is equivalent to `s[0]`, with a check
         that the shape is (1,). With an index, this is equivalent to `s[index]`.
@@ -1232,8 +1254,8 @@ class Series:
         if index is None:
             if len(self) != 1:
                 raise ValueError(
-                    "can only call '.item()' if the series is of length 1,"
-                    f" or an explicit index is provided (series is of length {len(self)})"
+                    "can only call '.item()' if the Series is of length 1,"
+                    f" or an explicit index is provided (Series is of length {len(self)})"
                 )
             return self._s.get_index(0)
 
@@ -1520,7 +1542,7 @@ class Series:
         self, percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75)
     ) -> DataFrame:
         """
-        Quick summary statistics of a series.
+        Quick summary statistics of a Series.
 
         Series with mixed datatypes will return summary statistics for the datatype of
         the first value.
@@ -1529,7 +1551,7 @@ class Series:
         ----------
         percentiles
             One or more percentiles to include in the summary statistics (if the
-            series has a numeric dtype). All values must be in the range `[0, 1]`.
+            Series has a numeric dtype). All values must be in the range `[0, 1]`.
 
         Notes
         -----
@@ -1580,7 +1602,7 @@ class Series:
         if self.len() == 0:
             raise ValueError("Series must contain at least one value")
 
-        elif self.is_numeric():
+        elif self.dtype.is_numeric():
             s = self.cast(Float64)
             stats = {
                 "count": s.len(),
@@ -1593,19 +1615,19 @@ class Series:
                 stats[f"{p:.0%}"] = s.quantile(p)
             stats["max"] = s.max()
 
-        elif self.is_boolean():
+        elif self.dtype == Boolean:
             stats = {
                 "count": self.len(),
                 "null_count": self.null_count(),
                 "sum": self.sum(),
             }
-        elif self.is_utf8():
+        elif self.dtype == Utf8:
             stats = {
                 "count": self.len(),
                 "null_count": self.null_count(),
                 "unique": len(self.unique()),
             }
-        elif self.is_temporal():
+        elif self.dtype.is_temporal():
             # we coerce all to string, because a polars column
             # only has a single dtype and dates: datetime and count: int don't match
             stats = {
@@ -1678,7 +1700,7 @@ class Series:
         ]
 
         """
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
@@ -1750,7 +1772,7 @@ class Series:
         1.0
 
         """
-        if not self.is_numeric():
+        if not self.dtype.is_numeric():
             return None
         return self.to_frame().select(F.col(self.name).std(ddof)).to_series().item()
 
@@ -1772,7 +1794,7 @@ class Series:
         1.0
 
         """
-        if not self.is_numeric():
+        if not self.dtype.is_numeric():
             return None
         return self.to_frame().select(F.col(self.name).var(ddof)).to_series().item()
 
@@ -3960,116 +3982,6 @@ class Series:
             .to_series()
         )
 
-    def is_numeric(self) -> bool:
-        """
-        Check if this Series datatype is numeric.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.is_numeric()
-        True
-
-        """
-        return self.dtype in NUMERIC_DTYPES
-
-    def is_integer(self, signed: bool | None = None) -> bool:
-        """
-        Check if this Series datatype is an integer (signed or unsigned).
-
-        Parameters
-        ----------
-        signed
-            * if `None`, both signed and unsigned integer dtypes will match.
-            * if `True`, only signed integer dtypes will be considered a match.
-            * if `False`, only unsigned integer dtypes will be considered a match.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, 2, 3], dtype=pl.UInt32)
-        >>> s.is_integer()
-        True
-        >>> s.is_integer(signed=False)
-        True
-        >>> s.is_integer(signed=True)
-        False
-
-        """
-        if signed is None:
-            return self.dtype in INTEGER_DTYPES
-        elif signed is True:
-            return self.dtype in SIGNED_INTEGER_DTYPES
-        elif signed is False:
-            return self.dtype in UNSIGNED_INTEGER_DTYPES
-
-        raise ValueError(f"`signed` must be None, True or False; got {signed!r}")
-
-    def is_temporal(self, excluding: OneOrMoreDataTypes | None = None) -> bool:
-        """
-        Check if this Series datatype is temporal.
-
-        Parameters
-        ----------
-        excluding
-            Optionally exclude one or more temporal dtypes from matching.
-
-        Examples
-        --------
-        >>> from datetime import date
-        >>> s = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
-        >>> s.is_temporal()
-        True
-        >>> s.is_temporal(excluding=[pl.Date])
-        False
-
-        """
-        if excluding is not None:
-            if not isinstance(excluding, Iterable):
-                excluding = [excluding]
-            if self.dtype in excluding:
-                return False
-
-        return self.dtype in TEMPORAL_DTYPES
-
-    def is_float(self) -> bool:
-        """
-        Check if this Series has floating point numbers.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1.0, 2.0, 3.0])
-        >>> s.is_float()
-        True
-
-        """
-        return self.dtype in FLOAT_DTYPES
-
-    def is_boolean(self) -> bool:
-        """
-        Check if this Series is a Boolean.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [True, False, True])
-        >>> s.is_boolean()
-        True
-
-        """
-        return self.dtype is Boolean
-
-    def is_utf8(self) -> bool:
-        """
-        Check if this Series datatype is a Utf8.
-
-        Examples
-        --------
-        >>> s = pl.Series("x", ["a", "b", "c"])
-        >>> s.is_utf8()
-        True
-
-        """
-        return self.dtype is Utf8
-
     def view(self, *, ignore_nulls: bool = False) -> SeriesView:
         """
         Get a view into this Series data with a numpy array.
@@ -4178,7 +4090,7 @@ class Series:
             use_pyarrow
             and _PYARROW_AVAILABLE
             and self.dtype != Object
-            and not self.is_temporal(excluding=Time)
+            and (self.dtype == Time or not self.dtype.is_temporal())
         ):
             return self.to_arrow().to_numpy(
                 *args, zero_copy_only=zero_copy_only, writable=writable
@@ -4190,15 +4102,15 @@ class Series:
             return np.array(self.to_list(), dtype="object")
         else:
             if not self.null_count():
-                if self.is_temporal():
+                if self.dtype.is_temporal():
                     np_array = convert_to_date(self.view(ignore_nulls=True))
-                elif self.is_numeric():
+                elif self.dtype.is_numeric():
                     np_array = self.view(ignore_nulls=True)
                 else:
                     raise_no_zero_copy()
                     np_array = self._s.to_numpy()
 
-            elif self.is_temporal():
+            elif self.dtype.is_temporal():
                 np_array = convert_to_date(self.to_physical()._s.to_numpy())
             else:
                 raise_no_zero_copy()
@@ -4344,7 +4256,7 @@ class Series:
             f'pl.Series("{self.name}", {self.head(n).to_list()}, dtype=pl.{self.dtype})'
         )
 
-    def set(self, filter: Series, value: int | float | str) -> Series:
+    def set(self, filter: Series, value: int | float | str | bool | None) -> Series:
         """
         Set masked values.
 
@@ -4689,6 +4601,29 @@ class Series:
 
         """
 
+    def round_sig_figs(self, digits: int) -> Series:
+        """
+        Round to a number of significant figures.
+
+        Parameters
+        ----------
+        digits
+            Number of significant figures to round to.
+
+        Examples
+        --------
+        >>> s = pl.Series([0.01234, 3.333, 1234.0])
+        >>> s.round_sig_figs(2)
+        shape: (3,)
+        Series: '' [f64]
+        [
+                0.012
+                3.3
+                1200.0
+        ]
+
+        """
+
     def dot(self, other: Series | ArrayLike) -> float | None:
         """
         Compute the dot/inner product between two Series.
@@ -5019,7 +4954,7 @@ class Series:
         If the function returns a different datatype, the return_dtype arg should
         be set, otherwise the method will fail.
 
-        Implementing logic using a Python function is almost always _significantly_
+        Implementing logic using a Python function is almost always *significantly*
         slower and more memory intensive than implementing the same logic using
         the native expression API because:
 
@@ -5203,7 +5138,7 @@ class Series:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their min.
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
@@ -5259,7 +5194,7 @@ class Series:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their max.
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
@@ -5315,7 +5250,7 @@ class Series:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their mean.
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
@@ -5428,7 +5363,7 @@ class Series:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their std dev.
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
@@ -5488,7 +5423,7 @@ class Series:
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
-        `weight` vector. The resulting values will be aggregated to their sum.
+        `weight` vector. The resulting values will be aggregated to their variance.
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
@@ -5885,6 +5820,12 @@ class Series:
             Random seed parameter. Defaults to `seed` if not set.
         seed_3
             Random seed parameter. Defaults to `seed` if not set.
+
+        Notes
+        -----
+        This implementation of :func:`hash` does not guarantee stable results
+        across different Polars versions. Its stability is only guaranteed within a
+        single version.
 
         Examples
         --------
@@ -6900,6 +6841,147 @@ class Series:
             Number of places to shift (may be negative).
 
         """
+
+    @deprecate_function("Use `Series.dtype.is_float()` instead.", version="0.19.13")
+    def is_float(self) -> bool:
+        """
+        Check if this Series has floating point numbers.
+
+        .. deprecated:: 0.19.13
+            Use `Series.dtype.is_float()` instead.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1.0, 2.0, 3.0])
+        >>> s.is_float()  # doctest: +SKIP
+        True
+
+        """
+        return self.dtype.is_float()
+
+    @deprecate_function(
+        "Use `Series.dtype.is_integer()` instead."
+        " For signed/unsigned variants, use `Series.dtype.is_signed_integer()`"
+        " or `Series.dtype.is_unsigned_integer()`.",
+        version="0.19.13",
+    )
+    def is_integer(self, signed: bool | None = None) -> bool:
+        """
+        Check if this Series datatype is an integer (signed or unsigned).
+
+        .. deprecated:: 0.19.13
+            Use `Series.dtype.is_integer()` instead.
+            For signed/unsigned variants, use `Series.dtype.is_signed_integer()`
+            or `Series.dtype.is_unsigned_integer()`.
+
+        Parameters
+        ----------
+        signed
+            * if `None`, both signed and unsigned integer dtypes will match.
+            * if `True`, only signed integer dtypes will be considered a match.
+            * if `False`, only unsigned integer dtypes will be considered a match.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3], dtype=pl.UInt32)
+        >>> s.is_integer()  # doctest: +SKIP
+        True
+        >>> s.is_integer(signed=False)  # doctest: +SKIP
+        True
+        >>> s.is_integer(signed=True)  # doctest: +SKIP
+        False
+
+        """
+        if signed is None:
+            return self.dtype.is_integer()
+        elif signed is True:
+            return self.dtype.is_signed_integer()
+        elif signed is False:
+            return self.dtype.is_unsigned_integer()
+
+        raise ValueError(f"`signed` must be None, True or False; got {signed!r}")
+
+    @deprecate_function("Use `Series.dtype.is_numeric()` instead.", version="0.19.13")
+    def is_numeric(self) -> bool:
+        """
+        Check if this Series datatype is numeric.
+
+        .. deprecated:: 0.19.13
+            Use `Series.dtype.is_float()` instead.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.is_numeric()  # doctest: +SKIP
+        True
+
+        """
+        return self.dtype.is_numeric()
+
+    @deprecate_function("Use `Series.dtype.is_temporal()` instead.", version="0.19.13")
+    def is_temporal(self, excluding: OneOrMoreDataTypes | None = None) -> bool:
+        """
+        Check if this Series datatype is temporal.
+
+        .. deprecated:: 0.19.13
+            Use `Series.dtype.is_temporal()` instead.
+
+        Parameters
+        ----------
+        excluding
+            Optionally exclude one or more temporal dtypes from matching.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> s = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
+        >>> s.is_temporal()  # doctest: +SKIP
+        True
+        >>> s.is_temporal(excluding=[pl.Date])  # doctest: +SKIP
+        False
+
+        """
+        if excluding is not None:
+            if not isinstance(excluding, Iterable):
+                excluding = [excluding]
+            if self.dtype in excluding:
+                return False
+
+        return self.dtype.is_temporal()
+
+    @deprecate_function("Use `Series.dtype == pl.Boolean` instead.", version="0.19.14")
+    def is_boolean(self) -> bool:
+        """
+        Check if this Series is a Boolean.
+
+        .. deprecated:: 0.19.14
+            Use `Series.dtype == pl.Boolean` instead.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [True, False, True])
+        >>> s.is_boolean()  # doctest: +SKIP
+        True
+
+        """
+        return self.dtype is Boolean
+
+    @deprecate_function("Use `Series.dtype == pl.Utf8` instead.", version="0.19.14")
+    def is_utf8(self) -> bool:
+        """
+        Check if this Series datatype is a Utf8.
+
+        .. deprecated:: 0.19.14
+            Use `Series.dtype == pl.Utf8` instead.
+
+        Examples
+        --------
+        >>> s = pl.Series("x", ["a", "b", "c"])
+        >>> s.is_utf8()  # doctest: +SKIP
+        True
+
+        """
+        return self.dtype is Utf8
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`

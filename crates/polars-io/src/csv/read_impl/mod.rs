@@ -552,7 +552,11 @@ impl<'a> CoreReader<'a> {
 
         // An empty file with a schema should return an empty DataFrame with that schema
         if bytes.is_empty() {
-            return Ok(DataFrame::from(self.schema.as_ref()));
+            let mut df = DataFrame::from(self.schema.as_ref());
+            if let Some(ref row_count) = self.row_count {
+                df.insert_at_idx(0, Series::new_empty(&row_count.name, &IDX_DTYPE))?;
+            }
+            return Ok(df);
         }
 
         // all the buffers returned from the threads
@@ -620,7 +624,7 @@ impl<'a> CoreReader<'a> {
                             };
 
                             cast_columns(&mut local_df, &self.to_cast, false, self.ignore_errors)?;
-                            let s = predicate.evaluate(&local_df)?;
+                            let s = predicate.evaluate_io(&local_df)?;
                             let mask = s.bool()?;
                             local_df = local_df.filter(mask)?;
 

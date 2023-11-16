@@ -6,7 +6,7 @@ mod fixed_size_list;
 use crate::array::*;
 use crate::bitmap::MutableBitmap;
 use crate::buffer::Buffer;
-use crate::datatypes::{DataType, PhysicalType};
+use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::legacy::bit_util::unset_bit_raw;
 use crate::legacy::prelude::*;
 use crate::legacy::trusted_len::{TrustedLen, TrustedLenPush};
@@ -252,7 +252,11 @@ pub unsafe fn take_no_null_bool_iter_unchecked<I: IntoIterator<Item = usize>>(
         values.get_bit_unchecked(idx)
     });
     let mutable = MutableBitmap::from_trusted_len_iter_unchecked(iter);
-    Box::new(BooleanArray::new(DataType::Boolean, mutable.into(), None))
+    Box::new(BooleanArray::new(
+        ArrowDataType::Boolean,
+        mutable.into(),
+        None,
+    ))
 }
 
 /// Take kernel for single chunk and an iterator as index.

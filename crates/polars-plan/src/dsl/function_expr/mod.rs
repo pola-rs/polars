@@ -11,8 +11,10 @@ mod bounds;
 mod cat;
 #[cfg(feature = "round_series")]
 mod clip;
+#[cfg(feature = "dtype-struct")]
 mod coerce;
 mod concat;
+#[cfg(feature = "cov")]
 mod correlation;
 #[cfg(feature = "cum_agg")]
 mod cum;
@@ -37,7 +39,7 @@ mod pow;
 mod random;
 #[cfg(feature = "range")]
 mod range;
-#[cfg(all(feature = "rolling_window", feature = "moment"))]
+#[cfg(feature = "rolling_window")]
 mod rolling;
 #[cfg(feature = "round_series")]
 mod round;
@@ -65,6 +67,7 @@ use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "dtype-array")]
 pub(super) use array::ArrayFunction;
+#[cfg(feature = "cov")]
 pub(crate) use correlation::CorrelationMethod;
 #[cfg(feature = "fused")]
 pub(crate) use fused::FusedOperator;
@@ -89,6 +92,8 @@ pub(super) use self::datetime::TemporalFunction;
 pub(super) use self::pow::PowFunction;
 #[cfg(feature = "range")]
 pub(super) use self::range::RangeFunction;
+#[cfg(feature = "rolling_window")]
+pub(super) use self::rolling::RollingFunction;
 #[cfg(feature = "strings")]
 pub(crate) use self::strings::StringFunction;
 #[cfg(feature = "dtype-struct")]
@@ -139,12 +144,8 @@ pub enum FunctionExpr {
     FillNull {
         super_type: DataType,
     },
-    #[cfg(all(feature = "rolling_window", feature = "moment"))]
-    // if we add more, make a sub enum
-    RollingSkew {
-        window_size: usize,
-        bias: bool,
-    },
+    #[cfg(feature = "rolling_window")]
+    RollingExpr(RollingFunction),
     ShiftAndFill,
     Shift,
     DropNans,
@@ -230,6 +231,10 @@ pub enum FunctionExpr {
         decimals: u32,
     },
     #[cfg(feature = "round_series")]
+    RoundSF {
+        digits: i32,
+    },
+    #[cfg(feature = "round_series")]
     Floor,
     #[cfg(feature = "round_series")]
     Ceil,
@@ -238,6 +243,7 @@ pub enum FunctionExpr {
     #[cfg(feature = "fused")]
     Fused(fused::FusedOperator),
     ConcatExpr(bool),
+    #[cfg(feature = "cov")]
     Correlation {
         method: correlation::CorrelationMethod,
         ddof: u8,
@@ -332,6 +338,7 @@ impl Hash for FunctionExpr {
             SearchSorted(f) => f.hash(state),
             #[cfg(feature = "random")]
             Random { method, .. } => method.hash(state),
+            #[cfg(feature = "cov")]
             Correlation { method, .. } => method.hash(state),
             #[cfg(feature = "range")]
             Range(f) => f.hash(state),
@@ -373,10 +380,9 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "row_hash")]
             Hash(a, b, c, d) => (a, b, c, d).hash(state),
             FillNull { super_type } => super_type.hash(state),
-            #[cfg(all(feature = "rolling_window", feature = "moment"))]
-            RollingSkew { window_size, bias } => {
-                window_size.hash(state);
-                bias.hash(state);
+            #[cfg(feature = "rolling_window")]
+            RollingExpr(f) => {
+                f.hash(state);
             },
             #[cfg(feature = "moment")]
             Skew(a) => a.hash(state),
@@ -435,7 +441,9 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "round_series")]
             Round { decimals } => decimals.hash(state),
             #[cfg(feature = "round_series")]
-            Floor => {},
+            FunctionExpr::RoundSF { digits } => digits.hash(state),
+            #[cfg(feature = "round_series")]
+            FunctionExpr::Floor => {},
             #[cfg(feature = "round_series")]
             Ceil => {},
             UpperBound => {},
@@ -536,8 +544,8 @@ impl Display for FunctionExpr {
             #[cfg(feature = "sign")]
             Sign => "sign",
             FillNull { .. } => "fill_null",
-            #[cfg(all(feature = "rolling_window", feature = "moment"))]
-            RollingSkew { .. } => "rolling_skew",
+            #[cfg(feature = "rolling_window")]
+            RollingExpr(func, ..) => return write!(f, "{func}"),
             ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
             DropNulls => "drop_nulls",
@@ -611,6 +619,8 @@ impl Display for FunctionExpr {
             #[cfg(feature = "round_series")]
             Round { .. } => "round",
             #[cfg(feature = "round_series")]
+            RoundSF { .. } => "round_sig_figs",
+            #[cfg(feature = "round_series")]
             Floor => "floor",
             #[cfg(feature = "round_series")]
             Ceil => "ceil",
@@ -619,6 +629,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "fused")]
             Fused(fused) => return Display::fmt(fused, f),
             ConcatExpr(_) => "concat_expr",
+            #[cfg(feature = "cov")]
             Correlation { method, .. } => return Display::fmt(method, f),
             #[cfg(feature = "peaks")]
             PeakMin => "peak_min",
@@ -801,10 +812,31 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             FillNull { super_type } => {
                 map_as_slice!(fill_null::fill_null, &super_type)
             },
-
-            #[cfg(all(feature = "rolling_window", feature = "moment"))]
-            RollingSkew { window_size, bias } => {
-                map!(rolling::rolling_skew, window_size, bias)
+            #[cfg(feature = "rolling_window")]
+            RollingExpr(f) => {
+                use RollingFunction::*;
+                match f {
+                    Min(options) => map!(rolling::rolling_min, options.clone()),
+                    MinBy(options) => map_as_slice!(rolling::rolling_min_by, options.clone()),
+                    Max(options) => map!(rolling::rolling_max, options.clone()),
+                    MaxBy(options) => map_as_slice!(rolling::rolling_max_by, options.clone()),
+                    Mean(options) => map!(rolling::rolling_mean, options.clone()),
+                    MeanBy(options) => map_as_slice!(rolling::rolling_mean_by, options.clone()),
+                    Sum(options) => map!(rolling::rolling_sum, options.clone()),
+                    SumBy(options) => map_as_slice!(rolling::rolling_sum_by, options.clone()),
+                    Median(options) => map!(rolling::rolling_median, options.clone()),
+                    MedianBy(options) => map_as_slice!(rolling::rolling_median_by, options.clone()),
+                    Quantile(options) => map!(rolling::rolling_quantile, options.clone()),
+                    QuantileBy(options) => {
+                        map_as_slice!(rolling::rolling_quantile_by, options.clone())
+                    },
+                    Var(options) => map!(rolling::rolling_var, options.clone()),
+                    VarBy(options) => map_as_slice!(rolling::rolling_var_by, options.clone()),
+                    Std(options) => map!(rolling::rolling_std, options.clone()),
+                    StdBy(options) => map_as_slice!(rolling::rolling_std_by, options.clone()),
+                    #[cfg(feature = "moment")]
+                    Skew(window_size, bias) => map!(rolling::rolling_skew, window_size, bias),
+                }
             },
             ShiftAndFill => {
                 map_as_slice!(shift_and_fill::shift_and_fill)
@@ -872,6 +904,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "round_series")]
             Round { decimals } => map!(round::round, decimals),
             #[cfg(feature = "round_series")]
+            RoundSF { digits } => map!(round::round_sig_figs, digits),
+            #[cfg(feature = "round_series")]
             Floor => map!(round::floor),
             #[cfg(feature = "round_series")]
             Ceil => map!(round::ceil),
@@ -880,6 +914,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "fused")]
             Fused(op) => map_as_slice!(fused::fused, op),
             ConcatExpr(rechunk) => map_as_slice!(concat::concat_expr, rechunk),
+            #[cfg(feature = "cov")]
             Correlation { method, ddof } => map_as_slice!(correlation::corr, ddof, method),
             #[cfg(feature = "peaks")]
             PeakMin => map!(peaks::peak_min),

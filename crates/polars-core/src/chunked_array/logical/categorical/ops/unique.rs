@@ -6,7 +6,7 @@ impl CategoricalChunked {
         let cat_map = self.get_rev_map();
         if self.can_fast_unique() {
             let ca = match &**cat_map {
-                RevMapping::Local(a) => {
+                RevMapping::Local(a, _) => {
                     UInt32Chunked::from_iter_values(self.physical().name(), 0..(a.len() as u32))
                 },
                 RevMapping::Global(map, _, _) => {

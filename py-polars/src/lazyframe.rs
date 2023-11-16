@@ -273,7 +273,7 @@ impl PyLazyFrame {
             path
         } else {
             paths
-                .get(0)
+                .first()
                 .ok_or_else(|| PyValueError::new_err("expected a path argument"))?
         };
 
@@ -577,12 +577,13 @@ impl PyLazyFrame {
     }
 
     #[cfg(all(feature = "streaming", feature = "csv"))]
-    #[pyo3(signature = (path, has_header, separator, line_terminator, quote_char, batch_size, datetime_format, date_format, time_format, float_precision, null_value, quote_style, maintain_order))]
+    #[pyo3(signature = (path, include_bom, include_header, separator, line_terminator, quote_char, batch_size, datetime_format, date_format, time_format, float_precision, null_value, quote_style, maintain_order))]
     fn sink_csv(
         &self,
         py: Python,
         path: PathBuf,
-        has_header: bool,
+        include_bom: bool,
+        include_header: bool,
         separator: u8,
         line_terminator: String,
         quote_char: u8,
@@ -611,7 +612,8 @@ impl PyLazyFrame {
         };
 
         let options = CsvWriterOptions {
-            has_header,
+            include_bom,
+            include_header,
             maintain_order,
             batch_size,
             serialize_options,

@@ -1,7 +1,7 @@
 use crate::array::{BinaryArray, BooleanArray, PrimitiveArray, Utf8Array};
 use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::offset::OffsetsBuffer;
 use crate::types::NativeType;
 
@@ -11,7 +11,7 @@ pub trait FromData<T> {
 
 impl FromData<Bitmap> for BooleanArray {
     fn from_data_default(values: Bitmap, validity: Option<Bitmap>) -> BooleanArray {
-        BooleanArray::new(DataType::Boolean, values, validity)
+        BooleanArray::new(ArrowDataType::Boolean, values, validity)
     }
 }
 
@@ -39,7 +39,7 @@ impl FromDataUtf8 for Utf8Array<i64> {
         validity: Option<Bitmap>,
     ) -> Self {
         let offsets = OffsetsBuffer::new_unchecked(offsets);
-        Utf8Array::new_unchecked(DataType::LargeUtf8, offsets, values, validity)
+        Utf8Array::new_unchecked(ArrowDataType::LargeUtf8, offsets, values, validity)
     }
 }
 
@@ -60,6 +60,6 @@ impl FromDataBinary for BinaryArray<i64> {
         validity: Option<Bitmap>,
     ) -> Self {
         let offsets = OffsetsBuffer::new_unchecked(offsets);
-        BinaryArray::new(DataType::LargeBinary, offsets, values, validity)
+        BinaryArray::new(ArrowDataType::LargeBinary, offsets, values, validity)
     }
 }

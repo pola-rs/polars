@@ -58,6 +58,8 @@ impl TimeUnit {
     }
 }
 
+#[cfg(feature = "rows")]
+#[cfg(any(feature = "dtype-datetime", feature = "dtype-duration"))]
 #[inline]
 pub(crate) fn convert_time_units(v: i64, tu_l: TimeUnit, tu_r: TimeUnit) -> i64 {
     use TimeUnit::*;

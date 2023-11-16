@@ -2,7 +2,7 @@ use std::io::Write;
 
 use arrow::array::Array;
 use arrow::chunk::Chunk;
-use arrow::datatypes::{DataType as ArrowDataType, PhysicalType};
+use arrow::datatypes::{ArrowDataType, PhysicalType};
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df};
 use polars_core::POOL;
@@ -186,7 +186,7 @@ where
         })
     }
 
-    /// Write the given DataFrame in the the writer `W`. Returns the total size of the file.
+    /// Write the given DataFrame in the writer `W`. Returns the total size of the file.
     pub fn finish(self, df: &mut DataFrame) -> PolarsResult<u64> {
         // ensures all chunks are aligned.
         df.align_chunks();

@@ -4,13 +4,13 @@ use super::utils::{build_extend_null_bits, extend_offset_values, ExtendNullBits}
 use super::Growable;
 use crate::array::{Array, BinaryArray};
 use crate::bitmap::MutableBitmap;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets};
 
 /// Concrete [`Growable`] for the [`BinaryArray`].
 pub struct GrowableBinary<'a, O: Offset> {
     arrays: Vec<&'a BinaryArray<O>>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     validity: MutableBitmap,
     values: Vec<u8>,
     offsets: Offsets<O>,

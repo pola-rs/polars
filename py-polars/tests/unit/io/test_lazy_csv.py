@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -266,3 +267,21 @@ def test_csv_list_arg(io_files_path: Path) -> None:
     assert df.shape == (54, 4)
     assert df.row(-1) == ("seafood", 194, 12.0, 1)
     assert df.row(0) == ("vegetables", 45, 0.5, 2)
+
+
+# https://github.com/pola-rs/polars/issues/9887
+def test_scan_csv_slice_offset_zero(io_files_path: Path) -> None:
+    lf = pl.scan_csv(io_files_path / "small.csv")
+    result = lf.slice(0)
+    assert result.collect().height == 4
+
+
+@pytest.mark.write_disk()
+def test_scan_empty_csv_with_row_count(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "small.parquet"
+    df = pl.DataFrame({"a": []})
+    df.write_csv(file_path)
+
+    read = pl.scan_csv(file_path).with_row_count("idx")
+    assert read.collect().schema == OrderedDict([("idx", pl.UInt32), ("a", pl.Utf8)])

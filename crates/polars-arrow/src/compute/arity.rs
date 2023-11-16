@@ -5,7 +5,7 @@ use polars_error::PolarsResult;
 use super::utils::{check_same_len, combine_validities};
 use crate::array::PrimitiveArray;
 use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::types::NativeType;
 
 /// Applies an unary and infallible function to a [`PrimitiveArray`]. This is the
@@ -18,7 +18,11 @@ use crate::types::NativeType;
 /// This implies that the operation must be infallible for any value of the
 /// corresponding type or this function may panic.
 #[inline]
-pub fn unary<I, F, O>(array: &PrimitiveArray<I>, op: F, data_type: DataType) -> PrimitiveArray<O>
+pub fn unary<I, F, O>(
+    array: &PrimitiveArray<I>,
+    op: F,
+    data_type: ArrowDataType,
+) -> PrimitiveArray<O>
 where
     I: NativeType,
     O: NativeType,
@@ -34,7 +38,7 @@ where
 pub fn try_unary<I, F, O>(
     array: &PrimitiveArray<I>,
     op: F,
-    data_type: DataType,
+    data_type: ArrowDataType,
 ) -> PolarsResult<PrimitiveArray<O>>
 where
     I: NativeType,
@@ -60,7 +64,7 @@ where
 pub fn unary_with_bitmap<I, F, O>(
     array: &PrimitiveArray<I>,
     op: F,
-    data_type: DataType,
+    data_type: ArrowDataType,
 ) -> (PrimitiveArray<O>, Bitmap)
 where
     I: NativeType,
@@ -92,7 +96,7 @@ where
 pub fn unary_checked<I, F, O>(
     array: &PrimitiveArray<I>,
     op: F,
-    data_type: DataType,
+    data_type: ArrowDataType,
 ) -> PrimitiveArray<O>
 where
     I: NativeType,
@@ -144,7 +148,7 @@ where
 pub fn binary<T, D, F>(
     lhs: &PrimitiveArray<T>,
     rhs: &PrimitiveArray<D>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     op: F,
 ) -> PrimitiveArray<T>
 where
@@ -172,7 +176,7 @@ where
 pub fn try_binary<T, D, F>(
     lhs: &PrimitiveArray<T>,
     rhs: &PrimitiveArray<D>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     op: F,
 ) -> PolarsResult<PrimitiveArray<T>>
 where
@@ -200,7 +204,7 @@ where
 pub fn binary_with_bitmap<T, D, F>(
     lhs: &PrimitiveArray<T>,
     rhs: &PrimitiveArray<D>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     op: F,
 ) -> (PrimitiveArray<T>, Bitmap)
 where
@@ -238,7 +242,7 @@ where
 pub fn binary_checked<T, D, F>(
     lhs: &PrimitiveArray<T>,
     rhs: &PrimitiveArray<D>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     op: F,
 ) -> PrimitiveArray<T>
 where

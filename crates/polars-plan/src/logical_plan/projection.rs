@@ -25,7 +25,8 @@ pub(super) fn replace_wildcard_with_column(mut expr: Expr, column_name: Arc<str>
     expr
 }
 
-pub fn remove_exclude(mut expr: Expr) -> Expr {
+#[cfg(feature = "regex")]
+fn remove_exclude(mut expr: Expr) -> Expr {
     expr.mutate().apply(|e| {
         if let Expr::Exclude(input, _) = e {
             *e = remove_exclude(std::mem::take(input));
@@ -46,7 +47,7 @@ fn rewrite_special_aliases(expr: Expr) -> PolarsResult<Expr> {
             Expr::KeepName(expr) => {
                 let roots = expr_to_leaf_column_names(&expr);
                 let name = roots
-                    .get(0)
+                    .first()
                     .expect("expected root column to keep expression name");
                 Ok(Expr::Alias(expr, name.clone()))
             },
@@ -171,6 +172,7 @@ fn replace_regex(
 }
 
 /// replace `columns(["A", "B"])..` with `col("A")..`, `col("B")..`
+#[allow(unused_variables)]
 fn expand_columns(
     expr: &Expr,
     result: &mut Vec<Expr>,

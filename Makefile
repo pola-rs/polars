@@ -26,6 +26,19 @@ requirements: .venv  ## Install/refresh Python project requirements
 build-python: .venv  ## Compile and install Python Polars for development
 	@$(MAKE) -s -C py-polars build
 
+.PHONY: clippy
+clippy:  ## Run clippy with all features
+	cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+.PHONY: clippy-default
+clippy-default:  ## Run clippy with default features
+	cargo clippy --all-targets --locked -- -D warnings
+
+.PHONY: fmt
+fmt:  ## Run rustfmt and dprint
+	cargo fmt --all
+	dprint fmt
+
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts
 	@rm -rf .venv/

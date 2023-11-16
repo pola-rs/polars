@@ -101,7 +101,7 @@ def from_dicts(
         to rename after loading the frame.
 
         If you want to drop some of the fields found in the input dictionaries, a
-        _partial_ schema can be declared, in which case omitted fields will not be
+        *partial* schema can be declared, in which case omitted fields will not be
         loaded. Similarly, you can extend the loaded frame with empty columns by
         adding them to the schema.
     schema_overrides : dict, default None
@@ -286,8 +286,14 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
                 coldata.pop(idx)
 
     # init cols as utf8 Series, handle "null" -> None, create schema from repr dtype
-    data = [pl.Series([(None if v == "null" else v) for v in cd]) for cd in coldata]
+    data = [
+        pl.Series([(None if v == "null" else v) for v in cd], dtype=Utf8)
+        for cd in coldata
+    ]
     schema = dict(zip(headers, (dtype_short_repr_to_dtype(d) for d in dtypes)))
+    if schema and data and (n_extend_cols := (len(schema) - len(data))) > 0:
+        empty_data = [None] * len(data[0])
+        data.extend((pl.Series(empty_data, dtype=Utf8)) for _ in range(n_extend_cols))
     for dtype in set(schema.values()):
         if dtype in (List, Struct, Object):
             raise NotImplementedError(
@@ -307,6 +313,8 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
                 df.write_csv(file=buf)
                 df = read_csv(buf, new_columns=df.columns, try_parse_dates=True)
             return df
+    elif schema and not data:
+        return df.cast(schema)  # type: ignore[arg-type]
     else:
         return _cast_repr_strings_with_schema(df, schema)
 

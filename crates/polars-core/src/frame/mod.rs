@@ -193,7 +193,7 @@ impl DataFrame {
     fn check_already_present(&self, name: &str) -> PolarsResult<()> {
         polars_ensure!(
             self.columns.iter().all(|s| s.name() != name),
-            Duplicate: "column with name {:?} is already present in the dataframe", name
+            Duplicate: "column with name {:?} is already present in the DataFrame", name
         );
         Ok(())
     }
@@ -224,7 +224,7 @@ impl DataFrame {
 
         let shape_err = |&first_name, &first_len, &name, &len| {
             polars_bail!(
-                ShapeMismatch: "could not create a new dataframe: series {:?} has length {} \
+                ShapeMismatch: "could not create a new DataFrame: series {:?} has length {} \
                 while series {:?} has length {}",
                 first_name, first_len, name, len
             );
@@ -585,7 +585,7 @@ impl DataFrame {
     pub fn set_column_names<S: AsRef<str>>(&mut self, names: &[S]) -> PolarsResult<()> {
         polars_ensure!(
             names.len() == self.width(),
-            ShapeMismatch: "{} column names provided for a dataframe of width {}",
+            ShapeMismatch: "{} column names provided for a DataFrame of width {}",
             names.len(), self.width()
         );
         let unique_names: AHashSet<&str, ahash::RandomState> =
@@ -626,7 +626,7 @@ impl DataFrame {
 
     /// The number of chunks per column
     pub fn n_chunks(&self) -> usize {
-        match self.columns.get(0) {
+        match self.columns.first() {
             None => 0,
             Some(s) => s.n_chunks(),
         }
@@ -767,7 +767,7 @@ impl DataFrame {
         for col in columns {
             polars_ensure!(
                 col.len() == self.height() || self.height() == 0,
-                ShapeMismatch: "unable to hstack series of length {} and dataframe of height {}",
+                ShapeMismatch: "unable to hstack Series of length {} and DataFrame of height {}",
                 col.len(), self.height(),
             );
             polars_ensure!(
@@ -909,7 +909,7 @@ impl DataFrame {
             polars_ensure!(
                 self.width() == 0,
                 ShapeMismatch:
-                "unable to append to a dataframe of width {} with a dataframe of width {}",
+                "unable to append to a DataFrame of width {} with a DataFrame of width {}",
                 self.width(), other.width(),
             );
             self.columns = other.columns.clone();
@@ -955,7 +955,7 @@ impl DataFrame {
         polars_ensure!(
             self.width() == other.width(),
             ShapeMismatch:
-            "unable to extend a dataframe of width {} with a dataframe of width {}",
+            "unable to extend a DataFrame of width {} with a DataFrame of width {}",
             self.width(), other.width(),
         );
         self.columns
@@ -1098,7 +1098,7 @@ impl DataFrame {
     ) -> PolarsResult<&mut Self> {
         polars_ensure!(
             series.len() == self.height(),
-            ShapeMismatch: "unable to add a column of length {} to a dataframe of height {}",
+            ShapeMismatch: "unable to add a column of length {} to a DataFrame of height {}",
             series.len(), self.height(),
         );
         self.columns.insert(index, series);
@@ -1144,7 +1144,7 @@ impl DataFrame {
                 Ok(df)
             } else {
                 polars_bail!(
-                    ShapeMismatch: "unable to add a column of length {} to a dataframe of height {}",
+                    ShapeMismatch: "unable to add a column of length {} to a DataFrame of height {}",
                     series.len(), height,
                 );
             }
@@ -1217,7 +1217,7 @@ impl DataFrame {
             Ok(self)
         } else {
             polars_bail!(
-                ShapeMismatch: "unable to add a column of length {} to a dataframe of height {}",
+                ShapeMismatch: "unable to add a column of length {} to a DataFrame of height {}",
                 series.len(), height,
             );
         }
@@ -1234,7 +1234,7 @@ impl DataFrame {
     /// }
     /// ```
     pub fn get(&self, idx: usize) -> Option<Vec<AnyValue>> {
-        match self.columns.get(0) {
+        match self.columns.first() {
             Some(s) => {
                 if s.len() <= idx {
                     return None;
@@ -1985,14 +1985,14 @@ impl DataFrame {
         polars_ensure!(
             idx < self.width(),
             ShapeMismatch:
-            "unable to replace at index {}, the dataframe has only {} columns",
+            "unable to replace at index {}, the DataFrame has only {} columns",
             idx, self.width(),
         );
         let mut new_column = new_col.into_series();
         polars_ensure!(
             new_column.len() == self.height(),
             ShapeMismatch:
-            "unable to replace a column, series length {} doesn't match the dataframe height {}",
+            "unable to replace a column, series length {} doesn't match the DataFrame height {}",
             new_column.len(), self.height(),
         );
         let old_col = &mut self.columns[idx];
@@ -2088,7 +2088,7 @@ impl DataFrame {
         let width = self.width();
         let col = self.columns.get_mut(idx).ok_or_else(|| {
             polars_err!(
-                ComputeError: "invalid column index: {} for a dataframe with {} columns",
+                ComputeError: "invalid column index: {} for a DataFrame with {} columns",
                 idx, width
             )
         })?;
@@ -2104,7 +2104,7 @@ impl DataFrame {
             },
             len => polars_bail!(
                 ShapeMismatch:
-                "resulting series has length {} while the dataframe has height {}",
+                "resulting Series has length {} while the DataFrame has height {}",
                 len, df_height
             ),
         }
@@ -2165,7 +2165,7 @@ impl DataFrame {
         let width = self.width();
         let col = self.columns.get_mut(idx).ok_or_else(|| {
             polars_err!(
-                ComputeError: "invalid column index: {} for a dataframe with {} columns",
+                ComputeError: "invalid column index: {} for a DataFrame with {} columns",
                 idx, width
             )
         })?;

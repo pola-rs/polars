@@ -4,12 +4,12 @@ use super::utils::{build_extend_null_bits, ExtendNullBits};
 use super::Growable;
 use crate::array::{Array, PrimitiveArray};
 use crate::bitmap::MutableBitmap;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::types::NativeType;
 
 /// Concrete [`Growable`] for the [`PrimitiveArray`].
 pub struct GrowablePrimitive<'a, T: NativeType> {
-    data_type: DataType,
+    data_type: ArrowDataType,
     arrays: Vec<&'a [T]>,
     validity: MutableBitmap,
     values: Vec<T>,

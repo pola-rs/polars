@@ -9,7 +9,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 
-@pytest.mark.write_disk()
+# @pytest.mark.write_disk()
 def test_hive_partitioned_predicate_pushdown(
     io_files_path: Path, tmp_path: Path, monkeypatch: Any, capfd: Any
 ) -> None:
@@ -27,7 +27,10 @@ def test_hive_partitioned_predicate_pushdown(
         use_legacy_dataset=True,
     )
     q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=False)
+    # checks schema
     assert q.columns == ["calories", "sugars_g"]
+    # checks materialization
+    assert q.collect().columns == ["calories", "sugars_g"]
 
     q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
     assert q.columns == ["calories", "sugars_g", "category", "fats_g"]

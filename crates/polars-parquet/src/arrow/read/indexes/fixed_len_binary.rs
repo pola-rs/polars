@@ -1,12 +1,15 @@
 use arrow::array::{Array, FixedSizeBinaryArray, MutableFixedSizeBinaryArray, PrimitiveArray};
-use arrow::datatypes::{DataType, PhysicalType, PrimitiveType};
+use arrow::datatypes::{ArrowDataType, PhysicalType, PrimitiveType};
 use arrow::trusted_len::TrustedLen;
 use arrow::types::{i256, NativeType};
 
 use super::ColumnPageStatistics;
 use crate::parquet::indexes::PageIndex;
 
-pub fn deserialize(indexes: &[PageIndex<Vec<u8>>], data_type: DataType) -> ColumnPageStatistics {
+pub fn deserialize(
+    indexes: &[PageIndex<Vec<u8>>],
+    data_type: ArrowDataType,
+) -> ColumnPageStatistics {
     ColumnPageStatistics {
         min: deserialize_binary_iter(
             indexes.iter().map(|index| index.min.as_ref()),
@@ -23,7 +26,7 @@ pub fn deserialize(indexes: &[PageIndex<Vec<u8>>], data_type: DataType) -> Colum
 
 fn deserialize_binary_iter<'a, I: TrustedLen<Item = Option<&'a Vec<u8>>>>(
     iter: I,
-    data_type: DataType,
+    data_type: ArrowDataType,
 ) -> Box<dyn Array> {
     match data_type.to_physical_type() {
         PhysicalType::Primitive(PrimitiveType::Int128) => {

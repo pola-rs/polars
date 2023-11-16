@@ -33,7 +33,7 @@ def test_series_from_pydecimal_and_ints(
     # TODO: check what happens if there are strings, floats arrow scalars in the list
     for data in permutations_int_dec_none:
         s = pl.Series("name", data)
-        assert s.dtype == pl.Decimal(7)  # inferred scale = 7, precision = None
+        assert s.dtype == pl.Decimal(scale=7)  # inferred scale = 7, precision = None
         assert s.name == "name"
         assert s.null_count() == 1
         for i, d in enumerate(data):
@@ -60,38 +60,46 @@ def test_frame_from_pydecimal_and_ints(
             for ctor in (pl.DataFrame, pl.from_records):
                 df = ctor(data=list(map(cls, data)))  # type: ignore[operator]
                 assert df.schema == {
-                    "a": pl.Decimal(7),
+                    "a": pl.Decimal(scale=7),
                 }
                 assert df.rows() == row_data
 
 
-def test_to_from_pydecimal_and_format() -> None:
+@pytest.mark.parametrize(
+    ("trim_zeros", "expected"),
+    [
+        (True, "0.01"),
+        (False, "0.010000000000000000000000000"),
+    ],
+)
+def test_to_from_pydecimal_and_format(trim_zeros: bool, expected: str) -> None:
     dec_strs = [
         "0",
         "-1",
-        "0.01",
+        expected,
         "-1.123801239123981293891283123",
         "12345678901.234567890123458390192857685",
         "-99999999999.999999999999999999999999999",
     ]
-    formatted = (
-        str(pl.Series(list(map(D, dec_strs))))
-        .split("[", 1)[1]
-        .split("\n", 1)[1]
-        .strip()[1:-1]
-        .split()
-    )
-    assert formatted == dec_strs
+    with pl.Config(trim_decimal_zeros=trim_zeros):
+        formatted = (
+            str(pl.Series(list(map(D, dec_strs))))
+            .split("[", 1)[1]
+            .split("\n", 1)[1]
+            .strip()[1:-1]
+            .split()
+        )
+        assert formatted == dec_strs
 
 
 def test_init_decimal_dtype() -> None:
     s = pl.Series("a", [D("-0.01"), D("1.2345678"), D("500")], dtype=pl.Decimal)
-    assert s.is_numeric()
+    assert s.dtype.is_numeric()
 
     df = pl.DataFrame(
         {"a": [D("-0.01"), D("1.2345678"), D("500")]}, schema={"a": pl.Decimal}
     )
-    assert df["a"].is_numeric()
+    assert df["a"].dtype.is_numeric()
 
 
 def test_decimal_convert_to_float_by_schema() -> None:
@@ -146,7 +154,7 @@ def test_utf8_to_decimal() -> None:
             "-62.44",
         ]
     ).str.to_decimal()
-    assert s.dtype == pl.Decimal(2)
+    assert s.dtype == pl.Decimal(scale=2)
 
     assert s.to_list() == [
         D("40.12"),
@@ -168,7 +176,7 @@ def test_read_csv_decimal(monkeypatch: Any) -> None:
     0.01,a"""
 
     df = pl.read_csv(csv.encode(), dtypes={"a": pl.Decimal(scale=2)})
-    assert df.dtypes == [pl.Decimal(2, None), pl.Utf8]
+    assert df.dtypes == [pl.Decimal(precision=None, scale=2), pl.Utf8]
     assert df["a"].to_list() == [
         D("123.12"),
         D("1.10"),
@@ -232,4 +240,18 @@ def test_decimal_aggregations() -> None:
         "sum": [D("9110.33")],
         "min": [D("0.10")],
         "max": [D("9000.12")],
+    }
+
+
+def test_decimal_in_filter() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": ["6", "7", "8"],
+        }
+    )
+    df = df.with_columns(pl.col("bar").cast(pl.Decimal))
+    assert df.filter(pl.col("foo") > 1).to_dict(as_series=False) == {
+        "foo": [2, 3],
+        "bar": [D("7"), D("8")],
     }

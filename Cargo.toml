@@ -2,14 +2,16 @@
 resolver = "2"
 members = [
   "crates/*",
-  "examples/*",
+  "docs/src/rust",
+  # "examples/*",
+  "py-polars",
 ]
 default-members = [
   "crates/*",
 ]
-exclude = [
-  "examples/datasets",
-]
+# exclude = [
+#   "examples/datasets",
+# ]
 
 [workspace.package]
 version = "0.34.2"
@@ -21,7 +23,13 @@ license = "MIT"
 
 [workspace.dependencies]
 ahash = ">=0.8.5"
+arrow-array = { version = ">=41", default-features = false }
+arrow-buffer = { version = ">=41", default-features = false }
+arrow-data = { version = ">=41", default-features = false }
+arrow-schema = { version = ">=41", default-features = false }
 atoi = "2"
+avro-schema = { version = "0.3" }
+base64 = "0.21.2"
 bitflags = "2"
 bytemuck = { version = "1", features = ["derive", "extern_crate_alloc"] }
 chrono = { version = "0.4.31", default-features = false, features = ["std"] }
@@ -31,64 +39,61 @@ crossbeam-channel = "0.5.8"
 crossbeam-queue = "0.3"
 either = "1.9"
 ethnum = "1.3.2"
+fallible-streaming-iterator = "0.1.9"
 futures = "0.3.25"
 hashbrown = { version = "0.14", features = ["rayon", "ahash"] }
+hex = "0.4.3"
 indexmap = { version = "2", features = ["std"] }
+itoa = "1.0.6"
+atoi_simd = "0.15"
+fast-float = { version = "0.2" }
 memchr = "2.6"
 multiversion = "0.7"
+ndarray = { version = "0.15", default-features = false }
 num-traits = "0.2"
-object_store = { version = "0.7", default-features = false }
+object_store = { version = "0.8", default-features = false }
 once_cell = "1"
+parquet2 = { version = "0.17.2", features = ["async"], default-features = false }
+percent-encoding = "2.3"
 pyo3 = "0.20"
 rand = "0.8"
+rand_distr = "0.4"
 rayon = "1.8"
 regex = "1.9"
+reqwest = { version = "0.11", default-features = false }
+ryu = "1.0.13"
 serde = "1.0.188"
 serde_json = "1"
 simd-json = { version = "0.13", features = ["known-key"] }
+simdutf8 = "0.1.4"
 smartstring = "1"
 sqlparser = "0.39"
+streaming-iterator = "0.1.9"
 strum_macros = "0.25"
 thiserror = "1"
 tokio = "1.26"
 tokio-util = "0.7.8"
 url = "2.4"
 version_check = "0.9.4"
-simdutf8 = "0.1.4"
-hex = "0.4.3"
-base64 = "0.21.2"
-fallible-streaming-iterator = "0.1.9"
-streaming-iterator = "0.1.9"
-itoa = "1.0.6"
-ryu = "1.0.13"
-lexical-core = "0.8.5"
-percent-encoding = "2.3"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
-polars-core = { version = "0.34.2", path = "crates/polars-core", default-features = false }
-polars-plan = { version = "0.34.2", path = "crates/polars-plan", default-features = false }
-polars-lazy = { version = "0.34.2", path = "crates/polars-lazy", default-features = false }
-polars-pipe = { version = "0.34.2", path = "crates/polars-pipe", default-features = false }
-polars-parquet = { version = "0.34.2", path = "crates/polars-parquet", default-features = false }
-polars-row = { version = "0.34.2", path = "crates/polars-row", default-features = false }
-polars-ffi = { version = "0.34.2", path = "crates/polars-ffi", default-features = false }
-polars-ops = { version = "0.34.2", path = "crates/polars-ops", default-features = false }
-polars-sql = { version = "0.34.2", path = "crates/polars-sql", default-features = false }
+zstd = "0.13"
+
+polars = { version = "0.34.2", path = "crates/polars", default-features = false }
 polars-algo = { version = "0.34.2", path = "crates/polars-algo", default-features = false }
+polars-core = { version = "0.34.2", path = "crates/polars-core", default-features = false }
+polars-error = { version = "0.34.2", path = "crates/polars-error", default-features = false }
+polars-ffi = { version = "0.34.2", path = "crates/polars-ffi", default-features = false }
+polars-io = { version = "0.34.2", path = "crates/polars-io", default-features = false }
+polars-json = { version = "0.34.2", path = "crates/polars-json", default-features = false }
+polars-lazy = { version = "0.34.2", path = "crates/polars-lazy", default-features = false }
+polars-ops = { version = "0.34.2", path = "crates/polars-ops", default-features = false }
+polars-parquet = { version = "0.34.2", path = "crates/polars-parquet", default-features = false }
+polars-pipe = { version = "0.34.2", path = "crates/polars-pipe", default-features = false }
+polars-plan = { version = "0.34.2", path = "crates/polars-plan", default-features = false }
+polars-row = { version = "0.34.2", path = "crates/polars-row", default-features = false }
+polars-sql = { version = "0.34.2", path = "crates/polars-sql", default-features = false }
 polars-time = { version = "0.34.2", path = "crates/polars-time", default-features = false }
 polars-utils = { version = "0.34.2", path = "crates/polars-utils", default-features = false }
-polars-io = { version = "0.34.2", path = "crates/polars-io", default-features = false }
-polars-error = { version = "0.34.2", path = "crates/polars-error", default-features = false }
-polars-json = { version = "0.34.2", path = "crates/polars-json", default-features = false }
-polars = { version = "0.34.2", path = "crates/polars", default-features = false }
-rand_distr = "0.4"
-reqwest = { version = "0.11", default-features = false }
-arrow-array = { version = ">=41", default-features = false }
-arrow-buffer = { version = ">=41", default-features = false }
-arrow-data = { version = ">=41", default-features = false }
-arrow-schema = { version = ">=41", default-features = false }
-parquet2 = { version = "0.17.2", features = ["async"], default-features = false }
-avro-schema = { version = "0.3" }
-zstd = "0.13"
 
 [workspace.dependencies.arrow]
 package = "polars-arrow"
@@ -110,3 +115,18 @@ features = [
 [patch.crates-io]
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
 # simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
+
+[profile.opt-dev]
+inherits = "dev"
+opt-level = 1
+
+[profile.debug-release]
+inherits = "release"
+debug = true
+incremental = true
+codegen-units = 16
+lto = "thin"
+
+[profile.release]
+codegen-units = 1
+lto = "fat"

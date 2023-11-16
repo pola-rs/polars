@@ -114,9 +114,13 @@ impl BinaryExpr {
         let left_s = ac_l.series().rechunk();
         let right_s = ac_r.series().rechunk();
         let res_s = apply_operator(&left_s, &right_s, self.op)?;
-        let ca = ListChunked::full(&name, &res_s, ac_l.groups.len());
         ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
-        ac_l.with_series(ca.into_series(), true, Some(&self.expr))?;
+        let res_s = if res_s.len() == 1 {
+            res_s.new_from_index(0, ac_l.groups.len())
+        } else {
+            ListChunked::full(&name, &res_s, ac_l.groups.len()).into_series()
+        };
+        ac_l.with_series(res_s, true, Some(&self.expr))?;
         Ok(ac_l)
     }
 
@@ -136,22 +140,8 @@ impl BinaryExpr {
                 .with_name(&name)
         };
 
-        // Try if we can reuse the groups.
-        use AggState::*;
-        match (ac_l.agg_state(), ac_r.agg_state()) {
-            // No need to change update groups.
-            (AggregatedList(_), _) => {},
-            // We can take the groups of the rhs.
-            (_, AggregatedList(_)) if matches!(ac_r.update_groups, UpdateGroups::No) => {
-                ac_l.groups = ac_r.groups
-            },
-            // We must update the groups.
-            _ => {
-                ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
-            },
-        }
-
-        ac_l.with_series(ca.into_series(), true, Some(&self.expr))?;
+        ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
+        ac_l.with_agg_state(AggState::AggregatedList(ca.into_series()));
         Ok(ac_l)
     }
 }
@@ -197,7 +187,7 @@ impl PhysicalExpr for BinaryExpr {
         polars_ensure!(
             lhs.len() == rhs.len() || lhs.len() == 1 || rhs.len() == 1,
             expr = self.expr,
-            ComputeError: "cannot evaluate two series of different lengths ({} and {})",
+            ComputeError: "cannot evaluate two Series of different lengths ({} and {})",
             lhs.len(), rhs.len(),
         );
         apply_operator_owned(lhs, rhs, self.op)

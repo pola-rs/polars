@@ -4,6 +4,7 @@
 mod arity;
 mod coerce;
 mod concat;
+#[cfg(feature = "cov")]
 mod correlation;
 pub(crate) mod horizontal;
 mod index;
@@ -17,6 +18,7 @@ mod temporal;
 pub use arity::*;
 pub use coerce::*;
 pub use concat::*;
+#[cfg(feature = "cov")]
 pub use correlation::*;
 pub use horizontal::*;
 pub use index::*;

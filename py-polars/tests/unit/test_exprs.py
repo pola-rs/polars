@@ -768,6 +768,24 @@ def test_map_dict() -> None:
         ),
     )
 
+    lf = pl.LazyFrame({"a": [1, 2, 3]})
+    assert_frame_equal(
+        lf.select(
+            pl.col("a").cast(pl.UInt8).map_dict({1: 11, 2: 22}, default=99)
+        ).collect(),
+        pl.DataFrame({"a": [11, 22, 99]}, schema_overrides={"a": pl.UInt8}),
+    )
+
+    df = (
+        pl.LazyFrame({"a": ["one", "two"]})
+        .with_columns(pl.col("a").map_dict({"one": 1}, return_dtype=pl.UInt32))
+        .fill_null(999)
+        .collect()
+    )
+    assert_frame_equal(
+        df, pl.DataFrame({"a": [1, 999]}, schema_overrides={"a": pl.UInt32})
+    )
+
 
 def test_lit_dtypes() -> None:
     def lit_series(value: Any, dtype: pl.PolarsDataType | None) -> pl.Series:

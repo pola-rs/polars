@@ -4,7 +4,7 @@ pub(super) fn shrink(s: Series) -> PolarsResult<Series> {
     if s.dtype().is_numeric() {
         if s.dtype().is_float() {
             s.cast(&DataType::Float32)
-        } else if s.dtype().is_unsigned() {
+        } else if s.dtype().is_unsigned_integer() {
             let max = s
                 .max_as_series()
                 .get(0)

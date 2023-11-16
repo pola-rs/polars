@@ -78,7 +78,8 @@ pub struct IpcWriterOptions {
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CsvWriterOptions {
-    pub has_header: bool,
+    pub include_bom: bool,
+    pub include_header: bool,
     pub batch_size: usize,
     pub maintain_order: bool,
     pub serialize_options: SerializeOptions,

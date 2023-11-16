@@ -13,9 +13,12 @@ from typing import TYPE_CHECKING, Any, Generator, Iterable, Literal, Sequence, T
 import polars as pl
 from polars import functions as F
 from polars.datatypes import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
     Boolean,
     Date,
     Datetime,
+    Decimal,
     Duration,
     Int64,
     Time,
@@ -85,7 +88,7 @@ def is_int_sequence(
     if _check_for_numpy(val) and isinstance(val, np.ndarray):
         return np.issubdtype(val.dtype, np.integer)
     elif include_series and isinstance(val, pl.Series):
-        return val.dtype in pl.INTEGER_DTYPES
+        return val.dtype.is_integer()
     return isinstance(val, Sequence) and _is_iterable_of(val, int)
 
 
@@ -339,7 +342,35 @@ def _cast_repr_strings_with_schema(
                 )
             elif tp == Boolean:
                 cast_cols[c] = F.col(c).map_dict(
-                    {"true": True, "false": False}, return_dtype=Boolean
+                    remapping={"true": True, "false": False},
+                    return_dtype=Boolean,
+                )
+            elif tp in INTEGER_DTYPES:
+                int_string = F.col(c).str.replace_all(r"[^\d+-]", "")
+                cast_cols[c] = (
+                    pl.when(int_string.str.len_bytes() > 0).then(int_string).cast(tp)
+                )
+            elif tp in FLOAT_DTYPES or tp.base_type() == Decimal:
+                # identify integer/fractional parts
+                integer_part = F.col(c).str.replace(r"^(.*)\D(\d*)$", "$1")
+                fractional_part = F.col(c).str.replace(r"^(.*)\D(\d*)$", "$2")
+                cast_cols[c] = (
+                    # check for empty string and/or integer format
+                    pl.when(F.col(c).str.contains(r"^[+-]?\d*$"))
+                    .then(pl.when(F.col(c).str.len_bytes() > 0).then(F.col(c)))
+                    # check for scientific notation
+                    .when(F.col(c).str.contains("[eE]"))
+                    .then(F.col(c).str.replace(r"[^eE\d]", "."))
+                    .otherwise(
+                        # recombine sanitised integer/fractional components
+                        pl.concat_str(
+                            integer_part.str.replace_all(r"[^\d+-]", ""),
+                            fractional_part,
+                            separator=".",
+                        )
+                    )
+                    .cast(Utf8)
+                    .cast(tp)
                 )
             elif tp != df.schema[c]:
                 cast_cols[c] = F.col(c).cast(tp)

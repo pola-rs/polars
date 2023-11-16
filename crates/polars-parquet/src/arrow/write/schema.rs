@@ -1,4 +1,4 @@
-use arrow::datatypes::{ArrowSchema, DataType, Field, TimeUnit};
+use arrow::datatypes::{ArrowDataType, ArrowSchema, Field, TimeUnit};
 use arrow::io::ipc::write::{default_ipc_fields, schema_to_bytes};
 use base64::engine::general_purpose;
 use base64::Engine as _;
@@ -42,7 +42,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
     };
     // create type from field
     match field.data_type().to_logical_type() {
-        DataType::Null => Ok(ParquetType::try_from_primitive(
+        ArrowDataType::Null => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Int32,
             repetition,
@@ -50,7 +50,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             Some(PrimitiveLogicalType::Unknown),
             None,
         )?),
-        DataType::Boolean => Ok(ParquetType::try_from_primitive(
+        ArrowDataType::Boolean => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Boolean,
             repetition,
@@ -58,7 +58,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             None,
             None,
         )?),
-        DataType::Int32 => Ok(ParquetType::try_from_primitive(
+        ArrowDataType::Int32 => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Int32,
             repetition,
@@ -66,8 +66,8 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             None,
             None,
         )?),
-        // DataType::Duration(_) has no parquet representation => do not apply any logical type
-        DataType::Int64 | DataType::Duration(_) => Ok(ParquetType::try_from_primitive(
+        // ArrowDataType::Duration(_) has no parquet representation => do not apply any logical type
+        ArrowDataType::Int64 | ArrowDataType::Duration(_) => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Int64,
             repetition,
@@ -77,7 +77,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
         )?),
         // no natural representation in parquet; leave it as is.
         // arrow consumers MAY use the arrow schema in the metadata to parse them.
-        DataType::Date64 => Ok(ParquetType::try_from_primitive(
+        ArrowDataType::Date64 => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Int64,
             repetition,
@@ -85,7 +85,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             None,
             None,
         )?),
-        DataType::Float32 => Ok(ParquetType::try_from_primitive(
+        ArrowDataType::Float32 => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Float,
             repetition,
@@ -93,7 +93,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             None,
             None,
         )?),
-        DataType::Float64 => Ok(ParquetType::try_from_primitive(
+        ArrowDataType::Float64 => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Double,
             repetition,
@@ -101,7 +101,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             None,
             None,
         )?),
-        DataType::Binary | DataType::LargeBinary => Ok(ParquetType::try_from_primitive(
+        ArrowDataType::Binary | ArrowDataType::LargeBinary => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::ByteArray,
             repetition,
@@ -109,7 +109,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             None,
             None,
         )?),
-        DataType::Utf8 | DataType::LargeUtf8 => Ok(ParquetType::try_from_primitive(
+        ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::ByteArray,
             repetition,
@@ -117,7 +117,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             Some(PrimitiveLogicalType::String),
             None,
         )?),
-        DataType::Date32 => Ok(ParquetType::try_from_primitive(
+        ArrowDataType::Date32 => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Int32,
             repetition,
@@ -125,7 +125,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             Some(PrimitiveLogicalType::Date),
             None,
         )?),
-        DataType::Int8 => Ok(ParquetType::try_from_primitive(
+        ArrowDataType::Int8 => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Int32,
             repetition,
@@ -133,7 +133,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             Some(PrimitiveLogicalType::Integer(IntegerType::Int8)),
             None,
         )?),
-        DataType::Int16 => Ok(ParquetType::try_from_primitive(
+        ArrowDataType::Int16 => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Int32,
             repetition,
@@ -141,7 +141,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             Some(PrimitiveLogicalType::Integer(IntegerType::Int16)),
             None,
         )?),
-        DataType::UInt8 => Ok(ParquetType::try_from_primitive(
+        ArrowDataType::UInt8 => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Int32,
             repetition,
@@ -149,7 +149,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             Some(PrimitiveLogicalType::Integer(IntegerType::UInt8)),
             None,
         )?),
-        DataType::UInt16 => Ok(ParquetType::try_from_primitive(
+        ArrowDataType::UInt16 => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Int32,
             repetition,
@@ -157,7 +157,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             Some(PrimitiveLogicalType::Integer(IntegerType::UInt16)),
             None,
         )?),
-        DataType::UInt32 => Ok(ParquetType::try_from_primitive(
+        ArrowDataType::UInt32 => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Int32,
             repetition,
@@ -165,7 +165,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             Some(PrimitiveLogicalType::Integer(IntegerType::UInt32)),
             None,
         )?),
-        DataType::UInt64 => Ok(ParquetType::try_from_primitive(
+        ArrowDataType::UInt64 => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Int64,
             repetition,
@@ -175,7 +175,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
         )?),
         // no natural representation in parquet; leave it as is.
         // arrow consumers MAY use the arrow schema in the metadata to parse them.
-        DataType::Timestamp(TimeUnit::Second, _) => Ok(ParquetType::try_from_primitive(
+        ArrowDataType::Timestamp(TimeUnit::Second, _) => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Int64,
             repetition,
@@ -183,7 +183,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             None,
             None,
         )?),
-        DataType::Timestamp(time_unit, zone) => Ok(ParquetType::try_from_primitive(
+        ArrowDataType::Timestamp(time_unit, zone) => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Int64,
             repetition,
@@ -201,7 +201,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
         )?),
         // no natural representation in parquet; leave it as is.
         // arrow consumers MAY use the arrow schema in the metadata to parse them.
-        DataType::Time32(TimeUnit::Second) => Ok(ParquetType::try_from_primitive(
+        ArrowDataType::Time32(TimeUnit::Second) => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Int32,
             repetition,
@@ -209,7 +209,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             None,
             None,
         )?),
-        DataType::Time32(TimeUnit::Millisecond) => Ok(ParquetType::try_from_primitive(
+        ArrowDataType::Time32(TimeUnit::Millisecond) => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Int32,
             repetition,
@@ -220,7 +220,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             }),
             None,
         )?),
-        DataType::Time64(time_unit) => Ok(ParquetType::try_from_primitive(
+        ArrowDataType::Time64(time_unit) => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::Int64,
             repetition,
@@ -239,7 +239,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             }),
             None,
         )?),
-        DataType::Struct(fields) => {
+        ArrowDataType::Struct(fields) => {
             if fields.is_empty() {
                 polars_bail!(InvalidOperation:
                     "Parquet does not support writing empty structs".to_string(),
@@ -254,11 +254,11 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
                 name, repetition, None, None, fields, None,
             ))
         },
-        DataType::Dictionary(_, value, _) => {
+        ArrowDataType::Dictionary(_, value, _) => {
             let dict_field = Field::new(name.as_str(), value.as_ref().clone(), field.is_nullable);
             to_parquet_type(&dict_field)
         },
-        DataType::FixedSizeBinary(size) => Ok(ParquetType::try_from_primitive(
+        ArrowDataType::FixedSizeBinary(size) => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::FixedLenByteArray(*size),
             repetition,
@@ -266,7 +266,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             None,
             None,
         )?),
-        DataType::Decimal(precision, scale) => {
+        ArrowDataType::Decimal(precision, scale) => {
             let precision = *precision;
             let scale = *scale;
             let logical_type = Some(PrimitiveLogicalType::Decimal(precision, scale));
@@ -288,7 +288,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
                 None,
             )?)
         },
-        DataType::Decimal256(precision, scale) => {
+        ArrowDataType::Decimal256(precision, scale) => {
             let precision = *precision;
             let scale = *scale;
             let logical_type = Some(PrimitiveLogicalType::Decimal(precision, scale));
@@ -332,7 +332,7 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
                 )?)
             }
         },
-        DataType::Interval(_) => Ok(ParquetType::try_from_primitive(
+        ArrowDataType::Interval(_) => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::FixedLenByteArray(12),
             repetition,
@@ -340,24 +340,24 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             None,
             None,
         )?),
-        DataType::List(f) | DataType::FixedSizeList(f, _) | DataType::LargeList(f) => {
-            Ok(ParquetType::from_group(
-                name,
-                repetition,
-                Some(GroupConvertedType::List),
-                Some(GroupLogicalType::List),
-                vec![ParquetType::from_group(
-                    "list".to_string(),
-                    Repetition::Repeated,
-                    None,
-                    None,
-                    vec![to_parquet_type(f)?],
-                    None,
-                )],
+        ArrowDataType::List(f)
+        | ArrowDataType::FixedSizeList(f, _)
+        | ArrowDataType::LargeList(f) => Ok(ParquetType::from_group(
+            name,
+            repetition,
+            Some(GroupConvertedType::List),
+            Some(GroupLogicalType::List),
+            vec![ParquetType::from_group(
+                "list".to_string(),
+                Repetition::Repeated,
                 None,
-            ))
-        },
-        DataType::Map(f, _) => Ok(ParquetType::from_group(
+                None,
+                vec![to_parquet_type(f)?],
+                None,
+            )],
+            None,
+        )),
+        ArrowDataType::Map(f, _) => Ok(ParquetType::from_group(
             name,
             repetition,
             Some(GroupConvertedType::Map),

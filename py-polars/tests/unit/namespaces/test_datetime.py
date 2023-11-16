@@ -698,10 +698,9 @@ def test_offset_by_crossing_dst(time_zone: str | None) -> None:
 
 
 def test_negative_offset_by_err_msg_8464() -> None:
-    with pytest.raises(
-        ComputeError, match=r"cannot advance '2022-03-30 00:00:00' by -1 month\(s\)"
-    ):
-        pl.Series([datetime(2022, 3, 30)]).dt.offset_by("-1mo")
+    result = pl.Series([datetime(2022, 3, 30)]).dt.offset_by("-1mo")
+    expected = pl.Series([datetime(2022, 2, 28)])
+    assert_series_equal(result, expected)
 
 
 def test_offset_by_truncate_sorted_flag() -> None:
@@ -864,9 +863,9 @@ def test_offset_by_expressions() -> None:
 @pytest.mark.parametrize(
     ("duration", "input_date", "expected"),
     [
-        ("1mo_saturating", date(2018, 1, 31), date(2018, 2, 28)),
-        ("1y_saturating", date(2024, 2, 29), date(2025, 2, 28)),
-        ("1y1mo_saturating", date(2024, 1, 30), date(2025, 2, 28)),
+        ("1mo", date(2018, 1, 31), date(2018, 2, 28)),
+        ("1y", date(2024, 2, 29), date(2025, 2, 28)),
+        ("1y1mo", date(2024, 1, 30), date(2025, 2, 28)),
     ],
 )
 def test_offset_by_saturating_8217_8474(

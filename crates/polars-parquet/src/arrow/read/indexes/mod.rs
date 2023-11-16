@@ -17,7 +17,7 @@ use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
 use arrow::array::{Array, UInt64Array};
-use arrow::datatypes::{DataType, Field, PhysicalType, PrimitiveType};
+use arrow::datatypes::{ArrowDataType, Field, PhysicalType, PrimitiveType};
 use polars_error::{polars_bail, PolarsResult};
 
 use super::get_field_pages;
@@ -64,7 +64,7 @@ pub struct ColumnPageStatistics {
 /// This function errors iff the value is not deserializable to arrow (e.g. invalid utf-8)
 fn deserialize(
     indexes: &mut VecDeque<&dyn ParquetIndex>,
-    data_type: DataType,
+    data_type: ArrowDataType,
 ) -> PolarsResult<FieldPageStatistics> {
     match data_type.to_physical_type() {
         PhysicalType::Boolean => {
@@ -203,39 +203,40 @@ fn deserialize(
             Ok(fixed_len_binary::deserialize(&index.indexes, data_type).into())
         },
         PhysicalType::Dictionary(_) => {
-            if let DataType::Dictionary(_, inner, _) = data_type.to_logical_type() {
+            if let ArrowDataType::Dictionary(_, inner, _) = data_type.to_logical_type() {
                 deserialize(indexes, (**inner).clone())
             } else {
                 unreachable!()
             }
         },
         PhysicalType::List => {
-            if let DataType::List(inner) = data_type.to_logical_type() {
+            if let ArrowDataType::List(inner) = data_type.to_logical_type() {
                 deserialize(indexes, inner.data_type.clone())
             } else {
                 unreachable!()
             }
         },
         PhysicalType::LargeList => {
-            if let DataType::LargeList(inner) = data_type.to_logical_type() {
+            if let ArrowDataType::LargeList(inner) = data_type.to_logical_type() {
                 deserialize(indexes, inner.data_type.clone())
             } else {
                 unreachable!()
             }
         },
         PhysicalType::Map => {
-            if let DataType::Map(inner, _) = data_type.to_logical_type() {
+            if let ArrowDataType::Map(inner, _) = data_type.to_logical_type() {
                 deserialize(indexes, inner.data_type.clone())
             } else {
                 unreachable!()
             }
         },
         PhysicalType::Struct => {
-            let children_fields = if let DataType::Struct(children) = data_type.to_logical_type() {
-                children
-            } else {
-                unreachable!()
-            };
+            let children_fields =
+                if let ArrowDataType::Struct(children) = data_type.to_logical_type() {
+                    children
+                } else {
+                    unreachable!()
+                };
             let children = children_fields
                 .iter()
                 .map(|child| deserialize(indexes, child.data_type.clone()))

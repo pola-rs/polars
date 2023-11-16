@@ -1,7 +1,7 @@
 //! Contains comparison operators
 //!
 //! The module contains functions that compare either an [`Array`] and a [`Scalar`]
-//! or two [`Array`]s (of the same [`DataType`]). The scalar-oriented functions are
+//! or two [`Array`]s (of the same [`ArrowDataType`]). The scalar-oriented functions are
 //! suffixed with `_scalar`.
 //!
 //! The functions are organized in two variants:
@@ -45,7 +45,7 @@
 //! ```
 
 use crate::array::*;
-use crate::datatypes::{DataType, IntervalUnit};
+use crate::datatypes::{ArrowDataType, IntervalUnit};
 use crate::scalar::*;
 
 pub mod binary;
@@ -171,8 +171,8 @@ pub fn eq_and_validity(lhs: &dyn Array, rhs: &dyn Array) -> BooleanArray {
     compare!(lhs, rhs, eq_and_validity, match_eq)
 }
 
-/// Returns whether a [`DataType`] is comparable is supported by [`eq`].
-pub fn can_eq(data_type: &DataType) -> bool {
+/// Returns whether a [`ArrowDataType`] is comparable is supported by [`eq`].
+pub fn can_eq(data_type: &ArrowDataType) -> bool {
     can_partial_eq(data_type)
 }
 
@@ -198,8 +198,8 @@ pub fn neq_and_validity(lhs: &dyn Array, rhs: &dyn Array) -> BooleanArray {
     compare!(lhs, rhs, neq_and_validity, match_eq)
 }
 
-/// Returns whether a [`DataType`] is comparable is supported by [`neq`].
-pub fn can_neq(data_type: &DataType) -> bool {
+/// Returns whether a [`ArrowDataType`] is comparable is supported by [`neq`].
+pub fn can_neq(data_type: &ArrowDataType) -> bool {
     can_partial_eq(data_type)
 }
 
@@ -214,8 +214,8 @@ pub fn lt(lhs: &dyn Array, rhs: &dyn Array) -> BooleanArray {
     compare!(lhs, rhs, lt, match_eq_ord)
 }
 
-/// Returns whether a [`DataType`] is comparable is supported by [`lt`].
-pub fn can_lt(data_type: &DataType) -> bool {
+/// Returns whether a [`ArrowDataType`] is comparable is supported by [`lt`].
+pub fn can_lt(data_type: &ArrowDataType) -> bool {
     can_partial_eq_and_ord(data_type)
 }
 
@@ -230,8 +230,8 @@ pub fn lt_eq(lhs: &dyn Array, rhs: &dyn Array) -> BooleanArray {
     compare!(lhs, rhs, lt_eq, match_eq_ord)
 }
 
-/// Returns whether a [`DataType`] is comparable is supported by [`lt`].
-pub fn can_lt_eq(data_type: &DataType) -> bool {
+/// Returns whether a [`ArrowDataType`] is comparable is supported by [`lt`].
+pub fn can_lt_eq(data_type: &ArrowDataType) -> bool {
     can_partial_eq_and_ord(data_type)
 }
 
@@ -246,8 +246,8 @@ pub fn gt(lhs: &dyn Array, rhs: &dyn Array) -> BooleanArray {
     compare!(lhs, rhs, gt, match_eq_ord)
 }
 
-/// Returns whether a [`DataType`] is comparable is supported by [`gt`].
-pub fn can_gt(data_type: &DataType) -> bool {
+/// Returns whether a [`ArrowDataType`] is comparable is supported by [`gt`].
+pub fn can_gt(data_type: &ArrowDataType) -> bool {
     can_partial_eq_and_ord(data_type)
 }
 
@@ -262,8 +262,8 @@ pub fn gt_eq(lhs: &dyn Array, rhs: &dyn Array) -> BooleanArray {
     compare!(lhs, rhs, gt_eq, match_eq_ord)
 }
 
-/// Returns whether a [`DataType`] is comparable is supported by [`gt_eq`].
-pub fn can_gt_eq(data_type: &DataType) -> bool {
+/// Returns whether a [`ArrowDataType`] is comparable is supported by [`gt_eq`].
+pub fn can_gt_eq(data_type: &ArrowDataType) -> bool {
     can_partial_eq_and_ord(data_type)
 }
 
@@ -276,7 +276,7 @@ macro_rules! compare_scalar {
             rhs.data_type().to_logical_type()
         );
         if !rhs.is_valid() {
-            return BooleanArray::new_null(DataType::Boolean, lhs.len());
+            return BooleanArray::new_null(ArrowDataType::Boolean, lhs.len());
         }
 
         use crate::datatypes::PhysicalType::*;
@@ -335,8 +335,8 @@ pub fn eq_scalar_and_validity(lhs: &dyn Array, rhs: &dyn Scalar) -> BooleanArray
     compare_scalar!(lhs, rhs, eq_scalar_and_validity, match_eq)
 }
 
-/// Returns whether a [`DataType`] is supported by [`eq_scalar`].
-pub fn can_eq_scalar(data_type: &DataType) -> bool {
+/// Returns whether a [`ArrowDataType`] is supported by [`eq_scalar`].
+pub fn can_eq_scalar(data_type: &ArrowDataType) -> bool {
     can_partial_eq_scalar(data_type)
 }
 
@@ -360,8 +360,8 @@ pub fn neq_scalar_and_validity(lhs: &dyn Array, rhs: &dyn Scalar) -> BooleanArra
     compare_scalar!(lhs, rhs, neq_scalar_and_validity, match_eq)
 }
 
-/// Returns whether a [`DataType`] is supported by [`neq_scalar`].
-pub fn can_neq_scalar(data_type: &DataType) -> bool {
+/// Returns whether a [`ArrowDataType`] is supported by [`neq_scalar`].
+pub fn can_neq_scalar(data_type: &ArrowDataType) -> bool {
     can_partial_eq_scalar(data_type)
 }
 
@@ -375,8 +375,8 @@ pub fn lt_scalar(lhs: &dyn Array, rhs: &dyn Scalar) -> BooleanArray {
     compare_scalar!(lhs, rhs, lt_scalar, match_eq_ord)
 }
 
-/// Returns whether a [`DataType`] is supported by [`lt_scalar`].
-pub fn can_lt_scalar(data_type: &DataType) -> bool {
+/// Returns whether a [`ArrowDataType`] is supported by [`lt_scalar`].
+pub fn can_lt_scalar(data_type: &ArrowDataType) -> bool {
     can_partial_eq_and_ord_scalar(data_type)
 }
 
@@ -390,8 +390,8 @@ pub fn lt_eq_scalar(lhs: &dyn Array, rhs: &dyn Scalar) -> BooleanArray {
     compare_scalar!(lhs, rhs, lt_eq_scalar, match_eq_ord)
 }
 
-/// Returns whether a [`DataType`] is supported by [`lt_eq_scalar`].
-pub fn can_lt_eq_scalar(data_type: &DataType) -> bool {
+/// Returns whether a [`ArrowDataType`] is supported by [`lt_eq_scalar`].
+pub fn can_lt_eq_scalar(data_type: &ArrowDataType) -> bool {
     can_partial_eq_and_ord_scalar(data_type)
 }
 
@@ -405,8 +405,8 @@ pub fn gt_scalar(lhs: &dyn Array, rhs: &dyn Scalar) -> BooleanArray {
     compare_scalar!(lhs, rhs, gt_scalar, match_eq_ord)
 }
 
-/// Returns whether a [`DataType`] is supported by [`gt_scalar`].
-pub fn can_gt_scalar(data_type: &DataType) -> bool {
+/// Returns whether a [`ArrowDataType`] is supported by [`gt_scalar`].
+pub fn can_gt_scalar(data_type: &ArrowDataType) -> bool {
     can_partial_eq_and_ord_scalar(data_type)
 }
 
@@ -420,67 +420,67 @@ pub fn gt_eq_scalar(lhs: &dyn Array, rhs: &dyn Scalar) -> BooleanArray {
     compare_scalar!(lhs, rhs, gt_eq_scalar, match_eq_ord)
 }
 
-/// Returns whether a [`DataType`] is supported by [`gt_eq_scalar`].
-pub fn can_gt_eq_scalar(data_type: &DataType) -> bool {
+/// Returns whether a [`ArrowDataType`] is supported by [`gt_eq_scalar`].
+pub fn can_gt_eq_scalar(data_type: &ArrowDataType) -> bool {
     can_partial_eq_and_ord_scalar(data_type)
 }
 
 // The list of operations currently supported.
-fn can_partial_eq_and_ord_scalar(data_type: &DataType) -> bool {
-    if let DataType::Dictionary(_, values, _) = data_type.to_logical_type() {
+fn can_partial_eq_and_ord_scalar(data_type: &ArrowDataType) -> bool {
+    if let ArrowDataType::Dictionary(_, values, _) = data_type.to_logical_type() {
         return can_partial_eq_and_ord_scalar(values.as_ref());
     }
     can_partial_eq_and_ord(data_type)
 }
 
 // The list of operations currently supported.
-fn can_partial_eq_and_ord(data_type: &DataType) -> bool {
+fn can_partial_eq_and_ord(data_type: &ArrowDataType) -> bool {
     matches!(
         data_type,
-        DataType::Boolean
-            | DataType::Int8
-            | DataType::Int16
-            | DataType::Int32
-            | DataType::Date32
-            | DataType::Time32(_)
-            | DataType::Interval(IntervalUnit::YearMonth)
-            | DataType::Int64
-            | DataType::Timestamp(_, _)
-            | DataType::Date64
-            | DataType::Time64(_)
-            | DataType::Duration(_)
-            | DataType::UInt8
-            | DataType::UInt16
-            | DataType::UInt32
-            | DataType::UInt64
-            | DataType::Float32
-            | DataType::Float64
-            | DataType::Utf8
-            | DataType::LargeUtf8
-            | DataType::Decimal(_, _)
-            | DataType::Binary
-            | DataType::LargeBinary
+        ArrowDataType::Boolean
+            | ArrowDataType::Int8
+            | ArrowDataType::Int16
+            | ArrowDataType::Int32
+            | ArrowDataType::Date32
+            | ArrowDataType::Time32(_)
+            | ArrowDataType::Interval(IntervalUnit::YearMonth)
+            | ArrowDataType::Int64
+            | ArrowDataType::Timestamp(_, _)
+            | ArrowDataType::Date64
+            | ArrowDataType::Time64(_)
+            | ArrowDataType::Duration(_)
+            | ArrowDataType::UInt8
+            | ArrowDataType::UInt16
+            | ArrowDataType::UInt32
+            | ArrowDataType::UInt64
+            | ArrowDataType::Float32
+            | ArrowDataType::Float64
+            | ArrowDataType::Utf8
+            | ArrowDataType::LargeUtf8
+            | ArrowDataType::Decimal(_, _)
+            | ArrowDataType::Binary
+            | ArrowDataType::LargeBinary
     )
 }
 
 // The list of operations currently supported.
-fn can_partial_eq(data_type: &DataType) -> bool {
+fn can_partial_eq(data_type: &ArrowDataType) -> bool {
     can_partial_eq_and_ord(data_type)
         || matches!(
             data_type.to_logical_type(),
-            DataType::Float16
-                | DataType::Interval(IntervalUnit::DayTime)
-                | DataType::Interval(IntervalUnit::MonthDayNano)
+            ArrowDataType::Float16
+                | ArrowDataType::Interval(IntervalUnit::DayTime)
+                | ArrowDataType::Interval(IntervalUnit::MonthDayNano)
         )
 }
 
 // The list of operations currently supported.
-fn can_partial_eq_scalar(data_type: &DataType) -> bool {
+fn can_partial_eq_scalar(data_type: &ArrowDataType) -> bool {
     can_partial_eq_and_ord_scalar(data_type)
         || matches!(
             data_type.to_logical_type(),
-            DataType::Interval(IntervalUnit::DayTime)
-                | DataType::Interval(IntervalUnit::MonthDayNano)
+            ArrowDataType::Interval(IntervalUnit::DayTime)
+                | ArrowDataType::Interval(IntervalUnit::MonthDayNano)
         )
 }
 
@@ -495,12 +495,12 @@ pub fn finish_eq_validities(
     match (validity_lhs, validity_rhs) {
         (None, None) => output_without_validities,
         (Some(lhs), None) => compute::boolean::and(
-            &BooleanArray::new(DataType::Boolean, lhs, None),
+            &BooleanArray::new(ArrowDataType::Boolean, lhs, None),
             &output_without_validities,
         ),
         (None, Some(rhs)) => compute::boolean::and(
             &output_without_validities,
-            &BooleanArray::new(DataType::Boolean, rhs, None),
+            &BooleanArray::new(ArrowDataType::Boolean, rhs, None),
         ),
         (Some(lhs), Some(rhs)) => {
             let lhs_validity_unset_bits = lhs.unset_bits();
@@ -510,8 +510,8 @@ pub fn finish_eq_validities(
             // these masked out values might differ and lead to a `eq == false` that has to
             // be corrected as both should be `null == null = true`
 
-            let lhs = BooleanArray::new(DataType::Boolean, lhs, None);
-            let rhs = BooleanArray::new(DataType::Boolean, rhs, None);
+            let lhs = BooleanArray::new(ArrowDataType::Boolean, lhs, None);
+            let rhs = BooleanArray::new(ArrowDataType::Boolean, rhs, None);
             let eq_validities = compute::comparison::boolean::eq(&lhs, &rhs);
 
             // validity_bits are equal AND values are equal
@@ -556,12 +556,12 @@ pub fn finish_neq_validities(
         (None, None) => output_without_validities,
         (Some(lhs), None) => {
             let lhs_negated =
-                compute::boolean::not(&BooleanArray::new(DataType::Boolean, lhs, None));
+                compute::boolean::not(&BooleanArray::new(ArrowDataType::Boolean, lhs, None));
             compute::boolean::or(&lhs_negated, &output_without_validities)
         },
         (None, Some(rhs)) => {
             let rhs_negated =
-                compute::boolean::not(&BooleanArray::new(DataType::Boolean, rhs, None));
+                compute::boolean::not(&BooleanArray::new(ArrowDataType::Boolean, rhs, None));
             compute::boolean::or(&output_without_validities, &rhs_negated)
         },
         (Some(lhs), Some(rhs)) => {
@@ -571,8 +571,8 @@ pub fn finish_neq_validities(
             // this branch is a bit more complicated as both arrays can have masked out values
             // these masked out values might differ and lead to a `neq == true` that has to
             // be corrected as both should be `null != null = false`
-            let lhs = BooleanArray::new(DataType::Boolean, lhs, None);
-            let rhs = BooleanArray::new(DataType::Boolean, rhs, None);
+            let lhs = BooleanArray::new(ArrowDataType::Boolean, lhs, None);
+            let rhs = BooleanArray::new(ArrowDataType::Boolean, rhs, None);
             let neq_validities = compute::comparison::boolean::neq(&lhs, &rhs);
 
             // validity_bits are not equal OR values not equal

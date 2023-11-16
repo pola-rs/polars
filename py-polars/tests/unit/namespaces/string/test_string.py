@@ -222,22 +222,22 @@ def test_str_case_cyrillic() -> None:
     assert s.str.to_uppercase().to_list() == [a.upper() for a in vals]
 
 
-def test_str_parse_int() -> None:
+def test_str_to_integer() -> None:
     bin = pl.Series(["110", "101", "010"])
-    assert_series_equal(bin.str.parse_int(2), pl.Series([6, 5, 2]).cast(pl.Int32))
+    assert_series_equal(bin.str.to_integer(base=2), pl.Series([6, 5, 2]).cast(pl.Int64))
 
     hex = pl.Series(["fa1e", "ff00", "cafe", "invalid", None])
     assert_series_equal(
-        hex.str.parse_int(16, strict=False),
-        pl.Series([64030, 65280, 51966, None, None]).cast(pl.Int32),
+        hex.str.to_integer(base=16, strict=False),
+        pl.Series([64030, 65280, 51966, None, None]).cast(pl.Int64),
         check_exact=True,
     )
 
     with pytest.raises(pl.ComputeError):
-        hex.str.parse_int(16)
+        hex.str.to_integer(base=16)
 
 
-def test_str_parse_int_df() -> None:
+def test_str_to_integer_df() -> None:
     df = pl.DataFrame(
         {
             "bin": ["110", "101", "-010", "invalid", None],
@@ -246,8 +246,8 @@ def test_str_parse_int_df() -> None:
     )
     out = df.with_columns(
         [
-            pl.col("bin").str.parse_int(2, strict=False),
-            pl.col("hex").str.parse_int(16, strict=False),
+            pl.col("bin").str.to_integer(base=2, strict=False),
+            pl.col("hex").str.to_integer(base=16, strict=False),
         ]
     )
 
@@ -261,13 +261,16 @@ def test_str_parse_int_df() -> None:
 
     with pytest.raises(pl.ComputeError):
         df.with_columns(
-            [pl.col("bin").str.parse_int(2), pl.col("hex").str.parse_int(16)]
+            [
+                pl.col("bin").str.to_integer(base=2),
+                pl.col("hex").str.to_integer(base=16),
+            ]
         )
 
 
-def test_str_parse_int_deprecated_default() -> None:
+def test_str_parse_int_deprecated() -> None:
     s = pl.Series(["110", "101", "010"])
-    with pytest.deprecated_call(match="default value"):
+    with pytest.deprecated_call(match="It has been renamed to `to_integer`"):
         result = s.str.parse_int()
     expected = pl.Series([6, 5, 2], dtype=pl.Int32)
     assert_series_equal(result, expected)

@@ -17,7 +17,7 @@ lf = pl.LazyFrame({"b": [4, 5, 6]})
 # Register all dataframes in the global namespace: registers both df and lf
 ctx = pl.SQLContext(register_globals=True)
 
-# Other option: register dataframe df as "df" and lazyframe lf as "lf"
+# Other option: register DataFrame df as "df" and lazyframe lf as "lf"
 ctx = pl.SQLContext(df=df, lf=lf)
 # --8<-- [end:register_context]
 

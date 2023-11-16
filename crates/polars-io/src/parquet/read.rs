@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
+#[cfg(feature = "cloud")]
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_parquet::read;
 use polars_parquet::write::FileMetaData;
@@ -17,8 +18,10 @@ use crate::mmap::MmapBytesReader;
 use crate::parquet::async_impl::FetchRowGroupsFromObjectStore;
 #[cfg(feature = "cloud")]
 use crate::parquet::async_impl::ParquetObjectStore;
+#[cfg(feature = "cloud")]
+use crate::parquet::read_impl::materialize_empty_df;
+use crate::parquet::read_impl::read_parquet;
 pub use crate::parquet::read_impl::BatchedParquetReader;
-use crate::parquet::read_impl::{materialize_hive_partitions, read_parquet};
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::RowCount;
@@ -51,43 +54,12 @@ pub struct ParquetReader<R: Read + Seek> {
     row_count: Option<RowCount>,
     low_memory: bool,
     metadata: Option<Arc<FileMetaData>>,
+    predicate: Option<Arc<dyn PhysicalIoExpr>>,
     hive_partition_columns: Option<Vec<Series>>,
     use_statistics: bool,
 }
 
 impl<R: MmapBytesReader> ParquetReader<R> {
-    #[cfg(feature = "lazy")]
-    // todo! hoist to lazy crate
-    pub fn _finish_with_scan_ops(
-        mut self,
-        predicate: Option<Arc<dyn PhysicalIoExpr>>,
-        projection: Option<&[usize]>,
-    ) -> PolarsResult<DataFrame> {
-        // this path takes predicates and parallelism into account
-        let metadata = self.get_metadata()?.clone();
-        let schema = self.schema()?;
-
-        let rechunk = self.rechunk;
-        read_parquet(
-            self.reader,
-            self.n_rows.unwrap_or(usize::MAX),
-            projection,
-            &schema,
-            Some(metadata),
-            predicate.as_deref(),
-            self.parallel,
-            self.row_count,
-            self.use_statistics,
-            self.hive_partition_columns.as_deref(),
-        )
-        .map(|mut df| {
-            if rechunk {
-                df.as_single_chunk_par();
-            };
-            df
-        })
-    }
-
     /// Try to reduce memory pressure at the expense of performance. If setting this does not reduce memory
     /// enough, turn off parallelization.
     pub fn set_low_memory(mut self, low_memory: bool) -> Self {
@@ -169,6 +141,11 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         }
         Ok(self.metadata.as_ref().unwrap())
     }
+
+    pub fn with_predicate(mut self, predicate: Option<Arc<dyn PhysicalIoExpr>>) -> Self {
+        self.predicate = predicate;
+        self
+    }
 }
 
 impl<R: MmapBytesReader + 'static> ParquetReader<R> {
@@ -183,7 +160,7 @@ impl<R: MmapBytesReader + 'static> ParquetReader<R> {
             schema,
             self.n_rows.unwrap_or(usize::MAX),
             self.projection,
-            None,
+            self.predicate.clone(),
             self.row_count,
             chunk_size,
             self.use_statistics,
@@ -205,6 +182,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             row_count: None,
             low_memory: false,
             metadata: None,
+            predicate: None,
             schema: None,
             use_statistics: true,
             hive_partition_columns: None,
@@ -230,7 +208,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             self.projection.as_deref(),
             &schema,
             Some(metadata),
-            None,
+            self.predicate.as_deref(),
             self.parallel,
             self.row_count,
             self.use_statistics,
@@ -365,8 +343,10 @@ impl ParquetAsyncReader {
     pub async fn finish(mut self) -> PolarsResult<DataFrame> {
         let rechunk = self.rechunk;
         let metadata = self.get_metadata().await?.clone();
-        let schema = self.schema().await?;
+        let reader_schema = self.schema().await?;
+        let row_count = self.row_count.clone();
         let hive_partition_columns = self.hive_partition_columns.clone();
+        let projection = self.projection.clone();
 
         // batched reader deals with slice pushdown
         let reader = self.batched(usize::MAX).await?;
@@ -378,9 +358,12 @@ impl ParquetAsyncReader {
             chunks.push(result?)
         }
         if chunks.is_empty() {
-            let mut df = DataFrame::from(schema.as_ref());
-            materialize_hive_partitions(&mut df, hive_partition_columns.as_deref(), 0);
-            return Ok(df);
+            return Ok(materialize_empty_df(
+                projection.as_deref(),
+                reader_schema.as_ref(),
+                hive_partition_columns.as_deref(),
+                row_count.as_ref(),
+            ));
         }
         let mut df = accumulate_dataframes_vertical_unchecked(chunks);
 

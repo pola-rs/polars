@@ -1,5 +1,8 @@
-use std::path::{Path, PathBuf};
+#[cfg(feature = "cloud")]
+use std::path::Path;
+use std::path::PathBuf;
 
+#[cfg(feature = "cloud")]
 use polars_core::config::{get_file_prefetch_size, verbose};
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_io::cloud::CloudOptions;
@@ -16,6 +19,7 @@ pub struct ParquetExec {
     #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
     file_options: FileScanOptions,
+    #[allow(dead_code)]
     metadata: Option<Arc<FileMetaData>>,
 }
 
@@ -69,7 +73,7 @@ impl ParquetExec {
                 .iter()
                 .map(|path| {
                     let mut file_info = self.file_info.clone();
-                    file_info.update_hive_partitions(path);
+                    file_info.update_hive_partitions(path)?;
 
                     let hive_partitions = file_info
                         .hive_parts
@@ -130,10 +134,9 @@ impl ParquetExec {
                             reader
                                 .with_n_rows(remaining_rows_to_read)
                                 .with_row_count(row_count)
-                                ._finish_with_scan_ops(
-                                    predicate.clone(),
-                                    projection.as_ref().map(|v| v.as_ref()),
-                                )
+                                .with_predicate(predicate.clone())
+                                .with_projection(projection.clone())
+                                .finish()
                         },
                     )
                     .collect::<PolarsResult<Vec<_>>>()
@@ -252,7 +255,7 @@ impl ParquetExec {
                             offset: rc.offset + *cumulative_read as IdxSize,
                         });
 
-                        file_info.update_hive_partitions(path);
+                        file_info.update_hive_partitions(path)?;
 
                         let hive_partitions = file_info
                             .hive_parts

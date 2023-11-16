@@ -981,7 +981,7 @@ def test_spearman_corr_ties() -> None:
     df = pl.DataFrame({"a": [1, 1, 1, 2, 3, 7, 4], "b": [4, 3, 2, 2, 4, 3, 1]})
 
     result = df.select(
-        pl.corr("a", "b", method="spearman").alias("a1"),
+        pl.corr("a", "b", method="spearman", ddof=0).alias("a1"),
         pl.corr(pl.col("a").rank("min"), pl.col("b").rank("min")).alias("a2"),
         pl.corr(pl.col("a").rank(), pl.col("b").rank()).alias("a3"),
     )
@@ -1006,9 +1006,9 @@ def test_pearson_corr() -> None:
 
     out = (
         ldf.group_by("era", maintain_order=True).agg(
-            pl.corr(pl.col("prediction"), pl.col("target"), method="pearson").alias(
-                "c"
-            ),
+            pl.corr(
+                pl.col("prediction"), pl.col("target"), method="pearson", ddof=0
+            ).alias("c"),
         )
     ).collect()["c"]
     assert out.to_list() == pytest.approx([0.6546536707079772, -5.477514993831792e-1])
@@ -1016,7 +1016,7 @@ def test_pearson_corr() -> None:
     # we can also pass in column names directly
     out = (
         ldf.group_by("era", maintain_order=True).agg(
-            pl.corr("prediction", "target", method="pearson").alias("c"),
+            pl.corr("prediction", "target", method="pearson", ddof=0).alias("c"),
         )
     ).collect()["c"]
     assert out.to_list() == pytest.approx([0.6546536707079772, -5.477514993831792e-1])

@@ -1,7 +1,6 @@
 use parquet_format_safe::{BoundaryOrder, ColumnIndex, OffsetIndex, PageLocation};
 
 use crate::parquet::error::{Error, Result};
-pub use crate::parquet::metadata::KeyValue;
 use crate::parquet::statistics::serialize_statistics;
 use crate::parquet::write::page::{is_data_page, PageWriteSpec};
 

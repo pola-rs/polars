@@ -150,7 +150,7 @@ jobs:
             --release
             --manifest-path py-polars/Cargo.toml
             --out dist
-          manylinux: '2_28'
+          manylinux: ${{ matrix.architecture == 'aarch64' && '2_24' || 'auto' }}
 
       - name: Upload wheel
         uses: actions/upload-artifact@v3
@@ -242,7 +242,7 @@ jobs:
           TAG: ${{ steps.github-release.outputs.tag_name }}
 
       - name: Trigger other workflows related to the release
-        if: inputs.dry-run == false && steps.version.outputs.is_prerelease == false
+        if: inputs.dry-run == false && steps.version.outputs.is_prerelease == 'false'
         uses: peter-evans/repository-dispatch@v2
         with:
           event-type: python-release

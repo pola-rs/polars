@@ -12,7 +12,7 @@ mod struct_;
 mod utils;
 
 use arrow::array::{Array, DictionaryKey, FixedSizeListArray, ListArray, MapArray};
-use arrow::datatypes::{DataType, Field, IntervalUnit};
+use arrow::datatypes::{ArrowDataType, Field, IntervalUnit};
 use arrow::offset::Offsets;
 use simple::page_iter_to_arrays;
 
@@ -41,13 +41,13 @@ pub fn get_page_iterator<R: Read + Seek>(
 
 /// Creates a new [`ListArray`] or [`FixedSizeListArray`].
 pub fn create_list(
-    data_type: DataType,
+    data_type: ArrowDataType,
     nested: &mut NestedState,
     values: Box<dyn Array>,
 ) -> Box<dyn Array> {
     let (mut offsets, validity) = nested.nested.pop().unwrap().inner();
     match data_type.to_logical_type() {
-        DataType::List(_) => {
+        ArrowDataType::List(_) => {
             offsets.push(values.len() as i64);
 
             let offsets = offsets.iter().map(|x| *x as i32).collect::<Vec<_>>();
@@ -63,7 +63,7 @@ pub fn create_list(
                 validity.and_then(|x| x.into()),
             ))
         },
-        DataType::LargeList(_) => {
+        ArrowDataType::LargeList(_) => {
             offsets.push(values.len() as i64);
 
             Box::new(ListArray::<i64>::new(
@@ -73,7 +73,7 @@ pub fn create_list(
                 validity.and_then(|x| x.into()),
             ))
         },
-        DataType::FixedSizeList(_, _) => Box::new(FixedSizeListArray::new(
+        ArrowDataType::FixedSizeList(_, _) => Box::new(FixedSizeListArray::new(
             data_type,
             values,
             validity.and_then(|x| x.into()),
@@ -84,13 +84,13 @@ pub fn create_list(
 
 /// Creates a new [`MapArray`].
 pub fn create_map(
-    data_type: DataType,
+    data_type: ArrowDataType,
     nested: &mut NestedState,
     values: Box<dyn Array>,
 ) -> Box<dyn Array> {
     let (mut offsets, validity) = nested.nested.pop().unwrap().inner();
     match data_type.to_logical_type() {
-        DataType::Map(_, _) => {
+        ArrowDataType::Map(_, _) => {
             offsets.push(values.len() as i64);
             let offsets = offsets.iter().map(|x| *x as i32).collect::<Vec<_>>();
 
@@ -109,7 +109,7 @@ pub fn create_map(
     }
 }
 
-fn is_primitive(data_type: &DataType) -> bool {
+fn is_primitive(data_type: &ArrowDataType) -> bool {
     matches!(
         data_type.to_physical_type(),
         arrow::datatypes::PhysicalType::Primitive(_)
@@ -151,19 +151,19 @@ where
     nested::columns_to_iter_recursive(columns, types, field, init, num_rows, chunk_size)
 }
 
-/// Returns the number of (parquet) columns that a [`DataType`] contains.
-pub fn n_columns(data_type: &DataType) -> usize {
+/// Returns the number of (parquet) columns that a [`ArrowDataType`] contains.
+pub fn n_columns(data_type: &ArrowDataType) -> usize {
     use arrow::datatypes::PhysicalType::*;
     match data_type.to_physical_type() {
         Null | Boolean | Primitive(_) | Binary | FixedSizeBinary | LargeBinary | Utf8
         | Dictionary(_) | LargeUtf8 => 1,
         List | FixedSizeList | LargeList => {
             let a = data_type.to_logical_type();
-            if let DataType::List(inner) = a {
+            if let ArrowDataType::List(inner) = a {
                 n_columns(&inner.data_type)
-            } else if let DataType::LargeList(inner) = a {
+            } else if let ArrowDataType::LargeList(inner) = a {
                 n_columns(&inner.data_type)
-            } else if let DataType::FixedSizeList(inner, _) = a {
+            } else if let ArrowDataType::FixedSizeList(inner, _) = a {
                 n_columns(&inner.data_type)
             } else {
                 unreachable!()
@@ -171,14 +171,14 @@ pub fn n_columns(data_type: &DataType) -> usize {
         },
         Map => {
             let a = data_type.to_logical_type();
-            if let DataType::Map(inner, _) = a {
+            if let ArrowDataType::Map(inner, _) = a {
                 n_columns(&inner.data_type)
             } else {
                 unreachable!()
             }
         },
         Struct => {
-            if let DataType::Struct(fields) = data_type.to_logical_type() {
+            if let ArrowDataType::Struct(fields) = data_type.to_logical_type() {
                 fields.iter().map(|inner| n_columns(&inner.data_type)).sum()
             } else {
                 unreachable!()
@@ -190,7 +190,7 @@ pub fn n_columns(data_type: &DataType) -> usize {
 
 /// An iterator adapter that maps multiple iterators of [`Pages`] into an iterator of [`Array`]s.
 ///
-/// For a non-nested datatypes such as [`DataType::Int32`], this function requires a single element in `columns` and `types`.
+/// For a non-nested datatypes such as [`ArrowDataType::Int32`], this function requires a single element in `columns` and `types`.
 /// For nested types, `columns` must be composed by all parquet columns with associated types `types`.
 ///
 /// The arrays are guaranteed to be at most of size `chunk_size` and data type `field.data_type`.

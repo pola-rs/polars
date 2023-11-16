@@ -7,7 +7,8 @@ from typing import Any, Iterator
 import pytest
 
 import polars as pl
-from polars.config import _POLARS_CFG_ENV_VARS, _get_float_fmt, _get_float_precision
+import polars.polars as plr
+from polars.config import _POLARS_CFG_ENV_VARS
 
 
 @pytest.fixture(autouse=True)
@@ -636,6 +637,7 @@ def test_config_load_save(tmp_path: Path) -> None:
         pl.Config.set_verbose(True)
         pl.Config.set_fmt_float("full")
         pl.Config.set_float_precision(6)
+        pl.Config.set_thousands_separator(",")
         assert os.environ.get("POLARS_VERBOSE") == "1"
 
         if file is None:
@@ -651,6 +653,7 @@ def test_config_load_save(tmp_path: Path) -> None:
         pl.Config.set_verbose(False)
         pl.Config.set_fmt_float("mixed")
         pl.Config.set_float_precision(2)
+        pl.Config.set_thousands_separator(None)
         assert os.environ.get("POLARS_VERBOSE") == "0"
 
         # ...load back from config file/string...
@@ -672,8 +675,8 @@ def test_config_load_save(tmp_path: Path) -> None:
         # ...and confirm the saved options were set.
         assert os.environ.get("POLARS_FMT_MAX_COLS") == "12"
         assert os.environ.get("POLARS_VERBOSE") == "1"
-        assert _get_float_fmt() == "full"
-        assert _get_float_precision() == 6
+        assert plr.get_float_fmt() == "full"
+        assert plr.get_float_precision() == 6
 
         # restore all default options (unsets from env)
         pl.Config.restore_defaults()
@@ -683,8 +686,8 @@ def test_config_load_save(tmp_path: Path) -> None:
 
         assert os.environ.get("POLARS_FMT_MAX_COLS") is None
         assert os.environ.get("POLARS_VERBOSE") is None
-        assert _get_float_fmt() == "mixed"
-        assert _get_float_precision() is None
+        assert plr.get_float_fmt() == "mixed"
+        assert plr.get_float_precision() is None
 
     # ref: #11094
     with pl.Config(

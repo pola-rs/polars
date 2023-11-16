@@ -16,7 +16,9 @@ pub mod json;
 #[cfg(feature = "json")]
 pub mod ndjson;
 #[cfg(feature = "cloud")]
-pub use crate::cloud::glob as async_glob;
+pub use cloud::glob as async_glob;
+#[cfg(feature = "cloud")]
+pub use pl_async::increase_concurrency_budget;
 
 #[cfg(feature = "odbc")]
 pub mod odbc;
@@ -47,12 +49,7 @@ pub use options::*;
 use polars_core::frame::ArrowChunk;
 use polars_core::prelude::*;
 
-#[cfg(any(
-    feature = "ipc",
-    feature = "json",
-    feature = "avro",
-    feature = "ipc_streaming",
-))]
+#[cfg(any(feature = "ipc", feature = "avro", feature = "ipc_streaming",))]
 use crate::predicates::PhysicalIoExpr;
 
 pub trait SerReader<R>
@@ -95,12 +92,7 @@ pub trait ArrowReader {
     fn next_record_batch(&mut self) -> PolarsResult<Option<ArrowChunk>>;
 }
 
-#[cfg(any(
-    feature = "ipc",
-    feature = "json",
-    feature = "avro",
-    feature = "ipc_streaming",
-))]
+#[cfg(any(feature = "ipc", feature = "avro", feature = "ipc_streaming",))]
 pub(crate) fn finish_reader<R: ArrowReader>(
     mut reader: R,
     rechunk: bool,
@@ -124,7 +116,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
         }
 
         if let Some(predicate) = &predicate {
-            let s = predicate.evaluate(&df)?;
+            let s = predicate.evaluate_io(&df)?;
             let mask = s.bool().expect("filter predicates was not of type boolean");
             df = df.filter(mask)?;
         }

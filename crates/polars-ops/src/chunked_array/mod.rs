@@ -19,6 +19,8 @@ mod top_k;
 #[cfg(feature = "mode")]
 pub mod mode;
 
+#[cfg(feature = "cov")]
+pub mod cov;
 pub mod gather_skip_nulls;
 #[cfg(feature = "repeat_by")]
 mod repeat_by;
