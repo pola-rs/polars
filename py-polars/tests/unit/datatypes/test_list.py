@@ -617,3 +617,10 @@ def test_list_series_construction_with_dtype_11849_11878() -> None:
         [{"1": "A", "2": None}],
         [{"1": "B", "2": "C"}, {"1": "D", "2": "E"}],
     ]
+
+
+def test_as_list_logical_type() -> None:
+    df = pl.select(timestamp=pl.date(2000, 1, 1), value=0)
+    assert df.group_by(True).agg(
+        pl.col("timestamp").take(pl.col("value").arg_max())
+    ).to_dict(as_series=False) == {"literal": [True], "timestamp": [[date(2000, 1, 1)]]}
