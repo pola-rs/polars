@@ -20,7 +20,7 @@ polars-utils = { workspace = true }
 ahash = { workspace = true }
 ciborium = { workspace = true }
 either = { workspace = true }
-lexical-core = { workspace = true }
+itoa = { workspace = true }
 libc = "0.2"
 ndarray = { workspace = true }
 numpy = { version = "0.20", default-features = false }

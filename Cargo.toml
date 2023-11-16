@@ -45,7 +45,8 @@ hashbrown = { version = "0.14", features = ["rayon", "ahash"] }
 hex = "0.4.3"
 indexmap = { version = "2", features = ["std"] }
 itoa = "1.0.6"
-lexical-core = "0.8.5"
+atoi_simd = "0.15"
+fast-float = { version = "0.2" }
 memchr = "2.6"
 multiversion = "0.7"
 ndarray = { version = "0.15", default-features = false }

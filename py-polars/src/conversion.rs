@@ -191,7 +191,13 @@ fn decimal_to_digits(v: i128, buf: &mut [u128; 3]) -> usize {
     // safety: transmute is safe as there are 48 bytes in 3 128bit ints
     // and the minimal alignment of u8 fits u16
     let buf = unsafe { std::mem::transmute::<&mut [u128; 3], &mut [u8; 48]>(buf) };
-    let len = lexical_core::write(v, buf).len();
+    let mut buffer = itoa::Buffer::new();
+    let value = buffer.format(v);
+    let len = value.len();
+    for (dst, src) in buf.iter_mut().zip(value.as_bytes().iter()) {
+        *dst = *src
+    }
+
     let ptr = buf.as_mut_ptr() as *mut i128;
     unsafe {
         // this is safe because we know that the buffer is exactly 48 bytes long

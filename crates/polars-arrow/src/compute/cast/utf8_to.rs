@@ -1,7 +1,6 @@
 use chrono::Datelike;
 use polars_error::PolarsResult;
 
-use super::CastOptions;
 use crate::array::*;
 use crate::datatypes::{ArrowDataType, TimeUnit};
 use crate::offset::Offset;
@@ -9,52 +8,8 @@ use crate::temporal_conversions::{
     utf8_to_naive_timestamp as utf8_to_naive_timestamp_, utf8_to_timestamp as utf8_to_timestamp_,
     EPOCH_DAYS_FROM_CE,
 };
-use crate::types::NativeType;
 
 const RFC3339: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
-
-/// Casts a [`Utf8Array`] to a [`PrimitiveArray`], making any uncastable value a Null.
-pub fn utf8_to_primitive<O: Offset, T>(from: &Utf8Array<O>, to: &ArrowDataType) -> PrimitiveArray<T>
-where
-    T: NativeType + lexical_core::FromLexical,
-{
-    let iter = from
-        .iter()
-        .map(|x| x.and_then::<T, _>(|x| lexical_core::parse(x.as_bytes()).ok()));
-
-    PrimitiveArray::<T>::from_trusted_len_iter(iter).to(to.clone())
-}
-
-/// Casts a [`Utf8Array`] to a [`PrimitiveArray`] at best-effort using `lexical_core::parse_partial`, making any uncastable value as zero.
-pub fn partial_utf8_to_primitive<O: Offset, T>(
-    from: &Utf8Array<O>,
-    to: &ArrowDataType,
-) -> PrimitiveArray<T>
-where
-    T: NativeType + lexical_core::FromLexical,
-{
-    let iter = from.iter().map(|x| {
-        x.and_then::<T, _>(|x| lexical_core::parse_partial(x.as_bytes()).ok().map(|x| x.0))
-    });
-
-    PrimitiveArray::<T>::from_trusted_len_iter(iter).to(to.clone())
-}
-
-pub(super) fn utf8_to_primitive_dyn<O: Offset, T>(
-    from: &dyn Array,
-    to: &ArrowDataType,
-    options: CastOptions,
-) -> PolarsResult<Box<dyn Array>>
-where
-    T: NativeType + lexical_core::FromLexical,
-{
-    let from = from.as_any().downcast_ref().unwrap();
-    if options.partial {
-        Ok(Box::new(partial_utf8_to_primitive::<O, T>(from, to)))
-    } else {
-        Ok(Box::new(utf8_to_primitive::<O, T>(from, to)))
-    }
-}
 
 /// Casts a [`Utf8Array`] to a Date32 primitive, making any uncastable value a Null.
 pub fn utf8_to_date32<O: Offset>(from: &Utf8Array<O>) -> PrimitiveArray<i32> {

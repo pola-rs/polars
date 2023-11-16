@@ -260,6 +260,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "atoi_simd"
+version = "0.15.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc41b65e01b6851bdcd2d741824e6b310d571396bf3915e31e4792034ee65126"
+
+[[package]]
 name = "autocfg"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1908,15 +1914,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
-name = "lexical"
-version = "6.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7aefb36fd43fef7003334742cbf77b243fcd36418a1d1bdd480d613a67968f6"
-dependencies = [
- "lexical-core",
-]
-
-[[package]]
 name = "lexical-core"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2630,6 +2627,7 @@ dependencies = [
  "arrow-schema",
  "async-stream",
  "atoi",
+ "atoi_simd",
  "avro-schema",
  "bytemuck",
  "chrono",
@@ -2640,6 +2638,7 @@ dependencies = [
  "dyn-clone",
  "either",
  "ethnum",
+ "fast-float",
  "flate2",
  "foreign_vec",
  "futures",
@@ -2647,7 +2646,7 @@ dependencies = [
  "hashbrown 0.14.2",
  "hex",
  "indexmap 2.1.0",
- "lexical-core",
+ "itoa",
  "lz4",
  "multiversion",
  "num-traits",
@@ -2658,6 +2657,7 @@ dependencies = [
  "regex",
  "regex-syntax 0.8.2",
  "rustc_version",
+ "ryu",
  "sample-arrow2",
  "sample-std",
  "sample-test",
@@ -2744,6 +2744,7 @@ version = "0.34.2"
 dependencies = [
  "ahash",
  "async-trait",
+ "atoi_simd",
  "bytes",
  "chrono",
  "chrono-tz",
@@ -2752,8 +2753,6 @@ dependencies = [
  "futures",
  "home",
  "itoa",
- "lexical",
- "lexical-core",
  "memchr",
  "memmap2",
  "num-traits",
@@ -3067,8 +3066,8 @@ dependencies = [
  "built",
  "ciborium",
  "either",
+ "itoa",
  "jemallocator",
- "lexical-core",
  "libc",
  "mimalloc",
  "ndarray",
