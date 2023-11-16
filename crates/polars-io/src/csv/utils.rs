@@ -16,7 +16,8 @@ use crate::csv::parser::{next_line_position, skip_bom, skip_line_ending, SplitLi
 use crate::csv::splitfields::SplitFields;
 use crate::csv::CsvEncoding;
 use crate::mmap::ReaderBytes;
-use crate::prelude::NullValues;
+use crate::prelude::parser::is_comment_line;
+use crate::prelude::{CommentPrefix, NullValues};
 use crate::utils::{BOOLEAN_RE, FLOAT_RE, INTEGER_RE};
 
 pub(crate) fn get_file_chunks(
@@ -142,7 +143,7 @@ pub fn infer_file_schema_inner(
     // on the schema inference
     skip_rows: &mut usize,
     skip_rows_after_header: usize,
-    comment_char: Option<u8>,
+    comment_prefix: Option<&CommentPrefix>,
     quote_char: Option<u8>,
     eol_char: u8,
     null_values: Option<&NullValues>,
@@ -170,19 +171,19 @@ pub fn infer_file_schema_inner(
 
     // skip lines that are comments
     let mut first_line = None;
-    if let Some(comment_ch) = comment_char {
-        for (i, line) in (&mut lines).enumerate() {
-            if let Some(ch) = line.first() {
-                if *ch != comment_ch {
-                    first_line = Some(line);
-                    *skip_rows += i;
-                    break;
-                }
-            }
+
+    for (i, line) in (&mut lines).enumerate() {
+        if !is_comment_line(line, comment_prefix) {
+            first_line = Some(line);
+            *skip_rows += i;
+            break;
         }
-    } else {
+    }
+
+    if first_line.is_none() {
         first_line = lines.next();
     }
+
     // edge case where we have a single row, no header and no eol char.
     if first_line.is_none() && !has_eol && !has_header {
         first_line = Some(bytes);
@@ -254,7 +255,7 @@ pub fn infer_file_schema_inner(
             schema_overwrite,
             skip_rows,
             skip_rows_after_header,
-            comment_char,
+            comment_prefix,
             quote_char,
             eol_char,
             null_values,
@@ -310,11 +311,9 @@ pub fn infer_file_schema_inner(
             continue;
         }
 
-        if let Some(c) = comment_char {
-            // line is a comment -> skip
-            if line[0] == c {
-                continue;
-            }
+        // line is a comment -> skip
+        if is_comment_line(line, comment_prefix) {
+            continue;
         }
 
         let len = line.len();
@@ -448,7 +447,7 @@ pub fn infer_file_schema_inner(
             schema_overwrite,
             skip_rows,
             skip_rows_after_header,
-            comment_char,
+            comment_prefix,
             quote_char,
             eol_char,
             null_values,
@@ -481,7 +480,7 @@ pub fn infer_file_schema(
     // on the schema inference
     skip_rows: &mut usize,
     skip_rows_after_header: usize,
-    comment_char: Option<u8>,
+    comment_prefix: Option<&CommentPrefix>,
     quote_char: Option<u8>,
     eol_char: u8,
     null_values: Option<&NullValues>,
@@ -496,7 +495,7 @@ pub fn infer_file_schema(
         schema_overwrite,
         skip_rows,
         skip_rows_after_header,
-        comment_char,
+        comment_prefix,
         quote_char,
         eol_char,
         null_values,

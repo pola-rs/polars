@@ -172,7 +172,7 @@ impl PyDataFrame {
     #[pyo3(signature = (
         py_f, infer_schema_length, chunk_size, has_header, ignore_errors, n_rows,
         skip_rows, projection, separator, rechunk, columns, encoding, n_threads, path,
-        overwrite_dtype, overwrite_dtype_slice, low_memory, comment_char, quote_char,
+        overwrite_dtype, overwrite_dtype_slice, low_memory, comment_prefix, quote_char,
         null_values, missing_utf8_is_empty_string, try_parse_dates, skip_rows_after_header,
         row_count, sample_size, eol_char, raise_if_empty, truncate_ragged_lines, schema)
     )]
@@ -194,7 +194,7 @@ impl PyDataFrame {
         overwrite_dtype: Option<Vec<(&str, Wrap<DataType>)>>,
         overwrite_dtype_slice: Option<Vec<Wrap<DataType>>>,
         low_memory: bool,
-        comment_char: Option<&str>,
+        comment_prefix: Option<&str>,
         quote_char: Option<&str>,
         null_values: Option<Wrap<NullValues>>,
         missing_utf8_is_empty_string: bool,
@@ -208,7 +208,6 @@ impl PyDataFrame {
         schema: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
-        let comment_char = comment_char.map(|s| s.as_bytes()[0]);
         let eol_char = eol_char.as_bytes()[0];
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let quote_char = quote_char.and_then(|s| s.as_bytes().first().copied());
@@ -251,7 +250,7 @@ impl PyDataFrame {
             .low_memory(low_memory)
             .with_null_values(null_values)
             .with_missing_is_null(!missing_utf8_is_empty_string)
-            .with_comment_char(comment_char)
+            .with_comment_prefix(comment_prefix)
             .with_try_parse_dates(try_parse_dates)
             .with_quote_char(quote_char)
             .with_end_of_line_char(eol_char)

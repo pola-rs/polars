@@ -542,7 +542,21 @@ fn test_comment_lines() -> PolarsResult<()> {
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
         .has_header(false)
-        .with_comment_char(Some(b'#'))
+        .with_comment_prefix(Some("#"))
+        .finish()?;
+    assert_eq!(df.shape(), (3, 5));
+
+    let csv = r"!str,2,3,4,5
+!#& this is a comment
+!str,2,3,4,5
+!#& this is also a comment
+!str,2,3,4,5
+";
+
+    let file = Cursor::new(csv);
+    let df = CsvReader::new(file)
+        .has_header(false)
+        .with_comment_prefix(Some("!#&"))
         .finish()?;
     assert_eq!(df.shape(), (3, 5));
 
@@ -557,7 +571,7 @@ fn test_comment_lines() -> PolarsResult<()> {
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
         .has_header(true)
-        .with_comment_char(Some(b'%'))
+        .with_comment_prefix(Some("%"))
         .finish()?;
     assert_eq!(df.shape(), (3, 5));
 
@@ -698,7 +712,7 @@ fn test_header_with_comments() -> PolarsResult<()> {
 
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
-        .with_comment_char(Some(b'#'))
+        .with_comment_prefix(Some("#"))
         .finish()?;
     // 1 row.
     assert_eq!(df.shape(), (1, 3));

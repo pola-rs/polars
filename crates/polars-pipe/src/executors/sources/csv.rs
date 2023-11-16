@@ -71,7 +71,7 @@ impl CsvSource {
             .low_memory(options.low_memory)
             .with_null_values(options.null_values)
             .with_encoding(CsvEncoding::LossyUtf8)
-            .with_comment_char(options.comment_char)
+            ._with_comment_prefix(options.comment_prefix)
             .with_quote_char(options.quote_char)
             .with_end_of_line_char(options.eol_char)
             .with_encoding(options.encoding)

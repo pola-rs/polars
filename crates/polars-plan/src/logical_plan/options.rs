@@ -4,7 +4,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "csv")]
 use polars_io::csv::SerializeOptions;
 #[cfg(feature = "csv")]
-use polars_io::csv::{CsvEncoding, NullValues};
+use polars_io::csv::{CommentPrefix, CsvEncoding, NullValues};
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcCompression;
 #[cfg(feature = "parquet")]
@@ -25,7 +25,7 @@ pub type FileCount = u32;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CsvParserOptions {
     pub separator: u8,
-    pub comment_char: Option<u8>,
+    pub comment_prefix: Option<CommentPrefix>,
     pub quote_char: Option<u8>,
     pub eol_char: u8,
     pub has_header: bool,
