@@ -453,3 +453,17 @@ def test_io_struct_async_12500(tmp_path: Path) -> None:
     assert pl.scan_parquet(file_path).select("c1").collect().to_dict(
         as_series=False
     ) == {"c1": [{"a": "foo", "b": "bar"}]}
+
+
+@pytest.mark.write_disk()
+def test_parquet_different_schema(tmp_path: Path) -> None:
+    # Schema is different but the projected columns are same dtype.
+    f1 = tmp_path / "a.parquet"
+    f2 = tmp_path / "b.parquet"
+    a = pl.DataFrame({"a": [1.0], "b": "a"})
+
+    b = pl.DataFrame({"a": [1], "b": "a"})
+
+    a.write_parquet(f1)
+    b.write_parquet(f2)
+    assert pl.scan_parquet([f1, f2]).select("b").collect().columns == ["b"]
