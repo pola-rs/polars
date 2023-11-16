@@ -205,7 +205,10 @@ impl ParquetExec {
                 .await?;
 
                 if !first_file {
-                    polars_ensure!(reader.schema().await?.as_ref() == first_schema.as_ref(), ComputeError: "schema of all files in a single scan_parquet must be equal");
+                    let schema = reader.schema().await?;
+                    polars_ensure!(first_schema.as_ref() ==  schema.as_ref(), ComputeError: "schema of all files in a single scan_parquet must be equal\n\n\
+                    Expected: {:?}\n\n\
+                    Got: {:?}", Schema::from(first_schema), Schema::from(schema));
                 }
 
                 let num_rows = reader.num_rows().await?;

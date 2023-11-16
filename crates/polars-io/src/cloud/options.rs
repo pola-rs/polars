@@ -81,6 +81,7 @@ pub enum CloudType {
     Azure,
     File,
     Gcp,
+    Http,
 }
 
 impl CloudType {
@@ -91,6 +92,7 @@ impl CloudType {
             "az" | "azure" | "adl" | "abfs" | "abfss" => Self::Azure,
             "gs" | "gcp" | "gcs" => Self::Gcp,
             "file" => Self::File,
+            "http" | "https" => Self::Http,
             _ => polars_bail!(ComputeError: "unknown url scheme"),
         })
     }
@@ -303,6 +305,7 @@ impl CloudOptions {
                 }
             },
             CloudType::File => Ok(Self::default()),
+            CloudType::Http => Ok(Self::default()),
             CloudType::Gcp => {
                 #[cfg(feature = "gcp")]
                 {

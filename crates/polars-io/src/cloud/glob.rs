@@ -73,7 +73,7 @@ fn extract_prefix_expansion(url: &str) -> PolarsResult<(String, Option<String>)>
 }
 
 /// A location on cloud storage, may have wildcards.
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Default)]
 pub struct CloudLocation {
     /// The scheme (s3, ...).
     pub scheme: String,
@@ -91,6 +91,13 @@ impl CloudLocation {
         let (bucket, key) = if is_local {
             ("".into(), parsed.path())
         } else {
+            if parsed.scheme().starts_with("http") {
+                return Ok(CloudLocation {
+                    scheme: parsed.scheme().into(),
+                    ..Default::default()
+                });
+            }
+
             let key = parsed.path();
             let bucket = parsed
                 .host()

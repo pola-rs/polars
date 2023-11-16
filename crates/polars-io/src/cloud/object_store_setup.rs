@@ -82,6 +82,19 @@ pub async fn build_object_store(url: &str, options: Option<&CloudOptions>) -> Bu
             let local = LocalFileSystem::new();
             Ok::<_, PolarsError>(Arc::new(local) as Arc<dyn ObjectStore>)
         },
+        CloudType::Http => {
+            {
+                #[cfg(feature = "http")]
+                {
+                    let store = object_store::http::HttpBuilder::new()
+                        .with_url(url)
+                        .build()?;
+                    Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
+                }
+            }
+            #[cfg(not(feature = "http"))]
+            return err_missing_feature("http", &cloud_location.scheme);
+        },
     }?;
     let mut cache = OBJECT_STORE_CACHE.write().await;
     *cache = Some((key, store.clone()));
