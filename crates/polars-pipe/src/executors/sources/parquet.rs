@@ -13,6 +13,7 @@ use polars_io::predicates::PhysicalIoExpr;
 use polars_io::prelude::materialize_projection;
 #[cfg(feature = "async")]
 use polars_io::prelude::ParquetAsyncReader;
+use polars_io::utils::check_projected_arrow_schema;
 use polars_io::{is_cloud_url, SerReader};
 use polars_plan::logical_plan::FileInfo;
 use polars_plan::prelude::{FileScanOptions, ParquetOptions};
@@ -126,7 +127,18 @@ impl ParquetSource {
                 .batched(chunk_size)?
         };
         if self.processed_paths >= 1 {
-            polars_ensure!(batched_reader.schema().as_ref() == self.file_info.reader_schema.as_ref().unwrap().as_ref(), ComputeError: "schema of all files in a single scan_parquet must be equal");
+            let with_columns = self
+                .file_options
+                .with_columns
+                .as_ref()
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]);
+            check_projected_arrow_schema(
+                batched_reader.schema().as_ref(),
+                self.file_info.reader_schema.as_ref().unwrap(),
+                with_columns,
+                "schema of all files in a single scan_parquet must be equal",
+            )?;
         }
         self.batched_readers.push_back(batched_reader);
         self.processed_paths += 1;

@@ -218,6 +218,41 @@ pub fn materialize_projection(
     }
 }
 
+/// Checks if the projected columns are equal
+pub fn check_projected_arrow_schema(
+    a: &ArrowSchema,
+    b: &ArrowSchema,
+    projected_names: &[String],
+    msg: &str,
+) -> PolarsResult<()> {
+    if a != b {
+        let a = Schema::from(a);
+        let b = Schema::from(b);
+        check_projected_schema(&a, &b, projected_names, msg)
+    } else {
+        Ok(())
+    }
+}
+
+/// Checks if the projected columns are equal
+pub fn check_projected_schema(
+    a: &Schema,
+    b: &Schema,
+    projected_names: &[String],
+    msg: &str,
+) -> PolarsResult<()> {
+    if !projected_names
+        .iter()
+        .all(|name| a.get(name) == b.get(name))
+    {
+        polars_bail!(ComputeError: "{msg}\n\n\
+                    Expected: {:?}\n\n\
+                    Got: {:?}", a, b)
+    } else {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
