@@ -579,8 +579,10 @@ pub fn cast(
         },
         (LargeUtf8, _) => match to_type {
             UInt8 | UInt16 | UInt32 | UInt64 | Int8 | Int16 | Int32 | Int64 | Float32 | Float64 => {
-                let binary =
-                    utf8_to_binary::<i64>(array.as_any().downcast_ref().unwrap(), to_type.clone());
+                let binary = utf8_to_binary::<i64>(
+                    array.as_any().downcast_ref().unwrap(),
+                    ArrowDataType::LargeBinary,
+                );
                 cast(&binary, to_type, options)
             },
             Date32 => utf8_to_date32_dyn::<i64>(array),

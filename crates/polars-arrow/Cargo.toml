@@ -33,7 +33,10 @@ simdutf8 = { workspace = true }
 ethnum = { workspace = true }
 
 # To efficiently cast numbers to strings
-lexical-core = { workspace = true, optional = true }
+atoi_simd = { workspace = true, optional = true }
+fast-float = { workspace = true, optional = true }
+itoa = { workspace = true, optional = true }
+ryu = { workspace = true, optional = true }
 
 regex = { workspace = true, optional = true }
 regex-syntax = { version = "0.8", optional = true }
@@ -134,7 +137,7 @@ compute_arithmetics = ["strength_reduce", "compute_arithmetics_decimal"]
 compute_bitwise = []
 compute_boolean = []
 compute_boolean_kleene = []
-compute_cast = ["lexical-core", "compute_take"]
+compute_cast = ["compute_take", "ryu", "atoi_simd", "itoa", "fast-float"]
 compute_comparison = ["compute_take", "compute_boolean"]
 compute_concatenate = []
 compute_filter = []

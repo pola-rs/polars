@@ -6,6 +6,47 @@ use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets};
 use crate::types::NativeType;
 
+pub(super) trait Parse {
+    fn parse(val: &[u8]) -> Option<Self>
+    where
+        Self: Sized;
+}
+
+macro_rules! impl_parse {
+    ($primitive_type:ident) => {
+        impl Parse for $primitive_type {
+            fn parse(val: &[u8]) -> Option<Self> {
+                atoi_simd::parse(val).ok()
+            }
+        }
+    };
+}
+impl_parse!(i8);
+impl_parse!(i16);
+impl_parse!(i32);
+impl_parse!(i64);
+impl_parse!(u8);
+impl_parse!(u16);
+impl_parse!(u32);
+impl_parse!(u64);
+
+impl Parse for f32 {
+    fn parse(val: &[u8]) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        fast_float::parse(val).ok()
+    }
+}
+impl Parse for f64 {
+    fn parse(val: &[u8]) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        fast_float::parse(val).ok()
+    }
+}
+
 /// Conversion of binary
 pub fn binary_to_large_binary(
     from: &BinaryArray<i32>,
@@ -61,32 +102,15 @@ pub fn binary_to_large_utf8(
     Utf8Array::<i64>::try_new(to_data_type, offsets, values, from.validity().cloned())
 }
 
-/// Casts a [`BinaryArray`] to a [`PrimitiveArray`] at best-effort using `lexical_core::parse_partial`, making any uncastable value as zero.
-pub fn partial_binary_to_primitive<O: Offset, T>(
-    from: &BinaryArray<O>,
-    to: &ArrowDataType,
-) -> PrimitiveArray<T>
-where
-    T: NativeType + lexical_core::FromLexical,
-{
-    let iter = from
-        .iter()
-        .map(|x| x.and_then::<T, _>(|x| lexical_core::parse_partial(x).ok().map(|x| x.0)));
-
-    PrimitiveArray::<T>::from_trusted_len_iter(iter).to(to.clone())
-}
-
 /// Casts a [`BinaryArray`] to a [`PrimitiveArray`], making any uncastable value a Null.
-pub fn binary_to_primitive<O: Offset, T>(
+pub(super) fn binary_to_primitive<O: Offset, T>(
     from: &BinaryArray<O>,
     to: &ArrowDataType,
 ) -> PrimitiveArray<T>
 where
-    T: NativeType + lexical_core::FromLexical,
+    T: NativeType + Parse,
 {
-    let iter = from
-        .iter()
-        .map(|x| x.and_then::<T, _>(|x| lexical_core::parse(x).ok()));
+    let iter = from.iter().map(|x| x.and_then::<T, _>(|x| T::parse(x)));
 
     PrimitiveArray::<T>::from_trusted_len_iter(iter).to(to.clone())
 }
@@ -97,11 +121,11 @@ pub(super) fn binary_to_primitive_dyn<O: Offset, T>(
     options: CastOptions,
 ) -> PolarsResult<Box<dyn Array>>
 where
-    T: NativeType + lexical_core::FromLexical,
+    T: NativeType + Parse,
 {
     let from = from.as_any().downcast_ref().unwrap();
     if options.partial {
-        Ok(Box::new(partial_binary_to_primitive::<O, T>(from, to)))
+        unimplemented!()
     } else {
         Ok(Box::new(binary_to_primitive::<O, T>(from, to)))
     }

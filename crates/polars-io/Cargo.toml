@@ -23,7 +23,7 @@ atoi_simd = { workspace = true, optional = true }
 bytes = { version = "1.3" }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
-fast-float = { version = "0.2", optional = true }
+fast-float = { workspace = true, optional = true }
 flate2 = { version = "1", optional = true, default-features = false }
 futures = { workspace = true, optional = true }
 itoa = { workspace = true, optional = true }
