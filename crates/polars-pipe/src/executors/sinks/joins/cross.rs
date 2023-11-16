@@ -118,11 +118,13 @@ impl Operator for CrossJoinProbe {
                         let iter_right = self.in_process_right.as_mut().unwrap();
                         let offset = iter_right.next().unwrap();
                         let right_df = chunk.data.slice(offset as i64, size);
-                        let df = self.in_process_left_df.cross_join(
+                        let mut df = self.in_process_left_df.cross_join(
                             &right_df,
                             Some(self.suffix.as_ref()),
                             None,
                         )?;
+                        // Cross joins can produce multiple chunks.
+                        df.as_single_chunk_par();
                         Ok(OperatorResult::HaveMoreOutPut(chunk.with_data(df)))
                     },
                 }
