@@ -104,8 +104,30 @@ pub unsafe fn import_series_buffer(e: *mut SeriesExport, len: usize) -> PolarsRe
 #[derive(Copy, Clone, Debug, Default)]
 #[repr(C)]
 pub struct CallerContext {
-    /// The expression may implement their own parallelism.
-    pub parallelized: bool,
+    // bit
+    // 1: PARALLEL
+    bitflags: u64,
+}
+
+impl CallerContext {
+    const fn kth_bit_set(&self, k: u64) -> bool {
+        (self.bitflags & (1 << k)) > 0
+    }
+
+    fn set_kth_bit(&mut self, k: u64) {
+        self.bitflags |= 1 << k
+    }
+
+    /// Parallelism is done by polars' main engine, the plugin should not run run its own parallelism.
+    /// If this is `false`, the plugin could use parallelism without (much) contention with polars
+    /// parallelism strategies.
+    pub fn parallel(&self) -> bool {
+        self.kth_bit_set(0)
+    }
+
+    pub fn _set_parallel(&mut self) {
+        self.set_kth_bit(0)
+    }
 }
 
 #[cfg(test)]
