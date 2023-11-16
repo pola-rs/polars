@@ -10,7 +10,7 @@ def test_value_counts() -> None:
     s = pl.Series("a", [1, 2, 2, 3])
     result = s.value_counts()
     expected = pl.DataFrame(
-        {"a": [1, 2, 3], "counts": [1, 2, 1]}, schema_overrides={"counts": pl.UInt32}
+        {"a": [1, 2, 3], "count": [1, 2, 1]}, schema_overrides={"count": pl.UInt32}
     )
     result_sorted = result.sort("a")
     assert_frame_equal(result_sorted, expected)
@@ -34,10 +34,10 @@ def test_value_counts_expr() -> None:
     )
     out = df.select(pl.col("id").value_counts(sort=True)).to_series().to_list()
     assert out == [
-        {"id": "c", "counts": 3},
-        {"id": "b", "counts": 2},
-        {"id": "d", "counts": 2},
-        {"id": "a", "counts": 1},
+        {"id": "c", "count": 3},
+        {"id": "b", "count": 2},
+        {"id": "d", "count": 2},
+        {"id": "a", "count": 1},
     ]
 
     # nested value counts. Then the series needs the name
@@ -47,11 +47,11 @@ def test_value_counts_expr() -> None:
 
     assert df.group_by("session").agg(
         pl.col("id").value_counts(sort=True).first()
-    ).to_dict(as_series=False) == {"session": [1], "id": [{"id": 2, "counts": 2}]}
+    ).to_dict(as_series=False) == {"session": [1], "id": [{"id": 2, "count": 2}]}
 
 
 def test_value_counts_duplicate_name() -> None:
-    s = pl.Series("counts", [1])
+    s = pl.Series("count", [1])
 
-    with pytest.raises(pl.DuplicateError, match="counts"):
+    with pytest.raises(pl.DuplicateError, match="count"):
         s.value_counts()

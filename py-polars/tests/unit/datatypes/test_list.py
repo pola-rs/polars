@@ -471,7 +471,7 @@ def test_logical_parallel_list_collect() -> None:
     assert out.to_dict(as_series=False) == {
         "Group": ["GroupA", "GroupA"],
         "Values": ["Value1", "Value2"],
-        "counts": [2, 1],
+        "count": [2, 1],
     }
 
 
