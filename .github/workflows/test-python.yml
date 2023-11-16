@@ -34,11 +34,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        python-version: ['3.8', '3.12']
-        exclude:
+        os: [ubuntu-latest]
+        python-version: ['3.8', '3.11', '3.12']
+        include:
           - os: windows-latest
-            python-version: '3.8'
+            python-version: '3.12'
 
     steps:
       - uses: actions/checkout@v4
@@ -95,7 +95,7 @@ jobs:
           pytest tests/docs/test_user_guide.py -m docs
 
       - name: Check import without optional dependencies
-        if: github.ref_name != 'main' && matrix.os != 'windows-latest'
+        if: github.ref_name != 'main' && matrix.python-version == '3.12' && matrix.os == 'ubuntu-latest'
         run: |
           declare -a deps=("pandas"
           "pyarrow"
