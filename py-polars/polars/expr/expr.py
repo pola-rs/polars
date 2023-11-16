@@ -5372,8 +5372,8 @@ class Expr:
 
         .. note::
             This implementation of :func:`hash` does not guarantee stable results
-            across polars versions. It only has guaranteed stability within one version.
-            For use-cases where you require stability across version you can use
+            across Polars versions. It only has guaranteed stability within one version.
+            For use-cases where you require stability across versions, you can use
             the following plugin: `polars-hash <https://github.com/ion-elgreco/polars-hash>`_.
 
         Parameters
