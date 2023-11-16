@@ -28,7 +28,7 @@ struct ListLocalCategoricalChunkedBuilder {
     inner: ListPrimitiveChunkedBuilder<UInt32Type>,
     idx_lookup: PlHashMap<KeyWrapper, ()>,
     categories: MutableUtf8Array<i64>,
-    categories_hash: u64,
+    categories_hash: u128,
 }
 
 // Wrap u32 key to avoid incorrect usage of hashmap with custom lookup
@@ -40,7 +40,7 @@ impl ListLocalCategoricalChunkedBuilder {
         RandomState::with_seed(0)
     }
 
-    pub(super) fn new(name: &str, capacity: usize, values_capacity: usize, hash: u64) -> Self {
+    pub(super) fn new(name: &str, capacity: usize, values_capacity: usize, hash: u128) -> Self {
         Self {
             inner: ListPrimitiveChunkedBuilder::new(
                 name,

@@ -53,7 +53,7 @@ pub enum RevMapping {
     /// Utf8Array: caches the string values
     Global(PlHashMap<u32, u32>, Utf8Array<i64>, u32),
     /// Utf8Array: caches the string values and a hash of all values for quick comparison
-    Local(Utf8Array<i64>, u64),
+    Local(Utf8Array<i64>, u128),
 }
 
 impl Debug for RevMapping {
@@ -102,8 +102,11 @@ impl RevMapping {
     }
 
     pub fn build_local(categories: Utf8Array<i64>) -> RevMapping {
-        let hash = RandomState::with_seed(0).hash_one(categories.values().as_slice());
-        RevMapping::Local(categories, hash)
+        let hash_builder = RandomState::with_seed(0);
+        let value_hash = hash_builder.hash_one(categories.values().as_slice());
+        let offset_hash = hash_builder.hash_one(categories.offsets().as_slice());
+        let combined = (value_hash as u128) << 64 | (offset_hash as u128);
+        RevMapping::Local(categories, combined)
     }
 
     /// Get the length of the [`RevMapping`]
