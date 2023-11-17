@@ -16,7 +16,7 @@ impl From<&CategoricalChunked> for DictionaryArray<u32> {
             false,
         );
         match map {
-            RevMapping::Local(arr, _) | RevMapping::Enum(arr) => {
+            RevMapping::Local(arr, _) | RevMapping::Enum(arr, _) => {
                 // Safety:
                 // the keys are in bounds
                 unsafe {
@@ -53,7 +53,7 @@ impl From<&CategoricalChunked> for DictionaryArray<i64> {
         match map {
             // Safety:
             // the keys are in bounds
-            RevMapping::Local(arr, _) | RevMapping::Enum(arr) => unsafe {
+            RevMapping::Local(arr, _) | RevMapping::Enum(arr, _) => unsafe {
                 DictionaryArray::try_new_unchecked(
                     dtype,
                     cast(keys, &ArrowDataType::Int64)
