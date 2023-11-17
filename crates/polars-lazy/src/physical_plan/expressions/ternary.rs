@@ -132,6 +132,10 @@ impl PhysicalExpr for TernaryExpr {
         // - AggregatedScalar or AggregatedList
         let mut has_non_unit_literal = false;
         let mut has_aggregated = false;
+        // If the length has changed then we must not apply on the flat values
+        // as ternary broadcasting is length-sensitive.
+        let mut non_aggregated_len_modified = false;
+
         for ac in [&ac_mask, &ac_truthy, &ac_falsy].into_iter() {
             match ac.agg_state() {
                 Literal(s) => {
@@ -141,7 +145,9 @@ impl PhysicalExpr for TernaryExpr {
                         break;
                     }
                 },
-                NotAggregated(_) => {},
+                NotAggregated(_) => {
+                    non_aggregated_len_modified |= !ac.original_len;
+                },
                 AggregatedScalar(_) | AggregatedList(_) => {
                     has_aggregated = true;
                 },
@@ -157,7 +163,7 @@ impl PhysicalExpr for TernaryExpr {
             return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
         }
 
-        if !has_aggregated {
+        if !has_aggregated && !non_aggregated_len_modified {
             // Everything is flat (either NotAggregated or a unit literal).
             if state.verbose() {
                 eprintln!("ternary agg: finish all not-aggregated or unit literal");
@@ -167,7 +173,21 @@ impl PhysicalExpr for TernaryExpr {
                 .series()
                 .zip_with(ac_mask.series().bool()?, ac_falsy.series())?;
 
-            ac_truthy.with_agg_state(NotAggregated(out));
+            for ac in [&ac_mask, &ac_truthy, &ac_falsy].into_iter() {
+                if matches!(ac.agg_state(), NotAggregated(_)) {
+                    let ac_target = ac;
+
+                    return Ok(AggregationContext {
+                        state: NotAggregated(out),
+                        groups: ac_target.groups.clone(),
+                        sorted: ac_target.sorted,
+                        update_groups: ac_target.update_groups,
+                        original_len: ac_target.original_len,
+                    });
+                }
+            }
+
+            ac_truthy.with_agg_state(Literal(out));
 
             return Ok(ac_truthy);
         }

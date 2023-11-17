@@ -246,7 +246,7 @@ impl PhysicalExpr for SliceExpr {
             },
         };
 
-        ac.with_groups(groups);
+        ac.with_groups(groups).set_original_len(false);
 
         Ok(ac)
     }
