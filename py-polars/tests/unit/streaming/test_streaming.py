@@ -176,7 +176,7 @@ def test_streaming_ternary() -> None:
             pl.when(pl.col("a") >= 2).then(pl.col("a")).otherwise(None).alias("b"),
         )
         .explain(streaming=True)
-        .startswith("--- PIPELINE")
+        .startswith("--- STREAMING")
     )
 
 

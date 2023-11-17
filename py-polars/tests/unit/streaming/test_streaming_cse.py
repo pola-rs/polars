@@ -79,7 +79,7 @@ def test_cse_expr_group_by() -> None:
     # check if it uses CSE_expr
     # and is a complete pipeline
     assert "__POLARS_CSER" in s
-    assert s.startswith("--- PIPELINE")
+    assert s.startswith("--- STREAMING")
 
     expected = pl.DataFrame(
         {"a": [1, 2, 3, 4], "sum": [1, 4, 9, 16], "min": [1, 4, 9, 16]}
