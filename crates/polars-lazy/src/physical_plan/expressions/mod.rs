@@ -97,7 +97,7 @@ impl AggState {
 
 // lazy update strategy
 #[cfg_attr(debug_assertions, derive(Debug))]
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 pub(crate) enum UpdateGroups {
     /// don't update groups
     No,
@@ -612,10 +612,6 @@ pub trait PhysicalExpr: Send + Sync {
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
         None
     }
-
-    //
-    fn is_valid_aggregation(&self) -> bool;
-
     fn is_literal(&self) -> bool {
         false
     }

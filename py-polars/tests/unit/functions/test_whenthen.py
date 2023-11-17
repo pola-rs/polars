@@ -372,3 +372,73 @@ def test_when_then_output_name_12380() -> None:
             expect,
             df.select(pl.when(false_expr).then(pl.col("x")).otherwise(pl.col("y"))),
         )
+
+
+def test_when_then_nested_non_unit_literal_predicate_agg_broadcast_12242() -> None:
+    df = pl.DataFrame(
+        {
+            "array_name": ["A", "A", "A", "B", "B"],
+            "array_idx": [5, 0, 3, 7, 2],
+            "array_val": [1, 2, 3, 4, 5],
+        }
+    )
+
+    int_range = pl.int_range(pl.min("array_idx"), pl.max("array_idx") + 1)
+
+    is_valid_idx = int_range.is_in("array_idx")
+
+    idxs = is_valid_idx.cumsum() - 1
+
+    ternary_expr = pl.when(is_valid_idx).then(pl.col("array_val").take(idxs))
+
+    expect = pl.DataFrame(
+        [
+            pl.Series("array_name", ["A", "B"], dtype=pl.Utf8),
+            pl.Series(
+                "array_val",
+                [[1, None, None, 2, None, 3], [4, None, None, None, None, 5]],
+                dtype=pl.List(pl.Int64),
+            ),
+        ]
+    )
+
+    assert_frame_equal(
+        expect, df.group_by("array_name").agg(ternary_expr).sort("array_name")
+    )
+
+
+def test_when_then_non_unit_literal_predicate_agg_broadcast_12382() -> None:
+    df = pl.DataFrame({"id": [1, 1], "value": [0, 3]})
+
+    expect = pl.DataFrame({"id": [1], "literal": [["yes", None, None, "yes", None]]})
+    actual = df.group_by("id").agg(
+        pl.when(pl.int_range(0, 5).is_in("value")).then(pl.lit("yes"))
+    )
+
+    assert_frame_equal(expect, actual)
+
+
+def test_when_then_binary_op_predicate_agg_12526() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 1],
+            "b": [1, 2, 5],
+        }
+    )
+
+    expect = pl.DataFrame(
+        {"a": [1], "col": [None]}, schema={"a": pl.Int64, "col": pl.Utf8}
+    )
+
+    actual = df.group_by("a").agg(
+        col=(
+            pl.when(pl.col("a").shift(1) > 2)
+            .then(pl.lit("abc"))
+            .when(pl.col("a").shift(1) > 1)
+            .then(pl.lit("def"))
+            .otherwise(pl.lit(None))
+            .first()
+        )
+    )
+
+    assert_frame_equal(expect, actual)

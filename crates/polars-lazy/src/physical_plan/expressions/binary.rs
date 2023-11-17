@@ -251,13 +251,6 @@ impl PhysicalExpr for BinaryExpr {
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
         Some(self)
     }
-
-    fn is_valid_aggregation(&self) -> bool {
-        // We don't want: col(a) == lit(1).
-        // We do want col(a).sum() == lit(1).
-        (!self.left.is_literal() && self.left.is_valid_aggregation())
-            || (!self.right.is_literal() && self.right.is_valid_aggregation())
-    }
 }
 
 #[cfg(feature = "parquet")]

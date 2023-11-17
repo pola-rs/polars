@@ -306,7 +306,7 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
     );
     assert_eq!(
         out.get(1)?,
-        AnyValue::List(Series::new("", &[10 as IdxSize]))
+        AnyValue::List(Series::new("", &[10 as IdxSize, 10 as IdxSize]))
     );
 
     let out = df
@@ -326,7 +326,7 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
     );
     assert_eq!(
         out.get(0)?,
-        AnyValue::List(Series::new("", &[10 as IdxSize]))
+        AnyValue::List(Series::new("", &[10 as IdxSize, 10 as IdxSize]))
     );
 
     let out = df
@@ -341,7 +341,7 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
 
     let out = out.column("value")?;
     assert!(matches!(out.get(0)?, AnyValue::List(_)));
-    assert_eq!(out.get(1)?, AnyValue::Null);
+    assert!(matches!(out.get(1)?, AnyValue::List(_)));
 
     // swapped branch
     let out = df
@@ -355,7 +355,7 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
 
     let out = out.column("value")?;
     assert!(matches!(out.get(1)?, AnyValue::List(_)));
-    assert_eq!(out.get(0)?, AnyValue::Null);
+    assert!(matches!(out.get(0)?, AnyValue::List(_)));
 
     Ok(())
 }
