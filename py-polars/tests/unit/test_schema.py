@@ -336,7 +336,6 @@ def test_list_eval_type_cast_11188() -> None:
         ],
         schema={"a": pl.List(pl.Int64)},
     )
-    print(df.schema)
     assert df.select(
         pl.col("a").list.eval(pl.element().cast(pl.Utf8)).alias("a_str")
     ).schema == {"a_str": pl.List(pl.Utf8)}
