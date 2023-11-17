@@ -127,6 +127,8 @@ impl PhysicalExpr for TernaryExpr {
 
         use AggState::*;
 
+        // Check for non-unit literals, and aggregated any `NotAggregated` in
+        // the inputs.
         let mut has_non_unit_literal = false;
         for ac in [&mut ac_mask, &mut ac_truthy, &mut ac_falsy].into_iter() {
             match ac.agg_state() {
@@ -145,12 +147,18 @@ impl PhysicalExpr for TernaryExpr {
         }
 
         if has_non_unit_literal {
-            // Non-unit literals must be materialized per-group.
+            // finish_as_iters for non-unit literals to avoid materializing the
+            // literal inputs per-group.
             if state.verbose() {
                 eprintln!("ternary agg: finish as iters due to non-unit literal")
             }
             return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
         }
+
+        // At this point the input agg states are one of the following:
+        // * `Literal` where `s.len() == 1`
+        // * `AggregatedList`
+        // * `AggregatedScalar`
 
         let mut non_literal_acs = Vec::<&AggregationContext>::with_capacity(3);
 
@@ -180,7 +188,7 @@ impl PhysicalExpr for TernaryExpr {
             if std::mem::discriminant(ac_l.agg_state()) != std::mem::discriminant(ac_r.agg_state())
             {
                 // Mix of AggregatedScalar and AggregatedList is done per group,
-                // as every row of the AggregatedScalar must be broadcast to a
+                // as every row of the AggregatedScalar must be broadcasted to a
                 // list of the same length as the corresponding AggregatedList
                 // row.
                 if state.verbose() {
@@ -192,7 +200,10 @@ impl PhysicalExpr for TernaryExpr {
 
         // At this point, the possible combinations are:
         // * mix of unit literals and AggregatedScalar
+        //   * `zip_with` can be called directly with the series
         // * mix of unit literals and AggregatedList
+        //   * `zip_with` can be called with the flat values after the offsets
+        //     have been been checked for alignment
         let ac_target = non_literal_acs.first().unwrap();
 
         let agg_state_out = match ac_target.agg_state() {
