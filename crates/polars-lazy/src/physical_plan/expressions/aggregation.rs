@@ -255,10 +255,6 @@ impl PhysicalExpr for AggregationExpr {
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
     }
-
-    fn is_valid_aggregation(&self) -> bool {
-        true
-    }
 }
 
 fn rename_series(mut s: Series, name: &str) -> Series {
@@ -538,9 +534,5 @@ impl PhysicalExpr for AggQuantileExpr {
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema)
-    }
-
-    fn is_valid_aggregation(&self) -> bool {
-        true
     }
 }

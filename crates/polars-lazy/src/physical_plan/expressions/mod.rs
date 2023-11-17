@@ -612,10 +612,6 @@ pub trait PhysicalExpr: Send + Sync {
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
         None
     }
-
-    //
-    fn is_valid_aggregation(&self) -> bool;
-
     fn is_literal(&self) -> bool {
         false
     }

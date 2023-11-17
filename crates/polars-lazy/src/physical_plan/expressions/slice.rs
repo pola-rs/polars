@@ -254,8 +254,4 @@ impl PhysicalExpr for SliceExpr {
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema)
     }
-
-    fn is_valid_aggregation(&self) -> bool {
-        true
-    }
 }

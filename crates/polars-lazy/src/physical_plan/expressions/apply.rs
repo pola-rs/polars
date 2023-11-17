@@ -373,9 +373,6 @@ impl PhysicalExpr for ApplyExpr {
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.expr.to_field(input_schema, Context::Default)
     }
-    fn is_valid_aggregation(&self) -> bool {
-        matches!(self.collect_groups, ApplyOptions::GroupWise)
-    }
     #[cfg(feature = "parquet")]
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
         let function = match &self.expr {

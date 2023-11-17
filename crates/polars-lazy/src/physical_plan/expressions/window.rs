@@ -623,10 +623,6 @@ impl PhysicalExpr for WindowExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
-
-    fn is_valid_aggregation(&self) -> bool {
-        false
-    }
 }
 
 fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Series) -> Series {

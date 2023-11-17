@@ -85,10 +85,6 @@ impl PhysicalExpr for CastExpr {
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
     }
-
-    fn is_valid_aggregation(&self) -> bool {
-        self.input.is_valid_aggregation()
-    }
 }
 
 impl PartitionedAggregation for CastExpr {

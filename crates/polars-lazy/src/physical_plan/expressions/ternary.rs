@@ -287,10 +287,6 @@ impl PhysicalExpr for TernaryExpr {
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
     }
-
-    fn is_valid_aggregation(&self) -> bool {
-        self.truthy.is_valid_aggregation() || self.falsy.is_valid_aggregation()
-    }
 }
 
 impl PartitionedAggregation for TernaryExpr {

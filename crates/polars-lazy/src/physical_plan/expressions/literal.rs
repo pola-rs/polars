@@ -117,10 +117,6 @@ impl PhysicalExpr for LiteralExpr {
         let dtype = self.0.get_datatype();
         Ok(Field::new("literal", dtype))
     }
-    fn is_valid_aggregation(&self) -> bool {
-        // literals can be both
-        true
-    }
     fn is_literal(&self) -> bool {
         true
     }
