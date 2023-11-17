@@ -320,32 +320,57 @@ def test_single_element_broadcast(
     # Given that the lengths of the mask, truthy and falsy are all either:
     # - Length 1
     # - Equal length to the maximum length of the 3.
-
     # This test checks that all length-1 exprs are broadcasted to the max length.
+
     expect = df.select("x").head(
         df.select(
             pl.max_horizontal(mask_expr.len(), truthy_expr.len(), falsy_expr.len())
         ).item()
     )
 
+    actual = df.select(
+        pl.when(mask_expr).then(truthy_expr.alias("x")).otherwise(falsy_expr)
+    )
+
     assert_frame_equal(
         expect,
-        df.select(
-            pl.when(mask_expr).then(truthy_expr.alias("x")).otherwise(falsy_expr)
-        ),
+        actual,
+    )
+
+    actual = (
+        df.group_by(pl.lit(True).alias("key"))
+        .agg(pl.when(mask_expr).then(truthy_expr.alias("x")).otherwise(falsy_expr))
+        .drop("key")
+    )
+
+    if expect.height > 1:
+        actual = actual.explode(pl.all())
+
+    assert_frame_equal(
+        expect,
+        actual,
     )
 
 
-def test_mismatched_height_should_raise() -> None:
+@pytest.mark.parametrize(
+    "df",
+    [pl.DataFrame({"x": range(5)}), pl.DataFrame({"x": 5 * [[*range(5)]]})],
+)
+@pytest.mark.parametrize(
+    "ternary_expr",
+    [
+        pl.when(True).then(pl.col("x").head(2)).otherwise(pl.col("x")),
+        pl.when(False).then(pl.col("x").head(2)).otherwise(pl.col("x")),
+    ],
+)
+def test_mismatched_height_should_raise(
+    df: pl.DataFrame, ternary_expr: pl.Expr
+) -> None:
     with pytest.raises(pl.ShapeError):
-        pl.DataFrame({"x": range(5)}).select(
-            pl.when(True).then(pl.col("x").head(2)).otherwise(pl.col("x"))
-        )
+        df.select(ternary_expr)
 
     with pytest.raises(pl.ShapeError):
-        pl.DataFrame({"x": 5 * [[*range(5)]]}).select(
-            pl.when(True).then(pl.col("x").head(2)).otherwise(pl.col("x"))
-        )
+        df.group_by(pl.lit(True).alias("key")).agg(ternary_expr)
 
 
 def test_when_then_output_name_12380() -> None:
@@ -355,10 +380,24 @@ def test_when_then_output_name_12380() -> None:
 
     expect = df.select(pl.col("x").cast(pl.Int64))
     for true_expr in (pl.first("true"), pl.col("true"), pl.lit(True)):
+        ternary_expr = pl.when(true_expr).then(pl.col("x")).otherwise(pl.col("y"))
+
+        actual = df.select(ternary_expr)
         assert_frame_equal(
             expect,
-            df.select(pl.when(true_expr).then(pl.col("x")).otherwise(pl.col("y"))),
+            actual,
         )
+        actual = (
+            df.group_by(pl.lit(True).alias("key"))
+            .agg(ternary_expr)
+            .drop("key")
+            .explode(pl.all())
+        )
+        assert_frame_equal(
+            expect,
+            actual,
+        )
+
     expect = df.select(pl.col("y").alias("x"))
     for false_expr in (
         pl.first("false"),
@@ -368,9 +407,22 @@ def test_when_then_output_name_12380() -> None:
         pl.col("null_bool"),
         pl.lit(None, dtype=pl.Boolean),
     ):
+        ternary_expr = pl.when(false_expr).then(pl.col("x")).otherwise(pl.col("y"))
+
+        actual = df.select(ternary_expr)
         assert_frame_equal(
             expect,
-            df.select(pl.when(false_expr).then(pl.col("x")).otherwise(pl.col("y"))),
+            actual,
+        )
+        actual = (
+            df.group_by(pl.lit(True).alias("key"))
+            .agg(ternary_expr)
+            .drop("key")
+            .explode(pl.all())
+        )
+        assert_frame_equal(
+            expect,
+            actual,
         )
 
 
@@ -389,7 +441,7 @@ def test_when_then_nested_non_unit_literal_predicate_agg_broadcast_12242() -> No
 
     idxs = is_valid_idx.cumsum() - 1
 
-    ternary_expr = pl.when(is_valid_idx).then(pl.col("array_val").take(idxs))
+    ternary_expr = pl.when(is_valid_idx).then(pl.col("array_val").gather(idxs))
 
     expect = pl.DataFrame(
         [
