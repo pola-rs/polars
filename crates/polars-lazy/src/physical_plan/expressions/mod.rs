@@ -97,7 +97,7 @@ impl AggState {
 
 // lazy update strategy
 #[cfg_attr(debug_assertions, derive(Debug))]
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 pub(crate) enum UpdateGroups {
     /// don't update groups
     No,

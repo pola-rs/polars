@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use arrow::legacy::utils::CustomIterTools;
 use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
@@ -31,27 +30,6 @@ impl TernaryExpr {
             falsy,
             expr,
             run_par,
-        }
-    }
-}
-
-fn expand_lengths(truthy: &mut Series, falsy: &mut Series, mask: &mut BooleanChunked) {
-    if mask.is_empty() {
-        *truthy = truthy.clear();
-        *falsy = falsy.clear();
-        return;
-    };
-
-    let len = std::cmp::max(std::cmp::max(truthy.len(), falsy.len()), mask.len());
-    if len > 1 {
-        if falsy.len() == 1 {
-            *falsy = falsy.new_from_index(0, len);
-        }
-        if truthy.len() == 1 {
-            *truthy = truthy.new_from_index(0, len);
-        }
-        if mask.len() == 1 {
-            *mask = mask.new_from_index(0, len);
         }
     }
 }
@@ -108,7 +86,7 @@ impl PhysicalExpr for TernaryExpr {
         // Don't cache window functions as they run in parallel.
         state.remove_cache_window_flag();
         let mask_series = self.predicate.evaluate(df, &state)?;
-        let mut mask = mask_series.bool()?.clone();
+        let mask = mask_series.bool()?.clone();
 
         let op_truthy = || self.truthy.evaluate(df, &state);
         let op_falsy = || self.falsy.evaluate(df, &state);
@@ -117,10 +95,9 @@ impl PhysicalExpr for TernaryExpr {
         } else {
             (op_truthy(), op_falsy())
         };
-        let mut truthy = truthy?;
-        let mut falsy = falsy?;
+        let truthy = truthy?;
+        let falsy = falsy?;
 
-        expand_lengths(&mut truthy, &mut falsy, &mut mask);
         truthy.zip_with(&mask, &falsy)
     }
 
@@ -135,8 +112,6 @@ impl PhysicalExpr for TernaryExpr {
         groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let aggregation_predicate = self.predicate.is_valid_aggregation();
-
         let op_mask = || self.predicate.evaluate_on_groups(df, groups, state);
         let op_truthy = || self.truthy.evaluate_on_groups(df, groups, state);
         let op_falsy = || self.falsy.evaluate_on_groups(df, groups, state);
@@ -146,166 +121,168 @@ impl PhysicalExpr for TernaryExpr {
             (op_mask(), (op_truthy(), op_falsy()))
         };
 
-        let ac_mask = ac_mask?;
+        let mut ac_mask = ac_mask?;
         let mut ac_truthy = ac_truthy?;
         let mut ac_falsy = ac_falsy?;
 
-        let mask_s = ac_mask.flat_naive();
-
-        // BIG TODO: find which branches are never hit and remove them.
         use AggState::*;
-        match (ac_truthy.agg_state(), ac_falsy.agg_state()) {
-            // All branches are aggregated-flat or literal
-            // mask -> aggregated-flat
-            // truthy -> aggregated-flat | literal
-            // falsy -> aggregated-flat | literal
-            // simply align lengths and zip
-            (
-                Literal(truthy) | AggregatedScalar(truthy),
-                AggregatedScalar(falsy) | Literal(falsy),
-            )
-            | (AggregatedList(truthy), AggregatedList(falsy))
-                if matches!(ac_mask.agg_state(), AggState::AggregatedScalar(_)) =>
+
+        let mut has_non_unit_literal = false;
+        for ac in [&mut ac_mask, &mut ac_truthy, &mut ac_falsy].into_iter() {
+            match ac.agg_state() {
+                Literal(s) => {
+                    has_non_unit_literal = s.len() != 1;
+
+                    if has_non_unit_literal {
+                        break;
+                    }
+                },
+                _ => {
+                    let _ = ac.aggregated();
+                },
+            }
+        }
+
+        if has_non_unit_literal {
+            // Non-unit literals must be materialized per-group.
+            if state.verbose() {
+                println!("ternary agg: finish as iters due to non-unit literal")
+            }
+            return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
+        }
+
+        let mut non_literal_acs = Vec::<&AggregationContext>::with_capacity(3);
+
+        for ac in [&ac_mask, &ac_truthy, &ac_falsy].into_iter() {
+            if !matches!(ac.agg_state(), Literal(_)) {
+                non_literal_acs.push(ac);
+            }
+        }
+
+        if non_literal_acs.is_empty() {
+            // All unit literals.
+            if state.verbose() {
+                println!(
+                    "ternary agg: finish all unit literals - expression could have been simplified"
+                )
+            }
+            ac_truthy.with_literal(
+                ac_truthy
+                    .series()
+                    .zip_with(ac_mask.series().bool()?, ac_falsy.series())?,
+            );
+
+            return Ok(ac_truthy);
+        }
+
+        for (ac_l, ac_r) in non_literal_acs.iter().zip(non_literal_acs.iter().skip(1)) {
+            if std::mem::discriminant(ac_l.agg_state()) != std::mem::discriminant(ac_r.agg_state())
             {
-                let mut truthy = truthy.clone();
-                let mut falsy = falsy.clone();
-                let mut mask = ac_mask.series().bool()?.clone();
-                expand_lengths(&mut truthy, &mut falsy, &mut mask);
-                let out = truthy.zip_with(&mask, &falsy).unwrap();
-                ac_truthy.with_series(out.with_name(truthy.name()), true, Some(&self.expr))?;
-                Ok(ac_truthy)
-            },
-
-            // We cannot flatten a list because that changes the order, so we apply over groups.
-            (AggregatedList(_), NotAggregated(_)) | (NotAggregated(_), AggregatedList(_)) => {
-                finish_as_iters(ac_truthy, ac_falsy, ac_mask)
-            },
-
-            // Then:
-            //     col().shift()
-            // Otherwise:
-            //     None
-            (AggregatedList(_), Literal(_)) | (Literal(_), AggregatedList(_)) => {
-                if !aggregation_predicate {
-                    return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
+                // Mix of AggregatedScalar and AggregatedList is done per group,
+                // as every row of the AggregatedScalar must be broadcast to a
+                // list of the same length as the corresponding AggregatedList
+                // row.
+                if state.verbose() {
+                    println!("ternary agg: finish as iters due to mix of AggregatedScalar and AggregatedList")
                 }
-                let mask = mask_s.bool()?;
-                let check_length = |ca: &ListChunked, mask: &BooleanChunked| {
-                    polars_ensure!(
-                        ca.len() == mask.len(), expr = self.expr, ComputeError:
-                        "predicates length: {} does not match groups length: {}",
-                        mask.len(), ca.len()
-                    );
-                    Ok(())
+                return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
+            }
+        }
+
+        // At this point, the possible combinations are:
+        // * mix of unit literals and AggregatedScalar
+        // * mix of unit literals and AggregatedList
+        let ac_target = non_literal_acs.first().unwrap();
+
+        let agg_state_out = match ac_target.agg_state() {
+            AggregatedList(_) => {
+                // Ternary can be applied directly on the flattened series,
+                // given that their offsets have been checked to be equal.
+                if state.verbose() {
+                    println!("ternary agg: finish AggregatedList")
+                }
+
+                for (ac_l, ac_r) in non_literal_acs.iter().zip(non_literal_acs.iter().skip(1)) {
+                    match (ac_l.agg_state(), ac_r.agg_state()) {
+                        (AggregatedList(s_l), AggregatedList(s_r)) => {
+                            let check = s_l.list().unwrap().offsets()?.as_slice()
+                                == s_r.list().unwrap().offsets()?.as_slice();
+
+                            polars_ensure!(
+                                check,
+                                ShapeMismatch: "shapes of `self`, `mask` and `other` are not suitable for `zip_with` operation"
+                            );
+                        },
+                        _ => unreachable!(),
+                    }
+                }
+
+                let truthy = if matches!(ac_truthy.agg_state(), AggregatedList(_)) {
+                    ac_truthy.series().list().unwrap().get_inner()
+                } else {
+                    ac_truthy.series().clone()
                 };
 
-                if ac_falsy.is_literal() && self.falsy.as_expression().map(has_null) == Some(true) {
-                    let s = ac_truthy.aggregated();
-                    let ca = s.list().unwrap();
-                    check_length(ca, mask)?;
-                    let out = ca
-                        .into_iter()
-                        .zip(mask)
-                        .map(|(truthy, take)| if take? { truthy } else { None })
-                        .collect_trusted::<ListChunked>()
-                        .with_name(ac_truthy.series().name());
-                    ac_truthy.with_series(out.into_series(), true, Some(&self.expr))?;
-                    Ok(ac_truthy)
-                } else if ac_truthy.is_literal()
-                    && self.truthy.as_expression().map(has_null) == Some(true)
-                {
-                    let s = ac_falsy.aggregated();
-                    let ca = s.list().unwrap();
-                    check_length(ca, mask)?;
-                    let out = ca
-                        .into_iter()
-                        .zip(mask)
-                        .map(|(falsy, take)| if take? { None } else { falsy })
-                        .collect_trusted::<ListChunked>()
-                        .with_name(ac_truthy.series().name());
-                    ac_truthy.with_series(out.into_series(), true, Some(&self.expr))?;
-                    Ok(ac_truthy)
-                }
-                // Then:
-                //     col().shift()
-                // Otherwise:
-                //     lit(list)
-                else if ac_truthy.is_literal() {
-                    let literal = ac_truthy.series();
-                    let s = ac_falsy.aggregated();
-                    let ca = s.list().unwrap();
-                    check_length(ca, mask)?;
-                    let out = ca
-                        .into_iter()
-                        .zip(mask)
-                        .map(|(falsy, take)| if take? { Some(literal.clone()) } else { falsy })
-                        .collect_trusted::<ListChunked>()
-                        .with_name(ac_truthy.series().name());
-                    ac_truthy.with_series(out.into_series(), true, Some(&self.expr))?;
-                    Ok(ac_truthy)
+                let falsy = if matches!(ac_falsy.agg_state(), AggregatedList(_)) {
+                    ac_falsy.series().list().unwrap().get_inner()
                 } else {
-                    let literal = ac_falsy.series();
-                    let s = ac_truthy.aggregated();
-                    let ca = s.list().unwrap();
-                    check_length(ca, mask)?;
-                    let out = ca
-                        .into_iter()
-                        .zip(mask)
-                        .map(|(truthy, take)| if take? { truthy } else { Some(literal.clone()) })
-                        .collect_trusted::<ListChunked>()
-                        .with_name(ac_truthy.series().name());
-                    ac_truthy.with_series(out.into_series(), true, Some(&self.expr))?;
-                    Ok(ac_truthy)
+                    ac_falsy.series().clone()
+                };
+
+                let mask = if matches!(ac_mask.agg_state(), AggregatedList(_)) {
+                    ac_mask.series().list().unwrap().get_inner()
+                } else {
+                    ac_mask.series().clone()
+                };
+
+                let out = truthy.zip_with(mask.bool()?, &falsy)?;
+
+                let out = out.rechunk();
+                let values = out.array_ref(0);
+                let offsets = ac_target.series().list().unwrap().offsets()?;
+                let inner_type = out.dtype();
+                let data_type = LargeListArray::default_datatype(values.data_type().clone());
+
+                // SAFETY: offsets are correct.
+                let out = LargeListArray::new(data_type, offsets, values.clone(), None);
+
+                let mut out = ListChunked::with_chunk(truthy.name(), out);
+                out.to_logical(inner_type.clone());
+
+                if let AggregatedList(s) = ac_target.agg_state() {
+                    if s.list().unwrap()._can_fast_explode() {
+                        out.set_fast_explode();
+                    }
+                } else {
+                    unreachable!();
                 }
+
+                let out = out.into_series();
+
+                AggregatedList(out)
             },
-            // Both are or a flat series or aggregated into a list
-            // so we can flatten the Series an apply the operators.
+            AggregatedScalar(_) => {
+                if state.verbose() {
+                    println!("ternary agg: finish AggregatedScalar")
+                }
+
+                let out = ac_truthy
+                    .series()
+                    .zip_with(ac_mask.series().bool()?, ac_falsy.series())?;
+                AggregatedScalar(out)
+            },
             _ => {
-                // Inspect the predicate and if it is consisting
-                // of arity/binary and some aggregation we apply as iters as
-                // it gets complicated quickly.
-                // For instance:
-                //  when(col(..) > min(..)).then(..).otherwise(..)
-                if let Some(expr) = self.predicate.as_expression() {
-                    let mut has_arity = false;
-                    let mut has_agg = false;
-                    for e in expr.into_iter() {
-                        match e {
-                            Expr::BinaryExpr { .. } | Expr::Ternary { .. } => has_arity = true,
-                            Expr::Agg(_) => has_agg = true,
-                            Expr::Function { options, .. }
-                            | Expr::AnonymousFunction { options, .. }
-                                if options.is_groups_sensitive() =>
-                            {
-                                has_agg = true
-                            },
-                            _ => {},
-                        }
-                    }
-                    if has_arity && has_agg {
-                        return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
-                    }
-                }
-
-                if !aggregation_predicate {
-                    return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
-                }
-                let mut mask = mask_s.bool()?.clone();
-                let mut truthy = ac_truthy.flat_naive().into_owned();
-                let mut falsy = ac_falsy.flat_naive().into_owned();
-                expand_lengths(&mut truthy, &mut falsy, &mut mask);
-                let out = truthy.zip_with(&mask, &falsy)?;
-
-                // Because of the flattening we don't have to do that anymore.
-                if matches!(ac_truthy.update_groups, UpdateGroups::WithSeriesLen) {
-                    ac_truthy.with_update_groups(UpdateGroups::No);
-                }
-
-                ac_truthy.with_series(out, false, None)?;
-
-                Ok(ac_truthy)
+                unreachable!()
             },
-        }
+        };
+
+        Ok(AggregationContext {
+            state: agg_state_out,
+            groups: ac_target.groups.clone(),
+            sorted: ac_target.sorted,
+            update_groups: ac_target.update_groups,
+            original_len: ac_target.original_len,
+        })
     }
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
@@ -327,12 +304,11 @@ impl PartitionedAggregation for TernaryExpr {
         let falsy = self.falsy.as_partitioned_aggregator().unwrap();
         let mask = self.predicate.as_partitioned_aggregator().unwrap();
 
-        let mut truthy = truthy.evaluate_partitioned(df, groups, state)?;
-        let mut falsy = falsy.evaluate_partitioned(df, groups, state)?;
+        let truthy = truthy.evaluate_partitioned(df, groups, state)?;
+        let falsy = falsy.evaluate_partitioned(df, groups, state)?;
         let mask = mask.evaluate_partitioned(df, groups, state)?;
-        let mut mask = mask.bool()?.clone();
+        let mask = mask.bool()?.clone();
 
-        expand_lengths(&mut truthy, &mut falsy, &mut mask);
         truthy.zip_with(&mask, &falsy)
     }
 

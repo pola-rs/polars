@@ -40,22 +40,22 @@ macro_rules! impl_ternary_broadcast {
             Ok(val)
         }
         (_, 1, 1) => {
-            let right = $other.get(0);
-            let mask = $mask.get(0).unwrap_or(false);
-            let mut val: ChunkedArray<$ty> = $self
-                .into_iter()
-                .map(|left| ternary_apply(mask, left, right))
-                .collect_trusted();
+            let mut val = if let Some(true) = $mask.get(0) {
+                $self.clone()
+            } else {
+                $other.new_from_index(0, $self_len)
+            };
+
             val.rename($self.name());
             Ok(val)
         }
         (1, _, 1) => {
-            let left = $self.get(0);
-            let mask = $mask.get(0).unwrap_or(false);
-            let mut val: ChunkedArray<$ty> = $other
-                .into_iter()
-                .map(|right| ternary_apply(mask, left, right))
-                .collect_trusted();
+            let mut val = if let Some(true) = $mask.get(0) {
+                $self.new_from_index(0, $other_len)
+            } else {
+                $other.clone()
+            };
+
             val.rename($self.name());
             Ok(val)
         },
@@ -97,6 +97,32 @@ macro_rules! impl_ternary_broadcast {
             )),
     }
     }};
+}
+
+macro_rules! expand_unit {
+    ($ca:ident, $len:ident) => {{
+        if $ca.len() == 1 {
+            $ca.new_from_index(0, $len)
+        } else {
+            $ca.clone()
+        }
+    }};
+}
+
+macro_rules! expand_lengths {
+    ($truthy:ident, $falsy:ident, $mask:ident) => {
+        if $mask.is_empty() {
+            ($truthy.clear(), $falsy.clear(), $mask.clone())
+        } else {
+            let len = std::cmp::max(std::cmp::max($truthy.len(), $falsy.len()), $mask.len());
+
+            let $truthy = expand_unit!($truthy, len);
+            let $falsy = expand_unit!($falsy, len);
+            let $mask = expand_unit!($mask, len);
+
+            ($truthy, $falsy, $mask)
+        }
+    };
 }
 
 fn zip_with<T: PolarsDataType>(
@@ -200,14 +226,18 @@ impl ChunkZip<BinaryType> for BinaryChunked {
 
 impl ChunkZip<ListType> for ListChunked {
     fn zip_with(&self, mask: &BooleanChunked, other: &ListChunked) -> PolarsResult<ListChunked> {
-        zip_with(self, other, mask)
+        let (truthy, falsy, mask) = (self, other, mask);
+        let (truthy, falsy, mask) = expand_lengths!(truthy, falsy, mask);
+        zip_with(&truthy, &falsy, &mask)
     }
 }
 
 #[cfg(feature = "dtype-array")]
 impl ChunkZip<FixedSizeListType> for ArrayChunked {
     fn zip_with(&self, mask: &BooleanChunked, other: &ArrayChunked) -> PolarsResult<ArrayChunked> {
-        zip_with(self, other, mask)
+        let (truthy, falsy, mask) = (self, other, mask);
+        let (truthy, falsy, mask) = expand_lengths!(truthy, falsy, mask);
+        zip_with(&truthy, &falsy, &mask)
     }
 }
 
@@ -218,13 +248,10 @@ impl<T: PolarsObject> ChunkZip<ObjectType<T>> for ObjectChunked<T> {
         mask: &BooleanChunked,
         other: &ChunkedArray<ObjectType<T>>,
     ) -> PolarsResult<ChunkedArray<ObjectType<T>>> {
-        if self.len() != mask.len() || mask.len() != other.len() {
-            return Err(polars_err!(
-                ShapeMismatch: "shapes of `self`, `mask` and `other` are not suitable for `zip_with` operation"
-            ));
-        };
+        let (truthy, falsy, mask) = (self, other, mask);
+        let (truthy, falsy, mask) = expand_lengths!(truthy, falsy, mask);
 
-        let (left, right, mask) = align_chunks_ternary(self, other, mask);
+        let (left, right, mask) = align_chunks_ternary(&truthy, &falsy, &mask);
         let mut ca: Self = left
             .as_ref()
             .into_iter()
