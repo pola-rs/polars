@@ -7,11 +7,11 @@ use crate::PySeries;
 
 #[pymethods]
 impl PySeries {
-    fn set_at_idx(&mut self, idx: PySeries, values: PySeries) -> PyResult<()> {
+    fn scatter(&mut self, idx: PySeries, values: PySeries) -> PyResult<()> {
         // we take the value because we want a ref count
         // of 1 so that we can have mutable access
         let s = std::mem::take(&mut self.series);
-        match set_at_idx(s, &idx.series, &values.series) {
+        match scatter(s, &idx.series, &values.series) {
             Ok(out) => {
                 self.series = out;
                 Ok(())
@@ -21,7 +21,7 @@ impl PySeries {
     }
 }
 
-fn set_at_idx(mut s: Series, idx: &Series, values: &Series) -> PolarsResult<Series> {
+fn scatter(mut s: Series, idx: &Series, values: &Series) -> PolarsResult<Series> {
     let logical_dtype = s.dtype().clone();
 
     let idx = polars_ops::prelude::convert_to_unsigned_index(idx, s.len())?;

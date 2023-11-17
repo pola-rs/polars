@@ -294,7 +294,7 @@ class Series:
                 if dtype is not None:
                     self._s = (
                         self.cast(dtype)
-                        .set_at_idx(np.argwhere(np.isnat(values)).flatten(), None)
+                        .scatter(np.argwhere(np.isnat(values)).flatten(), None)
                         ._s
                     )
                     return
@@ -1091,11 +1091,11 @@ class Series:
     ) -> None:
         # do the single idx as first branch as those are likely in a tight loop
         if isinstance(key, int) and not isinstance(key, bool):
-            self.set_at_idx(key, value)
+            self.scatter(key, value)
             return None
         elif isinstance(value, Sequence) and not isinstance(value, str):
             if self.dtype.is_numeric() or self.dtype.is_temporal():
-                self.set_at_idx(key, value)  # type: ignore[arg-type]
+                self.scatter(key, value)  # type: ignore[arg-type]
                 return None
             raise TypeError(
                 f"cannot set Series of dtype: {self.dtype!r} with list/tuple as value;"
@@ -1105,15 +1105,15 @@ class Series:
             if key.dtype == Boolean:
                 self._s = self.set(key, value)._s
             elif key.dtype == UInt64:
-                self._s = self.set_at_idx(key.cast(UInt32), value)._s
+                self._s = self.scatter(key.cast(UInt32), value)._s
             elif key.dtype == UInt32:
-                self._s = self.set_at_idx(key, value)._s
+                self._s = self.scatter(key, value)._s
 
         # TODO: implement for these types without casting to series
         elif _check_for_numpy(key) and isinstance(key, np.ndarray):
             if key.dtype == np.bool_:
                 # boolean numpy mask
-                self._s = self.set_at_idx(np.argwhere(key)[:, 0], value)._s
+                self._s = self.scatter(np.argwhere(key)[:, 0], value)._s
             else:
                 s = self._from_pyseries(
                     PySeries.new_u32("", np.array(key, np.uint32), _strict=True)
@@ -4312,22 +4312,22 @@ class Series:
             return NotImplemented
         return self._from_pyseries(f(filter._s, value))
 
-    def set_at_idx(
+    def scatter(
         self,
-        idx: Series | np.ndarray[Any, Any] | Sequence[int] | int,
-        value: (
+        indices: Series | np.ndarray[Any, Any] | Sequence[int] | int,
+        values: (
             int
             | float
             | str
             | bool
+            | date
+            | datetime
             | Sequence[int]
             | Sequence[float]
             | Sequence[bool]
             | Sequence[str]
             | Sequence[date]
             | Sequence[datetime]
-            | date
-            | datetime
             | Series
             | None
         ),
@@ -4337,26 +4337,21 @@ class Series:
 
         Parameters
         ----------
-        idx
+        indices
             Integers representing the index locations.
-        value
-            replacement values.
-
-        Returns
-        -------
-        Series
-            The mutated series.
+        values
+            Replacement values.
 
         Notes
         -----
         Use of this function is frequently an anti-pattern, as it can
-        block optimisation (predicate pushdown, etc). Consider using
+        block optimization (predicate pushdown, etc). Consider using
         `pl.when(predicate).then(value).otherwise(self)` instead.
 
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.set_at_idx(1, 10)
+        >>> s.scatter(1, 10)
         shape: (3,)
         Series: 'a' [i64]
         [
@@ -4382,21 +4377,21 @@ class Series:
         └─────────┘
 
         """
-        if isinstance(idx, int):
-            idx = [idx]
-        if len(idx) == 0:
+        if isinstance(indices, int):
+            indices = [indices]
+        if len(indices) == 0:
             return self
 
-        idx = Series("", idx)
-        if isinstance(value, (int, float, bool, str)) or (value is None):
-            value = Series("", [value])
+        indices = Series("", indices)
+        if isinstance(values, (int, float, bool, str)) or (values is None):
+            values = Series("", [values])
 
             # if we need to set more than a single value, we extend it
-            if len(idx) > 0:
-                value = value.extend_constant(value[0], len(idx) - 1)
-        elif not isinstance(value, Series):
-            value = Series("", value)
-        self._s.set_at_idx(idx._s, value._s)
+            if len(indices) > 0:
+                values = values.extend_constant(values[0], len(indices) - 1)
+        elif not isinstance(values, Series):
+            values = Series("", values)
+        self._s.scatter(indices._s, values._s)
         return self
 
     def clear(self, n: int = 0) -> Series:
@@ -7019,6 +7014,44 @@ class Series:
             Index location used for selection.
         """
         return self.gather(indices)
+
+    @deprecate_renamed_function("scatter", version="0.19.14")
+    @deprecate_renamed_parameter("idx", "indices", version="0.19.14")
+    @deprecate_renamed_parameter("value", "values", version="0.19.14")
+    def set_at_idx(
+        self,
+        indices: Series | np.ndarray[Any, Any] | Sequence[int] | int,
+        values: (
+            int
+            | float
+            | str
+            | bool
+            | date
+            | datetime
+            | Sequence[int]
+            | Sequence[float]
+            | Sequence[bool]
+            | Sequence[str]
+            | Sequence[date]
+            | Sequence[datetime]
+            | Series
+            | None
+        ),
+    ) -> Series:
+        """
+        Set values at the index locations.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`scatter`.
+
+        Parameters
+        ----------
+        indices
+            Integers representing the index locations.
+        values
+            Replacement values.
+        """
+        return self.scatter(indices, values)
 
     @deprecate_renamed_function("cum_sum", version="0.19.14")
     def cumsum(self, *, reverse: bool = False) -> Series:

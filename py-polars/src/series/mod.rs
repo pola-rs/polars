@@ -5,7 +5,7 @@ mod comparison;
 mod construction;
 mod export;
 mod numpy_ufunc;
-mod set_at_idx;
+mod scatter;
 
 use std::io::Cursor;
 

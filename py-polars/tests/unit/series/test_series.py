@@ -2495,52 +2495,6 @@ def test_clip() -> None:
     assert s.clip(1, 10).to_list() == [1, 5, None, 10]
 
 
-def test_set_at_idx() -> None:
-    s = pl.Series("s", [1, 2, 3])
-
-    # no-op (empty sequences)
-    for x in (
-        (),
-        [],
-        pl.Series(),
-        pl.Series(dtype=pl.Int8),
-        np.array([]),
-        np.ndarray(shape=(0, 0)),
-    ):
-        s.set_at_idx(x, 8)  # type: ignore[arg-type]
-        assert s.to_list() == [1, 2, 3]
-
-    # set new values, one index at a time
-    s.set_at_idx(0, 8)
-    s.set_at_idx([1], None)
-    assert s.to_list() == [8, None, 3]
-
-    # set new value at multiple indexes in one go
-    s.set_at_idx([0, 2], None)
-    assert s.to_list() == [None, None, None]
-
-    # try with different series dtype
-    s = pl.Series("s", ["a", "b", "c"])
-    s.set_at_idx((1, 2), "x")
-    assert s.to_list() == ["a", "x", "x"]
-    assert s.set_at_idx([0, 2], 0.12345).to_list() == ["0.12345", "x", "0.12345"]
-
-    # set multiple values values
-    s = pl.Series(["z", "z", "z"])
-    assert s.set_at_idx([0, 1], ["a", "b"]).to_list() == ["a", "b", "z"]
-    s = pl.Series([True, False, True])
-    assert s.set_at_idx([0, 1], [False, True]).to_list() == [False, True, True]
-
-    # set negative indices
-    a = pl.Series(range(5))
-    a[-2] = None
-    a[-5] = None
-    assert a.to_list() == [None, 1, 2, None, 4]
-
-    with pytest.raises(pl.OutOfBoundsError):
-        a[-100] = None
-
-
 def test_repr() -> None:
     s = pl.Series("ints", [1001, 2002, 3003])
     s_repr = repr(s)
