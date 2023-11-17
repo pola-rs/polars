@@ -392,7 +392,7 @@ def test_streaming_restart_non_streamable_group_by() -> None:
         )  # non-streamable UDF + nested_agg
     )
 
-    assert """--- PIPELINE""" in res.explain(streaming=True)
+    assert """--- STREAMING""" in res.explain(streaming=True)
 
 
 def test_group_by_min_max_string_type() -> None:
