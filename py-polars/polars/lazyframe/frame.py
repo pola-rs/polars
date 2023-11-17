@@ -4628,9 +4628,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.with_row_count(name, offset))
 
-    def take_every(self, n: int) -> Self:
+    def gather_every(self, n: int) -> Self:
         """
         Take every nth row in the LazyFrame and return as a new LazyFrame.
+
+        Parameters
+        ----------
+        n
+            Gather every *n*-th row.
 
         Examples
         --------
@@ -4640,7 +4645,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "b": [5, 6, 7, 8],
         ...     }
         ... )
-        >>> lf.take_every(2).collect()
+        >>> lf.gather_every(2).collect()
         shape: (2, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -4650,9 +4655,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ 5   │
         │ 3   ┆ 7   │
         └─────┴─────┘
-
         """
-        return self.select(F.col("*").take_every(n))
+        return self.select(F.col("*").gather_every(n))
 
     def fill_null(
         self,
@@ -6200,3 +6204,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         return self.shift(n, fill_value=fill_value)
+
+    @deprecate_renamed_function("gather_every", version="0.19.14")
+    def take_every(self, n: int) -> Self:
+        """
+        Take every nth row in the LazyFrame and return as a new LazyFrame.
+
+        .. deprecated:: 0.19.0
+            This method has been renamed to :meth:`gather_every`.
+
+        Parameters
+        ----------
+        n
+            Gather every *n*-th row.
+        """
+        return self.gather_every(n)

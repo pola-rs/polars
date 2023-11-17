@@ -9447,14 +9447,19 @@ class DataFrame:
             df._df.shrink_to_fit()
             return df
 
-    def take_every(self, n: int) -> DataFrame:
+    def gather_every(self, n: int) -> DataFrame:
         """
         Take every nth row in the DataFrame and return as a new DataFrame.
+
+        Parameters
+        ----------
+        n
+            Gather every *n*-th row.
 
         Examples
         --------
         >>> s = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
-        >>> s.take_every(2)
+        >>> s.gather_every(2)
         shape: (2, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -9466,7 +9471,7 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        return self.select(F.col("*").take_every(n))
+        return self.select(F.col("*").gather_every(n))
 
     def hash_rows(
         self,
@@ -10207,6 +10212,21 @@ class DataFrame:
 
         """
         return self.shift(n, fill_value=fill_value)
+
+    @deprecate_renamed_function("gather_every", version="0.19.12")
+    def take_every(self, n: int) -> DataFrame:
+        """
+        Take every nth row in the DataFrame and return as a new DataFrame.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :func:`gather_every`.
+
+        Parameters
+        ----------
+        n
+            Gather every *n*-th row.
+        """
+        return self.gather_every(n)
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:

@@ -110,10 +110,10 @@ def test_set_null() -> None:
     assert s[2] is None
 
 
-def test_take_every() -> None:
+def test_gather_every() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": ["w", "x", "y", "z"]})
     expected_df = pl.DataFrame({"a": [1, 3], "b": ["w", "y"]})
-    assert_frame_equal(expected_df, ldf.take_every(2).collect())
+    assert_frame_equal(expected_df, ldf.gather_every(2).collect())
 
 
 def test_agg() -> None:

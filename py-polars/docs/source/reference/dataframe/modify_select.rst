@@ -19,6 +19,7 @@ Manipulation/selection
     DataFrame.fill_null
     DataFrame.filter
     DataFrame.find_idx_by_name
+    DataFrame.gather_every
     DataFrame.get_column
     DataFrame.get_columns
     DataFrame.group_by
