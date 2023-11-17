@@ -83,7 +83,7 @@ def test_python_slicing_lazy_frame() -> None:
         assert ldf[py_slice].collect().rows() == ldf.collect().rows()[py_slice]
 
     assert_frame_equal(ldf[::-1], ldf.reverse())
-    assert_frame_equal(ldf[::-2], ldf.reverse().take_every(2))
+    assert_frame_equal(ldf[::-2], ldf.reverse().gather_every(2))
 
 
 def test_head_tail_limit() -> None:

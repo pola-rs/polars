@@ -1783,9 +1783,9 @@ def test_filter() -> None:
     assert_series_equal(s.filter([True, False, True]), pl.Series("a", [1, 3]))
 
 
-def test_take_every() -> None:
+def test_gather_every() -> None:
     s = pl.Series("a", [1, 2, 3, 4])
-    assert_series_equal(s.take_every(2), pl.Series("a", [1, 3]))
+    assert_series_equal(s.gather_every(2), pl.Series("a", [1, 3]))
 
 
 def test_arg_sort() -> None:

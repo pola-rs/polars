@@ -27,6 +27,7 @@ Manipulation/selection
     Series.fill_null
     Series.filter
     Series.floor
+    Series.gather_every
     Series.head
     Series.hist
     Series.interpolate

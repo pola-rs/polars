@@ -3040,14 +3040,19 @@ class Series:
         """
         return self.head(n)
 
-    def take_every(self, n: int) -> Series:
+    def gather_every(self, n: int) -> Series:
         """
         Take every nth value in the Series and return as new Series.
+
+        Parameters
+        ----------
+        n
+            Gather every *n*-th row.
 
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, 4])
-        >>> s.take_every(2)
+        >>> s.gather_every(2)
         shape: (2,)
         Series: 'a' [i64]
         [
@@ -6982,6 +6987,21 @@ class Series:
 
         """
         return self.dtype is Utf8
+
+    @deprecate_renamed_function("gather_every", version="0.19.14")
+    def take_every(self, n: int) -> Series:
+        """
+        Take every nth value in the Series and return as new Series.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`gather_every`.
+
+        Parameters
+        ----------
+        n
+            Gather every *n*-th row.
+        """
+        return self.gather_every(n)
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`

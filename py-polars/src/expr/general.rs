@@ -413,17 +413,17 @@ impl PyExpr {
         self.inner.clone().explode().into()
     }
 
-    fn take_every(&self, n: usize) -> Self {
+    fn gather_every(&self, n: usize) -> Self {
         self.inner
             .clone()
             .map(
                 move |s: Series| {
-                    polars_ensure!(n > 0, InvalidOperation: "take_every(n): n can't be zero");
-                    Ok(Some(s.take_every(n)))
+                    polars_ensure!(n > 0, InvalidOperation: "gather_every(n): n can't be zero");
+                    Ok(Some(s.gather_every(n)))
                 },
                 GetOutput::same_type(),
             )
-            .with_fmt("take_every")
+            .with_fmt("gather_every")
             .into()
     }
     fn tail(&self, n: usize) -> Self {

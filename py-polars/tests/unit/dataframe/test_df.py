@@ -383,10 +383,10 @@ def test_to_series() -> None:
     assert_series_equal(df.to_series(-1), df["z"])
 
 
-def test_take_every() -> None:
+def test_gather_every() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": ["w", "x", "y", "z"]})
     expected_df = pl.DataFrame({"a": [1, 3], "b": ["w", "y"]})
-    assert_frame_equal(expected_df, df.take_every(2))
+    assert_frame_equal(expected_df, df.gather_every(2))
 
 
 def test_take_misc(fruits_cars: pl.DataFrame) -> None:

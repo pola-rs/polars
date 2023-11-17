@@ -4381,14 +4381,19 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.implode())
 
-    def take_every(self, n: int) -> Self:
+    def gather_every(self, n: int) -> Self:
         """
         Take every nth value in the Series and return as a new Series.
+
+        Parameters
+        ----------
+        n
+            Gather every *n*-th row.
 
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7, 8, 9]})
-        >>> df.select(pl.col("foo").take_every(3))
+        >>> df.select(pl.col("foo").gather_every(3))
         shape: (3, 1)
         ┌─────┐
         │ foo │
@@ -4401,7 +4406,7 @@ class Expr:
         └─────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.take_every(n))
+        return self._from_pyexpr(self._pyexpr.gather_every(n))
 
     def head(self, n: int | Expr = 10) -> Self:
         """
@@ -9653,6 +9658,21 @@ class Expr:
             returns_scalar=auto_explode,
             cast_to_supertypes=cast_to_supertypes,
         )
+
+    @deprecate_renamed_function("gather_every", version="0.19.14")
+    def take_every(self, n: int) -> Self:
+        """
+        Take every nth value in the Series and return as a new Series.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`gather_every`.
+
+        Parameters
+        ----------
+        n
+            Gather every *n*-th row.
+        """
+        return self.gather_every(n)
 
     @property
     def bin(self) -> ExprBinaryNameSpace:
