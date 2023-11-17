@@ -330,12 +330,15 @@ def test_empty_list_eval_schema_5734() -> None:
 
 
 def test_list_eval_type_cast_11188() -> None:
-    df = pl.DataFrame([
-        {"a": None},
-    ], schema={'a': pl.List(pl.Int64)})
+    df = pl.DataFrame(
+        [
+            {"a": None},
+        ],
+        schema={"a": pl.List(pl.Int64)},
+    )
     print(df.schema)
     assert df.select(
-        pl.col('a').list.eval(pl.element().cast(pl.Utf8)).alias('a_str')
+        pl.col("a").list.eval(pl.element().cast(pl.Utf8)).alias("a_str")
     ).schema == {"a_str": pl.List(pl.Utf8)}
 
 
