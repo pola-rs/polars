@@ -174,7 +174,7 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
                 return Ok(Some(Series::new_empty(s.name(), output_field.data_type())));
             }
             if lst.null_count() == lst.len() {
-                return Ok(Some(s));
+                return Ok(Some(s.cast(output_field.data_type())?));
             }
 
             let fits_idx_size = lst.get_values_size() <= (IdxSize::MAX as usize);
