@@ -167,7 +167,7 @@ def test_align_frames() -> None:
         (pf1[["a", "b"]] * pf2[["a", "b"]])
         .fill_null(0)
         .select(pl.sum_horizontal("*").alias("dot"))
-        .insert_at_idx(0, pf1["date"])
+        .insert_column(0, pf1["date"])
     )
     # confirm we match the same operation in pandas
     assert_frame_equal(pl_dot, pl.from_pandas(pd_dot))

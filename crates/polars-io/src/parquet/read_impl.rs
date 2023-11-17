@@ -342,7 +342,7 @@ pub(super) fn materialize_empty_df(
     let mut df = DataFrame::from(schema.as_ref());
 
     if let Some(row_count) = row_count {
-        df.insert_at_idx(0, Series::new_empty(&row_count.name, &IDX_DTYPE))
+        df.insert_column(0, Series::new_empty(&row_count.name, &IDX_DTYPE))
             .unwrap();
     }
 

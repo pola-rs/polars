@@ -186,7 +186,7 @@ impl DataFrame {
 
     /// Get the index of the column.
     fn check_name_to_idx(&self, name: &str) -> PolarsResult<usize> {
-        self.find_idx_by_name(name)
+        self.get_column_index(name)
             .ok_or_else(|| polars_err!(ColumnNotFound: "{}", name))
     }
 
@@ -1091,7 +1091,7 @@ impl DataFrame {
 
     /// Insert a new column at a given index without checking for duplicates.
     /// This can leave the [`DataFrame`] at an invalid state
-    fn insert_at_idx_no_name_check(
+    fn insert_column_no_name_check(
         &mut self,
         index: usize,
         series: Series,
@@ -1106,19 +1106,19 @@ impl DataFrame {
     }
 
     /// Insert a new column at a given index.
-    pub fn insert_at_idx<S: IntoSeries>(
+    pub fn insert_column<S: IntoSeries>(
         &mut self,
         index: usize,
         column: S,
     ) -> PolarsResult<&mut Self> {
         let series = column.into_series();
         self.check_already_present(series.name())?;
-        self.insert_at_idx_no_name_check(index, series)
+        self.insert_column_no_name_check(index, series)
     }
 
     fn add_column_by_search(&mut self, series: Series) -> PolarsResult<()> {
-        if let Some(idx) = self.find_idx_by_name(series.name()) {
-            self.replace_at_idx(idx, series)?;
+        if let Some(idx) = self.get_column_index(series.name()) {
+            self.replace_column(idx, series)?;
         } else {
             self.columns.push(series);
         }
@@ -1170,7 +1170,7 @@ impl DataFrame {
             if self.columns.get(idx).map(|s| s.name()) != Some(name) {
                 self.add_column_by_search(s)?;
             } else {
-                self.replace_at_idx(idx, s)?;
+                self.replace_column(idx, s)?;
             }
         } else {
             self.columns.push(s);
@@ -1345,20 +1345,20 @@ impl DataFrame {
     ///                         "Mana" => &[250, 100, 0],
     ///                         "Strength" => &[30, 150, 300])?;
     ///
-    /// assert_eq!(df.find_idx_by_name("Name"), Some(0));
-    /// assert_eq!(df.find_idx_by_name("Health"), Some(1));
-    /// assert_eq!(df.find_idx_by_name("Mana"), Some(2));
-    /// assert_eq!(df.find_idx_by_name("Strength"), Some(3));
-    /// assert_eq!(df.find_idx_by_name("Haste"), None);
+    /// assert_eq!(df.get_column_index("Name"), Some(0));
+    /// assert_eq!(df.get_column_index("Health"), Some(1));
+    /// assert_eq!(df.get_column_index("Mana"), Some(2));
+    /// assert_eq!(df.get_column_index("Strength"), Some(3));
+    /// assert_eq!(df.get_column_index("Haste"), None);
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn find_idx_by_name(&self, name: &str) -> Option<usize> {
+    pub fn get_column_index(&self, name: &str) -> Option<usize> {
         self.columns.iter().position(|s| s.name() == name)
     }
 
     /// Get column index of a [`Series`] by name.
-    pub fn try_find_idx_by_name(&self, name: &str) -> PolarsResult<usize> {
-        self.find_idx_by_name(name)
+    pub fn try_get_column_index(&self, name: &str) -> PolarsResult<usize> {
+        self.get_column_index(name)
             .ok_or_else(|| polars_err!(ColumnNotFound: "{}", name))
     }
 
@@ -1376,9 +1376,7 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn column(&self, name: &str) -> PolarsResult<&Series> {
-        let idx = self
-            .find_idx_by_name(name)
-            .ok_or_else(|| polars_err!(ColumnNotFound: "{}", name))?;
+        let idx = self.try_get_column_index(name)?;
         Ok(self.select_at_idx(idx).unwrap())
     }
 
@@ -1605,7 +1603,7 @@ impl DataFrame {
     /// *Note: the length of the Series should remain the same otherwise the DataFrame is invalid.*
     /// For this reason the method is not public
     fn select_mut(&mut self, name: &str) -> Option<&mut Series> {
-        let opt_idx = self.find_idx_by_name(name);
+        let opt_idx = self.get_column_index(name);
 
         opt_idx.and_then(|idx| self.select_at_idx_mut(idx))
     }
@@ -1974,28 +1972,28 @@ impl DataFrame {
     /// let mut df = DataFrame::new(vec![s0, s1])?;
     ///
     /// // Add 32 to get lowercase ascii values
-    /// df.replace_at_idx(1, df.select_at_idx(1).unwrap() + 32);
+    /// df.replace_column(1, df.select_at_idx(1).unwrap() + 32);
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn replace_at_idx<S: IntoSeries>(
+    pub fn replace_column<S: IntoSeries>(
         &mut self,
-        idx: usize,
-        new_col: S,
+        index: usize,
+        new_column: S,
     ) -> PolarsResult<&mut Self> {
         polars_ensure!(
-            idx < self.width(),
+            index < self.width(),
             ShapeMismatch:
             "unable to replace at index {}, the DataFrame has only {} columns",
-            idx, self.width(),
+            index, self.width(),
         );
-        let mut new_column = new_col.into_series();
+        let mut new_column = new_column.into_series();
         polars_ensure!(
             new_column.len() == self.height(),
             ShapeMismatch:
             "unable to replace a column, series length {} doesn't match the DataFrame height {}",
             new_column.len(), self.height(),
         );
-        let old_col = &mut self.columns[idx];
+        let old_col = &mut self.columns[index];
         mem::swap(old_col, &mut new_column);
         Ok(self)
     }
@@ -2228,9 +2226,7 @@ impl DataFrame {
         F: FnOnce(&Series) -> PolarsResult<S>,
         S: IntoSeries,
     {
-        let idx = self
-            .find_idx_by_name(column)
-            .ok_or_else(|| polars_err!(ColumnNotFound: "{}", column))?;
+        let idx = self.try_get_column_index(column)?;
         self.try_apply_at_idx(idx, f)
     }
 
@@ -2547,7 +2543,7 @@ impl DataFrame {
 
         let mut summary = concat_df_unchecked(&tmp);
 
-        summary.insert_at_idx(0, Series::new("describe", headers))?;
+        summary.insert_column(0, Series::new("describe", headers))?;
 
         Ok(summary)
     }

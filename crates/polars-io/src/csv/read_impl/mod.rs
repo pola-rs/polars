@@ -80,7 +80,7 @@ pub(crate) fn cast_columns(
         // cast to the original dtypes in the schema
         for fld in to_cast {
             // field may not be projected
-            if let Some(idx) = df.find_idx_by_name(fld.name()) {
+            if let Some(idx) = df.get_column_index(fld.name()) {
                 df.try_apply_at_idx(idx, |s| cast_fn(s, fld))?;
             }
         }
@@ -554,7 +554,7 @@ impl<'a> CoreReader<'a> {
         if bytes.is_empty() {
             let mut df = DataFrame::from(self.schema.as_ref());
             if let Some(ref row_count) = self.row_count {
-                df.insert_at_idx(0, Series::new_empty(&row_count.name, &IDX_DTYPE))?;
+                df.insert_column(0, Series::new_empty(&row_count.name, &IDX_DTYPE))?;
             }
             return Ok(df);
         }

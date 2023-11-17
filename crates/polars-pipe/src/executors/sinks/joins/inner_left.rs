@@ -141,7 +141,7 @@ impl GenericJoinProbe {
         if !self.swapped_or_left && self.join_column_idx.is_none() {
             let mut idx = names
                 .iter()
-                .filter_map(|name| chunk.data.find_idx_by_name(name))
+                .filter_map(|name| chunk.data.get_column_index(name))
                 .collect::<Vec<_>>();
             // ensure that it is sorted so that we can later remove columns in
             // a predictable order

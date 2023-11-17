@@ -1606,9 +1606,9 @@ class DataFrame:
                     start = col_selection.start
                     stop = col_selection.stop
                     if isinstance(col_selection.start, str):
-                        start = self.find_idx_by_name(col_selection.start)
+                        start = self.get_column_index(col_selection.start)
                     if isinstance(col_selection.stop, str):
-                        stop = self.find_idx_by_name(col_selection.stop) + 1
+                        stop = self.get_column_index(col_selection.stop) + 1
 
                     col_selection = slice(start, stop, col_selection.step)
 
@@ -1775,7 +1775,7 @@ class DataFrame:
             # now find the location to place series
             # df[idx]
             if isinstance(col_selection, int):
-                self.replace_at_idx(col_selection, s)
+                self.replace_column(col_selection, s)
             # df["foo"]
             elif isinstance(col_selection, str):
                 self._replace(col_selection, s)
@@ -3113,7 +3113,7 @@ class DataFrame:
         column_widths = _unpack_multi_column_dict(column_widths or {})  # type: ignore[assignment]
 
         for column in df.columns:
-            col_idx, options = table_start[1] + df.find_idx_by_name(column), {}
+            col_idx, options = table_start[1] + df.get_column_index(column), {}
             if column in hidden_columns:
                 options = {"hidden": True}
             if column in column_widths:  # type: ignore[operator]
@@ -3880,22 +3880,24 @@ class DataFrame:
         """
         return self.lazy().rename(mapping).collect(_eager=True)
 
-    def insert_at_idx(self, index: int, series: Series) -> Self:
+    def insert_column(self, index: int, column: Series) -> Self:
         """
-        Insert a Series at a certain column index. This operation is in place.
+        Insert a Series at a certain column index.
+
+        This operation is in place.
 
         Parameters
         ----------
         index
-            Column to insert the new `Series` column.
-        series
+            Index at which to insert the new `Series` column.
+        column
             `Series` to insert.
 
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
         >>> s = pl.Series("baz", [97, 98, 99])
-        >>> df.insert_at_idx(1, s)
+        >>> df.insert_column(1, s)
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ baz ┆ bar │
@@ -3915,7 +3917,7 @@ class DataFrame:
         ...     }
         ... )
         >>> s = pl.Series("d", [-2.5, 15, 20.5, 0])
-        >>> df.insert_at_idx(3, s)
+        >>> df.insert_column(3, s)
         shape: (4, 4)
         ┌─────┬──────┬───────┬──────┐
         │ a   ┆ b    ┆ c     ┆ d    │
@@ -3931,7 +3933,7 @@ class DataFrame:
         """
         if index < 0:
             index = len(self.columns) + index
-        self._df.insert_at_idx(index, series._s)
+        self._df.insert_column(index, column._s)
         return self
 
     def filter(
@@ -4234,10 +4236,10 @@ class DataFrame:
 
         # return results as a frame
         df_summary = self.__class__(summary)
-        df_summary.insert_at_idx(0, pl.Series("describe", metrics))
+        df_summary.insert_column(0, pl.Series("describe", metrics))
         return df_summary
 
-    def find_idx_by_name(self, name: str) -> int:
+    def get_column_index(self, name: str) -> int:
         """
         Find the index of a column by name.
 
@@ -4251,21 +4253,23 @@ class DataFrame:
         >>> df = pl.DataFrame(
         ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
         ... )
-        >>> df.find_idx_by_name("ham")
+        >>> df.get_column_index("ham")
         2
 
         """
-        return self._df.find_idx_by_name(name)
+        return self._df.get_column_index(name)
 
-    def replace_at_idx(self, index: int, series: Series) -> Self:
+    def replace_column(self, index: int, column: Series) -> Self:
         """
         Replace a column at an index location.
+
+        This operation is in place.
 
         Parameters
         ----------
         index
             Column index.
-        series
+        column
             Series that will replace the column.
 
         Examples
@@ -4278,7 +4282,7 @@ class DataFrame:
         ...     }
         ... )
         >>> s = pl.Series("apple", [10, 20, 30])
-        >>> df.replace_at_idx(0, s)
+        >>> df.replace_column(0, s)
         shape: (3, 3)
         ┌───────┬─────┬─────┐
         │ apple ┆ bar ┆ ham │
@@ -4289,11 +4293,10 @@ class DataFrame:
         │ 20    ┆ 7   ┆ b   │
         │ 30    ┆ 8   ┆ c   │
         └───────┴─────┴─────┘
-
         """
         if index < 0:
             index = len(self.columns) + index
-        self._df.replace_at_idx(index, series._s)
+        self._df.replace_column(index, column._s)
         return self
 
     def sort(
@@ -10422,6 +10425,57 @@ class DataFrame:
             Gather every *n*-th row.
         """
         return self.gather_every(n)
+
+    @deprecate_renamed_function("get_column_index", version="0.19.14")
+    def find_idx_by_name(self, name: str) -> int:
+        """
+        Find the index of a column by name.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :func:`get_column_index`.
+
+        Parameters
+        ----------
+        name
+            Name of the column to find.
+        """
+        return self.get_column_index(name)
+
+    @deprecate_renamed_function("insert_column", version="0.19.14")
+    @deprecate_renamed_parameter("series", "column", version="0.19.14")
+    def insert_at_idx(self, index: int, column: Series) -> Self:
+        """
+        Insert a Series at a certain column index. This operation is in place.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :func:`insert_column`.
+
+        Parameters
+        ----------
+        index
+            Column to insert the new `Series` column.
+        column
+            `Series` to insert.
+        """
+        return self.insert_column(index, column)
+
+    @deprecate_renamed_function("replace_column", version="0.19.14")
+    @deprecate_renamed_parameter("series", "new_column", version="0.19.14")
+    def replace_at_idx(self, index: int, new_column: Series) -> Self:
+        """
+        Replace a column at an index location.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :func:`replace_column`.
+
+        Parameters
+        ----------
+        index
+            Column index.
+        new_column
+            Series that will replace the column.
+        """
+        return self.replace_column(index, new_column)
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:
