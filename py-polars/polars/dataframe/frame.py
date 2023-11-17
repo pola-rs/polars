@@ -88,6 +88,7 @@ from polars.utils.deprecation import (
     deprecate_renamed_function,
     deprecate_renamed_parameter,
     deprecate_saturating,
+    issue_deprecation_warning,
 )
 from polars.utils.various import (
     _prepare_row_count_args,
@@ -8053,9 +8054,19 @@ class DataFrame:
     def max(self, axis: int = 0) -> Self | Series:
         ...
 
-    def max(self, axis: int = 0) -> Self | Series:
+    def max(self, axis: int | None = None) -> Self | Series:
         """
         Aggregate the columns of this DataFrame to their maximum value.
+
+        Parameters
+        ----------
+        axis
+            Either 0 (vertical) or 1 (horizontal).
+
+            .. deprecated:: 0.19.14
+                This argument will be removed in a future version. This method will only
+                support vertical aggregation, as if `axis` were set to `0`.
+                To perform horizontal aggregation, use :meth:`max_horizontal`.
 
         Examples
         --------
@@ -8077,14 +8088,51 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
+        if axis is not None:
+            issue_deprecation_warning(
+                "The `axis` parameter for `DataFrame.max` is deprecated."
+                " Use `DataFrame.max_horizontal()` to perform horizontal aggregation.",
+                version="0.19.14",
+            )
+        else:
+            axis = 0
+
         if axis == 0:
             return self._from_pydf(self._df.max())
         if axis == 1:
-            return wrap_s(self._df.hmax())
+            return wrap_s(self._df.max_horizontal())
         raise ValueError("axis should be 0 or 1")
 
+    def max_horizontal(self) -> Series:
+        """
+        Get the maximum value horizontally across columns.
+
+        Returns
+        -------
+        Series
+            A Series named `"max"`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [4.0, 5.0, 6.0],
+        ...     }
+        ... )
+        >>> df.max_horizontal()
+        shape: (3,)
+        Series: 'max' [f64]
+        [
+                4.0
+                5.0
+                6.0
+        ]
+        """
+        return self.select(F.max_horizontal(F.all())).to_series()
+
     @overload
-    def min(self, axis: Literal[0] = ...) -> Self:
+    def min(self, axis: Literal[0] | None = ...) -> Self:
         ...
 
     @overload
@@ -8092,12 +8140,22 @@ class DataFrame:
         ...
 
     @overload
-    def min(self, axis: int = 0) -> Self | Series:
+    def min(self, axis: int) -> Self | Series:
         ...
 
-    def min(self, axis: int = 0) -> Self | Series:
+    def min(self, axis: int | None = None) -> Self | Series:
         """
         Aggregate the columns of this DataFrame to their minimum value.
+
+        Parameters
+        ----------
+        axis
+            Either 0 (vertical) or 1 (horizontal).
+
+            .. deprecated:: 0.19.14
+                This argument will be removed in a future version. This method will only
+                support vertical aggregation, as if `axis` were set to `0`.
+                To perform horizontal aggregation, use :meth:`min_horizontal`.
 
         Examples
         --------
@@ -8119,11 +8177,48 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
+        if axis is not None:
+            issue_deprecation_warning(
+                "The `axis` parameter for `DataFrame.min` is deprecated."
+                " Use `DataFrame.min_horizontal()` to perform horizontal aggregation.",
+                version="0.19.14",
+            )
+        else:
+            axis = 0
+
         if axis == 0:
             return self._from_pydf(self._df.min())
         if axis == 1:
-            return wrap_s(self._df.hmin())
+            return wrap_s(self._df.min_horizontal())
         raise ValueError("axis should be 0 or 1")
+
+    def min_horizontal(self) -> Series:
+        """
+        Get the minimum value horizontally across columns.
+
+        Returns
+        -------
+        Series
+            A Series named `"min"`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [4.0, 5.0, 6.0],
+        ...     }
+        ... )
+        >>> df.min_horizontal()
+        shape: (3,)
+        Series: 'min' [f64]
+        [
+                1.0
+                2.0
+                3.0
+        ]
+        """
+        return self.select(F.min_horizontal(F.all())).to_series()
 
     @overload
     def sum(
@@ -8147,7 +8242,7 @@ class DataFrame:
     def sum(
         self,
         *,
-        axis: int = 0,
+        axis: int,
         null_strategy: NullStrategy = "ignore",
     ) -> Self | Series:
         ...
@@ -8155,7 +8250,7 @@ class DataFrame:
     def sum(
         self,
         *,
-        axis: int = 0,
+        axis: int | None = None,
         null_strategy: NullStrategy = "ignore",
     ) -> Self | Series:
         """
@@ -8164,9 +8259,17 @@ class DataFrame:
         Parameters
         ----------
         axis
-            Either 0 or 1.
+            Either 0 (vertical) or 1 (horizontal).
+
+            .. deprecated:: 0.19.14
+                This argument will be removed in a future version. This method will only
+                support vertical aggregation, as if `axis` were set to `0`.
+                To perform horizontal aggregation, use :meth:`sum_horizontal`.
         null_strategy : {'ignore', 'propagate'}
-            This argument is only used if axis == 1.
+            This argument is only used if `axis == 1`.
+
+            .. deprecated:: 0.19.14
+                This argument will be removed in a future version.
 
         Examples
         --------
@@ -8186,21 +8289,63 @@ class DataFrame:
         ╞═════╪═════╪══════╡
         │ 6   ┆ 21  ┆ null │
         └─────┴─────┴──────┘
-        >>> df.sum(axis=1)
-        shape: (3,)
-        Series: 'foo' [str]
-        [
-                "16a"
-                "27b"
-                "38c"
-        ]
-
         """
+        if axis is not None:
+            issue_deprecation_warning(
+                "The `axis` parameter for `DataFrame.sum` is deprecated."
+                " Use `DataFrame.min_horizontal()` to perform horizontal aggregation.",
+                version="0.19.14",
+            )
+        else:
+            axis = 0
+
         if axis == 0:
             return self._from_pydf(self._df.sum())
         if axis == 1:
-            return wrap_s(self._df.hsum(null_strategy))
+            if null_strategy == "ignore":
+                ignore_nulls = True
+            elif null_strategy == "propagate":
+                ignore_nulls = False
+            else:
+                raise ValueError(
+                    f"`null_strategy` must be one of {{'ignore', 'propagate'}}, got {null_strategy}"
+                )
+            return self.sum_horizontal(ignore_nulls=ignore_nulls)
         raise ValueError("axis should be 0 or 1")
+
+    def sum_horizontal(self, *, ignore_nulls: bool = True) -> Series:
+        """
+        Sum all values horizontally across columns.
+
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default).
+            If set to `False`, any null value in the input will lead to a null output.
+
+        Returns
+        -------
+        Series
+            A Series named `"sum"`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [4.0, 5.0, 6.0],
+        ...     }
+        ... )
+        >>> df.sum_horizontal()
+        shape: (3,)
+        Series: 'sum' [f64]
+        [
+                5.0
+                7.0
+                9.0
+        ]
+        """
+        return wrap_s(self._df.sum_horizontal(ignore_nulls)).alias("sum")
 
     @overload
     def mean(
@@ -8224,7 +8369,7 @@ class DataFrame:
     def mean(
         self,
         *,
-        axis: int = 0,
+        axis: int,
         null_strategy: NullStrategy = "ignore",
     ) -> Self | Series:
         ...
@@ -8232,7 +8377,7 @@ class DataFrame:
     def mean(
         self,
         *,
-        axis: int = 0,
+        axis: int | None = None,
         null_strategy: NullStrategy = "ignore",
     ) -> Self | Series:
         """
@@ -8241,9 +8386,17 @@ class DataFrame:
         Parameters
         ----------
         axis
-            Either 0 or 1.
+            Either 0 (vertical) or 1 (horizontal).
+
+            .. deprecated:: 0.19.14
+                This argument will be removed in a future version. This method will only
+                support vertical aggregation, as if `axis` were set to `0`.
+                To perform horizontal aggregation, use :meth:`mean_horizontal`.
         null_strategy : {'ignore', 'propagate'}
-            This argument is only used if axis == 1.
+            This argument is only used if `axis == 1`.
+
+            .. deprecated:: 0.19.14
+                This argument will be removed in a future version.
 
         Examples
         --------
@@ -8264,21 +8417,63 @@ class DataFrame:
         ╞═════╪═════╪══════╪══════╡
         │ 2.0 ┆ 7.0 ┆ null ┆ 0.5  │
         └─────┴─────┴──────┴──────┘
-        >>> df.mean(axis=1)
-        shape: (3,)
-        Series: 'foo' [f64]
-        [
-            2.666667
-            3.0
-            5.5
-        ]
-
         """
+        if axis is not None:
+            issue_deprecation_warning(
+                "The `axis` parameter for `DataFrame.mean` is deprecated."
+                " Use `DataFrame.mean_horizontal()` to perform horizontal aggregation.",
+                version="0.19.14",
+            )
+        else:
+            axis = 0
+
         if axis == 0:
             return self._from_pydf(self._df.mean())
         if axis == 1:
-            return wrap_s(self._df.hmean(null_strategy))
+            if null_strategy == "ignore":
+                ignore_nulls = True
+            elif null_strategy == "propagate":
+                ignore_nulls = False
+            else:
+                raise ValueError(
+                    f"`null_strategy` must be one of {{'ignore', 'propagate'}}, got {null_strategy}"
+                )
+            return self.mean_horizontal(ignore_nulls=ignore_nulls)
         raise ValueError("axis should be 0 or 1")
+
+    def mean_horizontal(self, *, ignore_nulls: bool = True) -> Series:
+        """
+        Take the mean of all values horizontally across columns.
+
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default).
+            If set to `False`, any null value in the input will lead to a null output.
+
+        Returns
+        -------
+        Series
+            A Series named `"mean"`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [4.0, 5.0, 6.0],
+        ...     }
+        ... )
+        >>> df.mean_horizontal()
+        shape: (3,)
+        Series: 'mean' [f64]
+        [
+                2.5
+                3.5
+                4.5
+        ]
+        """
+        return wrap_s(self._df.mean_horizontal(ignore_nulls)).alias("mean")
 
     def std(self, ddof: int = 1) -> Self:
         """

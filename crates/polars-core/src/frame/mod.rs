@@ -2800,7 +2800,7 @@ impl DataFrame {
 
     /// Aggregate the column horizontally to their min values.
     #[cfg(feature = "zip_with")]
-    pub fn hmin(&self) -> PolarsResult<Option<Series>> {
+    pub fn min_horizontal(&self) -> PolarsResult<Option<Series>> {
         let min_fn = |acc: &Series, s: &Series| min_max_binary_series(acc, s, true);
 
         match self.columns.len() {
@@ -2826,7 +2826,7 @@ impl DataFrame {
 
     /// Aggregate the column horizontally to their max values.
     #[cfg(feature = "zip_with")]
-    pub fn hmax(&self) -> PolarsResult<Option<Series>> {
+    pub fn max_horizontal(&self) -> PolarsResult<Option<Series>> {
         let max_fn = |acc: &Series, s: &Series| min_max_binary_series(acc, s, false);
 
         match self.columns.len() {
@@ -2851,12 +2851,12 @@ impl DataFrame {
     }
 
     /// Aggregate the column horizontally to their sum values.
-    pub fn hsum(&self, none_strategy: NullStrategy) -> PolarsResult<Option<Series>> {
+    pub fn sum_horizontal(&self, null_strategy: NullStrategy) -> PolarsResult<Option<Series>> {
         let sum_fn =
-            |acc: &Series, s: &Series, none_strategy: NullStrategy| -> PolarsResult<Series> {
+            |acc: &Series, s: &Series, null_strategy: NullStrategy| -> PolarsResult<Series> {
                 let mut acc = acc.clone();
                 let mut s = s.clone();
-                if let NullStrategy::Ignore = none_strategy {
+                if let NullStrategy::Ignore = null_strategy {
                     // if has nulls
                     if acc.has_validity() {
                         acc = acc.fill_null(FillNullStrategy::Zero)?;
@@ -2871,7 +2871,7 @@ impl DataFrame {
         match self.columns.len() {
             0 => Ok(None),
             1 => Ok(Some(self.columns[0].clone())),
-            2 => sum_fn(&self.columns[0], &self.columns[1], none_strategy).map(Some),
+            2 => sum_fn(&self.columns[0], &self.columns[1], null_strategy).map(Some),
             _ => {
                 // the try_reduce_with is a bit slower in parallelism,
                 // but I don't think it matters here as we parallelize over columns, not over elements
@@ -2879,7 +2879,7 @@ impl DataFrame {
                     self.columns
                         .par_iter()
                         .map(|s| Ok(Cow::Borrowed(s)))
-                        .try_reduce_with(|l, r| sum_fn(&l, &r, none_strategy).map(Cow::Owned))
+                        .try_reduce_with(|l, r| sum_fn(&l, &r, null_strategy).map(Cow::Owned))
                         // we can unwrap the option, because we are certain there is a column
                         // we started this operation on 3 columns
                         .unwrap()
@@ -2890,7 +2890,7 @@ impl DataFrame {
     }
 
     /// Aggregate the column horizontally to their mean values.
-    pub fn hmean(&self, none_strategy: NullStrategy) -> PolarsResult<Option<Series>> {
+    pub fn mean_horizontal(&self, null_strategy: NullStrategy) -> PolarsResult<Option<Series>> {
         match self.columns.len() {
             0 => Ok(None),
             1 => Ok(Some(self.columns[0].clone())),
@@ -2906,7 +2906,7 @@ impl DataFrame {
                     .collect();
                 let numeric_df = DataFrame::new_no_checks(columns);
 
-                let sum = || numeric_df.hsum(none_strategy);
+                let sum = || numeric_df.sum_horizontal(null_strategy);
 
                 let null_count = || {
                     numeric_df
@@ -3588,7 +3588,7 @@ mod test {
     #[test]
     #[cfg(feature = "zip_with")]
     #[cfg_attr(miri, ignore)]
-    fn test_h_agg() {
+    fn test_horizontal_agg() {
         let a = Series::new("a", &[1, 2, 6]);
         let b = Series::new("b", &[Some(1), None, None]);
         let c = Series::new("c", &[Some(4), None, Some(3)]);
@@ -3596,7 +3596,7 @@ mod test {
         let df = DataFrame::new(vec![a, b, c]).unwrap();
         assert_eq!(
             Vec::from(
-                df.hmean(NullStrategy::Ignore)
+                df.mean_horizontal(NullStrategy::Ignore)
                     .unwrap()
                     .unwrap()
                     .f64()
@@ -3606,7 +3606,7 @@ mod test {
         );
         assert_eq!(
             Vec::from(
-                df.hsum(NullStrategy::Ignore)
+                df.sum_horizontal(NullStrategy::Ignore)
                     .unwrap()
                     .unwrap()
                     .i32()
@@ -3615,11 +3615,11 @@ mod test {
             &[Some(6), Some(2), Some(9)]
         );
         assert_eq!(
-            Vec::from(df.hmin().unwrap().unwrap().i32().unwrap()),
+            Vec::from(df.min_horizontal().unwrap().unwrap().i32().unwrap()),
             &[Some(1), Some(2), Some(3)]
         );
         assert_eq!(
-            Vec::from(df.hmax().unwrap().unwrap().i32().unwrap()),
+            Vec::from(df.max_horizontal().unwrap().unwrap().i32().unwrap()),
             &[Some(4), Some(2), Some(6)]
         );
     }

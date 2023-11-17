@@ -468,11 +468,9 @@ def test_ewm_with_multiple_chunks() -> None:
     assert df1.n_chunks() == 2
 
     ewm_std = df1.with_columns(
-        [
-            pl.all().ewm_std(com=20).name.prefix("ewm_"),
-        ]
+        pl.all().ewm_std(com=20).name.prefix("ewm_"),
     )
-    assert ewm_std.null_count().sum(axis=1)[0] == 4
+    assert ewm_std.null_count().sum_horizontal()[0] == 4
 
 
 def test_map_dict() -> None:

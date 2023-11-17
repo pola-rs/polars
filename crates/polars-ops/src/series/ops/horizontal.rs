@@ -70,11 +70,13 @@ pub fn all_horizontal(s: &[Series]) -> PolarsResult<Series> {
 #[cfg(feature = "zip_with")]
 pub fn max_horizontal(s: &[Series]) -> PolarsResult<Option<Series>> {
     let df = DataFrame::new_no_checks(Vec::from(s));
-    df.hmax().map(|opt_s| opt_s.map(|s| s.with_name("max")))
+    df.max_horizontal()
+        .map(|opt_s| opt_s.map(|s| s.with_name("max")))
 }
 
 #[cfg(feature = "zip_with")]
 pub fn min_horizontal(s: &[Series]) -> PolarsResult<Option<Series>> {
     let df = DataFrame::new_no_checks(Vec::from(s));
-    df.hmin().map(|opt_s| opt_s.map(|s| s.with_name("min")))
+    df.min_horizontal()
+        .map(|opt_s| opt_s.map(|s| s.with_name("min")))
 }
