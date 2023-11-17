@@ -5,10 +5,7 @@ use super::*;
 impl ChunkExplode for ListChunked {
     fn offsets(&self) -> PolarsResult<OffsetsBuffer<i64>> {
         let ca = self.rechunk();
-        let listarr: &LargeListArray = ca
-            .downcast_iter()
-            .next()
-            .ok_or_else(|| polars_err!(NoData: "cannot explode empty list"))?;
+        let listarr: &LargeListArray = ca.downcast_iter().next().unwrap();
         let offsets = listarr.offsets().clone();
 
         Ok(offsets)
@@ -19,10 +16,7 @@ impl ChunkExplode for ListChunked {
         // of the list. And we also return a slice of the offsets. This slice can be used to find the old
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
         let ca = self.rechunk();
-        let listarr: &LargeListArray = ca
-            .downcast_iter()
-            .next()
-            .ok_or_else(|| polars_err!(NoData: "cannot explode empty list"))?;
+        let listarr: &LargeListArray = ca.downcast_iter().next().unwrap();
         let offsets_buf = listarr.offsets().clone();
         let offsets = listarr.offsets().as_slice();
         let mut values = listarr.values().clone();
@@ -89,10 +83,7 @@ impl ChunkExplode for ListChunked {
 impl ChunkExplode for Utf8Chunked {
     fn offsets(&self) -> PolarsResult<OffsetsBuffer<i64>> {
         let ca = self.rechunk();
-        let array: &Utf8Array<i64> = ca
-            .downcast_iter()
-            .next()
-            .ok_or_else(|| polars_err!(NoData: "cannot explode empty str"))?;
+        let array: &Utf8Array<i64> = ca.downcast_iter().next().unwrap();
         let offsets = array.offsets().clone();
 
         Ok(offsets)
@@ -103,10 +94,7 @@ impl ChunkExplode for Utf8Chunked {
         // of the list. And we also return a slice of the offsets. This slice can be used to find the old
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
         let ca = self.rechunk();
-        let array: &Utf8Array<i64> = ca
-            .downcast_iter()
-            .next()
-            .ok_or_else(|| polars_err!(NoData: "cannot explode empty str"))?;
+        let array: &Utf8Array<i64> = ca.downcast_iter().next().unwrap();
 
         let values = array.values();
         let old_offsets = array.offsets().clone();
