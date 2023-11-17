@@ -757,11 +757,6 @@ def test_numpy_preserve_uint64_4112() -> None:
     assert df.to_numpy(structured=True).dtype == np.dtype([("a", "uint64")])
 
 
-def test_view_ub() -> None:
-    # this would be UB if the series was dropped and not passed to the view
-    assert np.sum(pl.Series([3, 1, 5]).sort().view()) == 9
-
-
 def test_arrow_list_null_5697() -> None:
     # Create a pyarrow table with a list[null] column.
     pa_table = pa.table([[[None]]], names=["mycol"])

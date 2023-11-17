@@ -1162,7 +1162,7 @@ class Series:
                     args.append(arg)
                 elif isinstance(arg, Series):
                     validity_mask &= arg.is_not_null()
-                    args.append(arg.view(ignore_nulls=True))
+                    args.append(arg._view(ignore_nulls=True))
                 else:
                     raise TypeError(
                         f"unsupported type {type(arg).__name__!r} for {arg!r}"
@@ -3987,37 +3987,6 @@ class Series:
             .to_series()
         )
 
-    def view(self, *, ignore_nulls: bool = False) -> SeriesView:
-        """
-        Get a view into this Series data with a numpy array.
-
-        This operation doesn't clone data, but does not include missing values.
-        Don't use this unless you know what you are doing.
-
-        Parameters
-        ----------
-        ignore_nulls
-            If True then nulls are converted to 0.
-            If False then an Exception is raised if nulls are present.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, None])
-        >>> s.view(ignore_nulls=True)
-        SeriesView([1, 0])
-
-        """
-        if not ignore_nulls:
-            assert not self.null_count()
-
-        from polars.series._numpy import SeriesView, _ptr_to_numpy
-
-        ptr_type = dtype_to_ctype(self.dtype)
-        ptr = self._s.as_single_ptr()
-        array = _ptr_to_numpy(ptr, self.len(), ptr_type)
-        array.setflags(write=False)
-        return SeriesView(array, self)
-
     def to_numpy(
         self,
         *args: Any,
@@ -4035,9 +4004,6 @@ class Series:
         - booleans can't be zero-copied.
 
         To ensure that no data is cloned, set `zero_copy_only=True`.
-
-        Alternatively, if you want a zero-copy view and know what you are doing,
-        use `.view()`.
 
         Parameters
         ----------
@@ -4108,9 +4074,9 @@ class Series:
         else:
             if not self.null_count():
                 if self.dtype.is_temporal():
-                    np_array = convert_to_date(self.view(ignore_nulls=True))
+                    np_array = convert_to_date(self._view(ignore_nulls=True))
                 elif self.dtype.is_numeric():
-                    np_array = self.view(ignore_nulls=True)
+                    np_array = self._view(ignore_nulls=True)
                 else:
                     raise_no_zero_copy()
                     np_array = self._s.to_numpy()
@@ -4126,6 +4092,40 @@ class Series:
                 return np_array.copy()
             else:
                 return np_array
+
+    def _view(self, *, ignore_nulls: bool = False) -> SeriesView:
+        """
+        Get a view into this Series data with a numpy array.
+
+        This operation doesn't clone data, but does not include missing values.
+
+        Returns
+        -------
+        SeriesView
+
+        Parameters
+        ----------
+        ignore_nulls
+            If True then nulls are converted to 0.
+            If False then an Exception is raised if nulls are present.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, None])
+        >>> s._view(ignore_nulls=True)
+        SeriesView([1, 0])
+
+        """
+        if not ignore_nulls:
+            assert not self.null_count()
+
+        from polars.series._numpy import SeriesView, _ptr_to_numpy
+
+        ptr_type = dtype_to_ctype(self.dtype)
+        ptr = self._s.as_single_ptr()
+        array = _ptr_to_numpy(ptr, self.len(), ptr_type)
+        array.setflags(write=False)
+        return SeriesView(array, self)
 
     def to_arrow(self) -> pa.Array:
         """
@@ -7080,6 +7080,28 @@ class Series:
             reverse the operation.
         """
         return self.cum_prod(reverse=reverse)
+
+    @deprecate_function(
+        "Use `Series.to_numpy(zero_copy_only=True) instead.", version="0.19.14"
+    )
+    def view(self, *, ignore_nulls: bool = False) -> SeriesView:
+        """
+        Get a view into this Series data with a numpy array.
+
+        .. deprecated:: 0.19.14
+            This method will be removed in a future version.
+
+        This operation doesn't clone data, but does not include missing values.
+        Don't use this unless you know what you are doing.
+
+        Parameters
+        ----------
+        ignore_nulls
+            If True then nulls are converted to 0.
+            If False then an Exception is raised if nulls are present.
+
+        """
+        return self._view(ignore_nulls=ignore_nulls)
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`
