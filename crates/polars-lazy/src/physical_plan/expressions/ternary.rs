@@ -147,7 +147,7 @@ impl PhysicalExpr for TernaryExpr {
         if has_non_unit_literal {
             // Non-unit literals must be materialized per-group.
             if state.verbose() {
-                println!("ternary agg: finish as iters due to non-unit literal")
+                eprintln!("ternary agg: finish as iters due to non-unit literal")
             }
             return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
         }
@@ -163,7 +163,7 @@ impl PhysicalExpr for TernaryExpr {
         if non_literal_acs.is_empty() {
             // All unit literals.
             if state.verbose() {
-                println!(
+                eprintln!(
                     "ternary agg: finish all unit literals - expression could have been simplified"
                 )
             }
@@ -184,7 +184,7 @@ impl PhysicalExpr for TernaryExpr {
                 // list of the same length as the corresponding AggregatedList
                 // row.
                 if state.verbose() {
-                    println!("ternary agg: finish as iters due to mix of AggregatedScalar and AggregatedList")
+                    eprintln!("ternary agg: finish as iters due to mix of AggregatedScalar and AggregatedList")
                 }
                 return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
             }
@@ -200,7 +200,7 @@ impl PhysicalExpr for TernaryExpr {
                 // Ternary can be applied directly on the flattened series,
                 // given that their offsets have been checked to be equal.
                 if state.verbose() {
-                    println!("ternary agg: finish AggregatedList")
+                    eprintln!("ternary agg: finish AggregatedList")
                 }
 
                 for (ac_l, ac_r) in non_literal_acs.iter().zip(non_literal_acs.iter().skip(1)) {
@@ -263,7 +263,7 @@ impl PhysicalExpr for TernaryExpr {
             },
             AggregatedScalar(_) => {
                 if state.verbose() {
-                    println!("ternary agg: finish AggregatedScalar")
+                    eprintln!("ternary agg: finish AggregatedScalar")
                 }
 
                 let out = ac_truthy
