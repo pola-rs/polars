@@ -358,12 +358,12 @@ def test_insert_column() -> None:
     assert_frame_equal(expected_df, df)
 
 
-def test_replace_at_idx() -> None:
+def test_replace_column() -> None:
     df = (
         pl.DataFrame({"x": [1, 2, 3], "y": [2, 3, 4], "z": [3, 4, 5]})
-        .replace_at_idx(0, pl.Series("a", [4, 5, 6]))
-        .replace_at_idx(-2, pl.Series("b", [5, 6, 7]))
-        .replace_at_idx(-1, pl.Series("c", [6, 7, 8]))
+        .replace_column(0, pl.Series("a", [4, 5, 6]))
+        .replace_column(-2, pl.Series("b", [5, 6, 7]))
+        .replace_column(-1, pl.Series("c", [6, 7, 8]))
     )
     expected_df = pl.DataFrame({"a": [4, 5, 6], "b": [5, 6, 7], "c": [6, 7, 8]})
     assert_frame_equal(expected_df, df)

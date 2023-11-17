@@ -1775,7 +1775,7 @@ class DataFrame:
             # now find the location to place series
             # df[idx]
             if isinstance(col_selection, int):
-                self.replace_at_idx(col_selection, s)
+                self.replace_column(col_selection, s)
             # df["foo"]
             elif isinstance(col_selection, str):
                 self._replace(col_selection, s)
@@ -4259,15 +4259,17 @@ class DataFrame:
         """
         return self._df.get_column_index(name)
 
-    def replace_at_idx(self, index: int, series: Series) -> Self:
+    def replace_column(self, index: int, column: Series) -> Self:
         """
         Replace a column at an index location.
+
+        This operation is in place.
 
         Parameters
         ----------
         index
             Column index.
-        series
+        column
             Series that will replace the column.
 
         Examples
@@ -4280,7 +4282,7 @@ class DataFrame:
         ...     }
         ... )
         >>> s = pl.Series("apple", [10, 20, 30])
-        >>> df.replace_at_idx(0, s)
+        >>> df.replace_column(0, s)
         shape: (3, 3)
         ┌───────┬─────┬─────┐
         │ apple ┆ bar ┆ ham │
@@ -4291,11 +4293,10 @@ class DataFrame:
         │ 20    ┆ 7   ┆ b   │
         │ 30    ┆ 8   ┆ c   │
         └───────┴─────┴─────┘
-
         """
         if index < 0:
             index = len(self.columns) + index
-        self._df.replace_at_idx(index, series._s)
+        self._df.replace_column(index, column._s)
         return self
 
     def sort(
@@ -10457,6 +10458,24 @@ class DataFrame:
             `Series` to insert.
         """
         return self.insert_column(index, column)
+
+    @deprecate_renamed_function("replace_column", version="0.19.14")
+    @deprecate_renamed_parameter("series", "new_column", version="0.19.14")
+    def replace_at_idx(self, index: int, new_column: Series) -> Self:
+        """
+        Replace a column at an index location.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :func:`replace_column`.
+
+        Parameters
+        ----------
+        index
+            Column index.
+        new_column
+            Series that will replace the column.
+        """
+        return self.replace_column(index, new_column)
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:

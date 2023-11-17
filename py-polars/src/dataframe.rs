@@ -1085,9 +1085,9 @@ impl PyDataFrame {
         Ok(())
     }
 
-    pub fn replace_at_idx(&mut self, index: usize, new_col: PySeries) -> PyResult<()> {
+    pub fn replace_column(&mut self, index: usize, new_column: PySeries) -> PyResult<()> {
         self.df
-            .replace_at_idx(index, new_col.series)
+            .replace_column(index, new_column.series)
             .map_err(PyPolarsErr::from)?;
         Ok(())
     }

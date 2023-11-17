@@ -1118,7 +1118,7 @@ impl DataFrame {
 
     fn add_column_by_search(&mut self, series: Series) -> PolarsResult<()> {
         if let Some(idx) = self.get_column_index(series.name()) {
-            self.replace_at_idx(idx, series)?;
+            self.replace_column(idx, series)?;
         } else {
             self.columns.push(series);
         }
@@ -1170,7 +1170,7 @@ impl DataFrame {
             if self.columns.get(idx).map(|s| s.name()) != Some(name) {
                 self.add_column_by_search(s)?;
             } else {
-                self.replace_at_idx(idx, s)?;
+                self.replace_column(idx, s)?;
             }
         } else {
             self.columns.push(s);
@@ -1972,28 +1972,28 @@ impl DataFrame {
     /// let mut df = DataFrame::new(vec![s0, s1])?;
     ///
     /// // Add 32 to get lowercase ascii values
-    /// df.replace_at_idx(1, df.select_at_idx(1).unwrap() + 32);
+    /// df.replace_column(1, df.select_at_idx(1).unwrap() + 32);
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn replace_at_idx<S: IntoSeries>(
+    pub fn replace_column<S: IntoSeries>(
         &mut self,
-        idx: usize,
-        new_col: S,
+        index: usize,
+        new_column: S,
     ) -> PolarsResult<&mut Self> {
         polars_ensure!(
-            idx < self.width(),
+            index < self.width(),
             ShapeMismatch:
             "unable to replace at index {}, the DataFrame has only {} columns",
-            idx, self.width(),
+            index, self.width(),
         );
-        let mut new_column = new_col.into_series();
+        let mut new_column = new_column.into_series();
         polars_ensure!(
             new_column.len() == self.height(),
             ShapeMismatch:
             "unable to replace a column, series length {} doesn't match the DataFrame height {}",
             new_column.len(), self.height(),
         );
-        let old_col = &mut self.columns[idx];
+        let old_col = &mut self.columns[index];
         mem::swap(old_col, &mut new_column);
         Ok(self)
     }
