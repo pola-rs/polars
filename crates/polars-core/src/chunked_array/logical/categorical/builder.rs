@@ -54,8 +54,8 @@ pub enum RevMapping {
     Global(PlHashMap<u32, u32>, Utf8Array<i64>, u32),
     /// Utf8Array: caches the string values and a hash of all values for quick comparison
     Local(Utf8Array<i64>, u128),
-    /// Utf8Array: user defined array of categories which caches the string values
-    UserDefined(Utf8Array<i64>),
+    /// Utf8Array: fixed user defined array of categories which caches the string values
+    Enum(Utf8Array<i64>),
 }
 
 impl Debug for RevMapping {
@@ -67,8 +67,8 @@ impl Debug for RevMapping {
             RevMapping::Local(_, _) => {
                 write!(f, "local")
             },
-            RevMapping::UserDefined(_) => {
-                write!(f, "userdefined")
+            RevMapping::Enum(_) => {
+                write!(f, "enum")
             },
         }
     }
@@ -98,16 +98,20 @@ impl RevMapping {
         matches!(self, Self::Local(_, _))
     }
 
-    pub fn is_user_defined(&self) -> bool {
-        matches!(self, Self::UserDefined(_))
+    pub fn is_enum(&self) -> bool {
+        matches!(self, Self::Enum(_))
     }
 
     /// Get the categories in this [`RevMapping`]
     pub fn get_categories(&self) -> &Utf8Array<i64> {
         match self {
             Self::Global(_, a, _) => a,
-            Self::Local(a, _) | Self::UserDefined(a) => a,
+            Self::Local(a, _) | Self::Enum(a) => a,
         }
+    }
+
+    pub fn build_enum(categories: Utf8Array<i64>) -> Self {
+        Self::Enum(categories)
     }
 
     pub fn build_local(categories: Utf8Array<i64>) -> RevMapping {
@@ -132,7 +136,7 @@ impl RevMapping {
                 let idx = *map.get(&idx).unwrap();
                 a.value(idx as usize)
             },
-            Self::Local(a, _) | Self::UserDefined(a) => a.value(idx as usize),
+            Self::Local(a, _) | Self::Enum(a) => a.value(idx as usize),
         }
     }
 
@@ -142,7 +146,7 @@ impl RevMapping {
                 let idx = *map.get(&idx)?;
                 a.get(idx as usize)
             },
-            Self::Local(a, _) | Self::UserDefined(a) => a.get(idx as usize),
+            Self::Local(a, _) | Self::Enum(a) => a.get(idx as usize),
         }
     }
 
@@ -158,7 +162,7 @@ impl RevMapping {
                 let idx = *map.get(&idx).unwrap();
                 a.value_unchecked(idx as usize)
             },
-            Self::Local(a, _) | Self::UserDefined(a) => a.value_unchecked(idx as usize),
+            Self::Local(a, _) | Self::Enum(a) => a.value_unchecked(idx as usize),
         }
     }
     /// Check if the categoricals have a compatible mapping
@@ -169,7 +173,7 @@ impl RevMapping {
         match (self, other) {
             (RevMapping::Global(_, _, l), RevMapping::Global(_, _, r)) => *l == *r,
             (RevMapping::Local(_, l_hash), RevMapping::Local(_, r_hash)) => l_hash == r_hash,
-            (RevMapping::UserDefined(l), RevMapping::UserDefined(r)) => {
+            (RevMapping::Enum(l), RevMapping::Enum(r)) => {
                 // TODO: faster comparison
                 l.eq(r)
             },
@@ -199,16 +203,12 @@ impl RevMapping {
                     .map(|(k, _v)| *k)
             },
 
-            Self::Local(a, _) | Self::UserDefined(a) => {
+            Self::Local(a, _) | Self::Enum(a) => {
                 // Safety: within bounds
                 unsafe { (0..a.len()).find(|idx| a.value_unchecked(*idx) == value) }
                     .map(|idx| idx as u32)
             },
         }
-    }
-
-    pub fn from_user_defined(categories: Utf8Array<i64>) -> Self {
-        Self::UserDefined(categories)
     }
 }
 
@@ -537,7 +537,7 @@ impl CategoricalChunked {
 
     /// Create a [`CategoricalChunked`] from a fixed list of categories and a List of strings.
     /// This will error if a string is not in the fixed list of categories
-    pub fn from_utf_with_user_defined_categories(
+    pub fn from_utf_to_enum(
         values: &Utf8Chunked,
         categories: &Utf8Array<i64>,
     ) -> PolarsResult<CategoricalChunked> {
@@ -561,7 +561,7 @@ impl CategoricalChunked {
                     .transpose()
             })
             .collect::<Result<UInt32Chunked, PolarsError>>()?;
-        let rev_map = RevMapping::from_user_defined(categories.clone());
+        let rev_map = RevMapping::build_enum(categories.clone());
         unsafe {
             Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
                 ca_idx,

@@ -199,7 +199,7 @@ impl CategoricalChunked {
         let cats = self.physical();
 
         let mut out = match &**rev_map {
-            RevMapping::Local(cached, _) | RevMapping::UserDefined(cached) => {
+            RevMapping::Local(cached, _) | RevMapping::Enum(cached) => {
                 if self.can_fast_unique() {
                     if verbose() {
                         eprintln!("grouping categoricals, run perfect hash function");

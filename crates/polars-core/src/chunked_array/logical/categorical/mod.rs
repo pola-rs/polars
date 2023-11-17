@@ -71,7 +71,7 @@ impl CategoricalChunked {
         let (physical_map, categories) = match rev_map.as_ref() {
             RevMapping::Global(m, c, _) => (m, c),
             RevMapping::Local(_, _) => return self.clone(),
-            RevMapping::UserDefined(a) => unsafe {
+            RevMapping::Enum(a) => unsafe {
                 return Self::from_cats_and_rev_map_unchecked(
                     self.physical().clone(),
                     RevMapping::build_local(a.clone()).into(),

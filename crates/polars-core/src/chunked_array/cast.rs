@@ -183,12 +183,8 @@ impl ChunkCast for Utf8Chunked {
                     Ok(ca.into_series())
                 },
                 Some(rev_map) => {
-                    polars_ensure!(rev_map.is_user_defined(), InvalidOperation: "casting to a categorical with a non-user defined mapping is not supported");
-                    CategoricalChunked::from_utf_with_user_defined_categories(
-                        self,
-                        rev_map.get_categories(),
-                    )
-                    .map(|ca| {
+                    polars_ensure!(rev_map.is_enum(), InvalidOperation: "casting to a flexible categories defined mapping is not supported");
+                    CategoricalChunked::from_utf_to_enum(self, rev_map.get_categories()).map(|ca| {
                         let mut s = ca.into_series();
                         s.rename(self.name());
                         s
