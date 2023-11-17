@@ -3307,7 +3307,7 @@ class Series:
 
         """
 
-    def take(
+    def gather(
         self, indices: int | list[int] | Expr | Series | np.ndarray[Any, Any]
     ) -> Series:
         """
@@ -3321,7 +3321,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, 4])
-        >>> s.take([1, 3])
+        >>> s.gather([1, 3])
         shape: (2,)
         Series: 'a' [i64]
         [
@@ -7002,6 +7002,23 @@ class Series:
             Gather every *n*-th row.
         """
         return self.gather_every(n)
+
+    @deprecate_renamed_function("gather", version="0.19.14")
+    def take(
+        self, indices: int | list[int] | Expr | Series | np.ndarray[Any, Any]
+    ) -> Series:
+        """
+        Take values by index.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`gather`.
+
+        Parameters
+        ----------
+        indices
+            Index location used for selection.
+        """
+        return self.gather(indices)
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`

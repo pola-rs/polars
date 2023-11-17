@@ -134,7 +134,7 @@ performant = ["polars/performant"]
 timezones = ["polars/timezones"]
 cse = ["polars/cse"]
 merge_sorted = ["polars/merge_sorted"]
-list_take = ["polars/list_take"]
+list_gather = ["polars/list_gather"]
 list_count = ["polars/list_count"]
 binary_encoding = ["polars/binary_encoding"]
 list_sets = ["polars-lazy/list_sets"]
@@ -163,7 +163,7 @@ operations = [
   "trigonometry",
   "sign",
   "performant",
-  "list_take",
+  "list_gather",
   "list_count",
   "list_sets",
   "list_any_all",

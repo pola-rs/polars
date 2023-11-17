@@ -318,8 +318,8 @@ impl PyExpr {
             .search_sorted(element.inner, side.0)
             .into()
     }
-    fn take(&self, idx: Self) -> Self {
-        self.inner.clone().take(idx.inner).into()
+    fn gather(&self, idx: Self) -> Self {
+        self.inner.clone().gather(idx.inner).into()
     }
 
     fn get(&self, idx: Self) -> Self {

@@ -15,7 +15,7 @@ macro_rules! push_expr {
             },
             Cast { expr, .. } => $push(expr),
             Sort { expr, .. } => $push(expr),
-            Take { expr, idx, .. } => {
+            Gather { expr, idx, .. } => {
                 $push(idx);
                 $push(expr);
             },

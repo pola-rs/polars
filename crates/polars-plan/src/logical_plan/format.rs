@@ -278,7 +278,7 @@ impl Debug for Expr {
             Filter { input, by } => {
                 write!(f, "{input:?}.filter({by:?})")
             },
-            Take {
+            Gather {
                 expr,
                 idx,
                 returns_scalar,

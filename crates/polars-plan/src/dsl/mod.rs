@@ -441,8 +441,8 @@ impl Expr {
     }
 
     /// Take the values by idx.
-    pub fn take<E: Into<Expr>>(self, idx: E) -> Self {
-        Expr::Take {
+    pub fn gather<E: Into<Expr>>(self, idx: E) -> Self {
+        Expr::Gather {
             expr: Box::new(self),
             idx: Box::new(idx.into()),
             returns_scalar: false,
@@ -451,7 +451,7 @@ impl Expr {
 
     /// Take the values by a single index.
     pub fn get<E: Into<Expr>>(self, idx: E) -> Self {
-        Expr::Take {
+        Expr::Gather {
             expr: Box::new(self),
             idx: Box::new(idx.into()),
             returns_scalar: true,

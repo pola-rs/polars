@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn test_list_take_nulls_and_empty() {
+fn test_list_gather_nulls_and_empty() {
     let a: &[i32] = &[];
     let a = Series::new("", a);
     let b = Series::new("", &[None, Some(a.clone())]);

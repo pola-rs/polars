@@ -23,6 +23,7 @@ The following methods are available under the `expr.list` attribute.
     Expr.list.eval
     Expr.list.explode
     Expr.list.first
+    Expr.list.gather
     Expr.list.get
     Expr.list.head
     Expr.list.intersection

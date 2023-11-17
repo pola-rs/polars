@@ -509,7 +509,7 @@ def test_no_cse_in_with_context() -> None:
         df1.lazy()
         .with_context(df2.lazy())
         .select(
-            pl.col("date_start", "label").take(
+            pl.col("date_start", "label").gather(
                 pl.col("date_start").search_sorted("timestamp") - 1
             ),
         )

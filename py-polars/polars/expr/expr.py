@@ -2346,7 +2346,7 @@ class Expr:
             )
         return self._from_pyexpr(self._pyexpr.sort_by(by, descending))
 
-    def take(
+    def gather(
         self, indices: int | list[int] | Expr | Series | np.ndarray[Any, Any]
     ) -> Self:
         """
@@ -2361,6 +2361,10 @@ class Expr:
         -------
         Expr
             Expression of the same data type.
+
+        See Also
+        --------
+        Expr.get : Take a single value
 
         Examples
         --------
@@ -2377,7 +2381,9 @@ class Expr:
         ...         "value": [1, 98, 2, 3, 99, 4],
         ...     }
         ... )
-        >>> df.group_by("group", maintain_order=True).agg(pl.col("value").take([2, 1]))
+        >>> df.group_by("group", maintain_order=True).agg(
+        ...     pl.col("value").gather([2, 1])
+        ... )
         shape: (2, 2)
         ┌───────┬───────────┐
         │ group ┆ value     │
@@ -2387,11 +2393,6 @@ class Expr:
         │ one   ┆ [2, 98]   │
         │ two   ┆ [4, 99]   │
         └───────┴───────────┘
-
-        See Also
-        --------
-        Expr.get : Take a single value
-
         """
         if isinstance(indices, list) or (
             _check_for_numpy(indices) and isinstance(indices, np.ndarray)
@@ -2399,7 +2400,7 @@ class Expr:
             indices_lit = F.lit(pl.Series("", indices, dtype=UInt32))._pyexpr
         else:
             indices_lit = parse_as_expression(indices)  # type: ignore[arg-type]
-        return self._from_pyexpr(self._pyexpr.take(indices_lit))
+        return self._from_pyexpr(self._pyexpr.gather(indices_lit))
 
     def get(self, index: int | Expr) -> Self:
         """
@@ -9673,6 +9674,23 @@ class Expr:
             Gather every *n*-th row.
         """
         return self.gather_every(n)
+
+    @deprecate_renamed_function("gather", version="0.19.14")
+    def take(
+        self, indices: int | list[int] | Expr | Series | np.ndarray[Any, Any]
+    ) -> Self:
+        """
+        Take values by index.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`gather`.
+
+        Parameters
+        ----------
+        indices
+            An expression that leads to a UInt32 dtyped Series.
+        """
+        return self.gather(indices)
 
     @property
     def bin(self) -> ExprBinaryNameSpace:

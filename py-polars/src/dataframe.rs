@@ -1065,7 +1065,7 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn take(&self, indices: Wrap<Vec<IdxSize>>) -> PyResult<Self> {
+    pub fn gather(&self, indices: Wrap<Vec<IdxSize>>) -> PyResult<Self> {
         let indices = indices.0;
         let indices = IdxCa::from_vec("", indices);
         let df = self.df.take(&indices).map_err(PyPolarsErr::from)?;

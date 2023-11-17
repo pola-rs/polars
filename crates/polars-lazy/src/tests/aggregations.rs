@@ -457,7 +457,7 @@ fn take_aggregations() -> PolarsResult<()> {
         .agg([
             // keep the head as it test slice correctness
             col("book")
-                .take(
+                .gather(
                     col("count")
                         .arg_sort(SortOptions {
                             descending: true,

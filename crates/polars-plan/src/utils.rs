@@ -204,7 +204,7 @@ pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
     for e in expr {
         match e {
             Expr::Filter { input, .. } => return get_single_leaf(input),
-            Expr::Take { expr, .. } => return get_single_leaf(expr),
+            Expr::Gather { expr, .. } => return get_single_leaf(expr),
             Expr::SortBy { expr, .. } => return get_single_leaf(expr),
             Expr::Window { function, .. } => return get_single_leaf(function),
             Expr::Column(name) => return Ok(name.clone()),

@@ -442,7 +442,7 @@ def test_compare_different_len() -> None:
 def test_take_negative_index_is_oob() -> None:
     df = pl.DataFrame({"value": [1, 2, 3]})
     with pytest.raises(pl.ComputeError, match=r"index out of bounds"):
-        df["value"].take(-1)
+        df["value"].gather(-1)
 
 
 def test_string_numeric_arithmetic_err() -> None:

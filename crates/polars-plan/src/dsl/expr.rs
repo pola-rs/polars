@@ -86,7 +86,7 @@ pub enum Expr {
         expr: Box<Expr>,
         options: SortOptions,
     },
-    Take {
+    Gather {
         expr: Box<Expr>,
         idx: Box<Expr>,
         returns_scalar: bool,

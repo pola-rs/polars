@@ -145,8 +145,8 @@ impl PyExpr {
             .into()
     }
 
-    #[cfg(feature = "list_take")]
-    fn list_take(&self, index: PyExpr, null_on_oob: bool) -> Self {
+    #[cfg(feature = "list_gather")]
+    fn list_gather(&self, index: PyExpr, null_on_oob: bool) -> Self {
         self.inner
             .clone()
             .list()

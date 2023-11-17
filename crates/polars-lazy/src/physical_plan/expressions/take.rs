@@ -72,7 +72,7 @@ impl PhysicalExpr for TakeExpr {
                 // A previous aggregation may have updated the groups.
                 let groups = ac.groups();
 
-                // Determine the take indices.
+                // Determine the gather indices.
                 let idx: IdxCa = match groups.as_ref() {
                     GroupsProxy::Idx(groups) => {
                         if groups.all().iter().zip(idx).any(|(g, idx)| match idx {

@@ -192,7 +192,7 @@ pub(crate) fn create_physical_expr(
                 node_to_expr(expression, expr_arena),
             )))
         },
-        Take {
+        Gather {
             expr,
             idx,
             returns_scalar,

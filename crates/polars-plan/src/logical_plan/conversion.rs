@@ -31,11 +31,11 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             data_type,
             strict,
         },
-        Expr::Take {
+        Expr::Gather {
             expr,
             idx,
             returns_scalar,
-        } => AExpr::Take {
+        } => AExpr::Gather {
             expr: to_aexpr(*expr, arena),
             idx: to_aexpr(*idx, arena),
             returns_scalar,
@@ -404,14 +404,14 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 options,
             }
         },
-        AExpr::Take {
+        AExpr::Gather {
             expr,
             idx,
             returns_scalar,
         } => {
             let expr = node_to_expr(expr, expr_arena);
             let idx = node_to_expr(idx, expr_arena);
-            Expr::Take {
+            Expr::Gather {
                 expr: Box::new(expr),
                 idx: Box::new(idx),
                 returns_scalar,

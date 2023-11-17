@@ -143,7 +143,7 @@ pub enum AExpr {
         expr: Node,
         options: SortOptions,
     },
-    Take {
+    Gather {
         expr: Node,
         idx: Node,
         returns_scalar: bool,
@@ -226,7 +226,7 @@ impl AExpr {
             | Window { .. }
             | Count
             | Slice { .. }
-            | Take { .. }
+            | Gather { .. }
             | Nth(_)
              => true,
             Alias(_, _)
@@ -268,7 +268,7 @@ impl AExpr {
             },
             Cast { expr, .. } => container.push(*expr),
             Sort { expr, .. } => container.push(*expr),
-            Take { expr, idx, .. } => {
+            Gather { expr, idx, .. } => {
                 container.push(*idx);
                 // latest, so that it is popped first
                 container.push(*expr);
@@ -347,7 +347,7 @@ impl AExpr {
                 *left = inputs[1];
                 return self;
             },
-            Take { expr, idx, .. } => {
+            Gather { expr, idx, .. } => {
                 *idx = inputs[0];
                 *expr = inputs[1];
                 return self;

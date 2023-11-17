@@ -586,7 +586,7 @@ def test_list_inner_cast_physical_11513() -> None:
             )
         },
     )
-    assert df.select(pl.col("struct").take(0)).to_dict(as_series=False) == {
+    assert df.select(pl.col("struct").gather(0)).to_dict(as_series=False) == {
         "struct": [[]]
     }
 
@@ -622,5 +622,5 @@ def test_list_series_construction_with_dtype_11849_11878() -> None:
 def test_as_list_logical_type() -> None:
     df = pl.select(timestamp=pl.date(2000, 1, 1), value=0)
     assert df.group_by(True).agg(
-        pl.col("timestamp").take(pl.col("value").arg_max())
+        pl.col("timestamp").gather(pl.col("value").arg_max())
     ).to_dict(as_series=False) == {"literal": [True], "timestamp": [[date(2000, 1, 1)]]}

@@ -150,7 +150,7 @@ impl AexprNode {
                     },
                 ) => strict_l == strict_r && dtl == dtr,
                 (Sort { options: l, .. }, Sort { options: r, .. }) => l == r,
-                (Take { .. }, Take { .. })
+                (Gather { .. }, Gather { .. })
                 | (Filter { .. }, Filter { .. })
                 | (Ternary { .. }, Ternary { .. })
                 | (Count, Count)
