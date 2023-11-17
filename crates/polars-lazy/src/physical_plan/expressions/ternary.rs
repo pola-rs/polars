@@ -238,6 +238,9 @@ impl PhysicalExpr for TernaryExpr {
 
                 let out = truthy.zip_with(mask.bool()?, &falsy)?;
 
+                // The output series is guaranteed to be aligned with expected
+                // offsets buffer of the result, so we construct the result
+                // ListChunked directly from the 2.
                 let out = out.rechunk();
                 let values = out.array_ref(0);
                 let offsets = ac_target.series().list().unwrap().offsets()?;
