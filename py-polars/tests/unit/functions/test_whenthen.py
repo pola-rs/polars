@@ -418,7 +418,7 @@ def test_when_then_non_unit_literal_predicate_agg_broadcast_12382() -> None:
     assert_frame_equal(expect, actual)
 
 
-def test_when_then_binary_op_predicate_12526() -> None:
+def test_when_then_binary_op_predicate_agg_12526() -> None:
     df = pl.DataFrame(
         {
             "a": [1, 1, 1],
