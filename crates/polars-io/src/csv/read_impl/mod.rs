@@ -80,7 +80,7 @@ pub(crate) fn cast_columns(
         // cast to the original dtypes in the schema
         for fld in to_cast {
             // field may not be projected
-            if let Some(idx) = df.find_idx_by_name(fld.name()) {
+            if let Some(idx) = df.get_column_index(fld.name()) {
                 df.try_apply_at_idx(idx, |s| cast_fn(s, fld))?;
             }
         }

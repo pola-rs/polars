@@ -1047,8 +1047,8 @@ impl PyDataFrame {
         self.df.select_at_idx(idx).map(|s| PySeries::new(s.clone()))
     }
 
-    pub fn find_idx_by_name(&self, name: &str) -> Option<usize> {
-        self.df.find_idx_by_name(name)
+    pub fn get_column_index(&self, name: &str) -> Option<usize> {
+        self.df.get_column_index(name)
     }
 
     pub fn get_column(&self, name: &str) -> PyResult<PySeries> {

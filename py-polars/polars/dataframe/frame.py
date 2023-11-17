@@ -1606,9 +1606,9 @@ class DataFrame:
                     start = col_selection.start
                     stop = col_selection.stop
                     if isinstance(col_selection.start, str):
-                        start = self.find_idx_by_name(col_selection.start)
+                        start = self.get_column_index(col_selection.start)
                     if isinstance(col_selection.stop, str):
-                        stop = self.find_idx_by_name(col_selection.stop) + 1
+                        stop = self.get_column_index(col_selection.stop) + 1
 
                     col_selection = slice(start, stop, col_selection.step)
 
@@ -3113,7 +3113,7 @@ class DataFrame:
         column_widths = _unpack_multi_column_dict(column_widths or {})  # type: ignore[assignment]
 
         for column in df.columns:
-            col_idx, options = table_start[1] + df.find_idx_by_name(column), {}
+            col_idx, options = table_start[1] + df.get_column_index(column), {}
             if column in hidden_columns:
                 options = {"hidden": True}
             if column in column_widths:  # type: ignore[operator]
@@ -4237,7 +4237,7 @@ class DataFrame:
         df_summary.insert_at_idx(0, pl.Series("describe", metrics))
         return df_summary
 
-    def find_idx_by_name(self, name: str) -> int:
+    def get_column_index(self, name: str) -> int:
         """
         Find the index of a column by name.
 
@@ -4251,11 +4251,11 @@ class DataFrame:
         >>> df = pl.DataFrame(
         ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
         ... )
-        >>> df.find_idx_by_name("ham")
+        >>> df.get_column_index("ham")
         2
 
         """
-        return self._df.find_idx_by_name(name)
+        return self._df.get_column_index(name)
 
     def replace_at_idx(self, index: int, series: Series) -> Self:
         """
@@ -10422,6 +10422,18 @@ class DataFrame:
             Gather every *n*-th row.
         """
         return self.gather_every(n)
+
+    @deprecate_renamed_function("get_column_index", version="0.19.14")
+    def find_idx_by_name(self, name: str) -> int:
+        """
+        Find the index of a column by name.
+
+        Parameters
+        ----------
+        name
+            Name of the column to find.
+        """
+        return self.get_column_index(name)
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:

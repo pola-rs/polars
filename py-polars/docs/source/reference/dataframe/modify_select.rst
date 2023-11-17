@@ -21,6 +21,7 @@ Manipulation/selection
     DataFrame.find_idx_by_name
     DataFrame.gather_every
     DataFrame.get_column
+    DataFrame.get_column_index
     DataFrame.get_columns
     DataFrame.group_by
     DataFrame.group_by_dynamic
