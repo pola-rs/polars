@@ -146,7 +146,7 @@ impl PhysicalExpr for TernaryExpr {
                     }
                 },
                 NotAggregated(_) => {
-                    non_aggregated_len_modified = non_aggregated_len_modified | !ac.original_len;
+                    non_aggregated_len_modified |= !ac.original_len;
                 },
                 AggregatedScalar(_) | AggregatedList(_) => {
                     has_aggregated = true;
