@@ -218,20 +218,20 @@ impl PhysicalExpr for TernaryExpr {
                     }
                 }
 
-                let truthy = if matches!(ac_truthy.agg_state(), AggregatedList(_)) {
-                    ac_truthy.series().list().unwrap().get_inner()
+                let truthy = if let AggregatedList(s) = ac_truthy.agg_state() {
+                    s.list().unwrap().get_inner()
                 } else {
                     ac_truthy.series().clone()
                 };
 
-                let falsy = if matches!(ac_falsy.agg_state(), AggregatedList(_)) {
-                    ac_falsy.series().list().unwrap().get_inner()
+                let falsy = if let AggregatedList(s) = ac_falsy.agg_state() {
+                    s.list().unwrap().get_inner()
                 } else {
                     ac_falsy.series().clone()
                 };
 
-                let mask = if matches!(ac_mask.agg_state(), AggregatedList(_)) {
-                    ac_mask.series().list().unwrap().get_inner()
+                let mask = if let AggregatedList(s) = ac_mask.agg_state() {
+                    s.list().unwrap().get_inner()
                 } else {
                     ac_mask.series().clone()
                 };
@@ -253,13 +253,9 @@ impl PhysicalExpr for TernaryExpr {
                 let mut out = ListChunked::with_chunk(truthy.name(), out);
                 out.to_logical(inner_type.clone());
 
-                if let AggregatedList(s) = ac_target.agg_state() {
-                    if s.list().unwrap()._can_fast_explode() {
-                        out.set_fast_explode();
-                    }
-                } else {
-                    unreachable!();
-                }
+                if ac_target.series().list().unwrap()._can_fast_explode() {
+                    out.set_fast_explode();
+                };
 
                 let out = out.into_series();
 
