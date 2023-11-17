@@ -3880,22 +3880,24 @@ class DataFrame:
         """
         return self.lazy().rename(mapping).collect(_eager=True)
 
-    def insert_at_idx(self, index: int, series: Series) -> Self:
+    def insert_column(self, index: int, column: Series) -> Self:
         """
-        Insert a Series at a certain column index. This operation is in place.
+        Insert a Series at a certain column index.
+
+        This operation is in place.
 
         Parameters
         ----------
         index
-            Column to insert the new `Series` column.
-        series
+            Index at which to insert the new `Series` column.
+        column
             `Series` to insert.
 
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
         >>> s = pl.Series("baz", [97, 98, 99])
-        >>> df.insert_at_idx(1, s)
+        >>> df.insert_column(1, s)
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ baz ┆ bar │
@@ -3915,7 +3917,7 @@ class DataFrame:
         ...     }
         ... )
         >>> s = pl.Series("d", [-2.5, 15, 20.5, 0])
-        >>> df.insert_at_idx(3, s)
+        >>> df.insert_column(3, s)
         shape: (4, 4)
         ┌─────┬──────┬───────┬──────┐
         │ a   ┆ b    ┆ c     ┆ d    │
@@ -3931,7 +3933,7 @@ class DataFrame:
         """
         if index < 0:
             index = len(self.columns) + index
-        self._df.insert_at_idx(index, series._s)
+        self._df.insert_column(index, column._s)
         return self
 
     def filter(
@@ -4234,7 +4236,7 @@ class DataFrame:
 
         # return results as a frame
         df_summary = self.__class__(summary)
-        df_summary.insert_at_idx(0, pl.Series("describe", metrics))
+        df_summary.insert_column(0, pl.Series("describe", metrics))
         return df_summary
 
     def get_column_index(self, name: str) -> int:
@@ -10428,12 +10430,33 @@ class DataFrame:
         """
         Find the index of a column by name.
 
+        .. deprecated:: 0.19.14
+            This method has been renamed to :func:`get_column_index`.
+
         Parameters
         ----------
         name
             Name of the column to find.
         """
         return self.get_column_index(name)
+
+    @deprecate_renamed_function("insert_column", version="0.19.14")
+    @deprecate_renamed_parameter("series", "column", version="0.19.14")
+    def insert_at_idx(self, index: int, column: Series) -> Self:
+        """
+        Insert a Series at a certain column index. This operation is in place.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :func:`insert_column`.
+
+        Parameters
+        ----------
+        index
+            Column to insert the new `Series` column.
+        column
+            `Series` to insert.
+        """
+        return self.insert_column(index, column)
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:

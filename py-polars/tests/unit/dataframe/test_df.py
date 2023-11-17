@@ -348,11 +348,11 @@ def test_assignment() -> None:
     assert df["foo"].to_list() == [1, 9, 9]
 
 
-def test_insert_at_idx() -> None:
+def test_insert_column() -> None:
     df = (
         pl.DataFrame({"z": [3, 4, 5]})
-        .insert_at_idx(0, pl.Series("x", [1, 2, 3]))
-        .insert_at_idx(-1, pl.Series("y", [2, 3, 4]))
+        .insert_column(0, pl.Series("x", [1, 2, 3]))
+        .insert_column(-1, pl.Series("y", [2, 3, 4]))
     )
     expected_df = pl.DataFrame({"x": [1, 2, 3], "y": [2, 3, 4], "z": [3, 4, 5]})
     assert_frame_equal(expected_df, df)

@@ -554,7 +554,7 @@ impl<'a> CoreReader<'a> {
         if bytes.is_empty() {
             let mut df = DataFrame::from(self.schema.as_ref());
             if let Some(ref row_count) = self.row_count {
-                df.insert_at_idx(0, Series::new_empty(&row_count.name, &IDX_DTYPE))?;
+                df.insert_column(0, Series::new_empty(&row_count.name, &IDX_DTYPE))?;
             }
             return Ok(df);
         }

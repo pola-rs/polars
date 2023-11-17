@@ -32,6 +32,7 @@ Manipulation/selection
     DataFrame.head
     DataFrame.hstack
     DataFrame.insert_at_idx
+    DataFrame.insert_column
     DataFrame.interpolate
     DataFrame.item
     DataFrame.iter_rows

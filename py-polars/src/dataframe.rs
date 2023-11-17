@@ -1092,9 +1092,9 @@ impl PyDataFrame {
         Ok(())
     }
 
-    pub fn insert_at_idx(&mut self, index: usize, new_col: PySeries) -> PyResult<()> {
+    pub fn insert_column(&mut self, index: usize, column: PySeries) -> PyResult<()> {
         self.df
-            .insert_at_idx(index, new_col.series)
+            .insert_column(index, column.series)
             .map_err(PyPolarsErr::from)?;
         Ok(())
     }
