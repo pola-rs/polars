@@ -127,10 +127,12 @@ impl PhysicalExpr for TernaryExpr {
 
         use AggState::*;
 
-        // Check for non-unit literals, and aggregated any `NotAggregated` in
-        // the inputs.
+        // Check if there are any:
+        // - non-unit literals
+        // - AggregatedScalar or AggregatedList
         let mut has_non_unit_literal = false;
-        for ac in [&mut ac_mask, &mut ac_truthy, &mut ac_falsy].into_iter() {
+        let mut has_aggregated = false;
+        for ac in [&ac_mask, &ac_truthy, &ac_falsy].into_iter() {
             match ac.agg_state() {
                 Literal(s) => {
                     has_non_unit_literal = s.len() != 1;
@@ -139,10 +141,10 @@ impl PhysicalExpr for TernaryExpr {
                         break;
                     }
                 },
-                NotAggregated(_) => {
-                    let _ = ac.aggregated();
+                NotAggregated(_) => {},
+                AggregatedScalar(_) | AggregatedList(_) => {
+                    has_aggregated = true;
                 },
-                _ => {},
             }
         }
 
@@ -155,6 +157,27 @@ impl PhysicalExpr for TernaryExpr {
             return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
         }
 
+        if !has_aggregated {
+            // Everything is flat (either NotAggregated or a unit literal).
+            if state.verbose() {
+                eprintln!("ternary agg: finish all not-aggregated or unit literal");
+            }
+
+            let out = ac_truthy
+                .series()
+                .zip_with(ac_mask.series().bool()?, ac_falsy.series())?;
+
+            ac_truthy.with_agg_state(NotAggregated(out));
+
+            return Ok(ac_truthy);
+        }
+
+        for ac in [&mut ac_mask, &mut ac_truthy, &mut ac_falsy].into_iter() {
+            if matches!(ac.agg_state(), NotAggregated(_)) {
+                let _ = ac.aggregated();
+            }
+        }
+
         // At this point the input agg states are one of the following:
         // * `Literal` where `s.len() == 1`
         // * `AggregatedList`
@@ -162,26 +185,12 @@ impl PhysicalExpr for TernaryExpr {
 
         let mut non_literal_acs = Vec::<&AggregationContext>::with_capacity(3);
 
+        // non_literal_acs will have at least 1 item because has_aggregated was
+        // true from above.
         for ac in [&ac_mask, &ac_truthy, &ac_falsy].into_iter() {
             if !matches!(ac.agg_state(), Literal(_)) {
                 non_literal_acs.push(ac);
             }
-        }
-
-        if non_literal_acs.is_empty() {
-            // All unit literals.
-            if state.verbose() {
-                eprintln!(
-                    "ternary agg: finish all unit literals - expression could have been simplified"
-                )
-            }
-            ac_truthy.with_literal(
-                ac_truthy
-                    .series()
-                    .zip_with(ac_mask.series().bool()?, ac_falsy.series())?,
-            );
-
-            return Ok(ac_truthy);
         }
 
         for (ac_l, ac_r) in non_literal_acs.iter().zip(non_literal_acs.iter().skip(1)) {
