@@ -96,7 +96,7 @@ pub(super) fn predicate_is_sort_boundary(node: Node, expr_arena: &Arena<AExpr>) 
             // this check for functions that are
             // group sensitive and doesn't auto-explode (e.g. is a reduction/aggregation
             // like sum, min, etc).
-            // function that match this are `cumsum`, `shift`, `sort`, etc.
+            // function that match this are `cum_sum`, `shift`, `sort`, etc.
             options.is_groups_sensitive() && !options.returns_scalar
         },
         _ => false,

@@ -387,9 +387,9 @@ def test_when_then_nested_non_unit_literal_predicate_agg_broadcast_12242() -> No
 
     is_valid_idx = int_range.is_in("array_idx")
 
-    idxs = is_valid_idx.cumsum() - 1
+    idxs = is_valid_idx.cum_sum() - 1
 
-    ternary_expr = pl.when(is_valid_idx).then(pl.col("array_val").take(idxs))
+    ternary_expr = pl.when(is_valid_idx).then(pl.col("array_val").gather(idxs))
 
     expect = pl.DataFrame(
         [

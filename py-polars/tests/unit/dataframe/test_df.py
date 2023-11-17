@@ -3369,22 +3369,6 @@ def test_deadlocks_3409() -> None:
     ) == {"col1": [0, 0, 0]}
 
 
-def test_cum_agg() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3, 2]})
-    assert_series_equal(
-        df.select(pl.col("a").cumsum())["a"], pl.Series("a", [1, 3, 6, 8])
-    )
-    assert_series_equal(
-        df.select(pl.col("a").cummin())["a"], pl.Series("a", [1, 1, 1, 1])
-    )
-    assert_series_equal(
-        df.select(pl.col("a").cummax())["a"], pl.Series("a", [1, 2, 3, 3])
-    )
-    assert_series_equal(
-        df.select(pl.col("a").cumprod())["a"], pl.Series("a", [1, 2, 6, 12])
-    )
-
-
 def test_floor() -> None:
     df = pl.DataFrame({"a": [1.8, 1.2, 3.0]})
     col_a_floor = df.select(pl.col("a").floor())["a"]

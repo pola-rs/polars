@@ -78,7 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .agg([
             col("time")
-                .cumcount(true) // python example has false
+                .cum_count(true) // python example has false
                 .reverse()
                 .head(Some(3))
                 .alias("day/eom"),

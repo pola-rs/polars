@@ -158,7 +158,7 @@ def test_predicate_pushdown_with_context_11014() -> None:
 def test_predicate_pushdown_cumsum_9566() -> None:
     df = pl.DataFrame({"A": range(10), "B": ["b"] * 5 + ["a"] * 5})
 
-    q = df.lazy().sort(["B", "A"]).filter(pl.col("A").is_in([8, 2]).cumsum() == 1)
+    q = df.lazy().sort(["B", "A"]).filter(pl.col("A").is_in([8, 2]).cum_sum() == 1)
 
     assert q.collect()["A"].to_list() == [8, 9, 0, 1]
 

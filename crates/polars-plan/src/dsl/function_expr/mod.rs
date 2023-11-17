@@ -175,23 +175,23 @@ pub enum FunctionExpr {
     #[cfg(feature = "top_k")]
     TopK(bool),
     #[cfg(feature = "cum_agg")]
-    Cumcount {
+    CumCount {
         reverse: bool,
     },
     #[cfg(feature = "cum_agg")]
-    Cumsum {
+    CumSum {
         reverse: bool,
     },
     #[cfg(feature = "cum_agg")]
-    Cumprod {
+    CumProd {
         reverse: bool,
     },
     #[cfg(feature = "cum_agg")]
-    Cummin {
+    CumMin {
         reverse: bool,
     },
     #[cfg(feature = "cum_agg")]
-    Cummax {
+    CumMax {
         reverse: bool,
     },
     Reverse,
@@ -404,15 +404,15 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "top_k")]
             TopK(a) => a.hash(state),
             #[cfg(feature = "cum_agg")]
-            Cumcount { reverse } => reverse.hash(state),
+            CumCount { reverse } => reverse.hash(state),
             #[cfg(feature = "cum_agg")]
-            Cumsum { reverse } => reverse.hash(state),
+            CumSum { reverse } => reverse.hash(state),
             #[cfg(feature = "cum_agg")]
-            Cumprod { reverse } => reverse.hash(state),
+            CumProd { reverse } => reverse.hash(state),
             #[cfg(feature = "cum_agg")]
-            Cummin { reverse } => reverse.hash(state),
+            CumMin { reverse } => reverse.hash(state),
             #[cfg(feature = "cum_agg")]
-            Cummax { reverse } => reverse.hash(state),
+            CumMax { reverse } => reverse.hash(state),
             #[cfg(feature = "dtype-struct")]
             ValueCounts { sort, parallel } => {
                 sort.hash(state);
@@ -577,15 +577,15 @@ impl Display for FunctionExpr {
             },
             Shift => "shift",
             #[cfg(feature = "cum_agg")]
-            Cumcount { .. } => "cumcount",
+            CumCount { .. } => "cum_count",
             #[cfg(feature = "cum_agg")]
-            Cumsum { .. } => "cumsum",
+            CumSum { .. } => "cum_sum",
             #[cfg(feature = "cum_agg")]
-            Cumprod { .. } => "cumprod",
+            CumProd { .. } => "cum_prod",
             #[cfg(feature = "cum_agg")]
-            Cummin { .. } => "cummin",
+            CumMin { .. } => "cum_min",
             #[cfg(feature = "cum_agg")]
-            Cummax { .. } => "cummax",
+            CumMax { .. } => "cum_max",
             #[cfg(feature = "dtype-struct")]
             ValueCounts { .. } => "value_counts",
             #[cfg(feature = "unique_counts")]
@@ -866,15 +866,15 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             },
             Shift => map_as_slice!(shift_and_fill::shift),
             #[cfg(feature = "cum_agg")]
-            Cumcount { reverse } => map!(cum::cumcount, reverse),
+            CumCount { reverse } => map!(cum::cum_count, reverse),
             #[cfg(feature = "cum_agg")]
-            Cumsum { reverse } => map!(cum::cumsum, reverse),
+            CumSum { reverse } => map!(cum::cum_sum, reverse),
             #[cfg(feature = "cum_agg")]
-            Cumprod { reverse } => map!(cum::cumprod, reverse),
+            CumProd { reverse } => map!(cum::cum_prod, reverse),
             #[cfg(feature = "cum_agg")]
-            Cummin { reverse } => map!(cum::cummin, reverse),
+            CumMin { reverse } => map!(cum::cum_min, reverse),
             #[cfg(feature = "cum_agg")]
-            Cummax { reverse } => map!(cum::cummax, reverse),
+            CumMax { reverse } => map!(cum::cum_max, reverse),
             #[cfg(feature = "dtype-struct")]
             ValueCounts { sort, parallel } => map!(dispatch::value_counts, sort, parallel),
             #[cfg(feature = "unique_counts")]

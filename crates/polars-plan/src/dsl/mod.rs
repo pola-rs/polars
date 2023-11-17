@@ -748,32 +748,32 @@ impl Expr {
 
     /// Cumulatively count values from 0 to len.
     #[cfg(feature = "cum_agg")]
-    pub fn cumcount(self, reverse: bool) -> Self {
-        self.apply_private(FunctionExpr::Cumcount { reverse })
+    pub fn cum_count(self, reverse: bool) -> Self {
+        self.apply_private(FunctionExpr::CumCount { reverse })
     }
 
     /// Get an array with the cumulative sum computed at every element.
     #[cfg(feature = "cum_agg")]
-    pub fn cumsum(self, reverse: bool) -> Self {
-        self.apply_private(FunctionExpr::Cumsum { reverse })
+    pub fn cum_sum(self, reverse: bool) -> Self {
+        self.apply_private(FunctionExpr::CumSum { reverse })
     }
 
     /// Get an array with the cumulative product computed at every element.
     #[cfg(feature = "cum_agg")]
-    pub fn cumprod(self, reverse: bool) -> Self {
-        self.apply_private(FunctionExpr::Cumprod { reverse })
+    pub fn cum_prod(self, reverse: bool) -> Self {
+        self.apply_private(FunctionExpr::CumProd { reverse })
     }
 
     /// Get an array with the cumulative min computed at every element.
     #[cfg(feature = "cum_agg")]
-    pub fn cummin(self, reverse: bool) -> Self {
-        self.apply_private(FunctionExpr::Cummin { reverse })
+    pub fn cum_min(self, reverse: bool) -> Self {
+        self.apply_private(FunctionExpr::CumMin { reverse })
     }
 
     /// Get an array with the cumulative max computed at every element.
     #[cfg(feature = "cum_agg")]
-    pub fn cummax(self, reverse: bool) -> Self {
-        self.apply_private(FunctionExpr::Cummax { reverse })
+    pub fn cum_max(self, reverse: bool) -> Self {
+        self.apply_private(FunctionExpr::CumMax { reverse })
     }
 
     /// Get the product aggregation of an expression.

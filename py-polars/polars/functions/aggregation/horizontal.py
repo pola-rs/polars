@@ -7,6 +7,7 @@ import polars.functions as F
 from polars.datatypes import UInt32
 from polars.utils._parse_expr_input import parse_as_list_of_expressions
 from polars.utils._wrap import wrap_expr
+from polars.utils.deprecation import deprecate_renamed_function
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -199,7 +200,7 @@ def sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     return wrap_expr(plr.sum_horizontal(pyexprs))
 
 
-def cumsum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
+def cum_sum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     """
     Cumulatively sum all values horizontally across columns.
 
@@ -218,10 +219,10 @@ def cumsum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     ...         "c": ["x", "y", "z"],
     ...     }
     ... )
-    >>> df.with_columns(pl.cumsum_horizontal("a", "b"))
+    >>> df.with_columns(pl.cum_sum_horizontal("a", "b"))
     shape: (3, 4)
     ┌─────┬──────┬─────┬───────────┐
-    │ a   ┆ b    ┆ c   ┆ cumsum    │
+    │ a   ┆ b    ┆ c   ┆ cum_sum   │
     │ --- ┆ ---  ┆ --- ┆ ---       │
     │ i64 ┆ i64  ┆ str ┆ struct[2] │
     ╞═════╪══════╪═════╪═══════════╡
@@ -235,6 +236,24 @@ def cumsum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     exprs_wrapped = [wrap_expr(e) for e in pyexprs]
 
     # (Expr): use u32 as that will not cast to float as eagerly
-    return F.cumfold(F.lit(0).cast(UInt32), lambda a, b: a + b, exprs_wrapped).alias(
-        "cumsum"
+    return F.cum_fold(F.lit(0).cast(UInt32), lambda a, b: a + b, exprs_wrapped).alias(
+        "cum_sum"
     )
+
+
+@deprecate_renamed_function("cum_sum_horizontal", version="0.19.14")
+def cumsum_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
+    """
+    Cumulatively sum all values horizontally across columns.
+
+    .. deprecated:: 0.19.14
+        This function has been renamed to :func:`cum_sum_horizontal`.
+
+    Parameters
+    ----------
+    *exprs
+        Column(s) to use in the aggregation. Accepts expression input. Strings are
+        parsed as column names, other non-expression inputs are parsed as literals.
+
+    """
+    return cum_sum_horizontal(*exprs).alias("cumsum")

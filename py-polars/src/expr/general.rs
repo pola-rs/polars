@@ -632,18 +632,27 @@ impl PyExpr {
         self.inner.clone().cbrt().into()
     }
 
-    fn cumsum(&self, reverse: bool) -> Self {
-        self.inner.clone().cumsum(reverse).into()
+    fn cum_sum(&self, reverse: bool) -> Self {
+        self.inner.clone().cum_sum(reverse).into()
     }
-    fn cummax(&self, reverse: bool) -> Self {
-        self.inner.clone().cummax(reverse).into()
+    fn cum_max(&self, reverse: bool) -> Self {
+        self.inner.clone().cum_max(reverse).into()
     }
-    fn cummin(&self, reverse: bool) -> Self {
-        self.inner.clone().cummin(reverse).into()
+    fn cum_min(&self, reverse: bool) -> Self {
+        self.inner.clone().cum_min(reverse).into()
+    }
+    fn cum_prod(&self, reverse: bool) -> Self {
+        self.inner.clone().cum_prod(reverse).into()
+    }
+    fn cum_count(&self, reverse: bool) -> Self {
+        self.inner.clone().cum_count(reverse).into()
     }
 
-    fn cumprod(&self, reverse: bool) -> Self {
-        self.inner.clone().cumprod(reverse).into()
+    fn cumulative_eval(&self, expr: Self, min_periods: usize, parallel: bool) -> Self {
+        self.inner
+            .clone()
+            .cumulative_eval(expr.inner, min_periods, parallel)
+            .into()
     }
 
     fn product(&self) -> Self {
@@ -704,13 +713,6 @@ impl PyExpr {
         self.inner.clone().upper_bound().into()
     }
 
-    fn cumulative_eval(&self, expr: Self, min_periods: usize, parallel: bool) -> Self {
-        self.inner
-            .clone()
-            .cumulative_eval(expr.inner, min_periods, parallel)
-            .into()
-    }
-
     fn rank(&self, method: Wrap<RankMethod>, descending: bool, seed: Option<u64>) -> Self {
         let options = RankOptions {
             method: method.0,
@@ -737,10 +739,6 @@ impl PyExpr {
 
     fn reshape(&self, dims: Vec<i64>) -> Self {
         self.inner.clone().reshape(&dims).into()
-    }
-
-    fn cumcount(&self, reverse: bool) -> Self {
-        self.inner.clone().cumcount(reverse).into()
     }
 
     fn to_physical(&self) -> Self {

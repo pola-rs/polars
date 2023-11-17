@@ -335,7 +335,7 @@ def test_inspect(capsys: CaptureFixture[str]) -> None:
     captured = capsys.readouterr()
     assert len(captured.out) > 0
 
-    ldf.select(pl.col("a").cumsum().inspect().alias("bar")).collect()
+    ldf.select(pl.col("a").cum_sum().inspect().alias("bar")).collect()
     res = capsys.readouterr()
     assert len(res.out) > 0
 
@@ -476,17 +476,41 @@ def test_len() -> None:
 def test_cum_agg() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3, 2]})
     assert_series_equal(
-        ldf.select(pl.col("a").cumsum()).collect()["a"], pl.Series("a", [1, 3, 6, 8])
+        ldf.select(pl.col("a").cum_sum()).collect()["a"], pl.Series("a", [1, 3, 6, 8])
     )
     assert_series_equal(
-        ldf.select(pl.col("a").cummin()).collect()["a"], pl.Series("a", [1, 1, 1, 1])
+        ldf.select(pl.col("a").cum_min()).collect()["a"], pl.Series("a", [1, 1, 1, 1])
     )
     assert_series_equal(
-        ldf.select(pl.col("a").cummax()).collect()["a"], pl.Series("a", [1, 2, 3, 3])
+        ldf.select(pl.col("a").cum_max()).collect()["a"], pl.Series("a", [1, 2, 3, 3])
     )
     assert_series_equal(
-        ldf.select(pl.col("a").cumprod()).collect()["a"], pl.Series("a", [1, 2, 6, 12])
+        ldf.select(pl.col("a").cum_prod()).collect()["a"], pl.Series("a", [1, 2, 6, 12])
     )
+
+
+def test_cum_agg_deprecated() -> None:
+    ldf = pl.LazyFrame({"a": [1, 2, 3, 2]})
+    with pytest.deprecated_call():
+        assert_series_equal(
+            ldf.select(pl.col("a").cumsum()).collect()["a"],
+            pl.Series("a", [1, 3, 6, 8]),
+        )
+    with pytest.deprecated_call():
+        assert_series_equal(
+            ldf.select(pl.col("a").cummin()).collect()["a"],
+            pl.Series("a", [1, 1, 1, 1]),
+        )
+    with pytest.deprecated_call():
+        assert_series_equal(
+            ldf.select(pl.col("a").cummax()).collect()["a"],
+            pl.Series("a", [1, 2, 3, 3]),
+        )
+    with pytest.deprecated_call():
+        assert_series_equal(
+            ldf.select(pl.col("a").cumprod()).collect()["a"],
+            pl.Series("a", [1, 2, 6, 12]),
+        )
 
 
 def test_floor() -> None:
@@ -1407,29 +1431,29 @@ def test_from_epoch_str() -> None:
         ).collect()
 
 
-def test_cumagg_types() -> None:
+def test_cum_agg_types() -> None:
     ldf = pl.LazyFrame({"a": [1, 2], "b": [True, False], "c": [1.3, 2.4]})
-    cumsum_lf = ldf.select(
-        [pl.col("a").cumsum(), pl.col("b").cumsum(), pl.col("c").cumsum()]
+    cum_sum_lf = ldf.select(
+        pl.col("a").cum_sum(),
+        pl.col("b").cum_sum(),
+        pl.col("c").cum_sum(),
     )
-    assert cumsum_lf.schema["a"] == pl.Int64
-    assert cumsum_lf.schema["b"] == pl.UInt32
-    assert cumsum_lf.schema["c"] == pl.Float64
-    collected_cumsum_lf = cumsum_lf.collect()
-    assert collected_cumsum_lf.schema == cumsum_lf.schema
+    assert cum_sum_lf.schema["a"] == pl.Int64
+    assert cum_sum_lf.schema["b"] == pl.UInt32
+    assert cum_sum_lf.schema["c"] == pl.Float64
+    collected_cumsum_lf = cum_sum_lf.collect()
+    assert collected_cumsum_lf.schema == cum_sum_lf.schema
 
-    cumprod_lf = ldf.select(
-        [
-            pl.col("a").cast(pl.UInt64).cumprod(),
-            pl.col("b").cumprod(),
-            pl.col("c").cumprod(),
-        ]
+    cum_prod_lf = ldf.select(
+        pl.col("a").cast(pl.UInt64).cum_prod(),
+        pl.col("b").cum_prod(),
+        pl.col("c").cum_prod(),
     )
-    assert cumprod_lf.schema["a"] == pl.UInt64
-    assert cumprod_lf.schema["b"] == pl.Int64
-    assert cumprod_lf.schema["c"] == pl.Float64
-    collected_cumprod_lf = cumprod_lf.collect()
-    assert collected_cumprod_lf.schema == cumprod_lf.schema
+    assert cum_prod_lf.schema["a"] == pl.UInt64
+    assert cum_prod_lf.schema["b"] == pl.Int64
+    assert cum_prod_lf.schema["c"] == pl.Float64
+    collected_cum_prod_lf = cum_prod_lf.collect()
+    assert collected_cum_prod_lf.schema == cum_prod_lf.schema
 
 
 def test_compare_schema_between_lazy_and_eager_6904() -> None:

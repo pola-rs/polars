@@ -596,7 +596,7 @@ impl OptimizationRule for SimplifyExprRule {
                         by: by.clone(),
                         descending: descending.iter().map(|r| !*r).collect(),
                     }),
-                    // TODO: add support for cumsum and other operation that allow reversing.
+                    // TODO: add support for cum_sum and other operation that allow reversing.
                     _ => None,
                 }
             },
