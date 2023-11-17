@@ -45,6 +45,7 @@ Manipulation/selection
     Series.round
     Series.round_sig_figs
     Series.sample
+    Series.scatter
     Series.set
     Series.set_at_idx
     Series.shift
