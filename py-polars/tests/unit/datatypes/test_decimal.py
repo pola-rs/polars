@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import itertools
 from dataclasses import dataclass
 from decimal import Decimal as D
@@ -255,3 +256,13 @@ def test_decimal_in_filter() -> None:
         "foo": [2, 3],
         "bar": [D("7"), D("8")],
     }
+
+
+def test_decimal_write_parquet_12375() -> None:
+    f = io.BytesIO()
+    df = pl.DataFrame(
+        {"hi": [True, False, True, False], "bye": [1, 2, 3, D(47283957238957239875)]}
+    )
+    assert df["bye"].dtype == pl.Decimal
+
+    df.write_parquet(f)
