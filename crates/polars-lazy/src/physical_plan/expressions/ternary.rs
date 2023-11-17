@@ -137,9 +137,10 @@ impl PhysicalExpr for TernaryExpr {
                         break;
                     }
                 },
-                _ => {
+                NotAggregated(_) => {
                     let _ = ac.aggregated();
                 },
+                _ => {},
             }
         }
 
