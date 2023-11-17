@@ -10,7 +10,7 @@ use polars_core::POOL;
 use polars_utils::aliases::PlHashSet;
 use tokio::runtime::{Builder, Runtime};
 
-static CONCURRENCY_BUDGET: AtomicI32 = AtomicI32::new(32);
+static CONCURRENCY_BUDGET: AtomicI32 = AtomicI32::new(24);
 
 pub async fn with_concurrency_budget<F, Fut>(requested_budget: u16, callable: F) -> Fut::Output
 where

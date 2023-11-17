@@ -45,8 +45,8 @@ pub fn get_file_prefetch_size() -> usize {
         .map(|s| s.parse::<usize>().expect("integer"))
         .unwrap_or_else(|_| {
             std::cmp::max(
-                std::cmp::min(std::thread::available_parallelism().unwrap().get() * 2, 64),
-                32,
+                std::cmp::min(std::thread::available_parallelism().unwrap().get() * 2, 32),
+                16,
             )
         })
 }

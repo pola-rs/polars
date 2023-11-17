@@ -42,7 +42,7 @@ static BUCKET_REGION: Lazy<std::sync::Mutex<FastFixedCache<SmartString, SmartStr
 #[allow(dead_code)]
 type Configs<T> = Vec<(T, String)>;
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// Options to connect to various cloud providers.
 pub struct CloudOptions {
@@ -53,6 +53,20 @@ pub struct CloudOptions {
     #[cfg(feature = "gcp")]
     gcp: Option<Configs<GoogleConfigKey>>,
     pub max_retries: usize,
+}
+
+impl Default for CloudOptions {
+    fn default() -> Self {
+        Self {
+            max_retries: 2,
+            #[cfg(feature = "aws")]
+            aws: Default::default(),
+            #[cfg(feature = "azure")]
+            azure: Default::default(),
+            #[cfg(feature = "gcp")]
+            gcp: Default::default(),
+        }
+    }
 }
 
 #[allow(dead_code)]
