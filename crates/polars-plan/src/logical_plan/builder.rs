@@ -683,19 +683,42 @@ impl LogicalPlanBuilder {
             into
         );
 
+        // Initialize schema from keys
         let mut schema = try_delayed!(
             expressions_to_schema(&keys, current_schema, Context::Default),
             &self.0,
             into
         );
-        let other = try_delayed!(
+
+        // Add dynamic groupby index column(s)
+        #[cfg(feature = "dynamic_group_by")]
+        {
+            if let Some(options) = rolling_options.as_ref() {
+                let name = &options.index_column;
+                let dtype = try_delayed!(current_schema.try_get(name), self.0, into);
+                schema.with_column(name.clone(), dtype.clone());
+            } else if let Some(options) = dynamic_options.as_ref() {
+                let name = &options.index_column;
+                let dtype = try_delayed!(current_schema.try_get(name), self.0, into);
+                if options.include_boundaries {
+                    schema.with_column("_lower_boundary".into(), dtype.clone());
+                    schema.with_column("_upper_boundary".into(), dtype.clone());
+                }
+                schema.with_column(name.clone(), dtype.clone());
+            }
+        }
+        let keys_index_len = schema.len();
+
+        // Add aggregation column(s)
+        let aggs_schema = try_delayed!(
             expressions_to_schema(&aggs, current_schema, Context::Aggregation),
             &self.0,
             into
         );
-        schema.merge(other);
+        schema.merge(aggs_schema);
 
-        if schema.len() < keys.len() + aggs.len() {
+        // Make sure aggregation columns do not contain keys or index columns
+        if schema.len() < (keys_index_len + aggs.len()) {
             let check_names = || {
                 let mut names = PlHashSet::with_capacity(schema.len());
                 for expr in aggs.iter().chain(keys.iter()) {
@@ -709,37 +732,13 @@ impl LogicalPlanBuilder {
             try_delayed!(check_names(), &self.0, into)
         }
 
-        #[cfg(feature = "dynamic_group_by")]
-        {
-            let index_columns = &[
-                rolling_options
-                    .as_ref()
-                    .map(|options| &options.index_column),
-                dynamic_options
-                    .as_ref()
-                    .map(|options| &options.index_column),
-            ];
-            for &name in index_columns.iter().flatten() {
-                let dtype = try_delayed!(
-                    current_schema
-                        .get(name)
-                        .ok_or_else(|| polars_err!(ColumnNotFound: "{}", name)),
-                    self.0,
-                    into
-                );
-                schema.with_column(name.clone(), dtype.clone());
-            }
-        }
-
-        #[cfg(feature = "dynamic_group_by")]
         let options = GroupbyOptions {
+            #[cfg(feature = "dynamic_group_by")]
             dynamic: dynamic_options,
+            #[cfg(feature = "dynamic_group_by")]
             rolling: rolling_options,
             slice: None,
         };
-
-        #[cfg(not(feature = "dynamic_group_by"))]
-        let options = GroupbyOptions { slice: None };
 
         LogicalPlan::Aggregate {
             input: Box::new(self.0),

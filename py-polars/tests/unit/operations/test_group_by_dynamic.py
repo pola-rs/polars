@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
@@ -900,9 +900,7 @@ def test_group_by_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) 
     assert result2 == expected2
 
 
-@pytest.mark.skip(
-    reason="Currently bugged, see: https://github.com/pola-rs/polars/issues/11339 "
-)
+# https://github.com/pola-rs/polars/issues/11339
 @pytest.mark.parametrize("include_boundaries", [True, False])
 def test_group_by_dynamic_lazy_schema(include_boundaries: bool) -> None:
     lf = pl.LazyFrame(
@@ -920,7 +918,7 @@ def test_group_by_dynamic_lazy_schema(include_boundaries: bool) -> None:
         "dt", every="2d", closed="right", include_boundaries=include_boundaries
     ).agg(pl.col("dt").min().alias("dt_min"))
 
-    assert list(result.schema.items()) == list(result.collect().schema.items())
+    assert result.schema == result.collect().schema
 
 
 def test_group_by_dynamic_12414() -> None:
@@ -950,3 +948,27 @@ def test_group_by_dynamic_12414() -> None:
         "today": [date(2023, 3, 3), date(2023, 9, 3)],
         "gt_min_count": [1, 1],
     }
+
+
+@pytest.mark.parametrize("input", [[pl.col("b").sum()], pl.col("b").sum()])
+def test_group_by_dynamic_agg_input_types(input: Any) -> None:
+    df = pl.LazyFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]}).set_sorted(
+        "index_column"
+    )
+    result = df.group_by_dynamic(
+        index_column="index_column", every="2i", closed="right"
+    ).agg(input)
+
+    expected = pl.LazyFrame({"index_column": [-2, 0, 2], "b": [1, 4, 2]})
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("input", [str, "b".join])
+def test_group_by_dynamic_agg_bad_input_types(input: Any) -> None:
+    df = pl.LazyFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]}).set_sorted(
+        "index_column"
+    )
+    with pytest.raises(TypeError):
+        df.group_by_dynamic(
+            index_column="index_column", every="2i", closed="right"
+        ).agg(input)
