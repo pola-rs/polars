@@ -215,15 +215,12 @@ where
                         )?)
                             as Box<dyn SinkTrait>,
                         #[cfg(feature = "ipc")]
-                        FileType::Ipc(ipc_options) => Box::new(IpcCloudSink::new(
-                                uri,
-                                cloud_options.as_ref(),
-                                *ipc_options,
-                                input_schema.as_ref(),
-                            )?)
-                            as Box<dyn SinkTrait>,
+                        FileType::Ipc(_ipc_options) => {
+                            // TODO: support Ipc as well
+                            todo!("For now, only parquet cloud files are supported");
+                        },
                         #[allow(unreachable_patterns)]
-                        other_file_type => todo!("Cloud-sinking of the file type {other_file_type:?} is not (yet) supported."),
+                        _ => unreachable!(),
                     }
                 },
             }
