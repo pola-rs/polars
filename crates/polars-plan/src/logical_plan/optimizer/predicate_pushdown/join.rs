@@ -126,6 +126,7 @@ pub(super) fn process_join(
         // the right hand side should be renamed with the suffix.
         // in that case we should not push down as the user wants to filter on `x`
         // not on `x_rhs`.
+        #[cfg(feature = "semi_anti_join")]
         if !filter_left
             && check_input_node(predicate, &schema_right, expr_arena)
             && !block_pushdown_right
