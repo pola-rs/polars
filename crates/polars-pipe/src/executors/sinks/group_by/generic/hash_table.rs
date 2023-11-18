@@ -1,5 +1,5 @@
-use polars_arrow::trusted_len::TrustedLenPush;
-use polars_core::hashing::partition::this_partition;
+use arrow::legacy::trusted_len::TrustedLenPush;
+use polars_utils::hashing::hash_to_partition;
 
 use super::*;
 use crate::pipeline::PARTITION_SIZE;
@@ -161,9 +161,8 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
         partition: usize,
         other: &AggHashTable<FIXED_OTHER>,
     ) {
-        let partition = partition as u64;
         self.combine_impl(other, |hash| {
-            this_partition(hash, partition, PARTITION_SIZE as u64)
+            partition == hash_to_partition(hash, PARTITION_SIZE)
         })
     }
 

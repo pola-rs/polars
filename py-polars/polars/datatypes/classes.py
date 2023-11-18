@@ -45,24 +45,47 @@ class DataTypeClass(type):
     def _string_repr(cls) -> str:
         return _dtype_str_repr(cls)
 
-    def base_type(cls) -> DataTypeClass:
-        """Return the base type."""
-        return cls
+    # Methods below defined here in signature only to satisfy mypy
+
+    @classmethod
+    def base_type(cls) -> DataTypeClass:  # noqa: D102
+        ...
+
+    @classmethod
+    def is_(cls, other: PolarsDataType) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
+    def is_not(cls, other: PolarsDataType) -> bool:  # noqa: D102
+        ...
 
     @classproperty
-    def is_nested(self) -> bool:
-        """Check if this data type is nested."""
-        return False
+    def is_nested(self) -> bool:  # noqa: D102
+        ...
 
     @classmethod
-    def is_(cls, other: PolarsDataType) -> bool:
-        """Check if this DataType is the same as another DataType."""
-        return cls == other and hash(cls) == hash(other)
+    def is_numeric(cls) -> bool:  # noqa: D102
+        ...
 
     @classmethod
-    def is_not(cls, other: PolarsDataType) -> bool:
-        """Check if this DataType is NOT the same as another DataType."""
-        return not cls.is_(other)
+    def is_integer(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
+    def is_signed_integer(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
+    def is_unsigned_integer(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
+    def is_float(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
+    def is_temporal(cls) -> bool:  # noqa: D102
+        ...
 
 
 class DataType(metaclass=DataTypeClass):
@@ -97,17 +120,12 @@ class DataType(metaclass=DataTypeClass):
         """
         return cls
 
-    @classproperty
-    def is_nested(self) -> bool:
-        """Check if this data type is nested."""
-        return False
-
     @classinstmethod  # type: ignore[arg-type]
     def is_(self, other: PolarsDataType) -> bool:
         """
         Check if this DataType is the same as another DataType.
 
-        This is a stricter check than ``self == other``, as it enforces an exact
+        This is a stricter check than `self == other`, as it enforces an exact
         match of all dtype attributes for nested and/or uninitialised dtypes.
 
         Parameters
@@ -130,7 +148,10 @@ class DataType(metaclass=DataTypeClass):
         """
         Check if this DataType is NOT the same as another DataType.
 
-        This is a stricter check than ``self != other``, as it enforces an exact
+        .. deprecated:: 0.19.14
+            Use `not dtype.is_(...)` instead.
+
+        This is a stricter check than `self != other`, as it enforces an exact
         match of all dtype attributes for nested and/or uninitialised dtypes.
 
         Parameters
@@ -142,11 +163,67 @@ class DataType(metaclass=DataTypeClass):
         --------
         >>> pl.List != pl.List(pl.Int32)
         False
-        >>> pl.List.is_not(pl.List(pl.Int32))
+        >>> pl.List.is_not(pl.List(pl.Int32))  # doctest: +SKIP
         True
 
         """
+        from polars.utils.deprecation import issue_deprecation_warning
+
+        issue_deprecation_warning(
+            "`DataType.is_not` is deprecated and will be removed in the next breaking release."
+            " Use `not dtype.is_(...)` instead.",
+            version="0.19.14",
+        )
         return not self.is_(other)
+
+    @classproperty
+    def is_nested(self) -> bool:
+        """
+        Check if this data type is nested.
+
+        .. deprecated:: 0.19.10
+            Use `dtype in pl.NESTED_DTYPES` instead.
+
+        """
+        from polars.utils.deprecation import issue_deprecation_warning
+
+        message = (
+            "`DataType.is_nested` is deprecated and will be removed in the next breaking release."
+            " It will be changed to a classmethod rather than a property."
+            " To silence this warning, use `dtype in pl.NESTED_DTYPES` instead."
+        )
+        issue_deprecation_warning(message, version="0.19.10")
+        return False
+
+    @classmethod
+    def is_numeric(cls) -> bool:
+        """Check whether the data type is a numeric type."""
+        return issubclass(cls, NumericType)
+
+    @classmethod
+    def is_integer(cls) -> bool:
+        """Check whether the data type is an integer type."""
+        return issubclass(cls, IntegerType)
+
+    @classmethod
+    def is_signed_integer(cls) -> bool:
+        """Check whether the data type is a signed integer type."""
+        return issubclass(cls, SignedIntegerType)
+
+    @classmethod
+    def is_unsigned_integer(cls) -> bool:
+        """Check whether the data type is an unsigned integer type."""
+        return issubclass(cls, UnsignedIntegerType)
+
+    @classmethod
+    def is_float(cls) -> bool:
+        """Check whether the data type is a temporal type."""
+        return issubclass(cls, FloatType)
+
+    @classmethod
+    def is_temporal(cls) -> bool:
+        """Check whether the data type is a temporal type."""
+        return issubclass(cls, TemporalType)
 
 
 def _custom_reconstruct(
@@ -200,15 +277,19 @@ class NumericType(DataType):
     """Base class for numeric data types."""
 
 
-class IntegralType(NumericType):
-    """Base class for integral data types."""
+class IntegerType(NumericType):
+    """Base class for integer data types."""
 
 
-class FractionalType(NumericType):
-    """Base class for fractional data types."""
+class SignedIntegerType(IntegerType):
+    """Base class for signed integer data types."""
 
 
-class FloatType(FractionalType):
+class UnsignedIntegerType(IntegerType):
+    """Base class for unsigned integer data types."""
+
+
+class FloatType(NumericType):
     """Base class for float data types."""
 
 
@@ -221,39 +302,53 @@ class NestedType(DataType):
 
     @classproperty
     def is_nested(self) -> bool:
-        """Check if this data type is nested."""
+        """
+        Check if this data type is nested.
+
+        .. deprecated:: 0.19.10
+            Use `dtype in pl.NESTED_DTYPES` instead.
+
+        """
+        from polars.utils.deprecation import issue_deprecation_warning
+
+        message = (
+            "`DataType.is_nested` is deprecated and will be removed in the next breaking release."
+            " It will be changed to a classmethod rather than a property."
+            " To silence this warning, use `dtype in pl.NESTED_DTYPES` instead."
+        )
+        issue_deprecation_warning(message, version="0.19.10")
         return True
 
 
-class Int8(IntegralType):
+class Int8(SignedIntegerType):
     """8-bit signed integer type."""
 
 
-class Int16(IntegralType):
+class Int16(SignedIntegerType):
     """16-bit signed integer type."""
 
 
-class Int32(IntegralType):
+class Int32(SignedIntegerType):
     """32-bit signed integer type."""
 
 
-class Int64(IntegralType):
+class Int64(SignedIntegerType):
     """64-bit signed integer type."""
 
 
-class UInt8(IntegralType):
+class UInt8(UnsignedIntegerType):
     """8-bit unsigned integer type."""
 
 
-class UInt16(IntegralType):
+class UInt16(UnsignedIntegerType):
     """16-bit unsigned integer type."""
 
 
-class UInt32(IntegralType):
+class UInt32(UnsignedIntegerType):
     """32-bit unsigned integer type."""
 
 
-class UInt64(IntegralType):
+class UInt64(UnsignedIntegerType):
     """64-bit unsigned integer type."""
 
 
@@ -265,17 +360,40 @@ class Float64(FloatType):
     """64-bit floating point type."""
 
 
-class Decimal(FractionalType):
+class Decimal(NumericType):
     """
     Decimal 128-bit type with an optional precision and non-negative scale.
 
-    NOTE: this is an experimental work-in-progress feature and may not work as expected.
+    .. warning::
+        This is an experimental work-in-progress feature and may not work as expected.
+
     """
 
     precision: int | None
     scale: int
 
-    def __init__(self, scale: int, precision: int | None = None):
+    def __init__(
+        self,
+        *args: Any,
+        precision: int | None = None,
+        scale: int = 0,
+    ):
+        from polars.utils.deprecation import issue_deprecation_warning
+
+        if args:
+            # TODO: When removing this deprecation, update the `to_object`
+            # implementation in py-polars/src/conversion.rs to use `call1` instead of
+            # `call`
+            issue_deprecation_warning(
+                "`Decimal` parameters `scale` and `precision` will change positions in the next breaking release."
+                " Use keyword arguments to keep current behavior and silence this warning.",
+                version="0.19.13",
+            )
+            if len(args) == 1:
+                scale = args[0]
+            else:
+                scale, precision = args[:2]
+
         self.precision = precision
         self.scale = scale
 
@@ -335,7 +453,7 @@ class Datetime(TemporalType):
             Unit of time / precision.
         time_zone
             Time zone string, as defined in zoneinfo (to see valid strings run
-            ``import zoneinfo; zoneinfo.available_timezones()`` for a full list).
+            `import zoneinfo; zoneinfo.available_timezones()` for a full list).
             When using to match dtypes, can use "*" to check for Datetime columns
             that have any timezone.
 
@@ -348,7 +466,8 @@ class Datetime(TemporalType):
 
         if self.time_unit not in ("ms", "us", "ns"):
             raise ValueError(
-                f"invalid time_unit; expected one of {{'ns','us','ms'}}, got {self.time_unit!r}"
+                "invalid `time_unit`"
+                f"\n\nExpected one of {{'ns','us','ms'}}, got {self.time_unit!r}."
             )
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
@@ -390,7 +509,8 @@ class Duration(TemporalType):
         self.time_unit = time_unit
         if self.time_unit not in ("ms", "us", "ns"):
             raise ValueError(
-                f"invalid time_unit; expected one of {{'ns','us','ms'}}, got {self.time_unit!r}"
+                "invalid `time_unit`"
+                f"\n\nExpected one of {{'ns','us','ms'}}, got {self.time_unit!r}."
             )
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
@@ -427,18 +547,18 @@ class Unknown(DataType):
 
 
 class List(NestedType):
-    """Nested list/array type with variable length of inner lists."""
+    """Variable length list type."""
 
     inner: PolarsDataType | None = None
 
     def __init__(self, inner: PolarsDataType | PythonDataType):
         """
-        Nested list/array type with variable length of inner lists.
+        Variable length list type.
 
         Parameters
         ----------
         inner
-            The `DataType` of values within the list
+            The `DataType` of the values within each list.
 
         Examples
         --------
@@ -489,26 +609,31 @@ class List(NestedType):
 
 
 class Array(NestedType):
-    """Nested list/array type with fixed length of inner arrays."""
+    """Fixed length list type."""
 
     inner: PolarsDataType | None = None
     width: int
 
-    def __init__(self, width: int, inner: PolarsDataType | PythonDataType = Null):
+    def __init__(  # noqa: D417
+        self,
+        *args: Any,
+        inner: PolarsDataType | PythonDataType | None = None,
+        width: int | None = None,
+    ):
         """
-        Nested list/array type with fixed length of inner arrays.
+        Fixed length list type.
 
         Parameters
         ----------
         width
-            The fixed size length of the inner arrays.
+            The length of the arrays.
         inner
-            The `DataType` of values within the inner arrays
+            The `DataType` of the values within each array.
 
         Examples
         --------
         >>> s = pl.Series(
-        ...     "a", [[1, 2], [4, 3]], dtype=pl.Array(width=2, inner=pl.Int64)
+        ...     "a", [[1, 2], [4, 3]], dtype=pl.Array(inner=pl.Int64, width=2)
         ... )
         >>> s
         shape: (2,)
@@ -519,6 +644,32 @@ class Array(NestedType):
         ]
 
         """
+        from polars.utils.deprecation import issue_deprecation_warning
+
+        if args:
+            # TODO: When removing this deprecation, update the `to_object`
+            # implementation in py-polars/src/conversion.rs to use `call1` instead of
+            # `call`
+            issue_deprecation_warning(
+                "`Array` parameters `width` and `inner` will change positions in the next breaking release."
+                " Use keyword arguments to keep current behavior and silence this warning.",
+                version="0.19.11",
+            )
+            if len(args) == 1:
+                width = args[0]
+            else:
+                width, inner = args[:2]
+        if width is None:
+            raise TypeError("`width` must be specified when initializing an `Array`")
+
+        if inner is None:
+            issue_deprecation_warning(
+                "The default value for the `inner` parameter of `Array` will be removed in the next breaking release."
+                " Pass `inner=pl.Null`to keep current behavior and silence this warning.",
+                version="0.19.11",
+            )
+            inner = Null
+
         self.width = width
         self.inner = polars.datatypes.py_type_to_dtype(inner)
 
@@ -541,11 +692,11 @@ class Array(NestedType):
             return False
 
     def __hash__(self) -> int:
-        return hash((self.__class__, self.inner))
+        return hash((self.__class__, self.inner, self.width))
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        return f"{class_name}({self.inner!r})"
+        return f"{class_name}({self.inner!r}, {self.width})"
 
 
 class Field:

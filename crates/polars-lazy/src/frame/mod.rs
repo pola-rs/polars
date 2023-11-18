@@ -1,18 +1,8 @@
-//! Lazy variant of a [DataFrame](polars_core::frame::DataFrame).
-#[cfg(feature = "csv")]
-mod csv;
-#[cfg(feature = "ipc")]
-mod ipc;
-#[cfg(feature = "json")]
-mod ndjson;
-#[cfg(feature = "parquet")]
-mod parquet;
+//! Lazy variant of a [DataFrame].
 #[cfg(feature = "python")]
 mod python;
 
-mod anonymous_scan;
 mod err;
-mod file_list_reader;
 #[cfg(feature = "pivot")]
 pub mod pivot;
 
@@ -22,6 +12,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 pub use anonymous_scan::*;
+use arrow::legacy::prelude::QuantileInterpolOptions;
 #[cfg(feature = "csv")]
 pub use csv::*;
 pub use file_list_reader::*;
@@ -31,9 +22,7 @@ pub use ipc::*;
 pub use ndjson::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
-use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::frame::explode::MeltArgs;
-use polars_core::frame::hash_join::{JoinType, JoinValidation};
 use polars_core::prelude::*;
 use polars_io::RowCount;
 pub use polars_plan::frame::{AllowedOptimizations, OptState};
@@ -41,12 +30,12 @@ use polars_plan::global::FETCH_ROWS;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
 use polars_plan::logical_plan::collect_fingerprints;
 use polars_plan::logical_plan::optimize;
-use polars_plan::utils::expr_to_leaf_column_names;
+use polars_plan::utils::expr_output_name;
 use smartstring::alias::String as SmartString;
 
 use crate::fallible;
 use crate::physical_plan::executors::Executor;
-use crate::physical_plan::planner::create_physical_plan;
+use crate::physical_plan::planner::{create_physical_expr, create_physical_plan};
 use crate::physical_plan::state::ExecutionState;
 #[cfg(feature = "streaming")]
 use crate::physical_plan::streaming::insert_streaming_nodes;
@@ -452,16 +441,16 @@ impl LazyFrame {
     /// with `Nones`.
     ///
     /// See the method on [Series](polars_core::series::SeriesTrait::shift) for more info on the `shift` operation.
-    pub fn shift(self, periods: i64) -> Self {
-        self.select(vec![col("*").shift(periods)])
+    pub fn shift<E: Into<Expr>>(self, n: E) -> Self {
+        self.select(vec![col("*").shift(n.into())])
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
     /// with the result of the `fill_value` expression.
     ///
     /// See the method on [Series](polars_core::series::SeriesTrait::shift) for more info on the `shift` operation.
-    pub fn shift_and_fill<E: Into<Expr>>(self, periods: i64, fill_value: E) -> Self {
-        self.select(vec![col("*").shift_and_fill(periods, fill_value.into())])
+    pub fn shift_and_fill<E: Into<Expr>>(self, n: E, fill_value: E) -> Self {
+        self.select(vec![col("*").shift_and_fill(n.into(), fill_value.into())])
     }
 
     /// Fill None values in the DataFrame with an expression.
@@ -561,7 +550,25 @@ impl LazyFrame {
             );
             opt_state.comm_subplan_elim = false;
         }
-        let lp_top = optimize(self.logical_plan, opt_state, lp_arena, expr_arena, scratch)?;
+        let lp_top = optimize(
+            self.logical_plan,
+            opt_state,
+            lp_arena,
+            expr_arena,
+            scratch,
+            Some(&|node, expr_arena| {
+                let phys_expr = create_physical_expr(
+                    node,
+                    Context::Default,
+                    expr_arena,
+                    None,
+                    &mut Default::default(),
+                )
+                .ok()?;
+                let io_expr = phys_expr_to_io_expr(phys_expr);
+                Some(io_expr)
+            }),
+        )?;
 
         if streaming {
             #[cfg(feature = "streaming")]
@@ -689,7 +696,7 @@ impl LazyFrame {
     pub fn sink_parquet_cloud(
         mut self,
         uri: String,
-        cloud_options: Option<polars_core::cloud::CloudOptions>,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
         parquet_options: ParquetWriteOptions,
     ) -> PolarsResult<()> {
         self.opt_state.streaming = true;
@@ -811,7 +818,7 @@ impl LazyFrame {
 
     /// Select (and optionally rename, with [`alias`](crate::dsl::Expr::alias)) columns from the query.
     ///
-    /// Columns can be selected with [`col`](crate::dsl::col);
+    /// Columns can be selected with [`col`];
     /// If you want to select all columns use `col("*")`.
     ///
     /// # Example
@@ -871,7 +878,7 @@ impl LazyFrame {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
-    /// use polars_arrow::prelude::QuantileInterpolOptions;
+    /// use arrow::legacy::prelude::QuantileInterpolOptions;
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
@@ -931,9 +938,11 @@ impl LazyFrame {
         if let Expr::Column(name) = index_column {
             options.index_column = name.as_ref().into();
         } else {
-            let name = expr_output_name(&index_column).unwrap();
+            let output_field = index_column
+                .to_field(&self.schema().unwrap(), Context::Default)
+                .unwrap();
             return self.with_column(index_column).group_by_rolling(
-                Expr::Column(name),
+                Expr::Column(Arc::from(output_field.name().as_str())),
                 by,
                 options,
             );
@@ -974,9 +983,11 @@ impl LazyFrame {
         if let Expr::Column(name) = index_column {
             options.index_column = name.as_ref().into();
         } else {
-            let name = expr_output_name(&index_column).unwrap();
+            let output_field = index_column
+                .to_field(&self.schema().unwrap(), Context::Default)
+                .unwrap();
             return self.with_column(index_column).group_by_dynamic(
-                Expr::Column(name),
+                Expr::Column(Arc::from(output_field.name().as_str())),
                 by,
                 options,
             );
@@ -1024,6 +1035,38 @@ impl LazyFrame {
         }
     }
 
+    /// Left anti join this query with another lazy query.
+    ///
+    /// Matches on the values of the expressions `left_on` and `right_on`. For more
+    /// flexible join logic, see [`join`](LazyFrame::join) or
+    /// [`join_builder`](LazyFrame::join_builder).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::prelude::*;
+    /// use polars_lazy::prelude::*;
+    /// fn anti_join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
+    ///         ldf
+    ///         .anti_join(other, col("foo"), col("bar").cast(DataType::Utf8))
+    /// }
+    /// ```
+    #[cfg(feature = "semi_anti_join")]
+    pub fn anti_join<E: Into<Expr>>(self, other: LazyFrame, left_on: E, right_on: E) -> LazyFrame {
+        self.join(
+            other,
+            [left_on.into()],
+            [right_on.into()],
+            JoinArgs::new(JoinType::Anti),
+        )
+    }
+
+    /// Creates the cartesian product from both frames, preserving the order of the left keys.
+    #[cfg(feature = "cross_join")]
+    pub fn cross_join(self, other: LazyFrame) -> LazyFrame {
+        self.join(other, vec![], vec![], JoinArgs::new(JoinType::Cross))
+    }
+
     /// Left join this query with another lazy query.
     ///
     /// Matches on the values of the expressions `left_on` and `right_on`. For more
@@ -1035,7 +1078,7 @@ impl LazyFrame {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
-    /// fn join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
+    /// fn left_join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
     ///         .left_join(other, col("foo"), col("bar"))
     /// }
@@ -1046,31 +1089,6 @@ impl LazyFrame {
             [left_on.into()],
             [right_on.into()],
             JoinArgs::new(JoinType::Left),
-        )
-    }
-
-    /// Outer join this query with another lazy query.
-    ///
-    /// Matches on the values of the expressions `left_on` and `right_on`. For more
-    /// flexible join logic, see [`join`](LazyFrame::join) or
-    /// [`join_builder`](LazyFrame::join_builder).
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use polars_core::prelude::*;
-    /// use polars_lazy::prelude::*;
-    /// fn join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
-    ///         ldf
-    ///         .outer_join(other, col("foo"), col("bar"))
-    /// }
-    /// ```
-    pub fn outer_join<E: Into<Expr>>(self, other: LazyFrame, left_on: E, right_on: E) -> LazyFrame {
-        self.join(
-            other,
-            [left_on.into()],
-            [right_on.into()],
-            JoinArgs::new(JoinType::Outer),
         )
     }
 
@@ -1085,7 +1103,7 @@ impl LazyFrame {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
-    /// fn join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
+    /// fn inner_join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
     ///         .inner_join(other, col("foo"), col("bar").cast(DataType::Utf8))
     /// }
@@ -1099,10 +1117,55 @@ impl LazyFrame {
         )
     }
 
-    /// Creates the cartesian product from both frames, preserving the order of the left keys.
-    #[cfg(feature = "cross_join")]
-    pub fn cross_join(self, other: LazyFrame) -> LazyFrame {
-        self.join(other, vec![], vec![], JoinArgs::new(JoinType::Cross))
+    /// Outer join this query with another lazy query.
+    ///
+    /// Matches on the values of the expressions `left_on` and `right_on`. For more
+    /// flexible join logic, see [`join`](LazyFrame::join) or
+    /// [`join_builder`](LazyFrame::join_builder).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::prelude::*;
+    /// use polars_lazy::prelude::*;
+    /// fn outer_join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
+    ///         ldf
+    ///         .outer_join(other, col("foo"), col("bar"))
+    /// }
+    /// ```
+    pub fn outer_join<E: Into<Expr>>(self, other: LazyFrame, left_on: E, right_on: E) -> LazyFrame {
+        self.join(
+            other,
+            [left_on.into()],
+            [right_on.into()],
+            JoinArgs::new(JoinType::Outer),
+        )
+    }
+
+    /// Left semi join this query with another lazy query.
+    ///
+    /// Matches on the values of the expressions `left_on` and `right_on`. For more
+    /// flexible join logic, see [`join`](LazyFrame::join) or
+    /// [`join_builder`](LazyFrame::join_builder).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::prelude::*;
+    /// use polars_lazy::prelude::*;
+    /// fn semi_join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
+    ///         ldf
+    ///         .semi_join(other, col("foo"), col("bar").cast(DataType::Utf8))
+    /// }
+    /// ```
+    #[cfg(feature = "semi_anti_join")]
+    pub fn semi_join<E: Into<Expr>>(self, other: LazyFrame, left_on: E, right_on: E) -> LazyFrame {
+        self.join(
+            other,
+            [left_on.into()],
+            [right_on.into()],
+            JoinArgs::new(JoinType::Semi),
+        )
     }
 
     /// Generic function to join two LazyFrames.
@@ -1153,7 +1216,7 @@ impl LazyFrame {
         JoinBuilder::new(self)
     }
 
-    /// Add a column, given as an expression, to a DataFrame.
+    /// Add or replace a column, given as an expression, to a DataFrame.
     ///
     /// # Example
     ///
@@ -1185,7 +1248,7 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Add multiple columns, given as expressions, to a DataFrame.
+    /// Add or replace multiple columns, given as expressions, to a DataFrame.
     ///
     /// # Example
     ///
@@ -1210,7 +1273,7 @@ impl LazyFrame {
         )
     }
 
-    /// Add multiple columns to a DataFrame, but evaluate them sequentially.
+    /// Add or replace multiple columns to a DataFrame, but evaluate them sequentially.
     pub fn with_columns_seq<E: AsRef<[Expr]>>(self, exprs: E) -> LazyFrame {
         let exprs = exprs.as_ref().to_vec();
         self.with_columns_impl(
@@ -1382,18 +1445,9 @@ impl LazyFrame {
     /// `subset` is an optional `Vec` of column names to consider for nulls; if None, all
     /// columns are considered.
     pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> LazyFrame {
-        match subset {
-            None => self.filter(all_horizontal([col("*").is_not_null()])),
-            Some(subset) => {
-                let predicate = all_horizontal(
-                    subset
-                        .into_iter()
-                        .map(|e| e.is_not_null())
-                        .collect::<Vec<_>>(),
-                );
-                self.filter(predicate)
-            },
-        }
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().drop_nulls(subset).build();
+        Self::from_logical_plan(lp, opt_state)
     }
 
     /// Slice the DataFrame using an offset (starting row) and a length.
@@ -1520,8 +1574,9 @@ impl LazyFrame {
             LogicalPlan::Scan {
                 file_options: options,
                 file_info,
+                scan_type,
                 ..
-            } => {
+            } if !matches!(scan_type, FileScan::Anonymous { .. }) => {
                 options.row_count = Some(RowCount {
                     name: name.to_string(),
                     offset: offset.unwrap_or(0),
@@ -1599,7 +1654,7 @@ pub struct LazyGroupBy {
 impl LazyGroupBy {
     /// Group by and aggregate.
     ///
-    /// Select a column with [col](crate::dsl::col) and choose an aggregation.
+    /// Select a column with [col] and choose an aggregation.
     /// If you want to aggregate all columns use `col("*")`.
     ///
     /// # Example
@@ -1607,7 +1662,7 @@ impl LazyGroupBy {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
-    /// use polars_arrow::prelude::QuantileInterpolOptions;
+    /// use arrow::legacy::prelude::QuantileInterpolOptions;
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
@@ -1644,10 +1699,10 @@ impl LazyGroupBy {
         let keys = self
             .keys
             .iter()
-            .flat_map(|k| expr_to_leaf_column_names(k).into_iter())
+            .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([col("*").exclude(&keys).head(n).keep_name()])
+        self.agg([col("*").exclude(&keys).head(n)])
             .explode([col("*").exclude(&keys)])
     }
 
@@ -1656,10 +1711,10 @@ impl LazyGroupBy {
         let keys = self
             .keys
             .iter()
-            .flat_map(|k| expr_to_leaf_column_names(k).into_iter())
+            .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([col("*").exclude(&keys).tail(n).keep_name()])
+        self.agg([col("*").exclude(&keys).tail(n)])
             .explode([col("*").exclude(&keys)])
     }
 

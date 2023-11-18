@@ -31,7 +31,7 @@ impl CategoricalChunked {
 
         if self.uses_lexical_ordering() {
             let mut vals = self
-                .logical()
+                .physical()
                 .into_no_null_iter()
                 .zip(self.iter_str())
                 .collect_trusted::<Vec<_>>();
@@ -57,7 +57,7 @@ impl CategoricalChunked {
                 )
             };
         }
-        let cats = self.logical().sort_with(options);
+        let cats = self.physical().sort_with(options);
         // safety:
         // we only reordered the indexes so we are still in bounds
         unsafe {
@@ -84,11 +84,11 @@ impl CategoricalChunked {
                 self.name(),
                 iters,
                 options,
-                self.logical().null_count(),
+                self.physical().null_count(),
                 self.len(),
             )
         } else {
-            self.logical().arg_sort(options)
+            self.physical().arg_sort(options)
         }
     }
 
@@ -96,7 +96,7 @@ impl CategoricalChunked {
 
     pub(crate) fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
         if self.uses_lexical_ordering() {
-            args_validate(self.logical(), &options.other, &options.descending)?;
+            args_validate(self.physical(), &options.other, &options.descending)?;
             let mut count: IdxSize = 0;
 
             // we use bytes to save a monomorphisized str impl
@@ -112,7 +112,7 @@ impl CategoricalChunked {
 
             arg_sort_multiple_impl(vals, options)
         } else {
-            self.logical().arg_sort_multiple(options)
+            self.physical().arg_sort_multiple(options)
         }
     }
 }
@@ -120,7 +120,7 @@ impl CategoricalChunked {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use crate::{enable_string_cache, reset_string_cache, SINGLE_LOCK};
+    use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
 
     fn assert_order(ca: &CategoricalChunked, cmp: &[&str]) {
         let s = ca.cast(&DataType::Utf8).unwrap();
@@ -133,9 +133,12 @@ mod test {
         let init = &["c", "b", "a", "d"];
 
         let _lock = SINGLE_LOCK.lock();
-        for toggle in [true, false] {
-            reset_string_cache();
-            enable_string_cache(toggle);
+        for use_string_cache in [true, false] {
+            disable_string_cache();
+            if use_string_cache {
+                enable_string_cache();
+            }
+
             let s = Series::new("", init).cast(&DataType::Categorical(None))?;
             let ca = s.categorical()?;
             let mut ca_lexical = ca.clone();
@@ -157,13 +160,16 @@ mod test {
     }
 
     #[test]
-
     fn test_cat_lexical_sort_multiple() -> PolarsResult<()> {
         let init = &["c", "b", "a", "a"];
 
         let _lock = SINGLE_LOCK.lock();
-        for enable in [true, false] {
-            enable_string_cache(enable);
+        for use_string_cache in [true, false] {
+            disable_string_cache();
+            if use_string_cache {
+                enable_string_cache();
+            }
+
             let s = Series::new("", init).cast(&DataType::Categorical(None))?;
             let ca = s.categorical()?;
             let mut ca_lexical: CategoricalChunked = ca.clone();

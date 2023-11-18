@@ -1,13 +1,13 @@
-use polars_arrow::floats::{f32_to_ordablef32, f64_to_ordablef64};
-use polars_arrow::prelude::QuantileInterpolOptions;
+use arrow::legacy::floats::{f32_to_ordablef32, f64_to_ordablef64};
+use arrow::legacy::prelude::QuantileInterpolOptions;
 use polars_utils::slice::Extrema;
 
 use super::*;
 
 pub trait QuantileAggSeries {
-    /// Get the median of the ChunkedArray as a new Series of length 1.
+    /// Get the median of the [`ChunkedArray`] as a new [`Series`] of length 1.
     fn median_as_series(&self) -> Series;
-    /// Get the quantile of the ChunkedArray as a new Series of length 1.
+    /// Get the quantile of the [`ChunkedArray`] as a new [`Series`] of length 1.
     fn quantile_as_series(
         &self,
         _quantile: f64,

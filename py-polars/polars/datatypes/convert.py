@@ -21,6 +21,7 @@ from typing import (
 )
 
 from polars.datatypes import (
+    Array,
     Binary,
     Boolean,
     Categorical,
@@ -142,15 +143,13 @@ def _map_py_type_to_dtype(
             if len(nested) == 1:
                 nested = nested[0]
             return (
-                dtype
-                if nested is None
-                else dtype(_map_py_type_to_dtype(nested))  # type: ignore[operator]
+                dtype if nested is None else dtype(_map_py_type_to_dtype(nested))  # type: ignore[operator]
             )
 
     raise TypeError("invalid type")
 
 
-def is_polars_dtype(dtype: Any, include_unknown: bool = False) -> bool:
+def is_polars_dtype(dtype: Any, *, include_unknown: bool = False) -> bool:
     """Indicate whether the given input is a Polars dtype, or dtype specialisation."""
     try:
         if dtype == Unknown:
@@ -203,7 +202,7 @@ def unpack_dtypes(
 
     unpacked: set[PolarsDataType] = set()
     for tp in dtypes:
-        if isinstance(tp, List):
+        if isinstance(tp, (List, Array)):
             if include_compound:
                 unpacked.add(tp)
             unpacked.update(unpack_dtypes(tp.inner, include_compound=include_compound))
@@ -298,6 +297,7 @@ class _DataTypeMappings:
     def NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE(self) -> dict[tuple[str, int], PolarsDataType]:
         return {
             # (np.dtype().kind, np.dtype().itemsize)
+            ("b", 1): Boolean,
             ("i", 1): Int8,
             ("i", 2): Int16,
             ("i", 4): Int32,
@@ -380,20 +380,20 @@ def dtype_to_py_type(dtype: PolarsDataType) -> PythonDataType:
 
 @overload
 def py_type_to_dtype(
-    data_type: Any, raise_unmatched: Literal[True] = True
+    data_type: Any, *, raise_unmatched: Literal[True] = ...
 ) -> PolarsDataType:
     ...
 
 
 @overload
 def py_type_to_dtype(
-    data_type: Any, raise_unmatched: Literal[False]
+    data_type: Any, *, raise_unmatched: Literal[False]
 ) -> PolarsDataType | None:
     ...
 
 
 def py_type_to_dtype(
-    data_type: Any, raise_unmatched: bool = True, allow_strings: bool = False
+    data_type: Any, *, raise_unmatched: bool = True, allow_strings: bool = False
 ) -> PolarsDataType | None:
     """Convert a Python dtype (or type annotation) to a Polars dtype."""
     if isinstance(data_type, ForwardRef):

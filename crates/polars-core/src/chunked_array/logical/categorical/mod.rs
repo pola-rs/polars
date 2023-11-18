@@ -2,12 +2,11 @@ mod builder;
 mod from;
 mod merge;
 mod ops;
-pub mod stringcache;
+pub mod string_cache;
 
 use bitflags::bitflags;
 pub use builder::*;
-pub(crate) use merge::*;
-pub(crate) use ops::{CategoricalTakeRandomGlobal, CategoricalTakeRandomLocal};
+pub use merge::*;
 use polars_utils::sync::SyncPtr;
 
 use super::*;
@@ -24,7 +23,7 @@ bitflags! {
 
 #[derive(Clone)]
 pub struct CategoricalChunked {
-    logical: Logical<CategoricalType, UInt32Type>,
+    physical: Logical<CategoricalType, UInt32Type>,
     /// 1st bit: original local categorical
     ///             meaning that n_unique is the same as the cat map length
     /// 2nd bit: use lexical sorting
@@ -33,7 +32,7 @@ pub struct CategoricalChunked {
 
 impl CategoricalChunked {
     pub(crate) fn field(&self) -> Field {
-        let name = self.logical().name();
+        let name = self.physical().name();
         Field::new(name, self.dtype().clone())
     }
 
@@ -41,23 +40,29 @@ impl CategoricalChunked {
         self.len() == 0
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
-        self.logical.len()
+        self.physical.len()
+    }
+
+    #[inline]
+    pub fn null_count(&self) -> usize {
+        self.physical.null_count()
     }
 
     pub fn name(&self) -> &str {
-        self.logical.name()
+        self.physical.name()
     }
 
     // TODO: Rename this
     /// Get a reference to the physical array (the categories).
-    pub fn logical(&self) -> &UInt32Chunked {
-        &self.logical
+    pub fn physical(&self) -> &UInt32Chunked {
+        &self.physical
     }
 
     /// Get a mutable reference to the physical array (the categories).
-    pub(crate) fn logical_mut(&mut self) -> &mut UInt32Chunked {
-        &mut self.logical
+    pub(crate) fn physical_mut(&mut self) -> &mut UInt32Chunked {
+        &mut self.physical
     }
 
     /// Convert a categorical column to its local representation.
@@ -65,15 +70,15 @@ impl CategoricalChunked {
         let rev_map = self.get_rev_map();
         let (physical_map, categories) = match rev_map.as_ref() {
             RevMapping::Global(m, c, _) => (m, c),
-            RevMapping::Local(_) => return self.clone(),
+            RevMapping::Local(_, _) => return self.clone(),
         };
 
-        let local_rev_map = RevMapping::Local(categories.clone());
+        let local_rev_map = RevMapping::build_local(categories.clone());
         // TODO: A fast path can possibly be implemented here:
         // if all physical map keys are equal to their values,
         // we can skip the apply and only update the rev_map
         let local_ca = self
-            .logical()
+            .physical()
             .apply(|opt_v| opt_v.map(|v| *physical_map.get(&v).unwrap()));
 
         let mut out =
@@ -85,12 +90,12 @@ impl CategoricalChunked {
     }
 
     pub(crate) fn get_flags(&self) -> Settings {
-        self.logical().get_flags()
+        self.physical().get_flags()
     }
 
     /// Set flags for the Chunked Array
     pub(crate) fn set_flags(&mut self, flags: Settings) {
-        self.logical_mut().set_flags(flags)
+        self.physical_mut().set_flags(flags)
     }
 
     /// Build a categorical from an original RevMap. That means that the number of categories in the `RevMapping == self.unique().len()`.
@@ -106,7 +111,7 @@ impl CategoricalChunked {
         let mut bit_settings = BitSettings::default();
         bit_settings.insert(BitSettings::ORIGINAL);
         Self {
-            logical,
+            physical: logical,
             bit_settings,
         }
     }
@@ -136,7 +141,7 @@ impl CategoricalChunked {
         let mut logical = Logical::<UInt32Type, _>::new_logical::<CategoricalType>(idx);
         logical.2 = Some(DataType::Categorical(Some(rev_map)));
         Self {
-            logical,
+            physical: logical,
             bit_settings: Default::default(),
         }
     }
@@ -144,14 +149,14 @@ impl CategoricalChunked {
     /// # Safety
     /// The existing index values must be in bounds of the new [`RevMapping`].
     pub(crate) unsafe fn set_rev_map(&mut self, rev_map: Arc<RevMapping>, keep_fast_unique: bool) {
-        self.logical.2 = Some(DataType::Categorical(Some(rev_map)));
+        self.physical.2 = Some(DataType::Categorical(Some(rev_map)));
         if !keep_fast_unique {
             self.set_fast_unique(false)
         }
     }
 
     pub(crate) fn can_fast_unique(&self) -> bool {
-        self.bit_settings.contains(BitSettings::ORIGINAL) && self.logical.chunks.len() == 1
+        self.bit_settings.contains(BitSettings::ORIGINAL) && self.physical.chunks.len() == 1
     }
 
     pub(crate) fn set_fast_unique(&mut self, toggle: bool) {
@@ -164,7 +169,7 @@ impl CategoricalChunked {
 
     /// Get a reference to the mapping of categorical types to the string values.
     pub fn get_rev_map(&self) -> &Arc<RevMapping> {
-        if let DataType::Categorical(Some(rev_map)) = &self.logical.2.as_ref().unwrap() {
+        if let DataType::Categorical(Some(rev_map)) = &self.physical.2.as_ref().unwrap() {
             rev_map
         } else {
             panic!("implementation error")
@@ -173,7 +178,7 @@ impl CategoricalChunked {
 
     /// Create an `[Iterator]` that iterates over the `&str` values of the `[CategoricalChunked]`.
     pub fn iter_str(&self) -> CatIter<'_> {
-        let iter = self.logical().into_iter();
+        let iter = self.physical().into_iter();
         CatIter {
             rev: self.get_rev_map(),
             iter,
@@ -183,7 +188,7 @@ impl CategoricalChunked {
 
 impl LogicalType for CategoricalChunked {
     fn dtype(&self) -> &DataType {
-        self.logical.2.as_ref().unwrap()
+        self.physical.2.as_ref().unwrap()
     }
 
     fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
@@ -192,7 +197,7 @@ impl LogicalType for CategoricalChunked {
     }
 
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
-        match self.logical.0.get_unchecked(i) {
+        match self.physical.0.get_unchecked(i) {
             Some(i) => AnyValue::Categorical(i, self.get_rev_map(), SyncPtr::new_null()),
             None => AnyValue::Null,
         }
@@ -204,16 +209,16 @@ impl LogicalType for CategoricalChunked {
                 let mapping = &**self.get_rev_map();
 
                 let mut builder =
-                    Utf8ChunkedBuilder::new(self.logical.name(), self.len(), self.len() * 5);
+                    Utf8ChunkedBuilder::new(self.physical.name(), self.len(), self.len() * 5);
 
                 let f = |idx: u32| mapping.get(idx);
 
-                if !self.logical.has_validity() {
-                    self.logical
+                if !self.physical.has_validity() {
+                    self.physical
                         .into_no_null_iter()
                         .for_each(|idx| builder.append_value(f(idx)));
                 } else {
-                    self.logical.into_iter().for_each(|opt_idx| {
+                    self.physical.into_iter().for_each(|opt_idx| {
                         builder.append_option(opt_idx.map(f));
                     });
                 }
@@ -223,13 +228,13 @@ impl LogicalType for CategoricalChunked {
             },
             DataType::UInt32 => {
                 let ca = unsafe {
-                    UInt32Chunked::from_chunks(self.logical.name(), self.logical.chunks.clone())
+                    UInt32Chunked::from_chunks(self.physical.name(), self.physical.chunks.clone())
                 };
                 Ok(ca.into_series())
             },
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => Ok(self.clone().into_series()),
-            _ => self.logical.cast(dtype),
+            _ => self.physical.cast(dtype),
         }
     }
 }
@@ -266,12 +271,12 @@ mod test {
     use std::convert::TryFrom;
 
     use super::*;
-    use crate::{enable_string_cache, reset_string_cache, SINGLE_LOCK};
+    use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
 
     #[test]
     fn test_categorical_round_trip() -> PolarsResult<()> {
         let _lock = SINGLE_LOCK.lock();
-        reset_string_cache();
+        disable_string_cache();
         let slice = &[
             Some("foo"),
             None,
@@ -296,8 +301,8 @@ mod test {
     #[test]
     fn test_append_categorical() {
         let _lock = SINGLE_LOCK.lock();
-        reset_string_cache();
-        enable_string_cache(true);
+        disable_string_cache();
+        enable_string_cache();
 
         let mut s1 = Series::new("1", vec!["a", "b", "c"])
             .cast(&DataType::Categorical(None))
@@ -330,8 +335,7 @@ mod test {
     #[test]
     fn test_categorical_flow() -> PolarsResult<()> {
         let _lock = SINGLE_LOCK.lock();
-        reset_string_cache();
-        enable_string_cache(false);
+        disable_string_cache();
 
         // tests several things that may lose the dtype information
         let s = Series::new("a", vec!["a", "b", "c"]).cast(&DataType::Categorical(None))?;
@@ -342,7 +346,7 @@ mod test {
         );
         assert!(matches!(
             s.get(0)?,
-            AnyValue::Categorical(0, RevMapping::Local(_), _)
+            AnyValue::Categorical(0, RevMapping::Local(_, _), _)
         ));
 
         let groups = s.group_tuples(false, true);

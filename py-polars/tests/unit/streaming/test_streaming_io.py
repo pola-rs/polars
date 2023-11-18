@@ -76,7 +76,7 @@ def test_sink_parquet_10115(tmp_path: Path) -> None:
         .sink_parquet(out_path)  #
     )
 
-    assert pl.read_parquet(out_path).to_dict(False) == {
+    assert pl.read_parquet(out_path).to_dict(as_series=False) == {
         "x": [1],
         "y": ["foo"],
         "z": ["_"],
@@ -125,10 +125,11 @@ def test_sink_csv_with_options() -> None:
     with unittest.mock.patch.object(df, "_ldf") as ldf:
         df.sink_csv(
             "path",
-            has_header=False,
+            include_bom=True,
+            include_header=False,
             separator=";",
             line_terminator="|",
-            quote="$",
+            quote_char="$",
             batch_size=42,
             datetime_format="%Y",
             date_format="%d",
@@ -141,10 +142,11 @@ def test_sink_csv_with_options() -> None:
 
         ldf.optimization_toggle().sink_csv.assert_called_with(
             path="path",
-            has_header=False,
+            include_bom=True,
+            include_header=False,
             separator=ord(";"),
             line_terminator="|",
-            quote=ord("$"),
+            quote_char=ord("$"),
             batch_size=42,
             datetime_format="%Y",
             date_format="%d",
@@ -159,21 +161,21 @@ def test_sink_csv_with_options() -> None:
 @pytest.mark.parametrize(("value"), ["abc", ""])
 def test_sink_csv_exception_for_separator(value: str) -> None:
     df = pl.LazyFrame({"dummy": ["abc"]})
-    with pytest.raises(ValueError, match="only single byte separator is allowed"):
+    with pytest.raises(ValueError, match="should be a single byte character, but is"):
         df.sink_csv("path", separator=value)
 
 
 @pytest.mark.parametrize(("value"), ["abc", ""])
 def test_sink_csv_exception_for_quote(value: str) -> None:
     df = pl.LazyFrame({"dummy": ["abc"]})
-    with pytest.raises(ValueError, match="only single byte quote char is allowed"):
-        df.sink_csv("path", quote=value)
+    with pytest.raises(ValueError, match="should be a single byte character, but is"):
+        df.sink_csv("path", quote_char=value)
 
 
 def test_scan_csv_only_header_10792(io_files_path: Path) -> None:
     foods_file_path = io_files_path / "only_header.csv"
     df = pl.scan_csv(foods_file_path).collect(streaming=True)
-    assert df.to_dict(False) == {"Name": [], "Address": []}
+    assert df.to_dict(as_series=False) == {"Name": [], "Address": []}
 
 
 def test_scan_empty_csv_10818(io_files_path: Path) -> None:

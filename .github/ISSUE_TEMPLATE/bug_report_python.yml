@@ -1,5 +1,5 @@
 name: '🐞 Bug report - Python'
-description: An issue with Python Polars
+description: Report an issue with Python Polars.
 labels: [bug, python]
 
 body:

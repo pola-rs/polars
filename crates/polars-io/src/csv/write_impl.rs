@@ -1,5 +1,6 @@
 use std::io::Write;
 
+use arrow::legacy::time_zone::Tz;
 #[cfg(any(
     feature = "dtype-date",
     feature = "dtype-time",
@@ -8,9 +9,7 @@ use std::io::Write;
 use arrow::temporal_conversions;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
-use lexical_core::{FormattedSize, ToLexical};
 use memchr::{memchr, memchr2};
-use polars_arrow::time_zone::Tz;
 use polars_core::prelude::*;
 use polars_core::series::SeriesIter;
 use polars_core::POOL;
@@ -22,46 +21,50 @@ use serde::{Deserialize, Serialize};
 use super::write::QuoteStyle;
 
 fn fmt_and_escape_str(f: &mut Vec<u8>, v: &str, options: &SerializeOptions) -> std::io::Result<()> {
+    if options.quote_style == QuoteStyle::Never {
+        return write!(f, "{v}");
+    }
+    let quote = options.quote_char as char;
     if v.is_empty() {
-        write!(f, "\"\"")
-    } else {
-        let needs_escaping = memchr(options.quote, v.as_bytes()).is_some();
-
-        if needs_escaping {
-            let replaced = unsafe {
-                // Replace from single quote " to double quote "".
-                v.replace(
-                    std::str::from_utf8_unchecked(&[options.quote]),
-                    std::str::from_utf8_unchecked(&[options.quote, options.quote]),
-                )
-            };
-            return write!(f, "\"{replaced}\"");
-        }
-        let surround_with_quotes = match options.quote_style {
-            QuoteStyle::Always | QuoteStyle::NonNumeric => true,
-            QuoteStyle::Necessary => memchr2(options.delimiter, b'\n', v.as_bytes()).is_some(),
+        return write!(f, "{quote}{quote}");
+    }
+    let needs_escaping = memchr(options.quote_char, v.as_bytes()).is_some();
+    if needs_escaping {
+        let replaced = unsafe {
+            // Replace from single quote " to double quote "".
+            v.replace(
+                std::str::from_utf8_unchecked(&[options.quote_char]),
+                std::str::from_utf8_unchecked(&[options.quote_char, options.quote_char]),
+            )
         };
+        return write!(f, "{quote}{replaced}{quote}");
+    }
+    let surround_with_quotes = match options.quote_style {
+        QuoteStyle::Always | QuoteStyle::NonNumeric => true,
+        QuoteStyle::Necessary => memchr2(options.separator, b'\n', v.as_bytes()).is_some(),
+        QuoteStyle::Never => false,
+    };
 
-        let quote = options.quote as char;
-        if surround_with_quotes {
-            write!(f, "{quote}{v}{quote}")
-        } else {
-            write!(f, "{v}")
-        }
+    if surround_with_quotes {
+        write!(f, "{quote}{v}{quote}")
+    } else {
+        write!(f, "{v}")
     }
 }
 
-fn fast_float_write<N: ToLexical>(f: &mut Vec<u8>, n: N, write_size: usize) -> std::io::Result<()> {
-    let len = f.len();
-    f.reserve(write_size);
-    unsafe {
-        let buffer = std::slice::from_raw_parts_mut(f.as_mut_ptr().add(len), write_size);
-        let written_n = n.to_lexical(buffer).len();
-        f.set_len(len + written_n);
-    }
-    Ok(())
+fn fast_float_write<I: ryu::Float>(f: &mut Vec<u8>, val: I) {
+    let mut buffer = ryu::Buffer::new();
+    let value = buffer.format(val);
+    f.extend_from_slice(value.as_bytes())
 }
 
+fn write_integer<I: itoa::Integer>(f: &mut Vec<u8>, val: I) {
+    let mut buffer = itoa::Buffer::new();
+    let value = buffer.format(val);
+    f.extend_from_slice(value.as_bytes())
+}
+
+#[allow(unused_variables)]
 unsafe fn write_anyvalue(
     f: &mut Vec<u8>,
     value: AnyValue,
@@ -84,7 +87,7 @@ unsafe fn write_anyvalue(
         },
         _ => {
             // Then we deal with the numeric types
-            let quote = options.quote as char;
+            let quote = options.quote_char as char;
 
             let mut end_with_quote = matches!(options.quote_style, QuoteStyle::Always);
             if end_with_quote {
@@ -94,20 +97,50 @@ unsafe fn write_anyvalue(
 
             match value {
                 AnyValue::Null => write!(f, "{}", &options.null),
-                AnyValue::Int8(v) => write!(f, "{v}"),
-                AnyValue::Int16(v) => write!(f, "{v}"),
-                AnyValue::Int32(v) => write!(f, "{v}"),
-                AnyValue::Int64(v) => write!(f, "{v}"),
-                AnyValue::UInt8(v) => write!(f, "{v}"),
-                AnyValue::UInt16(v) => write!(f, "{v}"),
-                AnyValue::UInt32(v) => write!(f, "{v}"),
-                AnyValue::UInt64(v) => write!(f, "{v}"),
+                AnyValue::Int8(v) => {
+                    write_integer(f, v);
+                    Ok(())
+                },
+                AnyValue::Int16(v) => {
+                    write_integer(f, v);
+                    Ok(())
+                },
+                AnyValue::Int32(v) => {
+                    write_integer(f, v);
+                    Ok(())
+                },
+                AnyValue::Int64(v) => {
+                    write_integer(f, v);
+                    Ok(())
+                },
+                AnyValue::UInt8(v) => {
+                    write_integer(f, v);
+                    Ok(())
+                },
+                AnyValue::UInt16(v) => {
+                    write_integer(f, v);
+                    Ok(())
+                },
+                AnyValue::UInt32(v) => {
+                    write_integer(f, v);
+                    Ok(())
+                },
+                AnyValue::UInt64(v) => {
+                    write_integer(f, v);
+                    Ok(())
+                },
                 AnyValue::Float32(v) => match &options.float_precision {
-                    None => fast_float_write(f, v, f32::FORMATTED_SIZE_DECIMAL),
+                    None => {
+                        fast_float_write(f, v);
+                        Ok(())
+                    },
                     Some(precision) => write!(f, "{v:.precision$}"),
                 },
                 AnyValue::Float64(v) => match &options.float_precision {
-                    None => fast_float_write(f, v, f64::FORMATTED_SIZE_DECIMAL),
+                    None => {
+                        fast_float_write(f, v);
+                        Ok(())
+                    },
                     Some(precision) => write!(f, "{v:.precision$}"),
                 },
                 _ => {
@@ -154,18 +187,19 @@ unsafe fn write_anyvalue(
                                 },
                                 _ => ndt.format(datetime_format),
                             };
-                            return write!(f, "{formatted}").map_err(|_|{
-
+                            let str_result = write!(f, "{formatted}");
+                            if str_result.is_err() {
                                 let datetime_format = unsafe { *datetime_formats.get_unchecked(i) };
                                 let type_name = if tz.is_some() {
                                     "DateTime"
                                 } else {
                                     "NaiveDateTime"
                                 };
-                                polars_err!(
-                ComputeError: "cannot format {} with format '{}'", type_name, datetime_format,
-            )
-                            });
+                                polars_bail!(
+                                    ComputeError: "cannot format {} with format '{}'", type_name, datetime_format,
+                                )
+                            };
+                            str_result
                         },
                         #[cfg(feature = "dtype-time")]
                         AnyValue::Time(v) => {
@@ -205,10 +239,10 @@ pub struct SerializeOptions {
     pub datetime_format: Option<String>,
     /// Used for [`DataType::Float64`] and [`DataType::Float32`].
     pub float_precision: Option<usize>,
-    /// Used as separator/delimiter.
-    pub delimiter: u8,
+    /// Used as separator.
+    pub separator: u8,
     /// Quoting character.
-    pub quote: u8,
+    pub quote_char: u8,
     /// Null value representation.
     pub null: String,
     /// String appended after every row.
@@ -223,8 +257,8 @@ impl Default for SerializeOptions {
             time_format: None,
             datetime_format: None,
             float_precision: None,
-            delimiter: b',',
-            quote: b'"',
+            separator: b',',
+            quote_char: b'"',
             null: String::new(),
             line_terminator: "\n".into(),
             quote_style: Default::default(),
@@ -269,10 +303,10 @@ pub(crate) fn write<W: Write>(
 
     // Check that the double quote is valid UTF-8.
     polars_ensure!(
-        std::str::from_utf8(&[options.quote, options.quote]).is_ok(),
+        std::str::from_utf8(&[options.quote_char, options.quote_char]).is_ok(),
         ComputeError: "quote char results in invalid utf-8",
     );
-    let delimiter = char::from(options.delimiter);
+    let separator = char::from(options.separator);
 
     let (datetime_formats, time_zones): (Vec<&str>, Vec<Option<Tz>>) = df
         .get_columns()
@@ -406,7 +440,7 @@ pub(crate) fn write<W: Write>(
                     }
                     let current_ptr = col as *const SeriesIter;
                     if current_ptr != last_ptr {
-                        write!(&mut write_buffer, "{delimiter}").unwrap()
+                        write!(&mut write_buffer, "{separator}").unwrap()
                     }
                 }
                 if !finished {
@@ -422,7 +456,7 @@ pub(crate) fn write<W: Write>(
         });
 
         // rayon will ensure the right order
-        result_buf.par_extend(par_iter);
+        POOL.install(|| result_buf.par_extend(par_iter));
 
         for buf in result_buf.drain(..) {
             let mut buf = buf?;
@@ -455,9 +489,16 @@ pub(crate) fn write_header<W: Write>(
     }
     writer.write_all(
         escaped_names
-            .join(std::str::from_utf8(&[options.delimiter]).unwrap())
+            .join(std::str::from_utf8(&[options.separator]).unwrap())
             .as_bytes(),
     )?;
     writer.write_all(options.line_terminator.as_bytes())?;
+    Ok(())
+}
+
+/// Writes a UTF-8 BOM to `writer`.
+pub(crate) fn write_bom<W: Write>(writer: &mut W) -> PolarsResult<()> {
+    const BOM: [u8; 3] = [0xEF, 0xBB, 0xBF];
+    writer.write_all(&BOM)?;
     Ok(())
 }

@@ -71,7 +71,7 @@ pub fn arg_where(condition: PyExpr) -> PyExpr {
 #[pyfunction]
 pub fn as_struct(exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
-    dsl::as_struct(&exprs).into()
+    dsl::as_struct(exprs).into()
 }
 
 #[pyfunction]
@@ -188,37 +188,38 @@ pub fn count() -> PyExpr {
 }
 
 #[pyfunction]
-pub fn cov(a: PyExpr, b: PyExpr) -> PyExpr {
-    dsl::cov(a.inner, b.inner).into()
+pub fn cov(a: PyExpr, b: PyExpr, ddof: u8) -> PyExpr {
+    dsl::cov(a.inner, b.inner, ddof).into()
 }
 
 #[pyfunction]
+#[cfg(feature = "trigonometry")]
 pub fn arctan2(y: PyExpr, x: PyExpr) -> PyExpr {
     y.inner.arctan2(x.inner).into()
 }
 
 #[pyfunction]
+#[cfg(feature = "trigonometry")]
 pub fn arctan2d(y: PyExpr, x: PyExpr) -> PyExpr {
     y.inner.arctan2(x.inner).degrees().into()
 }
 
 #[pyfunction]
-pub fn cumfold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init: bool) -> PyExpr {
+pub fn cum_fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init: bool) -> PyExpr {
     let exprs = exprs.to_exprs();
 
     let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
-    dsl::cumfold_exprs(acc.inner, func, exprs, include_init).into()
+    dsl::cum_fold_exprs(acc.inner, func, exprs, include_init).into()
 }
 
 #[pyfunction]
-pub fn cumreduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
+pub fn cum_reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
 
     let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
-    dsl::cumreduce_exprs(func, exprs).into()
+    dsl::cum_reduce_exprs(func, exprs).into()
 }
 
-#[allow(clippy::too_many_arguments)]
 #[pyfunction]
 #[pyo3(signature = (year, month, day, hour=None, minute=None, second=None, microsecond=None, time_unit=Wrap(TimeUnit::Microseconds), time_zone=None, ambiguous=None))]
 pub fn datetime(
@@ -257,7 +258,12 @@ pub fn datetime(
 }
 
 #[pyfunction]
-pub fn diag_concat_lf(lfs: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyLazyFrame> {
+pub fn concat_lf_diagonal(
+    lfs: &PyAny,
+    rechunk: bool,
+    parallel: bool,
+    to_supertypes: bool,
+) -> PyResult<PyLazyFrame> {
     let iter = lfs.iter()?;
 
     let lfs = iter
@@ -267,7 +273,15 @@ pub fn diag_concat_lf(lfs: &PyAny, rechunk: bool, parallel: bool) -> PyResult<Py
         })
         .collect::<PyResult<Vec<_>>>()?;
 
-    let lf = dsl::functions::diag_concat_lf(lfs, rechunk, parallel).map_err(PyPolarsErr::from)?;
+    let lf = dsl::functions::concat_lf_diagonal(
+        lfs,
+        UnionArgs {
+            rechunk,
+            parallel,
+            to_supertypes,
+        },
+    )
+    .map_err(PyPolarsErr::from)?;
     Ok(lf.into())
 }
 
@@ -284,37 +298,39 @@ pub fn dtype_cols(dtypes: Vec<Wrap<DataType>>) -> PyResult<PyExpr> {
     Ok(dsl::dtype_cols(dtypes).into())
 }
 
-#[allow(clippy::too_many_arguments)]
 #[pyfunction]
+#[pyo3(signature = (weeks, days, hours, minutes, seconds, milliseconds, microseconds, nanoseconds, time_unit))]
 pub fn duration(
-    days: Option<PyExpr>,
-    seconds: Option<PyExpr>,
-    nanoseconds: Option<PyExpr>,
-    microseconds: Option<PyExpr>,
-    milliseconds: Option<PyExpr>,
-    minutes: Option<PyExpr>,
-    hours: Option<PyExpr>,
     weeks: Option<PyExpr>,
+    days: Option<PyExpr>,
+    hours: Option<PyExpr>,
+    minutes: Option<PyExpr>,
+    seconds: Option<PyExpr>,
+    milliseconds: Option<PyExpr>,
+    microseconds: Option<PyExpr>,
+    nanoseconds: Option<PyExpr>,
+    time_unit: Wrap<TimeUnit>,
 ) -> PyExpr {
     set_unwrapped_or_0!(
-        days,
-        seconds,
-        nanoseconds,
-        microseconds,
-        milliseconds,
-        minutes,
-        hours,
         weeks,
+        days,
+        hours,
+        minutes,
+        seconds,
+        milliseconds,
+        microseconds,
+        nanoseconds,
     );
     let args = DurationArgs {
-        days,
-        seconds,
-        nanoseconds,
-        microseconds,
-        milliseconds,
-        minutes,
-        hours,
         weeks,
+        days,
+        hours,
+        minutes,
+        seconds,
+        milliseconds,
+        microseconds,
+        nanoseconds,
+        time_unit: time_unit.0,
     };
     dsl::duration(args).into()
 }

@@ -7,7 +7,7 @@ pub(super) fn rename_impl(
 ) -> PolarsResult<DataFrame> {
     let positions = existing
         .iter()
-        .map(|old| df.find_idx_by_name(old))
+        .map(|old| df.get_column_index(old))
         .collect::<Vec<_>>();
 
     for (pos, name) in positions.iter().zip(new.iter()) {

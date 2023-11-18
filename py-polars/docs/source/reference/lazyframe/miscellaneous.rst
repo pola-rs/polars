@@ -8,6 +8,7 @@ Miscellaneous
 
     LazyFrame.cache
     LazyFrame.collect
+    LazyFrame.collect_async
     LazyFrame.fetch
     LazyFrame.lazy
     LazyFrame.map

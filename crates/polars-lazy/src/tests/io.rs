@@ -241,7 +241,6 @@ fn test_csv_globbing() -> PolarsResult<()> {
     let df = lf.clone().collect()?;
     assert_eq!(df.shape(), (100, 4));
     let df = LazyCsvReader::new(glob).finish()?.slice(20, 60).collect()?;
-    dbg!(&full_df, &df);
     assert!(full_df.slice(20, 60).frame_equal(&df));
 
     let mut expr_arena = Arena::with_capacity(16);
@@ -435,10 +434,10 @@ fn scan_predicate_on_set_null_values() -> PolarsResult<()> {
 
 #[test]
 fn scan_anonymous_fn() -> PolarsResult<()> {
-    let function = Arc::new(|_scan_opts: AnonymousScanOptions| Ok(fruits_cars()));
+    let function = Arc::new(|_scan_opts: AnonymousScanArgs| Ok(fruits_cars()));
 
     let args = ScanArgsAnonymous {
-        schema: Some(fruits_cars().schema()),
+        schema: Some(Arc::new(fruits_cars().schema())),
         ..ScanArgsAnonymous::default()
     };
 

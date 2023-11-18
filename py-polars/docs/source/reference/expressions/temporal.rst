@@ -44,6 +44,13 @@ The following methods are available under the `expr.dt` attribute.
     Expr.dt.time
     Expr.dt.timestamp
     Expr.dt.to_string
+    Expr.dt.total_days
+    Expr.dt.total_hours
+    Expr.dt.total_microseconds
+    Expr.dt.total_milliseconds
+    Expr.dt.total_minutes
+    Expr.dt.total_nanoseconds
+    Expr.dt.total_seconds
     Expr.dt.truncate
     Expr.dt.week
     Expr.dt.weekday

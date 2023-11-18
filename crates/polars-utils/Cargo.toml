@@ -9,11 +9,12 @@ repository = { workspace = true }
 description = "Private utils for the Polars DataFrame library"
 
 [dependencies]
-polars-error = { version = "0.32.0", path = "../polars-error" }
+polars-error = { workspace = true }
 
 ahash = { workspace = true }
 bytemuck = { workspace = true }
 hashbrown = { workspace = true }
+indexmap = { workspace = true }
 num-traits = { workspace = true }
 once_cell = { workspace = true }
 rayon = { workspace = true }

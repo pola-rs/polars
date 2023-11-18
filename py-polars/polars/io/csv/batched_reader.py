@@ -11,7 +11,7 @@ from polars.utils.various import (
     _prepare_row_count_args,
     _process_null_values,
     handle_projection_columns,
-    normalise_filepath,
+    normalize_filepath,
 )
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -28,11 +28,12 @@ class BatchedCsvReader:
     def __init__(
         self,
         source: str | Path,
+        *,
         has_header: bool = True,
         columns: Sequence[int] | Sequence[str] | None = None,
         separator: str = ",",
         comment_char: str | None = None,
-        quote_char: str | None = r'"',
+        quote_char: str | None = '"',
         skip_rows: int = 0,
         dtypes: None | (SchemaDict | Sequence[PolarsDataType]) = None,
         null_values: str | Sequence[str] | dict[str, str] | None = None,
@@ -57,7 +58,7 @@ class BatchedCsvReader:
     ):
         path: str | None
         if isinstance(source, (str, Path)):
-            path = normalise_filepath(source)
+            path = normalize_filepath(source)
 
         dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None
         dtype_slice: Sequence[PolarsDataType] | None = None
@@ -107,9 +108,9 @@ class BatchedCsvReader:
 
     def next_batches(self, n: int) -> list[DataFrame] | None:
         """
-        Read ``n`` batches from the reader.
+        Read `n` batches from the reader.
 
-        The ``n`` chunks will be parallelized over the
+        The `n` chunks will be parallelized over the
         available threads.
 
         Parameters

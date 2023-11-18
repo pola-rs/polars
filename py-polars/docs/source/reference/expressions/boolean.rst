@@ -12,9 +12,11 @@ Boolean
     Expr.is_duplicated
     Expr.is_finite
     Expr.is_first
+    Expr.is_first_distinct
     Expr.is_in
     Expr.is_infinite
     Expr.is_last
+    Expr.is_last_distinct
     Expr.is_nan
     Expr.is_not
     Expr.is_not_nan

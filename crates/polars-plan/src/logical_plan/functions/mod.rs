@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-categorical")]
-use polars_core::IUseStringCache;
+use polars_core::StringCacheHolder;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
@@ -332,7 +332,7 @@ impl FunctionNode {
                 // we use a global string cache here as streaming chunks all have different rev maps
                 #[cfg(feature = "dtype-categorical")]
                 {
-                    let _hold = IUseStringCache::hold();
+                    let _sc = StringCacheHolder::hold();
                     Arc::get_mut(function).unwrap().call_udf(df)
                 }
 
@@ -385,12 +385,12 @@ impl Display for FunctionNode {
             MergeSorted { .. } => write!(f, "MERGE SORTED"),
             Pipeline { original, .. } => {
                 if let Some(original) = original {
-                    writeln!(f, "--- PIPELINE")?;
+                    writeln!(f, "--- STREAMING")?;
                     write!(f, "{:?}", original.as_ref())?;
                     let indent = 2;
-                    writeln!(f, "{:indent$}--- END PIPELINE", "")
+                    writeln!(f, "{:indent$}--- END STREAMING", "")
                 } else {
-                    writeln!(f, "PIPELINE")
+                    writeln!(f, "STREAMING")
                 }
             },
             Rename { .. } => write!(f, "RENAME"),

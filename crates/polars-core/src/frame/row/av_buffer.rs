@@ -5,6 +5,7 @@ use polars_utils::unreachable_unchecked_release;
 use smartstring::alias::String as SmartString;
 
 use super::*;
+use crate::chunked_array::builder::NullChunkedBuilder;
 #[cfg(feature = "dtype-struct")]
 use crate::prelude::any_value::arr_to_any_value;
 
@@ -38,6 +39,7 @@ pub enum AnyValueBuffer<'a> {
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
     Utf8(Utf8ChunkedBuilder),
+    Null(NullChunkedBuilder),
     All(DataType, Vec<AnyValue<'a>>),
 }
 
@@ -107,6 +109,7 @@ impl<'a> AnyValueBuffer<'a> {
             (Time(builder), AnyValue::Time(v)) => builder.append_value(v),
             #[cfg(feature = "dtype-time")]
             (Time(builder), AnyValue::Null) => builder.append_null(),
+            (Null(builder), AnyValue::Null) => builder.append_null(),
             // Struct and List can be recursive so use anyvalues for that
             (All(_, vals), v) => vals.push(v),
 
@@ -127,7 +130,7 @@ impl<'a> AnyValueBuffer<'a> {
         self.add(val.clone()).ok_or_else(|| {
             polars_err!(
                 ComputeError: "could not append value: {} of type: {} to the builder; make sure that all rows \
-                have the same schema or consider increasing `schema_inference_length`\n\
+                have the same schema or consider increasing `infer_schema_length`\n\
                 \n\
                 it might also be that a value overflows the data-type's capacity", val, val.dtype()
             )
@@ -237,6 +240,11 @@ impl<'a> AnyValueBuffer<'a> {
                 std::mem::swap(&mut new, b);
                 new.finish().into_series()
             },
+            Null(b) => {
+                let mut new = NullChunkedBuilder::new(b.field.name(), 0);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            },
             All(dtype, vals) => {
                 let out = Series::from_any_values_and_dtype("", vals, dtype, false).unwrap();
                 let mut new = Vec::with_capacity(capacity);
@@ -287,13 +295,14 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
             Float32 => AnyValueBuffer::Float32(PrimitiveChunkedBuilder::new("", len)),
             Float64 => AnyValueBuffer::Float64(PrimitiveChunkedBuilder::new("", len)),
             Utf8 => AnyValueBuffer::Utf8(Utf8ChunkedBuilder::new("", len, len * 5)),
+            Null => AnyValueBuffer::Null(NullChunkedBuilder::new("", 0)),
             // Struct and List can be recursive so use anyvalues for that
             dt => AnyValueBuffer::All(dt.clone(), Vec::with_capacity(len)),
         }
     }
 }
 
-/// An `AnyValueBuffer` that should be used when we trust the builder
+/// An [`AnyValueBuffer`] that should be used when we trust the builder
 #[derive(Clone)]
 pub enum AnyValueBufferTrusted<'a> {
     Boolean(BooleanChunkedBuilder),
@@ -315,6 +324,7 @@ pub enum AnyValueBufferTrusted<'a> {
     #[cfg(feature = "dtype-struct")]
     // not the trusted variant!
     Struct(Vec<(AnyValueBuffer<'a>, SmartString)>),
+    Null(NullChunkedBuilder),
     All(DataType, Vec<AnyValue<'a>>),
 }
 
@@ -349,6 +359,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                     b.add(AnyValue::Null);
                 }
             },
+            Null(builder) => builder.append_null(),
             All(_, vals) => vals.push(AnyValue::Null),
         }
     }
@@ -427,19 +438,25 @@ impl<'a> AnyValueBufferTrusted<'a> {
                 };
                 builder.append_value(*v)
             },
+            Null(builder) => {
+                let AnyValue::Null = val else {
+                    unreachable_unchecked_release!()
+                };
+                builder.append_null()
+            },
             _ => {
                 unreachable_unchecked_release!()
             },
         }
     }
 
-    /// Will add the AnyValue into `Self` and unpack as the physical type
-    /// belonging to `Self`. This should only be used with physical buffers
+    /// Will add the [`AnyValue`] into [`Self`] and unpack as the physical type
+    /// belonging to [`Self`]. This should only be used with physical buffers
     ///
     /// If a type is not primitive or utf8, the anyvalue will be converted to static
     ///
     /// # Safety
-    /// The caller must ensure that the `AnyValue` type exactly matches the `Buffer` type and is owned.
+    /// The caller must ensure that the [`AnyValue`] type exactly matches the `Buffer` type and is owned.
     #[inline]
     pub unsafe fn add_unchecked_owned_physical(&mut self, val: &AnyValue<'_>) {
         use AnyValueBufferTrusted::*;
@@ -478,7 +495,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
     }
 
     /// # Safety
-    /// The caller must ensure that the `AnyValue` type exactly matches the `Buffer` type and is borrowed.
+    /// The caller must ensure that the [`AnyValue`] type exactly matches the `Buffer` type and is borrowed.
     #[inline]
     pub unsafe fn add_unchecked_borrowed_physical(&mut self, val: &AnyValue<'_>) {
         use AnyValueBufferTrusted::*;
@@ -600,6 +617,11 @@ impl<'a> AnyValueBufferTrusted<'a> {
                     })
                     .collect::<Vec<_>>();
                 StructChunked::new("", &v).unwrap().into_series()
+            },
+            Null(b) => {
+                let mut new = NullChunkedBuilder::new(b.field.name(), 0);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
             },
             All(dtype, vals) => {
                 let mut swap_vals = Vec::with_capacity(capacity);

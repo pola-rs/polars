@@ -1,9 +1,9 @@
 use arrow::array::{Array, PrimitiveArray};
 use arrow::compute::aggregate::SimdOrd;
+use arrow::legacy::prelude::FromData;
+use arrow::legacy::slice::ExtremaNanAware;
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
-use polars_arrow::prelude::FromData;
-use polars_arrow::slice::ExtremaNanAware;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 

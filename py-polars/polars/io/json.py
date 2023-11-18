@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import polars._reexport as pl
+from polars.datatypes import N_INFER_DEFAULT
 
 if TYPE_CHECKING:
     from io import IOBase
@@ -15,6 +16,7 @@ if TYPE_CHECKING:
 def read_json(
     source: str | Path | IOBase | bytes,
     *,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
     schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDefinition | None = None,
 ) -> DataFrame:
@@ -25,8 +27,10 @@ def read_json(
     ----------
     source
         Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a ``read()`` method, such as a file handler (e.g. via builtin ``open``
-        function) or ``BytesIO``).
+        that have a `read()` method, such as a file handler (e.g. via builtin `open`
+        function) or `BytesIO`).
+    infer_schema_length
+        Infer the schema from the first `infer_schema_length` rows.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
@@ -48,5 +52,8 @@ def read_json(
 
     """
     return pl.DataFrame._read_json(
-        source, schema=schema, schema_overrides=schema_overrides
+        source,
+        infer_schema_length=infer_schema_length,
+        schema=schema,
+        schema_overrides=schema_overrides,
     )

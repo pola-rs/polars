@@ -8,24 +8,30 @@
 //!
 //! # Lazy DSL
 //!
-//! The lazy API of polars replaces the eager `DataFrame` with the [`LazyFrame`](crate::frame::LazyFrame), through which
+//! The lazy API of polars replaces the eager [`DataFrame`] with the [`LazyFrame`], through which
 //! the lazy API is exposed.
-//! The `LazyFrame` represents a logical execution plan: a sequence of operations to perform on a concrete data source.
-//! These operations are not executed until we call [`collect`](crate::frame::LazyFrame::collect).
+//! The [`LazyFrame`] represents a logical execution plan: a sequence of operations to perform on a concrete data source.
+//! These operations are not executed until we call [`collect`].
 //! This allows polars to optimize/reorder the query which may lead to faster queries or fewer type errors.
 //!
-//! In general, a `LazyFrame` requires a concrete data source — a `DataFrame`, a file on disk, etc. — which polars-lazy
+//! [`DataFrame`]: polars_core::frame::DataFrame
+//! [`LazyFrame`]: crate::frame::LazyFrame
+//! [`collect`]: crate::frame::LazyFrame::collect
+//!
+//! In general, a [`LazyFrame`] requires a concrete data source — a [`DataFrame`], a file on disk, etc. — which polars-lazy
 //! then applies the user-specified sequence of operations to.
-//! To obtain a `LazyFrame` from an existing `DataFrame`, we call the [`lazy`](crate::frame::IntoLazy::lazy) method on
-//! the `DataFrame`.
-//! A `LazyFrame` can also be obtained through the lazy versions of file readers, such as [`LazyCsvReader`](crate::frame::LazyCsvReader).
+//! To obtain a [`LazyFrame`] from an existing [`DataFrame`], we call the [`lazy`](crate::frame::IntoLazy::lazy) method on
+//! the [`DataFrame`].
+//! A [`LazyFrame`] can also be obtained through the lazy versions of file readers, such as [`LazyCsvReader`](crate::frame::LazyCsvReader).
 //!
 //! The other major component of the polars lazy API is [`Expr`](crate::dsl::Expr), which represents an operation to be
-//! performed on a `LazyFrame`, such as mapping over a column, filtering, or groupby-aggregation.
-//! `Expr` and the functions that produce them can be found in the [dsl module](crate::dsl).
+//! performed on a [`LazyFrame`], such as mapping over a column, filtering, or groupby-aggregation.
+//! [`Expr`] and the functions that produce them can be found in the [dsl module](crate::dsl).
 //!
-//! Most operations on a `LazyFrame` consume the `LazyFrame` and return a new `LazyFrame` with the updated plan.
-//! If you need to use the same `LazyFrame` multiple times, you should [`clone`](crate::frame::LazyFrame::clone) it, and optionally
+//! [`Expr`]: crate::dsl::Expr
+//!
+//! Most operations on a [`LazyFrame`] consume the [`LazyFrame`] and return a new [`LazyFrame`] with the updated plan.
+//! If you need to use the same [`LazyFrame`] multiple times, you should [`clone`](crate::frame::LazyFrame::clone) it, and optionally
 //! [`cache`](crate::frame::LazyFrame::cache) it beforehand.
 //!
 //! ## Examples
@@ -98,7 +104,7 @@
 //! use polars_core::prelude::*;
 //! use polars_core::df;
 //! use polars_lazy::prelude::*;
-//! use polars_arrow::prelude::QuantileInterpolOptions;
+//! use arrow::legacy::prelude::QuantileInterpolOptions;
 //!
 //! fn example() -> PolarsResult<DataFrame> {
 //!     let df = df!(
@@ -124,7 +130,7 @@
 //! Below we lazily call a custom closure of type `Series => Result<Series>`. Because the closure
 //! changes the type/variant of the Series we also define the return type. This is important because
 //! due to the laziness the types should be known beforehand. Note that by applying these custom
-//! functions you have access the the whole **eager API** of the Series/ChunkedArrays.
+//! functions you have access to the whole **eager API** of the Series/ChunkedArrays.
 //!
 //!```rust
 //! #[macro_use] extern crate polars_core;
@@ -200,6 +206,7 @@ pub mod dsl;
 pub mod frame;
 pub mod physical_plan;
 pub mod prelude;
+mod scan;
 #[cfg(test)]
 mod tests;
 pub mod utils;

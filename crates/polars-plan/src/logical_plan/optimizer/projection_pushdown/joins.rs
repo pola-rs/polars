@@ -42,7 +42,6 @@ pub(super) fn process_asof_join(
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<ALogicalPlan> {
-    proj_pd.has_joins_or_unions = true;
     // n = 0 if no projections, so we don't allocate unneeded
     let n = acc_projections.len() * 2;
     let mut pushdown_left = Vec::with_capacity(n);
@@ -222,7 +221,6 @@ pub(super) fn process_join(
         );
     }
 
-    proj_pd.has_joins_or_unions = true;
     // n = 0 if no projections, so we don't allocate unneeded
     let n = acc_projections.len() * 2;
     let mut pushdown_left = Vec::with_capacity(n);

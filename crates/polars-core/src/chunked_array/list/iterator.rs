@@ -96,7 +96,7 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
 unsafe impl<'a, I: Iterator<Item = Option<ArrayBox>>> TrustedLen for AmortizedListIter<'a, I> {}
 
 impl ListChunked {
-    /// This is an iterator over a ListChunked that save allocations.
+    /// This is an iterator over a [`ListChunked`] that save allocations.
     /// A Series is:
     ///     1. [`Arc<ChunkedArray>`]
     ///     ChunkedArray is:
@@ -173,14 +173,104 @@ impl ListChunked {
     where
         V: PolarsDataType,
         F: FnMut(Option<UnstableSeries<'a>>) -> Option<K> + Copy,
-        K: ArrayFromElementIter<ArrayType = V::Array>,
+        V::Array: ArrayFromIter<Option<K>>,
     {
         // TODO! make an amortized iter that does not flatten
-
         // SAFETY: unstable series never lives longer than the iterator.
-        let element_iter = unsafe { self.amortized_iter().map(f) };
-        let array = K::array_from_iter(element_iter);
-        ChunkedArray::from_chunk_iter(self.name(), std::iter::once(array))
+        unsafe { self.amortized_iter().map(f).collect_ca(self.name()) }
+    }
+
+    pub fn for_each_amortized<'a, F>(&'a self, f: F)
+    where
+        F: FnMut(Option<UnstableSeries<'a>>),
+    {
+        // SAFETY: unstable series never lives longer than the iterator.
+        unsafe { self.amortized_iter().for_each(f) }
+    }
+
+    /// Zip with a `ChunkedArray` then apply a binary function `F` elementwise.
+    #[must_use]
+    pub fn zip_and_apply_amortized<'a, T, I, F>(&'a self, ca: &'a ChunkedArray<T>, mut f: F) -> Self
+    where
+        T: PolarsDataType,
+        &'a ChunkedArray<T>: IntoIterator<IntoIter = I>,
+        I: TrustedLen<Item = Option<T::Physical<'a>>>,
+        F: FnMut(Option<UnstableSeries<'a>>, Option<T::Physical<'a>>) -> Option<Series>,
+    {
+        if self.is_empty() {
+            return self.clone();
+        }
+        let mut fast_explode = self.null_count() == 0;
+        // SAFETY: unstable series never lives longer than the iterator.
+        let mut out: ListChunked = unsafe {
+            self.amortized_iter()
+                .zip(ca)
+                .map(|(opt_s, opt_v)| {
+                    let out = f(opt_s, opt_v);
+                    match out {
+                        Some(out) => {
+                            fast_explode &= !out.is_empty();
+                            Some(out)
+                        },
+                        None => {
+                            fast_explode = false;
+                            out
+                        },
+                    }
+                })
+                .collect_trusted()
+        };
+
+        out.rename(self.name());
+        if fast_explode {
+            out.set_fast_explode();
+        }
+        out
+    }
+
+    pub fn try_zip_and_apply_amortized<'a, T, I, F>(
+        &'a self,
+        ca: &'a ChunkedArray<T>,
+        mut f: F,
+    ) -> PolarsResult<Self>
+    where
+        T: PolarsDataType,
+        &'a ChunkedArray<T>: IntoIterator<IntoIter = I>,
+        I: TrustedLen<Item = Option<T::Physical<'a>>>,
+        F: FnMut(
+            Option<UnstableSeries<'a>>,
+            Option<T::Physical<'a>>,
+        ) -> PolarsResult<Option<Series>>,
+    {
+        if self.is_empty() {
+            return Ok(self.clone());
+        }
+        let mut fast_explode = self.null_count() == 0;
+        // SAFETY: unstable series never lives longer than the iterator.
+        let mut out: ListChunked = unsafe {
+            self.amortized_iter()
+                .zip(ca)
+                .map(|(opt_s, opt_v)| {
+                    let out = f(opt_s, opt_v)?;
+                    match out {
+                        Some(out) => {
+                            fast_explode &= !out.is_empty();
+                            Ok(Some(out))
+                        },
+                        None => {
+                            fast_explode = false;
+                            Ok(out)
+                        },
+                    }
+                })
+                .collect::<PolarsResult<_>>()?
+        };
+
+        out.rename(self.name());
+        if fast_explode {
+            out.set_fast_explode();
+        }
+        Ok(out)
     }
 
     /// Apply a closure `F` elementwise.

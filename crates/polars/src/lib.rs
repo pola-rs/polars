@@ -5,9 +5,11 @@
 //! standard for columnar data.
 //!
 //! ## Quickstart
-//! We recommend to build your queries directly with polars-lazy. This allows you to combine
+//! We recommend to build your queries directly with [polars-lazy]. This allows you to combine
 //! expression into powerful aggregations and column selections. All expressions are evaluated
 //! in parallel and your queries are optimized just in time.
+//!
+//! [polars-lazy]: polars_lazy
 //!
 //! ```no_run
 //! use polars::prelude::*;
@@ -22,7 +24,7 @@
 //!             .last()
 //!             .alias("last_foo_ranked_by_ham"),
 //!         // every expression runs in parallel
-//!         col("foo").cummin(false).alias("cumulative_min_per_group"),
+//!         col("foo").cum_min(false).alias("cumulative_min_per_group"),
 //!         // every expression runs in parallel
 //!         col("foo").reverse().implode().alias("reverse_group"),
 //!     ]);
@@ -64,27 +66,37 @@
 //! * [Lazy](crate::docs::lazy)
 //!
 //! ## Data Structures
-//! The base data structures provided by polars are `DataFrame`, `Series`, and `ChunkedArray<T>`.
+//! The base data structures provided by polars are [`DataFrame`], [`Series`], and [`ChunkedArray<T>`].
 //! We will provide a short, top-down view of these data structures.
 //!
+//! [`DataFrame`]: crate::frame::DataFrame
+//! [`Series`]: crate::series::Series
+//! [`ChunkedArray<T>`]: crate::chunked_array::ChunkedArray
+//!
 //! ### DataFrame
-//! A `DataFrame` is a 2 dimensional data structure that is backed by a `Series`, and it could be
-//! seen as an abstraction on `Vec<Series>`. Operations that can be executed on `DataFrame`s are very
+//! A [`DataFrame`] is a 2 dimensional data structure that is backed by a [`Series`], and it could be
+//! seen as an abstraction on [`Vec<Series>`]. Operations that can be executed on [`DataFrame`] are very
 //! similar to what is done in a `SQL` like query. You can `GROUP`, `JOIN`, `PIVOT` etc.
 //!
+//! [`Vec<Series>`]: std::vec::Vec
+//!
 //! ### Series
-//! `Series` are the type agnostic columnar data representation of Polars. They provide many
-//! operations out of the box, many via the [Series struct](crate::prelude::Series) and
-//! [SeriesTrait trait](crate::series::SeriesTrait). Whether or not an operation is provided
-//! by a `Series` is determined by the operation. If the operation can be done without knowing the
-//! underlying columnar type, this operation probably is provided by the `Series`. If not, you must
-//! downcast to the typed data structure that is wrapped by the `Series`. That is the `ChunkedArray<T>`.
+//! [`Series`] are the type agnostic columnar data representation of Polars. They provide many
+//! operations out of the box, many via the [`Series`] series and
+//! [`SeriesTrait`] trait. Whether or not an operation is provided
+//! by a [`Series`] is determined by the operation. If the operation can be done without knowing the
+//! underlying columnar type, this operation probably is provided by the [`Series`]. If not, you must
+//! downcast to the typed data structure that is wrapped by the [`Series`]. That is the [`ChunkedArray<T>`].
+//!
+//! [`SeriesTrait`]: crate::series::SeriesTrait
 //!
 //! ### ChunkedArray
-//! `ChunkedArray<T>` are wrappers around an arrow array, that can contain multiples chunks, e.g.
-//! `Vec<dyn ArrowArray>`. These are the root data structures of Polars, and implement many operations.
-//! Most operations are implemented by traits defined in [chunked_array::ops](crate::chunked_array::ops),
-//! or on the [ChunkedArray struct](crate::chunked_array::ChunkedArray).
+//! [`ChunkedArray<T>`] are wrappers around an arrow array, that can contain multiples chunks, e.g.
+//! [`Vec<dyn ArrowArray>`]. These are the root data structures of Polars, and implement many operations.
+//! Most operations are implemented by traits defined in [chunked_array::ops],
+//! or on the [`ChunkedArray`] struct.
+//!
+//! [`ChunkedArray`]: crate::chunked_array::ChunkedArray
 //!
 //! ## SIMD
 //! Polars / Arrow uses packed_simd to speed up kernels with SIMD operations. SIMD is an optional
@@ -95,15 +107,17 @@
 //! more verbose and less capable of building elegant composite queries. We recommend to use the Lazy API
 //! whenever you can.
 //!
-//! As neither API is async they should be wrapped in `spawn_blocking` when used in an async context
+//! As neither API is async they should be wrapped in _spawn_blocking_ when used in an async context
 //! to avoid blocking the async thread pool of the runtime.
 //!
 //! ## Expressions
 //! Polars has a powerful concept called expressions.
 //! Polars expressions can be used in various contexts and are a functional mapping of
-//! `Fn(Series) -> Series`, meaning that they have Series as input and Series as output.
-//! By looking at this functional definition, we can see that the output of an `Expr` also can serve
-//! as the input of an `Expr`.
+//! `Fn(Series) -> Series`, meaning that they have [`Series`] as input and [`Series`] as output.
+//! By looking at this functional definition, we can see that the output of an [`Expr`] also can serve
+//! as the input of an [`Expr`].
+//!
+//! [`Expr`]: polars_lazy::dsl::Expr
 //!
 //! That may sound a bit strange, so lets give an example. The following is an expression:
 //!
@@ -133,7 +147,7 @@
 //! (Note that within an expression there may be more parallelization going on).
 //!
 //! Understanding polars expressions is most important when starting with the polars library. Read more
-//! about them in the [User Guide](https://pola-rs.github.io/polars-book/user-guide/concepts/expressions).
+//! about them in the [User Guide](https://pola-rs.github.io/polars/user-guide/concepts/expressions).
 //! Though the examples given there are in python. The expressions API is almost identical and the
 //! the read should certainly be valuable to rust users as well.
 //!
@@ -150,7 +164,7 @@
 //! Unlock full potential with lazy computation. This allows query optimizations and provides Polars
 //! the full query context so that the fastest algorithm can be chosen.
 //!
-//! **[Read more in the lazy module.](crate::lazy)**
+//! **[Read more in the lazy module.](polars_lazy)**
 //!
 //! ## Compile times
 //! A DataFrame library typically consists of
@@ -166,18 +180,17 @@
 //!
 //! * `performant` - Longer compile times more fast paths.
 //! * `lazy` - Lazy API
-//!     - `lazy_regex` - Use regexes in [column selection](crate::lazy::dsl::col)
+//!     - `lazy_regex` - Use regexes in [column selection]
 //!     - `dot_diagram` - Create dot diagrams from lazy logical plans.
 //! * `sql` - Pass SQL queries to polars.
 //! * `streaming` - Be able to process datasets that are larger than RAM.
 //! * `random` - Generate arrays with randomly sampled values
-//! * `ndarray`- Convert from `DataFrame` to `ndarray`
+//! * `ndarray`- Convert from [`DataFrame`] to [ndarray](https://docs.rs/ndarray/)
 //! * `temporal` - Conversions between [Chrono](https://docs.rs/chrono/) and Polars for temporal data types
 //! * `timezones` - Activate timezone support.
-//! * `strings` - Extra string utilities for `Utf8Chunked`
-//!     - `string_justify` - `zfill`, `ljust`, `rjust`
-//!     - `string_from_radix` - `parse_int`
-//! * `object` - Support for generic ChunkedArrays called `ObjectChunked<T>` (generic over `T`).
+//! * `strings` - Extra string utilities for [`Utf8Chunked`] //!     - `string_pad` - `zfill`, `ljust`, `rjust`
+//!     - `string_to_integer` - `parse_int`
+//! * `object` - Support for generic ChunkedArrays called [`ObjectChunked<T>`] (generic over `T`).
 //!              These are downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 //! * Performance related:
 //!     - `nightly` - Several nightly only features such as SIMD and specialization.
@@ -200,51 +213,56 @@
 //!                         * zip
 //!                         * gzip
 //!
-//! * `DataFrame` operations:
+//! [`Utf8Chunked`]: crate::datatypes::Utf8Chunked
+//! [column selection]: polars_lazy::dsl::col
+//! [`ObjectChunked<T>`]: polars_core::datatypes::ObjectChunked
+//!
+//!
+//! * [`DataFrame`] operations:
 //!     - `dynamic_group_by` - Groupby based on a time window instead of predefined keys.
 //!                           Also activates rolling window group by operations.
-//!     - `sort_multiple` - Allow sorting a `DataFrame` on multiple columns
-//!     - `rows` - Create `DataFrame` from rows and extract rows from `DataFrames`.
+//!     - `sort_multiple` - Allow sorting a [`DataFrame`] on multiple columns
+//!     - `rows` - Create [`DataFrame`] from rows and extract rows from [`DataFrame`]s.
 //!                And activates `pivot` and `transpose` operations
 //!     - `asof_join` - Join ASOF, to join on nearest keys instead of exact equality match.
-//!     - `cross_join` - Create the cartesian product of two DataFrames.
+//!     - `cross_join` - Create the cartesian product of two [`DataFrame`]s.
 //!     - `semi_anti_join` - SEMI and ANTI joins.
 //!     - `group_by_list` - Allow group_by operation on keys of type List.
-//!     - `row_hash` - Utility to hash DataFrame rows to UInt64Chunked
+//!     - `row_hash` - Utility to hash [`DataFrame`] rows to [`UInt64Chunked`]
 //!     - `diagonal_concat` - Concat diagonally thereby combining different schemas.
 //!     - `horizontal_concat` - Concat horizontally and extend with null values if lengths don't match
-//!     - `dataframe_arithmetic` - Arithmetic on (Dataframe and DataFrames) and (DataFrame on Series)
-//!     - `partition_by` - Split into multiple DataFrames partitioned by groups.
-//! * `Series`/`Expression` operations:
-//!     - `is_in` - Check for membership in `Series`.
+//!     - `dataframe_arithmetic` - Arithmetic on ([`Dataframe`] and [`DataFrame`]s) and ([`DataFrame`] on [`Series`])
+//!     - `partition_by` - Split into multiple [`DataFrame`]s partitioned by groups.
+//! * [`Series`]/[`Expr`] operations:
+//!     - `is_in` - Check for membership in [`Series`].
 //!     - `zip_with` - [Zip two Series/ ChunkedArrays](crate::chunked_array::ops::ChunkZip).
-//!     - `round_series` - round underlying float types of `Series`.
+//!     - `round_series` - round underlying float types of [`Series`].
 //!     - `repeat_by` - [Repeat element in an Array N times, where N is given by another array.
-//!     - `is_first` - Check if element is first unique value.
-//!     - `is_last` - Check if element is last unique value.
-//!     - `checked_arithmetic` - checked arithmetic/ returning `None` on invalid operations.
-//!     - `dot_product` - Dot/inner product on Series and Expressions.
+//!     - `is_first_distinct` - Check if element is first unique value.
+//!     - `is_last_distinct` - Check if element is last unique value.
+//!     - `checked_arithmetic` - checked arithmetic/ returning [`None`] on invalid operations.
+//!     - `dot_product` - Dot/inner product on [`Series`] and [`Expr`].
 //!     - `concat_str` - Concat string data in linear time.
 //!     - `reinterpret` - Utility to reinterpret bits to signed/unsigned
-//!     - `take_opt_iter` - Take from a Series with `Iterator<Item=Option<usize>>`
-//!     - `mode` - [Return the most occurring value(s)](crate::chunked_array::ops::ChunkUnique::mode)
-//!     - `cum_agg` - cumsum, cummin, cummax aggregation.
-//!     - `rolling_window` - rolling window functions, like rolling_mean
+//!     - `take_opt_iter` - Take from a [`Series`] with [`Iterator<Item=Option<usize>>`](std::iter::Iterator).
+//!     - `mode` - [Return the most occurring value(s)](polars_ops::chunked_array::mode)
+//!     - `cum_agg` - [`cum_sum`], [`cum_min`], [`cum_max`] aggregation.
+//!     - `rolling_window` - rolling window functions, like [`rolling_mean`]
 //!     - `interpolate` [interpolate None values](polars_ops::chunked_array::interpolate)
 //!     - `extract_jsonpath` - [Run jsonpath queries on Utf8Chunked](https://goessner.net/articles/JsonPath/)
 //!     - `list` - List utils.
-//!         - `list_take` take sublist by multiple indices
+//!         - `list_gather` take sublist by multiple indices
 //!     - `rank` - Ranking algorithms.
 //!     - `moment` - kurtosis and skew statistics
 //!     - `ewma` - Exponential moving average windows
-//!     - `abs` - Get absolute values of Series
-//!     - `arange` - Range operation on Series
-//!     - `product` - Compute the product of a Series.
-//!     - `diff` - `diff` operation.
+//!     - `abs` - Get absolute values of [`Series`].
+//!     - `arange` - Range operation on [`Series`].
+//!     - `product` - Compute the product of a [`Series`].
+//!     - `diff` - [`diff`] operation.
 //!     - `pct_change` - Compute change percentages.
 //!     - `unique_counts` - Count unique values in expressions.
-//!     - `log` - Logarithms for `Series`.
-//!     - `list_to_struct` - Convert `List` to `Struct` dtypes.
+//!     - `log` - Logarithms for [`Series`].
+//!     - `list_to_struct` - Convert [`List`] to [`Struct`] dtypes.
 //!     - `list_count` - Count elements in lists.
 //!     - `list_eval` - Apply expressions over list elements.
 //!     - `list_sets` - Compute UNION, INTERSECTION, and DIFFERENCE on list types.
@@ -253,21 +271,31 @@
 //!     - `search_sorted` - Find indices where elements should be inserted to maintain order.
 //!     - `date_offset` - Add an offset to dates that take months and leap years into account.
 //!     - `trigonometry` - Trigonometric functions.
-//!     - `sign` - Compute the element-wise sign of a Series.
+//!     - `sign` - Compute the element-wise sign of a [`Series`].
 //!     - `propagate_nans` - NaN propagating min/max aggregations.
 //!     - `extract_groups` - Extract multiple regex groups from strings.
-//! * `DataFrame` pretty printing
-//!     - `fmt` - Activate DataFrame formatting
+//!     - `cov` - Covariance and correlation functions.
+//! * [`DataFrame`] pretty printing
+//!     - `fmt` - Activate [`DataFrame`] formatting
+//!
+//! [`UInt64Chunked`]: crate::datatypes::UInt64Chunked
+//! [`cum_sum`]: polars_ops::prelude::cum_sum
+//! [`cum_min`]: polars_ops::prelude::cum_min
+//! [`cum_max`]: polars_ops::prelude::cum_max
+//! [`rolling_mean`]: crate::series::Series#method.rolling_mean
+//! [`diff`]: polars_ops::prelude::diff
+//! [`List`]: crate::datatypes::DataType::List
+//! [`Struct`]: crate::datatypes::DataType::Struct
 //!
 //! ## Compile times and opt-in data types
-//! As mentioned above, Polars `Series` are wrappers around
-//! `ChunkedArray<T>` without the generic parameter `T`.
+//! As mentioned above, Polars [`Series`] are wrappers around
+//! [`ChunkedArray<T>`] without the generic parameter `T`.
 //! To get rid of the generic parameter, all the possible value of `T` are compiled
-//! for `Series`. This gets more expensive the more types you want for a `Series`. In order to reduce
-//! the compile times, we have decided to default to a minimal set of types and make more `Series` types
+//! for [`Series`]. This gets more expensive the more types you want for a [`Series`]. In order to reduce
+//! the compile times, we have decided to default to a minimal set of types and make more [`Series`] types
 //! opt-in.
 //!
-//! Note that if you get strange compile time errors, you probably need to opt-in for that `Series` dtype.
+//! Note that if you get strange compile time errors, you probably need to opt-in for that [`Series`] dtype.
 //! The opt-in dtypes are:
 //!
 //! | data type               | feature flag      |
@@ -363,15 +391,14 @@
 //! * `POLARS_PARTITION_UNIQUE_COUNT` -> at which (estimated) key count a partitioned group_by should run.
 //!                                          defaults to `1000`, any higher cardinality will run default group_by.
 //! * `POLARS_FORCE_PARTITION` -> force partitioned group_by if the keys and aggregations allow it.
-//! * `POLARS_ALLOW_EXTENSION` -> allows for `[ObjectChunked<T>]` to be used in arrow, opening up possibilities like using
+//! * `POLARS_ALLOW_EXTENSION` -> allows for [`ObjectChunked<T>`] to be used in arrow, opening up possibilities like using
 //!                               `T` in complex lazy expressions. However this does require `unsafe` code allow this.
 //! * `POLARS_NO_PARQUET_STATISTICS` -> if set, statistics in parquet files are ignored.
 //! * `POLARS_PANIC_ON_ERR` -> panic instead of returning an Error.
 //! * `POLARS_NO_CHUNKED_JOIN` -> force rechunk before joins.
 //!
-//!
 //! ## User Guide
-//! If you want to read more, [check the User Guide](https://pola-rs.github.io/polars-book/).
+//! If you want to read more, [check the User Guide](https://pola-rs.github.io/polars/).
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![allow(ambiguous_glob_reexports)]
 pub mod docs;
@@ -382,8 +409,8 @@ pub mod prelude;
 pub mod sql;
 
 pub use polars_core::{
-    apply_method_all_arrow_series, chunked_array, datatypes, df, doc, error, frame, functions,
-    series, testing,
+    apply_method_all_arrow_series, chunked_array, datatypes, df, error, frame, functions, series,
+    testing,
 };
 #[cfg(feature = "dtype-categorical")]
 pub use polars_core::{enable_string_cache, using_string_cache};

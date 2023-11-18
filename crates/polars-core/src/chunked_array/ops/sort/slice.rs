@@ -1,4 +1,4 @@
-use polars_arrow::kernels::rolling::compare_fn_nan_max;
+use arrow::legacy::kernels::rolling::compare_fn_nan_max;
 
 use crate::prelude::*;
 

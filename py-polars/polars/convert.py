@@ -29,7 +29,7 @@ def from_dict(
     """
     Construct a DataFrame from a dictionary of sequences.
 
-    This operation clones data, unless you pass a ``{str: pl.Series,}`` dict.
+    This operation clones data, unless you pass a `{str: pl.Series,}` dict.
 
     Parameters
     ----------
@@ -101,7 +101,7 @@ def from_dicts(
         to rename after loading the frame.
 
         If you want to drop some of the fields found in the input dictionaries, a
-        _partial_ schema can be declared, in which case omitted fields will not be
+        *partial* schema can be declared, in which case omitted fields will not be
         loaded. Similarly, you can extend the loaded frame with empty columns by
         adding them to the schema.
     schema_overrides : dict, default None
@@ -130,7 +130,7 @@ def from_dicts(
     │ 3   ┆ 6   │
     └─────┴─────┘
 
-    Declaring a partial ``schema`` will drop the omitted columns.
+    Declaring a partial `schema` will drop the omitted columns.
 
     >>> df = pl.from_dicts(data, schema={"a": pl.Int32})
     >>> df
@@ -145,7 +145,7 @@ def from_dicts(
     │ 3   │
     └─────┘
 
-    Can also use the ``schema`` param to extend the loaded columns with one
+    Can also use the `schema` param to extend the loaded columns with one
     or more additional (empty) columns that are not present in the input dicts:
 
     >>> pl.from_dicts(
@@ -286,8 +286,14 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
                 coldata.pop(idx)
 
     # init cols as utf8 Series, handle "null" -> None, create schema from repr dtype
-    data = [pl.Series([(None if v == "null" else v) for v in cd]) for cd in coldata]
+    data = [
+        pl.Series([(None if v == "null" else v) for v in cd], dtype=Utf8)
+        for cd in coldata
+    ]
     schema = dict(zip(headers, (dtype_short_repr_to_dtype(d) for d in dtypes)))
+    if schema and data and (n_extend_cols := (len(schema) - len(data))) > 0:
+        empty_data = [None] * len(data[0])
+        data.extend((pl.Series(empty_data, dtype=Utf8)) for _ in range(n_extend_cols))
     for dtype in set(schema.values()):
         if dtype in (List, Struct, Object):
             raise NotImplementedError(
@@ -307,6 +313,8 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
                 df.write_csv(file=buf)
                 df = read_csv(buf, new_columns=df.columns, try_parse_dates=True)
             return df
+    elif schema and not data:
+        return df.cast(schema)  # type: ignore[arg-type]
     else:
         return _cast_repr_strings_with_schema(df, schema)
 
@@ -404,15 +412,10 @@ def from_repr(tbl: str) -> DataFrame | Series:
     │ 123456780       ┆ 9876543210        ┆ a:b:c ┆ 2023-03-25 10:56:59.663053 JST │
     │ 803065983       ┆ 2055938745        ┆ x:y:z ┆ 2023-03-25 12:38:18.050545 JST │
     └─────────────────┴───────────────────┴───────┴────────────────────────────────┘
-    >>> df.schema
-    {'source_actor_id': Int32,
-     'source_channel_id': Int64,
-     'ident': Utf8,
-     'timestamp': Datetime(time_unit='us', time_zone='Asia/Tokyo')}
 
     From Series repr:
 
-    >>> srs = pl.from_repr(
+    >>> s = pl.from_repr(
     ...     '''
     ...     shape: (3,)
     ...     Series: 's' [bool]
@@ -423,7 +426,7 @@ def from_repr(tbl: str) -> DataFrame | Series:
     ...     ]
     ...     '''
     ... )
-    >>> srs.to_list()
+    >>> s.to_list()
     [True, False, True]
 
     """
@@ -672,7 +675,7 @@ def from_pandas(
     rechunk : bool, default True
         Make sure that all data is in contiguous memory.
     nan_to_null : bool, default True
-        If data contains `NaN` values PyArrow will convert the ``NaN`` to ``None``
+        If data contains `NaN` values PyArrow will convert the `NaN` to `None`
     include_index : bool, default False
         Load any non-default pandas indexes as columns.
 

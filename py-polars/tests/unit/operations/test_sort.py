@@ -74,7 +74,7 @@ def test_sort_by_exprs() -> None:
 
 def test_arg_sort_nulls() -> None:
     a = pl.Series("a", [1.0, 2.0, 3.0, None, None])
-    assert a.arg_sort(nulls_last=True).to_list() == [0, 1, 2, 4, 3]
+    assert a.arg_sort(nulls_last=True).to_list() == [0, 1, 2, 3, 4]
     assert a.arg_sort(nulls_last=False).to_list() == [3, 4, 0, 1, 2]
 
     assert a.to_frame().sort(by="a", nulls_last=False).to_series().to_list() == [
@@ -124,7 +124,7 @@ def test_sort_by_exps_nulls_last() -> None:
         }
     ).with_row_count()
 
-    assert df.sort(pl.col("a") ** 2, nulls_last=True).to_dict(False) == {
+    assert df.sort(pl.col("a") ** 2, nulls_last=True).to_dict(as_series=False) == {
         "row_nr": [0, 4, 2, 1, 3],
         "a": [1, 1, -2, 3, None],
     }
@@ -143,12 +143,12 @@ def test_sort_aggregation_fast_paths() -> None:
 
     expected = df.select(
         [
-            pl.all().max().suffix("_max"),
-            pl.all().min().suffix("_min"),
+            pl.all().max().name.suffix("_max"),
+            pl.all().min().name.suffix("_min"),
         ]
     )
 
-    assert expected.to_dict(False) == {
+    assert expected.to_dict(as_series=False) == {
         "a_max": [3],
         "b_max": [3],
         "c_max": [3],
@@ -168,11 +168,11 @@ def test_sort_aggregation_fast_paths() -> None:
                     pl.all()
                     .sort(descending=descending, nulls_last=null_last)
                     .max()
-                    .suffix("_max"),
+                    .name.suffix("_max"),
                     pl.all()
                     .sort(descending=descending, nulls_last=null_last)
                     .min()
-                    .suffix("_min"),
+                    .name.suffix("_min"),
                 ]
             )
             assert_frame_equal(out, expected)
@@ -190,11 +190,11 @@ def test_sorted_join_and_dtypes() -> None:
         pl.col("a").cast(dt).set_sorted()
     )
 
-    assert df_a.join(df_b, on="a", how="inner").to_dict(False) == {
+    assert df_a.join(df_b, on="a", how="inner").to_dict(as_series=False) == {
         "row_nr": [1, 2, 3, 5],
         "a": [-2, 3, 3, 10],
     }
-    assert df_a.join(df_b, on="a", how="left").to_dict(False) == {
+    assert df_a.join(df_b, on="a", how="left").to_dict(as_series=False) == {
         "row_nr": [0, 1, 2, 3, 4, 5],
         "a": [-5, -2, 3, 3, 9, 10],
     }
@@ -265,7 +265,7 @@ def test_arg_sort_rank_nans() -> None:
             ]
         )
         .select(["rank", "arg_sort"])
-    ).to_dict(False) == {"rank": [1.0, 2.0], "arg_sort": [0, 1]}
+    ).to_dict(as_series=False) == {"rank": [1.0, 2.0], "arg_sort": [0, 1]}
 
 
 def test_top_k() -> None:
@@ -275,11 +275,27 @@ def test_top_k() -> None:
     assert_series_equal(s.top_k(3), pl.Series("a", [8, 5, 3]))
     assert_series_equal(s.bottom_k(4), pl.Series("a", [1, 2, 3, 5]))
 
+    assert_series_equal(s.top_k(pl.Series([3])), pl.Series("a", [8, 5, 3]))
+    assert_series_equal(s.bottom_k(pl.Series([4])), pl.Series("a", [1, 2, 3, 5]))
+
     # 5886
-    df = pl.DataFrame({"test": [2, 4, 1, 3]})
+    df = pl.DataFrame(
+        {
+            "test": [2, 4, 1, 3],
+            "val": [2, 4, 9, 3],
+        }
+    )
     assert_frame_equal(
         df.select(pl.col("test").top_k(10)),
         pl.DataFrame({"test": [4, 3, 2, 1]}),
+    )
+
+    assert_frame_equal(
+        df.select(
+            top_k=pl.col("test").top_k(pl.col("val").min()),
+            bottom_k=pl.col("test").bottom_k(pl.col("val").min()),
+        ),
+        pl.DataFrame({"top_k": [4, 3], "bottom_k": [1, 2]}),
     )
 
     # dataframe
@@ -319,7 +335,7 @@ def test_sorted_flag_unset_by_arithmetic_4937() -> None:
             (pl.col("price") * pl.col("mask")).max().alias("pmax"),
             (pl.col("price") * pl.col("mask")).min().alias("pmin"),
         ]
-    ).sort("ts").to_dict(False) == {
+    ).sort("ts").to_dict(as_series=False) == {
         "ts": [0, 1],
         "pmax": [3.6, 3.5],
         "pmin": [3.6, 0.0],
@@ -334,7 +350,7 @@ def test_unset_sorted_flag_after_extend() -> None:
     assert not df1["Add"].flags["SORTED_ASC"]
     df = df1.group_by("Add").agg([pl.col("Batch").min()]).sort("Add")
     assert df["Add"].flags["SORTED_ASC"]
-    assert df.to_dict(False) == {"Add": [37, 41], "Batch": [48, 49]}
+    assert df.to_dict(as_series=False) == {"Add": [37, 41], "Batch": [48, 49]}
 
 
 def test_set_sorted_schema() -> None:
@@ -351,7 +367,7 @@ def test_sort_slice_fast_path_5245() -> None:
         }
     ).lazy()
 
-    assert df.sort("foo").limit(1).select("foo").collect().to_dict(False) == {
+    assert df.sort("foo").limit(1).select("foo").collect().to_dict(as_series=False) == {
         "foo": ["a"]
     }
 
@@ -412,7 +428,7 @@ def test_sort_by_in_over_5499() -> None:
             pl.col("idx").sort_by("a").over("group").alias("sorted_1"),
             pl.col("idx").shift(1).sort_by("a").over("group").alias("sorted_2"),
         ]
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "sorted_1": [0, 2, 1, 4, 5, 3],
         "sorted_2": [None, 1, 0, 3, 4, None],
     }
@@ -437,7 +453,7 @@ def test_merge_sorted() -> None:
     )
     out = df_a.merge_sorted(df_b, key="range")
     assert out["range"].is_sorted()
-    assert out.to_dict(False) == {
+    assert out.to_dict(as_series=False) == {
         "row_nr": [0, 0, 1, 2, 10, 3, 4, 20, 5, 6, 30, 7, 8, 40, 9, 10, 50, 11],
         "range": [
             datetime(2022, 1, 1, 0, 0),
@@ -497,7 +513,7 @@ def test_sort_args() -> None:
 
 def test_sort_type_coercion_6892() -> None:
     df = pl.DataFrame({"a": [2, 1], "b": [2, 3]})
-    assert df.lazy().sort(pl.col("a") // 2).collect().to_dict(False) == {
+    assert df.lazy().sort(pl.col("a") // 2).collect().to_dict(as_series=False) == {
         "a": [1, 2],
         "b": [3, 2],
     }
@@ -541,18 +557,18 @@ def test_sort_by_logical() -> None:
     )
     assert df.group_by("name").agg([pl.col("num").sort_by(["dt1", "dt2"])]).sort(
         "name"
-    ).to_dict(False) == {"name": ["a", "b"], "num": [[3, 1], [4]]}
+    ).to_dict(as_series=False) == {"name": ["a", "b"], "num": [[3, 1], [4]]}
 
 
 def test_limit_larger_than_sort() -> None:
-    assert pl.LazyFrame({"a": [1]}).sort("a").limit(30).collect().to_dict(False) == {
-        "a": [1]
-    }
+    assert pl.LazyFrame({"a": [1]}).sort("a").limit(30).collect().to_dict(
+        as_series=False
+    ) == {"a": [1]}
 
 
 def test_sort_by_struct() -> None:
     df = pl.Series([{"a": 300}, {"a": 20}, {"a": 55}]).to_frame("st").with_row_count()
-    assert df.sort("st").to_dict(False) == {
+    assert df.sort("st").to_dict(as_series=False) == {
         "row_nr": [1, 2, 0],
         "st": [{"a": 20}, {"a": 55}, {"a": 300}],
     }
@@ -644,24 +660,11 @@ def test_sort_top_k_fast_path() -> None:
         }
     )
     # this triggers fast path as head is equal to n-rows
-    assert df.lazy().sort("b").head(3).collect().to_dict(False) == {
+    assert df.lazy().sort("b").head(3).collect().to_dict(as_series=False) == {
         "a": [None, 2, 1],
         "b": [4.0, 5.0, 6.0],
         "c": ["b", "c", "a"],
     }
-
-
-def test_sorted_flag_group_by_dynamic() -> None:
-    df = pl.DataFrame({"ts": [date(2020, 1, 1), date(2020, 1, 2)], "val": [1, 2]})
-    assert (
-        (
-            df.group_by_dynamic(pl.col("ts").set_sorted(), every="1d").agg(
-                pl.col("val").sum()
-            )
-        )
-        .to_series()
-        .flags["SORTED_ASC"]
-    )
 
 
 def test_top_k_9385() -> None:
@@ -695,3 +698,71 @@ def test_sorted_update_flags_10327() -> None:
             pl.Series("a", [], dtype=pl.Int64).to_frame(),
         ]
     )["a"].to_list() == [1, 2]
+
+
+def test_sort_by_11653() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [0, 0, 0, 0, 0, 1],
+            "weights": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            "other": [0.8, 0.4, 0.5, 0.6, 0.7, 0.8],
+        }
+    )
+
+    assert df.group_by("id").agg(
+        (pl.col("weights") / pl.col("weights").sum())
+        .sort_by("other")
+        .sum()
+        .alias("sort_by"),
+    ).sort("id").to_dict(as_series=False) == {"id": [0, 1], "sort_by": [1.0, 1.0]}
+
+
+def test_sort_with_null_12139() -> None:
+    df = pl.DataFrame(
+        {
+            "bool": [True, False, None, True, False],
+            "float": [1.0, 2.0, 3.0, 4.0, 5.0],
+        }
+    )
+
+    assert df.sort("bool", descending=False, nulls_last=False).to_dict(
+        as_series=False
+    ) == {
+        "bool": [None, False, False, True, True],
+        "float": [3.0, 2.0, 5.0, 1.0, 4.0],
+    }
+
+    assert df.sort("bool", descending=False, nulls_last=True).to_dict(
+        as_series=False
+    ) == {
+        "bool": [False, False, True, True, None],
+        "float": [2.0, 5.0, 1.0, 4.0, 3.0],
+    }
+
+    assert df.sort("bool", descending=True, nulls_last=True).to_dict(
+        as_series=False
+    ) == {
+        "bool": [True, True, False, False, None],
+        "float": [1.0, 4.0, 2.0, 5.0, 3.0],
+    }
+
+    assert df.sort("bool", descending=True, nulls_last=False).to_dict(
+        as_series=False
+    ) == {
+        "bool": [None, True, True, False, False],
+        "float": [3.0, 1.0, 4.0, 2.0, 5.0],
+    }
+
+
+def test_sort_with_null_12272() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1.0, 1.0, 1.0],
+            "b": [2.0, -1.0, None],
+        }
+    )
+    out = df.select((pl.col("a") * pl.col("b")).alias("product"))
+
+    assert out.sort("product").to_dict(as_series=False) == {
+        "product": [None, -1.0, 2.0]
+    }

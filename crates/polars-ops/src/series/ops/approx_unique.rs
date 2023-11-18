@@ -4,7 +4,7 @@ use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
 
 #[cfg(feature = "approx_unique")]
-use crate::series::HyperLogLog;
+use crate::series::ops::approx_algo::HyperLogLog;
 
 fn approx_n_unique_ca<'a, T>(ca: &'a ChunkedArray<T>) -> PolarsResult<Series>
 where
@@ -58,7 +58,7 @@ fn dispatcher(s: &Series) -> PolarsResult<Series> {
 ///  let s = Series::new("s", [1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3]);
 ///
 ///   let approx_count = approx_n_unique(&s).unwrap();
-///   dbg!(approx_count);
+///   println!("{}", approx_count);
 /// # }
 /// ```
 /// Outputs:

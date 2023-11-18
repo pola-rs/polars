@@ -81,8 +81,8 @@ impl ALogicalPlanNode {
         self.with_arena(|arena| arena.get(self.node).schema(arena))
     }
 
-    /// Take a `Node` and convert it an `ALogicalPlanNode` and call
-    /// `F` with `self` and the new created `ALogicalPlanNode`
+    /// Take a [`Node`] and convert it an [`ALogicalPlanNode`] and call
+    /// `F` with `self` and the new created [`ALogicalPlanNode`]
     pub fn binary<F, T>(&self, other: Node, op: F) -> T
     where
         F: FnOnce(&ALogicalPlanNode, &ALogicalPlanNode) -> T,

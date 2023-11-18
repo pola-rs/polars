@@ -4,6 +4,7 @@ use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
 use chrono::format::{DelayedFormat, StrftimeItems};
+use chrono::NaiveDate;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone as TimeZoneTrait;
 #[cfg(feature = "timezones")]

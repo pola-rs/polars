@@ -15,6 +15,7 @@ pub enum Selector {
 }
 
 impl Selector {
+    #[cfg(feature = "meta")]
     pub(crate) fn new(e: Expr) -> Self {
         Self::Root(Box::new(e))
     }

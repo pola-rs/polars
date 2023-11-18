@@ -17,8 +17,10 @@ pub(super) fn time_range(
     ensure_range_bounds_contain_exactly_one_value(start, end)?;
 
     let dtype = DataType::Time;
-    let start = temporal_series_to_i64_scalar(&start.cast(&dtype)?);
-    let end = temporal_series_to_i64_scalar(&end.cast(&dtype)?);
+    let start = temporal_series_to_i64_scalar(&start.cast(&dtype)?)
+        .ok_or_else(|| polars_err!(ComputeError: "start is an out-of-range time."))?;
+    let end = temporal_series_to_i64_scalar(&end.cast(&dtype)?)
+        .ok_or_else(|| polars_err!(ComputeError: "end is an out-of-range time."))?;
 
     let out = time_range_impl("time", start, end, interval, closed)?;
     Ok(out.cast(&dtype).unwrap().into_series())

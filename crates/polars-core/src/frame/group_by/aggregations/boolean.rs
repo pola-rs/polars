@@ -2,7 +2,7 @@ use super::*;
 
 pub fn _agg_helper_idx_bool<F>(groups: &GroupsIdx, f: F) -> Series
 where
-    F: Fn((IdxSize, &Vec<IdxSize>)) -> Option<bool> + Send + Sync,
+    F: Fn((IdxSize, &IdxVec)) -> Option<bool> + Send + Sync,
 {
     let ca: BooleanChunked = POOL.install(|| groups.into_par_iter().map(f).collect());
     ca.into_series()

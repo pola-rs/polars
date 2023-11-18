@@ -60,29 +60,6 @@ where
     }
 }
 
-#[inline]
-fn unsigned_interp<T>(low: T, high: T, steps: IdxSize, steps_n: T, av: &mut Vec<T>)
-where
-    T: Sub<Output = T>
-        + Mul<Output = T>
-        + Add<Output = T>
-        + Div<Output = T>
-        + NumCast
-        + PartialOrd
-        + Copy,
-{
-    if high >= low {
-        signed_interp::<T>(low, high, steps, steps_n, av)
-    } else {
-        let diff = low - high;
-        for step_i in (1..steps).rev() {
-            let step_i: T = NumCast::from(step_i).unwrap();
-            let v = linear_itp(high, step_i, diff, steps_n);
-            av.push(v)
-        }
-    }
-}
-
 fn interpolate_impl<T, I>(chunked_arr: &ChunkedArray<T>, interpolation_branch: I) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -196,34 +173,46 @@ fn interpolate_linear(s: &Series) -> Series {
             let logical = s.dtype();
 
             let s = s.to_physical_repr();
-            let out = match s.dtype() {
-                #[cfg(feature = "dtype-i8")]
-                DataType::Int8 => linear_interp_signed(s.i8().unwrap()),
-                #[cfg(feature = "dtype-i16")]
-                DataType::Int16 => linear_interp_signed(s.i16().unwrap()),
-                DataType::Int32 => linear_interp_signed(s.i32().unwrap()),
-                DataType::Int64 => linear_interp_signed(s.i64().unwrap()),
-                #[cfg(feature = "dtype-u8")]
-                DataType::UInt8 => linear_interp_unsigned(s.u8().unwrap()),
-                #[cfg(feature = "dtype-u16")]
-                DataType::UInt16 => linear_interp_unsigned(s.u16().unwrap()),
-                DataType::UInt32 => linear_interp_unsigned(s.u32().unwrap()),
-                DataType::UInt64 => linear_interp_unsigned(s.u64().unwrap()),
-                DataType::Float32 => linear_interp_unsigned(s.f32().unwrap()),
-                DataType::Float64 => linear_interp_unsigned(s.f64().unwrap()),
-                _ => s.as_ref().clone(),
+
+            let out = if matches!(
+                logical,
+                DataType::Date | DataType::Datetime(_, _) | DataType::Duration(_) | DataType::Time
+            ) {
+                match s.dtype() {
+                    // Datetime, Time, or Duration
+                    DataType::Int64 => linear_interp_signed(s.i64().unwrap()),
+                    // Date
+                    DataType::Int32 => linear_interp_signed(s.i32().unwrap()),
+                    _ => unreachable!(),
+                }
+            } else {
+                match s.dtype() {
+                    DataType::Float32 => linear_interp_signed(s.f32().unwrap()),
+                    DataType::Float64 => linear_interp_signed(s.f64().unwrap()),
+                    DataType::Int8
+                    | DataType::Int16
+                    | DataType::Int32
+                    | DataType::Int64
+                    | DataType::UInt8
+                    | DataType::UInt16
+                    | DataType::UInt32
+                    | DataType::UInt64 => {
+                        linear_interp_signed(s.cast(&DataType::Float64).unwrap().f64().unwrap())
+                    },
+                    _ => s.as_ref().clone(),
+                }
             };
-            out.cast(logical).unwrap()
+            match logical {
+                DataType::Date
+                | DataType::Datetime(_, _)
+                | DataType::Duration(_)
+                | DataType::Time => out.cast(logical).unwrap(),
+                _ => out,
+            }
         },
     }
 }
 
-fn linear_interp_unsigned<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Series
-where
-    ChunkedArray<T>: IntoSeries,
-{
-    interpolate_impl(ca, unsigned_interp::<T::Native>).into_series()
-}
 fn linear_interp_signed<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Series
 where
     ChunkedArray<T>: IntoSeries,
@@ -253,26 +242,34 @@ mod test {
     fn test_interpolate() {
         let ca = UInt32Chunked::new("", &[Some(1), None, None, Some(4), Some(5)]);
         let out = interpolate(&ca.into_series(), InterpolationMethod::Linear);
-        let out = out.u32().unwrap();
+        let out = out.f64().unwrap();
         assert_eq!(
             Vec::from(out),
-            &[Some(1), Some(2), Some(3), Some(4), Some(5)]
+            &[Some(1.0), Some(2.0), Some(3.0), Some(4.0), Some(5.0)]
         );
 
         let ca = UInt32Chunked::new("", &[None, Some(1), None, None, Some(4), Some(5)]);
         let out = interpolate(&ca.into_series(), InterpolationMethod::Linear);
-        let out = out.u32().unwrap();
+        let out = out.f64().unwrap();
         assert_eq!(
             Vec::from(out),
-            &[None, Some(1), Some(2), Some(3), Some(4), Some(5)]
+            &[None, Some(1.0), Some(2.0), Some(3.0), Some(4.0), Some(5.0)]
         );
 
         let ca = UInt32Chunked::new("", &[None, Some(1), None, None, Some(4), Some(5), None]);
         let out = interpolate(&ca.into_series(), InterpolationMethod::Linear);
-        let out = out.u32().unwrap();
+        let out = out.f64().unwrap();
         assert_eq!(
             Vec::from(out),
-            &[None, Some(1), Some(2), Some(3), Some(4), Some(5), None]
+            &[
+                None,
+                Some(1.0),
+                Some(2.0),
+                Some(3.0),
+                Some(4.0),
+                Some(5.0),
+                None
+            ]
         );
         let ca = UInt32Chunked::new("", &[None, Some(1), None, None, Some(4), Some(5), None]);
         let out = interpolate(&ca.into_series(), InterpolationMethod::Nearest);
@@ -287,8 +284,11 @@ mod test {
     fn test_interpolate_decreasing_unsigned() {
         let ca = UInt32Chunked::new("", &[Some(4), None, None, Some(1)]);
         let out = interpolate(&ca.into_series(), InterpolationMethod::Linear);
-        let out = out.u32().unwrap();
-        assert_eq!(Vec::from(out), &[Some(4), Some(3), Some(2), Some(1)])
+        let out = out.f64().unwrap();
+        assert_eq!(
+            Vec::from(out),
+            &[Some(4.0), Some(3.0), Some(2.0), Some(1.0)]
+        )
     }
 
     #[test]

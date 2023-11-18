@@ -3,13 +3,18 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars.series.utils import expr_dispatch
-from polars.utils.deprecation import deprecate_renamed_function
+from polars.utils.deprecation import (
+    deprecate_renamed_function,
+    deprecate_renamed_parameter,
+)
 
 if TYPE_CHECKING:
     from polars import Expr, Series
     from polars.polars import PySeries
     from polars.type_aliases import (
         Ambiguous,
+        IntoExpr,
+        IntoExprColumn,
         PolarsDataType,
         PolarsTemporalType,
         TimeUnit,
@@ -42,7 +47,7 @@ class StringNameSpace:
         format
             Format to use for conversion. Refer to the `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for the full specification. Example: ``"%Y-%m-%d"``.
+            for the full specification. Example: `"%Y-%m-%d"`.
             If set to None (default), the format is inferred from the data.
         strict
             Raise an error if any conversion fails.
@@ -51,7 +56,7 @@ class StringNameSpace:
             in the target string.
 
             .. note::
-                Using ``exact=False`` introduces a performance penalty - cleaning your
+                Using `exact=False` introduces a performance penalty - cleaning your
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the conversion.
@@ -91,13 +96,13 @@ class StringNameSpace:
         format
             Format to use for conversion. Refer to the `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for the full specification. Example: ``"%Y-%m-%d %H:%M:%S"``.
+            for the full specification. Example: `"%Y-%m-%d %H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
         time_unit : {None, 'us', 'ns', 'ms'}
             Unit of time for the resulting Datetime column. If set to None (default),
             the time unit is inferred from the format string if given, eg:
-            ``"%F %T%.3f"`` => ``Datetime("ms")``. If no fractional second component is
-            found, the default is ``"us"``.
+            `"%F %T%.3f"` => `Datetime("ms")`. If no fractional second component is
+            found, the default is `"us"`.
         time_zone
             Time zone for the resulting Datetime column.
         strict
@@ -107,7 +112,7 @@ class StringNameSpace:
             in the target string.
 
             .. note::
-                Using ``exact=False`` introduces a performance penalty - cleaning your
+                Using `exact=False` introduces a performance penalty - cleaning your
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted datetimes to apply the conversion.
@@ -117,24 +122,24 @@ class StringNameSpace:
 
             .. deprecated:: 0.18.0
                 This is now a no-op, you can safely remove it.
-                Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
+                Offset-naive strings are parsed as `pl.Datetime(time_unit)`,
                 and offset-aware strings are converted to
-                ``pl.Datetime(time_unit, "UTC")``.
+                `pl.Datetime(time_unit, "UTC")`.
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
-            - ``None`` (default): raise
-            - ``True``: use the earliest datetime
-            - ``False``: use the latest datetime
+            - `None` (default): raise
+            - `True`: use the earliest datetime
+            - `False`: use the latest datetime
 
             .. deprecated:: 0.19.0
                 Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
-            - ``'raise'`` (default): raise
-            - ``'earliest'``: use the earliest datetime
-            - ``'latest'``: use the latest datetime
+            - `'raise'` (default): raise
+            - `'earliest'`: use the earliest datetime
+            - `'latest'`: use the latest datetime
 
         Examples
         --------
@@ -163,7 +168,7 @@ class StringNameSpace:
         format
             Format to use for conversion. Refer to the `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for the full specification. Example: ``"%H:%M:%S"``.
+            for the full specification. Example: `"%H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
         strict
             Raise an error if any conversion fails.
@@ -205,7 +210,7 @@ class StringNameSpace:
         format
             Format to use for conversion. Refer to the `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for the full specification. Example: ``"%Y-%m-%d %H:%M:%S"``.
+            for the full specification. Example: `"%Y-%m-%d %H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
         strict
             Raise an error if any conversion fails.
@@ -214,31 +219,31 @@ class StringNameSpace:
             in the target string. Conversion to the Time type is always exact.
 
             .. note::
-                Using ``exact=False`` introduces a performance penalty - cleaning your
+                Using `exact=False` introduces a performance penalty - cleaning your
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
-            - ``None`` (default): raise
-            - ``True``: use the earliest datetime
-            - ``False``: use the latest datetime
+            - `None` (default): raise
+            - `True`: use the earliest datetime
+            - `False`: use the latest datetime
 
             .. deprecated:: 0.19.0
                 Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
-            - ``'raise'`` (default): raise
-            - ``'earliest'``: use the earliest datetime
-            - ``'latest'``: use the latest datetime
+            - `'raise'` (default): raise
+            - `'earliest'`: use the earliest datetime
+            - `'latest'`: use the latest datetime
 
         Notes
         -----
         When converting to a Datetime type, the time unit is inferred from the format
-        string if given, eg: ``"%F %T%.3f"`` => ``Datetime("ms")``. If no fractional
-        second component is found, the default is ``"us"``.
+        string if given, eg: `"%F %T%.3f"` => `Datetime("ms")`. If no fractional
+        second component is found, the default is `"us"`.
 
         Examples
         --------
@@ -289,7 +294,7 @@ class StringNameSpace:
         """
         Convert a Utf8 column into a Decimal column.
 
-        This method infers the needed parameters ``precision`` and ``scale``.
+        This method infers the needed parameters `precision` and `scale`.
 
         Parameters
         ----------
@@ -303,78 +308,89 @@ class StringNameSpace:
         ... )
         >>> s.str.to_decimal()
         shape: (7,)
-        Series: '' [decimal[2]]
+        Series: '' [decimal[*,2]]
         [
             40.12
             3420.13
             120134.19
             3212.98
-            12.9
+            12.90
             143.09
-            143.9
+            143.90
         ]
 
         """
 
-    def lengths(self) -> Series:
+    def len_bytes(self) -> Series:
         """
-        Get length of the string values in the Series (as number of bytes).
-
-        Notes
-        -----
-        The returned lengths are equal to the number of bytes in the UTF8 string. If you
-        need the length in terms of the number of characters, use ``n_chars`` instead.
+        Return the length of each string as the number of bytes.
 
         Returns
         -------
         Series
             Series of data type :class:`UInt32`.
 
+        See Also
+        --------
+        len_chars
+
+        Notes
+        -----
+        When working with non-ASCII text, the length in bytes is not the same as the
+        length in characters. You may want to use :func:`len_chars` instead.
+        Note that :func:`len_bytes` is much more performant (_O(1)_) than
+        :func:`len_chars` (_O(n)_).
+
         Examples
         --------
-        >>> s = pl.Series(["Café", None, "345", "東京"])
-        >>> s.str.lengths()
+        >>> s = pl.Series(["Café", "345", "東京", None])
+        >>> s.str.len_bytes()
         shape: (4,)
         Series: '' [u32]
         [
             5
-            null
             3
             6
+            null
         ]
 
         """
 
-    def n_chars(self) -> Series:
+    def len_chars(self) -> Series:
         """
-        Get length of the string values in the Series (as number of chars).
+        Return the length of each string as the number of characters.
 
         Returns
         -------
         Series
             Series of data type :class:`UInt32`.
 
+        See Also
+        --------
+        len_bytes
+
         Notes
         -----
-        If you know that you are working with ASCII text, ``lengths`` will be
-        equivalent, and faster (returns length in terms of the number of bytes).
+        When working with ASCII text, use :func:`len_bytes` instead to achieve
+        equivalent output with much better performance:
+        :func:`len_bytes` runs in _O(1)_, while :func:`len_chars` runs in (_O(n)_).
 
         Examples
         --------
-        >>> s = pl.Series(["Café", None, "345", "東京"])
-        >>> s.str.n_chars()
+        >>> s = pl.Series(["Café", "345", "東京", None])
+        >>> s.str.len_chars()
         shape: (4,)
         Series: '' [u32]
         [
             4
-            null
             3
             2
+            null
         ]
 
         """
 
-    def concat(self, delimiter: str = "-") -> Series:
+    def concat(self, delimiter: str = "-", *, ignore_nulls: bool = True) -> Series:
         """
         Vertically concat the values in the Series to a single string value.
 
@@ -382,6 +398,11 @@ class StringNameSpace:
         ----------
         delimiter
             The delimiter to insert between consecutive string values.
+        ignore_nulls
+            Ignore null values (default).
+
+            If set to ``False``, null values will be propagated.
+            if the column contains any null values, the output is ``None``.
 
         Returns
         -------
@@ -390,8 +411,18 @@ class StringNameSpace:
 
         Examples
         --------
-        >>> pl.Series([1, None, 2]).str.concat("-")[0]
-        '1-null-2'
+        >>> pl.Series([1, None, 2]).str.concat("-")
+        shape: (1,)
+        Series: '' [str]
+        [
+            "1-2"
+        ]
+        >>> pl.Series([1, None, 2]).str.concat("-", ignore_nulls=False)
+        shape: (1,)
+        Series: '' [str]
+        [
+            null
+        ]
 
         """
 
@@ -407,7 +438,7 @@ class StringNameSpace:
             A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
         literal
-            Treat ``pattern`` as a literal string, not as a regular expression.
+            Treat `pattern` as a literal string, not as a regular expression.
         strict
             Raise an error if the underlying pattern is not a valid regex,
             otherwise mask out with a null value.
@@ -415,7 +446,7 @@ class StringNameSpace:
         Notes
         -----
         To modify regular expression behaviour (such as case-sensitivity) with
-        flags, use the inline ``(?iLmsuxU)`` syntax. For example:
+        flags, use the inline `(?iLmsuxU)` syntax. For example:
 
         Default (case-sensitive) match:
 
@@ -575,7 +606,7 @@ class StringNameSpace:
             inferred from the JSON value.
         infer_schema_length
             How many rows to parse to determine the schema.
-            If ``None`` all rows are used.
+            If `None` all rows are used.
 
         See Also
         --------
@@ -658,7 +689,7 @@ class StringNameSpace:
         Notes
         -----
         To modify regular expression behaviour (such as multi-line matching)
-        with flags, use the inline ``(?iLmsuxU)`` syntax. For example:
+        with flags, use the inline `(?iLmsuxU)` syntax. For example:
 
         >>> s = pl.Series(
         ...     name="lines",
@@ -705,7 +736,7 @@ class StringNameSpace:
         Extract all matches for the given regex pattern.
 
         Extract each successive non-overlapping regex match in an individual string
-        as a list. If the haystack string is ``null``, ``null`` is returned.
+        as a list. If the haystack string is `null`, `null` is returned.
 
         Parameters
         ----------
@@ -716,7 +747,7 @@ class StringNameSpace:
         Notes
         -----
         To modify regular expression behaviour (such as "verbose" mode and/or
-        case-sensitive matching) with flags, use the inline ``(?iLmsuxU)`` syntax.
+        case-sensitive matching) with flags, use the inline `(?iLmsuxU)` syntax.
         For example:
 
         >>> s = pl.Series(
@@ -753,7 +784,7 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type ``List(Utf8)``.
+            Series of data type `List(Utf8)`.
 
         Examples
         --------
@@ -826,7 +857,7 @@ class StringNameSpace:
 
         """
 
-    def count_match(self, pattern: str | Series) -> Series:
+    def count_matches(self, pattern: str | Series, *, literal: bool = False) -> Series:
         r"""
         Count all successive non-overlapping regex matches.
 
@@ -836,6 +867,8 @@ class StringNameSpace:
             A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_. Can also be a :class:`Series` of
             regular expressions.
+        literal
+            Treat `pattern` as a literal string, not as a regular expression.
 
         Returns
         -------
@@ -847,7 +880,7 @@ class StringNameSpace:
         --------
         >>> s = pl.Series("foo", ["123 bla 45 asd", "xyz 678 910t", "bar", None])
         >>> # count digits
-        >>> s.str.count_match(r"\d")
+        >>> s.str.count_matches(r"\d")
         shape: (4,)
         Series: 'foo' [u32]
         [
@@ -857,9 +890,20 @@ class StringNameSpace:
             null
         ]
 
+        >>> s = pl.Series("bar", ["12 dbc 3xy", "cat\\w", "1zy3\\d\\d", None])
+        >>> s.str.count_matches(r"\d", literal=True)
+        shape: (4,)
+        Series: 'bar' [u32]
+        [
+            0
+            0
+            2
+            null
+        ]
+
         """
 
-    def split(self, by: str, *, inclusive: bool = False) -> Series:
+    def split(self, by: IntoExpr, *, inclusive: bool = False) -> Series:
         """
         Split the string by a substring.
 
@@ -873,17 +917,17 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type ``List(Utf8)``.
+            Series of data type `List(Utf8)`.
 
         """
 
-    def split_exact(self, by: str, n: int, *, inclusive: bool = False) -> Series:
+    def split_exact(self, by: IntoExpr, n: int, *, inclusive: bool = False) -> Series:
         """
-        Split the string by a substring using ``n`` splits.
+        Split the string by a substring using `n` splits.
 
-        Results in a struct of ``n+1`` fields.
+        Results in a struct of `n+1` fields.
 
-        If it cannot make ``n`` splits, the remaining field elements will be null.
+        If it cannot make `n` splits, the remaining field elements will be null.
 
         Parameters
         ----------
@@ -937,12 +981,12 @@ class StringNameSpace:
 
         """
 
-    def splitn(self, by: str, n: int) -> Series:
+    def splitn(self, by: IntoExpr, n: int) -> Series:
         """
-        Split the string by a substring, restricted to returning at most ``n`` items.
+        Split the string by a substring, restricted to returning at most `n` items.
 
-        If the number of possible splits is less than ``n-1``, the remaining field
-        elements will be null. If the number of possible splits is ``n-1`` or greater,
+        If the number of possible splits is less than `n-1`, the remaining field
+        elements will be null. If the number of possible splits is `n-1` or greater,
         the last (nth) substring will contain the remainder of the string.
 
         Parameters
@@ -1016,7 +1060,7 @@ class StringNameSpace:
         Notes
         -----
         To modify regular expression behaviour (such as case-sensitivity) with flags,
-        use the inline ``(?iLmsuxU)`` syntax. For example:
+        use the inline `(?iLmsuxU)` syntax. For example:
 
         >>> s = pl.Series(
         ...     name="weather",
@@ -1088,7 +1132,7 @@ class StringNameSpace:
 
         """
 
-    def strip_chars(self, characters: str | None = None) -> Series:
+    def strip_chars(self, characters: IntoExprColumn | None = None) -> Series:
         r"""
         Remove leading and trailing characters.
 
@@ -1124,7 +1168,7 @@ class StringNameSpace:
 
         """
 
-    def strip_chars_start(self, characters: str | None = None) -> Series:
+    def strip_chars_start(self, characters: IntoExprColumn | None = None) -> Series:
         r"""
         Remove leading characters.
 
@@ -1159,7 +1203,7 @@ class StringNameSpace:
 
         """
 
-    def strip_chars_end(self, characters: str | None = None) -> Series:
+    def strip_chars_end(self, characters: IntoExprColumn | None = None) -> Series:
         r"""
         Remove trailing characters.
 
@@ -1194,7 +1238,7 @@ class StringNameSpace:
 
         """
 
-    def strip_prefix(self, prefix: str) -> Series:
+    def strip_prefix(self, prefix: IntoExpr) -> Series:
         """
         Remove prefix.
 
@@ -1220,7 +1264,7 @@ class StringNameSpace:
 
         """
 
-    def strip_suffix(self, suffix: str) -> Series:
+    def strip_suffix(self, suffix: IntoExpr) -> Series:
         """
         Remove suffix.
 
@@ -1245,78 +1289,103 @@ class StringNameSpace:
         ]
         """
 
-    def zfill(self, alignment: int) -> Series:
+    def pad_start(self, length: int, fill_char: str = " ") -> Series:
         """
-        Fills the string with zeroes.
-
-        Return a copy of the string left filled with ASCII '0' digits to make a string
-        of length width.
-
-        A leading sign prefix ('+'/'-') is handled by inserting the padding after the
-        sign character rather than before. The original string is returned if width is
-        less than or equal to ``len(s)``.
+        Pad the start of the string until it reaches the given length.
 
         Parameters
         ----------
-        alignment
-            Fill the value up to this length.
-
-        """
-
-    def ljust(self, width: int, fill_char: str = " ") -> Series:
-        """
-        Return the string left justified in a string of length ``width``.
-
-        Padding is done using the specified ``fill_char``. The original string is
-        returned if ``width`` is less than or equal to``len(s)``.
-
-        Parameters
-        ----------
-        width
-            Justify left to this length.
+        length
+            Pad the string until it reaches this length. Strings with length equal to
+            or greater than this value are returned as-is.
         fill_char
-            Fill with this ASCII character.
+            The character to pad the string with.
+
+        See Also
+        --------
+        pad_end
+        zfill
 
         Examples
         --------
-        >>> s = pl.Series("a", ["cow", "monkey", None, "hippopotamus"])
-        >>> s.str.ljust(8, "*")
-        shape: (4,)
-        Series: 'a' [str]
-        [
-            "cow*****"
-            "monkey**"
-            null
-            "hippopotamus"
-        ]
-
-        """
-
-    def rjust(self, width: int, fill_char: str = " ") -> Series:
-        """
-        Return the string right justified in a string of length ``width``.
-
-        Padding is done using the specified ``fill_char``. The original string is
-        returned if ``width`` is less than or equal to ``len(s)``.
-
-        Parameters
-        ----------
-        width
-            Justify right to this length.
-        fill_char
-            Fill with this ASCII character.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", ["cow", "monkey", None, "hippopotamus"])
-        >>> s.str.rjust(8, "*")
+        >>> s = pl.Series("a", ["cow", "monkey", "hippopotamus", None])
+        >>> s.str.pad_start(8, "*")
         shape: (4,)
         Series: 'a' [str]
         [
             "*****cow"
             "**monkey"
-            null
             "hippopotamus"
+            null
+        ]
+
+        """
+
+    def pad_end(self, length: int, fill_char: str = " ") -> Series:
+        """
+        Pad the end of the string until it reaches the given length.
+
+        Parameters
+        ----------
+        length
+            Pad the string until it reaches this length. Strings with length equal to
+            or greater than this value are returned as-is.
+        fill_char
+            The character to pad the string with.
+
+        See Also
+        --------
+        pad_start
+
+        Examples
+        --------
+        >>> s = pl.Series(["cow", "monkey", "hippopotamus", None])
+        >>> s.str.pad_end(8, "*")
+        shape: (4,)
+        Series: '' [str]
+        [
+            "cow*****"
+            "monkey**"
+            "hippopotamus"
+            null
+        ]
+
+        """
+
+    @deprecate_renamed_parameter("alignment", "length", version="0.19.12")
+    def zfill(self, length: int) -> Series:
+        """
+        Pad the start of the string with zeros until it reaches the given length.
+
+        A sign prefix (`-`) is handled by inserting the padding after the sign
+        character rather than before.
+
+        Parameters
+        ----------
+        length
+            Pad the string until it reaches this length. Strings with length equal to
+            or greater than this value are returned as-is.
+
+        See Also
+        --------
+        pad_start
+
+        Notes
+        -----
+        This method is intended for padding numeric strings. If your data contains
+        non-ASCII characters, use :func:`pad_start` instead.
+
+        Examples
+        --------
+        >>> s = pl.Series([-1, 123, 999999, None])
+        >>> s.cast(pl.Utf8).str.zfill(4)
+        shape: (4,)
+        Series: '' [str]
+        [
+                "-001"
+                "0123"
+                "999999"
+                null
         ]
 
         """
@@ -1381,7 +1450,7 @@ class StringNameSpace:
         offset
             Start index. Negative indexing is supported.
         length
-            Length of the slice. If set to ``None`` (default), the slice is taken to the
+            Length of the slice. If set to `None` (default), the slice is taken to the
             end of the string.
 
         Returns
@@ -1442,18 +1511,15 @@ class StringNameSpace:
 
         """
 
-    def parse_int(self, radix: int = 2, *, strict: bool = True) -> Series:
-        r"""
-        Parse integers with base radix from strings.
-
-        By default base 2. ParseError/Overflows become Nulls.
+    def to_integer(self, *, base: int = 10, strict: bool = True) -> Series:
+        """
+        Convert an Utf8 column into an Int64 column with base radix.
 
         Parameters
         ----------
-        radix
+        base
             Positive integer which is the base of the string we are parsing.
-            Default: 2
-
+            Default: 10.
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
             False silently convert to Null.
@@ -1461,14 +1527,14 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int32`.
+            Series of data type :class:`Int64`.
 
         Examples
         --------
         >>> s = pl.Series("bin", ["110", "101", "010", "invalid"])
-        >>> s.str.parse_int(2, strict=False)
+        >>> s.str.to_integer(base=2, strict=False)
         shape: (4,)
-        Series: 'bin' [i32]
+        Series: 'bin' [i64]
         [
                 6
                 5
@@ -1477,15 +1543,34 @@ class StringNameSpace:
         ]
 
         >>> s = pl.Series("hex", ["fa1e", "ff00", "cafe", None])
-        >>> s.str.parse_int(16)
+        >>> s.str.to_integer(base=16)
         shape: (4,)
-        Series: 'hex' [i32]
+        Series: 'hex' [i64]
         [
                 64030
                 65280
                 51966
                 null
         ]
+
+        """
+
+    @deprecate_renamed_function("to_integer", version="0.19.14")
+    @deprecate_renamed_parameter("radix", "base", version="0.19.14")
+    def parse_int(self, base: int | None = None, *, strict: bool = True) -> Series:
+        """
+        Parse integers with base radix from strings.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :func:`to_integer`.
+
+        Parameters
+        ----------
+        base
+            Positive integer which is the base of the string we are parsing.
+        strict
+            Bool, Default=True will raise any ParseError or overflow as ComputeError.
+            False silently convert to Null.
 
         """
 
@@ -1537,5 +1622,84 @@ class StringNameSpace:
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
+
+        """
+
+    @deprecate_renamed_function("count_matches", version="0.19.3")
+    def count_match(self, pattern: str | Series) -> Series:
+        """
+        Count all successive non-overlapping regex matches.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`count_matches`.
+
+        Parameters
+        ----------
+        pattern
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_. Can also be a :class:`Series` of
+            regular expressions.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`UInt32`. Returns null if the original
+            value is null.
+
+        """
+
+    @deprecate_renamed_function("len_bytes", version="0.19.8")
+    def lengths(self) -> Series:
+        """
+        Return the number of bytes in each string.
+
+        .. deprecated:: 0.19.8
+            This method has been renamed to :func:`len_bytes`.
+
+        """
+
+    @deprecate_renamed_function("len_chars", version="0.19.8")
+    def n_chars(self) -> Series:
+        """
+        Return the length of each string as the number of characters.
+
+        .. deprecated:: 0.19.8
+            This method has been renamed to :func:`len_chars`.
+
+        """
+
+    @deprecate_renamed_function("pad_end", version="0.19.12")
+    @deprecate_renamed_parameter("width", "length", version="0.19.12")
+    def ljust(self, length: int, fill_char: str = " ") -> Series:
+        """
+        Return the string left justified in a string of length `length`.
+
+        .. deprecated:: 0.19.12
+            This method has been renamed to :func:`pad_end`.
+
+        Parameters
+        ----------
+        length
+            Justify left to this length.
+        fill_char
+            Fill with this ASCII character.
+
+        """
+
+    @deprecate_renamed_function("pad_start", version="0.19.12")
+    @deprecate_renamed_parameter("width", "length", version="0.19.12")
+    def rjust(self, length: int, fill_char: str = " ") -> Series:
+        """
+        Return the string right justified in a string of length `length`.
+
+        .. deprecated:: 0.19.12
+            This method has been renamed to :func:`pad_start`.
+
+        Parameters
+        ----------
+        length
+            Justify right to this length.
+        fill_char
+            Fill with this ASCII character.
 
         """

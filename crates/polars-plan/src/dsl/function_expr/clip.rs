@@ -1,14 +1,10 @@
 use super::*;
 
-pub(super) fn clip(
-    s: Series,
-    min: Option<AnyValue<'_>>,
-    max: Option<AnyValue<'_>>,
-) -> PolarsResult<Series> {
-    match (min, max) {
-        (Some(min), Some(max)) => s.clip(min, max),
-        (Some(min), None) => s.clip_min(min),
-        (None, Some(max)) => s.clip_max(max),
+pub(super) fn clip(s: &[Series], has_min: bool, has_max: bool) -> PolarsResult<Series> {
+    match (has_min, has_max) {
+        (true, true) => polars_ops::prelude::clip(&s[0], &s[1], &s[2]),
+        (true, false) => polars_ops::prelude::clip_min(&s[0], &s[1]),
+        (false, true) => polars_ops::prelude::clip_max(&s[0], &s[1]),
         _ => unreachable!(),
     }
 }

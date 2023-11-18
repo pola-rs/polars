@@ -1,14 +1,14 @@
 //! macros that define kernels for extracting
 //! `week`, `weekday`, `year`, `hour` etc. from primitive arrays.
-use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
-use polars_arrow::export::arrow::array::{BooleanArray, PrimitiveArray};
-use polars_arrow::export::arrow::compute::arity::unary;
+use arrow::array::{BooleanArray, PrimitiveArray};
+use arrow::compute::arity::unary;
 #[cfg(feature = "dtype-time")]
-use polars_arrow::export::arrow::temporal_conversions::time64ns_to_time_opt;
-use polars_arrow::export::arrow::temporal_conversions::{
+use arrow::temporal_conversions::time64ns_to_time_opt;
+use arrow::temporal_conversions::{
     date32_to_datetime_opt, timestamp_ms_to_datetime_opt, timestamp_ns_to_datetime_opt,
     timestamp_us_to_datetime_opt,
 };
+use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
 
 use super::super::windows::calendar::*;
 use super::*;

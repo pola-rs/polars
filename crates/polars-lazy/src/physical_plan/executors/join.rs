@@ -1,4 +1,4 @@
-use polars_core::frame::hash_join::JoinArgs;
+use polars_ops::frame::DataFrameJoinOps;
 
 use super::*;
 

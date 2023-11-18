@@ -9,12 +9,14 @@ pub enum QuoteStyle {
     /// This puts quotes around every field. Always.
     Always,
     /// This puts quotes around fields only when necessary.
-    // They are necessary when fields contain a quote, delimiter or record terminator. Quotes are also necessary when writing an empty record (which is indistinguishable from a record with one empty field).
+    // They are necessary when fields contain a quote, separator or record terminator. Quotes are also necessary when writing an empty record (which is indistinguishable from a record with one empty field).
     // This is the default.
     #[default]
     Necessary,
     /// This puts quotes around all fields that are non-numeric. Namely, when writing a field that does not parse as a valid float or integer, then quotes will be used even if they aren’t strictly necessary.
     NonNumeric,
+    /// Never quote any fields, even if it would produce invalid CSV data.
+    Never,
 }
 
 /// Write a DataFrame to csv.
@@ -26,6 +28,7 @@ pub struct CsvWriter<W: Write> {
     buffer: W,
     options: write_impl::SerializeOptions,
     header: bool,
+    bom: bool,
     batch_size: usize,
 }
 
@@ -44,11 +47,15 @@ where
             buffer,
             options,
             header: true,
+            bom: false,
             batch_size: 1024,
         }
     }
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
+        if self.bom {
+            write_impl::write_bom(&mut self.buffer)?;
+        }
         let names = df.get_column_names();
         if self.header {
             write_impl::write_header(&mut self.buffer, &names, &self.options)?;
@@ -61,15 +68,21 @@ impl<W> CsvWriter<W>
 where
     W: Write,
 {
-    /// Set whether to write headers.
-    pub fn has_header(mut self, has_header: bool) -> Self {
-        self.header = has_header;
+    /// Set whether to write UTF-8 BOM.
+    pub fn include_bom(mut self, include_bom: bool) -> Self {
+        self.bom = include_bom;
         self
     }
 
-    /// Set the CSV file's column delimiter as a byte character.
-    pub fn with_delimiter(mut self, delimiter: u8) -> Self {
-        self.options.delimiter = delimiter;
+    /// Set whether to write headers.
+    pub fn include_header(mut self, include_header: bool) -> Self {
+        self.header = include_header;
+        self
+    }
+
+    /// Set the CSV file's column separator as a byte character.
+    pub fn with_separator(mut self, separator: u8) -> Self {
+        self.options.separator = separator;
         self
     }
 
@@ -112,8 +125,8 @@ where
     }
 
     /// Set the single byte character used for quoting.
-    pub fn with_quoting_char(mut self, char: u8) -> Self {
-        self.options.quote = char;
+    pub fn with_quote_char(mut self, char: u8) -> Self {
+        self.options.quote_char = char;
         self
     }
 
@@ -137,9 +150,11 @@ where
     }
 
     pub fn batched(self, _schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
+        let expects_bom = self.bom;
         let expects_header = self.header;
         Ok(BatchedWriter {
             writer: self,
+            has_written_bom: !expects_bom,
             has_written_header: !expects_header,
         })
     }
@@ -147,6 +162,7 @@ where
 
 pub struct BatchedWriter<W: Write> {
     writer: CsvWriter<W>,
+    has_written_bom: bool,
     has_written_header: bool,
 }
 
@@ -156,6 +172,11 @@ impl<W: Write> BatchedWriter<W> {
     /// # Panics
     /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
     pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
+        if !self.has_written_bom {
+            self.has_written_bom = true;
+            write_impl::write_bom(&mut self.writer.buffer)?;
+        }
+
         if !self.has_written_header {
             self.has_written_header = true;
             let names = df.get_column_names();

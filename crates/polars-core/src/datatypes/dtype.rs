@@ -161,55 +161,61 @@ impl DataType {
         self.is_numeric() | matches!(self, DataType::Boolean | DataType::Utf8 | DataType::Binary)
     }
 
-    /// Check if this [`DataType`] is a numeric type.
+    /// Check if this [`DataType`] is a basic numeric type (excludes Decimal).
     pub fn is_numeric(&self) -> bool {
-        // allow because it cannot be replaced when object feature is activated
-        #[allow(clippy::match_like_matches_macro)]
+        self.is_float() || self.is_integer()
+    }
+
+    /// Check if this [`DataType`] is a Decimal type (of any scale/precision).
+    pub fn is_decimal(&self) -> bool {
         match self {
-            DataType::Utf8
-            | DataType::List(_)
-            | DataType::Date
-            | DataType::Datetime(_, _)
-            | DataType::Duration(_)
-            | DataType::Time
-            | DataType::Boolean
-            | DataType::Unknown
-            | DataType::Null => false,
-            DataType::Binary => false,
-            #[cfg(feature = "object")]
-            DataType::Object(_) => false,
-            #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => false,
-            #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => false,
             #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(_, _) => false,
-            _ => true,
+            DataType::Decimal(_, _) => true,
+            _ => false,
         }
     }
 
+    /// Check if this [`DataType`] is a basic floating point type (excludes Decimal).
     pub fn is_float(&self) -> bool {
         matches!(self, DataType::Float32 | DataType::Float64)
     }
 
+    /// Check if this [`DataType`] is an integer.
     pub fn is_integer(&self) -> bool {
-        self.is_numeric() && !matches!(self, DataType::Float32 | DataType::Float64)
+        matches!(
+            self,
+            DataType::Int8
+                | DataType::Int16
+                | DataType::Int32
+                | DataType::Int64
+                | DataType::UInt8
+                | DataType::UInt16
+                | DataType::UInt32
+                | DataType::UInt64
+        )
     }
 
-    pub fn is_signed(&self) -> bool {
+    pub fn is_signed_integer(&self) -> bool {
         // allow because it cannot be replaced when object feature is activated
-        #[allow(clippy::match_like_matches_macro)]
         match self {
+            DataType::Int64 | DataType::Int32 => true,
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => true,
             #[cfg(feature = "dtype-i16")]
             DataType::Int16 => true,
-            DataType::Int32 | DataType::Int64 => true,
             _ => false,
         }
     }
-    pub fn is_unsigned(&self) -> bool {
-        self.is_numeric() && !self.is_signed()
+
+    pub fn is_unsigned_integer(&self) -> bool {
+        match self {
+            DataType::UInt64 | DataType::UInt32 => true,
+            #[cfg(feature = "dtype-u8")]
+            DataType::UInt8 => true,
+            #[cfg(feature = "dtype-u16")]
+            DataType::UInt16 => true,
+            _ => false,
+        }
     }
 
     /// Convert to an Arrow data type.
@@ -305,11 +311,11 @@ impl Display for DataType {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
                 return match (precision, scale) {
-                    (_, None) => f.write_str("decimal[?]"), // shouldn't happen
-                    (None, Some(scale)) => f.write_str(&format!("decimal[{scale}]")),
                     (Some(precision), Some(scale)) => {
                         f.write_str(&format!("decimal[{precision},{scale}]"))
                     },
+                    (None, Some(scale)) => f.write_str(&format!("decimal[*,{scale}]")),
+                    _ => f.write_str("decimal[?]"), // shouldn't happen
                 };
             },
             DataType::Utf8 => "str",
@@ -345,8 +351,17 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
     Ok(match (left, right) {
         #[cfg(feature = "dtype-categorical")]
         (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r))) => {
-            let rev_map = merge_rev_map(rev_map_l, rev_map_r)?;
-            Categorical(Some(rev_map))
+            match (&**rev_map_l, &**rev_map_r) {
+                (RevMapping::Global(_, _, idl), RevMapping::Global(_, _, idr)) if idl == idr => {
+                    let mut merger = GlobalRevMapMerger::new(rev_map_l.clone());
+                    merger.merge_map(rev_map_r)?;
+                    Categorical(Some(merger.finish()))
+                },
+                (RevMapping::Local(_, idl), RevMapping::Local(_, idr)) if idl == idr => {
+                    left.clone()
+                },
+                _ => polars_bail!(string_cache_mismatch),
+            }
         },
         (List(inner_l), List(inner_r)) => {
             let merged = merge_dtypes(inner_l, inner_r)?;

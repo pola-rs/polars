@@ -51,7 +51,7 @@ fn test_groups_update_binary_shift_log() -> PolarsResult<()> {
     ]?
     .lazy()
     .group_by([col("b")])
-    .agg([col("a") - col("a").shift(1).log(2.0)])
+    .agg([col("a") - col("a").shift(lit(1)).log(2.0)])
     .sort("b", Default::default())
     .explode([col("a")])
     .collect()?;
@@ -70,7 +70,7 @@ fn test_expand_list() -> PolarsResult<()> {
         "b" => [2, 3],
     ]?
     .lazy()
-    .select([cols(["a", "b"]).cumsum(false)])
+    .select([cols(["a", "b"]).cum_sum(false)])
     .collect()?;
 
     let expected = df![

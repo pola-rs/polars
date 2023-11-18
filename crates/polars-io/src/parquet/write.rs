@@ -2,13 +2,12 @@ use std::io::Write;
 
 use arrow::array::Array;
 use arrow::chunk::Chunk;
-use arrow::datatypes::{DataType as ArrowDataType, PhysicalType};
-use arrow::error::Error as ArrowError;
-use arrow::io::parquet::read::ParquetError;
-use arrow::io::parquet::write::{self, DynIter, DynStreamingIterator, Encoding, FileWriter, *};
+use arrow::datatypes::{ArrowDataType, PhysicalType};
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df};
 use polars_core::POOL;
+use polars_parquet::read::ParquetError;
+use polars_parquet::write::{self, DynIter, DynStreamingIterator, Encoding, FileWriter, *};
 use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -32,21 +31,21 @@ pub struct ZstdLevel(i32);
 
 impl ZstdLevel {
     pub fn try_new(level: i32) -> PolarsResult<Self> {
-        ZstdLevelParquet::try_new(level).map_err(ArrowError::from)?;
+        ZstdLevelParquet::try_new(level)?;
         Ok(ZstdLevel(level))
     }
 }
 
 impl BrotliLevel {
     pub fn try_new(level: u32) -> PolarsResult<Self> {
-        BrotliLevelParquet::try_new(level).map_err(ArrowError::from)?;
+        BrotliLevelParquet::try_new(level)?;
         Ok(BrotliLevel(level))
     }
 }
 
 impl GzipLevel {
     pub fn try_new(level: u8) -> PolarsResult<Self> {
-        GzipLevelParquet::try_new(level).map_err(ArrowError::from)?;
+        GzipLevelParquet::try_new(level)?;
         Ok(GzipLevel(level))
     }
 }
@@ -187,7 +186,7 @@ where
         })
     }
 
-    /// Write the given DataFrame in the the writer `W`. Returns the total size of the file.
+    /// Write the given DataFrame in the writer `W`. Returns the total size of the file.
     pub fn finish(self, df: &mut DataFrame) -> PolarsResult<u64> {
         // ensures all chunks are aligned.
         df.align_chunks();
@@ -209,7 +208,7 @@ fn prepare_rg_iter<'a>(
     encodings: &'a [Vec<Encoding>],
     options: WriteOptions,
     parallel: bool,
-) -> impl Iterator<Item = Result<RowGroupIter<'a, ArrowError>, ArrowError>> + 'a {
+) -> impl Iterator<Item = PolarsResult<RowGroupIter<'a, PolarsError>>> + 'a {
     let rb_iter = df.iter_chunks();
     rb_iter.filter_map(move |batch| match batch.len() {
         0 => None,
@@ -279,7 +278,7 @@ fn create_serializer<'a>(
     encodings: &[Vec<Encoding>],
     options: WriteOptions,
     parallel: bool,
-) -> Result<RowGroupIter<'a, ArrowError>, ArrowError> {
+) -> PolarsResult<RowGroupIter<'a, PolarsError>> {
     let func = move |((array, type_), encoding): ((&ArrayRef, &ParquetType), &Vec<Encoding>)| {
         let encoded_columns = array_to_columns(array, type_.clone(), options, encoding).unwrap();
 
@@ -299,7 +298,7 @@ fn create_serializer<'a>(
                         options.compression,
                         vec![],
                     )
-                    .map_err(|e| ArrowError::External(format!("{e}"), Box::new(e))),
+                    .map_err(PolarsError::from),
                 );
 
                 Ok(pages)

@@ -1,16 +1,17 @@
 use std::fmt::Write;
 use std::sync::Arc;
 
-use polars_arrow::export::arrow::array::PrimitiveArray;
+use arrow::array::PrimitiveArray;
 use polars_core::export::arrow::bitmap::Bitmap;
 use polars_core::frame::group_by::{GroupBy, GroupsProxy};
-use polars_core::frame::hash_join::{
-    default_join_ids, private_left_join_multiple_keys, ChunkJoinOptIds, JoinValidation,
-};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
 use polars_core::{downcast_as_macro_arg_physical, POOL};
+use polars_ops::frame::join::{
+    default_join_ids, private_left_join_multiple_keys, ChunkJoinOptIds, JoinValidation,
+};
+use polars_ops::frame::SeriesJoin;
 use polars_utils::format_smartstring;
 use polars_utils::sort::perfect_sort;
 use polars_utils::sync::SyncPtr;
@@ -29,7 +30,7 @@ pub struct WindowExpr {
     /// A function Expr. i.e. Mean, Median, Max, etc.
     pub(crate) function: Expr,
     pub(crate) phys_function: Arc<dyn PhysicalExpr>,
-    pub(crate) options: WindowOptions,
+    pub(crate) mapping: WindowMapping,
     pub(crate) expr: Expr,
 }
 
@@ -120,7 +121,7 @@ impl WindowExpr {
 
         // Safety:
         // groups should always be in bounds.
-        unsafe { flattened.take_unchecked(&idx) }
+        unsafe { Ok(flattened.take_unchecked(&idx)) }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -280,7 +281,7 @@ impl WindowExpr {
         agg_col
     }
 
-    /// check if the the branches have an aggregation
+    /// Check if the branches have an aggregation
     /// when(a > sum)
     /// then (foo)
     /// otherwise(bar - sum)
@@ -301,8 +302,8 @@ impl WindowExpr {
                         },
                         Expr::Function { options, .. }
                         | Expr::AnonymousFunction { options, .. } => {
-                            if options.auto_explode
-                                && matches!(options.collect_groups, ApplyOptions::ApplyGroups)
+                            if options.returns_scalar
+                                && matches!(options.collect_groups, ApplyOptions::GroupWise)
                             {
                                 agg_col = true;
                             }
@@ -321,7 +322,7 @@ impl WindowExpr {
         sorted_keys: bool,
         gb: &GroupBy,
     ) -> PolarsResult<MapStrategy> {
-        match (self.options.mapping, agg_state) {
+        match (self.mapping, agg_state) {
             // Explode
             // `(col("x").sum() * col("y")).list().over("groups").flatten()`
             (WindowMapping::Explode, _) => Ok(MapStrategy::Explode),
@@ -330,7 +331,7 @@ impl WindowExpr {
             // (false, false, _) => Ok(MapStrategy::Join),
             // aggregations
             //`sum("foo").over("groups")`
-            (_, AggState::AggregatedFlat(_)) => Ok(MapStrategy::Join),
+            (_, AggState::AggregatedScalar(_)) => Ok(MapStrategy::Join),
             // no explicit aggregations, map over the groups
             //`(col("x").sum() * col("y")).over("groups")`
             (WindowMapping::Join, AggState::AggregatedList(_)) => Ok(MapStrategy::Join),
@@ -423,7 +424,7 @@ impl PhysicalExpr for WindowExpr {
         let explicit_list_agg = self.is_explicit_list_agg();
 
         // if we flatten this column we need to make sure the groups are sorted.
-        let mut sort_groups = matches!(self.options.mapping, WindowMapping::Explode) ||
+        let mut sort_groups = matches!(self.mapping, WindowMapping::Explode) ||
             // if not
             //      `col().over()`
             // and not
@@ -454,7 +455,7 @@ impl PhysicalExpr for WindowExpr {
                 cache_key.push_str(s.name());
             }
 
-            let mut gt_map = state.group_tuples.lock().unwrap();
+            let mut gt_map = state.group_tuples.write().unwrap();
             // we run sequential and partitioned
             // and every partition run the cache should be empty so we expect a max of 1.
             debug_assert!(gt_map.len() <= 1);
@@ -495,7 +496,7 @@ impl PhysicalExpr for WindowExpr {
         // Worst case is that a categorical is created with indexes from the string
         // cache which is fine, as the physical representation is undefined.
         #[cfg(feature = "dtype-categorical")]
-        let _sc = polars_core::IUseStringCache::hold();
+        let _sc = polars_core::StringCacheHolder::hold();
         let mut ac = self.run_aggregation(df, state, &gb)?;
 
         use MapStrategy::*;
@@ -622,22 +623,16 @@ impl PhysicalExpr for WindowExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
-
-    fn is_valid_aggregation(&self) -> bool {
-        false
-    }
 }
 
 fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Series) -> Series {
     #[cfg(feature = "chunked_ids")]
     {
-        use polars_arrow::export::arrow::Either;
+        use arrow::Either;
 
         match join_opt_ids {
             Either::Left(ids) => unsafe {
-                out_column.take_opt_iter_unchecked(
-                    &mut ids.iter().map(|&opt_i| opt_i.map(|i| i as usize)),
-                )
+                out_column.take_unchecked(&ids.iter().copied().collect_ca(""))
             },
             Either::Right(ids) => unsafe { out_column._take_opt_chunked_unchecked(ids) },
         }
@@ -645,16 +640,14 @@ fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Series) -> Se
 
     #[cfg(not(feature = "chunked_ids"))]
     unsafe {
-        out_column.take_opt_iter_unchecked(
-            &mut join_opt_ids.iter().map(|&opt_i| opt_i.map(|i| i as usize)),
-        )
+        out_column.take_unchecked(&join_opt_ids.iter().copied().collect_ca(""))
     }
 }
 
 fn cache_gb(gb: GroupBy, state: &ExecutionState, cache_key: &str) {
     if state.cache_window() {
         let groups = gb.take_groups();
-        let mut gt_map = state.group_tuples.lock().unwrap();
+        let mut gt_map = state.group_tuples.write().unwrap();
         gt_map.insert(cache_key.to_string(), groups);
     }
 }
@@ -720,7 +713,7 @@ where
                         .zip(groups.all().par_iter())
                         .for_each(|(v, g)| {
                             let ptr = sync_ptr_values.get();
-                            for idx in g {
+                            for idx in g.as_slice() {
                                 debug_assert!((*idx as usize) < len);
                                 unsafe { *ptr.add(*idx as usize) = *v }
                             }
@@ -770,7 +763,7 @@ where
                 let validity_ptr = sync_ptr_validity.get();
 
                 ca.into_iter().zip(groups.iter()).for_each(|(opt_v, g)| {
-                    for idx in g {
+                    for idx in g.as_slice() {
                         let idx = *idx as usize;
                         debug_assert!(idx < len);
                         unsafe {

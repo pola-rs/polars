@@ -23,12 +23,16 @@ def adbc_sqlite_driver_version(*args: Any, **kwargs: Any) -> str:
     return "n/a"
 
 
-@pytest.mark.write_disk()
-@pytest.mark.parametrize("engine", ["adbc", "sqlalchemy"])
+@pytest.mark.skipif(
+    sys.version_info > (3, 11),
+    reason="connectorx cannot be installed on Python 3.12 yet.",
+)
 @pytest.mark.skipif(
     sys.version_info < (3, 9) or sys.platform == "win32",
     reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
 )
+@pytest.mark.write_disk()
+@pytest.mark.parametrize("engine", ["adbc", "sqlalchemy"])
 def test_write_database_create(engine: DbWriteEngine, tmp_path: Path) -> None:
     df = pl.DataFrame(
         {
@@ -51,12 +55,16 @@ def test_write_database_create(engine: DbWriteEngine, tmp_path: Path) -> None:
     assert_frame_equal(result, df)
 
 
-@pytest.mark.write_disk()
-@pytest.mark.parametrize("engine", ["adbc", "sqlalchemy"])
+@pytest.mark.skipif(
+    sys.version_info > (3, 11),
+    reason="connectorx cannot be installed on Python 3.12 yet.",
+)
 @pytest.mark.skipif(
     sys.version_info < (3, 9) or sys.platform == "win32",
     reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
 )
+@pytest.mark.write_disk()
+@pytest.mark.parametrize("engine", ["adbc", "sqlalchemy"])
 def test_write_database_append(engine: DbWriteEngine, tmp_path: Path) -> None:
     df = pl.DataFrame(
         {
@@ -96,24 +104,28 @@ def test_write_database_append(engine: DbWriteEngine, tmp_path: Path) -> None:
     assert_frame_equal(result, pl.concat([df, df]))
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 9) or sys.platform == "win32",
+    reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
+)
 @pytest.mark.write_disk()
 @pytest.mark.parametrize(
     "engine",
     [
         pytest.param(
             "adbc",
-            marks=pytest.mark.skipif(
-                # see: https://github.com/apache/arrow-adbc/issues/1000
-                adbc_sqlite_driver_version() == "0.6.0",
-                reason="ADBC SQLite driver v0.6.0 has a bug with quoted/qualified table names",
+            marks=pytest.mark.xfail(  # see: https://github.com/apache/arrow-adbc/issues/1000
+                reason="ADBC SQLite driver has a bug with quoted/qualified table names",
             ),
         ),
-        "sqlalchemy",
+        pytest.param(
+            "sqlalchemy",
+            marks=pytest.mark.skipif(
+                sys.version_info > (3, 11),
+                reason="connectorx cannot be installed on Python 3.12 yet.",
+            ),
+        ),
     ],
-)
-@pytest.mark.skipif(
-    sys.version_info < (3, 9) or sys.platform == "win32",
-    reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
 )
 def test_write_database_create_quoted_tablename(
     engine: DbWriteEngine, tmp_path: Path

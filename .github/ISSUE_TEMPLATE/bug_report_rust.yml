@@ -1,5 +1,5 @@
 name: '🐞 Bug report - Rust'
-description: An issue with Rust Polars
+description: Report an issue with Rust Polars.
 labels: [bug, rust]
 
 body:

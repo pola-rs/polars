@@ -1,9 +1,10 @@
+#[cfg(feature = "dtype-struct")]
+use arrow::legacy::trusted_len::TrustedLenPush;
+#[cfg(feature = "dtype-date")]
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
 use arrow::types::PrimitiveType;
-#[cfg(feature = "dtype-struct")]
-use polars_arrow::trusted_len::TrustedLenPush;
 use polars_utils::format_smartstring;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::slice::GetSaferUnchecked;
@@ -428,14 +429,14 @@ impl<'a> AnyValue<'a> {
         })
     }
 
-    pub fn is_signed(&self) -> bool {
+    pub fn is_signed_integer(&self) -> bool {
         matches!(
             self,
             AnyValue::Int8(_) | AnyValue::Int16(_) | AnyValue::Int32(_) | AnyValue::Int64(_)
         )
     }
 
-    pub fn is_unsigned(&self) -> bool {
+    pub fn is_unsigned_integer(&self) -> bool {
         matches!(
             self,
             AnyValue::UInt8(_) | AnyValue::UInt16(_) | AnyValue::UInt32(_) | AnyValue::UInt64(_)
@@ -476,8 +477,8 @@ impl<'a> AnyValue<'a> {
         let new_av = match self {
             AnyValue::Boolean(v) => cast_to!(*v as u8),
             AnyValue::Float32(_) | AnyValue::Float64(_) => cast_to!(self.extract::<f64>().unwrap()),
-            av if av.is_signed() => cast_to!(av.extract::<i64>().unwrap()),
-            av if av.is_unsigned() => cast_to!(av.extract::<u64>().unwrap()),
+            av if av.is_signed_integer() => cast_to!(av.extract::<i64>().unwrap()),
+            av if av.is_unsigned_integer() => cast_to!(av.extract::<u64>().unwrap()),
             #[cfg(feature = "dtype-datetime")]
             AnyValue::Datetime(v, tu, None) => match dtype {
                 DataType::Int64 => AnyValue::Int64(*v),
@@ -736,6 +737,7 @@ impl<'a> AnyValue<'a> {
             },
             #[cfg(feature = "dtype-decimal")]
             Decimal(val, scale) => Decimal(val, scale),
+            #[allow(unreachable_patterns)]
             dt => polars_bail!(ComputeError: "cannot get static any-value from {}", dt),
         };
         Ok(av)
@@ -823,8 +825,8 @@ impl PartialEq for AnyValue<'_> {
                 (RevMapping::Global(_, _, id_l), RevMapping::Global(_, _, id_r)) => {
                     id_l == id_r && idx_l == idx_r
                 },
-                (RevMapping::Local(arr_l), RevMapping::Local(arr_r)) => {
-                    std::ptr::eq(arr_l, arr_r) && idx_l == idx_r
+                (RevMapping::Local(_, id_l), RevMapping::Local(_, id_r)) => {
+                    id_l == id_r && idx_l == idx_r
                 },
                 _ => false,
             },
@@ -892,122 +894,6 @@ fn struct_to_avs_static(idx: usize, arr: &StructArray, fields: &[Field]) -> Vec<
     avs
 }
 
-#[cfg(test)]
-mod test {
-    #[cfg(feature = "dtype-categorical")]
-    use super::*;
-
-    #[test]
-    #[cfg(feature = "dtype-categorical")]
-    fn test_arrow_dtypes_to_polars() {
-        let dtypes = [
-            (
-                ArrowDataType::Duration(ArrowTimeUnit::Nanosecond),
-                DataType::Duration(TimeUnit::Nanoseconds),
-            ),
-            (
-                ArrowDataType::Duration(ArrowTimeUnit::Millisecond),
-                DataType::Duration(TimeUnit::Milliseconds),
-            ),
-            (
-                ArrowDataType::Date64,
-                DataType::Datetime(TimeUnit::Milliseconds, None),
-            ),
-            (
-                ArrowDataType::Timestamp(ArrowTimeUnit::Nanosecond, None),
-                DataType::Datetime(TimeUnit::Nanoseconds, None),
-            ),
-            (
-                ArrowDataType::Timestamp(ArrowTimeUnit::Microsecond, None),
-                DataType::Datetime(TimeUnit::Microseconds, None),
-            ),
-            (
-                ArrowDataType::Timestamp(ArrowTimeUnit::Millisecond, None),
-                DataType::Datetime(TimeUnit::Milliseconds, None),
-            ),
-            (
-                ArrowDataType::Timestamp(ArrowTimeUnit::Second, None),
-                DataType::Datetime(TimeUnit::Milliseconds, None),
-            ),
-            (
-                ArrowDataType::Timestamp(ArrowTimeUnit::Second, Some("".to_string())),
-                DataType::Datetime(TimeUnit::Milliseconds, Some("".to_string())),
-            ),
-            (ArrowDataType::LargeUtf8, DataType::Utf8),
-            (ArrowDataType::Utf8, DataType::Utf8),
-            (ArrowDataType::LargeBinary, DataType::Binary),
-            (ArrowDataType::Binary, DataType::Binary),
-            (
-                ArrowDataType::Time64(ArrowTimeUnit::Nanosecond),
-                DataType::Time,
-            ),
-            (
-                ArrowDataType::Time64(ArrowTimeUnit::Millisecond),
-                DataType::Time,
-            ),
-            (
-                ArrowDataType::Time64(ArrowTimeUnit::Microsecond),
-                DataType::Time,
-            ),
-            (ArrowDataType::Time64(ArrowTimeUnit::Second), DataType::Time),
-            (
-                ArrowDataType::Time32(ArrowTimeUnit::Nanosecond),
-                DataType::Time,
-            ),
-            (
-                ArrowDataType::Time32(ArrowTimeUnit::Millisecond),
-                DataType::Time,
-            ),
-            (
-                ArrowDataType::Time32(ArrowTimeUnit::Microsecond),
-                DataType::Time,
-            ),
-            (ArrowDataType::Time32(ArrowTimeUnit::Second), DataType::Time),
-            (
-                ArrowDataType::List(Box::new(ArrowField::new(
-                    "item",
-                    ArrowDataType::Float64,
-                    true,
-                ))),
-                DataType::List(DataType::Float64.into()),
-            ),
-            (
-                ArrowDataType::LargeList(Box::new(ArrowField::new(
-                    "item",
-                    ArrowDataType::Float64,
-                    true,
-                ))),
-                DataType::List(DataType::Float64.into()),
-            ),
-            (
-                ArrowDataType::Dictionary(IntegerType::UInt32, ArrowDataType::Utf8.into(), false),
-                DataType::Categorical(None),
-            ),
-            (
-                ArrowDataType::Dictionary(
-                    IntegerType::UInt32,
-                    ArrowDataType::LargeUtf8.into(),
-                    false,
-                ),
-                DataType::Categorical(None),
-            ),
-            (
-                ArrowDataType::Dictionary(
-                    IntegerType::UInt64,
-                    ArrowDataType::LargeUtf8.into(),
-                    false,
-                ),
-                DataType::Categorical(None),
-            ),
-        ];
-
-        for (dt_a, dt_p) in dtypes {
-            let dt: DataType = (&dt_a).into();
-
-            assert_eq!(dt_p, dt);
-        }
-    }
-}
 pub trait GetAnyValue {
     /// # Safety
     ///
@@ -1181,6 +1067,123 @@ impl<K: NumericNative> From<K> for AnyValue<'_> {
                 // not supported by polars
                 _ => unreachable!(),
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[cfg(feature = "dtype-categorical")]
+    use super::*;
+
+    #[test]
+    #[cfg(feature = "dtype-categorical")]
+    fn test_arrow_dtypes_to_polars() {
+        let dtypes = [
+            (
+                ArrowDataType::Duration(ArrowTimeUnit::Nanosecond),
+                DataType::Duration(TimeUnit::Nanoseconds),
+            ),
+            (
+                ArrowDataType::Duration(ArrowTimeUnit::Millisecond),
+                DataType::Duration(TimeUnit::Milliseconds),
+            ),
+            (
+                ArrowDataType::Date64,
+                DataType::Datetime(TimeUnit::Milliseconds, None),
+            ),
+            (
+                ArrowDataType::Timestamp(ArrowTimeUnit::Nanosecond, None),
+                DataType::Datetime(TimeUnit::Nanoseconds, None),
+            ),
+            (
+                ArrowDataType::Timestamp(ArrowTimeUnit::Microsecond, None),
+                DataType::Datetime(TimeUnit::Microseconds, None),
+            ),
+            (
+                ArrowDataType::Timestamp(ArrowTimeUnit::Millisecond, None),
+                DataType::Datetime(TimeUnit::Milliseconds, None),
+            ),
+            (
+                ArrowDataType::Timestamp(ArrowTimeUnit::Second, None),
+                DataType::Datetime(TimeUnit::Milliseconds, None),
+            ),
+            (
+                ArrowDataType::Timestamp(ArrowTimeUnit::Second, Some("".to_string())),
+                DataType::Datetime(TimeUnit::Milliseconds, Some("".to_string())),
+            ),
+            (ArrowDataType::LargeUtf8, DataType::Utf8),
+            (ArrowDataType::Utf8, DataType::Utf8),
+            (ArrowDataType::LargeBinary, DataType::Binary),
+            (ArrowDataType::Binary, DataType::Binary),
+            (
+                ArrowDataType::Time64(ArrowTimeUnit::Nanosecond),
+                DataType::Time,
+            ),
+            (
+                ArrowDataType::Time64(ArrowTimeUnit::Millisecond),
+                DataType::Time,
+            ),
+            (
+                ArrowDataType::Time64(ArrowTimeUnit::Microsecond),
+                DataType::Time,
+            ),
+            (ArrowDataType::Time64(ArrowTimeUnit::Second), DataType::Time),
+            (
+                ArrowDataType::Time32(ArrowTimeUnit::Nanosecond),
+                DataType::Time,
+            ),
+            (
+                ArrowDataType::Time32(ArrowTimeUnit::Millisecond),
+                DataType::Time,
+            ),
+            (
+                ArrowDataType::Time32(ArrowTimeUnit::Microsecond),
+                DataType::Time,
+            ),
+            (ArrowDataType::Time32(ArrowTimeUnit::Second), DataType::Time),
+            (
+                ArrowDataType::List(Box::new(ArrowField::new(
+                    "item",
+                    ArrowDataType::Float64,
+                    true,
+                ))),
+                DataType::List(DataType::Float64.into()),
+            ),
+            (
+                ArrowDataType::LargeList(Box::new(ArrowField::new(
+                    "item",
+                    ArrowDataType::Float64,
+                    true,
+                ))),
+                DataType::List(DataType::Float64.into()),
+            ),
+            (
+                ArrowDataType::Dictionary(IntegerType::UInt32, ArrowDataType::Utf8.into(), false),
+                DataType::Categorical(None),
+            ),
+            (
+                ArrowDataType::Dictionary(
+                    IntegerType::UInt32,
+                    ArrowDataType::LargeUtf8.into(),
+                    false,
+                ),
+                DataType::Categorical(None),
+            ),
+            (
+                ArrowDataType::Dictionary(
+                    IntegerType::UInt64,
+                    ArrowDataType::LargeUtf8.into(),
+                    false,
+                ),
+                DataType::Categorical(None),
+            ),
+        ];
+
+        for (dt_a, dt_p) in dtypes {
+            let dt: DataType = (&dt_a).into();
+
+            assert_eq!(dt_p, dt);
         }
     }
 }

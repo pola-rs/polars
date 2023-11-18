@@ -108,7 +108,7 @@ fn types_set_to_dtype(types_set: PlIndexSet<DataType>) -> PolarsResult<DataType>
     types_set
         .into_iter()
         .map(Ok)
-        .fold_first_(|a, b| try_get_supertype(&a?, &b?))
+        .reduce(|a, b| try_get_supertype(&a?, &b?))
         .unwrap()
 }
 

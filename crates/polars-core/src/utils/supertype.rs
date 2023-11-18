@@ -14,7 +14,6 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         if l == r {
             return Some(l.clone());
         }
-
         match (l, r) {
             #[cfg(feature = "dtype-i8")]
             (Int8, Boolean) => Some(Int8),
@@ -230,9 +229,24 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
                 let st = get_supertype(inner_left, inner_right)?;
                 Some(DataType::List(Box::new(st)))
             }
+            #[cfg(feature = "dtype-array")]
+            (List(inner_left), Array(inner_right, _)) | (Array(inner_left, _), List(inner_right)) => {
+                let st = get_supertype(inner_left, inner_right)?;
+                Some(DataType::List(Box::new(st)))
+            }
             // todo! check if can be removed
             (List(inner), other) | (other, List(inner)) => {
                 let st = get_supertype(inner, other)?;
+                Some(DataType::List(Box::new(st)))
+            }
+            #[cfg(feature = "dtype-array")]
+            (Array(inner_left, width_left), Array(inner_right, width_right)) if *width_left == *width_right => {
+                let st = get_supertype(inner_left, inner_right)?;
+                Some(DataType::Array(Box::new(st), *width_left))
+            }
+            #[cfg(feature = "dtype-array")]
+            (Array(inner_left, _), Array(inner_right, _)) => {
+                let st = get_supertype(inner_left, inner_right)?;
                 Some(DataType::List(Box::new(st)))
             }
             (_, Unknown) => Some(Unknown),
@@ -250,7 +264,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
                 Some(Struct(new_fields))
             }
             #[cfg(feature = "dtype-decimal")]
-            (d @ Decimal(_, _), dt) if dt.is_signed() || dt.is_unsigned() => Some(d.clone()),
+            (d @ Decimal(_, _), dt) if dt.is_signed_integer() || dt.is_unsigned_integer() => Some(d.clone()),
             #[cfg(feature = "dtype-decimal")]
             (Decimal(p1, s1), Decimal(p2, s2)) => {
                 Some(Decimal((*p1).zip(*p2).map(|(p1, p2)| p1.max(p2)), (*s1).max(*s2)))

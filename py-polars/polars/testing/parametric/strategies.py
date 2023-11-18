@@ -4,7 +4,7 @@ import os
 from datetime import datetime, timedelta
 from itertools import chain
 from random import choice, shuffle
-from string import ascii_letters, ascii_uppercase, digits, punctuation
+from string import ascii_uppercase
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -17,6 +17,7 @@ from typing import (
 
 from hypothesis.strategies import (
     SearchStrategy,
+    binary,
     booleans,
     characters,
     composite,
@@ -35,6 +36,7 @@ from hypothesis.strategies import (
 )
 
 from polars.datatypes import (
+    Binary,
     Boolean,
     Categorical,
     Date,
@@ -57,6 +59,7 @@ from polars.datatypes import (
     is_polars_dtype,
 )
 from polars.type_aliases import PolarsDataType
+from polars.utils.deprecation import deprecate_nonkeyword_arguments
 
 if TYPE_CHECKING:
     import sys
@@ -90,12 +93,12 @@ strategy_u16 = integers(min_value=0, max_value=(2**16) - 1)
 strategy_u32 = integers(min_value=0, max_value=(2**32) - 1)
 strategy_u64 = integers(min_value=0, max_value=(2**64) - 1)
 
-strategy_ascii = text(max_size=8, alphabet=ascii_letters + digits + punctuation)
 strategy_categorical = text(max_size=2, alphabet=ascii_uppercase)
 strategy_utf8 = text(
-    alphabet=characters(max_codepoint=1000, blacklist_categories=("Cs", "Cc")),
+    alphabet=characters(max_codepoint=1000, exclude_categories=["Cs", "Cc"]),
     max_size=8,
 )
+strategy_binary = binary()
 strategy_datetime_ns = datetimes(
     min_value=datetime(1677, 9, 22, 0, 12, 43, 145225),
     max_value=datetime(2262, 4, 11, 23, 47, 16, 854775),
@@ -271,6 +274,7 @@ scalar_strategies: StrategyLookup = StrategyLookup(
         Duration: strategy_duration,
         Categorical: strategy_categorical,
         Utf8: strategy_utf8,
+        Binary: strategy_binary,
     }
 )
 nested_strategies: StrategyLookup = StrategyLookup()
@@ -281,6 +285,7 @@ if os.environ.get("POLARS_ACTIVATE_DECIMAL") == "1":
 
 
 def _get_strategy_dtypes(
+    *,
     base_type: bool = False,
     excluding: tuple[PolarsDataType] | PolarsDataType | None = None,
 ) -> list[PolarsDataType]:
@@ -290,7 +295,7 @@ def _get_strategy_dtypes(
     Parameters
     ----------
     base_type
-        If True, return the base types for each dtype (eg:``List(Utf8)`` → ``List``).
+        If True, return the base types for each dtype (eg:`List(Utf8)` → `List`).
     excluding
         A dtype or sequence of dtypes to omit from the results.
 
@@ -313,13 +318,14 @@ def _flexhash(elem: Any) -> int:
     return hash(elem)
 
 
+@deprecate_nonkeyword_arguments(allowed_args=["inner_dtype"], version="0.19.3")
 def create_list_strategy(
     inner_dtype: PolarsDataType | None,
     select_from: Sequence[Any] | None = None,
     size: int | None = None,
     min_size: int | None = None,
     max_size: int | None = None,
-    unique: bool = False,
+    unique: bool = False,  # noqa: FBT001
 ) -> SearchStrategy[list[Any]]:
     """
     Hypothesis strategy for producing polars List data.
@@ -379,14 +385,7 @@ def create_list_strategy(
         raise ValueError("if specifying `select_from`, must also specify `inner_dtype`")
 
     if inner_dtype is None:
-        strats = list(
-            # note: remove the restriction on nested Categoricals after
-            # https://github.com/pola-rs/polars/issues/8563 is fixed
-            _get_strategy_dtypes(
-                base_type=True,
-                excluding=Categorical,
-            )
-        )
+        strats = list(_get_strategy_dtypes(base_type=True))
         shuffle(strats)
         inner_dtype = choice(strats)
     if size:

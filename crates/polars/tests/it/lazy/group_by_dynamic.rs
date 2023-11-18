@@ -48,7 +48,7 @@ fn test_group_by_dynamic_week_bounds() -> PolarsResult<()> {
                 period: Duration::parse("1w"),
                 offset: Duration::parse("0w"),
                 closed_window: ClosedWindow::Left,
-                truncate: false,
+                label: Label::DataPoint,
                 include_boundaries: true,
                 start_by: StartBy::DataPoint,
                 ..Default::default()

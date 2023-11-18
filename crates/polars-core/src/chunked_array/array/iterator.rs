@@ -5,13 +5,13 @@ use crate::chunked_array::list::iterator::AmortizedListIter;
 use crate::series::unstable::{ArrayBox, UnstableSeries};
 
 impl ArrayChunked {
-    /// This is an iterator over a ListChunked that save allocations.
+    /// This is an iterator over a [`ListChunked`] that save allocations.
     /// A Series is:
     ///     1. [`Arc<ChunkedArray>`]
     ///     ChunkedArray is:
     ///         2. Vec< 3. ArrayRef>
     ///
-    /// The ArrayRef we indicated with 3. will be updated during iteration.
+    /// The [`ArrayRef`] we indicated with 3. will be updated during iteration.
     /// The Series will be pinned in memory, saving an allocation for
     /// 1. Arc<..>
     /// 2. Vec<...>

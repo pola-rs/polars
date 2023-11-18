@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 import polars._reexport as pl
 import polars.functions as F
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
-from polars.utils._async import _AsyncDataFrameResult
+from polars.utils._async import _AioDataFrameResult, _GeventDataFrameResult
 from polars.utils._parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
@@ -23,8 +23,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 
 if TYPE_CHECKING:
-    from queue import Queue
-    from typing import Collection, Literal
+    from typing import Awaitable, Collection, Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars.type_aliases import (
@@ -107,9 +106,9 @@ def count(column: str | Series | None = None) -> Expr | int:
     column
         If dtype is:
 
-        * ``pl.Series`` : count the values in the series.
-        * ``str`` : count the values in this column.
-        * ``None`` : count the number of values in this context.
+        * `pl.Series` : count the values in the Series.
+        * `str` : count the values in this column.
+        * `None` : count the number of values in this context.
 
     Examples
     --------
@@ -309,7 +308,7 @@ def avg(column: str | Series) -> Expr | float:
     Alias for mean.
 
     .. deprecated:: 0.18.12
-        Use ``mean`` instead.
+        Use `mean` instead.
 
     Examples
     --------
@@ -495,7 +494,7 @@ def first(column: str | Series | None = None) -> Expr | Any:
         if column.len() > 0:
             return column[0]
         else:
-            raise IndexError("the series is empty, so no first value can be returned")
+            raise IndexError("the Series is empty, so no first value can be returned")
     return F.col(column).first()
 
 
@@ -560,7 +559,7 @@ def last(column: str | Series | None = None) -> Expr:
         if column.len() > 0:
             return column[-1]
         else:
-            raise IndexError("the series is empty, so no last value can be returned")
+            raise IndexError("the Series is empty, so no last value can be returned")
     return F.col(column).last()
 
 
@@ -677,8 +676,8 @@ def tail(column: str | Series, n: int = 10) -> Expr | Series:
 
 
 def corr(
-    a: str | Expr,
-    b: str | Expr,
+    a: IntoExpr,
+    b: IntoExpr,
     *,
     method: CorrelationMethod = "pearson",
     ddof: int = 1,
@@ -732,24 +731,20 @@ def corr(
     │ 0.5 │
     └─────┘
     """
-    if isinstance(a, str):
-        a = F.col(a)
-    if isinstance(b, str):
-        b = F.col(b)
+    a = parse_as_expression(a)
+    b = parse_as_expression(b)
 
     if method == "pearson":
-        return wrap_expr(plr.pearson_corr(a._pyexpr, b._pyexpr, ddof))
+        return wrap_expr(plr.pearson_corr(a, b, ddof))
     elif method == "spearman":
-        return wrap_expr(
-            plr.spearman_rank_corr(a._pyexpr, b._pyexpr, ddof, propagate_nans)
-        )
+        return wrap_expr(plr.spearman_rank_corr(a, b, ddof, propagate_nans))
     else:
         raise ValueError(
             f"method must be one of {{'pearson', 'spearman'}}, got {method!r}"
         )
 
 
-def cov(a: str | Expr, b: str | Expr) -> Expr:
+def cov(a: IntoExpr, b: IntoExpr, ddof: int = 1) -> Expr:
     """
     Compute the covariance between two columns/ expressions.
 
@@ -759,6 +754,10 @@ def cov(a: str | Expr, b: str | Expr) -> Expr:
         Column name or Expression.
     b
         Column name or Expression.
+    ddof
+        "Delta Degrees of Freedom": the divisor used in the calculation is N - ddof,
+        where N represents the number of elements.
+        By default ddof is 1.
 
     Examples
     --------
@@ -774,11 +773,9 @@ def cov(a: str | Expr, b: str | Expr) -> Expr:
     └─────┘
 
     """
-    if isinstance(a, str):
-        a = F.col(a)
-    if isinstance(b, str):
-        b = F.col(b)
-    return wrap_expr(plr.cov(a._pyexpr, b._pyexpr))
+    a = parse_as_expression(a)
+    b = parse_as_expression(b)
+    return wrap_expr(plr.cov(a, b, ddof))
 
 
 def map_batches(
@@ -803,7 +800,7 @@ def map_batches(
     Returns
     -------
     Expr
-        Expression with the data type given by ``return_dtype``.
+        Expression with the data type given by `return_dtype`.
 
     Examples
     --------
@@ -869,7 +866,7 @@ def map(
     Returns
     -------
     Expr
-        Expression with the data type given by ``return_dtype``.
+        Expression with the data type given by `return_dtype`.
 
     """
     return map_batches(exprs, function, return_dtype)
@@ -903,7 +900,7 @@ def map_groups(
     Returns
     -------
     Expr
-        Expression with the data type given by ``return_dtype``.
+        Expression with the data type given by `return_dtype`.
 
     Examples
     --------
@@ -947,7 +944,7 @@ def map_groups(
 
     The output for group `1` can be understood as follows:
 
-    - group `1` contains series `'a': [1, 3]` and `'b': [4, 5]`
+    - group `1` contains Series `'a': [1, 3]` and `'b': [4, 5]`
     - applying the function to those lists of Series, one gets the output
       `[1 / 4 + 5, 3 / 4 + 6]`, i.e. `[5.25, 6.75]`
     """
@@ -991,7 +988,7 @@ def apply(
     Returns
     -------
     Expr
-        Expression with the data type given by ``return_dtype``.
+        Expression with the data type given by `return_dtype`.
 
     """
     return map_groups(exprs, function, return_dtype, returns_scalar=returns_scalar)
@@ -1019,7 +1016,7 @@ def fold(
     Notes
     -----
     If you simply want the first encountered expression as accumulator,
-    consider using ``reduce``.
+    consider using `reduce`.
 
     Examples
     --------
@@ -1122,7 +1119,7 @@ def reduce(
 
     Notes
     -----
-    See ``fold`` for the version with an explicit accumulator.
+    See `fold` for the version with an explicit accumulator.
 
     Examples
     --------
@@ -1169,7 +1166,7 @@ def reduce(
     return wrap_expr(plr.reduce(function, exprs))
 
 
-def cumfold(
+def cum_fold(
     acc: IntoExpr,
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
@@ -1177,14 +1174,14 @@ def cumfold(
     include_init: bool = False,
 ) -> Expr:
     """
-    Cumulatively accumulate over multiple columns horizontally/ row wise with a left fold.
+    Cumulatively fold horizontally across columns with a left fold.
 
     Every cumulative result is added as a separate field in a Struct column.
 
     Parameters
     ----------
     acc
-        Accumulator Expression. This is the value that will be initialized when the fold
+        Accumulator expression. This is the value that will be initialized when the fold
         starts. For a sum this could for instance be lit(0).
     function
         Function to apply over the accumulator and the value.
@@ -1197,7 +1194,7 @@ def cumfold(
     Notes
     -----
     If you simply want the first encountered expression as accumulator,
-    consider using ``cumreduce``.
+    consider using :func:`cum_reduce`.
 
     Examples
     --------
@@ -1208,50 +1205,36 @@ def cumfold(
     ...         "c": [5, 6, 7],
     ...     }
     ... )
-    >>> df
-    shape: (3, 3)
-    ┌─────┬─────┬─────┐
-    │ a   ┆ b   ┆ c   │
-    │ --- ┆ --- ┆ --- │
-    │ i64 ┆ i64 ┆ i64 │
-    ╞═════╪═════╪═════╡
-    │ 1   ┆ 3   ┆ 5   │
-    │ 2   ┆ 4   ┆ 6   │
-    │ 3   ┆ 5   ┆ 7   │
-    └─────┴─────┴─────┘
-
-    >>> df.select(
-    ...     pl.cumfold(
-    ...         acc=pl.lit(1), function=lambda acc, x: acc + x, exprs=pl.col("*")
-    ...     ).alias("cumfold"),
+    >>> df.with_columns(
+    ...     pl.cum_fold(acc=pl.lit(1), function=lambda acc, x: acc + x, exprs=pl.all())
     ... )
-    shape: (3, 1)
-    ┌───────────┐
-    │ cumfold   │
-    │ ---       │
-    │ struct[3] │
-    ╞═══════════╡
-    │ {2,5,10}  │
-    │ {3,7,13}  │
-    │ {4,9,16}  │
-    └───────────┘
+    shape: (3, 4)
+    ┌─────┬─────┬─────┬───────────┐
+    │ a   ┆ b   ┆ c   ┆ cum_fold  │
+    │ --- ┆ --- ┆ --- ┆ ---       │
+    │ i64 ┆ i64 ┆ i64 ┆ struct[3] │
+    ╞═════╪═════╪═════╪═══════════╡
+    │ 1   ┆ 3   ┆ 5   ┆ {2,5,10}  │
+    │ 2   ┆ 4   ┆ 6   ┆ {3,7,13}  │
+    │ 3   ┆ 5   ┆ 7   ┆ {4,9,16}  │
+    └─────┴─────┴─────┴───────────┘
 
-    """  # noqa: W505
+    """
     # in case of col("*")
     acc = parse_as_expression(acc, str_as_lit=True)
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
     exprs = parse_as_list_of_expressions(exprs)
-    return wrap_expr(plr.cumfold(acc, function, exprs, include_init))
+    return wrap_expr(plr.cum_fold(acc, function, exprs, include_init).alias("cum_fold"))
 
 
-def cumreduce(
+def cum_reduce(
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
 ) -> Expr:
     """
-    Cumulatively accumulate over multiple columns horizontally/ row wise with a left fold.
+    Cumulatively reduce horizontally across columns with a left fold.
 
     Every cumulative result is added as a separate field in a Struct column.
 
@@ -1272,40 +1255,24 @@ def cumreduce(
     ...         "c": [5, 6, 7],
     ...     }
     ... )
-    >>> df
-    shape: (3, 3)
-    ┌─────┬─────┬─────┐
-    │ a   ┆ b   ┆ c   │
-    │ --- ┆ --- ┆ --- │
-    │ i64 ┆ i64 ┆ i64 │
-    ╞═════╪═════╪═════╡
-    │ 1   ┆ 3   ┆ 5   │
-    │ 2   ┆ 4   ┆ 6   │
-    │ 3   ┆ 5   ┆ 7   │
-    └─────┴─────┴─────┘
-
-    >>> df.select(
-    ...     pl.cumreduce(function=lambda acc, x: acc + x, exprs=pl.col("*")).alias(
-    ...         "cumreduce"
-    ...     ),
-    ... )
-    shape: (3, 1)
-    ┌───────────┐
-    │ cumreduce │
-    │ ---       │
-    │ struct[3] │
-    ╞═══════════╡
-    │ {1,4,9}   │
-    │ {2,6,12}  │
-    │ {3,8,15}  │
-    └───────────┘
-    """  # noqa: W505
+    >>> df.with_columns(pl.cum_reduce(function=lambda acc, x: acc + x, exprs=pl.all()))
+    shape: (3, 4)
+    ┌─────┬─────┬─────┬────────────┐
+    │ a   ┆ b   ┆ c   ┆ cum_reduce │
+    │ --- ┆ --- ┆ --- ┆ ---        │
+    │ i64 ┆ i64 ┆ i64 ┆ struct[3]  │
+    ╞═════╪═════╪═════╪════════════╡
+    │ 1   ┆ 3   ┆ 5   ┆ {1,4,9}    │
+    │ 2   ┆ 4   ┆ 6   ┆ {2,6,12}   │
+    │ 3   ┆ 5   ┆ 7   ┆ {3,8,15}   │
+    └─────┴─────┴─────┴────────────┘
+    """
     # in case of col("*")
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
     exprs = parse_as_list_of_expressions(exprs)
-    return wrap_expr(plr.cumreduce(function, exprs))
+    return wrap_expr(plr.cum_reduce(function, exprs).alias("cum_reduce"))
 
 
 def arctan2(y: str | Expr, x: str | Expr) -> Expr:
@@ -1409,13 +1376,13 @@ def exclude(
     """
     Represent all columns except for the given columns.
 
-    Syntactic sugar for ``pl.all().exclude(columns)``.
+    Syntactic sugar for `pl.all().exclude(columns)`.
 
     Parameters
     ----------
     columns
         The name or datatype of the column(s) to exclude. Accepts regular expression
-        input. Regular expressions should start with ``^`` and end with ``$``.
+        input. Regular expressions should start with `^` and end with `$`.
     *more_columns
         Additional names or datatypes of columns to exclude, specified as positional
         arguments.
@@ -1640,7 +1607,7 @@ def collect_all(
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
-            eager=False,
+            _eager=False,
         )
         prepared.append(ldf)
 
@@ -1652,10 +1619,29 @@ def collect_all(
     return result
 
 
+@overload
 def collect_all_async(
     lazy_frames: Sequence[LazyFrame],
-    queue: Queue[list[DataFrame] | Exception],
     *,
+    gevent: Literal[True],
+    type_coercion: bool = True,
+    predicate_pushdown: bool = True,
+    projection_pushdown: bool = True,
+    simplify_expression: bool = True,
+    no_optimization: bool = True,
+    slice_pushdown: bool = True,
+    comm_subplan_elim: bool = True,
+    comm_subexpr_elim: bool = True,
+    streaming: bool = True,
+) -> _GeventDataFrameResult[list[DataFrame]]:
+    ...
+
+
+@overload
+def collect_all_async(
+    lazy_frames: Sequence[LazyFrame],
+    *,
+    gevent: Literal[False] = False,
     type_coercion: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
@@ -1665,33 +1651,63 @@ def collect_all_async(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     streaming: bool = False,
-) -> _AsyncDataFrameResult[list[DataFrame]]:
+) -> Awaitable[list[DataFrame]]:
+    ...
+
+
+def collect_all_async(
+    lazy_frames: Sequence[LazyFrame],
+    *,
+    gevent: bool = False,
+    type_coercion: bool = True,
+    predicate_pushdown: bool = True,
+    projection_pushdown: bool = True,
+    simplify_expression: bool = True,
+    no_optimization: bool = False,
+    slice_pushdown: bool = True,
+    comm_subplan_elim: bool = True,
+    comm_subexpr_elim: bool = True,
+    streaming: bool = False,
+) -> Awaitable[list[DataFrame]] | _GeventDataFrameResult[list[DataFrame]]:
     """
     Collect multiple LazyFrames at the same time asynchronously in thread pool.
 
-    Collects into a list of DataFrame, like :func:`polars.collect_all`
-    but instead of returning them directly its collected inside thread pool
-    and gets put into `queue` with `put_nowait` method,
-    while this method returns almost instantly.
+    Collects into a list of DataFrame (like :func:`polars.collect_all`),
+    but instead of returning them directly, they are scheduled to be collected
+    inside thread pool, while this method returns almost instantly.
 
     May be useful if you use gevent or asyncio and want to release control to other
     greenlets/tasks while LazyFrames are being collected.
-    You must use correct queue in that case.
-    Given `queue` must be thread safe!
 
-    For gevent use
-    [`gevent.queue.Queue`](https://www.gevent.org/api/gevent.queue.html#gevent.queue.Queue).
-
-    For asyncio
-    [`asyncio.queues.Queue`](https://docs.python.org/3/library/asyncio-queue.html#queue)
-    can not be used, since it's not thread safe!
-    For that purpose use [janus](https://github.com/aio-libs/janus) library.
+    Parameters
+    ----------
+    lazy_frames
+        A list of LazyFrames to collect.
+    gevent
+        Return wrapper to `gevent.event.AsyncResult` instead of Awaitable
+    type_coercion
+        Do type coercion optimization.
+    predicate_pushdown
+        Do predicate pushdown optimization.
+    projection_pushdown
+        Do projection pushdown optimization.
+    simplify_expression
+        Run simplify expressions optimization.
+    no_optimization
+        Turn off (certain) optimizations.
+    slice_pushdown
+        Slice pushdown optimization.
+    comm_subplan_elim
+        Will try to cache branching subplans that occur on self-joins or unions.
+    comm_subexpr_elim
+        Common subexpressions will be cached and reused.
+    streaming
+        Run parts of the query in a streaming fashion (this is in an alpha state)
 
     Notes
     -----
-    Results are put in queue exactly once using `put_nowait`.
-    If error occurred then Exception will be put in the queue instead of result
-    which is then raised by returned wrapper `get` method.
+    In case of error `set_exception` is used on
+    `asyncio.Future`/`gevent.event.AsyncResult` and will be reraised by them.
 
     Warnings
     --------
@@ -1705,8 +1721,10 @@ def collect_all_async(
 
     Returns
     -------
-    Wrapper that has `get` method and `queue` attribute with given queue.
-    `get` accepts kwargs that are passed down to `queue.get`.
+    If `gevent=False` (default) then returns awaitable.
+
+    If `gevent=True` then returns wrapper that has
+    `.get(block=True, timeout=None)` method.
     """
     if no_optimization:
         predicate_pushdown = False
@@ -1727,20 +1745,20 @@ def collect_all_async(
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
-            eager=False,
+            _eager=False,
         )
         prepared.append(ldf)
 
-    result = _AsyncDataFrameResult(queue)
-    plr.collect_all_with_callback(prepared, result._callback_all)
-    return result
+    result = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
+    plr.collect_all_with_callback(prepared, result._callback_all)  # type: ignore[attr-defined]
+    return result  # type: ignore[return-value]
 
 
 def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> DataFrame:
     """
     Run polars expressions without a context.
 
-    This is syntactic sugar for running ``df.select`` on an empty DataFrame.
+    This is syntactic sugar for running `df.select` on an empty DataFrame.
 
     Parameters
     ----------
@@ -1800,7 +1818,7 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
     condition
         Boolean expression to evaluate
     eager
-        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        Evaluate immediately and return a `Series`. If set to `False` (default),
         return an expression instead.
 
     See Also
@@ -1958,7 +1976,7 @@ def from_epoch(
         return column.cast(Datetime(time_unit))
     else:
         raise ValueError(
-            f"'time_unit' must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}"
+            f"`time_unit` must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}"
         )
 
 
@@ -1989,7 +2007,7 @@ def rolling_cov(
         a result. If None, it will be set equal to window size.
     ddof
         Delta degrees of freedom.  The divisor used in calculations
-        is ``N - ddof``, where ``N`` represents the number of elements.
+        is `N - ddof`, where `N` represents the number of elements.
 
     """
     if min_periods is None:
@@ -2030,7 +2048,7 @@ def rolling_corr(
         a result. If None, it will be set equal to window size.
     ddof
         Delta degrees of freedom.  The divisor used in calculations
-        is ``N - ddof``, where ``N`` represents the number of elements.
+        is `N - ddof`, where `N` represents the number of elements.
 
     """
     if min_periods is None:
@@ -2098,3 +2116,64 @@ def sql_expr(sql: str | Sequence[str]) -> Expr | list[Expr]:
         return wrap_expr(plr.sql_expr(sql))
     else:
         return [wrap_expr(plr.sql_expr(q)) for q in sql]
+
+
+@deprecate_renamed_function("cum_fold", version="0.19.14")
+def cumfold(
+    acc: IntoExpr,
+    function: Callable[[Series, Series], Series],
+    exprs: Sequence[Expr | str] | Expr,
+    *,
+    include_init: bool = False,
+) -> Expr:
+    """
+    Cumulatively accumulate over multiple columns horizontally/ row wise with a left fold.
+
+    Every cumulative result is added as a separate field in a Struct column.
+
+    Parameters
+    ----------
+    acc
+        Accumulator Expression. This is the value that will be initialized when the fold
+        starts. For a sum this could for instance be lit(0).
+    function
+        Function to apply over the accumulator and the value.
+        Fn(acc, value) -> new_value
+    exprs
+        Expressions to aggregate over. May also be a wildcard expression.
+    include_init
+        Include the initial accumulator state as struct field.
+    """  # noqa: W505
+    # in case of col("*")
+    acc = parse_as_expression(acc, str_as_lit=True)
+    if isinstance(exprs, pl.Expr):
+        exprs = [exprs]
+
+    exprs = parse_as_list_of_expressions(exprs)
+    return wrap_expr(plr.cum_fold(acc, function, exprs, include_init))
+
+
+@deprecate_renamed_function("cum_reduce", version="0.19.14")
+def cumreduce(
+    function: Callable[[Series, Series], Series],
+    exprs: Sequence[Expr | str] | Expr,
+) -> Expr:
+    """
+    Cumulatively accumulate over multiple columns horizontally/ row wise with a left fold.
+
+    Every cumulative result is added as a separate field in a Struct column.
+
+    Parameters
+    ----------
+    function
+        Function to apply over the accumulator and the value.
+        Fn(acc, value) -> new_value
+    exprs
+        Expressions to aggregate over. May also be a wildcard expression.
+    """  # noqa: W505
+    # in case of col("*")
+    if isinstance(exprs, pl.Expr):
+        exprs = [exprs]
+
+    exprs = parse_as_list_of_expressions(exprs)
+    return wrap_expr(plr.cum_reduce(function, exprs))

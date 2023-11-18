@@ -3,19 +3,17 @@ use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
 
+use arrow::legacy::is_valid::IsValid;
+use arrow::legacy::kernels::sort_partition::partition_to_groups_amortized;
 use hashbrown::hash_map::RawEntryMut;
 use num_traits::NumCast;
-use polars_arrow::is_valid::IsValid;
-use polars_arrow::kernels::sort_partition::partition_to_groups_amortized;
 use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
-use polars_core::hashing::integer_hash;
-use polars_core::hashing::partition::AsU64;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_set_partition_size;
 use polars_core::POOL;
-use polars_utils::hash_to_partition;
+use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 use rayon::prelude::*;
@@ -84,7 +82,7 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
 impl<K: PolarsNumericType> PrimitiveGroupbySink<K>
 where
     ChunkedArray<K>: IntoSeries,
-    K::Native: Hash + AsU64,
+    K::Native: Hash + DirtyHash,
 {
     pub(crate) fn new(
         key: Arc<dyn PhysicalPipedExpr>,
@@ -235,7 +233,8 @@ where
             let (opt_v, h) = if unsafe { arr.is_valid_unchecked(*offset as usize) } {
                 let first_g_value = unsafe { *values.get_unchecked_release(*offset as usize) };
                 // Ensure that this hash is equal to the default non-sorted sink.
-                let h = integer_hash(first_g_value);
+                let h = self.hb.hash_one(first_g_value);
+                // let h = integer_hash(first_g_value);
                 (Some(first_g_value), h)
             } else {
                 (null, null_hash)
@@ -353,7 +352,7 @@ where
 
 impl<K: PolarsNumericType> Sink for PrimitiveGroupbySink<K>
 where
-    K::Native: Hash + Eq + Debug + Hash + AsU64,
+    K::Native: Hash + Eq + Debug + Hash + DirtyHash,
     ChunkedArray<K>: IntoSeries,
 {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {

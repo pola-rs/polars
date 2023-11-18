@@ -4,8 +4,10 @@ from io import BytesIO, StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, overload
 
+from polars.exceptions import ComputeError
 from polars.utils._wrap import wrap_expr
-from polars.utils.various import normalise_filepath
+from polars.utils.deprecation import deprecate_nonkeyword_arguments
+from polars.utils.various import normalize_filepath
 
 if TYPE_CHECKING:
     from io import IOBase
@@ -87,12 +89,21 @@ class ExprMetaNameSpace:
         """
         return self._pyexpr.meta_is_regex_projection()
 
-    def output_name(self) -> str:
+    @overload
+    def output_name(self, *, raise_if_undetermined: Literal[True] = True) -> str:
+        ...
+
+    @overload
+    def output_name(self, *, raise_if_undetermined: Literal[False]) -> str | None:
+        ...
+
+    def output_name(self, *, raise_if_undetermined: bool = True) -> str | None:
         """
         Get the column name that this expression would produce.
 
-        It may not always be possible to determine the output name, as that can depend
-        on the schema of the context; in that case this will raise ``ComputeError``.
+        It may not always be possible to determine the output name as that can depend
+        on the schema of the context; in that case this will raise `ComputeError` if
+        `raise_if_undetermined` is True (the default), or `None` otherwise.
 
         Examples
         --------
@@ -108,12 +119,16 @@ class ExprMetaNameSpace:
         >>> e_sum_slice = pl.sum("foo").slice(pl.count() - 10, pl.col("bar"))
         >>> e_sum_slice.meta.output_name()
         'foo'
-        >>> e_count = pl.count()
-        >>> e_count.meta.output_name()
+        >>> pl.count().meta.output_name()
         'count'
 
         """
-        return self._pyexpr.meta_output_name()
+        try:
+            return self._pyexpr.meta_output_name()
+        except ComputeError:
+            if not raise_if_undetermined:
+                return None
+            raise
 
     def pop(self) -> list[Expr]:
         """
@@ -124,7 +139,7 @@ class ExprMetaNameSpace:
         list of Expr
             A list of expressions which in most cases will have a unit length.
             This is not the case when an expression has multiple inputs.
-            For instance in a ``fold`` expression.
+            For instance in a `fold` expression.
 
         Examples
         --------
@@ -162,7 +177,7 @@ class ExprMetaNameSpace:
 
     def undo_aliases(self) -> Expr:
         """
-        Undo any renaming operation like ``alias`` or ``keep_name``.
+        Undo any renaming operation like `alias` or `name.keep`.
 
         Examples
         --------
@@ -170,7 +185,7 @@ class ExprMetaNameSpace:
         >>> e.meta.undo_aliases().meta == pl.col("foo")
         True
         >>> e = pl.col("foo").sum().over("bar")
-        >>> e.keep_name().meta.undo_aliases().meta == e
+        >>> e.name.keep().meta.undo_aliases().meta == e
         True
 
         """
@@ -203,7 +218,7 @@ class ExprMetaNameSpace:
     def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
         """Write expression to json."""
         if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+            file = normalize_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if file is None or to_string_io:
             with BytesIO() as buf:
@@ -227,7 +242,8 @@ class ExprMetaNameSpace:
     def tree_format(self, *, return_as_string: Literal[True]) -> str:
         ...
 
-    def tree_format(self, return_as_string: bool = False) -> str | None:
+    @deprecate_nonkeyword_arguments(version="0.19.3")
+    def tree_format(self, return_as_string: bool = False) -> str | None:  # noqa: FBT001
         """
         Format the expression as a tree.
 

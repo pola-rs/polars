@@ -2,7 +2,7 @@ use super::*;
 use crate::frame::row::av_buffer::AnyValueBuffer;
 
 impl DataFrame {
-    /// Get a row from a DataFrame. Use of this is discouraged as it will likely be slow.
+    /// Get a row from a [`DataFrame`]. Use of this is discouraged as it will likely be slow.
     pub fn get_row(&self, idx: usize) -> PolarsResult<Row> {
         let values = self
             .columns
@@ -14,7 +14,7 @@ impl DataFrame {
 
     /// Amortize allocations by reusing a row.
     /// The caller is responsible to make sure that the row has at least the capacity for the number
-    /// of columns in the DataFrame
+    /// of columns in the [`DataFrame`]
     pub fn get_row_amortized<'a>(&'a self, idx: usize, row: &mut Row<'a>) -> PolarsResult<()> {
         for (s, any_val) in self.columns.iter().zip(&mut row.0) {
             *any_val = s.get(idx)?;
@@ -24,7 +24,7 @@ impl DataFrame {
 
     /// Amortize allocations by reusing a row.
     /// The caller is responsible to make sure that the row has at least the capacity for the number
-    /// of columns in the DataFrame
+    /// of columns in the [`DataFrame`]
     ///
     /// # Safety
     /// Does not do any bounds checking.
@@ -38,14 +38,14 @@ impl DataFrame {
             });
     }
 
-    /// Create a new DataFrame from rows. This should only be used when you have row wise data,
-    /// as this is a lot slower than creating the `Series` in a columnar fashion
+    /// Create a new [`DataFrame`] from rows. This should only be used when you have row wise data,
+    /// as this is a lot slower than creating the [`Series`] in a columnar fashion
     pub fn from_rows_and_schema(rows: &[Row], schema: &Schema) -> PolarsResult<Self> {
         Self::from_rows_iter_and_schema(rows.iter(), schema)
     }
 
-    /// Create a new DataFrame from an iterator over rows. This should only be used when you have row wise data,
-    /// as this is a lot slower than creating the `Series` in a columnar fashion
+    /// Create a new [`DataFrame`] from an iterator over rows. This should only be used when you have row wise data,
+    /// as this is a lot slower than creating the [`Series`] in a columnar fashion
     pub fn from_rows_iter_and_schema<'a, I>(mut rows: I, schema: &Schema) -> PolarsResult<Self>
     where
         I: Iterator<Item = &'a Row<'a>>,
@@ -86,8 +86,8 @@ impl DataFrame {
         DataFrame::new(v)
     }
 
-    /// Create a new DataFrame from an iterator over rows. This should only be used when you have row wise data,
-    /// as this is a lot slower than creating the `Series` in a columnar fashion
+    /// Create a new [`DataFrame`] from an iterator over rows. This should only be used when you have row wise data,
+    /// as this is a lot slower than creating the [`Series`] in a columnar fashion
     pub fn try_from_rows_iter_and_schema<'a, I>(mut rows: I, schema: &Schema) -> PolarsResult<Self>
     where
         I: Iterator<Item = PolarsResult<&'a Row<'a>>>,
@@ -128,8 +128,8 @@ impl DataFrame {
         DataFrame::new(v)
     }
 
-    /// Create a new DataFrame from rows. This should only be used when you have row wise data,
-    /// as this is a lot slower than creating the `Series` in a columnar fashion
+    /// Create a new [`DataFrame`] from rows. This should only be used when you have row wise data,
+    /// as this is a lot slower than creating the [`Series`] in a columnar fashion
     pub fn from_rows(rows: &[Row]) -> PolarsResult<Self> {
         let schema = rows_to_schema_first_non_null(rows, Some(50));
         let has_nulls = schema

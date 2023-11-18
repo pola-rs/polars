@@ -1,9 +1,9 @@
-use polars_lazy::prelude::*;
-use polars_sql::*;
-
 #[test]
 #[cfg(feature = "csv")]
 fn iss_7436() {
+    use polars_lazy::prelude::*;
+    use polars_sql::*;
+
     let mut context = SQLContext::new();
     let sql = r#"
         CREATE TABLE foods AS

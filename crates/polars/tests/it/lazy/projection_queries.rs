@@ -131,12 +131,16 @@ fn test_projection_5086() -> PolarsResult<()> {
         .lazy()
         .select([
             col("a"),
-            col("b").take("c").cumsum(false).over([col("a")]).gt(lit(0)),
+            col("b")
+                .gather("c")
+                .cum_sum(false)
+                .over([col("a")])
+                .gt(lit(0)),
         ])
         .select([
             col("a"),
             col("b")
-                .xor(col("b").shift(1).over([col("a")]))
+                .xor(col("b").shift(lit(1)).over([col("a")]))
                 .fill_null(lit(true))
                 .alias("keep"),
         ])

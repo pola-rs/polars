@@ -63,18 +63,18 @@ def datetime_(
     use_earliest
         Determine how to deal with ambiguous datetimes:
 
-        - ``None`` (default): raise
-        - ``True``: use the earliest datetime
-        - ``False``: use the latest datetime
+        - `None` (default): raise
+        - `True`: use the earliest datetime
+        - `False`: use the latest datetime
 
         .. deprecated:: 0.19.0
             Use `ambiguous` instead
     ambiguous
         Determine how to deal with ambiguous datetimes:
 
-        - ``'raise'`` (default): raise
-        - ``'earliest'``: use the earliest datetime
-        - ``'latest'``: use the latest datetime
+        - `'raise'` (default): raise
+        - `'earliest'`: use the earliest datetime
+        - `'latest'`: use the latest datetime
 
 
     Returns
@@ -177,17 +177,39 @@ def time_(
 
 def duration(
     *,
-    days: Expr | str | int | None = None,
-    seconds: Expr | str | int | None = None,
-    nanoseconds: Expr | str | int | None = None,
-    microseconds: Expr | str | int | None = None,
-    milliseconds: Expr | str | int | None = None,
-    minutes: Expr | str | int | None = None,
-    hours: Expr | str | int | None = None,
     weeks: Expr | str | int | None = None,
+    days: Expr | str | int | None = None,
+    hours: Expr | str | int | None = None,
+    minutes: Expr | str | int | None = None,
+    seconds: Expr | str | int | None = None,
+    milliseconds: Expr | str | int | None = None,
+    microseconds: Expr | str | int | None = None,
+    nanoseconds: Expr | str | int | None = None,
+    time_unit: TimeUnit = "us",
 ) -> Expr:
     """
     Create polars `Duration` from distinct time components.
+
+    Parameters
+    ----------
+    weeks
+        Number of weeks.
+    days
+        Number of days.
+    hours
+        Number of hours.
+    minutes
+        Number of minutes.
+    seconds
+        Number of seconds.
+    milliseconds
+        Number of milliseconds.
+    microseconds
+        Number of microseconds.
+    nanoseconds
+        Number of nanoseconds.
+    time_unit : {'us', 'ms', 'ns'}
+        Time unit of the resulting expression.
 
     Returns
     -------
@@ -197,8 +219,8 @@ def duration(
     Notes
     -----
     A `duration` represents a fixed amount of time. For example,
-    ``pl.duration(days=1)`` means "exactly 24 hours". By contrast,
-    ``Expr.dt.offset_by('1d')`` means "1 calendar day", which could sometimes be
+    `pl.duration(days=1)` means "exactly 24 hours". By contrast,
+    `Expr.dt.offset_by('1d')` means "1 calendar day", which could sometimes be
     23 hours or 25 hours depending on Daylight Savings Time.
     For non-fixed durations such as "calendar month" or "calendar day",
     please use :meth:`polars.Expr.dt.offset_by` instead.
@@ -267,6 +289,10 @@ def duration(
     └─────────────────────┴─────────────────────┴─────────────────────┘
 
     """  # noqa: W505
+    if weeks is not None:
+        weeks = parse_as_expression(weeks)
+    if days is not None:
+        days = parse_as_expression(days)
     if hours is not None:
         hours = parse_as_expression(hours)
     if minutes is not None:
@@ -279,21 +305,18 @@ def duration(
         microseconds = parse_as_expression(microseconds)
     if nanoseconds is not None:
         nanoseconds = parse_as_expression(nanoseconds)
-    if days is not None:
-        days = parse_as_expression(days)
-    if weeks is not None:
-        weeks = parse_as_expression(weeks)
 
     return wrap_expr(
         plr.duration(
-            days,
-            seconds,
-            nanoseconds,
-            microseconds,
-            milliseconds,
-            minutes,
-            hours,
             weeks,
+            days,
+            hours,
+            minutes,
+            seconds,
+            milliseconds,
+            microseconds,
+            nanoseconds,
+            time_unit,
         )
     )
 
@@ -390,7 +413,7 @@ def struct(
         Optional schema that explicitly defines the struct field dtypes. If no columns
         or expressions are provided, schema keys are used to define columns.
     eager
-        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        Evaluate immediately and return a `Series`. If set to `False` (default),
         return an expression instead.
     **named_exprs
         Additional columns to collect into the struct column, specified as keyword
@@ -398,7 +421,7 @@ def struct(
 
     Examples
     --------
-    Collect all columns of a dataframe into a struct by passing ``pl.all()``.
+    Collect all columns of a dataframe into a struct by passing `pl.all()`.
 
     >>> df = pl.DataFrame(
     ...     {
@@ -436,7 +459,7 @@ def struct(
     Use keyword arguments to easily name each struct field.
 
     >>> df.select(pl.struct(p="int", q="bool").alias("my_struct")).schema
-    {'my_struct': Struct([Field('p', Int64), Field('q', Boolean)])}
+    OrderedDict({'my_struct': Struct([Field('p', Int64), Field('q', Boolean)])})
 
     """
     pyexprs = parse_as_list_of_expressions(*exprs, **named_exprs)
@@ -471,7 +494,7 @@ def concat_str(
     exprs
         Columns to concatenate into a single string column. Accepts expression input.
         Strings are parsed as column names, other non-expression inputs are parsed as
-        literals. Non-``Utf8`` columns are cast to ``Utf8``.
+        literals. Non-`Utf8` columns are cast to `Utf8`.
     *more_exprs
         Additional columns to concatenate into a single string column, specified as
         positional arguments.

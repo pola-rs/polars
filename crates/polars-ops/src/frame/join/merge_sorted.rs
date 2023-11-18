@@ -1,4 +1,4 @@
-use polars_arrow::utils::{CustomIterTools, FromTrustedLenIterator};
+use arrow::legacy::utils::{CustomIterTools, FromTrustedLenIterator};
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 
@@ -175,8 +175,6 @@ where
     for a in &mut a_iter {
         current_a = a;
         if a <= current_b {
-            // safety
-            // we pre-allocated enough
             out.push(A_INDICATOR);
             continue;
         }

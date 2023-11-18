@@ -13,3 +13,23 @@ version-resolver:
       - breaking
       - breaking rust
   default: patch
+
+categories:
+  - title: 🏆 Highlights
+    labels: highlight
+  - title: 💥 Breaking changes
+    labels:
+      - breaking
+      - breaking rust
+  - title: 🚀 Performance improvements
+    labels: performance
+  - title: ✨ Enhancements
+    labels: enhancement
+  - title: 🐞 Bug fixes
+    labels: fix
+  - title: 🛠️ Other improvements
+    labels:
+      - build
+      - deprecation
+      - documentation
+      - internal

@@ -35,11 +35,12 @@
 use std::io::{Read, Seek};
 use std::sync::Arc;
 
+use arrow::datatypes::ArrowSchemaRef;
 use arrow::io::ipc::read;
 use polars_core::frame::ArrowChunk;
 use polars_core::prelude::*;
 
-use super::{finish_reader, ArrowReader, ArrowResult};
+use super::{finish_reader, ArrowReader};
 use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
@@ -73,18 +74,17 @@ pub struct IpcReader<R: MmapBytesReader> {
     pub(super) row_count: Option<RowCount>,
     memmap: bool,
     metadata: Option<read::FileMetadata>,
+    schema: Option<ArrowSchemaRef>,
 }
 
 fn check_mmap_err(err: PolarsError) -> PolarsResult<()> {
-    if let PolarsError::ArrowError(ref e) = err {
-        if let arrow::error::Error::NotYetImplemented(s) = e.as_ref() {
-            if s == "mmap can only be done on uncompressed IPC files" {
-                eprintln!(
-                    "Could not mmap compressed IPC file, defaulting to normal read. \
-                    Toggle off 'memory_map' to silence this warning."
-                );
-                return Ok(());
-            }
+    if let PolarsError::ComputeError(s) = &err {
+        if s.as_ref() == "mmap can only be done on uncompressed IPC files" {
+            eprintln!(
+                "Could not mmap compressed IPC file, defaulting to normal read. \
+                Toggle off 'memory_map' to silence this warning."
+            );
+            return Ok(());
         }
     }
     Err(err)
@@ -103,21 +103,17 @@ impl<R: MmapBytesReader> IpcReader<R> {
     }
     fn get_metadata(&mut self) -> PolarsResult<&read::FileMetadata> {
         if self.metadata.is_none() {
-            self.metadata = Some(read::read_file_metadata(&mut self.reader)?);
+            let metadata = read::read_file_metadata(&mut self.reader)?;
+            self.schema = Some(metadata.schema.clone());
+            self.metadata = Some(metadata);
         }
         Ok(self.metadata.as_ref().unwrap())
     }
 
-    /// Get schema of the Ipc File
-    pub fn schema(&mut self) -> PolarsResult<Schema> {
-        let metadata = self.get_metadata()?;
-        Ok(Schema::from_iter(&metadata.schema.fields))
-    }
-
-    /// Get arrow schema of the Ipc File, this is faster than creating a polars schema.
-    pub fn arrow_schema(&mut self) -> PolarsResult<ArrowSchema> {
-        let metadata = read::read_file_metadata(&mut self.reader)?;
-        Ok(metadata.schema)
+    /// Get arrow schema of the Ipc File.
+    pub fn schema(&mut self) -> PolarsResult<ArrowSchemaRef> {
+        self.get_metadata()?;
+        Ok(self.schema.as_ref().unwrap().clone())
     }
     /// Stop reading when `n` rows are read.
     pub fn with_n_rows(mut self, num_rows: Option<usize>) -> Self {
@@ -170,7 +166,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
         let metadata = read::read_file_metadata(&mut self.reader)?;
 
         let schema = if let Some(projection) = &self.projection {
-            apply_projection(&metadata.schema, projection)
+            Arc::new(apply_projection(&metadata.schema, projection))
         } else {
             metadata.schema.clone()
         };
@@ -185,7 +181,7 @@ impl<R: MmapBytesReader> ArrowReader for read::FileReader<R>
 where
     R: Read + Seek,
 {
-    fn next_record_batch(&mut self) -> ArrowResult<Option<ArrowChunk>> {
+    fn next_record_batch(&mut self) -> PolarsResult<Option<ArrowChunk>> {
         self.next().map_or(Ok(None), |v| v.map(Some))
     }
 }
@@ -201,6 +197,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
             row_count: None,
             memmap: true,
             metadata: None,
+            schema: None,
         }
     }
 
@@ -226,7 +223,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
         }
 
         let schema = if let Some(projection) = &self.projection {
-            apply_projection(&metadata.schema, projection)
+            Arc::new(apply_projection(&metadata.schema, projection))
         } else {
             metadata.schema.clone()
         };

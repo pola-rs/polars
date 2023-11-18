@@ -1,14 +1,16 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use polars_arrow::export::arrow::array::BinaryArray;
+use arrow::array::BinaryArray;
+use polars_core::datatypes::ChunkId;
 use polars_core::error::PolarsResult;
 use polars_core::export::ahash::RandomState;
-use polars_core::frame::hash_join::{ChunkId, _finish_join};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
+use polars_ops::frame::join::_finish_join;
+use polars_ops::prelude::JoinType;
 use polars_row::RowsEncoded;
-use polars_utils::hash_to_partition;
+use polars_utils::hashing::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 use smartstring::alias::String as SmartString;
 
@@ -139,7 +141,7 @@ impl GenericJoinProbe {
         if !self.swapped_or_left && self.join_column_idx.is_none() {
             let mut idx = names
                 .iter()
-                .filter_map(|name| chunk.data.find_idx_by_name(name))
+                .filter_map(|name| chunk.data.get_column_index(name))
                 .collect::<Vec<_>>();
             // ensure that it is sorted so that we can later remove columns in
             // a predictable order

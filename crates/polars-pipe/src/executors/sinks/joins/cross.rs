@@ -6,6 +6,7 @@ use std::vec;
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
+use polars_ops::prelude::CrossJoin as CrossJoinTrait;
 use smartstring::alias::String as SmartString;
 
 use crate::operators::{
@@ -90,7 +91,7 @@ impl Operator for CrossJoinProbe {
 
         if self.in_process_left.is_none() {
             let mut iter_left = (0..self.df.height()).step_by(size);
-            let offset = iter_left.next().unwrap();
+            let offset = iter_left.next().unwrap_or(0);
             self.in_process_left_df = self.df.slice(offset as i64, size);
             self.in_process_left = Some(iter_left);
         }
@@ -117,11 +118,13 @@ impl Operator for CrossJoinProbe {
                         let iter_right = self.in_process_right.as_mut().unwrap();
                         let offset = iter_right.next().unwrap();
                         let right_df = chunk.data.slice(offset as i64, size);
-                        let df = self.in_process_left_df.cross_join(
+                        let mut df = self.in_process_left_df.cross_join(
                             &right_df,
                             Some(self.suffix.as_ref()),
                             None,
                         )?;
+                        // Cross joins can produce multiple chunks.
+                        df.as_single_chunk_par();
                         Ok(OperatorResult::HaveMoreOutPut(chunk.with_data(df)))
                     },
                 }
@@ -134,7 +137,7 @@ impl Operator for CrossJoinProbe {
 
                 // we use the first join to determine the output names
                 // this we can amortize the name allocations.
-                let df = match &self.output_names {
+                let mut df = match &self.output_names {
                     None => {
                         let df = self.in_process_left_df.cross_join(
                             &right_df,
@@ -148,6 +151,8 @@ impl Operator for CrossJoinProbe {
                         .in_process_left_df
                         ._cross_join_with_names(&right_df, names)?,
                 };
+                // Cross joins can produce multiple chunks.
+                df.as_single_chunk_par();
 
                 Ok(OperatorResult::HaveMoreOutPut(chunk.with_data(df)))
             },

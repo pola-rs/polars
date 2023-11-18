@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from collections import OrderedDict, namedtuple
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
@@ -14,7 +15,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 import polars as pl
 from polars.dependencies import _ZONEINFO_AVAILABLE, dataclasses, pydantic
-from polars.exceptions import ShapeError, TimeZoneAwareConstructorWarning
+from polars.exceptions import TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import type_hints
 
@@ -175,7 +176,7 @@ def test_init_dict() -> None:
     for empty_val in [None, "", {}, []]:  # type: ignore[var-annotated]
         test = [{"field": {"sub_field": empty_val, "sub_field_2": 2}}]
         df = pl.DataFrame(test, schema={"field": pl.Object})
-        assert df.to_dict(False)["field"][0] == test[0]["field"]
+        assert df["field"][0] == test[0]["field"]
 
 
 def test_error_string_dtypes() -> None:
@@ -227,7 +228,7 @@ def test_init_structured_objects(monkeypatch: Any) -> None:
             assert df.schema == {
                 "timestamp": pl.Datetime("us"),
                 "ticker": pl.Utf8,
-                "price": pl.Decimal(1),
+                "price": pl.Decimal(scale=1),
                 "size": pl.Int64,
             }
             assert df.rows() == raw_data
@@ -240,7 +241,7 @@ def test_init_structured_objects(monkeypatch: Any) -> None:
             assert df.schema == {
                 "timestamp": pl.Datetime("ms"),
                 "ticker": pl.Utf8,
-                "price": pl.Decimal(1),
+                "price": pl.Decimal(scale=1),
                 "size": pl.Int32,
             }
 
@@ -250,14 +251,14 @@ def test_init_structured_objects(monkeypatch: Any) -> None:
             schema=[
                 ("ts", pl.Datetime("ms")),
                 ("tk", pl.Categorical),
-                ("pc", pl.Decimal(1)),
+                ("pc", pl.Decimal(scale=1)),
                 ("sz", pl.UInt16),
             ],
         )
         assert df.schema == {
             "ts": pl.Datetime("ms"),
             "tk": pl.Categorical,
-            "pc": pl.Decimal(1),
+            "pc": pl.Decimal(scale=1),
             "sz": pl.UInt16,
         }
         assert df.rows() == raw_data
@@ -290,14 +291,17 @@ def test_init_pydantic_2x() -> None:
 
     result = pl.DataFrame(models)
 
-    assert result.to_dict(False) == {
-        "user_id": ["x"],
-        "ts": [datetime(2021, 1, 1, 0, 0)],
-        "path": ["?"],
-        "referer": ["https://google.com"],
-        "event": ["enter"],
-        "time_on_page": [0],
-    }
+    expected = pl.DataFrame(
+        {
+            "user_id": ["x"],
+            "ts": [datetime(2021, 1, 1, 0, 0)],
+            "path": ["?"],
+            "referer": ["https://google.com"],
+            "event": ["enter"],
+            "time_on_page": [0],
+        }
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_init_structured_objects_unhashable() -> None:
@@ -456,6 +460,28 @@ def test_dataclasses_initvar_typing() -> None:
     assert dataclasses.asdict(abc) == df.rows(named=True)[0]
 
 
+def test_collections_namedtuple() -> None:
+    TestData = namedtuple("TestData", ["id", "info"])
+    nt_data = [TestData(1, "a"), TestData(2, "b"), TestData(3, "c")]
+
+    result = pl.DataFrame(nt_data)
+    expected = pl.DataFrame({"id": [1, 2, 3], "info": ["a", "b", "c"]})
+    assert_frame_equal(result, expected)
+
+    result = pl.DataFrame({"data": nt_data, "misc": ["x", "y", "z"]})
+    expected = pl.DataFrame(
+        {
+            "data": [
+                {"id": 1, "info": "a"},
+                {"id": 2, "info": "b"},
+                {"id": 3, "info": "c"},
+            ],
+            "misc": ["x", "y", "z"],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_init_ndarray(monkeypatch: Any) -> None:
     # Empty array
     df = pl.DataFrame(np.array([]))
@@ -567,6 +593,10 @@ def test_init_ndarray(monkeypatch: Any) -> None:
     assert df.shape == (2, 1)
     assert df.rows() == [([0, 1, 2, 3, 4],), ([5, 6, 7, 8, 9],)]
 
+    test_rows = [(1, 2), (3, 4)]
+    df = pl.DataFrame([np.array(test_rows[0]), np.array(test_rows[1])], orient="row")
+    assert_frame_equal(df, pl.DataFrame(test_rows, orient="row"))
+
     # numpy arrays containing NaN
     df0 = pl.DataFrame(
         data={"x": [1.0, 2.5, float("nan")], "y": [4.0, float("nan"), 6.5]},
@@ -578,8 +608,43 @@ def test_init_ndarray(monkeypatch: Any) -> None:
         data={"x": np.array([1.0, 2.5, np.nan]), "y": np.array([4.0, np.nan, 6.5])},
         nan_to_null=True,
     )
-    assert_frame_equal(df0, df1, nans_compare_equal=True)
+    assert_frame_equal(df0, df1)
     assert df2.rows() == [(1.0, 4.0), (2.5, None), (None, 6.5)]
+
+
+def test_init_numpy_scalars() -> None:
+    df = pl.DataFrame(
+        {
+            "bool": [np.bool_(True), np.bool_(False)],
+            "i8": [np.int8(16), np.int8(64)],
+            "u32": [np.uint32(1234), np.uint32(9876)],
+        }
+    )
+    df_expected = pl.from_records(
+        data=[(True, 16, 1234), (False, 64, 9876)],
+        schema=OrderedDict([("bool", pl.Boolean), ("i8", pl.Int8), ("u32", pl.UInt32)]),
+    )
+    assert_frame_equal(df, df_expected)
+
+
+def test_null_array_print_format() -> None:
+    pa_tbl_null = pa.table({"a": [None, None]})
+    df_null = pl.from_arrow(pa_tbl_null)
+    assert df_null.shape == (2, 1)
+    assert df_null.dtypes == [pl.Null]  # type: ignore[union-attr]
+    assert df_null.rows() == [(None,), (None,)]  # type: ignore[union-attr]
+
+    assert (
+        str(df_null) == "shape: (2, 1)\n"
+        "┌──────┐\n"
+        "│ a    │\n"
+        "│ ---  │\n"
+        "│ null │\n"
+        "╞══════╡\n"
+        "│ null │\n"
+        "│ null │\n"
+        "└──────┘"
+    )
 
 
 def test_init_arrow() -> None:
@@ -665,7 +730,7 @@ def test_init_series() -> None:
     s1 = pl.Series("n", np.array([1.0, 2.5, float("nan")]))
     s2 = pl.Series("n", np.array([1.0, 2.5, float("nan")]), nan_to_null=True)
 
-    assert_series_equal(s0, s1, nans_compare_equal=True)
+    assert_series_equal(s0, s1)
     assert s2.to_list() == [1.0, 2.5, None]
 
 
@@ -720,7 +785,9 @@ def test_init_1d_sequence() -> None:
     assert df.rows() == [(None,), (1,), (0,)]
 
     # String sequence
-    assert pl.DataFrame("abc", schema=["s"]).to_dict(False) == {"s": ["a", "b", "c"]}
+    result = pl.DataFrame("abc", schema=["s"])
+    expected = pl.DataFrame({"s": ["a", "b", "c"]})
+    assert_frame_equal(result, expected)
 
     # datetimes sequence
     df = pl.DataFrame([datetime(2020, 1, 1)], schema={"ts": pl.Datetime("ms")})
@@ -821,9 +888,29 @@ def test_init_records() -> None:
     assert_frame_equal(df, expected)
     assert df.to_dicts() == dicts
 
-    df_cd = pl.DataFrame(dicts, schema=["c", "d"])
-    expected = pl.DataFrame({"c": [1, 2, 1], "d": [2, 1, 2]})
-    assert_frame_equal(df_cd, expected)
+    df_cd = pl.DataFrame(dicts, schema=["a", "c", "d"])
+    expected_values = {
+        "a": [1, 2, 1],
+        "c": [None, None, None],
+        "d": [None, None, None],
+    }
+    assert df_cd.to_dict(as_series=False) == expected_values
+
+    data = {"a": 1, "b": 2, "c": 3}
+
+    df1 = pl.from_dicts([data])
+    assert df1.columns == ["a", "b", "c"]
+
+    df1.columns = ["x", "y", "z"]
+    assert df1.columns == ["x", "y", "z"]
+
+    df2 = pl.from_dicts([data], schema=["c", "b", "a"])
+    assert df2.columns == ["c", "b", "a"]
+
+    for colname in ("c", "b", "a"):
+        result = pl.from_dicts([data], schema=[colname])
+        expected_values = {colname: [data[colname]]}
+        assert result.to_dict(as_series=False) == expected_values
 
 
 def test_init_records_schema_order() -> None:
@@ -881,7 +968,7 @@ def test_init_only_columns() -> None:
                 pl.col("c").cast(pl.Int8),
             ]
         )
-        expected.insert_at_idx(3, pl.Series("d", [], pl.List(pl.UInt8)))
+        expected.insert_column(3, pl.Series("d", [], pl.List(pl.UInt8)))
 
         assert df.shape == (0, 4)
         assert_frame_equal(df, expected)
@@ -895,13 +982,15 @@ def test_init_only_columns() -> None:
 
 
 def test_from_dicts_list_without_dtype() -> None:
-    assert pl.from_dicts(
+    result = pl.from_dicts(
         [{"id": 1, "hint": ["some_text_here"]}, {"id": 2, "hint": [None]}]
-    ).to_dict(False) == {"id": [1, 2], "hint": [["some_text_here"], [None]]}
+    )
+    expected = pl.DataFrame({"id": [1, 2], "hint": [["some_text_here"], [None]]})
+    assert_frame_equal(result, expected)
 
 
 def test_from_dicts_list_struct_without_inner_dtype() -> None:
-    assert pl.DataFrame(
+    df = pl.DataFrame(
         {
             "users": [
                 [{"category": "A"}, {"category": "B"}],
@@ -909,22 +998,26 @@ def test_from_dicts_list_struct_without_inner_dtype() -> None:
             ],
             "days_of_week": [1, 2],
         }
-    ).to_dict(False) == {
+    )
+    expected = {
         "users": [
             [{"category": "A"}, {"category": "B"}],
             [{"category": None}, {"category": None}],
         ],
         "days_of_week": [1, 2],
     }
+    assert df.to_dict(as_series=False) == expected
 
-    # 5611
-    df = pl.from_dicts(
+
+def test_from_dicts_list_struct_without_inner_dtype_5611() -> None:
+    result = pl.from_dicts(
         [
             {"a": []},
             {"a": [{"b": 1}]},
         ]
     )
-    assert df.to_dict(False) == {"a": [[], [{"b": 1}]]}
+    expected = pl.DataFrame({"a": [[], [{"b": 1}]]})
+    assert_frame_equal(result, expected)
 
 
 def test_upcast_primitive_and_strings() -> None:
@@ -950,19 +1043,26 @@ def test_u64_lit_5031() -> None:
 
 def test_from_dicts_missing_columns() -> None:
     # missing columns from some of the data dicts
-    data = [
-        {"a": 1},
-        {"b": 2},
-    ]
-    assert pl.from_dicts(data).to_dict(False) == {"a": [1, None], "b": [None, 2]}
+    data = [{"a": 1}, {"b": 2}]
+    result = pl.from_dicts(data)
+    expected = pl.DataFrame({"a": [1, None], "b": [None, 2]})
+    assert_frame_equal(result, expected)
 
-    # missing columns in the schema; only load the declared keys
+    # partial schema with some columns missing; only load the declared keys
     data = [{"a": 1, "b": 2}]
-    assert pl.from_dicts(data, schema=["a"]).to_dict(False) == {"a": [1]}
+    result = pl.from_dicts(data, schema=["a"])
+    expected = pl.DataFrame({"a": [1]})
+    assert_frame_equal(result, expected)
 
-    # invalid
-    with pytest.raises(ShapeError):
-        pl.from_dicts([{"a": 1, "b": 2}], schema=["xyz"])
+
+@pytest.mark.xfail(
+    reason="Fails because of bug. See: https://github.com/pola-rs/polars/issues/12120"
+)
+def test_from_dicts_schema_columns_do_not_match() -> None:
+    data = [{"a": 1, "b": 2}]
+    result = pl.from_dicts(data, schema=["x"])
+    expected = pl.DataFrame({"x": [None]})
+    assert_frame_equal(result, expected)
 
 
 def test_from_rows_dtype() -> None:
@@ -1017,7 +1117,7 @@ def test_from_dicts_schema() -> None:
             schema_overrides=overrides,
         )
         assert df.dtypes == [pl.Int64, pl.Int64, pl.Int32]
-        assert df.to_dict(False) == {
+        assert df.to_dict(as_series=False) == {
             "a": [1, 2, 3],
             "b": [4, 5, 6],
             "c": [None, None, None],
@@ -1033,7 +1133,7 @@ def test_from_dicts_schema() -> None:
 
 
 def test_nested_read_dict_4143() -> None:
-    assert pl.from_dicts(
+    result = pl.from_dicts(
         [
             {
                 "id": 1,
@@ -1050,7 +1150,8 @@ def test_nested_read_dict_4143() -> None:
                 ],
             },
         ]
-    ).to_dict(False) == {
+    )
+    expected = {
         "hint": [
             [
                 {"some_text_here": "text", "list_": [1, 2, 4]},
@@ -1063,8 +1164,11 @@ def test_nested_read_dict_4143() -> None:
         ],
         "id": [1, 2],
     }
+    assert result.to_dict(as_series=False) == expected
 
-    out = pl.from_dicts(
+
+def test_nested_read_dict_4143_2() -> None:
+    result = pl.from_dicts(
         [
             {
                 "id": 1,
@@ -1083,11 +1187,11 @@ def test_nested_read_dict_4143() -> None:
         ]
     )
 
-    assert out.dtypes == [
+    assert result.dtypes == [
         pl.Int64,
         pl.List(pl.Struct({"some_text_here": pl.Utf8, "list_": pl.List(pl.Int64)})),
     ]
-    assert out.to_dict(False) == {
+    expected = {
         "id": [1, 2],
         "hint": [
             [
@@ -1100,6 +1204,7 @@ def test_nested_read_dict_4143() -> None:
             ],
         ],
     }
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_from_records_nullable_structs() -> None:
@@ -1123,24 +1228,24 @@ def test_from_records_nullable_structs() -> None:
     schema_options: list[list[tuple[str, pl.PolarsDataType]] | None] = [schema, None]
     for s in schema_options:
         result = pl.DataFrame(records, schema=s, orient="row")
-        assert result.to_dict(False) == {
+        expected = {
             "id": [1, 1],
             "items": [
                 [{"item_id": 100, "description": None}],
                 [{"item_id": 100, "description": "hi"}],
             ],
         }
+        assert result.to_dict(as_series=False) == expected
 
     # check initialisation without any records
     df = pl.DataFrame(schema=schema)
     dict_schema = dict(schema)
-
-    assert df.to_dict(False) == {"id": [], "items": []}
+    assert df.to_dict(as_series=False) == {"id": [], "items": []}
     assert df.schema == dict_schema
 
     dtype: pl.PolarsDataType = dict_schema["items"]
     series = pl.Series("items", dtype=dtype)
-    assert series.to_frame().to_dict(False) == {"items": []}
+    assert series.to_frame().to_dict(as_series=False) == {"items": []}
     assert series.dtype == dict_schema["items"]
     assert series.to_list() == []
 
@@ -1155,9 +1260,14 @@ def test_from_categorical_in_struct_defined_by_schema() -> None:
         },
         schema={"a": pl.Struct({"value": pl.Categorical, "counts": pl.UInt32})},
     )
-    out = df.unnest("a")
-    assert out.schema == {"value": pl.Categorical, "counts": pl.UInt32}
-    assert out.to_dict(False) == {"value": ["foo", "bar"], "counts": [1, 2]}
+
+    result = df.unnest("a")
+
+    expected = pl.DataFrame(
+        {"value": ["foo", "bar"], "counts": [1, 2]},
+        schema={"value": pl.Categorical, "counts": pl.UInt32},
+    )
+    assert_frame_equal(result, expected, categorical_as_str=True)
 
 
 def test_nested_schema_construction() -> None:
@@ -1199,8 +1309,9 @@ def test_nested_schema_construction() -> None:
         },
         schema=schema,
     )
+
     assert df.schema == schema
-    assert df.to_dict(False) == {
+    assert df.to_dict(as_series=False) == {
         "node_groups": [
             [
                 {"parent_node_group_id": None, "nodes": []},
@@ -1212,6 +1323,8 @@ def test_nested_schema_construction() -> None:
         ]
     }
 
+
+def test_nested_schema_construction2() -> None:
     schema = {
         "node_groups": pl.List(
             pl.Struct(
@@ -1236,7 +1349,7 @@ def test_nested_schema_construction() -> None:
         schema=schema,
     )
     assert df.schema == schema
-    assert df.to_dict(False) == {
+    assert df.to_dict(as_series=False) == {
         "node_groups": [[{"nodes": [{"name": "a", "time": 0}]}], [{"nodes": []}]]
     }
 

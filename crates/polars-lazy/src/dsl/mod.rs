@@ -2,15 +2,17 @@
 //!
 //! This DSL revolves around the [`Expr`] type, which represents an abstract
 //! operation on a DataFrame, such as mapping over a column, filtering, group_by, or aggregation.
-//! In general, functions on [`LazyFrame`](crate::frame::LazyFrame)s consume the LazyFrame and produce a new LazyFrame representing
+//! In general, functions on [`LazyFrame`]s consume the [`LazyFrame`] and produce a new [`LazyFrame`] representing
 //! the result of applying the function and passed expressions to the consumed LazyFrame.
 //! At runtime, when [`LazyFrame::collect`](crate::frame::LazyFrame::collect) is called, the expressions that comprise
-//! the LazyFrame's logical plan are materialized on the actual underlying Series.
+//! the [`LazyFrame`]'s logical plan are materialized on the actual underlying Series.
 //! For instance, `let expr = col("x").pow(lit(2)).alias("x2");` would produce an expression representing the abstract
 //! operation of squaring the column `"x"` and naming the resulting column `"x2"`, and to apply this operation to a
-//! LazyFrame, you'd use `let lazy_df = lazy_df.with_column(expr);`.
+//! [`LazyFrame`], you'd use `let lazy_df = lazy_df.with_column(expr);`.
 //! (Of course, a column named `"x"` must either exist in the original DataFrame or be produced by one of the preceding
-//! operations on the LazyFrame.)
+//! operations on the [`LazyFrame`].)
+//!
+//! [`LazyFrame`]: crate::frame::LazyFrame
 //!
 //! There are many, many free functions that this module exports that produce an [`Expr`] from scratch; [`col`] and
 //! [`lit`] are two examples.
@@ -28,7 +30,7 @@
 //! that will yield an `f64` column (instead of `bool`), or `col("string") - col("f64")`, which would attempt
 //! to subtract an `f64` Series from a `string` Series.
 //! These kinds of invalid operations will only yield an error at runtime, when
-//! [`collect`](crate::frame::LazyFrame::collect) is called on the LazyFrame.
+//! [`collect`](crate::frame::LazyFrame::collect) is called on the [`LazyFrame`].
 
 #[cfg(any(feature = "cumulative_eval", feature = "list_eval"))]
 mod eval;

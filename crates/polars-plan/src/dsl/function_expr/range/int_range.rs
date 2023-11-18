@@ -14,7 +14,6 @@ pub(super) fn int_range(s: &[Series], step: i64) -> PolarsResult<Series> {
             let start = start.idx()?.get(0).unwrap();
             let end = end.cast(&IDX_DTYPE)?;
             let end = end.idx()?.get(0).unwrap();
-
             int_range_impl::<IdxType>(start, end, step)
         },
         _ => {
@@ -61,18 +60,11 @@ pub(super) fn int_ranges(s: &[Series], step: i64) -> PolarsResult<Series> {
     let mut values_capacity = 0;
     for (opt_start, opt_end) in start.into_iter().zip(end) {
         if let (Some(start_v), Some(end_v)) = (opt_start, opt_end) {
-            match step {
-                1 => {
-                    values_capacity += (end_v - start_v) as usize;
-                },
-                2.. => {
-                    values_capacity += ((end_v - start_v) as usize / step as usize) + 1;
-                },
-                _ => {
-                    polars_ensure!(start_v > end_v, InvalidOperation: "range must be decreasing if 'step' is negative");
-                    values_capacity +=
-                        ((end_v - start_v) as usize / step.unsigned_abs() as usize) + 1;
-                },
+            if step == 1 {
+                values_capacity += (end_v - start_v).unsigned_abs() as usize;
+            } else {
+                values_capacity +=
+                    (((end_v - start_v).unsigned_abs() / step.unsigned_abs()) + 1) as usize;
             }
         }
     }
@@ -118,15 +110,12 @@ where
         0 => polars_bail!(InvalidOperation: "step must not be zero"),
         1 => ChunkedArray::<T>::from_iter_values(name, start..end),
         2.. => ChunkedArray::<T>::from_iter_values(name, (start..end).step_by(step as usize)),
-        _ => {
-            polars_ensure!(start > end, InvalidOperation: "range must be decreasing if 'step' is negative");
-            ChunkedArray::<T>::from_iter_values(
-                name,
-                (end..start)
-                    .step_by(step.unsigned_abs() as usize)
-                    .map(|x| start - (x - end)),
-            )
-        },
+        _ => ChunkedArray::<T>::from_iter_values(
+            name,
+            (end..start)
+                .step_by(step.unsigned_abs() as usize)
+                .map(|x| start - (x - end)),
+        ),
     };
 
     let is_sorted = if end < start {

@@ -67,18 +67,22 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
             .into_series())
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
         self.agg_helper(|ca| ca.agg_sum(groups))
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
         self.agg_helper(|ca| ca.agg_min(groups))
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
         self.agg_helper(|ca| ca.agg_max(groups))
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }
@@ -158,46 +162,34 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.apply_physical(|ca| ca.take_opt_chunked_unchecked(by))
     }
 
-    fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
-        self.0.deref().take(iter.into()).map(|ca| {
-            ca.into_decimal_unchecked(self.0.precision(), self.0.scale())
-                .into_series()
-        })
-    }
-
-    unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-        let ca = self.0.deref().take_unchecked(iter.into());
-        ca.into_decimal_unchecked(self.0.precision(), self.0.scale())
-            .into_series()
-    }
-
-    unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
-        let mut out = self.0.deref().take_unchecked(idx.into());
-
-        if self.0.is_sorted_ascending_flag()
-            && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
-        {
-            out.set_sorted_flag(idx.is_sorted_flag())
-        }
-
-        Ok(out
+    fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
+        Ok(self
+            .0
+            .take(indices)?
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series())
     }
 
-    unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
+    unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
         self.0
-            .deref()
-            .take_unchecked(iter.into())
+            .take_unchecked(indices)
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series()
     }
 
-    fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-        self.0.deref().take(indices.into()).map(|ca| {
-            ca.into_decimal_unchecked(self.0.precision(), self.0.scale())
-                .into_series()
-        })
+    fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
+        Ok(self
+            .0
+            .take(indices)?
+            .into_decimal_unchecked(self.0.precision(), self.0.scale())
+            .into_series())
+    }
+
+    unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
+        self.0
+            .take_unchecked(indices)
+            .into_decimal_unchecked(self.0.precision(), self.0.scale())
+            .into_series()
     }
 
     fn len(&self) -> usize {

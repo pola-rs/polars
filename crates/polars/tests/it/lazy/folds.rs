@@ -21,7 +21,7 @@ fn test_fold_wildcard() -> PolarsResult<()> {
     // test if we don't panic due to wildcard
     let _out = df1
         .lazy()
-        .select([all_horizontal([col("*").is_not_null()])])
+        .select([polars_lazy::dsl::all_horizontal([col("*").is_not_null()])?])
         .collect()?;
     Ok(())
 }

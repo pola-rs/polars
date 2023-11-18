@@ -104,28 +104,6 @@ impl SlicePushDown {
         use ALogicalPlan::*;
 
         match (lp, state) {
-            (AnonymousScan {
-                function,
-                file_info,
-                output_schema,
-                predicate,
-                mut options,
-            },
-                // TODO! we currently skip slice pushdown if there is a predicate.
-                // we can modify the readers to only limit after predicates have been applied
-                Some(state)) if state.offset == 0 && predicate.is_none() => {
-                let mut_options = Arc::make_mut(&mut options);
-                mut_options.n_rows = Some(state.len as usize);
-                let lp = AnonymousScan {
-                    function,
-                    file_info,
-                    output_schema,
-                    predicate,
-                    options,
-                };
-
-                Ok(lp)
-            },
             #[cfg(feature = "python")]
             (PythonScan {
                 mut options,
@@ -143,7 +121,7 @@ impl SlicePushDown {
             }
             #[cfg(feature = "csv")]
             (Scan {
-                path,
+                paths,
                 file_info,
                 output_schema,
                 file_options: mut options,
@@ -154,7 +132,7 @@ impl SlicePushDown {
                 csv_options.skip_rows += state.offset as usize;
 
                 let lp = Scan {
-                    path,
+                    paths,
                     file_info,
                     output_schema,
                     scan_type: FileScan::Csv {options: csv_options},
@@ -163,8 +141,9 @@ impl SlicePushDown {
                 };
                 Ok(lp)
             },
+            // TODO! we currently skip slice pushdown if there is a predicate.
             (Scan {
-                path,
+                paths,
                 file_info,
                 output_schema,
                 file_options: mut options,
@@ -173,7 +152,7 @@ impl SlicePushDown {
             }, Some(state)) if state.offset == 0 && predicate.is_none() => {
                 options.n_rows = Some(state.len as usize);
                 let lp = Scan {
-                    path,
+                    paths,
                     file_info,
                     output_schema,
                     predicate,

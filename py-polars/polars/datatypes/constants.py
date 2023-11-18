@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars.datatypes import (
+    Array,
     DataTypeGroup,
     Date,
     Datetime,
@@ -14,6 +15,8 @@ from polars.datatypes import (
     Int16,
     Int32,
     Int64,
+    List,
+    Struct,
     Time,
     UInt8,
     UInt16,
@@ -72,6 +75,8 @@ FLOAT_DTYPES: frozenset[PolarsDataType] = DataTypeGroup([Float32, Float64])
 NUMERIC_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
     FLOAT_DTYPES | INTEGER_DTYPES | frozenset([Decimal])
 )
+
+NESTED_DTYPES: frozenset[PolarsDataType] = DataTypeGroup([List, Struct, Array])
 
 # number of rows to scan by default when inferring datatypes
 N_INFER_DEFAULT = 100

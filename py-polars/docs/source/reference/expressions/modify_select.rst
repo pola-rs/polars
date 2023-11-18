@@ -27,6 +27,9 @@ Manipulation/selection
     Expr.flatten
     Expr.floor
     Expr.forward_fill
+    Expr.gather
+    Expr.gather_every
+    Expr.get
     Expr.head
     Expr.inspect
     Expr.interpolate
@@ -43,6 +46,7 @@ Manipulation/selection
     Expr.rle
     Expr.rle_id
     Expr.round
+    Expr.round_sig_figs
     Expr.sample
     Expr.shift
     Expr.shift_and_fill

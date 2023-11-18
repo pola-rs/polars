@@ -1,0 +1,96 @@
+name: Build documentation
+
+on:
+  pull_request:
+    paths:
+      - docs/**
+      - mkdocs.yml
+      - .github/workflows/docs-global.yml
+  repository_dispatch:
+    types:
+      - python-release
+  # Allow manual trigger until we have properly versioned docs
+  workflow_dispatch:
+
+jobs:
+  markdown-link-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.client_payload.sha }}
+    - uses: gaurav-nelson/github-action-markdown-link-check@v1
+      with:
+        config-file: docs/mlc-config.json
+        folder-path: docs
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.client_payload.sha }}
+      - uses: psf/black@stable
+        with:
+          src: docs/src/python
+          version: "23.10.0"
+
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.client_payload.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Create virtual environment
+        run: |
+          python -m venv .venv
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: |
+          pip install -r py-polars/requirements-dev.txt
+          pip install -r docs/requirements.txt
+
+      - name: Set up Rust
+        run: rustup show
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: py-polars
+          save-if: ${{ github.ref_name == 'main' }}
+
+      - name: Install Polars
+        working-directory: py-polars
+        run: |
+          source activate
+          maturin develop
+
+      - name: Set up Graphviz
+        uses: ts-graphviz/setup-graphviz@v1
+
+      - name: Build documentation
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: mkdocs build
+
+      - name: Add .nojekyll
+        if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
+        working-directory: site
+        run: touch .nojekyll
+
+      - name: Deploy docs
+        if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: site
+          clean-exclude: |
+            docs/
+            py-polars/
+          single-commit: true

@@ -48,7 +48,7 @@ def test_alias_for_col_agg_bool(function: str, input: str) -> None:
     assert_expr_equal(result, expected, context)
 
 
-@pytest.mark.parametrize("function", ["min", "max", "sum", "cumsum"])
+@pytest.mark.parametrize("function", ["min", "max", "sum", "cum_sum"])
 @pytest.mark.parametrize("input", ["a", "^a|b$"])
 def test_alias_for_col_agg(function: str, input: str) -> None:
     result = getattr(pl, function)(input)  # e.g. pl.min(input)

@@ -23,7 +23,7 @@ def test_drop_explode_6641() -> None:
         .drop(["identifier", "alternate"])
         .select(pl.concat_list([pl.col("test"), pl.col("test")]))
         .collect()
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "test": [
             [
                 {"identifier": "chr1:10426:10429:ACC>A", "alternate": "A"},

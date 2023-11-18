@@ -29,7 +29,10 @@ def test_streaming_group_by_sorted_fast_path_nulls_10273() -> None:
         .agg(pl.count())
         .collect(streaming=True)
         .sort("x")
-    ).to_dict(False) == {"x": [None, 0, 1, 2, 3], "count": [100, 100, 100, 100, 100]}
+    ).to_dict(as_series=False) == {
+        "x": [None, 0, 1, 2, 3],
+        "count": [100, 100, 100, 100, 100],
+    }
 
 
 def test_streaming_group_by_types() -> None:
@@ -87,7 +90,7 @@ def test_streaming_group_by_types() -> None:
             "date_max": pl.Date,
         }
 
-        assert out.to_dict(False) == {
+        assert out.to_dict(as_series=False) == {
             "str_first": ["bob"],
             "str_last": ["foo"],
             "str_mean": [None],
@@ -288,7 +291,7 @@ def test_streaming_group_by_struct_key() -> None:
     df1 = df.lazy().with_columns(pl.struct(["A", "C"]).alias("tuples"))
     assert df1.group_by("tuples").agg(pl.count(), pl.col("B").first()).sort(
         "B"
-    ).collect(streaming=True).to_dict(False) == {
+    ).collect(streaming=True).to_dict(as_series=False) == {
         "tuples": [{"A": 3, "C": 4}, {"A": 1, "C": 2}, {"A": 2, "C": 3}],
         "count": [1, 1, 2],
         "B": ["apple", "google", "ms"],
@@ -346,7 +349,7 @@ def test_streaming_group_by_categorical_aggregate() -> None:
             .collect(streaming=True)
         )
 
-    assert out.sort("b").to_dict(False) == {
+    assert out.sort("b").to_dict(as_series=False) == {
         "a": ["a", "a", "b", "b", "c", "c", None, None],
         "b": [
             date(2023, 4, 28),
@@ -369,7 +372,7 @@ def test_streaming_group_by_list_9758() -> None:
         .group_by("a")
         .first()
         .collect(streaming=True)
-        .to_dict(False)
+        .to_dict(as_series=False)
         == payload
     )
 
@@ -389,7 +392,7 @@ def test_streaming_restart_non_streamable_group_by() -> None:
         )  # non-streamable UDF + nested_agg
     )
 
-    assert """--- PIPELINE""" in res.explain(streaming=True)
+    assert """--- STREAMING""" in res.explain(streaming=True)
 
 
 def test_group_by_min_max_string_type() -> None:
@@ -404,7 +407,7 @@ def test_group_by_min_max_string_type() -> None:
             .agg([pl.min("b").alias("min"), pl.max("b").alias("max")])
             .collect(streaming=streaming)
             .sort("a")
-            .to_dict(False)
+            .to_dict(as_series=False)
             == expected
         )
 
@@ -418,7 +421,7 @@ def test_streaming_group_by_literal(literal: Any) -> None:
             pl.col("a").count().alias("a_count"),
             pl.col("a").sum().alias("a_sum"),
         ]
-    ).collect(streaming=True).to_dict(False) == {
+    ).collect(streaming=True).to_dict(as_series=False) == {
         "literal": [literal],
         "a_count": [20],
         "a_sum": [190],

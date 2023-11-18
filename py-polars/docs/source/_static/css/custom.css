@@ -43,3 +43,7 @@ div.bd-sidebar-secondary {
 label.sidebar-toggle.secondary-toggle {
     display: none !important;
 }
+
+a:visited {
+    color: var(--pst-color-link);
+}

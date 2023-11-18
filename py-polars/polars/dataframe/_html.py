@@ -49,6 +49,7 @@ class HTMLFormatter:
     def __init__(
         self,
         df: DataFrame,
+        *,
         max_cols: int = 75,
         max_rows: int = 40,
         from_series: bool = False,
@@ -158,8 +159,8 @@ class NotebookFormatter(HTMLFormatter):
     def write_style(self) -> None:
         style = """\
             <style>
-            .dataframe > thead > tr > th,
-            .dataframe > tbody > tr > td {
+            .dataframe > thead > tr,
+            .dataframe > tbody > tr {
               text-align: right;
               white-space: pre-wrap;
             }

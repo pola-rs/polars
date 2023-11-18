@@ -70,10 +70,10 @@ impl<K: PolarsDataType, T: PolarsDataType> Logical<K, T> {
 }
 
 pub trait LogicalType {
-    /// Get data type of ChunkedArray.
+    /// Get data type of [`ChunkedArray`].
     fn dtype(&self) -> &DataType;
 
-    /// Gets AnyValue from LogicalType
+    /// Gets [`AnyValue`] from [`LogicalType`]
     fn get_any_value(&self, _i: usize) -> PolarsResult<AnyValue<'_>> {
         unimplemented!()
     }

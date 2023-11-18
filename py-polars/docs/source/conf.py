@@ -46,6 +46,9 @@ extensions = [
     "sphinx_favicon",
 ]
 
+# Render docstring text in `single backticks` as code.
+default_role = "code"
+
 maximum_signature_line_length = 88
 
 # Below setting is used by
@@ -105,12 +108,8 @@ switcher_version = version_match.group(1) if version_match is not None else "dev
 html_theme_options = {
     "external_links": [
         {
-            "name": "User Guide",
-            "url": f"{web_root}/polars-book/user-guide/index.html",
-        },
-        {
-            "name": "Powered by Xomnia",
-            "url": "https://www.xomnia.com/",
+            "name": "User guide",
+            "url": f"{web_root}/polars/user-guide/",
         },
     ],
     "icon_links": [
@@ -138,6 +137,7 @@ html_theme_options = {
         "json_url": f"{web_root}/polars/docs/python/dev/_static/version_switcher.json",
         "version_match": switcher_version,
     },
+    "show_version_warning_banner": False,
     "navbar_end": ["version-switcher", "navbar-icon-links"],
     "check_switcher": False,
 }

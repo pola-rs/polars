@@ -1,5 +1,5 @@
 """
-Module for testing ``.str.strptime`` of the string namespace.
+Module for testing `.str.strptime` of the string namespace.
 
 This method gets its own module due to its complexity.
 """
@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.exceptions import ArrowError, ComputeError, TimeZoneAwareConstructorWarning
+from polars.exceptions import ComputeError, TimeZoneAwareConstructorWarning
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
@@ -103,7 +103,7 @@ def test_timezone_aware_strptime(tz_string: str, timedelta: timedelta) -> None:
     )
     assert times.with_columns(
         pl.col("delivery_datetime").str.to_datetime(format="%Y-%m-%d %H:%M:%S%z")
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "delivery_datetime": [
             datetime(2021, 12, 5, 6, 0, tzinfo=timezone(timedelta)),
             datetime(2021, 12, 5, 7, 0, tzinfo=timezone(timedelta)),
@@ -141,7 +141,7 @@ def test_to_date_non_exact_strptime() -> None:
     ],
 )
 def test_non_exact_short_elements_10223(value: str, attr: str) -> None:
-    with pytest.raises(pl.ComputeError, match="strict .* parsing failed"):
+    with pytest.raises(pl.ComputeError, match="Conversion .* failed"):
         getattr(pl.Series(["2019-01-01", value]).str, attr)(exact=False)
 
 
@@ -459,14 +459,14 @@ def test_strptime_invalid_timezone() -> None:
 
 def test_to_datetime_ambiguous_or_non_existent() -> None:
     with pytest.raises(
-        ArrowError,
+        pl.ComputeError,
         match="datetime '2021-11-07 01:00:00' is ambiguous in time zone 'US/Central'",
     ):
         pl.Series(["2021-11-07 01:00"]).str.to_datetime(
             time_unit="us", time_zone="US/Central"
         )
     with pytest.raises(
-        ArrowError,
+        pl.ComputeError,
         match="datetime '2021-03-28 02:30:00' is non-existent in time zone 'Europe/Warsaw'",
     ):
         pl.Series(["2021-03-28 02:30"]).str.to_datetime(
@@ -643,7 +643,7 @@ def test_to_datetime_use_earliest(exact: bool) -> None:
     )
     expected = datetime(2020, 10, 25, 1, fold=1, tzinfo=ZoneInfo("Europe/London"))
     assert result == expected
-    with pytest.raises(ArrowError):
+    with pytest.raises(pl.ComputeError):
         pl.Series(["2020-10-25 01:00"]).str.to_datetime(
             time_zone="Europe/London",
             exact=exact,
@@ -670,7 +670,7 @@ def test_strptime_use_earliest(exact: bool) -> None:
     )
     expected = datetime(2020, 10, 25, 1, fold=1, tzinfo=ZoneInfo("Europe/London"))
     assert result == expected
-    with pytest.raises(ArrowError):
+    with pytest.raises(pl.ComputeError):
         pl.Series(["2020-10-25 01:00"]).str.strptime(
             pl.Datetime("us", "Europe/London"),
             exact=exact,

@@ -122,7 +122,7 @@ class CategoricalDescription(TypedDict):
     is_ordered: bool
     # whether a dictionary-style mapping of categorical values to other objects exists
     is_dictionary: Literal[True]
-    # Python-level only (e.g. ``{int: str}``).
+    # Python-level only (e.g. `{int: str}`).
     # None if not a dictionary-style categorical.
     categories: PolarsColumn
 
@@ -193,7 +193,9 @@ class DataFrame(Protocol):
         """Version of the protocol."""
 
     def __dataframe__(
-        self, nan_as_null: bool = False, allow_copy: bool = True
+        self,
+        nan_as_null: bool = False,  # noqa: FBT001
+        allow_copy: bool = True,  # noqa: FBT001
     ) -> DataFrame:
         """Convert to a dataframe object implementing the dataframe interchange protocol."""  # noqa: W505
 
@@ -236,7 +238,9 @@ class SupportsInterchange(Protocol):
     """Dataframe that supports conversion into an interchange dataframe object."""
 
     def __dataframe__(
-        self, nan_as_null: bool = False, allow_copy: bool = True
+        self,
+        nan_as_null: bool = False,  # noqa: FBT001
+        allow_copy: bool = True,  # noqa: FBT001
     ) -> SupportsInterchange:
         """Convert to a dataframe object implementing the dataframe interchange protocol."""  # noqa: W505
 
@@ -251,4 +255,4 @@ class Endianness:
 
 
 class CopyNotAllowedError(RuntimeError):
-    """Exception raised when a copy is required, but ``allow_copy`` is set to ``False``."""  # noqa: W505
+    """Exception raised when a copy is required, but `allow_copy` is set to `False`."""

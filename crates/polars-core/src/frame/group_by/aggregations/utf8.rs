@@ -2,7 +2,7 @@ use super::*;
 
 pub fn _agg_helper_idx_utf8<'a, F>(groups: &'a GroupsIdx, f: F) -> Series
 where
-    F: Fn((IdxSize, &'a Vec<IdxSize>)) -> Option<&'a str> + Send + Sync,
+    F: Fn((IdxSize, &'a IdxVec)) -> Option<&'a str> + Send + Sync,
 {
     let ca: Utf8Chunked = POOL.install(|| groups.into_par_iter().map(f).collect());
     ca.into_series()

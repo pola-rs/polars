@@ -86,9 +86,10 @@ pub enum Expr {
         expr: Box<Expr>,
         options: SortOptions,
     },
-    Take {
+    Gather {
         expr: Box<Expr>,
         idx: Box<Expr>,
+        returns_scalar: bool,
     },
     SortBy {
         expr: Box<Expr>,
@@ -120,8 +121,7 @@ pub enum Expr {
         /// Also has the input. i.e. avg("foo")
         function: Box<Expr>,
         partition_by: Vec<Expr>,
-        order_by: Option<Box<Expr>>,
-        options: WindowOptions,
+        options: WindowType,
     },
     Wildcard,
     Slice {
@@ -154,6 +154,7 @@ pub enum Expr {
         output_type: GetOutput,
         options: FunctionOptions,
     },
+    SubPlan(SpecialEq<Arc<LogicalPlan>>, Vec<String>),
     /// Expressions in this node should only be expanding
     /// e.g.
     /// `Expr::Columns`

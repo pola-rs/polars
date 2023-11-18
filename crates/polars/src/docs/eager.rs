@@ -2,7 +2,11 @@
 //! # Polars Eager cookbook
 //!
 //! This page should serve a cookbook to quickly get you started with most fundamental operations
-//! executed on a `ChunkedArray`, `Series` or `DataFrame`.
+//! executed on a [`ChunkedArray`], [`Series`] or [`DataFrame`].
+//!
+//! [`ChunkedArray`]: crate::chunked_array::ChunkedArray
+//! [`Series`]: crate::series::Series
+//! [`DataFrame`]: crate::frame::DataFrame
 //!
 //! ## Tree Of Contents
 //!
@@ -93,8 +97,8 @@
 //! ```
 //!
 //! ## Arithmetic
-//! Arithmetic can be done on both `Series` and `ChunkedArray`s. The most notable difference is that
-//! a `Series` coerces the data to match the underlying data types.
+//! Arithmetic can be done on both [`Series`] and [`ChunkedArray`]. The most notable difference is that
+//! a [`Series`] coerces the data to match the underlying data types.
 //!
 //! ```
 //! use polars::prelude::*;
@@ -141,7 +145,9 @@
 //! let subtract_one_by_s = 1.sub(&series);
 //! ```
 //!
-//! For `ChunkedArray`s this left hand side operations can be done with the `apply` method.
+//! For [`ChunkedArray`] this left hand side operations can be done with the [`apply_values`] method.
+//!
+//! [`apply_values`]: crate::chunked_array::ops::ChunkApply::apply_values
 //!
 //! ```rust
 //! # use polars::prelude::*;
@@ -153,7 +159,7 @@
 //!
 //! ## Comparisons
 //!
-//! `Series` and `ChunkedArray`s can be used in comparison operations to create `boolean` masks/predicates.
+//! [`Series`] and [`ChunkedArray`] can be used in comparison operations to create _boolean_ masks/predicates.
 //!
 //! ```
 //! use polars::prelude::*;
@@ -570,8 +576,8 @@
 //!
 //! // write DataFrame to file
 //! CsvWriter::new(&mut file)
-//!     .has_header(true)
-//!     .with_delimiter(b',')
+//!     .include_header(true)
+//!     .with_separator(b',')
 //!     .finish(df);
 //! # Ok(())
 //! # }
@@ -642,8 +648,11 @@
 //!
 //! ## Replace NaN with Missing.
 //! The floating point [Not a Number: NaN](https://en.wikipedia.org/wiki/NaN) is conceptually different
-//! than missing data in Polars. In the snippet below we show how we can replace `NaN` values with
-//! missing values, by setting them to `None`.
+//! than missing data in Polars. In the snippet below we show how we can replace [`NaN`] values with
+//! missing values, by setting them to [`None`].
+//!
+//! [`NaN`]: https://doc.rust-lang.org/std/primitive.f64.html#associatedconstant.NAN
+//!
 //! ```
 //! use polars::prelude::*;
 //! use polars::df;
@@ -671,9 +680,11 @@
 //!
 //! ## Extracting data
 //!
-//! To be able to extract data out of `Series`, either by iterating over them or converting them
-//! to other datatypes like a `Vec<T>`, we first need to downcast them to a `ChunkedArray<T>`. This
-//! is needed because we don't know the data type that is hold by the `Series`.
+//! To be able to extract data out of [`Series`], either by iterating over them or converting them
+//! to other datatypes like a [`Vec<T>`], we first need to downcast them to a [`ChunkedArray<T>`]. This
+//! is needed because we don't know the data type that is hold by the [`Series`].
+//!
+//! [`ChunkedArray<T>`]: crate::chunked_array::ChunkedArray
 //!
 //! ```
 //! use polars::prelude::*;

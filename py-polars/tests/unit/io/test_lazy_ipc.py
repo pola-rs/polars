@@ -69,9 +69,19 @@ def test_glob_n_rows(io_files_path: Path) -> None:
     assert df.shape == (40, 4)
 
     # take first and last rows
-    assert df[[0, 39]].to_dict(False) == {
+    assert df[[0, 39]].to_dict(as_series=False) == {
         "category": ["vegetables", "seafood"],
         "calories": [45, 146],
         "fats_g": [0.5, 6.0],
         "sugars_g": [2, 2],
     }
+
+
+def test_ipc_list_arg(io_files_path: Path) -> None:
+    first = io_files_path / "foods1.ipc"
+    second = io_files_path / "foods2.ipc"
+
+    df = pl.scan_ipc(source=[first, second]).collect()
+    assert df.shape == (54, 4)
+    assert df.row(-1) == ("seafood", 194, 12.0, 1)
+    assert df.row(0) == ("vegetables", 45, 0.5, 2)

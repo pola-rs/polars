@@ -8,6 +8,8 @@ mod ndjson;
 mod parquet;
 
 use std::mem;
+#[cfg(any(feature = "parquet", feature = "ipc", feature = "cse"))]
+use std::ops::Deref;
 
 #[cfg(feature = "csv")]
 pub(crate) use csv::CsvExec;
@@ -17,47 +19,43 @@ pub(crate) use ipc::IpcExec;
 pub(crate) use parquet::ParquetExec;
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 use polars_io::predicates::PhysicalIoExpr;
+#[cfg(any(feature = "parquet", feature = "csv", feature = "ipc", feature = "cse"))]
 use polars_io::prelude::*;
 use polars_plan::global::_set_n_rows_for_scan;
 #[cfg(any(feature = "parquet", feature = "csv", feature = "ipc", feature = "cse"))]
 use polars_plan::logical_plan::FileFingerPrint;
 
 use super::*;
+#[cfg(any(feature = "ipc", feature = "parquet"))]
 use crate::physical_plan::expressions::phys_expr_to_io_expr;
 use crate::prelude::*;
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 type Projection = Option<Vec<usize>>;
 #[cfg(any(feature = "ipc", feature = "parquet"))]
-type StopNRows = Option<usize>;
-#[cfg(any(feature = "ipc", feature = "parquet"))]
 type Predicate = Option<Arc<dyn PhysicalIoExpr>>;
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 fn prepare_scan_args(
-    path: &std::path::Path,
     predicate: &Option<Arc<dyn PhysicalExpr>>,
     with_columns: &mut Option<Arc<Vec<String>>>,
     schema: &mut SchemaRef,
-    n_rows: Option<usize>,
     has_row_count: bool,
-) -> (std::fs::File, Projection, StopNRows, Predicate) {
-    let file = std::fs::File::open(path).unwrap();
-
+    hive_partitions: Option<&[Series]>,
+) -> (Projection, Predicate) {
     let with_columns = mem::take(with_columns);
     let schema = mem::take(schema);
 
-    let projection: Option<Vec<_>> = with_columns.map(|with_columns| {
-        with_columns
-            .iter()
-            .map(|name| schema.index_of(name).unwrap() - has_row_count as usize)
-            .collect()
-    });
+    let projection = materialize_projection(
+        with_columns.as_deref().map(|cols| cols.deref()),
+        &schema,
+        hive_partitions,
+        has_row_count,
+    );
 
-    let n_rows = _set_n_rows_for_scan(n_rows);
     let predicate = predicate.clone().map(phys_expr_to_io_expr);
 
-    (file, projection, n_rows, predicate)
+    (projection, predicate)
 }
 
 /// Producer of an in memory DataFrame
@@ -102,43 +100,51 @@ impl Executor for DataFrameExec {
 
 pub(crate) struct AnonymousScanExec {
     pub(crate) function: Arc<dyn AnonymousScan>,
-    pub(crate) options: AnonymousScanOptions,
+    pub(crate) file_options: FileScanOptions,
+    pub(crate) file_info: FileInfo,
     pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
+    pub(crate) output_schema: Option<SchemaRef>,
     pub(crate) predicate_has_windows: bool,
 }
 
 impl Executor for AnonymousScanExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
+        let mut args = AnonymousScanArgs {
+            n_rows: self.file_options.n_rows,
+            with_columns: self.file_options.with_columns.clone(),
+            schema: self.file_info.schema.clone(),
+            output_schema: self.output_schema.clone(),
+            predicate: None,
+        };
+        if self.predicate.is_some() {
+            state.insert_has_window_function_flag()
+        }
+
         match (self.function.allows_predicate_pushdown(), &self.predicate) {
             (true, Some(predicate)) => state.record(
                 || {
-                    self.options.predicate = predicate.as_expression().cloned();
-                    self.function.scan(self.options.clone())
+                    args.predicate = predicate.as_expression().cloned();
+                    self.function.scan(args)
                 },
                 "anonymous_scan".into(),
             ),
-            (false, Some(predicate)) => {
-                if self.predicate_has_windows {
-                    state.insert_has_window_function_flag()
-                }
-                state.record(|| {
-                        let mut df = self.function.scan(self.options.clone())?;
-                        let s = predicate.evaluate(&df, state)?;
-                        if self.predicate_has_windows {
-                            state.clear_window_expr_cache()
-                        }
-                        let mask = s.bool().map_err(
-                            |_| polars_err!(ComputeError: "filter predicate was not of type boolean"),
-                        )?;
-                        df = df.filter(mask)?;
+            (false, Some(predicate)) => state.record(
+                || {
+                    let mut df = self.function.scan(args)?;
+                    let s = predicate.evaluate(&df, state)?;
+                    if self.predicate_has_windows {
+                        state.clear_window_expr_cache()
+                    }
+                    let mask = s.bool().map_err(
+                        |_| polars_err!(ComputeError: "filter predicate was not of type boolean"),
+                    )?;
+                    df = df.filter(mask)?;
 
-                        Ok(df)
-                    },"anonymous_scan".into())
-            },
-            _ => state.record(
-                || self.function.scan(self.options.clone()),
+                    Ok(df)
+                },
                 "anonymous_scan".into(),
             ),
+            _ => state.record(|| self.function.scan(args), "anonymous_scan".into()),
         }
     }
 }

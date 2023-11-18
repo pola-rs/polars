@@ -1,6 +1,6 @@
 use arrow::array::Utf8Array;
 use arrow::bitmap::MutableBitmap;
-use polars_arrow::prelude::FromDataUtf8;
+use arrow::legacy::prelude::FromDataUtf8;
 use polars_core::prelude::*;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 use polars_time::chunkedarray::utf8::Pattern;
@@ -34,25 +34,25 @@ impl PrimitiveParser for Float64Type {
 impl PrimitiveParser for UInt32Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<u32> {
-        lexical::parse(bytes).ok()
+        atoi_simd::parse(bytes).ok()
     }
 }
 impl PrimitiveParser for UInt64Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<u64> {
-        lexical::parse(bytes).ok()
+        atoi_simd::parse(bytes).ok()
     }
 }
 impl PrimitiveParser for Int32Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<i32> {
-        lexical::parse(bytes).ok()
+        atoi_simd::parse(bytes).ok()
     }
 }
 impl PrimitiveParser for Int64Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<i64> {
-        lexical::parse(bytes).ok()
+        atoi_simd::parse(bytes).ok()
     }
 }
 

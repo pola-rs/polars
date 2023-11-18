@@ -37,21 +37,29 @@ use polars_core::df;
 #[cfg(feature = "temporal")]
 use polars_core::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use polars_core::prelude::*;
+#[cfg(feature = "parquet")]
 pub(crate) use polars_core::SINGLE_LOCK;
 use polars_io::prelude::*;
 use polars_plan::logical_plan::{
     ArenaLpIter, OptimizationRule, SimplifyExprRule, StackOptimizer, TypeCoercionRule,
 };
 
+#[cfg(feature = "cov")]
 use crate::dsl::pearson_corr;
 use crate::prelude::*;
 
+#[cfg(feature = "parquet")]
 static GLOB_PARQUET: &str = "../../examples/datasets/*.parquet";
+#[cfg(feature = "csv")]
 static GLOB_CSV: &str = "../../examples/datasets/*.csv";
+#[cfg(feature = "ipc")]
 static GLOB_IPC: &str = "../../examples/datasets/*.ipc";
-static FOODS_CSV: &str = "../../examples/datasets/foods1.csv";
-static FOODS_IPC: &str = "../../examples/datasets/foods1.ipc";
+#[cfg(feature = "parquet")]
 static FOODS_PARQUET: &str = "../../examples/datasets/foods1.parquet";
+#[cfg(feature = "csv")]
+static FOODS_CSV: &str = "../../examples/datasets/foods1.csv";
+#[cfg(feature = "ipc")]
+static FOODS_IPC: &str = "../../examples/datasets/foods1.ipc";
 
 #[cfg(feature = "csv")]
 fn scan_foods_csv() -> LazyFrame {
@@ -64,6 +72,7 @@ fn scan_foods_ipc() -> LazyFrame {
     LazyFrame::scan_ipc(FOODS_IPC, Default::default()).unwrap()
 }
 
+#[cfg(any(feature = "ipc", feature = "parquet"))]
 fn init_files() {
     for path in &[
         "../../examples/datasets/foods1.csv",
@@ -78,10 +87,13 @@ fn init_files() {
 
                 match ext {
                     ".parquet" => {
-                        ParquetWriter::new(f)
-                            .with_statistics(true)
-                            .finish(&mut df)
-                            .unwrap();
+                        #[cfg(feature = "parquet")]
+                        {
+                            ParquetWriter::new(f)
+                                .with_statistics(true)
+                                .finish(&mut df)
+                                .unwrap();
+                        }
                     },
                     ".ipc" => {
                         IpcWriter::new(f).finish(&mut df).unwrap();

@@ -1,9 +1,9 @@
-use polars_arrow::export::arrow::array::PrimitiveArray;
-use polars_core::export::arrow::array::Array;
+use arrow::array::{Array, PrimitiveArray};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::arrow::bitmap::MutableBitmap;
 use polars_core::utils::arrow::types::NativeType;
+use polars_utils::index::check_bounds;
 
 pub trait ChunkedSet<T: Copy> {
     fn set_at_idx2<V>(self, idx: &[IdxSize], values: V) -> PolarsResult<Series>
@@ -24,19 +24,6 @@ fn check_sorted(idx: &[IdxSize]) -> PolarsResult<()> {
         previous = i;
     }
     polars_ensure!(sorted, ComputeError: "set indices must be sorted");
-    Ok(())
-}
-
-fn check_bounds(idx: &[IdxSize], len: IdxSize) -> PolarsResult<()> {
-    let mut inbounds = true;
-
-    for &i in idx {
-        if i >= len {
-            // we will not break here as that prevents SIMD
-            inbounds = false;
-        }
-    }
-    polars_ensure!(inbounds, ComputeError: "set indices are out of bounds");
     Ok(())
 }
 

@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 def doctest_teardown(d: doctest.DocTest) -> None:
     # don't let config changes or string cache state leak between tests
     polars.Config.restore_defaults()
-    polars.enable_string_cache(False)
+    polars.disable_string_cache()
 
 
 def modules_in_path(p: Path) -> Iterator[ModuleType]:
@@ -72,6 +72,16 @@ if __name__ == "__main__":
 
     # Set doctests to fail on warnings
     warnings.simplefilter("error", DeprecationWarning)
+    warnings.filterwarnings(
+        "ignore",
+        message="datetime.datetime.utcfromtimestamp\\(\\) is deprecated.*",
+        category=DeprecationWarning,
+    )
+    warnings.filterwarnings(
+        "ignore",
+        message="datetime.datetime.utcnow\\(\\) is deprecated.*",
+        category=DeprecationWarning,
+    )
 
     OutputChecker = doctest.OutputChecker
 

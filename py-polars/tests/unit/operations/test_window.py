@@ -239,20 +239,13 @@ def test_window_functions_list_types() -> None:
         "list_shifted"
     ].to_list() == [None, [1], [1], [2]]
 
-    # filling with None is allowed, but does not make any sense
-    # as it is the same as shift.
-    # that's why we don't add it to the allowed types.
-    assert (
-        df.select(
-            pl.col("col_list").shift_and_fill(None, periods=1).alias("list_shifted")
-        )
-    )["list_shifted"].to_list() == [None, [1], [1], [2]]
+    assert (df.select(pl.col("col_list").shift().alias("list_shifted")))[
+        "list_shifted"
+    ].to_list() == [None, [1], [1], [2]]
 
-    assert (
-        df.select(
-            pl.col("col_list").shift_and_fill([], periods=1).alias("list_shifted")
-        )
-    )["list_shifted"].to_list() == [[], [1], [1], [2]]
+    assert (df.select(pl.col("col_list").shift(fill_value=[]).alias("list_shifted")))[
+        "list_shifted"
+    ].to_list() == [[], [1], [1], [2]]
 
 
 def test_sorted_window_expression() -> None:
@@ -380,7 +373,7 @@ def test_cached_windows_sync_8803() -> None:
             b=pl.col("is_valid").sum().gt(0).over("id"),
         )
         .sum()
-    ).to_dict(False) == {"id": [28], "is_valid": [1], "a": [3], "b": [3]}
+    ).to_dict(as_series=False) == {"id": [28], "is_valid": [1], "a": [3], "b": [3]}
 
 
 def test_window_filtered_aggregation() -> None:
@@ -430,4 +423,4 @@ def test_window_10417() -> None:
             pl.col("b") - pl.col("b").mean().over("a"),
             pl.col("c") - pl.col("c").mean().over("a"),
         ]
-    ).collect().to_dict(False) == {"a": [1], "b": [0.0], "c": [0.0]}
+    ).collect().to_dict(as_series=False) == {"a": [1], "b": [0.0], "c": [0.0]}

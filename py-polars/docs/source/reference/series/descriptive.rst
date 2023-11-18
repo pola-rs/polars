@@ -15,11 +15,13 @@ Descriptive
     Series.is_empty
     Series.is_finite
     Series.is_first
+    Series.is_first_distinct
     Series.is_float
     Series.is_in
     Series.is_infinite
     Series.is_integer
     Series.is_last
+    Series.is_last_distinct
     Series.is_nan
     Series.is_not_nan
     Series.is_not_null

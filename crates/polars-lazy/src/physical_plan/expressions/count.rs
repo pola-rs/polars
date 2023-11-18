@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use polars_core::prelude::*;
-use polars_plan::dsl::names::COUNT;
+use polars_plan::dsl::consts::COUNT;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
@@ -42,10 +42,6 @@ impl PhysicalExpr for CountExpr {
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
-    }
-
-    fn is_valid_aggregation(&self) -> bool {
-        true
     }
 }
 

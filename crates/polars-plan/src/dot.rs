@@ -1,5 +1,6 @@
+use std::borrow::Cow;
 use std::fmt::{Display, Write};
-use std::path::Path;
+use std::path::PathBuf;
 
 use polars_core::prelude::*;
 
@@ -131,20 +132,6 @@ impl LogicalPlan {
         let (mut branch, id) = id;
 
         match self {
-            AnonymousScan {
-                file_info, options, ..
-            } => self.write_scan(
-                acc_str,
-                prev_node,
-                "ANONYMOUS SCAN",
-                Path::new(""),
-                options.with_columns.as_deref().map(|cols| cols.as_slice()),
-                file_info.schema.len(),
-                &options.predicate,
-                branch,
-                id,
-                id_map,
-            ),
             Union { inputs, .. } => {
                 let current_node = DotNode {
                     branch,
@@ -164,9 +151,9 @@ impl LogicalPlan {
                 count,
             } => {
                 let fmt = if *count == usize::MAX {
-                    "CACHE".to_string()
+                    Cow::Borrowed("CACHE")
                 } else {
-                    format!("CACHE: {}times", *count)
+                    Cow::Owned(format!("CACHE: {}times", *count))
                 };
                 let current_node = DotNode {
                     branch: *cache_id,
@@ -195,7 +182,7 @@ impl LogicalPlan {
                 acc_str,
                 prev_node,
                 "PYTHON",
-                Path::new(""),
+                &[],
                 options.with_columns.as_ref().map(|s| s.as_slice()),
                 options.schema.len(),
                 &options.predicate,
@@ -326,7 +313,7 @@ impl LogicalPlan {
                 }
             },
             Scan {
-                path,
+                paths,
                 file_info,
                 predicate,
                 scan_type,
@@ -338,7 +325,7 @@ impl LogicalPlan {
                     acc_str,
                     prev_node,
                     name,
-                    path.as_ref(),
+                    paths.as_ref(),
                     options.with_columns.as_ref().map(|cols| cols.as_slice()),
                     file_info.schema.len(),
                     predicate,
@@ -423,7 +410,7 @@ impl LogicalPlan {
         acc_str: &mut String,
         prev_node: DotNode,
         name: &str,
-        path: &Path,
+        path: &[PathBuf],
         with_columns: Option<&[String]>,
         total_columns: usize,
         predicate: &Option<P>,
@@ -436,13 +423,20 @@ impl LogicalPlan {
             n_columns_fmt = format!("{}", columns.len());
         }
 
+        let path_fmt = match path.len() {
+            1 => path[0].to_string_lossy(),
+            0 => "".into(),
+            _ => Cow::Owned(format!(
+                "{} files: first file: {}",
+                path.len(),
+                path[0].to_string_lossy()
+            )),
+        };
+
         let pred = fmt_predicate(predicate.as_ref());
         let fmt = format!(
             "{name} SCAN {};\nπ {}/{};\nσ {}",
-            path.to_string_lossy(),
-            n_columns_fmt,
-            total_columns,
-            pred,
+            path_fmt, n_columns_fmt, total_columns, pred,
         );
         let current_node = DotNode {
             branch,
