@@ -353,9 +353,10 @@ impl NestedState {
 
 /// Extends `items` by consuming `page`, first trying to complete the last `item`
 /// and extending it if more are needed.
+///
 /// Note that as the page iterator being passed does not guarantee it reads to
-/// the end, this function cannot determine whether it finished reading. It
-/// therefore returns a bool indicating:
+/// the end, this function cannot always determine whether it has finished
+/// reading. It therefore returns a bool indicating:
 /// * true  : the row is fully read
 /// * false : the row may not be fully read
 pub(super) fn extend<'a, D: NestedDecoder<'a>>(
@@ -382,7 +383,7 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
     };
     let existing = nested.len();
 
-    // `remaining` and `additional` etc. can be 0 during reading of the last
+    // `remaining` and `additional` can be 0 during reading of the last
     // requested row, so the below code must guarantee at least some additional
     // data is read before any short circuits.
     let additional = (chunk_size - existing).min(*remaining);
