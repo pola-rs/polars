@@ -413,14 +413,16 @@ impl<'a> PredicatePushDown<'a> {
                 schema,
                 options,
             } => {
-                process_join(self, lp_arena,
-                expr_arena,
-                input_left,
-                         input_right,
-                         left_on,
-                         right_on,
-                         schema,
-                         options,
+                process_join(
+                    self, 
+                    lp_arena,
+                    expr_arena,
+                    input_left,
+                    input_right,
+                    left_on,
+                    right_on,
+                    schema,
+                    options,
                     acc_predicates
                 )
             }

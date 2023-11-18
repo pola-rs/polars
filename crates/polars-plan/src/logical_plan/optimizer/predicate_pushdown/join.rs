@@ -133,8 +133,7 @@ pub(super) fn process_join(
             // join columns, we also push down right
             || filter_left
                 && all_pred_cols_in_left_on(predicate, expr_arena, &left_on)
-                // TODO: Restricting to Inner and Left Join is probably too conservative
-                && matches!(&options.args.how, JoinType::Inner | JoinType::Left)
+                && matches!(&options.args.how, JoinType::Inner | JoinType::Left | JoinType::Semi)
         {
             insert_and_combine_predicate(&mut pushdown_right, predicate, expr_arena);
             filter_right = true;
