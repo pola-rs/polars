@@ -173,6 +173,42 @@ impl IpcSink {
     }
 }
 
+#[cfg(all(feature = "ipc", feature = "cloud"))]
+pub struct IpcCloudSink {}
+#[cfg(all(feature = "ipc", feature = "cloud"))]
+impl IpcCloudSink {
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new(
+        uri: &str,
+        cloud_options: Option<&polars_core::cloud::CloudOptions>,
+        ipc_options: IpcWriterOptions,
+        schema: &Schema,
+    ) -> PolarsResult<FilesSink> {
+        let cloud_writer = polars_io::cloud::CloudWriter::new(uri, cloud_options)?;
+        let writer = IpcWriter::new(cloud_writer)
+            .with_compression(ipc_options.compression)
+            .batched(schema)?;
+
+        let writer = Box::new(writer) as Box<dyn SinkWriter + Send>;
+
+        let morsels_per_sink = morsels_per_sink();
+        let backpressure = morsels_per_sink * 2;
+        let (sender, receiver) = bounded(backpressure);
+
+        let io_thread_handle = Arc::new(Some(init_writer_thread(
+            receiver,
+            writer,
+            ipc_options.maintain_order,
+            morsels_per_sink,
+        )));
+
+        Ok(FilesSink {
+            sender,
+            io_thread_handle,
+        })
+    }
+}
+
 #[cfg(feature = "csv")]
 pub struct CsvSink {}
 #[cfg(feature = "csv")]
