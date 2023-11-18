@@ -384,7 +384,7 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
     let existing = nested.len();
 
     // `remaining` and `additional` can be 0 during reading of the last
-    // requested row, so the below code must guarantee at least some additional
+    // requested row, so the code below must guarantee at least some additional
     // data is read before any short circuits.
     let additional = (chunk_size - existing).min(*remaining);
 
@@ -486,7 +486,7 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
             .copied();
 
         // There must be a next page with a repetition level of 0 to know that
-        // the current row is fully read, as the iterator here does not go to
+        // the current row is fully read, as the iterator here may not go to
         // the end.
         if next_rep.is_none() {
             return Ok(false);
