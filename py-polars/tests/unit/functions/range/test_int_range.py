@@ -66,6 +66,39 @@ def test_int_ranges(start: Any, end: Any, expected: pl.Series) -> None:
     assert_series_equal(result.to_series(), expected)
 
 
+def test_int_ranges_decreasing() -> None:
+    expected = pl.Series("int_range", [[5, 4, 3, 2, 1]], dtype=pl.List(pl.Int64))
+    assert_series_equal(pl.int_ranges(5, 0, -1, eager=True), expected)
+    assert_series_equal(pl.select(pl.int_ranges(5, 0, -1)).to_series(), expected)
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "step"),
+    [
+        (0, -5, 1),
+        (5, 0, 1),
+        (0, 5, -1),
+    ],
+)
+def test_int_ranges_empty(start: int, end: int, step: int) -> None:
+    assert_series_equal(
+        pl.int_range(start, end, step, eager=True),
+        pl.Series("int", [], dtype=pl.Int64),
+    )
+    assert_series_equal(
+        pl.int_ranges(start, end, step, eager=True),
+        pl.Series("int_range", [[]], dtype=pl.List(pl.Int64)),
+    )
+    assert_series_equal(
+        pl.Series("int", [], dtype=pl.Int64),
+        pl.select(pl.int_range(start, end, step)).to_series(),
+    )
+    assert_series_equal(
+        pl.Series("int_range", [[]], dtype=pl.List(pl.Int64)),
+        pl.select(pl.int_ranges(start, end, step)).to_series(),
+    )
+
+
 def test_int_ranges_eager() -> None:
     start = pl.Series([1, 2])
     result = pl.int_ranges(start, 4, eager=True)
