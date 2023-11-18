@@ -39,6 +39,16 @@ def test_lit_tuple_input(input: tuple[Any, ...]) -> None:
     assert_frame_equal(result, expected)
 
 
+def test_lit_numpy_array_input() -> None:
+    df = pl.DataFrame({"a": [1, 2]})
+    input = np.array([3, 4])
+
+    result = df.with_columns(pl.lit(input, dtype=pl.Int64))
+
+    expected = pl.DataFrame({"a": [1, 2], "literal": [3, 4]})
+    assert_frame_equal(result, expected)
+
+
 def test_lit_ambiguous_datetimes_11379() -> None:
     df = pl.DataFrame(
         {

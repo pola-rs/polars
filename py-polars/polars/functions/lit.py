@@ -121,7 +121,7 @@ def lit(
         return e.alias(name)
 
     elif _check_for_numpy(value) and isinstance(value, np.ndarray):
-        return lit(pl.Series("", value))
+        return lit(pl.Series("literal", value))
 
     elif isinstance(value, (list, tuple)):
         return lit(pl.Series("literal", [value]))
