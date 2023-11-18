@@ -45,21 +45,11 @@ pub struct ParquetSource {
 
 impl ParquetSource {
     fn init_next_reader(&mut self) -> PolarsResult<()> {
-        if self.run_async {
-            #[cfg(feature = "async")]
-            {
-                if let Some(index) = self.iter.next() {
-                    let batched_reader = polars_io::pl_async::get_runtime()
-                        .block_on(async { self.init_reader_async(index).await })?;
-                    self.finish_init_reader(batched_reader)
-                } else {
-                    Ok(())
-                }
-            }
-            #[cfg(not(feature = "async"))]
-            panic!("activate 'async' feature")
-        } else {
+        if !self.run_async {
+            // Don't do this for async as that would mean we run serially.
             self.init_next_reader_sync()
+        } else {
+            Ok(())
         }
     }
 
@@ -246,7 +236,9 @@ impl Source for ParquetSource {
     fn get_batches(&mut self, _context: &PExecutionContext) -> PolarsResult<SourceResult> {
         // We already start downloading the next file, we can only do that if we don't have a limit.
         // In the case of a limit we first must update the row count with the batch results.
-        if self.batched_readers.len() < self.prefetch_size && self.file_options.n_rows.is_none()
+        // It is important we do this for a reasonable batch size, that's why we have prefetch_size / 2
+        if self.batched_readers.len() <= self.prefetch_size / 2
+            && self.file_options.n_rows.is_none()
             || self.batched_readers.is_empty()
         {
             let range = 0..self.prefetch_size - self.batched_readers.len();
@@ -261,7 +253,6 @@ impl Source for ParquetSource {
                         .zip(&mut self.iter)
                         .map(|(_, index)| index)
                         .collect::<Vec<_>>();
-
                     let init_iter = range.into_iter().map(|index| self.init_reader_async(index));
 
                     let batched_readers = polars_io::pl_async::get_runtime()
