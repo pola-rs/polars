@@ -162,62 +162,19 @@ def test_group_by_iteration() -> None:
     assert result3 == expected3
 
 
-def bad_agg_parameters() -> list[Any]:
-    """Currently, IntoExpr and Iterable[IntoExpr] are supported."""
-    return [str, "b".join]
+@pytest.mark.parametrize("input", [[pl.col("b").sum()], pl.col("b").sum()])
+def test_group_by_agg_input_types(input: Any) -> None:
+    df = pl.LazyFrame({"a": [1, 1, 2, 2], "b": [1, 2, 3, 4]})
+    result = df.group_by("a", maintain_order=True).agg(input)
+    expected = pl.LazyFrame({"a": [1, 2], "b": [3, 7]})
+    assert_frame_equal(result, expected)
 
 
-def good_agg_parameters() -> list[pl.Expr | list[pl.Expr]]:
-    return [
-        [pl.col("b").sum()],
-        pl.col("b").sum(),
-    ]
-
-
-@pytest.mark.parametrize("lazy", [True, False])
-def test_group_by_agg_input_types(lazy: bool) -> None:
-    df = pl.DataFrame({"a": [1, 1, 2, 2], "b": [1, 2, 3, 4]})
-    df_or_lazy: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
-
-    for bad_param in bad_agg_parameters():
-        with pytest.raises(TypeError):  # noqa: PT012
-            result = df_or_lazy.group_by("a").agg(bad_param)
-            if lazy:
-                result.collect()  # type: ignore[union-attr]
-
-    expected = pl.DataFrame({"a": [1, 2], "b": [3, 7]})
-
-    for good_param in good_agg_parameters():
-        result = df_or_lazy.group_by("a", maintain_order=True).agg(good_param)
-        if lazy:
-            result = result.collect()  # type: ignore[union-attr]
-        assert_frame_equal(result, expected)
-
-
-@pytest.mark.parametrize("lazy", [True, False])
-def test_group_by_dynamic_agg_input_types(lazy: bool) -> None:
-    df = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]}).set_sorted(
-        "index_column"
-    )
-    df_or_lazy: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
-
-    for bad_param in bad_agg_parameters():
-        with pytest.raises(TypeError):  # noqa: PT012
-            result = df_or_lazy.group_by_dynamic(
-                index_column="index_column", every="2i", closed="right"
-            ).agg(bad_param)
-            if lazy:
-                result.collect()  # type: ignore[union-attr]
-
-    expected = pl.DataFrame({"index_column": [-2, 0, 2], "b": [1, 4, 2]})
-
-    for good_param in good_agg_parameters():
-        result = df_or_lazy.group_by_dynamic(
-            index_column="index_column", every="2i", closed="right"
-        ).agg(good_param)
-        if lazy:
-            result = result.collect()  # type: ignore[union-attr]
-        assert_frame_equal(result, expected)
+@pytest.mark.parametrize("input", [str, "b".join])
+def test_group_by_agg_bad_input_types(input: Any) -> None:
+    df = pl.LazyFrame({"a": [1, 1, 2, 2], "b": [1, 2, 3, 4]})
+    with pytest.raises(TypeError):
+        df.group_by("a").agg(input)
 
 
 def test_group_by_sorted_empty_dataframe_3680() -> None:

@@ -12,18 +12,6 @@ if TYPE_CHECKING:
     from polars.type_aliases import ClosedInterval
 
 
-def bad_agg_parameters() -> list[Any]:
-    """Currently, IntoExpr and Iterable[IntoExpr] are supported."""
-    return [str, "b".join]
-
-
-def good_agg_parameters() -> list[pl.Expr | list[pl.Expr]]:
-    return [
-        [pl.col("b").sum()],
-        pl.col("b").sum(),
-    ]
-
-
 def test_rolling_group_by_overlapping_groups() -> None:
     # this first aggregates overlapping groups so they cannot be naively flattened
     df = pl.DataFrame({"a": [41, 60, 37, 51, 52, 39, 40]})
@@ -45,30 +33,23 @@ def test_rolling_group_by_overlapping_groups() -> None:
     )
 
 
-@pytest.mark.parametrize("lazy", [True, False])
-def test_rolling_agg_input_types(lazy: bool) -> None:
-    df = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]}).set_sorted(
+@pytest.mark.parametrize("input", [[pl.col("b").sum()], pl.col("b").sum()])
+def test_rolling_agg_input_types(input: Any) -> None:
+    df = pl.LazyFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]}).set_sorted(
         "index_column"
     )
-    df_or_lazy: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
+    result = df.rolling(index_column="index_column", period="2i").agg(input)
+    expected = pl.LazyFrame({"index_column": [0, 1, 2, 3], "b": [1, 4, 4, 3]})
+    assert_frame_equal(result, expected)
 
-    for bad_param in bad_agg_parameters():
-        with pytest.raises(TypeError):  # noqa: PT012
-            result = df_or_lazy.rolling(index_column="index_column", period="2i").agg(
-                bad_param
-            )
-            if lazy:
-                result.collect()  # type: ignore[union-attr]
 
-    expected = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 4, 4, 3]})
-
-    for good_param in good_agg_parameters():
-        result = df_or_lazy.rolling(index_column="index_column", period="2i").agg(
-            good_param
-        )
-        if lazy:
-            result = result.collect()  # type: ignore[union-attr]
-        assert_frame_equal(result, expected)
+@pytest.mark.parametrize("input", [str, "b".join])
+def test_rolling_agg_bad_input_types(input: Any) -> None:
+    df = pl.LazyFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]}).set_sorted(
+        "index_column"
+    )
+    with pytest.raises(TypeError):
+        df.rolling(index_column="index_column", period="2i").agg(input)
 
 
 def test_rolling_negative_offset_3914() -> None:
