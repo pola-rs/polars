@@ -124,12 +124,10 @@ class Expr:
         return expr
 
     def _to_pyexpr(self, other: Any) -> PyExpr:
-        return self._to_expr(other)._pyexpr
-
-    def _to_expr(self, other: Any) -> Expr:
         if isinstance(other, Expr):
-            return other
-        return F.lit(other)
+            return other._pyexpr
+        else:
+            return F.lit(other)._pyexpr
 
     def _repr_html_(self) -> str:
         return self._pyexpr.to_str()
@@ -161,7 +159,7 @@ class Expr:
         return self._from_pyexpr(self._to_pyexpr(other)._and(self._pyexpr))
 
     def __eq__(self, other: Any) -> Self:  # type: ignore[override]
-        return self._from_pyexpr(self._pyexpr.eq(self._to_expr(other)._pyexpr))
+        return self._from_pyexpr(self._pyexpr.eq(self._to_pyexpr(other)))
 
     def __floordiv__(self, other: Any) -> Self:
         return self._from_pyexpr(self._pyexpr // self._to_pyexpr(other))
@@ -170,19 +168,19 @@ class Expr:
         return self._from_pyexpr(self._to_pyexpr(other) // self._pyexpr)
 
     def __ge__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr.gt_eq(self._to_expr(other)._pyexpr))
+        return self._from_pyexpr(self._pyexpr.gt_eq(self._to_pyexpr(other)))
 
     def __gt__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr.gt(self._to_expr(other)._pyexpr))
+        return self._from_pyexpr(self._pyexpr.gt(self._to_pyexpr(other)))
 
     def __invert__(self) -> Self:
         return self.not_()
 
     def __le__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr.lt_eq(self._to_expr(other)._pyexpr))
+        return self._from_pyexpr(self._pyexpr.lt_eq(self._to_pyexpr(other)))
 
     def __lt__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr.lt(self._to_expr(other)._pyexpr))
+        return self._from_pyexpr(self._pyexpr.lt(self._to_pyexpr(other)))
 
     def __mod__(self, other: Any) -> Self:
         return self._from_pyexpr(self._pyexpr % self._to_pyexpr(other))
@@ -197,7 +195,7 @@ class Expr:
         return self._from_pyexpr(self._to_pyexpr(other) * self._pyexpr)
 
     def __ne__(self, other: Any) -> Self:  # type: ignore[override]
-        return self._from_pyexpr(self._pyexpr.neq(self._to_expr(other)._pyexpr))
+        return self._from_pyexpr(self._pyexpr.neq(self._to_pyexpr(other)))
 
     def __neg__(self) -> Expr:
         neg_expr = F.lit(0) - self
@@ -4634,7 +4632,7 @@ class Expr:
         └──────┴──────┴────────┴────────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.eq_missing(self._to_expr(other)._pyexpr))
+        return self._from_pyexpr(self._pyexpr.eq_missing(self._to_pyexpr(other)))
 
     def ge(self, other: Any) -> Self:
         """
@@ -4849,7 +4847,7 @@ class Expr:
         └──────┴──────┴────────┴────────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.neq_missing(self._to_expr(other)._pyexpr))
+        return self._from_pyexpr(self._pyexpr.neq_missing(self._to_pyexpr(other)))
 
     def add(self, other: Any) -> Self:
         """

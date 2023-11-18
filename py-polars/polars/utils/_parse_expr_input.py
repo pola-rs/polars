@@ -31,6 +31,9 @@ def parse_as_list_of_expressions(
     __structify
         Convert multi-column expressions to a single struct expression.
 
+    Returns
+    -------
+    list of PyExpr
     """
     exprs = _parse_regular_inputs(inputs, structify=__structify)
     if named_inputs:
@@ -77,7 +80,7 @@ def parse_as_expression(
     *,
     str_as_lit: bool = False,
     structify: bool = False,
-) -> PyExpr | Expr:
+) -> PyExpr:
     """
     Parse a single input into an expression.
 
@@ -91,6 +94,9 @@ def parse_as_expression(
     structify
         Convert multi-column expressions to a single struct expression.
 
+    Returns
+    -------
+    PyExpr
     """
     if isinstance(input, pl.Expr):
         expr = input
