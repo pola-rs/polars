@@ -178,13 +178,14 @@ pub struct IpcCloudSink {}
 #[cfg(all(feature = "ipc", feature = "cloud"))]
 impl IpcCloudSink {
     #[allow(clippy::new_ret_no_self)]
-    pub fn new(
+    #[tokio::main(flavor = "current_thread")]
+    pub async fn new(
         uri: &str,
-        cloud_options: Option<&polars_core::cloud::CloudOptions>,
+        cloud_options: Option<&polars_io::cloud::CloudOptions>,
         ipc_options: IpcWriterOptions,
         schema: &Schema,
     ) -> PolarsResult<FilesSink> {
-        let cloud_writer = polars_io::cloud::CloudWriter::new(uri, cloud_options)?;
+        let cloud_writer = polars_io::cloud::CloudWriter::new(uri, cloud_options).await?;
         let writer = IpcWriter::new(cloud_writer)
             .with_compression(ipc_options.compression)
             .batched(schema)?;

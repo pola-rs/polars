@@ -749,7 +749,7 @@ impl LazyFrame {
     pub fn sink_ipc_cloud(
         mut self,
         uri: String,
-        cloud_options: Option<polars_core::cloud::CloudOptions>,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
         ipc_options: IpcWriterOptions,
     ) -> PolarsResult<()> {
         self.opt_state.streaming = true;
