@@ -693,22 +693,17 @@ impl LogicalPlanBuilder {
         // Add dynamic groupby index column(s)
         #[cfg(feature = "dynamic_group_by")]
         {
-            let index_columns = &[
-                rolling_options
-                    .as_ref()
-                    .map(|options| &options.index_column),
-                dynamic_options
-                    .as_ref()
-                    .map(|options| &options.index_column),
-            ];
-            for &name in index_columns.iter().flatten() {
-                let dtype = try_delayed!(
-                    current_schema
-                        .get(name)
-                        .ok_or_else(|| polars_err!(ColumnNotFound: "{}", name)),
-                    self.0,
-                    into
-                );
+            if let Some(options) = rolling_options.as_ref() {
+                let name = &options.index_column;
+                let dtype = try_delayed!(current_schema.try_get(name), self.0, into);
+                schema.with_column(name.clone(), dtype.clone());
+            } else if let Some(options) = dynamic_options.as_ref() {
+                let name = &options.index_column;
+                let dtype = try_delayed!(current_schema.try_get(name), self.0, into);
+                if options.include_boundaries {
+                    schema.with_column("_lower_boundary".into(), dtype.clone());
+                    schema.with_column("_upper_boundary".into(), dtype.clone());
+                }
                 schema.with_column(name.clone(), dtype.clone());
             }
         }

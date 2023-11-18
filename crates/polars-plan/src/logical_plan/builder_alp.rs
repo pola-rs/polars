@@ -127,18 +127,17 @@ impl<'a> ALogicalPlanBuilder<'a> {
 
         #[cfg(feature = "dynamic_group_by")]
         {
-            let index_columns = &[
-                options
-                    .rolling
-                    .as_ref()
-                    .map(|options| &options.index_column),
-                options
-                    .dynamic
-                    .as_ref()
-                    .map(|options| &options.index_column),
-            ];
-            for &name in index_columns.iter().flatten() {
+            if let Some(options) = options.rolling.as_ref() {
+                let name = &options.index_column;
                 let dtype = current_schema.get(name).unwrap();
+                schema.with_column(name.clone(), dtype.clone());
+            } else if let Some(options) = options.dynamic.as_ref() {
+                let name = &options.index_column;
+                let dtype = current_schema.get(name).unwrap();
+                if options.include_boundaries {
+                    schema.with_column("_lower_boundary".into(), dtype.clone());
+                    schema.with_column("_upper_boundary".into(), dtype.clone());
+                }
                 schema.with_column(name.clone(), dtype.clone());
             }
         }
