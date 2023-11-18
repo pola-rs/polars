@@ -12,7 +12,9 @@ use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::prelude::*;
 #[cfg(feature = "describe")]
 use crate::utils::concat_df_unchecked;
-use crate::utils::{slice_offsets, split_ca, split_df, try_get_supertype, NoNull};
+#[cfg(feature = "algorithm_group_by")]
+use crate::utils::{slice_offsets, NoNull};
+use crate::utils::{split_ca, split_df, try_get_supertype};
 
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
@@ -3445,7 +3447,6 @@ fn ensure_can_extend(left: &Series, right: &Series) -> PolarsResult<()> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::frame::NullStrategy;
 
     fn create_frame() -> DataFrame {
         let s0 = Series::new("days", [0, 1, 2].as_ref());

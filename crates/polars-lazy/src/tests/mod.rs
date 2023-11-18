@@ -28,7 +28,6 @@ fn load_df() -> DataFrame {
     .unwrap()
 }
 
-use std::io::Cursor;
 use std::iter::FromIterator;
 
 use optimization_checks::*;
@@ -39,6 +38,7 @@ use polars_core::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 pub(crate) use polars_core::SINGLE_LOCK;
+#[allow(unused_imports)]
 use polars_io::prelude::*;
 use polars_plan::logical_plan::{
     ArenaLpIter, OptimizationRule, SimplifyExprRule, StackOptimizer, TypeCoercionRule,
@@ -142,24 +142,12 @@ pub(crate) fn fruits_cars() -> DataFrame {
 }
 
 pub(crate) fn get_df() -> DataFrame {
-    let s = r#"
-"sepal.length","sepal.width","petal.length","petal.width","variety"
-5.1,3.5,1.4,.2,"Setosa"
-4.9,3,1.4,.2,"Setosa"
-4.7,3.2,1.3,.2,"Setosa"
-4.6,3.1,1.5,.2,"Setosa"
-5,3.6,1.4,.2,"Setosa"
-5.4,3.9,1.7,.4,"Setosa"
-4.6,3.4,1.4,.3,"Setosa"
-"#;
-
-    let file = Cursor::new(s);
-
-    let df = CsvReader::new(file)
-        // we also check if infer schema ignores errors
-        .infer_schema(Some(3))
-        .has_header(true)
-        .finish()
-        .unwrap();
-    df
+    df!(
+        "sepal.length" => [5.1, 4.9, 4.7, 4.6, 5.0, 5.4, 4.6],
+        "sepal.width" => [3.5, 3.0, 3.2, 3.1, 3.6, 3.9,3.4],
+        "petal.length" => [1.4, 4.0, 1.3, 1.5, 1.4, 1.7, 1.4],
+        "petal.width" => [0.2, 0.2, 0.2, 0.2, 0.2, 0.4, 0.3],
+        "variety" => ["Setosa", "Setosa", "Setosa", "Setosa", "Setosa", "Setosa", "Setosa"]
+    )
+    .unwrap()
 }

@@ -997,6 +997,7 @@ fn test_group_by_sort_slice() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "cum_agg")]
 fn test_group_by_cum_sum() -> PolarsResult<()> {
     let df = df![
         "groups" => [1, 2, 2, 3, 3, 3],

@@ -1,11 +1,12 @@
 use polars_ops::prelude::ListNameSpaceImpl;
-use polars_utils::idxvec;
 
 use super::*;
 
 #[test]
 #[cfg(feature = "dtype-datetime")]
 fn test_agg_list_type() -> PolarsResult<()> {
+    use polars_utils::idxvec;
+
     let s = Series::new("foo", &[1, 2, 3]);
     let s = s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
 
@@ -85,6 +86,7 @@ fn test_lazy_agg_scan() {
 }
 
 #[test]
+#[cfg(feature = "cum_agg")]
 fn test_cum_sum_agg_as_key() -> PolarsResult<()> {
     let df = df![
         "depth" => &[0i32, 1, 2, 3, 4, 5, 6, 7, 8, 9],

@@ -149,6 +149,7 @@ where
     }
 }
 
+#[cfg(feature = "random")]
 #[cfg(test)]
 mod test {
     use std::ops::Range;
