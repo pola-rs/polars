@@ -169,6 +169,7 @@ impl ParquetSource {
         Ok(())
     }
 
+    #[cfg(feature = "async")]
     async fn init_reader_async(&self, index: usize) -> PolarsResult<BatchedParquetReader> {
         let metadata = self.metadata.clone();
         let predicate = self.predicate.clone();
