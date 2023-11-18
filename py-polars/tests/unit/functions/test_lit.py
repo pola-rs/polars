@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any, Sequence
+from typing import Any
 
 import numpy as np
 import pytest
@@ -11,15 +11,32 @@ from polars.testing import assert_frame_equal
 
 
 @pytest.mark.parametrize(
-    "sequence",
+    "input",
     [
         [[1, 2], [3, 4, 5]],
+        [1, 2, 3],
+    ],
+)
+def test_lit_list_input(input: list[Any]) -> None:
+    df = pl.DataFrame({"a": [1, 2]})
+    result = df.with_columns(pl.lit(input))
+    expected = pl.DataFrame({"a": [1, 2], "literal": [input, input]})
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    "input",
+    [
+        ([1, 2], [3, 4, 5]),
         (1, 2, 3),
     ],
 )
-def test_lit_deprecated_sequence_input(sequence: Sequence[Any]) -> None:
-    with pytest.deprecated_call():
-        pl.lit(sequence)
+def test_lit_tuple_input(input: tuple[Any, ...]) -> None:
+    df = pl.DataFrame({"a": [1, 2]})
+    result = df.with_columns(pl.lit(input))
+
+    expected = pl.DataFrame({"a": [1, 2], "literal": [list(input), list(input)]})
+    assert_frame_equal(result, expected)
 
 
 def test_lit_ambiguous_datetimes_11379() -> None:

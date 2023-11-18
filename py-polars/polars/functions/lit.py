@@ -14,7 +14,6 @@ from polars.utils.convert import (
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
 )
-from polars.utils.deprecation import issue_deprecation_warning
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -125,13 +124,7 @@ def lit(
         return lit(pl.Series("", value))
 
     elif isinstance(value, (list, tuple)):
-        issue_deprecation_warning(
-            "Behavior for `lit` will change for sequence inputs."
-            " The result will change to be a literal of type List."
-            " To retain the old behavior, pass a Series instead, e.g. `Series(sequence)`.",
-            version="0.18.14",
-        )
-        return lit(pl.Series("", value))
+        return lit(pl.Series("literal", [value]))
 
     if dtype:
         return wrap_expr(plr.lit(value, allow_object)).cast(dtype)

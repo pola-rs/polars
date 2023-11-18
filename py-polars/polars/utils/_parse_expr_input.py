@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Iterable
 
 import polars._reexport as pl
@@ -13,9 +12,6 @@ if TYPE_CHECKING:
     from polars import Expr
     from polars.polars import PyExpr
     from polars.type_aliases import IntoExpr
-
-from polars.dependencies import _check_for_numpy
-from polars.dependencies import numpy as np
 
 
 def parse_as_list_of_expressions(
@@ -108,25 +104,9 @@ def parse_as_expression(
     elif isinstance(input, str) and not str_as_lit:
         expr = F.col(input)
         structify = False
-    elif (
-        isinstance(
-            input, (int, float, str, bytes, pl.Series, datetime, date, time, timedelta)
-        )
-        or input is None
-    ):
+    else:
         expr = F.lit(input)
         structify = False
-    elif isinstance(input, (list, tuple)):
-        expr = F.lit(pl.Series("literal", [input]))
-        structify = False
-    elif _check_for_numpy(input) and isinstance(input, np.ndarray):
-        expr = F.lit(pl.Series("literal", input))
-        structify = False
-    else:
-        raise TypeError(
-            f"did not expect value {input!r} of type {type(input).__name__!r}"
-            "\n\nTry disambiguating with `lit` or `col`."
-        )
 
     if structify:
         expr = _structify_expression(expr)
