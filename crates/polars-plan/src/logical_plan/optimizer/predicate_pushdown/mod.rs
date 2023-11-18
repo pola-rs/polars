@@ -414,7 +414,7 @@ impl<'a> PredicatePushDown<'a> {
                 options,
             } => {
                 process_join(
-                    self, 
+                    self,
                     lp_arena,
                     expr_arena,
                     input_left,
