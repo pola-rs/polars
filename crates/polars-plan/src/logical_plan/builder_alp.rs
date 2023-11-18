@@ -124,13 +124,6 @@ impl<'a> ALogicalPlanBuilder<'a> {
 
         let mut schema =
             aexprs_to_schema(&keys, &current_schema, Context::Default, self.expr_arena);
-        let other = aexprs_to_schema(
-            &aggs,
-            &current_schema,
-            Context::Aggregation,
-            self.expr_arena,
-        );
-        schema.merge(other);
 
         #[cfg(feature = "dynamic_group_by")]
         {
@@ -149,6 +142,14 @@ impl<'a> ALogicalPlanBuilder<'a> {
                 schema.with_column(name.clone(), dtype.clone());
             }
         }
+
+        let agg_schema = aexprs_to_schema(
+            &aggs,
+            &current_schema,
+            Context::Aggregation,
+            self.expr_arena,
+        );
+        schema.merge(agg_schema);
 
         let lp = ALogicalPlan::Aggregate {
             input: self.root,

@@ -683,32 +683,14 @@ impl LogicalPlanBuilder {
             into
         );
 
+        // Initialize schema from keys
         let mut schema = try_delayed!(
             expressions_to_schema(&keys, current_schema, Context::Default),
             &self.0,
             into
         );
-        let other = try_delayed!(
-            expressions_to_schema(&aggs, current_schema, Context::Aggregation),
-            &self.0,
-            into
-        );
-        schema.merge(other);
 
-        if schema.len() < keys.len() + aggs.len() {
-            let check_names = || {
-                let mut names = PlHashSet::with_capacity(schema.len());
-                for expr in aggs.iter().chain(keys.iter()) {
-                    let name = expr_output_name(expr)?;
-                    if !names.insert(name.clone()) {
-                        polars_bail!(duplicate = name);
-                    }
-                }
-                Ok(())
-            };
-            try_delayed!(check_names(), &self.0, into)
-        }
-
+        // Add dynamic groupby index column(s)
         #[cfg(feature = "dynamic_group_by")]
         {
             let index_columns = &[
@@ -730,16 +712,38 @@ impl LogicalPlanBuilder {
                 schema.with_column(name.clone(), dtype.clone());
             }
         }
+        let keys_index_len = schema.len();
 
-        #[cfg(feature = "dynamic_group_by")]
+        // Add aggregation column(s)
+        let aggs_schema = try_delayed!(
+            expressions_to_schema(&aggs, current_schema, Context::Aggregation),
+            &self.0,
+            into
+        );
+        schema.merge(aggs_schema);
+
+        // Make sure aggregation columns do not contain keys or index columns
+        if schema.len() < (keys_index_len + aggs.len()) {
+            let check_names = || {
+                let mut names = PlHashSet::with_capacity(schema.len());
+                for expr in aggs.iter().chain(keys.iter()) {
+                    let name = expr_output_name(expr)?;
+                    if !names.insert(name.clone()) {
+                        polars_bail!(duplicate = name);
+                    }
+                }
+                Ok(())
+            };
+            try_delayed!(check_names(), &self.0, into)
+        }
+
         let options = GroupbyOptions {
+            #[cfg(feature = "dynamic_group_by")]
             dynamic: dynamic_options,
+            #[cfg(feature = "dynamic_group_by")]
             rolling: rolling_options,
             slice: None,
         };
-
-        #[cfg(not(feature = "dynamic_group_by"))]
-        let options = GroupbyOptions { slice: None };
 
         LogicalPlan::Aggregate {
             input: Box::new(self.0),
