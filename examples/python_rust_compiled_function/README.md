@@ -1,4 +1,4 @@
-# Compile Custom Rust functions and use in python polars
+# Compile Custom Rust functions and use in Python Polars
 
 ## Compile a development binary in your current environment
 

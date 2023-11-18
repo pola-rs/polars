@@ -1,12 +1,14 @@
 use polars_error::PolarsResult;
 
 use crate::array::Array;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
-pub fn cast(array: &dyn Array, to_type: &DataType) -> PolarsResult<Box<dyn Array>> {
+pub fn cast(array: &dyn Array, to_type: &ArrowDataType) -> PolarsResult<Box<dyn Array>> {
     match to_type {
         #[cfg(feature = "dtype-decimal")]
-        DataType::Decimal(precision, scale) if matches!(array.data_type(), DataType::LargeUtf8) => {
+        ArrowDataType::Decimal(precision, scale)
+            if matches!(array.data_type(), ArrowDataType::LargeUtf8) =>
+        {
             let array = array.as_any().downcast_ref::<LargeStringArray>().unwrap();
             Ok(Box::new(cast_utf8_to_decimal(
                 array,

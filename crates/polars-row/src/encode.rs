@@ -2,7 +2,7 @@ use arrow::array::{
     Array, BinaryArray, BooleanArray, DictionaryArray, PrimitiveArray, StructArray, Utf8Array,
 };
 use arrow::compute::cast::cast;
-use arrow::datatypes::{DataType as ArrowDataType, DataType};
+use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use polars_utils::vec::PushUnchecked;
 
@@ -37,25 +37,32 @@ pub fn convert_columns_amortized<'a, I: IntoIterator<Item = &'a SortField>>(
 ) {
     let fields = fields.into_iter();
     assert_eq!(fields.size_hint().0, columns.len());
-    if columns
-        .iter()
-        .any(|arr| matches!(arr.data_type(), DataType::Struct(_) | DataType::LargeUtf8))
-    {
+    if columns.iter().any(|arr| {
+        matches!(
+            arr.data_type(),
+            ArrowDataType::Struct(_) | ArrowDataType::LargeUtf8
+        )
+    }) {
         let mut flattened_columns = Vec::with_capacity(columns.len() * 5);
         let mut flattened_fields = Vec::with_capacity(columns.len() * 5);
 
         for (arr, field) in columns.iter().zip(fields) {
             match arr.data_type() {
-                DataType::Struct(_) => {
+                ArrowDataType::Struct(_) => {
                     let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
                     for arr in arr.values() {
                         flattened_columns.push(arr.clone() as ArrayRef);
                         flattened_fields.push(field.clone())
                     }
                 },
-                DataType::LargeUtf8 => {
+                ArrowDataType::LargeUtf8 => {
                     flattened_columns.push(
-                        cast(arr.as_ref(), &DataType::LargeBinary, Default::default()).unwrap(),
+                        cast(
+                            arr.as_ref(),
+                            &ArrowDataType::LargeBinary,
+                            Default::default(),
+                        )
+                        .unwrap(),
                     );
                     flattened_fields.push(field.clone());
                 },
@@ -106,18 +113,18 @@ fn encode_primitive<T: NativeType + FixedLengthEncoding>(
 /// `out` must have enough bytes allocated otherwise it will be out of bounds.
 unsafe fn encode_array(array: &dyn Array, field: &SortField, out: &mut RowsEncoded) {
     match array.data_type() {
-        DataType::Boolean => {
+        ArrowDataType::Boolean => {
             let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
             crate::fixed::encode_iter(array.into_iter(), out, field);
         },
-        DataType::LargeBinary => {
+        ArrowDataType::LargeBinary => {
             let array = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
             crate::variable::encode_iter(array.into_iter(), out, field)
         },
-        DataType::LargeUtf8 => {
+        ArrowDataType::LargeUtf8 => {
             panic!("should be cast to binary")
         },
-        DataType::Dictionary(_, _, _) => {
+        ArrowDataType::Dictionary(_, _, _) => {
             let array = array
                 .as_any()
                 .downcast_ref::<DictionaryArray<u32>>()

@@ -25,7 +25,7 @@ either = { workspace = true }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
 itoap = { version = "1", optional = true, features = ["simd"] }
-ndarray = { version = "0.15", optional = true, default_features = false }
+ndarray = { workspace = true, optional = true }
 num-traits = { workspace = true }
 once_cell = { workspace = true }
 rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
@@ -91,10 +91,8 @@ take_opt_iter = []
 group_by_list = []
 # rolling window functions
 rolling_window = []
-moment = []
 diagonal_concat = []
 horizontal_concat = []
-abs = []
 dataframe_arithmetic = []
 product = []
 unique_counts = []
@@ -118,8 +116,6 @@ dtype-u8 = []
 dtype-u16 = []
 dtype-categorical = []
 dtype-struct = []
-
-parquet = ["arrow/io_parquet"]
 
 # scale to terabytes?
 bigidx = ["arrow/bigidx", "polars-utils/bigidx"]
@@ -145,15 +141,12 @@ docs-selection = [
   "dot_product",
   "row_hash",
   "rolling_window",
-  "moment",
   "dtype-categorical",
   "dtype-decimal",
   "diagonal_concat",
   "horizontal_concat",
-  "abs",
   "dataframe_arithmetic",
   "product",
-  "unique_counts",
   "describe",
   "chunked_ids",
   "partition_by",

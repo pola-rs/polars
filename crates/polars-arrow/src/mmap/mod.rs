@@ -10,7 +10,7 @@ use polars_error::{polars_bail, polars_err, to_compute_err, PolarsResult};
 
 use crate::array::Array;
 use crate::chunk::Chunk;
-use crate::datatypes::{DataType, Field};
+use crate::datatypes::{ArrowDataType, Field};
 use crate::io::ipc::read::file::{get_dictionary_batch, get_record_batch};
 use crate::io::ipc::read::{
     first_dict_field, Dictionaries, FileMetadata, IpcBuffer, Node, OutOfSpecKind,
@@ -170,7 +170,7 @@ unsafe fn mmap_dictionary<T: AsRef<[u8]>>(
         .map_err(|err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::InvalidFlatbufferData(err)))?
         .ok_or_else(|| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::MissingData))?;
 
-    let value_type = if let DataType::Dictionary(_, value_type, _) =
+    let value_type = if let ArrowDataType::Dictionary(_, value_type, _) =
         first_field.data_type.to_logical_type()
     {
         value_type.as_ref()

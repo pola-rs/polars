@@ -73,7 +73,7 @@ fn finalize_dataframe(
         // in the `DataFrame`.
         if can_decode {
             let sort_dtypes = sort_dtypes.expect("should be set if 'can_decode'");
-            let sort_dtypes = sort_by_idx(sort_dtypes, sort_idx);
+            // let sort_dtypes = sort_by_idx(sort_dtypes, sort_idx);
 
             let encoded = encoded.binary().unwrap();
             assert_eq!(encoded.chunks().len(), 1);
@@ -85,7 +85,7 @@ fn finalize_dataframe(
             let arrays = {
                 let arr =
                     std::mem::transmute::<&'_ BinaryArray<i64>, &'static BinaryArray<i64>>(arr);
-                decode_rows_from_binary(arr, sort_fields, &sort_dtypes, rows)
+                decode_rows_from_binary(arr, sort_fields, sort_dtypes, rows)
             };
             rows.clear();
 
@@ -140,21 +140,24 @@ impl SortSinkMultiple {
         sort_args: SortArguments,
         output_schema: SchemaRef,
         sort_idx: Vec<usize>,
-    ) -> Self {
+    ) -> PolarsResult<Self> {
         let can_decode = sort_column_can_be_decoded(&output_schema, &sort_idx);
         let mut schema = (*output_schema).clone();
 
         let mut sort_dtypes = None;
         if can_decode {
-            let mut dtypes = Vec::with_capacity(sort_idx.len());
+            polars_ensure!(sort_idx.iter().collect::<PlHashSet::<_>>().len() == sort_idx.len(), ComputeError: "only supports sorting by unique columns");
+
+            let mut dtypes = vec![DataType::Null; sort_idx.len()];
 
             // we remove columns by index, but then the indices aren't correct anymore
             // so we do it in the proper order and keep track of the indices removed
-            let mut sorted_sort_idx = sort_idx.to_vec();
-            sorted_sort_idx.sort_unstable();
+            let mut sorted_sort_idx = sort_idx.iter().copied().enumerate().collect::<Vec<_>>();
+            // Sort by `sort_idx`.
+            sorted_sort_idx.sort_unstable_by_key(|k| k.1);
             // remove the sort indices as we will encode them into the sort binary
-            for (i, sort_i) in sorted_sort_idx.iter().enumerate() {
-                dtypes.push(schema.shift_remove_index(*sort_i - i).unwrap().1);
+            for (iterator_i, (original_idx, sort_i)) in sorted_sort_idx.iter().enumerate() {
+                dtypes[*original_idx] = schema.shift_remove_index(*sort_i - iterator_i).unwrap().1;
             }
             sort_dtypes = Some(dtypes.into());
         }
@@ -175,7 +178,7 @@ impl SortSinkMultiple {
             Arc::new(schema),
         ));
 
-        SortSinkMultiple {
+        Ok(SortSinkMultiple {
             sort_sink,
             sort_args,
             sort_idx: Arc::from(sort_idx),
@@ -184,7 +187,7 @@ impl SortSinkMultiple {
             sort_column: vec![],
             can_decode,
             output_schema,
-        }
+        })
     }
 
     fn encode(&mut self, chunk: &mut DataChunk) -> PolarsResult<()> {
@@ -224,6 +227,7 @@ impl SortSinkMultiple {
             )
         };
 
+        debug_assert_eq!(column.chunks().len(), 1);
         // Safety: length is correct
         unsafe { chunk.data.with_column_unchecked(column) };
         Ok(())

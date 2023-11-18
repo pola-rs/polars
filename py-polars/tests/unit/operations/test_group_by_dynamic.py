@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
@@ -113,7 +113,7 @@ def test_group_by_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         include_boundaries=True,
         label="datapoint",
         start_by="datapoint",
-    ).agg(pl.count()).to_dict(False) == {
+    ).agg(pl.count()).to_dict(as_series=False) == {
         "_lower_boundary": [
             datetime(2022, 12, 16, 0, 0, tzinfo=tzinfo),
             datetime(2022, 12, 16, 0, 31, tzinfo=tzinfo),
@@ -157,7 +157,7 @@ def test_group_by_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         start_by="monday",
         label="datapoint",
     ).agg([pl.count(), pl.col("day").first().alias("data_day")])
-    assert result.to_dict(False) == {
+    assert result.to_dict(as_series=False) == {
         "_lower_boundary": [
             datetime(2022, 1, 3, 0, 0, tzinfo=tzinfo),
             datetime(2022, 1, 10, 0, 0, tzinfo=tzinfo),
@@ -182,7 +182,7 @@ def test_group_by_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         start_by="saturday",
         label="datapoint",
     ).agg([pl.count(), pl.col("day").first().alias("data_day")])
-    assert result.to_dict(False) == {
+    assert result.to_dict(as_series=False) == {
         "_lower_boundary": [
             datetime(2022, 1, 1, 0, 0, tzinfo=tzinfo),
             datetime(2022, 1, 8, 0, 0, tzinfo=tzinfo),
@@ -221,7 +221,7 @@ def test_group_by_dynamic_by_monday_and_offset_5444() -> None:
         "date", every="1w", offset="1d", by="label", start_by="monday"
     ).agg(pl.col("value").sum())
 
-    assert result.to_dict(False) == {
+    assert result.to_dict(as_series=False) == {
         "label": ["a", "a", "b", "b"],
         "date": [
             date(2022, 11, 1),
@@ -319,13 +319,9 @@ def test_group_by_dynamic_slice_pushdown() -> None:
     df = (
         df.sort("a")
         .group_by_dynamic("a", by="b", every="2i")
-        .agg(
-            (pl.col("c") - pl.col("c").shift_and_fill(fill_value=0, periods=1))
-            .sum()
-            .alias("c")
-        )
+        .agg((pl.col("c") - pl.col("c").shift(fill_value=0)).sum().alias("c"))
     )
-    assert df.head(2).collect().to_dict(False) == {
+    assert df.head(2).collect().to_dict(as_series=False) == {
         "b": ["a", "a"],
         "a": [0, 2],
         "c": [1, 3],
@@ -340,9 +336,7 @@ def test_rolling_kernels_group_by_dynamic_7548() -> None:
         pl.col("value").min().alias("min_value"),
         pl.col("value").max().alias("max_value"),
         pl.col("value").sum().alias("sum_value"),
-    ).to_dict(
-        False
-    ) == {
+    ).to_dict(as_series=False) == {
         "time": [-1, 0, 1, 2, 3],
         "value": [[0, 1], [0, 1, 2], [1, 2, 3], [2, 3], [3]],
         "min_value": [0, 0, 1, 2, 3],
@@ -417,9 +411,7 @@ def test_group_by_dynamic_elementwise_following_mean_agg_6904(
     df = (
         pl.DataFrame(
             {
-                "a": [
-                    datetime(2021, 1, 1) + timedelta(seconds=2**i) for i in range(5)
-                ],
+                "a": [datetime(2021, 1, 1) + timedelta(seconds=2**i) for i in range(5)],
                 "b": [float(i) for i in range(5)],
             }
         )
@@ -523,7 +515,7 @@ def test_no_sorted_err() -> None:
         pl.InvalidOperationError,
         match=r"argument in operation 'group_by_dynamic' is not explicitly sorted",
     ):
-        df.group_by_dynamic("dt", every="1h").agg(pl.all().count().suffix("_foo"))
+        df.group_by_dynamic("dt", every="1h").agg(pl.all().count().name.suffix("_foo"))
 
 
 @pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
@@ -627,9 +619,7 @@ def test_groupy_by_dynamic_median_10695() -> None:
         index_column="timestamp",
         every="60s",
         period="3m",
-    ).agg(
-        pl.col("foo").median()
-    ).to_dict(False) == {
+    ).agg(pl.col("foo").median()).to_dict(as_series=False) == {
         "timestamp": [
             datetime(2023, 8, 22, 15, 43),
             datetime(2023, 8, 22, 15, 44),
@@ -910,9 +900,7 @@ def test_group_by_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) 
     assert result2 == expected2
 
 
-@pytest.mark.skip(
-    reason="Currently bugged, see: https://github.com/pola-rs/polars/issues/11339 "
-)
+# https://github.com/pola-rs/polars/issues/11339
 @pytest.mark.parametrize("include_boundaries", [True, False])
 def test_group_by_dynamic_lazy_schema(include_boundaries: bool) -> None:
     lf = pl.LazyFrame(
@@ -930,4 +918,57 @@ def test_group_by_dynamic_lazy_schema(include_boundaries: bool) -> None:
         "dt", every="2d", closed="right", include_boundaries=include_boundaries
     ).agg(pl.col("dt").min().alias("dt_min"))
 
-    assert list(result.schema.items()) == list(result.collect().schema.items())
+    assert result.schema == result.collect().schema
+
+
+def test_group_by_dynamic_12414() -> None:
+    df = pl.DataFrame(
+        {
+            "today": [
+                date(2023, 3, 3),
+                date(2023, 8, 31),
+                date(2023, 9, 1),
+                date(2023, 9, 4),
+            ],
+            "b": [1, 2, 3, 4],
+        }
+    ).sort("today")
+    assert df.group_by_dynamic(
+        "today",
+        every="6mo",
+        period="3d",
+        closed="left",
+        start_by="datapoint",
+        include_boundaries=True,
+    ).agg(
+        gt_min_count=(pl.col.b >= (pl.col.b.min())).sum(),
+    ).to_dict(as_series=False) == {
+        "_lower_boundary": [datetime(2023, 3, 3, 0, 0), datetime(2023, 9, 3, 0, 0)],
+        "_upper_boundary": [datetime(2023, 3, 6, 0, 0), datetime(2023, 9, 6, 0, 0)],
+        "today": [date(2023, 3, 3), date(2023, 9, 3)],
+        "gt_min_count": [1, 1],
+    }
+
+
+@pytest.mark.parametrize("input", [[pl.col("b").sum()], pl.col("b").sum()])
+def test_group_by_dynamic_agg_input_types(input: Any) -> None:
+    df = pl.LazyFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]}).set_sorted(
+        "index_column"
+    )
+    result = df.group_by_dynamic(
+        index_column="index_column", every="2i", closed="right"
+    ).agg(input)
+
+    expected = pl.LazyFrame({"index_column": [-2, 0, 2], "b": [1, 4, 2]})
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("input", [str, "b".join])
+def test_group_by_dynamic_agg_bad_input_types(input: Any) -> None:
+    df = pl.LazyFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]}).set_sorted(
+        "index_column"
+    )
+    with pytest.raises(TypeError):
+        df.group_by_dynamic(
+            index_column="index_column", every="2i", closed="right"
+        ).agg(input)

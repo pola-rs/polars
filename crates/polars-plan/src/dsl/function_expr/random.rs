@@ -1,3 +1,4 @@
+use polars_core::prelude::DataType::Float64;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
@@ -9,12 +10,8 @@ use super::*;
 #[strum(serialize_all = "snake_case")]
 pub enum RandomMethod {
     Shuffle,
-    SampleN {
-        with_replacement: bool,
-        shuffle: bool,
-    },
-    SampleFrac {
-        frac: f64,
+    Sample {
+        is_fraction: bool,
         with_replacement: bool,
         shuffle: bool,
     },
@@ -31,13 +28,26 @@ pub(super) fn shuffle(s: &Series, seed: Option<u64>) -> PolarsResult<Series> {
 }
 
 pub(super) fn sample_frac(
-    s: &Series,
-    frac: f64,
+    s: &[Series],
     with_replacement: bool,
     shuffle: bool,
     seed: Option<u64>,
 ) -> PolarsResult<Series> {
-    s.sample_frac(frac, with_replacement, shuffle, seed)
+    let src = &s[0];
+    let frac_s = &s[1];
+
+    polars_ensure!(
+        frac_s.len() == 1,
+        ComputeError: "Sample fraction must be a single value."
+    );
+
+    let frac_s = frac_s.cast(&Float64)?;
+    let frac = frac_s.f64()?;
+
+    match frac.get(0) {
+        Some(frac) => src.sample_frac(frac, with_replacement, shuffle, seed),
+        None => Ok(Series::new_empty(src.name(), src.dtype())),
+    }
 }
 
 pub(super) fn sample_n(

@@ -3,10 +3,10 @@ from datetime import timedelta
 import polars as pl
 
 
-def test_duration_cumsum() -> None:
+def test_duration_cum_sum() -> None:
     df = pl.DataFrame({"A": [timedelta(days=1), timedelta(days=2)]})
 
-    assert df.select(pl.col("A").cumsum()).to_dict(False) == {
+    assert df.select(pl.col("A").cum_sum()).to_dict(as_series=False) == {
         "A": [timedelta(days=1), timedelta(days=3)]
     }
     assert df.schema["A"].is_(pl.Duration(time_unit="us"))
@@ -15,4 +15,4 @@ def test_duration_cumsum() -> None:
         pl.Duration(time_unit="ms"),
         pl.Duration(time_unit="ns"),
     ):
-        assert df.schema["A"].is_not(duration_dtype)  # type: ignore[arg-type]
+        assert df.schema["A"].is_(duration_dtype) is False  # type: ignore[arg-type]

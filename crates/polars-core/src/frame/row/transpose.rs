@@ -72,7 +72,8 @@ impl DataFrame {
                     });
                 }
                 cols_t.extend(buffers.into_iter().zip(names_out).map(|(buf, name)| {
-                    let mut s = buf.into_series().cast(dtype).unwrap();
+                    // Safety: we are casting back to the supertype
+                    let mut s = unsafe { buf.into_series().cast_unchecked(dtype).unwrap() };
                     s.rename(name);
                     s
                 }));
@@ -113,30 +114,25 @@ impl DataFrame {
         }
         polars_ensure!(
             df.height() != 0 && df.width() != 0,
-            NoData: "unable to transpose an empty dataframe"
+            NoData: "unable to transpose an empty DataFrame"
         );
         let dtype = df.get_supertype().unwrap()?;
         match dtype {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => {
                 let mut valid = true;
-                let mut cache_id = None;
+                let mut rev_map: Option<&Arc<RevMapping>> = None;
                 for s in self.columns.iter() {
-                    if let DataType::Categorical(Some(rev_map)) = &s.dtype() {
-                        match &**rev_map {
-                            RevMapping::Local(_) => valid = false,
-                            RevMapping::Global(_, _, id) => {
-                                if let Some(cache_id) = cache_id {
-                                    if cache_id != *id {
-                                        valid = false;
-                                    }
-                                }
-                                cache_id = Some(*id);
+                    if let DataType::Categorical(Some(col_rev_map)) = &s.dtype() {
+                        match rev_map {
+                            Some(rev_map) => valid = valid && rev_map.same_src(col_rev_map),
+                            None => {
+                                rev_map = Some(col_rev_map);
                             },
                         }
                     }
                 }
-                polars_ensure!(valid, ComputeError: "'transpose' of categorical can only be done if all are from the same global string cache")
+                polars_ensure!(valid, string_cache_mismatch);
             },
             _ => {},
         }

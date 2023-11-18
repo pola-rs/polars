@@ -55,52 +55,40 @@ impl PhysicalExpr for AggregationExpr {
         let keep_name = ac.series().name().to_string();
         polars_ensure!(!matches!(ac.agg_state(), AggState::Literal(_)), ComputeError: "cannot aggregate a literal");
 
-        macro_rules! check_null_prop {
-            () => {
-                match ac.agg_state() {
-                    AggState::AggregatedScalar(_) => {
-                        if ac.null_propagated {
-                            let agg_s = ac.aggregated();
-                            let out = rename_series(agg_s, &keep_name);
-                            return Ok(AggregationContext::new(out, Cow::Borrowed(groups), true))
-                        } else {
-                            polars_bail!(ComputeError: "cannot aggregate as {}, the column is already aggregated", self.agg_type);
-                        }
-                    },
-                    _ => ()
-                }
+        if let AggregatedScalar(_) = ac.agg_state() {
+            match self.agg_type {
+                GroupByMethod::Implode => {},
+                _ => {
+                    polars_bail!(ComputeError: "cannot aggregate as {}, the column is already aggregated", self.agg_type);
+                },
             }
         }
+
         // Safety:
         // groups must always be in bounds.
         let out = unsafe {
             match self.agg_type {
                 GroupByMethod::Min => {
-                    check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_min(&groups);
                     AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::Max => {
-                    check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_max(&groups);
                     AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::Median => {
-                    check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_median(&groups);
                     AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::Mean => {
-                    check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_mean(&groups);
                     AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::Sum => {
-                    check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_sum(&groups);
                     AggregatedScalar(rename_series(agg_s, &keep_name))
@@ -164,19 +152,16 @@ impl PhysicalExpr for AggregationExpr {
                     }
                 },
                 GroupByMethod::First => {
-                    check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_first(&groups);
                     AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::Last => {
-                    check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_last(&groups);
                     AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::NUnique => {
-                    check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_n_unique(&groups);
                     AggregatedScalar(rename_series(agg_s, &keep_name))
@@ -205,13 +190,11 @@ impl PhysicalExpr for AggregationExpr {
                     AggregatedScalar(column.into_series())
                 },
                 GroupByMethod::Std(ddof) => {
-                    check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_std(&groups, ddof);
                     AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::Var(ddof) => {
-                    check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_var(&groups, ddof);
                     AggregatedScalar(rename_series(agg_s, &keep_name))
@@ -223,7 +206,6 @@ impl PhysicalExpr for AggregationExpr {
                 GroupByMethod::NanMin => {
                     #[cfg(feature = "propagate_nans")]
                     {
-                        check_null_prop!();
                         let (s, groups) = ac.get_final_aggregation();
                         let agg_s = if s.dtype().is_float() {
                             nan_propagating_aggregate::group_agg_nan_min_s(&s, &groups)
@@ -240,7 +222,6 @@ impl PhysicalExpr for AggregationExpr {
                 GroupByMethod::NanMax => {
                     #[cfg(feature = "propagate_nans")]
                     {
-                        check_null_prop!();
                         let (s, groups) = ac.get_final_aggregation();
                         let agg_s = if s.dtype().is_float() {
                             nan_propagating_aggregate::group_agg_nan_max_s(&s, &groups)
@@ -273,10 +254,6 @@ impl PhysicalExpr for AggregationExpr {
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
-    }
-
-    fn is_valid_aggregation(&self) -> bool {
-        true
     }
 }
 
@@ -557,9 +534,5 @@ impl PhysicalExpr for AggQuantileExpr {
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema)
-    }
-
-    fn is_valid_aggregation(&self) -> bool {
-        true
     }
 }

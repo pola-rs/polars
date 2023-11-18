@@ -4,7 +4,7 @@ use super::utils::{build_extend_null_bits, ExtendNullBits};
 use super::{make_growable, Growable};
 use crate::array::{Array, FixedSizeListArray};
 use crate::bitmap::MutableBitmap;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 /// Concrete [`Growable`] for the [`FixedSizeListArray`].
 pub struct GrowableFixedSizeList<'a> {
@@ -32,12 +32,13 @@ impl<'a> GrowableFixedSizeList<'a> {
             use_validity = true;
         };
 
-        let size =
-            if let DataType::FixedSizeList(_, size) = &arrays[0].data_type().to_logical_type() {
-                *size
-            } else {
-                unreachable!("`GrowableFixedSizeList` expects `DataType::FixedSizeList`")
-            };
+        let size = if let ArrowDataType::FixedSizeList(_, size) =
+            &arrays[0].data_type().to_logical_type()
+        {
+            *size
+        } else {
+            unreachable!("`GrowableFixedSizeList` expects `DataType::FixedSizeList`")
+        };
 
         let extend_null_bits = arrays
             .iter()

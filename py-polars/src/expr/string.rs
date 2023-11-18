@@ -7,8 +7,12 @@ use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {
-    fn str_concat(&self, delimiter: &str) -> Self {
-        self.inner.clone().str().concat(delimiter).into()
+    fn str_concat(&self, delimiter: &str, ignore_nulls: bool) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .concat(delimiter, ignore_nulls)
+            .into()
     }
 
     #[pyo3(signature = (format, strict, exact, cache))]
@@ -137,16 +141,16 @@ impl PyExpr {
             .into()
     }
 
-    fn str_zfill(&self, alignment: usize) -> Self {
-        self.clone().inner.str().zfill(alignment).into()
+    fn str_pad_start(&self, length: usize, fill_char: char) -> Self {
+        self.inner.clone().str().pad_start(length, fill_char).into()
     }
 
-    fn str_ljust(&self, width: usize, fillchar: char) -> Self {
-        self.clone().inner.str().ljust(width, fillchar).into()
+    fn str_pad_end(&self, length: usize, fill_char: char) -> Self {
+        self.inner.clone().str().pad_end(length, fill_char).into()
     }
 
-    fn str_rjust(&self, width: usize, fillchar: char) -> Self {
-        self.clone().inner.str().rjust(width, fillchar).into()
+    fn str_zfill(&self, length: usize) -> Self {
+        self.inner.clone().str().zfill(length).into()
     }
 
     #[pyo3(signature = (pat, literal, strict))]
@@ -167,61 +171,29 @@ impl PyExpr {
     }
 
     fn str_hex_encode(&self) -> Self {
-        self.clone()
-            .inner
-            .map(
-                move |s| s.utf8().map(|s| Some(s.hex_encode().into_series())),
-                GetOutput::same_type(),
-            )
-            .with_fmt("str.hex_encode")
-            .into()
+        self.inner.clone().str().hex_encode().into()
     }
 
     #[cfg(feature = "binary_encoding")]
     fn str_hex_decode(&self, strict: bool) -> Self {
-        self.clone()
-            .inner
-            .map(
-                move |s| s.utf8()?.hex_decode(strict).map(|s| Some(s.into_series())),
-                GetOutput::from_type(DataType::Binary),
-            )
-            .with_fmt("str.hex_decode")
-            .into()
+        self.inner.clone().str().hex_decode(strict).into()
     }
 
     fn str_base64_encode(&self) -> Self {
-        self.clone()
-            .inner
-            .map(
-                move |s| s.utf8().map(|s| Some(s.base64_encode().into_series())),
-                GetOutput::same_type(),
-            )
-            .with_fmt("str.base64_encode")
-            .into()
+        self.inner.clone().str().base64_encode().into()
     }
 
     #[cfg(feature = "binary_encoding")]
     fn str_base64_decode(&self, strict: bool) -> Self {
-        self.clone()
-            .inner
-            .map(
-                move |s| {
-                    s.utf8()?
-                        .base64_decode(strict)
-                        .map(|s| Some(s.into_series()))
-                },
-                GetOutput::from_type(DataType::Binary),
-            )
-            .with_fmt("str.base64_decode")
-            .into()
+        self.inner.clone().str().base64_decode(strict).into()
     }
 
-    fn str_parse_int(&self, radix: u32, strict: bool) -> Self {
+    fn str_to_integer(&self, base: u32, strict: bool) -> Self {
         self.inner
             .clone()
             .str()
-            .from_radix(radix, strict)
-            .with_fmt("str.parse_int")
+            .to_integer(base, strict)
+            .with_fmt("str.to_integer")
             .into()
     }
 
@@ -248,8 +220,8 @@ impl PyExpr {
                 Err(e) => Err(PolarsError::ComputeError(format!("{e:?}").into())),
             }
         };
-        self.clone()
-            .inner
+        self.inner
+            .clone()
             .map(function, GetOutput::from_type(DataType::Utf8))
             .with_fmt("str.json_path_match")
             .into()

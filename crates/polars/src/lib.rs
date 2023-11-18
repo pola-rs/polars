@@ -24,7 +24,7 @@
 //!             .last()
 //!             .alias("last_foo_ranked_by_ham"),
 //!         // every expression runs in parallel
-//!         col("foo").cummin(false).alias("cumulative_min_per_group"),
+//!         col("foo").cum_min(false).alias("cumulative_min_per_group"),
 //!         // every expression runs in parallel
 //!         col("foo").reverse().implode().alias("reverse_group"),
 //!     ]);
@@ -188,8 +188,8 @@
 //! * `ndarray`- Convert from [`DataFrame`] to [ndarray](https://docs.rs/ndarray/)
 //! * `temporal` - Conversions between [Chrono](https://docs.rs/chrono/) and Polars for temporal data types
 //! * `timezones` - Activate timezone support.
-//! * `strings` - Extra string utilities for [`Utf8Chunked`] //!     - `string_justify` - `zfill`, `ljust`, `rjust`
-//!     - `string_from_radix` - `parse_int`
+//! * `strings` - Extra string utilities for [`Utf8Chunked`] //!     - `string_pad` - `zfill`, `ljust`, `rjust`
+//!     - `string_to_integer` - `parse_int`
 //! * `object` - Support for generic ChunkedArrays called [`ObjectChunked<T>`] (generic over `T`).
 //!              These are downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 //! * Performance related:
@@ -246,12 +246,12 @@
 //!     - `reinterpret` - Utility to reinterpret bits to signed/unsigned
 //!     - `take_opt_iter` - Take from a [`Series`] with [`Iterator<Item=Option<usize>>`](std::iter::Iterator).
 //!     - `mode` - [Return the most occurring value(s)](polars_ops::chunked_array::mode)
-//!     - `cum_agg` - [`cumsum`], [`cummin`], [`cummax`] aggregation.
+//!     - `cum_agg` - [`cum_sum`], [`cum_min`], [`cum_max`] aggregation.
 //!     - `rolling_window` - rolling window functions, like [`rolling_mean`]
 //!     - `interpolate` [interpolate None values](polars_ops::chunked_array::interpolate)
 //!     - `extract_jsonpath` - [Run jsonpath queries on Utf8Chunked](https://goessner.net/articles/JsonPath/)
 //!     - `list` - List utils.
-//!         - `list_take` take sublist by multiple indices
+//!         - `list_gather` take sublist by multiple indices
 //!     - `rank` - Ranking algorithms.
 //!     - `moment` - kurtosis and skew statistics
 //!     - `ewma` - Exponential moving average windows
@@ -274,13 +274,14 @@
 //!     - `sign` - Compute the element-wise sign of a [`Series`].
 //!     - `propagate_nans` - NaN propagating min/max aggregations.
 //!     - `extract_groups` - Extract multiple regex groups from strings.
+//!     - `cov` - Covariance and correlation functions.
 //! * [`DataFrame`] pretty printing
 //!     - `fmt` - Activate [`DataFrame`] formatting
 //!
 //! [`UInt64Chunked`]: crate::datatypes::UInt64Chunked
-//! [`cumsum`]: polars_ops::prelude::cumsum
-//! [`cummin`]: polars_ops::prelude::cummin
-//! [`cummax`]: polars_ops::prelude::cummax
+//! [`cum_sum`]: polars_ops::prelude::cum_sum
+//! [`cum_min`]: polars_ops::prelude::cum_min
+//! [`cum_max`]: polars_ops::prelude::cum_max
 //! [`rolling_mean`]: crate::series::Series#method.rolling_mean
 //! [`diff`]: polars_ops::prelude::diff
 //! [`List`]: crate::datatypes::DataType::List

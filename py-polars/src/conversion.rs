@@ -191,7 +191,13 @@ fn decimal_to_digits(v: i128, buf: &mut [u128; 3]) -> usize {
     // safety: transmute is safe as there are 48 bytes in 3 128bit ints
     // and the minimal alignment of u8 fits u16
     let buf = unsafe { std::mem::transmute::<&mut [u128; 3], &mut [u8; 48]>(buf) };
-    let len = lexical_core::write(v, buf).len();
+    let mut buffer = itoa::Buffer::new();
+    let value = buffer.format(v);
+    let len = value.len();
+    for (dst, src) in buf.iter_mut().zip(value.as_bytes().iter()) {
+        *dst = *src
+    }
+
     let ptr = buf.as_mut_ptr() as *mut i128;
     unsafe {
         // this is safe because we know that the buffer is exactly 48 bytes long
@@ -300,19 +306,26 @@ impl ToPyObject for Wrap<DataType> {
             DataType::UInt64 => pl.getattr(intern!(py, "UInt64")).unwrap().into(),
             DataType::Float32 => pl.getattr(intern!(py, "Float32")).unwrap().into(),
             DataType::Float64 => pl.getattr(intern!(py, "Float64")).unwrap().into(),
-            DataType::Decimal(precision, scale) => pl
-                .getattr(intern!(py, "Decimal"))
-                .unwrap()
-                .call1((*scale, *precision))
-                .unwrap()
-                .into(),
+            DataType::Decimal(precision, scale) => {
+                let kwargs = PyDict::new(py);
+                kwargs.set_item("precision", *precision).unwrap();
+                kwargs.set_item("scale", *scale).unwrap();
+                pl.getattr(intern!(py, "Decimal"))
+                    .unwrap()
+                    .call((), Some(kwargs))
+                    .unwrap()
+                    .into()
+            },
             DataType::Boolean => pl.getattr(intern!(py, "Boolean")).unwrap().into(),
             DataType::Utf8 => pl.getattr(intern!(py, "Utf8")).unwrap().into(),
             DataType::Binary => pl.getattr(intern!(py, "Binary")).unwrap().into(),
             DataType::Array(inner, size) => {
                 let inner = Wrap(*inner.clone()).to_object(py);
                 let list_class = pl.getattr(intern!(py, "Array")).unwrap();
-                list_class.call1((*size, inner)).unwrap().into()
+                let kwargs = PyDict::new(py);
+                kwargs.set_item("inner", inner).unwrap();
+                kwargs.set_item("width", size).unwrap();
+                list_class.call((), Some(kwargs)).unwrap().into()
             },
             DataType::List(inner) => {
                 let inner = Wrap(*inner.clone()).to_object(py);
@@ -831,7 +844,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                         if ob.is_instance_of::<PyBool>() {
                             get_bool
                             // TODO: this heap allocs on failure
-                        } else if ob.extract::<i64>().is_ok() {
+                        } else if ob.extract::<i64>().is_ok() || ob.extract::<u64>().is_ok() {
                             get_int
                         } else if ob.is_instance_of::<PyFloat>() {
                             get_float

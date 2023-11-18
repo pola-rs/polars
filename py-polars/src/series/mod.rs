@@ -5,7 +5,7 @@ mod comparison;
 mod construction;
 mod export;
 mod numpy_ufunc;
-mod set_at_idx;
+mod scatter;
 
 use std::io::Cursor;
 
@@ -165,17 +165,20 @@ impl PySeries {
             Err(e) => return Err(PyPolarsErr::from(e).into()),
         };
 
-        if let AnyValue::List(s) = av {
-            let pyseries = PySeries::new(s);
-            let out = POLARS
-                .getattr(py, "wrap_s")
-                .unwrap()
-                .call1(py, (pyseries,))
-                .unwrap();
-            return Ok(out.into_py(py));
-        }
+        let out = match av {
+            AnyValue::List(s) | AnyValue::Array(s, _) => {
+                let pyseries = PySeries::new(s);
+                let out = POLARS
+                    .getattr(py, "wrap_s")
+                    .unwrap()
+                    .call1(py, (pyseries,))
+                    .unwrap();
+                out.into_py(py)
+            },
+            _ => Wrap(av).into_py(py),
+        };
 
-        Ok(Wrap(av).into_py(py))
+        Ok(out)
     }
 
     /// Get index but allow negative indices
@@ -232,13 +235,6 @@ impl PySeries {
 
     fn dtype(&self, py: Python) -> PyObject {
         Wrap(self.series.dtype().clone()).to_object(py)
-    }
-
-    fn inner_dtype(&self, py: Python) -> Option<PyObject> {
-        self.series
-            .dtype()
-            .inner_dtype()
-            .map(|dt| Wrap(dt.clone()).to_object(py))
     }
 
     fn set_sorted_flag(&self, descending: bool) -> Self {
@@ -348,7 +344,7 @@ impl PySeries {
             if let Some(output_type) = output_type {
                 return Ok(Series::full_null(series.name(), series.len(), &output_type.0).into());
             }
-            let msg = "The output type of 'apply' function cannot determined.\n\
+            let msg = "The output type of the 'apply' function cannot be determined.\n\
             The function was never called because 'skip_nulls=True' and all values are null.\n\
             Consider setting 'skip_nulls=False' or setting the 'return_dtype'.";
             raise_err!(msg, ComputeError)

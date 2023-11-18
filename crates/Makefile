@@ -109,6 +109,7 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-ffi
 	cargo publish --allow-dirty -p polars-ops
 	cargo publish --allow-dirty -p polars-time
+	cargo publish --allow-dirty -p polars-parquet
 	cargo publish --allow-dirty -p polars-io
 	cargo publish --allow-dirty -p polars-plan
 	cargo publish --allow-dirty -p polars-pipe
@@ -145,4 +146,5 @@ check-wasm:  ## Check wasm build without supported features
 		--exclude-features parquet            \
 		--exclude-features performant         \
 		--exclude-features streaming          \
+		--exclude-features http          	  \
 		--exclude-features test

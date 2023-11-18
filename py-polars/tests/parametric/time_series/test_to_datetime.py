@@ -38,7 +38,7 @@ def test_to_datetime(datetimes: datetime, fmt: str) -> None:
                 not any(day in fmt for day in ("%d", "%j"))
                 or not any(month in fmt for month in ("%b", "%B", "%m"))
             )
-            and "strict datetime[μs] parsing failed" in str(exc)
+            and "failed in column" in str(exc)
         )
     else:
         assert result == expected

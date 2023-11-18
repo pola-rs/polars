@@ -45,9 +45,11 @@ def test_root_and_output_names() -> None:
         pl.ComputeError,
         match="cannot determine output column without a context for this expression",
     ):
-        pl.all().suffix("_").meta.output_name()
+        pl.all().name.suffix("_").meta.output_name()
 
-    assert pl.all().suffix("_").meta.output_name(raise_if_undetermined=False) is None
+    assert (
+        pl.all().name.suffix("_").meta.output_name(raise_if_undetermined=False) is None
+    )
 
 
 def test_undo_aliases() -> None:
@@ -55,11 +57,11 @@ def test_undo_aliases() -> None:
     assert e.meta.undo_aliases().meta == pl.col("foo")
 
     e = pl.col("foo").sum().over("bar")
-    assert e.keep_name().meta.undo_aliases().meta == e
+    assert e.name.keep().meta.undo_aliases().meta == e
 
     e.alias("bar").alias("foo")
     assert e.meta.undo_aliases().meta == e
-    assert e.suffix("ham").meta.undo_aliases().meta == e
+    assert e.name.suffix("ham").meta.undo_aliases().meta == e
 
 
 def test_meta_has_multiple_outputs() -> None:
@@ -83,3 +85,14 @@ def test_meta_tree_format(namespace_files_path: Path) -> None:
         result = e.meta.tree_format(return_as_string=True)
         result = "\n".join(s.rstrip() for s in result.split("\n"))
         assert result.strip() == tree_fmt.strip()
+
+
+def test_literal_output_name() -> None:
+    e = pl.lit(1)
+    assert e.meta.output_name() == "literal"
+
+    e = pl.lit(pl.Series("abc", [1, 2, 3]))
+    assert e.meta.output_name() == "abc"
+
+    e = pl.lit(pl.Series([1, 2, 3]))
+    assert e.meta.output_name() == ""

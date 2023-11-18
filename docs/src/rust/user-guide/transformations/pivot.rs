@@ -1,5 +1,6 @@
 // --8<-- [start:setup]
-use polars::prelude::{pivot::pivot, *};
+use polars::prelude::pivot::pivot;
+use polars::prelude::*;
 // --8<-- [end:setup]
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

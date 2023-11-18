@@ -8,7 +8,7 @@ use crate::array::physical_binary::*;
 use crate::array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets};
 use crate::trusted_len::TrustedLen;
 
@@ -57,7 +57,7 @@ impl<O: Offset> MutableUtf8Array<O> {
     /// # Implementation
     /// This function is `O(N)` - checking utf8 is `O(N)`
     pub fn try_new(
-        data_type: DataType,
+        data_type: ArrowDataType,
         offsets: Offsets<O>,
         values: Vec<u8>,
         validity: Option<MutableBitmap>,
@@ -82,7 +82,7 @@ impl<O: Offset> MutableUtf8Array<O> {
     /// * The `offsets` and `values` are inconsistent
     /// * The validity is not `None` and its length is different from `offsets`'s length minus one.
     pub unsafe fn new_unchecked(
-        data_type: DataType,
+        data_type: ArrowDataType,
         offsets: Offsets<O>,
         values: Vec<u8>,
         validity: Option<MutableBitmap>,
@@ -100,7 +100,7 @@ impl<O: Offset> MutableUtf8Array<O> {
         Self::from_trusted_len_iter(slice.as_ref().iter().map(|x| x.as_ref()))
     }
 
-    fn default_data_type() -> DataType {
+    fn default_data_type() -> ArrowDataType {
         Utf8Array::<O>::default_data_type()
     }
 
@@ -198,7 +198,7 @@ impl<O: Offset> MutableUtf8Array<O> {
     }
 
     /// Extract the low-end APIs from the [`MutableUtf8Array`].
-    pub fn into_data(self) -> (DataType, Offsets<O>, Vec<u8>, Option<MutableBitmap>) {
+    pub fn into_data(self) -> (ArrowDataType, Offsets<O>, Vec<u8>, Option<MutableBitmap>) {
         let (data_type, offsets, values) = self.values.into_inner();
         (data_type, offsets, values, self.validity)
     }
@@ -261,11 +261,11 @@ impl<O: Offset> MutableArray for MutableUtf8Array<O> {
         array.arced()
     }
 
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         if O::IS_LARGE {
-            &DataType::LargeUtf8
+            &ArrowDataType::LargeUtf8
         } else {
-            &DataType::Utf8
+            &ArrowDataType::Utf8
         }
     }
 

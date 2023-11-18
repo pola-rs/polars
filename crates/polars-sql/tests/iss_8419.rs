@@ -19,7 +19,7 @@ fn iss_8419() {
             col("Sales"),
             col("Sales")
                 .sort(true)
-                .cumsum(false)
+                .cum_sum(false)
                 .alias("SalesCumulative"),
         ])
         .sort("SalesCumulative", SortOptions::default())

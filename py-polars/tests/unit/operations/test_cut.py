@@ -87,7 +87,7 @@ def test_cut_deprecated_as_series() -> None:
         out = a.cut(breaks=[-1, 1], as_series=False)
 
     assert out.shape == (12, 3)
-    assert out.filter(pl.col("break_point") < 1e9).to_dict(False) == {
+    assert out.filter(pl.col("break_point") < 1e9).to_dict(as_series=False) == {
         "a": [-3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0],
         "break_point": [-1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0],
         "category": [

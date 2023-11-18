@@ -2,7 +2,7 @@ use std::any::Any;
 
 use super::Scalar;
 use crate::array::*;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 /// The scalar equivalent of [`MapArray`]. Like [`MapArray`], this struct holds a dynamically-typed
 /// [`Array`]. The only difference is that this has only one element.
@@ -10,7 +10,7 @@ use crate::datatypes::DataType;
 pub struct MapScalar {
     values: Box<dyn Array>,
     is_valid: bool,
-    data_type: DataType,
+    data_type: ArrowDataType,
 }
 
 impl PartialEq for MapScalar {
@@ -28,7 +28,7 @@ impl MapScalar {
     /// * the `data_type` is not `Map`
     /// * the child of the `data_type` is not equal to the `values`
     #[inline]
-    pub fn new(data_type: DataType, values: Option<Box<dyn Array>>) -> Self {
+    pub fn new(data_type: ArrowDataType, values: Option<Box<dyn Array>>) -> Self {
         let inner_field = MapArray::try_get_field(&data_type).unwrap();
         let inner_data_type = inner_field.data_type();
         let (is_valid, values) = match values {
@@ -60,7 +60,7 @@ impl Scalar for MapScalar {
         self.is_valid
     }
 
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 }

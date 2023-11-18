@@ -3,6 +3,7 @@ use std::sync::Arc;
 use polars_core::frame::group_by::{GroupsIndicator, GroupsProxy};
 use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 
 use crate::physical_plan::state::ExecutionState;
@@ -55,7 +56,7 @@ fn sort_by_groups_single_by(
     indicator: GroupsIndicator,
     sort_by_s: &Series,
     descending: &[bool],
-) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+) -> PolarsResult<(IdxSize, IdxVec)> {
     let new_idx = match indicator {
         GroupsIndicator::Idx((_, idx)) => {
             // SAFETY: group tuples are always in bounds.
@@ -125,7 +126,7 @@ fn sort_by_groups_multiple_by(
     indicator: GroupsIndicator,
     sort_by_s: &[Series],
     descending: &[bool],
-) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+) -> PolarsResult<(IdxSize, IdxVec)> {
     let new_idx = match indicator {
         GroupsIndicator::Idx((_first, idx)) => {
             // SAFETY: group tuples are always in bounds.
@@ -209,7 +210,7 @@ impl PhysicalExpr for SortByExpr {
         polars_ensure!(
             sorted_idx.len() == series.len(),
             expr = self.expr, ComputeError:
-            "`sort_by` produced different length: {} than the series that has to be sorted: {}",
+            "`sort_by` produced different length ({}) than the Series that has to be sorted ({})",
             sorted_idx.len(), series.len()
         );
 
@@ -313,9 +314,5 @@ impl PhysicalExpr for SortByExpr {
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema)
-    }
-
-    fn is_valid_aggregation(&self) -> bool {
-        true
     }
 }

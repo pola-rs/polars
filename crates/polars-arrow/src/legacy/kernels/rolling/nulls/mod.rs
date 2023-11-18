@@ -49,14 +49,12 @@ where
     // Safety; we are in bounds
     let mut agg_window = unsafe { Agg::new(values, validity, start, end, params) };
 
-    let mut validity = match create_validity(min_periods, len, window_size, det_offsets_fn) {
-        Some(v) => v,
-        None => {
+    let mut validity = create_validity(min_periods, len, window_size, det_offsets_fn)
+        .unwrap_or_else(|| {
             let mut validity = MutableBitmap::with_capacity(len);
             validity.extend_constant(len, true);
             validity
-        },
-    };
+        });
 
     let out = (0..len)
         .map(|idx| {
@@ -95,14 +93,14 @@ mod test {
     use super::*;
     use crate::array::{Array, Int32Array};
     use crate::buffer::Buffer;
-    use crate::datatypes::DataType;
+    use crate::datatypes::ArrowDataType;
     use crate::legacy::kernels::rolling::nulls::mean::rolling_mean;
 
     fn get_null_arr() -> PrimitiveArray<f64> {
         // 1, None, -1, 4
         let buf = Buffer::from(vec![1.0, 0.0, -1.0, 4.0]);
         PrimitiveArray::new(
-            DataType::Float64,
+            ArrowDataType::Float64,
             buf,
             Some(Bitmap::from(&[true, false, true, true])),
         )
@@ -112,7 +110,7 @@ mod test {
     fn test_rolling_sum_nulls() {
         let buf = Buffer::from(vec![1.0, 2.0, 3.0, 4.0]);
         let arr = &PrimitiveArray::new(
-            DataType::Float64,
+            ArrowDataType::Float64,
             buf,
             Some(Bitmap::from(&[true, false, true, true])),
         );
@@ -209,7 +207,7 @@ mod test {
     fn test_rolling_max_no_nulls() {
         let buf = Buffer::from(vec![1.0, 2.0, 3.0, 4.0]);
         let arr = &PrimitiveArray::new(
-            DataType::Float64,
+            ArrowDataType::Float64,
             buf,
             Some(Bitmap::from(&[true, true, true, true])),
         );
@@ -230,7 +228,7 @@ mod test {
 
         let buf = Buffer::from(vec![4.0, 3.0, 2.0, 1.0]);
         let arr = &PrimitiveArray::new(
-            DataType::Float64,
+            ArrowDataType::Float64,
             buf,
             Some(Bitmap::from(&[true, true, true, true])),
         );
@@ -255,7 +253,7 @@ mod test {
         let window_size = 3;
         let min_periods = 3;
 
-        let arr = Int32Array::new(DataType::Int32, vals.into(), Some(validity.into()));
+        let arr = Int32Array::new(ArrowDataType::Int32, vals.into(), Some(validity.into()));
 
         let out = rolling_apply_agg_window::<MaxWindow<_>, _, _>(
             arr.values().as_slice(),

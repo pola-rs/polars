@@ -14,7 +14,7 @@ pub use stream::{export_iterator, ArrowArrayStreamReader};
 
 use self::schema::to_field;
 use crate::array::Array;
-use crate::datatypes::{DataType, Field};
+use crate::datatypes::{ArrowDataType, Field};
 
 /// Exports an [`Box<dyn Array>`] to the C data interface.
 pub fn export_array_to_c(array: Box<dyn Array>) -> ArrowArray {
@@ -40,7 +40,7 @@ pub unsafe fn import_field_from_c(field: &ArrowSchema) -> PolarsResult<Field> {
 /// being valid according to the [C data interface](https://arrow.apache.org/docs/format/CDataInterface.html) (FFI).
 pub unsafe fn import_array_from_c(
     array: ArrowArray,
-    data_type: DataType,
+    data_type: ArrowDataType,
 ) -> PolarsResult<Box<dyn Array>> {
     try_from(InternalArrowArray::new(array, data_type))
 }

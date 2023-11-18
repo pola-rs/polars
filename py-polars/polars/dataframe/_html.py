@@ -159,8 +159,8 @@ class NotebookFormatter(HTMLFormatter):
     def write_style(self) -> None:
         style = """\
             <style>
-            .dataframe > thead > tr > th,
-            .dataframe > tbody > tr > td {
+            .dataframe > thead > tr,
+            .dataframe > tbody > tr {
               text-align: right;
               white-space: pre-wrap;
             }

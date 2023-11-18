@@ -48,7 +48,7 @@ fn test_shift_and_fill_window_function() -> PolarsResult<()> {
         .select([
             col("fruits"),
             col("B")
-                .shift_and_fill(-1, lit(-1))
+                .shift_and_fill(lit(-1), lit(-1))
                 .over_with_options([col("fruits")], WindowMapping::Join),
         ])
         .collect()?;
@@ -59,7 +59,7 @@ fn test_shift_and_fill_window_function() -> PolarsResult<()> {
         .select([
             col("fruits"),
             col("B")
-                .shift_and_fill(-1, lit(-1))
+                .shift_and_fill(lit(-1), lit(-1))
                 .over_with_options([col("fruits")], WindowMapping::Join),
         ])
         .collect()?;
@@ -80,7 +80,7 @@ fn test_exploded_window_function() -> PolarsResult<()> {
         .select([
             col("fruits"),
             col("B")
-                .shift(1)
+                .shift(lit(1))
                 .over_with_options([col("fruits")], WindowMapping::Explode)
                 .alias("shifted"),
         ])
@@ -99,7 +99,7 @@ fn test_exploded_window_function() -> PolarsResult<()> {
         .select([
             col("fruits"),
             col("B")
-                .shift_and_fill(1, lit(-1.0f32))
+                .shift_and_fill(lit(1), lit(-1.0f32))
                 .over_with_options([col("fruits")], WindowMapping::Explode)
                 .alias("shifted"),
         ])
@@ -168,7 +168,7 @@ fn test_literal_window_fn() -> PolarsResult<()> {
     let out = df
         .lazy()
         .select([repeat(1, count())
-            .cumsum(false)
+            .cum_sum(false)
             .over_with_options([col("chars")], WindowMapping::Join)
             .alias("foo")])
         .collect()?;
@@ -237,7 +237,7 @@ fn test_window_mapping() -> PolarsResult<()> {
             col("fruits"),
             col("A"),
             col("B"),
-            (col("B").shift(1) - col("A"))
+            (col("B").shift(lit(1)) - col("A"))
                 .alias("foo")
                 .over([col("fruits")]),
         ])
@@ -279,7 +279,7 @@ fn test_window_mapping() -> PolarsResult<()> {
             col("fruits"),
             col("A"),
             col("B"),
-            (col("B").shift(1) - col("A"))
+            (col("B").shift(lit(1)) - col("A"))
                 .alias("foo")
                 .over([col("fruits")]),
         ])

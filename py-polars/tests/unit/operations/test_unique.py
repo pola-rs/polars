@@ -31,7 +31,7 @@ def test_unique_predicate_pd() -> None:
 def test_unique_on_list_df() -> None:
     assert pl.DataFrame(
         {"a": [1, 2, 3, 4, 4], "b": [[1, 1], [2], [3], [4, 4], [4, 4]]}
-    ).unique(maintain_order=True).to_dict(False) == {
+    ).unique(maintain_order=True).to_dict(as_series=False) == {
         "a": [1, 2, 3, 4],
         "b": [[1, 1], [2], [3], [4, 4]],
     }

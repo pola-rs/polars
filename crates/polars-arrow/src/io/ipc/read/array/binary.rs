@@ -7,13 +7,13 @@ use super::super::read_basic::*;
 use super::super::{Compression, IpcBuffer, Node, OutOfSpecKind};
 use crate::array::BinaryArray;
 use crate::buffer::Buffer;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::offset::Offset;
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_binary<O: Offset, R: Read + Seek>(
     field_nodes: &mut VecDeque<Node>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
     reader: &mut R,
     block_offset: u64,

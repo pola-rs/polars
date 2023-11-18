@@ -39,7 +39,7 @@ pub(crate) const fn folded_multiply(s: u64, by: u64) -> u64 {
     ((result & 0xffff_ffff_ffff_ffff) as u64) ^ ((result >> 64) as u64)
 }
 
-pub(crate) fn get_null_hash_value(random_state: RandomState) -> u64 {
+pub(crate) fn get_null_hash_value(random_state: &RandomState) -> u64 {
     // we just start with a large prime number and hash that twice
     // to get a constant hash value for null/None
     let first = random_state.hash_one(3188347919usize);
@@ -47,7 +47,7 @@ pub(crate) fn get_null_hash_value(random_state: RandomState) -> u64 {
 }
 
 fn insert_null_hash(chunks: &[ArrayRef], random_state: RandomState, buf: &mut Vec<u64>) {
-    let null_h = get_null_hash_value(random_state);
+    let null_h = get_null_hash_value(&random_state);
     let hashes = buf.as_mut_slice();
 
     let mut offset = 0;
@@ -66,15 +66,10 @@ fn insert_null_hash(chunks: &[ArrayRef], random_state: RandomState, buf: &mut Ve
     });
 }
 
-#[inline(always)]
-pub fn integer_hash<T: AsU64>(v: T) -> u64 {
-    folded_multiply(v.as_u64(), MULTIPLE)
-}
-
 fn integer_vec_hash<T>(ca: &ChunkedArray<T>, random_state: RandomState, buf: &mut Vec<u64>)
 where
     T: PolarsIntegerType,
-    T::Native: Hash + AsU64,
+    T::Native: Hash,
 {
     // Note that we don't use the no null branch! This can break in unexpected ways.
     // for instance with threading we split an array in n_threads, this may lead to
@@ -88,10 +83,13 @@ where
     #[allow(unused_unsafe)]
     #[allow(clippy::useless_transmute)]
     ca.downcast_iter().for_each(|arr| {
-        buf.extend(arr.values().as_slice().iter().copied().map(|v| {
-            // we save an xor because we don't have initial state
-            integer_hash(v)
-        }));
+        buf.extend(
+            arr.values()
+                .as_slice()
+                .iter()
+                .copied()
+                .map(|v| random_state.hash_one(v)),
+        );
     });
     insert_null_hash(&ca.chunks, random_state, buf)
 }
@@ -99,9 +97,9 @@ where
 fn integer_vec_hash_combine<T>(ca: &ChunkedArray<T>, random_state: RandomState, hashes: &mut [u64])
 where
     T: PolarsIntegerType,
-    T::Native: Hash + AsU64,
+    T::Native: Hash,
 {
-    let null_h = get_null_hash_value(random_state);
+    let null_h = get_null_hash_value(&random_state);
 
     let mut offset = 0;
     ca.downcast_iter().for_each(|arr| {
@@ -112,8 +110,7 @@ where
                 .iter()
                 .zip(&mut hashes[offset..])
                 .for_each(|(v, h)| {
-                    // inlined from ahash. This ensures we combine with the previous state
-                    *h = folded_multiply(v.as_u64() ^ *h, MULTIPLE);
+                    *h = folded_multiply(random_state.hash_one(v) ^ *h, MULTIPLE);
                 }),
             _ => {
                 let validity = arr.validity().unwrap();
@@ -123,7 +120,8 @@ where
                     .zip(&mut hashes[offset..])
                     .zip(arr.values().as_slice())
                     .for_each(|((valid, h), l)| {
-                        let to_hash = [null_h, l.as_u64()][valid as usize];
+                        let lh = random_state.hash_one(l);
+                        let to_hash = [null_h, lh][valid as usize];
 
                         // inlined from ahash. This ensures we combine with the previous state
                         *h = folded_multiply(to_hash ^ *h, MULTIPLE);
@@ -177,7 +175,7 @@ impl VecHash for Utf8Chunked {
 
 // used in polars-pipe
 pub fn _hash_binary_array(arr: &BinaryArray<i64>, random_state: RandomState, buf: &mut Vec<u64>) {
-    let null_h = get_null_hash_value(random_state);
+    let null_h = get_null_hash_value(&random_state);
     if arr.null_count() == 0 {
         // use the null_hash as seed to get a hash determined by `random_state` that is passed
         buf.extend(arr.values_iter().map(|v| xxh3_64_with_seed(v, null_h)))
@@ -199,7 +197,7 @@ impl VecHash for BinaryChunked {
     }
 
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
-        let null_h = get_null_hash_value(random_state);
+        let null_h = get_null_hash_value(&random_state);
 
         let mut offset = 0;
         self.downcast_iter().for_each(|arr| {
@@ -240,7 +238,7 @@ impl VecHash for BooleanChunked {
         buf.reserve(self.len());
         let true_h = random_state.hash_one(true);
         let false_h = random_state.hash_one(false);
-        let null_h = get_null_hash_value(random_state);
+        let null_h = get_null_hash_value(&random_state);
         self.downcast_iter().for_each(|arr| {
             if arr.null_count() == 0 {
                 buf.extend(arr.values_iter().map(|v| if v { true_h } else { false_h }))
@@ -258,7 +256,7 @@ impl VecHash for BooleanChunked {
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
         let true_h = random_state.hash_one(true);
         let false_h = random_state.hash_one(false);
-        let null_h = get_null_hash_value(random_state);
+        let null_h = get_null_hash_value(&random_state);
 
         let mut offset = 0;
         self.downcast_iter().for_each(|arr| {
@@ -330,7 +328,7 @@ impl VecHash for ListChunked {
         );
         _buf.clear();
         _buf.reserve(self.len());
-        let null_h = get_null_hash_value(_random_state.clone());
+        let null_h = get_null_hash_value(&_random_state);
 
         for arr in self.downcast_iter() {
             _buf.extend(
@@ -353,7 +351,7 @@ impl VecHash for ListChunked {
         ComputeError: "grouping on list type is only allowed if the inner type is numeric"
         );
 
-        let null_h = get_null_hash_value(_random_state);
+        let null_h = get_null_hash_value(&_random_state);
 
         let mut offset = 0;
         self.downcast_iter().try_for_each(|arr| {
@@ -403,35 +401,6 @@ where
             hashes,
         );
         Ok(())
-    }
-}
-
-/// Contains a ptr to the string slice an the precomputed hash of that string.
-/// During rehashes, we will rehash the hash instead of the string, that makes rehashing
-/// cheap and allows cache coherent small hash tables.
-#[derive(Eq, Copy, Clone, Debug)]
-pub struct BytesHash<'a> {
-    payload: Option<&'a [u8]>,
-    pub(super) hash: u64,
-}
-
-impl<'a> Hash for BytesHash<'a> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u64(self.hash)
-    }
-}
-
-impl<'a> BytesHash<'a> {
-    #[inline]
-    pub fn new(s: Option<&'a [u8]>, hash: u64) -> Self {
-        Self { payload: s, hash }
-    }
-}
-
-impl<'a> PartialEq for BytesHash<'a> {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        (self.hash == other.hash) && (self.payload == other.payload)
     }
 }
 

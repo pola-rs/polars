@@ -4,10 +4,11 @@ use std::hash::Hash;
 use ahash::RandomState;
 use arrow::legacy::prelude::QuantileInterpolOptions;
 use num_traits::NumCast;
+use polars_utils::hashing::{BytesHash, DirtyHash};
 use rayon::prelude::*;
 
 use self::hashing::*;
-use crate::hashing::{get_null_hash_value, AsU64, BytesHash};
+use crate::hashing::get_null_hash_value;
 use crate::prelude::*;
 use crate::utils::{_set_partition_size, accumulate_dataframes_vertical};
 use crate::POOL;
@@ -68,7 +69,7 @@ impl DataFrame {
         if (minimal_by_len != df_height) && (self.width() > 0) {
             polars_ensure!(
                 minimal_by_len == 1,
-                ShapeMismatch: "series used as keys should have the same length as the dataframe"
+                ShapeMismatch: "series used as keys should have the same length as the DataFrame"
             );
             for by_key in by.iter_mut() {
                 if by_key.len() == minimal_by_len {

@@ -34,7 +34,9 @@ class _GeventDataFrameResult(Generic[T]):
         self._watcher.start(self._watcher_callback)
 
     def get(
-        self, block: bool = True, timeout: float | int | None = None  # noqa: FBT001
+        self,
+        block: bool = True,  # noqa: FBT001
+        timeout: float | int | None = None,
     ) -> T:
         return self.result.get(block=block, timeout=timeout)
 

@@ -6,8 +6,6 @@ use arrow::offset::OffsetsBuffer;
 use crate::datatypes::ObjectType;
 use crate::prelude::*;
 
-#[cfg(feature = "abs")]
-mod abs;
 pub(crate) mod aggregate;
 pub(crate) mod any_value;
 pub(crate) mod append;
@@ -94,6 +92,7 @@ pub trait ChunkExplode {
     fn explode(&self) -> PolarsResult<Series> {
         self.explode_and_offsets().map(|t| t.0)
     }
+    fn offsets(&self) -> PolarsResult<OffsetsBuffer<i64>>;
     fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)>;
 }
 

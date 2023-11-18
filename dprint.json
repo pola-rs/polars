@@ -11,7 +11,7 @@
         "py-polars/.ruff_cache/"
     ],
     "plugins": [
-        "https://plugins.dprint.dev/markdown-0.16.0.wasm",
+        "https://plugins.dprint.dev/markdown-0.16.2.wasm",
         "https://plugins.dprint.dev/toml-0.5.4.wasm"
     ]
 }

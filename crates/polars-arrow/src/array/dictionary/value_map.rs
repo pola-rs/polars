@@ -9,7 +9,7 @@ use polars_error::{polars_bail, polars_err, PolarsResult};
 use super::DictionaryKey;
 use crate::array::indexable::{AsIndexed, Indexable};
 use crate::array::{Array, MutableArray};
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 /// Hasher for pre-hashed values; similar to `hash_hasher` but with native endianness.
 ///
@@ -101,7 +101,7 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
         Ok(Self { values, map })
     }
 
-    pub fn data_type(&self) -> &DataType {
+    pub fn data_type(&self) -> &ArrowDataType {
         self.values.data_type()
     }
 

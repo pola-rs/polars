@@ -30,7 +30,7 @@ pub use series_trait::{IsSorted, *};
 use crate::chunked_array::Settings;
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
-use crate::utils::{_split_offsets, get_casting_failures, split_ca, split_series, Wrap};
+use crate::utils::{_split_offsets, handle_casting_failures, split_ca, split_series, Wrap};
 use crate::POOL;
 
 /// # Series
@@ -571,7 +571,7 @@ impl Series {
     }
 
     /// Traverse and collect every nth element in a new array.
-    pub fn take_every(&self, n: usize) -> Series {
+    pub fn gather_every(&self, n: usize) -> Series {
         let idx = (0..self.len() as IdxSize).step_by(n).collect_ca("");
         // SAFETY: we stay in-bounds.
         unsafe { self.take_unchecked(&idx) }
@@ -667,16 +667,9 @@ impl Series {
         }
         let s = self.0.cast(dtype)?;
         if null_count != s.null_count() {
-            let failures = get_casting_failures(self, &s)?;
-            polars_bail!(
-                ComputeError:
-                "strict conversion from `{}` to `{}` failed for column: {}, value(s) {}; \
-                if you were trying to cast Utf8 to temporal dtypes, consider using `strptime`",
-                self.dtype(), dtype, s.name(), failures.fmt_list(),
-            );
-        } else {
-            Ok(s)
+            handle_casting_failures(self, &s)?;
         }
+        Ok(s)
     }
 
     #[cfg(feature = "dtype-time")]
@@ -716,6 +709,8 @@ impl Series {
             dt => panic!("date not implemented for {dt:?}"),
         }
     }
+
+    #[allow(unused_variables)]
     pub(crate) fn into_datetime(self, timeunit: TimeUnit, tz: Option<TimeZone>) -> Series {
         #[cfg(not(feature = "dtype-datetime"))]
         {
@@ -741,6 +736,7 @@ impl Series {
         }
     }
 
+    #[allow(unused_variables)]
     pub(crate) fn into_duration(self, timeunit: TimeUnit) -> Series {
         #[cfg(not(feature = "dtype-duration"))]
         {
@@ -763,26 +759,6 @@ impl Series {
                 .into_series(),
             dt => panic!("into_duration not implemented for {dt:?}"),
         }
-    }
-
-    #[cfg(feature = "abs")]
-    /// convert numerical values to their absolute value
-    pub fn abs(&self) -> PolarsResult<Series> {
-        let a = self.to_physical_repr();
-        use DataType::*;
-        let out = match a.dtype() {
-            #[cfg(feature = "dtype-i8")]
-            Int8 => a.i8().unwrap().abs().into_series(),
-            #[cfg(feature = "dtype-i16")]
-            Int16 => a.i16().unwrap().abs().into_series(),
-            Int32 => a.i32().unwrap().abs().into_series(),
-            Int64 => a.i64().unwrap().abs().into_series(),
-            UInt8 | UInt16 | UInt32 | UInt64 => self.clone(),
-            Float32 => a.f32().unwrap().abs().into_series(),
-            Float64 => a.f64().unwrap().abs().into_series(),
-            dt => polars_bail!(opq = abs, dt),
-        };
-        out.cast(self.dtype())
     }
 
     // used for formatting
@@ -879,7 +855,7 @@ impl Series {
         match self.dtype() {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(Some(rv)) => match &**rv {
-                RevMapping::Local(arr) => size += estimated_bytes_size(arr),
+                RevMapping::Local(arr, _) => size += estimated_bytes_size(arr),
                 RevMapping::Global(map, arr, _) => {
                     size +=
                         map.capacity() * std::mem::size_of::<u32>() * 2 + estimated_bytes_size(arr);
@@ -899,13 +875,11 @@ impl Series {
         let offsets = (0i64..(s.len() as i64 + 1)).collect::<Vec<_>>();
         let offsets = unsafe { Offsets::new_unchecked(offsets) };
 
-        let new_arr = LargeListArray::new(
-            DataType::List(Box::new(s.dtype().clone())).to_arrow(),
-            offsets.into(),
-            values,
-            None,
-        );
-        ListChunked::with_chunk(s.name(), new_arr)
+        let data_type = LargeListArray::default_datatype(s.dtype().to_physical().to_arrow());
+        let new_arr = LargeListArray::new(data_type, offsets.into(), values, None);
+        let mut out = ListChunked::with_chunk(s.name(), new_arr);
+        out.set_inner_dtype(s.dtype().clone());
+        out
     }
 }
 

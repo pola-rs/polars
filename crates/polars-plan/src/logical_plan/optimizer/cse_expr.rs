@@ -326,7 +326,7 @@ impl ExprIdentifierVisitor<'_> {
             },
             #[cfg(feature = "random")]
             AExpr::Function {
-                function: FunctionExpr::Random { .. },
+                function: FunctionExpr::Random { .. } | FunctionExpr::RollingExpr { .. },
                 ..
             } => REFUSE_NO_MEMBER,
             AExpr::AnonymousFunction { .. } => REFUSE_NO_MEMBER,

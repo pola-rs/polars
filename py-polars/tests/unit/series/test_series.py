@@ -24,22 +24,39 @@ from polars.datatypes import (
     UInt64,
     Unknown,
 )
-from polars.exceptions import PolarsInefficientMapWarning, ShapeError
+from polars.exceptions import ComputeError, PolarsInefficientMapWarning, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import iterable_to_pyseries
 from polars.utils._wrap import wrap_s
 
 if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
+
     from polars.type_aliases import EpochTimeUnit, PolarsDataType, TimeUnit
+else:
+    from polars.utils.convert import get_zoneinfo as ZoneInfo
 
 
 def test_cum_agg() -> None:
     # confirm that known series give expected results
     s = pl.Series("a", [1, 2, 3, 2])
-    assert_series_equal(s.cumsum(), pl.Series("a", [1, 3, 6, 8]))
-    assert_series_equal(s.cummin(), pl.Series("a", [1, 1, 1, 1]))
-    assert_series_equal(s.cummax(), pl.Series("a", [1, 2, 3, 3]))
-    assert_series_equal(s.cumprod(), pl.Series("a", [1, 2, 6, 12]))
+    assert_series_equal(s.cum_sum(), pl.Series("a", [1, 3, 6, 8]))
+    assert_series_equal(s.cum_min(), pl.Series("a", [1, 1, 1, 1]))
+    assert_series_equal(s.cum_max(), pl.Series("a", [1, 2, 3, 3]))
+    assert_series_equal(s.cum_prod(), pl.Series("a", [1, 2, 6, 12]))
+
+
+def test_cum_agg_deprecated() -> None:
+    # confirm that known series give expected results
+    s = pl.Series("a", [1, 2, 3, 2])
+    with pytest.deprecated_call():
+        assert_series_equal(s.cumsum(), pl.Series("a", [1, 3, 6, 8]))
+    with pytest.deprecated_call():
+        assert_series_equal(s.cummin(), pl.Series("a", [1, 1, 1, 1]))
+    with pytest.deprecated_call():
+        assert_series_equal(s.cummax(), pl.Series("a", [1, 2, 3, 3]))
+    with pytest.deprecated_call():
+        assert_series_equal(s.cumprod(), pl.Series("a", [1, 2, 6, 12]))
 
 
 def test_init_inputs(monkeypatch: Any) -> None:
@@ -116,6 +133,24 @@ def test_init_inputs(monkeypatch: Any) -> None:
 
     # lists
     assert pl.Series("a", [[1, 2], [3, 4]]).dtype == pl.List(pl.Int64)
+
+    # conversion of Date to Datetime
+    s = pl.Series([date(2023, 1, 1), date(2023, 1, 2)], dtype=pl.Datetime)
+    assert s.to_list() == [datetime(2023, 1, 1), datetime(2023, 1, 2)]
+    assert Datetime == s.dtype
+    assert s.dtype.time_unit == "us"  # type: ignore[union-attr]
+    assert s.dtype.time_zone is None  # type: ignore[union-attr]
+
+    # conversion of Date to Datetime with specified timezone and units
+    tu: TimeUnit = "ms"
+    tz = "America/Argentina/Rio_Gallegos"
+    s = pl.Series([date(2023, 1, 1), date(2023, 1, 2)], dtype=pl.Datetime(tu, tz))
+    d1 = datetime(2023, 1, 1, 0, 0, 0, 0, ZoneInfo(tz))
+    d2 = datetime(2023, 1, 2, 0, 0, 0, 0, ZoneInfo(tz))
+    assert s.to_list() == [d1, d2]
+    assert Datetime == s.dtype
+    assert s.dtype.time_unit == tu  # type: ignore[union-attr]
+    assert s.dtype.time_zone == tz  # type: ignore[union-attr]
 
     # datetime64: check timeunit (auto-detect, implicit/explicit) and NaT
     d64 = pd.date_range(date(2021, 8, 1), date(2021, 8, 3)).values
@@ -501,37 +536,52 @@ def test_various() -> None:
     a = pl.Series("a", [2, 1, 1, 4, 4, 4])
     assert_series_equal(a.arg_unique(), pl.Series("a", [0, 1, 3], dtype=UInt32))
 
-    assert_series_equal(a.take([2, 3]), pl.Series("a", [1, 4]))
+    assert_series_equal(a.gather([2, 3]), pl.Series("a", [1, 4]))
 
 
 def test_series_dtype_is() -> None:
     s = pl.Series("s", [1, 2, 3])
 
-    assert s.is_numeric()
-    assert s.is_integer()
-    assert s.is_integer(signed=True)
-    assert not s.is_integer(signed=False)
-    assert (s * 0.99).is_float()
+    assert s.dtype.is_numeric()
+    assert s.dtype.is_integer()
+    assert s.dtype.is_signed_integer()
+    assert not s.dtype.is_unsigned_integer()
+    assert (s * 0.99).dtype.is_float()
 
     s = pl.Series("s", [1, 2, 3], dtype=pl.UInt8)
-    assert s.is_numeric()
-    assert s.is_integer()
-    assert not s.is_integer(signed=True)
-    assert s.is_integer(signed=False)
+    assert s.dtype.is_numeric()
+    assert s.dtype.is_integer()
+    assert not s.dtype.is_signed_integer()
+    assert s.dtype.is_unsigned_integer()
 
     s = pl.Series("bool", [True, None, False])
-    assert not s.is_numeric()
+    assert not s.dtype.is_numeric()
 
     s = pl.Series("s", ["testing..."])
-    assert s.is_utf8()
+    with pytest.deprecated_call():
+        assert s.is_utf8() is True
+    with pytest.deprecated_call():
+        assert s.is_boolean() is False
 
-    s = pl.Series("s", [], dtype=pl.Decimal(scale=15, precision=20))
-    assert not s.is_float()
-    assert s.is_numeric()
+    s = pl.Series("s", [], dtype=pl.Decimal(precision=20, scale=15))
+    assert not s.dtype.is_float()
+    assert s.dtype.is_numeric()
     assert s.is_empty()
 
     s = pl.Series("s", [], dtype=pl.Datetime("ms", time_zone="UTC"))
-    assert s.is_temporal()
+    assert s.dtype.is_temporal()
+
+
+def test_series_is_dtype_deprecated() -> None:
+    s = pl.Series([1.0, 2.0])
+    with pytest.deprecated_call():
+        assert s.is_float() is True
+    with pytest.deprecated_call():
+        assert s.is_numeric() is True
+    with pytest.deprecated_call():
+        assert s.is_integer() is False
+    with pytest.deprecated_call():
+        assert s.is_temporal() is False
 
 
 def test_series_head_tail_limit() -> None:
@@ -579,7 +629,7 @@ def test_cast() -> None:
     assert a.cast(pl.Date).dtype == pl.Date
 
     # display failed values, GH#4706
-    with pytest.raises(pl.ComputeError, match="foobar"):
+    with pytest.raises(ComputeError, match="foobar"):
         pl.Series(["1", "2", "3", "4", "foobar"]).cast(int)
 
 
@@ -728,20 +778,6 @@ def test_arrow() -> None:
             )
 
 
-def test_view() -> None:
-    a = pl.Series("a", [1.0, 2.5, 3.0])
-    assert isinstance(a.view(), np.ndarray)
-    assert np.all(a.view() == np.array([1.0, 2.5, 3.0]))
-
-    b = pl.Series("b", [1, 2, None])
-    assert b.has_validity()
-    with pytest.raises(AssertionError):
-        b.view()
-
-    assert np.all(b[:2].view() == np.array([1, 2]))
-    assert not b[:2].has_validity()
-
-
 def test_ufunc() -> None:
     # test if output dtype is calculated correctly.
     s_float32 = pl.Series("a", [1.0, 2.0, 3.0, 4.0], dtype=pl.Float32)
@@ -840,6 +876,13 @@ def test_ufunc() -> None:
         pl.Series("a", [3.0, None, 9.0, 12.0, 15.0, None]),
     )
 
+    # Test if nulls propagate through ufuncs
+    a3 = pl.Series("a", [None, None, 3, 3])
+    b3 = pl.Series("b", [None, 3, None, 3])
+    assert_series_equal(
+        cast(pl.Series, np.maximum(a3, b3)), pl.Series("a", [None, None, None, 3])
+    )
+
 
 def test_numpy_string_array() -> None:
     s_utf8 = pl.Series("a", ["aa", "bb", "cc", "dd"], dtype=pl.Utf8)
@@ -888,7 +931,7 @@ def test_set() -> None:
     a = pl.Series("a", [True, False, True])
     mask = pl.Series("msk", [True, False, True])
     a[mask] = False
-    assert_series_equal(a, pl.Series("", [False] * 3))
+    assert_series_equal(a, pl.Series("a", [False] * 3))
 
 
 def test_set_value_as_list_fail() -> None:
@@ -1001,7 +1044,7 @@ def test_fill_null() -> None:
 
     assert df.fill_null(0, matches_supertype=False).fill_null("bar").fill_null(
         False
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "i32": [1, 2, None],
         "i64": [1, 2, 0],
         "f32": [1.0, 2.0, None],
@@ -1012,7 +1055,7 @@ def test_fill_null() -> None:
 
     assert df.fill_null(0, matches_supertype=True).fill_null("bar").fill_null(
         False
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "i32": [1, 2, 0],
         "i64": [1, 2, 0],
         "f32": [1.0, 2.0, 0.0],
@@ -1031,7 +1074,7 @@ def test_fill_null() -> None:
         ]
     ).fill_null(3)
 
-    assert out.to_dict(False) == {
+    assert out.to_dict(as_series=False) == {
         "a": [1, 3, 2, 3],
         "u8": [1, 3, 2, 3],
         "u16": [1, 3, 2, 3],
@@ -1078,14 +1121,6 @@ def test_map_elements() -> None:
     a.map_elements(lambda x: x)
     a = pl.Series("a", [2, 2, 3]).cast(pl.Date)
     a.map_elements(lambda x: x)
-
-
-def test_shift() -> None:
-    a = pl.Series("a", [1, 2, 3])
-    assert_series_equal(a.shift(1), pl.Series("a", [None, 1, 2]))
-    assert_series_equal(a.shift(-1), pl.Series("a", [2, 3, None]))
-    assert_series_equal(a.shift(-2), pl.Series("a", [3, None, None]))
-    assert_series_equal(a.shift_and_fill(10, periods=-1), pl.Series("a", [2, 3, 10]))
 
 
 def test_object() -> None:
@@ -1211,6 +1246,40 @@ def test_round() -> None:
 
     b = a.round()
     assert b.to_list() == [1.0, 2.0]
+
+
+@pytest.mark.parametrize(
+    ("series", "digits", "expected_result"),
+    [
+        pytest.param(pl.Series([1.234, 0.1234]), 2, pl.Series([1.2, 0.12]), id="f64"),
+        pytest.param(
+            pl.Series([1.234, 0.1234]).cast(pl.Float32),
+            2,
+            pl.Series([1.2, 0.12]).cast(pl.Float32),
+            id="f32",
+        ),
+        pytest.param(pl.Series([123400, 1234]), 2, pl.Series([120000, 1200]), id="i64"),
+        pytest.param(
+            pl.Series([123400, 1234]).cast(pl.Int32),
+            2,
+            pl.Series([120000, 1200]).cast(pl.Int32),
+            id="i32",
+        ),
+        pytest.param(
+            pl.Series([0.0]), 2, pl.Series([0.0]), id="0 should remain the same"
+        ),
+    ],
+)
+def test_round_sig_figs(
+    series: pl.Series, digits: int, expected_result: pl.Series
+) -> None:
+    result = series.round_sig_figs(digits=digits)
+    assert_series_equal(result, expected_result)
+
+
+def test_round_sig_figs_raises_exc() -> None:
+    with pytest.raises(polars.exceptions.InvalidOperationError):
+        pl.Series([1.234, 0.1234]).round_sig_figs(digits=0)
 
 
 def test_apply_list_out() -> None:
@@ -1384,9 +1453,9 @@ def test_range() -> None:
 
 
 def test_strict_cast() -> None:
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         pl.Series("a", [2**16]).cast(dtype=pl.Int16, strict=True)
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(ComputeError):
         pl.DataFrame({"a": [2**16]}).select([pl.col("a").cast(pl.Int16, strict=True)])
 
 
@@ -1612,7 +1681,7 @@ def test_comparisons_bool_series_to_int() -> None:
     # TODO: do we want this to work?
     assert_series_equal(srs_bool / 1, pl.Series([True, False], dtype=Float64))
     match = (
-        r"cannot do arithmetic with series of dtype: Boolean"
+        r"cannot do arithmetic with Series of dtype: Boolean"
         r" and argument of type: 'bool'"
     )
     with pytest.raises(TypeError, match=match):
@@ -1620,7 +1689,7 @@ def test_comparisons_bool_series_to_int() -> None:
     with pytest.raises(TypeError, match=match):
         srs_bool + 1
     match = (
-        r"cannot do arithmetic with series of dtype: Boolean"
+        r"cannot do arithmetic with Series of dtype: Boolean"
         r" and argument of type: 'bool'"
     )
     with pytest.raises(TypeError, match=match):
@@ -1637,6 +1706,35 @@ def test_comparisons_bool_series_to_int() -> None:
                 match=r"'\W{1,2}' not supported .* 'Series' and '(int|bool|float)'",
             ):
                 op(srs_bool, scalar)
+
+
+@pytest.mark.parametrize(
+    ("values", "compare_with", "compares_equal"),
+    [
+        (
+            [date(1999, 12, 31), date(2021, 1, 31)],
+            date(2021, 1, 31),
+            [False, True],
+        ),
+        (
+            [datetime(2021, 1, 1, 12, 0, 0), datetime(2021, 1, 2, 12, 0, 0)],
+            datetime(2021, 1, 1, 12, 0, 0),
+            [True, False],
+        ),
+        (
+            [timedelta(days=1), timedelta(days=2)],
+            timedelta(days=1),
+            [True, False],
+        ),
+    ],
+)
+def test_temporal_comparison(
+    values: list[Any], compare_with: Any, compares_equal: list[bool]
+) -> None:
+    assert_series_equal(
+        pl.Series(values) == compare_with,
+        pl.Series(compares_equal, dtype=pl.Boolean),
+    )
 
 
 def test_abs() -> None:
@@ -1684,9 +1782,9 @@ def test_filter() -> None:
     assert_series_equal(s.filter([True, False, True]), pl.Series("a", [1, 3]))
 
 
-def test_take_every() -> None:
+def test_gather_every() -> None:
     s = pl.Series("a", [1, 2, 3, 4])
-    assert_series_equal(s.take_every(2), pl.Series("a", [1, 3]))
+    assert_series_equal(s.gather_every(2), pl.Series("a", [1, 3]))
 
 
 def test_arg_sort() -> None:
@@ -1933,6 +2031,10 @@ def test_reshape() -> None:
     # test lazy_dispatch
     out = pl.select(pl.lit(s).reshape((-1, 1))).to_series()
     assert_series_equal(out, expected)
+
+    # invalid (empty) dimensions
+    with pytest.raises(ComputeError, match="reshape `dimensions` cannot be empty"):
+        s.reshape(())
 
 
 def test_init_categorical() -> None:
@@ -2391,52 +2493,6 @@ def test_n_unique() -> None:
 def test_clip() -> None:
     s = pl.Series("foo", [-50, 5, None, 50])
     assert s.clip(1, 10).to_list() == [1, 5, None, 10]
-
-
-def test_set_at_idx() -> None:
-    s = pl.Series("s", [1, 2, 3])
-
-    # no-op (empty sequences)
-    for x in (
-        (),
-        [],
-        pl.Series(),
-        pl.Series(dtype=pl.Int8),
-        np.array([]),
-        np.ndarray(shape=(0, 0)),
-    ):
-        s.set_at_idx(x, 8)  # type: ignore[arg-type]
-        assert s.to_list() == [1, 2, 3]
-
-    # set new values, one index at a time
-    s.set_at_idx(0, 8)
-    s.set_at_idx([1], None)
-    assert s.to_list() == [8, None, 3]
-
-    # set new value at multiple indexes in one go
-    s.set_at_idx([0, 2], None)
-    assert s.to_list() == [None, None, None]
-
-    # try with different series dtype
-    s = pl.Series("s", ["a", "b", "c"])
-    s.set_at_idx((1, 2), "x")
-    assert s.to_list() == ["a", "x", "x"]
-    assert s.set_at_idx([0, 2], 0.12345).to_list() == ["0.12345", "x", "0.12345"]
-
-    # set multiple values values
-    s = pl.Series(["z", "z", "z"])
-    assert s.set_at_idx([0, 1], ["a", "b"]).to_list() == ["a", "b", "z"]
-    s = pl.Series([True, False, True])
-    assert s.set_at_idx([0, 1], [False, True]).to_list() == [False, True, True]
-
-    # set negative indices
-    a = pl.Series(range(5))
-    a[-2] = None
-    a[-5] = None
-    assert a.to_list() == [None, 1, 2, None, 4]
-
-    with pytest.raises(pl.OutOfBoundsError):
-        a[-100] = None
 
 
 def test_repr() -> None:

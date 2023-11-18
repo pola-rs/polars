@@ -1,12 +1,8 @@
 use polars_core::prelude::{polars_bail, polars_ensure, PolarsResult};
 use polars_core::series::Series;
 
-pub(super) fn temporal_series_to_i64_scalar(s: &Series) -> i64 {
-    s.to_physical_repr()
-        .get(0)
-        .unwrap()
-        .extract::<i64>()
-        .unwrap()
+pub(super) fn temporal_series_to_i64_scalar(s: &Series) -> Option<i64> {
+    s.to_physical_repr().get(0).unwrap().extract::<i64>()
 }
 
 pub(super) fn ensure_range_bounds_contain_exactly_one_value(

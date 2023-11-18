@@ -1,12 +1,14 @@
 use std::fmt::{Debug, Formatter};
-use std::io::Error;
+use std::io::{Error, ErrorKind};
 
 use polars::prelude::PolarsError;
 use pyo3::create_exception;
-use pyo3::exceptions::{PyException, PyIOError, PyRuntimeError};
+use pyo3::exceptions::{
+    PyException, PyFileExistsError, PyFileNotFoundError, PyIOError, PyPermissionError,
+    PyRuntimeError,
+};
 use pyo3::prelude::*;
 use thiserror::Error;
-
 #[derive(Error)]
 pub enum PyPolarsErr {
     #[error(transparent)]
@@ -34,7 +36,12 @@ impl std::convert::From<PyPolarsErr> for PyErr {
                 PolarsError::InvalidOperation(err) => {
                     InvalidOperationError::new_err(err.to_string())
                 },
-                PolarsError::Io(err) => PyIOError::new_err(err.to_string()),
+                PolarsError::Io(err) => match err.kind() {
+                    ErrorKind::NotFound => PyFileNotFoundError::new_err(err.to_string()),
+                    ErrorKind::PermissionDenied => PyPermissionError::new_err(err.to_string()),
+                    ErrorKind::AlreadyExists => PyFileExistsError::new_err(err.to_string()),
+                    _ => PyIOError::new_err(err.to_string()),
+                },
                 PolarsError::NoData(err) => NoDataError::new_err(err.to_string()),
                 PolarsError::OutOfBounds(err) => OutOfBoundsError::new_err(err.to_string()),
                 PolarsError::SchemaFieldNotFound(name) => {

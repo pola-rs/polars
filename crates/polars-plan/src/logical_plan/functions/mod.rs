@@ -385,12 +385,12 @@ impl Display for FunctionNode {
             MergeSorted { .. } => write!(f, "MERGE SORTED"),
             Pipeline { original, .. } => {
                 if let Some(original) = original {
-                    writeln!(f, "--- PIPELINE")?;
+                    writeln!(f, "--- STREAMING")?;
                     write!(f, "{:?}", original.as_ref())?;
                     let indent = 2;
-                    writeln!(f, "{:indent$}--- END PIPELINE", "")
+                    writeln!(f, "{:indent$}--- END STREAMING", "")
                 } else {
-                    writeln!(f, "PIPELINE")
+                    writeln!(f, "STREAMING")
                 }
             },
             Rename { .. } => write!(f, "RENAME"),

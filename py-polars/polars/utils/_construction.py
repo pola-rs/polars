@@ -24,7 +24,6 @@ from typing import (
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import (
-    FLOAT_DTYPES,
     INTEGER_DTYPES,
     N_INFER_DEFAULT,
     TEMPORAL_DTYPES,
@@ -43,6 +42,7 @@ from polars.datatypes import (
     Utf8,
     dtype_to_py_type,
     is_polars_dtype,
+    numpy_char_code_to_dtype,
     py_type_to_dtype,
 )
 from polars.datatypes.constructor import (
@@ -267,6 +267,26 @@ def sequence_from_anyvalue_or_object(name: str, values: Sequence[Any]) -> PySeri
         raise
 
 
+def sequence_from_anyvalue_and_dtype_or_object(
+    name: str, values: Sequence[Any], dtype: PolarsDataType
+) -> PySeries:
+    """
+    Last resort conversion.
+
+    AnyValues are most flexible and if they fail we go for object types
+
+    """
+    try:
+        return PySeries.new_from_anyvalues_and_dtype(name, values, dtype, strict=True)
+    # raised if we cannot convert to Wrap<AnyValue>
+    except RuntimeError:
+        return PySeries.new_object(name, values, _strict=False)
+    except ComputeError as exc:
+        if "mixed dtypes" in str(exc):
+            return PySeries.new_object(name, values, _strict=False)
+        raise
+
+
 def iterable_to_pyseries(
     name: str,
     values: Iterable[Any],
@@ -332,8 +352,7 @@ def _construct_series_with_fallbacks(
             if "'float'" in str_exc and (
                 # we do not accept float values as int/temporal, as it causes silent
                 # information loss; the caller should explicitly cast in this case.
-                target_dtype
-                not in (INTEGER_DTYPES | TEMPORAL_DTYPES)
+                target_dtype not in (INTEGER_DTYPES | TEMPORAL_DTYPES)
             ):
                 constructor = py_type_to_constructor(float)
 
@@ -458,7 +477,7 @@ def sequence_to_pyseries(
                 if value is None
                 else py_type_to_dtype(type(value), raise_unmatched=False)
             )
-            if values_dtype in FLOAT_DTYPES:
+            if values_dtype is not None and values_dtype.is_float():
                 raise TypeError(
                     # we do not accept float values as temporal; if this is
                     # required, the caller should explicitly cast to int first.
@@ -469,12 +488,16 @@ def sequence_to_pyseries(
             # we store the values internally as UTC and set the timezone
             py_series = PySeries.new_from_anyvalues(name, values, strict)
             time_unit = getattr(dtype, "time_unit", None)
-            if time_unit is None:
+            if time_unit is None or values_dtype == Date:
                 s = wrap_s(py_series)
             else:
                 s = wrap_s(py_series).dt.cast_time_unit(time_unit)
             time_zone = getattr(dtype, "time_zone", None)
-            if dtype == Datetime and (
+
+            if (values_dtype == Date) & (dtype == Datetime):
+                return s.cast(Datetime(time_unit)).dt.replace_time_zone(time_zone)._s
+
+            if (dtype == Datetime) and (
                 value.tzinfo is not None or time_zone is not None
             ):
                 values_tz = str(value.tzinfo) if value.tzinfo is not None else None
@@ -518,8 +541,8 @@ def sequence_to_pyseries(
             if isinstance(dtype, Object):
                 return PySeries.new_object(name, values, strict)
             if dtype:
-                srs = sequence_from_anyvalue_or_object(name, values)
-                if dtype.is_not(srs.dtype()):
+                srs = sequence_from_anyvalue_and_dtype_or_object(name, values, dtype)
+                if not dtype.is_(srs.dtype()):
                     srs = srs.cast(dtype, strict=False)
                 return srs
             return sequence_from_anyvalue_or_object(name, values)
@@ -533,9 +556,17 @@ def sequence_to_pyseries(
             constructor = py_type_to_constructor(python_dtype)
             if constructor == PySeries.new_object:
                 try:
-                    return PySeries.new_from_anyvalues(name, values, strict)
-                # raised if we cannot convert to Wrap<AnyValue>
+                    srs = PySeries.new_from_anyvalues(name, values, strict)
+                    if _check_for_numpy(python_dtype, check_type=False) and isinstance(
+                        np.bool_(True), np.generic
+                    ):
+                        dtype = numpy_char_code_to_dtype(np.dtype(python_dtype).char)
+                        return srs.cast(dtype, strict=strict)
+                    else:
+                        return srs
+
                 except RuntimeError:
+                    # raised if we cannot convert to Wrap<AnyValue>
                     return sequence_from_anyvalue_or_object(name, values)
 
             return _construct_series_with_fallbacks(
@@ -578,7 +609,7 @@ def _pandas_series_to_arrow(
     elif dtype:
         return pa.array(values, from_pandas=nan_to_null)
     else:
-        # Pandas Series is actually a Pandas DataFrame when the original dataframe
+        # Pandas Series is actually a Pandas DataFrame when the original DataFrame
         # contains duplicated columns and a duplicated column is requested with df["a"].
         raise ValueError(
             "duplicate column names found: ",
@@ -637,7 +668,7 @@ def _post_apply_columns(
     structs: dict[str, Struct] | None = None,
     schema_overrides: SchemaDict | None = None,
 ) -> PyDataFrame:
-    """Apply 'columns' param _after_ PyDataFrame creation (if no alternative)."""
+    """Apply 'columns' param *after* PyDataFrame creation (if no alternative)."""
     pydf_columns, pydf_dtypes = pydf.columns(), pydf.dtypes()
     columns, dtypes = _unpack_schema(
         (columns or pydf_columns), schema_overrides=schema_overrides
@@ -704,7 +735,7 @@ def _unpack_schema(
         )
 
     # determine column names from schema
-    if isinstance(schema, dict):
+    if isinstance(schema, Mapping):
         column_names: list[str] = list(schema)
         # coerce schema to list[str | tuple[str, PolarsDataType | PythonDataType | None]
         schema = list(schema.items())
@@ -721,9 +752,7 @@ def _unpack_schema(
         else None
     )
     column_dtypes: dict[str, PolarsDataType] = {
-        lookup.get((name := col[0]), name)
-        if lookup
-        else col[0]: dtype  # type: ignore[misc]
+        lookup.get((name := col[0]), name) if lookup else col[0]: dtype  # type: ignore[misc]
         if is_polars_dtype(dtype, include_unknown=True)
         else py_type_to_dtype(dtype)
         for col in schema
@@ -821,7 +850,7 @@ def dict_to_pydf(
     nan_to_null: bool = False,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a dictionary of sequences."""
-    if isinstance(schema, dict) and data:
+    if isinstance(schema, Mapping) and data:
         if not all((col in schema) for col in data):
             raise ValueError(
                 "the given column-schema names do not match the data dictionary"
@@ -1120,7 +1149,9 @@ def _sequence_of_dict_to_pydf(
         if column_names
         else None
     )
-    pydf = PyDataFrame.read_dicts(data, infer_schema_length, dicts_schema)
+    pydf = PyDataFrame.read_dicts(
+        data, infer_schema_length, dicts_schema, schema_overrides
+    )
 
     # TODO: we can remove this `schema_overrides` block completely
     #  once https://github.com/pola-rs/polars/issues/11044 is fixed

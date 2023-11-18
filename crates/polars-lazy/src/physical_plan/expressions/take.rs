@@ -12,6 +12,7 @@ pub struct TakeExpr {
     pub(crate) phys_expr: Arc<dyn PhysicalExpr>,
     pub(crate) idx: Arc<dyn PhysicalExpr>,
     pub(crate) expr: Expr,
+    pub(crate) returns_scalar: bool,
 }
 
 impl TakeExpr {
@@ -71,7 +72,7 @@ impl PhysicalExpr for TakeExpr {
                 // A previous aggregation may have updated the groups.
                 let groups = ac.groups();
 
-                // Determine the take indices.
+                // Determine the gather indices.
                 let idx: IdxCa = match groups.as_ref() {
                     GroupsProxy::Idx(groups) => {
                         if groups.all().iter().zip(idx).any(|(g, idx)| match idx {
@@ -101,12 +102,23 @@ impl PhysicalExpr for TakeExpr {
                     },
                 };
                 let taken = ac.flat_naive().take(&idx)?;
+
+                let taken = if self.returns_scalar {
+                    taken
+                } else {
+                    taken.as_list().into_series()
+                };
+
                 ac.with_series(taken, true, Some(&self.expr))?;
                 return Ok(ac);
             },
-            AggState::AggregatedList(s) => s.list().unwrap().clone(),
+            AggState::AggregatedList(s) => {
+                polars_ensure!(!self.returns_scalar, ComputeError: "expected single index");
+                s.list().unwrap().clone()
+            },
             // Maybe a literal as well, this needs a different path.
             AggState::NotAggregated(_) => {
+                polars_ensure!(!self.returns_scalar, ComputeError: "expected single index");
                 let s = idx.aggregated();
                 s.list().unwrap().clone()
             },
@@ -144,6 +156,13 @@ impl PhysicalExpr for TakeExpr {
                                 },
                             };
                             let taken = ac.flat_naive().take(&idx.into_inner())?;
+
+                            let taken = if self.returns_scalar {
+                                taken
+                            } else {
+                                taken.as_list().into_series()
+                            };
+
                             ac.with_series(taken, true, Some(&self.expr))?;
                             ac.with_update_groups(UpdateGroups::WithGroupsLen);
                             Ok(ac)
@@ -185,9 +204,5 @@ impl PhysicalExpr for TakeExpr {
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.phys_expr.to_field(input_schema)
-    }
-
-    fn is_valid_aggregation(&self) -> bool {
-        true
     }
 }

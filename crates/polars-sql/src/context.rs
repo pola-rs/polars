@@ -25,6 +25,7 @@ pub struct SQLContext {
     pub(crate) table_map: PlHashMap<String, LazyFrame>,
     pub(crate) function_registry: Arc<dyn FunctionRegistry>,
     cte_map: RefCell<PlHashMap<String, LazyFrame>>,
+    aliases: RefCell<PlHashMap<String, String>>,
 }
 
 impl Default for SQLContext {
@@ -33,6 +34,7 @@ impl Default for SQLContext {
             function_registry: Arc::new(DefaultFunctionRegistry {}),
             table_map: Default::default(),
             cte_map: Default::default(),
+            aliases: Default::default(),
         }
     }
 }
@@ -110,9 +112,10 @@ impl SQLContext {
             .parse_statements()
             .map_err(to_compute_err)?;
         polars_ensure!(ast.len() == 1, ComputeError: "One and only one statement at a time please");
-        let res = self.execute_statement(ast.get(0).unwrap());
+        let res = self.execute_statement(ast.first().unwrap());
         // Every execution should clear the CTE map.
         self.cte_map.borrow_mut().clear();
+        self.aliases.borrow_mut().clear();
         res
     }
 
@@ -139,9 +142,16 @@ impl SQLContext {
         self.cte_map.borrow_mut().insert(name.to_owned(), lf);
     }
 
-    fn get_table_from_current_scope(&self, name: &str) -> Option<LazyFrame> {
+    pub(super) fn get_table_from_current_scope(&self, name: &str) -> Option<LazyFrame> {
         let table_name = self.table_map.get(name).cloned();
-        table_name.or_else(|| self.cte_map.borrow().get(name).cloned())
+        table_name
+            .or_else(|| self.cte_map.borrow().get(name).cloned())
+            .or_else(|| {
+                self.aliases
+                    .borrow()
+                    .get(name)
+                    .and_then(|alias| self.table_map.get(alias).cloned())
+            })
     }
 
     pub(crate) fn execute_statement(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
@@ -213,13 +223,11 @@ impl SQLContext {
                 concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any))
             },
             // UNION ALL BY NAME
-            // TODO: add recognition for SetQuantifier::DistinctByName
-            //  when "https://github.com/sqlparser-rs/sqlparser-rs/pull/997" is available
             #[cfg(feature = "diagonal_concat")]
             SetQuantifier::AllByName => concat_lf_diagonal(vec![left, right], opts),
             // UNION [DISTINCT] BY NAME
             #[cfg(feature = "diagonal_concat")]
-            SetQuantifier::ByName => {
+            SetQuantifier::ByName | SetQuantifier::DistinctByName => {
                 let concatenated = concat_lf_diagonal(vec![left, right], opts);
                 concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any))
             },
@@ -329,7 +337,7 @@ impl SQLContext {
         // Implicit joins require some more work in query parsers, explicit joins are preferred for now.
         let sql_tbl: &TableWithJoins = select_stmt
             .from
-            .get(0)
+            .first()
             .ok_or_else(|| polars_err!(ComputeError: "no table name provided in query"))?;
 
         let mut lf = self.execute_from_statement(sql_tbl)?;
@@ -540,7 +548,7 @@ impl SQLContext {
             ..
         } = stmt
         {
-            let tbl_name = name.0.get(0).unwrap().value.as_str();
+            let tbl_name = name.0.first().unwrap().value.as_str();
             // CREATE TABLE IF NOT EXISTS
             if *if_not_exists && self.table_map.contains_key(tbl_name) {
                 polars_bail!(ComputeError: "relation {} already exists", tbl_name);
@@ -571,10 +579,15 @@ impl SQLContext {
                 if let Some(args) = args {
                     return self.execute_tbl_function(name, alias, args);
                 }
-                let tbl_name = name.0.get(0).unwrap().value.as_str();
+                let tbl_name = name.0.first().unwrap().value.as_str();
                 if let Some(lf) = self.get_table_from_current_scope(tbl_name) {
                     match alias {
-                        Some(alias) => Ok((alias.to_string(), lf)),
+                        Some(alias) => {
+                            self.aliases
+                                .borrow_mut()
+                                .insert(alias.name.value.clone(), tbl_name.to_string());
+                            Ok((alias.to_string(), lf))
+                        },
                         None => Ok((tbl_name.to_string(), lf)),
                     }
                 } else {
@@ -592,7 +605,7 @@ impl SQLContext {
         alias: &Option<TableAlias>,
         args: &[FunctionArg],
     ) -> PolarsResult<(String, LazyFrame)> {
-        let tbl_fn = name.0.get(0).unwrap().value.as_str();
+        let tbl_fn = name.0.first().unwrap().value.as_str();
         let read_fn = tbl_fn.parse::<PolarsTableFunctions>()?;
         let (tbl_name, lf) = read_fn.execute(args)?;
         let tbl_name = alias

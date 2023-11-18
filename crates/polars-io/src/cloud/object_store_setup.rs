@@ -1,5 +1,6 @@
 use once_cell::sync::Lazy;
 pub use options::*;
+use polars_error::to_compute_err;
 use tokio::sync::RwLock;
 
 use super::*;
@@ -25,7 +26,8 @@ fn err_missing_feature(feature: &str, scheme: &str) -> BuildResult {
 
 /// Build an [`ObjectStore`] based on the URL and passed in url. Return the cloud location and an implementation of the object store.
 pub async fn build_object_store(url: &str, options: Option<&CloudOptions>) -> BuildResult {
-    let cloud_location = CloudLocation::new(url)?;
+    let parsed = parse_url(url).map_err(to_compute_err)?;
+    let cloud_location = CloudLocation::from_url(&parsed)?;
 
     let options = options.cloned();
     let key = (url.to_string(), options);
@@ -39,17 +41,14 @@ pub async fn build_object_store(url: &str, options: Option<&CloudOptions>) -> Bu
         }
     }
 
-    let cloud_type = CloudType::from_str(url)?;
     let options = key
         .1
         .as_ref()
         .map(Cow::Borrowed)
         .unwrap_or_else(|| Cow::Owned(Default::default()));
+
+    let cloud_type = CloudType::from_url(&parsed)?;
     let store = match cloud_type {
-        CloudType::File => {
-            let local = LocalFileSystem::new();
-            Ok::<_, PolarsError>(Arc::new(local) as Arc<dyn ObjectStore>)
-        },
         CloudType::Aws => {
             #[cfg(feature = "aws")]
             {
@@ -78,6 +77,23 @@ pub async fn build_object_store(url: &str, options: Option<&CloudOptions>) -> Bu
             }
             #[cfg(not(feature = "azure"))]
             return err_missing_feature("azure", &cloud_location.scheme);
+        },
+        CloudType::File => {
+            let local = LocalFileSystem::new();
+            Ok::<_, PolarsError>(Arc::new(local) as Arc<dyn ObjectStore>)
+        },
+        CloudType::Http => {
+            {
+                #[cfg(feature = "http")]
+                {
+                    let store = object_store::http::HttpBuilder::new()
+                        .with_url(url)
+                        .build()?;
+                    Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
+                }
+            }
+            #[cfg(not(feature = "http"))]
+            return err_missing_feature("http", &cloud_location.scheme);
         },
     }?;
     let mut cache = OBJECT_STORE_CACHE.write().await;

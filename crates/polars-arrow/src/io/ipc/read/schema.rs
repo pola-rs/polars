@@ -5,8 +5,8 @@ use polars_error::{polars_bail, polars_err, PolarsResult};
 use super::super::{IpcField, IpcSchema};
 use super::{OutOfSpecKind, StreamMetadata};
 use crate::datatypes::{
-    get_extension, DataType, Extension, Field, IntegerType, IntervalUnit, Metadata, Schema,
-    TimeUnit, UnionMode,
+    get_extension, ArrowDataType, ArrowSchema, Extension, Field, IntegerType, IntervalUnit,
+    Metadata, TimeUnit, UnionMode,
 };
 
 fn try_unzip_vec<A, B, I: Iterator<Item = PolarsResult<(A, B)>>>(
@@ -82,14 +82,14 @@ fn deserialize_timeunit(time_unit: arrow_format::ipc::TimeUnit) -> PolarsResult<
     })
 }
 
-fn deserialize_time(time: TimeRef) -> PolarsResult<(DataType, IpcField)> {
+fn deserialize_time(time: TimeRef) -> PolarsResult<(ArrowDataType, IpcField)> {
     let unit = deserialize_timeunit(time.unit()?)?;
 
     let data_type = match (time.bit_width()?, unit) {
-        (32, TimeUnit::Second) => DataType::Time32(TimeUnit::Second),
-        (32, TimeUnit::Millisecond) => DataType::Time32(TimeUnit::Millisecond),
-        (64, TimeUnit::Microsecond) => DataType::Time64(TimeUnit::Microsecond),
-        (64, TimeUnit::Nanosecond) => DataType::Time64(TimeUnit::Nanosecond),
+        (32, TimeUnit::Second) => ArrowDataType::Time32(TimeUnit::Second),
+        (32, TimeUnit::Millisecond) => ArrowDataType::Time32(TimeUnit::Millisecond),
+        (64, TimeUnit::Microsecond) => ArrowDataType::Time64(TimeUnit::Microsecond),
+        (64, TimeUnit::Nanosecond) => ArrowDataType::Time64(TimeUnit::Nanosecond),
         (bits, precision) => {
             polars_bail!(ComputeError:
                 "Time type with bit width of {bits} and unit of {precision:?}"
@@ -99,16 +99,16 @@ fn deserialize_time(time: TimeRef) -> PolarsResult<(DataType, IpcField)> {
     Ok((data_type, IpcField::default()))
 }
 
-fn deserialize_timestamp(timestamp: TimestampRef) -> PolarsResult<(DataType, IpcField)> {
+fn deserialize_timestamp(timestamp: TimestampRef) -> PolarsResult<(ArrowDataType, IpcField)> {
     let timezone = timestamp.timezone()?.map(|tz| tz.to_string());
     let time_unit = deserialize_timeunit(timestamp.unit()?)?;
     Ok((
-        DataType::Timestamp(time_unit, timezone),
+        ArrowDataType::Timestamp(time_unit, timezone),
         IpcField::default(),
     ))
 }
 
-fn deserialize_union(union_: UnionRef, field: FieldRef) -> PolarsResult<(DataType, IpcField)> {
+fn deserialize_union(union_: UnionRef, field: FieldRef) -> PolarsResult<(ArrowDataType, IpcField)> {
     let mode = UnionMode::sparse(union_.mode()? == arrow_format::ipc::UnionMode::Sparse);
     let ids = union_.type_ids()?.map(|x| x.iter().collect());
 
@@ -127,10 +127,10 @@ fn deserialize_union(union_: UnionRef, field: FieldRef) -> PolarsResult<(DataTyp
         fields: ipc_fields,
         dictionary_id: None,
     };
-    Ok((DataType::Union(fields, ids, mode), ipc_field))
+    Ok((ArrowDataType::Union(fields, ids, mode), ipc_field))
 }
 
-fn deserialize_map(map: MapRef, field: FieldRef) -> PolarsResult<(DataType, IpcField)> {
+fn deserialize_map(map: MapRef, field: FieldRef) -> PolarsResult<(ArrowDataType, IpcField)> {
     let is_sorted = map.keys_sorted()?;
 
     let children = field
@@ -141,7 +141,7 @@ fn deserialize_map(map: MapRef, field: FieldRef) -> PolarsResult<(DataType, IpcF
         .ok_or_else(|| polars_err!(oos = "IPC: Map must contain one child"))??;
     let (field, ipc_field) = deserialize_field(inner)?;
 
-    let data_type = DataType::Map(Box::new(field), is_sorted);
+    let data_type = ArrowDataType::Map(Box::new(field), is_sorted);
     Ok((
         data_type,
         IpcField {
@@ -151,7 +151,7 @@ fn deserialize_map(map: MapRef, field: FieldRef) -> PolarsResult<(DataType, IpcF
     ))
 }
 
-fn deserialize_struct(field: FieldRef) -> PolarsResult<(DataType, IpcField)> {
+fn deserialize_struct(field: FieldRef) -> PolarsResult<(ArrowDataType, IpcField)> {
     let fields = field
         .children()?
         .ok_or_else(|| polars_err!(oos = "IPC: Struct must contain children"))?;
@@ -166,10 +166,10 @@ fn deserialize_struct(field: FieldRef) -> PolarsResult<(DataType, IpcField)> {
         fields: ipc_fields,
         dictionary_id: None,
     };
-    Ok((DataType::Struct(fields), ipc_field))
+    Ok((ArrowDataType::Struct(fields), ipc_field))
 }
 
-fn deserialize_list(field: FieldRef) -> PolarsResult<(DataType, IpcField)> {
+fn deserialize_list(field: FieldRef) -> PolarsResult<(ArrowDataType, IpcField)> {
     let children = field
         .children()?
         .ok_or_else(|| polars_err!(oos = "IPC: List must contain children"))?;
@@ -179,7 +179,7 @@ fn deserialize_list(field: FieldRef) -> PolarsResult<(DataType, IpcField)> {
     let (field, ipc_field) = deserialize_field(inner)?;
 
     Ok((
-        DataType::List(Box::new(field)),
+        ArrowDataType::List(Box::new(field)),
         IpcField {
             fields: vec![ipc_field],
             dictionary_id: None,
@@ -187,7 +187,7 @@ fn deserialize_list(field: FieldRef) -> PolarsResult<(DataType, IpcField)> {
     ))
 }
 
-fn deserialize_large_list(field: FieldRef) -> PolarsResult<(DataType, IpcField)> {
+fn deserialize_large_list(field: FieldRef) -> PolarsResult<(ArrowDataType, IpcField)> {
     let children = field
         .children()?
         .ok_or_else(|| polars_err!(oos = "IPC: List must contain children"))?;
@@ -197,7 +197,7 @@ fn deserialize_large_list(field: FieldRef) -> PolarsResult<(DataType, IpcField)>
     let (field, ipc_field) = deserialize_field(inner)?;
 
     Ok((
-        DataType::LargeList(Box::new(field)),
+        ArrowDataType::LargeList(Box::new(field)),
         IpcField {
             fields: vec![ipc_field],
             dictionary_id: None,
@@ -208,7 +208,7 @@ fn deserialize_large_list(field: FieldRef) -> PolarsResult<(DataType, IpcField)>
 fn deserialize_fixed_size_list(
     list: FixedSizeListRef,
     field: FieldRef,
-) -> PolarsResult<(DataType, IpcField)> {
+) -> PolarsResult<(ArrowDataType, IpcField)> {
     let children = field
         .children()?
         .ok_or_else(|| polars_err!(oos = "IPC: FixedSizeList must contain children"))?;
@@ -223,7 +223,7 @@ fn deserialize_fixed_size_list(
         .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
 
     Ok((
-        DataType::FixedSizeList(Box::new(field), size),
+        ArrowDataType::FixedSizeList(Box::new(field), size),
         IpcField {
             fields: vec![ipc_field],
             dictionary_id: None,
@@ -236,7 +236,7 @@ fn get_data_type(
     field: arrow_format::ipc::FieldRef,
     extension: Extension,
     may_be_dictionary: bool,
-) -> PolarsResult<(DataType, IpcField)> {
+) -> PolarsResult<(ArrowDataType, IpcField)> {
     if let Some(dictionary) = field.dictionary()? {
         if may_be_dictionary {
             let int = dictionary
@@ -246,7 +246,7 @@ fn get_data_type(
             let (inner, mut ipc_field) = get_data_type(field, extension, false)?;
             ipc_field.dictionary_id = Some(dictionary.id()?);
             return Ok((
-                DataType::Dictionary(index_type, Box::new(inner), dictionary.is_ordered()?),
+                ArrowDataType::Dictionary(index_type, Box::new(inner), dictionary.is_ordered()?),
                 ipc_field,
             ));
         }
@@ -256,7 +256,7 @@ fn get_data_type(
         let (name, metadata) = extension;
         let (data_type, fields) = get_data_type(field, None, false)?;
         return Ok((
-            DataType::Extension(name, Box::new(data_type), metadata),
+            ArrowDataType::Extension(name, Box::new(data_type), metadata),
             fields,
         ));
     }
@@ -267,18 +267,18 @@ fn get_data_type(
 
     use arrow_format::ipc::TypeRef::*;
     Ok(match type_ {
-        Null(_) => (DataType::Null, IpcField::default()),
-        Bool(_) => (DataType::Boolean, IpcField::default()),
+        Null(_) => (ArrowDataType::Null, IpcField::default()),
+        Bool(_) => (ArrowDataType::Boolean, IpcField::default()),
         Int(int) => {
             let data_type = deserialize_integer(int)?.into();
             (data_type, IpcField::default())
         },
-        Binary(_) => (DataType::Binary, IpcField::default()),
-        LargeBinary(_) => (DataType::LargeBinary, IpcField::default()),
-        Utf8(_) => (DataType::Utf8, IpcField::default()),
-        LargeUtf8(_) => (DataType::LargeUtf8, IpcField::default()),
+        Binary(_) => (ArrowDataType::Binary, IpcField::default()),
+        LargeBinary(_) => (ArrowDataType::LargeBinary, IpcField::default()),
+        Utf8(_) => (ArrowDataType::Utf8, IpcField::default()),
+        LargeUtf8(_) => (ArrowDataType::LargeUtf8, IpcField::default()),
         FixedSizeBinary(fixed) => (
-            DataType::FixedSizeBinary(
+            ArrowDataType::FixedSizeBinary(
                 fixed
                     .byte_width()?
                     .try_into()
@@ -288,16 +288,16 @@ fn get_data_type(
         ),
         FloatingPoint(float) => {
             let data_type = match float.precision()? {
-                arrow_format::ipc::Precision::Half => DataType::Float16,
-                arrow_format::ipc::Precision::Single => DataType::Float32,
-                arrow_format::ipc::Precision::Double => DataType::Float64,
+                arrow_format::ipc::Precision::Half => ArrowDataType::Float16,
+                arrow_format::ipc::Precision::Single => ArrowDataType::Float32,
+                arrow_format::ipc::Precision::Double => ArrowDataType::Float64,
             };
             (data_type, IpcField::default())
         },
         Date(date) => {
             let data_type = match date.unit()? {
-                arrow_format::ipc::DateUnit::Day => DataType::Date32,
-                arrow_format::ipc::DateUnit::Millisecond => DataType::Date64,
+                arrow_format::ipc::DateUnit::Day => ArrowDataType::Date32,
+                arrow_format::ipc::DateUnit::Millisecond => ArrowDataType::Date64,
             };
             (data_type, IpcField::default())
         },
@@ -306,20 +306,20 @@ fn get_data_type(
         Interval(interval) => {
             let data_type = match interval.unit()? {
                 arrow_format::ipc::IntervalUnit::YearMonth => {
-                    DataType::Interval(IntervalUnit::YearMonth)
+                    ArrowDataType::Interval(IntervalUnit::YearMonth)
                 },
                 arrow_format::ipc::IntervalUnit::DayTime => {
-                    DataType::Interval(IntervalUnit::DayTime)
+                    ArrowDataType::Interval(IntervalUnit::DayTime)
                 },
                 arrow_format::ipc::IntervalUnit::MonthDayNano => {
-                    DataType::Interval(IntervalUnit::MonthDayNano)
+                    ArrowDataType::Interval(IntervalUnit::MonthDayNano)
                 },
             };
             (data_type, IpcField::default())
         },
         Duration(duration) => {
             let time_unit = deserialize_timeunit(duration.unit()?)?;
-            (DataType::Duration(time_unit), IpcField::default())
+            (ArrowDataType::Duration(time_unit), IpcField::default())
         },
         Decimal(decimal) => {
             let bit_width: usize = decimal
@@ -336,8 +336,8 @@ fn get_data_type(
                 .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
 
             let data_type = match bit_width {
-                128 => DataType::Decimal(precision, scale),
-                256 => DataType::Decimal256(precision, scale),
+                128 => ArrowDataType::Decimal(precision, scale),
+                256 => ArrowDataType::Decimal256(precision, scale),
                 _ => return Err(polars_err!(oos = OutOfSpecKind::NegativeFooterLength)),
             };
 
@@ -352,8 +352,8 @@ fn get_data_type(
     })
 }
 
-/// Deserialize an flatbuffers-encoded Schema message into [`Schema`] and [`IpcSchema`].
-pub fn deserialize_schema(message: &[u8]) -> PolarsResult<(Schema, IpcSchema)> {
+/// Deserialize an flatbuffers-encoded Schema message into [`ArrowSchema`] and [`IpcSchema`].
+pub fn deserialize_schema(message: &[u8]) -> PolarsResult<(ArrowSchema, IpcSchema)> {
     let message = arrow_format::ipc::MessageRef::read_as_root(message)
         .map_err(|_err| polars_err!(oos = "Unable deserialize message: {err:?}"))?;
 
@@ -371,7 +371,7 @@ pub fn deserialize_schema(message: &[u8]) -> PolarsResult<(Schema, IpcSchema)> {
 /// Deserialize the raw Schema table from IPC format to Schema data type
 pub(super) fn fb_to_schema(
     schema: arrow_format::ipc::SchemaRef,
-) -> PolarsResult<(Schema, IpcSchema)> {
+) -> PolarsResult<(ArrowSchema, IpcSchema)> {
     let fields = schema
         .fields()?
         .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingFields))?;
@@ -400,7 +400,7 @@ pub(super) fn fb_to_schema(
     }
 
     Ok((
-        Schema { fields, metadata },
+        ArrowSchema { fields, metadata },
         IpcSchema {
             fields: ipc_fields,
             is_little_endian,

@@ -32,7 +32,7 @@ aggregation.
 
 ## Lazy
 
-A polars `LazyFrame` always need to know the schema of a computation statically (before collecting the query).
+A Polars `LazyFrame` always need to know the schema of a computation statically (before collecting the query).
 As a pivot's output schema depends on the data, and it is therefore impossible to determine the schema without
 running the query.
 

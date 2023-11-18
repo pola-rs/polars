@@ -4,7 +4,7 @@ use avro_schema::write::encode;
 use super::super::super::iterator::*;
 use crate::array::*;
 use crate::bitmap::utils::ZipValidity;
-use crate::datatypes::{DataType, IntervalUnit, PhysicalType, PrimitiveType};
+use crate::datatypes::{ArrowDataType, IntervalUnit, PhysicalType, PrimitiveType};
 use crate::offset::Offset;
 use crate::types::months_days_ns;
 
@@ -498,8 +498,8 @@ pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSeria
 }
 
 /// Whether [`new_serializer`] supports `data_type`.
-pub fn can_serialize(data_type: &DataType) -> bool {
-    use DataType::*;
+pub fn can_serialize(data_type: &ArrowDataType) -> bool {
+    use ArrowDataType::*;
     match data_type.to_logical_type() {
         List(inner) => return can_serialize(&inner.data_type),
         LargeList(inner) => return can_serialize(&inner.data_type),

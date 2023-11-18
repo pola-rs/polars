@@ -4,7 +4,6 @@ use std::sync::RwLock;
 use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
-use polars_ops::prelude::*;
 
 use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::function_expr::ListFunction;
@@ -137,7 +136,7 @@ impl ListNameSpace {
         self.0.map_many_private(
             FunctionExpr::ListExpr(ListFunction::Get),
             &[index],
-            true,
+            false,
             false,
         )
     }
@@ -147,12 +146,12 @@ impl ListNameSpace {
     /// # Arguments
     /// - `null_on_oob`: Return a null when an index is out of bounds.
     /// This behavior is more expensive than defaulting to returning an `Error`.
-    #[cfg(feature = "list_take")]
+    #[cfg(feature = "list_gather")]
     pub fn take(self, index: Expr, null_on_oob: bool) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::ListExpr(ListFunction::Take(null_on_oob)),
+            FunctionExpr::ListExpr(ListFunction::Gather(null_on_oob)),
             &[index],
-            true,
+            false,
             false,
         )
     }
@@ -216,7 +215,7 @@ impl ListNameSpace {
         self.0.map_many_private(
             FunctionExpr::ListExpr(ListFunction::Slice),
             &[offset, length],
-            true,
+            false,
             false,
         )
     }
@@ -229,6 +228,13 @@ impl ListNameSpace {
     /// Get the tail of every sublist
     pub fn tail(self, n: Expr) -> Expr {
         self.slice(lit(0i64) - n.clone().cast(DataType::Int64), n)
+    }
+
+    #[cfg(feature = "dtype-array")]
+    /// Convert a List column into an Array column with the same inner data type.
+    pub fn to_array(self, width: usize) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ListExpr(ListFunction::ToArray(width)))
     }
 
     #[cfg(feature = "list_to_struct")]
@@ -296,7 +302,7 @@ impl ListNameSpace {
             .map_many_private(
                 FunctionExpr::ListExpr(ListFunction::Contains),
                 &[other],
-                true,
+                false,
                 false,
             )
             .with_function_options(|mut options| {
@@ -313,7 +319,7 @@ impl ListNameSpace {
             .map_many_private(
                 FunctionExpr::ListExpr(ListFunction::CountMatches),
                 &[other],
-                true,
+                false,
                 false,
             )
             .with_function_options(|mut options| {

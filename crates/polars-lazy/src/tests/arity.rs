@@ -1,6 +1,7 @@
 use super::*;
 
 #[test]
+#[cfg(feature = "cov")]
 fn test_pearson_corr() -> PolarsResult<()> {
     let df = df! {
         "uid" => [0, 0, 0, 1, 1, 1],

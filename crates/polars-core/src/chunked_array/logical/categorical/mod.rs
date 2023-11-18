@@ -6,7 +6,7 @@ pub mod string_cache;
 
 use bitflags::bitflags;
 pub use builder::*;
-pub(crate) use merge::*;
+pub use merge::*;
 use polars_utils::sync::SyncPtr;
 
 use super::*;
@@ -70,10 +70,10 @@ impl CategoricalChunked {
         let rev_map = self.get_rev_map();
         let (physical_map, categories) = match rev_map.as_ref() {
             RevMapping::Global(m, c, _) => (m, c),
-            RevMapping::Local(_) => return self.clone(),
+            RevMapping::Local(_, _) => return self.clone(),
         };
 
-        let local_rev_map = RevMapping::Local(categories.clone());
+        let local_rev_map = RevMapping::build_local(categories.clone());
         // TODO: A fast path can possibly be implemented here:
         // if all physical map keys are equal to their values,
         // we can skip the apply and only update the rev_map
@@ -346,7 +346,7 @@ mod test {
         );
         assert!(matches!(
             s.get(0)?,
-            AnyValue::Categorical(0, RevMapping::Local(_), _)
+            AnyValue::Categorical(0, RevMapping::Local(_, _), _)
         ));
 
         let groups = s.group_tuples(false, true);

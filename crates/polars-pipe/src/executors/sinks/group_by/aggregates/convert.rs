@@ -3,8 +3,10 @@ use std::sync::Arc;
 
 use polars_core::datatypes::Field;
 use polars_core::error::PolarsResult;
+use polars_core::frame::DataFrame;
 use polars_core::prelude::{DataType, SchemaRef, Series, IDX_DTYPE};
 use polars_core::schema::Schema;
+use polars_io::predicates::PhysicalIoExpr;
 use polars_plan::dsl::Expr;
 use polars_plan::logical_plan::{ArenaExprIter, Context};
 use polars_plan::prelude::{AAggExpr, AExpr};
@@ -23,6 +25,11 @@ use crate::operators::DataChunk;
 
 struct Count {}
 
+impl PhysicalIoExpr for Count {
+    fn evaluate_io(&self, _df: &DataFrame) -> PolarsResult<Series> {
+        unimplemented!()
+    }
+}
 impl PhysicalPipedExpr for Count {
     fn evaluate(&self, chunk: &DataChunk, _lazy_state: &dyn Any) -> PolarsResult<Series> {
         // the length must match the chunks as the operators expect that

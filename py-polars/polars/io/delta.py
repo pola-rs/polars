@@ -38,7 +38,7 @@ def read_delta(
     version
         Version of the Delta lake table.
 
-        Note: If ``version`` is not provided, the latest version of delta lake
+        Note: If `version` is not provided, the latest version of delta lake
         table is read.
     columns
         Columns to select. Accepts a list of column names.
@@ -67,7 +67,7 @@ def read_delta(
 
     Use the `pyarrow_options` parameter to read only certain partitions.
     Note: This should be preferred over using an equivalent `.filter()` on the resulting
-    dataframe, as this avoids reading the data at all.
+    DataFrame, as this avoids reading the data at all.
 
     >>> pl.read_delta(  # doctest: +SKIP
     ...     table_path,
@@ -163,7 +163,7 @@ def scan_delta(
     version
         Version of the Delta lake table.
 
-        Note: If ``version`` is not provided, the latest version of delta lake
+        Note: If `version` is not provided, the latest version of delta lake
         table is read.
     storage_options
         Extra options for the storage backends supported by `deltalake`.
@@ -316,7 +316,7 @@ def _get_delta_lake_table(
 def _check_if_delta_available() -> None:
     if not _DELTALAKE_AVAILABLE:
         raise ModuleNotFoundError(
-            "deltalake is not installed\n\nPlease run: pip install deltalake>=0.9.0"
+            "deltalake is not installed" "\n\nPlease run: pip install deltalake"
         )
 
 
@@ -326,7 +326,7 @@ def _check_for_unsupported_types(dtypes: list[PolarsDataType]) -> None:
     overlap = schema_dtypes & unsupported_types
 
     if overlap:
-        raise TypeError(f"dataframe contains unsupported data types: {overlap!r}")
+        raise TypeError(f"DataFrame contains unsupported data types: {overlap!r}")
 
 
 def _convert_pa_schema_to_delta(schema: pa.schema) -> pa.schema:
@@ -337,8 +337,6 @@ def _convert_pa_schema_to_delta(schema: pa.schema) -> pa.schema:
         pa.uint16(): pa.int16(),
         pa.uint32(): pa.int32(),
         pa.uint64(): pa.int64(),
-        pa.large_string(): pa.string(),
-        pa.large_binary(): pa.binary(),
     }
 
     def dtype_to_delta_dtype(dtype: pa.DataType) -> pa.DataType:
@@ -356,10 +354,10 @@ def _convert_pa_schema_to_delta(schema: pa.schema) -> pa.schema:
         except KeyError:
             return dtype
 
-    def list_to_delta_dtype(dtype: pa.LargeListType) -> pa.ListType:
+    def list_to_delta_dtype(dtype: pa.LargeListType) -> pa.LargeListType:
         nested_dtype = dtype.value_type
         nested_dtype_cast = dtype_to_delta_dtype(nested_dtype)
-        return pa.list_(nested_dtype_cast)
+        return pa.large_list(nested_dtype_cast)
 
     def struct_to_delta_dtype(dtype: pa.StructType) -> pa.StructType:
         fields = [dtype.field(i) for i in range(dtype.num_fields)]

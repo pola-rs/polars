@@ -1,5 +1,5 @@
 use crate::array::{BinaryArray, Utf8Array};
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::legacy::trusted_len::TrustedLenPush;
 use crate::offset::Offsets;
 
@@ -62,7 +62,12 @@ pub trait Utf8FromIter {
         let iter = iter.map(StrAsBytes);
         let (offsets, values) = unsafe { fill_offsets_and_values(iter, size_hint, len) };
         unsafe {
-            Utf8Array::new_unchecked(DataType::LargeUtf8, offsets.into(), values.into(), None)
+            Utf8Array::new_unchecked(
+                ArrowDataType::LargeUtf8,
+                offsets.into(),
+                values.into(),
+                None,
+            )
         }
     }
 }
@@ -77,7 +82,12 @@ pub trait BinaryFromIter {
         I: Iterator<Item = S>,
     {
         let (offsets, values) = unsafe { fill_offsets_and_values(iter, value_cap, len) };
-        BinaryArray::new(DataType::LargeBinary, offsets.into(), values.into(), None)
+        BinaryArray::new(
+            ArrowDataType::LargeBinary,
+            offsets.into(),
+            values.into(),
+            None,
+        )
     }
 }
 

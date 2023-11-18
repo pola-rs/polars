@@ -19,7 +19,9 @@ Manipulation/selection
     DataFrame.fill_null
     DataFrame.filter
     DataFrame.find_idx_by_name
+    DataFrame.gather_every
     DataFrame.get_column
+    DataFrame.get_column_index
     DataFrame.get_columns
     DataFrame.group_by
     DataFrame.group_by_dynamic
@@ -30,6 +32,7 @@ Manipulation/selection
     DataFrame.head
     DataFrame.hstack
     DataFrame.insert_at_idx
+    DataFrame.insert_column
     DataFrame.interpolate
     DataFrame.item
     DataFrame.iter_rows
@@ -46,6 +49,7 @@ Manipulation/selection
     DataFrame.rename
     DataFrame.replace
     DataFrame.replace_at_idx
+    DataFrame.replace_column
     DataFrame.reverse
     DataFrame.rolling
     DataFrame.row

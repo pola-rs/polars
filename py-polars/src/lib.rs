@@ -149,9 +149,9 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::cov))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::cumfold))
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::cum_fold))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::cumreduce))
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::cum_reduce))
         .unwrap();
     #[cfg(feature = "trigonometry")]
     m.add_wrapped(wrap_pyfunction!(functions::lazy::arctan2))
@@ -225,13 +225,27 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         functions::string_cache::using_string_cache
     ))
     .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::meta::set_float_fmt))
+
+    // Numeric formatting
+    m.add_wrapped(wrap_pyfunction!(functions::meta::get_thousands_separator))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::set_thousands_separator))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::meta::get_float_fmt))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::get_float_precision))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::get_decimal_separator))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::get_trim_decimal_zeros))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::set_float_fmt))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::meta::set_float_precision))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::meta::get_float_precision))
+    m.add_wrapped(wrap_pyfunction!(functions::meta::set_decimal_separator))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::set_trim_decimal_zeros))
         .unwrap();
 
     // Functions - misc

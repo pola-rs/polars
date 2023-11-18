@@ -23,6 +23,7 @@ use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num_traits::pow::Pow;
 use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
+use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 
 #[cfg(feature = "object")]
@@ -157,7 +158,7 @@ where
 /// Helper that combines the groups into a parallel iterator over `(first, all): (u32, &Vec<u32>)`.
 pub fn _agg_helper_idx<T, F>(groups: &GroupsIdx, f: F) -> Series
 where
-    F: Fn((IdxSize, &Vec<IdxSize>)) -> Option<T::Native> + Send + Sync,
+    F: Fn((IdxSize, &IdxVec)) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
 {
@@ -168,7 +169,7 @@ where
 /// Same helper as `_agg_helper_idx` but for aggregations that don't return an Option.
 pub fn _agg_helper_idx_no_null<T, F>(groups: &GroupsIdx, f: F) -> Series
 where
-    F: Fn((IdxSize, &Vec<IdxSize>)) -> T::Native + Send + Sync,
+    F: Fn((IdxSize, &IdxVec)) -> T::Native + Send + Sync,
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
 {
@@ -180,7 +181,7 @@ where
 /// this doesn't have traverse the `first: Vec<u32>` memory and is therefore faster.
 fn agg_helper_idx_on_all<T, F>(groups: &GroupsIdx, f: F) -> Series
 where
-    F: Fn(&Vec<IdxSize>) -> Option<T::Native> + Send + Sync,
+    F: Fn(&IdxVec) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
 {

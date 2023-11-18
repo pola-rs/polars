@@ -11,7 +11,7 @@ pub use batched_mmap::*;
 pub use batched_read::*;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
-use polars_core::utils::{accumulate_dataframes_vertical, get_casting_failures};
+use polars_core::utils::{accumulate_dataframes_vertical, handle_casting_failures};
 use polars_core::POOL;
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::*;
@@ -58,12 +58,7 @@ pub(crate) fn cast_columns(
             (_, dt) => s.cast(dt),
         }?;
         if !ignore_errors && s.null_count() != out.null_count() {
-            let failures = get_casting_failures(s, &out)?;
-            polars_bail!(
-                ComputeError:
-                "parsing to `{}` failed for column: {}, value(s) {};",
-                fld.data_type(), s.name(), failures.fmt_list(),
-            )
+            handle_casting_failures(s, &out)?;
         }
         Ok(out)
     };
@@ -85,7 +80,7 @@ pub(crate) fn cast_columns(
         // cast to the original dtypes in the schema
         for fld in to_cast {
             // field may not be projected
-            if let Some(idx) = df.find_idx_by_name(fld.name()) {
+            if let Some(idx) = df.get_column_index(fld.name()) {
                 df.try_apply_at_idx(idx, |s| cast_fn(s, fld))?;
             }
         }
@@ -557,7 +552,11 @@ impl<'a> CoreReader<'a> {
 
         // An empty file with a schema should return an empty DataFrame with that schema
         if bytes.is_empty() {
-            return Ok(DataFrame::from(self.schema.as_ref()));
+            let mut df = DataFrame::from(self.schema.as_ref());
+            if let Some(ref row_count) = self.row_count {
+                df.insert_column(0, Series::new_empty(&row_count.name, &IDX_DTYPE))?;
+            }
+            return Ok(df);
         }
 
         // all the buffers returned from the threads
@@ -625,7 +624,7 @@ impl<'a> CoreReader<'a> {
                             };
 
                             cast_columns(&mut local_df, &self.to_cast, false, self.ignore_errors)?;
-                            let s = predicate.evaluate(&local_df)?;
+                            let s = predicate.evaluate_io(&local_df)?;
                             let mask = s.bool()?;
                             local_df = local_df.filter(mask)?;
 

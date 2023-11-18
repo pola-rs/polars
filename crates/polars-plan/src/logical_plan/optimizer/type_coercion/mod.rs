@@ -416,6 +416,60 @@ impl OptimizationRule for TypeCoercionRule {
                     options,
                 })
             },
+            // shift and fill should only cast left and fill value to super type.
+            AExpr::Function {
+                function: FunctionExpr::ShiftAndFill,
+                ref input,
+                options,
+            } => {
+                let mut input = input.clone();
+
+                let input_schema = get_schema(lp_arena, lp_node);
+                let left_node = input[0];
+                let fill_value_node = input[2];
+                let (left, type_left) =
+                    unpack!(get_aexpr_and_type(expr_arena, left_node, &input_schema));
+                let (fill_value, type_fill_value) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    fill_value_node,
+                    &input_schema
+                ));
+
+                unpack!(early_escape(&type_left, &type_fill_value));
+
+                let super_type = unpack!(get_supertype(&type_left, &type_fill_value));
+                let super_type =
+                    modify_supertype(super_type, left, fill_value, &type_left, &type_fill_value);
+
+                let new_node_left = if type_left != super_type {
+                    expr_arena.add(AExpr::Cast {
+                        expr: left_node,
+                        data_type: super_type.clone(),
+                        strict: false,
+                    })
+                } else {
+                    left_node
+                };
+
+                let new_node_fill_value = if type_fill_value != super_type {
+                    expr_arena.add(AExpr::Cast {
+                        expr: fill_value_node,
+                        data_type: super_type.clone(),
+                        strict: false,
+                    })
+                } else {
+                    fill_value_node
+                };
+
+                input[0] = new_node_left;
+                input[2] = new_node_fill_value;
+
+                Some(AExpr::Function {
+                    function: FunctionExpr::ShiftAndFill,
+                    input,
+                    options,
+                })
+            },
             // fill null has a supertype set during projection
             // to make the schema known before the optimization phase
             AExpr::Function {

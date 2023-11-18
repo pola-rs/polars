@@ -18,7 +18,7 @@
 //! Defines take kernel for [`Array`]
 
 use crate::array::{new_empty_array, Array, NullArray, PrimitiveArray};
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::types::Index;
 
 mod binary;
@@ -95,43 +95,43 @@ pub fn take<O: Index>(
 /// # Examples
 /// ```
 /// use polars_arrow::compute::take::can_take;
-/// use polars_arrow::datatypes::{DataType};
+/// use polars_arrow::datatypes::{ArrowDataType};
 ///
-/// let data_type = DataType::Int8;
+/// let data_type = ArrowDataType::Int8;
 /// assert_eq!(can_take(&data_type), true);
 /// ```
-pub fn can_take(data_type: &DataType) -> bool {
+pub fn can_take(data_type: &ArrowDataType) -> bool {
     matches!(
         data_type,
-        DataType::Null
-            | DataType::Boolean
-            | DataType::Int8
-            | DataType::Int16
-            | DataType::Int32
-            | DataType::Date32
-            | DataType::Time32(_)
-            | DataType::Interval(_)
-            | DataType::Int64
-            | DataType::Date64
-            | DataType::Time64(_)
-            | DataType::Duration(_)
-            | DataType::Timestamp(_, _)
-            | DataType::UInt8
-            | DataType::UInt16
-            | DataType::UInt32
-            | DataType::UInt64
-            | DataType::Float16
-            | DataType::Float32
-            | DataType::Float64
-            | DataType::Decimal(_, _)
-            | DataType::Utf8
-            | DataType::LargeUtf8
-            | DataType::Binary
-            | DataType::LargeBinary
-            | DataType::Struct(_)
-            | DataType::List(_)
-            | DataType::LargeList(_)
-            | DataType::FixedSizeList(_, _)
-            | DataType::Dictionary(..)
+        ArrowDataType::Null
+            | ArrowDataType::Boolean
+            | ArrowDataType::Int8
+            | ArrowDataType::Int16
+            | ArrowDataType::Int32
+            | ArrowDataType::Date32
+            | ArrowDataType::Time32(_)
+            | ArrowDataType::Interval(_)
+            | ArrowDataType::Int64
+            | ArrowDataType::Date64
+            | ArrowDataType::Time64(_)
+            | ArrowDataType::Duration(_)
+            | ArrowDataType::Timestamp(_, _)
+            | ArrowDataType::UInt8
+            | ArrowDataType::UInt16
+            | ArrowDataType::UInt32
+            | ArrowDataType::UInt64
+            | ArrowDataType::Float16
+            | ArrowDataType::Float32
+            | ArrowDataType::Float64
+            | ArrowDataType::Decimal(_, _)
+            | ArrowDataType::Utf8
+            | ArrowDataType::LargeUtf8
+            | ArrowDataType::Binary
+            | ArrowDataType::LargeBinary
+            | ArrowDataType::Struct(_)
+            | ArrowDataType::List(_)
+            | ArrowDataType::LargeList(_)
+            | ArrowDataType::FixedSizeList(_, _)
+            | ArrowDataType::Dictionary(..)
     )
 }

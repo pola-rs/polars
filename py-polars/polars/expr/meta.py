@@ -102,8 +102,8 @@ class ExprMetaNameSpace:
         Get the column name that this expression would produce.
 
         It may not always be possible to determine the output name as that can depend
-        on the schema of the context; in that case this will raise ``ComputeError`` if
-        ``raise_if_undetermined`` is True (the default), or ``None`` otherwise.
+        on the schema of the context; in that case this will raise `ComputeError` if
+        `raise_if_undetermined` is True (the default), or `None` otherwise.
 
         Examples
         --------
@@ -139,7 +139,7 @@ class ExprMetaNameSpace:
         list of Expr
             A list of expressions which in most cases will have a unit length.
             This is not the case when an expression has multiple inputs.
-            For instance in a ``fold`` expression.
+            For instance in a `fold` expression.
 
         Examples
         --------
@@ -177,7 +177,7 @@ class ExprMetaNameSpace:
 
     def undo_aliases(self) -> Expr:
         """
-        Undo any renaming operation like ``alias`` or ``keep_name``.
+        Undo any renaming operation like `alias` or `name.keep`.
 
         Examples
         --------
@@ -185,7 +185,7 @@ class ExprMetaNameSpace:
         >>> e.meta.undo_aliases().meta == pl.col("foo")
         True
         >>> e = pl.col("foo").sum().over("bar")
-        >>> e.keep_name().meta.undo_aliases().meta == e
+        >>> e.name.keep().meta.undo_aliases().meta == e
         True
 
         """

@@ -226,18 +226,18 @@ def test_rolling_extrema() -> None:
             pl.when(pl.int_range(0, pl.count(), eager=False) < 2)
             .then(None)
             .otherwise(pl.all())
-            .suffix("_nulls")
+            .name.suffix("_nulls")
         ]
     )
 
-    assert df.select([pl.all().rolling_min(3)]).to_dict(False) == {
+    assert df.select([pl.all().rolling_min(3)]).to_dict(as_series=False) == {
         "col1": [None, None, 0, 1, 2, 3, 4],
         "col2": [None, None, 4, 3, 2, 1, 0],
         "col1_nulls": [None, None, None, None, 2, 3, 4],
         "col2_nulls": [None, None, None, None, 2, 1, 0],
     }
 
-    assert df.select([pl.all().rolling_max(3)]).to_dict(False) == {
+    assert df.select([pl.all().rolling_max(3)]).to_dict(as_series=False) == {
         "col1": [None, None, 2, 3, 4, 5, 6],
         "col2": [None, None, 6, 5, 4, 3, 2],
         "col1_nulls": [None, None, None, None, 4, 5, 6],
@@ -246,14 +246,14 @@ def test_rolling_extrema() -> None:
 
     # shuffled data triggers other kernels
     df = df.select([pl.all().shuffle(0)])
-    assert df.select([pl.all().rolling_min(3)]).to_dict(False) == {
+    assert df.select([pl.all().rolling_min(3)]).to_dict(as_series=False) == {
         "col1": [None, None, 0, 0, 1, 2, 2],
         "col2": [None, None, 0, 2, 1, 1, 1],
         "col1_nulls": [None, None, None, None, None, 2, 2],
         "col2_nulls": [None, None, None, None, None, 1, 1],
     }
 
-    assert df.select([pl.all().rolling_max(3)]).to_dict(False) == {
+    assert df.select([pl.all().rolling_max(3)]).to_dict(as_series=False) == {
         "col1": [None, None, 6, 4, 5, 5, 5],
         "col2": [None, None, 6, 6, 5, 4, 4],
         "col1_nulls": [None, None, None, None, None, 5, 5],
@@ -277,15 +277,15 @@ def test_rolling_group_by_extrema() -> None:
         )
         .agg(
             [
-                pl.col("col1").suffix("_list"),
-                pl.col("col1").min().suffix("_min"),
-                pl.col("col1").max().suffix("_max"),
+                pl.col("col1").name.suffix("_list"),
+                pl.col("col1").min().name.suffix("_min"),
+                pl.col("col1").max().name.suffix("_max"),
                 pl.col("col1").first().alias("col1_first"),
                 pl.col("col1").last().alias("col1_last"),
             ]
         )
         .select(["col1_list", "col1_min", "col1_max", "col1_first", "col1_last"])
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "col1_list": [
             [6],
             [6, 5],
@@ -316,15 +316,15 @@ def test_rolling_group_by_extrema() -> None:
         )
         .agg(
             [
-                pl.col("col1").suffix("_list"),
-                pl.col("col1").min().suffix("_min"),
-                pl.col("col1").max().suffix("_max"),
+                pl.col("col1").name.suffix("_list"),
+                pl.col("col1").min().name.suffix("_min"),
+                pl.col("col1").max().name.suffix("_max"),
                 pl.col("col1").first().alias("col1_first"),
                 pl.col("col1").last().alias("col1_last"),
             ]
         )
         .select(["col1_list", "col1_min", "col1_max", "col1_first", "col1_last"])
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "col1_list": [
             [0],
             [0, 1],
@@ -354,13 +354,13 @@ def test_rolling_group_by_extrema() -> None:
         )
         .agg(
             [
-                pl.col("col1").min().suffix("_min"),
-                pl.col("col1").max().suffix("_max"),
-                pl.col("col1").suffix("_list"),
+                pl.col("col1").min().name.suffix("_min"),
+                pl.col("col1").max().name.suffix("_max"),
+                pl.col("col1").name.suffix("_list"),
             ]
         )
         .select(["col1_list", "col1_min", "col1_max"])
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "col1_list": [
             [3],
             [3, 4],
@@ -384,15 +384,9 @@ def test_rolling_slice_pushdown() -> None:
             by="b",
             period="2i",
         )
-        .agg(
-            [
-                (pl.col("c") - pl.col("c").shift_and_fill(fill_value=0, periods=1))
-                .sum()
-                .alias("c")
-            ]
-        )
+        .agg([(pl.col("c") - pl.col("c").shift(fill_value=0)).sum().alias("c")])
     )
-    assert df.head(2).collect().to_dict(False) == {
+    assert df.head(2).collect().to_dict(as_series=False) == {
         "b": ["a", "a"],
         "a": [1, 2],
         "c": [1, 3],
@@ -413,7 +407,7 @@ def test_overlapping_groups_4628() -> None:
                 (pl.col("val") - pl.col("val").shift(1)).alias("val - val.shift"),
             ]
         )
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "index": [1, 2, 3, 4, 5, 6],
         "val.diff": [
             [None],
@@ -545,7 +539,7 @@ def test_rolling_cov_corr() -> None:
             pl.rolling_cov("x", "y", window_size=3).alias("cov"),
             pl.rolling_corr("x", "y", window_size=3).alias("corr"),
         ]
-    ).to_dict(False)
+    ).to_dict(as_series=False)
     assert res["cov"][2:] == pytest.approx([0.0, 0.0, 5.333333333333336])
     assert res["corr"][2:] == pytest.approx([nan, nan, 0.9176629354822473], nan_ok=True)
     assert res["cov"][:2] == [None] * 2
@@ -601,6 +595,10 @@ def test_rolling_weighted_quantile_10031() -> None:
         ),
         pl.Series([None, None, None, 3.5, 5.5]),
     )
+
+
+def test_rolling_meta_eq_10101() -> None:
+    assert pl.col("A").rolling_sum(10).meta.eq(pl.col("A").rolling_sum(10)) is True
 
 
 def test_rolling_aggregations_unsorted_raise_10991() -> None:
@@ -717,3 +715,73 @@ def test_rolling_nanoseconds_11003() -> None:
     )
     expected = df.with_columns(val=pl.Series([1, 3, 6]))
     assert_frame_equal(result, expected)
+
+
+def test_rolling_by_1mo_saturating_12216() -> None:
+    df = pl.DataFrame(
+        {
+            "date": [
+                date(2020, 6, 29),
+                date(2020, 6, 30),
+                date(2020, 7, 30),
+                date(2020, 7, 31),
+                date(2020, 8, 1),
+            ],
+            "val": [1, 2, 3, 4, 5],
+        }
+    ).set_sorted("date")
+    with pytest.deprecated_call(match="The '_saturating' suffix is deprecated"):
+        result = df.rolling(index_column="date", period="1mo_saturating").agg(
+            vals=pl.col("val")
+        )
+    expected = pl.DataFrame(
+        {
+            "date": [
+                date(2020, 6, 29),
+                date(2020, 6, 30),
+                date(2020, 7, 30),
+                date(2020, 7, 31),
+                date(2020, 8, 1),
+            ],
+            "vals": [[1], [1, 2], [3], [3, 4], [3, 4, 5]],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+    # check with `closed='both'` against DuckDB output
+    result = df.rolling(index_column="date", period="1mo", closed="both").agg(
+        vals=pl.col("val")
+    )
+    expected = pl.DataFrame(
+        {
+            "date": [
+                date(2020, 6, 29),
+                date(2020, 6, 30),
+                date(2020, 7, 30),
+                date(2020, 7, 31),
+                date(2020, 8, 1),
+            ],
+            "vals": [[1], [1, 2], [2, 3], [2, 3, 4], [3, 4, 5]],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_index_expr_with_literal() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).sort("a")
+    out = df.rolling(index_column=(5 * pl.col("a")).set_sorted(), period="2i").agg(
+        pl.col("b")
+    )
+    expected = pl.DataFrame({"literal": [5, 10, 15], "b": [["a"], ["b"], ["c"]]})
+    assert_frame_equal(out, expected)
+
+
+def test_index_expr_output_name_12244() -> None:
+    df = pl.DataFrame({"A": [1, 2, 3]})
+
+    # pl.int_range's output name is: `int`.
+    out = df.rolling(pl.int_range(0, pl.count()), period="2i").agg("A")
+    assert out.to_dict(as_series=False) == {
+        "int": [0, 1, 2],
+        "A": [[1], [1, 2], [2, 3]],
+    }

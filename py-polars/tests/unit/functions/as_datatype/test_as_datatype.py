@@ -56,7 +56,7 @@ def test_datetime_time_zone(time_zone: str | None) -> None:
 def test_datetime_ambiguous_time_zone() -> None:
     expr = pl.datetime(2018, 10, 28, 2, 30, time_zone="Europe/Brussels")
 
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(pl.ComputeError):
         pl.select(expr)
 
 
@@ -118,13 +118,13 @@ def test_list_concat() -> None:
 def test_concat_list_with_lit() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
-    assert df.select(pl.concat_list([pl.col("a"), pl.lit(1)]).alias("a")).to_dict(
-        False
-    ) == {"a": [[1, 1], [2, 1], [3, 1]]}
+    result = df.select(pl.concat_list([pl.col("a"), pl.lit(1)]).alias("a"))
+    expected = {"a": [[1, 1], [2, 1], [3, 1]]}
+    assert result.to_dict(as_series=False) == expected
 
-    assert df.select(pl.concat_list([pl.lit(1), pl.col("a")]).alias("a")).to_dict(
-        False
-    ) == {"a": [[1, 1], [1, 2], [1, 3]]}
+    result = df.select(pl.concat_list([pl.lit(1), pl.col("a")]).alias("a"))
+    expected = {"a": [[1, 1], [1, 2], [1, 3]]}
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_concat_list_empty_raises() -> None:
@@ -155,7 +155,7 @@ def test_concat_list_in_agg_6397() -> None:
             # this casts every element to a list
             pl.concat_list(pl.col("value")),
         ]
-    ).sort("group").to_dict(False) == {
+    ).sort("group").to_dict(as_series=False) == {
         "group": [1, 2, 3],
         "value": [[["a"]], [["b"], ["c"]], [["d"]]],
     }
@@ -165,7 +165,7 @@ def test_concat_list_in_agg_6397() -> None:
         [
             pl.concat_list(pl.col("value").implode()).alias("result"),
         ]
-    ).sort("group").to_dict(False) == {
+    ).sort("group").to_dict(as_series=False) == {
         "group": [1, 2, 3],
         "result": [[["a"]], [["b", "c"]], [["d"]]],
     }
@@ -186,7 +186,7 @@ def test_categorical_list_concat_4762() -> None:
 
     q = df.lazy().select([pl.concat_list([pl.col("x").cast(pl.Categorical)] * 2)])
     with pl.StringCache():
-        assert q.collect().to_dict(False) == expected
+        assert q.collect().to_dict(as_series=False) == expected
 
 
 def test_list_concat_rolling_window() -> None:
@@ -286,17 +286,21 @@ def test_struct_with_lit() -> None:
     expr = pl.struct([pl.col("a"), pl.lit(1).alias("b")])
 
     assert (
-        pl.DataFrame({"a": pl.Series([], dtype=pl.Int64)}).select(expr).to_dict(False)
+        pl.DataFrame({"a": pl.Series([], dtype=pl.Int64)})
+        .select(expr)
+        .to_dict(as_series=False)
     ) == {"a": []}
 
     assert (
-        pl.DataFrame({"a": pl.Series([1], dtype=pl.Int64)}).select(expr).to_dict(False)
+        pl.DataFrame({"a": pl.Series([1], dtype=pl.Int64)})
+        .select(expr)
+        .to_dict(as_series=False)
     ) == {"a": [{"a": 1, "b": 1}]}
 
     assert (
         pl.DataFrame({"a": pl.Series([1, 2], dtype=pl.Int64)})
         .select(expr)
-        .to_dict(False)
+        .to_dict(as_series=False)
     ) == {"a": [{"a": 1, "b": 1}, {"a": 2, "b": 1}]}
 
 
@@ -435,14 +439,16 @@ def test_struct_broadcasting() -> None:
                 ]
             ).alias("my_struct")
         )
-    ).to_dict(False) == {"my_struct": [{"a": "a", "col1": 1}, {"a": "a", "col1": 2}]}
+    ).to_dict(as_series=False) == {
+        "my_struct": [{"a": "a", "col1": 1}, {"a": "a", "col1": 2}]
+    }
 
 
 def test_struct_list_cat_8235() -> None:
     df = pl.DataFrame(
         {"values": [["a", "b", "c"]]}, schema={"values": pl.List(pl.Categorical)}
     )
-    assert df.select(pl.struct("values")).to_dict(False) == {
+    assert df.select(pl.struct("values")).to_dict(as_series=False) == {
         "values": [{"values": ["a", "b", "c"]}]
     }
 
@@ -451,7 +457,9 @@ def test_struct_lit_cast() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     schema = {"a": pl.Int64, "b": pl.List(pl.Int64)}
 
-    out = df.select(pl.struct([pl.col("a"), pl.lit(None).alias("b")], schema=schema))["a"]  # type: ignore[arg-type]
+    out = df.select(
+        pl.struct(pl.col("a"), pl.lit(None).alias("b"), schema=schema)  # type: ignore[arg-type]
+    ).get_column("a")
 
     expected = pl.Series(
         "a",
@@ -464,7 +472,9 @@ def test_struct_lit_cast() -> None:
     )
     assert_series_equal(out, expected)
 
-    out = df.select(pl.struct([pl.col("a"), pl.lit(pl.Series([[]])).alias("b")], schema=schema))["a"]  # type: ignore[arg-type]
+    out = df.select(
+        pl.struct([pl.col("a"), pl.lit(pl.Series([[]])).alias("b")], schema=schema)  # type: ignore[arg-type]
+    ).get_column("a")
 
     expected = pl.Series(
         "a",
@@ -486,8 +496,8 @@ def test_suffix_in_struct_creation() -> None:
                 "b": [3, 4],
                 "c": [5, 6],
             }
-        ).select(pl.struct(pl.col(["a", "c"]).suffix("_foo")).alias("bar"))
-    ).unnest("bar").to_dict(False) == {"a_foo": [1, 2], "c_foo": [5, 6]}
+        ).select(pl.struct(pl.col(["a", "c"]).name.suffix("_foo")).alias("bar"))
+    ).unnest("bar").to_dict(as_series=False) == {"a_foo": [1, 2], "c_foo": [5, 6]}
 
 
 def test_concat_str() -> None:

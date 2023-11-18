@@ -56,7 +56,7 @@ pub fn date_range(
             time_zone,
         }),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             cast_to_supertypes: true,
             allow_rename: true,
             ..Default::default()
@@ -85,7 +85,7 @@ pub fn date_ranges(
             time_zone,
         }),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             cast_to_supertypes: true,
             allow_rename: true,
             ..Default::default()
@@ -114,7 +114,7 @@ pub fn datetime_range(
             time_zone,
         }),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             cast_to_supertypes: true,
             allow_rename: true,
             ..Default::default()
@@ -143,7 +143,7 @@ pub fn datetime_ranges(
             time_zone,
         }),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             cast_to_supertypes: true,
             allow_rename: true,
             ..Default::default()
@@ -160,7 +160,7 @@ pub fn time_range(start: Expr, end: Expr, interval: Duration, closed: ClosedWind
         input,
         function: FunctionExpr::Range(RangeFunction::TimeRange { interval, closed }),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             allow_rename: true,
             ..Default::default()
         },
@@ -176,7 +176,7 @@ pub fn time_ranges(start: Expr, end: Expr, interval: Duration, closed: ClosedWin
         input,
         function: FunctionExpr::Range(RangeFunction::TimeRanges { interval, closed }),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             allow_rename: true,
             ..Default::default()
         },

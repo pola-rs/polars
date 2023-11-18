@@ -167,7 +167,7 @@ def test_align_frames() -> None:
         (pf1[["a", "b"]] * pf2[["a", "b"]])
         .fill_null(0)
         .select(pl.sum_horizontal("*").alias("dot"))
-        .insert_at_idx(0, pf1["date"])
+        .insert_column(0, pf1["date"])
     )
     # confirm we match the same operation in pandas
     assert_frame_equal(pl_dot, pl.from_pandas(pd_dot))
@@ -300,7 +300,7 @@ def test_overflow_diff() -> None:
             "a": [20, 10, 30],
         }
     )
-    assert df.select(pl.col("a").cast(pl.UInt64).diff()).to_dict(False) == {
+    assert df.select(pl.col("a").cast(pl.UInt64).diff()).to_dict(as_series=False) == {
         "a": [None, -10, 20]
     }
 
@@ -319,7 +319,7 @@ def test_fill_null_unknown_output_type() -> None:
     )
     assert df.with_columns(
         np.exp(pl.col("a")).fill_null(pl.lit(1, pl.Float64))
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "a": [
             1.0,
             7.38905609893065,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -161,62 +162,19 @@ def test_group_by_iteration() -> None:
     assert result3 == expected3
 
 
-def bad_agg_parameters() -> list[Any]:
-    """Currently, IntoExpr and Iterable[IntoExpr] are supported."""
-    return [str, "b".join]
+@pytest.mark.parametrize("input", [[pl.col("b").sum()], pl.col("b").sum()])
+def test_group_by_agg_input_types(input: Any) -> None:
+    df = pl.LazyFrame({"a": [1, 1, 2, 2], "b": [1, 2, 3, 4]})
+    result = df.group_by("a", maintain_order=True).agg(input)
+    expected = pl.LazyFrame({"a": [1, 2], "b": [3, 7]})
+    assert_frame_equal(result, expected)
 
 
-def good_agg_parameters() -> list[pl.Expr | list[pl.Expr]]:
-    return [
-        [pl.col("b").sum()],
-        pl.col("b").sum(),
-    ]
-
-
-@pytest.mark.parametrize("lazy", [True, False])
-def test_group_by_agg_input_types(lazy: bool) -> None:
-    df = pl.DataFrame({"a": [1, 1, 2, 2], "b": [1, 2, 3, 4]})
-    df_or_lazy: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
-
-    for bad_param in bad_agg_parameters():
-        with pytest.raises(TypeError):  # noqa: PT012
-            result = df_or_lazy.group_by("a").agg(bad_param)
-            if lazy:
-                result.collect()  # type: ignore[union-attr]
-
-    expected = pl.DataFrame({"a": [1, 2], "b": [3, 7]})
-
-    for good_param in good_agg_parameters():
-        result = df_or_lazy.group_by("a", maintain_order=True).agg(good_param)
-        if lazy:
-            result = result.collect()  # type: ignore[union-attr]
-        assert_frame_equal(result, expected)
-
-
-@pytest.mark.parametrize("lazy", [True, False])
-def test_group_by_dynamic_agg_input_types(lazy: bool) -> None:
-    df = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]}).set_sorted(
-        "index_column"
-    )
-    df_or_lazy: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
-
-    for bad_param in bad_agg_parameters():
-        with pytest.raises(TypeError):  # noqa: PT012
-            result = df_or_lazy.group_by_dynamic(
-                index_column="index_column", every="2i", closed="right"
-            ).agg(bad_param)
-            if lazy:
-                result.collect()  # type: ignore[union-attr]
-
-    expected = pl.DataFrame({"index_column": [-2, 0, 2], "b": [1, 4, 2]})
-
-    for good_param in good_agg_parameters():
-        result = df_or_lazy.group_by_dynamic(
-            index_column="index_column", every="2i", closed="right"
-        ).agg(good_param)
-        if lazy:
-            result = result.collect()  # type: ignore[union-attr]
-        assert_frame_equal(result, expected)
+@pytest.mark.parametrize("input", [str, "b".join])
+def test_group_by_agg_bad_input_types(input: Any) -> None:
+    df = pl.LazyFrame({"a": [1, 1, 2, 2], "b": [1, 2, 3, 4]})
+    with pytest.raises(TypeError):
+        df.group_by("a").agg(input)
 
 
 def test_group_by_sorted_empty_dataframe_3680() -> None:
@@ -269,9 +227,9 @@ def test_apply_after_take_in_group_by_3869() -> None:
         )
         .group_by("k", maintain_order=True)
         .agg(
-            pl.col("v").take(pl.col("t").arg_max()).sqrt()
+            pl.col("v").get(pl.col("t").arg_max()).sqrt()
         )  # <- fails for sqrt, exp, log, pow, etc.
-    ).to_dict(False) == {"k": ["a", "b"], "v": [1.4142135623730951, 2.0]}
+    ).to_dict(as_series=False) == {"k": ["a", "b"], "v": [1.4142135623730951, 2.0]}
 
 
 def test_group_by_signed_transmutes() -> None:
@@ -284,7 +242,7 @@ def test_group_by_signed_transmutes() -> None:
             .agg(pl.col("bar").median())
         )
 
-        assert df.to_dict(False) == {
+        assert df.to_dict(as_series=False) == {
             "foo": [-1, -2, -3, -4, -5],
             "bar": [500.0, 600.0, 700.0, 800.0, 900.0],
         }
@@ -320,11 +278,15 @@ def test_arg_sort_sort_by_groups_update__4360() -> None:
 
 def test_unique_order() -> None:
     df = pl.DataFrame({"a": [1, 2, 1]}).with_row_count()
-    assert df.unique(keep="last", subset="a", maintain_order=True).to_dict(False) == {
+    assert df.unique(keep="last", subset="a", maintain_order=True).to_dict(
+        as_series=False
+    ) == {
         "row_nr": [1, 2],
         "a": [2, 1],
     }
-    assert df.unique(keep="first", subset="a", maintain_order=True).to_dict(False) == {
+    assert df.unique(keep="first", subset="a", maintain_order=True).to_dict(
+        as_series=False
+    ) == {
         "row_nr": [0, 1],
         "a": [1, 2],
     }
@@ -339,7 +301,7 @@ def test_group_by_dynamic_flat_agg_4814() -> None:
             (pl.col("b").last() / pl.col("a").last()).alias("last_ratio_1"),
             (pl.col("b") / pl.col("a")).last().alias("last_ratio_2"),
         ]
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "a": [0, 1, 2],
         "sum_ratio_1": [1.0, 4.2, 5.0],
         "last_ratio_1": [1.0, 6.0, 6.0],
@@ -377,7 +339,7 @@ def test_group_by_dynamic_overlapping_groups_flat_apply_multiple_5038(
         )
         .collect()
         .sum()
-        .to_dict(False)
+        .to_dict(as_series=False)
     )
 
     assert res["corr"] == pytest.approx([9.148920923684765])
@@ -387,8 +349,8 @@ def test_group_by_dynamic_overlapping_groups_flat_apply_multiple_5038(
 def test_take_in_group_by() -> None:
     df = pl.DataFrame({"group": [1, 1, 1, 2, 2, 2], "values": [10, 200, 3, 40, 500, 6]})
     assert df.group_by("group").agg(
-        pl.col("values").take(1) - pl.col("values").take(2)
-    ).sort("group").to_dict(False) == {"group": [1, 2], "values": [197, 494]}
+        pl.col("values").get(1) - pl.col("values").get(2)
+    ).sort("group").to_dict(as_series=False) == {"group": [1, 2], "values": [197, 494]}
 
 
 def test_group_by_wildcard() -> None:
@@ -399,8 +361,8 @@ def test_group_by_wildcard() -> None:
         }
     )
     assert df.group_by([pl.col("*")], maintain_order=True).agg(
-        [pl.col("a").first().suffix("_agg")]
-    ).to_dict(False) == {"a": [1, 2], "b": [1, 2], "a_agg": [1, 2]}
+        [pl.col("a").first().name.suffix("_agg")]
+    ).to_dict(as_series=False) == {"a": [1, 2], "b": [1, 2], "a_agg": [1, 2]}
 
 
 def test_group_by_all_masked_out() -> None:
@@ -424,7 +386,10 @@ def test_group_by_null_propagation_6185() -> None:
 
     expected = {"B": [1, 2], "A": [None, None]}
     assert (
-        df_1.group_by("B").agg((expr - expr.mean()).mean()).sort("B").to_dict(False)
+        df_1.group_by("B")
+        .agg((expr - expr.mean()).mean())
+        .sort("B")
+        .to_dict(as_series=False)
         == expected
     )
 
@@ -437,10 +402,36 @@ def test_group_by_when_then_with_binary_and_agg_in_pred_6202() -> None:
         df.group_by("code", maintain_order=True).agg(
             [pl.when(pl.col("xx") > pl.min("xx")).then(True).otherwise(False)]
         )
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "code": ["a", "b"],
         "literal": [[False, True], [True, True, False]],
     }
+
+
+def test_group_by_binary_agg_with_literal() -> None:
+    df = pl.DataFrame({"id": ["a", "a", "b", "b"], "value": [1, 2, 3, 4]})
+
+    out = df.group_by("id", maintain_order=True).agg(
+        pl.col("value") + pl.Series([1, 3])
+    )
+    assert out.to_dict(as_series=False) == {"id": ["a", "b"], "value": [[2, 5], [4, 7]]}
+
+    out = df.group_by("id", maintain_order=True).agg(pl.col("value") + pl.lit(1))
+    assert out.to_dict(as_series=False) == {"id": ["a", "b"], "value": [[2, 3], [4, 5]]}
+
+    out = df.group_by("id", maintain_order=True).agg(pl.lit(1) + pl.lit(2))
+    assert out.to_dict(as_series=False) == {"id": ["a", "b"], "literal": [3, 3]}
+
+    out = df.group_by("id", maintain_order=True).agg(pl.lit(1) + pl.Series([2, 3]))
+    assert out.to_dict(as_series=False) == {
+        "id": ["a", "b"],
+        "literal": [[3, 4], [3, 4]],
+    }
+
+    out = df.group_by("id", maintain_order=True).agg(
+        value=pl.lit(pl.Series([1, 2])) + pl.lit(pl.Series([3, 4]))
+    )
+    assert out.to_dict(as_series=False) == {"id": ["a", "b"], "value": [[4, 6], [4, 6]]}
 
 
 @pytest.mark.slow()
@@ -452,9 +443,9 @@ def test_overflow_mean_partitioned_group_by_5194(dtype: pl.PolarsDataType) -> No
             pl.Series("group", [1, 2] * 50_000, dtype=dtype),
         ]
     )
-    assert df.group_by("group").agg(pl.col("data").mean()).sort(by="group").to_dict(
-        False
-    ) == {"group": [1, 2], "data": [10000000.0, 10000000.0]}
+    result = df.group_by("group").agg(pl.col("data").mean()).sort(by="group")
+    expected = {"group": [1, 2], "data": [10000000.0, 10000000.0]}
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_group_by_multiple_column_reference() -> None:
@@ -469,7 +460,7 @@ def test_group_by_multiple_column_reference() -> None:
         pl.col("val") + pl.col("val").shift().fill_null(0),
     )
 
-    assert res.sort("gr").to_dict(False) == {
+    assert res.sort("gr").to_dict(as_series=False) == {
         "gr": ["a", "b"],
         "val": [[1, 101, 10100], [20, 2020, 202000]],
     }
@@ -612,10 +603,8 @@ def test_perfect_hash_table_null_values_8663() -> None:
         ],
         dtype=pl.Categorical,
     )
-
-    assert s.to_frame("a").group_by("a").agg(pl.col("a").alias("agg")).to_dict(
-        False
-    ) == {
+    result = s.to_frame("a").group_by("a").agg(pl.col("a").alias("agg"))
+    expected = {
         "a": [
             "3",
             "41",
@@ -701,6 +690,7 @@ def test_perfect_hash_table_null_values_8663() -> None:
             [None, None, None],
         ],
     }
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_group_by_partitioned_ending_cast(monkeypatch: Any) -> None:
@@ -785,7 +775,7 @@ def test_group_by_multiple_keys_one_literal() -> None:
             .agg(pl.col("b").max())
             .sort(["a", "b"])
             .collect(streaming=streaming)
-            .to_dict(False)
+            .to_dict(as_series=False)
             == expected
         )
 
@@ -809,7 +799,7 @@ def test_group_by_list_scalar_11749() -> None:
         df.group_by("group_name").agg(
             (pl.col("measurement").first() == pl.col("measurement")).alias("eq"),
         )
-    ).sort("group_name").to_dict(False) == {
+    ).sort("group_name").to_dict(as_series=False) == {
         "group_name": ["a;b", "c;d"],
         "eq": [[True, True, True, True], [True, False]],
     }
@@ -829,3 +819,28 @@ def test_lazy_group_by_reuse_11767() -> None:
     a = lgb.count()
     b = lgb.count()
     assert a.collect().frame_equal(b.collect())
+
+
+def test_group_by_double_on_empty_12194() -> None:
+    df = pl.DataFrame({"group": [1], "x": [1]}).clear()
+    squared_deviation_sum = ((pl.col("x") - pl.col("x").mean()) ** 2).sum()
+    assert df.group_by("group").agg(squared_deviation_sum).schema == OrderedDict(
+        [("group", pl.Int64), ("x", pl.Float64)]
+    )
+
+
+def test_group_by_when_then_no_aggregation_predicate() -> None:
+    df = pl.DataFrame(
+        {
+            "key": ["aa", "aa", "bb", "bb", "aa", "aa"],
+            "val": [-3, -2, 1, 4, -3, 5],
+        }
+    )
+    assert df.group_by("key").agg(
+        pos=pl.when(pl.col("val") >= 0).then(pl.col("val")).sum(),
+        neg=pl.when(pl.col("val") < 0).then(pl.col("val")).sum(),
+    ).sort("key").to_dict(as_series=False) == {
+        "key": ["aa", "bb"],
+        "pos": [5, 5],
+        "neg": [-8, 0],
+    }

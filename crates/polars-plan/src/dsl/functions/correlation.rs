@@ -1,19 +1,19 @@
 use super::*;
 
 /// Compute the covariance between two columns.
-pub fn cov(a: Expr, b: Expr) -> Expr {
+pub fn cov(a: Expr, b: Expr, ddof: u8) -> Expr {
     let input = vec![a, b];
     let function = FunctionExpr::Correlation {
         method: CorrelationMethod::Covariance,
-        ddof: 0,
+        ddof,
     };
     Expr::Function {
         input,
         function,
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             cast_to_supertypes: true,
-            auto_explode: true,
+            returns_scalar: true,
             ..Default::default()
         },
     }
@@ -34,9 +34,9 @@ pub fn pearson_corr(a: Expr, b: Expr, ddof: u8) -> Expr {
         input,
         function,
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             cast_to_supertypes: true,
-            auto_explode: true,
+            returns_scalar: true,
             ..Default::default()
         },
     }
@@ -62,9 +62,9 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> E
         input,
         function,
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             cast_to_supertypes: true,
-            auto_explode: true,
+            returns_scalar: true,
             ..Default::default()
         },
     }

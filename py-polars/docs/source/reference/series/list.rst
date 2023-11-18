@@ -23,6 +23,7 @@ The following methods are available under the `Series.list` attribute.
     Series.list.eval
     Series.list.explode
     Series.list.first
+    Series.list.gather
     Series.list.get
     Series.list.head
     Series.list.join
@@ -46,6 +47,7 @@ The following methods are available under the `Series.list` attribute.
     Series.list.symmetric_difference
     Series.list.tail
     Series.list.take
+    Series.list.to_array
     Series.list.to_struct
     Series.list.union
     Series.list.unique

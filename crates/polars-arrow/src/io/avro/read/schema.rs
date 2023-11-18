@@ -19,9 +19,9 @@ fn external_props(schema: &AvroSchema) -> Metadata {
     props
 }
 
-/// Infers an [`Schema`] from the root [`Record`].
+/// Infers an [`ArrowSchema`] from the root [`Record`].
 /// This
-pub fn infer_schema(record: &Record) -> PolarsResult<Schema> {
+pub fn infer_schema(record: &Record) -> PolarsResult<ArrowSchema> {
     Ok(record
         .fields
         .iter()
@@ -43,45 +43,49 @@ fn schema_to_field(
 ) -> PolarsResult<Field> {
     let mut nullable = false;
     let data_type = match schema {
-        AvroSchema::Null => DataType::Null,
-        AvroSchema::Boolean => DataType::Boolean,
+        AvroSchema::Null => ArrowDataType::Null,
+        AvroSchema::Boolean => ArrowDataType::Boolean,
         AvroSchema::Int(logical) => match logical {
             Some(logical) => match logical {
-                avro_schema::schema::IntLogical::Date => DataType::Date32,
-                avro_schema::schema::IntLogical::Time => DataType::Time32(TimeUnit::Millisecond),
+                avro_schema::schema::IntLogical::Date => ArrowDataType::Date32,
+                avro_schema::schema::IntLogical::Time => {
+                    ArrowDataType::Time32(TimeUnit::Millisecond)
+                },
             },
-            None => DataType::Int32,
+            None => ArrowDataType::Int32,
         },
         AvroSchema::Long(logical) => match logical {
             Some(logical) => match logical {
-                avro_schema::schema::LongLogical::Time => DataType::Time64(TimeUnit::Microsecond),
+                avro_schema::schema::LongLogical::Time => {
+                    ArrowDataType::Time64(TimeUnit::Microsecond)
+                },
                 avro_schema::schema::LongLogical::TimestampMillis => {
-                    DataType::Timestamp(TimeUnit::Millisecond, Some("00:00".to_string()))
+                    ArrowDataType::Timestamp(TimeUnit::Millisecond, Some("00:00".to_string()))
                 },
                 avro_schema::schema::LongLogical::TimestampMicros => {
-                    DataType::Timestamp(TimeUnit::Microsecond, Some("00:00".to_string()))
+                    ArrowDataType::Timestamp(TimeUnit::Microsecond, Some("00:00".to_string()))
                 },
                 avro_schema::schema::LongLogical::LocalTimestampMillis => {
-                    DataType::Timestamp(TimeUnit::Millisecond, None)
+                    ArrowDataType::Timestamp(TimeUnit::Millisecond, None)
                 },
                 avro_schema::schema::LongLogical::LocalTimestampMicros => {
-                    DataType::Timestamp(TimeUnit::Microsecond, None)
+                    ArrowDataType::Timestamp(TimeUnit::Microsecond, None)
                 },
             },
-            None => DataType::Int64,
+            None => ArrowDataType::Int64,
         },
-        AvroSchema::Float => DataType::Float32,
-        AvroSchema::Double => DataType::Float64,
+        AvroSchema::Float => ArrowDataType::Float32,
+        AvroSchema::Double => ArrowDataType::Float64,
         AvroSchema::Bytes(logical) => match logical {
             Some(logical) => match logical {
                 avro_schema::schema::BytesLogical::Decimal(precision, scale) => {
-                    DataType::Decimal(*precision, *scale)
+                    ArrowDataType::Decimal(*precision, *scale)
                 },
             },
-            None => DataType::Binary,
+            None => ArrowDataType::Binary,
         },
-        AvroSchema::String(_) => DataType::Utf8,
-        AvroSchema::Array(item_schema) => DataType::List(Box::new(schema_to_field(
+        AvroSchema::String(_) => ArrowDataType::Utf8,
+        AvroSchema::Array(item_schema) => ArrowDataType::List(Box::new(schema_to_field(
             item_schema,
             Some("item"), // default name for list items
             Metadata::default(),
@@ -105,7 +109,7 @@ fn schema_to_field(
                     .iter()
                     .map(|s| schema_to_field(s, None, Metadata::default()))
                     .collect::<PolarsResult<Vec<Field>>>()?;
-                DataType::Union(fields, None, UnionMode::Dense)
+                ArrowDataType::Union(fields, None, UnionMode::Dense)
             }
         },
         AvroSchema::Record(Record { fields, .. }) => {
@@ -119,25 +123,25 @@ fn schema_to_field(
                     schema_to_field(&field.schema, Some(&field.name), props)
                 })
                 .collect::<PolarsResult<_>>()?;
-            DataType::Struct(fields)
+            ArrowDataType::Struct(fields)
         },
         AvroSchema::Enum { .. } => {
             return Ok(Field::new(
                 name.unwrap_or_default(),
-                DataType::Dictionary(IntegerType::Int32, Box::new(DataType::Utf8), false),
+                ArrowDataType::Dictionary(IntegerType::Int32, Box::new(ArrowDataType::Utf8), false),
                 false,
             ))
         },
         AvroSchema::Fixed(Fixed { size, logical, .. }) => match logical {
             Some(logical) => match logical {
                 avro_schema::schema::FixedLogical::Decimal(precision, scale) => {
-                    DataType::Decimal(*precision, *scale)
+                    ArrowDataType::Decimal(*precision, *scale)
                 },
                 avro_schema::schema::FixedLogical::Duration => {
-                    DataType::Interval(IntervalUnit::MonthDayNano)
+                    ArrowDataType::Interval(IntervalUnit::MonthDayNano)
                 },
             },
-            None => DataType::FixedSizeBinary(*size),
+            None => ArrowDataType::FixedSizeBinary(*size),
         },
     };
 

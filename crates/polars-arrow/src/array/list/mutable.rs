@@ -6,14 +6,14 @@ use super::ListArray;
 use crate::array::physical_binary::extend_validity;
 use crate::array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
 use crate::bitmap::MutableBitmap;
-use crate::datatypes::{DataType, Field};
+use crate::datatypes::{ArrowDataType, Field};
 use crate::offset::{Offset, Offsets};
 use crate::trusted_len::TrustedLen;
 
 /// The mutable version of [`ListArray`].
 #[derive(Debug, Clone)]
 pub struct MutableListArray<O: Offset, M: MutableArray> {
-    data_type: DataType,
+    data_type: ArrowDataType,
     offsets: Offsets<O>,
     values: M,
     validity: Option<MutableBitmap>,
@@ -109,7 +109,7 @@ where
 
 impl<O: Offset, M: MutableArray> MutableListArray<O, M> {
     /// Creates a new [`MutableListArray`] from a [`MutableArray`] and capacity.
-    pub fn new_from(values: M, data_type: DataType, capacity: usize) -> Self {
+    pub fn new_from(values: M, data_type: ArrowDataType, capacity: usize) -> Self {
         let offsets = Offsets::<O>::with_capacity(capacity);
         assert_eq!(values.len(), 0);
         ListArray::<O>::get_child_field(&data_type);
@@ -125,9 +125,9 @@ impl<O: Offset, M: MutableArray> MutableListArray<O, M> {
     pub fn new_with_field(values: M, name: &str, nullable: bool) -> Self {
         let field = Box::new(Field::new(name, values.data_type().clone(), nullable));
         let data_type = if O::IS_LARGE {
-            DataType::LargeList(field)
+            ArrowDataType::LargeList(field)
         } else {
-            DataType::List(field)
+            ArrowDataType::List(field)
         };
         Self::new_from(values, data_type, 0)
     }
@@ -291,7 +291,7 @@ impl<O: Offset, M: MutableArray + 'static> MutableArray for MutableListArray<O, 
         .arced()
     }
 
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 

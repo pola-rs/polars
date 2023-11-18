@@ -230,28 +230,6 @@ impl OptimizationRule for SimplifyBooleanRule {
                 Some(AExpr::Literal(LiteralValue::Boolean(true)))
             },
 
-            AExpr::Ternary {
-                truthy, predicate, ..
-            } if matches!(
-                expr_arena.get(*predicate),
-                AExpr::Literal(LiteralValue::Boolean(true))
-            ) =>
-            {
-                Some(expr_arena.get(*truthy).clone())
-            },
-            AExpr::Ternary {
-                truthy,
-                falsy,
-                predicate,
-            } if matches!(
-                expr_arena.get(*predicate),
-                AExpr::Literal(LiteralValue::Boolean(false))
-            ) =>
-            {
-                let names = aexpr_to_leaf_names(*truthy, expr_arena);
-                let name = names.get(0).map(Arc::clone).unwrap_or_else(|| "".into());
-                Some(AExpr::Alias(*falsy, name))
-            },
             AExpr::Function {
                 input,
                 function: FunctionExpr::Boolean(BooleanFunction::Not),
@@ -400,9 +378,9 @@ fn string_addition_to_linear_concat(
                     input: vec![left_ae, right_ae],
                     function: StringFunction::ConcatHorizontal("".to_string()).into(),
                     options: FunctionOptions {
-                        collect_groups: ApplyOptions::ApplyFlat,
+                        collect_groups: ApplyOptions::ElementWise,
                         input_wildcard_expansion: true,
-                        auto_explode: true,
+                        returns_scalar: false,
                         ..Default::default()
                     },
                 }),
@@ -558,7 +536,7 @@ impl OptimizationRule for SimplifyExprRule {
                         input: vec![*right],
                         function: BooleanFunction::IsNull.into(),
                         options: FunctionOptions {
-                            collect_groups: ApplyOptions::ApplyGroups,
+                            collect_groups: ApplyOptions::GroupWise,
                             ..Default::default()
                         },
                     }),
@@ -567,7 +545,7 @@ impl OptimizationRule for SimplifyExprRule {
                         input: vec![*left],
                         function: BooleanFunction::IsNull.into(),
                         options: FunctionOptions {
-                            collect_groups: ApplyOptions::ApplyGroups,
+                            collect_groups: ApplyOptions::GroupWise,
                             ..Default::default()
                         },
                     }),
@@ -576,7 +554,7 @@ impl OptimizationRule for SimplifyExprRule {
                         input: vec![*right],
                         function: BooleanFunction::IsNotNull.into(),
                         options: FunctionOptions {
-                            collect_groups: ApplyOptions::ApplyGroups,
+                            collect_groups: ApplyOptions::GroupWise,
                             ..Default::default()
                         },
                     }),
@@ -585,7 +563,7 @@ impl OptimizationRule for SimplifyExprRule {
                         input: vec![*left],
                         function: BooleanFunction::IsNotNull.into(),
                         options: FunctionOptions {
-                            collect_groups: ApplyOptions::ApplyGroups,
+                            collect_groups: ApplyOptions::GroupWise,
                             ..Default::default()
                         },
                     }),
@@ -618,7 +596,7 @@ impl OptimizationRule for SimplifyExprRule {
                         by: by.clone(),
                         descending: descending.iter().map(|r| !*r).collect(),
                     }),
-                    // TODO: add support for cumsum and other operation that allow reversing.
+                    // TODO: add support for cum_sum and other operation that allow reversing.
                     _ => None,
                 }
             },
@@ -681,6 +659,9 @@ fn inline_cast(input: &AExpr, dtype: &DataType, strict: bool) -> PolarsResult<Op
                 let Some(av) = lv.to_anyvalue() else {
                     return Ok(None);
                 };
+                if dtype == &av.dtype() {
+                    return Ok(Some(input.clone()));
+                }
                 match (av, dtype) {
                     // casting null always remains null
                     (AnyValue::Null, _) => return Ok(None),

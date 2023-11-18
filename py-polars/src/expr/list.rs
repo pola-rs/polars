@@ -145,13 +145,17 @@ impl PyExpr {
             .into()
     }
 
-    #[cfg(feature = "list_take")]
-    fn list_take(&self, index: PyExpr, null_on_oob: bool) -> Self {
+    #[cfg(feature = "list_gather")]
+    fn list_gather(&self, index: PyExpr, null_on_oob: bool) -> Self {
         self.inner
             .clone()
             .list()
             .take(index.inner, null_on_oob)
             .into()
+    }
+
+    fn list_to_array(&self, width: usize) -> Self {
+        self.inner.clone().list().to_array(width).into()
     }
 
     #[pyo3(signature = (width_strat, name_gen, upper_bound))]

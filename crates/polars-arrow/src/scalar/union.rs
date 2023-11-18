@@ -1,18 +1,18 @@
 use super::Scalar;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 /// A single entry of a [`crate::array::UnionArray`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct UnionScalar {
     value: Box<dyn Scalar>,
     type_: i8,
-    data_type: DataType,
+    data_type: ArrowDataType,
 }
 
 impl UnionScalar {
     /// Returns a new [`UnionScalar`]
     #[inline]
-    pub fn new(data_type: DataType, type_: i8, value: Box<dyn Scalar>) -> Self {
+    pub fn new(data_type: ArrowDataType, type_: i8, value: Box<dyn Scalar>) -> Self {
         Self {
             value,
             type_,
@@ -45,7 +45,7 @@ impl Scalar for UnionScalar {
     }
 
     #[inline]
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 }

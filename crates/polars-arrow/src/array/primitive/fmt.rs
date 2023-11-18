@@ -21,7 +21,7 @@ macro_rules! dyn_primitive {
 pub fn get_write_value<'a, T: NativeType, F: Write>(
     array: &'a PrimitiveArray<T>,
 ) -> Box<dyn Fn(&mut F, usize) -> Result + 'a> {
-    use crate::datatypes::DataType::*;
+    use crate::datatypes::ArrowDataType::*;
     match array.data_type().to_logical_type() {
         Int8 => Box::new(|f, index| write!(f, "{}", array.value(index))),
         Int16 => Box::new(|f, index| write!(f, "{}", array.value(index))),

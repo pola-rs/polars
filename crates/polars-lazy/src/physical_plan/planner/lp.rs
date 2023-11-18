@@ -1,5 +1,6 @@
 use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_plan::global::_set_n_rows_for_scan;
 
 use super::super::executors::{self, Executor};
 use super::*;
@@ -93,7 +94,7 @@ fn partitionable_gb(
                                         )
                         },
                         Function {input, options, ..} => {
-                            matches!(options.collect_groups, ApplyOptions::ApplyFlat) && input.len() == 1 &&
+                            matches!(options.collect_groups, ApplyOptions::ElementWise) && input.len() == 1 &&
                                 !has_aggregation(input[0])
                         }
                         BinaryExpr {left, right, ..} => {
@@ -192,14 +193,16 @@ pub fn create_physical_plan(
                 state.has_windows,
             )))
         },
+        #[allow(unused_variables)]
         Scan {
             paths,
             file_info,
             output_schema,
             scan_type,
             predicate,
-            file_options,
+            mut file_options,
         } => {
+            file_options.n_rows = _set_n_rows_for_scan(file_options.n_rows);
             let mut state = ExpressionConversionState::default();
             let predicate = predicate
                 .map(|pred| {
@@ -245,19 +248,15 @@ pub fn create_physical_plan(
                     options,
                     cloud_options,
                     metadata,
-                } => {
-                    assert_eq!(paths.len(), 1);
-                    let path = paths[0].clone();
-                    Ok(Box::new(executors::ParquetExec::new(
-                        path,
-                        file_info,
-                        predicate,
-                        options,
-                        cloud_options,
-                        file_options,
-                        metadata,
-                    )))
-                },
+                } => Ok(Box::new(executors::ParquetExec::new(
+                    paths,
+                    file_info,
+                    predicate,
+                    options,
+                    cloud_options,
+                    file_options,
+                    metadata,
+                ))),
                 FileScan::Anonymous { function, .. } => {
                     Ok(Box::new(executors::AnonymousScanExec {
                         function,

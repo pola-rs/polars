@@ -10,6 +10,8 @@ python:
   hstack: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.hstack.html
   read_csv: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.read_csv.html
   write_csv: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.DataFrame.write_csv.html
+  read_excel: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.read_excel.html
+  write_excel: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.DataFrame.write_excel.html
   read_json: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.read_json.html
   write_json: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.DataFrame.write_json.html
   read_ipc: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.read_ipc.html
@@ -328,8 +330,11 @@ rust:
     link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/dt/struct.DateLikeNameSpace.html#method.day
     feature_flags: [temporal]
 
-  list.eval: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/trait.ListNameSpaceExtension.html#method.eval
-
+  list.eval: 
+    name: list.eval
+    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/trait.ListNameSpaceExtension.html#method.eval
+    feature_flags: [list_eval]
+    
   str.contains:
     name: str.contains
     link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.contains

@@ -186,14 +186,14 @@ impl DataFrame {
 
     /// Get the index of the column.
     fn check_name_to_idx(&self, name: &str) -> PolarsResult<usize> {
-        self.find_idx_by_name(name)
+        self.get_column_index(name)
             .ok_or_else(|| polars_err!(ColumnNotFound: "{}", name))
     }
 
     fn check_already_present(&self, name: &str) -> PolarsResult<()> {
         polars_ensure!(
             self.columns.iter().all(|s| s.name() != name),
-            Duplicate: "column with name {:?} is already present in the dataframe", name
+            Duplicate: "column with name {:?} is already present in the DataFrame", name
         );
         Ok(())
     }
@@ -224,7 +224,7 @@ impl DataFrame {
 
         let shape_err = |&first_name, &first_len, &name, &len| {
             polars_bail!(
-                ShapeMismatch: "could not create a new dataframe: series {:?} has length {} \
+                ShapeMismatch: "could not create a new DataFrame: series {:?} has length {} \
                 while series {:?} has length {}",
                 first_name, first_len, name, len
             );
@@ -585,7 +585,7 @@ impl DataFrame {
     pub fn set_column_names<S: AsRef<str>>(&mut self, names: &[S]) -> PolarsResult<()> {
         polars_ensure!(
             names.len() == self.width(),
-            ShapeMismatch: "{} column names provided for a dataframe of width {}",
+            ShapeMismatch: "{} column names provided for a DataFrame of width {}",
             names.len(), self.width()
         );
         let unique_names: AHashSet<&str, ahash::RandomState> =
@@ -626,7 +626,7 @@ impl DataFrame {
 
     /// The number of chunks per column
     pub fn n_chunks(&self) -> usize {
-        match self.columns.get(0) {
+        match self.columns.first() {
             None => 0,
             Some(s) => s.n_chunks(),
         }
@@ -767,7 +767,7 @@ impl DataFrame {
         for col in columns {
             polars_ensure!(
                 col.len() == self.height() || self.height() == 0,
-                ShapeMismatch: "unable to hstack series of length {} and dataframe of height {}",
+                ShapeMismatch: "unable to hstack Series of length {} and DataFrame of height {}",
                 col.len(), self.height(),
             );
             polars_ensure!(
@@ -909,7 +909,7 @@ impl DataFrame {
             polars_ensure!(
                 self.width() == 0,
                 ShapeMismatch:
-                "unable to append to a dataframe of width {} with a dataframe of width {}",
+                "unable to append to a DataFrame of width {} with a DataFrame of width {}",
                 self.width(), other.width(),
             );
             self.columns = other.columns.clone();
@@ -955,7 +955,7 @@ impl DataFrame {
         polars_ensure!(
             self.width() == other.width(),
             ShapeMismatch:
-            "unable to extend a dataframe of width {} with a dataframe of width {}",
+            "unable to extend a DataFrame of width {} with a DataFrame of width {}",
             self.width(), other.width(),
         );
         self.columns
@@ -1091,14 +1091,14 @@ impl DataFrame {
 
     /// Insert a new column at a given index without checking for duplicates.
     /// This can leave the [`DataFrame`] at an invalid state
-    fn insert_at_idx_no_name_check(
+    fn insert_column_no_name_check(
         &mut self,
         index: usize,
         series: Series,
     ) -> PolarsResult<&mut Self> {
         polars_ensure!(
             series.len() == self.height(),
-            ShapeMismatch: "unable to add a column of length {} to a dataframe of height {}",
+            ShapeMismatch: "unable to add a column of length {} to a DataFrame of height {}",
             series.len(), self.height(),
         );
         self.columns.insert(index, series);
@@ -1106,19 +1106,19 @@ impl DataFrame {
     }
 
     /// Insert a new column at a given index.
-    pub fn insert_at_idx<S: IntoSeries>(
+    pub fn insert_column<S: IntoSeries>(
         &mut self,
         index: usize,
         column: S,
     ) -> PolarsResult<&mut Self> {
         let series = column.into_series();
         self.check_already_present(series.name())?;
-        self.insert_at_idx_no_name_check(index, series)
+        self.insert_column_no_name_check(index, series)
     }
 
     fn add_column_by_search(&mut self, series: Series) -> PolarsResult<()> {
-        if let Some(idx) = self.find_idx_by_name(series.name()) {
-            self.replace_at_idx(idx, series)?;
+        if let Some(idx) = self.get_column_index(series.name()) {
+            self.replace_column(idx, series)?;
         } else {
             self.columns.push(series);
         }
@@ -1144,7 +1144,7 @@ impl DataFrame {
                 Ok(df)
             } else {
                 polars_bail!(
-                    ShapeMismatch: "unable to add a column of length {} to a dataframe of height {}",
+                    ShapeMismatch: "unable to add a column of length {} to a DataFrame of height {}",
                     series.len(), height,
                 );
             }
@@ -1170,7 +1170,7 @@ impl DataFrame {
             if self.columns.get(idx).map(|s| s.name()) != Some(name) {
                 self.add_column_by_search(s)?;
             } else {
-                self.replace_at_idx(idx, s)?;
+                self.replace_column(idx, s)?;
             }
         } else {
             self.columns.push(s);
@@ -1217,7 +1217,7 @@ impl DataFrame {
             Ok(self)
         } else {
             polars_bail!(
-                ShapeMismatch: "unable to add a column of length {} to a dataframe of height {}",
+                ShapeMismatch: "unable to add a column of length {} to a DataFrame of height {}",
                 series.len(), height,
             );
         }
@@ -1234,7 +1234,7 @@ impl DataFrame {
     /// }
     /// ```
     pub fn get(&self, idx: usize) -> Option<Vec<AnyValue>> {
-        match self.columns.get(0) {
+        match self.columns.first() {
             Some(s) => {
                 if s.len() <= idx {
                     return None;
@@ -1345,20 +1345,20 @@ impl DataFrame {
     ///                         "Mana" => &[250, 100, 0],
     ///                         "Strength" => &[30, 150, 300])?;
     ///
-    /// assert_eq!(df.find_idx_by_name("Name"), Some(0));
-    /// assert_eq!(df.find_idx_by_name("Health"), Some(1));
-    /// assert_eq!(df.find_idx_by_name("Mana"), Some(2));
-    /// assert_eq!(df.find_idx_by_name("Strength"), Some(3));
-    /// assert_eq!(df.find_idx_by_name("Haste"), None);
+    /// assert_eq!(df.get_column_index("Name"), Some(0));
+    /// assert_eq!(df.get_column_index("Health"), Some(1));
+    /// assert_eq!(df.get_column_index("Mana"), Some(2));
+    /// assert_eq!(df.get_column_index("Strength"), Some(3));
+    /// assert_eq!(df.get_column_index("Haste"), None);
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn find_idx_by_name(&self, name: &str) -> Option<usize> {
+    pub fn get_column_index(&self, name: &str) -> Option<usize> {
         self.columns.iter().position(|s| s.name() == name)
     }
 
     /// Get column index of a [`Series`] by name.
-    pub fn try_find_idx_by_name(&self, name: &str) -> PolarsResult<usize> {
-        self.find_idx_by_name(name)
+    pub fn try_get_column_index(&self, name: &str) -> PolarsResult<usize> {
+        self.get_column_index(name)
             .ok_or_else(|| polars_err!(ColumnNotFound: "{}", name))
     }
 
@@ -1376,9 +1376,7 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn column(&self, name: &str) -> PolarsResult<&Series> {
-        let idx = self
-            .find_idx_by_name(name)
-            .ok_or_else(|| polars_err!(ColumnNotFound: "{}", name))?;
+        let idx = self.try_get_column_index(name)?;
         Ok(self.select_at_idx(idx).unwrap())
     }
 
@@ -1605,7 +1603,7 @@ impl DataFrame {
     /// *Note: the length of the Series should remain the same otherwise the DataFrame is invalid.*
     /// For this reason the method is not public
     fn select_mut(&mut self, name: &str) -> Option<&mut Series> {
-        let opt_idx = self.find_idx_by_name(name);
+        let opt_idx = self.get_column_index(name);
 
         opt_idx.and_then(|idx| self.select_at_idx_mut(idx))
     }
@@ -1974,28 +1972,28 @@ impl DataFrame {
     /// let mut df = DataFrame::new(vec![s0, s1])?;
     ///
     /// // Add 32 to get lowercase ascii values
-    /// df.replace_at_idx(1, df.select_at_idx(1).unwrap() + 32);
+    /// df.replace_column(1, df.select_at_idx(1).unwrap() + 32);
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn replace_at_idx<S: IntoSeries>(
+    pub fn replace_column<S: IntoSeries>(
         &mut self,
-        idx: usize,
-        new_col: S,
+        index: usize,
+        new_column: S,
     ) -> PolarsResult<&mut Self> {
         polars_ensure!(
-            idx < self.width(),
+            index < self.width(),
             ShapeMismatch:
-            "unable to replace at index {}, the dataframe has only {} columns",
-            idx, self.width(),
+            "unable to replace at index {}, the DataFrame has only {} columns",
+            index, self.width(),
         );
-        let mut new_column = new_col.into_series();
+        let mut new_column = new_column.into_series();
         polars_ensure!(
             new_column.len() == self.height(),
             ShapeMismatch:
-            "unable to replace a column, series length {} doesn't match the dataframe height {}",
+            "unable to replace a column, series length {} doesn't match the DataFrame height {}",
             new_column.len(), self.height(),
         );
-        let old_col = &mut self.columns[idx];
+        let old_col = &mut self.columns[index];
         mem::swap(old_col, &mut new_column);
         Ok(self)
     }
@@ -2088,7 +2086,7 @@ impl DataFrame {
         let width = self.width();
         let col = self.columns.get_mut(idx).ok_or_else(|| {
             polars_err!(
-                ComputeError: "invalid column index: {} for a dataframe with {} columns",
+                ComputeError: "invalid column index: {} for a DataFrame with {} columns",
                 idx, width
             )
         })?;
@@ -2104,7 +2102,7 @@ impl DataFrame {
             },
             len => polars_bail!(
                 ShapeMismatch:
-                "resulting series has length {} while the dataframe has height {}",
+                "resulting Series has length {} while the DataFrame has height {}",
                 len, df_height
             ),
         }
@@ -2165,7 +2163,7 @@ impl DataFrame {
         let width = self.width();
         let col = self.columns.get_mut(idx).ok_or_else(|| {
             polars_err!(
-                ComputeError: "invalid column index: {} for a dataframe with {} columns",
+                ComputeError: "invalid column index: {} for a DataFrame with {} columns",
                 idx, width
             )
         })?;
@@ -2228,9 +2226,7 @@ impl DataFrame {
         F: FnOnce(&Series) -> PolarsResult<S>,
         S: IntoSeries,
     {
-        let idx = self
-            .find_idx_by_name(column)
-            .ok_or_else(|| polars_err!(ColumnNotFound: "{}", column))?;
+        let idx = self.try_get_column_index(column)?;
         self.try_apply_at_idx(idx, f)
     }
 
@@ -2547,7 +2543,7 @@ impl DataFrame {
 
         let mut summary = concat_df_unchecked(&tmp);
 
-        summary.insert_at_idx(0, Series::new("describe", headers))?;
+        summary.insert_column(0, Series::new("describe", headers))?;
 
         Ok(summary)
     }
@@ -2800,7 +2796,7 @@ impl DataFrame {
 
     /// Aggregate the column horizontally to their min values.
     #[cfg(feature = "zip_with")]
-    pub fn hmin(&self) -> PolarsResult<Option<Series>> {
+    pub fn min_horizontal(&self) -> PolarsResult<Option<Series>> {
         let min_fn = |acc: &Series, s: &Series| min_max_binary_series(acc, s, true);
 
         match self.columns.len() {
@@ -2826,7 +2822,7 @@ impl DataFrame {
 
     /// Aggregate the column horizontally to their max values.
     #[cfg(feature = "zip_with")]
-    pub fn hmax(&self) -> PolarsResult<Option<Series>> {
+    pub fn max_horizontal(&self) -> PolarsResult<Option<Series>> {
         let max_fn = |acc: &Series, s: &Series| min_max_binary_series(acc, s, false);
 
         match self.columns.len() {
@@ -2851,12 +2847,12 @@ impl DataFrame {
     }
 
     /// Aggregate the column horizontally to their sum values.
-    pub fn hsum(&self, none_strategy: NullStrategy) -> PolarsResult<Option<Series>> {
+    pub fn sum_horizontal(&self, null_strategy: NullStrategy) -> PolarsResult<Option<Series>> {
         let sum_fn =
-            |acc: &Series, s: &Series, none_strategy: NullStrategy| -> PolarsResult<Series> {
+            |acc: &Series, s: &Series, null_strategy: NullStrategy| -> PolarsResult<Series> {
                 let mut acc = acc.clone();
                 let mut s = s.clone();
-                if let NullStrategy::Ignore = none_strategy {
+                if let NullStrategy::Ignore = null_strategy {
                     // if has nulls
                     if acc.has_validity() {
                         acc = acc.fill_null(FillNullStrategy::Zero)?;
@@ -2871,7 +2867,7 @@ impl DataFrame {
         match self.columns.len() {
             0 => Ok(None),
             1 => Ok(Some(self.columns[0].clone())),
-            2 => sum_fn(&self.columns[0], &self.columns[1], none_strategy).map(Some),
+            2 => sum_fn(&self.columns[0], &self.columns[1], null_strategy).map(Some),
             _ => {
                 // the try_reduce_with is a bit slower in parallelism,
                 // but I don't think it matters here as we parallelize over columns, not over elements
@@ -2879,7 +2875,7 @@ impl DataFrame {
                     self.columns
                         .par_iter()
                         .map(|s| Ok(Cow::Borrowed(s)))
-                        .try_reduce_with(|l, r| sum_fn(&l, &r, none_strategy).map(Cow::Owned))
+                        .try_reduce_with(|l, r| sum_fn(&l, &r, null_strategy).map(Cow::Owned))
                         // we can unwrap the option, because we are certain there is a column
                         // we started this operation on 3 columns
                         .unwrap()
@@ -2890,7 +2886,7 @@ impl DataFrame {
     }
 
     /// Aggregate the column horizontally to their mean values.
-    pub fn hmean(&self, none_strategy: NullStrategy) -> PolarsResult<Option<Series>> {
+    pub fn mean_horizontal(&self, null_strategy: NullStrategy) -> PolarsResult<Option<Series>> {
         match self.columns.len() {
             0 => Ok(None),
             1 => Ok(Some(self.columns[0].clone())),
@@ -2906,7 +2902,7 @@ impl DataFrame {
                     .collect();
                 let numeric_df = DataFrame::new_no_checks(columns);
 
-                let sum = || numeric_df.hsum(none_strategy);
+                let sum = || numeric_df.sum_horizontal(null_strategy);
 
                 let null_count = || {
                     numeric_df
@@ -3588,7 +3584,7 @@ mod test {
     #[test]
     #[cfg(feature = "zip_with")]
     #[cfg_attr(miri, ignore)]
-    fn test_h_agg() {
+    fn test_horizontal_agg() {
         let a = Series::new("a", &[1, 2, 6]);
         let b = Series::new("b", &[Some(1), None, None]);
         let c = Series::new("c", &[Some(4), None, Some(3)]);
@@ -3596,7 +3592,7 @@ mod test {
         let df = DataFrame::new(vec![a, b, c]).unwrap();
         assert_eq!(
             Vec::from(
-                df.hmean(NullStrategy::Ignore)
+                df.mean_horizontal(NullStrategy::Ignore)
                     .unwrap()
                     .unwrap()
                     .f64()
@@ -3606,7 +3602,7 @@ mod test {
         );
         assert_eq!(
             Vec::from(
-                df.hsum(NullStrategy::Ignore)
+                df.sum_horizontal(NullStrategy::Ignore)
                     .unwrap()
                     .unwrap()
                     .i32()
@@ -3615,11 +3611,11 @@ mod test {
             &[Some(6), Some(2), Some(9)]
         );
         assert_eq!(
-            Vec::from(df.hmin().unwrap().unwrap().i32().unwrap()),
+            Vec::from(df.min_horizontal().unwrap().unwrap().i32().unwrap()),
             &[Some(1), Some(2), Some(3)]
         );
         assert_eq!(
-            Vec::from(df.hmax().unwrap().unwrap().i32().unwrap()),
+            Vec::from(df.max_horizontal().unwrap().unwrap().i32().unwrap()),
             &[Some(4), Some(2), Some(6)]
         );
     }

@@ -19,14 +19,14 @@ fn write_scan<P: Display>(
     if indent != 0 {
         writeln!(f)?;
     }
-    let path_fmt = if path.len() == 1 {
-        path[0].to_string_lossy()
-    } else {
-        Cow::Owned(format!(
+    let path_fmt = match path.len() {
+        1 => path[0].to_string_lossy(),
+        0 => "".into(),
+        _ => Cow::Owned(format!(
             "{} files: first file: {}",
             path.len(),
             path[0].to_string_lossy()
-        ))
+        )),
     };
 
     write!(f, "{:indent$}{} SCAN {}", "", name, path_fmt)?;
@@ -278,8 +278,16 @@ impl Debug for Expr {
             Filter { input, by } => {
                 write!(f, "{input:?}.filter({by:?})")
             },
-            Take { expr, idx } => {
-                write!(f, "{expr:?}.take({idx:?})")
+            Gather {
+                expr,
+                idx,
+                returns_scalar,
+            } => {
+                if *returns_scalar {
+                    write!(f, "{expr:?}.get({idx:?})")
+                } else {
+                    write!(f, "{expr:?}.take({idx:?})")
+                }
             },
             SubPlan(lf, _) => {
                 write!(f, ".subplan({lf:?})")
@@ -363,7 +371,7 @@ impl Debug for Expr {
             } => write!(f, "{input:?}.slice(offset={offset:?}, length={length:?})",),
             Wildcard => write!(f, "*"),
             Exclude(column, names) => write!(f, "{column:?}.exclude({names:?})"),
-            KeepName(e) => write!(f, "{e:?}.keep_name()"),
+            KeepName(e) => write!(f, "{e:?}.name.keep()"),
             RenameAlias { expr, .. } => write!(f, ".rename_alias({expr:?})"),
             Columns(names) => write!(f, "cols({names:?})"),
             DtypeColumn(dt) => write!(f, "dtype_columns({dt:?})"),

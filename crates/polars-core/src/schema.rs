@@ -1,5 +1,6 @@
 use std::fmt::{Debug, Formatter};
 
+use arrow::datatypes::ArrowSchemaRef;
 use indexmap::map::MutableKeys;
 use indexmap::IndexMap;
 #[cfg(feature = "serde-lazy")]
@@ -381,6 +382,13 @@ impl Schema {
         self.inner.iter().map(|(_name, dtype)| dtype)
     }
 
+    /// Iterates over mut references to the dtypes in this schema
+    pub fn iter_dtypes_mut(
+        &mut self,
+    ) -> impl Iterator<Item = &mut DataType> + '_ + ExactSizeIterator {
+        self.inner.iter_mut().map(|(_name, dtype)| dtype)
+    }
+
     /// Iterates over references to the names in this schema
     pub fn iter_names(&self) -> impl Iterator<Item = &SmartString> + '_ + ExactSizeIterator {
         self.inner.iter().map(|(name, _dtype)| name)
@@ -455,5 +463,28 @@ impl IndexOfSchema for ArrowSchema {
 
     fn get_names(&self) -> Vec<&str> {
         self.fields.iter().map(|f| f.name.as_str()).collect()
+    }
+}
+
+impl From<&ArrowSchema> for Schema {
+    fn from(value: &ArrowSchema) -> Self {
+        Self::from_iter(value.fields.iter())
+    }
+}
+impl From<ArrowSchema> for Schema {
+    fn from(value: ArrowSchema) -> Self {
+        Self::from(&value)
+    }
+}
+
+impl From<ArrowSchemaRef> for Schema {
+    fn from(value: ArrowSchemaRef) -> Self {
+        Self::from(value.as_ref())
+    }
+}
+
+impl From<&ArrowSchemaRef> for Schema {
+    fn from(value: &ArrowSchemaRef) -> Self {
+        Self::from(value.as_ref())
     }
 }

@@ -1,11 +1,11 @@
 use super::Scalar;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// The [`Scalar`] implementation of fixed size binary ([`Option<Box<[u8]>>`]).
 pub struct FixedSizeBinaryScalar {
     value: Option<Box<[u8]>>,
-    data_type: DataType,
+    data_type: ArrowDataType,
 }
 
 impl FixedSizeBinaryScalar {
@@ -15,7 +15,7 @@ impl FixedSizeBinaryScalar {
     /// * the `data_type` is not `FixedSizeBinary`
     /// * the size of child binary is not equal
     #[inline]
-    pub fn new<P: Into<Vec<u8>>>(data_type: DataType, value: Option<P>) -> Self {
+    pub fn new<P: Into<Vec<u8>>>(data_type: ArrowDataType, value: Option<P>) -> Self {
         assert_eq!(
             data_type.to_physical_type(),
             crate::datatypes::PhysicalType::FixedSizeBinary
@@ -25,7 +25,7 @@ impl FixedSizeBinaryScalar {
                 let x: Vec<u8> = x.into();
                 assert_eq!(
                     data_type.to_logical_type(),
-                    &DataType::FixedSizeBinary(x.len())
+                    &ArrowDataType::FixedSizeBinary(x.len())
                 );
                 x.into_boxed_slice()
             }),
@@ -52,7 +52,7 @@ impl Scalar for FixedSizeBinaryScalar {
     }
 
     #[inline]
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 }
