@@ -499,21 +499,23 @@ impl<O: Offset, I: Pages> Iterator for Iter<O, I> {
     type Item = PolarsResult<Box<dyn Array>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let maybe_state = next(
-            &mut self.iter,
-            &mut self.items,
-            &mut self.dict,
-            &mut self.remaining,
-            self.chunk_size,
-            &BinaryDecoder::<O>::default(),
-        );
-        match maybe_state {
-            MaybeNext::Some(Ok((values, validity))) => {
-                Some(finish(&self.data_type, values, validity))
-            },
-            MaybeNext::Some(Err(e)) => Some(Err(e)),
-            MaybeNext::None => None,
-            MaybeNext::More => self.next(),
+        loop {
+            let maybe_state = next(
+                &mut self.iter,
+                &mut self.items,
+                &mut self.dict,
+                &mut self.remaining,
+                self.chunk_size,
+                &BinaryDecoder::<O>::default(),
+            );
+            match maybe_state {
+                MaybeNext::Some(Ok((values, validity))) => {
+                    return Some(finish(&self.data_type, values, validity))
+                },
+                MaybeNext::Some(Err(e)) => return Some(Err(e)),
+                MaybeNext::None => return None,
+                MaybeNext::More => continue,
+            }
         }
     }
 }

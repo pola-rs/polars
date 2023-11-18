@@ -7,6 +7,7 @@ use arrow::types::NativeType;
 use num_traits::AsPrimitive;
 use polars_error::{to_compute_err, PolarsResult};
 
+use super::super::utils::MaybeNext;
 use super::super::{utils, Pages};
 use super::basic::{finish, PrimitiveDecoder, State as PrimitiveState};
 use crate::arrow::read::deserialize::utils::{
@@ -246,21 +247,23 @@ where
     type Item = PolarsResult<MutablePrimitiveArray<T>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let maybe_state = utils::next(
-            &mut self.iter,
-            &mut self.items,
-            &mut self.dict,
-            &mut self.remaining,
-            self.chunk_size,
-            &IntDecoder::new(self.op),
-        );
-        match maybe_state {
-            utils::MaybeNext::Some(Ok((values, validity))) => {
-                Some(Ok(finish(&self.data_type, values, validity)))
-            },
-            utils::MaybeNext::Some(Err(e)) => Some(Err(e)),
-            utils::MaybeNext::None => None,
-            utils::MaybeNext::More => self.next(),
+        loop {
+            let maybe_state = utils::next(
+                &mut self.iter,
+                &mut self.items,
+                &mut self.dict,
+                &mut self.remaining,
+                self.chunk_size,
+                &IntDecoder::new(self.op),
+            );
+            match maybe_state {
+                MaybeNext::Some(Ok((values, validity))) => {
+                    return Some(Ok(finish(&self.data_type, values, validity)))
+                },
+                MaybeNext::Some(Err(e)) => return Some(Err(e)),
+                MaybeNext::None => return None,
+                MaybeNext::More => continue,
+            }
         }
     }
 }

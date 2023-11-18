@@ -136,23 +136,27 @@ impl<I: Pages> Iterator for NestedIter<I> {
     type Item = PolarsResult<(NestedState, BooleanArray)>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let maybe_state = next(
-            &mut self.iter,
-            &mut self.items,
-            &mut None,
-            &mut self.remaining,
-            &self.init,
-            self.chunk_size,
-            &BooleanDecoder::default(),
-        );
-        match maybe_state {
-            MaybeNext::Some(Ok((nested, (values, validity)))) => Some(Ok((
-                nested,
-                finish(&ArrowDataType::Boolean, values, validity),
-            ))),
-            MaybeNext::Some(Err(e)) => Some(Err(e)),
-            MaybeNext::None => None,
-            MaybeNext::More => self.next(),
+        loop {
+            let maybe_state = next(
+                &mut self.iter,
+                &mut self.items,
+                &mut None,
+                &mut self.remaining,
+                &self.init,
+                self.chunk_size,
+                &BooleanDecoder::default(),
+            );
+            match maybe_state {
+                MaybeNext::Some(Ok((nested, (values, validity)))) => {
+                    return Some(Ok((
+                        nested,
+                        finish(&ArrowDataType::Boolean, values, validity),
+                    )))
+                },
+                MaybeNext::Some(Err(e)) => return Some(Err(e)),
+                MaybeNext::None => return None,
+                MaybeNext::More => continue,
+            }
         }
     }
 }
