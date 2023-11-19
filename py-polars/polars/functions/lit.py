@@ -121,10 +121,10 @@ def lit(
         return e.alias(name)
 
     elif _check_for_numpy(value) and isinstance(value, np.ndarray):
-        return lit(pl.Series("literal", value))
+        return lit(pl.Series("literal", value, dtype=dtype))
 
     elif isinstance(value, (list, tuple)):
-        return lit(pl.Series("literal", [value]))
+        return lit(pl.Series("literal", [value], dtype=dtype))
 
     if dtype:
         return wrap_expr(plr.lit(value, allow_object)).cast(dtype)
