@@ -113,12 +113,8 @@ def lit(
         return lit(datetime(value.year, value.month, value.day)).cast(Date)
 
     elif isinstance(value, pl.Series):
-        name = value.name
         value = value._s
-        e = wrap_expr(plr.lit(value, allow_object))
-        if name == "":
-            return e
-        return e.alias(name)
+        return wrap_expr(plr.lit(value, allow_object))
 
     elif _check_for_numpy(value) and isinstance(value, np.ndarray):
         return lit(pl.Series("literal", value, dtype=dtype))
