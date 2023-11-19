@@ -467,3 +467,13 @@ def test_parquet_different_schema(tmp_path: Path) -> None:
     a.write_parquet(f1)
     b.write_parquet(f2)
     assert pl.scan_parquet([f1, f2]).select("b").collect().columns == ["b"]
+
+
+@pytest.mark.write_disk()
+def test_nested_slice_12480(tmp_path: Path) -> None:
+    path = tmp_path / "data.parquet"
+    df = pl.select(pl.lit(1).repeat_by(10_000).explode().cast(pl.List(pl.Int32)))
+
+    df.write_parquet(path, use_pyarrow=True, pyarrow_options={"data_page_size": 1})
+
+    assert pl.scan_parquet(path).slice(0, 1).collect().height == 1

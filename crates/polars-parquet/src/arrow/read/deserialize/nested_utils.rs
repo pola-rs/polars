@@ -352,7 +352,13 @@ impl NestedState {
 }
 
 /// Extends `items` by consuming `page`, first trying to complete the last `item`
-/// and extending it if more are needed
+/// and extending it if more are needed.
+///
+/// Note that as the page iterator being passed does not guarantee it reads to
+/// the end, this function cannot always determine whether it has finished
+/// reading. It therefore returns a bool indicating:
+/// * true  : the row is fully read
+/// * false : the row may not be fully read
 pub(super) fn extend<'a, D: NestedDecoder<'a>>(
     page: &'a DataPage,
     init: &[InitNested],
@@ -361,7 +367,7 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
     remaining: &mut usize,
     decoder: &D,
     chunk_size: Option<usize>,
-) -> PolarsResult<()> {
+) -> PolarsResult<bool> {
     let mut values_page = decoder.build_state(page, dict)?;
     let mut page = NestedPage::try_new(page)?;
 
@@ -377,10 +383,13 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
     };
     let existing = nested.len();
 
+    // `remaining` and `additional` can be 0 during reading of the last
+    // requested row, so the code below must guarantee at least some additional
+    // data is read before any short circuits.
     let additional = (chunk_size - existing).min(*remaining);
 
     // extend the current state
-    extend_offsets2(
+    let is_fully_read = extend_offsets2(
         &mut page,
         &mut values_page,
         &mut nested.nested,
@@ -388,7 +397,7 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
         decoder,
         additional,
     )?;
-    *remaining -= nested.len() - existing;
+    *remaining = remaining.wrapping_sub(nested.len() - existing);
     items.push_back((nested, decoded));
 
     while page.len() > 0 && *remaining > 0 {
@@ -404,10 +413,10 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
             decoder,
             additional,
         )?;
-        *remaining -= nested.len();
+        *remaining = remaining.wrapping_sub(nested.len());
         items.push_back((nested, decoded));
     }
-    Ok(())
+    Ok(is_fully_read)
 }
 
 fn extend_offsets2<'a, D: NestedDecoder<'a>>(
@@ -417,7 +426,7 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
     decoded: &mut D::DecodedState,
     decoder: &D,
     additional: usize,
-) -> PolarsResult<()> {
+) -> PolarsResult<bool> {
     let max_depth = nested.len();
 
     let mut cum_sum = vec![0u32; max_depth + 1];
@@ -468,19 +477,26 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
             }
         }
 
-        let next_rep = *page
+        let next_rep = page
             .iter
             .peek()
             .map(|x| x.0.as_ref())
             .transpose()
             .unwrap() // todo: fix this
-            .unwrap_or(&0);
+            .copied();
 
-        if next_rep == 0 && rows == additional {
+        // There must be a next page with a repetition level of 0 to know that
+        // the current row is fully read, as the iterator here may not go to
+        // the end.
+        if next_rep.is_none() {
+            return Ok(false);
+        }
+
+        if next_rep.unwrap() == 0 && rows == additional {
             break;
         }
     }
-    Ok(())
+    Ok(true)
 }
 
 #[inline]
@@ -521,7 +537,7 @@ where
             };
 
             // there is a new page => consume the page from the start
-            let error = extend(
+            let is_fully_read = extend(
                 page,
                 init,
                 items,
@@ -530,19 +546,18 @@ where
                 decoder,
                 chunk_size,
             );
-            match error {
-                Ok(_) => {},
-                Err(e) => return MaybeNext::Some(Err(e)),
-            };
 
-            // this comparison is strictly greater to ensure the contents of the
-            // row are fully read.
-            if !items.is_empty()
-                && items.front().unwrap().0.len() > chunk_size.unwrap_or(usize::MAX)
-            {
-                MaybeNext::Some(Ok(items.pop_front().unwrap()))
-            } else {
-                MaybeNext::More
+            match is_fully_read {
+                Ok(true) => {
+                    debug_assert!(
+                        items.front().unwrap().0.len() == chunk_size.unwrap_or(usize::MAX),
+                        "`extend` reported row was fully read but length did not match"
+                    );
+
+                    MaybeNext::Some(Ok(items.pop_front().unwrap()))
+                },
+                Ok(false) => MaybeNext::More,
+                Err(e) => MaybeNext::Some(Err(e)),
             }
         },
     }
