@@ -126,7 +126,6 @@ pub(super) fn process_join(
         // the right hand side should be renamed with the suffix.
         // in that case we should not push down as the user wants to filter on `x`
         // not on `x_rhs`.
-        #[cfg(feature = "semi_anti_join")]
         if !filter_left
             && check_input_node(predicate, &schema_right, expr_arena)
             && !block_pushdown_right
@@ -139,6 +138,15 @@ pub(super) fn process_join(
             insert_and_combine_predicate(&mut pushdown_right, predicate, expr_arena);
             filter_right = true;
         }
+        #[cfg(feature = "semi_anti_join")]
+        if filter_left
+            && all_pred_cols_in_left_on(predicate, expr_arena, &left_on)
+            && matches!(&options.args.how, JoinType::Semi)
+            {
+                insert_and_combine_predicate(&mut pushdown_right, predicate, expr_arena);
+                filter_right = true;
+            }
+
 
         match (filter_left, filter_right, &options.args.how) {
             // if not pushed down on one of the tables we have to do it locally.
