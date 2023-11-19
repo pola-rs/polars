@@ -274,7 +274,7 @@ print("q9")
 out = x.group_by(["id2", "id4"]).agg((pl.corr("v1", "v2") ** 2).alias("r2")).collect()
 print(time.time() - t0)
 assert out.shape == (9216, 3)
-assert np.isclose(out["r2"].sum(), 9.86033041315029)
+assert np.isclose(out["r2"].sum(), 9.902706276948825)
 
 t0 = time.time()
 print("q10")

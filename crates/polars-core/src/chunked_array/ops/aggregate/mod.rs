@@ -20,7 +20,6 @@ use crate::series::implementations::SeriesWrap;
 use crate::series::IsSorted;
 
 mod float_sum;
-pub use float_sum::f64 as sum_f64;
 
 /// Aggregations that return [`Series`] of unit length. Those can be used in broadcasting operations.
 pub trait ChunkAggSeries {
