@@ -740,6 +740,37 @@ impl LazyFrame {
         Ok(())
     }
 
+    /// Stream a query result into an ipc/arrow file on an ObjectStore-compatible cloud service.
+    /// This is useful if the final result doesn't fit
+    /// into memory, and where you do not want to write to a local file but to a location in the cloud.
+    /// This method will return an error if the query cannot be completely done in a
+    /// streaming fashion.
+    #[cfg(all(feature = "cloud_write", feature = "ipc"))]
+    pub fn sink_ipc_cloud(
+        mut self,
+        uri: String,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+        ipc_options: IpcWriterOptions,
+    ) -> PolarsResult<()> {
+        self.opt_state.streaming = true;
+        self.logical_plan = LogicalPlan::Sink {
+            input: Box::new(self.logical_plan),
+            payload: SinkType::Cloud {
+                uri: Arc::new(uri),
+                cloud_options,
+                file_type: FileType::Ipc(ipc_options),
+            },
+        };
+        let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
+        polars_ensure!(
+            is_streaming,
+            ComputeError: "cannot run the whole query in a streaming order; \
+                           use `collect().write_ipc()` instead"
+        );
+        let _ = physical_plan.execute(&mut state)?;
+        Ok(())
+    }
+
     /// Stream a query result into an csv file. This is useful if the final result doesn't fit
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
