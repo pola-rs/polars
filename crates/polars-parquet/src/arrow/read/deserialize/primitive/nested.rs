@@ -7,6 +7,7 @@ use arrow::types::NativeType;
 use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
+use super::super::utils::MaybeNext;
 use super::super::{utils, Pages};
 use super::basic::{deserialize_plain, Values, ValuesDictionary};
 use crate::parquet::encoding::Encoding;
@@ -227,22 +228,24 @@ where
     type Item = PolarsResult<(NestedState, PrimitiveArray<T>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let maybe_state = next(
-            &mut self.iter,
-            &mut self.items,
-            &mut self.dict,
-            &mut self.remaining,
-            &self.init,
-            self.chunk_size,
-            &self.decoder,
-        );
-        match maybe_state {
-            utils::MaybeNext::Some(Ok((nested, state))) => {
-                Some(Ok((nested, finish(&self.data_type, state.0, state.1))))
-            },
-            utils::MaybeNext::Some(Err(e)) => Some(Err(e)),
-            utils::MaybeNext::None => None,
-            utils::MaybeNext::More => self.next(),
+        loop {
+            let maybe_state = next(
+                &mut self.iter,
+                &mut self.items,
+                &mut self.dict,
+                &mut self.remaining,
+                &self.init,
+                self.chunk_size,
+                &self.decoder,
+            );
+            match maybe_state {
+                MaybeNext::Some(Ok((nested, state))) => {
+                    return Some(Ok((nested, finish(&self.data_type, state.0, state.1))))
+                },
+                MaybeNext::Some(Err(e)) => return Some(Err(e)),
+                MaybeNext::None => return None,
+                MaybeNext::More => continue,
+            }
         }
     }
 }
