@@ -329,6 +329,18 @@ def test_empty_list_eval_schema_5734() -> None:
     ).schema == {"a": pl.List(pl.Int64)}
 
 
+def test_list_eval_type_cast_11188() -> None:
+    df = pl.DataFrame(
+        [
+            {"a": None},
+        ],
+        schema={"a": pl.List(pl.Int64)},
+    )
+    assert df.select(
+        pl.col("a").list.eval(pl.element().cast(pl.Utf8)).alias("a_str")
+    ).schema == {"a_str": pl.List(pl.Utf8)}
+
+
 def test_schema_true_divide_6643() -> None:
     df = pl.DataFrame({"a": [1]})
     a = pl.col("a")
