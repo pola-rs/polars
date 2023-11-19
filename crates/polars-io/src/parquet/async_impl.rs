@@ -270,7 +270,7 @@ impl FetchRowGroupsFromObjectStore {
         let _ = std::thread::spawn(move || {
             get_runtime().block_on(async {
                 let chunk_len = msg_limit;
-                let mut handles = Vec::with_capacity(chunk_len);
+                let mut handles = Vec::with_capacity(chunk_len.clamp(0, row_groups.len()));
                 for chunk in row_groups.chunks_mut(chunk_len) {
                     // Start downloads concurrently
                     for (i, rg) in chunk {

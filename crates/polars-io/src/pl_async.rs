@@ -10,37 +10,39 @@ use polars_core::POOL;
 use polars_utils::aliases::PlHashSet;
 use tokio::runtime::{Builder, Runtime};
 
-const INITIAL_BUDGET: u16 = 24;
-static CONCURRENCY_BUDGET: AtomicI32 = AtomicI32::new(INITIAL_BUDGET as i32);
+static CONCURRENCY_BUDGET: std::sync::OnceLock<(AtomicI32, u16)> = std::sync::OnceLock::new();
 
 pub async fn with_concurrency_budget<F, Fut>(requested_budget: u16, callable: F) -> Fut::Output
 where
     F: FnOnce() -> Fut,
     Fut: Future,
 {
+    let (global_budget, initial_budget) = CONCURRENCY_BUDGET.get_or_init(|| {
+        let budget = std::env::var("POLARS_CONCURRENCY_BUDGET")
+            .map(|s| s.parse::<i32>().expect("integer"))
+            .unwrap_or_else(|_| POOL.current_num_threads() as i32);
+
+        (AtomicI32::new(budget), budget as u16)
+    });
+
     // This would never finish otherwise.
-    debug_assert!(requested_budget <= INITIAL_BUDGET);
+    assert!(requested_budget <= *initial_budget);
     loop {
         let requested_budget = requested_budget as i32;
-        let available_budget = CONCURRENCY_BUDGET.fetch_sub(requested_budget, Ordering::Relaxed);
+        let available_budget = global_budget.fetch_sub(requested_budget, Ordering::Relaxed);
 
         // Bail out, there was no budget
         if available_budget < 0 {
-            CONCURRENCY_BUDGET.fetch_add(requested_budget, Ordering::Relaxed);
+            global_budget.fetch_add(requested_budget, Ordering::Relaxed);
             tokio::time::sleep(Duration::from_millis(50)).await;
         } else {
             let fut = callable();
             let out = fut.await;
-            CONCURRENCY_BUDGET.fetch_add(requested_budget, Ordering::Relaxed);
+            global_budget.fetch_add(requested_budget, Ordering::Relaxed);
 
             return out;
         }
     }
-}
-
-/// Increase/decrease the concurrency budget and return the previous budget
-pub fn increase_concurrency_budget(increase: i32) -> i32 {
-    CONCURRENCY_BUDGET.fetch_add(increase, Ordering::Relaxed)
 }
 
 pub struct RuntimeManager {
@@ -51,7 +53,7 @@ pub struct RuntimeManager {
 impl RuntimeManager {
     fn new() -> Self {
         let rt = Builder::new_multi_thread()
-            .worker_threads(std::cmp::max(POOL.current_num_threads() / 2, 4))
+            .worker_threads(std::cmp::max(POOL.current_num_threads(), 4))
             .enable_io()
             .enable_time()
             .build()
