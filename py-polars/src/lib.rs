@@ -38,9 +38,9 @@ pub mod series;
 mod sql;
 pub mod utils;
 
-#[cfg(all(target_arch = "unix", not(use_mimalloc)))]
+#[cfg(all(target_family = "unix", not(use_mimalloc)))]
 use jemallocator::Jemalloc;
-#[cfg(any(not(target_arch = "unix"), use_mimalloc))]
+#[cfg(any(not(target_family = "unix"), use_mimalloc))]
 use mimalloc::MiMalloc;
 #[cfg(feature = "object")]
 pub use on_startup::__register_startup_deps;
@@ -61,11 +61,11 @@ use crate::lazygroupby::PyLazyGroupBy;
 use crate::series::PySeries;
 
 #[global_allocator]
-#[cfg(all(target_arch = "unix", not(use_mimalloc)))]
+#[cfg(all(target_family = "unix", not(use_mimalloc)))]
 static ALLOC: Jemalloc = Jemalloc;
 
 #[global_allocator]
-#[cfg(any(not(target_arch = "unix"), use_mimalloc))]
+#[cfg(any(not(target_family = "unix"), use_mimalloc))]
 static ALLOC: MiMalloc = MiMalloc;
 
 #[pymodule]

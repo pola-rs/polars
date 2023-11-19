@@ -90,10 +90,10 @@ features = [
 [build-dependencies]
 built = { version = "0.6", features = ["chrono", "git2"], optional = true }
 
-[target.'cfg(any(not(target_os = "linux"), use_mimalloc))'.dependencies]
+[target.'cfg(any(not(target_family = "unix"), use_mimalloc))'.dependencies]
 mimalloc = { version = "0.1", default-features = false }
 
-[target.'cfg(all(target_os = "linux", not(use_mimalloc)))'.dependencies]
+[target.'cfg(all(target_family = "unix", not(use_mimalloc)))'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 # features are only there to enable building a slim binary for the benchmark in CI
