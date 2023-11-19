@@ -49,45 +49,18 @@ where
     let mut c = 0.0;
     let mut n = 0.0;
 
-    const BUF_SIZE: usize = 64;
-
-    let mut x_vec = [0.0; BUF_SIZE];
-    let mut y_vec = [0.0; BUF_SIZE];
-    let mut dx_vec = [0.0; BUF_SIZE];
-    let mut dy_vec = [0.0; BUF_SIZE];
-    let mut c_vec = [0.0; BUF_SIZE];
-
     for iter in iters {
-        let mut iter = iter.clone().into_iter();
+        let iter = iter.clone().into_iter();
+        for (x, y) in iter {
+            let x = x.to_f64().unwrap();
+            let y = y.to_f64().unwrap();
 
-        loop {
-            let mut offset = BUF_SIZE;
-            for i in 0..BUF_SIZE {
-                if let Some((x, y)) = iter.next() {
-                    let x = x.to_f64().unwrap();
-                    let y = y.to_f64().unwrap();
+            n += 1.0;
 
-                    x_vec[i] = x;
-                    y_vec[i] = y;
-                    dx_vec[i] = x - mean_x;
-                    dy_vec[i] = y - mean_y;
-                } else {
-                    offset = i;
-                    break;
-                }
-            }
-            if offset == 0 {
-                break;
-            }
-            n += offset as f64;
-
-            mean_x += sum_f64::sum(&dx_vec[..offset]) / n;
-            mean_y += sum_f64::sum(&dy_vec[..offset]) / n;
-
-            for i in 0..BUF_SIZE {
-                c_vec[i] = (x_vec[i] - mean_x) * (y_vec[i] - mean_y)
-            }
-            c += sum_f64::sum(&c_vec[..offset]);
+            let dx = x - mean_x;
+            mean_x += dx / n;
+            mean_y += (y - mean_y) / n;
+            c += dx * (y - mean_y)
         }
     }
 
@@ -140,52 +113,25 @@ where
     let mut m2x = 0.0;
     let mut m2y = 0.0;
 
-    const BUF_SIZE: usize = 64;
-
-    let mut x_vec = [0.0; BUF_SIZE];
-    let mut y_vec = [0.0; BUF_SIZE];
-    let mut dx_vec = [0.0; BUF_SIZE];
-    let mut dy_vec = [0.0; BUF_SIZE];
-    let mut c_vec = [0.0; BUF_SIZE];
-
     for iter in iters {
-        let mut iter = iter.clone().into_iter();
+        let iter = iter.clone().into_iter();
+        for (x, y) in iter {
+            let x = x.to_f64().unwrap();
+            let y = y.to_f64().unwrap();
 
-        loop {
-            let mut offset = BUF_SIZE;
-            for i in 0..BUF_SIZE {
-                if let Some((x, y)) = iter.next() {
-                    let x = x.to_f64().unwrap();
-                    let y = y.to_f64().unwrap();
+            n += 1.0;
 
-                    x_vec[i] = x;
-                    y_vec[i] = y;
-                    dx_vec[i] = x - mean_x;
-                    dy_vec[i] = y - mean_y;
-                } else {
-                    offset = i;
-                    break;
-                }
-            }
-            if offset == 0 {
-                break;
-            }
-            n += offset as f64;
-            let mean_x_old = mean_x;
-            let mean_y_old = mean_y;
-            mean_x += sum_f64::sum(&dx_vec[..offset]) / n;
-            mean_y += sum_f64::sum(&dy_vec[..offset]) / n;
+            let dx = x - mean_x;
+            let dy = y - mean_y;
+            mean_x += dx / n;
+            mean_y += dy / n;
 
-            for i in 0..BUF_SIZE {
-                let dx_new = x_vec[i] - mean_x;
-                let dy_new = y_vec[i] - mean_y;
-                c_vec[i] = dx_new * dy_new;
-                x_vec[i] = (x_vec[i] - mean_x_old) * dx_new;
-                y_vec[i] = (y_vec[i] - mean_y_old) * dy_new;
-            }
-            c += sum_f64::sum(&c_vec[..offset]);
-            m2x += sum_f64::sum(&x_vec[..offset]);
-            m2y += sum_f64::sum(&y_vec[..offset]);
+            let d2x = x - mean_x;
+            let d2y = y - mean_y;
+
+            m2x += dx * d2x;
+            m2y += dy * d2y;
+            c += dx * (y - mean_y)
         }
     }
 
