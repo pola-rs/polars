@@ -142,11 +142,10 @@ pub(super) fn process_join(
         if filter_left
             && all_pred_cols_in_left_on(predicate, expr_arena, &left_on)
             && matches!(&options.args.how, JoinType::Semi)
-            {
-                insert_and_combine_predicate(&mut pushdown_right, predicate, expr_arena);
-                filter_right = true;
-            }
-
+        {
+            insert_and_combine_predicate(&mut pushdown_right, predicate, expr_arena);
+            filter_right = true;
+        }
 
         match (filter_left, filter_right, &options.args.how) {
             // if not pushed down on one of the tables we have to do it locally.
