@@ -133,7 +133,7 @@ fn columns_to_iter_recursive<'a, I: 'a>(
     chunk_size: Option<usize>,
 ) -> PolarsResult<NestedArrayIter<'a>>
 where
-    I: Pages,
+    I: PagesIter,
 {
     if init.is_empty() && is_primitive(&field.data_type) {
         return Ok(Box::new(
@@ -188,7 +188,7 @@ pub fn n_columns(data_type: &ArrowDataType) -> usize {
     }
 }
 
-/// An iterator adapter that maps multiple iterators of [`Pages`] into an iterator of [`Array`]s.
+/// An iterator adapter that maps multiple iterators of [`PagesIter`] into an iterator of [`Array`]s.
 ///
 /// For a non-nested datatypes such as [`ArrowDataType::Int32`], this function requires a single element in `columns` and `types`.
 /// For nested types, `columns` must be composed by all parquet columns with associated types `types`.
@@ -202,7 +202,7 @@ pub fn column_iter_to_arrays<'a, I: 'a>(
     num_rows: usize,
 ) -> PolarsResult<ArrayIter<'a>>
 where
-    I: Pages,
+    I: PagesIter,
 {
     Ok(Box::new(
         columns_to_iter_recursive(columns, types, field, vec![], num_rows, chunk_size)?

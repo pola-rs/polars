@@ -10,7 +10,7 @@ use super::utils::{
     self, dict_indices_decoder, extend_from_decoder, get_selected_rows, DecodedState, Decoder,
     FilteredOptionalPageValidity, MaybeNext, OptionalPageValidity,
 };
-use super::Pages;
+use super::PagesIter;
 use crate::parquet::deserialize::SliceFilteredIter;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
@@ -236,7 +236,7 @@ fn finish_key<K: DictionaryKey>(values: Vec<K>, validity: MutableBitmap) -> Prim
 }
 
 #[inline]
-pub(super) fn next_dict<K: DictionaryKey, I: Pages, F: Fn(&DictPage) -> Box<dyn Array>>(
+pub(super) fn next_dict<K: DictionaryKey, I: PagesIter, F: Fn(&DictPage) -> Box<dyn Array>>(
     iter: &mut I,
     items: &mut VecDeque<(Vec<K>, MutableBitmap)>,
     dict: &mut Option<Box<dyn Array>>,

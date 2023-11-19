@@ -8,7 +8,7 @@ use num_traits::AsPrimitive;
 use polars_error::{to_compute_err, PolarsResult};
 
 use super::super::utils::MaybeNext;
-use super::super::{utils, Pages};
+use super::super::{utils, PagesIter};
 use super::basic::{finish, PrimitiveDecoder, State as PrimitiveState};
 use crate::arrow::read::deserialize::utils::{
     get_selected_rows, FilteredOptionalPageValidity, OptionalPageValidity,
@@ -188,12 +188,12 @@ where
     }
 }
 
-/// An [`Iterator`] adapter over [`Pages`] assumed to be encoded as primitive arrays
+/// An [`Iterator`] adapter over [`PagesIter`] assumed to be encoded as primitive arrays
 /// encoded as parquet integer types
 #[derive(Debug)]
 pub struct IntegerIter<T, I, P, F>
 where
-    I: Pages,
+    I: PagesIter,
     T: NativeType,
     P: ParquetNativeType,
     F: Fn(P) -> T,
@@ -210,7 +210,7 @@ where
 
 impl<T, I, P, F> IntegerIter<T, I, P, F>
 where
-    I: Pages,
+    I: PagesIter,
     T: NativeType,
 
     P: ParquetNativeType,
@@ -238,7 +238,7 @@ where
 
 impl<T, I, P, F> Iterator for IntegerIter<T, I, P, F>
 where
-    I: Pages,
+    I: PagesIter,
     T: NativeType,
     P: ParquetNativeType,
     i64: num_traits::AsPrimitive<P>,

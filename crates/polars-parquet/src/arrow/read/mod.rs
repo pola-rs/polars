@@ -45,12 +45,15 @@ pub use crate::parquet::{
 };
 
 /// Trait describing a [`FallibleStreamingIterator`] of [`Page`]
-pub trait Pages:
+pub trait PagesIter:
     FallibleStreamingIterator<Item = Page, Error = ParquetError> + Send + Sync
 {
 }
 
-impl<I: FallibleStreamingIterator<Item = Page, Error = ParquetError> + Send + Sync> Pages for I {}
+impl<I: FallibleStreamingIterator<Item = Page, Error = ParquetError> + Send + Sync> PagesIter
+    for I
+{
+}
 
 /// Type def for a sharable, boxed dyn [`Iterator`] of arrays
 pub type ArrayIter<'a> = Box<dyn Iterator<Item = PolarsResult<Box<dyn Array>>> + Send + Sync + 'a>;

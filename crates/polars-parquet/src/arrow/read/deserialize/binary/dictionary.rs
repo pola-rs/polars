@@ -8,16 +8,16 @@ use polars_error::PolarsResult;
 
 use super::super::dictionary::*;
 use super::super::utils::MaybeNext;
-use super::super::Pages;
+use super::super::PagesIter;
 use super::utils::{Binary, SizedBinaryIter};
 use crate::arrow::read::deserialize::nested_utils::{InitNested, NestedState};
 use crate::parquet::page::DictPage;
 
-/// An iterator adapter over [`Pages`] assumed to be encoded as parquet's dictionary-encoded binary representation
+/// An iterator adapter over [`PagesIter`] assumed to be encoded as parquet's dictionary-encoded binary representation
 #[derive(Debug)]
 pub struct DictIter<K, O, I>
 where
-    I: Pages,
+    I: PagesIter,
     O: Offset,
     K: DictionaryKey,
 {
@@ -34,7 +34,7 @@ impl<K, O, I> DictIter<K, O, I>
 where
     K: DictionaryKey,
     O: Offset,
-    I: Pages,
+    I: PagesIter,
 {
     pub fn new(
         iter: I,
@@ -81,7 +81,7 @@ fn read_dict<O: Offset>(data_type: ArrowDataType, dict: &DictPage) -> Box<dyn Ar
 
 impl<K, O, I> Iterator for DictIter<K, O, I>
 where
-    I: Pages,
+    I: PagesIter,
     O: Offset,
     K: DictionaryKey,
 {
@@ -110,7 +110,7 @@ where
 #[derive(Debug)]
 pub struct NestedDictIter<K, O, I>
 where
-    I: Pages,
+    I: PagesIter,
     O: Offset,
     K: DictionaryKey,
 {
@@ -126,7 +126,7 @@ where
 
 impl<K, O, I> NestedDictIter<K, O, I>
 where
-    I: Pages,
+    I: PagesIter,
     O: Offset,
     K: DictionaryKey,
 {
@@ -152,7 +152,7 @@ where
 
 impl<K, O, I> Iterator for NestedDictIter<K, O, I>
 where
-    I: Pages,
+    I: PagesIter,
     O: Offset,
     K: DictionaryKey,
 {

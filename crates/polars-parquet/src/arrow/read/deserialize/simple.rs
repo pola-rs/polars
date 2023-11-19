@@ -5,7 +5,7 @@ use arrow::types::{days_ms, i256, NativeType};
 use ethnum::I256;
 use polars_error::{polars_bail, PolarsResult};
 
-use super::super::{ArrayIter, Pages};
+use super::super::{ArrayIter, PagesIter};
 use super::{binary, boolean, fixed_size_binary, null, primitive};
 use crate::parquet::schema::types::{
     PhysicalType, PrimitiveLogicalType, PrimitiveType, TimeUnit as ParquetTimeUnit,
@@ -49,7 +49,7 @@ where
 
 /// An iterator adapter that maps an iterator of Pages into an iterator of Arrays
 /// of [`ArrowDataType`] `data_type` and length `chunk_size`.
-pub fn page_iter_to_arrays<'a, I: Pages + 'a>(
+pub fn page_iter_to_arrays<'a, I: PagesIter + 'a>(
     pages: I,
     type_: &PrimitiveType,
     data_type: ArrowDataType,
@@ -420,7 +420,7 @@ pub fn int96_to_i64_s(value: [u32; 3]) -> i64 {
     day_seconds + seconds
 }
 
-fn timestamp<'a, I: Pages + 'a>(
+fn timestamp<'a, I: PagesIter + 'a>(
     pages: I,
     physical_type: &PhysicalType,
     logical_type: &Option<PrimitiveLogicalType>,
@@ -477,7 +477,7 @@ fn timestamp<'a, I: Pages + 'a>(
     }
 }
 
-fn timestamp_dict<'a, K: DictionaryKey, I: Pages + 'a>(
+fn timestamp_dict<'a, K: DictionaryKey, I: PagesIter + 'a>(
     pages: I,
     physical_type: &PhysicalType,
     logical_type: &Option<PrimitiveLogicalType>,
@@ -529,7 +529,7 @@ fn timestamp_dict<'a, K: DictionaryKey, I: Pages + 'a>(
     }
 }
 
-fn dict_read<'a, K: DictionaryKey, I: Pages + 'a>(
+fn dict_read<'a, K: DictionaryKey, I: PagesIter + 'a>(
     iter: I,
     physical_type: &PhysicalType,
     logical_type: &Option<PrimitiveLogicalType>,

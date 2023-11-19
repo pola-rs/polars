@@ -4,7 +4,7 @@ use arrow::array::Array;
 use arrow::bitmap::MutableBitmap;
 use polars_error::PolarsResult;
 
-use super::super::Pages;
+use super::super::PagesIter;
 use super::utils::{DecodedState, MaybeNext, PageState};
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::page::{split_buffer, DataPage, DictPage, Page};
@@ -267,6 +267,7 @@ pub(super) trait NestedDecoder<'a> {
 }
 
 /// The initial info of nested data types.
+/// The `bool` indicates if the type is nullable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InitNested {
     /// Primitive data types
@@ -510,7 +511,7 @@ pub(super) fn next<'a, I, D>(
     decoder: &D,
 ) -> MaybeNext<PolarsResult<(NestedState, D::DecodedState)>>
 where
-    I: Pages,
+    I: PagesIter,
     D: NestedDecoder<'a>,
 {
     // front[a1, a2, a3, ...]back

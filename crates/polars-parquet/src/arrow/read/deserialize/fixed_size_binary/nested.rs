@@ -12,7 +12,7 @@ use crate::arrow::read::deserialize::fixed_size_binary::basic::{
 };
 use crate::arrow::read::deserialize::nested_utils::{next, NestedDecoder};
 use crate::arrow::read::deserialize::utils::Pushable;
-use crate::arrow::read::{InitNested, NestedState, Pages};
+use crate::arrow::read::{InitNested, NestedState, PagesIter};
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{DataPage, DictPage};
 use crate::parquet::schema::Repetition;
@@ -135,7 +135,7 @@ impl<'a> NestedDecoder<'a> for BinaryDecoder {
     }
 }
 
-pub struct NestedIter<I: Pages> {
+pub struct NestedIter<I: PagesIter> {
     iter: I,
     data_type: ArrowDataType,
     size: usize,
@@ -146,7 +146,7 @@ pub struct NestedIter<I: Pages> {
     remaining: usize,
 }
 
-impl<I: Pages> NestedIter<I> {
+impl<I: PagesIter> NestedIter<I> {
     pub fn new(
         iter: I,
         init: Vec<InitNested>,
@@ -168,7 +168,7 @@ impl<I: Pages> NestedIter<I> {
     }
 }
 
-impl<I: Pages> Iterator for NestedIter<I> {
+impl<I: PagesIter> Iterator for NestedIter<I> {
     type Item = PolarsResult<(NestedState, FixedSizeBinaryArray)>;
 
     fn next(&mut self) -> Option<Self::Item> {

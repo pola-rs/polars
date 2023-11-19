@@ -11,7 +11,7 @@ use super::super::utils::{
     extend_from_decoder, get_selected_rows, next, DecodedState, FilteredOptionalPageValidity,
     MaybeNext, OptionalPageValidity,
 };
-use super::super::{utils, Pages};
+use super::super::{utils, PagesIter};
 use super::utils::*;
 use crate::parquet::deserialize::SliceFilteredIter;
 use crate::parquet::encoding::{delta_length_byte_array, hybrid_rle, Encoding};
@@ -468,7 +468,7 @@ pub(super) fn finish<O: Offset>(
     }
 }
 
-pub struct Iter<O: Offset, I: Pages> {
+pub struct Iter<O: Offset, I: PagesIter> {
     iter: I,
     data_type: ArrowDataType,
     items: VecDeque<(Binary<O>, MutableBitmap)>,
@@ -477,7 +477,7 @@ pub struct Iter<O: Offset, I: Pages> {
     remaining: usize,
 }
 
-impl<O: Offset, I: Pages> Iter<O, I> {
+impl<O: Offset, I: PagesIter> Iter<O, I> {
     pub fn new(
         iter: I,
         data_type: ArrowDataType,
@@ -495,7 +495,7 @@ impl<O: Offset, I: Pages> Iter<O, I> {
     }
 }
 
-impl<O: Offset, I: Pages> Iterator for Iter<O, I> {
+impl<O: Offset, I: PagesIter> Iterator for Iter<O, I> {
     type Item = PolarsResult<Box<dyn Array>>;
 
     fn next(&mut self) -> Option<Self::Item> {

@@ -9,7 +9,7 @@ use polars_error::PolarsResult;
 use super::super::dictionary::{nested_next_dict, *};
 use super::super::nested_utils::{InitNested, NestedState};
 use super::super::utils::MaybeNext;
-use super::super::Pages;
+use super::super::PagesIter;
 use super::basic::deserialize_plain;
 use crate::parquet::page::DictPage;
 use crate::parquet::types::NativeType as ParquetNativeType;
@@ -29,11 +29,11 @@ where
     Box::new(PrimitiveArray::new(data_type, values.into(), None))
 }
 
-/// An iterator adapter over [`Pages`] assumed to be encoded as boolean arrays
+/// An iterator adapter over [`PagesIter`] assumed to be encoded as boolean arrays
 #[derive(Debug)]
 pub struct DictIter<K, T, I, P, F>
 where
-    I: Pages,
+    I: PagesIter,
     T: NativeType,
     K: DictionaryKey,
     P: ParquetNativeType,
@@ -52,7 +52,7 @@ where
 impl<K, T, I, P, F> DictIter<K, T, I, P, F>
 where
     K: DictionaryKey,
-    I: Pages,
+    I: PagesIter,
     T: NativeType,
 
     P: ParquetNativeType,
@@ -80,7 +80,7 @@ where
 
 impl<K, T, I, P, F> Iterator for DictIter<K, T, I, P, F>
 where
-    I: Pages,
+    I: PagesIter,
     T: NativeType,
     K: DictionaryKey,
     P: ParquetNativeType,
@@ -111,7 +111,7 @@ where
 #[derive(Debug)]
 pub struct NestedDictIter<K, T, I, P, F>
 where
-    I: Pages,
+    I: PagesIter,
     T: NativeType,
     K: DictionaryKey,
     P: ParquetNativeType,
@@ -131,7 +131,7 @@ where
 impl<K, T, I, P, F> NestedDictIter<K, T, I, P, F>
 where
     K: DictionaryKey,
-    I: Pages,
+    I: PagesIter,
     T: NativeType,
 
     P: ParquetNativeType,
@@ -161,7 +161,7 @@ where
 
 impl<K, T, I, P, F> Iterator for NestedDictIter<K, T, I, P, F>
 where
-    I: Pages,
+    I: PagesIter,
     T: NativeType,
     K: DictionaryKey,
     P: ParquetNativeType,
