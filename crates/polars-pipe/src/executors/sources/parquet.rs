@@ -236,9 +236,10 @@ impl Source for ParquetSource {
     fn get_batches(&mut self, _context: &PExecutionContext) -> PolarsResult<SourceResult> {
         // We already start downloading the next file, we can only do that if we don't have a limit.
         // In the case of a limit we first must update the row count with the batch results.
-        // It is important we do this for a reasonable batch size, that's why we have prefetch_size / 2
-        if self.batched_readers.len() <= self.prefetch_size / 2
-            && self.file_options.n_rows.is_none()
+        //
+        // It is important we do this for a reasonable batch size, that's why we start this when we
+        // have just 2 readers left.
+        if self.batched_readers.len() <= 2 && self.file_options.n_rows.is_none()
             || self.batched_readers.is_empty()
         {
             let range = 0..self.prefetch_size - self.batched_readers.len();
