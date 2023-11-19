@@ -312,7 +312,11 @@ impl ParquetExec {
     }
 
     fn read(&mut self) -> PolarsResult<DataFrame> {
-        let is_cloud = is_cloud_url(self.paths[0].as_path());
+        let is_cloud = self
+            .paths
+            .first()
+            .map(|p| is_cloud_url(p.as_path()))
+            .unwrap_or(false);
         let force_async = std::env::var("POLARS_FORCE_ASYNC").as_deref().unwrap_or("") == "1";
 
         let out = if is_cloud || force_async {
