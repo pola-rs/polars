@@ -133,7 +133,7 @@ pub(super) fn process_join(
             // join columns, we also push down right
             || filter_left
                 && all_pred_cols_in_left_on(predicate, expr_arena, &left_on)
-                && matches!(&options.args.how, JoinType::Inner | JoinType::Left | JoinType::Semi)
+                && matches!(&options.args.how, JoinType::Inner | JoinType::Left)
         {
             insert_and_combine_predicate(&mut pushdown_right, predicate, expr_arena);
             filter_right = true;
