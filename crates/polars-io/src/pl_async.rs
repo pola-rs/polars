@@ -10,13 +10,16 @@ use polars_core::POOL;
 use polars_utils::aliases::PlHashSet;
 use tokio::runtime::{Builder, Runtime};
 
-static CONCURRENCY_BUDGET: AtomicI32 = AtomicI32::new(24);
+const INITIAL_BUDGET: u16 = 24;
+static CONCURRENCY_BUDGET: AtomicI32 = AtomicI32::new(INITIAL_BUDGET as i32);
 
 pub async fn with_concurrency_budget<F, Fut>(requested_budget: u16, callable: F) -> Fut::Output
 where
     F: FnOnce() -> Fut,
     Fut: Future,
 {
+    // This would never finish otherwise.
+    debug_assert!(requested_budget <= INITIAL_BUDGET);
     loop {
         let requested_budget = requested_budget as i32;
         let available_budget = CONCURRENCY_BUDGET.fetch_sub(requested_budget, Ordering::Relaxed);
