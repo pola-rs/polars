@@ -120,31 +120,25 @@ pub(super) fn process_join(
         if check_input_node(predicate, &schema_left, expr_arena) && !block_pushdown_left {
             insert_and_combine_predicate(&mut pushdown_left, predicate, expr_arena);
             filter_left = true;
-        }
-
-        // if the predicate is in the left hand side
+            // If we push down to the left and all predicate columns are also
+            // join columns, we also push down right for inner, left or semi join
+            if all_pred_cols_in_left_on(predicate, expr_arena, &left_on) {
+                filter_right = match &options.args.how {
+                    JoinType::Inner | JoinType::Left => true,
+                    #[cfg(feature = "semi_anti_join")]
+                    JoinType::Semi => true,
+                    _ => false,
+                }
+            }
+        // this is `else if` because if the predicate is in the left hand side
         // the right hand side should be renamed with the suffix.
         // in that case we should not push down as the user wants to filter on `x`
         // not on `x_rhs`.
-        if !filter_left
-            && check_input_node(predicate, &schema_right, expr_arena)
-            && !block_pushdown_right
-            // However, if we push down to the left and all predicate columns are also
-            // join columns, we also push down right
-            || filter_left
-                && all_pred_cols_in_left_on(predicate, expr_arena, &left_on)
-                && matches!(&options.args.how, JoinType::Inner | JoinType::Left)
-        {
-            insert_and_combine_predicate(&mut pushdown_right, predicate, expr_arena);
-            filter_right = true;
+        } else if check_input_node(predicate, &schema_right, expr_arena) && !block_pushdown_right {
+            filter_right = true
         }
-        #[cfg(feature = "semi_anti_join")]
-        if filter_left
-            && all_pred_cols_in_left_on(predicate, expr_arena, &left_on)
-            && matches!(&options.args.how, JoinType::Semi)
-        {
+        if filter_right {
             insert_and_combine_predicate(&mut pushdown_right, predicate, expr_arena);
-            filter_right = true;
         }
 
         match (filter_left, filter_right, &options.args.how) {
