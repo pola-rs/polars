@@ -4,7 +4,7 @@ use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::MutableBitmap;
 use polars_error::{polars_err, to_compute_err, PolarsError, PolarsResult};
 
-use super::super::Pages;
+use super::super::PagesIter;
 use crate::parquet::deserialize::{
     FilteredHybridEncoded, FilteredHybridRleDecoderIter, HybridDecoderBitmapIter, HybridEncoded,
 };
@@ -287,14 +287,12 @@ impl<'a> PageValidity<'a> for OptionalPageValidity<'a> {
     }
 }
 
-/// Extends a [`Pushable`] from an iterator of non-null values and an hybrid-rle decoder
-pub(super) fn extend_from_decoder<T: Default, P: Pushable<T>, I: Iterator<Item = T>>(
+fn reserve_pushable_and_validity<'a, T: Default, P: Pushable<T>>(
     validity: &mut MutableBitmap,
-    page_validity: &mut dyn PageValidity,
+    page_validity: &'a mut dyn PageValidity,
     limit: Option<usize>,
     pushable: &mut P,
-    mut values_iter: I,
-) {
+) -> Vec<FilteredHybridEncoded<'a>> {
     let limit = limit.unwrap_or(usize::MAX);
 
     let mut runs = vec![];
@@ -321,6 +319,18 @@ pub(super) fn extend_from_decoder<T: Default, P: Pushable<T>, I: Iterator<Item =
     }
     pushable.reserve(reserve_pushable);
     validity.reserve(reserve_pushable);
+    runs
+}
+
+/// Extends a [`Pushable`] from an iterator of non-null values and an hybrid-rle decoder
+pub(super) fn extend_from_decoder<T: Default, P: Pushable<T>, I: Iterator<Item = T>>(
+    validity: &mut MutableBitmap,
+    page_validity: &mut dyn PageValidity,
+    limit: Option<usize>,
+    pushable: &mut P,
+    mut values_iter: I,
+) {
+    let runs = reserve_pushable_and_validity(validity, page_validity, limit, pushable);
 
     // then a second loop to really fill the buffers
     for run in runs {
@@ -408,7 +418,7 @@ pub(super) fn extend_from_new_page<'a, T: Decoder<'a>>(
     remaining: &mut usize,
     decoder: &T,
 ) {
-    let capacity = chunk_size.unwrap_or(0);
+    let capacity = std::cmp::min(chunk_size.unwrap_or(0), *remaining);
     let chunk_size = chunk_size.unwrap_or(usize::MAX);
 
     let mut decoded = if let Some(decoded) = items.pop_back() {
@@ -447,7 +457,7 @@ pub enum MaybeNext<P> {
 }
 
 #[inline]
-pub(super) fn next<'a, I: Pages, D: Decoder<'a>>(
+pub(super) fn next<'a, I: PagesIter, D: Decoder<'a>>(
     iter: &'a mut I,
     items: &'a mut VecDeque<D::DecodedState>,
     dict: &'a mut Option<D::Dict>,

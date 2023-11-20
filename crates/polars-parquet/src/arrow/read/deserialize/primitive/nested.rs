@@ -8,7 +8,7 @@ use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
 use super::super::utils::MaybeNext;
-use super::super::{utils, Pages};
+use super::super::{utils, PagesIter};
 use super::basic::{deserialize_plain, Values, ValuesDictionary};
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{DataPage, DictPage};
@@ -168,11 +168,11 @@ fn finish<T: NativeType>(
     PrimitiveArray::new(data_type.clone(), values.into(), validity.into())
 }
 
-/// An iterator adapter over [`Pages`] assumed to be encoded as boolean arrays
+/// An iterator adapter over [`PagesIter`] assumed to be encoded as boolean arrays
 #[derive(Debug)]
 pub struct NestedIter<T, I, P, F>
 where
-    I: Pages,
+    I: PagesIter,
     T: NativeType,
 
     P: ParquetNativeType,
@@ -190,7 +190,7 @@ where
 
 impl<T, I, P, F> NestedIter<T, I, P, F>
 where
-    I: Pages,
+    I: PagesIter,
     T: NativeType,
 
     P: ParquetNativeType,
@@ -219,7 +219,7 @@ where
 
 impl<T, I, P, F> Iterator for NestedIter<T, I, P, F>
 where
-    I: Pages,
+    I: PagesIter,
     T: NativeType,
 
     P: ParquetNativeType,

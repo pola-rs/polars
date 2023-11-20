@@ -10,7 +10,7 @@ use super::super::utils::{
     extend_from_decoder, get_selected_rows, next, DecodedState, Decoder,
     FilteredOptionalPageValidity, MaybeNext, OptionalPageValidity,
 };
-use super::super::{utils, Pages};
+use super::super::{utils, PagesIter};
 use crate::parquet::deserialize::SliceFilteredIter;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
@@ -191,9 +191,9 @@ fn finish(
     BooleanArray::new(data_type.clone(), values.into(), validity.into())
 }
 
-/// An iterator adapter over [`Pages`] assumed to be encoded as boolean arrays
+/// An iterator adapter over [`PagesIter`] assumed to be encoded as boolean arrays
 #[derive(Debug)]
-pub struct Iter<I: Pages> {
+pub struct Iter<I: PagesIter> {
     iter: I,
     data_type: ArrowDataType,
     items: VecDeque<(MutableBitmap, MutableBitmap)>,
@@ -201,7 +201,7 @@ pub struct Iter<I: Pages> {
     remaining: usize,
 }
 
-impl<I: Pages> Iter<I> {
+impl<I: PagesIter> Iter<I> {
     pub fn new(
         iter: I,
         data_type: ArrowDataType,
@@ -218,7 +218,7 @@ impl<I: Pages> Iter<I> {
     }
 }
 
-impl<I: Pages> Iterator for Iter<I> {
+impl<I: PagesIter> Iterator for Iter<I> {
     type Item = PolarsResult<BooleanArray>;
 
     fn next(&mut self) -> Option<Self::Item> {

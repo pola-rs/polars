@@ -10,7 +10,7 @@ use super::super::utils::{
     DecodedState, Decoder, FilteredOptionalPageValidity, MaybeNext, OptionalPageValidity,
     PageState, Pushable,
 };
-use super::super::Pages;
+use super::super::PagesIter;
 use super::utils::FixedSizeBinary;
 use crate::parquet::deserialize::SliceFilteredIter;
 use crate::parquet::encoding::{hybrid_rle, Encoding};
@@ -277,7 +277,7 @@ pub fn finish(
     FixedSizeBinaryArray::new(data_type.clone(), values.values.into(), validity.into())
 }
 
-pub struct Iter<I: Pages> {
+pub struct Iter<I: PagesIter> {
     iter: I,
     data_type: ArrowDataType,
     size: usize,
@@ -287,7 +287,7 @@ pub struct Iter<I: Pages> {
     remaining: usize,
 }
 
-impl<I: Pages> Iter<I> {
+impl<I: PagesIter> Iter<I> {
     pub fn new(
         iter: I,
         data_type: ArrowDataType,
@@ -307,7 +307,7 @@ impl<I: Pages> Iter<I> {
     }
 }
 
-impl<I: Pages> Iterator for Iter<I> {
+impl<I: PagesIter> Iterator for Iter<I> {
     type Item = PolarsResult<FixedSizeBinaryArray>;
 
     fn next(&mut self) -> Option<Self::Item> {

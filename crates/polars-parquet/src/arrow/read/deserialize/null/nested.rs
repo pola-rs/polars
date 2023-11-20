@@ -6,7 +6,7 @@ use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
 use super::super::utils::MaybeNext;
-use super::super::{utils, Pages};
+use super::super::{utils, PagesIter};
 use crate::arrow::read::deserialize::utils::DecodedState;
 use crate::parquet::page::{DataPage, DictPage};
 
@@ -65,11 +65,11 @@ impl<'a> NestedDecoder<'a> for NullDecoder {
     }
 }
 
-/// An iterator adapter over [`Pages`] assumed to be encoded as null arrays
+/// An iterator adapter over [`PagesIter`] assumed to be encoded as null arrays
 #[derive(Debug)]
 pub struct NestedIter<I>
 where
-    I: Pages,
+    I: PagesIter,
 {
     iter: I,
     init: Vec<InitNested>,
@@ -82,7 +82,7 @@ where
 
 impl<I> NestedIter<I>
 where
-    I: Pages,
+    I: PagesIter,
 {
     pub fn new(
         iter: I,
@@ -105,7 +105,7 @@ where
 
 impl<I> Iterator for NestedIter<I>
 where
-    I: Pages,
+    I: PagesIter,
 {
     type Item = PolarsResult<(NestedState, NullArray)>;
 

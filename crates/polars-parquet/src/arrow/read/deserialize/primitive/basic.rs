@@ -9,7 +9,7 @@ use polars_error::PolarsResult;
 use super::super::utils::{
     get_selected_rows, FilteredOptionalPageValidity, MaybeNext, OptionalPageValidity,
 };
-use super::super::{utils, Pages};
+use super::super::{utils, PagesIter};
 use crate::parquet::deserialize::SliceFilteredIter;
 use crate::parquet::encoding::{hybrid_rle, Encoding};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
@@ -286,11 +286,11 @@ pub(super) fn finish<T: NativeType>(
     MutablePrimitiveArray::try_new(data_type.clone(), values, validity).unwrap()
 }
 
-/// An [`Iterator`] adapter over [`Pages`] assumed to be encoded as primitive arrays
+/// An [`Iterator`] adapter over [`PagesIter`] assumed to be encoded as primitive arrays
 #[derive(Debug)]
 pub struct Iter<T, I, P, F>
 where
-    I: Pages,
+    I: PagesIter,
     T: NativeType,
     P: ParquetNativeType,
     F: Fn(P) -> T,
@@ -307,7 +307,7 @@ where
 
 impl<T, I, P, F> Iter<T, I, P, F>
 where
-    I: Pages,
+    I: PagesIter,
     T: NativeType,
 
     P: ParquetNativeType,
@@ -335,7 +335,7 @@ where
 
 impl<T, I, P, F> Iterator for Iter<T, I, P, F>
 where
-    I: Pages,
+    I: PagesIter,
     T: NativeType,
     P: ParquetNativeType,
     F: Copy + Fn(P) -> T,

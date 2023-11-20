@@ -8,7 +8,7 @@ use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
 use super::super::utils::MaybeNext;
-use super::super::{utils, Pages};
+use super::super::{utils, PagesIter};
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::schema::Repetition;
@@ -102,9 +102,9 @@ impl<'a> NestedDecoder<'a> for BooleanDecoder {
     fn deserialize_dict(&self, _: &DictPage) -> Self::Dictionary {}
 }
 
-/// An iterator adapter over [`Pages`] assumed to be encoded as boolean arrays
+/// An iterator adapter over [`PagesIter`] assumed to be encoded as boolean arrays
 #[derive(Debug)]
-pub struct NestedIter<I: Pages> {
+pub struct NestedIter<I: PagesIter> {
     iter: I,
     init: Vec<InitNested>,
     items: VecDeque<(NestedState, (MutableBitmap, MutableBitmap))>,
@@ -112,7 +112,7 @@ pub struct NestedIter<I: Pages> {
     chunk_size: Option<usize>,
 }
 
-impl<I: Pages> NestedIter<I> {
+impl<I: PagesIter> NestedIter<I> {
     pub fn new(iter: I, init: Vec<InitNested>, num_rows: usize, chunk_size: Option<usize>) -> Self {
         Self {
             iter,
@@ -132,7 +132,7 @@ fn finish(
     BooleanArray::new(data_type.clone(), values.into(), validity.into())
 }
 
-impl<I: Pages> Iterator for NestedIter<I> {
+impl<I: PagesIter> Iterator for NestedIter<I> {
     type Item = PolarsResult<(NestedState, BooleanArray)>;
 
     fn next(&mut self) -> Option<Self::Item> {

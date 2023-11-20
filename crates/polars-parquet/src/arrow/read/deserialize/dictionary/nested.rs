@@ -5,7 +5,7 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_error::{polars_err, PolarsResult};
 
-use super::super::super::Pages;
+use super::super::super::PagesIter;
 use super::super::nested_utils::*;
 use super::super::utils::{dict_indices_decoder, not_implemented, MaybeNext, PageState};
 use super::finish_key;
@@ -143,7 +143,7 @@ impl<'a, K: DictionaryKey> NestedDecoder<'a> for DictionaryDecoder<K> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn next_dict<K: DictionaryKey, I: Pages, F: Fn(&DictPage) -> Box<dyn Array>>(
+pub fn next_dict<K: DictionaryKey, I: PagesIter, F: Fn(&DictPage) -> Box<dyn Array>>(
     iter: &mut I,
     items: &mut VecDeque<(NestedState, (Vec<K>, MutableBitmap))>,
     remaining: &mut usize,

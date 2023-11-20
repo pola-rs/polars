@@ -4,10 +4,10 @@ use arrow::array::NullArray;
 use arrow::datatypes::ArrowDataType;
 pub(super) use nested::NestedIter;
 
-use super::super::{ArrayIter, Pages};
+use super::super::{ArrayIter, PagesIter};
 use crate::parquet::page::Page;
 
-/// Converts [`Pages`] to an [`ArrayIter`]
+/// Converts [`PagesIter`] to an [`ArrayIter`]
 pub fn iter_to_arrays<'a, I>(
     mut iter: I,
     data_type: ArrowDataType,
@@ -15,7 +15,7 @@ pub fn iter_to_arrays<'a, I>(
     num_rows: usize,
 ) -> ArrayIter<'a>
 where
-    I: 'a + Pages,
+    I: 'a + PagesIter,
 {
     let mut len = 0usize;
 

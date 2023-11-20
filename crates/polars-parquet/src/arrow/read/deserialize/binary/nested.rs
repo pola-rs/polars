@@ -11,7 +11,7 @@ use super::super::utils;
 use super::super::utils::MaybeNext;
 use super::basic::{deserialize_plain, finish, Dict, ValuesDictionary};
 use super::utils::*;
-use crate::arrow::read::Pages;
+use crate::arrow::read::PagesIter;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::schema::Repetition;
@@ -136,7 +136,7 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
     }
 }
 
-pub struct NestedIter<O: Offset, I: Pages> {
+pub struct NestedIter<O: Offset, I: PagesIter> {
     iter: I,
     data_type: ArrowDataType,
     init: Vec<InitNested>,
@@ -146,7 +146,7 @@ pub struct NestedIter<O: Offset, I: Pages> {
     remaining: usize,
 }
 
-impl<O: Offset, I: Pages> NestedIter<O, I> {
+impl<O: Offset, I: PagesIter> NestedIter<O, I> {
     pub fn new(
         iter: I,
         init: Vec<InitNested>,
@@ -166,7 +166,7 @@ impl<O: Offset, I: Pages> NestedIter<O, I> {
     }
 }
 
-impl<O: Offset, I: Pages> Iterator for NestedIter<O, I> {
+impl<O: Offset, I: PagesIter> Iterator for NestedIter<O, I> {
     type Item = PolarsResult<(NestedState, Box<dyn Array>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
