@@ -390,14 +390,16 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
             *remaining -= nested.len() - existing;
             items.push_back((nested, decoded));
 
+            if page.len() == 0 {
+                // No more pages.
+                break;
+            }
+
             if is_fully_read && *remaining == 0 {
+                // Requested amount has been fully read.
                 break;
             };
         };
-
-        if page.len() == 0 {
-            break;
-        }
 
         let nested = init_nested(init, chunk_size.unwrap_or(*remaining).min(*remaining));
         let decoded = decoder.with_capacity(0);
