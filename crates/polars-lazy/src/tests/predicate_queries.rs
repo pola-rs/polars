@@ -302,3 +302,34 @@ fn test_push_join_col_predicates_to_both_sides_7247() -> PolarsResult<()> {
     assert_eq!(out, expected);
     Ok(())
 }
+
+#[test]
+#[cfg(feature = "semi_anti_join")]
+fn test_push_join_col_predicates_to_both_sides_semi_12565() -> PolarsResult<()> {
+    let df1 = df! {
+        "a" => ["a1", "a2"],
+        "b" => ["b1", "b2"],
+    }?;
+    let df2 = df! {
+        "a" => ["a1", "a1", "a2"],
+        "b2" => ["b1", "b1", "b2"],
+        "c" => ["a1", "c", "a2"]
+    }?;
+    let df = df1.lazy().join(
+        df2.lazy(),
+        [col("a"), col("b")],
+        [col("a"), col("b2")],
+        JoinArgs::new(JoinType::Semi),
+    );
+    let q = df.filter(col("a").eq(lit("a1")));
+
+    predicate_at_all_scans(q.clone());
+
+    let out = q.collect()?;
+    let expected = df![
+        "a" => ["a1"],
+        "b" => ["b1"],
+    ]?;
+    assert_eq!(out, expected);
+    Ok(())
+}
