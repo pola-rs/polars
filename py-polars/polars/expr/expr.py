@@ -5558,6 +5558,7 @@ class Expr:
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
+        warn_if_unsorted: bool = True,
     ) -> Self:
         """
         Apply a rolling min (moving min) over the values in this array.
@@ -5625,6 +5626,9 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
@@ -5751,7 +5755,7 @@ class Expr:
         )
         return self._from_pyexpr(
             self._pyexpr.rolling_min(
-                window_size, weights, min_periods, center, by, closed
+                window_size, weights, min_periods, center, by, closed, warn_if_unsorted
             )
         )
 
@@ -5765,6 +5769,7 @@ class Expr:
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
+        warn_if_unsorted: bool = True,
     ) -> Self:
         """
         Apply a rolling max (moving max) over the values in this array.
@@ -5828,6 +5833,9 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
@@ -5981,7 +5989,7 @@ class Expr:
         )
         return self._from_pyexpr(
             self._pyexpr.rolling_max(
-                window_size, weights, min_periods, center, by, closed
+                window_size, weights, min_periods, center, by, closed, warn_if_unsorted
             )
         )
 
@@ -5995,6 +6003,7 @@ class Expr:
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
+        warn_if_unsorted: bool = True,
     ) -> Self:
         """
         Apply a rolling mean (moving mean) over the values in this array.
@@ -6062,6 +6071,9 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
@@ -6215,7 +6227,13 @@ class Expr:
         )
         return self._from_pyexpr(
             self._pyexpr.rolling_mean(
-                window_size, weights, min_periods, center, by, closed
+                window_size,
+                weights,
+                min_periods,
+                center,
+                by,
+                closed,
+                warn_if_unsorted,
             )
         )
 
@@ -6229,6 +6247,7 @@ class Expr:
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
+        warn_if_unsorted: bool = True,
     ) -> Self:
         """
         Apply a rolling sum (moving sum) over the values in this array.
@@ -6292,6 +6311,9 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
@@ -6445,7 +6467,7 @@ class Expr:
         )
         return self._from_pyexpr(
             self._pyexpr.rolling_sum(
-                window_size, weights, min_periods, center, by, closed
+                window_size, weights, min_periods, center, by, closed, warn_if_unsorted
             )
         )
 
@@ -6460,6 +6482,7 @@ class Expr:
         by: str | None = None,
         closed: ClosedInterval = "left",
         ddof: int = 1,
+        warn_if_unsorted: bool = True,
     ) -> Self:
         """
         Compute a rolling standard deviation.
@@ -6525,6 +6548,9 @@ class Expr:
             applicable if `by` has been set.
         ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
@@ -6678,7 +6704,14 @@ class Expr:
         )
         return self._from_pyexpr(
             self._pyexpr.rolling_std(
-                window_size, weights, min_periods, center, by, closed, ddof
+                window_size,
+                weights,
+                min_periods,
+                center,
+                by,
+                closed,
+                ddof,
+                warn_if_unsorted,
             )
         )
 
@@ -6693,6 +6726,7 @@ class Expr:
         by: str | None = None,
         closed: ClosedInterval = "left",
         ddof: int = 1,
+        warn_if_unsorted: bool = True,
     ) -> Self:
         """
         Compute a rolling variance.
@@ -6758,6 +6792,9 @@ class Expr:
             applicable if `by` has been set.
         ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
@@ -6918,6 +6955,7 @@ class Expr:
                 by,
                 closed,
                 ddof,
+                warn_if_unsorted,
             )
         )
 
@@ -6931,6 +6969,7 @@ class Expr:
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
+        warn_if_unsorted: bool = True,
     ) -> Self:
         """
         Compute a rolling median.
@@ -6994,6 +7033,9 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
@@ -7073,7 +7115,7 @@ class Expr:
         )
         return self._from_pyexpr(
             self._pyexpr.rolling_median(
-                window_size, weights, min_periods, center, by, closed
+                window_size, weights, min_periods, center, by, closed, warn_if_unsorted
             )
         )
 
@@ -7089,6 +7131,7 @@ class Expr:
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
+        warn_if_unsorted: bool = True,
     ) -> Self:
         """
         Compute a rolling quantile.
@@ -7156,6 +7199,9 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
@@ -7271,6 +7317,7 @@ class Expr:
                 center,
                 by,
                 closed,
+                warn_if_unsorted,
             )
         )
 
