@@ -371,6 +371,11 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
     let mut values_page = decoder.build_state(page, dict)?;
     let mut page = NestedPage::try_new(page)?;
 
+    debug_assert!(
+        items.len() < 2,
+        "Should have yielded already completed item before reading more."
+    );
+
     let mut first_item_fully_read = false;
 
     loop {
@@ -391,16 +396,15 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
             items.push_back((nested, decoded));
 
             if page.len() == 0 {
-                // No more pages.
                 break;
             }
 
             if is_fully_read && *remaining == 0 {
-                // Requested amount has been fully read.
                 break;
             };
         };
 
+        // There are more pages and the remaining rows have not been fully read.
         let nested = init_nested(init, chunk_size.unwrap_or(*remaining).min(*remaining));
         let decoded = decoder.with_capacity(0);
         items.push_back((nested, decoded));
@@ -419,27 +423,6 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
 ) -> PolarsResult<bool> {
     let max_depth = nested.len();
 
-    if
-    // There is existing data in nested.
-    max_depth > 0
-    // 0 additional rows need to be read.
-    && additional == 0
-    // The next page is a new row but was not seen by the previous call as it
-    // was not yet available.
-    && page
-        .iter
-        .peek()
-        .map(|x| x.0.as_ref())
-        .transpose()
-        .unwrap()
-        .copied()
-        .unwrap_or(1)
-        == 0
-    {
-        // The existing data in this nested state is already complete.
-        return Ok(true);
-    }
-
     let mut cum_sum = vec![0u32; max_depth + 1];
     for (i, nest) in nested.iter().enumerate() {
         let delta = nest.is_nullable() as u32 + nest.is_repeated() as u32;
@@ -453,12 +436,18 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
     }
 
     let mut rows = 0;
-    while let Some((rep, def)) = page.iter.next() {
-        let rep = rep?;
-        let def = def?;
-        if rep == 0 {
+    loop {
+        // SAFETY: page.iter is always non-empty on first loop
+        if page.iter.peek().unwrap().0.as_ref().copied().unwrap_or(1) == 0 {
+            if rows == additional {
+                return Ok(true);
+            }
             rows += 1;
         }
+
+        let (rep, def) = page.iter.next().unwrap();
+        let rep = rep?;
+        let def = def?;
 
         let mut is_required = false;
         for depth in 0..max_depth {
@@ -488,26 +477,12 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
             }
         }
 
-        let next_rep = page
-            .iter
-            .peek()
-            .map(|x| x.0.as_ref())
-            .transpose()
-            .unwrap() // todo: fix this
-            .copied();
-
-        // There must be a next page with a repetition level of 0 to know that
-        // the current row is fully read, as the iterator here may not go to
-        // the end.
-        if next_rep.is_none() {
-            return Ok(false);
-        }
-
-        if next_rep.unwrap() == 0 && rows == additional {
+        if page.iter.len() == 0 {
             break;
         }
     }
-    Ok(true)
+
+    Ok(false)
 }
 
 #[inline]
@@ -525,8 +500,8 @@ where
     D: NestedDecoder<'a>,
 {
     // front[a1, a2, a3, ...]back
-    if *remaining == 0 && items.is_empty() {
-        return MaybeNext::None;
+    if items.len() > 1 {
+        return MaybeNext::Some(Ok(items.pop_front().unwrap()));
     }
 
     match iter.next() {
@@ -561,7 +536,7 @@ where
             match is_fully_read {
                 Ok(true) => {
                     debug_assert!(
-                        items.front().unwrap().0.len() == chunk_size.unwrap_or(usize::MAX),
+                        items.front().unwrap().0.len() == chunk_size.unwrap_or(*remaining),
                         "`extend` reported row was fully read but length did not match"
                     );
 
