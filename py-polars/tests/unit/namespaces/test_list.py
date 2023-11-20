@@ -677,7 +677,9 @@ def test_list_to_array() -> None:
 
 def test_list_to_array_wrong_lengths() -> None:
     s = pl.Series([[1.0, 2.0], [3.0, 4.0]], dtype=pl.List(pl.Float32))
-    with pytest.raises(pl.ComputeError, match="incompatible offsets in source list"):
+    with pytest.raises(
+        pl.ComputeError, match="not all elements have the specified width"
+    ):
         s.list.to_array(3)
 
 

@@ -11,7 +11,7 @@ pub use binary_to::*;
 pub use boolean_to::*;
 pub use decimal_to::*;
 pub use dictionary_to::*;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{polars_bail, polars_err, PolarsResult};
 pub use primitive_to::*;
 pub use utf8_to::*;
 
@@ -399,7 +399,7 @@ fn cast_list_to_fixed_size_list<O: Offset>(
         .find(|(actual, expected)| *actual != expected)
     {
         Some(_) => polars_bail!(ComputeError:
-            "incompatible offsets in source list"
+            "not all elements have the specified width {size}"
         ),
         None => {
             let sliced_values = list.values().sliced(
@@ -407,11 +407,14 @@ fn cast_list_to_fixed_size_list<O: Offset>(
                 list.offsets().range().to_usize(),
             );
             let new_values = cast(sliced_values.as_ref(), inner.data_type(), options)?;
-            Ok(FixedSizeListArray::new(
+            FixedSizeListArray::try_new(
                 ArrowDataType::FixedSizeList(Box::new(inner.clone()), size),
                 new_values,
                 list.validity().cloned(),
-            ))
+            )
+            .map_err(
+                |_| polars_err!(ComputeError: "not all elements have the specified width {size}"),
+            )
         },
     }
 }
