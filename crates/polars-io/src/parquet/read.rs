@@ -10,7 +10,7 @@ use polars_parquet::write::FileMetaData;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use super::read_impl::FetchRowGroupsFromMmapReader;
+use super::read_impl::{read_parquet, FetchRowGroupsFromMmapReader};
 #[cfg(feature = "cloud")]
 use crate::cloud::CloudOptions;
 use crate::mmap::MmapBytesReader;
@@ -18,8 +18,6 @@ use crate::mmap::MmapBytesReader;
 use crate::parquet::async_impl::FetchRowGroupsFromObjectStore;
 #[cfg(feature = "cloud")]
 use crate::parquet::async_impl::ParquetObjectStore;
-#[cfg(feature = "cloud")]
-use crate::parquet::read_impl::read_parquet;
 pub use crate::parquet::read_impl::BatchedParquetReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
