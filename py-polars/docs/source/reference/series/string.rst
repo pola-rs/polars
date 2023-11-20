@@ -20,6 +20,7 @@ The following methods are available under the `Series.str` attribute.
     Series.str.extract
     Series.str.extract_all
     Series.str.extract_groups
+    Series.str.json_decode
     Series.str.json_extract
     Series.str.json_path_match
     Series.str.len_bytes

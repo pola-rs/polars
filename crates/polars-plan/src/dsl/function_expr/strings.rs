@@ -53,7 +53,7 @@ pub enum StringFunction {
     LenChars,
     Lowercase,
     #[cfg(feature = "extract_jsonpath")]
-    JsonExtract {
+    JsonDecode {
         dtype: Option<DataType>,
         infer_schema_len: Option<usize>,
     },
@@ -126,7 +126,7 @@ impl StringFunction {
             #[cfg(feature = "string_to_integer")]
             ToInteger { .. } => mapper.with_dtype(DataType::Int64),
             #[cfg(feature = "extract_jsonpath")]
-            JsonExtract { dtype, .. } => mapper.with_opt_dtype(dtype.clone()),
+            JsonDecode { dtype, .. } => mapper.with_opt_dtype(dtype.clone()),
             LenBytes => mapper.with_dtype(DataType::UInt32),
             LenChars => mapper.with_dtype(DataType::UInt32),
             #[cfg(feature = "regex")]
@@ -192,7 +192,7 @@ impl Display for StringFunction {
             #[cfg(feature = "string_to_integer")]
             ToInteger { .. } => "to_integer",
             #[cfg(feature = "extract_jsonpath")]
-            JsonExtract { .. } => "json_extract",
+            JsonDecode { .. } => "json_decode",
             LenBytes => "len_bytes",
             Lowercase => "lowercase",
             LenChars => "len_chars",
@@ -327,10 +327,10 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "dtype-decimal")]
             ToDecimal(infer_len) => map!(strings::to_decimal, infer_len),
             #[cfg(feature = "extract_jsonpath")]
-            JsonExtract {
+            JsonDecode {
                 dtype,
                 infer_schema_len,
-            } => map!(strings::json_extract, dtype.clone(), infer_schema_len),
+            } => map!(strings::json_decode, dtype.clone(), infer_schema_len),
         }
     }
 }
@@ -844,11 +844,11 @@ pub(super) fn to_decimal(s: &Series, infer_len: usize) -> PolarsResult<Series> {
 }
 
 #[cfg(feature = "extract_jsonpath")]
-pub(super) fn json_extract(
+pub(super) fn json_decode(
     s: &Series,
     dtype: Option<DataType>,
     infer_schema_len: Option<usize>,
 ) -> PolarsResult<Series> {
     let ca = s.utf8()?;
-    ca.json_extract(dtype, infer_schema_len)
+    ca.json_decode(dtype, infer_schema_len)
 }

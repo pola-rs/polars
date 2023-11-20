@@ -84,7 +84,7 @@ def test_datelike_identity() -> None:
 def test_map_elements_list_anyvalue_fallback() -> None:
     with pytest.warns(
         PolarsInefficientMapWarning,
-        match=r'(?s)replace your `map_elements` with.*pl.col\("text"\).str.json_extract()',
+        match=r'(?s)replace your `map_elements` with.*pl.col\("text"\).str.json_decode()',
     ):
         df = pl.DataFrame({"text": ['[{"x": 1, "y": 2}, {"x": 3, "y": 4}]']})
         assert df.select(pl.col("text").map_elements(json.loads)).to_dict(
@@ -211,7 +211,7 @@ def test_map_elements_explicit_list_output_type() -> None:
 def test_map_elements_dict() -> None:
     with pytest.warns(
         PolarsInefficientMapWarning,
-        match=r'(?s)replace your `map_elements` with.*pl.col\("abc"\).str.json_extract()',
+        match=r'(?s)replace your `map_elements` with.*pl.col\("abc"\).str.json_decode()',
     ):
         df = pl.DataFrame({"abc": ['{"A":"Value1"}', '{"B":"Value2"}']})
         assert df.select(pl.col("abc").map_elements(json.loads)).to_dict(

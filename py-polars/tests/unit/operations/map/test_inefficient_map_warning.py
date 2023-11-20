@@ -114,7 +114,7 @@ TEST_CASES = [
     # ---------------------------------------------
     # json expr: load/extract
     # ---------------------------------------------
-    ("c", "lambda x: json.loads(x)", 'pl.col("c").str.json_extract()'),
+    ("c", "lambda x: json.loads(x)", 'pl.col("c").str.json_decode()'),
     # ---------------------------------------------
     # map_dict
     # ---------------------------------------------
@@ -248,10 +248,10 @@ def test_parse_apply_raw_functions() -> None:
     result_frames = []
     with pytest.warns(
         PolarsInefficientMapWarning,
-        match=r"(?s)Expr\.map_elements.*In this case, you can replace.*\.str\.json_extract",
+        match=r"(?s)Expr\.map_elements.*In this case, you can replace.*\.str\.json_decode",
     ):
         for expr in (
-            pl.col("value").str.json_extract(),
+            pl.col("value").str.json_decode(),
             pl.col("value").map_elements(json.loads),
         ):
             result_frames.append(
