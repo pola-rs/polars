@@ -120,7 +120,7 @@ impl StructChunked {
     }
 
     #[inline]
-    pub(crate) fn chunks(&self) -> &Vec<ArrayRef> {
+    pub fn chunks(&self) -> &Vec<ArrayRef> {
         &self.chunks
     }
 

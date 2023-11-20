@@ -35,4 +35,10 @@ impl StructNameSpace {
                 Arc::from(names),
             )))
     }
+
+    #[cfg(feature = "json")]
+    pub fn to_json(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StructExpr(StructFunction::ToJson))
+    }
 }

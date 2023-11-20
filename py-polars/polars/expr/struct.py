@@ -150,3 +150,10 @@ class ExprStructNameSpace:
 
         """
         return wrap_expr(self._pyexpr.struct_rename_fields(names))
+
+    def to_json(self) -> Expr:
+        """
+        Convert this struct to a string column with json values
+
+        """
+        return wrap_expr(self._pyexpr.struct_to_json())

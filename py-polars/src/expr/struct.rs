@@ -15,4 +15,8 @@ impl PyExpr {
     fn struct_rename_fields(&self, names: Vec<String>) -> Self {
         self.inner.clone().struct_().rename_fields(names).into()
     }
+
+    fn struct_to_json(&self) -> Self {
+        self.inner.clone().struct_().to_json().into()
+    }
 }
