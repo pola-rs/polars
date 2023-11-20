@@ -376,7 +376,7 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
         "Should have yielded already completed item before reading more."
     );
 
-    let mut first_item_fully_read = false;
+    let mut first_item_is_fully_read = false;
 
     loop {
         if let Some((mut nested, mut decoded)) = items.pop_back() {
@@ -395,7 +395,7 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
                 decoder,
                 additional,
             )?;
-            first_item_fully_read |= is_fully_read;
+            first_item_is_fully_read |= is_fully_read;
             *remaining -= nested.len() - existing;
             items.push_back((nested, decoded));
 
@@ -408,13 +408,17 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
             };
         };
 
-        // There are more pages and the remaining rows have not been fully read.
+        // At this point:
+        // * There are more pages.
+        // * The remaining rows have not been fully read.
+        // * There is no last nested state in the deque, or there is one but it
+        //   already holds completed data.
         let nested = init_nested(init, chunk_size.unwrap_or(*remaining).min(*remaining));
         let decoded = decoder.with_capacity(0);
         items.push_back((nested, decoded));
     }
 
-    Ok(first_item_fully_read)
+    Ok(first_item_is_fully_read)
 }
 
 fn extend_offsets2<'a, D: NestedDecoder<'a>>(
@@ -441,7 +445,11 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
 
     let mut rows = 0;
     loop {
-        // SAFETY: page.iter is always non-empty on first loop
+        // SAFETY: page.iter is always non-empty on first loop.
+        // The current function gets called multiple times with iterators that
+        // yield batches of pages. This means e.g. it could be that the very
+        // first page is a new row, and the existing nested state has already
+        // contains all data from the additional rows.
         if page.iter.peek().unwrap().0.as_ref().copied().unwrap_or(1) == 0 {
             if rows == additional {
                 return Ok(true);
