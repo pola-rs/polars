@@ -81,7 +81,7 @@ where
             if k == 0 {
                 break;
             }
-            
+
             // TODO: combine these all in one SIMD'ized pass.
             let xsum = float_sum::f64::sum(&x_tmp[..k]);
             let ysum = float_sum::f64::sum(&y_tmp[..k]);
@@ -90,10 +90,10 @@ where
             let old_mean_x = mean_x;
             let old_mean_y = mean_y;
             n += k as f64;
-            mean_x += (xsum - k as f64*old_mean_x) / n;
-            mean_y += (ysum - k as f64*old_mean_y) / n;
+            mean_x += (xsum - k as f64 * old_mean_x) / n;
+            mean_y += (ysum - k as f64 * old_mean_y) / n;
 
-            cxy += xysum - xsum*old_mean_y - ysum*mean_x + mean_x*old_mean_y*(k as f64);
+            cxy += xysum - xsum * old_mean_y - ysum * mean_x + mean_x * old_mean_y * (k as f64);
         }
     }
 
@@ -174,16 +174,16 @@ where
             let xxsum = multiply_sum(&x_tmp, &x_tmp, k);
             let xysum = multiply_sum(&x_tmp, &y_tmp, k);
             let yysum = multiply_sum(&y_tmp, &y_tmp, k);
-            
+
             let old_mean_x = mean_x;
             let old_mean_y = mean_y;
             n += k as f64;
-            mean_x += (xsum - k as f64*old_mean_x) / n;
-            mean_y += (ysum - k as f64*old_mean_y) / n;
+            mean_x += (xsum - k as f64 * old_mean_x) / n;
+            mean_y += (ysum - k as f64 * old_mean_y) / n;
 
-            cxx += xxsum - xsum*old_mean_x - xsum*mean_x + mean_x*old_mean_x*(k as f64);
-            cxy += xysum - xsum*old_mean_y - ysum*mean_x + mean_x*old_mean_y*(k as f64);
-            cyy += yysum - ysum*old_mean_y - ysum*mean_y + mean_y*old_mean_y*(k as f64);
+            cxx += xxsum - xsum * old_mean_x - xsum * mean_x + mean_x * old_mean_x * (k as f64);
+            cxy += xysum - xsum * old_mean_y - ysum * mean_x + mean_x * old_mean_y * (k as f64);
+            cyy += yysum - ysum * old_mean_y - ysum * mean_y + mean_y * old_mean_y * (k as f64);
         }
     }
 
