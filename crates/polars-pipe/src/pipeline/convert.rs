@@ -174,27 +174,32 @@ where
                 #[allow(unused_variables)]
                 SinkType::File {
                     path, file_type, ..
-                } => match &file_type {
-                    #[cfg(feature = "parquet")]
-                    FileType::Parquet(options) => {
-                        let path = path.as_ref().as_path();
-                        Box::new(ParquetSink::new(path, *options, input_schema.as_ref())?)
-                            as Box<dyn SinkTrait>
-                    },
-                    #[cfg(feature = "ipc")]
-                    FileType::Ipc(options) => {
-                        let path = path.as_ref().as_path();
-                        Box::new(IpcSink::new(path, *options, input_schema.as_ref())?)
-                            as Box<dyn SinkTrait>
-                    },
-                    #[cfg(feature = "csv")]
-                    FileType::Csv(options) => {
-                        let path = path.as_ref().as_path();
-                        Box::new(CsvSink::new(path, options.clone(), input_schema.as_ref())?)
-                            as Box<dyn SinkTrait>
-                    },
-                    #[allow(unreachable_patterns)]
-                    _ => unreachable!(),
+                } => {
+                    let path = path.as_ref().as_path();
+                    match &file_type {
+                        #[cfg(feature = "parquet")]
+                        FileType::Parquet(options) => {
+                            Box::new(ParquetSink::new(path, *options, input_schema.as_ref())?)
+                                as Box<dyn SinkTrait>
+                        },
+                        #[cfg(feature = "ipc")]
+                        FileType::Ipc(options) => {
+                            Box::new(IpcSink::new(path, *options, input_schema.as_ref())?)
+                                as Box<dyn SinkTrait>
+                        },
+                        #[cfg(feature = "csv")]
+                        FileType::Csv(options) => {
+                            Box::new(CsvSink::new(path, options.clone(), input_schema.as_ref())?)
+                                as Box<dyn SinkTrait>
+                        },
+                        #[cfg(feature = "json")]
+                        FileType::Json(options) => {
+                            Box::new(JsonSink::new(path, *options, input_schema.as_ref())?)
+                                as Box<dyn SinkTrait>
+                        },
+                        #[allow(unreachable_patterns)]
+                        _ => unreachable!(),
+                    }
                 },
                 #[cfg(feature = "cloud")]
                 SinkType::Cloud {

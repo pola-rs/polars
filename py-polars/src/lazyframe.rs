@@ -628,6 +628,21 @@ impl PyLazyFrame {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
+    #[cfg(all(feature = "streaming", feature = "json"))]
+    #[pyo3(signature = (path, maintain_order))]
+    fn sink_json(&self, py: Python, path: PathBuf, maintain_order: bool) -> PyResult<()> {
+        let options = JsonWriterOptions { maintain_order };
+
+        // if we don't allow threads and we have udfs trying to acquire the gil from different
+        // threads we deadlock.
+        py.allow_threads(|| {
+            let ldf = self.ldf.clone();
+            ldf.sink_json(path, options).map_err(PyPolarsErr::from)
+        })?;
+        Ok(())
+    }
+
     fn fetch(&self, py: Python, n_rows: usize) -> PyResult<PyDataFrame> {
         let ldf = self.ldf.clone();
         let df = py.allow_threads(|| ldf.fetch(n_rows).map_err(PyPolarsErr::from))?;

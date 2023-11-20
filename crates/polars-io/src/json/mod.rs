@@ -71,6 +71,7 @@ use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
 use polars_json::json::infer;
+use polars_json::json::write::FallibleStreamingIterator;
 use simd_json::BorrowedValue;
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
@@ -149,6 +150,34 @@ where
             },
         }
 
+        Ok(())
+    }
+}
+
+pub struct BatchedWriter<W: Write> {
+    writer: W,
+}
+
+impl<W> BatchedWriter<W>
+where
+    W: Write,
+{
+    pub fn new(writer: W) -> Self {
+        BatchedWriter { writer }
+    }
+    /// Write a batch to the json writer.
+    ///
+    /// # Panics
+    /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
+    pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
+        let fields = df.iter().map(|s| s.field().to_arrow()).collect::<Vec<_>>();
+        let chunks = df.iter_chunks();
+        let batches =
+            chunks.map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
+        let mut serializer = polars_json::ndjson::write::Serializer::new(batches, vec![]);
+        while let Some(block) = serializer.next()? {
+            self.writer.write_all(block)?;
+        }
         Ok(())
     }
 }

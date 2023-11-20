@@ -85,6 +85,14 @@ pub struct CsvWriterOptions {
     pub serialize_options: SerializeOptions,
 }
 
+#[cfg(feature = "json")]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct JsonWriterOptions {
+    /// maintain the order the data was processed
+    pub maintain_order: bool,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IpcScanOptions {
@@ -329,6 +337,8 @@ pub enum FileType {
     Ipc(IpcWriterOptions),
     #[cfg(feature = "csv")]
     Csv(CsvWriterOptions),
+    #[cfg(feature = "json")]
+    Json(JsonWriterOptions),
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
