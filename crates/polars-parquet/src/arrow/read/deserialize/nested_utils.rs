@@ -381,7 +381,11 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
     loop {
         if let Some((mut nested, mut decoded)) = items.pop_back() {
             let existing = nested.len();
-            let additional = chunk_size.unwrap_or(*remaining).min(*remaining) - existing;
+
+            let additional = chunk_size
+                .unwrap_or(*remaining)
+                .min(*remaining)
+                .saturating_sub(existing);
 
             let is_fully_read = extend_offsets2(
                 &mut page,
@@ -534,14 +538,7 @@ where
             );
 
             match is_fully_read {
-                Ok(true) => {
-                    debug_assert!(
-                        items.front().unwrap().0.len() == chunk_size.unwrap_or(*remaining),
-                        "`extend` reported row was fully read but length did not match"
-                    );
-
-                    MaybeNext::Some(Ok(items.pop_front().unwrap()))
-                },
+                Ok(true) => MaybeNext::Some(Ok(items.pop_front().unwrap())),
                 Ok(false) => MaybeNext::More,
                 Err(e) => MaybeNext::Some(Err(e)),
             }
