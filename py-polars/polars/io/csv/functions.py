@@ -8,6 +8,7 @@ from polars.datatypes import N_INFER_DEFAULT, Utf8
 from polars.io._utils import _prepare_file_arg
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
+from polars.utils.deprecation import deprecate_renamed_parameter
 from polars.utils.various import handle_projection_columns, normalize_filepath
 
 if TYPE_CHECKING:
@@ -17,6 +18,9 @@ if TYPE_CHECKING:
     from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
 
 
+@deprecate_renamed_parameter(
+    old_name="comment_char", new_name="comment_prefix", version="0.19.14"
+)
 def read_csv(
     source: str | TextIO | BytesIO | Path | BinaryIO | bytes,
     *,
@@ -24,7 +28,7 @@ def read_csv(
     columns: Sequence[int] | Sequence[str] | None = None,
     new_columns: Sequence[str] | None = None,
     separator: str = ",",
-    comment_char: str | None = None,
+    comment_prefix: str | None = None,
     quote_char: str | None = '"',
     skip_rows: int = 0,
     dtypes: Mapping[str, PolarsDataType] | Sequence[PolarsDataType] | None = None,
@@ -74,9 +78,9 @@ def read_csv(
         columns will have their original name.
     separator
         Single byte character to use as separator in the file.
-    comment_char
-        Single byte character that indicates the start of a comment line,
-        for instance `#`.
+    comment_prefix
+        A string, which can be up to 5 symbols in length, used to indicate
+        the start of a comment line. For instance, it can be set to `#` or `//`.
     quote_char
         Single byte character used for csv quoting, default = `"`.
         Set to None to turn off special handling and escaping of quotes.
@@ -185,7 +189,6 @@ def read_csv(
 
     """
     _check_arg_is_1byte("separator", separator, can_be_empty=False)
-    _check_arg_is_1byte("comment_char", comment_char, can_be_empty=False)
     _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
     _check_arg_is_1byte("eol_char", eol_char, can_be_empty=False)
 
@@ -368,7 +371,7 @@ def read_csv(
             has_header=has_header,
             columns=columns if columns else projection,
             separator=separator,
-            comment_char=comment_char,
+            comment_prefix=comment_prefix,
             quote_char=quote_char,
             skip_rows=skip_rows,
             dtypes=dtypes,
@@ -398,6 +401,9 @@ def read_csv(
     return df
 
 
+@deprecate_renamed_parameter(
+    old_name="comment_char", new_name="comment_prefix", version="0.19.14"
+)
 def read_csv_batched(
     source: str | Path,
     *,
@@ -405,7 +411,7 @@ def read_csv_batched(
     columns: Sequence[int] | Sequence[str] | None = None,
     new_columns: Sequence[str] | None = None,
     separator: str = ",",
-    comment_char: str | None = None,
+    comment_prefix: str | None = None,
     quote_char: str | None = '"',
     skip_rows: int = 0,
     dtypes: Mapping[str, PolarsDataType] | Sequence[PolarsDataType] | None = None,
@@ -455,9 +461,9 @@ def read_csv_batched(
         columns will have their original name.
     separator
         Single byte character to use as separator in the file.
-    comment_char
-        Single byte character that indicates the start of a comment line,
-        for instance `#`.
+    comment_prefix
+        A string, which can be up to 5 symbols in length, used to indicate
+        the start of a comment line. For instance, it can be set to `#` or `//`.
     quote_char
         Single byte character used for csv quoting, default = `"`.
         Set to None to turn off special handling and escaping of quotes.
@@ -669,7 +675,7 @@ def read_csv_batched(
         has_header=has_header,
         columns=columns if columns else projection,
         separator=separator,
-        comment_char=comment_char,
+        comment_prefix=comment_prefix,
         quote_char=quote_char,
         skip_rows=skip_rows,
         dtypes=dtypes,
@@ -694,12 +700,15 @@ def read_csv_batched(
     )
 
 
+@deprecate_renamed_parameter(
+    old_name="comment_char", new_name="comment_prefix", version="0.19.14"
+)
 def scan_csv(
     source: str | Path | list[str] | list[Path],
     *,
     has_header: bool = True,
     separator: str = ",",
-    comment_char: str | None = None,
+    comment_prefix: str | None = None,
     quote_char: str | None = '"',
     skip_rows: int = 0,
     dtypes: SchemaDict | Sequence[PolarsDataType] | None = None,
@@ -741,9 +750,9 @@ def scan_csv(
         enumeration over every column in the dataset starting at 1.
     separator
         Single byte character to use as separator in the file.
-    comment_char
-        Single byte character that indicates the start of a comment line,
-        for instance `#`.
+    comment_prefix
+        A string, which can be up to 5 symbols in length, used to indicate
+        the start of a comment line. For instance, it can be set to `#` or `//`.
     quote_char
         Single byte character used for csv quoting, default = `"`.
         Set to None to turn off special handling and escaping of quotes.
@@ -900,7 +909,6 @@ def scan_csv(
                 return new_columns  # type: ignore[return-value]
 
     _check_arg_is_1byte("separator", separator, can_be_empty=False)
-    _check_arg_is_1byte("comment_char", comment_char, can_be_empty=False)
     _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
 
     if isinstance(source, (str, Path)):
@@ -912,7 +920,7 @@ def scan_csv(
         source,
         has_header=has_header,
         separator=separator,
-        comment_char=comment_char,
+        comment_prefix=comment_prefix,
         quote_char=quote_char,
         skip_rows=skip_rows,
         dtypes=dtypes,  # type: ignore[arg-type]

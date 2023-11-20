@@ -549,7 +549,7 @@ def test_empty_line_with_single_column() -> None:
         b"a\n\nb\n",
         new_columns=["A"],
         has_header=False,
-        comment_char="#",
+        comment_prefix="#",
         use_pyarrow=False,
     )
     expected = pl.DataFrame({"A": ["a", None, "b"]})
@@ -561,10 +561,29 @@ def test_empty_line_with_multiple_columns() -> None:
         b"a,b\n\nc,d\n",
         new_columns=["A", "B"],
         has_header=False,
-        comment_char="#",
+        comment_prefix="#",
         use_pyarrow=False,
     )
     expected = pl.DataFrame({"A": ["a", "c"], "B": ["b", "d"]})
+    assert_frame_equal(df, expected)
+
+
+def test_csv_multi_char_comment() -> None:
+    csv = textwrap.dedent(
+        """\
+        #a,b
+        ##c,d
+        """
+    )
+    f = io.StringIO(csv)
+    df = pl.read_csv(
+        f,
+        new_columns=["A", "B"],
+        has_header=False,
+        comment_prefix="##",
+        use_pyarrow=False,
+    )
+    expected = pl.DataFrame({"A": ["#a"], "B": ["b"]})
     assert_frame_equal(df, expected)
 
 

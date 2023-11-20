@@ -20,7 +20,7 @@ use rayon::prelude::*;
 
 use crate::csv::buffer::*;
 use crate::csv::parser::*;
-use crate::csv::read::NullValuesCompiled;
+use crate::csv::read::{CommentPrefix, NullValuesCompiled};
 use crate::csv::utils::*;
 use crate::csv::{CsvEncoding, NullValues};
 use crate::mmap::ReaderBytes;
@@ -109,7 +109,7 @@ pub(crate) struct CoreReader<'a> {
     sample_size: usize,
     chunk_size: usize,
     low_memory: bool,
-    comment_char: Option<u8>,
+    comment_prefix: Option<CommentPrefix>,
     quote_char: Option<u8>,
     eol_char: u8,
     null_values: Option<NullValuesCompiled>,
@@ -198,7 +198,7 @@ impl<'a> CoreReader<'a> {
         sample_size: usize,
         chunk_size: usize,
         low_memory: bool,
-        comment_char: Option<u8>,
+        comment_prefix: Option<CommentPrefix>,
         quote_char: Option<u8>,
         eol_char: u8,
         null_values: Option<NullValues>,
@@ -247,7 +247,7 @@ impl<'a> CoreReader<'a> {
                         schema_overwrite.as_deref(),
                         &mut skip_rows,
                         skip_rows_after_header,
-                        comment_char,
+                        comment_prefix.as_ref(),
                         quote_char,
                         eol_char,
                         null_values.as_ref(),
@@ -299,7 +299,7 @@ impl<'a> CoreReader<'a> {
             sample_size,
             chunk_size,
             low_memory,
-            comment_char,
+            comment_prefix,
             quote_char,
             eol_char,
             null_values,
@@ -342,14 +342,13 @@ impl<'a> CoreReader<'a> {
 
         if self.skip_rows_after_header > 0 {
             for _ in 0..self.skip_rows_after_header {
-                let pos = match bytes.first() {
-                    Some(first) if Some(*first) == self.comment_char => {
-                        next_line_position_naive(bytes, eol_char)
-                    },
+                let pos = if is_comment_line(bytes, self.comment_prefix.as_ref()) {
+                    next_line_position_naive(bytes, eol_char)
+                } else {
                     // we don't pass expected fields
                     // as we want to skip all rows
                     // no matter the no. of fields
-                    _ => next_line_position(bytes, None, self.separator, self.quote_char, eol_char),
+                    next_line_position(bytes, None, self.separator, self.quote_char, eol_char)
                 }
                 .ok_or_else(|| polars_err!(NoData: "not enough lines to skip"))?;
 
@@ -598,7 +597,7 @@ impl<'a> CoreReader<'a> {
                                 local_bytes,
                                 offset,
                                 self.separator,
-                                self.comment_char,
+                                self.comment_prefix.as_ref(),
                                 self.quote_char,
                                 self.eol_char,
                                 self.missing_is_null,
@@ -670,7 +669,7 @@ impl<'a> CoreReader<'a> {
                             bytes_offset_thread,
                             self.quote_char,
                             self.eol_char,
-                            self.comment_char,
+                            self.comment_prefix.as_ref(),
                             capacity,
                             &str_capacities,
                             self.encoding,
@@ -716,7 +715,7 @@ impl<'a> CoreReader<'a> {
                                 remaining_bytes,
                                 0,
                                 self.separator,
-                                self.comment_char,
+                                self.comment_prefix.as_ref(),
                                 self.quote_char,
                                 self.eol_char,
                                 self.missing_is_null,
@@ -800,7 +799,7 @@ fn read_chunk(
     bytes_offset_thread: usize,
     quote_char: Option<u8>,
     eol_char: u8,
-    comment_char: Option<u8>,
+    comment_prefix: Option<&CommentPrefix>,
     capacity: usize,
     str_capacities: &[RunningSize],
     encoding: CsvEncoding,
@@ -835,7 +834,7 @@ fn read_chunk(
             local_bytes,
             offset,
             separator,
-            comment_char,
+            comment_prefix,
             quote_char,
             eol_char,
             missing_is_null,

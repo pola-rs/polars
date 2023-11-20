@@ -5,6 +5,7 @@ use polars_core::prelude::*;
 use super::buffer::*;
 use crate::csv::read::NullValuesCompiled;
 use crate::csv::splitfields::SplitFields;
+use crate::csv::CommentPrefix;
 
 /// Skip the utf-8 Byte Order Mark.
 /// credits to csv-core
@@ -13,6 +14,17 @@ pub(crate) fn skip_bom(input: &[u8]) -> &[u8] {
         &input[3..]
     } else {
         input
+    }
+}
+
+/// Checks if a line in a CSV file is a comment based on the given comment prefix configuration.
+///
+/// This function is used during CSV parsing to determine whether a line should be ignored based on its starting characters.
+pub(crate) fn is_comment_line(line: &[u8], comment_prefix: Option<&CommentPrefix>) -> bool {
+    match comment_prefix {
+        Some(CommentPrefix::Single(c)) => line.starts_with(&[*c]),
+        Some(CommentPrefix::Multi(s)) => line.starts_with(s.as_bytes()),
+        None => false,
     }
 }
 
@@ -351,7 +363,7 @@ pub(super) fn parse_lines<'a>(
     mut bytes: &'a [u8],
     offset: usize,
     separator: u8,
-    comment_char: Option<u8>,
+    comment_prefix: Option<&CommentPrefix>,
     quote_char: Option<u8>,
     eol_char: u8,
     missing_is_null: bool,
@@ -400,13 +412,10 @@ pub(super) fn parse_lines<'a>(
         }
 
         // deal with comments
-        if let Some(c) = comment_char {
-            // line is a comment -> skip
-            if bytes[0] == c {
-                let bytes_rem = skip_this_line(bytes, quote_char, eol_char);
-                bytes = bytes_rem;
-                continue;
-            }
+        if is_comment_line(bytes, comment_prefix) {
+            let bytes_rem = skip_this_line(bytes, quote_char, eol_char);
+            bytes = bytes_rem;
+            continue;
         }
 
         // Every line we only need to parse the columns that are projected.

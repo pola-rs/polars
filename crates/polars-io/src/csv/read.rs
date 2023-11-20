@@ -25,6 +25,33 @@ pub enum NullValues {
     Named(Vec<(String, String)>),
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum CommentPrefix {
+    /// A single byte character that indicates the start of a comment line.
+    Single(u8),
+    /// A string that indicates the start of a comment line.
+    /// This allows for multiple characters to be used as a comment identifier.
+    Multi(String),
+}
+
+impl CommentPrefix {
+    /// Creates a new `CommentPrefix` for the `Single` variant.
+    pub fn new_single(c: u8) -> Self {
+        CommentPrefix::Single(c)
+    }
+
+    /// Creates a new `CommentPrefix`. If `Multi` variant is used and the string is longer
+    /// than 5 characters, it will return `None`.
+    pub fn new_multi(s: String) -> Option<Self> {
+        if s.len() <= 5 {
+            Some(CommentPrefix::Multi(s))
+        } else {
+            None
+        }
+    }
+}
+
 pub(super) enum NullValuesCompiled {
     /// A single value that's used for all columns
     AllColumnsSingle(String),
@@ -118,7 +145,7 @@ where
     dtype_overwrite: Option<&'a [DataType]>,
     sample_size: usize,
     chunk_size: usize,
-    comment_char: Option<u8>,
+    comment_prefix: Option<CommentPrefix>,
     null_values: Option<NullValues>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     quote_char: Option<u8>,
@@ -210,9 +237,21 @@ where
         self
     }
 
-    /// Set the comment character. Lines starting with this character will be ignored.
-    pub fn with_comment_char(mut self, comment_char: Option<u8>) -> Self {
-        self.comment_char = comment_char;
+    /// Set the comment prefix for this instance. Lines starting with this prefix will be ignored.
+    pub fn with_comment_prefix(mut self, comment_prefix: Option<&str>) -> Self {
+        self.comment_prefix = comment_prefix.map(|s| {
+            if s.len() == 1 && s.chars().next().unwrap().is_ascii() {
+                CommentPrefix::Single(s.as_bytes()[0])
+            } else {
+                CommentPrefix::Multi(s.to_string())
+            }
+        });
+        self
+    }
+
+    /// Sets the comment prefix from `CsvParserOptions` for internal initialization.
+    pub fn _with_comment_prefix(mut self, comment_prefix: Option<CommentPrefix>) -> Self {
+        self.comment_prefix = comment_prefix;
         self
     }
 
@@ -370,7 +409,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             self.sample_size,
             self.chunk_size,
             self.low_memory,
-            self.comment_char,
+            std::mem::take(&mut self.comment_prefix),
             self.quote_char,
             self.eol_char,
             std::mem::take(&mut self.null_values),
@@ -487,7 +526,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                     None,
                     &mut self.skip_rows_before_header,
                     self.skip_rows_after_header,
-                    self.comment_char,
+                    self.comment_prefix.as_ref(),
                     self.quote_char,
                     self.eol_char,
                     self.null_values.as_ref(),
@@ -516,7 +555,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                     None,
                     &mut self.skip_rows_before_header,
                     self.skip_rows_after_header,
-                    self.comment_char,
+                    self.comment_prefix.as_ref(),
                     self.quote_char,
                     self.eol_char,
                     self.null_values.as_ref(),
@@ -556,7 +595,7 @@ where
             sample_size: 1024,
             chunk_size: 1 << 18,
             low_memory: false,
-            comment_char: None,
+            comment_prefix: None,
             eol_char: b'\n',
             null_values: None,
             missing_is_null: true,
