@@ -371,15 +371,12 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
     let mut values_page = decoder.build_state(page, dict)?;
     let mut page = NestedPage::try_new(page)?;
 
-    let capacity = chunk_size.unwrap_or(0);
-    // chunk_size = None, remaining = 44 => chunk_size = 44
-    let chunk_size = chunk_size.unwrap_or(usize::MAX);
-
-    let mut existing = items.back().map(|x| x.0.len()).unwrap_or(0);
+    let mut first_item_fully_read = false;
 
     loop {
-        if let (mut nested, mut decoded) = if let Some((nested, decoded)) = items.pop_back() {
-            let additional = (chunk_size - existing).min(*remaining);
+        if let Some((mut nested, mut decoded)) = items.pop_back() {
+            let existing = nested.len();
+            let additional = chunk_size.unwrap_or(*remaining).min(*remaining) - existing;
 
             let is_fully_read = extend_offsets2(
                 &mut page,
@@ -389,57 +386,25 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
                 decoder,
                 additional,
             )?;
+            first_item_fully_read |= is_fully_read;
             *remaining = remaining.wrapping_sub(nested.len() - existing);
             items.push_back((nested, decoded));
+
+            if is_fully_read && *remaining == 0 {
+                break;
+            };
         };
-    }
 
-    let (mut nested, mut decoded) = if let Some((nested, decoded)) = items.pop_back() {
-        (nested, decoded)
-    } else {
-        // there is no state => initialize it
-        (init_nested(init, capacity), decoder.with_capacity(0))
-    };
-    let existing = nested.len();
-
-    // `remaining` and `additional` can be 0 during reading of the last
-    // requested row, so the code below must guarantee at least some additional
-    // data is read before any short circuits.
-    let additional = (chunk_size - existing).min(*remaining);
-
-    // extend the current state
-    let is_fully_read = extend_offsets2(
-        &mut page,
-        &mut values_page,
-        &mut nested.nested,
-        &mut decoded,
-        decoder,
-        additional,
-    )?;
-    *remaining = remaining.wrapping_sub(nested.len() - existing);
-    items.push_back((nested, decoded));
-
-    while page.len() > 0 {
-        let additional = chunk_size.min(*remaining);
-
-        let mut nested = init_nested(init, additional);
-        let mut decoded = decoder.with_capacity(0);
-        let is_fully_read = extend_offsets2(
-            &mut page,
-            &mut values_page,
-            &mut nested.nested,
-            &mut decoded,
-            decoder,
-            additional,
-        )?;
-        *remaining = remaining.wrapping_sub(nested.len());
-        items.push_back((nested, decoded));
-
-        if is_fully_read && *remaining == 0 {
+        if page.len() == 0 {
             break;
-        };
+        }
+
+        let nested = init_nested(init, chunk_size.unwrap_or(*remaining).min(*remaining));
+        let decoded = decoder.with_capacity(0);
+        items.push_back((nested, decoded));
     }
-    Ok(is_fully_read)
+
+    Ok(first_item_fully_read)
 }
 
 fn extend_offsets2<'a, D: NestedDecoder<'a>>(
@@ -458,7 +423,7 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
     // 0 additional rows need to be read.
     && additional == 0
     // The next page is a new row but was not seen by the previous call as it
-    // was not available.
+    // was not yet available.
     && page
         .iter
         .peek()
@@ -469,7 +434,7 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
         .unwrap_or(1)
         == 0
     {
-        // The existing data in nested is already complete.
+        // The existing data in this nested state is already complete.
         return Ok(true);
     }
 
