@@ -387,7 +387,7 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
                 additional,
             )?;
             first_item_fully_read |= is_fully_read;
-            *remaining = remaining.wrapping_sub(nested.len() - existing);
+            *remaining -= nested.len() - existing;
             items.push_back((nested, decoded));
 
             if is_fully_read && *remaining == 0 {
