@@ -198,7 +198,7 @@ impl PyExpr {
     }
 
     #[cfg(feature = "extract_jsonpath")]
-    fn str_json_extract(
+    fn str_json_decode(
         &self,
         dtype: Option<Wrap<DataType>>,
         infer_schema_len: Option<usize>,
@@ -207,7 +207,7 @@ impl PyExpr {
         self.inner
             .clone()
             .str()
-            .json_extract(dtype, infer_schema_len)
+            .json_decode(dtype, infer_schema_len)
             .into()
     }
 

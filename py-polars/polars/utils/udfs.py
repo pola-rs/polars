@@ -729,7 +729,7 @@ class RewrittenInstructions:
                     attribute_count : 3 + attribute_count
                 ]
                 if inst1.argval == "json":
-                    expr_name = "str.json_extract"
+                    expr_name = "str.json_decode"
                 elif inst1.argval == "datetime":
                     fmt = matching_instructions[attribute_count + 3].argval
                     expr_name = f'str.to_datetime(format="{fmt}")'
@@ -815,7 +815,7 @@ def _is_raw_function(function: Callable[[Any], Any]) -> tuple[str, str]:
                 import json  # double-check since it is referenced via 'builtins'
 
                 if function is json.loads:
-                    return "json", "str.json_extract()"
+                    return "json", "str.json_decode()"
 
     except AttributeError:
         pass

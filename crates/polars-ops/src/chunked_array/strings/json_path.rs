@@ -64,7 +64,7 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
     }
 
     /// Extracts a typed-JSON value for each row in the Utf8Chunked
-    fn json_extract(
+    fn json_decode(
         &self,
         dtype: Option<DataType>,
         infer_schema_len: Option<usize>,
@@ -103,7 +103,7 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
         infer_schema_len: Option<usize>,
     ) -> PolarsResult<Series> {
         let selected_json = self.as_utf8().json_path_select(json_path)?;
-        selected_json.json_extract(dtype, infer_schema_len)
+        selected_json.json_decode(dtype, infer_schema_len)
     }
 }
 
@@ -163,7 +163,7 @@ mod tests {
     }
 
     #[test]
-    fn test_json_extract() {
+    fn test_json_decode() {
         let s = Series::new(
             "json",
             [
@@ -187,11 +187,11 @@ mod tests {
         let expected_dtype = expected_series.dtype().clone();
 
         assert!(ca
-            .json_extract(None, None)
+            .json_decode(None, None)
             .unwrap()
             .series_equal_missing(&expected_series));
         assert!(ca
-            .json_extract(Some(expected_dtype), None)
+            .json_decode(Some(expected_dtype), None)
             .unwrap()
             .series_equal_missing(&expected_series));
     }

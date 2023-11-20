@@ -89,7 +89,7 @@ def test_local_imports() -> None:
 
     bytecode_parser = BytecodeParser(lambda x: json.loads(x), map_target="expr")
     result = bytecode_parser.to_expression("x")
-    expected = 'pl.col("x").str.json_extract()'
+    expected = 'pl.col("x").str.json_decode()'
     assert result == expected
 
     bytecode_parser = BytecodeParser(

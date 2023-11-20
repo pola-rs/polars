@@ -436,35 +436,35 @@ def test_str_split() -> None:
         assert out[2].to_list() == ["ab,", "c,", "de"]
 
 
-def test_json_extract_series() -> None:
+def test_json_decode_series() -> None:
     s = pl.Series(["[1, 2, 3]", None, "[4, 5, 6]"])
     expected = pl.Series([[1, 2, 3], None, [4, 5, 6]])
     dtype = pl.List(pl.Int64)
-    assert_series_equal(s.str.json_extract(None), expected)
-    assert_series_equal(s.str.json_extract(dtype), expected)
+    assert_series_equal(s.str.json_decode(None), expected)
+    assert_series_equal(s.str.json_decode(dtype), expected)
 
     s = pl.Series(['{"a": 1, "b": true}', None, '{"a": 2, "b": false}'])
     expected = pl.Series([{"a": 1, "b": True}, None, {"a": 2, "b": False}])
     dtype2 = pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)])
-    assert_series_equal(s.str.json_extract(None), expected)
-    assert_series_equal(s.str.json_extract(dtype2), expected)
+    assert_series_equal(s.str.json_decode(None), expected)
+    assert_series_equal(s.str.json_decode(dtype2), expected)
 
     expected = pl.Series([{"a": 1}, None, {"a": 2}])
     dtype2 = pl.Struct([pl.Field("a", pl.Int64)])
-    assert_series_equal(s.str.json_extract(dtype2), expected)
+    assert_series_equal(s.str.json_decode(dtype2), expected)
 
     s = pl.Series([], dtype=pl.Utf8)
     expected = pl.Series([], dtype=pl.List(pl.Int64))
     dtype = pl.List(pl.Int64)
-    assert_series_equal(s.str.json_extract(dtype), expected)
+    assert_series_equal(s.str.json_decode(dtype), expected)
 
 
-def test_json_extract_lazy_expr() -> None:
+def test_json_decode_lazy_expr() -> None:
     dtype = pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)])
     ldf = (
         pl.DataFrame({"json": ['{"a": 1, "b": true}', None, '{"a": 2, "b": false}']})
         .lazy()
-        .select(pl.col("json").str.json_extract(dtype))
+        .select(pl.col("json").str.json_decode(dtype))
     )
     expected = pl.DataFrame(
         {"json": [{"a": 1, "b": True}, None, {"a": 2, "b": False}]}
@@ -473,7 +473,15 @@ def test_json_extract_lazy_expr() -> None:
     assert_frame_equal(ldf, expected)
 
 
-def test_json_extract_primitive_to_list_11053() -> None:
+def test_json_extract_deprecated() -> None:
+    s = pl.Series(['{"a": 1, "b": true}', None, '{"a": 2, "b": false}'])
+    expected = pl.Series([{"a": 1, "b": True}, None, {"a": 2, "b": False}])
+    with pytest.deprecated_call():
+        result = s.str.json_extract()
+    assert_series_equal(result, expected)
+
+
+def test_json_decode_primitive_to_list_11053() -> None:
     df = pl.DataFrame(
         {
             "json": [
@@ -490,7 +498,7 @@ def test_json_extract_primitive_to_list_11053() -> None:
     )
 
     output = df.select(
-        pl.col("json").str.json_extract(schema).alias("casted_json")
+        pl.col("json").str.json_decode(schema).alias("casted_json")
     ).unnest("casted_json")
     expected = pl.DataFrame({"col1": [["123"], ["xyz"]], "col2": [["123"], None]})
     assert_frame_equal(output, expected)

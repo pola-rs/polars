@@ -1165,13 +1165,13 @@ class ExprStringNameSpace:
         prefix = parse_as_expression(prefix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_starts_with(prefix))
 
-    def json_extract(
+    def json_decode(
         self, dtype: PolarsDataType | None = None, infer_schema_length: int | None = 100
     ) -> Expr:
         """
         Parse string values as JSON.
 
-        Throw errors if encounter invalid JSON strings.
+        Throws an error if invalid JSON strings are encountered.
 
         Parameters
         ----------
@@ -1193,10 +1193,10 @@ class ExprStringNameSpace:
         ...     {"json": ['{"a":1, "b": true}', None, '{"a":2, "b": false}']}
         ... )
         >>> dtype = pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)])
-        >>> df.with_columns(extracted=pl.col("json").str.json_extract(dtype))
+        >>> df.with_columns(decoded=pl.col("json").str.json_decode(dtype))
         shape: (3, 2)
         ┌─────────────────────┬─────────────┐
-        │ json                ┆ extracted   │
+        │ json                ┆ decoded     │
         │ ---                 ┆ ---         │
         │ str                 ┆ struct[2]   │
         ╞═════════════════════╪═════════════╡
@@ -1208,7 +1208,7 @@ class ExprStringNameSpace:
         """
         if dtype is not None:
             dtype = py_type_to_dtype(dtype)
-        return wrap_expr(self._pyexpr.str_json_extract(dtype, infer_schema_length))
+        return wrap_expr(self._pyexpr.str_json_decode(dtype, infer_schema_length))
 
     def json_path_match(self, json_path: str) -> Expr:
         """
@@ -2240,6 +2240,27 @@ class ExprStringNameSpace:
 
         """
         return self.pad_start(length, fill_char)
+
+    @deprecate_renamed_function("json_decode", version="0.19.12")
+    def json_extract(
+        self, dtype: PolarsDataType | None = None, infer_schema_length: int | None = 100
+    ) -> Expr:
+        """
+        Parse string values as JSON.
+
+        .. deprecated:: 0.19.15
+            This method has been renamed to :meth:`json_decode`.
+
+        Parameters
+        ----------
+        dtype
+            The dtype to cast the extracted value to. If None, the dtype will be
+            inferred from the JSON value.
+        infer_schema_length
+            How many rows to parse to determine the schema.
+            If `None` all rows are used.
+        """
+        return self.json_decode(dtype, infer_schema_length)
 
 
 def _validate_format_argument(format: str | None) -> None:
