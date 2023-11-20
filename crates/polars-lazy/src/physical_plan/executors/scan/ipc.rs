@@ -14,7 +14,7 @@ impl IpcExec {
     fn read(&mut self, verbose: bool) -> PolarsResult<DataFrame> {
         let file = std::fs::File::open(&self.path)?;
         let (projection, predicate) = prepare_scan_args(
-            &self.predicate,
+            self.predicate.clone(),
             &mut self.file_options.with_columns,
             &mut self.schema,
             self.file_options.row_count.is_some(),

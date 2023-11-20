@@ -37,7 +37,7 @@ type Predicate = Option<Arc<dyn PhysicalIoExpr>>;
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 fn prepare_scan_args(
-    predicate: &Option<Arc<dyn PhysicalExpr>>,
+    predicate: Option<Arc<dyn PhysicalExpr>>,
     with_columns: &mut Option<Arc<Vec<String>>>,
     schema: &mut SchemaRef,
     has_row_count: bool,
@@ -53,7 +53,7 @@ fn prepare_scan_args(
         has_row_count,
     );
 
-    let predicate = predicate.clone().map(phys_expr_to_io_expr);
+    let predicate = predicate.map(phys_expr_to_io_expr);
 
     (projection, predicate)
 }

@@ -19,7 +19,6 @@ use crate::parquet::async_impl::FetchRowGroupsFromObjectStore;
 #[cfg(feature = "cloud")]
 use crate::parquet::async_impl::ParquetObjectStore;
 #[cfg(feature = "cloud")]
-use crate::parquet::read_impl::materialize_empty_df;
 use crate::parquet::read_impl::read_parquet;
 pub use crate::parquet::read_impl::BatchedParquetReader;
 use crate::predicates::PhysicalIoExpr;

@@ -9,7 +9,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 
-# @pytest.mark.write_disk()
+@pytest.mark.write_disk()
 def test_hive_partitioned_predicate_pushdown(
     io_files_path: Path, tmp_path: Path, monkeypatch: Any, capfd: Any
 ) -> None:
@@ -57,6 +57,12 @@ def test_hive_partitioned_predicate_pushdown(
 
     # tests: 11536
     assert q.filter(pl.col("sugars_g") == 25).collect().shape == (1, 4)
+
+    # tests: 12570
+    assert q.filter(pl.col("fats_g") == 1225.0).select("category").collect().shape == (
+        0,
+        1,
+    )
 
 
 @pytest.mark.write_disk()
