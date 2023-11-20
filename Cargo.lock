@@ -2926,6 +2926,7 @@ dependencies = [
  "polars-core",
  "polars-ffi",
  "polars-io",
+ "polars-json",
  "polars-ops",
  "polars-parquet",
  "polars-time",

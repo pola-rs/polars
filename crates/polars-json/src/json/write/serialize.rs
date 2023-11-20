@@ -8,10 +8,9 @@ use arrow::offset::Offset;
 #[cfg(feature = "chrono-tz")]
 use arrow::temporal_conversions::parse_offset_tz;
 use arrow::temporal_conversions::{
-    date32_to_date, date64_to_date, duration_ms_to_duration, duration_ns_to_duration,
-    duration_s_to_duration, duration_us_to_duration, parse_offset, timestamp_ms_to_datetime,
-    timestamp_ns_to_datetime, timestamp_s_to_datetime, timestamp_to_datetime,
-    timestamp_us_to_datetime,
+    date32_to_date, duration_ms_to_duration, duration_ns_to_duration, duration_s_to_duration,
+    duration_us_to_duration, parse_offset, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
+    timestamp_s_to_datetime, timestamp_to_datetime, timestamp_us_to_datetime,
 };
 use arrow::types::NativeType;
 use chrono::{Duration, NaiveDate, NaiveDateTime};
@@ -419,9 +418,6 @@ pub(crate) fn new_serializer<'a>(
         ArrowDataType::FixedSizeList(_, _) => {
             fixed_size_list_serializer(array.as_any().downcast_ref().unwrap(), offset, take)
         },
-        ArrowDataType::List(_) => {
-            list_serializer::<i32>(array.as_any().downcast_ref().unwrap(), offset, take)
-        },
         ArrowDataType::LargeList(_) => {
             list_serializer::<i64>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
@@ -440,12 +436,6 @@ pub(crate) fn new_serializer<'a>(
         ArrowDataType::Date32 => date_serializer(
             array.as_any().downcast_ref().unwrap(),
             date32_to_date,
-            offset,
-            take,
-        ),
-        ArrowDataType::Date64 => date_serializer(
-            array.as_any().downcast_ref().unwrap(),
-            date64_to_date,
             offset,
             take,
         ),

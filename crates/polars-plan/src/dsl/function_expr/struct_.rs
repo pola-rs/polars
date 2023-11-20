@@ -9,6 +9,8 @@ pub enum StructFunction {
     FieldByIndex(i64),
     FieldByName(Arc<str>),
     RenameFields(Arc<Vec<String>>),
+    #[cfg(feature = "json")]
+    JsonEncode,
 }
 
 impl StructFunction {
@@ -58,6 +60,8 @@ impl StructFunction {
                         .collect(),
                 ),
             }),
+            #[cfg(feature = "json")]
+            JsonEncode => mapper.with_dtype(DataType::Utf8),
         }
     }
 }
@@ -69,6 +73,8 @@ impl Display for StructFunction {
             FieldByIndex(index) => write!(f, "struct.field_by_index({index})"),
             FieldByName(name) => write!(f, "struct.field_by_name({name})"),
             RenameFields(names) => write!(f, "struct.rename_fields({:?})", names),
+            #[cfg(feature = "json")]
+            JsonEncode => write!(f, "struct.to_json"),
         }
     }
 }
@@ -80,6 +86,8 @@ impl From<StructFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             FieldByIndex(index) => map!(struct_::get_by_index, index),
             FieldByName(name) => map!(struct_::get_by_name, name.clone()),
             RenameFields(names) => map!(struct_::rename_fields, names.clone()),
+            #[cfg(feature = "json")]
+            JsonEncode => map!(struct_::to_json),
         }
     }
 }
@@ -110,4 +118,16 @@ pub(super) fn rename_fields(s: &Series, names: Arc<Vec<String>>) -> PolarsResult
         })
         .collect::<Vec<_>>();
     StructChunked::new(ca.name(), &fields).map(|ca| ca.into_series())
+}
+
+#[cfg(feature = "json")]
+pub(super) fn to_json(s: &Series) -> PolarsResult<Series> {
+    let ca = s.struct_()?;
+
+    let iter = ca
+        .chunks()
+        .iter()
+        .map(|arr| polars_json::json::write::serialize_to_utf8(arr.as_ref()));
+
+    Ok(Utf8Chunked::from_chunk_iter(ca.name(), iter).into_series())
 }
