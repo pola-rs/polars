@@ -324,18 +324,11 @@
 //! ### Custom allocator
 //! A DataFrame library naturally does a lot of heap allocations. It is recommended to use a custom
 //! allocator.
-//! [Mimalloc](https://crates.io/crates/mimalloc) and
-//! [JeMalloc](https://crates.io/crates/jemallocator) for instance, show a significant
+//! [JeMalloc](https://crates.io/crates/jemallocator) and
+//! [Mimalloc](https://crates.io/crates/mimalloc) for instance, show a significant
 //! performance gain in runtime as well as memory usage.
 //!
-//! #### Usage
-//! ```ignore
-//! use mimalloc::MiMalloc;
-//!
-//! #[global_allocator]
-//! static GLOBAL: MiMalloc = MiMalloc;
-//! ```
-//!
+//! #### Jemalloc Usage
 //! ```ignore
 //! use jemallocator::Jemalloc;
 //!
@@ -343,15 +336,30 @@
 //! static GLOBAL: Jemalloc = Jemalloc;
 //! ```
 //!
-//! #### Notes
-//! [Benchmarks](https://github.com/pola-rs/polars/pull/3108) have shown that on Linux JeMalloc
-//! outperforms Mimalloc on all tasks and is therefore the default Linux allocator used for the Python bindings.
+//! #### Cargo.toml
+//! ```toml
+//! [dependencies]
+//! jemallocator = { version = "*" }
+//! ```
+//!
+//! #### Mimalloc Usage
+//!
+//! ```ignore
+//! use mimalloc::MiMalloc;
+//!
+//! #[global_allocator]
+//! static GLOBAL: MiMalloc = MiMalloc;
+//! ```
 //!
 //! #### Cargo.toml
 //! ```toml
 //! [dependencies]
 //! mimalloc = { version = "*", default-features = false }
 //! ```
+//!
+//! #### Notes
+//! [Benchmarks](https://github.com/pola-rs/polars/pull/3108) have shown that on Linux and macOS JeMalloc
+//! outperforms Mimalloc on all tasks and is therefore the default allocator used for the Python bindings on Unix platforms.
 //!
 //! ## Config with ENV vars
 //!
