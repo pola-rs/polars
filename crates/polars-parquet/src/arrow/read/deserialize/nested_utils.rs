@@ -411,8 +411,7 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
         // At this point:
         // * There are more pages.
         // * The remaining rows have not been fully read.
-        // * There is no last nested state in the deque, or there is one but it
-        //   already holds completed data.
+        // * The deque is empty, or the last item already holds completed data.
         let nested = init_nested(init, chunk_size.unwrap_or(*remaining).min(*remaining));
         let decoded = decoder.with_capacity(0);
         items.push_back((nested, decoded));
