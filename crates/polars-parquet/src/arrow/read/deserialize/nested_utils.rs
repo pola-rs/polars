@@ -375,6 +375,25 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
     // chunk_size = None, remaining = 44 => chunk_size = 44
     let chunk_size = chunk_size.unwrap_or(usize::MAX);
 
+    let mut existing = items.back().map(|x| x.0.len()).unwrap_or(0);
+
+    loop {
+        if let (mut nested, mut decoded) = if let Some((nested, decoded)) = items.pop_back() {
+            let additional = (chunk_size - existing).min(*remaining);
+
+            let is_fully_read = extend_offsets2(
+                &mut page,
+                &mut values_page,
+                &mut nested.nested,
+                &mut decoded,
+                decoder,
+                additional,
+            )?;
+            *remaining = remaining.wrapping_sub(nested.len() - existing);
+            items.push_back((nested, decoded));
+        };
+    }
+
     let (mut nested, mut decoded) = if let Some((nested, decoded)) = items.pop_back() {
         (nested, decoded)
     } else {
@@ -400,12 +419,12 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
     *remaining = remaining.wrapping_sub(nested.len() - existing);
     items.push_back((nested, decoded));
 
-    while page.len() > 0 && *remaining > 0 {
+    while page.len() > 0 {
         let additional = chunk_size.min(*remaining);
 
         let mut nested = init_nested(init, additional);
         let mut decoded = decoder.with_capacity(0);
-        extend_offsets2(
+        let is_fully_read = extend_offsets2(
             &mut page,
             &mut values_page,
             &mut nested.nested,
@@ -415,6 +434,10 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
         )?;
         *remaining = remaining.wrapping_sub(nested.len());
         items.push_back((nested, decoded));
+
+        if is_fully_read && *remaining == 0 {
+            break;
+        };
     }
     Ok(is_fully_read)
 }
@@ -428,6 +451,27 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
     additional: usize,
 ) -> PolarsResult<bool> {
     let max_depth = nested.len();
+
+    if
+    // There is existing data in nested.
+    max_depth > 0
+    // 0 additional rows need to be read.
+    && additional == 0
+    // The next page is a new row but was not seen by the previous call as it
+    // was not available.
+    && page
+        .iter
+        .peek()
+        .map(|x| x.0.as_ref())
+        .transpose()
+        .unwrap()
+        .copied()
+        .unwrap_or(1)
+        == 0
+    {
+        // The existing data in nested is already complete.
+        return Ok(true);
+    }
 
     let mut cum_sum = vec![0u32; max_depth + 1];
     for (i, nest) in nested.iter().enumerate() {
