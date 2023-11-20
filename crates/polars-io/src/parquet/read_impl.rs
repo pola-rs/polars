@@ -13,6 +13,7 @@ use polars_parquet::read;
 use polars_parquet::read::{ArrayIter, FileMetaData, RowGroupMetaData};
 use rayon::prelude::*;
 
+use super::materialize_empty_df;
 use super::mmap::ColumnStore;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 #[cfg(feature = "cloud")]
@@ -21,7 +22,7 @@ use crate::parquet::mmap::mmap_columns;
 use crate::parquet::predicates::read_this_row_group;
 use crate::parquet::{mmap, FileMetaDataRef, ParallelStrategy};
 use crate::predicates::{apply_predicate, PhysicalIoExpr};
-use crate::utils::{apply_projection, get_reader_bytes};
+use crate::utils::get_reader_bytes;
 use crate::RowCount;
 
 fn enlarge_data_type(mut data_type: ArrowDataType) -> ArrowDataType {
@@ -326,29 +327,6 @@ fn rg_to_dfs_par_over_rg(
         })
         .collect::<PolarsResult<Vec<_>>>()?;
     Ok(dfs.into_iter().flatten().collect())
-}
-
-pub(super) fn materialize_empty_df(
-    projection: Option<&[usize]>,
-    reader_schema: &ArrowSchema,
-    hive_partition_columns: Option<&[Series]>,
-    row_count: Option<&RowCount>,
-) -> DataFrame {
-    let schema = if let Some(projection) = projection {
-        Cow::Owned(apply_projection(reader_schema, projection))
-    } else {
-        Cow::Borrowed(reader_schema)
-    };
-    let mut df = DataFrame::from(schema.as_ref());
-
-    if let Some(row_count) = row_count {
-        df.insert_column(0, Series::new_empty(&row_count.name, &IDX_DTYPE))
-            .unwrap();
-    }
-
-    materialize_hive_partitions(&mut df, hive_partition_columns, 0);
-
-    df
 }
 
 #[allow(clippy::too_many_arguments)]

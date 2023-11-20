@@ -80,7 +80,7 @@ impl ParquetExec {
 
                     let file = std::fs::File::open(path)?;
                     let (projection, predicate) = prepare_scan_args(
-                        &self.predicate,
+                        self.predicate.clone(),
                         &mut self.file_options.with_columns.clone(),
                         &mut self.file_info.schema.clone(),
                         base_row_count.is_some(),
@@ -275,7 +275,7 @@ impl ParquetExec {
                             .map(|hive| hive.materialize_partition_columns());
 
                         let (projection, predicate) = prepare_scan_args(
-                            predicate,
+                            predicate.clone(),
                             &mut file_options.with_columns.clone(),
                             &mut file_info.schema.clone(),
                             row_count.is_some(),
@@ -312,7 +312,29 @@ impl ParquetExec {
     }
 
     fn read(&mut self) -> PolarsResult<DataFrame> {
-        let is_cloud = is_cloud_url(self.paths[0].as_path());
+        let is_cloud = match self.paths.first() {
+            Some(p) => is_cloud_url(p.as_path()),
+            None => {
+                let hive_partitions = self
+                    .file_info
+                    .hive_parts
+                    .as_ref()
+                    .map(|hive| hive.materialize_partition_columns());
+                let (projection, _) = prepare_scan_args(
+                    None,
+                    &mut self.file_options.with_columns,
+                    &mut self.file_info.schema,
+                    self.file_options.row_count.is_some(),
+                    hive_partitions.as_deref(),
+                );
+                return Ok(materialize_empty_df(
+                    projection.as_deref(),
+                    self.file_info.reader_schema.as_ref().unwrap(),
+                    hive_partitions.as_deref(),
+                    self.file_options.row_count.as_ref(),
+                ));
+            },
+        };
         let force_async = std::env::var("POLARS_FORCE_ASYNC").as_deref().unwrap_or("") == "1";
 
         let out = if is_cloud || force_async {
