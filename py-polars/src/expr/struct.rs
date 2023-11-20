@@ -16,7 +16,7 @@ impl PyExpr {
         self.inner.clone().struct_().rename_fields(names).into()
     }
 
-    fn struct_to_json(&self) -> Self {
-        self.inner.clone().struct_().to_json().into()
+    fn struct_json_encode(&self) -> Self {
+        self.inner.clone().struct_().json_encode().into()
     }
 }

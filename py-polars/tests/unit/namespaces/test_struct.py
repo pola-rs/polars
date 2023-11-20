@@ -28,3 +28,14 @@ def test_rename_fields() -> None:
         "a",
         "b",
     ]
+
+
+def test_struct_json_encode() -> None:
+    assert pl.DataFrame(
+        {"a": [{"a": [1, 2], "b": [45]}, {"a": [9, 1, 3], "b": None}]}
+    ).with_columns(pl.col("a").struct.json_encode().alias("encoded")).to_dict(
+        as_series=False
+    ) == {
+        "a": [{"a": [1, 2], "b": [45]}, {"a": [9, 1, 3], "b": None}],
+        "encoded": ['{"a":[1,2],"b":[45]}', '{"a":[9,1,3],"b":null}'],
+    }

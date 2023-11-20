@@ -10,7 +10,7 @@ pub enum StructFunction {
     FieldByName(Arc<str>),
     RenameFields(Arc<Vec<String>>),
     #[cfg(feature = "json")]
-    ToJson,
+    JsonEncode,
 }
 
 impl StructFunction {
@@ -61,7 +61,7 @@ impl StructFunction {
                 ),
             }),
             #[cfg(feature = "json")]
-            ToJson => mapper.with_dtype(DataType::Utf8),
+            JsonEncode => mapper.with_dtype(DataType::Utf8),
         }
     }
 }
@@ -74,7 +74,7 @@ impl Display for StructFunction {
             FieldByName(name) => write!(f, "struct.field_by_name({name})"),
             RenameFields(names) => write!(f, "struct.rename_fields({:?})", names),
             #[cfg(feature = "json")]
-            ToJson => write!(f, "struct.to_json"),
+            JsonEncode => write!(f, "struct.to_json"),
         }
     }
 }
@@ -87,7 +87,7 @@ impl From<StructFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             FieldByName(name) => map!(struct_::get_by_name, name.clone()),
             RenameFields(names) => map!(struct_::rename_fields, names.clone()),
             #[cfg(feature = "json")]
-            ToJson => map!(struct_::to_json),
+            JsonEncode => map!(struct_::to_json),
         }
     }
 }
