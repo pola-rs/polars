@@ -682,3 +682,12 @@ def test_non_existent_expr_inputs_in_lazy() -> None:
             .filter(pl.col("bar") == pl.col("foo"))
             .explain()
         )
+
+
+def test_error_list_to_array() -> None:
+    with pytest.raises(
+        pl.ComputeError, match="not all elements have the specified width"
+    ):
+        pl.DataFrame(
+            data={"a": [[1, 2], [3, 4, 5]]}, schema={"a": pl.List(pl.Int8)}
+        ).with_columns(array=pl.col("a").list.to_array(2))
