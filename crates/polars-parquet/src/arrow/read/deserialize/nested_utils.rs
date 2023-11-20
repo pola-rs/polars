@@ -450,7 +450,7 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
         // yield batches of pages. This means e.g. it could be that the very
         // first page is a new row, and the existing nested state has already
         // contains all data from the additional rows.
-        if page.iter.peek().unwrap().0.as_ref().copied().unwrap_or(1) == 0 {
+        if page.iter.peek().unwrap().0.as_ref().copied().unwrap() == 0 {
             if rows == additional {
                 return Ok(true);
             }
