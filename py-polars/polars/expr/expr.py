@@ -9751,8 +9751,10 @@ class Expr:
         return self.cum_count(reverse=reverse)
 
     @deprecate_function(
-        "It has been renamed to `replace` and some parameter names and defaults have changed.",
-        version="0.19.14",
+        "It has been renamed to `replace`."
+        " The default behavior has changed to keep any values not present in the mapping unchanged."
+        " Pass `default=None` to keep existing behavior.",
+        version="0.20.0",
     )
     @deprecate_renamed_parameter("remapping", "mapping", version="0.20.0")
     def map_dict(
@@ -9766,7 +9768,9 @@ class Expr:
         Replace values in column according to remapping dictionary.
 
         .. deprecated:: 0.20.0
-            This method has been renamed to :meth:`replace`.
+            This method has been renamed to :meth:`replace`. The default behavior
+            has changed to keep any values not present in the mapping unchanged.
+            Pass `default=None` to keep existing behavior.
 
         Parameters
         ----------
