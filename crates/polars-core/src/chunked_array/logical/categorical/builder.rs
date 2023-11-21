@@ -5,6 +5,7 @@ use ahash::RandomState;
 use arrow::array::*;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use hashbrown::hash_map::{Entry, RawEntryMut};
+use polars_utils::iter::EnumerateIdxTrait;
 
 use crate::datatypes::PlHashMap;
 use crate::hashing::_HASHMAP_INIT_SIZE;
@@ -547,7 +548,7 @@ impl CategoricalChunked {
 
         // Build a mapping string -> idx
         let mut map = PlHashMap::with_capacity(categories.len());
-        for (idx, cat) in categories.iter().flatten().enumerate() {
+        for (idx, cat) in categories.values_iter().enumerate_idx() {
             map.insert(cat, idx as u32);
         }
         // Find idx of every value in the map
