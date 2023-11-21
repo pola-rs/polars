@@ -330,10 +330,7 @@ pub fn page_iter_to_arrays<'a, I: PagesIter + 'a>(
             chunk_size,
             |x: f64| x,
         ))),
-
-        (PhysicalType::ByteArray, Utf8 | Binary) => Box::new(binary::Iter::<i32, _>::new(
-            pages, data_type, chunk_size, num_rows,
-        )),
+        // Don't compile this code with `i32` as we don't use this in polars
         (PhysicalType::ByteArray, LargeBinary | LargeUtf8) => Box::new(
             binary::Iter::<i64, _>::new(pages, data_type, chunk_size, num_rows),
         ),
