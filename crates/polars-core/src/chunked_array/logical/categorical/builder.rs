@@ -174,8 +174,6 @@ impl RevMapping {
     /// Check if the categoricals have a compatible mapping
     #[inline]
     pub fn same_src(&self, other: &Self) -> bool {
-        dbg!(&self);
-        dbg!(&other);
         match (self, other) {
             (RevMapping::Global(_, _, l), RevMapping::Global(_, _, r)) => *l == *r,
             (RevMapping::Local(_, l_hash), RevMapping::Local(_, r_hash)) => l_hash == r_hash,
