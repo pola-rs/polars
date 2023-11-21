@@ -174,10 +174,15 @@ pub fn call_categorical_merge_operation<I: CategoricalMergeOperation>(
                 rev_map_merger.finish(),
             )
         },
-        (RevMapping::Local(_, idl), RevMapping::Local(_, idr)) if idl == idr => (
-            merge_ops.finish(cat_left.physical(), cat_right.physical())?,
-            rev_map_left.clone(),
-        ),
+        (RevMapping::Local(_, idl), RevMapping::Local(_, idr))
+        | (RevMapping::Enum(_, idl), RevMapping::Enum(_, idr))
+            if idl == idr =>
+        {
+            (
+                merge_ops.finish(cat_left.physical(), cat_right.physical())?,
+                rev_map_left.clone(),
+            )
+        },
         (RevMapping::Local(categorical, _), RevMapping::Local(_, _)) => {
             let (rhs_physical, rev_map) = merge_local_rhs_categorical(categorical, cat_right)?;
             (
