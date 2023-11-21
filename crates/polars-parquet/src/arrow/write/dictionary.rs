@@ -12,7 +12,6 @@ use super::fixed_len_bytes::{
 use super::primitive::{
     build_statistics as primitive_build_statistics, encode_plain as primitive_encode_plain,
 };
-use super::utf8::{build_statistics as utf8_build_statistics, encode_plain as utf8_encode_plain};
 use super::{nested, Nested, WriteOptions};
 use crate::arrow::read::schema::is_nullable;
 use crate::arrow::write::{slice_nested_leaf, utils};
@@ -197,35 +196,17 @@ pub fn array_to_pages<K: DictionaryKey>(
                     ArrowDataType::UInt64 => dyn_prim!(u64, i64, array, options, type_),
                     ArrowDataType::Float32 => dyn_prim!(f32, f32, array, options, type_),
                     ArrowDataType::Float64 => dyn_prim!(f64, f64, array, options, type_),
-                    ArrowDataType::Utf8 => {
-                        let array = array.values().as_any().downcast_ref().unwrap();
-
-                        let mut buffer = vec![];
-                        utf8_encode_plain::<i32>(array, false, &mut buffer);
-                        let stats = if options.write_statistics {
-                            Some(utf8_build_statistics(array, type_.clone()))
-                        } else {
-                            None
-                        };
-                        (DictPage::new(buffer, array.len(), false), stats)
-                    },
                     ArrowDataType::LargeUtf8 => {
-                        let array = array.values().as_any().downcast_ref().unwrap();
+                        let array = arrow::compute::cast::cast(
+                            array.values().as_ref(),
+                            &ArrowDataType::LargeBinary,
+                            Default::default(),
+                        )
+                        .unwrap();
+                        let array = array.as_any().downcast_ref().unwrap();
 
                         let mut buffer = vec![];
-                        utf8_encode_plain::<i64>(array, false, &mut buffer);
-                        let stats = if options.write_statistics {
-                            Some(utf8_build_statistics(array, type_.clone()))
-                        } else {
-                            None
-                        };
-                        (DictPage::new(buffer, array.len(), false), stats)
-                    },
-                    ArrowDataType::Binary => {
-                        let array = array.values().as_any().downcast_ref().unwrap();
-
-                        let mut buffer = vec![];
-                        binary_encode_plain::<i32>(array, false, &mut buffer);
+                        binary_encode_plain::<i64>(array, false, &mut buffer);
                         let stats = if options.write_statistics {
                             Some(binary_build_statistics(array, type_.clone()))
                         } else {
