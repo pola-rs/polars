@@ -94,6 +94,7 @@ from polars.utils.deprecation import (
 from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _is_generator,
+    no_default,
     parse_percentiles,
     parse_version,
     range_to_series,
@@ -129,6 +130,7 @@ if TYPE_CHECKING:
         SizeUnit,
         TemporalLiteral,
     )
+    from polars.utils.various import NoDefault
 
     if sys.version_info >= (3, 11):
         from typing import Self
@@ -6228,25 +6230,32 @@ class Series:
 
         """
 
-    def map_dict(
+    def replace(
         self,
-        remapping: dict[Any, Any],
+        mapping: dict[Any, Any],
         *,
-        default: Any = None,
+        default: Any | NoDefault = no_default,
         return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
-        Replace values in the Series using a remapping dictionary.
+        Replace values according to the given mapping.
+
+        Needs a global string cache for lazily evaluated queries on columns of
+        type `Categorical`.
 
         Parameters
         ----------
-        remapping
-            Dictionary containing the before/after values to map.
+        mapping
+            Mapping of values to their replacement.
         default
-            Value to use when the remapping dict does not contain the lookup value.
-            Use `pl.first()`, to keep the original value.
+            Value to use when the mapping does not contain the lookup value.
+            Defaults to keeping the original value.
         return_dtype
             Set return dtype to override automatic return dtype determination.
+
+        See Also
+        --------
+        str.replace
 
         Examples
         --------
@@ -7135,6 +7144,36 @@ class Series:
 
         """
         return self._view(ignore_nulls=ignore_nulls)
+
+    @deprecate_function(
+        "It has been renamed to `replace` and some parameter names and defaults have changed.",
+        version="0.19.14",
+    )
+    @deprecate_renamed_parameter("remapping", "mapping", version="0.20.0")
+    def map_dict(
+        self,
+        mapping: dict[Any, Any],
+        *,
+        default: Any = None,
+        return_dtype: PolarsDataType | None = None,
+    ) -> Self:
+        """
+        Replace values in the Series using a remapping dictionary.
+
+        .. deprecated:: 0.20.0
+            This method has been renamed to :meth:`replace`.
+
+        Parameters
+        ----------
+        mapping
+            Dictionary containing the before/after values to map.
+        default
+            Value to use when the remapping dict does not contain the lookup value.
+            Use `pl.first()`, to keep the original value.
+        return_dtype
+            Set return dtype to override automatic return dtype determination.
+        """
+        return self.replace(mapping, default=default, return_dtype=return_dtype)
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`
