@@ -169,6 +169,7 @@ class ChainedThen(Expr):
     ) -> ChainedWhen:
         """
         Add another condition to the `when-then-otherwise` expression.
+
         Parameters
         ----------
         predicates
