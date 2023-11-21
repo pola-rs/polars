@@ -24,7 +24,6 @@ mod row_group;
 mod schema;
 #[cfg(feature = "async")]
 mod sink;
-mod utf8;
 mod utils;
 
 use arrow::array::*;
@@ -384,24 +383,17 @@ pub fn array_to_page_simple(
             options,
             type_,
         ),
-        ArrowDataType::Utf8 => utf8::array_to_page::<i32>(
-            array.as_any().downcast_ref().unwrap(),
-            options,
-            type_,
-            encoding,
-        ),
-        ArrowDataType::LargeUtf8 => utf8::array_to_page::<i64>(
-            array.as_any().downcast_ref().unwrap(),
-            options,
-            type_,
-            encoding,
-        ),
-        ArrowDataType::Binary => binary::array_to_page::<i32>(
-            array.as_any().downcast_ref().unwrap(),
-            options,
-            type_,
-            encoding,
-        ),
+        ArrowDataType::LargeUtf8 => {
+            let array =
+                arrow::compute::cast::cast(array, &ArrowDataType::LargeBinary, Default::default())
+                    .unwrap();
+            binary::array_to_page::<i64>(
+                array.as_any().downcast_ref().unwrap(),
+                options,
+                type_,
+                encoding,
+            )
+        },
         ArrowDataType::LargeBinary => binary::array_to_page::<i64>(
             array.as_any().downcast_ref().unwrap(),
             options,
@@ -633,17 +625,11 @@ fn array_to_page_nested(
             let array = array.as_any().downcast_ref().unwrap();
             boolean::nested_array_to_page(array, options, type_, nested)
         },
-        Utf8 => {
-            let array = array.as_any().downcast_ref().unwrap();
-            utf8::nested_array_to_page::<i32>(array, options, type_, nested)
-        },
         LargeUtf8 => {
+            let array =
+                arrow::compute::cast::cast(array, &LargeBinary, Default::default()).unwrap();
             let array = array.as_any().downcast_ref().unwrap();
-            utf8::nested_array_to_page::<i64>(array, options, type_, nested)
-        },
-        Binary => {
-            let array = array.as_any().downcast_ref().unwrap();
-            binary::nested_array_to_page::<i32>(array, options, type_, nested)
+            binary::nested_array_to_page::<i64>(array, options, type_, nested)
         },
         LargeBinary => {
             let array = array.as_any().downcast_ref().unwrap();

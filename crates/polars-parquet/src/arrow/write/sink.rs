@@ -52,7 +52,7 @@ where
         }
 
         let parquet_schema = crate::arrow::write::to_parquet_schema(&schema)?;
-        let created_by = Some("Arrow2 - Native Rust implementation of Arrow".to_string());
+        let created_by = Some("Polars".to_string());
         let writer = FileStreamer::new(
             writer,
             parquet_schema.clone(),
