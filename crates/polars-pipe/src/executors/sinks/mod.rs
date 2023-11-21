@@ -34,7 +34,7 @@ const HASHMAP_INIT_SIZE: usize = 64;
 
 pub(crate) static POLARS_SPILL_DIR: &str = "POLARS_SPILL_DIR";
 
-pub(crate) fn get_base_spill_dir() -> std::path::PathBuf {
+pub(crate) fn get_base_spill_dir() -> String {
     let base_dir = std::env::var(POLARS_SPILL_DIR)
         .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());
 
@@ -42,7 +42,5 @@ pub(crate) fn get_base_spill_dir() -> std::path::PathBuf {
         eprintln!("Using base directory for spilling: {}", base_dir);
     }
 
-    let mut base_path = std::path::PathBuf::from(base_dir);
-    base_path.push("polars");
-    base_path
+    base_dir
 }

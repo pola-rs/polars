@@ -5,7 +5,7 @@ use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use num_traits::AsPrimitive;
-use polars_error::{to_compute_err, PolarsResult};
+use polars_error::PolarsResult;
 
 use super::super::utils::MaybeNext;
 use super::super::{utils, PagesIter};
@@ -14,8 +14,7 @@ use crate::arrow::read::deserialize::utils::{
     get_selected_rows, FilteredOptionalPageValidity, OptionalPageValidity,
 };
 use crate::parquet::deserialize::SliceFilteredIter;
-use crate::parquet::encoding::delta_bitpacked::Decoder;
-use crate::parquet::encoding::Encoding;
+use crate::parquet::encoding::{delta_bitpacked, Encoding};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::schema::Repetition;
 use crate::parquet::types::NativeType as ParquetNativeType;
@@ -27,10 +26,13 @@ where
     T: NativeType,
 {
     Common(PrimitiveState<'a, T>),
-    DeltaBinaryPackedRequired(Decoder<'a>),
-    DeltaBinaryPackedOptional(OptionalPageValidity<'a>, Decoder<'a>),
-    FilteredDeltaBinaryPackedRequired(SliceFilteredIter<Decoder<'a>>),
-    FilteredDeltaBinaryPackedOptional(FilteredOptionalPageValidity<'a>, Decoder<'a>),
+    DeltaBinaryPackedRequired(delta_bitpacked::Decoder<'a>),
+    DeltaBinaryPackedOptional(OptionalPageValidity<'a>, delta_bitpacked::Decoder<'a>),
+    FilteredDeltaBinaryPackedRequired(SliceFilteredIter<delta_bitpacked::Decoder<'a>>),
+    FilteredDeltaBinaryPackedOptional(
+        FilteredOptionalPageValidity<'a>,
+        delta_bitpacked::Decoder<'a>,
+    ),
 }
 
 impl<'a, T> utils::PageState<'a> for State<'a, T>
@@ -93,20 +95,19 @@ where
         match (page.encoding(), dict, is_optional, is_filtered) {
             (Encoding::DeltaBinaryPacked, _, false, false) => {
                 let (_, _, values) = split_buffer(page)?;
-                Decoder::try_new(values)
-                    .map(State::DeltaBinaryPackedRequired)
-                    .map_err(to_compute_err)
+                Ok(delta_bitpacked::Decoder::try_new(values)
+                    .map(State::DeltaBinaryPackedRequired)?)
             },
             (Encoding::DeltaBinaryPacked, _, true, false) => {
                 let (_, _, values) = split_buffer(page)?;
                 Ok(State::DeltaBinaryPackedOptional(
                     OptionalPageValidity::try_new(page)?,
-                    Decoder::try_new(values)?,
+                    delta_bitpacked::Decoder::try_new(values)?,
                 ))
             },
             (Encoding::DeltaBinaryPacked, _, false, true) => {
                 let (_, _, values) = split_buffer(page)?;
-                let values = Decoder::try_new(values)?;
+                let values = delta_bitpacked::Decoder::try_new(values)?;
 
                 let rows = get_selected_rows(page);
                 let values = SliceFilteredIter::new(values, rows);
@@ -115,7 +116,7 @@ where
             },
             (Encoding::DeltaBinaryPacked, _, true, true) => {
                 let (_, _, values) = split_buffer(page)?;
-                let values = Decoder::try_new(values)?;
+                let values = delta_bitpacked::Decoder::try_new(values)?;
 
                 Ok(State::FilteredDeltaBinaryPackedOptional(
                     FilteredOptionalPageValidity::try_new(page)?,

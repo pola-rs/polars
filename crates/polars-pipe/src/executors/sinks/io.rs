@@ -42,8 +42,8 @@ fn get_spill_dir(operation_name: &'static str) -> PolarsResult<PathBuf> {
         .unwrap()
         .as_nanos();
 
-    let mut dir = get_base_spill_dir();
-    dir.push(format!("{}/{}", operation_name, uuid));
+    let mut dir = std::path::PathBuf::from(get_base_spill_dir());
+    dir.push(&format!("polars/{operation_name}/{uuid}"));
 
     if !dir.exists() {
         fs::create_dir_all(&dir).map_err(|err| {
@@ -65,8 +65,8 @@ fn get_spill_dir(operation_name: &'static str) -> PolarsResult<PathBuf> {
 /// have a lockfile (opened with 'w' permissions).
 fn gc_thread(operation_name: &'static str) {
     let _ = std::thread::spawn(move || {
-        let mut dir = get_base_spill_dir();
-        dir.push(operation_name);
+        let mut dir = std::path::PathBuf::from(get_base_spill_dir());
+        dir.push(&format!("polars/{operation_name}"));
 
         // if the directory does not exist, there is nothing to clean
         let rd = match std::fs::read_dir(&dir) {
