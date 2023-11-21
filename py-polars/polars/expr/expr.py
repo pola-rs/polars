@@ -3986,8 +3986,8 @@ class Expr:
 
         See Also
         --------
-        map_dict
         map_elements
+        replace
 
         Examples
         --------
@@ -9043,143 +9043,94 @@ class Expr:
 
         Examples
         --------
-        >>> country_code_dict = {
+        Replace a single value by another value. Values not in the mapping remain
+        unchanged.
+
+        >>> df = pl.DataFrame({"a": [1, 2, 2, 3]})
+        >>> df.with_columns(pl.col("a").replace({2: 100}).alias("replaced"))
+        shape: (4, 2)
+        ┌─────┬──────────┐
+        │ a   ┆ replaced │
+        │ --- ┆ ---      │
+        │ i64 ┆ i64      │
+        ╞═════╪══════════╡
+        │ 1   ┆ 1        │
+        │ 2   ┆ 100      │
+        │ 2   ┆ 100      │
+        │ 3   ┆ 3        │
+        └─────┴──────────┘
+
+        Replace multiple values. Specify a default to set values not in the given map
+        to the default value.
+
+        >>> df = pl.DataFrame({"country_code": ["FR", "ES", "DE", None]})
+        >>> country_code_map = {
         ...     "CA": "Canada",
         ...     "DE": "Germany",
         ...     "FR": "France",
-        ...     None: "Not specified",
+        ...     None: "unspecified",
         ... }
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "country_code": ["FR", None, "ES", "DE"],
-        ...     }
-        ... ).with_row_count()
-        >>> df
+        >>> df.with_columns(
+        ...     pl.col("country_code")
+        ...     .replace(country_code_map, default=None)
+        ...     .alias("replaced")
+        ... )
         shape: (4, 2)
-        ┌────────┬──────────────┐
-        │ row_nr ┆ country_code │
-        │ ---    ┆ ---          │
-        │ u32    ┆ str          │
-        ╞════════╪══════════════╡
-        │ 0      ┆ FR           │
-        │ 1      ┆ null         │
-        │ 2      ┆ ES           │
-        │ 3      ┆ DE           │
-        └────────┴──────────────┘
+        ┌──────────────┬─────────────┐
+        │ country_code ┆ replaced    │
+        │ ---          ┆ ---         │
+        │ str          ┆ str         │
+        ╞══════════════╪═════════════╡
+        │ FR           ┆ France      │
+        │ ES           ┆ null        │
+        │ DE           ┆ Germany     │
+        │ null         ┆ unspecified │
+        └──────────────┴─────────────┘
 
-        >>> df.with_columns(
-        ...     pl.col("country_code").map_dict(country_code_dict).alias("remapped")
+        The return type can be overridden with the `return_dtype` argument.
+
+        >>> df = df.with_row_count()
+        >>> df.select(
+        ...     "row_nr",
+        ...     pl.col("row_nr")
+        ...     .replace({1: 10, 2: 20}, default=0, return_dtype=pl.UInt8)
+        ...     .alias("replaced"),
         ... )
-        shape: (4, 3)
-        ┌────────┬──────────────┬───────────────┐
-        │ row_nr ┆ country_code ┆ remapped      │
-        │ ---    ┆ ---          ┆ ---           │
-        │ u32    ┆ str          ┆ str           │
-        ╞════════╪══════════════╪═══════════════╡
-        │ 0      ┆ FR           ┆ France        │
-        │ 1      ┆ null         ┆ Not specified │
-        │ 2      ┆ ES           ┆ null          │
-        │ 3      ┆ DE           ┆ Germany       │
-        └────────┴──────────────┴───────────────┘
+        shape: (4, 2)
+        ┌────────┬──────────┐
+        │ row_nr ┆ replaced │
+        │ ---    ┆ ---      │
+        │ u32    ┆ u8       │
+        ╞════════╪══════════╡
+        │ 0      ┆ 0        │
+        │ 1      ┆ 10       │
+        │ 2      ┆ 20       │
+        │ 3      ┆ 0        │
+        └────────┴──────────┘
 
-        Set a default value for values that cannot be mapped...
-
-        >>> df.with_columns(
-        ...     pl.col("country_code")
-        ...     .map_dict(country_code_dict, default="unknown")
-        ...     .alias("remapped")
-        ... )
-        shape: (4, 3)
-        ┌────────┬──────────────┬───────────────┐
-        │ row_nr ┆ country_code ┆ remapped      │
-        │ ---    ┆ ---          ┆ ---           │
-        │ u32    ┆ str          ┆ str           │
-        ╞════════╪══════════════╪═══════════════╡
-        │ 0      ┆ FR           ┆ France        │
-        │ 1      ┆ null         ┆ Not specified │
-        │ 2      ┆ ES           ┆ unknown       │
-        │ 3      ┆ DE           ┆ Germany       │
-        └────────┴──────────────┴───────────────┘
-
-        ...or keep the original value, by making use of `pl.first()`:
+        To reference other columns as a `default` value, a struct column must be
+        constructed first. The first field must be the column in which values are
+        replaced. The other columns can be used in the default expression.
 
         >>> df.with_columns(
-        ...     pl.col("country_code")
-        ...     .map_dict(country_code_dict, default=pl.first())
-        ...     .alias("remapped")
-        ... )
-        shape: (4, 3)
-        ┌────────┬──────────────┬───────────────┐
-        │ row_nr ┆ country_code ┆ remapped      │
-        │ ---    ┆ ---          ┆ ---           │
-        │ u32    ┆ str          ┆ str           │
-        ╞════════╪══════════════╪═══════════════╡
-        │ 0      ┆ FR           ┆ France        │
-        │ 1      ┆ null         ┆ Not specified │
-        │ 2      ┆ ES           ┆ ES            │
-        │ 3      ┆ DE           ┆ Germany       │
-        └────────┴──────────────┴───────────────┘
-
-        ...or keep the original value, by explicitly referring to the column:
-
-        >>> df.with_columns(
-        ...     pl.col("country_code")
-        ...     .map_dict(country_code_dict, default=pl.col("country_code"))
-        ...     .alias("remapped")
-        ... )
-        shape: (4, 3)
-        ┌────────┬──────────────┬───────────────┐
-        │ row_nr ┆ country_code ┆ remapped      │
-        │ ---    ┆ ---          ┆ ---           │
-        │ u32    ┆ str          ┆ str           │
-        ╞════════╪══════════════╪═══════════════╡
-        │ 0      ┆ FR           ┆ France        │
-        │ 1      ┆ null         ┆ Not specified │
-        │ 2      ┆ ES           ┆ ES            │
-        │ 3      ┆ DE           ┆ Germany       │
-        └────────┴──────────────┴───────────────┘
-
-        If you need to access different columns to set a default value, a struct needs
-        to be constructed; in the first field is the column that you want to remap and
-        the rest of the fields are the other columns used in the default expression.
-
-        >>> df.with_columns(
-        ...     pl.struct(pl.col(["country_code", "row_nr"])).map_dict(
-        ...         mapping=country_code_dict,
+        ...     pl.struct("country_code", "row_nr")
+        ...     .replace(
+        ...         mapping=country_code_map,
         ...         default=pl.col("row_nr").cast(pl.Utf8),
         ...     )
-        ... )
-        shape: (4, 2)
-        ┌────────┬───────────────┐
-        │ row_nr ┆ country_code  │
-        │ ---    ┆ ---           │
-        │ u32    ┆ str           │
-        ╞════════╪═══════════════╡
-        │ 0      ┆ France        │
-        │ 1      ┆ Not specified │
-        │ 2      ┆ 2             │
-        │ 3      ┆ Germany       │
-        └────────┴───────────────┘
-
-        Override return dtype:
-
-        >>> df.with_columns(
-        ...     pl.col("row_nr")
-        ...     .map_dict({1: 7, 3: 4}, default=3, return_dtype=pl.UInt8)
-        ...     .alias("remapped")
+        ...     .alias("replaced")
         ... )
         shape: (4, 3)
-        ┌────────┬──────────────┬──────────┐
-        │ row_nr ┆ country_code ┆ remapped │
-        │ ---    ┆ ---          ┆ ---      │
-        │ u32    ┆ str          ┆ u8       │
-        ╞════════╪══════════════╪══════════╡
-        │ 0      ┆ FR           ┆ 3        │
-        │ 1      ┆ null         ┆ 7        │
-        │ 2      ┆ ES           ┆ 3        │
-        │ 3      ┆ DE           ┆ 4        │
-        └────────┴──────────────┴──────────┘
-
+        ┌────────┬──────────────┬─────────────┐
+        │ row_nr ┆ country_code ┆ replaced    │
+        │ ---    ┆ ---          ┆ ---         │
+        │ u32    ┆ str          ┆ str         │
+        ╞════════╪══════════════╪═════════════╡
+        │ 0      ┆ FR           ┆ France      │
+        │ 1      ┆ ES           ┆ 1           │
+        │ 2      ┆ DE           ┆ Germany     │
+        │ 3      ┆ null         ┆ unspecified │
+        └────────┴──────────────┴─────────────┘
         """
 
         def _remap_key_or_value_series(

@@ -6259,61 +6259,52 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("iso3166", ["TUR", "???", "JPN", "NLD"])
-        >>> country_lookup = {
-        ...     "JPN": "Japan",
-        ...     "TUR": "Türkiye",
-        ...     "NLD": "Netherlands",
+        Replace a single value by another value. Values not in the mapping remain
+        unchanged.
+
+        >>> s = pl.Series("a", [1, 2, 2, 3])
+        >>> s.replace({2: 100})
+        shape: (4,)
+        Series: 'a' [i64]
+        [
+                1
+                100
+                100
+                3
+        ]
+
+        Replace multiple values. Specify a default to set values not in the given map
+        to the default value.
+
+        >>> s = pl.Series("country_code", ["FR", "ES", "DE", None])
+        >>> country_code_map = {
+        ...     "CA": "Canada",
+        ...     "DE": "Germany",
+        ...     "FR": "France",
+        ...     None: "unspecified",
         ... }
-
-        Remap, setting a default for unrecognised values...
-
-        >>> s.map_dict(country_lookup, default="Unspecified").alias("country_name")
+        >>> s.replace(country_code_map, default=None)
         shape: (4,)
-        Series: 'country_name' [str]
+        Series: 'country_code' [str]
         [
-            "Türkiye"
-            "Unspecified"
-            "Japan"
-            "Netherlands"
+                "France"
+                null
+                "Germany"
+                "unspecified"
         ]
 
-        ...or keep the original value, by making use of `pl.first()`:
+        The return type can be overridden with the `return_dtype` argument.
 
-        >>> s.map_dict(country_lookup, default=pl.first()).alias("country_name")
+        >>> s = pl.Series("a", [0, 1, 2, 3])
+        >>> s.replace({1: 10, 2: 20}, default=0, return_dtype=pl.UInt8)
         shape: (4,)
-        Series: 'country_name' [str]
+        Series: 'a' [u8]
         [
-            "Türkiye"
-            "???"
-            "Japan"
-            "Netherlands"
+                0
+                10
+                20
+                0
         ]
-
-        ...or keep the original value, by assigning the input series:
-
-        >>> s.map_dict(country_lookup, default=s).alias("country_name")
-        shape: (4,)
-        Series: 'country_name' [str]
-        [
-            "Türkiye"
-            "???"
-            "Japan"
-            "Netherlands"
-        ]
-
-        Override return dtype:
-
-        >>> s = pl.Series("int8", [5, 2, 3], dtype=pl.Int8)
-        >>> s.map_dict({2: 7}, default=pl.first(), return_dtype=pl.Int16)
-        shape: (3,)
-        Series: 'int8' [i16]
-        [
-            5
-            7
-            3
-        ]
-
         """
 
     def reshape(self, dimensions: tuple[int, ...]) -> Series:
