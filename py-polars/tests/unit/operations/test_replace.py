@@ -375,3 +375,15 @@ def test_replace_series() -> None:
         ),
         pl.Series("boolean_to_str", ["1", "0"]),
     )
+
+
+def test_map_dict_deprecated() -> None:
+    s = pl.Series("a", [1, 2, 3])
+    with pytest.deprecated_call():
+        result = s.map_dict({2: 100})
+    expected = pl.Series("a", [None, 100, None])
+    assert_series_equal(result, expected)
+
+    with pytest.deprecated_call():
+        result = s.to_frame().select(pl.col("a").map_dict({2: 100})).to_series()
+    assert_series_equal(result, expected)
