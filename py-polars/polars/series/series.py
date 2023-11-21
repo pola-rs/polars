@@ -130,7 +130,6 @@ if TYPE_CHECKING:
         SizeUnit,
         TemporalLiteral,
     )
-    from polars.utils.various import NoDefault
 
     if sys.version_info >= (3, 11):
         from typing import Self
@@ -6234,7 +6233,7 @@ class Series:
         self,
         mapping: dict[Any, Any],
         *,
-        default: Any | NoDefault = no_default,
+        default: Any = no_default,
         return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
