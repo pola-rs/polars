@@ -533,9 +533,13 @@ class Duration(TemporalType):
 class Categorical(DataType):
     """A categorical encoding of a set of strings."""
 
-    categories: list[str] | None = None
 
-    def __init__(self, categories: list[str] | None = None):
+class Enum(DataType):
+    """A fixed set categorical encoding of a set of strings."""
+
+    categories: list[str]
+
+    def __init__(self, categories: list[str]):
         """
         Categorical data type.
 
@@ -549,15 +553,15 @@ class Categorical(DataType):
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
-        if type(other) is DataTypeClass and issubclass(other, Categorical):
+        if type(other) is DataTypeClass and issubclass(other, Enum):
             return True
-        elif isinstance(other, Categorical):
+        elif isinstance(other, Enum):
             return self.categories == other.categories
         else:
             return False
 
     def __hash__(self) -> int:
-        return hash((self.__class__, "".join(self.categories or "")))
+        return hash((self.__class__, "".join(self.categories)))
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__

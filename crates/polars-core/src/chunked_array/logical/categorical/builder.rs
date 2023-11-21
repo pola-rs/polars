@@ -549,6 +549,7 @@ impl CategoricalChunked {
         // Build a mapping string -> idx
         let mut map = PlHashMap::with_capacity(categories.len());
         for (idx, cat) in categories.values_iter().enumerate_idx() {
+            #[allow(clippy::unnecessary_cast)]
             map.insert(cat, idx as u32);
         }
         // Find idx of every value in the map

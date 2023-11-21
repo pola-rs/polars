@@ -32,6 +32,8 @@ from polars.datatypes import (
     Date,
     Datetime,
     Duration,
+    Enum,
+    Float32,
     List,
     Null,
     Object,
@@ -444,7 +446,7 @@ def sequence_to_pyseries(
         pyseries = _construct_series_with_fallbacks(
             constructor, name, values, dtype, strict=strict
         )
-        if dtype in (Date, Datetime, Duration, Time, Boolean, Categorical):
+        if dtype in (Date, Datetime, Duration, Time, Categorical, Boolean, Enum):
             if pyseries.dtype() != dtype:
                 pyseries = pyseries.cast(dtype, strict=True)
         return pyseries
@@ -701,6 +703,8 @@ def _post_apply_columns(
         pydf_dtype = pydf_dtypes[i]
         if dtype == Categorical != pydf_dtype:
             column_casts.append(F.col(col).cast(Categorical)._pyexpr)
+        elif dtype == Enum != pydf_dtype:
+            column_casts.append(F.col(col).cast(dtype)._pyexpr)
         elif structs and (struct := structs.get(col)) and struct != pydf_dtype:
             column_casts.append(F.col(col).cast(struct)._pyexpr)
         elif dtype is not None and dtype != Unknown and dtype != pydf_dtype:
@@ -1077,7 +1081,7 @@ def _sequence_of_sequence_to_pydf(
 
         unpack_nested = False
         for col, tp in local_schema_override.items():
-            if tp == Categorical:
+            if tp in (Categorical, Enum):
                 local_schema_override[col] = Utf8
             elif not unpack_nested and (tp.base_type() in (Unknown, Struct)):
                 unpack_nested = contains_nested(
@@ -1269,7 +1273,7 @@ def _establish_dataclass_or_model_schema(
             schema_overrides = overrides
 
     for col, tp in overrides.items():
-        if tp == Categorical:
+        if tp in (Categorical, Enum):
             overrides[col] = Utf8
         elif not unpack_nested and (tp.base_type() in (Unknown, Struct)):
             unpack_nested = contains_nested(

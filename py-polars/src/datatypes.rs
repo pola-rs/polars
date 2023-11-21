@@ -28,7 +28,8 @@ pub(crate) enum PyDataType {
     Time,
     #[cfg(feature = "object")]
     Object,
-    Categorical(Option<Utf8Array<i64>>),
+    Categorical,
+    Enum(Utf8Array<i64>),
     Struct,
     Binary,
     Decimal(Option<usize>, usize),
@@ -62,8 +63,14 @@ impl From<&DataType> for PyDataType {
             #[cfg(feature = "object")]
             DataType::Object(_) => Object,
             DataType::Categorical(rev_map) => rev_map.as_ref().map_or_else(
-                || Categorical(None),
-                |rev_map| Categorical(Some(rev_map.get_categories().clone())),
+                || Categorical,
+                |rev_map| {
+                    if let RevMapping::Enum(categories, _) = &**rev_map {
+                        Enum(categories.clone())
+                    } else {
+                        Categorical
+                    }
+                },
             ),
             DataType::Struct(_) => Struct,
             DataType::Null | DataType::Unknown => {
@@ -103,9 +110,8 @@ impl From<PyDataType> for DataType {
             PyDataType::Time => Time,
             #[cfg(feature = "object")]
             PyDataType::Object => Object(OBJECT_NAME),
-            PyDataType::Categorical(categories) => {
-                categories.map_or_else(|| Categorical(None), create_categorical_data_type)
-            },
+            PyDataType::Categorical => Categorical(None),
+            PyDataType::Enum(categories) => create_enum_data_type(categories),
             PyDataType::Struct => Struct(vec![]),
             PyDataType::Decimal(p, s) => Decimal(p, Some(s)),
             PyDataType::Array(width) => Array(DataType::Null.into(), width),

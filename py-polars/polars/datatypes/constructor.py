@@ -41,6 +41,7 @@ if not _DOCUMENTING:
         dt.Utf8: PySeries.new_str,
         dt.Object: PySeries.new_object,
         dt.Categorical: PySeries.new_str,
+        dt.Enum: PySeries.new_str,
         dt.Binary: PySeries.new_binary,
         dt.Null: PySeries.new_null,
     }
