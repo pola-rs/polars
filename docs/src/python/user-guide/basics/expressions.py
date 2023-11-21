@@ -55,7 +55,7 @@ df.with_columns(pl.col("b").sum().alias("e"), (pl.col("b") + 42).alias("b+42"))
 # --8<-- [start:dataframe2]
 df2 = pl.DataFrame(
     {
-        "x": np.arange(0, 8),
+        "x": range(0, 8),
         "y": ["A", "A", "A", "B", "B", "C", "X", "X"],
     }
 )
