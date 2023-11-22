@@ -8296,7 +8296,7 @@ class DataFrame:
         if axis is not None:
             issue_deprecation_warning(
                 "The `axis` parameter for `DataFrame.sum` is deprecated."
-                " Use `DataFrame.min_horizontal()` to perform horizontal aggregation.",
+                " Use `DataFrame.sum_horizontal()` to perform horizontal aggregation.",
                 version="0.19.14",
             )
         else:
