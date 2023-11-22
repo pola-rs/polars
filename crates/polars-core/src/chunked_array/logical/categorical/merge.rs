@@ -190,6 +190,9 @@ pub fn call_categorical_merge_operation<I: CategoricalMergeOperation>(
                 rev_map,
             )
         },
+        (_, RevMapping::Enum(_, _)) | (RevMapping::Enum(_, _), _) => {
+            polars_bail!(ComputeError: "enum is not compatible with other categorical / enum")
+        },
         _ => polars_bail!(string_cache_mismatch),
     };
     // Safety: physical and rev map are correctly constructed above

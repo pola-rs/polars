@@ -101,3 +101,28 @@ def test_casting_from_an_enum_to_global() -> None:
     s2 = s.cast(pl.Categorical)
     expected = pl.Series([None, "a", "b", "c"], dtype=pl.Categorical)
     assert_series_equal(s2, expected)
+
+
+def test_append_to_an_enum() -> None:
+    s = pl.Series([None, "a", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
+    s2 = pl.Series(["c", "a", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
+    s.append(s2)
+    assert s.len() == 8
+
+
+def test_append_to_an_enum_with_new_category() -> None:
+    with pytest.raises(
+        pl.ComputeError,
+        match=("enum is not compatible with other categorical / enum"),
+    ):
+        pl.Series([None, "a", "b", "c"], dtype=pl.Enum(["a", "b", "c"])).append(
+            pl.Series(["d", "a", "b", "c"], dtype=pl.Enum(["a", "b", "c", "d"]))
+        )
+
+
+def test_extend_to_an_enum() -> None:
+    s = pl.Series([None, "a", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
+    s2 = pl.Series(["c", "a", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
+    s.extend(s2)
+    assert s.len() == 8
+    assert s.null_count() == 1
