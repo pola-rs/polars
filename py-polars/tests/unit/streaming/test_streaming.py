@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import os
+import tempfile
 import time
 from datetime import date
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -12,8 +15,6 @@ from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from polars.type_aliases import JoinStrategy
 
 pytestmark = pytest.mark.xdist_group("streaming")
@@ -332,3 +333,19 @@ def test_streaming_11219() -> None:
     assert lf.with_context([lf_other, lf_other2]).select(
         pl.col("b") + pl.col("c").first()
     ).collect(streaming=True).to_dict(as_series=False) == {"b": ["afoo", "cfoo", None]}
+
+
+@pytest.mark.write_disk()
+def test_custom_temp_dir(monkeypatch: Any) -> None:
+    test_temp_dir = "test_temp_dir"
+    temp_dir = Path(tempfile.gettempdir()) / test_temp_dir
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(temp_dir))
+
+    s = pl.arange(0, 100_000, eager=True).rename("idx")
+    df = s.shuffle().to_frame()
+    df.lazy().sort("idx").collect(streaming=True)
+
+    assert os.listdir(temp_dir), f"Temp directory '{temp_dir}' is empty"
