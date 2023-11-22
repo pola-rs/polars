@@ -377,16 +377,13 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
         "Should have yielded already completed item before reading more."
     );
 
+    let chunk_size = chunk_size.unwrap_or(usize::MAX);
     let mut first_item_is_fully_read = false;
 
     loop {
         if let Some((mut nested, mut decoded)) = items.pop_back() {
             let existing = nested.len();
-
-            let additional = chunk_size
-                .unwrap_or(*remaining)
-                .min(*remaining)
-                .saturating_sub(existing);
+            let additional = (chunk_size - existing).min(*remaining);
 
             let is_fully_read = extend_offsets2(
                 &mut page,
@@ -413,7 +410,7 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
         // * There are more pages.
         // * The remaining rows have not been fully read.
         // * The deque is empty, or the last item already holds completed data.
-        let nested = init_nested(init, chunk_size.unwrap_or(*remaining).min(*remaining));
+        let nested = init_nested(init, chunk_size.min(*remaining));
         let decoded = decoder.with_capacity(0);
         items.push_back((nested, decoded));
     }
