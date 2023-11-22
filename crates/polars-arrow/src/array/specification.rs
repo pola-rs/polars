@@ -56,11 +56,14 @@ pub(crate) fn try_check_utf8<O: Offset, C: OffsetsContainer<O>>(
     }
 
     try_check_offsets_bounds(offsets, values.len())?;
+    let end = offsets.last();
+    let start = offsets.as_slice()[0].to_usize();
+    let values_range = &values[start..end];
 
-    if values.is_ascii() {
+    if values_range.is_ascii() {
         Ok(())
     } else {
-        simdutf8::basic::from_utf8(values).map_err(to_compute_err)?;
+        simdutf8::basic::from_utf8(values_range).map_err(to_compute_err)?;
 
         // offsets can be == values.len()
         // find first offset from the end that is smaller
@@ -98,9 +101,7 @@ pub(crate) fn try_check_utf8<O: Offset, C: OffsetsContainer<O>>(
 
             // A valid code-point iff it does not start with 0b10xxxxxx
             // Bit-magic taken from `std::str::is_char_boundary`
-            if (b as i8) < -0x40 {
-                any_invalid = true
-            }
+            any_invalid |= (b as i8) < -0x40;
         }
         if any_invalid {
             polars_bail!(ComputeError: "non-valid char boundary detected")
@@ -119,11 +120,7 @@ pub(crate) unsafe fn check_indexes_unchecked<K: DictionaryKey>(
     let mut invalid = false;
 
     // this loop is auto-vectorized
-    keys.iter().for_each(|k| {
-        if k.as_usize() > len {
-            invalid = true;
-        }
-    });
+    keys.iter().for_each(|k| invalid |= k.as_usize() > len);
 
     if invalid {
         let key = keys.iter().map(|k| k.as_usize()).max().unwrap();
