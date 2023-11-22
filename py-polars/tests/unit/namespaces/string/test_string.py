@@ -244,11 +244,9 @@ def test_str_to_integer_df() -> None:
             "hex": ["fa1e", "ff00", "cafe", "invalid", None],
         }
     )
-    out = df.with_columns(
-        [
-            pl.col("bin").str.to_integer(base=2, strict=False),
-            pl.col("hex").str.to_integer(base=16, strict=False),
-        ]
+    result = df.with_columns(
+        pl.col("bin").str.to_integer(base=2, strict=False),
+        pl.col("hex").str.to_integer(base=16, strict=False),
     )
 
     expected = pl.DataFrame(
@@ -257,7 +255,7 @@ def test_str_to_integer_df() -> None:
             "hex": [64030, 65280, 51966, None, None],
         }
     )
-    assert out.frame_equal(expected)
+    assert_frame_equal(result, expected)
 
     with pytest.raises(pl.ComputeError):
         df.with_columns(

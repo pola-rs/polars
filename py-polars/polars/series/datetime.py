@@ -1675,7 +1675,9 @@ class DateTimeNameSpace:
             2001-01-01 19:00:00
             2001-01-01 22:00:00
         ]
-        >>> s.dt.round("1h").series_equal(s.dt.round(timedelta(hours=1)))
+        >>> round_str = s.dt.round("1h")
+        >>> round_td = s.dt.round(timedelta(hours=1))
+        >>> round_str.equals(round_td)
         True
 
         >>> start = datetime(2001, 1, 1)

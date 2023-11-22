@@ -1186,10 +1186,11 @@ def test_sql_expr() -> None:
             "SUBSTR(b,1,2) AS b2",
         ]
     )
+    result = df.select(*sql_exprs)
     expected = pl.DataFrame(
-        {"a": [1, 1, 1], "aa": [1, 4, 27], "b2": ["yz", "bc", None]}
+        {"a": [1, 1, 1], "aa": [1.0, 4.0, 27.0], "b2": ["yz", "bc", None]}
     )
-    assert df.select(*sql_exprs).frame_equal(expected)
+    assert_frame_equal(result, expected)
 
     # expect expressions that can't reasonably be parsed as expressions to raise
     # (for example: those that explicitly reference tables and/or use wildcards)
@@ -1249,12 +1250,11 @@ def test_sql_date() -> None:
     )
 
     with pl.SQLContext(df=df, eager_execution=True) as ctx:
-        expected = pl.DataFrame({"date": [True, False, False]})
-        assert ctx.execute("SELECT date < DATE('2021-03-20') from df").frame_equal(
-            expected
-        )
+        result = ctx.execute("SELECT date < DATE('2021-03-20') from df")
 
+    expected = pl.DataFrame({"date": [True, False, False]})
+    assert_frame_equal(result, expected)
+
+    result = pl.select(pl.sql_expr("""CAST(DATE('2023-03', '%Y-%m') as STRING)"""))
     expected = pl.DataFrame({"literal": ["2023-03-01"]})
-    assert pl.select(
-        pl.sql_expr("""CAST(DATE('2023-03', '%Y-%m') as STRING)""")
-    ).frame_equal(expected)
+    assert_frame_equal(result, expected)

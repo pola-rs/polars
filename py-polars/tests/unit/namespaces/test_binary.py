@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 from polars.type_aliases import TransferEncoding
 
 
@@ -132,7 +133,7 @@ def test_compare_encode_between_lazy_and_eager_6814(encoding: TransferEncoding) 
     result_eager = df.select(expr)
     dtype = result_eager["x"].dtype
     result_lazy = df.lazy().select(expr).select(pl.col(dtype)).collect()
-    assert result_eager.frame_equal(result_lazy)
+    assert_frame_equal(result_eager, result_lazy)
 
 
 @pytest.mark.parametrize(
@@ -148,4 +149,4 @@ def test_compare_decode_between_lazy_and_eager_6814(encoding: TransferEncoding) 
     result_eager = df.select(expr)
     dtype = result_eager["x"].dtype
     result_lazy = df.lazy().select(expr).select(pl.col(dtype)).collect()
-    assert result_eager.frame_equal(result_lazy)
+    assert_frame_equal(result_eager, result_lazy)

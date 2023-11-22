@@ -397,19 +397,18 @@ def test_list_any() -> None:
 
 
 def test_list_min_max() -> None:
-    for dt in pl.NUMERIC_DTYPES:
-        if dt == pl.Decimal:
-            continue
+    for dt in pl.INTEGER_DTYPES | pl.FLOAT_DTYPES:
         df = pl.DataFrame(
             {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]},
             schema={"a": pl.List(dt)},
         )
-        assert df.select(pl.col("a").list.min())["a"].series_equal(
-            df.select(pl.col("a").list.first())["a"]
-        )
-        assert df.select(pl.col("a").list.max())["a"].series_equal(
-            df.select(pl.col("a").list.last())["a"]
-        )
+        result = df.select(pl.col("a").list.min())
+        expected = df.select(pl.col("a").list.first())
+        assert_frame_equal(result, expected)
+
+        result = df.select(pl.col("a").list.max())
+        expected = df.select(pl.col("a").list.last())
+        assert_frame_equal(result, expected)
 
     df = pl.DataFrame(
         {"a": [[1], [1, 5, -1, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5], None]},

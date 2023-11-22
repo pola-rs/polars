@@ -28,10 +28,10 @@ def test_empty_cross_join() -> None:
 
 def test_empty_string_replace() -> None:
     s = pl.Series("", [], dtype=pl.Utf8)
-    assert s.str.replace("a", "b", literal=True).series_equal(s)
-    assert s.str.replace("a", "b").series_equal(s)
-    assert s.str.replace("ab", "b", literal=True).series_equal(s)
-    assert s.str.replace("ab", "b").series_equal(s)
+    assert_series_equal(s.str.replace("a", "b", literal=True), s)
+    assert_series_equal(s.str.replace("a", "b"), s)
+    assert_series_equal(s.str.replace("ab", "b", literal=True), s)
+    assert_series_equal(s.str.replace("ab", "b"), s)
 
 
 def test_empty_window_function() -> None:

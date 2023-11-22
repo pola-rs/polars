@@ -492,11 +492,10 @@ def test_list_gather_logical_type() -> None:
 
 
 def test_list_unique() -> None:
-    assert (
-        pl.Series([[1, 1, 2, 2, 3], [3, 3, 3, 2, 1, 2]])
-        .list.unique(maintain_order=True)
-        .series_equal(pl.Series([[1, 2, 3], [3, 2, 1]]))
-    )
+    s = pl.Series([[1, 1, 2, 2, 3], [3, 3, 3, 2, 1, 2]])
+    result = s.list.unique(maintain_order=True)
+    expected = pl.Series([[1, 2, 3], [3, 2, 1]])
+    assert_series_equal(result, expected)
 
 
 def test_list_to_struct() -> None:

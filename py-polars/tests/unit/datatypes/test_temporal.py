@@ -427,8 +427,8 @@ def test_timezone() -> None:
     # different timezones are not considered equal
     # we check both `null_equal=True` and `null_equal=False`
     # https://github.com/pola-rs/polars/issues/5023
-    assert not s.series_equal(tz_s, null_equal=False)
-    assert not s.series_equal(tz_s, null_equal=True)
+    assert s.equals(tz_s, null_equal=False) is False
+    assert s.equals(tz_s, null_equal=True) is False
     assert_series_not_equal(tz_s, s)
     assert_series_equal(s.cast(int), tz_s.cast(int))
 
