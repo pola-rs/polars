@@ -54,6 +54,7 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
 
+        dbg!(&page.encoding());
         match (page.encoding(), dict, is_optional, is_filtered) {
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false, false) => {
                 ValuesDictionary::try_new(page, dict).map(State::RequiredDictionary)

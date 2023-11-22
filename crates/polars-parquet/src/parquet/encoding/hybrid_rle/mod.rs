@@ -97,7 +97,17 @@ impl<'a> Iterator for HybridRleDecoder<'a> {
             self.remaining -= 1;
             Some(Ok(result))
         } else {
+            // Pattern match more cases so we recurse less.
             match read_next(&mut self.decoder, self.remaining) {
+                // THis is the hottest case.
+                Ok(State::Single(Some(value))) => Some(Ok(value)),
+                Ok(State::None) => Some(Ok(0)),
+                Ok(State::Rle(mut iter)) => {
+                    let out = iter.next();
+                    self.state = State::Rle(iter);
+
+                    out.map(Ok)
+                },
                 Ok(state) => {
                     self.state = state;
                     self.next()
