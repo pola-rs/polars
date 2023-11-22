@@ -8,9 +8,14 @@ use polars_error::{polars_bail, PolarsResult};
 
 use super::{array_to_pages, Encoding, WriteOptions};
 use crate::arrow::read::schema::is_nullable;
-use crate::parquet::page::Page;
+use crate::parquet::page::{DataPage, DictPage, Page};
 use crate::parquet::schema::types::{ParquetType, PrimitiveType as ParquetPrimitiveType};
-use crate::parquet::write::DynIter;
+use crate::write::FlatIter;
+
+pub enum PageResult {
+    Data(Page),
+    DictAndData { dict: DictPage, data: DataPage },
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ListNested<O: Offset> {
@@ -33,13 +38,18 @@ impl<O: Offset> ListNested<O> {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Nested {
     /// a primitive (leaf or parquet column)
-    /// bitmap, _, length
+    /// - validity
+    /// - is_optional
+    /// - length
     Primitive(Option<Bitmap>, bool, usize),
     /// a list
     List(ListNested<i32>),
     /// a list
     LargeList(ListNested<i64>),
     /// a struct
+    /// - validity
+    /// - is_optional
+    /// - length
     Struct(Option<Bitmap>, bool, usize),
 }
 
@@ -233,7 +243,7 @@ pub fn array_to_columns<A: AsRef<dyn Array> + Send + Sync>(
     type_: ParquetType,
     options: WriteOptions,
     encoding: &[Encoding],
-) -> PolarsResult<Vec<DynIter<'static, PolarsResult<Page>>>> {
+) -> PolarsResult<Vec<FlatIter>> {
     let array = array.as_ref();
     let nested = to_nested(array, &type_)?;
 

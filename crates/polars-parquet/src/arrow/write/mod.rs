@@ -72,6 +72,9 @@ pub use schema::to_parquet_type;
 #[cfg(feature = "async")]
 pub use sink::FileSink;
 
+use crate::parquet::page::DataPage;
+use crate::write::pages::PageResult;
+
 /// returns offset and length to slice the leaf values
 pub fn slice_nested_leaf(nested: &[Nested]) -> (usize, usize) {
     // find the deepest recursive dremel structure as that one determines how many values we must
@@ -137,7 +140,12 @@ pub fn can_encode(data_type: &ArrowDataType, encoding: Encoding) -> bool {
                     | ArrowDataType::Utf8
                     | ArrowDataType::LargeUtf8,
             )
-            | (Encoding::RleDictionary, ArrowDataType::Dictionary(_, _, _))
+            | (
+                Encoding::RleDictionary,
+                ArrowDataType::Dictionary(_, _, _)
+                    | ArrowDataType::LargeBinary
+                    | ArrowDataType::LargeUtf8
+            )
             | (
                 Encoding::PlainDictionary,
                 ArrowDataType::Dictionary(_, _, _)
@@ -220,17 +228,53 @@ pub fn get_max_length(nested: &[Nested]) -> usize {
     length
 }
 
+/// Utility to flatten page iterator
+pub struct FlatIter {
+    iter: DynIter<'static, PolarsResult<PageResult>>,
+    in_process: Option<DataPage>,
+}
+impl FlatIter {
+    fn new(iter: DynIter<'static, PolarsResult<PageResult>>) -> Self {
+        Self {
+            iter,
+            in_process: None,
+        }
+    }
+}
+
+impl Iterator for FlatIter {
+    type Item = PolarsResult<Page>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(page) = self.in_process.take() {
+            return Some(Ok(Page::Data(page)));
+        }
+
+        let item = self.iter.next()?;
+        match item {
+            Ok(item) => match item {
+                PageResult::Data(page) => Some(Ok(page)),
+                PageResult::DictAndData { dict, data } => {
+                    self.in_process = Some(data);
+                    Some(Ok(Page::Dict(dict)))
+                },
+            },
+            Err(e) => Some(Err(e)),
+        }
+    }
+}
+
 /// Returns an iterator of [`Page`].
 pub fn array_to_pages(
     primitive_array: &dyn Array,
     type_: ParquetPrimitiveType,
     nested: &[Nested],
     options: WriteOptions,
-    encoding: Encoding,
-) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
+    mut encoding: Encoding,
+) -> PolarsResult<FlatIter> {
     if let ArrowDataType::Dictionary(key_type, _, _) = primitive_array.data_type().to_logical_type()
     {
-        return match_integer_type!(key_type, |$T| {
+        let pages = match_integer_type!(key_type, |$T| {
             dictionary::array_to_pages::<$T>(
                 primitive_array.as_any().downcast_ref().unwrap(),
                 type_,
@@ -239,16 +283,17 @@ pub fn array_to_pages(
                 encoding,
             )
         });
+        let pages = DynIter::new(std::iter::once(pages));
+        return Ok(FlatIter::new(pages));
     };
 
     let nested = nested.to_vec();
-    let primitive_array = primitive_array.to_boxed();
 
     let number_of_rows = nested[0].len();
 
     // note: this is not correct if the array is sliced - the estimation should happen on the
     // primitive after sliced for parquet
-    let byte_size = estimated_bytes_size(primitive_array.as_ref());
+    let byte_size = estimated_bytes_size(primitive_array);
 
     const DEFAULT_PAGE_SIZE: usize = 1024 * 1024;
     let max_page_size = options.data_pagesize_limit.unwrap_or(DEFAULT_PAGE_SIZE);
@@ -260,7 +305,7 @@ pub fn array_to_pages(
     };
     let rows_per_page = (max_page_size / (bytes_per_row + 1)).max(1);
 
-    let pages = (0..number_of_rows)
+    let row_iter = (0..number_of_rows)
         .step_by(rows_per_page)
         .map(move |offset| {
             let length = if offset + rows_per_page > number_of_rows {
@@ -268,21 +313,37 @@ pub fn array_to_pages(
             } else {
                 rows_per_page
             };
-
-            let mut right_array = primitive_array.clone();
-            let mut right_nested = nested.clone();
-            slice_parquet_array(right_array.as_mut(), &mut right_nested, offset, length);
-
-            array_to_page(
-                right_array.as_ref(),
-                type_.clone(),
-                &right_nested,
-                options,
-                encoding,
-            )
+            (offset, length)
         });
 
-    Ok(DynIter::new(pages))
+    let primitive_array = primitive_array.to_boxed();
+
+    let pages = row_iter.map(move |(offset, length)| {
+        let mut right_array = primitive_array.clone();
+        let mut right_nested = nested.clone();
+        slice_parquet_array(right_array.as_mut(), &mut right_nested, offset, length);
+
+        match array_to_page(
+            right_array.as_ref(),
+            type_.clone(),
+            &right_nested,
+            options,
+            encoding,
+        )? {
+            PageResult::DictAndData { dict, data } => {
+                // Fall back to plain decoding if we exceed 1MB or 75% cardinality.
+                if dict.buffer.len() > 1024 * 1024
+                    || (right_array.len() as f64) / (dict.num_values as f64) > 0.75
+                {
+                    encoding = Encoding::Plain
+                }
+                Ok(PageResult::DictAndData { dict, data })
+            },
+            data => Ok(data),
+        }
+    });
+    let iter = DynIter::new(pages);
+    Ok(FlatIter::new(iter))
 }
 
 /// Converts an [`Array`] to a [`CompressedPage`] based on options, descriptor and `encoding`.
@@ -292,7 +353,7 @@ pub fn array_to_page(
     nested: &[Nested],
     options: WriteOptions,
     encoding: Encoding,
-) -> PolarsResult<Page> {
+) -> PolarsResult<PageResult> {
     if nested.len() == 1 {
         // special case where validity == def levels
         return array_to_page_simple(array, type_, options, encoding);
@@ -306,7 +367,7 @@ pub fn array_to_page_simple(
     type_: ParquetPrimitiveType,
     options: WriteOptions,
     encoding: Encoding,
-) -> PolarsResult<Page> {
+) -> PolarsResult<PageResult> {
     let data_type = array.data_type();
     if !can_encode(data_type, encoding) {
         polars_bail!(InvalidOperation:
@@ -387,19 +448,21 @@ pub fn array_to_page_simple(
             let array =
                 arrow::compute::cast::cast(array, &ArrowDataType::LargeBinary, Default::default())
                     .unwrap();
-            binary::array_to_page::<i64>(
+            return binary::array_to_page::<i64>(
+                array.as_any().downcast_ref().unwrap(),
+                options,
+                type_,
+                encoding,
+            );
+        },
+        ArrowDataType::LargeBinary => {
+            return binary::array_to_page::<i64>(
                 array.as_any().downcast_ref().unwrap(),
                 options,
                 type_,
                 encoding,
             )
         },
-        ArrowDataType::LargeBinary => binary::array_to_page::<i64>(
-            array.as_any().downcast_ref().unwrap(),
-            options,
-            type_,
-            encoding,
-        ),
         ArrowDataType::Null => {
             let array = Int32Array::new_null(ArrowDataType::Int32, array.len());
             primitive::array_to_page_plain::<i32, i32>(&array, options, type_)
@@ -605,7 +668,7 @@ pub fn array_to_page_simple(
         },
         other => polars_bail!(nyi = "Writing parquet pages for data type {other:?}"),
     }
-    .map(Page::Data)
+    .map(|page| PageResult::Data(Page::Data(page)))
 }
 
 fn array_to_page_nested(
@@ -614,7 +677,7 @@ fn array_to_page_nested(
     nested: &[Nested],
     options: WriteOptions,
     _encoding: Encoding,
-) -> PolarsResult<Page> {
+) -> PolarsResult<PageResult> {
     use ArrowDataType::*;
     match array.data_type().to_logical_type() {
         Null => {
@@ -820,7 +883,7 @@ fn array_to_page_nested(
         },
         other => polars_bail!(nyi = "Writing nested parquet pages for data type {other:?}"),
     }
-    .map(Page::Data)
+    .map(|page| PageResult::Data(Page::Data(page)))
 }
 
 fn transverse_recursive<T, F: Fn(&ArrowDataType) -> T + Clone>(

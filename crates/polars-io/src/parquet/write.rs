@@ -232,7 +232,9 @@ fn get_encodings(schema: &ArrowSchema) -> Vec<Vec<Encoding>> {
 /// Declare encodings
 fn encoding_map(data_type: &ArrowDataType) -> Encoding {
     match data_type.to_physical_type() {
-        PhysicalType::Dictionary(_) => Encoding::RleDictionary,
+        PhysicalType::Dictionary(_) | PhysicalType::LargeBinary | PhysicalType::LargeUtf8 => {
+            Encoding::RleDictionary
+        },
         // remaining is plain
         _ => Encoding::Plain,
     }
