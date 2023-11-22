@@ -8,12 +8,12 @@ use polars_io::RowCount;
 
 use crate::frame::LazyFileListReader;
 use crate::prelude::*;
+use crate::scan::ReaderOrSources;
 
 #[derive(Clone)]
 #[cfg(feature = "csv")]
 pub struct LazyCsvReader<'a> {
-    path: PathBuf,
-    paths: Arc<[PathBuf]>,
+    reader_or_sources: ReaderOrSources,
     separator: u8,
     has_header: bool,
     ignore_errors: bool,
@@ -40,14 +40,9 @@ pub struct LazyCsvReader<'a> {
 
 #[cfg(feature = "csv")]
 impl<'a> LazyCsvReader<'a> {
-    pub fn new_paths(paths: Arc<[PathBuf]>) -> Self {
-        Self::new("").with_paths(paths)
-    }
-
-    pub fn new(path: impl AsRef<Path>) -> Self {
+    pub fn new(sources: ReaderSources) -> Self {
         LazyCsvReader {
-            path: path.as_ref().to_owned(),
-            paths: Arc::new([]),
+            reader_or_sources: ReaderOrSources::Sources { sources: Arc::new(sources) },
             separator: b',',
             has_header: true,
             ignore_errors: false,
@@ -237,7 +232,7 @@ impl<'a> LazyCsvReader<'a> {
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
-        let mut file = if let Some(mut paths) = self.iter_paths()? {
+        let mut file = if let Some(mut paths) = self.iter_readers()? {
             let path = match paths.next() {
                 Some(globresult) => globresult?,
                 None => polars_bail!(ComputeError: "globbing pattern did not match any files"),
@@ -279,9 +274,9 @@ impl<'a> LazyCsvReader<'a> {
 }
 
 impl LazyFileListReader for LazyCsvReader<'_> {
-    fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
+    fn finish_no_glob(self, reader: Reader) -> PolarsResult<LazyFrame> {
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_csv(
-            self.path,
+            reader,
             self.separator,
             self.has_header,
             self.ignore_errors,
