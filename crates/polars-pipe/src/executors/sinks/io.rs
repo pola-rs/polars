@@ -11,7 +11,7 @@ use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 use polars_io::prelude::*;
 
-use crate::executors::sinks::get_base_spill_dir;
+use crate::executors::sinks::get_base_temp_dir;
 use crate::pipeline::morsels_per_sink;
 
 pub(in crate::executors::sinks) type DfIter =
@@ -42,7 +42,7 @@ fn get_spill_dir(operation_name: &'static str) -> PolarsResult<PathBuf> {
         .unwrap()
         .as_nanos();
 
-    let mut dir = std::path::PathBuf::from(get_base_spill_dir());
+    let mut dir = std::path::PathBuf::from(get_base_temp_dir());
     dir.push(&format!("polars/{operation_name}/{uuid}"));
 
     if !dir.exists() {
@@ -65,7 +65,7 @@ fn get_spill_dir(operation_name: &'static str) -> PolarsResult<PathBuf> {
 /// have a lockfile (opened with 'w' permissions).
 fn gc_thread(operation_name: &'static str) {
     let _ = std::thread::spawn(move || {
-        let mut dir = std::path::PathBuf::from(get_base_spill_dir());
+        let mut dir = std::path::PathBuf::from(get_base_temp_dir());
         dir.push(&format!("polars/{operation_name}"));
 
         // if the directory does not exist, there is nothing to clean

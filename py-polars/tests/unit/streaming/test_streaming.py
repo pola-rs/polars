@@ -336,16 +336,16 @@ def test_streaming_11219() -> None:
 
 
 @pytest.mark.write_disk()
-def test_custom_spill_dir(monkeypatch: Any) -> None:
-    test_spill_dir = "test_spill_dir"
-    spill_dir = Path(tempfile.gettempdir()) / test_spill_dir
+def test_custom_temp_dir(monkeypatch: Any) -> None:
+    test_temp_dir = "test_temp_dir"
+    temp_dir = Path(tempfile.gettempdir()) / test_temp_dir
 
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
-    monkeypatch.setenv("POLARS_SPILL_DIR", str(spill_dir))
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(temp_dir))
 
     s = pl.arange(0, 100_000, eager=True).rename("idx")
     df = s.shuffle().to_frame()
     df.lazy().sort("idx").collect(streaming=True)
 
-    assert os.listdir(spill_dir), f"Spill directory '{spill_dir}' is empty"
+    assert os.listdir(temp_dir), f"Temp directory '{temp_dir}' is empty"
