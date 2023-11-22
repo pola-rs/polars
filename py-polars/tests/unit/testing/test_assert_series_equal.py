@@ -10,7 +10,7 @@ import pytest
 import polars as pl
 from polars.testing import assert_series_equal, assert_series_not_equal
 
-nan = float("NaN")
+nan = float("nan")
 
 
 def test_compare_series_value_mismatch() -> None:

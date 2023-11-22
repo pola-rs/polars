@@ -1549,7 +1549,7 @@ def test_to_numpy(monkeypatch: Any) -> None:
             np.testing.assert_array_equal(
                 np_array_with_missing_values,
                 np.array(
-                    [np.NaN, 2.0, 3.0],
+                    [np.nan, 2.0, 3.0],
                     dtype=(np.float64 if flag is True else np.float32),
                 ),
             )
@@ -1920,7 +1920,7 @@ def test_is_finite_is_infinite() -> None:
 
 
 def test_is_nan_is_not_nan() -> None:
-    s = pl.Series("a", [1.0, 2.0, 3.0, np.NaN])
+    s = pl.Series("a", [1.0, 2.0, 3.0, np.nan])
     assert_series_equal(s.is_nan(), pl.Series("a", [False, False, False, True]))
     assert_series_equal(s.is_not_nan(), pl.Series("a", [True, True, True, False]))
 

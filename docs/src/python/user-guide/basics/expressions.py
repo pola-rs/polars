@@ -1,11 +1,12 @@
 # --8<-- [start:setup]
-import polars as pl
-import numpy as np
 from datetime import datetime
+
+import numpy as np
+import polars as pl
 
 df = pl.DataFrame(
     {
-        "a": np.arange(0, 8),
+        "a": range(8),
         "b": np.random.rand(8),
         "c": [
             datetime(2022, 12, 1),
@@ -17,7 +18,7 @@ df = pl.DataFrame(
             datetime(2022, 12, 7),
             datetime(2022, 12, 8),
         ],
-        "d": [1, 2.0, np.NaN, np.NaN, 0, -5, -42, None],
+        "d": [1, 2.0, float("nan"), float("nan"), 0, -5, -42, None],
     }
 )
 # --8<-- [end:setup]
@@ -55,7 +56,7 @@ df.with_columns(pl.col("b").sum().alias("e"), (pl.col("b") + 42).alias("b+42"))
 # --8<-- [start:dataframe2]
 df2 = pl.DataFrame(
     {
-        "x": np.arange(0, 8),
+        "x": range(8),
         "y": ["A", "A", "A", "B", "B", "C", "X", "X"],
     }
 )

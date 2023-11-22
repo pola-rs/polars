@@ -3509,7 +3509,7 @@ class Series:
         Examples
         --------
         >>> import numpy as np
-        >>> s = pl.Series("a", [1.0, 2.0, 3.0, np.NaN])
+        >>> s = pl.Series("a", [1.0, 2.0, 3.0, np.nan])
         >>> s.is_nan()
         shape: (4,)
         Series: 'a' [bool]
@@ -3534,7 +3534,7 @@ class Series:
         Examples
         --------
         >>> import numpy as np
-        >>> s = pl.Series("a", [1.0, 2.0, 3.0, np.NaN])
+        >>> s = pl.Series("a", [1.0, 2.0, 3.0, np.nan])
         >>> s.is_not_nan()
         shape: (4,)
         Series: 'a' [bool]

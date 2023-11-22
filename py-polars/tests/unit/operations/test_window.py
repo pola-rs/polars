@@ -135,7 +135,7 @@ def test_no_panic_on_nan_3067() -> None:
     df = pl.DataFrame(
         {
             "group": ["a", "a", "a", "b", "b", "b"],
-            "total": [1.0, 2, 3, 4, 5, np.NaN],
+            "total": [1.0, 2, 3, 4, 5, np.nan],
         }
     )
 

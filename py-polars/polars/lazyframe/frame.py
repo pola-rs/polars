@@ -4863,8 +4863,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         >>> lf = pl.LazyFrame(
         ...     {
-        ...         "a": [1.5, 2, float("NaN"), 4],
-        ...         "b": [0.5, 4, float("NaN"), 13],
+        ...         "a": [1.5, 2, float("nan"), 4],
+        ...         "b": [0.5, 4, float("nan"), 13],
         ...     }
         ... )
         >>> lf.fill_nan(99).collect()

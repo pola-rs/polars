@@ -255,7 +255,7 @@ def test_arg_sort_rank_nans() -> None:
     assert (
         pl.DataFrame(
             {
-                "val": [1.0, float("NaN")],
+                "val": [1.0, float("nan")],
             }
         )
         .with_columns(
