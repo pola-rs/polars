@@ -484,9 +484,15 @@ def test_when_then_binary_op_predicate_agg_12526() -> None:
 
     actual = df.group_by("a").agg(
         col=(
-            pl.when(pl.col("a").shift(1) > 2)
+            pl.when(
+                pl.col("a").shift(1) > 2,
+                pl.col("b").is_not_null(),
+            )
             .then(pl.lit("abc"))
-            .when(pl.col("a").shift(1) > 1)
+            .when(
+                pl.col("a").shift(1) > 1,
+                pl.col("b").is_not_null(),
+            )
             .then(pl.lit("def"))
             .otherwise(pl.lit(None))
             .first()
@@ -494,3 +500,40 @@ def test_when_then_binary_op_predicate_agg_12526() -> None:
     )
 
     assert_frame_equal(expect, actual)
+
+
+def test_when_then_deprecation() -> None:
+    df = pl.DataFrame({"foo": [5, 4, 3], "bar": [2, 1, 0]})
+    for param_name in ("expr", "condition"):
+        with pytest.warns(DeprecationWarning, match="pass as a positional argument"):
+            df.select(pl.when(**{param_name: pl.col("bar") >= 0}).then(99))
+
+
+def test_when_predicates_kwargs() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [10, 20, 30, 40],
+            "y": [15, -20, None, 1],
+            "z": ["a", "b", "c", "d"],
+        }
+    )
+    assert_frame_equal(  # kwargs only
+        df.select(matched=pl.when(x=30, z="c").then(True).otherwise(False)),
+        pl.DataFrame({"matched": [False, False, True, False]}),
+    )
+    assert_frame_equal(  # mixed predicates & kwargs
+        df.select(matched=pl.when(pl.col("x") < 30, z="b").then(True).otherwise(False)),
+        pl.DataFrame({"matched": [False, True, False, False]}),
+    )
+    assert_frame_equal(  # chained when/then with mixed predicates/kwargs
+        df.select(
+            misc=pl.when(pl.col("x") > 50)
+            .then(pl.lit("x>50"))
+            .when(y=1)
+            .then(pl.lit("y=1"))
+            .when(pl.col("z").is_in(["a", "b"]), pl.col("y") < 0)
+            .then(pl.lit("z in (a|b), y<0"))
+            .otherwise(pl.lit("?"))
+        ),
+        pl.DataFrame({"misc": ["?", "z in (a|b), y<0", "?", "y=1"]}),
+    )

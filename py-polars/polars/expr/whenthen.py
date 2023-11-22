@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Iterable
 
 import polars.functions as F
 from polars.expr.expr import Expr
-from polars.utils._parse_expr_input import parse_as_expression
+from polars.utils._parse_expr_input import (
+    parse_as_expression,
+    parse_when_constraint_expressions,
+)
 from polars.utils._wrap import wrap_expr
 from polars.utils.deprecation import (
     deprecate_renamed_parameter,
@@ -67,18 +70,27 @@ class Then(Expr):
         return self._then.otherwise(F.lit(None)._pyexpr)
 
     @deprecate_renamed_parameter("predicate", "condition", version="0.18.9")
-    def when(self, condition: IntoExpr) -> ChainedWhen:
+    def when(
+        self,
+        *predicates: IntoExpr | Iterable[IntoExpr],
+        **constraints: Any,
+    ) -> ChainedWhen:
         """
         Add a condition to the `when-then-otherwise` expression.
 
         Parameters
         ----------
-        condition
-            The condition for applying the subsequent statement.
-            Accepts a boolean expression. String input is parsed as a column name.
+        predicates
+            Condition(s) that must be met in order to apply the subsequent statement.
+            Accepts one or more boolean expressions, which are implicitly combined with
+            `&`. String input is parsed as a column name.
+        constraints
+            Apply conditions as `colname = value` keyword arguments that are treated as
+            equality matches, such as `x = 123`. As with the predicates parameter,
+            multiple conditions are implicitly combined using `&`.
 
         """
-        condition_pyexpr = parse_as_expression(condition)
+        condition_pyexpr = parse_when_constraint_expressions(*predicates, **constraints)
         return ChainedWhen(self._then.when(condition_pyexpr))
 
     @deprecate_renamed_parameter("expr", "statement", version="0.18.9")
@@ -150,18 +162,27 @@ class ChainedThen(Expr):
         return self._chained_then.otherwise(F.lit(None)._pyexpr)
 
     @deprecate_renamed_parameter("predicate", "condition", version="0.18.9")
-    def when(self, condition: IntoExpr) -> ChainedWhen:
+    def when(
+        self,
+        *predicates: IntoExpr | Iterable[IntoExpr],
+        **constraints: Any,
+    ) -> ChainedWhen:
         """
         Add another condition to the `when-then-otherwise` expression.
 
         Parameters
         ----------
-        condition
-            The condition for applying the subsequent statement.
-            Accepts a boolean expression. String input is parsed as a column name.
+        predicates
+            Condition(s) that must be met in order to apply the subsequent statement.
+            Accepts one or more boolean expressions, which are implicitly combined with
+            `&`. String input is parsed as a column name.
+        constraints
+            Apply conditions as `colname = value` keyword arguments that are treated as
+            equality matches, such as `x = 123`. As with the predicates parameter,
+            multiple conditions are implicitly combined using `&`.
 
         """
-        condition_pyexpr = parse_as_expression(condition)
+        condition_pyexpr = parse_when_constraint_expressions(*predicates, **constraints)
         return ChainedWhen(self._chained_then.when(condition_pyexpr))
 
     @deprecate_renamed_parameter("expr", "statement", version="0.18.9")

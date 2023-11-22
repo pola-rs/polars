@@ -1,27 +1,30 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Iterable
 
 import polars._reexport as pl
-from polars.utils._parse_expr_input import parse_as_expression
+from polars.utils._parse_expr_input import parse_when_constraint_expressions
 from polars.utils.deprecation import deprecate_renamed_parameter
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
 
 if TYPE_CHECKING:
-    from polars.type_aliases import IntoExpr
+    from polars.type_aliases import IntoExprColumn
 
 
 @deprecate_renamed_parameter("expr", "condition", version="0.18.9")
-def when(condition: IntoExpr) -> pl.When:
+def when(
+    *predicates: IntoExprColumn | Iterable[IntoExprColumn] | bool,
+    **constraints: Any,
+) -> pl.When:
     """
     Start a `when-then-otherwise` expression.
 
     Expression similar to an `if-else` statement in Python. Always initiated by a
-    `pl.when(<condition>).then(<value if condition>)`. Optionally followed by chaining
-    one or more `.when(<condition>).then(<value>)` statements.
+    `pl.when(<condition>).then(<value if condition>)`., and optionally followed by
+    chaining one or more `.when(<condition>).then(<value>)` statements.
 
     Chained `when, thens` should be read as Python `if, elif, ... elif` blocks, not as
     `if, if, ... if`, i.e. the first condition that evaluates to True will be picked.
@@ -32,9 +35,14 @@ def when(condition: IntoExpr) -> pl.When:
 
     Parameters
     ----------
-    condition
-        The condition for applying the subsequent statement.
-        Accepts a boolean expression. String input is parsed as a column name.
+    predicates
+        Condition(s) that must be met in order to apply the subsequent statement.
+        Accepts one or more boolean expressions, which are implicitly combined with
+        `&`. String input is parsed as a column name.
+    constraints
+        Apply conditions as `colname = value` keyword arguments that are treated as
+        equality matches, such as `x = 123`. As with the predicates parameter, multiple
+        conditions are implicitly combined using `&`.
 
     Warnings
     --------
@@ -48,12 +56,7 @@ def when(condition: IntoExpr) -> pl.When:
     where it isn't.
 
     >>> df = pl.DataFrame({"foo": [1, 3, 4], "bar": [3, 4, 0]})
-    >>> df.with_columns(
-    ...     pl.when(pl.col("foo") > 2)
-    ...     .then(pl.lit(1))
-    ...     .otherwise(pl.lit(-1))
-    ...     .alias("val")
-    ... )
+    >>> df.with_columns(pl.when(pl.col("foo") > 2).then(1).otherwise(-1).alias("val"))
     shape: (3, 3)
     ┌─────┬─────┬─────┐
     │ foo ┆ bar ┆ val │
@@ -93,7 +96,7 @@ def when(condition: IntoExpr) -> pl.When:
     The `otherwise` at the end is optional. If left out, any rows where none
     of the `when` expressions evaluate to True, are set to `null`:
 
-    >>> df.with_columns(pl.when(pl.col("foo") > 2).then(pl.lit(1)).alias("val"))
+    >>> df.with_columns(pl.when(pl.col("foo") > 2).then(1).alias("val"))
     shape: (3, 3)
     ┌─────┬─────┬──────┐
     │ foo ┆ bar ┆ val  │
@@ -105,6 +108,41 @@ def when(condition: IntoExpr) -> pl.When:
     │ 4   ┆ 0   ┆ 1    │
     └─────┴─────┴──────┘
 
+    Pass multiple predicates, each of which must be met:
+
+    >>> df.with_columns(
+    ...     val=pl.when(
+    ...         pl.col("bar") > 0,
+    ...         pl.col("foo") % 2 != 0,
+    ...     )
+    ...     .then(99)
+    ...     .otherwise(-1)
+    ... )
+    shape: (3, 3)
+    ┌─────┬─────┬─────┐
+    │ foo ┆ bar ┆ val │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i32 │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 3   ┆ 99  │
+    │ 3   ┆ 4   ┆ 99  │
+    │ 4   ┆ 0   ┆ -1  │
+    └─────┴─────┴─────┘
+
+    Pass conditions as keyword arguments:
+
+    >>> df.with_columns(val=pl.when(foo=4, bar=0).then(99).otherwise(-1))
+    shape: (3, 3)
+    ┌─────┬─────┬─────┐
+    │ foo ┆ bar ┆ val │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i32 │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 3   ┆ -1  │
+    │ 3   ┆ 4   ┆ -1  │
+    │ 4   ┆ 0   ┆ 99  │
+    └─────┴─────┴─────┘
+
     """
-    condition_pyexpr = parse_as_expression(condition)
-    return pl.When(plr.when(condition_pyexpr))
+    condition = parse_when_constraint_expressions(*predicates, **constraints)
+    return pl.When(plr.when(condition))
