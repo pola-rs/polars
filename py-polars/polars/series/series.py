@@ -7172,14 +7172,14 @@ class Series:
         """
         return self.replace(mapping, default=default, return_dtype=return_dtype)
 
-    @deprecate_renamed_function("equals", version="0.20.0")
+    @deprecate_renamed_function("equals", version="0.19.16")
     def series_equal(
         self, other: Series, *, null_equal: bool = True, strict: bool = False
     ) -> bool:
         """
         Check whether the Series is equal to another Series.
 
-        .. deprecated:: 0.20.0
+        .. deprecated:: 0.19.16
             This method has been renamed to :meth:`equals`.
 
         Parameters

@@ -10481,12 +10481,12 @@ class DataFrame:
         """
         return self.replace_column(index, new_column)
 
-    @deprecate_renamed_function("equals", version="0.20.0")
+    @deprecate_renamed_function("equals", version="0.19.16")
     def frame_equal(self, other: DataFrame, *, null_equal: bool = True) -> bool:
         """
         Check whether the DataFrame is equal to another DataFrame.
 
-        .. deprecated:: 0.20.0
+        .. deprecated:: 0.19.16
             This method has been renamed to :func:`equals`.
 
         Parameters
