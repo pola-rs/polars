@@ -220,6 +220,45 @@ pub fn get_max_length(nested: &[Nested]) -> usize {
     length
 }
 
+/// Utility to flatten page iterator
+struct FlatIter {
+    iter: DynIter<'static, PolarsResult<std::vec::IntoIter<Page>>>,
+    in_process: Option<std::vec::IntoIter<Page>>,
+}
+impl FlatIter {
+    fn new(iter: DynIter<'static, PolarsResult<std::vec::IntoIter<Page>>>) -> Self {
+        Self {
+            iter,
+            in_process: None,
+        }
+    }
+}
+
+impl Iterator for FlatIter {
+    type Item = PolarsResult<Page>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(iter) = &mut self.in_process {
+            match iter.next() {
+                Some(item) => return Some(Ok(item)),
+                None => {
+                    self.in_process = None;
+                },
+            }
+        }
+
+        let item = self.iter.next()?;
+        match item {
+            Ok(mut item) => {
+                let out = item.next().map(Ok);
+                self.in_process = Some(item);
+                out
+            },
+            Err(e) => Some(Err(e)),
+        }
+    }
+}
+
 /// Returns an iterator of [`Page`].
 pub fn array_to_pages(
     primitive_array: &dyn Array,
@@ -242,13 +281,12 @@ pub fn array_to_pages(
     };
 
     let nested = nested.to_vec();
-    let primitive_array = primitive_array.to_boxed();
 
     let number_of_rows = nested[0].len();
 
     // note: this is not correct if the array is sliced - the estimation should happen on the
     // primitive after sliced for parquet
-    let byte_size = estimated_bytes_size(primitive_array.as_ref());
+    let byte_size = estimated_bytes_size(primitive_array);
 
     const DEFAULT_PAGE_SIZE: usize = 1024 * 1024;
     let max_page_size = options.data_pagesize_limit.unwrap_or(DEFAULT_PAGE_SIZE);
@@ -260,7 +298,7 @@ pub fn array_to_pages(
     };
     let rows_per_page = (max_page_size / (bytes_per_row + 1)).max(1);
 
-    let pages = (0..number_of_rows)
+    let row_iter = (0..number_of_rows)
         .step_by(rows_per_page)
         .map(move |offset| {
             let length = if offset + rows_per_page > number_of_rows {
@@ -268,21 +306,88 @@ pub fn array_to_pages(
             } else {
                 rows_per_page
             };
-
-            let mut right_array = primitive_array.clone();
-            let mut right_nested = nested.clone();
-            slice_parquet_array(right_array.as_mut(), &mut right_nested, offset, length);
-
-            array_to_page(
-                right_array.as_ref(),
-                type_.clone(),
-                &right_nested,
-                options,
-                encoding,
-            )
+            (offset, length)
         });
 
-    Ok(DynIter::new(pages))
+    match (primitive_array.data_type(), encoding) {
+        (ArrowDataType::LargeBinary | ArrowDataType::LargeUtf8, Encoding::RleDictionary) => {
+            let array = arrow::compute::cast::cast(
+                primitive_array,
+                &ArrowDataType::LargeBinary,
+                Default::default(),
+            )
+            .unwrap();
+            let mut keep_dict_encoding: bool = true;
+
+            let pages = row_iter.map(move |(offset, length)| {
+                let mut right_array = array.clone();
+                let mut right_nested = nested.clone();
+                slice_parquet_array(right_array.as_mut(), &mut right_nested, offset, length);
+
+                if keep_dict_encoding {
+                    let len_before = right_array.len();
+                    let array = arrow::compute::cast::cast(
+                        right_array.as_ref(),
+                        &ArrowDataType::Dictionary(
+                            IntegerType::UInt32,
+                            Box::new(ArrowDataType::LargeBinary),
+                            false,
+                        ),
+                        Default::default(),
+                    )
+                    .unwrap();
+                    let array = array
+                        .as_any()
+                        .downcast_ref::<DictionaryArray<u32>>()
+                        .unwrap();
+                    let len_after = array.len();
+                    let pages = dictionary::array_to_pages(
+                        array,
+                        type_.clone(),
+                        &right_nested,
+                        options,
+                        encoding,
+                    )?
+                    .collect::<PolarsResult<Vec<_>>>()?;
+                    keep_dict_encoding &= ((len_after as f64) / (len_before as f64) < 0.75)
+                        || pages
+                            .iter()
+                            .any(|page| page.is_dict() && page.len() < 1024 * 1024 * 1024);
+
+                    Ok(pages.into_iter())
+                } else {
+                    array_to_page(
+                        right_array.as_ref(),
+                        type_.clone(),
+                        &right_nested,
+                        options,
+                        encoding,
+                    )
+                    .map(|page| vec![page].into_iter())
+                }
+            });
+            let iter = DynIter::new(pages);
+            Ok(DynIter::new(FlatIter::new(iter)))
+        },
+        _ => {
+            let primitive_array = primitive_array.to_boxed();
+            let pages = row_iter.map(move |(offset, length)| {
+                let mut right_array = primitive_array.clone();
+                let mut right_nested = nested.clone();
+                slice_parquet_array(right_array.as_mut(), &mut right_nested, offset, length);
+
+                array_to_page(
+                    right_array.as_ref(),
+                    type_.clone(),
+                    &right_nested,
+                    options,
+                    encoding,
+                )
+            });
+
+            Ok(DynIter::new(pages))
+        },
+    }
 }
 
 /// Converts an [`Array`] to a [`CompressedPage`] based on options, descriptor and `encoding`.

@@ -17,6 +17,7 @@ pub(crate) fn encode_plain<O: Offset>(
     is_optional: bool,
     buffer: &mut Vec<u8>,
 ) {
+    buffer.reserve(array.values().len());
     // append the non-null values
     if is_optional {
         array.iter().for_each(|x| {

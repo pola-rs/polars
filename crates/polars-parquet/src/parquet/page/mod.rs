@@ -239,6 +239,17 @@ pub enum Page {
 }
 
 impl Page {
+    pub(crate) fn is_dict(&self) -> bool {
+        matches!(self, Page::Dict(_))
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        match self {
+            Self::Data(page) => page.buffer.len(),
+            Self::Dict(page) => page.buffer.len(),
+        }
+    }
+
     pub(crate) fn buffer(&mut self) -> &mut Vec<u8> {
         match self {
             Self::Data(page) => &mut page.buffer,
