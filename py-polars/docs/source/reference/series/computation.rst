@@ -46,6 +46,7 @@ Computation
     Series.peak_max
     Series.peak_min
     Series.rank
+    Series.replace
     Series.rolling_apply
     Series.rolling_map
     Series.rolling_max

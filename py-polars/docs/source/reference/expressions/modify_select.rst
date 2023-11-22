@@ -41,6 +41,7 @@ Manipulation/selection
     Expr.rechunk
     Expr.reinterpret
     Expr.repeat_by
+    Expr.replace
     Expr.reshape
     Expr.reverse
     Expr.rle

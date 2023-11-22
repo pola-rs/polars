@@ -2672,64 +2672,6 @@ def test_is_between() -> None:
     ]
 
 
-def test_map_dict() -> None:
-    s = pl.Series("s", [-1, 2, None, 4, -5])
-    remap = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five"}
-
-    assert_series_equal(
-        s.abs().map_dict(remap, default="?"),
-        pl.Series("s", ["one", "two", "?", "four", "five"]),
-    )
-    assert_series_equal(
-        s.map_dict(remap, default=s.cast(pl.Utf8)),
-        pl.Series("s", ["-1", "two", None, "four", "-5"]),
-    )
-
-    remap_int = {1: 11, 2: 22, 3: 33, 4: 44, 5: 55}
-
-    assert_series_equal(
-        s.map_dict(remap_int, default=pl.first()),
-        pl.Series("s", [-1, 22, None, 44, -5]),
-    )
-
-    assert_series_equal(
-        s.cast(pl.Int16).map_dict(remap_int),
-        pl.Series("s", [None, 22, None, 44, None], dtype=pl.Int16),
-    )
-
-    assert_series_equal(
-        s.cast(pl.Int16).map_dict(remap_int, default=pl.first()),
-        pl.Series("s", [-1, 22, None, 44, -5], dtype=pl.Int16),
-    )
-
-    assert_series_equal(
-        s.cast(pl.Int16).map_dict(
-            remap_int, default=pl.first(), return_dtype=pl.Float32
-        ),
-        pl.Series("s", [-1.0, 22.0, None, 44.0, -5.0], dtype=pl.Float32),
-    )
-
-    assert_series_equal(
-        s.cast(pl.Int16).map_dict(remap_int, default=9),
-        pl.Series("s", [9, 22, 9, 44, 9], dtype=pl.Int16),
-    )
-
-    assert_series_equal(
-        s.cast(pl.Int16).map_dict(remap_int, default=9, return_dtype=pl.Float32),
-        pl.Series("s", [9.0, 22.0, 9.0, 44.0, 9.0], dtype=pl.Float32),
-    )
-
-    assert_series_equal(
-        pl.Series("boolean_to_int", [True, False]).map_dict({True: 1, False: 0}),
-        pl.Series("boolean_to_int", [1, 0]),
-    )
-
-    assert_series_equal(
-        pl.Series("boolean_to_str", [True, False]).map_dict({True: "1", False: "0"}),
-        pl.Series("boolean_to_str", ["1", "0"]),
-    )
-
-
 @pytest.mark.parametrize(
     ("dtype", "lower", "upper"),
     [

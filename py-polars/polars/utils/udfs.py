@@ -483,7 +483,7 @@ class InstructionTranslator:
         elif inst.opname in OpNames.UNARY:
             return OpNames.UNARY[inst.opname]
         elif inst.opname == "BINARY_SUBSCR":
-            return "map_dict"
+            return "replace"
         else:
             raise AssertionError(
                 "unrecognized opname"
@@ -520,7 +520,7 @@ class InstructionTranslator:
                         if " " in e1
                         else f"{not_}{e1}.is_in({e2})"
                     )
-                elif op == "map_dict":
+                elif op == "replace":
                     if not self._caller_variables:
                         self._caller_variables.update(_get_all_caller_variables())
                         if not isinstance(self._caller_variables.get(e1, None), dict):

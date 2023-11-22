@@ -58,7 +58,7 @@ from polars.utils.deprecation import (
     warn_closed_future_change,
 )
 from polars.utils.meta import threadpool_size
-from polars.utils.various import sphinx_accessor
+from polars.utils.various import no_default, sphinx_accessor
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
@@ -3985,8 +3985,8 @@ class Expr:
 
         See Also
         --------
-        map_dict
         map_elements
+        replace
 
         Examples
         --------
@@ -9012,173 +9012,124 @@ class Expr:
         """
         return self
 
-    def map_dict(
+    def replace(
         self,
-        remapping: dict[Any, Any],
+        mapping: dict[Any, Any],
         *,
-        default: Any = None,
+        default: Any = no_default,
         return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
-        Replace values in column according to remapping dictionary.
+        Replace values according to the given mapping.
 
         Needs a global string cache for lazily evaluated queries on columns of
-        type `pl.Categorical`.
+        type `Categorical`.
 
         Parameters
         ----------
-        remapping
-            Dictionary containing the before/after values to map.
+        mapping
+            Mapping of values to their replacement.
         default
-            Value to use when the remapping dict does not contain the lookup value.
-            Accepts expression input. Non-expression inputs are parsed as literals.
-            Use `pl.first()`, to keep the original value.
+            Value to use when the mapping does not contain the lookup value.
+            Defaults to keeping the original value. Accepts expression input.
+            Non-expression inputs are parsed as literals.
         return_dtype
             Set return dtype to override automatic return dtype determination.
 
         See Also
         --------
-        map
+        str.replace
 
         Examples
         --------
-        >>> country_code_dict = {
+        Replace a single value by another value. Values not in the mapping remain
+        unchanged.
+
+        >>> df = pl.DataFrame({"a": [1, 2, 2, 3]})
+        >>> df.with_columns(pl.col("a").replace({2: 100}).alias("replaced"))
+        shape: (4, 2)
+        ┌─────┬──────────┐
+        │ a   ┆ replaced │
+        │ --- ┆ ---      │
+        │ i64 ┆ i64      │
+        ╞═════╪══════════╡
+        │ 1   ┆ 1        │
+        │ 2   ┆ 100      │
+        │ 2   ┆ 100      │
+        │ 3   ┆ 3        │
+        └─────┴──────────┘
+
+        Replace multiple values. Specify a default to set values not in the given map
+        to the default value.
+
+        >>> df = pl.DataFrame({"country_code": ["FR", "ES", "DE", None]})
+        >>> country_code_map = {
         ...     "CA": "Canada",
         ...     "DE": "Germany",
         ...     "FR": "France",
-        ...     None: "Not specified",
+        ...     None: "unspecified",
         ... }
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "country_code": ["FR", None, "ES", "DE"],
-        ...     }
-        ... ).with_row_count()
-        >>> df
+        >>> df.with_columns(
+        ...     pl.col("country_code")
+        ...     .replace(country_code_map, default=None)
+        ...     .alias("replaced")
+        ... )
         shape: (4, 2)
-        ┌────────┬──────────────┐
-        │ row_nr ┆ country_code │
-        │ ---    ┆ ---          │
-        │ u32    ┆ str          │
-        ╞════════╪══════════════╡
-        │ 0      ┆ FR           │
-        │ 1      ┆ null         │
-        │ 2      ┆ ES           │
-        │ 3      ┆ DE           │
-        └────────┴──────────────┘
+        ┌──────────────┬─────────────┐
+        │ country_code ┆ replaced    │
+        │ ---          ┆ ---         │
+        │ str          ┆ str         │
+        ╞══════════════╪═════════════╡
+        │ FR           ┆ France      │
+        │ ES           ┆ null        │
+        │ DE           ┆ Germany     │
+        │ null         ┆ unspecified │
+        └──────────────┴─────────────┘
 
-        >>> df.with_columns(
-        ...     pl.col("country_code").map_dict(country_code_dict).alias("remapped")
+        The return type can be overridden with the `return_dtype` argument.
+
+        >>> df = df.with_row_count()
+        >>> df.select(
+        ...     "row_nr",
+        ...     pl.col("row_nr")
+        ...     .replace({1: 10, 2: 20}, default=0, return_dtype=pl.UInt8)
+        ...     .alias("replaced"),
         ... )
-        shape: (4, 3)
-        ┌────────┬──────────────┬───────────────┐
-        │ row_nr ┆ country_code ┆ remapped      │
-        │ ---    ┆ ---          ┆ ---           │
-        │ u32    ┆ str          ┆ str           │
-        ╞════════╪══════════════╪═══════════════╡
-        │ 0      ┆ FR           ┆ France        │
-        │ 1      ┆ null         ┆ Not specified │
-        │ 2      ┆ ES           ┆ null          │
-        │ 3      ┆ DE           ┆ Germany       │
-        └────────┴──────────────┴───────────────┘
+        shape: (4, 2)
+        ┌────────┬──────────┐
+        │ row_nr ┆ replaced │
+        │ ---    ┆ ---      │
+        │ u32    ┆ u8       │
+        ╞════════╪══════════╡
+        │ 0      ┆ 0        │
+        │ 1      ┆ 10       │
+        │ 2      ┆ 20       │
+        │ 3      ┆ 0        │
+        └────────┴──────────┘
 
-        Set a default value for values that cannot be mapped...
-
-        >>> df.with_columns(
-        ...     pl.col("country_code")
-        ...     .map_dict(country_code_dict, default="unknown")
-        ...     .alias("remapped")
-        ... )
-        shape: (4, 3)
-        ┌────────┬──────────────┬───────────────┐
-        │ row_nr ┆ country_code ┆ remapped      │
-        │ ---    ┆ ---          ┆ ---           │
-        │ u32    ┆ str          ┆ str           │
-        ╞════════╪══════════════╪═══════════════╡
-        │ 0      ┆ FR           ┆ France        │
-        │ 1      ┆ null         ┆ Not specified │
-        │ 2      ┆ ES           ┆ unknown       │
-        │ 3      ┆ DE           ┆ Germany       │
-        └────────┴──────────────┴───────────────┘
-
-        ...or keep the original value, by making use of `pl.first()`:
+        To reference other columns as a `default` value, a struct column must be
+        constructed first. The first field must be the column in which values are
+        replaced. The other columns can be used in the default expression.
 
         >>> df.with_columns(
-        ...     pl.col("country_code")
-        ...     .map_dict(country_code_dict, default=pl.first())
-        ...     .alias("remapped")
-        ... )
-        shape: (4, 3)
-        ┌────────┬──────────────┬───────────────┐
-        │ row_nr ┆ country_code ┆ remapped      │
-        │ ---    ┆ ---          ┆ ---           │
-        │ u32    ┆ str          ┆ str           │
-        ╞════════╪══════════════╪═══════════════╡
-        │ 0      ┆ FR           ┆ France        │
-        │ 1      ┆ null         ┆ Not specified │
-        │ 2      ┆ ES           ┆ ES            │
-        │ 3      ┆ DE           ┆ Germany       │
-        └────────┴──────────────┴───────────────┘
-
-        ...or keep the original value, by explicitly referring to the column:
-
-        >>> df.with_columns(
-        ...     pl.col("country_code")
-        ...     .map_dict(country_code_dict, default=pl.col("country_code"))
-        ...     .alias("remapped")
-        ... )
-        shape: (4, 3)
-        ┌────────┬──────────────┬───────────────┐
-        │ row_nr ┆ country_code ┆ remapped      │
-        │ ---    ┆ ---          ┆ ---           │
-        │ u32    ┆ str          ┆ str           │
-        ╞════════╪══════════════╪═══════════════╡
-        │ 0      ┆ FR           ┆ France        │
-        │ 1      ┆ null         ┆ Not specified │
-        │ 2      ┆ ES           ┆ ES            │
-        │ 3      ┆ DE           ┆ Germany       │
-        └────────┴──────────────┴───────────────┘
-
-        If you need to access different columns to set a default value, a struct needs
-        to be constructed; in the first field is the column that you want to remap and
-        the rest of the fields are the other columns used in the default expression.
-
-        >>> df.with_columns(
-        ...     pl.struct(pl.col(["country_code", "row_nr"])).map_dict(
-        ...         remapping=country_code_dict,
+        ...     pl.struct("country_code", "row_nr")
+        ...     .replace(
+        ...         mapping=country_code_map,
         ...         default=pl.col("row_nr").cast(pl.Utf8),
         ...     )
-        ... )
-        shape: (4, 2)
-        ┌────────┬───────────────┐
-        │ row_nr ┆ country_code  │
-        │ ---    ┆ ---           │
-        │ u32    ┆ str           │
-        ╞════════╪═══════════════╡
-        │ 0      ┆ France        │
-        │ 1      ┆ Not specified │
-        │ 2      ┆ 2             │
-        │ 3      ┆ Germany       │
-        └────────┴───────────────┘
-
-        Override return dtype:
-
-        >>> df.with_columns(
-        ...     pl.col("row_nr")
-        ...     .map_dict({1: 7, 3: 4}, default=3, return_dtype=pl.UInt8)
-        ...     .alias("remapped")
+        ...     .alias("replaced")
         ... )
         shape: (4, 3)
-        ┌────────┬──────────────┬──────────┐
-        │ row_nr ┆ country_code ┆ remapped │
-        │ ---    ┆ ---          ┆ ---      │
-        │ u32    ┆ str          ┆ u8       │
-        ╞════════╪══════════════╪══════════╡
-        │ 0      ┆ FR           ┆ 3        │
-        │ 1      ┆ null         ┆ 7        │
-        │ 2      ┆ ES           ┆ 3        │
-        │ 3      ┆ DE           ┆ 4        │
-        └────────┴──────────────┴──────────┘
-
+        ┌────────┬──────────────┬─────────────┐
+        │ row_nr ┆ country_code ┆ replaced    │
+        │ ---    ┆ ---          ┆ ---         │
+        │ u32    ┆ str          ┆ str         │
+        ╞════════╪══════════════╪═════════════╡
+        │ 0      ┆ FR           ┆ France      │
+        │ 1      ┆ ES           ┆ 1           │
+        │ 2      ┆ DE           ┆ Germany     │
+        │ 3      ┆ null         ┆ unspecified │
+        └────────┴──────────────┴─────────────┘
         """
 
         def _remap_key_or_value_series(
@@ -9191,9 +9142,9 @@ class Expr:
             is_keys: bool,
         ) -> Series:
             """
-            Convert remapping keys or remapping values to `Series` with `dtype`.
+            Convert mapping keys or mapping values to `Series` with `dtype`.
 
-            Try to convert the remapping keys or remapping values to `Series` with
+            Try to convert the mapping keys or mapping values to `Series` with
             the specified dtype and check that none of the values are accidentally
             lost (replaced by nulls) during the conversion.
 
@@ -9202,7 +9153,7 @@ class Expr:
             name
                 Name of the keys or values Series.
             values
-                Values for the Series: `remapping.keys()` or `remapping.values()`.
+                Values for the Series: `mapping.keys()` or `mapping.values()`.
             dtype
                 User specified dtype. If None,
             dtype_if_empty
@@ -9210,16 +9161,16 @@ class Expr:
                 or a list with only None values, set the Polars dtype of the Series
                 data.
             dtype_keys
-                If user set dtype is None, try to see if Series for remapping.values()
-                can be converted to same dtype as the remapping.keys() Series dtype.
+                If user set dtype is None, try to see if Series for mapping.values()
+                can be converted to same dtype as the mapping.keys() Series dtype.
             is_keys
-                If values contains keys or values from remapping dict.
+                If values contains keys or values from mapping dict.
 
             """
             try:
                 if dtype is None:
                     # If no dtype was set, which should only happen when:
-                    #     values = remapping.values()
+                    #     values = mapping.values()
                     # create a Series from those values and infer the dtype.
                     s = pl.Series(
                         name,
@@ -9251,13 +9202,13 @@ class Expr:
                             )
                             if dtype != s.dtype:
                                 raise ValueError(
-                                    f"remapping values for `map_dict` could not be converted to {dtype!r}: found {s.dtype!r}"
+                                    f"mapping values for `replace` could not be converted to {dtype!r}: found {s.dtype!r}"
                                 )
                 else:
                     # dtype was set, which should always be the case when:
-                    #     values = remapping.keys()
+                    #     values = mapping.keys()
                     # and in cases where the user set the output dtype when:
-                    #     values = remapping.values()
+                    #     values = mapping.values()
                     s = pl.Series(
                         name,
                         values,
@@ -9267,38 +9218,38 @@ class Expr:
                     )
                     if dtype != s.dtype:
                         raise ValueError(
-                            f"remapping {'keys' if is_keys else 'values'} for `map_dict` could not be converted to {dtype!r}: found {s.dtype!r}"
+                            f"mapping {'keys' if is_keys else 'values'} for `replace` could not be converted to {dtype!r}: found {s.dtype!r}"
                         )
 
             except OverflowError as exc:
                 if is_keys:
                     raise ValueError(
-                        f"remapping keys for `map_dict` could not be converted to {dtype!r}: {exc!s}"
+                        f"mapping keys for `replace` could not be converted to {dtype!r}: {exc!s}"
                     ) from exc
                 else:
                     raise ValueError(
-                        f"choose a more suitable output dtype for `map_dict` as remapping value could not be converted to {dtype!r}: {exc!s}"
+                        f"choose a more suitable output dtype for `replace` as mapping value could not be converted to {dtype!r}: {exc!s}"
                     ) from exc
 
             if is_keys:
-                # values = remapping.keys()
+                # values = mapping.keys()
                 if s.null_count() == 0:  # noqa: SIM114
                     pass
-                elif s.null_count() == 1 and None in remapping:
+                elif s.null_count() == 1 and None in mapping:
                     pass
                 else:
                     raise ValueError(
-                        f"remapping keys for `map_dict` could not be converted to {dtype!r} without losing values in the conversion"
+                        f"mapping keys for `replace` could not be converted to {dtype!r} without losing values in the conversion"
                     )
             else:
-                # values = remapping.values()
+                # values = mapping.values()
                 if s.null_count() == 0:  # noqa: SIM114
                     pass
                 elif s.len() - s.null_count() == len(list(filter(None, values))):
                     pass
                 else:
                     raise ValueError(
-                        f"remapping values for `map_dict` could not be converted to {dtype!r} without losing values in the conversion"
+                        f"remapping values for `replace` could not be converted to {dtype!r} without losing values in the conversion"
                     )
             return s
 
@@ -9326,7 +9277,7 @@ class Expr:
             )
             remap_key_s = _remap_key_or_value_series(
                 name=remap_key_column,
-                values=remapping.keys(),
+                values=mapping.keys(),
                 dtype=input_dtype,
                 dtype_if_empty=input_dtype,
                 dtype_keys=input_dtype,
@@ -9336,7 +9287,7 @@ class Expr:
                 # Create remap value Series with specified output dtype.
                 remap_value_s = pl.Series(
                     remap_value_column,
-                    remapping.values(),
+                    mapping.values(),
                     dtype=return_dtype_,
                     dtype_if_empty=input_dtype,
                 )
@@ -9346,7 +9297,7 @@ class Expr:
                 # Series is pl.Utf8 and remap key Series is pl.Categorical).
                 remap_value_s = _remap_key_or_value_series(
                     name=remap_value_column,
-                    values=remapping.values(),
+                    values=mapping.values(),
                     dtype=None,
                     dtype_if_empty=input_dtype,
                     dtype_keys=input_dtype,
@@ -9374,8 +9325,11 @@ class Expr:
 
             return mapped.collect(no_optimization=True).to_series(index=result_index)
 
-        remapping_func = partial(inner_func, default_value=default)
-        return self.map_batches(function=remapping_func, return_dtype=return_dtype)
+        if default is no_default:
+            default = F.first()
+
+        mapping_func = partial(inner_func, default_value=default)
+        return self.map_batches(function=mapping_func, return_dtype=return_dtype)
 
     @deprecate_renamed_function("map_batches", version="0.19.0")
     def map(
@@ -9794,6 +9748,42 @@ class Expr:
             Reverse the operation.
         """
         return self.cum_count(reverse=reverse)
+
+    @deprecate_function(
+        "It has been renamed to `replace`."
+        " The default behavior has changed to keep any values not present in the mapping unchanged."
+        " Pass `default=None` to keep existing behavior.",
+        version="0.19.16",
+    )
+    @deprecate_renamed_parameter("remapping", "mapping", version="0.19.16")
+    def map_dict(
+        self,
+        mapping: dict[Any, Any],
+        *,
+        default: Any = None,
+        return_dtype: PolarsDataType | None = None,
+    ) -> Self:
+        """
+        Replace values in column according to remapping dictionary.
+
+        .. deprecated:: 0.19.16
+            This method has been renamed to :meth:`replace`. The default behavior
+            has changed to keep any values not present in the mapping unchanged.
+            Pass `default=None` to keep existing behavior.
+
+        Parameters
+        ----------
+        mapping
+            Dictionary containing the before/after values to map.
+        default
+            Value to use when the remapping dict does not contain the lookup value.
+            Accepts expression input. Non-expression inputs are parsed as literals.
+            Use `pl.first()`, to keep the original value.
+        return_dtype
+            Set return dtype to override automatic return dtype determination.
+
+        """
+        return self.replace(mapping, default=default, return_dtype=return_dtype)
 
     @property
     def bin(self) -> ExprBinaryNameSpace:

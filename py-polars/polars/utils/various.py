@@ -341,8 +341,9 @@ def _cast_repr_strings_with_schema(
                     .cast(tp)
                 )
             elif tp == Boolean:
-                cast_cols[c] = F.col(c).map_dict(
-                    remapping={"true": True, "false": False},
+                cast_cols[c] = F.col(c).replace(
+                    mapping={"true": True, "false": False},
+                    default=None,
                     return_dtype=Boolean,
                 )
             elif tp in INTEGER_DTYPES:

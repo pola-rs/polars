@@ -94,6 +94,7 @@ from polars.utils.deprecation import (
 from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _is_generator,
+    no_default,
     parse_percentiles,
     parse_version,
     range_to_series,
@@ -6228,83 +6229,81 @@ class Series:
 
         """
 
-    def map_dict(
+    def replace(
         self,
-        remapping: dict[Any, Any],
+        mapping: dict[Any, Any],
         *,
-        default: Any = None,
+        default: Any = no_default,
         return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
-        Replace values in the Series using a remapping dictionary.
+        Replace values according to the given mapping.
+
+        Needs a global string cache for lazily evaluated queries on columns of
+        type `Categorical`.
 
         Parameters
         ----------
-        remapping
-            Dictionary containing the before/after values to map.
+        mapping
+            Mapping of values to their replacement.
         default
-            Value to use when the remapping dict does not contain the lookup value.
-            Use `pl.first()`, to keep the original value.
+            Value to use when the mapping does not contain the lookup value.
+            Defaults to keeping the original value.
         return_dtype
             Set return dtype to override automatic return dtype determination.
 
+        See Also
+        --------
+        str.replace
+
         Examples
         --------
-        >>> s = pl.Series("iso3166", ["TUR", "???", "JPN", "NLD"])
-        >>> country_lookup = {
-        ...     "JPN": "Japan",
-        ...     "TUR": "Türkiye",
-        ...     "NLD": "Netherlands",
+        Replace a single value by another value. Values not in the mapping remain
+        unchanged.
+
+        >>> s = pl.Series("a", [1, 2, 2, 3])
+        >>> s.replace({2: 100})
+        shape: (4,)
+        Series: 'a' [i64]
+        [
+                1
+                100
+                100
+                3
+        ]
+
+        Replace multiple values. Specify a default to set values not in the given map
+        to the default value.
+
+        >>> s = pl.Series("country_code", ["FR", "ES", "DE", None])
+        >>> country_code_map = {
+        ...     "CA": "Canada",
+        ...     "DE": "Germany",
+        ...     "FR": "France",
+        ...     None: "unspecified",
         ... }
-
-        Remap, setting a default for unrecognised values...
-
-        >>> s.map_dict(country_lookup, default="Unspecified").alias("country_name")
+        >>> s.replace(country_code_map, default=None)
         shape: (4,)
-        Series: 'country_name' [str]
+        Series: 'country_code' [str]
         [
-            "Türkiye"
-            "Unspecified"
-            "Japan"
-            "Netherlands"
+                "France"
+                null
+                "Germany"
+                "unspecified"
         ]
 
-        ...or keep the original value, by making use of `pl.first()`:
+        The return type can be overridden with the `return_dtype` argument.
 
-        >>> s.map_dict(country_lookup, default=pl.first()).alias("country_name")
+        >>> s = pl.Series("a", [0, 1, 2, 3])
+        >>> s.replace({1: 10, 2: 20}, default=0, return_dtype=pl.UInt8)
         shape: (4,)
-        Series: 'country_name' [str]
+        Series: 'a' [u8]
         [
-            "Türkiye"
-            "???"
-            "Japan"
-            "Netherlands"
+                0
+                10
+                20
+                0
         ]
-
-        ...or keep the original value, by assigning the input series:
-
-        >>> s.map_dict(country_lookup, default=s).alias("country_name")
-        shape: (4,)
-        Series: 'country_name' [str]
-        [
-            "Türkiye"
-            "???"
-            "Japan"
-            "Netherlands"
-        ]
-
-        Override return dtype:
-
-        >>> s = pl.Series("int8", [5, 2, 3], dtype=pl.Int8)
-        >>> s.map_dict({2: 7}, default=pl.first(), return_dtype=pl.Int16)
-        shape: (3,)
-        Series: 'int8' [i16]
-        [
-            5
-            7
-            3
-        ]
-
         """
 
     def reshape(self, dimensions: tuple[int, ...]) -> Series:
@@ -7135,6 +7134,40 @@ class Series:
 
         """
         return self._view(ignore_nulls=ignore_nulls)
+
+    @deprecate_function(
+        "It has been renamed to `replace`."
+        " The default behavior has changed to keep any values not present in the mapping unchanged."
+        " Pass `default=None` to keep existing behavior.",
+        version="0.19.16",
+    )
+    @deprecate_renamed_parameter("remapping", "mapping", version="0.19.16")
+    def map_dict(
+        self,
+        mapping: dict[Any, Any],
+        *,
+        default: Any = None,
+        return_dtype: PolarsDataType | None = None,
+    ) -> Self:
+        """
+        Replace values in the Series using a remapping dictionary.
+
+        .. deprecated:: 0.19.16
+            This method has been renamed to :meth:`replace`. The default behavior
+            has changed to keep any values not present in the mapping unchanged.
+            Pass `default=None` to keep existing behavior.
+
+        Parameters
+        ----------
+        mapping
+            Dictionary containing the before/after values to map.
+        default
+            Value to use when the remapping dict does not contain the lookup value.
+            Use `pl.first()`, to keep the original value.
+        return_dtype
+            Set return dtype to override automatic return dtype determination.
+        """
+        return self.replace(mapping, default=default, return_dtype=return_dtype)
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`
