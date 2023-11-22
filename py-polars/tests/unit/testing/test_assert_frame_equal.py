@@ -9,7 +9,7 @@ import polars as pl
 from polars.exceptions import InvalidAssert
 from polars.testing import assert_frame_equal, assert_frame_not_equal
 
-nan = float("NaN")
+nan = float("nan")
 
 
 @pytest.mark.parametrize(

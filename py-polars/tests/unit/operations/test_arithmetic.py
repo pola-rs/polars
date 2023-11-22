@@ -15,7 +15,7 @@ def test_sqrt_neg_inf() -> None:
     ).with_columns(pl.col("val").sqrt().alias("sqrt"))
     # comparing nans and infinities by string value as they are not cmp
     assert str(out["sqrt"].to_list()) == str(
-        [float("NaN"), float("NaN"), 0.0, 3.0, float("Inf")]
+        [float("nan"), float("nan"), 0.0, 3.0, float("Inf")]
     )
 
 

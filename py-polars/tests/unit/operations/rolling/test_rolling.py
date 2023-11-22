@@ -686,7 +686,7 @@ def test_rolling() -> None:
         expected = pl.Series([None, 0.1, 0.2], dtype=dt)
         assert_series_equal(result, expected)
 
-    df = pl.DataFrame({"val": [1.0, 2.0, 3.0, np.NaN, 5.0, 6.0, 7.0]})
+    df = pl.DataFrame({"val": [1.0, 2.0, 3.0, np.nan, 5.0, 6.0, 7.0]})
 
     for e in [
         pl.col("val").rolling_min(window_size=3),

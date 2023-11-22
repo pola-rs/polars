@@ -1,21 +1,21 @@
 # --8<-- [start:setup]
-import polars as pl
 import numpy as np
+import polars as pl
 
 # --8<-- [end:setup]
 
 # --8<-- [start:join]
 df = pl.DataFrame(
     {
-        "a": np.arange(0, 8),
+        "a": range(8),
         "b": np.random.rand(8),
-        "d": [1, 2.0, np.NaN, np.NaN, 0, -5, -42, None],
+        "d": [1, 2.0, float("nan"), float("nan"), 0, -5, -42, None],
     }
 )
 
 df2 = pl.DataFrame(
     {
-        "x": np.arange(0, 8),
+        "x": range(8),
         "y": ["A", "A", "A", "B", "B", "C", "X", "X"],
     }
 )
