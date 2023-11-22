@@ -187,7 +187,7 @@ impl<K: DictionaryKey, M: 'static + MutableArray> MutableArray for MutableDictio
 impl<K, M, T> TryExtend<Option<T>> for MutableDictionaryArray<K, M>
 where
     K: DictionaryKey,
-    M: MutableArray + Indexable + TryExtend<Option<T>>,
+    M: MutableArray + Indexable + TryExtend<Option<T>> + TryPush<Option<T>>,
     T: AsIndexed<M>,
     M::Type: Eq + Hash,
 {
@@ -196,7 +196,7 @@ where
             if let Some(value) = value {
                 let key = self
                     .map
-                    .try_push_valid(value, |arr, v| arr.try_extend(std::iter::once(Some(v))))?;
+                    .try_push_valid(value, |arr, v| arr.try_push(Some(v)))?;
                 self.keys.try_push(Some(key))?;
             } else {
                 self.push_null();

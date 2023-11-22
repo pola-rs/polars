@@ -20,7 +20,7 @@ use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{DictPage, Page};
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::{serialize_statistics, ParquetStatistics};
-use crate::parquet::write::DynIter;
+use crate::write::pages::PageResult;
 
 fn serialize_def_levels_simple(
     validity: Option<&Bitmap>,
@@ -174,7 +174,7 @@ pub fn array_to_pages<K: DictionaryKey>(
     nested: &[Nested],
     options: WriteOptions,
     encoding: Encoding,
-) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
+) -> PolarsResult<PageResult> {
     match encoding {
         Encoding::PlainDictionary | Encoding::RleDictionary => {
             // write DictPage
@@ -247,13 +247,15 @@ pub fn array_to_pages<K: DictionaryKey>(
                         )
                     },
                 };
-            let dict_page = Page::Dict(dict_page);
 
             // write DataPage pointing to DictPage
-            let data_page = serialize_keys(array, type_, nested, statistics, options)?;
+            let data_page =
+                serialize_keys(array, type_, nested, statistics, options)?.unwrap_data();
 
-            let iter = std::iter::once(Ok(dict_page)).chain(std::iter::once(Ok(data_page)));
-            Ok(DynIter::new(Box::new(iter)))
+            Ok(PageResult::DictAndData {
+                dict: dict_page,
+                data: data_page,
+            })
         },
         _ => polars_bail!(nyi = "Dictionary arrays only support dictionary encoding"),
     }

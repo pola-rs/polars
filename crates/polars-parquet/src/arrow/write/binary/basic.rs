@@ -1,16 +1,19 @@
-use arrow::array::{Array, BinaryArray};
+use arrow::array::{Array, BinaryArray, DictionaryArray};
 use arrow::bitmap::Bitmap;
+use arrow::datatypes::{ArrowDataType, IntegerType};
 use arrow::offset::Offset;
 use polars_error::{polars_bail, PolarsResult};
 
 use super::super::{utils, WriteOptions};
 use crate::arrow::read::schema::is_nullable;
 use crate::parquet::encoding::{delta_bitpacked, Encoding};
-use crate::parquet::page::DataPage;
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::{
     serialize_statistics, BinaryStatistics, ParquetStatistics, Statistics,
 };
+use crate::read::ParquetType;
+use crate::write::pages::PageResult;
+use crate::write::{to_nested, Page};
 
 pub(crate) fn encode_plain<O: Offset>(
     array: &BinaryArray<O>,
@@ -43,7 +46,30 @@ pub fn array_to_page<O: Offset>(
     options: WriteOptions,
     type_: PrimitiveType,
     encoding: Encoding,
-) -> PolarsResult<DataPage> {
+) -> PolarsResult<PageResult> {
+    if let Encoding::RleDictionary = encoding {
+        let nested = to_nested(array, &ParquetType::PrimitiveType(type_.clone()))?
+            .pop()
+            .unwrap();
+        // This does the group by.
+        let array = arrow::compute::cast::cast(
+            array,
+            &ArrowDataType::Dictionary(
+                // TODO!: use smallest possible integer type
+                IntegerType::UInt32,
+                Box::new(ArrowDataType::LargeBinary),
+                false,
+            ),
+            Default::default(),
+        )
+        .unwrap();
+        let array = array
+            .as_any()
+            .downcast_ref::<DictionaryArray<u32>>()
+            .unwrap();
+        return super::super::dictionary::array_to_pages(array, type_, &nested, options, encoding);
+    }
+
     let validity = array.validity();
     let is_optional = is_nullable(&type_.field_info);
 
@@ -94,6 +120,7 @@ pub fn array_to_page<O: Offset>(
         options,
         encoding,
     )
+    .map(|page| PageResult::Data(Page::Data(page)))
 }
 
 pub(crate) fn build_statistics<O: Offset>(

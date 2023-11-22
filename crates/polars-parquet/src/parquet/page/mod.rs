@@ -11,6 +11,11 @@ pub use crate::parquet::thrift_format::{
     DataPageHeader as DataPageHeaderV1, DataPageHeaderV2, PageHeader as ParquetPageHeader,
 };
 
+pub enum PageResult {
+    Single(Page),
+    Two { dict: DictPage, data: DataPage },
+}
+
 /// A [`CompressedDataPage`] is compressed, encoded representation of a Parquet data page.
 /// It holds actual data and thus cloning it is expensive.
 #[derive(Debug)]
@@ -239,21 +244,16 @@ pub enum Page {
 }
 
 impl Page {
-    pub(crate) fn is_dict(&self) -> bool {
-        matches!(self, Page::Dict(_))
-    }
-
-    pub(crate) fn len(&self) -> usize {
-        match self {
-            Self::Data(page) => page.buffer.len(),
-            Self::Dict(page) => page.buffer.len(),
-        }
-    }
-
     pub(crate) fn buffer(&mut self) -> &mut Vec<u8> {
         match self {
             Self::Data(page) => &mut page.buffer,
             Self::Dict(page) => &mut page.buffer,
+        }
+    }
+    pub(crate) fn unwrap_data(self) -> DataPage {
+        match self {
+            Self::Data(page) => page,
+            _ => panic!(),
         }
     }
 }
