@@ -3737,11 +3737,11 @@ class Series:
 
         """
 
-    def series_equal(
+    def equals(
         self, other: Series, *, null_equal: bool = True, strict: bool = False
     ) -> bool:
         """
-        Check if series is equal with another Series.
+        Check whether the Series is equal to another Series.
 
         Parameters
         ----------
@@ -3753,17 +3753,20 @@ class Series:
             Don't allow different numerical dtypes, e.g. comparing `pl.UInt32` with a
             `pl.Int64` will return `False`.
 
+        See Also
+        --------
+        assert_series_equal
+
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s1 = pl.Series("a", [1, 2, 3])
         >>> s2 = pl.Series("b", [4, 5, 6])
-        >>> s.series_equal(s)
+        >>> s1.equals(s1)
         True
-        >>> s.series_equal(s2)
+        >>> s1.equals(s2)
         False
-
         """
-        return self._s.series_equal(other._s, null_equal, strict)
+        return self._s.equals(other._s, null_equal, strict)
 
     def len(self) -> int:
         """
@@ -7168,6 +7171,28 @@ class Series:
             Set return dtype to override automatic return dtype determination.
         """
         return self.replace(mapping, default=default, return_dtype=return_dtype)
+
+    @deprecate_renamed_function("equals", version="0.20.0")
+    def series_equal(
+        self, other: Series, *, null_equal: bool = True, strict: bool = False
+    ) -> bool:
+        """
+        Check whether the Series is equal to another Series.
+
+        .. deprecated:: 0.20.0
+            This method has been renamed to :meth:`equals`.
+
+        Parameters
+        ----------
+        other
+            Series to compare with.
+        null_equal
+            Consider null values as equal.
+        strict
+            Don't allow different numerical dtypes, e.g. comparing `pl.UInt32` with a
+            `pl.Int64` will return `False`.
+        """
+        return self.equals(other, null_equal=null_equal, strict=strict)
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`

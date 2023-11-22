@@ -4578,9 +4578,9 @@ class DataFrame:
             )
         )
 
-    def frame_equal(self, other: DataFrame, *, null_equal: bool = True) -> bool:
+    def equals(self, other: DataFrame, *, null_equal: bool = True) -> bool:
         """
-        Check if DataFrame is equal to other.
+        Check whether the DataFrame is equal to another DataFrame.
 
         Parameters
         ----------
@@ -4588,6 +4588,10 @@ class DataFrame:
             DataFrame to compare with.
         null_equal
             Consider null values as equal.
+
+        See Also
+        --------
+        assert_frame_equal
 
         Examples
         --------
@@ -4605,13 +4609,13 @@ class DataFrame:
         ...         "ham": ["c", "b", "a"],
         ...     }
         ... )
-        >>> df1.frame_equal(df1)
+        >>> df1.equals(df1)
         True
-        >>> df1.frame_equal(df2)
+        >>> df1.equals(df2)
         False
 
         """
-        return self._df.frame_equal(other._df, null_equal)
+        return self._df.equals(other._df, null_equal)
 
     @deprecate_function(
         "DataFrame.replace is deprecated and will be removed in a future version. "
@@ -10476,6 +10480,23 @@ class DataFrame:
             Series that will replace the column.
         """
         return self.replace_column(index, new_column)
+
+    @deprecate_renamed_function("equals", version="0.20.0")
+    def frame_equal(self, other: DataFrame, *, null_equal: bool = True) -> bool:
+        """
+        Check whether the DataFrame is equal to another DataFrame.
+
+        .. deprecated:: 0.20.0
+            This method has been renamed to :func:`equals`.
+
+        Parameters
+        ----------
+        other
+            DataFrame to compare with.
+        null_equal
+            Consider null values as equal.
+        """
+        return self.equals(other, null_equal=null_equal)
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:
