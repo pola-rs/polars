@@ -521,3 +521,23 @@ def test_parquet_nano_second_schema() -> None:
     df.to_parquet(f)
     f.seek(0)
     assert pl.read_parquet(f).item() == value
+
+
+def test_nested_struct_read_12610() -> None:
+    n = 1_025
+    expect = pl.select(a=pl.int_range(0, n), b=pl.repeat(1, n)).with_columns(
+        struct=pl.struct(pl.all())
+    )
+
+    f = io.BytesIO()
+    expect.write_parquet(
+        f,
+        use_pyarrow=True,
+        pyarrow_options={
+            "data_page_size": 500,
+        },
+    )
+    f.seek(0)
+
+    actual = pl.read_parquet(f)
+    assert_frame_equal(expect, actual)
