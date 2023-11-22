@@ -1,11 +1,11 @@
 # Categorical Data
 
-Categorical data represents string data where the values in the column have a finite set of values (usually way smaller than the length of the column). You can think about columns on gender, countries, currency pairings, etc. Storing these values as plain strings is a waste of memory and performance as we will be repeating the same string over and over again. Additionally, in the case of joins we are stuck with expensive string comparisons. 
+Categorical data represents string data where the values in the column have a finite set of values (usually way smaller than the length of the column). You can think about columns on gender, countries, currency pairings, etc. Storing these values as plain strings is a waste of memory and performance as we will be repeating the same string over and over again. Additionally, in the case of joins we are stuck with expensive string comparisons.
 
 That is why Polars supports encoding string values in dictionary format. Working with categorical data in Polars can be done with two different DataTypes: `Enum`,`Categorical`. Both have their own use cases which we will explain further on this page.
-First we will look at what a categorical is in Polars. 
+First we will look at what a categorical is in Polars.
 
-In Polars a categorical is a defined as a string column which is encoded by a dictionary.  A string column would be split into two elements: encodings and the actual string values.
+In Polars a categorical is a defined as a string column which is encoded by a dictionary. A string column would be split into two elements: encodings and the actual string values.
 
 <table>
 <tr><th>String Column </th><th>Categorical Column</th></tr>
@@ -116,7 +116,7 @@ From the code block above you can see that the `Enum` data type requires the upf
 
 #### `Categorical` Data Type
 
-The `Categorical` data type is a flexible one. Polars will add categories on the fly if it sees them. This sounds like a strictly better version compared to the `Enum` data type as we can simply infer the categories, however inferring comes at a cost. The main cost here is we have no control over our encodings.   
+The `Categorical` data type is a flexible one. Polars will add categories on the fly if it sees them. This sounds like a strictly better version compared to the `Enum` data type as we can simply infer the categories, however inferring comes at a cost. The main cost here is we have no control over our encodings.
 
 Consider the following scenario where we append the following two categorical `Series`
 
@@ -209,7 +209,6 @@ Polars encodes the string values in order as they appear. So the series would lo
     </tbody>
 </table>
 
-
 </td>
 <td>
 
@@ -243,12 +242,12 @@ Combining the `Series` becomes a non-trivial task which is expensive as the phys
 
 ##### Using the global string Cache
 
-One way to handle this problem is to enable a `StringCache`. When you enable the `StringCache` strings are no longer encoded in the order they appear on a per-column basis. Instead, the string cache ensures a single encoding for each string. The string `Polar` will always map the same physical for all categorical columns made under the string cache. 
-Merge operations (e.g. appends, joins) are cheap as there is no need to make the encodings compatible first, solving the problem we had above. 
+One way to handle this problem is to enable a `StringCache`. When you enable the `StringCache` strings are no longer encoded in the order they appear on a per-column basis. Instead, the string cache ensures a single encoding for each string. The string `Polar` will always map the same physical for all categorical columns made under the string cache.
+Merge operations (e.g. appends, joins) are cheap as there is no need to make the encodings compatible first, solving the problem we had above.
 
 {{code_block('user-guide/concepts/data-types/categoricals','global_append',[])}}
 
-However, the string cache does come at a small performance hit during construction of the `Series` as we need to look up / insert the string value in the cache. Therefore, it is preferred to use the `Enum` Data Type if you know your categories in advance.    
+However, the string cache does come at a small performance hit during construction of the `Series` as we need to look up / insert the string value in the cache. Therefore, it is preferred to use the `Enum` Data Type if you know your categories in advance.
 
 #### `Enum Data Type`
 
@@ -259,4 +258,3 @@ In the `Enum` data type we specify the categories in advance. This way we ensure
 Polars will raise an `OutOfBounds` error when a value is encountered which is not specified in the `Enum`.
 
 {{code_block('user-guide/concepts/data-types/categoricals','enum_error',[])}}
-

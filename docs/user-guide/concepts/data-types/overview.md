@@ -5,7 +5,7 @@ cache-efficient and well-supported for Inter Process Communication. Most data ty
 from Arrow, with the exception of `Utf8` (this is actually `LargeUtf8`), `Categorical`, and `Object` (support is limited). The data types are:
 
 | Group    | Type          | Details                                                                                                                              |
-| -------- |---------------|--------------------------------------------------------------------------------------------------------------------------------------|
+| -------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | Numeric  | `Int8`        | 8-bit signed integer.                                                                                                                |
 |          | `Int16`       | 16-bit signed integer.                                                                                                               |
 |          | `Int32`       | 32-bit signed integer.                                                                                                               |
