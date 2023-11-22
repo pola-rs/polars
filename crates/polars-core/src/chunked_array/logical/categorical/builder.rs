@@ -557,7 +557,7 @@ impl CategoricalChunked {
                 opt_s
                     .map(|s| {
                         map.get(s).copied().ok_or_else(
-                            || polars_err!(OutOfBounds: "value {} in string column not found in fixed set of categories {:?}",s,categories),
+                            || polars_err!(OutOfBounds: "value {} is not present in Enum: {:?}",s,categories),
                         )
                     })
                     .transpose()

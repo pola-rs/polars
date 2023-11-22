@@ -535,7 +535,13 @@ class Categorical(DataType):
 
 
 class Enum(DataType):
-    """A fixed set categorical encoding of a set of strings."""
+    """
+    A fixed set categorical encoding of a set of strings.
+
+    .. warning::
+    This is an experimental work-in-progress feature and may not work as expected.
+
+    """
 
     categories: list[str]
 

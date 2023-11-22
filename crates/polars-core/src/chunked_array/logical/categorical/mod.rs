@@ -7,11 +7,13 @@ pub mod string_cache;
 use bitflags::bitflags;
 pub use builder::*;
 pub use merge::*;
+use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::sync::SyncPtr;
 
 use super::*;
 use crate::chunked_array::Settings;
 use crate::prelude::*;
+use crate::using_string_cache;
 
 bitflags! {
     #[derive(Default, Clone)]
@@ -71,10 +73,10 @@ impl CategoricalChunked {
         let (physical_map, categories) = match rev_map.as_ref() {
             RevMapping::Global(m, c, _) => (m, c),
             RevMapping::Local(_, _) => return self.clone(),
-            RevMapping::Enum(a, _) => unsafe {
+            RevMapping::Enum(a, h) => unsafe {
                 return Self::from_cats_and_rev_map_unchecked(
                     self.physical().clone(),
-                    RevMapping::build_local(a.clone()).into(),
+                    RevMapping::Local(a.clone(), *h).into(),
                 );
             },
         };
@@ -93,6 +95,63 @@ impl CategoricalChunked {
         out.set_lexical_ordering(self.uses_lexical_ordering());
 
         out
+    }
+
+    pub fn to_global(&self) -> PolarsResult<Self> {
+        polars_ensure!(using_string_cache(), string_cache_mismatch);
+        // Fast path
+        let categories = match &**self.get_rev_map() {
+            RevMapping::Global(_, _, _) => return Ok(self.clone()),
+            RevMapping::Local(categories, _) => categories,
+            RevMapping::Enum(categories, _) => categories,
+        };
+        let physical = self.physical().rechunk();
+        let arr = physical.downcast_get(0).unwrap();
+
+        let mut builder = CategoricalChunkedBuilder::new(self.name(), physical.len());
+        builder.global_map_from_local(arr, categories.clone());
+        Ok(builder.finish())
+    }
+
+    pub fn to_enum(&self, categories: &Utf8Array<i64>, hash: u128) -> PolarsResult<Self> {
+        // Fast paths
+        match self.get_rev_map().as_ref() {
+            RevMapping::Enum(_, cur_hash) if hash == *cur_hash => return Ok(self.clone()),
+            RevMapping::Local(_, cur_hash) if hash == *cur_hash => {
+                return unsafe {
+                    Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
+                        self.physical().clone(),
+                        RevMapping::Enum(categories.clone(), hash).into(),
+                    ))
+                }
+            },
+            _ => (),
+        };
+        // Make a mapping from old idx to new idx
+        let old_rev_map = self.get_rev_map();
+        #[allow(clippy::unnecessary_cast)]
+        let idx_map: PlHashMap<u32, u32> = categories
+            .values_iter()
+            .enumerate_idx()
+            .filter_map(|(new_idx, s)| old_rev_map.find(s).map(|old_idx| (old_idx, new_idx as u32)))
+            .collect();
+
+        // Loop over the physicals and try get new idx
+        let new_phys: UInt32Chunked = self
+            .physical()
+            .into_iter()
+            .map(|opt_v: Option<u32>| opt_v.map(|v| idx_map.get(&v).copied().ok_or_else(|| polars_err!(OutOfBounds: "value {} is not present in Enum {:?}",old_rev_map.get(v),&categories))).transpose())
+            .collect::<PolarsResult<_>>()?;
+
+        Ok(
+            // Safety: we created the physical from the enum categories
+            unsafe {
+                CategoricalChunked::from_cats_and_rev_map_unchecked(
+                    new_phys,
+                    RevMapping::Enum(categories.clone(), hash).into(),
+                )
+            },
+        )
     }
 
     pub(crate) fn get_flags(&self) -> Settings {
@@ -239,7 +298,25 @@ impl LogicalType for CategoricalChunked {
                 Ok(ca.into_series())
             },
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => Ok(self.clone().into_series()),
+            DataType::Categorical(rev_map) => {
+                // Casting to a Enum
+                if let Some(rev_map) = rev_map {
+                    if let RevMapping::Enum(categories, hash) = &**rev_map {
+                        return Ok(self.to_enum(categories, *hash)?.into_series());
+                    }
+                }
+
+                // Casting from an Enum to a local or global
+                if matches!(&**self.get_rev_map(), RevMapping::Enum(_, _)) && rev_map.is_none() {
+                    if using_string_cache() {
+                        return Ok(self.to_global()?.into_series());
+                    } else {
+                        return Ok(self.to_local().into_series());
+                    }
+                }
+                // Otherwise we do nothing
+                Ok(self.clone().into_series())
+            },
             _ => self.physical.cast(dtype),
         }
     }

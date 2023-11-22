@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+from polars import StringCache
 from polars.testing import assert_series_equal
 
 
@@ -14,7 +15,7 @@ def test_enum_creation() -> None:
 def test_enum_non_existent() -> None:
     with pytest.raises(
         pl.OutOfBoundsError,
-        match=("in string column not found in fixed set of categories"),
+        match=("value c is not present in Enum"),
     ):
         pl.Series([None, "a", "b", "c"], dtype=pl.Enum(categories=["a", "b"]))
 
@@ -37,3 +38,66 @@ def test_nested_enum_creation() -> None:
     s = pl.Series([[None, "a"], ["b", "c"]], dtype=dtype)
     assert s.len() == 2
     assert s.dtype == dtype
+
+
+def test_casting_to_an_enum_from_utf() -> None:
+    dtype = pl.Enum(["a", "b", "c"])
+    s = pl.Series([None, "a", "b", "c"])
+    s2 = s.cast(dtype)
+    assert s2.dtype == dtype
+    assert s2.null_count() == 1
+
+
+def test_casting_to_an_enum_from_categorical() -> None:
+    dtype = pl.Enum(["a", "b", "c"])
+    s = pl.Series([None, "a", "b", "c"], dtype=pl.Categorical)
+    s2 = s.cast(dtype)
+    assert s2.dtype == dtype
+    assert s2.null_count() == 1
+    expected = pl.Series([None, "a", "b", "c"], dtype=dtype)
+    assert_series_equal(s2, expected)
+
+
+def test_casting_to_an_enum_from_categorical_nonexistent() -> None:
+    with pytest.raises(
+        pl.OutOfBoundsError,
+        match=("value c is not present in Enum"),
+    ):
+        pl.Series([None, "a", "b", "c"], dtype=pl.Categorical).cast(pl.Enum(["a", "b"]))
+
+
+@StringCache()
+def test_casting_to_an_enum_from_global_categorical() -> None:
+    dtype = pl.Enum(["a", "b", "c"])
+    s = pl.Series([None, "a", "b", "c"], dtype=pl.Categorical)
+    s2 = s.cast(dtype)
+    assert s2.dtype == dtype
+    assert s2.null_count() == 1
+    expected = pl.Series([None, "a", "b", "c"], dtype=dtype)
+    assert_series_equal(s2, expected)
+
+
+@StringCache()
+def test_casting_to_an_enum_from_global_categorical_nonexistent() -> None:
+    with pytest.raises(
+        pl.OutOfBoundsError,
+        match=("value c is not present in Enum"),
+    ):
+        pl.Series([None, "a", "b", "c"], dtype=pl.Categorical).cast(pl.Enum(["a", "b"]))
+
+
+def test_casting_from_an_enum_to_local() -> None:
+    dtype = pl.Enum(["a", "b", "c"])
+    s = pl.Series([None, "a", "b", "c"], dtype=dtype)
+    s2 = s.cast(pl.Categorical)
+    expected = pl.Series([None, "a", "b", "c"], dtype=pl.Categorical)
+    assert_series_equal(s2, expected)
+
+
+@StringCache()
+def test_casting_from_an_enum_to_global() -> None:
+    dtype = pl.Enum(["a", "b", "c"])
+    s = pl.Series([None, "a", "b", "c"], dtype=dtype)
+    s2 = s.cast(pl.Categorical)
+    expected = pl.Series([None, "a", "b", "c"], dtype=pl.Categorical)
+    assert_series_equal(s2, expected)
