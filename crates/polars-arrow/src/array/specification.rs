@@ -120,9 +120,7 @@ pub(crate) unsafe fn check_indexes_unchecked<K: DictionaryKey>(
     let mut invalid = false;
 
     // this loop is auto-vectorized
-    keys.iter().for_each(|k| {
-        invalid |= k.as_usize() > len
-    });
+    keys.iter().for_each(|k| invalid |= k.as_usize() > len);
 
     if invalid {
         let key = keys.iter().map(|k| k.as_usize()).max().unwrap();
