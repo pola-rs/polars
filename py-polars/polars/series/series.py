@@ -7139,9 +7139,9 @@ class Series:
         "It has been renamed to `replace`."
         " The default behavior has changed to keep any values not present in the mapping unchanged."
         " Pass `default=None` to keep existing behavior.",
-        version="0.20.0",
+        version="0.19.16",
     )
-    @deprecate_renamed_parameter("remapping", "mapping", version="0.20.0")
+    @deprecate_renamed_parameter("remapping", "mapping", version="0.19.16")
     def map_dict(
         self,
         mapping: dict[Any, Any],
@@ -7152,7 +7152,7 @@ class Series:
         """
         Replace values in the Series using a remapping dictionary.
 
-        .. deprecated:: 0.20.0
+        .. deprecated:: 0.19.16
             This method has been renamed to :meth:`replace`. The default behavior
             has changed to keep any values not present in the mapping unchanged.
             Pass `default=None` to keep existing behavior.
