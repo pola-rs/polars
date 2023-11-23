@@ -309,7 +309,7 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn from_buffer(
+    unsafe fn from_buffer(
         py: Python,
         pointer: usize,
         length: usize,
@@ -320,16 +320,16 @@ impl PySeries {
         let base = base.to_object(py);
 
         let arr_boxed = match dtype {
-            DataType::Int8 => from_buffer_impl::<i8>(pointer, length, base),
-            DataType::Int16 => from_buffer_impl::<i16>(pointer, length, base),
-            DataType::Int32 => from_buffer_impl::<i32>(pointer, length, base),
-            DataType::Int64 => from_buffer_impl::<i64>(pointer, length, base),
-            DataType::UInt8 => from_buffer_impl::<u8>(pointer, length, base),
-            DataType::UInt16 => from_buffer_impl::<u16>(pointer, length, base),
-            DataType::UInt32 => from_buffer_impl::<u32>(pointer, length, base),
-            DataType::UInt64 => from_buffer_impl::<u64>(pointer, length, base),
-            DataType::Float32 => from_buffer_impl::<f32>(pointer, length, base),
-            DataType::Float64 => from_buffer_impl::<f64>(pointer, length, base),
+            DataType::Int8 => unsafe { from_buffer_impl::<i8>(pointer, length, base) },
+            DataType::Int16 => unsafe { from_buffer_impl::<i16>(pointer, length, base) },
+            DataType::Int32 => unsafe { from_buffer_impl::<i32>(pointer, length, base) },
+            DataType::Int64 => unsafe { from_buffer_impl::<i64>(pointer, length, base) },
+            DataType::UInt8 => unsafe { from_buffer_impl::<u8>(pointer, length, base) },
+            DataType::UInt16 => unsafe { from_buffer_impl::<u16>(pointer, length, base) },
+            DataType::UInt32 => unsafe { from_buffer_impl::<u32>(pointer, length, base) },
+            DataType::UInt64 => unsafe { from_buffer_impl::<u64>(pointer, length, base) },
+            DataType::Float32 => unsafe { from_buffer_impl::<f32>(pointer, length, base) },
+            DataType::Float64 => unsafe { from_buffer_impl::<f64>(pointer, length, base) },
             DataType::Boolean => {
                 return Err(PyNotImplementedError::new_err(
                     "`from_buffer` is not yet implemented for boolean types",
@@ -347,7 +347,7 @@ impl PySeries {
     }
 }
 
-fn from_buffer_impl<T: NativeType>(
+unsafe fn from_buffer_impl<T: NativeType>(
     pointer: usize,
     length: usize,
     base: Py<PyAny>,
