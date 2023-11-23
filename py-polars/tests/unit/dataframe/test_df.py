@@ -2692,9 +2692,7 @@ def test_fill_null_limits() -> None:
             pl.all().fill_null(strategy="forward", limit=2),
             pl.all().fill_null(strategy="backward", limit=2).name.suffix("_backward"),
         ]
-    ).to_dict(
-        as_series=False
-    ) == {
+    ).to_dict(as_series=False) == {
         "a": [1, 1, 1, None, 5, 6, 6, 6, None, 10],
         "b": ["a", "a", "a", None, "b", "c", "c", "c", None, "d"],
         "c": [True, True, True, None, False, True, True, True, None, False],
