@@ -6,6 +6,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from polars.testing.asserts.series import assert_series_equal
 
 
 def test_predicate_4906() -> None:
@@ -108,10 +109,10 @@ def test_predicate_arr_first_6573() -> None:
 def test_fast_path_comparisons() -> None:
     s = pl.Series(np.sort(np.random.randint(0, 50, 100)))
 
-    assert (s > 25).series_equal(s.set_sorted() > 25)
-    assert (s >= 25).series_equal(s.set_sorted() >= 25)
-    assert (s < 25).series_equal(s.set_sorted() < 25)
-    assert (s <= 25).series_equal(s.set_sorted() <= 25)
+    assert_series_equal(s > 25, s.set_sorted() > 25)
+    assert_series_equal(s >= 25, s.set_sorted() >= 25)
+    assert_series_equal(s < 25, s.set_sorted() < 25)
+    assert_series_equal(s <= 25, s.set_sorted() <= 25)
 
 
 def test_predicate_pushdown_block_8661() -> None:
@@ -252,7 +253,9 @@ def test_predicate_pushdown_boundary_12102() -> None:
         .filter(pl.col("y") > 2)
     )
 
-    assert lf.collect().frame_equal(lf.collect(predicate_pushdown=False))
+    result = lf.collect()
+    result_no_ppd = lf.collect(predicate_pushdown=False)
+    assert_frame_equal(result, result_no_ppd)
 
 
 def test_take_can_block_predicate_pushdown() -> None:

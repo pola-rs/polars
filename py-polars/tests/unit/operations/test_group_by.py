@@ -807,18 +807,25 @@ def test_group_by_list_scalar_11749() -> None:
 
 def test_group_by_with_expr_as_key() -> None:
     gb = pl.select(x=1).group_by(pl.col("x").alias("key"))
-    assert gb.agg(pl.all().first()).frame_equal(gb.agg(pl.first("x")))
+    result = gb.agg(pl.all().first())
+    expected = gb.agg(pl.first("x"))
+    assert_frame_equal(result, expected)
 
     # tests: 11766
-    assert gb.head(0).frame_equal(gb.agg(pl.col("x").head(0)).explode("x"))
-    assert gb.tail(0).frame_equal(gb.agg(pl.col("x").tail(0)).explode("x"))
+    result = gb.head(0)
+    expected = gb.agg(pl.col("x").head(0)).explode("x")
+    assert_frame_equal(result, expected)
+
+    result = gb.tail(0)
+    expected = gb.agg(pl.col("x").tail(0)).explode("x")
+    assert_frame_equal(result, expected)
 
 
 def test_lazy_group_by_reuse_11767() -> None:
     lgb = pl.select(x=1).lazy().group_by("x")
     a = lgb.count()
     b = lgb.count()
-    assert a.collect().frame_equal(b.collect())
+    assert_frame_equal(a, b)
 
 
 def test_group_by_double_on_empty_12194() -> None:

@@ -144,9 +144,9 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 18:00:00 │
         │ 2001-01-01 22:00:00 │
         └─────────────────────┘
-        >>> df.select(pl.col("datetime").dt.truncate("1h")).frame_equal(
-        ...     df.select(pl.col("datetime").dt.truncate(timedelta(hours=1)))
-        ... )
+        >>> truncate_str = df.select(pl.col("datetime").dt.truncate("1h"))
+        >>> truncate_td = df.select(pl.col("datetime").dt.truncate(timedelta(hours=1)))
+        >>> truncate_str.equals(truncate_td)
         True
 
         >>> df = pl.datetime_range(

@@ -129,10 +129,10 @@ def test_hive_partitioned_projection_pushdown(
             parallel=parallel,  # type: ignore[arg-type]
         )
 
-        expect = q.collect().select("category")
-        actual = q.select("category").collect()
+        expected = q.collect().select("category")
+        result = q.select("category").collect()
 
-        assert expect.frame_equal(actual)
+        assert_frame_equal(result, expected)
 
 
 @pytest.mark.write_disk()
