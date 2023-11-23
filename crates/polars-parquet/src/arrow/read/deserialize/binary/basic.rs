@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::default::Default;
 
-use arrow::array::{Array, BinaryArray, Utf8Array};
+use arrow::array::{Array, BinaryArray, MutableBinaryValuesArray, Utf8Array};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 use arrow::offset::Offset;
@@ -21,13 +21,13 @@ use crate::read::ParquetError;
 
 #[derive(Debug)]
 pub(super) struct Required<'a> {
-    pub values: SizedBinaryIter<'a>,
+    pub values: std::iter::Take<BinaryIter<'a>>,
 }
 
 impl<'a> Required<'a> {
     pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
         let (_, _, values) = split_buffer(page)?;
-        let values = SizedBinaryIter::new(values, page.num_values());
+        let values = BinaryIter::new(values).take(page.num_values());
 
         Ok(Self { values })
     }
@@ -145,12 +145,12 @@ impl<'a> Iterator for DeltaBytes<'a> {
 
 #[derive(Debug)]
 pub(super) struct FilteredRequired<'a> {
-    pub values: SliceFilteredIter<SizedBinaryIter<'a>>,
+    pub values: SliceFilteredIter<std::iter::Take<BinaryIter<'a>>>,
 }
 
 impl<'a> FilteredRequired<'a> {
     pub fn new(page: &'a DataPage) -> Self {
-        let values = SizedBinaryIter::new(page.buffer(), page.num_values());
+        let values = BinaryIter::new(page.buffer()).take(page.num_values());
 
         let rows = get_selected_rows(page);
         let values = SliceFilteredIter::new(values, rows);
@@ -183,7 +183,7 @@ impl<'a> FilteredDelta<'a> {
     }
 }
 
-pub(super) type Dict = Vec<Vec<u8>>;
+pub(super) type Dict = BinaryArray<i64>;
 
 #[derive(Debug)]
 pub(super) struct RequiredDictionary<'a> {
@@ -442,7 +442,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                     &mut page_values
                         .values
                         .by_ref()
-                        .map(|index| page_dict[index.unwrap() as usize].as_ref()),
+                        .map(|index| page_dict.value(index.unwrap() as usize)),
                 )
             },
             State::RequiredDictionary(page) => {
@@ -451,7 +451,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                 for x in page
                     .values
                     .by_ref()
-                    .map(|index| page_dict[index.unwrap() as usize].as_ref())
+                    .map(|index| page_dict.value(index.unwrap() as usize))
                     .take(additional)
                 {
                     values.push(x)
@@ -480,7 +480,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                 for x in page
                     .values
                     .by_ref()
-                    .map(|index| page_dict[index.unwrap() as usize].as_ref())
+                    .map(|index| page_dict.value(index.unwrap() as usize))
                     .take(additional)
                 {
                     values.push(x)
@@ -496,7 +496,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                     &mut page_values
                         .values
                         .by_ref()
-                        .map(|index| page_dict[index.unwrap() as usize].as_ref()),
+                        .map(|index| page_dict.value(index.unwrap() as usize)),
                 )
             },
             State::OptionalDeltaByteArray(page_validity, page_values) => {
@@ -597,7 +597,11 @@ impl<O: Offset, I: PagesIter> Iterator for Iter<O, I> {
 }
 
 pub(super) fn deserialize_plain(values: &[u8], num_values: usize) -> Dict {
-    SizedBinaryIter::new(values, num_values)
-        .map(|x| x.to_vec())
-        .collect()
+    let all = BinaryIter::new(values).take(num_values).collect::<Vec<_>>();
+    let values_size = all.iter().map(|v| v.len()).sum::<usize>();
+    let mut dict_values = MutableBinaryValuesArray::<i64>::with_capacities(all.len(), values_size);
+    for v in all {
+        dict_values.push(v)
+    }
+    dict_values.into()
 }

@@ -134,37 +134,3 @@ impl<'a> Iterator for BinaryIter<'a> {
         Some(result)
     }
 }
-
-#[derive(Debug)]
-pub struct SizedBinaryIter<'a> {
-    iter: BinaryIter<'a>,
-    remaining: usize,
-}
-
-impl<'a> SizedBinaryIter<'a> {
-    pub fn new(values: &'a [u8], size: usize) -> Self {
-        let iter = BinaryIter::new(values);
-        Self {
-            iter,
-            remaining: size,
-        }
-    }
-}
-
-impl<'a> Iterator for SizedBinaryIter<'a> {
-    type Item = &'a [u8];
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.remaining == 0 {
-            return None;
-        } else {
-            self.remaining -= 1
-        };
-        self.iter.next()
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.remaining, Some(self.remaining))
-    }
-}

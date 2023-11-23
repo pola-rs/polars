@@ -107,7 +107,7 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
                 let item = page
                     .values
                     .next()
-                    .map(|index| dict_values[index.unwrap() as usize].as_ref())
+                    .map(|index| dict_values.value(index.unwrap() as usize))
                     .unwrap_or_default();
                 values.push(item);
             },
@@ -116,7 +116,7 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
                 let item = page
                     .values
                     .next()
-                    .map(|index| dict_values[index.unwrap() as usize].as_ref())
+                    .map(|index| dict_values.value(index.unwrap() as usize))
                     .unwrap_or_default();
                 values.push(item);
                 validity.push(true);

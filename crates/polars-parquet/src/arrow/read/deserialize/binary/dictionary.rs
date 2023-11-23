@@ -9,9 +9,10 @@ use polars_error::PolarsResult;
 use super::super::dictionary::*;
 use super::super::utils::MaybeNext;
 use super::super::PagesIter;
-use super::utils::{Binary, SizedBinaryIter};
+use super::utils::Binary;
 use crate::arrow::read::deserialize::nested_utils::{InitNested, NestedState};
 use crate::parquet::page::DictPage;
+use crate::read::deserialize::binary::utils::BinaryIter;
 
 /// An iterator adapter over [`PagesIter`] assumed to be encoded as parquet's dictionary-encoded binary representation
 #[derive(Debug)]
@@ -60,7 +61,7 @@ fn read_dict<O: Offset>(data_type: ArrowDataType, dict: &DictPage) -> Box<dyn Ar
         _ => data_type,
     };
 
-    let values = SizedBinaryIter::new(&dict.buffer, dict.num_values);
+    let values = BinaryIter::new(&dict.buffer).take(dict.num_values);
 
     let mut data = Binary::<O>::with_capacity(dict.num_values);
     data.values = Vec::with_capacity(dict.buffer.len() - 4 * dict.num_values);
