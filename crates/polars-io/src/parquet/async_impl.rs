@@ -20,7 +20,7 @@ use super::cloud::{build_object_store, CloudLocation, CloudReader};
 use super::mmap::ColumnStore;
 use crate::cloud::CloudOptions;
 use crate::parquet::read_impl::compute_row_group_range;
-use crate::pl_async::{get_runtime, with_concurrency_budget};
+use crate::pl_async::{get_runtime, with_concurrency_budget, MAX_BUDGET_PER_REQUEST};
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::predicates::read_this_row_group;
 
@@ -63,12 +63,15 @@ impl ParquetObjectStore {
 
     async fn get_ranges(&self, ranges: &[Range<usize>]) -> PolarsResult<Vec<Bytes>> {
         // Object-store has a maximum of 10 concurrent.
-        with_concurrency_budget((ranges.len() as u16).clamp(0, 10), || async {
-            self.store
-                .get_ranges(&self.path, ranges)
-                .await
-                .map_err(to_compute_err)
-        })
+        with_concurrency_budget(
+            (ranges.len() as u16).clamp(0, MAX_BUDGET_PER_REQUEST as u16),
+            || async {
+                self.store
+                    .get_ranges(&self.path, ranges)
+                    .await
+                    .map_err(to_compute_err)
+            },
+        )
         .await
     }
 

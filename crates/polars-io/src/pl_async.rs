@@ -11,6 +11,7 @@ use polars_utils::aliases::PlHashSet;
 use tokio::runtime::{Builder, Runtime};
 
 static CONCURRENCY_BUDGET: std::sync::OnceLock<(AtomicI32, u16)> = std::sync::OnceLock::new();
+pub(super) const MAX_BUDGET_PER_REQUEST: usize = 10;
 
 pub async fn with_concurrency_budget<F, Fut>(requested_budget: u16, callable: F) -> Fut::Output
 where
@@ -20,7 +21,9 @@ where
     let (global_budget, initial_budget) = CONCURRENCY_BUDGET.get_or_init(|| {
         let budget = std::env::var("POLARS_CONCURRENCY_BUDGET")
             .map(|s| s.parse::<i32>().expect("integer"))
-            .unwrap_or_else(|_| POOL.current_num_threads() as i32);
+            .unwrap_or_else(|_| {
+                std::cmp::max(POOL.current_num_threads(), MAX_BUDGET_PER_REQUEST) as i32
+            });
 
         (AtomicI32::new(budget), budget as u16)
     });
