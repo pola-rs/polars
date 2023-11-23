@@ -1,8 +1,10 @@
 use numpy::{Element, PyArray1};
+use polars::export::arrow;
+use polars::export::arrow::array::Array;
 use polars::export::arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_core::utils::CustomIterTools;
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyNotImplementedError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
 use crate::arrow_interop::to_rust::array_to_rust;
@@ -39,9 +41,6 @@ fn mmap_numpy_array<T: Element + NativeType>(
     name: &str,
     array: &PyArray1<T>,
 ) -> PySeries {
-    use arrow::array::Array;
-    use polars::export::arrow;
-
     let ro_array = array.readonly();
     let vals = ro_array.as_slice().unwrap();
 
@@ -308,4 +307,53 @@ impl PySeries {
             },
         }
     }
+
+    #[staticmethod]
+    fn from_buffer(
+        py: Python,
+        pointer: usize,
+        length: usize,
+        dtype: Wrap<DataType>,
+        base: &PyAny,
+    ) -> PyResult<Self> {
+        let dtype = dtype.0;
+        let base = base.to_object(py);
+
+        let arr_boxed = match dtype {
+            DataType::Int8 => from_buffer_impl::<i8>(pointer, length, base),
+            DataType::Int16 => from_buffer_impl::<i16>(pointer, length, base),
+            DataType::Int32 => from_buffer_impl::<i32>(pointer, length, base),
+            DataType::Int64 => from_buffer_impl::<i64>(pointer, length, base),
+            DataType::UInt8 => from_buffer_impl::<u8>(pointer, length, base),
+            DataType::UInt16 => from_buffer_impl::<u16>(pointer, length, base),
+            DataType::UInt32 => from_buffer_impl::<u32>(pointer, length, base),
+            DataType::UInt64 => from_buffer_impl::<u64>(pointer, length, base),
+            DataType::Float32 => from_buffer_impl::<f32>(pointer, length, base),
+            DataType::Float64 => from_buffer_impl::<f64>(pointer, length, base),
+            DataType::Boolean => {
+                return Err(PyNotImplementedError::new_err(
+                    "`from_buffer` is not yet implemented for boolean types",
+                ))
+            },
+            dt => {
+                return Err(PyTypeError::new_err(format!(
+                    "`from_buffer` requires a physical type as input for `dtype`, got {dt}",
+                )))
+            },
+        };
+
+        let s = Series::from_arrow("", arr_boxed).unwrap().into();
+        Ok(s)
+    }
+}
+
+fn from_buffer_impl<T: NativeType>(
+    pointer: usize,
+    length: usize,
+    base: Py<PyAny>,
+) -> Box<dyn Array> {
+    let pointer = pointer as *const T;
+    let slice = unsafe { std::slice::from_raw_parts(pointer, length) };
+    let arr = unsafe { arrow::ffi::mmap::slice_and_owner(slice, base) };
+    arr.to_boxed()
 }
