@@ -153,11 +153,6 @@ def _assert_series_values_equal(
             cause=exc,
         )
 
-    # Handle NaN values (which compare unequal to themselves)
-    if _comparing_floats(left.dtype, right.dtype):
-        both_nan = (left.is_nan() & right.is_nan()).fill_null(False)
-        unequal = unequal & ~both_nan
-
     # Check nested dtypes in separate function
     if _comparing_nested_numerics(left.dtype, right.dtype):
         try:
@@ -191,7 +186,6 @@ def _assert_series_values_equal(
         )
 
     _assert_series_null_values_match(left, right)
-    _assert_series_nan_values_match(left, right)
     _assert_series_values_within_tolerance(
         left,
         right,
@@ -245,25 +239,6 @@ def _assert_series_null_values_match(left: Series, right: Series) -> None:
         raise_assertion_error(
             "Series", "null value mismatch", left.to_list(), right.to_list()
         )
-
-
-def _assert_series_nan_values_match(
-    left: Series, right: Series
-) -> None:
-    if not _comparing_floats(left.dtype, right.dtype):
-        return
-    nan_value_mismatch = left.is_nan() != right.is_nan()
-    if nan_value_mismatch.any():
-        raise_assertion_error(
-            "Series",
-            "nan value mismatch - nans compare equal",
-            left.to_list(),
-            right.to_list(),
-        )
-
-
-def _comparing_floats(left: PolarsDataType, right: PolarsDataType) -> bool:
-    return left.is_float() and right.is_float()
 
 
 def _comparing_lists(left: PolarsDataType, right: PolarsDataType) -> bool:
