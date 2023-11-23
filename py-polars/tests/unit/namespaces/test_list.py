@@ -545,6 +545,13 @@ def test_list_count_matches_boolean_nulls_9141() -> None:
     assert a.select(pl.col("a").list.count_matches(True))["a"].to_list() == [1]
 
 
+def test_list_set_oob() -> None:
+    df = pl.DataFrame({"a": [42, 23]})
+    assert df.select(pl.col("a").list.set_intersection([])).to_dict(
+        as_series=False
+    ) == {"a": [[], []]}
+
+
 def test_list_set_operations() -> None:
     df = pl.DataFrame(
         {"a": [[1, 2, 3], [1, 1, 1], [4]], "b": [[4, 2, 1], [2, 1, 12], [4]]}
