@@ -81,6 +81,7 @@ zstd = "0.13"
 polars = { version = "0.35.4", path = "crates/polars", default-features = false }
 polars-algo = { version = "0.35.4", path = "crates/polars-algo", default-features = false }
 polars-core = { version = "0.35.4", path = "crates/polars-core", default-features = false }
+polars-compute = { version = "0.35.4", path = "crates/polars-compute", default-features = false }
 polars-error = { version = "0.35.4", path = "crates/polars-error", default-features = false }
 polars-ffi = { version = "0.35.4", path = "crates/polars-ffi", default-features = false }
 polars-io = { version = "0.35.4", path = "crates/polars-io", default-features = false }

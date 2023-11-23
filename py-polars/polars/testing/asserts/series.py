@@ -34,7 +34,6 @@ def assert_series_equal(
     rtol: float = 1e-5,
     atol: float = 1e-8,
     categorical_as_str: bool = False,
-    nans_compare_equal: bool | None = None,
 ) -> None:
     """
     Assert that the left and right Series are equal.
@@ -64,12 +63,6 @@ def assert_series_equal(
     categorical_as_str
         Cast categorical columns to string before comparing. Enabling this helps
         compare columns that do not share the same string cache.
-    nans_compare_equal
-        Consider NaN values to be equal.
-
-        .. deprecated: 0.19.12
-            This parameter will be removed. Default behaviour will remain as though it
-            were set to `True`.
 
     See Also
     --------
@@ -96,15 +89,6 @@ def assert_series_equal(
     [right]: [1, 5, 3]
 
     """
-    if nans_compare_equal is not None:
-        issue_deprecation_warning(
-            "The `nans_compare_equal` parameter for `assert_series_equal` is deprecated."
-            " Default behaviour will remain as though it were set to `True`.",
-            version="0.19.12",
-        )
-    else:
-        nans_compare_equal = True
-
     if not (isinstance(left, Series) and isinstance(right, Series)):  # type: ignore[redundant-expr]
         raise_assertion_error(
             "inputs",
@@ -128,7 +112,6 @@ def assert_series_equal(
         check_exact=check_exact,
         rtol=rtol,
         atol=atol,
-        nans_compare_equal=nans_compare_equal,
         categorical_as_str=categorical_as_str,
     )
 
@@ -140,7 +123,6 @@ def _assert_series_values_equal(
     check_exact: bool,
     rtol: float,
     atol: float,
-    nans_compare_equal: bool,
     categorical_as_str: bool,
 ) -> None:
     """Assert that the values in both Series are equal."""
@@ -172,7 +154,7 @@ def _assert_series_values_equal(
         )
 
     # Handle NaN values (which compare unequal to themselves)
-    if nans_compare_equal and _comparing_floats(left.dtype, right.dtype):
+    if _comparing_floats(left.dtype, right.dtype):
         both_nan = (left.is_nan() & right.is_nan()).fill_null(False)
         unequal = unequal & ~both_nan
 
@@ -185,7 +167,6 @@ def _assert_series_values_equal(
                 check_exact=check_exact,
                 rtol=rtol,
                 atol=atol,
-                nans_compare_equal=nans_compare_equal,
                 categorical_as_str=categorical_as_str,
             )
         except AssertionError as exc:
@@ -210,7 +191,7 @@ def _assert_series_values_equal(
         )
 
     _assert_series_null_values_match(left, right)
-    _assert_series_nan_values_match(left, right, nans_compare_equal=nans_compare_equal)
+    _assert_series_nan_values_match(left, right)
     _assert_series_values_within_tolerance(
         left,
         right,
@@ -227,7 +208,6 @@ def _assert_series_nested_values_equal(
     check_exact: bool,
     rtol: float,
     atol: float,
-    nans_compare_equal: bool,
     categorical_as_str: bool,
 ) -> None:
     # compare nested lists element-wise
@@ -242,7 +222,6 @@ def _assert_series_nested_values_equal(
                 check_exact=check_exact,
                 rtol=rtol,
                 atol=atol,
-                nans_compare_equal=nans_compare_equal,
                 categorical_as_str=categorical_as_str,
             )
 
@@ -256,7 +235,6 @@ def _assert_series_nested_values_equal(
                 check_exact=check_exact,
                 rtol=rtol,
                 atol=atol,
-                nans_compare_equal=nans_compare_equal,
                 categorical_as_str=categorical_as_str,
             )
 
@@ -270,25 +248,15 @@ def _assert_series_null_values_match(left: Series, right: Series) -> None:
 
 
 def _assert_series_nan_values_match(
-    left: Series, right: Series, *, nans_compare_equal: bool
+    left: Series, right: Series
 ) -> None:
     if not _comparing_floats(left.dtype, right.dtype):
         return
-
-    if nans_compare_equal:
-        nan_value_mismatch = left.is_nan() != right.is_nan()
-        if nan_value_mismatch.any():
-            raise_assertion_error(
-                "Series",
-                "nan value mismatch - nans compare equal",
-                left.to_list(),
-                right.to_list(),
-            )
-
-    elif left.is_nan().any() or right.is_nan().any():
+    nan_value_mismatch = left.is_nan() != right.is_nan()
+    if nan_value_mismatch.any():
         raise_assertion_error(
             "Series",
-            "nan value mismatch - nans compare unequal",
+            "nan value mismatch - nans compare equal",
             left.to_list(),
             right.to_list(),
         )
@@ -359,7 +327,6 @@ def assert_series_not_equal(
     rtol: float = 1e-5,
     atol: float = 1e-8,
     categorical_as_str: bool = False,
-    nans_compare_equal: bool | None = None,
 ) -> None:
     """
     Assert that the left and right Series are **not** equal.
@@ -388,12 +355,6 @@ def assert_series_not_equal(
     categorical_as_str
         Cast categorical columns to string before comparing. Enabling this helps
         compare columns that do not share the same string cache.
-    nans_compare_equal
-        Consider NaN values to be equal.
-
-        .. deprecated: 0.19.12
-            This parameter will be removed. Default behaviour will remain as though it
-            were set to `True`.
 
     See Also
     --------
@@ -420,7 +381,6 @@ def assert_series_not_equal(
             check_exact=check_exact,
             rtol=rtol,
             atol=atol,
-            nans_compare_equal=nans_compare_equal,
             categorical_as_str=categorical_as_str,
         )
     except AssertionError:

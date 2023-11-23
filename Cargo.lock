@@ -2652,6 +2652,10 @@ dependencies = [
  "num-traits",
  "polars-error",
  "polars-utils",
+ "proptest",
+ "rand",
+ "regex",
+ "regex-syntax 0.8.2",
  "rustc_version",
  "ryu",
  "sample-arrow2",
@@ -2668,7 +2672,7 @@ dependencies = [
 
 [[package]]
 name = "polars-compute"
-version = "0.33.2"
+version = "0.35.4"
 dependencies = [
  "bytemuck",
  "num-traits",
