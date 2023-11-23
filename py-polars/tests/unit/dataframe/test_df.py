@@ -3578,3 +3578,9 @@ def test_from_records_u64_12329() -> None:
     s = pl.from_records([{"a": 9908227375760408577}])
     assert s.dtypes == [pl.UInt64]
     assert s["a"][0] == 9908227375760408577
+
+
+def test_negative_slice_12642() -> None:
+    df = pl.DataFrame({"x": range(5)})
+
+    assert_frame_equal(df.slice(-2, 1), df.tail(2).head(1))
