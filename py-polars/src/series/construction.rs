@@ -309,7 +309,7 @@ impl PySeries {
     }
 
     #[staticmethod]
-    unsafe fn from_buffer(
+    unsafe fn _from_buffer(
         py: Python,
         pointer: usize,
         length: usize,
