@@ -5,6 +5,7 @@ use super::super::pages::{ListNested, Nested};
 use super::rep::num_values;
 use super::to_length;
 
+// (is_valid, length)
 trait DebugIter: Iterator<Item = (u32, usize)> + std::fmt::Debug {}
 
 impl<A: Iterator<Item = (u32, usize)> + std::fmt::Debug> DebugIter for A {}
