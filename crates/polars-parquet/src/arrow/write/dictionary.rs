@@ -185,7 +185,7 @@ fn serialize_keys<K: DictionaryKey>(
         statistics,
         type_,
         options,
-        Encoding::BitPacked,
+        Encoding::RleDictionary,
     )
     .map(Page::Data)
 }
