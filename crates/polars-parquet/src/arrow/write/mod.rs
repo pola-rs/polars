@@ -120,57 +120,6 @@ pub fn to_parquet_schema(schema: &ArrowSchema) -> PolarsResult<SchemaDescriptor>
     Ok(SchemaDescriptor::new("root".to_string(), parquet_types))
 }
 
-/// Checks whether the `data_type` can be encoded as `encoding`.
-/// Note that this is whether this implementation supports it, which is a subset of
-/// what the parquet spec allows.
-pub fn can_encode(data_type: &ArrowDataType, encoding: Encoding) -> bool {
-    if let (Encoding::DeltaBinaryPacked, ArrowDataType::Decimal(p, _)) =
-        (encoding, data_type.to_logical_type())
-    {
-        return *p <= 18;
-    };
-
-    matches!(
-        (encoding, data_type.to_logical_type()),
-        (Encoding::Plain, _)
-            | (
-                Encoding::DeltaLengthByteArray,
-                ArrowDataType::Binary
-                    | ArrowDataType::LargeBinary
-                    | ArrowDataType::Utf8
-                    | ArrowDataType::LargeUtf8,
-            )
-            | (
-                Encoding::RleDictionary,
-                ArrowDataType::Dictionary(_, _, _)
-                    | ArrowDataType::LargeBinary
-                    | ArrowDataType::LargeUtf8
-            )
-            | (
-                Encoding::PlainDictionary,
-                ArrowDataType::Dictionary(_, _, _)
-            )
-            | (
-                Encoding::DeltaBinaryPacked,
-                ArrowDataType::Null
-                    | ArrowDataType::UInt8
-                    | ArrowDataType::UInt16
-                    | ArrowDataType::UInt32
-                    | ArrowDataType::UInt64
-                    | ArrowDataType::Int8
-                    | ArrowDataType::Int16
-                    | ArrowDataType::Int32
-                    | ArrowDataType::Date32
-                    | ArrowDataType::Time32(_)
-                    | ArrowDataType::Int64
-                    | ArrowDataType::Date64
-                    | ArrowDataType::Time64(_)
-                    | ArrowDataType::Timestamp(_, _)
-                    | ArrowDataType::Duration(_)
-            )
-    )
-}
-
 /// Slices the [`Array`] to `Box<dyn Array>` and `Vec<Nested>`.
 pub fn slice_parquet_array(
     primitive_array: &mut dyn Array,
@@ -332,14 +281,18 @@ pub fn array_to_pages(
         )? {
             PageResult::DictAndData { dict, data } => {
                 // Fall back to plain decoding if we exceed 1MB or 75% cardinality.
-                if dict.buffer.len() > 1024 * 1024
-                    || (right_array.len() as f64) / (dict.num_values as f64) > 0.75
-                {
+                if dict.buffer.len() > 1024 * 1024 {
                     encoding = Encoding::Plain
                 }
                 Ok(PageResult::DictAndData { dict, data })
             },
-            data => Ok(data),
+            page_result => {
+                // The encoder didn't write a dictionary, so we will use plain from now on.
+                if matches!(encoding, Encoding::RleDictionary) {
+                    encoding = Encoding::Plain;
+                }
+                Ok(page_result)
+            },
         }
     });
     let iter = DynIter::new(pages);
@@ -369,55 +322,62 @@ pub fn array_to_page_simple(
     encoding: Encoding,
 ) -> PolarsResult<PageResult> {
     let data_type = array.data_type();
-    if !can_encode(data_type, encoding) {
-        polars_bail!(InvalidOperation:
-            "The datatype {data_type:?} cannot be encoded by {encoding:?}"
-        )
-    }
 
     match data_type.to_logical_type() {
         ArrowDataType::Boolean => {
             boolean::array_to_page(array.as_any().downcast_ref().unwrap(), options, type_)
         },
         // casts below MUST match the casts done at the metadata (field -> parquet type).
-        ArrowDataType::UInt8 => primitive::array_to_page_integer::<u8, i32>(
-            array.as_any().downcast_ref().unwrap(),
-            options,
-            type_,
-            encoding,
-        ),
-        ArrowDataType::UInt16 => primitive::array_to_page_integer::<u16, i32>(
-            array.as_any().downcast_ref().unwrap(),
-            options,
-            type_,
-            encoding,
-        ),
-        ArrowDataType::UInt32 => primitive::array_to_page_integer::<u32, i32>(
-            array.as_any().downcast_ref().unwrap(),
-            options,
-            type_,
-            encoding,
-        ),
-        ArrowDataType::UInt64 => primitive::array_to_page_integer::<u64, i64>(
-            array.as_any().downcast_ref().unwrap(),
-            options,
-            type_,
-            encoding,
-        ),
-        ArrowDataType::Int8 => primitive::array_to_page_integer::<i8, i32>(
-            array.as_any().downcast_ref().unwrap(),
-            options,
-            type_,
-            encoding,
-        ),
-        ArrowDataType::Int16 => primitive::array_to_page_integer::<i16, i32>(
-            array.as_any().downcast_ref().unwrap(),
-            options,
-            type_,
-            encoding,
-        ),
+        ArrowDataType::UInt8 => {
+            return primitive::array_to_page_integer::<u8, i32>(
+                array.as_any().downcast_ref().unwrap(),
+                options,
+                type_,
+                encoding,
+            )
+        },
+        ArrowDataType::UInt16 => {
+            return primitive::array_to_page_integer::<u16, i32>(
+                array.as_any().downcast_ref().unwrap(),
+                options,
+                type_,
+                encoding,
+            )
+        },
+        ArrowDataType::UInt32 => {
+            return primitive::array_to_page_integer::<u32, i32>(
+                array.as_any().downcast_ref().unwrap(),
+                options,
+                type_,
+                encoding,
+            )
+        },
+        ArrowDataType::UInt64 => {
+            return primitive::array_to_page_integer::<u64, i64>(
+                array.as_any().downcast_ref().unwrap(),
+                options,
+                type_,
+                encoding,
+            )
+        },
+        ArrowDataType::Int8 => {
+            return primitive::array_to_page_integer::<i8, i32>(
+                array.as_any().downcast_ref().unwrap(),
+                options,
+                type_,
+                encoding,
+            )
+        },
+        ArrowDataType::Int16 => {
+            return primitive::array_to_page_integer::<i16, i32>(
+                array.as_any().downcast_ref().unwrap(),
+                options,
+                type_,
+                encoding,
+            )
+        },
         ArrowDataType::Int32 | ArrowDataType::Date32 | ArrowDataType::Time32(_) => {
-            primitive::array_to_page_integer::<i32, i32>(
+            return primitive::array_to_page_integer::<i32, i32>(
                 array.as_any().downcast_ref().unwrap(),
                 options,
                 type_,
@@ -428,12 +388,14 @@ pub fn array_to_page_simple(
         | ArrowDataType::Date64
         | ArrowDataType::Time64(_)
         | ArrowDataType::Timestamp(_, _)
-        | ArrowDataType::Duration(_) => primitive::array_to_page_integer::<i64, i64>(
-            array.as_any().downcast_ref().unwrap(),
-            options,
-            type_,
-            encoding,
-        ),
+        | ArrowDataType::Duration(_) => {
+            return primitive::array_to_page_integer::<i64, i64>(
+                array.as_any().downcast_ref().unwrap(),
+                options,
+                type_,
+                encoding,
+            )
+        },
         ArrowDataType::Float32 => primitive::array_to_page_plain::<f32, f32>(
             array.as_any().downcast_ref().unwrap(),
             options,
@@ -542,7 +504,9 @@ pub fn array_to_page_simple(
                     values,
                     array.validity().cloned(),
                 );
-                primitive::array_to_page_integer::<i32, i32>(&array, options, type_, encoding)
+                return primitive::array_to_page_integer::<i32, i32>(
+                    &array, options, type_, encoding,
+                );
             } else if precision <= 18 {
                 let values = array
                     .values()
@@ -556,7 +520,9 @@ pub fn array_to_page_simple(
                     values,
                     array.validity().cloned(),
                 );
-                primitive::array_to_page_integer::<i64, i64>(&array, options, type_, encoding)
+                return primitive::array_to_page_integer::<i64, i64>(
+                    &array, options, type_, encoding,
+                );
             } else if precision <= 38 {
                 let size = decimal_length_from_precision(precision);
                 let statistics = if options.write_statistics {
@@ -627,7 +593,9 @@ pub fn array_to_page_simple(
                     values,
                     array.validity().cloned(),
                 );
-                primitive::array_to_page_integer::<i32, i32>(&array, options, type_, encoding)
+                return primitive::array_to_page_integer::<i32, i32>(
+                    &array, options, type_, encoding,
+                );
             } else if precision <= 18 {
                 let values = array
                     .values()
@@ -641,7 +609,9 @@ pub fn array_to_page_simple(
                     values,
                     array.validity().cloned(),
                 );
-                primitive::array_to_page_integer::<i64, i64>(&array, options, type_, encoding)
+                return primitive::array_to_page_integer::<i64, i64>(
+                    &array, options, type_, encoding,
+                );
             } else {
                 let size = decimal_length_from_precision(precision);
 

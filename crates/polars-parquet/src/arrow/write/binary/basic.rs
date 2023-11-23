@@ -1,6 +1,5 @@
-use arrow::array::{Array, BinaryArray, DictionaryArray};
+use arrow::array::{Array, BinaryArray};
 use arrow::bitmap::Bitmap;
-use arrow::datatypes::{ArrowDataType, IntegerType};
 use arrow::offset::Offset;
 use polars_error::{polars_bail, PolarsResult};
 
@@ -11,9 +10,9 @@ use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::{
     serialize_statistics, BinaryStatistics, ParquetStatistics, Statistics,
 };
-use crate::read::ParquetType;
+use crate::write::dictionary::encode_as_dictionary_optional;
 use crate::write::pages::PageResult;
-use crate::write::{to_nested, Page};
+use crate::write::Page;
 
 pub(crate) fn encode_plain<O: Offset>(
     array: &BinaryArray<O>,
@@ -45,29 +44,13 @@ pub fn array_to_page<O: Offset>(
     array: &BinaryArray<O>,
     options: WriteOptions,
     type_: PrimitiveType,
-    encoding: Encoding,
+    mut encoding: Encoding,
 ) -> PolarsResult<PageResult> {
     if let Encoding::RleDictionary = encoding {
-        let nested = to_nested(array, &ParquetType::PrimitiveType(type_.clone()))?
-            .pop()
-            .unwrap();
-        // This does the group by.
-        let array = arrow::compute::cast::cast(
-            array,
-            &ArrowDataType::Dictionary(
-                // TODO!: use smallest possible integer type
-                IntegerType::UInt32,
-                Box::new(ArrowDataType::LargeBinary),
-                false,
-            ),
-            Default::default(),
-        )
-        .unwrap();
-        let array = array
-            .as_any()
-            .downcast_ref::<DictionaryArray<u32>>()
-            .unwrap();
-        return super::super::dictionary::array_to_pages(array, type_, &nested, options, encoding);
+        if let Some(result) = encode_as_dictionary_optional(array, type_.clone(), options) {
+            return result;
+        }
+        encoding = Encoding::Plain;
     }
 
     let validity = array.validity();

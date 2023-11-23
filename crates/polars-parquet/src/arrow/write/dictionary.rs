@@ -1,6 +1,6 @@
 use arrow::array::{Array, DictionaryArray, DictionaryKey};
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::datatypes::ArrowDataType;
+use arrow::datatypes::{ArrowDataType, IntegerType};
 use polars_error::{polars_bail, PolarsResult};
 
 use super::binary::{
@@ -21,6 +21,46 @@ use crate::parquet::page::{DictPage, Page};
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::{serialize_statistics, ParquetStatistics};
 use crate::write::pages::PageResult;
+use crate::write::{to_nested, ParquetType};
+
+pub(crate) fn encode_as_dictionary_optional(
+    array: &dyn Array,
+    type_: PrimitiveType,
+    options: WriteOptions,
+) -> Option<PolarsResult<PageResult>> {
+    let nested = to_nested(array, &ParquetType::PrimitiveType(type_.clone()))
+        .ok()?
+        .pop()
+        .unwrap();
+
+    let dtype = Box::new(array.data_type().clone());
+
+    let len_before = array.len();
+    // This does the group by.
+    let array = arrow::compute::cast::cast(
+        array,
+        &ArrowDataType::Dictionary(IntegerType::UInt16, dtype, false),
+        Default::default(),
+    )
+    .ok()?;
+
+    let array = array
+        .as_any()
+        .downcast_ref::<DictionaryArray<u16>>()
+        .unwrap();
+
+    if (array.values().len() as f64) / (len_before as f64) > 0.75 {
+        return None;
+    }
+
+    Some(array_to_pages(
+        array,
+        type_,
+        &nested,
+        options,
+        Encoding::RleDictionary,
+    ))
+}
 
 fn serialize_def_levels_simple(
     validity: Option<&Bitmap>,

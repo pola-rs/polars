@@ -235,6 +235,13 @@ fn encoding_map(data_type: &ArrowDataType) -> Encoding {
         PhysicalType::Dictionary(_) | PhysicalType::LargeBinary | PhysicalType::LargeUtf8 => {
             Encoding::RleDictionary
         },
+        PhysicalType::Primitive(dt) => {
+            use arrow::types::PrimitiveType::*;
+            match dt {
+                Float32 | Float64 | Float16 => Encoding::Plain,
+                _ => Encoding::RleDictionary,
+            }
+        },
         // remaining is plain
         _ => Encoding::Plain,
     }
