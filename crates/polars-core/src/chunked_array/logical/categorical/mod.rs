@@ -105,11 +105,10 @@ impl CategoricalChunked {
             RevMapping::Local(categories, _) => categories,
             RevMapping::Enum(categories, _) => categories,
         };
-        let physical = self.physical().rechunk();
-        let arr = physical.downcast_get(0).unwrap();
+        let physical = self.physical();
 
         let mut builder = CategoricalChunkedBuilder::new(self.name(), physical.len());
-        builder.global_map_from_local(arr, categories.clone());
+        builder.global_map_from_local(physical, categories.clone());
         Ok(builder.finish())
     }
 

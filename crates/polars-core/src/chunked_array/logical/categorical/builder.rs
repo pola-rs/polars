@@ -336,7 +336,10 @@ impl<'a> CategoricalChunkedBuilder<'a> {
     }
 
     /// Build a global string cached [`CategoricalChunked`] from a local [`Dictionary`].
-    pub(super) fn global_map_from_local(&mut self, keys: &UInt32Array, values: Utf8Array<i64>) {
+    pub(super) fn global_map_from_local<I>(&mut self, keys: I, values: Utf8Array<i64>)
+    where
+        I: IntoIterator<Item = Option<u32>> + Send,
+    {
         // locally we don't need a hashmap because we all categories are 1 integer apart
         // so the index is local, and the values is global
         let mut local_to_global: Vec<u32> = Vec::with_capacity(values.len());
@@ -370,8 +373,8 @@ impl<'a> CategoricalChunkedBuilder<'a> {
             keys.into_iter()
                 .map(|opt_k| {
                     opt_k.map(|cat| {
-                        debug_assert!((*cat as usize) < local_to_global.len());
-                        *unsafe { local_to_global.get_unchecked(*cat as usize) }
+                        debug_assert!((cat as usize) < local_to_global.len());
+                        *unsafe { local_to_global.get_unchecked(cat as usize) }
                     })
                 })
                 .collect::<UInt32Vec>()
@@ -469,8 +472,8 @@ impl<'a> CategoricalChunkedBuilder<'a> {
         if using_string_cache() {
             if let RevMappingBuilder::Local(ref mut mut_arr) = self.reverse_mapping {
                 let arr: Utf8Array<_> = std::mem::take(mut_arr).into();
-                let keys = std::mem::take(&mut self.cat_builder).into();
-                self.global_map_from_local(&keys, arr);
+                let keys: UInt32Array = std::mem::take(&mut self.cat_builder).into();
+                self.global_map_from_local(keys, arr);
             }
         }
 
