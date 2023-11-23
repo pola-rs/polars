@@ -19,7 +19,10 @@ pub(crate) fn encode_plain<O: Offset>(
     is_optional: bool,
     buffer: &mut Vec<u8>,
 ) {
-    buffer.reserve(array.values().len());
+    let len_before = buffer.len();
+    let capacity =
+        array.values().len() + (array.len() - array.null_count()) * std::mem::size_of::<u32>();
+    buffer.reserve(capacity);
     // append the non-null values
     if is_optional {
         array.iter().for_each(|x| {
@@ -38,6 +41,8 @@ pub(crate) fn encode_plain<O: Offset>(
             buffer.extend_from_slice(x);
         })
     }
+    // Ensure we allocated properly.
+    debug_assert_eq!(buffer.len() - len_before, capacity);
 }
 
 pub fn array_to_page<O: Offset>(
