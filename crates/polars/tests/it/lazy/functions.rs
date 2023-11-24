@@ -24,5 +24,5 @@ fn test_format_str() {
     ]
     .unwrap();
 
-    assert!(out.frame_equal_missing(&expected));
+    assert!(out.equals_missing(&expected));
 }

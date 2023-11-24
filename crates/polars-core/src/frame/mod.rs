@@ -1285,8 +1285,8 @@ impl DataFrame {
     ///     "2" => &[2, 2, 2]
     /// }?;
     ///
-    /// assert!(df.select(&["0", "1"])?.frame_equal(&df.select_by_range(0..=1)?));
-    /// assert!(df.frame_equal(&df.select_by_range(..)?));
+    /// assert!(df.select(&["0", "1"])?.equals(&df.select_by_range(0..=1)?));
+    /// assert!(df.equals(&df.select_by_range(..)?));
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn select_by_range<R>(&self, range: R) -> PolarsResult<Self>

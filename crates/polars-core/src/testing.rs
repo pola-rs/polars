@@ -91,7 +91,7 @@ impl DataFrame {
     /// let df2: DataFrame = df!("Atomic number" => &[1, 51, 300],
     ///                         "Element" => &[Some("Hydrogen"), Some("Antimony"), None])?;
     ///
-    /// assert!(!df1.frame_equal(&df2));
+    /// assert!(!df1.equals(&df2));
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn equals(&self, other: &DataFrame) -> bool {
@@ -117,7 +117,7 @@ impl DataFrame {
     /// let df2: DataFrame = df!("Atomic number" => &[1, 51, 300],
     ///                         "Element" => &[Some("Hydrogen"), Some("Antimony"), None])?;
     ///
-    /// assert!(df1.frame_equal_missing(&df2));
+    /// assert!(df1.equals_missing(&df2));
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn equals_missing(&self, other: &DataFrame) -> bool {
@@ -169,7 +169,7 @@ mod test {
     use crate::prelude::*;
 
     #[test]
-    fn test_series_equal() {
+    fn test_series_equals() {
         let a = Series::new("a", &[1_u32, 2, 3]);
         let b = Series::new("a", &[1_u32, 2, 3]);
         assert!(a.equals(&b));
