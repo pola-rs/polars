@@ -113,7 +113,7 @@ impl GlobalRevMapMerger {
 fn merge_local_rhs_categorical<'a>(
     categories: &'a Utf8Array<i64>,
     ca_right: &'a CategoricalChunked,
-) -> Result<(impl Iterator<Item = Option<u32>> + 'a, Arc<RevMapping>), PolarsError> {
+) -> Result<(UInt32Chunked, Arc<RevMapping>), PolarsError> {
     // Counterpart of the GlobalRevmapMerger.
     // In case of local categorical we also need to change the physicals not only the revmap
 
@@ -147,10 +147,8 @@ fn merge_local_rhs_categorical<'a>(
     let new_rev_map = Arc::new(RevMapping::build_local(new_categories.into()));
     Ok((
         ca_right
-            .physical()
-            .downcast_iter()
-            .flatten()
-            .map(move |v: Option<&u32>| v.map(|v2| *idx_mapping.get(v2).unwrap())),
+            .physical
+            .apply(|opt_v| opt_v.map(|v| *idx_mapping.get(&v).unwrap())),
         new_rev_map,
     ))
 }
@@ -181,8 +179,7 @@ pub fn call_categorical_merge_operation<I: CategoricalMergeOperation>(
             rev_map_left.clone(),
         ),
         (RevMapping::Local(categorical, _), RevMapping::Local(_, _)) => {
-            let (rhs_iter, rev_map) = merge_local_rhs_categorical(categorical, cat_right)?;
-            let rhs_physical = rhs_iter.collect();
+            let (rhs_physical, rev_map) = merge_local_rhs_categorical(categorical, cat_right)?;
             (
                 merge_ops.finish(cat_left.physical(), &rhs_physical)?,
                 rev_map,
