@@ -3545,4 +3545,3 @@ def test_iter_columns() -> None:
     iter_columns = df.iter_columns()
     assert_series_equal(next(iter_columns), pl.Series("a", [1, 1, 2]))
     assert_series_equal(next(iter_columns), pl.Series("b", [4, 5, 6]))
-
