@@ -138,16 +138,37 @@ pub unsafe fn slice_and_owner<T: NativeType, O>(slice: &[T], owner: O) -> Primit
 /// Creates a (non-null) [`BooleanArray`] from a slice of bits.
 /// This does not have memcopy and is the fastest way to create a [`BooleanArray`].
 ///
-/// This can be useful if you want to apply arrow kernels on slices without incurring
-/// a memcopy cost.
+/// This can be useful if you want to apply arrow kernels on slices without
+/// incurring a memcopy cost.
 ///
 /// The `offset` indicates where the first bit starts in the first byte.
 ///
 /// # Safety
 ///
-/// Using this function is not unsafe, but the returned BooleanArrays's lifetime is bound to the lifetime
-/// of the slice. The returned [`BooleanArray`] _must not_ outlive the passed slice.
+/// Using this function is not unsafe, but the returned BooleanArrays's lifetime
+/// is bound to the lifetime of the slice. The returned [`BooleanArray`] _must
+/// not_ outlive the passed slice.
 pub unsafe fn bitmap(data: &[u8], offset: usize, length: usize) -> PolarsResult<BooleanArray> {
+    bitmap_and_owner(data, offset, length, ())
+}
+
+/// Creates a (non-null) [`BooleanArray`] from a slice of bits.
+/// This does not have memcopy and is the fastest way to create a [`BooleanArray`].
+///
+/// This can be useful if you want to apply arrow kernels on slices without
+/// incurring a memcopy cost.
+///
+/// The `offset` indicates where the first bit starts in the first byte.
+///
+/// # Safety
+///
+/// The caller must ensure the passed `owner` ensures the data remains alive.
+pub unsafe fn bitmap_and_owner<O>(
+    data: &[u8],
+    offset: usize,
+    length: usize,
+    owner: O,
+) -> PolarsResult<BooleanArray> {
     if offset >= 8 {
         polars_bail!(InvalidOperation: "offset should be < 8")
     };
@@ -158,7 +179,7 @@ pub unsafe fn bitmap(data: &[u8], offset: usize, length: usize) -> PolarsResult<
     let validity = None;
 
     let ptr = data.as_ptr();
-    let data = Arc::new(data);
+    let data = Arc::new(owner);
 
     // safety: the underlying assumption of this function: the array will not be used
     // beyond the

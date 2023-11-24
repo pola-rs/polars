@@ -14,13 +14,27 @@ from polars.utils._wrap import wrap_s
 
 @given(
     s=series(
-        allowed_dtypes=(pl.INTEGER_DTYPES | pl.FLOAT_DTYPES),  # TODO: Add booleans
+        allowed_dtypes=(pl.INTEGER_DTYPES | pl.FLOAT_DTYPES | {pl.Boolean}),
         chunked=False,
     )
 )
 def test_series_from_buffer(s: pl.Series) -> None:
     offset, length, pointer = s._s.get_ptr()
-    result = wrap_s(PySeries._from_buffer(pointer, length, s.dtype, base=s))
+    result = wrap_s(PySeries._from_buffer(pointer, offset, length, s.dtype, base=s))
+    assert_series_equal(s, result)
+
+
+def test_series_from_buffer_numeric() -> None:
+    s = pl.Series([1, 2, 3], dtype=pl.UInt16)
+    offset, length, pointer = s._s.get_ptr()
+    result = wrap_s(PySeries._from_buffer(pointer, offset, length, s.dtype, base=s))
+    assert_series_equal(s, result)
+
+
+def test_series_from_buffer_sliced_bitmask() -> None:
+    s = pl.Series([True] * 9, dtype=pl.Boolean)[5:]
+    offset, length, pointer = s._s.get_ptr()
+    result = wrap_s(PySeries._from_buffer(pointer, offset, length, s.dtype, base=s))
     assert_series_equal(s, result)
 
 
@@ -32,4 +46,4 @@ def test_series_from_buffer_unsupported() -> None:
         TypeError,
         match="`from_buffer` requires a physical type as input for `dtype`, got date",
     ):
-        wrap_s(PySeries._from_buffer(pointer, length, pl.Date, base=s))
+        wrap_s(PySeries._from_buffer(pointer, offset, length, pl.Date, base=s))
