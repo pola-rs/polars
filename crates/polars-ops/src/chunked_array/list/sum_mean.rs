@@ -1,6 +1,6 @@
 use std::ops::Div;
 
-use arrow::array::{Array, PrimitiveArray, ArrayRef};
+use arrow::array::{Array, ArrayRef, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::types::NativeType;

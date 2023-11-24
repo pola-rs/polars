@@ -1,4 +1,4 @@
-use arrow::array::{Array, BinaryArray};
+use arrow::array::{Array, BinaryArray, ValueSize};
 use arrow::bitmap::Bitmap;
 use arrow::offset::Offset;
 use polars_error::{polars_bail, PolarsResult};
@@ -13,7 +13,6 @@ use crate::parquet::statistics::{
 use crate::write::dictionary::encode_as_dictionary_optional;
 use crate::write::pages::PageResult;
 use crate::write::Page;
-use arrow::array::ValueSize;
 
 pub(crate) fn encode_plain<O: Offset>(
     array: &BinaryArray<O>,
@@ -21,12 +20,8 @@ pub(crate) fn encode_plain<O: Offset>(
     buffer: &mut Vec<u8>,
 ) {
     let len_before = buffer.len();
-    dbg!(len_before);
     let capacity =
         array.get_values_size() + (array.len() - array.null_count()) * std::mem::size_of::<u32>();
-
-
-    dbg!(capacity, array.values().len(), array.len(), array.null_count());
     buffer.reserve(capacity);
     // append the non-null values
     if is_optional {
@@ -46,7 +41,6 @@ pub(crate) fn encode_plain<O: Offset>(
             buffer.extend_from_slice(x);
         })
     }
-    dbg!(buffer.len());
     // Ensure we allocated properly.
     debug_assert_eq!(buffer.len() - len_before, capacity);
 }

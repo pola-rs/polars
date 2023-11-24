@@ -23,6 +23,7 @@ use std::fmt::{Display, Formatter};
 pub(crate) use aggregation::*;
 pub(crate) use alias::*;
 pub(crate) use apply::*;
+use arrow::array::ArrayRef;
 use arrow::legacy::utils::CustomIterTools;
 pub(crate) use binary::*;
 pub(crate) use cast::*;
@@ -42,7 +43,6 @@ pub(crate) use take::*;
 pub(crate) use ternary::*;
 pub(crate) use window::*;
 
-use arrow::array::ArrayRef;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 

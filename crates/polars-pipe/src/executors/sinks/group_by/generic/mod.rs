@@ -10,9 +10,7 @@ use std::any::Any;
 use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
 
-use arrow::array::{
-    BinaryArray, ArrayRef
-};
+use arrow::array::{ArrayRef, BinaryArray};
 use eval::Eval;
 use hash_table::AggHashTable;
 use hashbrown::hash_map::{RawEntryMut, RawVacantEntryMut};

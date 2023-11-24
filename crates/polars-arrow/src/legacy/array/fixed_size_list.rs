@@ -1,10 +1,9 @@
 use polars_error::PolarsResult;
 
-use crate::array::FixedSizeListArray;
+use crate::array::{ArrayRef, FixedSizeListArray};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::kernels::concatenate::concatenate_owned_unchecked;
-use crate::array::ArrayRef;
 
 #[derive(Default)]
 pub struct AnonymousBuilder {

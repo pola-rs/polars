@@ -1,7 +1,6 @@
-use crate::array::ListArray;
+use crate::array::{ArrayRef, ListArray};
 use crate::legacy::compute::take::take_unchecked;
 use crate::legacy::prelude::*;
-use crate::array::ArrayRef;
 use crate::legacy::trusted_len::TrustedLenPush;
 use crate::legacy::utils::CustomIterTools;
 use crate::offset::{Offsets, OffsetsBuffer};

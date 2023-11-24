@@ -65,7 +65,7 @@ use std::convert::TryFrom;
 use std::io::Write;
 use std::ops::Deref;
 
-use arrow::array::StructArray;
+use arrow::array::{ArrayRef, StructArray};
 use arrow::legacy::conversion::chunk_to_struct;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
@@ -74,7 +74,6 @@ use polars_json::json::infer;
 use polars_json::json::write::FallibleStreamingIterator;
 use simd_json::BorrowedValue;
 
-use arrow::array::ArrayRef;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::*;
 

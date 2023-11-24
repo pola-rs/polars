@@ -1,6 +1,6 @@
 use polars_error::PolarsResult;
 
-use crate::array::{ArrayRef,new_null_array, Array, ListArray, NullArray, StructArray};
+use crate::array::{new_null_array, Array, ArrayRef, ListArray, NullArray, StructArray};
 use crate::bitmap::MutableBitmap;
 use crate::compute::concatenate;
 use crate::datatypes::ArrowDataType;

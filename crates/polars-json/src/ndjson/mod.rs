@@ -1,6 +1,5 @@
-use arrow::datatypes::*;
 use arrow::array::ArrayRef;
-use arrow::legacy::prelude::*;
+use arrow::datatypes::*;
 use polars_error::*;
 pub mod deserialize;
 mod file;

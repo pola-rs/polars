@@ -1,8 +1,6 @@
-use crate::array::{PrimitiveArray, StructArray};
+use crate::array::{ArrayRef, PrimitiveArray, StructArray};
 use crate::chunk::Chunk;
-use crate::array::ArrayRef;
 use crate::datatypes::{ArrowDataType, Field};
-use crate::legacy::prelude::*;
 use crate::types::NativeType;
 
 pub fn chunk_to_struct(chunk: Chunk<ArrayRef>, fields: Vec<Field>) -> StructArray {

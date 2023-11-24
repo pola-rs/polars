@@ -1,9 +1,6 @@
-use crate::array::{
-    Array, BinaryArray, BooleanArray, FixedSizeListArray, ListArray, PrimitiveArray, Utf8Array,
-};
+use crate::array::{Array, BinaryArray, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::ArrowDataType;
-use crate::legacy::prelude::*;
 use crate::legacy::utils::CustomIterTools;
 use crate::offset::Offsets;
 use crate::types::NativeType;
@@ -18,7 +15,6 @@ pub mod slice;
 pub mod utf8;
 
 pub use slice::*;
-
 
 macro_rules! iter_to_values {
     ($iterator:expr, $validity:expr, $offsets:expr, $length_so_far:expr) => {{

@@ -1,7 +1,7 @@
-use arrow::array::{Array, PrimitiveArray, ArrayRef};
+use arrow::array::{Array, ArrayRef, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::legacy::array::PolarsArray;
-use arrow::legacy::data_types::{IsFloat};
+use arrow::legacy::data_types::IsFloat;
 use arrow::legacy::slice::ExtremaNanAware;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::types::NativeType;

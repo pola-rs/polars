@@ -10,11 +10,11 @@ use std::hint::unreachable_unchecked;
 use std::iter::FromIterator;
 
 pub(crate) use arg_sort_multiple::argsort_multiple_row_fmt;
+use arrow::array::ValueSize;
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
 use arrow::legacy::kernels::rolling::compare_fn_nan_max;
-use arrow::legacy::prelude::{FromData};
-use arrow::array::ValueSize;
+use arrow::legacy::prelude::FromData;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use num_traits::Float;
 use rayon::prelude::*;

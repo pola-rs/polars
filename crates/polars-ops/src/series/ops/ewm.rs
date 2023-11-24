@@ -1,10 +1,10 @@
 use std::convert::TryFrom;
 
+use arrow::array::ArrayRef;
 pub use arrow::legacy::kernels::ewm::EWMOptions;
 use arrow::legacy::kernels::ewm::{
     ewm_mean as kernel_ewm_mean, ewm_std as kernel_ewm_std, ewm_var as kernel_ewm_var,
 };
-use arrow::array::ArrayRef;
 use polars_core::prelude::*;
 
 fn check_alpha(alpha: f64) -> PolarsResult<()> {

@@ -9,6 +9,7 @@ mod single_keys_semi_anti;
 pub(super) mod sort_merge;
 mod zip_outer;
 
+use arrow::array::ArrayRef;
 pub use multiple_keys::private_left_join_multiple_keys;
 pub(super) use multiple_keys::*;
 use polars_core::utils::{_set_partition_size, slice_slice, split_ca};
@@ -24,7 +25,6 @@ use single_keys_outer::*;
 use single_keys_semi_anti::*;
 pub use sort_merge::*;
 pub(super) use zip_outer::zip_outer_join_column;
-use arrow::array::ArrayRef;
 
 pub use super::*;
 
