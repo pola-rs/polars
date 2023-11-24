@@ -319,7 +319,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
         match (page.encoding(), dict, is_optional, is_filtered) {
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false, false) => {
                 if is_string {
-                    arrow::array::specification::try_check_utf8(dict.offsets(), dict.values())?;
+                    try_check_utf8(dict.offsets(), dict.values())?;
                 }
                 Ok(State::RequiredDictionary(RequiredDictionary::try_new(
                     page, dict,
@@ -327,7 +327,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
             },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), true, false) => {
                 if is_string {
-                    arrow::array::specification::try_check_utf8(dict.offsets(), dict.values())?;
+                    try_check_utf8(dict.offsets(), dict.values())?;
                 }
                 Ok(State::OptionalDictionary(
                     OptionalPageValidity::try_new(page)?,
@@ -336,14 +336,14 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
             },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false, true) => {
                 if is_string {
-                    arrow::array::specification::try_check_utf8(dict.offsets(), dict.values())?;
+                    try_check_utf8(dict.offsets(), dict.values())?;
                 }
                 FilteredRequiredDictionary::try_new(page, dict)
                     .map(State::FilteredRequiredDictionary)
             },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), true, true) => {
                 if is_string {
-                    arrow::array::specification::try_check_utf8(dict.offsets(), dict.values())?;
+                    try_check_utf8(dict.offsets(), dict.values())?;
                 }
                 Ok(State::FilteredOptionalDictionary(
                     FilteredOptionalPageValidity::try_new(page)?,
@@ -574,13 +574,13 @@ pub(super) fn finish<O: Offset>(
         )
         .map(|x| x.boxed()),
         PhysicalType::Utf8 | PhysicalType::LargeUtf8 => unsafe {
-            Utf8Array::<O>::try_new_unchecked(
+            Ok(Utf8Array::<O>::new_unchecked(
                 data_type.clone(),
                 values.offsets.into(),
                 values.values.into(),
                 validity.into(),
             )
-            .map(|x| x.boxed())
+            .boxed())
         },
         _ => unreachable!(),
     }

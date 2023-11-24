@@ -485,7 +485,7 @@ unsafe fn into_utf8array(arr: BinaryArray<i64>) -> Utf8Array<i64> {
     unsafe {
         let (_dt, offsets, values, validity) = arr.into_inner();
         let dt = arrow::datatypes::ArrowDataType::LargeUtf8;
-        Utf8Array::try_new_unchecked(dt, offsets, values, validity).unwrap_unchecked()
+        Utf8Array::new_unchecked(dt, offsets, values, validity)
     }
 }
 

@@ -237,13 +237,12 @@ impl ChunkCast for Utf8Chunked {
 unsafe fn binary_to_utf8_unchecked(from: &BinaryArray<i64>) -> Utf8Array<i64> {
     let values = from.values().clone();
     let offsets = from.offsets().clone();
-    Utf8Array::<i64>::try_new_unchecked(
+    Utf8Array::<i64>::new_unchecked(
         ArrowDataType::LargeUtf8,
         offsets,
         values,
         from.validity().cloned(),
     )
-    .unwrap()
 }
 
 impl BinaryChunked {

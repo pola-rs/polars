@@ -1,6 +1,6 @@
 use either::Either;
 
-use super::specification::{try_check_utf8};
+use super::specification::try_check_utf8;
 use super::{Array, GenericBinaryArray};
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
@@ -359,12 +359,12 @@ impl<O: Offset> Utf8Array<O> {
     /// * The `values` between two consecutive `offsets` are not valid utf8
     /// # Implementation
     /// This function is `O(1)`
-    pub unsafe fn try_new_unchecked(
+    pub unsafe fn new_unchecked(
         data_type: ArrowDataType,
         offsets: OffsetsBuffer<O>,
         values: Buffer<u8>,
         validity: Option<Bitmap>,
-    ) -> PolarsResult<Self> {
+    ) -> Self {
         debug_assert!(
             offsets.last().to_usize() <= values.len(),
             "offsets must not exceed the values length"
@@ -380,12 +380,12 @@ impl<O: Offset> Utf8Array<O> {
             "Utf8Array can only be initialized with DataType::Utf8 or DataType::LargeUtf8"
         );
 
-        Ok(Self {
+        Self {
             data_type,
             offsets,
             values,
             validity,
-        })
+        }
     }
 
     /// Creates a new [`Utf8Array`].
@@ -404,28 +404,6 @@ impl<O: Offset> Utf8Array<O> {
         validity: Option<Bitmap>,
     ) -> Self {
         Self::try_new(data_type, offsets, values, validity).unwrap()
-    }
-
-    /// Creates a new [`Utf8Array`] without checking for offsets monotinicity.
-    ///
-    /// # Errors
-    /// This function returns an error iff:
-    /// * The last offset is not equal to the values' length.
-    /// * the validity's length is not equal to `offsets.len()`.
-    /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to either `Utf8` or `LargeUtf8`.
-    /// # Safety
-    /// This function is unsound iff:
-    /// * the offsets are not monotonically increasing
-    /// * The `values` between two consecutive `offsets` are not valid utf8
-    /// # Implementation
-    /// This function is `O(1)`
-    pub unsafe fn new_unchecked(
-        data_type: ArrowDataType,
-        offsets: OffsetsBuffer<O>,
-        values: Buffer<u8>,
-        validity: Option<Bitmap>,
-    ) -> Self {
-        Self::try_new_unchecked(data_type, offsets, values, validity).unwrap()
     }
 
     /// Returns a (non-null) [`Utf8Array`] created from a [`TrustedLen`] of `&str`.

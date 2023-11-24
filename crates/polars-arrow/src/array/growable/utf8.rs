@@ -51,13 +51,12 @@ impl<'a, O: Offset> GrowableUtf8<'a, O> {
         }
 
         unsafe {
-            Utf8Array::<O>::try_new_unchecked(
+            Utf8Array::<O>::new_unchecked(
                 self.arrays[0].data_type().clone(),
                 offsets.into(),
                 values.into(),
                 validity.into(),
             )
-            .unwrap()
         }
     }
 }
