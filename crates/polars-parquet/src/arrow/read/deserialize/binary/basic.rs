@@ -573,13 +573,15 @@ pub(super) fn finish<O: Offset>(
             validity.into(),
         )
         .map(|x| x.boxed()),
-        PhysicalType::Utf8 | PhysicalType::LargeUtf8 => Utf8Array::<O>::try_new(
-            data_type.clone(),
-            values.offsets.into(),
-            values.values.into(),
-            validity.into(),
-        )
-        .map(|x| x.boxed()),
+        PhysicalType::Utf8 | PhysicalType::LargeUtf8 => unsafe {
+            Utf8Array::<O>::try_new_unchecked(
+                data_type.clone(),
+                values.offsets.into(),
+                values.values.into(),
+                validity.into(),
+            )
+            .map(|x| x.boxed())
+        },
         _ => unreachable!(),
     }
 }
