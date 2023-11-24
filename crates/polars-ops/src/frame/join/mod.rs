@@ -100,11 +100,12 @@ pub trait DataFrameJoinOps: IntoDf {
 
     #[doc(hidden)]
     #[allow(clippy::too_many_arguments)]
+    #[allow(unused_mut)]
     fn _join_impl(
         &self,
         other: &DataFrame,
-        selected_left: Vec<Series>,
-        selected_right: Vec<Series>,
+        mut selected_left: Vec<Series>,
+        mut selected_right: Vec<Series>,
         args: JoinArgs,
         _check_rechunk: bool,
         _verbose: bool,
@@ -182,14 +183,22 @@ pub trait DataFrameJoinOps: IntoDf {
         };
 
         #[cfg(feature = "dtype-categorical")]
-        for (l, r) in selected_left.iter().zip(&selected_right) {
-            _check_categorical_src(l.dtype(), r.dtype())?
+        for (l, r) in selected_left.iter_mut().zip(selected_right.iter_mut()) {
+            match _check_categorical_src(l.dtype(), r.dtype()) {
+                Ok(_) => {},
+                Err(_) => {
+                    let (ca_left, ca_right) =
+                        make_categoricals_compatible(l.categorical()?, r.categorical()?)?;
+                    *l = ca_left.into_series().with_name(l.name());
+                    *r = ca_right.into_series().with_name(r.name());
+                },
+            }
         }
 
         // Single keys.
         if selected_left.len() == 1 {
-            let s_left = left_df.column(selected_left[0].name())?;
-            let s_right = other.column(selected_right[0].name())?;
+            let s_left = &selected_left[0];
+            let s_right = &selected_right[0];
             return match args.how {
                 JoinType::Inner => {
                     left_df._inner_join_from_series(other, s_left, s_right, args, _verbose)

@@ -117,6 +117,12 @@ fn merge_local_rhs_categorical<'a>(
     // Counterpart of the GlobalRevmapMerger.
     // In case of local categorical we also need to change the physicals not only the revmap
 
+    polars_warn!(
+        "Local categoricals have different encodings, expensive re-encoding is done \
+    to perform this merge operation. Consider using a StringCache or an Enum type \
+    if the categories are known in advance"
+    );
+
     let RevMapping::Local(cats_right, _) = &**ca_right.get_rev_map() else {
         unreachable!()
     };
@@ -153,6 +159,7 @@ pub trait CategoricalMergeOperation {
     fn finish(self, lhs: &UInt32Chunked, rhs: &UInt32Chunked) -> PolarsResult<UInt32Chunked>;
 }
 
+// Make the right categorical compatible with the left while applying the merge operation
 pub fn call_categorical_merge_operation<I: CategoricalMergeOperation>(
     cat_left: &CategoricalChunked,
     cat_right: &CategoricalChunked,
@@ -190,6 +197,33 @@ pub fn call_categorical_merge_operation<I: CategoricalMergeOperation>(
             new_rev_map,
         ))
     }
+}
+
+struct DoNothing;
+impl CategoricalMergeOperation for DoNothing {
+    fn finish(self, _lhs: &UInt32Chunked, rhs: &UInt32Chunked) -> PolarsResult<UInt32Chunked> {
+        Ok(rhs.clone())
+    }
+}
+
+// Make the right categorical compatible with the left
+pub fn make_categoricals_compatible(
+    ca_left: &CategoricalChunked,
+    ca_right: &CategoricalChunked,
+) -> PolarsResult<(CategoricalChunked, CategoricalChunked)> {
+    let new_ca_right = call_categorical_merge_operation(ca_left, ca_right, DoNothing)?;
+
+    // Alter rev map of left
+    let mut new_ca_left = ca_left.clone();
+    // Safety: We just made both rev maps compatible only appended categories
+    unsafe {
+        new_ca_left.set_rev_map(
+            new_ca_right.get_rev_map().clone(),
+            ca_left.get_rev_map().len() == new_ca_right.get_rev_map().len(),
+        )
+    };
+
+    Ok((new_ca_left, new_ca_right))
 }
 
 #[cfg(test)]
