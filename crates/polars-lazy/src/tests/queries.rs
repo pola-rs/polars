@@ -82,7 +82,7 @@ fn test_lazy_drop_nulls() {
         "bar" => &[Some(1)]
     }
     .unwrap();
-    assert!(new.frame_equal(&out));
+    assert!(new.equals(&out));
 }
 
 #[test]
@@ -597,7 +597,7 @@ fn test_lazy_fill_null() {
         "b" => &[Some(1.0), Some(10.0)]
     }
     .unwrap();
-    assert!(out.frame_equal(&correct));
+    assert!(out.equals(&correct));
     assert_eq!(out.get_column_names(), vec!["a", "b"])
 }
 
@@ -1091,7 +1091,7 @@ fn test_filter_and_alias() -> PolarsResult<()> {
     ]?;
     println!("{:?}", out);
     println!("{:?}", expected);
-    assert!(out.frame_equal(&expected));
+    assert!(out.equals(&expected));
     Ok(())
 }
 
@@ -1771,7 +1771,7 @@ fn test_partitioned_gb_1() -> PolarsResult<()> {
     .sort("keys", Default::default())
     .collect()?;
 
-    assert!(out.frame_equal(&df![
+    assert!(out.equals(&df![
         "keys" => [1, 2],
         "eq_a" => [2 as IdxSize, 1],
         "eq_b" => [1 as IdxSize, 0],
@@ -1795,7 +1795,7 @@ fn test_partitioned_gb_count() -> PolarsResult<()> {
     ])
     .collect()?;
 
-    assert!(out.frame_equal(&df![
+    assert!(out.equals(&df![
         "col" => [0],
         "counted" => [100 as IdxSize],
         "count2" => [100 as IdxSize],
@@ -1842,7 +1842,7 @@ fn test_partitioned_gb_binary() -> PolarsResult<()> {
         .agg([(col("col") + lit(10)).sum().alias("sum")])
         .collect()?;
 
-    assert!(out.frame_equal(&df![
+    assert!(out.equals(&df![
         "col" => [0],
         "sum" => [200],
     ]?));
@@ -1855,7 +1855,7 @@ fn test_partitioned_gb_binary() -> PolarsResult<()> {
             .alias("sum")])
         .collect()?;
 
-    assert!(out.frame_equal(&df![
+    assert!(out.equals(&df![
         "col" => [0],
         "sum" => [200.0_f32],
     ]?));
@@ -1881,7 +1881,7 @@ fn test_partitioned_gb_ternary() -> PolarsResult<()> {
             .alias("sum")])
         .collect()?;
 
-    assert!(out.frame_equal(&df![
+    assert!(out.equals(&df![
         "col" => [0],
         "sum" => [9],
     ]?));
@@ -1902,7 +1902,7 @@ fn test_sort_maintain_order_true() -> PolarsResult<()> {
         .slice(0, 3)
         .collect()?;
     println!("{:?}", res);
-    assert!(res.frame_equal(&df![
+    assert!(res.equals(&df![
         "A" => [1, 1, 1],
         "B" => ["A", "B", "C"],
     ]?));

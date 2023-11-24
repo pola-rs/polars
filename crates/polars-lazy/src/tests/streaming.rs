@@ -382,7 +382,7 @@ fn test_sort_maintain_order_streaming() -> PolarsResult<()> {
         .slice(0, 3)
         .with_streaming(true)
         .collect()?;
-    assert!(res.frame_equal(&df![
+    assert!(res.equals(&df![
         "A" => [1, 1, 1],
         "B" => ["A", "B", "C"],
     ]?));

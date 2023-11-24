@@ -80,13 +80,13 @@ fn select_qualified_wildcard() {
     ctx.register("test2", df2.lazy());
 
     let sql = r#"
-    SELECT test.* 
-    FROM test 
-    INNER JOIN test2 
+    SELECT test.*
+    FROM test
+    INNER JOIN test2
     USING(a)
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
-    assert!(actual.frame_equal(&expected));
+    assert!(actual.equals(&expected));
 }
 
 #[test]
@@ -114,12 +114,12 @@ fn select_qualified_column() {
 
     let sql = r#"
     SELECT test.b, test2.*
-    FROM test 
-    INNER JOIN test2 
+    FROM test
+    INNER JOIN test2
     USING(a)
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
-    assert!(actual.frame_equal(&expected));
+    assert!(actual.equals(&expected));
 }
 
 #[test]
@@ -158,7 +158,7 @@ fn test_union_all() {
     .unwrap();
 
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
-    assert!(actual.frame_equal(&expected));
+    assert!(actual.equals(&expected));
 }
 
 #[test]
@@ -192,5 +192,5 @@ fn iss_9560_join_as() {
     }
     .unwrap();
 
-    assert!(actual.frame_equal(&expected));
+    assert!(actual.equals(&expected));
 }

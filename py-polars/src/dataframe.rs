@@ -1129,7 +1129,7 @@ impl PyDataFrame {
         if null_equal {
             self.df.frame_equal_missing(&other.df)
         } else {
-            self.df.frame_equal(&other.df)
+            self.df.equals(&other.df)
         }
     }
 

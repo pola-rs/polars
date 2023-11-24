@@ -71,7 +71,7 @@ fn test_inner_join() {
         .unwrap();
 
         println!("{}", joined);
-        assert!(joined.frame_equal(&true_df));
+        assert!(joined.equals(&true_df));
     }
 }
 
@@ -377,7 +377,7 @@ fn unit_df_join() -> PolarsResult<()> {
         "b" => [2],
         "b_right" => [1]
     ]?;
-    assert!(out.frame_equal(&expected));
+    assert!(out.equals(&expected));
     Ok(())
 }
 

@@ -33,6 +33,6 @@ fn iss_7437() -> PolarsResult<()> {
         .collect()?
         .sort(["category"], vec![false], false)?;
 
-    assert!(df_sql.frame_equal(&expected));
+    assert!(df_sql.equals(&expected));
     Ok(())
 }

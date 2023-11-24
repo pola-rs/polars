@@ -64,7 +64,7 @@ fn test_shift_and_fill_window_function() -> PolarsResult<()> {
         ])
         .collect()?;
 
-    assert!(out1.frame_equal(&out2));
+    assert!(out1.equals(&out2));
 
     Ok(())
 }
@@ -331,7 +331,7 @@ fn test_window_exprs_in_binary_exprs() -> PolarsResult<()> {
         "stdized3" => [0]
     ]?;
 
-    assert!(df.frame_equal(&expected));
+    assert!(df.equals(&expected));
 
     Ok(())
 }
@@ -353,7 +353,7 @@ fn test_window_exprs_any_all() -> PolarsResult<()> {
         "any" => [false, true, false, false, true, true, true, true],
         "all" => [false, true, false, false, false, false, true, true],
     ]?;
-    assert!(df.frame_equal(&expected));
+    assert!(df.equals(&expected));
     Ok(())
 }
 

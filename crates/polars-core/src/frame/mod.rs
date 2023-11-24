@@ -3564,7 +3564,7 @@ mod test {
             "str" => ["a", "b", "c"]
         }
         .unwrap();
-        assert!(df.frame_equal(&valid));
+        assert!(df.equals(&valid));
     }
 
     #[test]

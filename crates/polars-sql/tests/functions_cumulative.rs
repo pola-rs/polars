@@ -47,7 +47,7 @@ fn test_cumulative_sum() {
     let sql_expr = "SUM(Sales) OVER (ORDER BY Sales DESC)";
     let (expected, actual) = create_expected(expr, sql_expr);
 
-    assert!(expected.frame_equal(&actual))
+    assert!(expected.equals(&actual))
 }
 
 #[test]
@@ -57,7 +57,7 @@ fn test_cumulative_min() {
     let sql_expr = "MIN(Sales) OVER (ORDER BY Sales DESC)";
     let (expected, actual) = create_expected(expr, sql_expr);
 
-    assert!(expected.frame_equal(&actual))
+    assert!(expected.equals(&actual))
 }
 
 #[test]
@@ -67,5 +67,5 @@ fn test_cumulative_max() {
     let sql_expr = "MAX(Sales) OVER (ORDER BY Sales DESC)";
     let (expected, actual) = create_expected(expr, sql_expr);
 
-    assert!(expected.frame_equal(&actual))
+    assert!(expected.equals(&actual))
 }

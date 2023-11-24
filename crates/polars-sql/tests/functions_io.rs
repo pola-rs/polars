@@ -18,7 +18,7 @@ fn read_csv_tbl_func() {
         "Response" => ["Create Table"]
     }
     .unwrap();
-    assert!(df_sql.frame_equal(&create_tbl_res));
+    assert!(df_sql.equals(&create_tbl_res));
     let df_2 = context
         .execute(r#"SELECT * FROM foods1"#)
         .unwrap()
@@ -43,7 +43,7 @@ fn read_csv_tbl_func_inline() {
         .select(&[col("category")])
         .collect()
         .unwrap();
-    assert!(df_sql.frame_equal(&expected));
+    assert!(df_sql.equals(&expected));
 }
 
 #[test]
@@ -61,7 +61,7 @@ fn read_csv_tbl_func_inline_2() {
         .select(&[col("category")])
         .collect()
         .unwrap();
-    assert!(df_sql.frame_equal(&expected));
+    assert!(df_sql.equals(&expected));
 }
 
 #[test]
@@ -77,7 +77,7 @@ fn read_parquet_tbl() {
         "Response" => ["Create Table"]
     }
     .unwrap();
-    assert!(df_sql.frame_equal(&create_tbl_res));
+    assert!(df_sql.equals(&create_tbl_res));
     let df_2 = context
         .execute(r#"SELECT * FROM foods1"#)
         .unwrap()
@@ -100,7 +100,7 @@ fn read_ipc_tbl() {
         "Response" => ["Create Table"]
     }
     .unwrap();
-    assert!(df_sql.frame_equal(&create_tbl_res));
+    assert!(df_sql.equals(&create_tbl_res));
     let df_2 = context
         .execute(r#"SELECT * FROM foods1"#)
         .unwrap()

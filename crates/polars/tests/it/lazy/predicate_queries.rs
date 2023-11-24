@@ -19,7 +19,7 @@ fn test_predicate_after_renaming() -> PolarsResult<()> {
         "foo2" => [2],
         "bar2" => [2],
     ]?;
-    assert!(df.frame_equal(&expected));
+    assert!(df.equals(&expected));
 
     Ok(())
 }
@@ -147,7 +147,7 @@ fn test_is_in_categorical_3420() -> PolarsResult<()> {
         "b" => [1, 2, 3]
     ]?;
     expected.try_apply("a", |s| s.cast(&DataType::Categorical(None)))?;
-    assert!(out.frame_equal(&expected));
+    assert!(out.equals(&expected));
     Ok(())
 }
 
@@ -220,7 +220,7 @@ fn test_count_blocked_at_union_3963() -> PolarsResult<()> {
         .filter(count().over([col("k")]).gt(lit(1)))
         .collect()?;
 
-        assert!(out.frame_equal(&expected));
+        assert!(out.equals(&expected));
     }
 
     Ok(())

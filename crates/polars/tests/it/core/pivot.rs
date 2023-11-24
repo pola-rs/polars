@@ -241,7 +241,7 @@ fn test_pivot_datetime() -> PolarsResult<()> {
         "x" => [150],
         "y" => [420]
     ]?;
-    assert!(out.frame_equal(&expected));
+    assert!(out.equals(&expected));
 
     Ok(())
 }

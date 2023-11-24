@@ -177,7 +177,7 @@ mod test {
             assert_eq!(ipc_paths.len(), 1);
             let reader = BufReader::new(polars_utils::open_file(&ipc_paths[0])?);
             let df = IpcReader::new(reader).finish()?;
-            assert!(expected_df.frame_equal(&df));
+            assert!(expected_df.equals(&df));
         }
 
         Ok(())

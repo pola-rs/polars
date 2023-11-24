@@ -13,7 +13,7 @@ fn assert_sql_to_polars(df: &DataFrame, sql: &str, f: impl FnOnce(LazyFrame) -> 
     context.register("df", df.clone().lazy());
     let df_sql = context.execute(sql).unwrap().collect().unwrap();
     let df_pl = f(df.clone().lazy()).collect().unwrap();
-    assert!(df_sql.frame_equal(&df_pl));
+    assert!(df_sql.equals(&df_pl));
 }
 
 #[test]
@@ -123,7 +123,7 @@ fn test_cast_exprs() {
         ])
         .collect()
         .unwrap();
-    assert!(df_sql.frame_equal(&df_pl));
+    assert!(df_sql.equals(&df_pl));
 }
 
 #[test]
@@ -170,7 +170,7 @@ fn test_prefixed_column_names() {
         .select(&[col("a").alias("a"), col("b").alias("b")])
         .collect()
         .unwrap();
-    assert!(df_sql.frame_equal(&df_pl));
+    assert!(df_sql.equals(&df_pl));
 }
 
 #[test]
@@ -189,7 +189,7 @@ fn test_prefixed_column_names_2() {
         .select(&[col("a").alias("a"), col("b").alias("b")])
         .collect()
         .unwrap();
-    assert!(df_sql.frame_equal(&df_pl));
+    assert!(df_sql.equals(&df_pl));
 }
 
 #[test]
@@ -219,7 +219,7 @@ fn test_null_exprs() {
         ])
         .collect()
         .unwrap();
-    assert!(df_sql.frame_equal(&df_pl));
+    assert!(df_sql.equals(&df_pl));
 }
 
 #[test]
@@ -337,7 +337,7 @@ fn test_agg_functions() {
         ])
         .collect()
         .unwrap();
-    assert!(df_sql.frame_equal(&df_pl));
+    assert!(df_sql.equals(&df_pl));
 }
 
 #[test]
@@ -354,7 +354,7 @@ fn create_table() {
         "Response" => ["Create Table"]
     }
     .unwrap();
-    assert!(df_sql.frame_equal(&create_tbl_res));
+    assert!(df_sql.equals(&create_tbl_res));
     let df_2 = context
         .execute(r#"SELECT a FROM df2"#)
         .unwrap()
@@ -362,7 +362,7 @@ fn create_table() {
         .unwrap();
     let expected = df.lazy().select(&[col("a")]).collect().unwrap();
 
-    assert!(df_2.frame_equal(&expected));
+    assert!(df_2.equals(&expected));
 }
 
 #[test]
@@ -381,7 +381,7 @@ fn test_unary_minus_0() {
         .filter(col("value").lt(lit(-1)))
         .collect()
         .unwrap();
-    assert!(df_sql.frame_equal(&df_pl));
+    assert!(df_sql.equals(&df_pl));
 }
 
 #[test]
@@ -397,7 +397,7 @@ fn test_unary_minus_1() {
     let df_sql = context.execute(sql).unwrap().collect().unwrap();
     let neg_value = lit(0) - col("value");
     let df_pl = df.lazy().filter(neg_value.lt(lit(1))).collect().unwrap();
-    assert!(df_sql.frame_equal(&df_pl));
+    assert!(df_sql.equals(&df_pl));
 }
 
 #[test]
@@ -500,7 +500,7 @@ fn test_group_by_2() -> PolarsResult<()> {
         )
         .limit(2);
     let expected = expected.collect()?;
-    assert!(df_sql.frame_equal(&expected));
+    assert!(df_sql.equals(&expected));
     Ok(())
 }
 
@@ -525,7 +525,7 @@ fn test_case_expr() {
         .otherwise(lit("no match"))
         .alias("sign");
     let df_pl = df.lazy().select(&[case_expr]).collect().unwrap();
-    assert!(df_sql.frame_equal(&df_pl));
+    assert!(df_sql.equals(&df_pl));
 }
 
 #[test]
@@ -549,7 +549,7 @@ fn test_case_expr_with_expression() {
         .otherwise(lit("No?"))
         .alias("parity");
     let df_pl = df.lazy().select(&[case_expr]).collect().unwrap();
-    assert!(df_sql.frame_equal(&df_pl));
+    assert!(df_sql.equals(&df_pl));
 }
 
 #[test]
@@ -558,7 +558,7 @@ fn test_sql_expr() {
     let expr = sql_expr("MIN(a)").unwrap();
     let actual = df.clone().lazy().select(&[expr]).collect().unwrap();
     let expected = df.lazy().select(&[col("a").min()]).collect().unwrap();
-    assert!(actual.frame_equal(&expected));
+    assert!(actual.equals(&expected));
 }
 
 #[test]

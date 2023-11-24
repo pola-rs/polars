@@ -607,7 +607,7 @@ bar,bar";
         "a" => ["foo", "bar"],
         "b" => ["foo", "bar"]
     ]?;
-    assert!(df.frame_equal(&expect));
+    assert!(df.equals(&expect));
     Ok(())
 }
 
@@ -1097,7 +1097,7 @@ fn test_whitespace_skipping() -> PolarsResult<()> {
         "a" => [12i64],
         "b" => [1435i64],
     ]?;
-    assert!(out.frame_equal(&expected));
+    assert!(out.equals(&expected));
 
     Ok(())
 }

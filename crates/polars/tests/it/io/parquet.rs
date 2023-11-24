@@ -15,6 +15,6 @@ fn test_vstack_empty_3220() -> PolarsResult<()> {
     let mut buf = Cursor::new(Vec::new());
     ParquetWriter::new(&mut buf).finish(&mut stacked)?;
     let read_df = ParquetReader::new(buf).finish()?;
-    assert!(stacked.frame_equal(&read_df));
+    assert!(stacked.equals(&read_df));
     Ok(())
 }

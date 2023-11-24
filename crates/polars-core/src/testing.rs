@@ -94,7 +94,7 @@ impl DataFrame {
     /// assert!(!df1.frame_equal(&df2));
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn frame_equal(&self, other: &DataFrame) -> bool {
+    pub fn equals(&self, other: &DataFrame) -> bool {
         if self.shape() != other.shape() {
             return false;
         }
@@ -191,7 +191,7 @@ mod test {
         let b = Series::new("b", [1, 2, 3].as_ref());
 
         let df1 = DataFrame::new(vec![a, b]).unwrap();
-        assert!(df1.frame_equal(&df1))
+        assert!(df1.equals(&df1))
     }
 
     #[test]
