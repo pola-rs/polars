@@ -64,7 +64,7 @@ impl PartialEq for Series {
 
 impl DataFrame {
     /// Check if [`DataFrame`]' schemas are equal.
-    pub fn frame_equal_schema(&self, other: &DataFrame) -> PolarsResult<()> {
+    pub fn schema_equal(&self, other: &DataFrame) -> PolarsResult<()> {
         for (lhs, rhs) in self.iter().zip(other.iter()) {
             polars_ensure!(
                 lhs.name() == rhs.name(),
