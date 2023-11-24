@@ -4,7 +4,7 @@ use polars::export::arrow::array::Array;
 use polars::export::arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_core::utils::CustomIterTools;
-use pyo3::exceptions::{PyNotImplementedError, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
 use crate::arrow_interop::to_rust::array_to_rust;
@@ -312,6 +312,7 @@ impl PySeries {
     unsafe fn _from_buffer(
         py: Python,
         pointer: usize,
+        offset: usize,
         length: usize,
         dtype: Wrap<DataType>,
         base: &PyAny,
@@ -331,9 +332,7 @@ impl PySeries {
             DataType::Float32 => unsafe { from_buffer_impl::<f32>(pointer, length, base) },
             DataType::Float64 => unsafe { from_buffer_impl::<f64>(pointer, length, base) },
             DataType::Boolean => {
-                return Err(PyNotImplementedError::new_err(
-                    "`from_buffer` is not yet implemented for boolean types",
-                ))
+                unsafe { from_buffer_boolean_impl(pointer, offset, length, base) }?
             },
             dt => {
                 return Err(PyTypeError::new_err(format!(
@@ -356,4 +355,29 @@ unsafe fn from_buffer_impl<T: NativeType>(
     let slice = unsafe { std::slice::from_raw_parts(pointer, length) };
     let arr = unsafe { arrow::ffi::mmap::slice_and_owner(slice, base) };
     arr.to_boxed()
+}
+
+unsafe fn from_buffer_boolean_impl(
+    pointer: usize,
+    offset: usize,
+    length: usize,
+    base: Py<PyAny>,
+) -> PyResult<Box<dyn Array>> {
+    let length_in_bytes = get_boolean_buffer_length_in_bytes(length, offset);
+
+    let pointer = pointer as *const u8;
+    let slice = unsafe { std::slice::from_raw_parts(pointer, length_in_bytes) };
+    let arr_result = unsafe { arrow::ffi::mmap::bitmap_and_owner(slice, offset, length, base) };
+    let arr = arr_result.map_err(PyPolarsErr::from)?;
+    Ok(arr.to_boxed())
+}
+fn get_boolean_buffer_length_in_bytes(length: usize, offset: usize) -> usize {
+    let n_bits = offset + length;
+    let n_bytes = n_bits / 8;
+    let rest = n_bits % 8;
+    if rest == 0 {
+        n_bytes
+    } else {
+        n_bytes + 1
+    }
 }

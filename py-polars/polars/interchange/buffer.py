@@ -52,10 +52,10 @@ class PolarsBuffer(Buffer):
             n_bits = offset + length
             n_bytes, rest = divmod(n_bits, 8)
             # Round up to the nearest byte
-            if rest:
-                return n_bytes + 1
-            else:
+            if rest == 0:
                 return n_bytes
+            else:
+                return n_bytes + 1
 
         return self._data.len() * (dtype[1] // 8)
 
