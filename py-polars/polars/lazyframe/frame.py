@@ -2592,7 +2592,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         predicates
             Expression that evaluates to a boolean Series.
         constraints
-            Column filters. Use name=value to filter column name by the supplied value.
+            Column filters; use `name = value` to filter columns by the supplied value.
+            Each constraint will behave the same as `pl.col(name).eq(value)`, and
+            will be implicitly joined with the other filter conditions using `&`.
 
         Examples
         --------
@@ -2724,7 +2726,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         # unpack equality constraints from kwargs
         all_predicates.extend(
-            F.col(name).eq(value) for name, value in constraints.items()
+            F.col(name).eq_missing(value) for name, value in constraints.items()
         )
         if not (all_predicates or boolean_masks):
             raise ValueError("No predicates or constraints provided to `filter`.")

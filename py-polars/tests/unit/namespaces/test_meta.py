@@ -26,7 +26,7 @@ def test_root_and_output_names() -> None:
     assert e.meta.output_name() == "foo"
     assert e.meta.root_names() == ["foo", "bar"]
 
-    e = pl.col("foo").filter(pl.col("bar") == 13)
+    e = pl.col("foo").filter(bar=13)
     assert e.meta.output_name() == "foo"
     assert e.meta.root_names() == ["foo", "bar"]
 
