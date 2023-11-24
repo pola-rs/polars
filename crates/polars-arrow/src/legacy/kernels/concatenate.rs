@@ -1,7 +1,7 @@
 use polars_error::{polars_bail, PolarsResult};
 
 use crate::array::growable::make_growable;
-use crate::legacy::prelude::*;
+use crate::array::ArrayRef;
 
 /// Concatenate multiple [`Array`][Array] of the same type into a single [`Array`][Array].
 /// This does not check the arrays types.

@@ -1,4 +1,4 @@
-use arrow::array::{Array, BinaryArray};
+use arrow::array::{Array, BinaryArray, ValueSize};
 use arrow::bitmap::Bitmap;
 use arrow::offset::Offset;
 use polars_error::{polars_bail, PolarsResult};
@@ -21,7 +21,7 @@ pub(crate) fn encode_plain<O: Offset>(
 ) {
     let len_before = buffer.len();
     let capacity =
-        array.values().len() + (array.len() - array.null_count()) * std::mem::size_of::<u32>();
+        array.get_values_size() + (array.len() - array.null_count()) * std::mem::size_of::<u32>();
     buffer.reserve(capacity);
     // append the non-null values
     if is_optional {

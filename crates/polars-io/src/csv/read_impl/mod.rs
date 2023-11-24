@@ -6,7 +6,7 @@ use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use arrow::legacy::array::*;
+use arrow::array::ValueSize;
 pub use batched_mmap::*;
 pub use batched_read::*;
 use polars_core::config::verbose;

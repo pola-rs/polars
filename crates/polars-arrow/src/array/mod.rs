@@ -680,6 +680,7 @@ pub mod indexable;
 mod iterator;
 
 pub mod growable;
+mod values;
 
 pub use binary::{BinaryArray, BinaryValueIter, MutableBinaryArray, MutableBinaryValuesArray};
 pub use boolean::{BooleanArray, MutableBooleanArray};
@@ -698,6 +699,7 @@ pub use primitive::*;
 pub use struct_::{MutableStructArray, StructArray};
 pub use union::UnionArray;
 pub use utf8::{MutableUtf8Array, MutableUtf8ValuesArray, Utf8Array, Utf8ValuesIter};
+pub use values::ValueSize;
 
 pub(crate) use self::ffi::{offset_buffers_children_dictionary, FromFfi, ToFfi};
 use crate::{match_integer_type, with_match_primitive_type, with_match_primitive_type_full};
@@ -743,3 +745,5 @@ pub unsafe trait GenericBinaryArray<O: crate::offset::Offset>: Array {
     /// The offsets of the array
     fn offsets(&self) -> &[O];
 }
+
+pub type ArrayRef = Box<dyn Array>;

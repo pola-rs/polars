@@ -10,7 +10,7 @@ use std::sync::Arc;
 use num_traits::{Bounded, Float, NumCast, One, Zero};
 use window::*;
 
-use crate::array::PrimitiveArray;
+use crate::array::{ArrayRef, PrimitiveArray};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::legacy::data_types::IsFloat;
 use crate::legacy::prelude::*;

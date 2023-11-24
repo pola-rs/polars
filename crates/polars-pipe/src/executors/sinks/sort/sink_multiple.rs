@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use arrow::array::BinaryArray;
+use arrow::array::{ArrayRef, BinaryArray};
 use polars_core::prelude::sort::_broadcast_descending;
 use polars_core::prelude::sort::arg_sort_multiple::_get_rows_encoded_compat_array;
 use polars_core::prelude::*;

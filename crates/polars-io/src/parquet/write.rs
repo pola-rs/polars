@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use arrow::array::Array;
+use arrow::array::{Array, ArrayRef};
 use arrow::chunk::Chunk;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 use polars_core::prelude::*;

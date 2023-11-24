@@ -2,10 +2,11 @@ pub mod version_0;
 
 use std::mem::ManuallyDrop;
 
+use arrow::array::ArrayRef;
 use arrow::ffi;
 use arrow::ffi::{ArrowArray, ArrowSchema};
 use polars_core::error::PolarsResult;
-use polars_core::prelude::{ArrayRef, ArrowField, Series};
+use polars_core::prelude::{ArrowField, Series};
 
 pub const MAJOR: u16 = 0;
 pub const MINOR: u16 = 0;

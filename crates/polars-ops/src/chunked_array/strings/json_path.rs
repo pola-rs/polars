@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use arrow::array::ValueSize;
 use jsonpath_lib::PathCompiled;
 use serde_json::Value;
 

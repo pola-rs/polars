@@ -1,5 +1,6 @@
 use std::sync::Mutex;
 
+use arrow::array::ValueSize;
 use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_plan::constants::MAP_LIST_NAME;

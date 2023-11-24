@@ -1,6 +1,7 @@
 //! Everything you need to get started with Polars.
 pub use std::sync::Arc;
 
+pub use arrow::array::ArrayRef;
 pub(crate) use arrow::array::*;
 pub use arrow::datatypes::{ArrowSchema, Field as ArrowField};
 #[cfg(feature = "ewma")]

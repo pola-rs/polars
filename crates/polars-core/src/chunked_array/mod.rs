@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
-use arrow::legacy::prelude::ValueSize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
