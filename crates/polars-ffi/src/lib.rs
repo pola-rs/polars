@@ -5,7 +5,8 @@ use std::mem::ManuallyDrop;
 use arrow::ffi;
 use arrow::ffi::{ArrowArray, ArrowSchema};
 use polars_core::error::PolarsResult;
-use polars_core::prelude::{ArrayRef, ArrowField, Series};
+use polars_core::prelude::{ArrowField, Series};
+use arrow::array::ArrayRef;
 
 pub const MAJOR: u16 = 0;
 pub const MINOR: u16 = 0;

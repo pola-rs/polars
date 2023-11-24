@@ -42,6 +42,7 @@ pub(crate) use take::*;
 pub(crate) use ternary::*;
 pub(crate) use window::*;
 
+use arrow::array::ArrayRef;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 

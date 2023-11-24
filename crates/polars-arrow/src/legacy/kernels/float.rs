@@ -1,5 +1,6 @@
 use num_traits::Float;
 
+use crate::array::ArrayRef;
 use crate::array::{BooleanArray, PrimitiveArray};
 use crate::bitmap::Bitmap;
 use crate::legacy::array::default_arrays::FromData;

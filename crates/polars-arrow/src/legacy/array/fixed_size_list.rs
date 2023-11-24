@@ -4,7 +4,7 @@ use crate::array::FixedSizeListArray;
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::kernels::concatenate::concatenate_owned_unchecked;
-use crate::legacy::prelude::ArrayRef;
+use crate::array::ArrayRef;
 
 #[derive(Default)]
 pub struct AnonymousBuilder {

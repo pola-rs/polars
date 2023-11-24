@@ -9,6 +9,7 @@ use polars_core::export::regex::Regex;
 use polars_core::prelude::arity::*;
 use polars_utils::cache::FastFixedCache;
 use regex::escape;
+use arrow::array::ValueSize;
 
 use super::*;
 #[cfg(feature = "binary_encoding")]

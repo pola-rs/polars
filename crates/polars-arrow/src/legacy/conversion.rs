@@ -1,5 +1,6 @@
 use crate::array::{PrimitiveArray, StructArray};
 use crate::chunk::Chunk;
+use crate::array::ArrayRef;
 use crate::datatypes::{ArrowDataType, Field};
 use crate::legacy::prelude::*;
 use crate::types::NativeType;

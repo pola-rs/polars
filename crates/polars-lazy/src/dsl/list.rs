@@ -5,6 +5,7 @@ use polars_core::prelude::*;
 use polars_plan::constants::MAP_LIST_NAME;
 use polars_plan::dsl::*;
 use rayon::prelude::*;
+use arrow::array::ValueSize;
 
 use crate::physical_plan::exotic::prepare_expression_for_context;
 use crate::physical_plan::state::ExecutionState;

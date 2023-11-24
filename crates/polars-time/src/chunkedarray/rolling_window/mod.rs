@@ -3,7 +3,7 @@ mod rolling_kernels;
 
 use std::convert::TryFrom;
 
-use arrow::array::{Array, PrimitiveArray};
+use arrow::array::{Array, PrimitiveArray, ArrayRef};
 use arrow::legacy::kernels::rolling;
 pub use dispatch::*;
 use polars_core::prelude::*;

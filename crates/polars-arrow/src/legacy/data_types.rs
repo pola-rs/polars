@@ -84,4 +84,3 @@ macro_rules! impl_is_float {
 impl_is_float!(f32, true, false);
 impl_is_float!(f64, false, true);
 
-pub type ArrayRef = Box<dyn Array>;

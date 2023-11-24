@@ -74,6 +74,7 @@ use polars_json::json::infer;
 use polars_json::json::write::FallibleStreamingIterator;
 use simd_json::BorrowedValue;
 
+use arrow::array::ArrayRef;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::*;
 

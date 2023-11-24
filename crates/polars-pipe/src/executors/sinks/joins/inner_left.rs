@@ -1,7 +1,9 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use arrow::array::BinaryArray;
+use arrow::array::{
+    BinaryArray, ArrayRef
+};
 use polars_core::datatypes::ChunkId;
 use polars_core::error::PolarsResult;
 use polars_core::export::ahash::RandomState;

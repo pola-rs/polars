@@ -1,4 +1,4 @@
-use crate::array::{UInt32Array, Utf8Array};
+use crate::array::{ArrayRef, UInt32Array, Utf8Array};
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::prelude::*;

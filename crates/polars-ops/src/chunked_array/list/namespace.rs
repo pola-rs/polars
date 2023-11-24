@@ -1,8 +1,8 @@
 use std::convert::TryFrom;
 use std::fmt::Write;
 
+use arrow::array::ValueSize;
 use arrow::legacy::kernels::list::sublist_get;
-use arrow::legacy::prelude::ValueSize;
 use polars_core::chunked_array::builder::get_list_builder;
 #[cfg(feature = "list_gather")]
 use polars_core::export::num::ToPrimitive;

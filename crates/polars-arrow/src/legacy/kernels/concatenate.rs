@@ -1,5 +1,6 @@
 use polars_error::{polars_bail, PolarsResult};
 
+use crate::array::ArrayRef;
 use crate::array::growable::make_growable;
 use crate::legacy::prelude::*;
 

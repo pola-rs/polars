@@ -2,7 +2,9 @@ use std::any::Any;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use arrow::array::BinaryArray;
+use arrow::array::{
+    BinaryArray, ArrayRef
+};
 use hashbrown::hash_map::RawEntryMut;
 use polars_core::datatypes::ChunkId;
 use polars_core::error::PolarsResult;

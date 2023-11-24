@@ -17,6 +17,7 @@ use polars_core::POOL;
 use polars_time::prelude::*;
 use polars_utils::flatten;
 use rayon::prelude::*;
+use arrow::array::ValueSize;
 
 use crate::csv::buffer::*;
 use crate::csv::parser::*;

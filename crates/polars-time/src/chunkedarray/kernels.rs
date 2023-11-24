@@ -1,6 +1,6 @@
 //! macros that define kernels for extracting
 //! `week`, `weekday`, `year`, `hour` etc. from primitive arrays.
-use arrow::array::{BooleanArray, PrimitiveArray};
+use arrow::array::{BooleanArray, PrimitiveArray, ArrayRef};
 use arrow::compute::arity::unary;
 #[cfg(feature = "dtype-time")]
 use arrow::temporal_conversions::time64ns_to_time_opt;

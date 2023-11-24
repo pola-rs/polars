@@ -1,4 +1,4 @@
-use arrow::array::{Array, PrimitiveArray};
+use arrow::array::{Array, PrimitiveArray, ArrayRef};
 use arrow::compute::aggregate::SimdOrd;
 use arrow::legacy::prelude::FromData;
 use arrow::legacy::slice::ExtremaNanAware;

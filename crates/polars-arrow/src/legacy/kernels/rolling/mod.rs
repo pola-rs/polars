@@ -7,6 +7,7 @@ use std::cmp::Ordering;
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 use std::sync::Arc;
 
+use crate::array::ArrayRef;
 use num_traits::{Bounded, Float, NumCast, One, Zero};
 use window::*;
 

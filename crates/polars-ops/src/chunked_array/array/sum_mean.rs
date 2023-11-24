@@ -1,4 +1,4 @@
-use arrow::array::{Array, PrimitiveArray};
+use arrow::array::{Array, PrimitiveArray, ArrayRef};
 use arrow::bitmap::Bitmap;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::types::NativeType;

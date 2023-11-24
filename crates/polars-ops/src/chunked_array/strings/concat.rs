@@ -1,4 +1,4 @@
-use arrow::array::Utf8Array;
+use arrow::array::{Utf8Array, ValueSize};
 use arrow::legacy::array::default_arrays::FromDataUtf8;
 use polars_core::prelude::*;
 

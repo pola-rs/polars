@@ -24,6 +24,7 @@ use single_keys_outer::*;
 use single_keys_semi_anti::*;
 pub use sort_merge::*;
 pub(super) use zip_outer::zip_outer_join_column;
+use arrow::array::ArrayRef;
 
 pub use super::*;
 

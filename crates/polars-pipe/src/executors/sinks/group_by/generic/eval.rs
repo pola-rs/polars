@@ -1,6 +1,8 @@
 use std::cell::UnsafeCell;
 
-use arrow::array::BinaryArray;
+use arrow::array::{
+    BinaryArray, ArrayRef
+};
 use polars_core::export::ahash::RandomState;
 use polars_row::{RowsEncoded, SortField};
 
