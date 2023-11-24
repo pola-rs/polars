@@ -190,11 +190,11 @@ mod tests {
         assert!(ca
             .json_decode(None, None)
             .unwrap()
-            .series_equal_missing(&expected_series));
+            .equals_missing(&expected_series));
         assert!(ca
             .json_decode(Some(expected_dtype), None)
             .unwrap()
-            .series_equal_missing(&expected_series));
+            .equals_missing(&expected_series));
     }
 
     #[test]
@@ -214,7 +214,7 @@ mod tests {
             .json_path_select("$")
             .unwrap()
             .into_series()
-            .series_equal_missing(&s));
+            .equals_missing(&s));
 
         let b_series = Series::new(
             "json",
@@ -229,14 +229,14 @@ mod tests {
             .json_path_select("$.b")
             .unwrap()
             .into_series()
-            .series_equal_missing(&b_series));
+            .equals_missing(&b_series));
 
         let c_series = Series::new("json", [None, Some(r#"[0,1]"#), Some(r#"[2,5]"#), None]);
         assert!(ca
             .json_path_select("$.b[:].c")
             .unwrap()
             .into_series()
-            .series_equal_missing(&c_series));
+            .equals_missing(&c_series));
     }
 
     #[test]
@@ -266,6 +266,6 @@ mod tests {
             .json_path_extract("$.b[:].c", None, None)
             .unwrap()
             .into_series()
-            .series_equal_missing(&c_series));
+            .equals_missing(&c_series));
     }
 }

@@ -197,7 +197,7 @@ fn test_missing_data() {
     assert!(df
         .column("column_2")
         .unwrap()
-        .series_equal_missing(&Series::new("column_2", &[Some(2_i64), None])));
+        .equals_missing(&Series::new("column_2", &[Some(2_i64), None])));
     assert!(df
         .column("column_3")
         .unwrap()

@@ -15,14 +15,14 @@ mod test {
         let json = serde_json::to_string(&ca).unwrap();
 
         let out = serde_json::from_str::<Series>(&json).unwrap();
-        assert!(ca.into_series().series_equal_missing(&out));
+        assert!(ca.into_series().equals_missing(&out));
 
         let ca = Utf8Chunked::new("foo", &[Some("foo"), None, Some("bar")]);
 
         let json = serde_json::to_string(&ca).unwrap();
 
         let out = serde_json::from_str::<Series>(&json).unwrap(); // uses `Deserialize<'de>`
-        assert!(ca.into_series().series_equal_missing(&out));
+        assert!(ca.into_series().equals_missing(&out));
 
         Ok(())
     }
@@ -35,7 +35,7 @@ mod test {
         let json = serde_json::to_string(&ca).unwrap();
 
         let out = serde_json::from_reader::<_, Series>(json.as_bytes()).unwrap(); // uses `DeserializeOwned`
-        assert!(ca.into_series().series_equal_missing(&out));
+        assert!(ca.into_series().equals_missing(&out));
     }
 
     fn sample_dataframe() -> DataFrame {

@@ -243,7 +243,7 @@ fn test_window_mapping() -> PolarsResult<()> {
         ])
         .collect()?;
     let expected = Series::new("foo", [None, Some(3), None, Some(-1), Some(-1)]);
-    assert!(out.column("foo")?.series_equal_missing(&expected));
+    assert!(out.column("foo")?.equals_missing(&expected));
 
     // now sorted
     // this will trigger a fast path
@@ -286,7 +286,7 @@ fn test_window_mapping() -> PolarsResult<()> {
         .collect()?;
 
     let expected = Series::new("foo", [None, Some(-1), None, Some(3), Some(-1)]);
-    assert!(out.column("foo")?.series_equal_missing(&expected));
+    assert!(out.column("foo")?.equals_missing(&expected));
 
     Ok(())
 }

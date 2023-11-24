@@ -135,7 +135,7 @@ pub struct Series(pub Arc<dyn SeriesTrait>);
 
 impl PartialEq for Wrap<Series> {
     fn eq(&self, other: &Self) -> bool {
-        self.0.series_equal_missing(other)
+        self.0.equals_missing(other)
     }
 }
 

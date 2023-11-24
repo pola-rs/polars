@@ -240,7 +240,7 @@ fn test_join_multiple_columns() {
     assert!(joined_inner_hack
         .column("ham")
         .unwrap()
-        .series_equal_missing(joined_inner.column("ham").unwrap()));
+        .equals_missing(joined_inner.column("ham").unwrap()));
 
     let joined_outer_hack = df_a.outer_join(&df_b, ["dummy"], ["dummy"]).unwrap();
     let joined_outer = df_a
@@ -249,7 +249,7 @@ fn test_join_multiple_columns() {
     assert!(joined_outer_hack
         .column("ham")
         .unwrap()
-        .series_equal_missing(joined_outer.column("ham").unwrap()));
+        .equals_missing(joined_outer.column("ham").unwrap()));
 }
 
 #[test]

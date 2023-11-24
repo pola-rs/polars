@@ -731,7 +731,7 @@ impl ChunkCompare<&ListChunked> for ListChunked {
 
     fn equal_missing(&self, rhs: &ListChunked) -> BooleanChunked {
         let _series_equal_missing = |lhs: Option<&Series>, rhs: Option<&Series>| match (lhs, rhs) {
-            (Some(l), Some(r)) => Some(l.series_equal_missing(r)),
+            (Some(l), Some(r)) => Some(l.equals_missing(r)),
             (None, None) => Some(true),
             _ => Some(false),
         };
@@ -751,7 +751,7 @@ impl ChunkCompare<&ListChunked> for ListChunked {
     fn not_equal_missing(&self, rhs: &ListChunked) -> BooleanChunked {
         let _series_not_equal_missing =
             |lhs: Option<&Series>, rhs: Option<&Series>| match (lhs, rhs) {
-                (Some(l), Some(r)) => Some(!l.series_equal_missing(r)),
+                (Some(l), Some(r)) => Some(!l.equals_missing(r)),
                 (None, None) => Some(false),
                 _ => Some(true),
             };

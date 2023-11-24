@@ -9,14 +9,14 @@ impl Series {
         if self.null_count() > 0 || other.null_count() > 0 || self.dtype() != other.dtype() {
             false
         } else {
-            self.series_equal_missing(other)
+            self.equals_missing(other)
         }
     }
 
     /// Check if all values in series are equal where `None == None` evaluates to `true`.
     /// Two [`Datetime`](DataType::Datetime) series are *not* equal if their timezones are different, regardless
     /// if they represent the same UTC time or not.
-    pub fn series_equal_missing(&self, other: &Series) -> bool {
+    pub fn equals_missing(&self, other: &Series) -> bool {
         match (self.dtype(), other.dtype()) {
             #[cfg(feature = "timezones")]
             (DataType::Datetime(_, tz_lhs), DataType::Datetime(_, tz_rhs)) => {
@@ -58,7 +58,7 @@ impl Series {
 
 impl PartialEq for Series {
     fn eq(&self, other: &Self) -> bool {
-        self.series_equal_missing(other)
+        self.equals_missing(other)
     }
 }
 
@@ -125,7 +125,7 @@ impl DataFrame {
             return false;
         }
         for (left, right) in self.get_columns().iter().zip(other.get_columns()) {
-            if !left.series_equal_missing(right) {
+            if !left.equals_missing(right) {
                 return false;
             }
         }
@@ -160,7 +160,7 @@ impl PartialEq for DataFrame {
                 .columns
                 .iter()
                 .zip(other.columns.iter())
-                .all(|(s1, s2)| s1.series_equal_missing(s2))
+                .all(|(s1, s2)| s1.equals_missing(s2))
     }
 }
 
@@ -175,7 +175,7 @@ mod test {
         assert!(a.equals(&b));
 
         let s = Series::new("foo", &[None, Some(1i64)]);
-        assert!(s.series_equal_missing(&s));
+        assert!(s.equals_missing(&s));
     }
 
     #[test]
