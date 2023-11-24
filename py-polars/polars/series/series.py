@@ -1760,8 +1760,6 @@ class Series:
         1.0
 
         """
-        if self.is_temporal():
-            return self.dt.std(ddof)
         if not self.is_numeric():
             return None
         return self.to_frame().select(F.col(self.name).std(ddof)).to_series().item()
@@ -1784,8 +1782,6 @@ class Series:
         1.0
 
         """
-        if self.is_temporal():
-            return self.dt.var(ddof)
         if not self.is_numeric():
             return None
         return self.to_frame().select(F.col(self.name).var(ddof)).to_series().item()
