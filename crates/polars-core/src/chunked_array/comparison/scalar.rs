@@ -51,10 +51,12 @@ impl<T, Rhs> ChunkCompare<Rhs> for ChunkedArray<T>
 where
     T: PolarsNumericType,
     Rhs: ToPrimitive,
+    T::Array: TotalOrdKernel<Scalar=T::Native>,
 {
     type Item = BooleanChunked;
     fn equal(&self, rhs: Rhs) -> BooleanChunked {
-        self.primitive_compare_scalar(rhs, |l, rhs| comparison::eq_scalar(l, rhs))
+        let rhs: T::Native = NumCast::from(rhs).unwrap();
+        arity::unary_mut_values(self, |arr| arr.tot_eq_kernel_broadcast(&rhs).into())
     }
 
     fn equal_missing(&self, rhs: Rhs) -> BooleanChunked {
@@ -62,7 +64,8 @@ where
     }
 
     fn not_equal(&self, rhs: Rhs) -> BooleanChunked {
-        self.primitive_compare_scalar(rhs, |l, rhs| comparison::neq_scalar(l, rhs))
+        let rhs: T::Native = NumCast::from(rhs).unwrap();
+        arity::unary_mut_values(self, |arr| arr.tot_ne_kernel_broadcast(&rhs).into())
     }
 
     fn not_equal_missing(&self, rhs: Rhs) -> BooleanChunked {
@@ -79,7 +82,10 @@ where
                 let rhs: T::Native = NumCast::from(rhs).unwrap();
                 partition_mask(self, true, |x| x.tot_gt(&rhs))
             },
-            _ => self.primitive_compare_scalar(rhs, |l, rhs| comparison::gt_scalar(l, rhs)),
+            _ => {
+                let rhs: T::Native = NumCast::from(rhs).unwrap();
+                arity::unary_mut_values(self, |arr| arr.tot_gt_kernel_broadcast(&rhs).into())
+            }
         }
     }
 
@@ -93,7 +99,10 @@ where
                 let rhs: T::Native = NumCast::from(rhs).unwrap();
                 partition_mask(self, true, |x| x.tot_ge(&rhs))
             },
-            _ => self.primitive_compare_scalar(rhs, |l, rhs| comparison::gt_eq_scalar(l, rhs)),
+            _ => {
+                let rhs: T::Native = NumCast::from(rhs).unwrap();
+                arity::unary_mut_values(self, |arr| arr.tot_ge_kernel_broadcast(&rhs).into())
+            }
         }
     }
 
@@ -107,7 +116,10 @@ where
                 let rhs: T::Native = NumCast::from(rhs).unwrap();
                 partition_mask(self, false, |x| x.tot_ge(&rhs))
             },
-            _ => self.primitive_compare_scalar(rhs, |l, rhs| comparison::lt_scalar(l, rhs)),
+            _ => {
+                let rhs: T::Native = NumCast::from(rhs).unwrap();
+                arity::unary_mut_values(self, |arr| arr.tot_lt_kernel_broadcast(&rhs).into())
+            }
         }
     }
 
@@ -121,7 +133,10 @@ where
                 let rhs: T::Native = NumCast::from(rhs).unwrap();
                 partition_mask(self, false, |x| x.tot_gt(&rhs))
             },
-            _ => self.primitive_compare_scalar(rhs, |l, rhs| comparison::lt_eq_scalar(l, rhs)),
+            _ => {
+                let rhs: T::Native = NumCast::from(rhs).unwrap();
+                arity::unary_mut_values(self, |arr| arr.tot_le_kernel_broadcast(&rhs).into())
+            }
         }
     }
 }

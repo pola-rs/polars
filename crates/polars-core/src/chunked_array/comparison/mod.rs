@@ -1,13 +1,12 @@
 mod scalar;
 
-use std::ops::{BitOr, Not, BitAnd};
+use std::ops::{BitOr, Not};
 
 use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::{MutableBitmap, self};
 use arrow::compute;
 use arrow::compute::comparison;
 use arrow::legacy::prelude::FromData;
-use arrow::legacy::utils::{combine_validities_and, combine_validities_or};
 use arrow::scalar::{BinaryScalar, PrimitiveScalar, Scalar, Utf8Scalar};
 use either::Either;
 use num_traits::{NumCast, ToPrimitive};
@@ -29,7 +28,7 @@ where
 impl<T> ChunkCompare<&ChunkedArray<T>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Array: TotalOrdKernel
+    T::Array: TotalOrdKernel<Scalar=T::Native>
 {
     type Item = BooleanChunked;
 
@@ -108,7 +107,7 @@ where
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => arity::binary_mut_with_options(self, rhs, |a, b| comparison::neq(a, b), ""),
+            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_ne_kernel(b).into(), ""),
         }
     }
 
@@ -132,8 +131,19 @@ where
             _ => arity::binary_mut_with_options(
                 self,
                 rhs,
-                |a, b| comparison::neq_and_validity(a, b),
-                "",
+                |a, b| {
+                    let q = a.tot_ne_kernel(b);
+                    let combined = match (a.validity(), b.validity()) {
+                        (None, None) => q,
+                        (None, Some(r)) => &q | &!r,
+                        (Some(l), None) => &q | &!l,
+                        (Some(l), Some(r)) => {
+                            bitmap::ternary(&q, l, r, |q, l, r| (q & l & r) | (l ^ r))
+                        }
+                    };
+                    combined.into()
+                },
+                ""
             ),
         }
     }
@@ -155,7 +165,7 @@ where
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => arity::binary_mut_with_options(self, rhs, |a, b| comparison::gt(a, b), ""),
+            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_gt_kernel(b).into(), ""),
         }
     }
 
@@ -176,7 +186,7 @@ where
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => arity::binary_mut_with_options(self, rhs, |a, b| comparison::gt_eq(a, b), ""),
+            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_ge_kernel(b).into(), ""),
         }
     }
 
@@ -197,7 +207,7 @@ where
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => arity::binary_mut_with_options(self, rhs, |a, b| comparison::lt(a, b), ""),
+            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_lt_kernel(b).into(), ""),
         }
     }
 
@@ -218,7 +228,7 @@ where
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => arity::binary_mut_with_options(self, rhs, |a, b| comparison::lt_eq(a, b), ""),
+            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_le_kernel(b).into(), ""),
         }
     }
 }
