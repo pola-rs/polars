@@ -136,10 +136,10 @@ where
         state: &mut Self::State,
         decoded: &mut Self::DecodedState,
         remaining: usize,
-    ) {
+    ) -> PolarsResult<()> {
         let (values, validity) = decoded;
         match state {
-            State::Common(state) => self.0.extend_from_state(state, decoded, remaining),
+            State::Common(state) => self.0.extend_from_state(state, decoded, remaining)?,
             State::DeltaBinaryPackedRequired(state) => {
                 values.extend(
                     state
@@ -182,6 +182,7 @@ where
                 );
             },
         }
+        Ok(())
     }
 
     fn deserialize_dict(&self, page: &DictPage) -> Self::Dict {
