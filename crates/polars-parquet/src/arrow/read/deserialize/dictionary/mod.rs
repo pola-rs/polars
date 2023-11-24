@@ -151,7 +151,7 @@ where
         state: &mut Self::State,
         decoded: &mut Self::DecodedState,
         remaining: usize,
-    ) {
+    ) -> PolarsResult<()> {
         let (values, validity) = decoded;
         match state {
             State::Optional(page) => extend_from_decoder(
@@ -226,6 +226,7 @@ where
                 );
             },
         }
+        Ok(())
     }
 
     fn deserialize_dict(&self, _: &DictPage) -> Self::Dict {}
@@ -279,13 +280,15 @@ pub(super) fn next_dict<K: DictionaryKey, I: PagesIter, F: Fn(&DictPage) -> Box<
                 Err(e) => return MaybeNext::Some(Err(e)),
             };
 
-            utils::extend_from_new_page(
+            if let Err(e) = utils::extend_from_new_page(
                 page,
                 chunk_size,
                 items,
                 remaining,
                 &PrimitiveDecoder::<K>::default(),
-            );
+            ) {
+                return MaybeNext::Some(Err(e));
+            }
 
             if items.front().unwrap().len() < chunk_size.unwrap_or(usize::MAX) {
                 MaybeNext::More

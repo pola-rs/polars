@@ -147,7 +147,7 @@ impl<'a> Decoder<'a> for BooleanDecoder {
         state: &mut Self::State,
         decoded: &mut Self::DecodedState,
         remaining: usize,
-    ) {
+    ) -> PolarsResult<()> {
         let (values, validity) = decoded;
         match state {
             State::Optional(page_validity, page_values) => extend_from_decoder(
@@ -178,6 +178,7 @@ impl<'a> Decoder<'a> for BooleanDecoder {
                 );
             },
         }
+        Ok(())
     }
 
     fn deserialize_dict(&self, _: &DictPage) -> Self::Dict {}

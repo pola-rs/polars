@@ -667,7 +667,7 @@ mod list;
 mod map;
 mod null;
 mod primitive;
-mod specification;
+pub mod specification;
 mod struct_;
 mod union;
 mod utf8;

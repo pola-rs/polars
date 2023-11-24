@@ -405,7 +405,7 @@ pub(super) trait Decoder<'a> {
         page: &mut Self::State,
         decoded: &mut Self::DecodedState,
         additional: usize,
-    );
+    ) -> PolarsResult<()>;
 
     /// Deserializes a [`DictPage`] into [`Self::Dict`].
     fn deserialize_dict(&self, page: &DictPage) -> Self::Dict;
@@ -417,7 +417,7 @@ pub(super) fn extend_from_new_page<'a, T: Decoder<'a>>(
     items: &mut VecDeque<T::DecodedState>,
     remaining: &mut usize,
     decoder: &T,
-) {
+) -> PolarsResult<()> {
     let capacity = std::cmp::min(chunk_size.unwrap_or(0), *remaining);
     let chunk_size = chunk_size.unwrap_or(usize::MAX);
 
@@ -431,7 +431,7 @@ pub(super) fn extend_from_new_page<'a, T: Decoder<'a>>(
 
     let additional = (chunk_size - existing).min(*remaining);
 
-    decoder.extend_from_state(&mut page, &mut decoded, additional);
+    decoder.extend_from_state(&mut page, &mut decoded, additional)?;
     *remaining -= decoded.len() - existing;
     items.push_back(decoded);
 
@@ -439,10 +439,11 @@ pub(super) fn extend_from_new_page<'a, T: Decoder<'a>>(
         let additional = chunk_size.min(*remaining);
 
         let mut decoded = decoder.with_capacity(additional);
-        decoder.extend_from_state(&mut page, &mut decoded, additional);
+        decoder.extend_from_state(&mut page, &mut decoded, additional)?;
         *remaining -= decoded.len();
         items.push_back(decoded)
     }
+    Ok(())
 }
 
 /// Represents what happened when a new page was consumed
@@ -497,7 +498,9 @@ pub(super) fn next<'a, I: PagesIter, D: Decoder<'a>>(
                 Err(e) => return MaybeNext::Some(Err(e)),
             };
 
-            extend_from_new_page(page, chunk_size, items, remaining, decoder);
+            if let Err(e) = extend_from_new_page(page, chunk_size, items, remaining, decoder) {
+                return MaybeNext::Some(Err(e));
+            }
 
             if (items.len() == 1) && items.front().unwrap().len() < chunk_size.unwrap_or(usize::MAX)
             {

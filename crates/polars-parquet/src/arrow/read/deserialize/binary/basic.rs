@@ -1,6 +1,8 @@
+use std::cell::Cell;
 use std::collections::VecDeque;
 use std::default::Default;
 
+use arrow::array::specification::try_check_utf8;
 use arrow::array::{Array, BinaryArray, MutableBinaryValuesArray, Utf8Array};
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
@@ -17,7 +19,7 @@ use crate::parquet::deserialize::SliceFilteredIter;
 use crate::parquet::encoding::{delta_bitpacked, delta_length_byte_array, hybrid_rle, Encoding};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::schema::Repetition;
-use crate::read::ParquetError;
+use crate::read::{ParquetError, PrimitiveLogicalType};
 
 #[derive(Debug)]
 pub(super) struct Required<'a> {
@@ -291,6 +293,7 @@ impl<O: Offset> DecodedState for (Binary<O>, MutableBitmap) {
 #[derive(Debug, Default)]
 struct BinaryDecoder<O: Offset> {
     phantom_o: std::marker::PhantomData<O>,
+    check_utf8: Cell<bool>,
 }
 
 impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
@@ -307,21 +310,41 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
 
+        let is_string = matches!(
+            page.descriptor.primitive_type.logical_type,
+            Some(PrimitiveLogicalType::String)
+        );
+        self.check_utf8.set(is_string);
+
         match (page.encoding(), dict, is_optional, is_filtered) {
-            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false, false) => Ok(
-                State::RequiredDictionary(RequiredDictionary::try_new(page, dict)?),
-            ),
+            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false, false) => {
+                if is_string {
+                    try_check_utf8(dict.offsets(), dict.values())?;
+                }
+                Ok(State::RequiredDictionary(RequiredDictionary::try_new(
+                    page, dict,
+                )?))
+            },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), true, false) => {
+                if is_string {
+                    try_check_utf8(dict.offsets(), dict.values())?;
+                }
                 Ok(State::OptionalDictionary(
                     OptionalPageValidity::try_new(page)?,
                     ValuesDictionary::try_new(page, dict)?,
                 ))
             },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false, true) => {
+                if is_string {
+                    try_check_utf8(dict.offsets(), dict.values())?;
+                }
                 FilteredRequiredDictionary::try_new(page, dict)
                     .map(State::FilteredRequiredDictionary)
             },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), true, true) => {
+                if is_string {
+                    try_check_utf8(dict.offsets(), dict.values())?;
+                }
                 Ok(State::FilteredOptionalDictionary(
                     FilteredOptionalPageValidity::try_new(page)?,
                     ValuesDictionary::try_new(page, dict)?,
@@ -383,8 +406,10 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
         state: &mut Self::State,
         decoded: &mut Self::DecodedState,
         additional: usize,
-    ) {
+    ) -> PolarsResult<()> {
         let (values, validity) = decoded;
+        let mut validate_utf8 = self.check_utf8.take();
+        let len_before = values.offsets.len();
         match state {
             State::Optional(page_validity, page_values) => extend_from_decoder(
                 validity,
@@ -433,6 +458,8 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                 }
             },
             State::OptionalDictionary(page_validity, page_values) => {
+                // Already done on the dict.
+                validate_utf8 = false;
                 let page_dict = &page_values.dict;
                 utils::extend_from_decoder(
                     validity,
@@ -446,6 +473,8 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                 )
             },
             State::RequiredDictionary(page) => {
+                // Already done on the dict.
+                validate_utf8 = false;
                 let page_dict = &page.dict;
 
                 for x in page
@@ -476,6 +505,8 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                 );
             },
             State::FilteredRequiredDictionary(page) => {
+                // Already done on the dict.
+                validate_utf8 = false;
                 let page_dict = &page.dict;
                 for x in page
                     .values
@@ -487,6 +518,8 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                 }
             },
             State::FilteredOptionalDictionary(page_validity, page_values) => {
+                // Already done on the dict.
+                validate_utf8 = false;
                 let page_dict = &page_values.dict;
                 utils::extend_from_decoder(
                     validity,
@@ -508,6 +541,13 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                     page_values,
                 )
             },
+        }
+
+        if validate_utf8 {
+            let offsets = &values.offsets.as_slice()[len_before..];
+            try_check_utf8(offsets, &values.values)
+        } else {
+            Ok(())
         }
     }
 
@@ -533,13 +573,15 @@ pub(super) fn finish<O: Offset>(
             validity.into(),
         )
         .map(|x| x.boxed()),
-        PhysicalType::Utf8 | PhysicalType::LargeUtf8 => Utf8Array::<O>::try_new(
-            data_type.clone(),
-            values.offsets.into(),
-            values.values.into(),
-            validity.into(),
-        )
-        .map(|x| x.boxed()),
+        PhysicalType::Utf8 | PhysicalType::LargeUtf8 => unsafe {
+            Ok(Utf8Array::<O>::new_unchecked(
+                data_type.clone(),
+                values.offsets.into(),
+                values.values.into(),
+                validity.into(),
+            )
+            .boxed())
+        },
         _ => unreachable!(),
     }
 }
@@ -575,6 +617,7 @@ impl<O: Offset, I: PagesIter> Iterator for Iter<O, I> {
     type Item = PolarsResult<Box<dyn Array>>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        let decoder = BinaryDecoder::<O>::default();
         loop {
             let maybe_state = next(
                 &mut self.iter,
@@ -582,7 +625,7 @@ impl<O: Offset, I: PagesIter> Iterator for Iter<O, I> {
                 &mut self.dict,
                 &mut self.remaining,
                 self.chunk_size,
-                &BinaryDecoder::<O>::default(),
+                &decoder,
             );
             match maybe_state {
                 MaybeNext::Some(Ok((values, validity))) => {
