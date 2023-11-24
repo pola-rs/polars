@@ -56,5 +56,5 @@ fn test_math_functions() {
         .unwrap();
     println!("{}", df_pl.head(Some(10)));
     println!("{}", df_sql.head(Some(10)));
-    assert!(df_sql.frame_equal_missing(&df_pl));
+    assert!(df_sql.equals_missing(&df_pl));
 }

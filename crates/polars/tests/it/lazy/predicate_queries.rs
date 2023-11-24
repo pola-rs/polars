@@ -48,7 +48,7 @@ fn filter_true_lit() -> PolarsResult<()> {
         .collect()?;
     let res = with_true.vstack(&with_not_true)?;
     let res = res.vstack(&with_null)?;
-    assert!(res.frame_equal_missing(&df));
+    assert!(res.equals_missing(&df));
     Ok(())
 }
 
@@ -169,7 +169,7 @@ fn test_predicate_pushdown_blocked_by_outer_join() -> PolarsResult<()> {
         "b" => ["b1"],
         "c" => [null],
     ]?;
-    assert!(out.frame_equal_missing(&expected));
+    assert!(out.equals_missing(&expected));
     Ok(())
 }
 

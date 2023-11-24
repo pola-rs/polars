@@ -32,7 +32,7 @@ fn test_chunked_left_join() -> PolarsResult<()> {
         "plays" => ["guitar", "bass", "guitar"],
         "band" => [Some("beatles"), Some("beatles"), None],
     ]?;
-    assert!(out.frame_equal_missing(&expected));
+    assert!(out.equals_missing(&expected));
 
     Ok(())
 }

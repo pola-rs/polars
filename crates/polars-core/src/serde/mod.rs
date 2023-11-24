@@ -66,7 +66,7 @@ mod test {
         let df = sample_dataframe();
         let json = serde_json::to_string(&df).unwrap();
         let out = serde_json::from_str::<DataFrame>(&json).unwrap(); // uses `Deserialize<'de>`
-        assert!(df.frame_equal_missing(&out));
+        assert!(df.equals_missing(&out));
     }
 
     #[test]
@@ -74,7 +74,7 @@ mod test {
         let df = sample_dataframe();
         let bytes = bincode::serialize(&df).unwrap();
         let out = bincode::deserialize::<DataFrame>(&bytes).unwrap(); // uses `Deserialize<'de>`
-        assert!(df.frame_equal_missing(&out));
+        assert!(df.equals_missing(&out));
     }
 
     /// test using the `DeserializedOwned` trait
@@ -84,7 +84,7 @@ mod test {
         let json = serde_json::to_string(&df).unwrap();
 
         let out = serde_json::from_reader::<_, DataFrame>(json.as_bytes()).unwrap(); // uses `DeserializeOwned`
-        assert!(df.frame_equal_missing(&out));
+        assert!(df.equals_missing(&out));
     }
 
     #[test]
@@ -100,7 +100,7 @@ mod test {
         let df = DataFrame::new(vec![s1]).unwrap();
         let bytes = bincode::serialize(&df).unwrap();
         let out = bincode::deserialize_from::<_, DataFrame>(bytes.as_slice()).unwrap();
-        assert!(df.frame_equal_missing(&out));
+        assert!(df.equals_missing(&out));
     }
 
     #[test]
@@ -139,7 +139,7 @@ mod test {
 
         let df_str = serde_json::to_string(&df).unwrap();
         let out = serde_json::from_str::<DataFrame>(&df_str).unwrap();
-        assert!(df.frame_equal_missing(&out));
+        assert!(df.equals_missing(&out));
     }
     /// test using the `DeserializedOwned` trait
     #[test]
@@ -147,6 +147,6 @@ mod test {
         let df = sample_dataframe();
         let bytes = bincode::serialize(&df).unwrap();
         let out = bincode::deserialize_from::<_, DataFrame>(bytes.as_slice()).unwrap(); // uses `DeserializeOwned`
-        assert!(df.frame_equal_missing(&out));
+        assert!(df.equals_missing(&out));
     }
 }

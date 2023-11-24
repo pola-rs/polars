@@ -526,7 +526,7 @@ fn test_missing_fields() -> PolarsResult<()> {
         "column_4" => [Some(4), None, Some(4), None],
         "column_5" => [Some(5), None, Some(5), None]
     ]?;
-    assert!(df.frame_equal_missing(&expect));
+    assert!(df.equals_missing(&expect));
     Ok(())
 }
 
@@ -917,7 +917,7 @@ fn test_quoted_bool_ints() -> PolarsResult<()> {
         "bar" => [4, 5, 6],
         "baz" => [false, false, true],
     ]?;
-    assert!(df.frame_equal_missing(&expected));
+    assert!(df.equals_missing(&expected));
 
     Ok(())
 }
@@ -993,7 +993,7 @@ fn test_empty_string_cols() -> PolarsResult<()> {
         "column_1" => [None, Some("abc"), None, Some("xyz")],
         "column_2" => [None, Some(333i64), Some(666), Some(999)]
     ]?;
-    assert!(df.frame_equal_missing(&expected));
+    assert!(df.equals_missing(&expected));
     Ok(())
 }
 

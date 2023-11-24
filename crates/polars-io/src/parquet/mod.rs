@@ -98,7 +98,7 @@ mod test {
         f.seek(SeekFrom::Start(0))?;
 
         let read = ParquetReader::new(f).finish()?;
-        assert!(read.frame_equal_missing(&df));
+        assert!(read.equals_missing(&df));
         Ok(())
     }
 

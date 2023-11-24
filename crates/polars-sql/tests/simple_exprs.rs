@@ -151,7 +151,7 @@ fn test_literal_exprs() {
         ])
         .collect()
         .unwrap();
-    assert!(df_sql.frame_equal_missing(&df_pl));
+    assert!(df_sql.equals_missing(&df_pl));
 }
 
 #[test]
@@ -245,7 +245,7 @@ fn test_null_exprs_in_where() {
         .collect()
         .unwrap();
 
-    assert!(df_sql.frame_equal_missing(&df_pl));
+    assert!(df_sql.equals_missing(&df_pl));
 }
 
 #[test]

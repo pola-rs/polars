@@ -23,5 +23,5 @@ fn iss_7440() {
         ])
         .collect()
         .unwrap();
-    assert!(df_sql.frame_equal_missing(&df_pl));
+    assert!(df_sql.equals_missing(&df_pl));
 }

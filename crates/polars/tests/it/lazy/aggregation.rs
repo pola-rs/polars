@@ -10,21 +10,21 @@ fn test_lazy_df_aggregations() {
         .min()
         .collect()
         .unwrap()
-        .frame_equal_missing(&df.min()));
+        .equals_missing(&df.min()));
     assert!(df
         .clone()
         .lazy()
         .median()
         .collect()
         .unwrap()
-        .frame_equal_missing(&df.median()));
+        .equals_missing(&df.median()));
     assert!(df
         .clone()
         .lazy()
         .quantile(lit(0.5), QuantileInterpolOptions::default())
         .collect()
         .unwrap()
-        .frame_equal_missing(
+        .equals_missing(
             &df.quantile(0.5, QuantileInterpolOptions::default())
                 .unwrap()
         ));

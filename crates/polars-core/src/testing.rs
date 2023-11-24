@@ -120,7 +120,7 @@ impl DataFrame {
     /// assert!(df1.frame_equal_missing(&df2));
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn frame_equal_missing(&self, other: &DataFrame) -> bool {
+    pub fn equals_missing(&self, other: &DataFrame) -> bool {
         if self.shape() != other.shape() {
             return false;
         }

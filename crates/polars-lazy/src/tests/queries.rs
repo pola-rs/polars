@@ -581,7 +581,7 @@ fn test_lazy_reverse() {
         .reverse()
         .collect()
         .unwrap()
-        .frame_equal_missing(&df.reverse()))
+        .equals_missing(&df.reverse()))
 }
 
 #[test]
