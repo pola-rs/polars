@@ -805,8 +805,39 @@ impl Series {
                 let val = &[self.mean()];
                 Series::new(self.name(), val)
             },
-            dt @ DataType::Duration(_) => {
+            DataType::Date => Series::new(
+                self.name(),
+                &[self.mean().map(|v| (v * 86_400_000_000f64) as i64)],
+            )
+            .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
+            .unwrap(),
+            dt @ (DataType::Datetime(_, _) | DataType::Duration(_)) => {
                 Series::new(self.name(), &[self.mean().map(|v| v as i64)])
+                    .cast(dt)
+                    .unwrap()
+            },
+            _ => return Series::full_null(self.name(), 1, self.dtype()),
+        }
+    }
+
+    pub fn median_as_series(&self) -> Series {
+        match self.dtype() {
+            DataType::Float32 => {
+                let val = &[self.median().map(|m| m as f32)];
+                Series::new(self.name(), val)
+            },
+            dt if dt.is_numeric() || matches!(dt, DataType::Boolean) => {
+                let val = &[self.median()];
+                Series::new(self.name(), val)
+            },
+            DataType::Date => Series::new(
+                self.name(),
+                &[self.median().map(|v| (v * 86_400_000_000f64) as i64)],
+            )
+            .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
+            .unwrap(),
+            dt @ (DataType::Datetime(_, _) | DataType::Duration(_)) => {
+                Series::new(self.name(), &[self.median().map(|v| v as i64)])
                     .cast(dt)
                     .unwrap()
             },

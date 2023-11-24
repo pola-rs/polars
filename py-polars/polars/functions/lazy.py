@@ -23,6 +23,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 
 if TYPE_CHECKING:
+    from datetime import datetime, timedelta
     from typing import Awaitable, Collection, Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
@@ -261,11 +262,11 @@ def mean(column: str) -> Expr:
 
 
 @overload
-def mean(column: Series) -> float:
+def mean(column: Series) -> float | datetime | timedelta | None:
     ...
 
 
-def mean(column: str | Series) -> Expr | float | None:
+def mean(column: str | Series) -> Expr | float | datetime | timedelta | None:
     """
     Get the mean value.
 
@@ -303,7 +304,7 @@ def avg(column: Series) -> float:
 
 
 @deprecate_renamed_function("mean", version="0.18.12")
-def avg(column: str | Series) -> Expr | float:
+def avg(column: str | Series) -> Expr | float | datetime | timedelta | None:
     """
     Alias for mean.
 
@@ -337,7 +338,7 @@ def median(column: Series) -> float | int:
     ...
 
 
-def median(column: str | Series) -> Expr | float | int | None:
+def median(column: str | Series) -> Expr | float | int | datetime | timedelta | None:
     """
     Get the median value.
 

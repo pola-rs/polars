@@ -953,7 +953,17 @@ def test_describe() -> None:
             ],
             "d": ["3", "1", None, None, "b", None, None, None, "c"],
             "e": ["3", "1", None, None, None, None, None, None, None],
-            "f": ["3", "0", None, None, "2020-01-01", None, None, None, "2022-01-01"],
+            "f": [
+                "3",
+                "0",
+                "2020-12-31 16:00:00",
+                None,
+                "2020-01-01",
+                None,
+                None,
+                None,
+                "2022-01-01",
+            ],
         }
     )
     assert_frame_equal(df.describe(), expected)

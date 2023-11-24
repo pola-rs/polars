@@ -1206,7 +1206,7 @@ def test_describe() -> None:
     assert dict(date_s.describe().rows()) == {  # type: ignore[arg-type]
         "count": "3",
         "min": "2021-01-01",
-        "50%": "2021-01-02",
+        "50%": "2021-01-02 00:00:00",
         "max": "2021-01-03",
         "null_count": "0",
     }

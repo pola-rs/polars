@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars.datatypes import Date
+from polars.datatypes import Date, Datetime, Duration
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
-from polars.utils.convert import _to_python_date, _to_python_datetime
+from polars.utils.convert import (
+    _to_python_datetime,
+    _to_python_timedelta,
+)
 from polars.utils.deprecation import deprecate_renamed_function
 
 if TYPE_CHECKING:
@@ -57,7 +60,7 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s).max()  # type: ignore[return-value]
 
-    def median(self) -> dt.date | dt.datetime | dt.timedelta | None:
+    def median(self) -> dt.datetime | dt.timedelta | None:
         """
         Return median as python DateTime.
 
@@ -80,15 +83,18 @@ class DateTimeNameSpace:
 
         """
         s = wrap_s(self._s)
-        out = s.median()
+        out = s._s.median()
         if out is not None:
             if s.dtype == Date:
-                return _to_python_date(int(out))
-            else:
+                # 86_400_000_000 = microseconds in days
+                return _to_python_datetime(int(out * 86_400_000_000), "us")
+            elif s.dtype == Datetime:
                 return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
+            elif s.dtype == Duration:
+                return _to_python_timedelta(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
         return None
 
-    def mean(self) -> dt.date | dt.datetime | None:
+    def mean(self) -> dt.datetime | dt.timedelta | None:
         """
         Return mean as python DateTime.
 
@@ -103,12 +109,15 @@ class DateTimeNameSpace:
 
         """
         s = wrap_s(self._s)
-        out = s.mean()
+        out = s._s.mean()
         if out is not None:
             if s.dtype == Date:
-                return _to_python_date(int(out))
-            else:
+                # 86_400_000_000 = microseconds in days
+                return _to_python_datetime(int(out * 86_400_000_000), "us")
+            elif s.dtype == Datetime:
                 return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
+            elif s.dtype == Duration:
+                return _to_python_timedelta(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
         return None
 
     def to_string(self, format: str) -> Series:
