@@ -225,15 +225,22 @@ def numpy_to_pyseries(
         return constructor(
             name, values, nan_to_null if dtype in (np.float32, np.float64) else strict
         )
-    elif len(values.shape) == 2:
-        pyseries_container = []
-        for row in range(values.shape[0]):
-            pyseries_container.append(
-                numpy_to_pyseries(
-                    "", values[row, :], strict=strict, nan_to_null=nan_to_null
-                )
-            )
-        return PySeries.new_series_list(name, pyseries_container, _strict=False)
+    elif len(shape := values.shape) == 2:
+        # optimise by ingesting 1D and reshaping in Rust
+        values = values.reshape(-1)
+        py_s = numpy_to_pyseries(
+            name,
+            values,
+            strict=strict,
+            nan_to_null=nan_to_null,
+        )
+        return (
+            PyDataFrame([py_s])
+            .lazy()
+            .select([F.col(name).reshape(shape)._pyexpr])
+            .collect()
+            .select_at_idx(0)
+        )
     else:
         return PySeries.new_object(name, values, strict)
 
@@ -1361,6 +1368,7 @@ def numpy_to_pydf(
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a numpy ndarray (including structured ndarrays)."""
     shape = data.shape
+    two_d = len(shape) == 2
 
     if data.dtype.names is not None:
         structured_array, orient = True, "col"
@@ -1391,14 +1399,17 @@ def numpy_to_pydf(
 
             elif orient is None and schema is not None:
                 # infer orientation from 'schema' param; if square array
-                # we maintain the default convention where first axis = rows
+                # we check the flags to establish row/column major order
                 n_schema_cols = len(schema)
                 if n_schema_cols == shape[0] and n_schema_cols != shape[1]:
                     orient = "col"
                     n_columns = shape[0]
-                else:
+                elif data.flags["C_CONTIGUOUS"]:
                     orient = "row"
                     n_columns = shape[1]
+                else:
+                    orient = "col"
+                    n_columns = shape[0]
 
             elif orient == "row":
                 n_columns = shape[1]
@@ -1414,7 +1425,11 @@ def numpy_to_pydf(
             )
 
     if schema is not None and len(schema) != n_columns:
-        raise ValueError("dimensions of `schema` arg must match data dimensions")
+        if (n_schema_cols := len(schema)) != 1:
+            raise ValueError(
+                f"dimensions of `schema` ({n_schema_cols}) must match data dimensions ({n_columns})"
+            )
+        n_columns = n_schema_cols
 
     column_names, schema_overrides = _unpack_schema(
         schema, schema_overrides=schema_overrides, n_expected=n_columns
@@ -1448,7 +1463,7 @@ def numpy_to_pydf(
             data_series = [
                 pl.Series(
                     name=column_names[i],
-                    values=data[:, i],
+                    values=(data if two_d and n_columns == 1 else data[:, i]),
                     dtype=schema_overrides.get(column_names[i]),
                     nan_to_null=nan_to_null,
                 )._s
@@ -1458,7 +1473,7 @@ def numpy_to_pydf(
             data_series = [
                 pl.Series(
                     name=column_names[i],
-                    values=data[i],
+                    values=(data if two_d and n_columns == 1 else data[i]),
                     dtype=schema_overrides.get(column_names[i]),
                     nan_to_null=nan_to_null,
                 )._s
