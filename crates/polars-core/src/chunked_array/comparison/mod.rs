@@ -722,7 +722,7 @@ impl ChunkCompare<&ListChunked> for ListChunked {
     type Item = BooleanChunked;
     fn equal(&self, rhs: &ListChunked) -> BooleanChunked {
         let _series_equal = |lhs: Option<&Series>, rhs: Option<&Series>| match (lhs, rhs) {
-            (Some(l), Some(r)) => Some(l.series_equal(r)),
+            (Some(l), Some(r)) => Some(l.equals(r)),
             _ => None,
         };
 
@@ -741,7 +741,7 @@ impl ChunkCompare<&ListChunked> for ListChunked {
 
     fn not_equal(&self, rhs: &ListChunked) -> BooleanChunked {
         let _series_not_equal = |lhs: Option<&Series>, rhs: Option<&Series>| match (lhs, rhs) {
-            (Some(l), Some(r)) => Some(!l.series_equal(r)),
+            (Some(l), Some(r)) => Some(!l.equals(r)),
             _ => None,
         };
 

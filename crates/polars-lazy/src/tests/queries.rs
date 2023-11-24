@@ -430,7 +430,7 @@ fn test_lazy_query_10() {
         TimeUnit::Nanoseconds,
     )
     .into();
-    assert!(out.column("z").unwrap().series_equal(&z));
+    assert!(out.column("z").unwrap().equals(&z));
     let x: Series = DatetimeChunked::from_naive_datetime(
         "x",
         [
@@ -460,7 +460,7 @@ fn test_lazy_query_10() {
     assert!(out
         .column("z")
         .unwrap()
-        .series_equal(&z.cast(&DataType::Duration(TimeUnit::Milliseconds)).unwrap()));
+        .equals(&z.cast(&DataType::Duration(TimeUnit::Milliseconds)).unwrap()));
 }
 
 #[test]
@@ -992,7 +992,7 @@ fn test_group_by_sort_slice() -> PolarsResult<()> {
         .sort("groups", SortOptions::default())
         .collect()?;
 
-    assert!(out1.column("foo")?.series_equal(out2.column("foo")?));
+    assert!(out1.column("foo")?.equals(out2.column("foo")?));
     Ok(())
 }
 
@@ -1144,9 +1144,9 @@ fn test_fill_forward() -> PolarsResult<()> {
     let agg = out.column("b")?.list()?;
 
     let a: Series = agg.get_as_series(0).unwrap();
-    assert!(a.series_equal(&Series::new("b", &[1, 1])));
+    assert!(a.equals(&Series::new("b", &[1, 1])));
     let a: Series = agg.get_as_series(2).unwrap();
-    assert!(a.series_equal(&Series::new("b", &[1, 1])));
+    assert!(a.equals(&Series::new("b", &[1, 1])));
     let a: Series = agg.get_as_series(1).unwrap();
     assert_eq!(a.null_count(), 1);
     Ok(())
@@ -1462,7 +1462,7 @@ fn test_list_in_select_context() -> PolarsResult<()> {
     let out = df.lazy().select([col("a").implode()]).collect()?;
 
     let s = out.column("a")?;
-    assert!(s.series_equal(&expected));
+    assert!(s.equals(&expected));
 
     Ok(())
 }

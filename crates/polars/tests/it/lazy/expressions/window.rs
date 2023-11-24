@@ -196,7 +196,7 @@ fn test_window_mapping() -> PolarsResult<()> {
         .select([col("A").over([col("fruits")])])
         .collect()?;
 
-    assert!(out.column("A")?.series_equal(df.column("A")?));
+    assert!(out.column("A")?.equals(df.column("A")?));
 
     let out = df
         .clone()
@@ -213,7 +213,7 @@ fn test_window_mapping() -> PolarsResult<()> {
         .collect()?;
 
     let expected = Series::new("foo", [11, 12, 13, 14, 15]);
-    assert!(out.column("foo")?.series_equal(&expected));
+    assert!(out.column("foo")?.equals(&expected));
 
     let out = df
         .clone()
@@ -228,7 +228,7 @@ fn test_window_mapping() -> PolarsResult<()> {
         ])
         .collect()?;
     let expected = Series::new("foo", [11, 12, 8, 9, 15]);
-    assert!(out.column("foo")?.series_equal(&expected));
+    assert!(out.column("foo")?.equals(&expected));
 
     let out = df
         .clone()
@@ -255,7 +255,7 @@ fn test_window_mapping() -> PolarsResult<()> {
         .select([(lit(10) + col("A")).alias("foo").over([col("fruits")])])
         .collect()?;
     let expected = Series::new("foo", [13, 14, 11, 12, 15]);
-    assert!(out.column("foo")?.series_equal(&expected));
+    assert!(out.column("foo")?.equals(&expected));
 
     let out = df
         .clone()
@@ -271,7 +271,7 @@ fn test_window_mapping() -> PolarsResult<()> {
         .collect()?;
 
     let expected = Series::new("foo", [8, 9, 11, 12, 15]);
-    assert!(out.column("foo")?.series_equal(&expected));
+    assert!(out.column("foo")?.equals(&expected));
 
     let out = df
         .lazy()

@@ -5,7 +5,7 @@ use crate::prelude::*;
 
 impl Series {
     /// Check if series are equal. Note that `None == None` evaluates to `false`
-    pub fn series_equal(&self, other: &Series) -> bool {
+    pub fn equals(&self, other: &Series) -> bool {
         if self.null_count() > 0 || other.null_count() > 0 || self.dtype() != other.dtype() {
             false
         } else {
@@ -99,7 +99,7 @@ impl DataFrame {
             return false;
         }
         for (left, right) in self.get_columns().iter().zip(other.get_columns()) {
-            if !left.series_equal(right) {
+            if !left.equals(right) {
                 return false;
             }
         }
@@ -172,7 +172,7 @@ mod test {
     fn test_series_equal() {
         let a = Series::new("a", &[1_u32, 2, 3]);
         let b = Series::new("a", &[1_u32, 2, 3]);
-        assert!(a.series_equal(&b));
+        assert!(a.equals(&b));
 
         let s = Series::new("foo", &[None, Some(1i64)]);
         assert!(s.series_equal_missing(&s));
@@ -182,7 +182,7 @@ mod test {
     fn test_series_dtype_noteq() {
         let s_i32 = Series::new("a", &[1_i32, 2_i32]);
         let s_i64 = Series::new("a", &[1_i64, 2_i64]);
-        assert!(!s_i32.series_equal(&s_i64));
+        assert!(!s_i32.equals(&s_i64));
     }
 
     #[test]

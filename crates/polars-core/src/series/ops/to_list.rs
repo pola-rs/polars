@@ -137,7 +137,7 @@ mod test {
         let expected = builder.finish();
 
         let out = s.implode()?;
-        assert!(expected.into_series().series_equal(&out.into_series()));
+        assert!(expected.into_series().equals(&out.into_series()));
 
         Ok(())
     }

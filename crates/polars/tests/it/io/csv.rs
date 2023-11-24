@@ -193,7 +193,7 @@ fn test_missing_data() {
     assert!(df
         .column("column_1")
         .unwrap()
-        .series_equal(&Series::new("column_1", &[1_i64, 1])));
+        .equals(&Series::new("column_1", &[1_i64, 1])));
     assert!(df
         .column("column_2")
         .unwrap()
@@ -201,7 +201,7 @@ fn test_missing_data() {
     assert!(df
         .column("column_3")
         .unwrap()
-        .series_equal(&Series::new("column_3", &[3_i64, 3])));
+        .equals(&Series::new("column_3", &[3_i64, 3])));
 }
 
 #[test]
@@ -216,7 +216,7 @@ fn test_escape_comma() {
     assert!(df
         .column("column_3")
         .unwrap()
-        .series_equal(&Series::new("column_3", &[11_i64, 12])));
+        .equals(&Series::new("column_3", &[11_i64, 12])));
 }
 
 #[test]
@@ -228,7 +228,7 @@ fn test_escape_double_quotes() {
     let file = Cursor::new(csv);
     let df = CsvReader::new(file).finish().unwrap();
     assert_eq!(df.shape(), (2, 3));
-    assert!(df.column("column_2").unwrap().series_equal(&Series::new(
+    assert!(df.column("column_2").unwrap().equals(&Series::new(
         "column_2",
         &[
             r#"with "double quotes" US"#,
@@ -285,7 +285,7 @@ hello,","," ",world,"!"
         assert!(df
             .column(col)
             .unwrap()
-            .series_equal(&Series::new(col, &[&**val; 4])));
+            .equals(&Series::new(col, &[&**val; 4])));
     }
 }
 
@@ -304,7 +304,7 @@ versions of Lorem Ipsum.",11
     let file = Cursor::new(csv);
     let df = CsvReader::new(file).finish().unwrap();
 
-    assert!(df.column("column_2").unwrap().series_equal(&Series::new(
+    assert!(df.column("column_2").unwrap().equals(&Series::new(
         "column_2",
         &[
             r#"Lorem Ipsum is simply dummy text of the printing and typesetting

@@ -308,7 +308,7 @@ impl PySeries {
         if null_equal {
             self.series.series_equal_missing(&other.series)
         } else {
-            self.series.series_equal(&other.series)
+            self.series.equals(&other.series)
         }
     }
 
