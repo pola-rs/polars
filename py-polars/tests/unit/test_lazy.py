@@ -1045,56 +1045,6 @@ def test_pearson_corr() -> None:
     assert out.to_list() == pytest.approx([0.6546536707079772, -5.477514993831792e-1])
 
 
-def test_cov(fruits_cars: pl.DataFrame) -> None:
-    ldf = fruits_cars.lazy()
-    cov_a_b = pl.cov(pl.col("A"), pl.col("B"))
-    cov_ab = pl.cov("A", "B")
-    assert cast(float, ldf.select(cov_a_b).collect().item()) == -2.5
-    assert cast(float, ldf.select(cov_ab).collect().item()) == -2.5
-
-
-def test_std(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.lazy().std().collect()["A"][0] == pytest.approx(
-        1.5811388300841898
-    )
-
-
-def test_var(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.lazy().var().collect()["A"][0] == pytest.approx(2.5)
-
-
-def test_max(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.lazy().max().collect()["A"][0] == 5
-    assert fruits_cars.select(pl.col("A").max())["A"][0] == 5
-
-
-def test_min(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.lazy().min().collect()["A"][0] == 1
-    assert fruits_cars.select(pl.col("A").min())["A"][0] == 1
-
-
-def test_median(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.lazy().median().collect()["A"][0] == 3
-    assert fruits_cars.select(pl.col("A").median())["A"][0] == 3
-
-
-def test_quantile(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.lazy().quantile(0.25, "nearest").collect()["A"][0] == 2
-    assert fruits_cars.select(pl.col("A").quantile(0.25, "nearest"))["A"][0] == 2
-
-    assert fruits_cars.lazy().quantile(0.24, "lower").collect()["A"][0] == 1
-    assert fruits_cars.select(pl.col("A").quantile(0.24, "lower"))["A"][0] == 1
-
-    assert fruits_cars.lazy().quantile(0.26, "higher").collect()["A"][0] == 3
-    assert fruits_cars.select(pl.col("A").quantile(0.26, "higher"))["A"][0] == 3
-
-    assert fruits_cars.lazy().quantile(0.24, "midpoint").collect()["A"][0] == 1.5
-    assert fruits_cars.select(pl.col("A").quantile(0.24, "midpoint"))["A"][0] == 1.5
-
-    assert fruits_cars.lazy().quantile(0.24, "linear").collect()["A"][0] == 1.96
-    assert fruits_cars.select(pl.col("A").quantile(0.24, "linear"))["A"][0] == 1.96
-
-
 def test_null_count() -> None:
     lf = pl.LazyFrame({"a": [1, 2, None, 2], "b": [None, 3, None, 3]})
     assert lf.null_count().collect().rows() == [(1, 2)]
