@@ -94,3 +94,15 @@ def test_struct_schema_on_append_extend_3452() -> None:
         ),
     ):
         housing1.extend(housing2)
+
+
+def test_append_null_series() -> None:
+    a = pl.Series("a", [1, 2], pl.Int64)
+    b = pl.Series("b", [None, None], pl.Null)
+
+    result = a.append(b)
+
+    expected = pl.Series("a", [1, 2, None, None], pl.Int64)
+    assert_series_equal(a, expected)
+    assert_series_equal(result, expected)
+    assert a.n_chunks() == 2
