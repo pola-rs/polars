@@ -25,7 +25,7 @@ pub unsafe trait IsFloat: private::Sealed {
     where
         Self: Sized,
     {
-        false
+        true
     }
 }
 
