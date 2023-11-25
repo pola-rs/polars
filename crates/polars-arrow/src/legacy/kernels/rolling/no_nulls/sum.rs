@@ -36,7 +36,7 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign>
                 // we are in bounds
                 let leaving_value = self.slice.get_unchecked(idx);
 
-                if T::is_float() && leaving_value.is_nan() {
+                if T::is_float() && !leaving_value.is_finite() {
                     recompute_sum = true;
                     break;
                 }

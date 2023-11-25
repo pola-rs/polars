@@ -20,6 +20,13 @@ pub unsafe trait IsFloat: private::Sealed {
     {
         false
     }
+    #[allow(clippy::wrong_self_convention)]
+    fn is_finite(&self) -> bool
+    where
+        Self: Sized,
+    {
+        false
+    }
 }
 
 unsafe impl IsFloat for i8 {}
@@ -74,6 +81,11 @@ macro_rules! impl_is_float {
             #[inline]
             fn is_nan(&self) -> bool {
                 <$tp>::is_nan(*self)
+            }
+
+            #[inline]
+            fn is_finite(&self) -> bool {
+                <$tp>::is_finite(*self)
             }
         }
     };
