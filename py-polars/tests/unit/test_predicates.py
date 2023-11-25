@@ -293,3 +293,70 @@ def test_literal_series_expr_predicate_pushdown() -> None:
 
     assert "FILTER" not in lf.explain()
     assert lf.collect().to_series().to_list() == [1]
+
+
+def test_predicate_pushdown_with_window_projections_12637() -> None:
+    lf = pl.LazyFrame(
+        {
+            "key": [1],
+            "key_2": [1],
+            "key_3": [1],
+            "value": [1],
+            "value_2": [1],
+            "value_3": [1],
+        }
+    )
+
+    actual = lf.with_columns(
+        (pl.col("value") * 2).over("key").alias("value_2"),
+        (pl.col("value") * 2).over("key").alias("value_3"),
+    ).filter(pl.col("key") == 5)
+
+    assert r'SELECTION: "[(col(\"key\")) == (5)]"' in actual.explain()
+
+    actual = (
+        lf.with_columns(
+            (pl.col("value") * 2).over("key", "key_2").alias("value_2"),
+            (pl.col("value") * 2).over("key", "key_2").alias("value_3"),
+        )
+        .filter(pl.col("key") == 5)
+        .filter(pl.col("key_2") == 5)
+    )
+
+    assert "FILTER" not in actual.explain()
+
+    actual = (
+        lf.with_columns(
+            (pl.col("value") * 2).over("key", "key_2").alias("value_2"),
+            (pl.col("value") * 2).over("key", "key_3").alias("value_3"),
+        )
+        .filter(pl.col("key") == 5)
+        .filter(pl.col("key_2") == 5)
+    )
+
+    assert "FILTER" in actual.explain()
+    assert r'SELECTION: "[(col(\"key\")) == (5)]"' in actual.explain()
+
+    actual = (
+        lf.with_columns(
+            (pl.col("value") * 2).over("key", pl.col("key_2") + 1).alias("value_2"),
+            (pl.col("value") * 2).over("key", "key_2").alias("value_3"),
+        )
+        .filter(pl.col("key") == 5)
+        .filter(pl.col("key_2") == 5)
+    )
+    assert "FILTER" in actual.explain()
+    assert r'SELECTION: "[(col(\"key\")) == (5)]"' in actual.explain()
+
+    # Should block when .over() contains groups-sensitive expr
+    actual = (
+        lf.with_columns(
+            (pl.col("value") * 2).over("key", pl.sum("key_2")).alias("value_2"),
+            (pl.col("value") * 2).over("key", "key_2").alias("value_3"),
+        )
+        .filter(pl.col("key") == 5)
+        .filter(pl.col("key_2") == 5)
+    )
+
+    assert "FILTER" in actual.explain()
+    assert 'SELECTION: "None"' in actual.explain()

@@ -4,7 +4,7 @@ use polars_core::prelude::*;
 use super::keys::*;
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use crate::utils::{aexpr_to_leaf_names, check_input_node, has_aexpr, rename_aexpr_leaf_names};
+use crate::utils::{aexpr_to_leaf_names, has_aexpr};
 
 trait Dsl {
     fn and(self, right: Node, arena: &mut Arena<AExpr>) -> Node;
@@ -104,200 +104,6 @@ pub(super) fn predicate_is_sort_boundary(node: Node, expr_arena: &Arena<AExpr>) 
     has_aexpr(node, expr_arena, matches)
 }
 
-/// Predicates can be renamed during pushdown to support being pushed through
-/// aliases, however this is permitted only if the alias is not preceded by any
-/// operations that change the column values. For example:
-///
-/// `col(A).alias(B)` - predicates referring to column B can be re-written to
-/// use column A, since they have the same values.
-///
-/// `col(A).sort().alias(B)` - predicates referring to column B cannot be
-/// re-written to use column A as they have different values.
-pub(super) fn projection_allows_aliased_predicate_pushdown(
-    node: Node,
-    expr_arena: &Arena<AExpr>,
-) -> bool {
-    !has_aexpr(node, expr_arena, |ae| {
-        !matches!(ae, AExpr::Column(_) | AExpr::Alias(_, _))
-    })
-}
-
-enum LoopBehavior {
-    Continue,
-    Nothing,
-}
-
-fn rename_predicate_columns_due_to_aliased_projection(
-    expr_arena: &mut Arena<AExpr>,
-    acc_predicates: &mut PlHashMap<Arc<str>, Node>,
-    projection_node: Node,
-    allow_aliased_pushdown: bool,
-    local_predicates: &mut Vec<Node>,
-) -> LoopBehavior {
-    let projection_aexpr = expr_arena.get(projection_node);
-    if let AExpr::Alias(_, alias_name) = projection_aexpr {
-        let alias_name = alias_name.clone();
-        let projection_leaves = aexpr_to_leaf_names(projection_node, expr_arena);
-
-        // this means the leaf is a literal
-        if projection_leaves.is_empty() {
-            return LoopBehavior::Nothing;
-        }
-
-        // if this alias refers to one of the predicates in the upper nodes
-        // we rename the column of the predicate before we push it downwards.
-        if let Some(predicate) = acc_predicates.remove(&alias_name) {
-            if !allow_aliased_pushdown {
-                local_predicates.push(predicate);
-                remove_predicate_refers_to_alias(acc_predicates, local_predicates, &alias_name);
-                return LoopBehavior::Continue;
-            }
-            if projection_leaves.len() == 1 {
-                // we were able to rename the alias column with the root column name
-                // before pushing down the predicate
-                let predicate =
-                    rename_aexpr_leaf_names(predicate, expr_arena, projection_leaves[0].clone());
-
-                insert_and_combine_predicate(acc_predicates, predicate, expr_arena);
-            } else {
-                // this may be a complex binary function. The predicate may only be valid
-                // on this projected column so we do filter locally.
-                local_predicates.push(predicate)
-            }
-        }
-
-        remove_predicate_refers_to_alias(acc_predicates, local_predicates, &alias_name);
-    }
-    LoopBehavior::Nothing
-}
-
-/// we could not find the alias name
-/// that could still mean that a predicate that is a complicated binary expression
-/// refers to the aliased name. If we find it, we remove it for now
-/// TODO! rename the expression.
-fn remove_predicate_refers_to_alias(
-    acc_predicates: &mut PlHashMap<Arc<str>, Node>,
-    local_predicates: &mut Vec<Node>,
-    alias_name: &str,
-) {
-    let mut remove_names = vec![];
-    for (composed_name, _) in acc_predicates.iter() {
-        if key_has_name(composed_name, alias_name) {
-            remove_names.push(composed_name.clone());
-            break;
-        }
-    }
-
-    for composed_name in remove_names {
-        let predicate = acc_predicates.remove(&composed_name).unwrap();
-        local_predicates.push(predicate)
-    }
-}
-
-/// Implementation for both Hstack and Projection
-pub(super) fn rewrite_projection_node(
-    expr_arena: &mut Arena<AExpr>,
-    lp_arena: &Arena<ALogicalPlan>,
-    acc_predicates: &mut PlHashMap<Arc<str>, Node>,
-    projections: Vec<Node>,
-    input: Node,
-) -> (Vec<Node>, Vec<Node>)
-where
-{
-    let mut local_predicates = Vec::with_capacity(acc_predicates.len());
-
-    // maybe update predicate name if a projection is an alias
-    // aliases change the column names and because we push the predicates downwards
-    // this may be problematic as the aliased column may not yet exist.
-    for projection_node in &projections {
-        // only if a predicate refers to this projection's output column.
-        let allow_aliased_pushdown =
-            projection_allows_aliased_predicate_pushdown(*projection_node, expr_arena);
-
-        {
-            // if this alias refers to one of the predicates in the upper nodes
-            // we rename the column of the predicate before we push it downwards.
-            match rename_predicate_columns_due_to_aliased_projection(
-                expr_arena,
-                acc_predicates,
-                *projection_node,
-                allow_aliased_pushdown,
-                &mut local_predicates,
-            ) {
-                LoopBehavior::Continue => continue,
-                LoopBehavior::Nothing => {},
-            }
-        }
-        let input_schema = lp_arena.get(input).schema(lp_arena);
-        let projection_expr = expr_arena.get(*projection_node);
-        let output_field = projection_expr
-            .to_field(&input_schema, Context::Default, expr_arena)
-            .unwrap();
-
-        // should have been handled earlier by `pushdown_and_continue`.
-        debug_assert_aexpr_allows_predicate_pushdown(*projection_node, expr_arena);
-
-        // remove predicates that cannot be done on the input above
-        let to_local = acc_predicates
-            .iter()
-            .filter_map(|(name, predicate)| {
-                if !key_has_name(name, output_field.name()) {
-                    // Predicate has nothing to do with this projection.
-                    return None;
-                }
-
-                if
-                // checks that the column does not change value compared to the
-                // node above
-                allow_aliased_pushdown
-                // checks that the column exists in the node above
-                && check_input_node(*predicate, &input_schema, expr_arena)
-                {
-                    None
-                } else {
-                    Some(name.clone())
-                }
-            })
-            .collect::<Vec<_>>();
-
-        for name in to_local {
-            let local = acc_predicates.remove(&name).unwrap();
-            local_predicates.push(local);
-        }
-
-        // remove predicates that are based on column modifications
-        no_pushdown_preds(
-            *projection_node,
-            expr_arena,
-            |e| matches!(e, AExpr::Explode(_)) || matches!(e, AExpr::Ternary { .. }),
-            &mut local_predicates,
-            acc_predicates,
-        );
-    }
-    (local_predicates, projections)
-}
-
-pub(super) fn no_pushdown_preds<F>(
-    // node that is projected | hstacked
-    node: Node,
-    arena: &Arena<AExpr>,
-    matches: F,
-    // predicates that will be filtered at this node in the LP
-    local_predicates: &mut Vec<Node>,
-    acc_predicates: &mut PlHashMap<Arc<str>, Node>,
-) where
-    F: Fn(&AExpr) -> bool,
-{
-    // matching expr are typically explode, shift, etc. expressions that mess up predicates when pushed down
-    if has_aexpr(node, arena, matches) {
-        // columns that are projected. We check if we can push down the predicates past this projection
-        let columns = aexpr_to_leaf_names(node, arena);
-
-        let condition = |name: Arc<str>| columns.contains(&name);
-        local_predicates.extend(transfer_to_local_by_name(arena, acc_predicates, condition));
-    }
-}
-
 /// Transfer a predicate from `acc_predicates` that will be pushed down
 /// to a local_predicates vec based on a condition.
 pub(super) fn transfer_to_local_by_name<F>(
@@ -328,36 +134,21 @@ where
     local_predicates
 }
 
-/// An expression blocks predicates from being pushed past it if its results for
-/// the subset where the predicate evaluates as true becomes different compared
-/// to if it was performed before the predicate was applied. This is in general
-/// any expression that produces outputs based on groups of values
-/// (i.e. groups-wise) rather than individual values (i.e. element-wise).
-///
-/// Examples of expressions whose results would change, and thus block push-down:
-/// - any aggregation - sum, mean, first, last, min, max etc.
-/// - sorting - as the sort keys would change between filters
-pub(super) fn aexpr_blocks_predicate_pushdown(node: Node, expr_arena: &Arena<AExpr>) -> bool {
-    let mut stack = Vec::<Node>::with_capacity(4);
-    stack.push(node);
-
-    // Cannot use `has_aexpr` because we need to ignore any literals in the RHS
-    // of an `is_in` operation.
-    while let Some(node) = stack.pop() {
-        let ae = expr_arena.get(node);
-
-        if match ae {
-            // These literals do not come from the RHS of an is_in, meaning that
-            // they are projected as either columns or predicates, both of which
-            // rely on the height of the dataframe at this level and thus need
-            // to block pushdown.
-            AExpr::Literal(LiteralValue::Range { .. }) => true,
-            AExpr::Literal(LiteralValue::Series(s)) => s.len() > 1,
-            ae => ae.groups_sensitive(),
-        } {
-            return true;
-        }
-
+fn check_and_extend_predicate_pd_nodes(
+    stack: &mut Vec<Node>,
+    ae: &AExpr,
+    expr_arena: &Arena<AExpr>,
+) -> bool {
+    if match ae {
+        // These literals do not come from the RHS of an is_in, meaning that
+        // they are projected as either columns or predicates, both of which
+        // rely on the height of the dataframe at this level and thus need
+        // to block pushdown.
+        AExpr::Literal(lit) => !lit.projects_as_scalar(),
+        ae => ae.groups_sensitive(),
+    } {
+        false
+    } else {
         match ae {
             #[cfg(feature = "is_in")]
             AExpr::Function {
@@ -379,16 +170,218 @@ pub(super) fn aexpr_blocks_predicate_pushdown(node: Node, expr_arena: &Arena<AEx
                     }
                 };
                 if !transferred_local_nodes {
-                    ae.nodes(&mut stack);
+                    ae.nodes(stack);
                 }
             },
             ae => {
-                ae.nodes(&mut stack);
+                ae.nodes(stack);
             },
         };
+        true
+    }
+}
+
+/// An expression blocks predicates from being pushed past it if its results for
+/// the subset where the predicate evaluates as true becomes different compared
+/// to if it was performed before the predicate was applied. This is in general
+/// any expression that produces outputs based on groups of values
+/// (i.e. groups-wise) rather than individual values (i.e. element-wise).
+///
+/// Examples of expressions whose results would change, and thus block push-down:
+/// - any aggregation - sum, mean, first, last, min, max etc.
+/// - sorting - as the sort keys would change between filters
+pub(super) fn aexpr_blocks_predicate_pushdown(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    let mut stack = Vec::<Node>::with_capacity(4);
+    stack.push(node);
+
+    // Cannot use `has_aexpr` because we need to ignore any literals in the RHS
+    // of an `is_in` operation.
+    while let Some(node) = stack.pop() {
+        let ae = expr_arena.get(node);
+
+        if !check_and_extend_predicate_pd_nodes(&mut stack, ae, expr_arena) {
+            return true;
+        }
+    }
+    false
+}
+
+/// * `col(A).alias(B).alias(C) => (C, A)`
+/// * `col(A)                   => (A, A)`
+/// * `col(A).sum().alias(B)    => None`
+fn get_maybe_aliased_projection_to_input_name_map(
+    node: Node,
+    expr_arena: &Arena<AExpr>,
+) -> Option<(Arc<str>, Arc<str>)> {
+    let mut curr_node = node;
+    let mut curr_alias: Option<Arc<str>> = None;
+
+    loop {
+        match expr_arena.get(curr_node) {
+            AExpr::Alias(node, alias) => {
+                if curr_alias.is_none() {
+                    curr_alias = Some(alias.clone());
+                }
+
+                curr_node = *node;
+            },
+            AExpr::Column(name) => {
+                return if let Some(alias) = curr_alias {
+                    Some((alias, name.clone()))
+                } else {
+                    Some((name.clone(), name.clone()))
+                }
+            },
+            _ => break,
+        }
     }
 
-    false
+    None
+}
+
+/// This function returns None if predicates cannot be pushed. Otherwise, it
+/// returns:
+/// * A function to determine if a column used by a predicate can be used
+///   in the upper schema.
+/// * A mapping from aliased names to the column names in the upper schema.
+#[allow(clippy::type_complexity)]
+pub fn get_column_allowed_checker_and_rename_map(
+    input_schema: Arc<Schema>,
+    projection_nodes: &Vec<Node>,
+    expr_arena: &Arena<AExpr>,
+) -> PolarsResult<
+    Option<(
+        Box<dyn Fn(&Arc<str>) -> bool>,
+        PlHashMap<Arc<str>, Arc<str>>,
+    )>,
+> {
+    let mut ae_nodes_stack = Vec::<Node>::with_capacity(4);
+    let mut pushdown_rename_map =
+        optimizer::init_hashmap::<Arc<str>, Arc<str>>(Some(projection_nodes.len()));
+
+    let mut modified_projection_columns =
+        PlHashSet::<Arc<str>>::with_capacity(projection_nodes.len());
+    let mut common_window_inputs: Option<PlHashSet<Arc<str>>> = None;
+
+    for projection_node in projection_nodes.iter() {
+        if let Some((alias, column_name)) =
+            get_maybe_aliased_projection_to_input_name_map(*projection_node, expr_arena)
+        {
+            if alias != column_name {
+                pushdown_rename_map.insert(alias, column_name);
+            }
+            continue;
+        }
+
+        modified_projection_columns.insert(Arc::<str>::from(
+            expr_arena
+                .get(*projection_node)
+                .to_field(&input_schema, Context::Default, expr_arena)?
+                .name()
+                .as_str(),
+        ));
+
+        ae_nodes_stack.push(*projection_node);
+
+        while let Some(node) = ae_nodes_stack.pop() {
+            let ae = expr_arena.get(node);
+
+            match ae {
+                AExpr::Window {
+                    partition_by,
+                    #[cfg(feature = "dynamic_group_by")]
+                    options,
+                    ..
+                } => {
+                    #[cfg(feature = "dynamic_group_by")]
+                    if matches!(options, WindowType::Rolling(..)) {
+                        return Ok(None);
+                    };
+
+                    let mut partition_by_names =
+                        PlHashSet::<Arc<str>>::with_capacity(partition_by.len());
+
+                    for node in partition_by.iter() {
+                        // Only accept col() or col().alias()
+                        if let Some((_, name)) =
+                            get_maybe_aliased_projection_to_input_name_map(*node, expr_arena)
+                        {
+                            partition_by_names.insert(name.clone());
+                        } else {
+                            // This needs to be checked for groups-sensitivity.
+                            // e.g.:
+                            // * sum().over(col(A).sum().over(..))
+                            if aexpr_blocks_predicate_pushdown(*node, expr_arena) {
+                                return Ok(None);
+                            }
+                        }
+                    }
+
+                    // Cannot push into disjoint windows:
+                    // e.g.:
+                    // * sum().over(A)
+                    // * sum().over(B)
+                    if let Some(ref mut inputs) = common_window_inputs {
+                        inputs.retain(|k| partition_by_names.contains(k))
+                    } else {
+                        common_window_inputs = Some(partition_by_names);
+                    }
+
+                    if common_window_inputs.as_ref().unwrap().is_empty() {
+                        return Ok(None);
+                    }
+                },
+                _ => {
+                    if !check_and_extend_predicate_pd_nodes(&mut ae_nodes_stack, ae, expr_arena) {
+                        return Ok(None);
+                    }
+                },
+            }
+        }
+    }
+
+    if let Some(common_window_inputs) = common_window_inputs {
+        // Rename column names in column window inputs to any potential aliases.
+        let column_name_to_alias_map = pushdown_rename_map
+            .iter()
+            .map(|(k, v)| (v.clone(), k.clone()))
+            .collect::<PlHashMap<Arc<str>, Arc<str>>>();
+
+        let common_window_inputs = common_window_inputs
+            .into_iter()
+            .flat_map(|key| {
+                let mut out = Vec::<Arc<str>>::with_capacity(2);
+
+                if let Some(aliased) = column_name_to_alias_map.get(&key) {
+                    out.push(aliased.clone())
+                }
+
+                // Ensure predicate does not refer to a different column that
+                // got aliased to the same name as the window column. E.g.:
+                // .with_columns(col(A).alias(C), sum=sum().over(C))
+                // .filter(col(C) == ..)
+                if !pushdown_rename_map.contains_key(&key) {
+                    out.push(key)
+                };
+
+                out
+            })
+            .collect::<PlHashSet<Arc<str>>>();
+
+        if common_window_inputs.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some((
+                Box::new(move |name| common_window_inputs.contains(name)),
+                pushdown_rename_map,
+            )))
+        }
+    } else {
+        Ok(Some((
+            Box::new(move |name| !modified_projection_columns.contains(name)),
+            pushdown_rename_map,
+        )))
+    }
 }
 
 /// Used in places that previously handled blocking exprs before refactoring.

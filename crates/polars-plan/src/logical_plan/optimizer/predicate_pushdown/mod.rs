@@ -75,28 +75,74 @@ impl<'a> PredicatePushDown<'a> {
         let exprs = lp.get_exprs();
 
         if has_projections {
-            // This checks the exprs in the projections at this level.
-            if exprs
-                .iter()
-                .any(|e_n| aexpr_blocks_predicate_pushdown(*e_n, expr_arena))
-            {
-                return self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
-            }
-
             // projections should only have a single input.
             if inputs.len() > 1 {
                 // except for ExtContext
                 assert!(matches!(lp, ALogicalPlan::ExtContext { .. }));
             }
             let input = inputs[inputs.len() - 1];
-            let (local_predicates, projections) =
-                rewrite_projection_node(expr_arena, lp_arena, &mut acc_predicates, exprs, input);
+            let input_schema = lp_arena.get(input).schema(lp_arena);
+
+            let pushdown_opts = get_column_allowed_checker_and_rename_map(
+                input_schema.into_owned(),
+                &exprs,
+                expr_arena,
+            )?;
+
+            if pushdown_opts.is_none() {
+                return self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
+            };
+
+            let (check_column_allowed, pushdown_rename_map) = pushdown_opts.unwrap();
+
+            let mut remove_keys = Vec::<Arc<str>>::new();
+
+            for (key, node) in acc_predicates.iter_mut() {
+                let mut can_pushdown = true;
+                let mut needs_rename = false;
+
+                for (_, ae) in (&*expr_arena).iter(*node) {
+                    if let AExpr::Column(name) = ae {
+                        can_pushdown &= check_column_allowed(name);
+
+                        if !can_pushdown {
+                            break;
+                        }
+
+                        needs_rename |= pushdown_rename_map.contains_key(name);
+                    }
+                }
+
+                if !can_pushdown {
+                    remove_keys.push(key.clone());
+                    continue;
+                }
+
+                if needs_rename {
+                    let mut new_expr = node_to_expr(*node, expr_arena);
+                    new_expr.mutate().apply(|e| {
+                        if let Expr::Column(name) = e {
+                            if let Some(rename_to) = pushdown_rename_map.get(name) {
+                                *name = rename_to.clone();
+                            };
+                        };
+                        true
+                    });
+                    let predicate = to_aexpr(new_expr, expr_arena);
+                    *node = predicate;
+                }
+            }
+
+            let mut local_predicates = Vec::with_capacity(remove_keys.len());
+            for key in remove_keys {
+                local_predicates.push(acc_predicates.remove(&key).unwrap());
+            }
 
             let alp = lp_arena.take(input);
             let alp = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
             lp_arena.replace(input, alp);
 
-            let lp = lp.with_exprs_and_input(projections, inputs);
+            let lp = lp.with_exprs_and_input(exprs, inputs);
             Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
         } else {
             let mut local_predicates = Vec::with_capacity(acc_predicates.len());
