@@ -30,10 +30,9 @@ macro_rules! impl_ternary_broadcast {
     ($self:ident, $self_len:expr, $other_len:expr, $mask_len: expr, $other:expr, $mask:expr, $ty:ty) => {{
         match ($self_len, $other_len, $mask_len) {
         (1, 1, _) => {
-            let mask = $mask.apply_kernel(&|arr| prepare_mask(arr).to_boxed());
             let left = $self.get(0);
             let right = $other.get(0);
-            let mut val: ChunkedArray<$ty> = mask.apply_values_generic(|mask| ternary_apply(mask, left, right));
+            let mut val: ChunkedArray<$ty> = $mask.apply_generic(|mask| ternary_apply(mask.unwrap_or(false), left, right));
             val.rename($self.name());
             Ok(val)
         }
@@ -58,14 +57,12 @@ macro_rules! impl_ternary_broadcast {
             Ok(val)
         },
         (1, r_len, mask_len) if r_len == mask_len =>{
-            let mask = $mask.apply_kernel(&|arr| prepare_mask(arr).to_boxed());
             let left = $self.get(0);
 
-            // TODO! use binary_apply
-            let mut val: ChunkedArray<$ty> = mask
-                .into_no_null_iter()
+            let mut val: ChunkedArray<$ty> = $mask
+                .into_iter()
                 .zip($other)
-                .map(|(mask, right)| ternary_apply(mask, left, right))
+                .map(|(mask, right)| ternary_apply(mask.unwrap_or(false), left, right))
                 .collect_trusted();
             val.rename($self.name());
             Ok(val)
@@ -74,11 +71,10 @@ macro_rules! impl_ternary_broadcast {
             let mask = $mask.apply_kernel(&|arr| prepare_mask(arr).to_boxed());
             let right = $other.get(0);
 
-            // TODO! use binary_apply
             let mut val: ChunkedArray<$ty> = mask
-                .into_no_null_iter()
+                .into_iter()
                 .zip($self)
-                .map(|(mask, left)| ternary_apply(mask, left, right))
+                .map(|(mask, left)| ternary_apply(mask.unwrap_or(false), left, right))
                 .collect_trusted();
             val.rename($self.name());
             Ok(val)
