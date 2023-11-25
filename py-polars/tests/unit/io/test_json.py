@@ -144,7 +144,7 @@ def test_write_ndjson_with_trailing_newline() -> None:
 def test_read_ndjson_empty_array() -> None:
     assert pl.read_ndjson(io.StringIO("""{"foo": {"bar": []}}""")).to_dict(
         as_series=False
-    ) == {"foo": [{"": None}]}
+    ) == {"foo": [{"bar": []}]}
 
 
 def test_ndjson_nested_null() -> None:
@@ -321,7 +321,7 @@ def test_ndjson_null_buffer() -> None:
         [
             ("id", pl.Int64),
             ("zero_column", pl.Int64),
-            ("empty_array_column", pl.Null),
+            ("empty_array_column", pl.List(pl.Null)),
             ("empty_object_column", pl.Struct([pl.Field("", pl.Null)])),
             ("null_column", pl.Null),
         ]
