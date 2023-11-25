@@ -360,10 +360,10 @@ macro_rules! impl_dyn_series {
                 self.0.min_as_series().$into_logical()
             }
             fn median_as_series(&self) -> Series {
-                Int32Chunked::full_null(self.name(), 1)
-                    .cast(self.dtype())
-                    .unwrap()
-                    .into()
+                Series::new(
+                    self.name(),
+                    &[self.median().map(|v| (v * 86_400_000_000f64) as i64)],
+                )
             }
             fn var_as_series(&self, _ddof: u8) -> Series {
                 Int32Chunked::full_null(self.name(), 1)
