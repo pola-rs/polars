@@ -123,15 +123,7 @@ where
     T: IsFloat + NativeType + PartialOrd,
 {
     if T::is_float() {
-        buf.sort_by(|a, b| {
-            match (a.is_nan(), b.is_nan()) {
-                // safety: we checked nans
-                (false, false) => unsafe { a.partial_cmp(b).unwrap_unchecked() },
-                (true, true) => Ordering::Equal,
-                (true, false) => Ordering::Greater,
-                (false, true) => Ordering::Less,
-            }
-        });
+        buf.sort_by(|a, b| compare_fn_nan_max(a, b));
     } else {
         // Safety:
         // all integers are Ord
