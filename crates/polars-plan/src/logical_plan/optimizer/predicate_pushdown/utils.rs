@@ -242,7 +242,7 @@ fn get_maybe_aliased_projection_to_input_name_map(
 /// This function returns None if predicates cannot be pushed. Otherwise, it
 /// returns:
 /// * A function to determine if a column used by a predicate can be used
-///   in the upper schema.
+///   in the upper node.
 /// * A mapping from aliased names to the column names in the upper schema.
 #[allow(clippy::type_complexity)]
 pub fn get_column_allowed_checker_and_rename_map(
