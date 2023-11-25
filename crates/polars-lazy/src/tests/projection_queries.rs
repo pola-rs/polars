@@ -60,7 +60,7 @@ fn test_cross_join_pd() -> PolarsResult<()> {
         "total" => [13, 12, 10, 9]
     ]?;
 
-    assert!(out.frame_equal(&expected));
+    assert!(out.equals(&expected));
     Ok(())
 }
 
@@ -82,7 +82,7 @@ fn test_row_count_pd() -> PolarsResult<()> {
         "x" => [3i32, 6, 9]
     ]?;
 
-    assert!(df.frame_equal(&expected));
+    assert!(df.equals(&expected));
 
     Ok(())
 }

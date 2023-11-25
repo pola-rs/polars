@@ -165,5 +165,5 @@ fn test_duration_date_arithmetic() {
 }
 
 fn assert_series_eq(s1: &Series, s2: &Series) {
-    assert!(s1.series_equal(s2))
+    assert!(s1.equals(s2))
 }

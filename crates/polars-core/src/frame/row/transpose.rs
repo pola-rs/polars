@@ -270,7 +270,7 @@ mod test {
             "column_2" => [3, 30],
 
         ]?;
-        assert!(out.frame_equal_missing(&expected));
+        assert!(out.equals_missing(&expected));
 
         let df = df![
             "a" => [Some(1), None, Some(3)],
@@ -283,7 +283,7 @@ mod test {
             "column_2" => [Some(3), None],
 
         ]?;
-        assert!(out.frame_equal_missing(&expected));
+        assert!(out.equals_missing(&expected));
 
         let df = df![
             "a" => ["a", "b", "c"],
@@ -296,7 +296,7 @@ mod test {
             "column_2" => [Some("c"), None],
 
         ]?;
-        assert!(out.frame_equal_missing(&expected));
+        assert!(out.equals_missing(&expected));
         Ok(())
     }
 }

@@ -41,5 +41,5 @@ fn iss_8419() {
     "#;
     let df = ctx.execute(query).unwrap().collect().unwrap();
 
-    assert!(df.frame_equal(&expected))
+    assert!(df.equals(&expected))
 }

@@ -399,7 +399,7 @@ mod test {
             "C" => [1, 1, 1, 1, 1, 1, 1],
         ]?;
 
-        assert!(out.frame_equal_missing(&expected));
+        assert!(out.equals_missing(&expected));
 
         let list = Series::new("foo", [s0.clone(), s1.clear(), s1.clone()]);
         let df = DataFrame::new(vec![list, s0, s1])?;
@@ -410,7 +410,7 @@ mod test {
             "C" => [1, 1, 1, 1, 1, 1, 1],
         ]?;
 
-        assert!(out.frame_equal_missing(&expected));
+        assert!(out.equals_missing(&expected));
         Ok(())
     }
 

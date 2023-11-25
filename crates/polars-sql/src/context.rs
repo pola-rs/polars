@@ -96,7 +96,7 @@ impl SQLContext {
     ///
     /// ctx.register("df", df.clone().lazy());
     /// let sql_df = ctx.execute("SELECT * FROM df").unwrap().collect().unwrap();
-    /// assert!(sql_df.frame_equal(&df));
+    /// assert!(sql_df.equals(&df));
     /// # }
     ///```
     pub fn execute(&mut self, query: &str) -> PolarsResult<LazyFrame> {

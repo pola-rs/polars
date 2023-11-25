@@ -29,7 +29,7 @@ fn test_swap_rename() -> PolarsResult<()> {
         "b" => [1],
         "a" => [2],
     ]?;
-    assert!(df.frame_equal(&expected));
+    assert!(df.equals(&expected));
     Ok(())
 }
 
@@ -114,7 +114,7 @@ fn test_many_aliasing_projections_5070() -> PolarsResult<()> {
         "val" => [2, 3],
         "output" => [0, 1],
     ]?;
-    assert!(out.frame_equal(&expected));
+    assert!(out.equals(&expected));
 
     Ok(())
 }
@@ -151,7 +151,7 @@ fn test_projection_5086() -> PolarsResult<()> {
         "keep" => [true, false, false, true]
     ]?;
 
-    assert!(out.frame_equal(&expected));
+    assert!(out.equals(&expected));
 
     Ok(())
 }

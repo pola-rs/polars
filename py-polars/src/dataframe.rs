@@ -1127,9 +1127,9 @@ impl PyDataFrame {
 
     pub fn equals(&self, other: &PyDataFrame, null_equal: bool) -> bool {
         if null_equal {
-            self.df.frame_equal_missing(&other.df)
+            self.df.equals_missing(&other.df)
         } else {
-            self.df.frame_equal(&other.df)
+            self.df.equals(&other.df)
         }
     }
 

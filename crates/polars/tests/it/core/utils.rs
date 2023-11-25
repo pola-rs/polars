@@ -14,6 +14,6 @@ fn test_df_macro_trailing_commas() -> PolarsResult<()> {
         "c" => &[1, 2],
     }?;
 
-    assert!(a.frame_equal(&b));
+    assert!(a.equals(&b));
     Ok(())
 }

@@ -5,18 +5,18 @@ use crate::prelude::*;
 
 impl Series {
     /// Check if series are equal. Note that `None == None` evaluates to `false`
-    pub fn series_equal(&self, other: &Series) -> bool {
+    pub fn equals(&self, other: &Series) -> bool {
         if self.null_count() > 0 || other.null_count() > 0 || self.dtype() != other.dtype() {
             false
         } else {
-            self.series_equal_missing(other)
+            self.equals_missing(other)
         }
     }
 
     /// Check if all values in series are equal where `None == None` evaluates to `true`.
     /// Two [`Datetime`](DataType::Datetime) series are *not* equal if their timezones are different, regardless
     /// if they represent the same UTC time or not.
-    pub fn series_equal_missing(&self, other: &Series) -> bool {
+    pub fn equals_missing(&self, other: &Series) -> bool {
         match (self.dtype(), other.dtype()) {
             #[cfg(feature = "timezones")]
             (DataType::Datetime(_, tz_lhs), DataType::Datetime(_, tz_rhs)) => {
@@ -58,13 +58,13 @@ impl Series {
 
 impl PartialEq for Series {
     fn eq(&self, other: &Self) -> bool {
-        self.series_equal_missing(other)
+        self.equals_missing(other)
     }
 }
 
 impl DataFrame {
     /// Check if [`DataFrame`]' schemas are equal.
-    pub fn frame_equal_schema(&self, other: &DataFrame) -> PolarsResult<()> {
+    pub fn schema_equal(&self, other: &DataFrame) -> PolarsResult<()> {
         for (lhs, rhs) in self.iter().zip(other.iter()) {
             polars_ensure!(
                 lhs.name() == rhs.name(),
@@ -91,15 +91,15 @@ impl DataFrame {
     /// let df2: DataFrame = df!("Atomic number" => &[1, 51, 300],
     ///                         "Element" => &[Some("Hydrogen"), Some("Antimony"), None])?;
     ///
-    /// assert!(!df1.frame_equal(&df2));
+    /// assert!(!df1.equals(&df2));
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn frame_equal(&self, other: &DataFrame) -> bool {
+    pub fn equals(&self, other: &DataFrame) -> bool {
         if self.shape() != other.shape() {
             return false;
         }
         for (left, right) in self.get_columns().iter().zip(other.get_columns()) {
-            if !left.series_equal(right) {
+            if !left.equals(right) {
                 return false;
             }
         }
@@ -117,15 +117,15 @@ impl DataFrame {
     /// let df2: DataFrame = df!("Atomic number" => &[1, 51, 300],
     ///                         "Element" => &[Some("Hydrogen"), Some("Antimony"), None])?;
     ///
-    /// assert!(df1.frame_equal_missing(&df2));
+    /// assert!(df1.equals_missing(&df2));
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn frame_equal_missing(&self, other: &DataFrame) -> bool {
+    pub fn equals_missing(&self, other: &DataFrame) -> bool {
         if self.shape() != other.shape() {
             return false;
         }
         for (left, right) in self.get_columns().iter().zip(other.get_columns()) {
-            if !left.series_equal_missing(right) {
+            if !left.equals_missing(right) {
                 return false;
             }
         }
@@ -160,7 +160,7 @@ impl PartialEq for DataFrame {
                 .columns
                 .iter()
                 .zip(other.columns.iter())
-                .all(|(s1, s2)| s1.series_equal_missing(s2))
+                .all(|(s1, s2)| s1.equals_missing(s2))
     }
 }
 
@@ -169,20 +169,20 @@ mod test {
     use crate::prelude::*;
 
     #[test]
-    fn test_series_equal() {
+    fn test_series_equals() {
         let a = Series::new("a", &[1_u32, 2, 3]);
         let b = Series::new("a", &[1_u32, 2, 3]);
-        assert!(a.series_equal(&b));
+        assert!(a.equals(&b));
 
         let s = Series::new("foo", &[None, Some(1i64)]);
-        assert!(s.series_equal_missing(&s));
+        assert!(s.equals_missing(&s));
     }
 
     #[test]
     fn test_series_dtype_noteq() {
         let s_i32 = Series::new("a", &[1_i32, 2_i32]);
         let s_i64 = Series::new("a", &[1_i64, 2_i64]);
-        assert!(!s_i32.series_equal(&s_i64));
+        assert!(!s_i32.equals(&s_i64));
     }
 
     #[test]
@@ -191,7 +191,7 @@ mod test {
         let b = Series::new("b", [1, 2, 3].as_ref());
 
         let df1 = DataFrame::new(vec![a, b]).unwrap();
-        assert!(df1.frame_equal(&df1))
+        assert!(df1.equals(&df1))
     }
 
     #[test]

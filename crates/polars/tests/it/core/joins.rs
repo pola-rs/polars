@@ -32,7 +32,7 @@ fn test_chunked_left_join() -> PolarsResult<()> {
         "plays" => ["guitar", "bass", "guitar"],
         "band" => [Some("beatles"), Some("beatles"), None],
     ]?;
-    assert!(out.frame_equal_missing(&expected));
+    assert!(out.equals_missing(&expected));
 
     Ok(())
 }
@@ -71,7 +71,7 @@ fn test_inner_join() {
         .unwrap();
 
         println!("{}", joined);
-        assert!(joined.frame_equal(&true_df));
+        assert!(joined.equals(&true_df));
     }
 }
 
@@ -240,7 +240,7 @@ fn test_join_multiple_columns() {
     assert!(joined_inner_hack
         .column("ham")
         .unwrap()
-        .series_equal_missing(joined_inner.column("ham").unwrap()));
+        .equals_missing(joined_inner.column("ham").unwrap()));
 
     let joined_outer_hack = df_a.outer_join(&df_b, ["dummy"], ["dummy"]).unwrap();
     let joined_outer = df_a
@@ -249,7 +249,7 @@ fn test_join_multiple_columns() {
     assert!(joined_outer_hack
         .column("ham")
         .unwrap()
-        .series_equal_missing(joined_outer.column("ham").unwrap()));
+        .equals_missing(joined_outer.column("ham").unwrap()));
 }
 
 #[test]
@@ -377,7 +377,7 @@ fn unit_df_join() -> PolarsResult<()> {
         "b" => [2],
         "b_right" => [1]
     ]?;
-    assert!(out.frame_equal(&expected));
+    assert!(out.equals(&expected));
     Ok(())
 }
 

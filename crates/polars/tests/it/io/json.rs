@@ -126,7 +126,7 @@ fn read_ndjson_with_trailing_newline() {
         "Column1" => ["Value1"]
     }
     .unwrap();
-    assert!(expected.frame_equal(&df));
+    assert!(expected.equals(&df));
 }
 #[test]
 #[cfg(feature = "dtype-struct")]

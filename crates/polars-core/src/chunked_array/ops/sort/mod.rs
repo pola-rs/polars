@@ -829,7 +829,7 @@ mod test {
             "a" => ["a", "a", "b", "b", "c", "c"],
             "b" => [3, 5, 4, 4, 2, 5]
         )?;
-        assert!(out.frame_equal(&expected));
+        assert!(out.equals(&expected));
 
         let df = df!(
             "groups" => [1, 2, 3],
@@ -841,14 +841,14 @@ mod test {
             "groups" => [3, 2, 1],
             "values" => ["b", "a", "a"]
         )?;
-        assert!(out.frame_equal(&expected));
+        assert!(out.equals(&expected));
 
         let out = df.sort(["values", "groups"], vec![false, true], false)?;
         let expected = df!(
             "groups" => [2, 1, 3],
             "values" => ["a", "a", "b"]
         )?;
-        assert!(out.frame_equal(&expected));
+        assert!(out.equals(&expected));
 
         Ok(())
     }

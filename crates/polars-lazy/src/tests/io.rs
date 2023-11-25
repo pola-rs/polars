@@ -241,7 +241,7 @@ fn test_csv_globbing() -> PolarsResult<()> {
     let df = lf.clone().collect()?;
     assert_eq!(df.shape(), (100, 4));
     let df = LazyCsvReader::new(glob).finish()?.slice(20, 60).collect()?;
-    assert!(full_df.slice(20, 60).frame_equal(&df));
+    assert!(full_df.slice(20, 60).equals(&df));
 
     let mut expr_arena = Arena::with_capacity(16);
     let mut lp_arena = Arena::with_capacity(8);

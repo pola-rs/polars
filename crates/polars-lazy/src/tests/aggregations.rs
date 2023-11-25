@@ -76,12 +76,12 @@ fn test_agg_unique_first() -> PolarsResult<()> {
 fn test_lazy_agg_scan() {
     let lf = scan_foods_csv;
     let df = lf().min().collect().unwrap();
-    assert!(df.frame_equal_missing(&lf().collect().unwrap().min()));
+    assert!(df.equals_missing(&lf().collect().unwrap().min()));
     let df = lf().max().collect().unwrap();
-    assert!(df.frame_equal_missing(&lf().collect().unwrap().max()));
+    assert!(df.equals_missing(&lf().collect().unwrap().max()));
     // mean is not yet aggregated at scan.
     let df = lf().mean().collect().unwrap();
-    assert!(df.frame_equal_missing(&lf().collect().unwrap().mean()));
+    assert!(df.equals_missing(&lf().collect().unwrap().mean()));
 }
 
 #[test]

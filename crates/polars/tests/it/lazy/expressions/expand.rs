@@ -40,7 +40,7 @@ fn test_expand_datetimes_3042() -> PolarsResult<()> {
         "dt1" => ["01/01/2020", "01/08/2020", "01/15/2020"],
         "dt2" => ["01/01/2020", "01/08/2020", "01/15/2020"],
     ]?;
-    assert!(out.frame_equal(&expected));
+    assert!(out.equals(&expected));
 
     Ok(())
 }
