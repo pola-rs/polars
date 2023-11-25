@@ -281,6 +281,7 @@ pub fn get_column_allowed_checker_and_rename_map(
                 .as_str(),
         ));
 
+        debug_assert!(ae_nodes_stack.is_empty());
         ae_nodes_stack.push(*projection_node);
 
         while let Some(node) = ae_nodes_stack.pop() {
