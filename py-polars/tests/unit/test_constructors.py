@@ -482,7 +482,7 @@ def test_collections_namedtuple() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_init_ndarray(monkeypatch: Any) -> None:
+def test_init_ndarray() -> None:
     # Empty array
     df = pl.DataFrame(np.array([]))
     assert_frame_equal(df, pl.DataFrame())
@@ -496,7 +496,7 @@ def test_init_ndarray(monkeypatch: Any) -> None:
     expected = pl.DataFrame({"a": [1, 2, 3]}).with_columns(pl.col("a").cast(pl.Int32))
     assert_frame_equal(df, expected)
 
-    # 2D array (or 2x 1D array) - should default to column orientation
+    # 2D array (or 2x 1D array) - should default to column orientation (if C-contiguous)
     for data in (
         np.array([[1, 2], [3, 4]], dtype=np.int64),
         [np.array([1, 2], dtype=np.int64), np.array([3, 4], dtype=np.int64)],
@@ -524,7 +524,7 @@ def test_init_ndarray(monkeypatch: Any) -> None:
     expected = pl.DataFrame({"column_0": [1, 3], "column_1": [2, 4]})
     assert_frame_equal(df, expected)
 
-    # no orientation is numpy convention
+    # no orientation, numpy convention
     df = pl.DataFrame(np.ones((3, 1), dtype=np.int64))
     assert df.shape == (3, 1)
 
@@ -542,46 +542,12 @@ def test_init_ndarray(monkeypatch: Any) -> None:
     expected = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
     assert_frame_equal(df, expected)
 
-    # 2D array - orientation conflicts with columns
-    with pytest.raises(ValueError):
-        pl.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), schema=["a", "b"], orient="row")
-    with pytest.raises(ValueError):
-        pl.DataFrame(
-            np.array([[1, 2, 3], [4, 5, 6]]),
-            schema=[("a", pl.UInt32), ("b", pl.UInt32)],
-            orient="row",
-        )
+    # List column from 2D array with single-column schema
+    df = pl.DataFrame(np.arange(4).reshape(-1, 1).astype(np.int64), schema=["a"])
+    assert_frame_equal(df, pl.DataFrame({"a": [[0], [1], [2], [3]]}))
 
-    # 2D square array; ensure that we maintain convention
-    # (first axis = rows) with/without an explicit schema
-    arr = np.arange(4).reshape(2, 2)
-    assert (
-        [(0, 1), (2, 3)]
-        == pl.DataFrame(arr).rows()
-        == pl.DataFrame(arr, schema=["a", "b"]).rows()
-    )
-
-    # 3D array
-    with pytest.raises(ValueError):
-        _ = pl.DataFrame(np.random.randn(2, 2, 2))
-
-    # Wrong orient value
-    with pytest.raises(ValueError):
-        df = pl.DataFrame(
-            np.array([[1, 2, 3], [4, 5, 6]]),
-            orient="wrong",  # type: ignore[arg-type]
-        )
-
-    # Dimensions mismatch
-    with pytest.raises(ValueError):
-        _ = pl.DataFrame(np.array([1, 2, 3]), schema=[])
-    with pytest.raises(ValueError):
-        _ = pl.DataFrame(np.array([[1, 2], [3, 4]]), schema=["a"])
-
-    # NumPy not available
-    monkeypatch.setattr(pl.dataframe.frame, "_check_for_numpy", lambda x: False)
-    with pytest.raises(TypeError):
-        pl.DataFrame(np.array([1, 2, 3]), schema=["a"])
+    df = pl.DataFrame(np.arange(4).reshape(-1, 2).astype(np.int64), schema=["a"])
+    assert_frame_equal(df, pl.DataFrame({"a": [[0, 1], [2, 3]]}))
 
     # 2D numpy arrays
     df = pl.DataFrame({"a": np.arange(5, dtype=np.int64).reshape(1, -1)})
@@ -597,6 +563,36 @@ def test_init_ndarray(monkeypatch: Any) -> None:
     df = pl.DataFrame([np.array(test_rows[0]), np.array(test_rows[1])], orient="row")
     assert_frame_equal(df, pl.DataFrame(test_rows, orient="row"))
 
+
+def test_init_ndarray_errors() -> None:
+    # 2D array: orientation conflicts with columns
+    with pytest.raises(ValueError):
+        pl.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), schema=["a", "b"], orient="row")
+
+    with pytest.raises(ValueError):
+        pl.DataFrame(
+            np.array([[1, 2, 3], [4, 5, 6]]),
+            schema=[("a", pl.UInt32), ("b", pl.UInt32)],
+            orient="row",
+        )
+
+    # Invalid orient value
+    with pytest.raises(ValueError):
+        pl.DataFrame(
+            np.array([[1, 2, 3], [4, 5, 6]]),
+            orient="wrong",  # type: ignore[arg-type]
+        )
+
+    # Dimensions mismatch
+    with pytest.raises(ValueError):
+        _ = pl.DataFrame(np.array([1, 2, 3]), schema=[])
+
+    # Cannot init with 3D array
+    with pytest.raises(ValueError):
+        _ = pl.DataFrame(np.random.randn(2, 2, 2))
+
+
+def test_init_ndarray_nan() -> None:
     # numpy arrays containing NaN
     df0 = pl.DataFrame(
         data={"x": [1.0, 2.5, float("nan")], "y": [4.0, float("nan"), 6.5]},
@@ -610,6 +606,42 @@ def test_init_ndarray(monkeypatch: Any) -> None:
     )
     assert_frame_equal(df0, df1)
     assert df2.rows() == [(1.0, 4.0), (2.5, None), (None, 6.5)]
+
+    s0 = pl.Series("n", [1.0, 2.5, float("nan")])
+    s1 = pl.Series("n", np.array([1.0, 2.5, float("nan")]))
+    s2 = pl.Series("n", np.array([1.0, 2.5, float("nan")]), nan_to_null=True)
+
+    assert_series_equal(s0, s1)
+    assert s2.to_list() == [1.0, 2.5, None]
+
+
+def test_init_ndarray_square() -> None:
+    # 2D square array; ensure that we maintain convention
+    # (first axis = rows) with/without an explicit schema
+    arr = np.arange(4).reshape(2, 2)
+    assert (
+        [(0, 1), (2, 3)]
+        == pl.DataFrame(arr).rows()
+        == pl.DataFrame(arr, schema=["a", "b"]).rows()
+    )
+    # check that we tie-break square arrays using fortran vs c-contiguous row/col major
+    df_c = pl.DataFrame(
+        data=np.array([[1, 2], [3, 4]], dtype=np.int64, order="C"),
+        schema=["x", "y"],
+    )
+    assert_frame_equal(df_c, pl.DataFrame({"x": [1, 3], "y": [2, 4]}))
+
+    df_f = pl.DataFrame(
+        data=np.array([[1, 2], [3, 4]], dtype=np.int64, order="F"),
+        schema=["x", "y"],
+    )
+    assert_frame_equal(df_f, pl.DataFrame({"x": [1, 2], "y": [3, 4]}))
+
+
+def test_init_numpy_unavailable(monkeypatch: Any) -> None:
+    monkeypatch.setattr(pl.dataframe.frame, "_check_for_numpy", lambda x: False)
+    with pytest.raises(TypeError):
+        pl.DataFrame(np.array([1, 2, 3]), schema=["a"])
 
 
 def test_init_numpy_scalars() -> None:
@@ -724,14 +756,6 @@ def test_init_series() -> None:
 
     s3 = pl.Series(dtype=pl.List(pl.List(pl.UInt8)))
     assert s3.dtype == pl.List(pl.List(pl.UInt8))
-
-    # numpy data containing NaN values
-    s0 = pl.Series("n", [1.0, 2.5, float("nan")])
-    s1 = pl.Series("n", np.array([1.0, 2.5, float("nan")]))
-    s2 = pl.Series("n", np.array([1.0, 2.5, float("nan")]), nan_to_null=True)
-
-    assert_series_equal(s0, s1)
-    assert s2.to_list() == [1.0, 2.5, None]
 
 
 def test_init_seq_of_seq() -> None:
