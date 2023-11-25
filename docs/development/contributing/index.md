@@ -104,6 +104,99 @@ We use the Makefile to conveniently run the following formatting and linting too
 
 If this all runs correctly, you're ready to start contributing to the Polars codebase!
 
+### Settiong up your debugging environment
+
+Due to the way that Python and Rust interoperate, debugging the Rust side of development from Python calls can be difficult.
+This guide shows how to set up [Visual Studio Code](https://code.visualstudio.com/) with a debugging environment that makes
+debugging rust code called from a python script painless.
+
+#### 1. Install The [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb) extension.
+
+You can install from within a VS Code terminal with the following:
+
+```shell
+code --install-extension vadimcn.vscode-lldb augustocdias.tasks-shell-input
+```
+
+#### 2. Add debug launch configurations.
+
+Copy the following two configurations to your `launch.json` file. This file is usually found in the `.vscode` subfolder of your
+root directory. See [Debugging in VSCode](https://code.visualstudio.com/docs/editor/debugging#_launch-configurations) for more
+information about the `launch.json` file.
+
+<details><summary><code><b>launch.json</b></code></summary>
+
+```json
+{
+    "configurations": [
+        {
+            "name": "Debug Rust/Python",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/py-polars/debug/launch.py",
+            "args": [
+                "${file}"
+            ],
+            "console": "internalConsole",
+            "justMyCode": true,
+            "serverReadyAction": {
+                "pattern": "pID = ([0-9]+)",
+                "action": "startDebugging",
+                "name": "Rust LLDB"
+            }
+        },
+        {
+            "name": "Rust LLDB",
+            "pid": "0",
+            "type": "lldb",
+            "request": "attach",
+            "program": "${workspaceFolder}/py-polars/.venv/bin/python",
+            "stopOnEntry": false,
+            "sourceLanguages": [
+                "rust"
+            ],
+            "presentation": {
+                "hidden": true
+            }
+        }
+    ]
+}
+```
+
+</details>
+
+#### 3. (Only if necessary) Disable `ptrace` protection
+
+In some systems, the LLDB debugger will not attach unless [`ptrace` protection](https://linux-audit.com/protect-ptrace-processes-kernel-yama-ptrace_scope)
+is disabled. To disable, run the following command:
+
+```shell
+echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope
+```
+
+#### Debugging a script
+
+1. Create a python script containing polars code. Ensure that your polars virtual environment is activated.
+
+2. Set breakpoint in any `.rs` or `.py` file.
+
+3. In the `Run and Debug` panel on the left, select `Python: Debug Rust` from the drop-down menu on top and click
+   the `Start Debugging` button.
+
+At this point, your debugger should stop on breakpoints in any `.rs` file located within the codebase. To quickly
+re-start the debugger in the future, use the standard `F5` keyboard shortcut to re-launch the `Python: Debug Rust`
+debugging configuration.
+
+#### Details
+
+The debugging feature runs via the specially-designed VS Code launch configuration shown above. The initial python debugger
+is launched, using a special launch script located at `/py-polars/debug/launch.py`, and passes the name of the script to be
+debugged (the target script) as an input argument. The launch script determines the process ID, writes this value into
+the launch.json configuration file, compiles the target script and runs it in the current environment. At this point, a
+second (Rust) debugger is attached to the Python debugger. The result is two simultaneous debuggers operating on the same
+running instance. Breakpoints in the Python code will stop on the Python debugger and breakpoints in the Rust code will stop
+on the Rust debugger.
+
 ### Working on your issue
 
 Create a new git branch from the `main` branch in your local repository, and start coding!
