@@ -78,11 +78,7 @@ fn filter_map_nulls(dt: ArrowDataType) -> Option<ArrowDataType> {
 fn infer_object(inner: &Object) -> PolarsResult<ArrowDataType> {
     let fields = inner
         .iter()
-        .filter_map(|(key, value)| {
-            infer(value)
-                .map(|dt| filter_map_nulls(dt).map(|dt| (key, dt)))
-                .transpose()
-        })
+        .map(|(key, value)| infer(value).map(|dt| (key, dt)))
         .map(|maybe_dt| {
             let (key, dt) = maybe_dt?;
             Ok(Field::new(key.as_ref(), dt, true))

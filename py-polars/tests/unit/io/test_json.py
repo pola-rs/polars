@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import io
 import json
+from collections import OrderedDict
+from io import BytesIO
 from typing import TYPE_CHECKING
 
 import pytest
@@ -284,4 +286,43 @@ def test_write_json_duration() -> None:
     assert (
         df.write_json(row_oriented=True)
         == '[{"a":"P1DT5362.939S"},{"a":"P1DT5362.890S"},{"a":"PT6020.836S"}]'
+    )
+
+
+def test_json_null_infer() -> None:
+    json = BytesIO(
+        bytes(
+            """
+    [
+      {
+        "a": 1,
+        "b": null
+      }
+    ]
+    """,
+            "UTF-8",
+        )
+    )
+
+    assert pl.read_json(json).schema == OrderedDict({"a": pl.Int64, "b": pl.Null})
+
+
+def test_ndjson_null_buffer() -> None:
+    data = io.BytesIO(
+        b"""\
+    {"id": 1, "zero_column": 0, "empty_array_column": [], "empty_object_column": {}, "null_column": null}
+    {"id": 2, "zero_column": 0, "empty_array_column": [], "empty_object_column": {}, "null_column": null}
+    {"id": 3, "zero_column": 0, "empty_array_column": [], "empty_object_column": {}, "null_column": null}
+    {"id": 4, "zero_column": 0, "empty_array_column": [], "empty_object_column": {}, "null_column": null}
+    """
+    )
+
+    assert pl.read_ndjson(data).schema == OrderedDict(
+        [
+            ("id", pl.Int64),
+            ("zero_column", pl.Int64),
+            ("empty_array_column", pl.Null),
+            ("empty_object_column", pl.Struct([pl.Field("", pl.Null)])),
+            ("null_column", pl.Null),
+        ]
     )
