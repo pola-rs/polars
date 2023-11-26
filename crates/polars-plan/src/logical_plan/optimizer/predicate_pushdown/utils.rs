@@ -271,7 +271,7 @@ pub fn get_column_allowed_checker_and_rename_map(
         modified_projection_columns.insert(Arc::<str>::from(
             expr_arena
                 .get(*projection_node)
-                .to_field(&input_schema, Context::Default, expr_arena)?
+                .to_field(input_schema, Context::Default, expr_arena)?
                 .name()
                 .as_str(),
         ));
