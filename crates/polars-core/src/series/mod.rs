@@ -807,6 +807,7 @@ impl Series {
                 let val = &[self.mean()];
                 Series::new(self.name(), val)
             },
+            #[cfg(feature = "dtype-datetime")]
             DataType::Date => {
                 let us = US_IN_DAY as f64;
                 Series::new(self.name(), &[self.mean().map(|v| (v * us) as i64)])
