@@ -16,6 +16,7 @@ use arrow::legacy::prelude::QuantileInterpolOptions;
 use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::ops::ToBitRepr;
+use crate::chunked_array::temporal::conversion::US_IN_DAY;
 use crate::chunked_array::AsSinglePtr;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
