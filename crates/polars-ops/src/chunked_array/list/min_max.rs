@@ -1,12 +1,12 @@
 use arrow::array::{Array, ArrayRef, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::legacy::array::PolarsArray;
-use arrow::legacy::data_types::IsFloat;
 use arrow::legacy::slice::ExtremaNanAware;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::float::IsFloat;
 
 use crate::chunked_array::list::namespace::has_inner_nulls;
 

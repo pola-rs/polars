@@ -6,6 +6,7 @@ use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::float::IsFloat;
 
 fn array_agg<T, S, F1, F2>(
     values: &PrimitiveArray<T>,

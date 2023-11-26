@@ -1,6 +1,5 @@
-use arrow::legacy::kernels::rolling::compare_fn_nan_max;
-
-use crate::prelude::*;
+use polars_utils::float::IsFloat;
+use polars_utils::ord::compare_fn_nan_max;
 
 /// used a lot, ensure there is a single impl
 pub fn sort_slice_ascending<T: IsFloat + PartialOrd>(v: &mut [T]) {

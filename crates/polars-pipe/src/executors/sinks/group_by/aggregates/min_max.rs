@@ -3,12 +3,12 @@ use std::cmp::Ordering;
 
 use arrow::array::PrimitiveArray;
 use arrow::compute::aggregate::SimdOrd;
-use arrow::legacy::kernels::rolling::{compare_fn_nan_max, compare_fn_nan_min};
 use polars_core::datatypes::{AnyValue, DataType};
 use polars_core::export::arrow::types::simd::Simd;
 use polars_core::export::num::NumCast;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::compute::aggregate::{max_primitive, min_primitive};
+use polars_utils::ord::{compare_fn_nan_max, compare_fn_nan_min};
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::*;

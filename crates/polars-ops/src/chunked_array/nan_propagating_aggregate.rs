@@ -10,6 +10,7 @@ use polars_core::frame::group_by::aggregations::{
     _rolling_apply_agg_window_nulls, _slice_from_offsets, _use_rolling_kernels,
 };
 use polars_core::prelude::*;
+use polars_utils::float::IsFloat;
 
 #[inline(always)]
 fn nan_min<T: IsFloat + PartialOrd + Copy>(a: T, b: T) -> T {
