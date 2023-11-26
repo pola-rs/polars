@@ -1404,12 +1404,12 @@ def numpy_to_pydf(
                 if n_schema_cols == shape[0] and n_schema_cols != shape[1]:
                     orient = "col"
                     n_columns = shape[0]
-                elif data.flags["C_CONTIGUOUS"]:
+                elif data.flags["F_CONTIGUOUS"] and shape[0] == shape[1]:
+                    orient = "col"
+                    n_columns = n_schema_cols
+                else:
                     orient = "row"
                     n_columns = shape[1]
-                else:
-                    orient = "col"
-                    n_columns = shape[0]
 
             elif orient == "row":
                 n_columns = shape[1]
