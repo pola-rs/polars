@@ -295,6 +295,16 @@ def test_literal_series_expr_predicate_pushdown() -> None:
     assert lf.collect().to_series().to_list() == [1]
 
 
+def test_multi_alias_pushdown() -> None:
+    lf = pl.LazyFrame({"a": [1], "b": [1]})
+
+    actual = lf.with_columns(m="a", n="b").filter((pl.col("m") + pl.col("n")) < 2)
+
+    plan = actual.explain()
+    assert "FILTER" not in plan
+    assert r'SELECTION: "[([(col(\"a\")) + (col(\"b\"))]) < (2)]' in plan
+
+
 def test_predicate_pushdown_with_window_projections_12637() -> None:
     lf = pl.LazyFrame(
         {
@@ -312,7 +322,9 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
         (pl.col("value") * 2).over("key").alias("value_3"),
     ).filter(pl.col("key") == 5)
 
-    assert r'SELECTION: "[(col(\"key\")) == (5)]"' in actual.explain()
+    plan = actual.explain()
+    assert "FILTER" not in plan
+    assert r'SELECTION: "[(col(\"key\")) == (5)]"' in plan
 
     actual = (
         lf.with_columns(
@@ -323,7 +335,15 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
         .filter(pl.col("key_2") == 5)
     )
 
-    assert "FILTER" not in actual.explain()
+    plan = actual.explain()
+    assert "FILTER" not in plan
+    assert (
+        # hashbrown::HashMap is unordered.
+        r'SELECTION: "[([(col(\"key\")) == (5)]) & ([(col(\"key_2\")) == (5)])]"'
+        in plan
+        or r'SELECTION: "[([(col(\"key_2\")) == (5)]) & ([(col(\"key\")) == (5)])]"'
+        in plan
+    )
 
     actual = (
         lf.with_columns(
@@ -334,8 +354,9 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
         .filter(pl.col("key_2") == 5)
     )
 
-    assert "FILTER" in actual.explain()
-    assert r'SELECTION: "[(col(\"key\")) == (5)]"' in actual.explain()
+    plan = actual.explain()
+    assert "FILTER" in plan
+    assert r'SELECTION: "[(col(\"key\")) == (5)]"' in plan
 
     actual = (
         lf.with_columns(
@@ -345,8 +366,9 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
         .filter(pl.col("key") == 5)
         .filter(pl.col("key_2") == 5)
     )
-    assert "FILTER" in actual.explain()
-    assert r'SELECTION: "[(col(\"key\")) == (5)]"' in actual.explain()
+    plan = actual.explain()
+    assert "FILTER" in plan
+    assert r'SELECTION: "[(col(\"key\")) == (5)]"' in plan
 
     # Should block when .over() contains groups-sensitive expr
     actual = (
@@ -358,5 +380,6 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
         .filter(pl.col("key_2") == 5)
     )
 
-    assert "FILTER" in actual.explain()
-    assert 'SELECTION: "None"' in actual.explain()
+    plan = actual.explain()
+    assert "FILTER" in plan
+    assert 'SELECTION: "None"' in plan
