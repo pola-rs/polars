@@ -13,10 +13,11 @@ pub(crate) use arg_sort_multiple::argsort_multiple_row_fmt;
 use arrow::array::ValueSize;
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
-use arrow::legacy::kernels::rolling::compare_fn_nan_max;
 use arrow::legacy::prelude::FromData;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use num_traits::Float;
+use polars_utils::float::IsFloat;
+use polars_utils::ord::compare_fn_nan_max;
 use rayon::prelude::*;
 pub use slice::*;
 

@@ -27,7 +27,6 @@ use arrow::compute::comparison::Simd8;
 #[cfg(feature = "dtype-categorical")]
 use arrow::datatypes::IntegerType;
 pub use arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
-use arrow::legacy::data_types::IsFloat;
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use bytemuck::Zeroable;
@@ -35,6 +34,7 @@ pub use dtype::*;
 pub use field::*;
 use num_traits::{Bounded, FromPrimitive, Num, NumCast, One, Zero};
 use polars_utils::abs_diff::AbsDiff;
+use polars_utils::float::IsFloat;
 #[cfg(feature = "serde")]
 use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]

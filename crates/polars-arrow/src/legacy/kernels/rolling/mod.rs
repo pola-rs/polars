@@ -8,11 +8,12 @@ use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 use std::sync::Arc;
 
 use num_traits::{Bounded, Float, NumCast, One, Zero};
+use polars_utils::float::IsFloat;
+use polars_utils::ord::{compare_fn_nan_max, compare_fn_nan_min};
 use window::*;
 
 use crate::array::{ArrayRef, PrimitiveArray};
 use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::legacy::data_types::IsFloat;
 use crate::legacy::prelude::*;
 use crate::legacy::utils::CustomIterTools;
 use crate::types::NativeType;
@@ -23,50 +24,6 @@ type Idx = usize;
 type WindowSize = usize;
 type Len = usize;
 pub type DynArgs = Option<Arc<dyn Any + Sync + Send>>;
-
-#[inline]
-/// NaN will be smaller than every valid value
-pub fn compare_fn_nan_min<T>(a: &T, b: &T) -> Ordering
-where
-    T: PartialOrd + IsFloat,
-{
-    // this branch should be optimized away for integers
-    if T::is_float() {
-        match (a.is_nan(), b.is_nan()) {
-            // safety: we checked nans
-            (false, false) => unsafe { a.partial_cmp(b).unwrap_unchecked() },
-            (true, true) => Ordering::Equal,
-            (true, false) => Ordering::Less,
-            (false, true) => Ordering::Greater,
-        }
-    } else {
-        // Safety:
-        // all integers are Ord
-        unsafe { a.partial_cmp(b).unwrap_unchecked() }
-    }
-}
-
-#[inline]
-/// NaN will be larger than every valid value
-pub fn compare_fn_nan_max<T>(a: &T, b: &T) -> Ordering
-where
-    T: PartialOrd + IsFloat,
-{
-    // this branch should be optimized away for integers
-    if T::is_float() {
-        match (a.is_nan(), b.is_nan()) {
-            // safety: we checked nans
-            (false, false) => unsafe { a.partial_cmp(b).unwrap_unchecked() },
-            (true, true) => Ordering::Equal,
-            (true, false) => Ordering::Greater,
-            (false, true) => Ordering::Less,
-        }
-    } else {
-        // Safety:
-        // all integers are Ord
-        unsafe { a.partial_cmp(b).unwrap_unchecked() }
-    }
-}
 
 fn det_offsets(i: Idx, window_size: WindowSize, _len: Len) -> (usize, usize) {
     (i.saturating_sub(window_size - 1), i + 1)

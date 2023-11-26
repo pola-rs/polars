@@ -2,10 +2,11 @@ use std::cmp::Ordering;
 use std::fmt::Debug;
 
 use arrow::array::{Array, BinaryArray, PrimitiveArray};
-use arrow::legacy::kernels::rolling::compare_fn_nan_max;
 use arrow::legacy::prelude::*;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::float::IsFloat;
+use polars_utils::ord::compare_fn_nan_max;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 

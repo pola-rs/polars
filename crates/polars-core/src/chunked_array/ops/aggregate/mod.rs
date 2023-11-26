@@ -6,10 +6,10 @@ use std::cmp::Ordering;
 use std::ops::Add;
 
 use arrow::compute;
-use arrow::legacy::kernels::rolling::{compare_fn_nan_max, compare_fn_nan_min};
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num_traits::{Float, One, ToPrimitive, Zero};
+use polars_utils::ord::{compare_fn_nan_max, compare_fn_nan_min};
 pub use quantile::*;
 pub use var::*;
 

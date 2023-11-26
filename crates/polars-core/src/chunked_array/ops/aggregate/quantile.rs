@@ -1,5 +1,5 @@
-use arrow::legacy::floats::{f32_to_ordablef32, f64_to_ordablef64};
 use arrow::legacy::prelude::QuantileInterpolOptions;
+use polars_utils::float::{f32_to_ordablef32, f64_to_ordablef64};
 use polars_utils::slice::Extrema;
 
 use super::*;

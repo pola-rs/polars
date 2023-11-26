@@ -1,3 +1,5 @@
+use polars_utils::float::IsFloat;
+
 use super::*;
 
 #[inline]
