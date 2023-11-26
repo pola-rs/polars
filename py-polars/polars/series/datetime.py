@@ -90,7 +90,6 @@ class DateTimeNameSpace:
         out = s._s.median()
         if out is not None:
             if s.dtype == Date:
-                # 86_400_000_000 = microseconds in days
                 return _to_python_datetime(int(out * US_IN_DAY), "us")
             elif s.dtype == Datetime:
                 return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
@@ -116,7 +115,6 @@ class DateTimeNameSpace:
         out = s._s.mean()
         if out is not None:
             if s.dtype == Date:
-                # 86_400_000_000 = microseconds in days
                 return _to_python_datetime(int(out * US_IN_DAY), "us")
             elif s.dtype == Datetime:
                 return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
