@@ -343,26 +343,20 @@ pub fn get_column_allowed_checker_and_rename_map(
             .map(|(k, v)| (v.clone(), k.clone()))
             .collect::<PlHashMap<Arc<str>, Arc<str>>>();
 
-        let common_window_inputs = common_window_inputs
-            .into_iter()
-            .flat_map(|key| {
-                let mut out = Vec::<Arc<str>>::with_capacity(2);
-
-                if let Some(aliased) = column_name_to_alias_map.get(&key) {
-                    out.push(aliased.clone())
-                }
-
-                // Ensure predicate does not refer to a different column that
-                // got aliased to the same name as the window column. E.g.:
-                // .with_columns(col(A).alias(C), sum=sum().over(C))
-                // .filter(col(C) == ..)
-                if !pushdown_rename_map.contains_key(&key) {
-                    out.push(key)
-                };
-
-                out
-            })
-            .collect::<PlHashSet<Arc<str>>>();
+        let mut new = PlHashSet::<Arc<str>>::with_capacity(2 * common_window_inputs.len());
+        for key in common_window_inputs.into_iter() {
+            if let Some(aliased) = column_name_to_alias_map.get(&key) {
+                new.insert(aliased.clone());
+            }
+            // Ensure predicate does not refer to a different column that
+            // got aliased to the same name as the window column. E.g.:
+            // .with_columns(col(A).alias(C), sum=sum().over(C))
+            // .filter(col(C) == ..)
+            if !pushdown_rename_map.contains_key(&key) {
+                new.insert(key);
+            }
+        }
+        let common_window_inputs = new;
 
         if common_window_inputs.is_empty() {
             Ok(None)
