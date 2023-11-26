@@ -27,6 +27,7 @@ use num_traits::NumCast;
 use rayon::prelude::*;
 pub use series_trait::{IsSorted, *};
 
+#[cfg(feature = "dtype-datetime")]
 use crate::chunked_array::temporal::conversion::US_IN_DAY;
 use crate::chunked_array::Settings;
 #[cfg(feature = "zip_with")]
