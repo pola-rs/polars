@@ -1673,12 +1673,16 @@ pub struct LazyGroupBy {
     rolling_options: Option<RollingGroupOptions>,
 }
 
-impl LazyGroupBy {
-    /// Get current optimizations.
-    pub fn get_current_optimizations(&self) -> OptState {
-        self.opt_state
+impl From<LazyGroupBy> for LazyFrame {
+    fn from(lgb: LazyGroupBy) -> Self {
+        Self {
+            logical_plan: lgb.logical_plan,
+            opt_state: lgb.opt_state,
+        }
     }
+}
 
+impl LazyGroupBy {
     /// Group by and aggregate.
     ///
     /// Select a column with [col] and choose an aggregation.
