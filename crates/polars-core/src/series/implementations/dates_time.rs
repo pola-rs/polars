@@ -172,8 +172,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn mean(&self) -> Option<f64> {
-                let s = self.0.mean();
-                s
+                self.0.mean()
             }
 
             fn median(&self) -> Option<f64> {
