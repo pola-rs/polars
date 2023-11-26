@@ -249,12 +249,7 @@ pub fn get_column_allowed_checker_and_rename_map(
     input_schema: &Schema,
     projection_nodes: &Vec<Node>,
     expr_arena: &Arena<AExpr>,
-) -> PolarsResult<
-    Option<(
-        Box<dyn Fn(&Arc<str>) -> bool>,
-        PlHashMap<Arc<str>, Arc<str>>,
-    )>,
-> {
+) -> PolarsResult<Option<(Box<dyn Fn(&str) -> bool>, PlHashMap<Arc<str>, Arc<str>>)>> {
     let mut ae_nodes_stack = Vec::<Node>::with_capacity(4);
     let mut pushdown_rename_map =
         optimizer::init_hashmap::<Arc<str>, Arc<str>>(Some(projection_nodes.len()));
