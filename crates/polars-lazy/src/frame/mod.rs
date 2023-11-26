@@ -1674,6 +1674,11 @@ pub struct LazyGroupBy {
 }
 
 impl LazyGroupBy {
+    /// Get current optimizations.
+    pub fn get_current_optimizations(&self) -> OptState {
+        self.opt_state
+    }
+
     /// Group by and aggregate.
     ///
     /// Select a column with [col] and choose an aggregation.
