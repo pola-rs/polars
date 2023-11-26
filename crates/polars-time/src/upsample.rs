@@ -3,7 +3,6 @@ use chrono_tz::Tz;
 use polars_core::prelude::*;
 use polars_core::utils::ensure_sorted_arg;
 use polars_ops::prelude::*;
-use chrono::NaiveDate;
 
 use crate::prelude::*;
 #[cfg(feature = "timezones")]
