@@ -246,7 +246,7 @@ fn get_maybe_aliased_projection_to_input_name_map(
 /// * A mapping from aliased names to the column names in the upper schema.
 #[allow(clippy::type_complexity)]
 pub fn get_column_allowed_checker_and_rename_map(
-    input_schema: Arc<Schema>,
+    input_schema: &Schema,
     projection_nodes: &Vec<Node>,
     expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<

@@ -84,7 +84,7 @@ impl<'a> PredicatePushDown<'a> {
             let input_schema = lp_arena.get(input).schema(lp_arena);
 
             let pushdown_opts = get_column_allowed_checker_and_rename_map(
-                input_schema.into_owned(),
+                input_schema.as_ref(),
                 &exprs,
                 expr_arena,
             )?;
