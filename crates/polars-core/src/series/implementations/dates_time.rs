@@ -359,9 +359,10 @@ macro_rules! impl_dyn_series {
                 self.0.min_as_series().$into_logical()
             }
             fn median_as_series(&self) -> Series {
+                let us = US_IN_DAY as f64;
                 Series::new(
                     self.name(),
-                    &[self.median().map(|v| (v * 86_400_000_000f64) as i64)],
+                    &[self.median().map(|v| (v * us) as i64)],
                 )
             }
             fn var_as_series(&self, _ddof: u8) -> Series {

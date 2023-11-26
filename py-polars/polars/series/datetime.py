@@ -6,6 +6,8 @@ from polars.datatypes import Date, Datetime, Duration
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
 from polars.utils.convert import (
+    SECONDS_PER_DAY,
+    US_PER_SECOND,
     _to_python_datetime,
     _to_python_timedelta,
 )
@@ -17,6 +19,8 @@ if TYPE_CHECKING:
     from polars import Expr, Series
     from polars.polars import PySeries
     from polars.type_aliases import Ambiguous, EpochTimeUnit, TimeUnit
+
+US_IN_DAY = SECONDS_PER_DAY * US_PER_SECOND
 
 
 @expr_dispatch
@@ -87,7 +91,7 @@ class DateTimeNameSpace:
         if out is not None:
             if s.dtype == Date:
                 # 86_400_000_000 = microseconds in days
-                return _to_python_datetime(int(out * 86_400_000_000), "us")
+                return _to_python_datetime(int(out * US_IN_DAY), "us")
             elif s.dtype == Datetime:
                 return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
             elif s.dtype == Duration:
@@ -113,7 +117,7 @@ class DateTimeNameSpace:
         if out is not None:
             if s.dtype == Date:
                 # 86_400_000_000 = microseconds in days
-                return _to_python_datetime(int(out * 86_400_000_000), "us")
+                return _to_python_datetime(int(out * US_IN_DAY), "us")
             elif s.dtype == Datetime:
                 return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
             elif s.dtype == Duration:

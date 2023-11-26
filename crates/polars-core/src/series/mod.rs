@@ -805,12 +805,12 @@ impl Series {
                 let val = &[self.mean()];
                 Series::new(self.name(), val)
             },
-            DataType::Date => Series::new(
-                self.name(),
-                &[self.mean().map(|v| (v * 86_400_000_000f64) as i64)],
-            )
-            .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
-            .unwrap(),
+            DataType::Date => {
+                let us = US_IN_DAY as f64;
+                Series::new(self.name(), &[self.mean().map(|v| (v * us) as i64)])
+                    .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
+                    .unwrap()
+            },
             dt @ (DataType::Datetime(_, _) | DataType::Duration(_)) => {
                 Series::new(self.name(), &[self.mean().map(|v| v as i64)])
                     .cast(dt)
