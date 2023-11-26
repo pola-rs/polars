@@ -6909,7 +6909,7 @@ class Series:
         Check if this Series datatype is numeric.
 
         .. deprecated:: 0.19.13
-            Use `Series.dtype.is_float()` instead.
+            Use `Series.dtype.is_numeric()` instead.
 
         Examples
         --------
