@@ -3,6 +3,7 @@ use chrono_tz::Tz;
 use polars_core::prelude::*;
 use polars_core::utils::ensure_sorted_arg;
 use polars_ops::prelude::*;
+use chrono::NaiveDate;
 
 use crate::prelude::*;
 #[cfg(feature = "timezones")]
@@ -137,14 +138,23 @@ fn upsample_impl(
         upsample_single_impl(source, index_column, every, offset)
     } else {
         let gb = if stable {
-            source.group_by_stable(by)
+            source.group_by_stable(&by)
         } else {
-            source.group_by(by)
+            source.group_by(&by)
         };
         // don't parallelize this, this may SO on large data.
         gb?.apply(|df| {
             let index_column = df.column(index_column)?;
-            upsample_single_impl(&df, index_column, every, offset)
+            let mut upsampled_df = upsample_single_impl(&df, index_column, every, offset)?;
+            for column in &by {
+                 let filled_group = upsampled_df
+                     .column(column)?
+                     .fill_null(FillNullStrategy::Forward(None))?;
+                 upsampled_df.with_column(filled_group)?;
+             }
+            Ok(upsampled_df)
+
+
         })
     }
 }
@@ -205,5 +215,55 @@ fn upsample_single_impl(
         dt => polars_bail!(
             ComputeError: "upsample not allowed for index column of dtype {}", dt,
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+use polars_core::prelude::*;
+use chrono::NaiveDate;
+use crate::prelude::*;
+
+    #[test]
+    fn test_upsample_groupby() {
+        let time = date_range(
+            "time",
+            NaiveDate::from_ymd_opt(2021, 12, 16)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2021, 12, 16)
+                .unwrap()
+                .and_hms_opt(2, 0, 0)
+                .unwrap(),
+            Duration::parse("30m"),
+            ClosedWindow::Both,
+            TimeUnit::Milliseconds,
+            None,
+        ).unwrap();
+        let df = df!(
+            "time" => time,
+            "groups" => &["a", "a", "b", "b", "b"],
+            "values" => &[1.0, 2.0, 3.0, 4.0, 5.0],
+        ).unwrap();
+        let out1 = df
+            .clone()
+            .upsample_stable::<[String; 1]>([String::from("groups")], "time", Duration::parse("15m"), Duration::parse("0")).unwrap();
+        let df = df!(
+            "time" => &[
+            NaiveDate::from_ymd_opt(2021, 12, 16).unwrap().and_hms_opt(0, 0, 0).unwrap(),
+            NaiveDate::from_ymd_opt(2021, 12, 16).unwrap().and_hms_opt(0, 15, 0).unwrap(),
+            NaiveDate::from_ymd_opt(2021, 12, 16).unwrap().and_hms_opt(0, 30, 0).unwrap(),
+            NaiveDate::from_ymd_opt(2021, 12, 16).unwrap().and_hms_opt(1, 0, 0).unwrap(),
+            NaiveDate::from_ymd_opt(2021, 12, 16).unwrap().and_hms_opt(1, 15, 0).unwrap(),
+            NaiveDate::from_ymd_opt(2021, 12, 16).unwrap().and_hms_opt(1, 30, 0).unwrap(),
+            NaiveDate::from_ymd_opt(2021, 12, 16).unwrap().and_hms_opt(1, 45, 0).unwrap(),
+            NaiveDate::from_ymd_opt(2021, 12, 16).unwrap().and_hms_opt(2, 0, 0).unwrap(),
+            ],
+            "groups" => &["a", "a", "a", "b", "b", "b", "b", "b"],
+            "values" => &[Some(1.0), None, Some(2.0), Some(3.0), None, Some(4.0), None, Some(5.0)],
+        ).unwrap();
+        assert_eq!(df, out1)
+
     }
 }
