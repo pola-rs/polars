@@ -38,3 +38,11 @@ def test_view_deprecated() -> None:
         result = s.view()
     assert isinstance(result, np.ndarray)
     assert np.all(result == np.array([1.0, 2.5, 3.0]))
+
+
+def test_numpy_disambiguation() -> None:
+    a = np.array([1, 2])
+    assert pl.DataFrame({"a": a}).with_columns(b=a).to_dict(as_series=False) == {
+        "a": [1, 2],
+        "b": [1, 2],
+    }
