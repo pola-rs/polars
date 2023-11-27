@@ -2,7 +2,7 @@ use std::ops::Add;
 
 use arrow::compute;
 use arrow::types::simd::Simd;
-use num_traits::ToPrimitive;
+use num_traits::{ToPrimitive, Zero};
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_binary;
 
@@ -192,5 +192,10 @@ where
     let sample_std_x = (cxx / sample_n).sqrt();
     let sample_std_y = (cyy / sample_n).sqrt();
 
-    sample_cov / (sample_std_x * sample_std_y)
+    let denom = sample_std_x * sample_std_y;
+    if denom.is_zero() {
+        f64::NAN
+    } else {
+        sample_cov / denom
+    }
 }

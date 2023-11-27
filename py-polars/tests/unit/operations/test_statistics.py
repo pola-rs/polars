@@ -24,6 +24,11 @@ def test_corr() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_corr_nan() -> None:
+    df = pl.DataFrame({"a": [1.0] * 71, "b": [-1.1, 2.2] * 30 + [3.3] * 11})
+    assert str(df.select(pl.corr("a", "b", ddof=1))[0, 0]) == "nan"
+
+
 def test_hist() -> None:
     a = pl.Series("a", [1, 3, 8, 8, 2, 1, 3])
     assert (
