@@ -5,7 +5,7 @@ use std::sync::Arc;
 use arrow::array::*;
 use arrow::datatypes::{ArrowDataType, Field, IntervalUnit, PhysicalType};
 use arrow::types::i256;
-use arrow::with_match_primitive_type;
+use arrow::with_match_primitive_type_full;
 use ethnum::I256;
 use polars_error::{polars_bail, PolarsResult};
 
@@ -159,7 +159,7 @@ fn make_mutable(data_type: &ArrowDataType, capacity: usize) -> PolarsResult<Box<
         PhysicalType::Boolean => {
             Box::new(MutableBooleanArray::with_capacity(capacity)) as Box<dyn MutableArray>
         },
-        PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+        PhysicalType::Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             Box::new(MutablePrimitiveArray::<$T>::with_capacity(capacity).to(data_type.clone()))
                 as Box<dyn MutableArray>
         }),
