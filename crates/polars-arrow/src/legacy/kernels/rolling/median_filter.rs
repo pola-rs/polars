@@ -3,6 +3,7 @@
 // k: size of window
 // alpha: slice of length k
 
+use std::cmp::Ordering;
 use std::fmt::{Debug, Formatter};
 use polars_utils::float::IsFloat;
 use polars_utils::IdxSize;
@@ -16,25 +17,24 @@ fn get_h(k: usize) -> usize {
 struct Block<'a, T: Copy + IsFloat> {
     k: usize,
     tail: usize,
-    m_elemnt: usize,
-    counter: usize,
+    n_element: usize,
     alpha: &'a [T],
-    pi: &'a mut [IdxSize],
-    prev: &'a mut Vec<IdxSize>,
-    next: &'a mut Vec<IdxSize>,
+    pi: &'a mut [u32],
+    prev: &'a mut Vec<u32>,
+    next: &'a mut Vec<u32>,
+    // permutation index in alpha
     m: usize,
+    // index in the list
+    m_index: usize
 
 }
 
 impl<T: Copy + Debug + IsFloat> Debug for Block<'_, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "elements in list: {}", self.n_element)?;
         writeln!(f, "m: {}", self.m)?;
+        writeln!(f, "m_index: {}", self.m_index)?;
         writeln!(f, "median: {:?}", self.alpha[self.m])?;
-        writeln!(f, "elements in list: {}", self.counter)?;
-        // dbg!(&self.prev);
-        // dbg!(&self.next);
-        // dbg!(&self.pi);
-        // dbg!(&self.alpha);
 
         let mut p = self.m as u32;
         loop {
@@ -44,7 +44,7 @@ impl<T: Copy + Debug + IsFloat> Debug for Block<'_, T> {
                 break
             }
         }
-        let mut current = Vec::with_capacity(self.counter);
+        let mut current = Vec::with_capacity(self.n_element);
         let start = p;
         current.push(self.alpha[p as usize]);
 
@@ -57,12 +57,11 @@ impl<T: Copy + Debug + IsFloat> Debug for Block<'_, T> {
         }
 
         write!(f, "current buffer sorted: [")?;
-        let median_point = self.pi[self.pi[self.m] as usize] as usize;
         for (i, v) in current.iter().enumerate() {
-            if i == median_point {
+            if i == self.m_index {
                 write!(f, "[{v:?}], ")?;
             } else {
-                let chars = if i == self.counter - 1 {
+                let chars = if i == self.n_element - 1 {
                     ""
                 } else {
                     ", "
@@ -74,16 +73,20 @@ impl<T: Copy + Debug + IsFloat> Debug for Block<'_, T> {
     }
 }
 
-impl<'a, T: Copy + IsFloat + PartialOrd> Block<'a, T> {
+impl<'a, T: Copy + IsFloat + PartialOrd + Debug> Block<'a, T> {
 
-    fn new(h: usize, alpha: &'a [T],
-           scratch: &'a mut Vec<u8>,
+    fn new(
+        alpha: &'a [T],
+        scratch: &'a mut Vec<u8>,
            prev: &'a mut Vec<u32>,
            next: &'a mut Vec<u32>,
     ) -> Self {
         let k = alpha.len();
         let pi= arg_sort_ascending(alpha, scratch);
-        let m = pi[h] as usize;
+
+        let m_index = k / 2;
+        let m = pi[m_index] as usize;
+
         prev.resize(k + 1, 0 as u32);
         next.resize(k + 1, 0 as u32);
         let mut b = Self {
@@ -92,8 +95,8 @@ impl<'a, T: Copy + IsFloat + PartialOrd> Block<'a, T> {
             prev,
             next,
             m,
-            counter: k,
-            m_elemnt: h,
+            m_index,
+            n_element: k,
             tail: k,
             alpha,
         };
@@ -112,6 +115,8 @@ impl<'a, T: Copy + IsFloat + PartialOrd> Block<'a, T> {
         }
         self.next[p as usize] = self.tail as u32;
         self.prev[self.tail] = p as u32;
+        dbg!(&self.pi);
+        dbg!(&self.prev, &self.next);
     }
 
     fn unwind(&mut self) {
@@ -120,40 +125,52 @@ impl<'a, T: Copy + IsFloat + PartialOrd> Block<'a, T> {
             self.prev[self.next[i] as usize] = self.prev[i];
         }
         self.m = self.tail;
-        self.counter = 0;
+        self.n_element = 0;
     }
 
     fn delete(&mut self, i: usize) {
+        let delete = self.get_pair(i);
+        let current = self.get_pair(self.m);
+        // delete from links
         self.next[self.prev[i] as usize] = self.next[i];
         self.prev[self.next[i] as usize] = self.prev[i];
 
+        self.n_element -= 1;
 
-        if self.m == i {
-            // Make sure that m is still well defined
-            self.m = self.next[self.m] as usize;
-        }
-        if self.counter > 0 {
-            if self.is_small(i) {
-                self.m = self.prev[self.m] as usize;
-            } else {
-                self.m = self.next[self.m] as usize;
+        // median index position
+        let new_index = self.n_element / 2;
+
+        let mut current_index = match dbg!(delete.partial_cmp(&current).unwrap()) {
+            Ordering::Less => {
+                // 1, 2, [3], 4, 5
+                //    2, [3], 4, 5
+                // the del changes index
+                self.m_index - 1
+            },
+            Ordering::Greater => {
+                // 1, 2, [3], 4, 5
+                // 1, 2, [3], 4
+                // index position remains unaffected
+                self.m_index
+            },
+            Ordering::Equal => {
+                // 1, 2, [3], 4, 5
+                // 1, 2, [4], 5
+                // go to next
+                self.m = self.next[self.m as usize] as usize;
+                self.m_index
             }
+        };
 
-            self.counter -= 1;
+        if new_index < current_index {
+            current_index -= 1;
+            self.m = self.prev[self.m as usize] as usize;
         }
-
-        // if self.is_small(i) {
-        //     self.counter -= 1
-        // } else {
-        //     if self.m == i {
-        //         // Make sure that m is still well defined
-        //         self.m = self.next[self.m] as usize;
-        //     }
-        //     if self.counter > 0 {
-        //         self.m = self.prev[self.m] as usize;
-        //         self.counter -= 1;
-        //     }
-        // }
+        if new_index > current_index {
+            current_index += 1;
+            self.m = self.next[self.m as usize] as usize;
+        }
+        self.m_index = current_index;
     }
 
     fn undelete(&mut self, i: usize) {
@@ -167,7 +184,7 @@ impl<'a, T: Copy + IsFloat + PartialOrd> Block<'a, T> {
 
     fn advance(&mut self) {
         self.m = self.next[self.m] as usize;
-        self.counter += 1;
+        self.n_element += 1;
     }
 
     fn at_end(&self) -> bool {
@@ -253,13 +270,15 @@ mod test {
     #[test]
     fn test_block() {
 
-        let values = [2, 4, 5, 9, 1, 2, 4, 9];
+        let values = [2, 8, 5, 9, 1, 3, 4, 10];
         let mut scratch = vec![];
         let mut prev = vec![];
         let mut next = vec![];
-        let mut b = Block::new(3, &values, &mut scratch, &mut prev, &mut next);
+        let mut b = Block::new(&values, &mut scratch, &mut prev, &mut next);
         b.delete(1);
-        // b.delete(2);
+        b.delete(0);
+        b.delete(5);
+        // b.delete(4);
         dbg!(b);
 
     }
