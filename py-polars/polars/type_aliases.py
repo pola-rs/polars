@@ -67,7 +67,7 @@ PythonLiteral: TypeAlias = Union[
     NumericLiteral, TemporalLiteral, str, bool, bytes, List[Any]
 ]
 # Inputs that can convert into a `col` expression
-IntoExprColumn: TypeAlias = Union["Expr", "Series", str]
+IntoExprColumn: TypeAlias = Union["Expr", "Series", str, "np.ndarray"]
 # Inputs that can convert into an expression
 IntoExpr: TypeAlias = Union[PythonLiteral, IntoExprColumn, None]
 

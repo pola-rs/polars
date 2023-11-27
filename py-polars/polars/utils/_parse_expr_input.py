@@ -14,6 +14,9 @@ if TYPE_CHECKING:
     from polars.polars import PyExpr
     from polars.type_aliases import IntoExpr
 
+from polars.dependencies import _check_for_numpy
+from polars.dependencies import numpy as np
+
 
 def parse_as_list_of_expressions(
     *inputs: IntoExpr | Iterable[IntoExpr],
@@ -115,6 +118,9 @@ def parse_as_expression(
         structify = False
     elif isinstance(input, (list, tuple)):
         expr = F.lit(pl.Series("literal", [input]))
+        structify = False
+    elif _check_for_numpy(input) and isinstance(input, np.ndarray):
+        expr = F.lit(pl.Series("literal", input))
         structify = False
     else:
         raise TypeError(
