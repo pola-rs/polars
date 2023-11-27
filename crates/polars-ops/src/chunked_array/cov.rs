@@ -193,9 +193,10 @@ where
     let sample_std_y = (cyy / sample_n).sqrt();
 
     let denom = sample_std_x * sample_std_y;
+    let result = sample_cov / denom;
     if denom.is_zero() {
         f64::NAN
     } else {
-        sample_cov / denom
+        result
     }
 }
