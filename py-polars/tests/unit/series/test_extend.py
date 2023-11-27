@@ -32,3 +32,15 @@ def test_extend_bad_input() -> None:
 
     with pytest.raises(AttributeError):
         a.extend(b)  # type: ignore[arg-type]
+
+
+def test_extend_with_null_series() -> None:
+    a = pl.Series("a", [1, 2], pl.Int64)
+    b = pl.Series("b", [None, None], pl.Null)
+
+    result = a.extend(b)
+
+    expected = pl.Series("a", [1, 2, None, None], pl.Int64)
+    assert_series_equal(a, expected)
+    assert_series_equal(result, expected)
+    assert a.n_chunks() == 1

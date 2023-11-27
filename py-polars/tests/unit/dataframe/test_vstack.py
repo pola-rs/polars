@@ -58,3 +58,16 @@ def test_vstack_column_name_mismatch(df1: pl.DataFrame) -> None:
 
     with pytest.raises(pl.ShapeError):
         df1.vstack(df2)
+
+
+def test_vstack_with_null_column() -> None:
+    df1 = pl.DataFrame({"x": [3.5]}, schema={"x": pl.Float64})
+    df2 = pl.DataFrame({"x": [None]}, schema={"x": pl.Null})
+
+    result = df1.vstack(df2)
+    expected = pl.DataFrame({"x": [3.5, None]}, schema={"x": pl.Float64})
+
+    assert_frame_equal(result, expected)
+
+    with pytest.raises(pl.ShapeError):
+        df2.vstack(df1)
