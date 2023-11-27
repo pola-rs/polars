@@ -164,7 +164,7 @@ pub fn infer_file_schema_inner(
     };
     let mut lines = SplitLines::new(bytes, quote_char.unwrap_or(b'"'), eol_char).skip(*skip_rows);
     // it can be that we have a single line without eol char
-    let has_eol = bytes.contains(&eol_char);
+    // let has_eol = bytes.contains(&eol_char);
 
     // get or create header names
     // when has_header is false, creates default column names with column_ prefix
@@ -185,9 +185,9 @@ pub fn infer_file_schema_inner(
     }
 
     // edge case where we have a single row, no header and no eol char.
-    if first_line.is_none() && !has_eol && !has_header {
-        first_line = Some(bytes);
-    }
+    // if first_line.is_none() && !has_eol && !has_header {
+    //     first_line = Some(bytes);
+    // }
 
     // now that we've found the first non-comment line we parse the headers, or we create a header
     let headers: Vec<String> = if let Some(mut header_line) = first_line {
