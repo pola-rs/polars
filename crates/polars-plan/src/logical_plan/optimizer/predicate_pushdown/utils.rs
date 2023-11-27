@@ -253,7 +253,7 @@ fn get_maybe_aliased_projection_to_input_name_map(
 pub enum PushdownEligibility {
     Full,
     // Partial can happen when there are window exprs.
-    Partial(Vec<Arc<str>>),
+    Partial { to_local: Vec<Arc<str>> },
     NoPushdown,
 }
 
@@ -473,7 +473,7 @@ pub fn pushdown_eligibility(
         len if len == acc_predicates.len() => {
             Ok((PushdownEligibility::NoPushdown, alias_to_col_map))
         },
-        _ => Ok((PushdownEligibility::Partial(to_local), alias_to_col_map)),
+        _ => Ok((PushdownEligibility::Partial { to_local }, alias_to_col_map)),
     }
 }
 

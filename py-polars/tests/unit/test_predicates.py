@@ -384,9 +384,8 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     assert "FILTER" in plan
     assert 'SELECTION: "None"' in plan
 
-    # The window input names are extracted from window expressions to allow
-    # predicates to be pushed down if they only refer to the window inputs, but
-    # the must also not be window expressions themselves.
+    # Ensure the implementation doesn't accidentally push a window expression
+    # that only refers to the common window keys.
     actual = lf.with_columns(
         (pl.col("value") * 2).over("key").alias("value_2"),
     ).filter(pl.count().over("key") == 1)

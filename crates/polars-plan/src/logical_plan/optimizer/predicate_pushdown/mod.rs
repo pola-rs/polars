@@ -88,7 +88,7 @@ impl<'a> PredicatePushDown<'a> {
 
             let local_predicates = match eligibility {
                 PushdownEligibility::Full => vec![],
-                PushdownEligibility::Partial(to_local) => {
+                PushdownEligibility::Partial { to_local } => {
                     let mut out = Vec::<Node>::with_capacity(to_local.len());
                     for key in to_local {
                         out.push(acc_predicates.remove(&key).unwrap());
@@ -242,7 +242,7 @@ impl<'a> PredicatePushDown<'a> {
 
                 let local_predicates = match pushdown_eligibility(lp.schema(lp_arena).as_ref(), &vec![], &acc_predicates, expr_arena)?.0 {
                     PushdownEligibility::Full => vec![],
-                    PushdownEligibility::Partial(to_local) => {
+                    PushdownEligibility::Partial { to_local } => {
                         let mut out = Vec::<Node>::with_capacity(to_local.len());
                         for key in to_local {
                             out.push(acc_predicates.remove(&key).unwrap());
