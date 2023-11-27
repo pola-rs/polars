@@ -3469,11 +3469,18 @@ class DataFrame:
             return schema, tbl
 
         if engine == "adbc":
-            import adbc_driver_manager
+            try:
+                import adbc_driver_manager
 
-            adbc_version = parse_version(
-                getattr(adbc_driver_manager, "__version__", "0.0")
-            )
+                adbc_version = parse_version(
+                    getattr(adbc_driver_manager, "__version__", "0.0")
+                )
+            except ModuleNotFoundError as exc:
+                raise ModuleNotFoundError(
+                    "adbc_driver_manager not found"
+                    "\n\nInstall Polars with: pip install adbc_driver_manager"
+                ) from exc
+
             if if_exists == "fail":
                 # if the table exists, 'create' will raise an error,
                 # resulting in behaviour equivalent to 'fail'

@@ -4,7 +4,6 @@ import sys
 from typing import TYPE_CHECKING
 
 import pytest
-from adbc_driver_manager import InternalError
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -58,6 +57,8 @@ def test_write_database_create(engine: DbWriteEngine, tmp_path: Path) -> None:
 @pytest.mark.write_disk()
 @pytest.mark.parametrize("engine", ["adbc", "sqlalchemy"])
 def test_write_database_append_replace(engine: DbWriteEngine, tmp_path: Path) -> None:
+    from adbc_driver_manager import InternalError
+
     df = pl.DataFrame(
         {
             "key": ["xx", "yy", "zz"],
