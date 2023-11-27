@@ -26,6 +26,7 @@ use polars_io::{
     csv::CommentPrefix,
     csv::CsvEncoding,
     csv::NullValues,
+    mmap::ReaderFactory,
     utils::get_reader_bytes,
 };
 
@@ -119,7 +120,7 @@ impl LogicalPlanBuilder {
         };
 
         Ok(LogicalPlan::Scan {
-            paths: Arc::new([]),
+            reader_factories: Arc::new([]),
             file_info,
             predicate: None,
             file_options,
@@ -212,7 +213,7 @@ impl LogicalPlanBuilder {
             hive_partitioning,
         };
         Ok(LogicalPlan::Scan {
-            paths,
+            reader_factories,
             file_info,
             file_options: options,
             predicate: None,
@@ -264,7 +265,7 @@ impl LogicalPlanBuilder {
             hive_partitioning: false,
         };
         Ok(LogicalPlan::Scan {
-            paths: Arc::new([path]),
+            reader_factories: Arc::new([ReaderFactory::LocalFile {path}]),
             file_info,
             file_options,
             predicate: None,
@@ -275,8 +276,8 @@ impl LogicalPlanBuilder {
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv")]
-    pub fn scan_csv<P: Into<std::path::PathBuf>>(
-        path: P,
+    pub fn scan_csv(
+        reader_factory: ReaderFactory,
         separator: u8,
         has_header: bool,
         ignore_errors: bool,
@@ -299,13 +300,10 @@ impl LogicalPlanBuilder {
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
     ) -> PolarsResult<Self> {
-        let path = path.into();
-        let mut file = polars_utils::open_file(&path)?;
-
-        let paths = Arc::new([path]);
-
+        let mut reader = reader_factory.mmapbytesreader()?;
+        let paths = Arc::new([reader_factory]);
         let mut magic_nr = [0u8; 2];
-        let res = file.read_exact(&mut magic_nr);
+        let res = reader.read_exact(&mut magic_nr);
         if raise_if_empty {
             res.map_err(|_| polars_err!(NoData: "empty CSV"))?;
         };
@@ -313,8 +311,8 @@ impl LogicalPlanBuilder {
             !is_compressed(&magic_nr),
             ComputeError: "cannot scan compressed csv; use `read_csv` for compressed data",
         );
-        file.rewind()?;
-        let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
+        reader.rewind()?;
+        let reader_bytes = get_reader_bytes(&mut reader).expect("could not mmap file");
 
         // TODO! delay inferring schema until absolutely necessary
         // this needs a way to estimated bytes/rows.
@@ -367,7 +365,7 @@ impl LogicalPlanBuilder {
             hive_partitioning: false,
         };
         Ok(LogicalPlan::Scan {
-            paths,
+            reader_factories: paths,
             file_info,
             file_options: options,
             predicate: None,

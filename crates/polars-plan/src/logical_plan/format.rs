@@ -101,7 +101,7 @@ impl LogicalPlan {
                 input._format(f, sub_indent)
             },
             Scan {
-                paths,
+                reader_factories: paths,
                 file_info,
                 predicate,
                 scan_type,

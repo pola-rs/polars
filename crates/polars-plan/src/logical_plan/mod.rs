@@ -1,10 +1,10 @@
 use std::fmt::Debug;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use polars_core::prelude::*;
 #[cfg(any(feature = "cloud", feature = "parquet"))]
 use polars_io::cloud::CloudOptions;
+use polars_io::mmap::ReaderFactory;
 
 use crate::logical_plan::LogicalPlan::DataFrameScan;
 use crate::prelude::*;
@@ -162,7 +162,7 @@ pub enum LogicalPlan {
         count: usize,
     },
     Scan {
-        paths: Arc<[PathBuf]>,
+        reader_factories: Arc<[ReaderFactory]>,
         file_info: FileInfo,
         predicate: Option<Expr>,
         file_options: FileScanOptions,

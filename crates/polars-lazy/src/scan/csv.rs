@@ -8,7 +8,7 @@ use polars_io::RowCount;
 
 use crate::frame::LazyFileListReader;
 use crate::prelude::*;
-use crate::scan::ReaderOrSources;
+use crate::scan::{ReaderOrSources, Reader};
 
 #[derive(Clone)]
 #[cfg(feature = "csv")]
@@ -228,20 +228,12 @@ impl<'a> LazyCsvReader<'a> {
     /// Modify a schema before we run the lazy scanning.
     ///
     /// Important! Run this function latest in the builder!
-    pub fn with_schema_modify<F>(self, f: F) -> PolarsResult<Self>
+    pub fn with_schema_modify<F>(mut self, f: F) -> PolarsResult<Self>
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
-        let mut file = if let Some(mut paths) = self.iter_readers()? {
-            let path = match paths.next() {
-                Some(globresult) => globresult?,
-                None => polars_bail!(ComputeError: "globbing pattern did not match any files"),
-            };
-            polars_utils::open_file(path)
-        } else {
-            polars_utils::open_file(&self.path)
-        }?;
-        let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
+        let mut mmap_bytes_reader = self.reader().mmapbytesreader();
+        let reader_bytes = get_reader_bytes(mmap_bytes_reader).expect("could not mmap file");
         let mut skip_rows = self.skip_rows;
 
         let (schema, _, _) = infer_file_schema(
@@ -276,7 +268,7 @@ impl<'a> LazyCsvReader<'a> {
 impl LazyFileListReader for LazyCsvReader<'_> {
     fn finish_no_glob(self, reader: Reader) -> PolarsResult<LazyFrame> {
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_csv(
-            reader,
+            reader.mmapbytesreader(),
             self.separator,
             self.has_header,
             self.ignore_errors,
@@ -305,21 +297,29 @@ impl LazyFileListReader for LazyCsvReader<'_> {
         Ok(lf)
     }
 
-    fn path(&self) -> &Path {
-        &self.path
+    fn reader(&mut self) -> &mut Reader {
+        if let ReaderOrSources::Reader{mut reader} = self.reader_or_sources {
+            &mut *reader
+        } else {
+            panic!("Attempted to get reader when in wrong state");
+        }
     }
 
-    fn paths(&self) -> &[PathBuf] {
-        &self.paths
+    fn sources(&self) -> &ReaderSources {
+        if let ReaderOrSources::Sources{sources} = self.reader_or_sources {
+            &*sources
+        } else {
+            panic!("Attempted to get sources when in wrong state");
+        }
     }
 
-    fn with_path(mut self, path: PathBuf) -> Self {
-        self.path = path;
+    fn with_reader(mut self, reader: Arc<Reader>) -> Self {
+        self.reader_or_sources = ReaderOrSources::Reader { reader };
         self
     }
 
-    fn with_paths(mut self, paths: Arc<[PathBuf]>) -> Self {
-        self.paths = paths;
+    fn with_sources(mut self, sources: Arc<ReaderSources>) -> Self {
+        self.reader_or_sources = ReaderOrSources::Sources { sources };
         self
     }
 

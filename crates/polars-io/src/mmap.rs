@@ -1,5 +1,12 @@
+use std::fmt::Display;
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek};
+use std::path::PathBuf;
+
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
+use polars_error::PolarsResult;
 
 /// Trait used to get a hold to file handler or to the underlying bytes
 /// without performing a Read.
@@ -81,6 +88,42 @@ impl<'a, T: 'a + MmapBytesReader> From<&'a T> for ReaderBytes<'a> {
                 let mmap = unsafe { memmap::Mmap::map(f).unwrap() };
                 ReaderBytes::Mapped(mmap, f)
             },
+        }
+    }
+}
+
+/// Create MmapBytesReaders for a specific "file", either locally or remotely.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum ReaderFactory {
+    /// A specific local file on the filesystem:
+    LocalFile {
+        path: PathBuf,
+    },
+    /// A cloud URL of a remote file, to be used with async APIs
+    RemoteFile {
+        location: String,
+    },
+    // /// A wrapper around a Python callable that returns a file-like object.
+    // PyFileFactory { factory: PythonFunction }
+}
+
+impl Display for ReaderFactory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReaderFactory::LocalFile { path, .. } => write!(f, "{}", path.to_string_lossy()),
+            ReaderFactory::RemoteFile { location } => write!(f, "{location}"),
+        }
+    }
+}
+
+impl ReaderFactory {
+    pub fn mmapbytesreader(&self) -> PolarsResult<Box<dyn MmapBytesReader>> {
+        match self {
+            ReaderFactory::LocalFile { path, .. } => {
+                let file = polars_utils::open_file(path)?;
+                Ok(Box::new(file))
+            },
+            ReaderFactory::RemoteFile { .. } => todo!("Still haven't figured out how async works"),
         }
     }
 }

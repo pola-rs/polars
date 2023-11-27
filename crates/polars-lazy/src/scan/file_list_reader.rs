@@ -10,26 +10,6 @@ use polars_io::{is_cloud_url, RowCount};
 
 use crate::prelude::*;
 
-/// Read a specific file, either locally or remotely.
-enum Reader {
-    Local {
-        path: PathBuf,
-        reader: Box<dyn MmapBytesReader>,
-    },
-    Remote {
-        location: String,
-    },
-}
-
-impl Display for Reader {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Reader::Local { path, .. } => write!(f, "{}", path.to_string_lossy()),
-            Reader::Remote { location } => write!(f, "{location}"),
-        }
-    }
-}
-
 pub type ReaderIterator = Box<dyn Iterator<Item = PolarsResult<Reader>>>;
 
 // cloud_options is used only with async feature
@@ -144,14 +124,14 @@ impl ReaderSources {
         // }
     }
 }
-/// A LazyFileListReader can be in one of two states: either it has a FileList
-/// it needs to iterate over, or it has a single, specific MmapBytesReader. In
-/// practice this is a bad design and there should really be separate structs
-/// for the two states, a builder and a final state, but that's a bit of a
-/// refactoring.
+/// A LazyFileListReader can be in one of two states: either it has a set of
+/// sources (a filesystem glob, or a list of file paths it needs to iterate
+/// over), or it has a single, specific Reader. This isn't a great design and
+/// there should really be separate structs for the two states, e.g. a builder
+/// and a final state.
 #[derive(Clone)]
 pub(crate) enum ReaderOrSources {
-    Reader { reader: Arc<Box<dyn MmapBytesReader>> },
+    Reader { reader: Arc<Reader> },
     Sources { sources: Arc<ReaderSources> },
 }
 
@@ -208,15 +188,15 @@ pub trait LazyFileListReader: Clone {
     fn finish_no_glob(self, reader: Reader) -> PolarsResult<LazyFrame>;
 
     /// Reader of the scanned file.
-    fn reader(&self) -> &Reader;
+    fn reader(&mut self) -> &mut Reader;
 
     /// A source of multiple readers.
     fn sources(&self) -> &ReaderSources;
 
-    /// Set path of the scanned file.
-    /// Support glob patterns.
+    /// Set the reader for a _specific_ file (local or remote), e.g. it's not a
+    /// glob.
     #[must_use]
-    fn with_reader(self, reader: Reader) -> Self;
+    fn with_reader(self, reader: Arc<Reader>) -> Self;
 
     /// Set sources of the scanned files.
     #[must_use]

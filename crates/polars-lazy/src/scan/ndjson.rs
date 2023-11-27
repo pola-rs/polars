@@ -81,7 +81,7 @@ impl LazyJsonLineReader {
 }
 
 impl LazyFileListReader for LazyJsonLineReader {
-    fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
+    fn finish_no_glob(self, path: &Path) -> PolarsResult<LazyFrame> {
         let options = ScanArgsAnonymous {
             name: "JSON SCAN",
             infer_schema_length: self.infer_schema_length,
