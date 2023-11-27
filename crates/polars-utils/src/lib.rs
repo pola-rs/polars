@@ -36,5 +36,6 @@ pub mod float;
 pub mod index;
 pub mod io;
 pub mod ord;
+mod doubly_linked_list;
 
 pub use io::open_file;

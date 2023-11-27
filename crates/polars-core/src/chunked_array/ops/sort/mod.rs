@@ -3,7 +3,6 @@ mod arg_sort;
 pub mod arg_sort_multiple;
 #[cfg(feature = "dtype-categorical")]
 mod categorical;
-mod slice;
 
 use std::cmp::Ordering;
 use std::hint::unreachable_unchecked;
