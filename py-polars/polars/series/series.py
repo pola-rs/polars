@@ -101,6 +101,7 @@ from polars.utils.various import (
     range_to_slice,
     scale_bytes,
     sphinx_accessor,
+    _warn_null_comparison
 )
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -559,6 +560,7 @@ class Series:
         ...
 
     def __eq__(self, other: Any) -> Series | Expr:
+        _warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__eq__(other)
         return self._comp(other, "eq")
@@ -572,6 +574,7 @@ class Series:
         ...
 
     def __ne__(self, other: Any) -> Series | Expr:
+        _warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__ne__(other)
         return self._comp(other, "neq")
@@ -585,6 +588,7 @@ class Series:
         ...
 
     def __gt__(self, other: Any) -> Series | Expr:
+        _warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__gt__(other)
         return self._comp(other, "gt")
@@ -598,6 +602,7 @@ class Series:
         ...
 
     def __lt__(self, other: Any) -> Series | Expr:
+        _warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__lt__(other)
         return self._comp(other, "lt")
@@ -611,6 +616,7 @@ class Series:
         ...
 
     def __ge__(self, other: Any) -> Series | Expr:
+        _warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__ge__(other)
         return self._comp(other, "gt_eq")
@@ -624,6 +630,7 @@ class Series:
         ...
 
     def __le__(self, other: Any) -> Series | Expr:
+        _warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__le__(other)
         return self._comp(other, "lt_eq")

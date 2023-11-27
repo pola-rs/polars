@@ -58,7 +58,7 @@ from polars.utils.deprecation import (
     warn_closed_future_change,
 )
 from polars.utils.meta import threadpool_size
-from polars.utils.various import no_default, sphinx_accessor
+from polars.utils.various import no_default, sphinx_accessor, _warn_null_comparison
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
@@ -159,6 +159,7 @@ class Expr:
         return self._from_pyexpr(self._to_pyexpr(other)._and(self._pyexpr))
 
     def __eq__(self, other: Any) -> Self:  # type: ignore[override]
+        _warn_null_comparison(other)
         return self._from_pyexpr(self._pyexpr.eq(self._to_pyexpr(other)))
 
     def __floordiv__(self, other: Any) -> Self:
@@ -168,18 +169,22 @@ class Expr:
         return self._from_pyexpr(self._to_pyexpr(other) // self._pyexpr)
 
     def __ge__(self, other: Any) -> Self:
+        _warn_null_comparison(other)
         return self._from_pyexpr(self._pyexpr.gt_eq(self._to_pyexpr(other)))
 
     def __gt__(self, other: Any) -> Self:
+        _warn_null_comparison(other)
         return self._from_pyexpr(self._pyexpr.gt(self._to_pyexpr(other)))
 
     def __invert__(self) -> Self:
         return self.not_()
 
     def __le__(self, other: Any) -> Self:
+        _warn_null_comparison(other)
         return self._from_pyexpr(self._pyexpr.lt_eq(self._to_pyexpr(other)))
 
     def __lt__(self, other: Any) -> Self:
+        _warn_null_comparison(other)
         return self._from_pyexpr(self._pyexpr.lt(self._to_pyexpr(other)))
 
     def __mod__(self, other: Any) -> Self:
@@ -195,6 +200,7 @@ class Expr:
         return self._from_pyexpr(self._to_pyexpr(other) * self._pyexpr)
 
     def __ne__(self, other: Any) -> Self:  # type: ignore[override]
+        _warn_null_comparison(other)
         return self._from_pyexpr(self._pyexpr.neq(self._to_pyexpr(other)))
 
     def __neg__(self) -> Expr:
