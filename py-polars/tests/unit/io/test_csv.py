@@ -1628,6 +1628,21 @@ def test_csv_ragged_lines() -> None:
             pl.read_csv(io.StringIO(s), has_header=False, truncate_ragged_lines=False)
 
 
+def test_csv_missing_last_eol_char() -> None:
+    csv = io.StringIO(
+        # fmt: off
+        "a b\n"
+        "1 1\n"
+        "2 2.1"
+        # fmt: on
+    )
+    expected = pl.DataFrame({
+        "a": pl.Series([1, 2], dtype=pl.Int64),
+        "b": pl.Series([1, 2.1], dtype=pl.Float64),
+    })
+    assert_frame_equal(pl.read_csv(csv), expected)
+
+
 def test_provide_schema() -> None:
     # can be used to overload schema with ragged csv files
     assert pl.read_csv(

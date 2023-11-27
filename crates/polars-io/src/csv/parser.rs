@@ -279,10 +279,12 @@ impl<'a> Iterator for SplitLines<'a> {
         let mut in_field = false;
         let mut pos = 0u32;
         let mut iter = self.v.iter();
+        let mut has_incr = false;
         loop {
             match iter.next() {
                 Some(&c) => {
                     pos += 1;
+                    has_incr = true;
 
                     if c == self.quote_char {
                         // toggle between string field enclosure
@@ -296,6 +298,10 @@ impl<'a> Iterator for SplitLines<'a> {
                     }
                 },
                 None => {
+                    if has_incr {
+                        // we've hit EOF without an end_line_char
+                        break;
+                    }
                     // no new line found we are done
                     // the rest will be done by last line specific code.
                     return None;
