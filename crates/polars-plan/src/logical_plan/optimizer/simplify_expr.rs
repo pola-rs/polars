@@ -434,6 +434,7 @@ impl OptimizationRule for SimplifyExprRule {
                 let right_aexpr = expr_arena.get(*right);
 
                 // lit(left) + lit(right) => lit(left + right)
+                use Operator::*;
                 #[allow(clippy::manual_map)]
                 let out = match op {
                     Plus => {
@@ -524,51 +525,7 @@ impl OptimizationRule for SimplifyExprRule {
                     return Ok(out);
                 }
 
-                // Null propagation.
-                let left_is_null = matches!(left_aexpr, AExpr::Literal(LiteralValue::Null));
-                let right_is_null = matches!(right_aexpr, AExpr::Literal(LiteralValue::Null));
-                use Operator::*;
-                match (left_is_null, op, right_is_null) {
-                    // all null operation null -> null
-                    (true, _, true) => Some(AExpr::Literal(LiteralValue::Null)),
-                    // null == column -> column.is_null()
-                    (true, Eq, false) => Some(AExpr::Function {
-                        input: vec![*right],
-                        function: BooleanFunction::IsNull.into(),
-                        options: FunctionOptions {
-                            collect_groups: ApplyOptions::GroupWise,
-                            ..Default::default()
-                        },
-                    }),
-                    // column == null -> column.is_null()
-                    (false, Eq, true) => Some(AExpr::Function {
-                        input: vec![*left],
-                        function: BooleanFunction::IsNull.into(),
-                        options: FunctionOptions {
-                            collect_groups: ApplyOptions::GroupWise,
-                            ..Default::default()
-                        },
-                    }),
-                    // null != column -> column.is_not_null()
-                    (true, NotEq, false) => Some(AExpr::Function {
-                        input: vec![*right],
-                        function: BooleanFunction::IsNotNull.into(),
-                        options: FunctionOptions {
-                            collect_groups: ApplyOptions::GroupWise,
-                            ..Default::default()
-                        },
-                    }),
-                    // column != null -> column.is_not_null()
-                    (false, NotEq, true) => Some(AExpr::Function {
-                        input: vec![*left],
-                        function: BooleanFunction::IsNotNull.into(),
-                        options: FunctionOptions {
-                            collect_groups: ApplyOptions::GroupWise,
-                            ..Default::default()
-                        },
-                    }),
-                    _ => None,
-                }
+                None
             },
             // sort().reverse() -> sort(reverse)
             // sort_by().reverse() -> sort_by(reverse)

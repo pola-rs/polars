@@ -530,7 +530,7 @@ impl TotalEq for f16 {
 }
 
 impl TotalOrd for f16 {
-    fn tot_cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn tot_cmp(&self, _other: &Self) -> std::cmp::Ordering {
         unimplemented!()
     }
 }
