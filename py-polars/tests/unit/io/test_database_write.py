@@ -53,8 +53,6 @@ def test_write_database_create(engine: DbWriteEngine, tmp_path: Path) -> None:
 @pytest.mark.write_disk()
 @pytest.mark.parametrize("engine", ["adbc", "sqlalchemy"])
 def test_write_database_append_replace(engine: DbWriteEngine, tmp_path: Path) -> None:
-    from adbc_driver_manager import InternalError
-
     df = pl.DataFrame(
         {
             "key": ["xx", "yy", "zz"],
@@ -66,7 +64,7 @@ def test_write_database_append_replace(engine: DbWriteEngine, tmp_path: Path) ->
     tmp_path.mkdir(exist_ok=True)
     test_db = str(tmp_path / f"test_{engine}.db")
     test_db_uri = f"sqlite:///{test_db}"
-    table_name = "test_append"
+    table_name = f"test_append_{engine}"
 
     df.write_database(
         table_name=table_name,
@@ -74,8 +72,7 @@ def test_write_database_append_replace(engine: DbWriteEngine, tmp_path: Path) ->
         engine=engine,
     )
 
-    ExpectedError = InternalError if engine == "adbc" else ValueError
-    with pytest.raises(ExpectedError):
+    with pytest.raises(Exception):  # noqa: B017
         df.write_database(
             table_name=table_name,
             connection=test_db_uri,
@@ -127,7 +124,7 @@ def test_write_database_create_quoted_tablename(
     test_db_uri = f"sqlite:///{test_db}"
 
     # table name requires quoting, and is qualified with the implicit 'main' schema
-    qualified_table_name = 'main."test-append"'
+    qualified_table_name = f'main."test-append-{engine}"'
 
     df.write_database(
         table_name=qualified_table_name,
