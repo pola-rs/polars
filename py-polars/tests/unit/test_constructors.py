@@ -563,6 +563,14 @@ def test_init_ndarray() -> None:
     df = pl.DataFrame([np.array(test_rows[0]), np.array(test_rows[1])], orient="row")
     assert_frame_equal(df, pl.DataFrame(test_rows, orient="row"))
 
+    # round trip export/init
+    for shape in ((4, 4), (4, 8), (8, 4)):
+        np_ones = np.ones(shape=shape, dtype=np.float64)
+        names = [f"c{i}" for i in range(shape[1])]
+
+        df = pl.DataFrame(np_ones, schema=names)
+        assert_frame_equal(df, pl.DataFrame(np.asarray(df), schema=names))
+
 
 def test_init_ndarray_errors() -> None:
     # 2D array: orientation conflicts with columns
