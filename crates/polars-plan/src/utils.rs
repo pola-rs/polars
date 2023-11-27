@@ -269,27 +269,6 @@ pub(crate) fn aexpr_to_column_nodes(root: Node, arena: &Arena<AExpr>) -> Vec<Nod
     aexpr_to_column_nodes_iter(root, arena).collect()
 }
 
-/// Rename the roots of the expression to a single name.
-/// Most of the times used with columns that have a single root.
-/// In some cases we can have multiple roots.
-/// For instance in predicate pushdown the predicates are combined by their root column
-/// When combined they may be a binary expression with the same root columns
-pub(crate) fn rename_aexpr_leaf_names(
-    node: Node,
-    arena: &mut Arena<AExpr>,
-    new_name: Arc<str>,
-) -> Node {
-    // we convert to expression as we cannot easily copy the aexpr.
-    let mut new_expr = node_to_expr(node, arena);
-    new_expr.mutate().apply(|e| {
-        if let Expr::Column(name) = e {
-            *name = new_name.clone()
-        }
-        true
-    });
-    to_aexpr(new_expr, arena)
-}
-
 /// If the leaf names match `current`, the node will be replaced
 /// with a renamed expression.
 pub(crate) fn rename_matching_aexpr_leaf_names(
