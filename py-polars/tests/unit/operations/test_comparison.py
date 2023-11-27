@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 
 import pytest
 
@@ -218,6 +219,9 @@ def test_total_ordering_float_series(lhs: float | None, rhs: float | None) -> No
 def test_total_ordering_float_series_broadcast(
     lhs: float | None, rhs: float | None
 ) -> None:
+    # We do want to test None comparisons.
+    warnings.filterwarnings("ignore", category=UserWarning)
+
     ref = reference_ordering_propagating(lhs, rhs)
 
     # Add dummy variable so we don't broadcast inherently.
@@ -253,6 +257,85 @@ def test_total_ordering_float_series_broadcast(
             "ge": [ref and (ref == ">" or ref == "=")] * 2,
         },
         schema={c: pl.Boolean for c in ["eq", "ne", "lt", "le", "gt", "ge"]},
+    )
+
+    assert_frame_equal(ans_first, ans_correct)
+    assert_frame_equal(ans_scalar, ans_correct)
+
+
+def reference_ordering_missing(lhs: float | None, rhs: float | None) -> str:
+    if lhs is None and rhs is None:
+        return "="
+
+    if lhs is None:
+        return "<"
+
+    if rhs is None:
+        return ">"
+
+    if math.isnan(lhs) and math.isnan(rhs):
+        return "="
+
+    if math.isnan(lhs) or lhs > rhs:
+        return ">"
+
+    if math.isnan(rhs) or lhs < rhs:
+        return "<"
+
+    return "="
+
+
+@pytest.mark.parametrize("lhs", INTERESTING_FLOAT_VALUES)
+@pytest.mark.parametrize("rhs", INTERESTING_FLOAT_VALUES)
+def test_total_ordering_float_series_missing(lhs: float | None, rhs: float | None) -> None:
+    ref = reference_ordering_missing(lhs, rhs)
+
+    # Add dummy variable so we don't broadcast or do full-null optimization.
+    df = pl.DataFrame(
+        {"l": [lhs, 0.0], "r": [rhs, 0.0]}, schema={"l": pl.Float64, "r": pl.Float64}
+    )
+
+    assert_frame_equal(
+        df.select(
+            pl.col("l").eq_missing(pl.col("r")).alias("eq"),
+            pl.col("l").ne_missing(pl.col("r")).alias("ne"),
+        ),
+        pl.DataFrame(
+            {
+                "eq": [ref == "=", True],
+                "ne": [ref != "=", False],
+            }
+        ),
+    )
+
+@pytest.mark.parametrize("lhs", INTERESTING_FLOAT_VALUES)
+@pytest.mark.parametrize("rhs", INTERESTING_FLOAT_VALUES)
+def test_total_ordering_float_series_missing_broadcast(
+    lhs: float | None, rhs: float | None
+) -> None:
+    ref = reference_ordering_missing(lhs, rhs)
+
+    # Add dummy variable so we don't broadcast inherently.
+    df = pl.DataFrame(
+        {"l": [lhs, lhs], "r": [rhs, rhs]}, schema={"l": pl.Float64, "r": pl.Float64}
+    )
+
+    ans_first = df.select(
+        pl.col("l").eq_missing(pl.col("r").first()).alias("eq"),
+        pl.col("l").ne_missing(pl.col("r").first()).alias("ne"),
+    )
+
+    ans_scalar = df.select(
+        pl.col("l").eq_missing(rhs).alias("eq"),
+        pl.col("l").ne_missing(rhs).alias("ne"),
+    )
+
+    ans_correct = pl.DataFrame(
+        {
+            "eq": [ref == "="] * 2,
+            "ne": [ref != "="] * 2,
+        },
+        schema={c: pl.Boolean for c in ["eq", "ne"]},
     )
 
     assert_frame_equal(ans_first, ans_correct)
