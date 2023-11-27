@@ -25,7 +25,7 @@ def test_corr() -> None:
 
 
 def test_corr_nan() -> None:
-    df = pl.DataFrame({"a": [1.0] * 71, "b": [-1.1, 2.2] * 30 + [3.3] * 11})
+    df = pl.DataFrame({"a": [1.0, 1.0], "b": [1.0, 2.0]})
     assert str(df.select(pl.corr("a", "b", ddof=1))[0, 0]) == "nan"
 
 
