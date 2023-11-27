@@ -298,7 +298,7 @@ impl<'a> Iterator for SplitLines<'a> {
                     }
                 },
                 None => {
-                    if chars_read {
+                    if chars_read && !in_field {
                         // we've hit EOF without an EOL
                         unsafe {
                             debug_assert!((pos as usize) <= self.v.len());
