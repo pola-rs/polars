@@ -51,6 +51,16 @@ def test_array_construction() -> None:
     ]
     assert df.rows() == []
 
+    # from dicts
+    rows = [
+        {"row_id": "a", "data": [1, 2, 3]},
+        {"row_id": "b", "data": [2, 3, 4]},
+    ]
+    schema = {"row_id": pl.Utf8(), "data": pl.Array(inner=pl.Int64, width=3)}
+    df = pl.from_dicts(rows, schema=schema)
+    assert df.schema == schema
+    assert df.rows() == [("a", [1, 2, 3]), ("b", [2, 3, 4])]
+
 
 def test_array_in_group_by() -> None:
     df = pl.DataFrame(
