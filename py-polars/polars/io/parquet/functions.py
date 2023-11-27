@@ -182,16 +182,10 @@ def scan_parquet(
     retries: int = 0,
 ) -> LazyFrame:
     """
-    Lazily read from a parquet file or multiple files via glob patterns.
+    Lazily read from a local or cloud-hosted parquet file (or files).
 
-    This allows the query optimizer to push down predicates and projections to the scan
-    level, thereby potentially reducing memory overhead.
-
-    Notes
-    -----
-    * Partitioned files:
-        If you have a directory-nested (hive-style) partitioned dataset, you should
-        use the :func:`scan_pyarrow_dataset` method to read that data instead.
+    This function allows the query optimizer to push down predicates and projections to
+    the scan level, typically increasing performance and reducing memory overhead.
 
     Parameters
     ----------
