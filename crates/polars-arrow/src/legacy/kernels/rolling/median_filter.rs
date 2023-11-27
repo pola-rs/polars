@@ -25,7 +25,7 @@ struct Block<'a, T: Copy + IsFloat> {
     // permutation index in alpha
     m: usize,
     // index in the list
-    m_index: usize
+    current_index: usize
 
 }
 
@@ -33,8 +33,8 @@ impl<T: Copy + Debug + IsFloat> Debug for Block<'_, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "elements in list: {}", self.n_element)?;
         writeln!(f, "m: {}", self.m)?;
-        writeln!(f, "m_index: {}", self.m_index)?;
-        writeln!(f, "median: {:?}", self.alpha[self.m])?;
+        writeln!(f, "m_index: {}", self.current_index)?;
+        writeln!(f, "α[m]: {:?}", self.alpha[self.m])?;
 
         let mut p = self.m as u32;
         loop {
@@ -45,7 +45,6 @@ impl<T: Copy + Debug + IsFloat> Debug for Block<'_, T> {
             }
         }
         let mut current = Vec::with_capacity(self.n_element);
-        let start = p;
         current.push(self.alpha[p as usize]);
 
         loop {
@@ -58,7 +57,7 @@ impl<T: Copy + Debug + IsFloat> Debug for Block<'_, T> {
 
         write!(f, "current buffer sorted: [")?;
         for (i, v) in current.iter().enumerate() {
-            if i == self.m_index {
+            if i == self.current_index {
                 write!(f, "[{v:?}], ")?;
             } else {
                 let chars = if i == self.n_element - 1 {
@@ -95,7 +94,7 @@ impl<'a, T: Copy + IsFloat + PartialOrd + Debug> Block<'a, T> {
             prev,
             next,
             m,
-            m_index,
+            current_index: m_index,
             n_element: k,
             tail: k,
             alpha,
@@ -115,8 +114,6 @@ impl<'a, T: Copy + IsFloat + PartialOrd + Debug> Block<'a, T> {
         }
         self.next[p as usize] = self.tail as u32;
         self.prev[self.tail] = p as u32;
-        dbg!(&self.pi);
-        dbg!(&self.prev, &self.next);
     }
 
     fn unwind(&mut self) {
@@ -128,58 +125,100 @@ impl<'a, T: Copy + IsFloat + PartialOrd + Debug> Block<'a, T> {
         self.n_element = 0;
     }
 
+    fn set_median(&mut self) {
+        // median index position
+        let new_index = self.n_element / 2;
+        self.traverse_to_index(new_index)
+    }
+
+    fn traverse_to_index(&mut self, i: usize) {
+        match i as i64 - self.current_index as i64 {
+            0 => {
+                // pass
+            }
+            -1 => {
+                self.current_index -= 1;
+                self.m = self.prev[self.m as usize] as usize;
+            },
+            1 => {
+                self.current_index += 1;
+                self.m = self.next[self.m as usize] as usize;
+            },
+            i64::MIN..=0 => {
+                self.current_index -= i;
+                for _ in i..0 {
+                    self.m = self.prev[self.m as usize] as usize;
+                }
+            },
+            _ => {
+                self.current_index += i;
+                for _ in 0..i {
+                    self.m = self.next[self.m as usize] as usize;
+                }
+            }
+        }
+    }
+
     fn delete(&mut self, i: usize) {
         let delete = self.get_pair(i);
         let current = self.get_pair(self.m);
+
         // delete from links
         self.next[self.prev[i] as usize] = self.next[i];
         self.prev[self.next[i] as usize] = self.prev[i];
 
         self.n_element -= 1;
 
-        // median index position
-        let new_index = self.n_element / 2;
-
-        let mut current_index = match dbg!(delete.partial_cmp(&current).unwrap()) {
+        match delete.partial_cmp(&current).unwrap() {
             Ordering::Less => {
                 // 1, 2, [3], 4, 5
                 //    2, [3], 4, 5
                 // the del changes index
-                self.m_index - 1
+                self.current_index -= 1
             },
             Ordering::Greater => {
                 // 1, 2, [3], 4, 5
                 // 1, 2, [3], 4
                 // index position remains unaffected
-                self.m_index
             },
             Ordering::Equal => {
                 // 1, 2, [3], 4, 5
                 // 1, 2, [4], 5
-                // go to next
+                // go to next position because hte link was deleted
                 self.m = self.next[self.m as usize] as usize;
-                self.m_index
             }
         };
-
-        if new_index < current_index {
-            current_index -= 1;
-            self.m = self.prev[self.m as usize] as usize;
-        }
-        if new_index > current_index {
-            current_index += 1;
-            self.m = self.next[self.m as usize] as usize;
-        }
-        self.m_index = current_index;
     }
 
     fn undelete(&mut self, i: usize) {
+        let added = self.get_pair(i);
+        let current = self.get_pair(self.m);
+
+        // undelete from links
         self.next[self.prev[i] as usize] = i as IdxSize;
         self.prev[self.next[i] as usize] = i as IdxSize;
 
-        if self.is_small(i) {
-            self.m = self.prev[self.m] as usize
-        }
+        self.n_element += 1;
+
+        match added.partial_cmp(&current).unwrap() {
+            Ordering::Less => {
+                //    2, [3], 4, 5
+                // 1, 2, [3], 4, 5
+                // the addition changes index
+                self.current_index += 1
+            },
+            Ordering::Greater => {
+                // 1, 2, [3], 4
+                // 1, 2, [3], 4, 5
+                // index position remains unaffected
+            },
+            Ordering::Equal => {
+                // 1, 2, [4], 5
+                // 1, 2, [3], 4, 5
+                // go to prev position because hte link was added
+                self.m = self.prev[self.m as usize] as usize;
+            }
+        };
     }
 
     fn advance(&mut self) {
@@ -199,8 +238,8 @@ impl<'a, T: Copy + IsFloat + PartialOrd + Debug> Block<'a, T> {
         }
     }
 
-    fn get_pair(&self, i: usize) -> (T, usize) {
-        (self.alpha[i], i)
+    fn get_pair(&self, i: usize) -> (T, u32) {
+        (self.alpha[i], i as u32)
     }
 
     fn is_small(&self, i: usize) -> bool {
@@ -208,61 +247,6 @@ impl<'a, T: Copy + IsFloat + PartialOrd + Debug> Block<'a, T> {
     }
 
 }
-
-// fn sort_median<T>(k: usize, b: usize, slice: &[T])
-// where T: Copy + IsFloat + PartialOrd + 'static
-// {
-//     let mut scratch_a = vec![];
-//     let mut prev_a = vec![];
-//     let mut next_a = vec![];
-//
-//     let mut scratch_b = vec![];
-//     let mut prev_b = vec![];
-//     let mut next_b = vec![];
-//
-//     let h= get_h(k);
-//     let alpha = &slice[0..k];
-//
-//     let mut out = Vec::with_capacity(slice.len());
-//     let mut block_a = Block::new(h, &alpha[..1], &mut scratch_a, &mut prev_a, &mut next_a);
-//     let mut block_b = Block::new(h, alpha, &mut scratch_b, &mut prev_b, &mut next_b);
-//     out.push(block_b.peek());
-//
-//     for j in 1..b {
-//         block_a = block_b;
-//
-//         let alpha = &slice[j * k..(j + 1) *k];
-//         block_b = if j % 2 == 0 {
-//             Block::new(h, alpha, &mut scratch_b, &mut prev_b, &mut next_b)
-//         } else {
-//             Block::new(h, alpha, &mut scratch_a, &mut prev_a, &mut next_a)
-//         };
-//
-//         block_b.unwind();
-//         debug_assert_eq!(block_a.counter, h);
-//         debug_assert_eq!(block_b.counter, h);
-//
-//         for i in 0..k {
-//             block_a.delete(i);
-//             block_b.undelete(i);
-//             debug_assert!(block_a.counter + block_b.counter <= h);
-//
-//             if block_a.counter + block_b.counter <= h {
-//                 if block_a.peek() <= block_b.peek() {
-//                     block_a.advance()
-//                 } else {
-//                     block_b.advance()
-//                 }
-//             }
-//             debug_assert_eq!(block_a.counter + block_b.counter, h)
-//             out.push(std::cmp::min(block_a.peek(), block_b.peek()));
-//         }
-//         debug_assert_eq!(block_a.counter, 0);
-//         debug_assert_eq!(block_b.counter, h);
-//     }
-//     dbg!(out);
-//
-// }
 
 mod test {
     use super::*;
@@ -278,7 +262,12 @@ mod test {
         b.delete(1);
         b.delete(0);
         b.delete(5);
-        // b.delete(4);
+        b.delete(4);
+        b.undelete(4);
+        b.undelete(5);
+        b.undelete(0);
+
+        b.set_median();
         dbg!(b);
 
     }
