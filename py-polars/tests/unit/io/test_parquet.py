@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 from datetime import datetime, time, timezone
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -541,3 +542,21 @@ def test_nested_struct_read_12610() -> None:
 
     actual = pl.read_parquet(f)
     assert_frame_equal(expect, actual)
+
+
+@pl.Config(activate_decimals=True)
+@pytest.mark.write_disk()
+def test_decimal_parquet(tmp_path: Path) -> None:
+    path = tmp_path / "foo.parquet"
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": ["6", "7", "8"],
+        }
+    )
+
+    df = df.with_columns(pl.col("bar").cast(pl.Decimal))
+
+    df.write_parquet(path, statistics=True)
+    out = pl.scan_parquet(path).filter(foo=2).collect().to_dict(as_series=False)
+    assert out == {"foo": [2], "bar": [Decimal("7")]}
