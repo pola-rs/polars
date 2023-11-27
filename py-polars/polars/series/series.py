@@ -94,6 +94,7 @@ from polars.utils.deprecation import (
 from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _is_generator,
+    _warn_null_comparison,
     no_default,
     parse_percentiles,
     parse_version,
@@ -101,7 +102,6 @@ from polars.utils.various import (
     range_to_slice,
     scale_bytes,
     sphinx_accessor,
-    _warn_null_comparison
 )
 
 with contextlib.suppress(ImportError):  # Module not available when building docs

@@ -3,7 +3,7 @@ mod scalar;
 use std::ops::{BitOr, Not};
 
 use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
-use arrow::bitmap::{MutableBitmap, self};
+use arrow::bitmap::{self, MutableBitmap};
 use arrow::compute;
 use arrow::compute::comparison;
 use arrow::legacy::prelude::FromData;
@@ -28,7 +28,7 @@ where
 impl<T> ChunkCompare<&ChunkedArray<T>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Array: TotalOrdKernel<Scalar=T::Native>
+    T::Array: TotalOrdKernel<Scalar = T::Native>,
 {
     type Item = BooleanChunked;
 
@@ -81,11 +81,11 @@ where
                         (Some(l), None) => &q & l,
                         (Some(l), Some(r)) => {
                             bitmap::ternary(&q, l, r, |q, l, r| (q & l & r) | !(l | r))
-                        }
+                        },
                     };
                     combined.into()
                 },
-                ""
+                "",
             ),
         }
     }
@@ -139,11 +139,11 @@ where
                         (Some(l), None) => &q | &!l,
                         (Some(l), Some(r)) => {
                             bitmap::ternary(&q, l, r, |q, l, r| (q & l & r) | (l ^ r))
-                        }
+                        },
                     };
                     combined.into()
                 },
-                ""
+                "",
             ),
         }
     }

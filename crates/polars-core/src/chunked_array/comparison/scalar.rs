@@ -51,7 +51,7 @@ impl<T, Rhs> ChunkCompare<Rhs> for ChunkedArray<T>
 where
     T: PolarsNumericType,
     Rhs: ToPrimitive,
-    T::Array: TotalOrdKernel<Scalar=T::Native>,
+    T::Array: TotalOrdKernel<Scalar = T::Native>,
 {
     type Item = BooleanChunked;
     fn equal(&self, rhs: Rhs) -> BooleanChunked {
@@ -85,7 +85,7 @@ where
             _ => {
                 let rhs: T::Native = NumCast::from(rhs).unwrap();
                 arity::unary_mut_values(self, |arr| arr.tot_gt_kernel_broadcast(&rhs).into())
-            }
+            },
         }
     }
 
@@ -102,7 +102,7 @@ where
             _ => {
                 let rhs: T::Native = NumCast::from(rhs).unwrap();
                 arity::unary_mut_values(self, |arr| arr.tot_ge_kernel_broadcast(&rhs).into())
-            }
+            },
         }
     }
 
@@ -119,7 +119,7 @@ where
             _ => {
                 let rhs: T::Native = NumCast::from(rhs).unwrap();
                 arity::unary_mut_values(self, |arr| arr.tot_lt_kernel_broadcast(&rhs).into())
-            }
+            },
         }
     }
 
@@ -136,7 +136,7 @@ where
             _ => {
                 let rhs: T::Native = NumCast::from(rhs).unwrap();
                 arity::unary_mut_values(self, |arr| arr.tot_le_kernel_broadcast(&rhs).into())
-            }
+            },
         }
     }
 }

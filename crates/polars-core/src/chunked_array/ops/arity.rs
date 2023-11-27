@@ -28,14 +28,11 @@ impl<A1, A2, R, T: FnMut(A1, A2) -> R> BinaryFnMut<A1, A2> for T {
 }
 
 /// Applies a kernel that produces `Array` types.
-/// 
+///
 /// Intended for kernels that apply on values, this function will apply the
 /// validity mask afterwards.
 #[inline]
-pub fn unary_mut_values<T, V, F, Arr>(
-    ca: &ChunkedArray<T>,
-    mut op: F,
-) -> ChunkedArray<V>
+pub fn unary_mut_values<T, V, F, Arr>(ca: &ChunkedArray<T>, mut op: F) -> ChunkedArray<V>
 where
     T: PolarsDataType,
     V: PolarsDataType<Array = Arr>,
@@ -217,9 +214,8 @@ where
     ChunkedArray::try_from_chunk_iter(lhs.name(), iter)
 }
 
-
 /// Applies a kernel that produces `Array` types.
-/// 
+///
 /// Intended for kernels that apply on values, this function will filter out any
 /// results which do not have two non-null inputs.
 #[inline]

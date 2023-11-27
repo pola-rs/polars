@@ -366,4 +366,3 @@ def test_assert_frame_not_equal() -> None:
     df = pl.DataFrame({"a": [1, 2]})
     with pytest.raises(AssertionError, match="frames are equal"):
         assert_frame_not_equal(df, df)
-

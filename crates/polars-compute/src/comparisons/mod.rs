@@ -2,7 +2,7 @@ use arrow::bitmap::Bitmap;
 
 // Low-level comparison kernel.
 // Ignores validity (results for nulls are unspecified but initialized).
-pub trait TotalOrdKernel : Sized {
+pub trait TotalOrdKernel: Sized {
     type Scalar;
 
     fn tot_eq_kernel(&self, other: &Self) -> Bitmap;
@@ -24,21 +24,22 @@ pub trait TotalOrdKernel : Sized {
     fn tot_ge_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap;
 }
 
-trait NotSimd { }
+trait NotSimd {}
 
+#[allow(unused)]
 macro_rules! impl_not_simd {
     ($($T:ty,)*) => {
         $(impl NotSimd for $T { })*
     };
 }
 
-#[cfg(not(feature="simd"))]
+#[cfg(not(feature = "simd"))]
 impl<T> NotSimd for T {}
 
-#[cfg(feature="simd")]
+#[cfg(feature = "simd")]
 impl_not_simd!(u128, i128,);
 
 mod scalar;
 
-#[cfg(feature="simd")]
+#[cfg(feature = "simd")]
 mod simd;

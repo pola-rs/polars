@@ -58,7 +58,7 @@ from polars.utils.deprecation import (
     warn_closed_future_change,
 )
 from polars.utils.meta import threadpool_size
-from polars.utils.various import no_default, sphinx_accessor, _warn_null_comparison
+from polars.utils.various import _warn_null_comparison, no_default, sphinx_accessor
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where

@@ -7,7 +7,6 @@ from polars.exceptions import ComputeError, InvalidAssert
 from polars.lazyframe import LazyFrame
 from polars.testing.asserts.series import _assert_series_values_equal
 from polars.testing.asserts.utils import raise_assertion_error
-from polars.utils.deprecation import issue_deprecation_warning
 
 
 def assert_frame_equal(

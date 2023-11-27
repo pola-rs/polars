@@ -380,6 +380,10 @@ impl Array for BooleanArray {
 
 impl From<Bitmap> for BooleanArray {
     fn from(values: Bitmap) -> Self {
-        Self { data_type: ArrowDataType::Boolean, values, validity: None }
+        Self {
+            data_type: ArrowDataType::Boolean,
+            values,
+            validity: None,
+        }
     }
 }

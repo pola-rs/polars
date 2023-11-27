@@ -637,4 +637,3 @@ def test_series_equal_decimals_inexact_fail() -> None:
     s2 = pl.Series([D("1.00000"), D("2.00001")], dtype=pl.Decimal)
     with pytest.raises(AssertionError, match="value mismatch"):
         assert_series_equal(s1, s2, check_exact=False, rtol=0)
-

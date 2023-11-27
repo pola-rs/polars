@@ -18,7 +18,6 @@ from polars.datatypes import (
 from polars.exceptions import ComputeError
 from polars.series import Series
 from polars.testing.asserts.utils import raise_assertion_error
-from polars.utils.deprecation import issue_deprecation_warning
 
 if TYPE_CHECKING:
     from polars.type_aliases import PolarsDataType
@@ -242,9 +241,7 @@ def _assert_series_null_values_match(left: Series, right: Series) -> None:
         )
 
 
-def _assert_series_nan_values_match(
-    left: Series, right: Series
-) -> None:
+def _assert_series_nan_values_match(left: Series, right: Series) -> None:
     if not _comparing_floats(left.dtype, right.dtype):
         return
     nan_value_mismatch = left.is_nan() != right.is_nan()

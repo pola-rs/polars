@@ -1,6 +1,10 @@
-import pytest
-import polars as pl
+from __future__ import annotations
+
 import math
+
+import pytest
+
+import polars as pl
 from polars.testing import assert_frame_equal
 
 
@@ -147,54 +151,45 @@ def test_missing_equality_on_bools() -> None:
         False,
     ]
 
-def test_comparison_expr_series() -> None:
-    df = pl.DataFrame({"a": pl.Series([1, 2, 3]), "b": pl.Series([2, 1, 3])})
 
-    assert_frame_equal(
-        df.select(
-            (pl.col("a") == df["b"]).alias("eq"),  # False, False, True
-            (pl.col("a") != df["b"]).alias("ne"),  # True, True, False
-            (pl.col("a") < df["b"]).alias("lt"),  # True, False, False
-            (pl.col("a") <= df["b"]).alias("le"),  # True, False, True
-            (pl.col("a") > df["b"]).alias("gt"),  # False, True, False
-            (pl.col("a") >= df["b"]).alias("ge"),  # False, True, True
-        ),
-        pl.DataFrame(
-            {
-                "eq": [False, False, True],
-                "ne": [True, True, False],
-                "lt": [True, False, False],
-                "le": [True, False, True],
-                "gt": [False, True, False],
-                "ge": [False, True, True],
-            }
-        ),
-    )
-
-def reference_ordering_propagating(l: float | None, r: float | None):
-    if l is None or r is None:
+def reference_ordering_propagating(lhs: float | None, rhs: float | None) -> str | None:
+    if lhs is None or rhs is None:
         return None
-    
-    if math.isnan(l) and math.isnan(r):
+
+    if math.isnan(lhs) and math.isnan(rhs):
         return "="
-    
-    if math.isnan(l) or l > r:
+
+    if math.isnan(lhs) or lhs > rhs:
         return ">"
-    
-    if math.isnan(r) or l < r:
+
+    if math.isnan(rhs) or lhs < rhs:
         return "<"
-    
+
     return "="
-    
-INTERESTING_FLOAT_VALUES = [0.0, -0.0, -1.0, 1.0, -float('nan'), float('nan'), -float('inf'), float('inf'), None]
+
+
+INTERESTING_FLOAT_VALUES = [
+    0.0,
+    -0.0,
+    -1.0,
+    1.0,
+    -float("nan"),
+    float("nan"),
+    -float("inf"),
+    float("inf"),
+    None,
+]
+
 
 @pytest.mark.parametrize("lhs", INTERESTING_FLOAT_VALUES)
 @pytest.mark.parametrize("rhs", INTERESTING_FLOAT_VALUES)
 def test_total_ordering_float_series(lhs: float | None, rhs: float | None) -> None:
     ref = reference_ordering_propagating(lhs, rhs)
-    
+
     # Add dummy variable so we don't broadcast or do full-null optimization.
-    df = pl.DataFrame({"l": [lhs, 0.0], "r": [rhs, 0.0]}, schema={"l": pl.Float64, "r": pl.Float64})
+    df = pl.DataFrame(
+        {"l": [lhs, 0.0], "r": [rhs, 0.0]}, schema={"l": pl.Float64, "r": pl.Float64}
+    )
 
     assert_frame_equal(
         df.select(
@@ -207,7 +202,7 @@ def test_total_ordering_float_series(lhs: float | None, rhs: float | None) -> No
         ),
         pl.DataFrame(
             {
-                "eq": [ref and ref == "=", True], # "ref and X" propagates ref is None
+                "eq": [ref and ref == "=", True],  # "ref and X" propagates ref is None
                 "ne": [ref and ref != "=", False],
                 "lt": [ref and ref == "<", False],
                 "le": [ref and (ref == "<" or ref == "="), True],
@@ -220,12 +215,16 @@ def test_total_ordering_float_series(lhs: float | None, rhs: float | None) -> No
 
 @pytest.mark.parametrize("lhs", INTERESTING_FLOAT_VALUES)
 @pytest.mark.parametrize("rhs", INTERESTING_FLOAT_VALUES)
-def test_total_ordering_float_series_broadcast(lhs: float | None, rhs: float | None) -> None:
+def test_total_ordering_float_series_broadcast(
+    lhs: float | None, rhs: float | None
+) -> None:
     ref = reference_ordering_propagating(lhs, rhs)
-    
+
     # Add dummy variable so we don't broadcast inherently.
-    df = pl.DataFrame({"l": [lhs, lhs], "r": [rhs, rhs]}, schema={"l": pl.Float64, "r": pl.Float64})
-    
+    df = pl.DataFrame(
+        {"l": [lhs, lhs], "r": [rhs, rhs]}, schema={"l": pl.Float64, "r": pl.Float64}
+    )
+
     ans_first = df.select(
         (pl.col("l") == pl.col("r").first()).alias("eq"),
         (pl.col("l") != pl.col("r").first()).alias("ne"),
@@ -243,17 +242,17 @@ def test_total_ordering_float_series_broadcast(lhs: float | None, rhs: float | N
         (pl.col("l") > rhs).alias("gt"),
         (pl.col("l") >= rhs).alias("ge"),
     )
-    
+
     ans_correct = pl.DataFrame(
         {
-            "eq": [ref and ref == "="] * 2, # "ref and X" propagates ref is None
+            "eq": [ref and ref == "="] * 2,  # "ref and X" propagates ref is None
             "ne": [ref and ref != "="] * 2,
             "lt": [ref and ref == "<"] * 2,
             "le": [ref and (ref == "<" or ref == "=")] * 2,
             "gt": [ref and ref == ">"] * 2,
             "ge": [ref and (ref == ">" or ref == "=")] * 2,
         },
-        schema={c: pl.Boolean for c in ["eq", "ne", "lt", "le", "gt", "ge"]}
+        schema={c: pl.Boolean for c in ["eq", "ne", "lt", "le", "gt", "ge"]},
     )
 
     assert_frame_equal(ans_first, ans_correct)

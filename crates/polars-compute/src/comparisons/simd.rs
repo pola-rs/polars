@@ -7,7 +7,6 @@ use bytemuck::Pod;
 
 use super::TotalOrdKernel;
 
-
 fn apply_binary_kernel<const N: usize, M: Pod, T, F>(
     lhs: &PrimitiveArray<T>,
     rhs: &PrimitiveArray<T>,
@@ -20,18 +19,22 @@ where
     assert!(std::mem::size_of::<M>() == N);
     assert!(lhs.len() == rhs.len());
     let n = lhs.len();
-    
+
     let lhs_buf = lhs.values().as_slice();
     let rhs_buf = rhs.values().as_slice();
     let mut lhs_chunks = lhs_buf.chunks_exact(N);
     let mut rhs_chunks = rhs_buf.chunks_exact(N);
     let mut v = Vec::with_capacity(n.div_ceil(N));
     v.extend(
-        lhs_chunks.by_ref()
+        lhs_chunks
+            .by_ref()
             .zip(rhs_chunks.by_ref())
             .map(|(l, r)| unsafe {
-                f(l.try_into().unwrap_unchecked(), r.try_into().unwrap_unchecked())
-            })
+                f(
+                    l.try_into().unwrap_unchecked(),
+                    r.try_into().unwrap_unchecked(),
+                )
+            }),
     );
 
     if n % N > 0 {
@@ -45,25 +48,21 @@ where
     Bitmap::from_u8_vec(bytemuck::cast_vec(v), n)
 }
 
-fn apply_unary_kernel<const N: usize, M: Pod, T, F>(
-    arg: &PrimitiveArray<T>,
-    mut f: F,
-) -> Bitmap
+fn apply_unary_kernel<const N: usize, M: Pod, T, F>(arg: &PrimitiveArray<T>, mut f: F) -> Bitmap
 where
     T: NativeType,
     F: FnMut(&[T; N]) -> M,
 {
     assert!(std::mem::size_of::<M>() == N);
     let n = arg.len();
-    
+
     let arg_buf = arg.values().as_slice();
     let mut arg_chunks = arg_buf.chunks_exact(N);
     let mut v = Vec::with_capacity(n.div_ceil(N));
     v.extend(
-        arg_chunks.by_ref()
-            .map(|l| unsafe {
-                f(l.try_into().unwrap_unchecked())
-            })
+        arg_chunks
+            .by_ref()
+            .map(|l| unsafe { f(l.try_into().unwrap_unchecked()) }),
     );
 
     if n % N > 0 {
@@ -74,7 +73,6 @@ where
 
     Bitmap::from_u8_vec(bytemuck::cast_vec(v), n)
 }
-
 
 macro_rules! impl_int_total_ord_kernel {
     ($T: ty, $width: literal, $mask: ty) => {
@@ -147,7 +145,7 @@ macro_rules! impl_int_total_ord_kernel {
                 })
             }
         }
-    }
+    };
 }
 
 macro_rules! impl_float_total_ord_kernel {
@@ -221,7 +219,7 @@ macro_rules! impl_float_total_ord_kernel {
                     (!(lhs_is_nan | ls.simd_ge(rs))).to_bitmask()
                 })
             }
-            
+
             fn tot_le_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
                 let rs = Simd::splat(*other);
                 apply_unary_kernel::<$width, $mask, _, _>(self, |l| {
@@ -249,7 +247,7 @@ macro_rules! impl_float_total_ord_kernel {
                 })
             }
         }
-    }
+    };
 }
 
 impl_int_total_ord_kernel!(u8, 32, u32);

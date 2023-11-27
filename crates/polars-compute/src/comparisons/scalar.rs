@@ -3,7 +3,7 @@ use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
 use polars_utils::total_ord::TotalOrd;
 
-use super::{TotalOrdKernel, NotSimd};
+use super::{NotSimd, TotalOrdKernel};
 
 impl<T: NativeType + NotSimd + TotalOrd> TotalOrdKernel for PrimitiveArray<T> {
     type Scalar = T;
@@ -45,45 +45,26 @@ impl<T: NativeType + NotSimd + TotalOrd> TotalOrdKernel for PrimitiveArray<T> {
     }
 
     fn tot_eq_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        self.values()
-            .iter()
-            .map(|l| l.tot_eq(other))
-            .collect()
+        self.values().iter().map(|l| l.tot_eq(other)).collect()
     }
 
     fn tot_ne_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        self.values()
-            .iter()
-            .map(|l| l.tot_ne(other))
-            .collect()
+        self.values().iter().map(|l| l.tot_ne(other)).collect()
     }
 
     fn tot_lt_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        self.values()
-            .iter()
-            .map(|l| l.tot_lt(other))
-            .collect()
+        self.values().iter().map(|l| l.tot_lt(other)).collect()
     }
 
     fn tot_le_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        self.values()
-            .iter()
-            .map(|l| l.tot_le(other))
-            .collect()
+        self.values().iter().map(|l| l.tot_le(other)).collect()
     }
 
     fn tot_gt_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        self.values()
-            .iter()
-            .map(|l| l.tot_gt(other))
-            .collect()
+        self.values().iter().map(|l| l.tot_gt(other)).collect()
     }
 
     fn tot_ge_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        self.values()
-            .iter()
-            .map(|l| l.tot_ge(other))
-            .collect()
+        self.values().iter().map(|l| l.tot_ge(other)).collect()
     }
-
 }

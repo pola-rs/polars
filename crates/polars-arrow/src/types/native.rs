@@ -3,7 +3,7 @@ use std::ops::Neg;
 use std::panic::RefUnwindSafe;
 
 use bytemuck::{Pod, Zeroable};
-use polars_utils::total_ord::{TotalOrd, TotalEq};
+use polars_utils::total_ord::{TotalEq, TotalOrd};
 
 use super::PrimitiveType;
 
@@ -123,7 +123,9 @@ impl TotalEq for days_ms {
 
 impl TotalOrd for days_ms {
     fn tot_cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.days().cmp(&other.days()).then(self.milliseconds().cmp(&other.milliseconds()))
+        self.days()
+            .cmp(&other.days())
+            .then(self.milliseconds().cmp(&other.milliseconds()))
     }
 }
 
@@ -225,7 +227,6 @@ impl months_days_ns {
     }
 }
 
-
 impl TotalEq for months_days_ns {
     fn tot_eq(&self, other: &Self) -> bool {
         self == other
@@ -234,7 +235,8 @@ impl TotalEq for months_days_ns {
 
 impl TotalOrd for months_days_ns {
     fn tot_cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.months().cmp(&other.months())
+        self.months()
+            .cmp(&other.months())
             .then(self.days().cmp(&other.days()))
             .then(self.ns().cmp(&other.ns()))
     }
