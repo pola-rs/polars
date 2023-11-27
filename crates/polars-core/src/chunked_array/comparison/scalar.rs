@@ -1,20 +1,5 @@
 use super::*;
 
-impl<T> ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    fn primitive_compare_scalar<Rhs: ToPrimitive>(
-        &self,
-        rhs: Rhs,
-        f: impl Fn(&PrimitiveArray<T::Native>, &dyn Scalar) -> BooleanArray,
-    ) -> BooleanChunked {
-        let rhs: T::Native = NumCast::from(rhs).unwrap();
-        let scalar = PrimitiveScalar::new(T::get_dtype().to_arrow(), Some(rhs));
-        self.apply_kernel_cast(&|arr| Box::new(f(arr, &scalar)))
-    }
-}
-
 /// Splits the ChunkedArray into a lower part, where is_lower returns true, and
 /// an upper part where it returns false, and returns a mask where the lower part
 /// has value lower_part, and the upper part !lower_part.
@@ -60,7 +45,16 @@ where
     }
 
     fn equal_missing(&self, rhs: Rhs) -> BooleanChunked {
-        self.primitive_compare_scalar(rhs, |l, rhs| comparison::eq_scalar_and_validity(l, rhs))
+        let rhs: T::Native = NumCast::from(rhs).unwrap();
+        let iter = self.downcast_iter().map(|arr| {
+            let eq = arr.tot_eq_kernel_broadcast(&rhs);
+            if let Some(valid) = arr.validity() {
+                bitmap::binary(&eq, valid, |e, v| e & v).into()
+            } else {
+                eq.into()
+            }
+        });
+        ChunkedArray::from_chunk_iter(self.name(), iter)
     }
 
     fn not_equal(&self, rhs: Rhs) -> BooleanChunked {
@@ -69,7 +63,16 @@ where
     }
 
     fn not_equal_missing(&self, rhs: Rhs) -> BooleanChunked {
-        self.primitive_compare_scalar(rhs, |l, rhs| comparison::neq_scalar_and_validity(l, rhs))
+        let rhs: T::Native = NumCast::from(rhs).unwrap();
+        let iter = self.downcast_iter().map(|arr| {
+            let ne = arr.tot_ne_kernel_broadcast(&rhs);
+            if let Some(valid) = arr.validity() {
+                bitmap::binary(&ne, valid, |n, v| n | !v).into()
+            } else {
+                ne.into()
+            }
+        });
+        ChunkedArray::from_chunk_iter(self.name(), iter)
     }
 
     fn gt(&self, rhs: Rhs) -> BooleanChunked {

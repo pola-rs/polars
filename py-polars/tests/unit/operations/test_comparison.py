@@ -287,7 +287,9 @@ def reference_ordering_missing(lhs: float | None, rhs: float | None) -> str:
 
 @pytest.mark.parametrize("lhs", INTERESTING_FLOAT_VALUES)
 @pytest.mark.parametrize("rhs", INTERESTING_FLOAT_VALUES)
-def test_total_ordering_float_series_missing(lhs: float | None, rhs: float | None) -> None:
+def test_total_ordering_float_series_missing(
+    lhs: float | None, rhs: float | None
+) -> None:
     ref = reference_ordering_missing(lhs, rhs)
 
     # Add dummy variable so we don't broadcast or do full-null optimization.
@@ -307,6 +309,7 @@ def test_total_ordering_float_series_missing(lhs: float | None, rhs: float | Non
             }
         ),
     )
+
 
 @pytest.mark.parametrize("lhs", INTERESTING_FLOAT_VALUES)
 @pytest.mark.parametrize("rhs", INTERESTING_FLOAT_VALUES)
