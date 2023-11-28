@@ -117,13 +117,14 @@ impl Display for ReaderFactory {
 }
 
 impl ReaderFactory {
+    /// Open the underlying file. Only works for non-RemoteFile.
     pub fn mmapbytesreader(&self) -> PolarsResult<Box<dyn MmapBytesReader>> {
         match self {
             ReaderFactory::LocalFile { path, .. } => {
                 let file = polars_utils::open_file(path)?;
                 Ok(Box::new(file))
             },
-            ReaderFactory::RemoteFile { .. } => todo!("Still haven't figured out how async works"),
+            ReaderFactory::RemoteFile { .. } => panic!("RemoteFile needs to be handled by async code, not as MmapBytesReader"),
         }
     }
 }
