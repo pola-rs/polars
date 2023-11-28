@@ -43,7 +43,7 @@ impl<
         let vals = self.sorted.update(start, end);
         let length = vals.len();
 
-        let mut idx = match self.interpol {
+        let idx = match self.interpol {
             Linear => {
                 // Maybe add a fast path for median case? They could branch depending on odd/even.
                 let length_f = length as f64;
@@ -82,12 +82,16 @@ impl<
                     (mid + mid_plus_1) / (T::one() + T::one())
                 };
             },
-            Nearest => ((length as f64) * self.prob) as usize,
+            Nearest => {
+                let idx = ((length as f64) * self.prob) as usize;
+                std::cmp::min(idx, length - 1)
+            },
             Lower => ((length as f64 - 1.0) * self.prob).floor() as usize,
-            Higher => ((length as f64 - 1.0) * self.prob).ceil() as usize,
+            Higher => {
+                let idx = ((length as f64 - 1.0) * self.prob).ceil() as usize;
+                std::cmp::min(idx, length - 1)
+            },
         };
-
-        idx = std::cmp::min(idx, length - 1);
 
         // safety
         // we are in bounds
