@@ -21,6 +21,8 @@ from typing import (
 if TYPE_CHECKING:
     import sys
 
+    from sqlalchemy import Engine
+
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars.datatypes import DataType, DataTypeClass, IntegerType, TemporalType
     from polars.dependencies import numpy as np
@@ -233,4 +235,4 @@ class Cursor(BasicCursor):  # noqa: D101
         """Fetch results in batches."""
 
 
-ConnectionOrCursor = Union[BasicConnection, BasicCursor, Cursor]
+ConnectionOrCursor = Union[BasicConnection, BasicCursor, Cursor, "Engine"]

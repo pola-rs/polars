@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import sys
-from contextlib import suppress
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import pytest
+from sqlalchemy import create_engine
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -15,18 +15,6 @@ if TYPE_CHECKING:
     from polars.type_aliases import DbWriteEngine
 
 
-def adbc_sqlite_driver_version(*args: Any, **kwargs: Any) -> str:
-    with suppress(ModuleNotFoundError):  # not available on 3.8/windows
-        import adbc_driver_sqlite
-
-        return getattr(adbc_driver_sqlite, "__version__", "n/a")
-    return "n/a"
-
-
-@pytest.mark.skipif(
-    sys.version_info > (3, 11),
-    reason="connectorx cannot be installed on Python 3.12 yet.",
-)
 @pytest.mark.skipif(
     sys.version_info < (3, 9) or sys.platform == "win32",
     reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
@@ -43,29 +31,28 @@ def test_write_database_create(engine: DbWriteEngine, tmp_path: Path) -> None:
     )
     tmp_path.mkdir(exist_ok=True)
     test_db = str(tmp_path / f"test_{engine}.db")
+    test_db_uri = f"sqlite:///{test_db}"
     table_name = "test_create"
 
     df.write_database(
         table_name=table_name,
-        connection=f"sqlite:///{test_db}",
-        if_exists="replace",
+        connection=test_db_uri,
         engine=engine,
     )
-    result = pl.read_database_uri(f"SELECT * FROM {table_name}", f"sqlite:///{test_db}")
+    result = pl.read_database(
+        query=f"SELECT * FROM {table_name}",
+        connection=create_engine(test_db_uri),
+    )
     assert_frame_equal(result, df)
 
 
-@pytest.mark.skipif(
-    sys.version_info > (3, 11),
-    reason="connectorx cannot be installed on Python 3.12 yet.",
-)
 @pytest.mark.skipif(
     sys.version_info < (3, 9) or sys.platform == "win32",
     reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
 )
 @pytest.mark.write_disk()
 @pytest.mark.parametrize("engine", ["adbc", "sqlalchemy"])
-def test_write_database_append(engine: DbWriteEngine, tmp_path: Path) -> None:
+def test_write_database_append_replace(engine: DbWriteEngine, tmp_path: Path) -> None:
     df = pl.DataFrame(
         {
             "key": ["xx", "yy", "zz"],
@@ -76,31 +63,45 @@ def test_write_database_append(engine: DbWriteEngine, tmp_path: Path) -> None:
 
     tmp_path.mkdir(exist_ok=True)
     test_db = str(tmp_path / f"test_{engine}.db")
-    table_name = "test_append"
+    test_db_uri = f"sqlite:///{test_db}"
+    table_name = f"test_append_{engine}"
 
     df.write_database(
         table_name=table_name,
-        connection=f"sqlite:///{test_db}",
-        if_exists="replace",
+        connection=test_db_uri,
         engine=engine,
     )
 
-    ExpectedError = NotImplementedError if engine == "adbc" else ValueError
-    with pytest.raises(ExpectedError):
+    with pytest.raises(Exception):  # noqa: B017
         df.write_database(
             table_name=table_name,
-            connection=f"sqlite:///{test_db}",
+            connection=test_db_uri,
             if_exists="fail",
             engine=engine,
         )
 
     df.write_database(
         table_name=table_name,
-        connection=f"sqlite:///{test_db}",
+        connection=test_db_uri,
+        if_exists="replace",
+        engine=engine,
+    )
+    result = pl.read_database(
+        query=f"SELECT * FROM {table_name}",
+        connection=create_engine(test_db_uri),
+    )
+    assert_frame_equal(result, df)
+
+    df.write_database(
+        table_name=table_name,
+        connection=test_db_uri,
         if_exists="append",
         engine=engine,
     )
-    result = pl.read_database_uri(f"SELECT * FROM {table_name}", f"sqlite:///{test_db}")
+    result = pl.read_database(
+        query=f"SELECT * FROM {table_name}",
+        connection=create_engine(test_db_uri),
+    )
     assert_frame_equal(result, pl.concat([df, df]))
 
 
@@ -111,21 +112,7 @@ def test_write_database_append(engine: DbWriteEngine, tmp_path: Path) -> None:
 @pytest.mark.write_disk()
 @pytest.mark.parametrize(
     "engine",
-    [
-        pytest.param(
-            "adbc",
-            marks=pytest.mark.xfail(  # see: https://github.com/apache/arrow-adbc/issues/1000
-                reason="ADBC SQLite driver has a bug with quoted/qualified table names",
-            ),
-        ),
-        pytest.param(
-            "sqlalchemy",
-            marks=pytest.mark.skipif(
-                sys.version_info > (3, 11),
-                reason="connectorx cannot be installed on Python 3.12 yet.",
-            ),
-        ),
-    ],
+    ["adbc", "sqlalchemy"],
 )
 def test_write_database_create_quoted_tablename(
     engine: DbWriteEngine, tmp_path: Path
@@ -134,17 +121,26 @@ def test_write_database_create_quoted_tablename(
 
     tmp_path.mkdir(exist_ok=True)
     test_db = str(tmp_path / f"test_{engine}.db")
+    test_db_uri = f"sqlite:///{test_db}"
 
     # table name requires quoting, and is qualified with the implicit 'main' schema
-    table_name = 'main."test-append"'
+    qualified_table_name = f'main."test-append-{engine}"'
 
     df.write_database(
-        table_name=table_name,
-        connection=f"sqlite:///{test_db}",
+        table_name=qualified_table_name,
+        connection=test_db_uri,
+        engine=engine,
+    )
+    df.write_database(
+        table_name=qualified_table_name,
+        connection=test_db_uri,
         if_exists="replace",
         engine=engine,
     )
-    result = pl.read_database_uri(f"SELECT * FROM {table_name}", f"sqlite:///{test_db}")
+    result = pl.read_database(
+        query=f"SELECT * FROM {qualified_table_name}",
+        connection=create_engine(test_db_uri),
+    )
     assert_frame_equal(result, df)
 
 
@@ -156,17 +152,9 @@ def test_write_database_errors() -> None:
         ValueError, match="`table_name` appears to be invalid: 'w.x.y.z'"
     ):
         df.write_database(
-            connection="sqlite:///:memory:", table_name="w.x.y.z", engine="sqlalchemy"
-        )
-
-    with pytest.raises(
-        NotImplementedError, match="`if_exists = 'fail'` not supported for ADBC engine"
-    ):
-        df.write_database(
             connection="sqlite:///:memory:",
-            table_name="test_errs",
-            if_exists="fail",
-            engine="adbc",
+            table_name="w.x.y.z",
+            engine="sqlalchemy",
         )
 
     with pytest.raises(ValueError, match="'do_something' is not valid for if_exists"):

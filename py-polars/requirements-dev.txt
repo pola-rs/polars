@@ -25,6 +25,7 @@ backports.zoneinfo; python_version < '3.9'
 tzdata; platform_system == 'Windows'
 # Database
 SQLAlchemy
+adbc_driver_manager; python_version >= '3.9' and platform_system != 'Windows'
 adbc_driver_sqlite; python_version >= '3.9' and platform_system != 'Windows'
 # TODO: Remove version constraint for connectorx when Python 3.12 is supported:
 # https://github.com/sfu-db/connector-x/issues/527
