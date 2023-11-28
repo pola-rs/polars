@@ -20,6 +20,7 @@ pub trait NativeType:
     + std::fmt::Display
     + PartialEq
     + Default
+    + Copy
 {
     /// The corresponding variant of [`PrimitiveType`].
     const PRIMITIVE: PrimitiveType;

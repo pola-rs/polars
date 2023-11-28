@@ -4,14 +4,17 @@
 
 use std::cmp::Ordering;
 use std::fmt::{Debug, Formatter};
+use std::ops::{Add, Mul, Sub};
+use num_traits::NumCast;
 
 use polars_utils::float::IsFloat;
 use polars_utils::sort::arg_sort_ascending;
 use polars_utils::IdxSize;
 
 use crate::legacy::kernels::rolling::Idx;
+use crate::types::NativeType;
 
-struct Block<'a, T: Copy + IsFloat> {
+struct Block<'a, T: NativeType + IsFloat> {
     k: usize,
     tail: usize,
     n_element: usize,
@@ -25,7 +28,7 @@ struct Block<'a, T: Copy + IsFloat> {
     current_index: usize,
 }
 
-impl<T: Copy + Debug + IsFloat> Debug for Block<'_, T> {
+impl<T: NativeType + IsFloat> Debug for Block<'_, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.n_element == 0 {
             return writeln!(f, "empty block");
@@ -66,7 +69,7 @@ impl<T: Copy + Debug + IsFloat> Debug for Block<'_, T> {
     }
 }
 
-impl<'a, T: Copy + IsFloat + PartialOrd + Debug> Block<'a, T> {
+impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
     fn new(
         alpha: &'a [T],
         scratch: &'a mut Vec<u8>,
@@ -263,9 +266,72 @@ impl<'a, T: Copy + IsFloat + PartialOrd + Debug> Block<'a, T> {
     }
 }
 
+trait LenGet {
+    type Item: NativeType;
+    fn len(&self) -> usize;
+
+    fn get(&mut self, i: usize) -> Self::Item;
+}
+
+impl<T: IsFloat + PartialOrd + NativeType> LenGet for &mut Block<'_, T> {
+    type Item = T;
+
+    fn len(&self) -> usize {
+        self.n_element
+    }
+
+    fn get(&mut self, i: usize) -> Self::Item {
+        self.traverse_to_index(i);
+        self.peek().unwrap()
+    }
+}
+
+struct MedianUpdate<M: LenGet> {
+    inner: M
+}
+
+impl<M> MedianUpdate<M>
+where M: LenGet,
+<M as LenGet>::Item:
+Sub<Output=<M as LenGet>::Item>
++ Mul<Output=<M as LenGet>::Item>
++ Add<Output=<M as LenGet>::Item>
++ NumCast
+{
+    fn new(inner: M) -> Self {
+        Self {
+            inner
+        }
+    }
+
+    fn median(&mut self) -> M::Item {
+        let lenght = self.inner.len();
+        let length_f =  lenght as f64;
+        let idx = ((length_f - 1.0) * 0.5).floor() as usize;
+
+        let float_idx_top = (length_f - 1.0) * 0.5;
+        let top_idx = float_idx_top.ceil() as usize;
+
+        return if idx == top_idx {
+            self.inner.get(idx)
+        } else {
+            let proportion : M::Item = NumCast::from(float_idx_top - idx as f64).unwrap();
+            let vi = self.inner.get(idx);
+            let vj = self.inner.get(top_idx);
+
+            proportion * (vj - vi) + vi
+        };
+    }
+
+}
+
 fn rolling_median<T>(k: usize, slice: &[T])
 where
-    T: Copy + IsFloat + PartialOrd + Debug,
+    T: IsFloat + NativeType + PartialOrd + Sub + NumCast
++ Sub<Output=T>
++ Mul<Output=T>
++ Add<Output=T>
+,
 {
     let mut scratch_a = vec![];
     let mut prev_a = vec![];
@@ -285,6 +351,9 @@ where
     let n_blocks = slice.len() / k;
 
     block_left.unwind();
+    let mut mu = MedianUpdate::new(&mut block_left);
+    dbg!(mu.median());
+    // mu.
 
     // let mut block_b = Block::new(h, alpha, &mut scratch_b, &mut prev_b, &mut next_b);
     // out.push(block_b.peek());
