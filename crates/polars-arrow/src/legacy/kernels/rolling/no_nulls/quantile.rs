@@ -82,7 +82,8 @@ impl<
                     (mid + mid_plus_1) / (T::one() + T::one())
                 };
             },
-            Lower | Nearest => ((length as f64 - 1.0) * self.prob).floor() as usize,
+            Nearest => ((length as f64) * self.prob) as usize,
+            Lower => ((length as f64 - 1.0) * self.prob).floor() as usize,
             Higher => ((length as f64 - 1.0) * self.prob).ceil() as usize,
         };
 
