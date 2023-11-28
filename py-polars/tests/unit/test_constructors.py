@@ -544,7 +544,8 @@ def test_init_ndarray() -> None:
 
     # List column from 2D array with single-column schema
     df = pl.DataFrame(np.arange(4).reshape(-1, 1).astype(np.int64), schema=["a"])
-    assert_frame_equal(df, pl.DataFrame({"a": [[0], [1], [2], [3]]}))
+    assert_frame_equal(df, pl.DataFrame({"a": [0, 1, 2, 3]}))
+    assert np.array_equal(df.to_numpy(), np.arange(4).reshape(-1, 1).astype(np.int64))
 
     df = pl.DataFrame(np.arange(4).reshape(-1, 2).astype(np.int64), schema=["a"])
     assert_frame_equal(df, pl.DataFrame({"a": [[0, 1], [2, 3]]}))
