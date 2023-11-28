@@ -3,7 +3,7 @@ mod scalar;
 use std::ops::{BitOr, Not};
 
 use arrow::array::{BooleanArray, Utf8Array};
-use arrow::bitmap::{self, MutableBitmap};
+use arrow::bitmap::MutableBitmap;
 use arrow::compute;
 use arrow::compute::comparison;
 use arrow::legacy::prelude::FromData;
@@ -60,23 +60,7 @@ where
                     rhs.is_null()
                 }
             },
-            _ => arity::binary_mut_with_options(
-                self,
-                rhs,
-                |a, b| {
-                    let q = a.tot_eq_kernel(b);
-                    let combined = match (a.validity(), b.validity()) {
-                        (None, None) => q,
-                        (None, Some(r)) => &q & r,
-                        (Some(l), None) => &q & l,
-                        (Some(l), Some(r)) => {
-                            bitmap::ternary(&q, l, r, |q, l, r| (q & l & r) | !(l | r))
-                        },
-                    };
-                    combined.into()
-                },
-                "",
-            ),
+            _ => arity::binary_mut_with_options(self, rhs, |a, b| a.tot_eq_missing_kernel(b).into(), ""),
         }
     }
 
@@ -118,23 +102,7 @@ where
                     rhs.is_not_null()
                 }
             },
-            _ => arity::binary_mut_with_options(
-                self,
-                rhs,
-                |a, b| {
-                    let q = a.tot_ne_kernel(b);
-                    let combined = match (a.validity(), b.validity()) {
-                        (None, None) => q,
-                        (None, Some(r)) => &q | &!r,
-                        (Some(l), None) => &q | &!l,
-                        (Some(l), Some(r)) => {
-                            bitmap::ternary(&q, l, r, |q, l, r| (q & l & r) | (l ^ r))
-                        },
-                    };
-                    combined.into()
-                },
-                "",
-            ),
+            _ => arity::binary_mut_with_options(self, rhs, |a, b| a.tot_ne_missing_kernel(b).into(), ""),
         }
     }
 
@@ -458,23 +426,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                     rhs.is_null()
                 }
             },
-            _ => arity::binary_mut_with_options(
-                self,
-                rhs,
-                |a, b| {
-                    let q = a.tot_eq_kernel(b);
-                    let combined = match (a.validity(), b.validity()) {
-                        (None, None) => q,
-                        (None, Some(r)) => &q & r,
-                        (Some(l), None) => &q & l,
-                        (Some(l), Some(r)) => {
-                            bitmap::ternary(&q, l, r, |q, l, r| (q & l & r) | !(l | r))
-                        },
-                    };
-                    combined.into()
-                },
-                "",
-            ),
+            _ => arity::binary_mut_with_options(self, rhs, |a, b| a.tot_eq_missing_kernel(b).into(), ""),
         }
     }
 
@@ -516,23 +468,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                     rhs.is_not_null()
                 }
             },
-            _ => arity::binary_mut_with_options(
-                self,
-                rhs,
-                |a, b| {
-                    let q = a.tot_ne_kernel(b);
-                    let combined = match (a.validity(), b.validity()) {
-                        (None, None) => q,
-                        (None, Some(r)) => &q | &!r,
-                        (Some(l), None) => &q | &!l,
-                        (Some(l), Some(r)) => {
-                            bitmap::ternary(&q, l, r, |q, l, r| (q & l & r) | (l ^ r))
-                        },
-                    };
-                    combined.into()
-                },
-                "",
-            ),
+            _ => arity::binary_mut_with_options(self, rhs, |a, b| a.tot_ne_missing_kernel(b).into(), ""),
         }
     }
 

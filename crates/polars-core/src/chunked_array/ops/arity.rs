@@ -45,6 +45,19 @@ where
     ChunkedArray::from_chunk_iter(ca.name(), iter)
 }
 
+/// Applies a kernel that produces `Array` types.
+#[inline]
+pub fn unary_mut_with_options<T, V, F, Arr>(ca: &ChunkedArray<T>, mut op: F) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    V: PolarsDataType<Array = Arr>,
+    Arr: Array + StaticArray,
+    F: FnMut(&T::Array) -> Arr,
+{
+    let iter = ca.downcast_iter().map(|arr| op(arr));
+    ChunkedArray::from_chunk_iter(ca.name(), iter)
+}
+
 #[inline]
 pub fn binary_elementwise<T, U, V, F>(
     lhs: &ChunkedArray<T>,

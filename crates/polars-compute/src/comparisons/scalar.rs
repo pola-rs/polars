@@ -3,9 +3,9 @@ use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
 use polars_utils::total_ord::{TotalOrd, TotalEq};
 
-use super::{NotSimd, TotalOrdKernel};
+use super::{NotSimdPrimitive, TotalOrdKernel};
 
-impl<T: NativeType + NotSimd + TotalOrd> TotalOrdKernel for PrimitiveArray<T> {
+impl<T: NativeType + NotSimdPrimitive + TotalOrd> TotalOrdKernel for PrimitiveArray<T> {
     type Scalar = T;
 
     fn tot_lt_kernel(&self, other: &Self) -> Bitmap {

@@ -46,15 +46,7 @@ where
 
     fn equal_missing(&self, rhs: Rhs) -> BooleanChunked {
         let rhs: T::Native = NumCast::from(rhs).unwrap();
-        let iter = self.downcast_iter().map(|arr| {
-            let eq = arr.tot_eq_kernel_broadcast(&rhs);
-            if let Some(valid) = arr.validity() {
-                bitmap::binary(&eq, valid, |e, v| e & v).into()
-            } else {
-                eq.into()
-            }
-        });
-        ChunkedArray::from_chunk_iter(self.name(), iter)
+        arity::unary_mut_with_options(self, |arr| arr.tot_eq_missing_kernel_broadcast(&rhs).into())
     }
 
     fn not_equal(&self, rhs: Rhs) -> BooleanChunked {
@@ -64,15 +56,7 @@ where
 
     fn not_equal_missing(&self, rhs: Rhs) -> BooleanChunked {
         let rhs: T::Native = NumCast::from(rhs).unwrap();
-        let iter = self.downcast_iter().map(|arr| {
-            let ne = arr.tot_ne_kernel_broadcast(&rhs);
-            if let Some(valid) = arr.validity() {
-                bitmap::binary(&ne, valid, |n, v| n | !v).into()
-            } else {
-                ne.into()
-            }
-        });
-        ChunkedArray::from_chunk_iter(self.name(), iter)
+        arity::unary_mut_with_options(self, |arr| arr.tot_ne_missing_kernel_broadcast(&rhs).into())
     }
 
     fn gt(&self, rhs: Rhs) -> BooleanChunked {
