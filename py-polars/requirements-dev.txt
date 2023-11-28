@@ -35,7 +35,7 @@ fsspec
 s3fs[boto3]
 # TODO: Unpin and remove aiohttp here when 3.9.0 is released:
 # https://github.com/aio-libs/aiohttp/issues/7739
-aiohttp==3.9.0b1
+aiohttp==3.9.0
 # Spreadsheet
 ezodf
 lxml
