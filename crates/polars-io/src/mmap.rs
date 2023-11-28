@@ -93,6 +93,7 @@ impl<'a, T: 'a + MmapBytesReader> From<&'a T> for ReaderBytes<'a> {
 }
 
 /// Create MmapBytesReaders for a specific "file", either locally or remotely.
+#[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ReaderFactory {
     /// A specific local file on the filesystem:

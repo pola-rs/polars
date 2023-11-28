@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::fmt::{Display, Write};
-use std::path::PathBuf;
 
 use polars_core::prelude::*;
 
@@ -313,7 +312,7 @@ impl LogicalPlan {
                 }
             },
             Scan {
-                reader_factories: paths,
+                reader_factories,
                 file_info,
                 predicate,
                 scan_type,
@@ -325,7 +324,7 @@ impl LogicalPlan {
                     acc_str,
                     prev_node,
                     name,
-                    paths.as_ref(),
+                    reader_factories.iter().map(|rf|rf.to_string()).collect::<Vec<String>>().as_ref(),
                     options.with_columns.as_ref().map(|cols| cols.as_slice()),
                     file_info.schema.len(),
                     predicate,
@@ -410,7 +409,7 @@ impl LogicalPlan {
         acc_str: &mut String,
         prev_node: DotNode,
         name: &str,
-        path: &[PathBuf],
+        paths: &[String],
         with_columns: Option<&[String]>,
         total_columns: usize,
         predicate: &Option<P>,
@@ -423,14 +422,14 @@ impl LogicalPlan {
             n_columns_fmt = format!("{}", columns.len());
         }
 
-        let path_fmt = match path.len() {
-            1 => path[0].to_string_lossy(),
+        let path_fmt = match paths.len() {
+            1 => paths[0],
             0 => "".into(),
-            _ => Cow::Owned(format!(
+            _ => format!(
                 "{} files: first file: {}",
-                path.len(),
-                path[0].to_string_lossy()
-            )),
+                paths.len(),
+                paths[0]
+            ),
         };
 
         let pred = fmt_predicate(predicate.as_ref());

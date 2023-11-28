@@ -313,7 +313,7 @@ impl LogicalPlanBuilder {
         truncate_ragged_lines: bool,
     ) -> PolarsResult<Self> {
         let mut reader = reader_factory.mmapbytesreader()?;
-        let paths = Arc::new([reader_factory]);
+        let reader_factories = Arc::new([reader_factory]);
         let mut magic_nr = [0u8; 2];
         let res = reader.read_exact(&mut magic_nr);
         if raise_if_empty {
@@ -377,7 +377,7 @@ impl LogicalPlanBuilder {
             hive_partitioning: false,
         };
         Ok(LogicalPlan::Scan {
-            reader_factories: paths,
+            reader_factories,
             file_info,
             file_options: options,
             predicate: None,

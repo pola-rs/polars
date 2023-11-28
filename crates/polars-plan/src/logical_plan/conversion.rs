@@ -607,14 +607,14 @@ impl ALogicalPlan {
         };
         match lp {
             ALogicalPlan::Scan {
-                paths,
+                reader_factories,
                 file_info,
                 predicate,
                 scan_type,
                 output_schema: _,
                 file_options: options,
             } => LogicalPlan::Scan {
-                reader_factories: paths,
+                reader_factories,
                 file_info,
                 predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
                 scan_type,

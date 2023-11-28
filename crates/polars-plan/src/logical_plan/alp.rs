@@ -1,8 +1,8 @@
 use std::borrow::Cow;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars_core::prelude::*;
+use polars_io::mmap::ReaderFactory;
 use polars_utils::arena::{Arena, Node};
 
 use super::projection_expr::*;
@@ -30,7 +30,7 @@ pub enum ALogicalPlan {
         predicate: Node,
     },
     Scan {
-        paths: Arc<[PathBuf]>,
+        reader_factories: Arc<[ReaderFactory]>,
         file_info: FileInfo,
         predicate: Option<Node>,
         /// schema of the projected file
@@ -293,7 +293,7 @@ impl ALogicalPlan {
                 options: *options,
             },
             Scan {
-                paths,
+                reader_factories,
                 file_info,
                 output_schema,
                 predicate,
@@ -305,7 +305,7 @@ impl ALogicalPlan {
                     new_predicate = exprs.pop()
                 }
                 Scan {
-                    paths: paths.clone(),
+                    reader_factories: reader_factories.clone(),
                     file_info: file_info.clone(),
                     output_schema: output_schema.clone(),
                     file_options: options.clone(),
