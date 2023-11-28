@@ -3,7 +3,7 @@ use arrow::bitmap::Bitmap;
 // Low-level comparison kernel.
 // Ignores validity (results for nulls are unspecified but initialized).
 pub trait TotalOrdKernel: Sized {
-    type Scalar;
+    type Scalar: ?Sized;
 
     fn tot_eq_kernel(&self, other: &Self) -> Bitmap;
     fn tot_ne_kernel(&self, other: &Self) -> Bitmap;

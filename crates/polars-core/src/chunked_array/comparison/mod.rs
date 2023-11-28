@@ -507,189 +507,202 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
 
     fn equal(&self, rhs: &BinaryChunked) -> BooleanChunked {
         // Broadcast.
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                self.equal(value)
-            } else {
-                BooleanChunked::full_null("", self.len())
-            }
-        } else if self.len() == 1 {
-            if let Some(value) = self.get(0) {
-                rhs.equal(value)
-            } else {
-                BooleanChunked::full_null("", rhs.len())
-            }
-        } else {
-            arity::binary_mut_with_options(self, rhs, comparison::binary::eq, "")
+        match (self.len(), rhs.len()) {
+            (_, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.equal(value)
+                } else {
+                    BooleanChunked::full_null("", self.len())
+                }
+            },
+            (1, _) => {
+                if let Some(value) = self.get(0) {
+                    rhs.equal(value)
+                } else {
+                    BooleanChunked::full_null("", rhs.len())
+                }
+            },
+            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_eq_kernel(b).into(), ""),
         }
     }
 
     fn equal_missing(&self, rhs: &BinaryChunked) -> BooleanChunked {
         // Broadcast.
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                self.equal_missing(value)
-            } else {
-                self.is_null()
-            }
-        } else if self.len() == 1 {
-            if let Some(value) = self.get(0) {
-                rhs.equal_missing(value)
-            } else {
-                rhs.is_null()
-            }
-        } else {
-            arity::binary_mut_with_options(self, rhs, comparison::binary::eq_and_validity, "")
+        match (self.len(), rhs.len()) {
+            (_, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.equal_missing(value)
+                } else {
+                    self.is_null()
+                }
+            },
+            (1, _) => {
+                if let Some(value) = self.get(0) {
+                    rhs.equal_missing(value)
+                } else {
+                    rhs.is_null()
+                }
+            },
+            _ => arity::binary_mut_with_options(
+                self,
+                rhs,
+                |a, b| {
+                    let q = a.tot_eq_kernel(b);
+                    let combined = match (a.validity(), b.validity()) {
+                        (None, None) => q,
+                        (None, Some(r)) => &q & r,
+                        (Some(l), None) => &q & l,
+                        (Some(l), Some(r)) => {
+                            bitmap::ternary(&q, l, r, |q, l, r| (q & l & r) | !(l | r))
+                        },
+                    };
+                    combined.into()
+                },
+                "",
+            ),
         }
     }
 
     fn not_equal(&self, rhs: &BinaryChunked) -> BooleanChunked {
         // Broadcast.
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                self.not_equal(value)
-            } else {
-                BooleanChunked::full_null("", self.len())
-            }
-        } else if self.len() == 1 {
-            if let Some(value) = self.get(0) {
-                rhs.not_equal(value)
-            } else {
-                BooleanChunked::full_null("", rhs.len())
-            }
-        } else {
-            arity::binary_mut_with_options(self, rhs, comparison::binary::neq, "")
+        match (self.len(), rhs.len()) {
+            (_, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.not_equal(value)
+                } else {
+                    BooleanChunked::full_null("", self.len())
+                }
+            },
+            (1, _) => {
+                if let Some(value) = self.get(0) {
+                    rhs.not_equal(value)
+                } else {
+                    BooleanChunked::full_null("", rhs.len())
+                }
+            },
+            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_ne_kernel(b).into(), ""),
         }
     }
 
     fn not_equal_missing(&self, rhs: &BinaryChunked) -> BooleanChunked {
         // Broadcast.
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                self.not_equal_missing(value)
-            } else {
-                self.is_not_null()
-            }
-        } else if self.len() == 1 {
-            if let Some(value) = self.get(0) {
-                rhs.not_equal_missing(value)
-            } else {
-                rhs.is_not_null()
-            }
-        } else {
-            arity::binary_mut_with_options(self, rhs, comparison::binary::neq_and_validity, "")
+        match (self.len(), rhs.len()) {
+            (_, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.not_equal_missing(value)
+                } else {
+                    self.is_not_null()
+                }
+            },
+            (1, _) => {
+                if let Some(value) = self.get(0) {
+                    rhs.not_equal_missing(value)
+                } else {
+                    rhs.is_not_null()
+                }
+            },
+            _ => arity::binary_mut_with_options(
+                self,
+                rhs,
+                |a, b| {
+                    let q = a.tot_ne_kernel(b);
+                    let combined = match (a.validity(), b.validity()) {
+                        (None, None) => q,
+                        (None, Some(r)) => &q | &!r,
+                        (Some(l), None) => &q | &!l,
+                        (Some(l), Some(r)) => {
+                            bitmap::ternary(&q, l, r, |q, l, r| (q & l & r) | (l ^ r))
+                        },
+                    };
+                    combined.into()
+                },
+                "",
+            ),
         }
     }
 
     fn gt(&self, rhs: &BinaryChunked) -> BooleanChunked {
         // Broadcast.
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                self.gt(value)
-            } else {
-                BooleanChunked::full_null("", self.len())
-            }
-        } else if self.len() == 1 {
-            if let Some(value) = self.get(0) {
-                rhs.lt(value)
-            } else {
-                BooleanChunked::full_null("", self.len())
-            }
-        } else {
-            arity::binary_mut_with_options(self, rhs, comparison::binary::gt, "")
+        match (self.len(), rhs.len()) {
+            (_, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.gt(value)
+                } else {
+                    BooleanChunked::full_null("", self.len())
+                }
+            },
+            (1, _) => {
+                if let Some(value) = self.get(0) {
+                    rhs.lt(value)
+                } else {
+                    BooleanChunked::full_null("", rhs.len())
+                }
+            },
+            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_gt_kernel(b).into(), ""),
         }
     }
 
     fn gt_eq(&self, rhs: &BinaryChunked) -> BooleanChunked {
         // Broadcast.
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                self.gt_eq(value)
-            } else {
-                BooleanChunked::full_null("", self.len())
-            }
-        } else if self.len() == 1 {
-            if let Some(value) = self.get(0) {
-                rhs.lt_eq(value)
-            } else {
-                BooleanChunked::full_null("", self.len())
-            }
-        } else {
-            arity::binary_mut_with_options(self, rhs, comparison::binary::gt_eq, "")
+        match (self.len(), rhs.len()) {
+            (_, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.gt_eq(value)
+                } else {
+                    BooleanChunked::full_null("", self.len())
+                }
+            },
+            (1, _) => {
+                if let Some(value) = self.get(0) {
+                    rhs.lt_eq(value)
+                } else {
+                    BooleanChunked::full_null("", rhs.len())
+                }
+            },
+            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_ge_kernel(b).into(), ""),
         }
     }
 
     fn lt(&self, rhs: &BinaryChunked) -> BooleanChunked {
         // Broadcast.
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                self.lt(value)
-            } else {
-                BooleanChunked::full_null("", self.len())
-            }
-        } else if self.len() == 1 {
-            if let Some(value) = self.get(0) {
-                rhs.gt(value)
-            } else {
-                BooleanChunked::full_null("", self.len())
-            }
-        } else {
-            arity::binary_mut_with_options(self, rhs, comparison::binary::lt, "")
+        match (self.len(), rhs.len()) {
+            (_, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.lt(value)
+                } else {
+                    BooleanChunked::full_null("", self.len())
+                }
+            },
+            (1, _) => {
+                if let Some(value) = self.get(0) {
+                    rhs.gt(value)
+                } else {
+                    BooleanChunked::full_null("", rhs.len())
+                }
+            },
+            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_lt_kernel(b).into(), ""),
         }
     }
 
     fn lt_eq(&self, rhs: &BinaryChunked) -> BooleanChunked {
         // Broadcast.
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                self.lt_eq(value)
-            } else {
-                BooleanChunked::full_null("", self.len())
-            }
-        } else if self.len() == 1 {
-            if let Some(value) = self.get(0) {
-                rhs.gt_eq(value)
-            } else {
-                BooleanChunked::full_null("", self.len())
-            }
-        } else {
-            arity::binary_mut_with_options(self, rhs, comparison::binary::lt_eq, "")
+        match (self.len(), rhs.len()) {
+            (_, 1) => {
+                if let Some(value) = rhs.get(0) {
+                    self.lt_eq(value)
+                } else {
+                    BooleanChunked::full_null("", self.len())
+                }
+            },
+            (1, _) => {
+                if let Some(value) = self.get(0) {
+                    rhs.gt_eq(value)
+                } else {
+                    BooleanChunked::full_null("", rhs.len())
+                }
+            },
+            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_le_kernel(b).into(), ""),
         }
-    }
-}
-
-impl ChunkCompare<&str> for Utf8Chunked {
-    type Item = BooleanChunked;
-    fn equal(&self, rhs: &str) -> BooleanChunked {
-        self.utf8_compare_scalar(rhs, |l, rhs| comparison::eq_scalar(l, rhs))
-    }
-
-    fn equal_missing(&self, rhs: &str) -> BooleanChunked {
-        self.utf8_compare_scalar(rhs, |l, rhs| comparison::eq_scalar_and_validity(l, rhs))
-    }
-
-    fn not_equal(&self, rhs: &str) -> BooleanChunked {
-        self.utf8_compare_scalar(rhs, |l, rhs| comparison::neq_scalar(l, rhs))
-    }
-
-    fn not_equal_missing(&self, rhs: &str) -> BooleanChunked {
-        self.utf8_compare_scalar(rhs, |l, rhs| comparison::neq_scalar_and_validity(l, rhs))
-    }
-
-    fn gt(&self, rhs: &str) -> BooleanChunked {
-        self.utf8_compare_scalar(rhs, |l, rhs| comparison::gt_scalar(l, rhs))
-    }
-
-    fn gt_eq(&self, rhs: &str) -> BooleanChunked {
-        self.utf8_compare_scalar(rhs, |l, rhs| comparison::gt_eq_scalar(l, rhs))
-    }
-
-    fn lt(&self, rhs: &str) -> BooleanChunked {
-        self.utf8_compare_scalar(rhs, |l, rhs| comparison::lt_scalar(l, rhs))
-    }
-
-    fn lt_eq(&self, rhs: &str) -> BooleanChunked {
-        self.utf8_compare_scalar(rhs, |l, rhs| comparison::lt_eq_scalar(l, rhs))
     }
 }
 

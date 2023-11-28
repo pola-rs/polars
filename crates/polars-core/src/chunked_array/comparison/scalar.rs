@@ -201,6 +201,42 @@ impl ChunkCompare<&[u8]> for BinaryChunked {
     }
 }
 
+impl ChunkCompare<&str> for Utf8Chunked {
+    type Item = BooleanChunked;
+    fn equal(&self, rhs: &str) -> BooleanChunked {
+        self.utf8_compare_scalar(rhs, |l, rhs| comparison::eq_scalar(l, rhs))
+    }
+
+    fn equal_missing(&self, rhs: &str) -> BooleanChunked {
+        self.utf8_compare_scalar(rhs, |l, rhs| comparison::eq_scalar_and_validity(l, rhs))
+    }
+
+    fn not_equal(&self, rhs: &str) -> BooleanChunked {
+        self.utf8_compare_scalar(rhs, |l, rhs| comparison::neq_scalar(l, rhs))
+    }
+
+    fn not_equal_missing(&self, rhs: &str) -> BooleanChunked {
+        self.utf8_compare_scalar(rhs, |l, rhs| comparison::neq_scalar_and_validity(l, rhs))
+    }
+
+    fn gt(&self, rhs: &str) -> BooleanChunked {
+        self.utf8_compare_scalar(rhs, |l, rhs| comparison::gt_scalar(l, rhs))
+    }
+
+    fn gt_eq(&self, rhs: &str) -> BooleanChunked {
+        self.utf8_compare_scalar(rhs, |l, rhs| comparison::gt_eq_scalar(l, rhs))
+    }
+
+    fn lt(&self, rhs: &str) -> BooleanChunked {
+        self.utf8_compare_scalar(rhs, |l, rhs| comparison::lt_scalar(l, rhs))
+    }
+
+    fn lt_eq(&self, rhs: &str) -> BooleanChunked {
+        self.utf8_compare_scalar(rhs, |l, rhs| comparison::lt_eq_scalar(l, rhs))
+    }
+}
+
+
 #[cfg(test)]
 mod test {
     use super::*;
