@@ -101,7 +101,7 @@ pub enum ReaderFactory {
     },
     /// A cloud URL of a remote file, to be used with async APIs
     RemoteFile {
-        location: String,
+        uri: String,
     },
     // /// A wrapper around a Python callable that returns a file-like object.
     // PyFileFactory { factory: PythonFunction }
@@ -111,7 +111,7 @@ impl Display for ReaderFactory {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ReaderFactory::LocalFile { path, .. } => write!(f, "{}", path.to_string_lossy()),
-            ReaderFactory::RemoteFile { location } => write!(f, "{location}"),
+            ReaderFactory::RemoteFile { uri: location } => write!(f, "{location}"),
         }
     }
 }
