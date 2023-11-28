@@ -5,12 +5,12 @@ use std::path::{PathBuf, Path};
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
-use polars_io::mmap::MmapBytesReader;
+use polars_io::mmap::{MmapBytesReader, ReaderFactory};
 use polars_io::{is_cloud_url, RowCount};
 
 use crate::prelude::*;
 
-pub type ReaderIterator = Box<dyn Iterator<Item = PolarsResult<Reader>>>;
+pub type ReaderIterator = Box<dyn Iterator<Item = PolarsResult<ReaderFactory>>>;
 
 // cloud_options is used only with async feature
 #[allow(unused_variables)]
@@ -25,7 +25,7 @@ fn polars_glob(
             Ok(Box::new(
                 paths
                     .into_iter()
-                    .map(|a| Ok(Reader::Remote { location: a })),
+                    .map(|a| Ok(ReaderFactory::Remote { uri: a })),
             ))
         }
         #[cfg(not(feature = "async"))]
@@ -36,7 +36,7 @@ fn polars_glob(
         let paths = paths.map(|v| {
             v.map_err(to_compute_err).and_then(|p| {
                 File::open(p)
-                    .map(|f| Reader::Local {
+                    .map(|f| ReaderFactory::Local {
                         path: p,
                         reader: Box::new(f),
                     })
@@ -49,9 +49,9 @@ fn polars_glob(
 
 /// The source for one or more files (or remote files).
 pub enum ReaderSources {
-    /// A path that can be globbed to get multiple files.
+    /// A path that can be globbed to get multiple files or cloud URIs.
     GlobPath { path: PathBuf },
-    /// Multiple specific file paths.
+    /// Multiple specific file paths or cloud URIs.
     SpecificPaths { paths: Vec<PathBuf> },
     // TODO eventually also support things that aren't paths, e.g. Python
     // file-like objects.
@@ -96,12 +96,12 @@ impl ReaderSources {
                 Ok(Box::new(paths.clone().into_iter().map(|path| {
                     let path_str = path.to_string_lossy();
                     if is_cloud_url(path_str.as_ref()) {
-                        Ok(Reader::Remote {
+                        Ok(ReaderFactory::Remote {
                             location: path_str.to_string(),
                         })
                     } else {
                         let f = File::open(path)?;
-                        Ok(Reader::Local {
+                        Ok(ReaderFactory::Local {
                             path,
                             reader: Box::new(f),
                         })
@@ -126,12 +126,12 @@ impl ReaderSources {
 }
 /// A LazyFileListReader can be in one of two states: either it has a set of
 /// sources (a filesystem glob, or a list of file paths it needs to iterate
-/// over), or it has a single, specific Reader. This isn't a great design and
-/// there should really be separate structs for the two states, e.g. a builder
-/// and a final state.
+/// over), or it has a single, specific ReaderFactory. This isn't a great design
+/// and there should really be separate structs for the two states, e.g. a
+/// builder and a final state.
 #[derive(Clone)]
 pub(crate) enum ReaderOrSources {
-    Reader { reader: Arc<Reader> },
+    Reader { reader: Arc<ReaderFactory> },
     Sources { sources: Arc<ReaderSources> },
 }
 
@@ -185,10 +185,10 @@ pub trait LazyFileListReader: Clone {
     /// This method assumes, that path is *not* a glob.
     ///
     /// It is recommended to always use [LazyFileListReader::finish] method.
-    fn finish_no_glob(self, reader: Reader) -> PolarsResult<LazyFrame>;
+    fn finish_no_glob(self, reader: ReaderFactory) -> PolarsResult<LazyFrame>;
 
     /// Reader of the scanned file.
-    fn reader(&mut self) -> &mut Reader;
+    fn reader(&mut self) -> &mut ReaderFactory;
 
     /// A source of multiple readers.
     fn sources(&self) -> &ReaderSources;
@@ -196,7 +196,7 @@ pub trait LazyFileListReader: Clone {
     /// Set the reader for a _specific_ file (local or remote), e.g. it's not a
     /// glob.
     #[must_use]
-    fn with_reader(self, reader: Arc<Reader>) -> Self;
+    fn with_reader(self, reader: Arc<ReaderFactory>) -> Self;
 
     /// Set sources of the scanned files.
     #[must_use]
