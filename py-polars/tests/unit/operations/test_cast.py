@@ -5,6 +5,7 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
+from polars.testing.asserts.series import assert_series_equal
 
 
 def test_utf8_date() -> None:
@@ -107,3 +108,56 @@ def test_utf8_datetime_timezone() -> None:
     )
 
     assert_frame_equal(expected, out)
+
+
+@pytest.mark.parametrize(("dtype"), [pl.Int8, pl.Int16, pl.Int32, pl.Int64])
+def test_leading_plus_zero_int(dtype: pl.DataType) -> None:
+    s_int = pl.Series(
+        [
+            "-000000000000002",
+            "-1",
+            "-0",
+            "0",
+            "+0",
+            "1",
+            "+1",
+            "0000000000000000000002",
+            "+000000000000000000003",
+        ]
+    )
+    assert_series_equal(
+        s_int.cast(dtype), pl.Series([-2, -1, 0, 0, 0, 1, 1, 2, 3], dtype=dtype)
+    )
+
+
+@pytest.mark.parametrize(("dtype"), [pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64])
+def test_leading_plus_zero_uint(dtype: pl.DataType) -> None:
+    s_int = pl.Series(
+        ["0", "+0", "1", "+1", "0000000000000000000002", "+000000000000000000003"]
+    )
+    assert_series_equal(s_int.cast(dtype), pl.Series([0, 0, 1, 1, 2, 3], dtype=dtype))
+
+
+@pytest.mark.parametrize(("dtype"), [pl.Float32, pl.Float64])
+def test_leading_plus_zero_float(dtype: pl.DataType) -> None:
+    s_float = pl.Series(
+        [
+            "-000000000000002.0",
+            "-1.0",
+            "-.5",
+            "-0.0",
+            "0.",
+            "+0",
+            "+.5",
+            "1",
+            "+1",
+            "0000000000000000000002",
+            "+000000000000000000003",
+        ]
+    )
+    assert_series_equal(
+        s_float.cast(dtype),
+        pl.Series(
+            [-2.0, -1.0, -0.5, 0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 2.0, 3.0], dtype=dtype
+        ),
+    )

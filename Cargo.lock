@@ -262,8 +262,7 @@ dependencies = [
 [[package]]
 name = "atoi_simd"
 version = "0.15.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc41b65e01b6851bdcd2d741824e6b310d571396bf3915e31e4792034ee65126"
+source = "git+https://github.com/orlp/atoi_simd?branch=fix-parse-skipped-zeroes#4856ac9924e70a8b9b56d6088c8421abae6aca03"
 
 [[package]]
 name = "autocfg"
