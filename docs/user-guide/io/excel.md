@@ -7,7 +7,7 @@ From a performance perspective, we recommend using other formats if possible, su
 
 Polars does not have a native Excel reader.
 Instead, it uses external libraries to parse Excel files into objects that Polars can parse.
-To read Excel files, we must install either the (default) xls2csv library or one of the alternatives as an additional dependency.
+To read Excel files, we must install either the (default) xlsx2csv library or one of the alternatives as an additional dependency.
 
 === ":fontawesome-brands-python: Python"
 
@@ -15,7 +15,7 @@ To read Excel files, we must install either the (default) xls2csv library or one
     $ pip install xlsx2csv openpyxl pyxlsb
     ```
 
-The default Excel reader is xls2csv.
+The default Excel reader is xlsx2csv.
 It is a Python library which parses the Excel file into a CSV file which Polars then reads with the native CSV reader.
 We read an Excel file with `read_excel`:
 
