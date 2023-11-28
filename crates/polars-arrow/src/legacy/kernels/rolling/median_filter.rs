@@ -211,7 +211,9 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
         self.undelete_link(i);
 
         if self.at_end() {
-            self.m = i;
+            dbg!(&self.prev, &self.next, &self.alpha, &self.pi, self.m);
+            self.m = self.pi[self.prev[self.m] as usize] as usize;
+            dbg!(self.m);
             self.n_element = 1;
             self.current_index = 0;
             return;
@@ -427,6 +429,7 @@ where
         //   - WINDOW -
         // |--------------|
         let alpha = &slice[i * k..(i + 1) *k];
+        dbg!(&alpha);
         block_right = unsafe { Block::new(alpha, &mut *scratch_right_ptr, &mut *prev_right_ptr, &mut *next_right_ptr) };
 
         // Time reverse the rhs so we can undelete in sorted order.
@@ -560,6 +563,21 @@ mod test {
     }
 
     #[test]
+    fn test_block_2() {
+        let values = [9, 1, 2];
+        let mut scratch = vec![];
+        let mut prev = vec![];
+        let mut next = vec![];
+        let mut b = Block::new(&values, &mut scratch, &mut prev, &mut next);
+
+        b.unwind();
+        b.undelete(0);
+
+        dbg!(b);
+
+    }
+
+    #[test]
     fn test_median() {
         let values = [2.0, 8.0, 5.0, 9.0, 1.0, 2.0, 4.0, 2.0];
         let k = 3;
@@ -568,8 +586,8 @@ mod test {
         // i:  2, 8, 5
         // s:  2, 5, 8
         //              block 2
-        // i:           5, 9, 1
-        // s:           1, 5, 9
+        // i:           9, 1, 2
+        // s:           1, 2, 9
 
         rolling_median(k, &values);
     }
