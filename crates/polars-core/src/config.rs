@@ -30,10 +30,10 @@ pub(crate) const FMT_TABLE_ROUNDED_CORNERS: &str = "POLARS_FMT_TABLE_ROUNDED_COR
 pub(crate) const FMT_TABLE_CELL_LIST_LEN: &str = "POLARS_FMT_TABLE_CELL_LIST_LEN";
 
 // Other env vars
-#[cfg(feature = "dtype-decimal")]
+#[cfg(all(feature = "dtype-decimal", feature = "python"))]
 pub(crate) const DECIMAL_ACTIVE: &str = "POLARS_ACTIVATE_DECIMAL";
 
-#[cfg(feature = "dtype-decimal")]
+#[cfg(all(feature = "dtype-decimal", feature = "python"))]
 pub(crate) fn decimal_is_active() -> bool {
     std::env::var(DECIMAL_ACTIVE).as_deref().unwrap_or("") == "1"
 }
