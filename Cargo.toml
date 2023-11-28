@@ -113,6 +113,7 @@ features = [
 ]
 
 [patch.crates-io]
+atoi_simd = { git = "https://github.com/orlp/atoi_simd", branch = "fix-parse-skipped-zeroes" }
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
 # simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
 
