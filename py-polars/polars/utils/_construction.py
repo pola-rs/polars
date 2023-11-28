@@ -1463,7 +1463,11 @@ def numpy_to_pydf(
             data_series = [
                 pl.Series(
                     name=column_names[i],
-                    values=(data if two_d and n_columns == 1 else data[:, i]),
+                    values=(
+                        data
+                        if two_d and n_columns == 1 and shape[1] > 1
+                        else data[:, i]
+                    ),
                     dtype=schema_overrides.get(column_names[i]),
                     nan_to_null=nan_to_null,
                 )._s
@@ -1473,7 +1477,9 @@ def numpy_to_pydf(
             data_series = [
                 pl.Series(
                     name=column_names[i],
-                    values=(data if two_d and n_columns == 1 else data[i]),
+                    values=(
+                        data if two_d and n_columns == 1 and shape[1] > 1 else data[i]
+                    ),
                     dtype=schema_overrides.get(column_names[i]),
                     nan_to_null=nan_to_null,
                 )._s
