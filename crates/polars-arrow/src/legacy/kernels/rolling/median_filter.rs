@@ -130,7 +130,6 @@ impl<'a, T: Copy + IsFloat + PartialOrd + Debug> Block<'a, T> {
     fn set_median(&mut self) {
         // median index position
         let new_index = self.n_element / 2;
-        dbg!(new_index);
         self.traverse_to_index(new_index)
     }
 
@@ -280,12 +279,12 @@ where
     let alpha = &slice[..k];
 
     // let mut out = Vec::with_capacity(slice.len());
-    let mut block_a = Block::new(alpha, &mut scratch_a, &mut prev_a, &mut next_a);
-    let mut block_b = Block::new(&alpha[..1], &mut scratch_b, &mut prev_b, &mut next_b);
+    let mut block_left = Block::new(alpha, &mut scratch_a, &mut prev_a, &mut next_a);
+    let mut block_right = Block::new(&alpha[..1], &mut scratch_b, &mut prev_b, &mut next_b);
 
     let n_blocks = slice.len() / k;
 
-    block_a.unwind();
+    block_left.unwind();
 
     // let mut block_b = Block::new(h, alpha, &mut scratch_b, &mut prev_b, &mut next_b);
     // out.push(block_b.peek());
