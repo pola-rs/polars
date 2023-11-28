@@ -47,7 +47,7 @@ impl<
             Linear => {
                 // Maybe add a fast path for median case? They could branch depending on odd/even.
                 let length_f = length as f64;
-                let idx = (length_f * self.prob) as usize;
+                let idx = ((length_f - 1.0) * self.prob).floor() as usize;
 
                 let float_idx_top = (length_f - 1.0) * self.prob;
                 let top_idx = float_idx_top.ceil() as usize;
