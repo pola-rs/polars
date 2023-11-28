@@ -1,7 +1,7 @@
+mod median_filter;
 pub mod no_nulls;
 pub mod nulls;
 mod window;
-mod median_filter;
 // mod median_filter;
 
 use std::any::Any;

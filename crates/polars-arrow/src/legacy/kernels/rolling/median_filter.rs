@@ -1,13 +1,14 @@
-
 // h: size of half window
 // k: size of window
 // alpha: slice of length k
 
 use std::cmp::Ordering;
 use std::fmt::{Debug, Formatter};
+
 use polars_utils::float::IsFloat;
-use polars_utils::IdxSize;
 use polars_utils::sort::arg_sort_ascending;
+use polars_utils::IdxSize;
+
 use crate::legacy::kernels::rolling::Idx;
 
 struct Block<'a, T: Copy + IsFloat> {
@@ -21,14 +22,13 @@ struct Block<'a, T: Copy + IsFloat> {
     // permutation index in alpha
     m: usize,
     // index in the list
-    current_index: usize
-
+    current_index: usize,
 }
 
 impl<T: Copy + Debug + IsFloat> Debug for Block<'_, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.n_element == 0 {
-            return writeln!(f, "empty block")
+            return writeln!(f, "empty block");
         }
         writeln!(f, "elements in list: {}", self.n_element)?;
         writeln!(f, "m: {}", self.m)?;
@@ -42,7 +42,7 @@ impl<T: Copy + Debug + IsFloat> Debug for Block<'_, T> {
             p = self.prev[p as usize];
             if p as usize == self.tail {
                 p = self.next[p as usize];
-                break
+                break;
             }
         }
 
@@ -51,7 +51,6 @@ impl<T: Copy + Debug + IsFloat> Debug for Block<'_, T> {
         for _ in 0..self.n_element {
             current.push(self.alpha[p as usize]);
             p = self.next[p as usize];
-
         }
 
         write!(f, "current buffer sorted: [")?;
@@ -59,11 +58,7 @@ impl<T: Copy + Debug + IsFloat> Debug for Block<'_, T> {
             if i == self.current_index {
                 write!(f, "[{v:?}], ")?;
             } else {
-                let chars = if i == self.n_element - 1 {
-                    ""
-                } else {
-                    ", "
-                };
+                let chars = if i == self.n_element - 1 { "" } else { ", " };
                 write!(f, "{v:?}{chars}")?;
             }
         }
@@ -72,15 +67,14 @@ impl<T: Copy + Debug + IsFloat> Debug for Block<'_, T> {
 }
 
 impl<'a, T: Copy + IsFloat + PartialOrd + Debug> Block<'a, T> {
-
     fn new(
         alpha: &'a [T],
         scratch: &'a mut Vec<u8>,
-           prev: &'a mut Vec<u32>,
-           next: &'a mut Vec<u32>,
+        prev: &'a mut Vec<u32>,
+        next: &'a mut Vec<u32>,
     ) -> Self {
         let k = alpha.len();
-        let pi= arg_sort_ascending(alpha, scratch);
+        let pi = arg_sort_ascending(alpha, scratch);
 
         let m_index = k / 2;
         let m = pi[m_index] as usize;
@@ -120,7 +114,6 @@ impl<'a, T: Copy + IsFloat + PartialOrd + Debug> Block<'a, T> {
         self.prev[self.next[i] as usize] = self.prev[i];
     }
 
-
     fn undelete_link(&mut self, i: usize) {
         self.next[self.prev[i] as usize] = i as u32;
         self.prev[self.next[i] as usize] = i as u32;
@@ -145,7 +138,7 @@ impl<'a, T: Copy + IsFloat + PartialOrd + Debug> Block<'a, T> {
         match i as i64 - self.current_index as i64 {
             0 => {
                 // pass
-            }
+            },
             -1 => {
                 self.current_index -= 1;
                 self.m = self.prev[self.m as usize] as usize;
@@ -165,7 +158,7 @@ impl<'a, T: Copy + IsFloat + PartialOrd + Debug> Block<'a, T> {
                 for _ in 0..i {
                     self.m = self.next[self.m as usize] as usize;
                 }
-            }
+            },
         }
     }
 
@@ -195,7 +188,7 @@ impl<'a, T: Copy + IsFloat + PartialOrd + Debug> Block<'a, T> {
                 // 1, 2, [4], 5
                 // go to next position because hte link was deleted
                 self.m = self.next[self.m as usize] as usize;
-            }
+            },
         };
     }
 
@@ -207,7 +200,7 @@ impl<'a, T: Copy + IsFloat + PartialOrd + Debug> Block<'a, T> {
             self.m = i;
             self.n_element = 1;
             self.current_index = 0;
-            return
+            return;
         }
         let added = self.get_pair(i);
         let current = self.get_pair(self.m);
@@ -231,8 +224,13 @@ impl<'a, T: Copy + IsFloat + PartialOrd + Debug> Block<'a, T> {
                 // 1, 2, [3], 4, 5
                 // go to prev position because hte link was added
                 self.m = self.prev[self.m as usize] as usize;
-            }
+            },
         };
+    }
+
+    fn delete_set_median(&mut self, i: usize) {
+        self.delete(i);
+        self.set_median()
     }
 
     fn undelete_set_median(&mut self, i: usize) {
@@ -264,11 +262,11 @@ impl<'a, T: Copy + IsFloat + PartialOrd + Debug> Block<'a, T> {
     fn is_small(&self, i: usize) -> bool {
         self.at_end() || self.get_pair(i) < self.get_pair(self.m as usize)
     }
-
 }
 
 fn rolling_median<T>(k: usize, slice: &[T])
-where T: Copy + IsFloat + PartialOrd + Debug
+where
+    T: Copy + IsFloat + PartialOrd + Debug,
 {
     let mut scratch_a = vec![];
     let mut prev_a = vec![];
@@ -288,7 +286,6 @@ where T: Copy + IsFloat + PartialOrd + Debug
     let n_blocks = slice.len() / k;
 
     block_a.unwind();
-
 
     // let mut block_b = Block::new(h, alpha, &mut scratch_b, &mut prev_b, &mut next_b);
     // out.push(block_b.peek());
@@ -326,16 +323,14 @@ where T: Copy + IsFloat + PartialOrd + Debug
     //     debug_assert_eq!(block_b.counter, h);
     // }
     // dbg!(out);
-
 }
-
 
 mod test {
     use super::*;
 
     #[test]
     fn test_block() {
-
+        //                    0, 1, 2, 3, 4, 5, 6, 7
         let values = [2, 8, 5, 9, 1, 3, 4, 10];
         let mut scratch = vec![];
         let mut prev = vec![];
@@ -372,9 +367,27 @@ mod test {
         assert_eq!(b.peek(), Some(5));
 
         // Now we will delete as the block` will leave the window.
-        // TODO! write
-        dbg!(b);
-
+        b.delete_set_median(0);
+        // [1, 3, 4, [5], 8, 9, 10]
+        assert_eq!(b.peek(), Some(5));
+        b.delete_set_median(1);
+        // [1, 3, 4, [5], 9, 10]
+        assert_eq!(b.peek(), Some(5));
+        b.delete_set_median(2);
+        // [1, 3, [4],  9, 10]
+        assert_eq!(b.peek(), Some(4));
+        b.delete_set_median(3);
+        // [1, 3, [4], 10]
+        assert_eq!(b.peek(), Some(4));
+        b.delete_set_median(4);
+        // [3, [4], 10]
+        assert_eq!(b.peek(), Some(4));
+        b.delete_set_median(5);
+        // [4, [10]]
+        assert_eq!(b.peek(), Some(10));
+        b.delete_set_median(6);
+        // [[10]]
+        assert_eq!(b.peek(), Some(10));
     }
 
     #[test]
@@ -383,7 +396,5 @@ mod test {
         let k = 3;
 
         rolling_median(k, &values);
-
-
     }
 }
