@@ -398,12 +398,18 @@ pub fn list_set_operation(
     set_op: SetOperation,
 ) -> PolarsResult<ListChunked> {
     polars_ensure!(a.len() == b.len() || b.len() == 1 || a.len() == 1, ShapeMismatch: "column lengths don't match");
+    let mut a = a.clone();
+    let mut b = a.clone();
+    if a.len() != b.len() {
+        a = a.rechunk();
+        b = b.rechunk();
+    }
 
     // we use the unsafe variant because we want to keep the nested logical types type.
     unsafe {
         arity::try_binary_unchecked_same_type(
-            a,
-            b,
+            &a,
+            &b,
             |a, b| array_set_operation(a, b, set_op).map(|arr| arr.boxed()),
             false,
             false,

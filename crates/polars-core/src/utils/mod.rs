@@ -620,6 +620,9 @@ pub fn accumulate_dataframes_horizontal(dfs: Vec<DataFrame>) -> PolarsResult<Dat
     Ok(acc_df)
 }
 
+/// Ensure the chunks in both ChunkedArrays have the same length.
+/// # Panics
+/// This will panic if `left.len() != right.len()` and array is chunked.
 pub fn align_chunks_binary<'a, T, B>(
     left: &'a ChunkedArray<T>,
     right: &'a ChunkedArray<B>,
@@ -628,6 +631,11 @@ where
     B: PolarsDataType,
     T: PolarsDataType,
 {
+    assert_eq!(
+        left.len(),
+        right.len(),
+        "expected arrays of the same length"
+    );
     match (left.chunks.len(), right.chunks.len()) {
         (1, 1) => (Cow::Borrowed(left), Cow::Borrowed(right)),
         (_, 1) => (
