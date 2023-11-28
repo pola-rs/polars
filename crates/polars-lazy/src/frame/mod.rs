@@ -1673,6 +1673,15 @@ pub struct LazyGroupBy {
     rolling_options: Option<RollingGroupOptions>,
 }
 
+impl From<LazyGroupBy> for LazyFrame {
+    fn from(lgb: LazyGroupBy) -> Self {
+        Self {
+            logical_plan: lgb.logical_plan,
+            opt_state: lgb.opt_state,
+        }
+    }
+}
+
 impl LazyGroupBy {
     /// Group by and aggregate.
     ///
