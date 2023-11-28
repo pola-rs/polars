@@ -539,7 +539,7 @@ class Enum(DataType):
     A fixed set categorical encoding of a set of strings.
 
     .. warning::
-    This is an experimental work-in-progress feature and may not work as expected.
+        This is an experimental work-in-progress feature and may not work as expected.
 
     """
 
@@ -547,12 +547,12 @@ class Enum(DataType):
 
     def __init__(self, categories: list[str]):
         """
-        Categorical data type.
+        A fixed set categorical encoding of a set of strings.
 
         Parameters
         ----------
-        categories :
-            Categories in the dataset
+        categories
+            Categories in the dataset.
 
         """
         self.categories = categories
@@ -567,7 +567,7 @@ class Enum(DataType):
             return False
 
     def __hash__(self) -> int:
-        return hash((self.__class__, "".join(self.categories)))
+        return hash((self.__class__, *self.categories))
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__

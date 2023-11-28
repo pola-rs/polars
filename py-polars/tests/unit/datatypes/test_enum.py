@@ -14,8 +14,8 @@ def test_enum_creation() -> None:
 
 def test_enum_non_existent() -> None:
     with pytest.raises(
-        pl.OutOfBoundsError,
-        match=("value c is not present in Enum"),
+        pl.ComputeError,
+        match=("value 'c' is not present in Enum"),
     ):
         pl.Series([None, "a", "b", "c"], dtype=pl.Enum(categories=["a", "b"]))
 

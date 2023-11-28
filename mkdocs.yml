@@ -20,7 +20,7 @@ nav:
       - user-guide/basics/expressions.md
       - user-guide/basics/joins.md
     - Concepts:
-      - Data Types:
+      - Data types:
         - user-guide/concepts/data-types/overview.md
         - user-guide/concepts/data-types/categoricals.md
       - user-guide/concepts/data-structures.md

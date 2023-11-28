@@ -560,7 +560,7 @@ impl CategoricalChunked {
                 opt_s
                     .map(|s| {
                         map.get(s).copied().ok_or_else(
-                            || polars_err!(OutOfBounds: "value {} is not present in Enum: {:?}",s,categories),
+                            || polars_err!(ComputeError: "value '{}' is not present in Enum: {:?}",s,categories),
                         )
                     })
                     .transpose()

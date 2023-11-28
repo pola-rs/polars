@@ -29,11 +29,11 @@ pub(crate) enum PyDataType {
     #[cfg(feature = "object")]
     Object,
     Categorical,
-    Enum(Utf8Array<i64>),
     Struct,
     Binary,
     Decimal(Option<usize>, usize),
     Array(usize),
+    Enum(Utf8Array<i64>),
 }
 
 impl From<&DataType> for PyDataType {
