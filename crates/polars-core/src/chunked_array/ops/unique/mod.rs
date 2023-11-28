@@ -118,7 +118,7 @@ where
                     let arr: PrimitiveArray<T::Native> = arr.into();
                     Ok(ChunkedArray::with_chunk(self.name(), arr))
                 } else {
-                    let mask = self.not_equal_and_validity(&self.shift(1));
+                    let mask = self.not_equal_missing(&self.shift(1));
                     self.filter(&mask)
                 }
             },
@@ -159,7 +159,7 @@ where
 
                     Ok(count)
                 } else {
-                    let mask = self.not_equal_and_validity(&self.shift(1));
+                    let mask = self.not_equal_missing(&self.shift(1));
                     Ok(mask.sum().unwrap() as usize)
                 }
             },

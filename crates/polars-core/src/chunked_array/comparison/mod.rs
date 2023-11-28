@@ -15,16 +15,6 @@ use polars_compute::comparisons::TotalOrdKernel;
 use crate::prelude::*;
 use crate::series::IsSorted;
 
-impl<T> ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    // Also includes validity in comparison.
-    pub fn not_equal_and_validity(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        arity::binary_mut_with_options(self, rhs, |a, b| comparison::neq_and_validity(a, b), "")
-    }
-}
-
 impl<T> ChunkCompare<&ChunkedArray<T>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
