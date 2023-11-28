@@ -631,22 +631,31 @@ where
     B: PolarsDataType,
     T: PolarsDataType,
 {
-    assert_eq!(
-        left.len(),
-        right.len(),
-        "expected arrays of the same length"
-    );
+    let assert = || {
+        assert_eq!(
+            left.len(),
+            right.len(),
+            "expected arrays of the same length"
+        )
+    };
     match (left.chunks.len(), right.chunks.len()) {
         (1, 1) => (Cow::Borrowed(left), Cow::Borrowed(right)),
-        (_, 1) => (
-            Cow::Borrowed(left),
-            Cow::Owned(right.match_chunks(left.chunk_id())),
-        ),
-        (1, _) => (
-            Cow::Owned(left.match_chunks(right.chunk_id())),
-            Cow::Borrowed(right),
-        ),
+        (_, 1) => {
+            assert();
+            (
+                Cow::Borrowed(left),
+                Cow::Owned(right.match_chunks(left.chunk_id())),
+            )
+        },
+        (1, _) => {
+            assert();
+            (
+                Cow::Owned(left.match_chunks(right.chunk_id())),
+                Cow::Borrowed(right),
+            )
+        },
         (_, _) => {
+            assert();
             // could optimize to choose to rechunk a primitive and not a string or list type
             let left = left.rechunk();
             (
