@@ -12,7 +12,7 @@ To read Excel files, we must install either the (default) xls2csv library or one
 === ":fontawesome-brands-python: Python"
 
     ```shell
-    $ pip install xls2csv openpyxl pyxlsb
+    $ pip install xlsx2csv openpyxl pyxlsb
     ```
 
 The default Excel reader is xls2csv.
