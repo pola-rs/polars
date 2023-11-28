@@ -220,7 +220,7 @@ foo,bar,baz
 1,2,3
 4,5,6
 7,8,9
-    """
+"""
         )
     file_path = tmp_path / "*.csv"
     assert pl.read_csv(file_path, skip_rows=2).to_dict(as_series=False) == {
