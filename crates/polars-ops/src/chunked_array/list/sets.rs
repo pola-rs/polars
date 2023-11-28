@@ -399,7 +399,7 @@ pub fn list_set_operation(
 ) -> PolarsResult<ListChunked> {
     polars_ensure!(a.len() == b.len() || b.len() == 1 || a.len() == 1, ShapeMismatch: "column lengths don't match");
     let mut a = a.clone();
-    let mut b = a.clone();
+    let mut b = b.clone();
     if a.len() != b.len() {
         a = a.rechunk();
         b = b.rechunk();
