@@ -4091,6 +4091,16 @@ class Series:
                 if self.dtype.is_temporal():
                     np_array = convert_to_date(self._view(ignore_nulls=True))
                 elif self.dtype.is_numeric():
+                    if self.dtype.is_decimal():
+                        if not _PYARROW_AVAILABLE:
+                            raise ModuleNotFoundError(
+                                "decimal → numpy conversion currently requires pyarrow"
+                                "\n\nPlease run: pip install pyarrow"
+                            )
+                        elif not use_pyarrow:
+                            raise ValueError(
+                                "decimal → numpy conversion currently requires `use_pyarrow=True`"
+                            )
                     np_array = self._view(ignore_nulls=True)
                 else:
                     raise_no_zero_copy()
