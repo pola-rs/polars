@@ -632,6 +632,19 @@ def test_list_set_operations_broadcast() -> None:
     ).to_dict(as_series=False) == {"a": [[1], [2], []]}
 
 
+def test_list_set_operation_different_length_chunk_12734() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[2, 3, 3], [4, 1], [1, 2, 3]],
+        }
+    )
+
+    df = pl.concat([df.slice(0, 1), df.slice(1, 1), df.slice(2, 1)], rechunk=False)
+    assert df.with_columns(
+        pl.col("a").list.set_difference(pl.lit(pl.Series([[1, 2]])))
+    ).to_dict(as_series=False) == {"a": [[3], [4], [3]]}
+
+
 def test_list_gather_oob_10079() -> None:
     df = pl.DataFrame(
         {
