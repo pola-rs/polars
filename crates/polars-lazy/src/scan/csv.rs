@@ -8,12 +8,12 @@ use polars_io::RowCount;
 
 use crate::frame::LazyFileListReader;
 use crate::prelude::*;
-use crate::scan::{ReaderOrSources, Reader};
+use crate::scan::SpecificOrMultipleReaderFactories;
 
 #[derive(Clone)]
 #[cfg(feature = "csv")]
 pub struct LazyCsvReader<'a> {
-    reader_or_sources: ReaderOrSources,
+    reader_or_sources: SpecificOrMultipleReaderFactories,
     separator: u8,
     has_header: bool,
     ignore_errors: bool,
@@ -40,9 +40,9 @@ pub struct LazyCsvReader<'a> {
 
 #[cfg(feature = "csv")]
 impl<'a> LazyCsvReader<'a> {
-    pub fn new(sources: ReaderSources) -> Self {
+    pub fn new(sources: MultipleReaderFactories) -> Self {
         LazyCsvReader {
-            reader_or_sources: ReaderOrSources::Sources { sources: Arc::new(sources) },
+            reader_or_sources: SpecificOrMultipleReaderFactories::Multiple { sources: Arc::new(sources) },
             separator: b',',
             has_header: true,
             ignore_errors: false,
@@ -232,8 +232,8 @@ impl<'a> LazyCsvReader<'a> {
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
-        let mut mmap_bytes_reader = self.reader().mmapbytesreader();
-        let reader_bytes = get_reader_bytes(mmap_bytes_reader).expect("could not mmap file");
+        let mut mmap_bytes_reader = self.reader().mmapbytesreader()?;
+        let reader_bytes = get_reader_bytes(&mut mmap_bytes_reader).expect("could not mmap file");
         let mut skip_rows = self.skip_rows;
 
         let (schema, _, _) = infer_file_schema(
@@ -297,29 +297,29 @@ impl LazyFileListReader for LazyCsvReader<'_> {
         Ok(lf)
     }
 
-    fn reader(&mut self) -> &mut Reader {
-        if let ReaderOrSources::Reader{mut reader} = self.reader_or_sources {
+    fn reader(&mut self) -> &mut ReaderFactory {
+        if let SpecificOrMultipleReaderFactories::Specific{mut reader} = self.reader_or_sources {
             &mut *reader
         } else {
             panic!("Attempted to get reader when in wrong state");
         }
     }
 
-    fn sources(&self) -> &ReaderSources {
-        if let ReaderOrSources::Sources{sources} = self.reader_or_sources {
+    fn multiple_readers(&self) -> &MultipleReaderFactories {
+        if let SpecificOrMultipleReaderFactories::Multiple{sources} = self.reader_or_sources {
             &*sources
         } else {
             panic!("Attempted to get sources when in wrong state");
         }
     }
 
-    fn with_reader(mut self, reader: Arc<Reader>) -> Self {
-        self.reader_or_sources = ReaderOrSources::Reader { reader };
+    fn with_reader(mut self, reader: Arc<ReaderFactory>) -> Self {
+        self.reader_or_sources = SpecificOrMultipleReaderFactories::Specific { reader };
         self
     }
 
-    fn with_sources(mut self, sources: Arc<ReaderSources>) -> Self {
-        self.reader_or_sources = ReaderOrSources::Sources { sources };
+    fn with_multiple_readers(mut self, sources: Arc<MultipleReaderFactories>) -> Self {
+        self.reader_or_sources = SpecificOrMultipleReaderFactories::Multiple { sources };
         self
     }
 

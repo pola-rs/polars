@@ -48,7 +48,7 @@ fn polars_glob(
 }
 
 /// The source for one or more files (or remote files).
-pub enum ReaderSources {
+pub enum MultipleReaderFactories {
     /// A path that can be globbed to get multiple files or cloud URIs.
     GlobPath { path: PathBuf },
     /// Multiple specific file paths or cloud URIs.
@@ -57,11 +57,11 @@ pub enum ReaderSources {
     // file-like objects.
 }
 
-impl Display for ReaderSources {
+impl Display for MultipleReaderFactories {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ReaderSources::GlobPath { path } => write!(f, "{}", path.to_string_lossy()),
-            ReaderSources::SpecificPaths { paths } => {
+            MultipleReaderFactories::GlobPath { path } => write!(f, "{}", path.to_string_lossy()),
+            MultipleReaderFactories::SpecificPaths { paths } => {
                 write!(f, "[")?;
                 for path in paths {
                     write!(f, "{}, ", path.to_string_lossy())?;
@@ -72,7 +72,7 @@ impl Display for ReaderSources {
     }
 }
 
-impl ReaderSources {
+impl MultipleReaderFactories {
     /// Create a new ReaderSources with a specific glob path.
     pub fn new_glob(path: impl AsRef<Path>) -> Self {
         Self::GlobPath { path: path.as_ref().to_owned() }
@@ -83,16 +83,16 @@ impl ReaderSources {
         Self::SpecificPaths { paths }
     }
 
-    /// Get list of readers.
+    /// Get list of specific reader factories.
     ///
     /// Returns [None] if path is not a glob pattern.
     fn iter_readers(&self, cloud_options: Option<&CloudOptions>) -> PolarsResult<ReaderIterator> {
         match self {
-            ReaderSources::GlobPath { path } => {
+            MultipleReaderFactories::GlobPath { path } => {
                 let path_str = path.to_string_lossy();
                 polars_glob(&path_str, cloud_options)
             },
-            ReaderSources::SpecificPaths { paths } => {
+            MultipleReaderFactories::SpecificPaths { paths } => {
                 Ok(Box::new(paths.clone().into_iter().map(|path| {
                     let path_str = path.to_string_lossy();
                     if is_cloud_url(path_str.as_ref()) {
@@ -125,14 +125,14 @@ impl ReaderSources {
     }
 }
 /// A LazyFileListReader can be in one of two states: either it has a set of
-/// sources (a filesystem glob, or a list of file paths it needs to iterate
+/// sources (a filesystem glob, or a list of file paths/uris it needs to iterate
 /// over), or it has a single, specific ReaderFactory. This isn't a great design
 /// and there should really be separate structs for the two states, e.g. a
 /// builder and a final state.
 #[derive(Clone)]
-pub(crate) enum ReaderOrSources {
-    Reader { reader: Arc<ReaderFactory> },
-    Sources { sources: Arc<ReaderSources> },
+pub(crate) enum SpecificOrMultipleReaderFactories {
+    Specific { reader: Arc<ReaderFactory> },
+    Multiple { sources: Arc<MultipleReaderFactories> },
 }
 
 /// Reads [LazyFrame] from a filesystem or a cloud storage.
@@ -142,7 +142,7 @@ pub(crate) enum ReaderOrSources {
 pub trait LazyFileListReader: Clone {
     /// Get the final [LazyFrame].
     fn finish(self) -> PolarsResult<LazyFrame> {
-        let readers = self.sources().iter_readers(self.cloud_options())?;
+        let readers = self.multiple_readers().iter_readers(self.cloud_options())?;
         let lfs = readers
             .map(|r| {
                 let r = r?;
@@ -159,7 +159,7 @@ pub trait LazyFileListReader: Clone {
 
         polars_ensure!(
             !lfs.is_empty(),
-            ComputeError: "no matching files found in {}", self.sources()
+            ComputeError: "no matching files found in {}", self.multiple_readers()
         );
 
         let mut lf = self.concat_impl(lfs)?;
@@ -191,7 +191,7 @@ pub trait LazyFileListReader: Clone {
     fn reader(&mut self) -> &mut ReaderFactory;
 
     /// A source of multiple readers.
-    fn sources(&self) -> &ReaderSources;
+    fn multiple_readers(&self) -> &MultipleReaderFactories;
 
     /// Set the reader for a _specific_ file (local or remote), e.g. it's not a
     /// glob.
@@ -200,7 +200,7 @@ pub trait LazyFileListReader: Clone {
 
     /// Set sources of the scanned files.
     #[must_use]
-    fn with_sources(self, sources: Arc<ReaderSources>) -> Self;
+    fn with_multiple_readers(self, sources: Arc<MultipleReaderFactories>) -> Self;
 
     /// Rechunk the memory to contiguous chunks when parsing is done.
     fn rechunk(&self) -> bool;
