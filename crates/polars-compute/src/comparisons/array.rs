@@ -30,14 +30,16 @@ macro_rules! compare {
         let lhs = $lhs;
         let rhs = $rhs;
         assert_eq!(lhs.len(), rhs.len());
-        let ArrowDataType::FixedSizeList(lhs_type, lhs_width) = lhs.data_type().to_logical_type() else {
+        let ArrowDataType::FixedSizeList(lhs_type, lhs_width) = lhs.data_type().to_logical_type()
+        else {
             panic!("array comparison called with non-array type");
         };
-        let ArrowDataType::FixedSizeList(rhs_type, rhs_width) = rhs.data_type().to_logical_type() else {
+        let ArrowDataType::FixedSizeList(rhs_type, rhs_width) = rhs.data_type().to_logical_type()
+        else {
             panic!("array comparison called with non-array type");
         };
         assert_eq!(lhs_type.data_type(), rhs_type.data_type());
-        
+
         if lhs_width != rhs_width {
             return Bitmap::new_with_value($wrong_width, lhs.len());
         }

@@ -123,7 +123,7 @@ def test_array_equal_and_not_equal() -> None:
     assert_series_equal(left.eq_missing(right), pl.Series([True, False]))
     assert_series_equal(left != right, pl.Series([False, True]))
     assert_series_equal(left.ne_missing(right), pl.Series([False, True]))
-    
+
     # TODO: test eq_missing with nulled arrays, rather than null elements.
 
 

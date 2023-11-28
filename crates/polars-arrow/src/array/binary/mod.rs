@@ -97,8 +97,12 @@ impl<O: Offset> BinaryArray<O> {
             validity,
         })
     }
-    
-    // Creates a new [`BinaryArray`] without checking invariants.
+
+    /// Creates a new [`BinaryArray`] without checking invariants.
+    ///
+    /// # Safety
+    ///
+    /// The invariants must be valid (see try_new).
     pub unsafe fn new_unchecked(
         data_type: ArrowDataType,
         offsets: OffsetsBuffer<O>,

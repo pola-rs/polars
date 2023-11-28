@@ -60,7 +60,12 @@ where
                     rhs.is_null()
                 }
             },
-            _ => arity::binary_mut_with_options(self, rhs, |a, b| a.tot_eq_missing_kernel(b).into(), ""),
+            _ => arity::binary_mut_with_options(
+                self,
+                rhs,
+                |a, b| a.tot_eq_missing_kernel(b).into(),
+                "",
+            ),
         }
     }
 
@@ -102,7 +107,12 @@ where
                     rhs.is_not_null()
                 }
             },
-            _ => arity::binary_mut_with_options(self, rhs, |a, b| a.tot_ne_missing_kernel(b).into(), ""),
+            _ => arity::binary_mut_with_options(
+                self,
+                rhs,
+                |a, b| a.tot_ne_missing_kernel(b).into(),
+                "",
+            ),
         }
     }
 
@@ -426,7 +436,12 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                     rhs.is_null()
                 }
             },
-            _ => arity::binary_mut_with_options(self, rhs, |a, b| a.tot_eq_missing_kernel(b).into(), ""),
+            _ => arity::binary_mut_with_options(
+                self,
+                rhs,
+                |a, b| a.tot_eq_missing_kernel(b).into(),
+                "",
+            ),
         }
     }
 
@@ -468,7 +483,12 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                     rhs.is_not_null()
                 }
             },
-            _ => arity::binary_mut_with_options(self, rhs, |a, b| a.tot_ne_missing_kernel(b).into(), ""),
+            _ => arity::binary_mut_with_options(
+                self,
+                rhs,
+                |a, b| a.tot_ne_missing_kernel(b).into(),
+                "",
+            ),
         }
     }
 

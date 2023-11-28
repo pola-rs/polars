@@ -1,5 +1,5 @@
 use arrow::array::Array;
-use arrow::bitmap::{Bitmap, self};
+use arrow::bitmap::{self, Bitmap};
 
 // Low-level comparison kernel.
 pub trait TotalOrdKernel: Sized + Array {
@@ -26,7 +26,7 @@ pub trait TotalOrdKernel: Sized + Array {
     fn tot_le_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap;
     fn tot_gt_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap;
     fn tot_ge_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap;
-    
+
     // These kernels treat null as any other value equal to itself but unequal
     // to anything else.
     fn tot_eq_missing_kernel(&self, other: &Self) -> Bitmap {
@@ -35,22 +35,18 @@ pub trait TotalOrdKernel: Sized + Array {
             (None, None) => q,
             (None, Some(r)) => &q & r,
             (Some(l), None) => &q & l,
-            (Some(l), Some(r)) => {
-                bitmap::ternary(&q, l, r, |q, l, r| (q & l & r) | !(l | r))
-            },
+            (Some(l), Some(r)) => bitmap::ternary(&q, l, r, |q, l, r| (q & l & r) | !(l | r)),
         };
         combined
     }
-    
+
     fn tot_ne_missing_kernel(&self, other: &Self) -> Bitmap {
         let q = self.tot_ne_kernel(other);
         let combined = match (self.validity(), other.validity()) {
             (None, None) => q,
             (None, Some(r)) => &q | &!r,
             (Some(l), None) => &q | &!l,
-            (Some(l), Some(r)) => {
-                bitmap::ternary(&q, l, r, |q, l, r| (q & l & r) | (l ^ r))
-            },
+            (Some(l), Some(r)) => bitmap::ternary(&q, l, r, |q, l, r| (q & l & r) | (l ^ r)),
         };
         combined.into()
     }
@@ -65,7 +61,7 @@ pub trait TotalOrdKernel: Sized + Array {
             q.into()
         }
     }
-    
+
     fn tot_ne_missing_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
         let q = self.tot_ne_kernel_broadcast(other);
         if let Some(valid) = self.validity() {

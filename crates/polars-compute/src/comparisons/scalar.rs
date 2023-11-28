@@ -1,7 +1,7 @@
-use arrow::array::{PrimitiveArray, BinaryArray, Utf8Array};
+use arrow::array::{BinaryArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
-use polars_utils::total_ord::{TotalOrd, TotalEq};
+use polars_utils::total_ord::{TotalEq, TotalOrd};
 
 use super::{NotSimdPrimitive, TotalOrdKernel};
 
@@ -68,7 +68,6 @@ impl<T: NativeType + NotSimdPrimitive + TotalOrd> TotalOrdKernel for PrimitiveAr
         self.values().iter().map(|l| l.tot_ge(other)).collect()
     }
 }
-
 
 impl TotalOrdKernel for BinaryArray<i64> {
     type Scalar = [u8];
@@ -173,4 +172,3 @@ impl TotalOrdKernel for Utf8Array<i64> {
         self.to_binary().tot_ge_kernel_broadcast(&other.as_bytes())
     }
 }
-

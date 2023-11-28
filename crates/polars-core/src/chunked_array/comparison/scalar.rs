@@ -220,7 +220,6 @@ impl ChunkCompare<&str> for Utf8Chunked {
     }
 }
 
-
 #[cfg(test)]
 mod test {
     use super::*;
