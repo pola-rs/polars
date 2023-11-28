@@ -1702,3 +1702,11 @@ def test_empty_csv_no_raise() -> None:
         0,
         0,
     )
+
+
+def test_csv_no_new_line_last() -> None:
+    csv = io.StringIO("a b\n" "1 1\n" "2 2\n" "3 2.1")
+    assert pl.read_csv(csv, separator=" ").to_dict(as_series=False) == {
+        "a": [1, 2, 3],
+        "b": [1.0, 2.0, 2.1],
+    }
