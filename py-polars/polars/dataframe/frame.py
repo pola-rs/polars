@@ -3501,8 +3501,8 @@ class DataFrame:
                 )
 
             with _open_adbc_connection(connection) as conn, conn.cursor() as cursor:
+                db_schema, unpacked_table_name = unpack_table_name(table_name)
                 if adbc_version >= (0, 7):
-                    db_schema, unpacked_table_name = unpack_table_name(table_name)
                     if "sqlite" in conn.adbc_get_info()["driver_name"].lower():
                         if if_exists == "replace":
                             # note: adbc doesn't (yet) support 'replace' for sqlite
@@ -3519,8 +3519,15 @@ class DataFrame:
                         catalog_name=catalog,
                         db_schema_name=db_schema,
                     )
+                elif db_schema is not None:
+                    adbc_str_version = ".".join(str(v) for v in adbc_version)
+                    raise ModuleNotFoundError(
+                        # https://github.com/apache/arrow-adbc/issues/1000
+                        # https://github.com/apache/arrow-adbc/issues/1109
+                        f"use of schema-qualified table names requires ADBC version >= 0.8, found {adbc_str_version}"
+                    )
                 else:
-                    cursor.adbc_ingest(table_name, self.to_arrow(), mode)
+                    cursor.adbc_ingest(unpacked_table_name, self.to_arrow(), mode)
                 conn.commit()
 
         elif engine == "sqlalchemy":
