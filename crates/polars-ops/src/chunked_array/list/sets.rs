@@ -259,57 +259,60 @@ fn binary(
     } else {
         offsets_b
     };
+    let first_a = offsets_a[0];
+    let second_a = offsets_a[1];
+    let first_b = offsets_b[0];
+    let second_b = offsets_b[1];
     for i in 1..offsets_slice.len() {
-        unsafe {
-            let start_a = *offsets_a.get_unchecked(i - 1) as usize;
-            let end_a = *offsets_a.get_unchecked(i) as usize;
+        // If we go OOB we take the first element as we are then broadcasting.
+        let start_a = *offsets_a.get(i - 1).unwrap_or(&first_a) as usize;
+        let end_a = *offsets_a.get(i).unwrap_or(&second_a) as usize;
 
-            let start_b = *offsets_b.get_unchecked(i - 1) as usize;
-            let end_b = *offsets_b.get_unchecked(i) as usize;
+        let start_b = *offsets_b.get(i - 1).unwrap_or(&first_b) as usize;
+        let end_b = *offsets_b.get(i).unwrap_or(&second_b) as usize;
 
-            // The branches are the same every loop.
-            // We rely on branch prediction here.
-            let offset = if broadcast_rhs {
-                // going via skip iterator instead of slice doesn't heap alloc nor trigger a bitcount
-                let a_iter = a.into_iter().skip(start_a).take(end_a - start_a);
-                let b_iter = b.into_iter();
-                set_operation(
-                    &mut set,
-                    &mut set2,
-                    a_iter,
-                    b_iter,
-                    &mut values_out,
-                    set_op,
-                    true,
-                )
-            } else if broadcast_lhs {
-                let a_iter = a.into_iter();
-                let b_iter = b.into_iter().skip(start_b).take(end_b - start_b);
-                set_operation(
-                    &mut set,
-                    &mut set2,
-                    a_iter,
-                    b_iter,
-                    &mut values_out,
-                    set_op,
-                    false,
-                )
-            } else {
-                // going via skip iterator instead of slice doesn't heap alloc nor trigger a bitcount
-                let a_iter = a.into_iter().skip(start_a).take(end_a - start_a);
-                let b_iter = b.into_iter().skip(start_b).take(end_b - start_b);
-                set_operation(
-                    &mut set,
-                    &mut set2,
-                    a_iter,
-                    b_iter,
-                    &mut values_out,
-                    set_op,
-                    false,
-                )
-            };
-            offsets.push(offset as i64);
-        }
+        // The branches are the same every loop.
+        // We rely on branch prediction here.
+        let offset = if broadcast_rhs {
+            // going via skip iterator instead of slice doesn't heap alloc nor trigger a bitcount
+            let a_iter = a.into_iter().skip(start_a).take(end_a - start_a);
+            let b_iter = b.into_iter();
+            set_operation(
+                &mut set,
+                &mut set2,
+                a_iter,
+                b_iter,
+                &mut values_out,
+                set_op,
+                true,
+            )
+        } else if broadcast_lhs {
+            let a_iter = a.into_iter();
+            let b_iter = b.into_iter().skip(start_b).take(end_b - start_b);
+            set_operation(
+                &mut set,
+                &mut set2,
+                a_iter,
+                b_iter,
+                &mut values_out,
+                set_op,
+                false,
+            )
+        } else {
+            // going via skip iterator instead of slice doesn't heap alloc nor trigger a bitcount
+            let a_iter = a.into_iter().skip(start_a).take(end_a - start_a);
+            let b_iter = b.into_iter().skip(start_b).take(end_b - start_b);
+            set_operation(
+                &mut set,
+                &mut set2,
+                a_iter,
+                b_iter,
+                &mut values_out,
+                set_op,
+                false,
+            )
+        };
+        offsets.push(offset as i64);
     }
     let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
     let values: BinaryArray<i64> = values_out.into();
