@@ -44,21 +44,28 @@ impl<
         let length = vals.len();
 
         let mut idx = match self.interpol {
-            QuantileInterpolOptions::Nearest => ((length as f64) * self.prob) as usize,
-            QuantileInterpolOptions::Lower
-            | QuantileInterpolOptions::Midpoint
-            | QuantileInterpolOptions::Linear => {
-                ((length as f64 - 1.0) * self.prob).floor() as usize
+            Linear => {
+                // Maybe add a fast path for median case? They could branch depending on odd/even.
+                let length_f = length as f64;
+                let idx = (length_f * self.prob) as usize;
+
+                let float_idx_top = (length_f - 1.0) * self.prob;
+                let top_idx = float_idx_top.ceil() as usize;
+                return if idx == top_idx {
+                    unsafe { *vals.get_unchecked_release(idx) }
+                } else {
+                    let proportion = T::from(float_idx_top - idx as f64).unwrap();
+                    let vi = unsafe { *vals.get_unchecked_release(idx) };
+                    let vj = unsafe { *vals.get_unchecked_release(top_idx) };
+
+                    proportion * (vj - vi) + vi
+                };
             },
-            QuantileInterpolOptions::Higher => ((length as f64 - 1.0) * self.prob).ceil() as usize,
-        };
-
-        idx = std::cmp::min(idx, length - 1);
-
-        match self.interpol {
-            QuantileInterpolOptions::Midpoint => {
-                let top_idx = ((length as f64 - 1.0) * self.prob).ceil() as usize;
-                if top_idx == idx {
+            Midpoint => {
+                let length_f = length as f64;
+                let idx = (length_f * self.prob) as usize;
+                let top_idx = ((length_f - 1.0) * self.prob).ceil() as usize;
+                return if top_idx == idx {
                     // safety
                     // we are in bounds
                     unsafe { *vals.get_unchecked_release(idx) }
@@ -72,30 +79,18 @@ impl<
                         )
                     };
 
-                    (mid + mid_plus_1) / T::from::<f64>(2.0f64).unwrap()
-                }
+                    (mid + mid_plus_1) / (T::one() + T::one())
+                };
             },
-            QuantileInterpolOptions::Linear => {
-                let float_idx = (length as f64 - 1.0) * self.prob;
-                let top_idx = f64::ceil(float_idx) as usize;
+            Lower | Nearest => ((length as f64 - 1.0) * self.prob).floor() as usize,
+            Higher => ((length as f64 - 1.0) * self.prob).ceil() as usize,
+        };
 
-                if top_idx == idx {
-                    // safety
-                    // we are in bounds
-                    unsafe { *vals.get_unchecked_release(idx) }
-                } else {
-                    let proportion = T::from(float_idx - idx as f64).unwrap();
-                    proportion
-                        * (*vals.get_unchecked_release(top_idx) - *vals.get_unchecked_release(idx))
-                        + *vals.get_unchecked_release(idx)
-                }
-            },
-            _ => {
-                // safety
-                // we are in bounds
-                unsafe { *vals.get_unchecked_release(idx) }
-            },
-        }
+        idx = std::cmp::min(idx, length - 1);
+
+        // safety
+        // we are in bounds
+        unsafe { *vals.get_unchecked_release(idx) }
     }
 }
 
