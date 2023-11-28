@@ -91,3 +91,6 @@ mod scalar;
 
 #[cfg(feature = "simd")]
 mod simd;
+
+#[cfg(feature = "dtype-array")]
+mod array;

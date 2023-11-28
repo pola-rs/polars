@@ -20,3 +20,4 @@ version_check = { workspace = true }
 [features]
 nightly = []
 simd = []
+dtype-array = []
