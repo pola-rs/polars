@@ -25,6 +25,7 @@ from typing import (
     TypeVar,
     Union,
     cast,
+    get_args,
     overload,
 )
 
@@ -68,6 +69,7 @@ from polars.io.spreadsheet._write_utils import (
 )
 from polars.selectors import _expand_selector_dicts, _expand_selectors
 from polars.slice import PolarsSlice
+from polars.type_aliases import DbWriteMode
 from polars.utils._construction import (
     _post_apply_columns,
     arrow_to_pydf,
@@ -133,7 +135,6 @@ if TYPE_CHECKING:
         CsvEncoding,
         CsvQuoteStyle,
         DbWriteEngine,
-        DbWriteMode,
         FillNullStrategy,
         FrameInitTypes,
         IndexOrder,
@@ -3420,12 +3421,13 @@ class DataFrame:
             )
 
     @deprecate_renamed_parameter("connection_uri", "connection", version="0.18.9")
+    @deprecate_renamed_parameter("if_exists", "if_table_exists", version="0.20.0")
     def write_database(
         self,
         table_name: str,
         connection: str,
         *,
-        if_exists: DbWriteMode = "fail",
+        if_table_exists: DbWriteMode = "fail",
         engine: DbWriteEngine = "sqlalchemy",
     ) -> None:
         """
@@ -3442,7 +3444,7 @@ class DataFrame:
 
             * "postgresql://user:pass@server:port/database"
             * "sqlite:////path/to/database.db"
-        if_exists : {'append', 'replace', 'fail'}
+        if_table_exists : {'append', 'replace', 'fail'}
             The insert mode:
 
             * 'replace' will create a new database table, overwriting an existing one.
@@ -3452,6 +3454,12 @@ class DataFrame:
             Select the engine used for writing the data.
         """
         from polars.io.database import _open_adbc_connection
+
+        if if_table_exists not in (valid_write_modes := get_args(DbWriteMode)):
+            allowed = ", ".join(repr(m) for m in valid_write_modes)
+            raise ValueError(
+                f"write_database `if_table_exists` must be one of {{{allowed}}}, got {if_table_exists!r}"
+            )
 
         def unpack_table_name(name: str) -> tuple[str | None, str]:
             """Unpack optionally qualified table name into schema/table pair."""
@@ -3481,22 +3489,22 @@ class DataFrame:
                     "\n\nInstall Polars with: pip install adbc_driver_manager"
                 ) from exc
 
-            if if_exists == "fail":
+            if if_table_exists == "fail":
                 # if the table exists, 'create' will raise an error,
                 # resulting in behaviour equivalent to 'fail'
                 mode = "create"
-            elif if_exists == "replace":
+            elif if_table_exists == "replace":
                 if adbc_version < (0, 7):
                     adbc_str_version = ".".join(str(v) for v in adbc_version)
                     raise ModuleNotFoundError(
-                        f"`if_exists = 'replace'` requires ADBC version >= 0.7, found {adbc_str_version}"
+                        f"`if_table_exists = 'replace'` requires ADBC version >= 0.7, found {adbc_str_version}"
                     )
                 mode = "replace"
-            elif if_exists == "append":
+            elif if_table_exists == "append":
                 mode = "append"
             else:
                 raise ValueError(
-                    f"unexpected value for `if_exists`: {if_exists!r}"
+                    f"unexpected value for `if_table_exists`: {if_table_exists!r}"
                     f"\n\nChoose one of {{'fail', 'replace', 'append'}}"
                 )
 
@@ -3504,7 +3512,7 @@ class DataFrame:
                 db_schema, unpacked_table_name = unpack_table_name(table_name)
                 if adbc_version >= (0, 7):
                     if "sqlite" in conn.adbc_get_info()["driver_name"].lower():
-                        if if_exists == "replace":
+                        if if_table_exists == "replace":
                             # note: adbc doesn't (yet) support 'replace' for sqlite
                             cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
                             mode = "create"
@@ -3552,7 +3560,7 @@ class DataFrame:
                 name=table_name,
                 schema=db_schema,
                 con=engine_sa,
-                if_exists=if_exists,
+                if_exists=if_table_exists,
                 index=False,
             )
         else:
