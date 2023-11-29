@@ -48,7 +48,7 @@ pub trait TotalOrdKernel: Sized + Array {
             (Some(l), None) => &q | &!l,
             (Some(l), Some(r)) => bitmap::ternary(&q, l, r, |q, l, r| (q & l & r) | (l ^ r)),
         };
-        combined.into()
+        combined
     }
 
     // These kernels treat null as any other value equal to itself but unequal
@@ -56,18 +56,18 @@ pub trait TotalOrdKernel: Sized + Array {
     fn tot_eq_missing_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
         let q = self.tot_eq_kernel_broadcast(other);
         if let Some(valid) = self.validity() {
-            bitmap::binary(&q, valid, |q, v| q & v).into()
+            bitmap::binary(&q, valid, |q, v| q & v)
         } else {
-            q.into()
+            q
         }
     }
 
     fn tot_ne_missing_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
         let q = self.tot_ne_kernel_broadcast(other);
         if let Some(valid) = self.validity() {
-            bitmap::binary(&q, valid, |q, v| q | !v).into()
+            bitmap::binary(&q, valid, |q, v| q | !v)
         } else {
-            q.into()
+            q
         }
     }
 }
