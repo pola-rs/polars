@@ -60,8 +60,8 @@ def test_casting_to_an_enum_from_categorical() -> None:
 
 def test_casting_to_an_enum_from_categorical_nonexistent() -> None:
     with pytest.raises(
-        pl.OutOfBoundsError,
-        match=("value c is not present in Enum"),
+        pl.ComputeError,
+        match=("value 'c' is not present in Enum"),
     ):
         pl.Series([None, "a", "b", "c"], dtype=pl.Categorical).cast(pl.Enum(["a", "b"]))
 
@@ -80,8 +80,8 @@ def test_casting_to_an_enum_from_global_categorical() -> None:
 @StringCache()
 def test_casting_to_an_enum_from_global_categorical_nonexistent() -> None:
     with pytest.raises(
-        pl.OutOfBoundsError,
-        match=("value c is not present in Enum"),
+        pl.ComputeError,
+        match=("value 'c' is not present in Enum"),
     ):
         pl.Series([None, "a", "b", "c"], dtype=pl.Categorical).cast(pl.Enum(["a", "b"]))
 

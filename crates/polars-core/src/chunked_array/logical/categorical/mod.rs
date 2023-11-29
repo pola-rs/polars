@@ -108,10 +108,15 @@ impl CategoricalChunked {
         let physical = self.physical();
 
         let mut builder = CategoricalChunkedBuilder::new(self.name(), physical.len());
-        builder.global_map_from_local(physical, categories.clone());
+        let iter = physical
+            .downcast_iter()
+            .map(|z| z.into_iter().map(|z| z.copied()))
+            .collect::<Vec<_>>();
+        builder.global_map_from_local(iter, self.len(), categories.clone());
         Ok(builder.finish())
     }
 
+    // Convert to fixed enum. In case a value is not in the categories return Error
     pub fn to_enum(&self, categories: &Utf8Array<i64>, hash: u128) -> PolarsResult<Self> {
         // Fast paths
         match self.get_rev_map().as_ref() {
@@ -139,7 +144,7 @@ impl CategoricalChunked {
         let new_phys: UInt32Chunked = self
             .physical()
             .into_iter()
-            .map(|opt_v: Option<u32>| opt_v.map(|v| idx_map.get(&v).copied().ok_or_else(|| polars_err!(OutOfBounds: "value {} is not present in Enum {:?}",old_rev_map.get(v),&categories))).transpose())
+            .map(|opt_v: Option<u32>| opt_v.map(|v| idx_map.get(&v).copied().ok_or_else(|| polars_err!(ComputeError: "value '{}' is not present in Enum {:?}",old_rev_map.get(v),&categories))).transpose())
             .collect::<PolarsResult<_>>()?;
 
         Ok(

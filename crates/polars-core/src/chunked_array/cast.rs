@@ -176,7 +176,9 @@ impl ChunkCast for Utf8Chunked {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(rev_map) => match rev_map {
                 None => {
-                    let iter = self.into_iter();
+                    // Safety: length is correct
+                    let iter =
+                        unsafe { self.downcast_iter().flatten().trust_my_length(self.len()) };
                     let mut builder = CategoricalChunkedBuilder::new(self.name(), self.len());
                     builder.drain_iter(iter);
                     let ca = builder.finish();
@@ -184,11 +186,12 @@ impl ChunkCast for Utf8Chunked {
                 },
                 Some(rev_map) => {
                     polars_ensure!(rev_map.is_enum(), InvalidOperation: "casting to a non-enum variant with rev map is not supported for the user");
-                    CategoricalChunked::from_utf_to_enum(self, rev_map.get_categories()).map(|ca| {
-                        let mut s = ca.into_series();
-                        s.rename(self.name());
-                        s
-                    })
+                    CategoricalChunked::from_utf8_to_enum(self, rev_map.get_categories().clone())
+                        .map(|ca| {
+                            let mut s = ca.into_series();
+                            s.rename(self.name());
+                            s
+                        })
                 },
             },
             #[cfg(feature = "dtype-struct")]

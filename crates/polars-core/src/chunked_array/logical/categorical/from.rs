@@ -93,7 +93,12 @@ impl CategoricalChunked {
     ) -> Self {
         if using_string_cache() {
             let mut builder = CategoricalChunkedBuilder::new(name, keys.len());
-            builder.global_map_from_local(keys.clone(), values.clone());
+            let capacity = keys.len();
+            builder.global_map_from_local(
+                [keys.iter().map(|v| v.copied())],
+                capacity,
+                values.clone(),
+            );
             builder.finish()
         } else {
             CategoricalChunked::from_chunks_original(
