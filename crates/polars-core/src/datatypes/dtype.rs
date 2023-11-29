@@ -221,56 +221,67 @@ impl DataType {
     /// Convert to an Arrow data type.
     #[inline]
     pub fn to_arrow(&self) -> ArrowDataType {
+        self.try_to_arrow().unwrap()
+    }
+
+    #[inline]
+    pub fn try_to_arrow(&self) -> PolarsResult<ArrowDataType> {
         use DataType::*;
         match self {
-            Boolean => ArrowDataType::Boolean,
-            UInt8 => ArrowDataType::UInt8,
-            UInt16 => ArrowDataType::UInt16,
-            UInt32 => ArrowDataType::UInt32,
-            UInt64 => ArrowDataType::UInt64,
-            Int8 => ArrowDataType::Int8,
-            Int16 => ArrowDataType::Int16,
-            Int32 => ArrowDataType::Int32,
-            Int64 => ArrowDataType::Int64,
-            Float32 => ArrowDataType::Float32,
-            Float64 => ArrowDataType::Float64,
+            Boolean => Ok(ArrowDataType::Boolean),
+            UInt8 => Ok(ArrowDataType::UInt8),
+            UInt16 => Ok(ArrowDataType::UInt16),
+            UInt32 => Ok(ArrowDataType::UInt32),
+            UInt64 => Ok(ArrowDataType::UInt64),
+            Int8 => Ok(ArrowDataType::Int8),
+            Int16 => Ok(ArrowDataType::Int16),
+            Int32 => Ok(ArrowDataType::Int32),
+            Int64 => Ok(ArrowDataType::Int64),
+            Float32 => Ok(ArrowDataType::Float32),
+            Float64 => Ok(ArrowDataType::Float64),
             #[cfg(feature = "dtype-decimal")]
             // note: what else can we do here other than setting precision to 38?..
-            Decimal(precision, scale) => ArrowDataType::Decimal(
+            Decimal(precision, scale) => Ok(ArrowDataType::Decimal(
                 (*precision).unwrap_or(38),
                 scale.unwrap_or(0), // and what else can we do here?
-            ),
-            Utf8 => ArrowDataType::LargeUtf8,
-            Binary => ArrowDataType::LargeBinary,
-            Date => ArrowDataType::Date32,
-            Datetime(unit, tz) => ArrowDataType::Timestamp(unit.to_arrow(), tz.clone()),
-            Duration(unit) => ArrowDataType::Duration(unit.to_arrow()),
-            Time => ArrowDataType::Time64(ArrowTimeUnit::Nanosecond),
+            )),
+            Utf8 => Ok(ArrowDataType::LargeUtf8),
+            Binary => Ok(ArrowDataType::LargeBinary),
+            Date => Ok(ArrowDataType::Date32),
+            Datetime(unit, tz) => Ok(ArrowDataType::Timestamp(unit.to_arrow(), tz.clone())),
+            Duration(unit) => Ok(ArrowDataType::Duration(unit.to_arrow())),
+            Time => Ok(ArrowDataType::Time64(ArrowTimeUnit::Nanosecond)),
             #[cfg(feature = "dtype-array")]
-            Array(dt, size) => ArrowDataType::FixedSizeList(
-                Box::new(arrow::datatypes::Field::new("item", dt.to_arrow(), true)),
+            Array(dt, size) => Ok(ArrowDataType::FixedSizeList(
+                Box::new(arrow::datatypes::Field::new(
+                    "item",
+                    dt.try_to_arrow()?,
+                    true,
+                )),
                 *size,
-            ),
-            List(dt) => ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
-                "item",
-                dt.to_arrow(),
-                true,
+            )),
+            List(dt) => Ok(ArrowDataType::LargeList(Box::new(
+                arrow::datatypes::Field::new("item", dt.to_arrow(), true),
             ))),
-            Null => ArrowDataType::Null,
+            Null => Ok(ArrowDataType::Null),
             #[cfg(feature = "object")]
-            Object(_) => panic!("cannot convert object to arrow"),
+            Object(_) => {
+                polars_bail!(InvalidOperation: "cannot convert Object dtype data to Arrow")
+            },
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_) => ArrowDataType::Dictionary(
+            Categorical(_) => Ok(ArrowDataType::Dictionary(
                 IntegerType::UInt32,
                 Box::new(ArrowDataType::LargeUtf8),
                 false,
-            ),
+            )),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
                 let fields = fields.iter().map(|fld| fld.to_arrow()).collect();
-                ArrowDataType::Struct(fields)
+                Ok(ArrowDataType::Struct(fields))
             },
-            Unknown => unreachable!(),
+            Unknown => {
+                polars_bail!(InvalidOperation: "cannot convert Unknown dtype data to Arrow")
+            },
         }
     }
 
