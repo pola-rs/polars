@@ -132,35 +132,35 @@ impl ChunkCompare<&[u8]> for BinaryChunked {
     type Item = BooleanChunked;
 
     fn equal(&self, rhs: &[u8]) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_eq_kernel_broadcast(&rhs).into())
+        arity::unary_mut_values(self, |arr| arr.tot_eq_kernel_broadcast(rhs).into())
     }
 
     fn equal_missing(&self, rhs: &[u8]) -> BooleanChunked {
-        arity::unary_mut_with_options(self, |arr| arr.tot_eq_missing_kernel_broadcast(&rhs).into())
+        arity::unary_mut_with_options(self, |arr| arr.tot_eq_missing_kernel_broadcast(rhs).into())
     }
 
     fn not_equal(&self, rhs: &[u8]) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_ne_kernel_broadcast(&rhs).into())
+        arity::unary_mut_values(self, |arr| arr.tot_ne_kernel_broadcast(rhs).into())
     }
 
     fn not_equal_missing(&self, rhs: &[u8]) -> BooleanChunked {
-        arity::unary_mut_with_options(self, |arr| arr.tot_ne_missing_kernel_broadcast(&rhs).into())
+        arity::unary_mut_with_options(self, |arr| arr.tot_ne_missing_kernel_broadcast(rhs).into())
     }
 
     fn gt(&self, rhs: &[u8]) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_gt_kernel_broadcast(&rhs).into())
+        arity::unary_mut_values(self, |arr| arr.tot_gt_kernel_broadcast(rhs).into())
     }
 
     fn gt_eq(&self, rhs: &[u8]) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_ge_kernel_broadcast(&rhs).into())
+        arity::unary_mut_values(self, |arr| arr.tot_ge_kernel_broadcast(rhs).into())
     }
 
     fn lt(&self, rhs: &[u8]) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_lt_kernel_broadcast(&rhs).into())
+        arity::unary_mut_values(self, |arr| arr.tot_lt_kernel_broadcast(rhs).into())
     }
 
     fn lt_eq(&self, rhs: &[u8]) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_le_kernel_broadcast(&rhs).into())
+        arity::unary_mut_values(self, |arr| arr.tot_le_kernel_broadcast(rhs).into())
     }
 }
 
@@ -168,35 +168,35 @@ impl ChunkCompare<&str> for Utf8Chunked {
     type Item = BooleanChunked;
 
     fn equal(&self, rhs: &str) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_eq_kernel_broadcast(&rhs).into())
+        arity::unary_mut_values(self, |arr| arr.tot_eq_kernel_broadcast(rhs).into())
     }
 
     fn equal_missing(&self, rhs: &str) -> BooleanChunked {
-        arity::unary_mut_with_options(self, |arr| arr.tot_eq_missing_kernel_broadcast(&rhs).into())
+        arity::unary_mut_with_options(self, |arr| arr.tot_eq_missing_kernel_broadcast(rhs).into())
     }
 
     fn not_equal(&self, rhs: &str) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_ne_kernel_broadcast(&rhs).into())
+        arity::unary_mut_values(self, |arr| arr.tot_ne_kernel_broadcast(rhs).into())
     }
 
     fn not_equal_missing(&self, rhs: &str) -> BooleanChunked {
-        arity::unary_mut_with_options(self, |arr| arr.tot_ne_missing_kernel_broadcast(&rhs).into())
+        arity::unary_mut_with_options(self, |arr| arr.tot_ne_missing_kernel_broadcast(rhs).into())
     }
 
     fn gt(&self, rhs: &str) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_gt_kernel_broadcast(&rhs).into())
+        arity::unary_mut_values(self, |arr| arr.tot_gt_kernel_broadcast(rhs).into())
     }
 
     fn gt_eq(&self, rhs: &str) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_ge_kernel_broadcast(&rhs).into())
+        arity::unary_mut_values(self, |arr| arr.tot_ge_kernel_broadcast(rhs).into())
     }
 
     fn lt(&self, rhs: &str) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_lt_kernel_broadcast(&rhs).into())
+        arity::unary_mut_values(self, |arr| arr.tot_lt_kernel_broadcast(rhs).into())
     }
 
     fn lt_eq(&self, rhs: &str) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_le_kernel_broadcast(&rhs).into())
+        arity::unary_mut_values(self, |arr| arr.tot_le_kernel_broadcast(rhs).into())
     }
 }
 
