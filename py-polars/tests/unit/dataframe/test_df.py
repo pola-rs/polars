@@ -2008,7 +2008,12 @@ def test_rename_strict() -> None:
         df.rename({'a': 'c', 'd': 'e'})
 
     result = df.rename({'a': 'c', 'd': 'e'}, strict=False)
-    expected = df.rename({'a': 'c'})
+    expected = pl.DataFrame(
+        {
+            "c": [1, 2, 3, 4, 5],
+            "b": ["A", "A", "B", "C", "B"],
+        }
+    )
     assert_frame_equal(result, expected)
 
 
