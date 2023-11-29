@@ -396,6 +396,7 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
 pub(crate) fn can_extend_dtype(left: &DataType, right: &DataType) -> PolarsResult<bool> {
     match (left, right) {
         (DataType::List(l), DataType::List(r)) => can_extend_dtype(l, r),
+        #[cfg(feature = "dtype-struct")]
         (DataType::Struct(l), DataType::Struct(r)) => {
             let mut must_cast = false;
             for (l, r) in l.iter().zip(r.iter()) {
