@@ -85,7 +85,7 @@ impl<T> ChunkUnique<T> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq + Ord,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoSeries + for<'a> ChunkCompare<&'a ChunkedArray<T>, Item=BooleanChunked>
 {
     fn unique(&self) -> PolarsResult<Self> {
         // prevent stackoverflow repeated sorted.unique call
