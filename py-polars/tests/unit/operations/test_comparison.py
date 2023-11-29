@@ -332,8 +332,8 @@ def test_total_ordering_string_series(lhs: str | None, rhs: str | None) -> None:
     verify_total_ordering_broadcast(lhs, rhs, "", pl.Utf8)
 
 
-@pytest.mark.parametrize("lhs", INTERESTING_STRING_VALUES)
-@pytest.mark.parametrize("rhs", INTERESTING_STRING_VALUES)
+@pytest.mark.parametrize("str_lhs", INTERESTING_STRING_VALUES)
+@pytest.mark.parametrize("str_rhs", INTERESTING_STRING_VALUES)
 def test_total_ordering_binary_series(str_lhs: str | None, str_rhs: str | None) -> None:
     lhs = None if str_lhs is None else str_lhs.encode("utf-8")
     rhs = None if str_rhs is None else str_rhs.encode("utf-8")
