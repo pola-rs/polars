@@ -2005,9 +2005,9 @@ def test_rename_strict() -> None:
         }
     )
     with pytest.raises(pl.exceptions.SchemaFieldNotFoundError):
-        df.rename({'a': 'c', 'd': 'e'})
+        df.rename({"a": "c", "d": "e"})
 
-    result = df.rename({'a': 'c', 'd': 'e'}, strict=False)
+    result = df.rename({"a": "c", "d": "e"}, strict=False)
     expected = pl.DataFrame(
         {
             "c": [1, 2, 3, 4, 5],
