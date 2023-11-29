@@ -3900,7 +3900,7 @@ class DataFrame:
         """
         return self.select(F.col("*").reverse())
 
-    def rename(self, mapping: dict[str, str], strict: bool = True) -> DataFrame:
+    def rename(self, mapping: dict[str, str], *, strict: bool = True) -> DataFrame:
         """
         Rename column names.
 
