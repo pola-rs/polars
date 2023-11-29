@@ -2,12 +2,10 @@ mod scalar;
 
 use std::ops::{BitOr, Not};
 
-use arrow::array::{BooleanArray, Utf8Array};
+use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::compute;
-use arrow::compute::comparison;
 use arrow::legacy::prelude::FromData;
-use arrow::scalar::{BinaryScalar, Scalar, Utf8Scalar};
 use num_traits::{NumCast, ToPrimitive};
 use polars_compute::comparisons::TotalOrdKernel;
 
