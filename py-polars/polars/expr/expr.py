@@ -4593,7 +4593,7 @@ class Expr:
         ╞═════╪═════╪════════╡
         │ 1.0 ┆ 2.0 ┆ false  │
         │ 2.0 ┆ 2.0 ┆ true   │
-        │ NaN ┆ NaN ┆ false  │
+        │ NaN ┆ NaN ┆ true   │
         │ 4.0 ┆ 4.0 ┆ true   │
         └─────┴─────┴────────┘
 
@@ -4631,7 +4631,7 @@ class Expr:
         ╞══════╪══════╪════════╪════════════════╡
         │ 1.0  ┆ 2.0  ┆ false  ┆ false          │
         │ 2.0  ┆ 2.0  ┆ true   ┆ true           │
-        │ NaN  ┆ NaN  ┆ false  ┆ false          │
+        │ NaN  ┆ NaN  ┆ true   ┆ true           │
         │ 4.0  ┆ 4.0  ┆ true   ┆ true           │
         │ null ┆ 5.0  ┆ null   ┆ false          │
         │ null ┆ null ┆ null   ┆ true           │
@@ -4668,7 +4668,7 @@ class Expr:
         ╞═════╪═════╪════════╡
         │ 5.0 ┆ 5.0 ┆ true   │
         │ 4.0 ┆ 3.0 ┆ true   │
-        │ NaN ┆ NaN ┆ false  │
+        │ NaN ┆ NaN ┆ true   │
         │ 2.0 ┆ 1.0 ┆ true   │
         └─────┴─────┴────────┘
 
@@ -4738,7 +4738,7 @@ class Expr:
         ╞═════╪═════╪════════╡
         │ 5.0 ┆ 5.0 ┆ true   │
         │ 4.0 ┆ 3.5 ┆ false  │
-        │ NaN ┆ NaN ┆ false  │
+        │ NaN ┆ NaN ┆ true   │
         │ 0.5 ┆ 2.0 ┆ true   │
         └─────┴─────┴────────┘
 
@@ -4808,7 +4808,7 @@ class Expr:
         ╞═════╪═════╪════════╡
         │ 1.0 ┆ 2.0 ┆ true   │
         │ 2.0 ┆ 2.0 ┆ false  │
-        │ NaN ┆ NaN ┆ true   │
+        │ NaN ┆ NaN ┆ false  │
         │ 4.0 ┆ 4.0 ┆ false  │
         └─────┴─────┴────────┘
 
@@ -4846,7 +4846,7 @@ class Expr:
         ╞══════╪══════╪════════╪════════════════╡
         │ 1.0  ┆ 2.0  ┆ true   ┆ true           │
         │ 2.0  ┆ 2.0  ┆ false  ┆ false          │
-        │ NaN  ┆ NaN  ┆ true   ┆ true           │
+        │ NaN  ┆ NaN  ┆ false  ┆ false          │
         │ 4.0  ┆ 4.0  ┆ false  ┆ false          │
         │ null ┆ 5.0  ┆ null   ┆ true           │
         │ null ┆ null ┆ null   ┆ false          │
