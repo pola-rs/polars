@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import warnings
+from typing import Any
 
 import pytest
 
@@ -153,20 +154,142 @@ def test_missing_equality_on_bools() -> None:
     ]
 
 
-def reference_ordering_propagating(lhs: float | None, rhs: float | None) -> str | None:
+def isnan(x: Any) -> bool:
+    return isinstance(x, float) and math.isnan(x)
+
+
+def reference_ordering_propagating(lhs: Any, rhs: Any) -> str | None:
+    # normal < nan, nan == nan, nulls propagate
     if lhs is None or rhs is None:
         return None
 
-    if math.isnan(lhs) and math.isnan(rhs):
+    if isnan(lhs) and isnan(rhs):
         return "="
 
-    if math.isnan(lhs) or lhs > rhs:
+    if isnan(lhs) or lhs > rhs:
         return ">"
 
-    if math.isnan(rhs) or lhs < rhs:
+    if isnan(rhs) or lhs < rhs:
         return "<"
 
     return "="
+
+
+def reference_ordering_missing(lhs: Any, rhs: Any) -> str:
+    # null < normal < nan, nan == nan, null == null
+    if lhs is None and rhs is None:
+        return "="
+
+    if lhs is None:
+        return "<"
+
+    if rhs is None:
+        return ">"
+
+    if isnan(lhs) and isnan(rhs):
+        return "="
+
+    if isnan(lhs) or lhs > rhs:
+        return ">"
+
+    if isnan(rhs) or lhs < rhs:
+        return "<"
+
+    return "="
+
+
+def verify_total_ordering(
+    lhs: Any, rhs: Any, dummy: Any, dtype: pl.PolarsDataType
+) -> None:
+    assert dummy is not None
+    ref = reference_ordering_propagating(lhs, rhs)
+    refmiss = reference_ordering_missing(lhs, rhs)
+
+    # Add dummy variable so we don't broadcast or do full-null optimization.
+    df = pl.DataFrame(
+        {"l": [lhs, dummy], "r": [rhs, dummy]}, schema={"l": dtype, "r": dtype}
+    )
+
+    ans = df.select(
+        (pl.col("l") == pl.col("r")).alias("eq"),
+        (pl.col("l") != pl.col("r")).alias("ne"),
+        (pl.col("l") < pl.col("r")).alias("lt"),
+        (pl.col("l") <= pl.col("r")).alias("le"),
+        (pl.col("l") > pl.col("r")).alias("gt"),
+        (pl.col("l") >= pl.col("r")).alias("ge"),
+        pl.col("l").eq_missing(pl.col("r")).alias("eq_missing"),
+        pl.col("l").ne_missing(pl.col("r")).alias("ne_missing"),
+    )
+
+    ans_correct_dict = {
+        "eq": [ref and ref == "="],  # "ref and X" propagates ref is None
+        "ne": [ref and ref != "="],
+        "lt": [ref and ref == "<"],
+        "le": [ref and (ref == "<" or ref == "=")],
+        "gt": [ref and ref == ">"],
+        "ge": [ref and (ref == ">" or ref == "=")],
+        "eq_missing": [refmiss == "="],
+        "ne_missing": [refmiss != "="],
+    }
+    ans_correct = pl.DataFrame(
+        ans_correct_dict, schema={c: pl.Boolean for c in ans_correct_dict}
+    )
+
+    assert_frame_equal(ans[:1], ans_correct)
+
+
+def verify_total_ordering_broadcast(
+    lhs: Any, rhs: Any, dummy: Any, dtype: pl.PolarsDataType
+) -> None:
+    # We do want to test None comparisons.
+    warnings.filterwarnings("ignore", category=UserWarning)
+
+    ref = reference_ordering_propagating(lhs, rhs)
+    refmiss = reference_ordering_missing(lhs, rhs)
+
+    # Add dummy variable so we don't broadcast inherently.
+    df = pl.DataFrame(
+        {"l": [lhs, dummy], "r": [rhs, dummy]}, schema={"l": dtype, "r": dtype}
+    )
+
+    ans_first = df.select(
+        (pl.col("l") == pl.col("r").first()).alias("eq"),
+        (pl.col("l") != pl.col("r").first()).alias("ne"),
+        (pl.col("l") < pl.col("r").first()).alias("lt"),
+        (pl.col("l") <= pl.col("r").first()).alias("le"),
+        (pl.col("l") > pl.col("r").first()).alias("gt"),
+        (pl.col("l") >= pl.col("r").first()).alias("ge"),
+        pl.col("l").eq_missing(pl.col("r").first()).alias("eq_missing"),
+        pl.col("l").ne_missing(pl.col("r").first()).alias("ne_missing"),
+    )
+
+    ans_scalar = df.select(
+        (pl.col("l") == rhs).alias("eq"),
+        (pl.col("l") != rhs).alias("ne"),
+        (pl.col("l") < rhs).alias("lt"),
+        (pl.col("l") <= rhs).alias("le"),
+        (pl.col("l") > rhs).alias("gt"),
+        (pl.col("l") >= rhs).alias("ge"),
+        (pl.col("l").eq_missing(rhs)).alias("eq_missing"),
+        (pl.col("l").ne_missing(rhs)).alias("ne_missing"),
+    )
+
+    ans_correct_dict = {
+        "eq": [ref and ref == "="],  # "ref and X" propagates ref is None
+        "ne": [ref and ref != "="],
+        "lt": [ref and ref == "<"],
+        "le": [ref and (ref == "<" or ref == "=")],
+        "gt": [ref and ref == ">"],
+        "ge": [ref and (ref == ">" or ref == "=")],
+        "eq_missing": [refmiss == "="],
+        "ne_missing": [refmiss != "="],
+    }
+    ans_correct = pl.DataFrame(
+        ans_correct_dict, schema={c: pl.Boolean for c in ans_correct_dict}
+    )
+
+    assert_frame_equal(ans_first[:1], ans_correct)
+    assert_frame_equal(ans_scalar[:1], ans_correct)
 
 
 INTERESTING_FLOAT_VALUES = [
@@ -185,161 +308,41 @@ INTERESTING_FLOAT_VALUES = [
 @pytest.mark.parametrize("lhs", INTERESTING_FLOAT_VALUES)
 @pytest.mark.parametrize("rhs", INTERESTING_FLOAT_VALUES)
 def test_total_ordering_float_series(lhs: float | None, rhs: float | None) -> None:
-    ref = reference_ordering_propagating(lhs, rhs)
-
-    # Add dummy variable so we don't broadcast or do full-null optimization.
-    df = pl.DataFrame(
-        {"l": [lhs, 0.0], "r": [rhs, 0.0]}, schema={"l": pl.Float64, "r": pl.Float64}
-    )
-
-    assert_frame_equal(
-        df.select(
-            (pl.col("l") == pl.col("r")).alias("eq"),
-            (pl.col("l") != pl.col("r")).alias("ne"),
-            (pl.col("l") < pl.col("r")).alias("lt"),
-            (pl.col("l") <= pl.col("r")).alias("le"),
-            (pl.col("l") > pl.col("r")).alias("gt"),
-            (pl.col("l") >= pl.col("r")).alias("ge"),
-        ),
-        pl.DataFrame(
-            {
-                "eq": [ref and ref == "=", True],  # "ref and X" propagates ref is None
-                "ne": [ref and ref != "=", False],
-                "lt": [ref and ref == "<", False],
-                "le": [ref and (ref == "<" or ref == "="), True],
-                "gt": [ref and ref == ">", False],
-                "ge": [ref and (ref == ">" or ref == "="), True],
-            }
-        ),
-    )
+    verify_total_ordering(lhs, rhs, 0.0, pl.Float32)
+    verify_total_ordering(lhs, rhs, 0.0, pl.Float64)
+    verify_total_ordering_broadcast(lhs, rhs, 0.0, pl.Float32)
+    verify_total_ordering_broadcast(lhs, rhs, 0.0, pl.Float64)
 
 
-@pytest.mark.parametrize("lhs", INTERESTING_FLOAT_VALUES)
-@pytest.mark.parametrize("rhs", INTERESTING_FLOAT_VALUES)
-def test_total_ordering_float_series_broadcast(
-    lhs: float | None, rhs: float | None
-) -> None:
-    # We do want to test None comparisons.
-    warnings.filterwarnings("ignore", category=UserWarning)
-
-    ref = reference_ordering_propagating(lhs, rhs)
-
-    # Add dummy variable so we don't broadcast inherently.
-    df = pl.DataFrame(
-        {"l": [lhs, lhs], "r": [rhs, rhs]}, schema={"l": pl.Float64, "r": pl.Float64}
-    )
-
-    ans_first = df.select(
-        (pl.col("l") == pl.col("r").first()).alias("eq"),
-        (pl.col("l") != pl.col("r").first()).alias("ne"),
-        (pl.col("l") < pl.col("r").first()).alias("lt"),
-        (pl.col("l") <= pl.col("r").first()).alias("le"),
-        (pl.col("l") > pl.col("r").first()).alias("gt"),
-        (pl.col("l") >= pl.col("r").first()).alias("ge"),
-    )
-
-    ans_scalar = df.select(
-        (pl.col("l") == rhs).alias("eq"),
-        (pl.col("l") != rhs).alias("ne"),
-        (pl.col("l") < rhs).alias("lt"),
-        (pl.col("l") <= rhs).alias("le"),
-        (pl.col("l") > rhs).alias("gt"),
-        (pl.col("l") >= rhs).alias("ge"),
-    )
-
-    ans_correct = pl.DataFrame(
-        {
-            "eq": [ref and ref == "="] * 2,  # "ref and X" propagates ref is None
-            "ne": [ref and ref != "="] * 2,
-            "lt": [ref and ref == "<"] * 2,
-            "le": [ref and (ref == "<" or ref == "=")] * 2,
-            "gt": [ref and ref == ">"] * 2,
-            "ge": [ref and (ref == ">" or ref == "=")] * 2,
-        },
-        schema={c: pl.Boolean for c in ["eq", "ne", "lt", "le", "gt", "ge"]},
-    )
-
-    assert_frame_equal(ans_first, ans_correct)
-    assert_frame_equal(ans_scalar, ans_correct)
+INTERESTING_STRING_VALUES = [
+    "",
+    "foo",
+    "bar",
+    "fooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooom",
+    "foooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo",
+    "fooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooop",
+    None,
+]
 
 
-def reference_ordering_missing(lhs: float | None, rhs: float | None) -> str:
-    if lhs is None and rhs is None:
-        return "="
-
-    if lhs is None:
-        return "<"
-
-    if rhs is None:
-        return ">"
-
-    if math.isnan(lhs) and math.isnan(rhs):
-        return "="
-
-    if math.isnan(lhs) or lhs > rhs:
-        return ">"
-
-    if math.isnan(rhs) or lhs < rhs:
-        return "<"
-
-    return "="
+@pytest.mark.parametrize("lhs", INTERESTING_STRING_VALUES)
+@pytest.mark.parametrize("rhs", INTERESTING_STRING_VALUES)
+def test_total_ordering_string_series(lhs: str | None, rhs: str | None) -> None:
+    verify_total_ordering(lhs, rhs, "", pl.Utf8)
+    verify_total_ordering_broadcast(lhs, rhs, "", pl.Utf8)
 
 
-@pytest.mark.parametrize("lhs", INTERESTING_FLOAT_VALUES)
-@pytest.mark.parametrize("rhs", INTERESTING_FLOAT_VALUES)
-def test_total_ordering_float_series_missing(
-    lhs: float | None, rhs: float | None
-) -> None:
-    ref = reference_ordering_missing(lhs, rhs)
-
-    # Add dummy variable so we don't broadcast or do full-null optimization.
-    df = pl.DataFrame(
-        {"l": [lhs, 0.0], "r": [rhs, 0.0]}, schema={"l": pl.Float64, "r": pl.Float64}
-    )
-
-    assert_frame_equal(
-        df.select(
-            pl.col("l").eq_missing(pl.col("r")).alias("eq"),
-            pl.col("l").ne_missing(pl.col("r")).alias("ne"),
-        ),
-        pl.DataFrame(
-            {
-                "eq": [ref == "=", True],
-                "ne": [ref != "=", False],
-            }
-        ),
-    )
+@pytest.mark.parametrize("lhs", INTERESTING_STRING_VALUES)
+@pytest.mark.parametrize("rhs", INTERESTING_STRING_VALUES)
+def test_total_ordering_binary_series(str_lhs: str | None, str_rhs: str | None) -> None:
+    lhs = None if str_lhs is None else str_lhs.encode("utf-8")
+    rhs = None if str_rhs is None else str_rhs.encode("utf-8")
+    verify_total_ordering(lhs, rhs, b"", pl.Binary)
+    verify_total_ordering_broadcast(lhs, rhs, b"", pl.Binary)
 
 
-@pytest.mark.parametrize("lhs", INTERESTING_FLOAT_VALUES)
-@pytest.mark.parametrize("rhs", INTERESTING_FLOAT_VALUES)
-def test_total_ordering_float_series_missing_broadcast(
-    lhs: float | None, rhs: float | None
-) -> None:
-    ref = reference_ordering_missing(lhs, rhs)
-
-    # Add dummy variable so we don't broadcast inherently.
-    df = pl.DataFrame(
-        {"l": [lhs, lhs], "r": [rhs, rhs]}, schema={"l": pl.Float64, "r": pl.Float64}
-    )
-
-    ans_first = df.select(
-        pl.col("l").eq_missing(pl.col("r").first()).alias("eq"),
-        pl.col("l").ne_missing(pl.col("r").first()).alias("ne"),
-    )
-
-    ans_scalar = df.select(
-        pl.col("l").eq_missing(rhs).alias("eq"),
-        pl.col("l").ne_missing(rhs).alias("ne"),
-    )
-
-    ans_correct = pl.DataFrame(
-        {
-            "eq": [ref == "="] * 2,
-            "ne": [ref != "="] * 2,
-        },
-        schema={c: pl.Boolean for c in ["eq", "ne"]},
-    )
-
-    assert_frame_equal(ans_first, ans_correct)
-    assert_frame_equal(ans_scalar, ans_correct)
+@pytest.mark.parametrize("lhs", [None, False, True])
+@pytest.mark.parametrize("rhs", [None, False, True])
+def test_total_ordering_bool_series(lhs: bool | None, rhs: bool | None) -> None:
+    verify_total_ordering(lhs, rhs, False, pl.Boolean)
+    verify_total_ordering_broadcast(lhs, rhs, False, pl.Boolean)
