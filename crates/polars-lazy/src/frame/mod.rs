@@ -410,10 +410,7 @@ impl LazyFrame {
         for (existing, new) in iter.zip(new) {
             let existing = existing.as_ref();
             let new = new.as_ref();
-            if new != existing {
-                if !strict.unwrap_or(true) && !schema.contains(existing) {
-                    continue;
-                }
+            if new != existing && (strict.unwrap_or(true) || schema.contains(existing)) {
                 existing_vec.push(existing.into());
                 new_vec.push(new.into());
             }
