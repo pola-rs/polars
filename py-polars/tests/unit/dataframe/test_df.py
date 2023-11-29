@@ -1997,6 +1997,21 @@ def test_rename_same_name() -> None:
     }
 
 
+def test_rename_strict() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5],
+            "b": ["A", "A", "B", "C", "B"],
+        }
+    )
+    with pytest.raises(pl.exceptions.SchemaFieldNotFoundError):
+        df.rename({'a': 'c', 'd': 'e'})
+
+    result = df.rename({'a': 'c', 'd': 'e'}, strict=False)
+    expected = df.rename({'a': 'c'})
+    assert_frame_equal(result, expected)
+
+
 def test_fill_null() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, None]})
     assert_frame_equal(df.fill_null(4), pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
