@@ -768,21 +768,22 @@ def test_is_not_deprecated() -> None:
     assert_frame_equal(result, expected)
 
 def test_repr_short_expression() -> None:
-    expr = F.all().len().name.prefix('length:')
+    expr = pl.functions.all().len().name.prefix('length:')
     # we cut off the last ten characters because that includes the
     # memory location which will vary between runs
-    result = repr(expr)[:-10] 
+    result = repr(expr)[:-10]
 
-    expectd = "<Expr ['.rename_alias(*.count())'] at 0x"
+    expected = "<Expr ['.rename_alias(*.count())'] at 0x"
     assert result == expected
 
 def test_repr_long_expression() -> None:
-    expr = (F.all().len() - F.all().is_duplicated().sum()).name.prefix('unique_count')
+    expr = pl.functions.all().approx_n_unique().name.prefix('approx_n_unique:')
+
     # we cut off the last ten characters because that includes the
     # memory location which will vary between runs
-    result = repr(expr)[:-10] 
+    result = repr(expr)[:-10]
 
     # note the … denoting that there was truncated text
-    expectd = "<Expr ['.rename_alias([(*.count()) - (…'] at 0x"
+    expected = "<Expr ['.rename_alias(*.approx_n_uniqu…'] at 0x"
     assert result == expected
     assert repr(expr).endswith('>')
