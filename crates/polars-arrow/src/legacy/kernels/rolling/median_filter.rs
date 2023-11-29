@@ -127,7 +127,7 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
     }
 
     fn unwind(&mut self) {
-        for i in (0..self.k - 1).rev() {
+        for i in (0..self.k).rev() {
             self.delete_link(i)
         }
         self.m = self.tail;
@@ -211,9 +211,7 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
         self.undelete_link(i);
 
         if self.at_end() {
-            dbg!(&self.prev, &self.next, &self.alpha, &self.pi, self.m);
-            self.m = self.pi[self.prev[self.m] as usize] as usize;
-            dbg!(self.m);
+            self.m = self.prev[self.m] as usize;
             self.n_element = 1;
             self.current_index = 0;
             return;
@@ -429,7 +427,6 @@ where
         //   - WINDOW -
         // |--------------|
         let alpha = &slice[i * k..(i + 1) *k];
-        dbg!(&alpha);
         block_right = unsafe { Block::new(alpha, &mut *scratch_right_ptr, &mut *prev_right_ptr, &mut *next_right_ptr) };
 
         // Time reverse the rhs so we can undelete in sorted order.
@@ -437,12 +434,10 @@ where
 
         // Here the window will move from BLOCK_LEFT into BLOCK_RIGHT
         for j in 0..block_right.capacity() {
-            dbg!(j);
             block_left.delete(j);
             block_right.undelete(j);
-            dbg!(&block_left);
-            dbg!(&block_right);
 
+            dbg!(&block_left, &block_right);
             unsafe {
                 let union = BlockUnion::new(&mut *ptr_left, &mut *ptr_right);
                 out.push(dbg!(MedianUpdate::new(union).median()))
@@ -571,10 +566,12 @@ mod test {
         let mut b = Block::new(&values, &mut scratch, &mut prev, &mut next);
 
         b.unwind();
-        b.undelete(0);
-
-        dbg!(b);
-
+        b.undelete_set_median(0);
+        assert_eq!(b.peek(), Some(9));
+        b.undelete_set_median(1);
+        assert_eq!(b.peek(), Some(9));
+        b.undelete_set_median(2);
+        assert_eq!(b.peek(), Some(2));
     }
 
     #[test]
