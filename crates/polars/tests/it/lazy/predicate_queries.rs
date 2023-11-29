@@ -11,7 +11,7 @@ fn test_predicate_after_renaming() -> PolarsResult<()> {
         "bar" => [3, 2, 1]
     ]?
     .lazy()
-    .rename(["foo", "bar"], ["foo2", "bar2"])
+    .rename(["foo", "bar"], ["foo2", "bar2"], None)
     .filter(col("foo2").eq(col("bar2")))
     .collect()?;
 

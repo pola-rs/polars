@@ -22,7 +22,7 @@ fn test_swap_rename() -> PolarsResult<()> {
         "b" => [2],
     ]?
     .lazy()
-    .rename(["a", "b"], ["b", "a"])
+    .rename(["a", "b"], ["b", "a"], None)
     .collect()?;
 
     let expected = df![
