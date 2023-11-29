@@ -630,10 +630,7 @@ fn dict_read<'a, K: DictionaryKey, I: PagesIter + 'a>(
             chunk_size,
             |x: f64| x,
         )),
-        (PhysicalType::ByteArray, Utf8 | Binary) => dyn_iter(binary::DictIter::<K, i32, _>::new(
-            iter, data_type, num_rows, chunk_size,
-        )),
-        (PhysicalType::ByteArray, LargeUtf8 | LargeBinary) => dyn_iter(
+        (PhysicalType::ByteArray, LargeUtf8 | LargeBinary | Utf8 | Binary) => dyn_iter(
             binary::DictIter::<K, i64, _>::new(iter, data_type, num_rows, chunk_size),
         ),
         (PhysicalType::FixedLenByteArray(_), FixedSizeBinary(_)) => dyn_iter(
