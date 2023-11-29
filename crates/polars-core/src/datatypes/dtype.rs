@@ -388,3 +388,29 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
         _ => polars_bail!(ComputeError: "unable to merge datatypes"),
     })
 }
+
+// if returns
+// `Ok(true)`: can extend, but must cast
+// `Ok(false)`: can extend as is
+// Error: cannot extend.
+pub(crate) fn can_extend_dtype(left: &DataType, right: &DataType) -> PolarsResult<bool> {
+    match (left, right) {
+        (DataType::List(l), DataType::List(r)) => can_extend_dtype(l, r),
+        #[cfg(feature = "dtype-struct")]
+        (DataType::Struct(l), DataType::Struct(r)) => {
+            let mut must_cast = false;
+            for (l, r) in l.iter().zip(r.iter()) {
+                must_cast |= can_extend_dtype(&l.dtype, &r.dtype)?;
+            }
+            Ok(must_cast)
+        },
+        (DataType::Null, DataType::Null) => Ok(false),
+        // Other way around we don't allow because we keep left dtype as is.
+        // We don't go to supertype, and we certainly don't want to cast self to null type.
+        (_, DataType::Null) => Ok(true),
+        (l, r) => {
+            polars_ensure!(l == r, SchemaMismatch: "cannot extend/append {:?} with {:?}", left, right);
+            Ok(false)
+        },
+    }
+}
