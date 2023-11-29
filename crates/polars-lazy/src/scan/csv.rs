@@ -10,6 +10,10 @@ use crate::frame::LazyFileListReader;
 use crate::prelude::*;
 use crate::scan::SpecificOrMultipleReaderFactories;
 
+/// Initially this should be constructed with multiple ReaderFactory instances,
+/// and then LazyFileListReader::finish() is used to clone() an instance,
+/// temporarily turn them into LazyCsvReaders with a specific ReaderFactory, and
+/// then combines them into a LazyFrame.
 #[derive(Clone)]
 #[cfg(feature = "csv")]
 pub struct LazyCsvReader<'a> {
@@ -232,7 +236,7 @@ impl<'a> LazyCsvReader<'a> {
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
-        let mut mmap_bytes_reader = self.reader().mmapbytesreader()?;
+        let mut mmap_bytes_reader = self.specific_reader().expect("There should be a specific ReaderFactory set at this point").mmapbytesreader()?;
         let reader_bytes = get_reader_bytes(&mut mmap_bytes_reader).expect("could not mmap file");
         let mut skip_rows = self.skip_rows;
 
@@ -297,23 +301,23 @@ impl LazyFileListReader for LazyCsvReader<'_> {
         Ok(lf)
     }
 
-    fn reader(&mut self) -> &mut ReaderFactory {
+    fn specific_reader(&mut self) -> Option<&mut ReaderFactory> {
         if let SpecificOrMultipleReaderFactories::Specific{mut reader} = self.reader_or_sources {
-            &mut *reader
+            Some(&mut *reader)
         } else {
-            panic!("Attempted to get reader when in wrong state");
+            None
         }
     }
 
-    fn multiple_readers(&self) -> &MultipleReaderFactories {
+    fn multiple_readers(&self) -> Option<&MultipleReaderFactories> {
         if let SpecificOrMultipleReaderFactories::Multiple{sources} = self.reader_or_sources {
-            &*sources
+            Some(&*sources)
         } else {
-            panic!("Attempted to get sources when in wrong state");
+            None
         }
     }
 
-    fn with_reader(mut self, reader: Arc<ReaderFactory>) -> Self {
+    fn with_specific_reader(mut self, reader: Arc<ReaderFactory>) -> Self {
         self.reader_or_sources = SpecificOrMultipleReaderFactories::Specific { reader };
         self
     }

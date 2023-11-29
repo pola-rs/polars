@@ -142,7 +142,7 @@ pub(crate) enum SpecificOrMultipleReaderFactories {
 pub trait LazyFileListReader: Clone {
     /// Get the final [LazyFrame].
     fn finish(self) -> PolarsResult<LazyFrame> {
-        let readers = self.multiple_readers().iter_readers(self.cloud_options())?;
+        let readers = self.multiple_readers().expect("finish() shouldn't be called if a specific ReaderFactory was already set").iter_readers(self.cloud_options())?;
         let lfs = readers
             .map(|r| {
                 let r = r?;
@@ -187,16 +187,16 @@ pub trait LazyFileListReader: Clone {
     /// It is recommended to always use [LazyFileListReader::finish] method.
     fn finish_no_glob(self, reader: ReaderFactory) -> PolarsResult<LazyFrame>;
 
-    /// Reader of the scanned file.
-    fn reader(&mut self) -> &mut ReaderFactory;
+    /// Reader of a specific scanned file.
+    fn specific_reader(&mut self) -> Option<&mut ReaderFactory>;
 
     /// A source of multiple readers.
-    fn multiple_readers(&self) -> &MultipleReaderFactories;
+    fn multiple_readers(&self) -> Option<&MultipleReaderFactories>;
 
     /// Set the reader for a _specific_ file (local or remote), e.g. it's not a
     /// glob.
     #[must_use]
-    fn with_reader(self, reader: Arc<ReaderFactory>) -> Self;
+    fn with_specific_reader(self, reader: Arc<ReaderFactory>) -> Self;
 
     /// Set sources of the scanned files.
     #[must_use]
