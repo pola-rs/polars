@@ -92,6 +92,13 @@ Check if linting also works correctly by running:
 make pre-commit
 ```
 
+Using the package that you just built:
+
+```bash
+cd polars # the root directory of the git checkout
+.venv/bin/python # will start python with polars available as a module
+```
+
 Note that we do not actually use the [pre-commit](https://pre-commit.com/) tool.
 We use the Makefile to conveniently run the following formatting and linting tools:
 
