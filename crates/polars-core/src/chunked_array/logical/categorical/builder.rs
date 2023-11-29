@@ -553,7 +553,7 @@ impl CategoricalChunked {
     /// This will error if a string is not in the fixed list of categories
     pub fn from_utf8_to_enum(
         values: &Utf8Chunked,
-        categories: Utf8Array<i64>,
+        categories: &Utf8Array<i64>,
     ) -> PolarsResult<CategoricalChunked> {
         polars_ensure!(categories.null_count()  == 0, ComputeError: "categories can not contain null values");
 
@@ -570,13 +570,13 @@ impl CategoricalChunked {
                 opt_s
                     .map(|s| {
                         map.get(s).copied().ok_or_else(
-                            || polars_err!(ComputeError: "value '{}' is not present in Enum: {:?}",s,&categories),
+                            || polars_err!(ComputeError: "value '{}' is not present in Enum: {:?}",s,categories),
                         )
                     })
                     .transpose()
             })
             .collect::<Result<UInt32Chunked, PolarsError>>()?;
-        let rev_map = RevMapping::build_enum(categories);
+        let rev_map = RevMapping::build_enum(categories.clone());
         unsafe {
             Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
                 ca_idx,

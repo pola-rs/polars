@@ -186,12 +186,13 @@ impl ChunkCast for Utf8Chunked {
                 },
                 Some(rev_map) => {
                     polars_ensure!(rev_map.is_enum(), InvalidOperation: "casting to a non-enum variant with rev map is not supported for the user");
-                    CategoricalChunked::from_utf8_to_enum(self, rev_map.get_categories().clone())
-                        .map(|ca| {
+                    CategoricalChunked::from_utf8_to_enum(self, rev_map.get_categories()).map(
+                        |ca| {
                             let mut s = ca.into_series();
                             s.rename(self.name());
                             s
-                        })
+                        },
+                    )
                 },
             },
             #[cfg(feature = "dtype-struct")]
