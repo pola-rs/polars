@@ -3900,7 +3900,7 @@ class DataFrame:
         """
         return self.select(F.col("*").reverse())
 
-    def rename(self, mapping: dict[str, str]) -> DataFrame:
+    def rename(self, mapping: dict[str, str], strict: bool = True) -> DataFrame:
         """
         Rename column names.
 
@@ -3908,6 +3908,8 @@ class DataFrame:
         ----------
         mapping
             Key value pairs that map from old name to new name.
+        strict
+            Throw an error if a column is not present
 
         Examples
         --------
@@ -3927,7 +3929,7 @@ class DataFrame:
         └───────┴─────┴─────┘
 
         """
-        return self.lazy().rename(mapping).collect(_eager=True)
+        return self.lazy().rename(mapping, strict=strict).collect(_eager=True)
 
     def insert_column(self, index: int, column: Series) -> Self:
         """
