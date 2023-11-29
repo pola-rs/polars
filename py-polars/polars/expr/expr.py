@@ -135,6 +135,9 @@ class Expr:
     def __str__(self) -> str:
         return self._pyexpr.to_str()
 
+    def __repr__(self) -> str:
+        return self._pyexpr.to_str()
+
     def __bool__(self) -> NoReturn:
         raise TypeError(
             "the truth value of an Expr is ambiguous"
