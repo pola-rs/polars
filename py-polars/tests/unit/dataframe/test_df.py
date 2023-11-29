@@ -2004,7 +2004,7 @@ def test_rename_strict() -> None:
             "b": ["A", "A", "B", "C", "B"],
         }
     )
-    with pytest.raises(pl.exceptions.SchemaFieldNotFoundError):
+    with pytest.raises(pl.SchemaFieldNotFoundError):
         df.rename({"a": "c", "d": "e"})
 
     result = df.rename({"a": "c", "d": "e"}, strict=False)
