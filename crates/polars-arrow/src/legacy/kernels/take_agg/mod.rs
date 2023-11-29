@@ -12,7 +12,7 @@ use crate::types::NativeType;
 
 /// Take kernel for single chunk without nulls and an iterator as index.
 /// # Safety
-/// caller must ensure iterators are not empty and indexes are in bounds
+/// caller must ensure iterators indexes are in bounds
 #[inline]
 pub unsafe fn take_agg_no_null_primitive_iter_unchecked<
     T: NativeType + ToPrimitive,
