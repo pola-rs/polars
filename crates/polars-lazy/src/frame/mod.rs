@@ -411,7 +411,7 @@ impl LazyFrame {
             let new = new.as_ref();
             if new != existing {
                 if !strict.unwrap_or(true) && !schema.contains(existing) {
-                    continue
+                    continue;
                 }
                 existing_vec.push(existing.into());
                 new_vec.push(new.into());
