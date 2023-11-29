@@ -1,6 +1,6 @@
 mod scalar;
 
-use std::ops::{BitOr, Not};
+use std::ops::Not;
 
 use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
@@ -640,7 +640,7 @@ impl ChunkCompare<&StructChunked> for StructChunked {
                 .iter()
                 .zip(rhs.fields().iter())
                 .map(|(l, r)| l.not_equal(r).unwrap())
-                .reduce(|lhs, rhs| lhs.bitor(rhs))
+                .reduce(|lhs, rhs| lhs | rhs)
                 .unwrap()
         }
     }
@@ -653,7 +653,7 @@ impl ChunkCompare<&StructChunked> for StructChunked {
                 .iter()
                 .zip(rhs.fields().iter())
                 .map(|(l, r)| l.not_equal_missing(r).unwrap())
-                .reduce(|lhs, rhs| lhs.bitor(rhs))
+                .reduce(|lhs, rhs| lhs | rhs)
                 .unwrap()
         }
     }
