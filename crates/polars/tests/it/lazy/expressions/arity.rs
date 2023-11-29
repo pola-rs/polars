@@ -133,7 +133,7 @@ fn test_when_then_otherwise_cats() -> PolarsResult<()> {
         .with_column(col("book").cast(DataType::Categorical(None)))
         .with_column(col("user").cast(DataType::Categorical(None)))
         .with_column(
-            when(col("book").eq(Null {}.lit()))
+            when(col("book").is_null())
                 .then(col("user"))
                 .otherwise(col("book"))
                 .alias("a"),
@@ -228,28 +228,6 @@ fn test_when_then_otherwise_sum_in_agg() -> PolarsResult<()> {
     assert!(q.collect()?.equals_missing(&expected));
 
     Ok(())
-}
-
-#[test]
-fn test_null_commutativity() {
-    let df = DataFrame::new_no_checks(vec![]);
-    let out = df
-        .lazy()
-        .select([
-            lit(1).neq(NULL.lit()).alias("a"),
-            NULL.lit().neq(1).alias("b"),
-        ])
-        .collect()
-        .unwrap();
-
-    assert_eq!(
-        out.column("a").unwrap().get(0).unwrap(),
-        AnyValue::Boolean(true)
-    );
-    assert_eq!(
-        out.column("b").unwrap().get(0).unwrap(),
-        AnyValue::Boolean(true)
-    );
 }
 
 #[test]
