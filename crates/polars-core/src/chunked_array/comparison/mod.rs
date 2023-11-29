@@ -1142,7 +1142,7 @@ mod test {
         let out = true_.lt_eq(&a);
         assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(true)]);
         let out = a.lt_eq(&false_);
-        assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(false)]);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(false)]);
         let out = false_.lt_eq(&a);
         assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(true)]);
 

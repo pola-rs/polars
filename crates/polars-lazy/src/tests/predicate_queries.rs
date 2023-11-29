@@ -192,7 +192,7 @@ fn test_filter_nulls_created_by_join() -> PolarsResult<()> {
     let out = a
         .lazy()
         .join(b, [col("key")], [col("key")], JoinType::Left.into())
-        .filter(col("flag").eq(lit(NULL)))
+        .filter(col("flag").is_null())
         .with_predicate_pushdown(false)
         .collect()?;
     assert!(out.equals_missing(&expected));
