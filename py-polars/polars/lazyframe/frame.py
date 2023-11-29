@@ -4265,12 +4265,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └───────┴─────┴─────┘
 
         """
-        if strict is False:
-            mapping = {k: v for k, v in mapping.items() if k in self.columns}
-
         existing = list(mapping.keys())
         new = list(mapping.values())
-        return self._from_pyldf(self._ldf.rename(existing, new))
+        return self._from_pyldf(self._ldf.rename(existing, new, strict))
 
     def reverse(self) -> Self:
         """

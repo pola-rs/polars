@@ -165,7 +165,7 @@ impl SqlExprVisitor<'_> {
             let schema_entry = schema.get_at_index(0);
             if let Some((old_name, _)) = schema_entry {
                 let new_name = String::from(old_name.as_str()) + rand_string.as_str();
-                lf = lf.rename([old_name.to_string()], [new_name.clone()]);
+                lf = lf.rename([old_name.to_string()], [new_name.clone()], None);
 
                 return Ok(Expr::SubPlan(
                     SpecialEq::new(Arc::new(lf.logical_plan)),

@@ -391,13 +391,14 @@ impl LazyFrame {
     /// corresponding new column names. Renaming happens to all `existing` columns
     /// simultaneously, not iteratively. (In particular, all columns in `existing` must
     /// already exist in the `LazyFrame` when `rename` is called.)
-    pub fn rename<I, J, T, S>(self, existing: I, new: J) -> Self
+    pub fn rename<I, J, T, S>(self, existing: I, new: J, strict: Option<bool>) -> Self
     where
         I: IntoIterator<Item = T>,
         J: IntoIterator<Item = S>,
         T: AsRef<str>,
         S: AsRef<str>,
     {
+        let schema = &self.schema().unwrap();
         let iter = existing.into_iter();
         let cap = iter.size_hint().0;
         let mut existing_vec: Vec<SmartString> = Vec::with_capacity(cap);
@@ -409,13 +410,15 @@ impl LazyFrame {
             let existing = existing.as_ref();
             let new = new.as_ref();
             if new != existing {
+                if !strict.unwrap_or(true) && !schema.contains(existing) {
+                    continue
+                }
                 existing_vec.push(existing.into());
                 new_vec.push(new.into());
             }
         }
 
         // a column gets swapped
-        let schema = &self.schema().unwrap();
         let swapping = new_vec.iter().any(|name| schema.get(name).is_some());
 
         if let Some(lp) = self.check_names(&existing_vec, Some(schema)) {

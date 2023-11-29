@@ -840,9 +840,9 @@ impl PyLazyFrame {
         ldf.with_columns_seq(exprs.to_exprs()).into()
     }
 
-    fn rename(&mut self, existing: Vec<String>, new: Vec<String>) -> Self {
+    fn rename(&mut self, existing: Vec<String>, new: Vec<String>, strict: bool) -> Self {
         let ldf = self.ldf.clone();
-        ldf.rename(existing, new).into()
+        ldf.rename(existing, new, Some(strict)).into()
     }
 
     fn reverse(&self) -> Self {
