@@ -45,7 +45,7 @@ hashbrown = { version = "0.14", features = ["rayon", "ahash"] }
 hex = "0.4.3"
 indexmap = { version = "2", features = ["std"] }
 itoa = "1.0.6"
-atoi_simd = "0.15"
+atoi_simd = "0.15.5"
 fast-float = { version = "0.2" }
 memchr = "2.6"
 multiversion = "0.7"
@@ -113,7 +113,6 @@ features = [
 ]
 
 [patch.crates-io]
-atoi_simd = { git = "https://github.com/orlp/atoi_simd", branch = "fix-parse-skipped-zeroes" }
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
 # simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
 
