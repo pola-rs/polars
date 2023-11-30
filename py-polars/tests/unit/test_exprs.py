@@ -787,4 +787,3 @@ def test_repr_long_expression() -> None:
     expected = "<Expr ['dtype_columns([Utf8]).str.coun…'] at "
     assert result == expected
     assert repr(expr).endswith('>')
-    "uniqu"
