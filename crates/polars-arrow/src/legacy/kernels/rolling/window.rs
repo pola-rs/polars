@@ -44,7 +44,7 @@ impl<'a, T: NativeType> SortedBuf<'a, T> {
                 // value is present in buf
                 let remove_idx = self
                     .buf
-                    .binary_search_by(|a| a.tot_cmp(&val))
+                    .binary_search_by(|a| a.tot_cmp(val))
                     .unwrap_unchecked();
                 // this is O(n) but we need a sorted window
                 self.buf.remove(remove_idx);

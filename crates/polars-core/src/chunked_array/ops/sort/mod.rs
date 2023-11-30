@@ -27,12 +27,8 @@ use crate::series::IsSorted;
 use crate::utils::{CustomIterTools, NoNull};
 use crate::POOL;
 
-pub(crate) fn sort_by_branch<T, C>(
-    slice: &mut [T],
-    descending: bool,
-    cmp: C,
-    parallel: bool,
-) where
+pub(crate) fn sort_by_branch<T, C>(slice: &mut [T], descending: bool, cmp: C, parallel: bool)
+where
     T: Send,
     C: Send + Sync + Fn(&T, &T) -> Ordering,
 {
@@ -50,12 +46,8 @@ pub(crate) fn sort_by_branch<T, C>(
 }
 
 #[inline]
-fn sort_unstable_by_branch<T, C>(
-    slice: &mut [T],
-    descending: bool,
-    cmp: C,
-    parallel: bool,
-) where
+fn sort_unstable_by_branch<T, C>(slice: &mut [T], descending: bool, cmp: C, parallel: bool)
+where
     T: Send,
     C: Send + Sync + Fn(&T, &T) -> Ordering,
 {
@@ -105,10 +97,7 @@ macro_rules! sort_with_fast_path {
     }}
 }
 
-fn sort_with_numeric<T>(
-    ca: &ChunkedArray<T>,
-    options: SortOptions,
-) -> ChunkedArray<T>
+fn sort_with_numeric<T>(ca: &ChunkedArray<T>, options: SortOptions) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
 {

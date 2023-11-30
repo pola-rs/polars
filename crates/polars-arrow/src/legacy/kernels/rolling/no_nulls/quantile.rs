@@ -157,13 +157,7 @@ where
 #[inline]
 fn compute_wq<T>(buf: &[(T, f64)], p: f64, wsum: f64, interp: QuantileInterpolOptions) -> T
 where
-    T: Debug
-        + NativeType
-        + Mul<Output = T>
-        + Sub<Output = T>
-        + NumCast
-        + ToPrimitive
-        + Zero
+    T: Debug + NativeType + Mul<Output = T> + Sub<Output = T> + NumCast + ToPrimitive + Zero,
 {
     // There are a few ways to compute a weighted quantile but no "canonical" way.
     // This is mostly taken from the Julia implementation which was readable and reasonable
@@ -212,13 +206,7 @@ fn rolling_apply_weighted_quantile<T, Fo>(
 ) -> ArrayRef
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
-    T: Debug
-        + NativeType
-        + Mul<Output = T>
-        + Sub<Output = T>
-        + NumCast
-        + ToPrimitive
-        + Zero
+    T: Debug + NativeType + Mul<Output = T> + Sub<Output = T> + NumCast + ToPrimitive + Zero,
 {
     assert_eq!(weights.len(), window_size);
     // Keep nonzero weights and their indices to know which values we need each iteration.
