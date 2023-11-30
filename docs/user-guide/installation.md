@@ -42,7 +42,7 @@ By using the above command you install the core of Polars onto your system. Howe
 
 ```text
 # For example
-pip install polars[numpy, fsspec]
+pip install 'polars[numpy,fsspec]'
 ```
 
 | Tag        | Description                                                                                                                           |
