@@ -9147,7 +9147,7 @@ class Expr:
             name: str,
             values: Iterable[Any],
             dtype: PolarsDataType | None,
-            dtype_if_empty: PolarsDataType | None,
+            dtype_if_empty: PolarsDataType,
             dtype_keys: PolarsDataType | None,
             *,
             is_keys: bool,
