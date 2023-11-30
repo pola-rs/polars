@@ -14,10 +14,10 @@ use polars::series::ops::NullBehavior;
 use polars_core::frame::row::any_values_to_dtype;
 use polars_core::prelude::{IndexOrder, QuantileInterpolOptions};
 use polars_core::utils::arrow::types::NativeType;
-use polars_core::utils::arrow::util::total_ord::TotalEq;
 use polars_lazy::prelude::*;
 #[cfg(feature = "cloud")]
 use polars_rs::io::cloud::CloudOptions;
+use polars_utils::total_ord::TotalEq;
 use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::{PyTypeError, PyValueError};

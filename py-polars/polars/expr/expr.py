@@ -58,7 +58,7 @@ from polars.utils.deprecation import (
     warn_closed_future_change,
 )
 from polars.utils.meta import threadpool_size
-from polars.utils.various import no_default, sphinx_accessor
+from polars.utils.various import _warn_null_comparison, no_default, sphinx_accessor
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
@@ -164,6 +164,7 @@ class Expr:
         return self._from_pyexpr(self._to_pyexpr(other)._and(self._pyexpr))
 
     def __eq__(self, other: Any) -> Self:  # type: ignore[override]
+        _warn_null_comparison(other)
         return self._from_pyexpr(self._pyexpr.eq(self._to_pyexpr(other)))
 
     def __floordiv__(self, other: Any) -> Self:
@@ -173,18 +174,22 @@ class Expr:
         return self._from_pyexpr(self._to_pyexpr(other) // self._pyexpr)
 
     def __ge__(self, other: Any) -> Self:
+        _warn_null_comparison(other)
         return self._from_pyexpr(self._pyexpr.gt_eq(self._to_pyexpr(other)))
 
     def __gt__(self, other: Any) -> Self:
+        _warn_null_comparison(other)
         return self._from_pyexpr(self._pyexpr.gt(self._to_pyexpr(other)))
 
     def __invert__(self) -> Self:
         return self.not_()
 
     def __le__(self, other: Any) -> Self:
+        _warn_null_comparison(other)
         return self._from_pyexpr(self._pyexpr.lt_eq(self._to_pyexpr(other)))
 
     def __lt__(self, other: Any) -> Self:
+        _warn_null_comparison(other)
         return self._from_pyexpr(self._pyexpr.lt(self._to_pyexpr(other)))
 
     def __mod__(self, other: Any) -> Self:
@@ -200,6 +205,7 @@ class Expr:
         return self._from_pyexpr(self._to_pyexpr(other) * self._pyexpr)
 
     def __ne__(self, other: Any) -> Self:  # type: ignore[override]
+        _warn_null_comparison(other)
         return self._from_pyexpr(self._pyexpr.neq(self._to_pyexpr(other)))
 
     def __neg__(self) -> Expr:
@@ -4592,7 +4598,7 @@ class Expr:
         ╞═════╪═════╪════════╡
         │ 1.0 ┆ 2.0 ┆ false  │
         │ 2.0 ┆ 2.0 ┆ true   │
-        │ NaN ┆ NaN ┆ false  │
+        │ NaN ┆ NaN ┆ true   │
         │ 4.0 ┆ 4.0 ┆ true   │
         └─────┴─────┴────────┘
 
@@ -4630,7 +4636,7 @@ class Expr:
         ╞══════╪══════╪════════╪════════════════╡
         │ 1.0  ┆ 2.0  ┆ false  ┆ false          │
         │ 2.0  ┆ 2.0  ┆ true   ┆ true           │
-        │ NaN  ┆ NaN  ┆ false  ┆ false          │
+        │ NaN  ┆ NaN  ┆ true   ┆ true           │
         │ 4.0  ┆ 4.0  ┆ true   ┆ true           │
         │ null ┆ 5.0  ┆ null   ┆ false          │
         │ null ┆ null ┆ null   ┆ true           │
@@ -4667,7 +4673,7 @@ class Expr:
         ╞═════╪═════╪════════╡
         │ 5.0 ┆ 5.0 ┆ true   │
         │ 4.0 ┆ 3.0 ┆ true   │
-        │ NaN ┆ NaN ┆ false  │
+        │ NaN ┆ NaN ┆ true   │
         │ 2.0 ┆ 1.0 ┆ true   │
         └─────┴─────┴────────┘
 
@@ -4737,7 +4743,7 @@ class Expr:
         ╞═════╪═════╪════════╡
         │ 5.0 ┆ 5.0 ┆ true   │
         │ 4.0 ┆ 3.5 ┆ false  │
-        │ NaN ┆ NaN ┆ false  │
+        │ NaN ┆ NaN ┆ true   │
         │ 0.5 ┆ 2.0 ┆ true   │
         └─────┴─────┴────────┘
 
@@ -4807,7 +4813,7 @@ class Expr:
         ╞═════╪═════╪════════╡
         │ 1.0 ┆ 2.0 ┆ true   │
         │ 2.0 ┆ 2.0 ┆ false  │
-        │ NaN ┆ NaN ┆ true   │
+        │ NaN ┆ NaN ┆ false  │
         │ 4.0 ┆ 4.0 ┆ false  │
         └─────┴─────┴────────┘
 
@@ -4845,7 +4851,7 @@ class Expr:
         ╞══════╪══════╪════════╪════════════════╡
         │ 1.0  ┆ 2.0  ┆ true   ┆ true           │
         │ 2.0  ┆ 2.0  ┆ false  ┆ false          │
-        │ NaN  ┆ NaN  ┆ true   ┆ true           │
+        │ NaN  ┆ NaN  ┆ false  ┆ false          │
         │ 4.0  ┆ 4.0  ┆ false  ┆ false          │
         │ null ┆ 5.0  ┆ null   ┆ true           │
         │ null ┆ null ┆ null   ┆ false          │

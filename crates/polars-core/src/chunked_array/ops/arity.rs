@@ -27,6 +27,36 @@ impl<A1, A2, R, T: FnMut(A1, A2) -> R> BinaryFnMut<A1, A2> for T {
     type Ret = R;
 }
 
+/// Applies a kernel that produces `Array` types.
+///
+/// Intended for kernels that apply on values, this function will apply the
+/// validity mask afterwards.
+#[inline]
+pub fn unary_mut_values<T, V, F, Arr>(ca: &ChunkedArray<T>, mut op: F) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    V: PolarsDataType<Array = Arr>,
+    Arr: Array + StaticArray,
+    F: FnMut(&T::Array) -> Arr,
+{
+    let iter = ca
+        .downcast_iter()
+        .map(|arr| op(arr).with_validity_typed(arr.validity().cloned()));
+    ChunkedArray::from_chunk_iter(ca.name(), iter)
+}
+
+/// Applies a kernel that produces `Array` types.
+#[inline]
+pub fn unary_mut_with_options<T, V, F, Arr>(ca: &ChunkedArray<T>, op: F) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    V: PolarsDataType<Array = Arr>,
+    Arr: Array + StaticArray,
+    F: FnMut(&T::Array) -> Arr,
+{
+    ChunkedArray::from_chunk_iter(ca.name(), ca.downcast_iter().map(op))
+}
+
 #[inline]
 pub fn binary_elementwise<T, U, V, F>(
     lhs: &ChunkedArray<T>,
@@ -194,6 +224,37 @@ where
             Ok(array.with_validity_typed(validity))
         });
     ChunkedArray::try_from_chunk_iter(lhs.name(), iter)
+}
+
+/// Applies a kernel that produces `Array` types.
+///
+/// Intended for kernels that apply on values, this function will filter out any
+/// results which do not have two non-null inputs.
+#[inline]
+pub fn binary_mut_values<T, U, V, F, Arr>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<U>,
+    mut op: F,
+    name: &str,
+) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    V: PolarsDataType<Array = Arr>,
+    Arr: Array + StaticArray,
+    F: FnMut(&T::Array, &U::Array) -> Arr,
+{
+    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
+    let iter = lhs
+        .downcast_iter()
+        .zip(rhs.downcast_iter())
+        .map(|(lhs_arr, rhs_arr)| {
+            let ret = op(lhs_arr, rhs_arr);
+            let inp_val = combine_validities_and(lhs_arr.validity(), rhs_arr.validity());
+            let val = combine_validities_and(inp_val.as_ref(), ret.validity());
+            ret.with_validity_typed(val)
+        });
+    ChunkedArray::from_chunk_iter(name, iter)
 }
 
 /// Applies a kernel that produces `Array` types.

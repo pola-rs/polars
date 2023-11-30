@@ -98,6 +98,25 @@ impl<O: Offset> BinaryArray<O> {
         })
     }
 
+    /// Creates a new [`BinaryArray`] without checking invariants.
+    ///
+    /// # Safety
+    ///
+    /// The invariants must be valid (see try_new).
+    pub unsafe fn new_unchecked(
+        data_type: ArrowDataType,
+        offsets: OffsetsBuffer<O>,
+        values: Buffer<u8>,
+        validity: Option<Bitmap>,
+    ) -> Self {
+        Self {
+            data_type,
+            offsets,
+            values,
+            validity,
+        }
+    }
+
     /// Creates a new [`BinaryArray`] from slices of `&[u8]`.
     pub fn from_slice<T: AsRef<[u8]>, P: AsRef<[T]>>(slice: P) -> Self {
         Self::from_trusted_len_values_iter(slice.as_ref().iter())

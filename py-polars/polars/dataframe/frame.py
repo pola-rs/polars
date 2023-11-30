@@ -95,6 +95,7 @@ from polars.utils.deprecation import (
 from polars.utils.various import (
     _prepare_row_count_args,
     _process_null_values,
+    _warn_null_comparison,
     can_create_dicts_with_pyarrow,
     handle_projection_columns,
     is_bool_sequence,
@@ -1388,6 +1389,7 @@ class DataFrame:
         op: ComparisonOperator,
     ) -> DataFrame:
         """Compare a DataFrame with a non-DataFrame object."""
+        _warn_null_comparison(other)
         if op == "eq":
             return self.select(F.all() == other)
         elif op == "neq":
