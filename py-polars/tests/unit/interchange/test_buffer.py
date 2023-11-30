@@ -61,7 +61,7 @@ def test_bufsize(data: pl.Series, expected: int) -> None:
         pl.Series([datetime(2022, 1, 1), datetime(2022, 2, 1)]),
         pl.Series(["a", "b", "a"]),
         pl.Series(["a", "b", "a"], dtype=pl.Categorical),
-        pl.Series([]),
+        pl.Series([], dtype=pl.Float32),
     ],
 )
 def test_ptr(data: pl.Series) -> None:

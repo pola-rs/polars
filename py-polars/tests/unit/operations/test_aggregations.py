@@ -281,13 +281,16 @@ def test_mapped_literal_to_literal_9217() -> None:
 
 
 def test_sum_empty_and_null_set() -> None:
-    series = pl.Series("a", [])
+    series = pl.Series("a", [], dtype=pl.Float32)
     assert series.sum() == 0
 
-    series = pl.Series("a", [None])
+    series = pl.Series("a", [None], dtype=pl.Float32)
     assert series.sum() == 0
 
-    df = pl.DataFrame({"a": [None, None, None], "b": [1, 1, 1]})
+    df = pl.DataFrame(
+        {"a": [None, None, None], "b": [1, 1, 1]},
+        schema={"a": pl.Float32, "b": pl.Int64},
+    )
     assert df.select(pl.sum("a")).item() == 0.0
     assert df.group_by("b").agg(pl.sum("a"))["a"].item() == 0.0
 

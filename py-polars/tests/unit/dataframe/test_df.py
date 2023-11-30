@@ -1690,7 +1690,7 @@ def test_hashing_on_python_objects() -> None:
 
 
 def test_unique_unit_rows() -> None:
-    df = pl.DataFrame({"a": [1], "b": [None]})
+    df = pl.DataFrame({"a": [1], "b": [None]}, schema={"a": pl.Int64, "b": pl.Float32})
 
     # 'unique' one-row frame should be equal to the original frame
     assert_frame_equal(df, df.unique(subset="a"))
