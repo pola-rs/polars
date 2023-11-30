@@ -10100,14 +10100,14 @@ class DataFrame:
         """
         Update the values in this `DataFrame` with the values in `other`.
 
-        By default, null values in the right dataframe are ignored. Use
-        `ignore_nulls=False` to overwrite values in this frame with null values in other
-        frame.
+        By default, null values in the right frame are ignored. Use
+        `include_nulls=False` to overwrite values in this frame with
+        null values in the other frame.
 
         Notes
         -----
-        This is syntactic sugar for a left/inner join, with an optional coalesce when
-        `include_nulls = False`.
+        This is syntactic sugar for a left/inner join, with an optional coalesce
+        when `include_nulls = False`
 
         Warnings
         --------
