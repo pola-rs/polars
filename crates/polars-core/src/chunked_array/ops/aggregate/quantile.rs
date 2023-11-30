@@ -58,32 +58,6 @@ fn midpoint_interpol<T: Float>(lower: T, upper: T) -> T {
     }
 }
 
-trait Sortable {
-    fn sort(&self) -> Self;
-}
-
-// Utility trait for `generic_quantile`
-impl<T> Sortable for ChunkedArray<T>
-where
-    T: PolarsIntegerType,
-    T::Native: TotalOrd,
-{
-    fn sort(&self) -> Self {
-        ChunkSort::sort(self, false)
-    }
-}
-impl Sortable for Float32Chunked {
-    fn sort(&self) -> Self {
-        ChunkSort::sort(self, false)
-    }
-}
-
-impl Sortable for Float64Chunked {
-    fn sort(&self) -> Self {
-        ChunkSort::sort(self, false)
-    }
-}
-
 // Uses quickselect instead of sorting all data
 fn quantile_slice<T: ToPrimitive + TotalOrd>(
     vals: &mut [T],
@@ -135,7 +109,6 @@ fn generic_quantile<T>(
 ) -> PolarsResult<Option<f64>>
 where
     T: PolarsNumericType,
-    ChunkedArray<T>: Sortable,
 {
     polars_ensure!(
         (0.0..=1.0).contains(&quantile),
@@ -150,7 +123,7 @@ where
     }
 
     let (idx, float_idx, top_idx) = quantile_idx(quantile, length, null_count, interpol);
-    let sorted = ca.sort();
+    let sorted = ca.sort(false);
     let lower = sorted.get(idx).map(|v| v.to_f64().unwrap());
 
     let opt = match interpol {

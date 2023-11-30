@@ -1,16 +1,4 @@
-use polars_utils::float::IsFloat;
-
 use super::*;
-
-#[inline]
-fn ascending_order<T: PartialOrd + IsFloat>(a: &(IdxSize, T), b: &(IdxSize, T)) -> Ordering {
-    compare_fn_nan_max(&a.1, &b.1)
-}
-
-#[inline]
-fn descending_order<T: PartialOrd + IsFloat>(a: &(IdxSize, T), b: &(IdxSize, T)) -> Ordering {
-    compare_fn_nan_max(&b.1, &a.1)
-}
 
 pub(super) fn arg_sort<I, J, T>(
     name: &str,
@@ -22,7 +10,7 @@ pub(super) fn arg_sort<I, J, T>(
 where
     I: IntoIterator<Item = J>,
     J: IntoIterator<Item = Option<T>>,
-    T: PartialOrd + Send + Sync + IsFloat,
+    T: TotalOrd + Send + Sync,
 {
     let descending = options.descending;
     let nulls_last = options.nulls_last;
@@ -49,11 +37,10 @@ where
         vals.extend(iter);
     }
 
-    arg_sort_branch(
+    sort_by_branch(
         vals.as_mut_slice(),
         descending,
-        ascending_order,
-        descending_order,
+        |a, b| a.1.tot_cmp(&b.1),
         options.multithreaded,
     );
 

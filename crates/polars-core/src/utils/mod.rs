@@ -15,7 +15,6 @@ use smartstring::alias::String as SmartString;
 pub use supertype::*;
 pub use {arrow, rayon};
 
-pub use crate::chunked_array::ops::sort::arg_sort_no_nulls;
 use crate::prelude::*;
 use crate::POOL;
 
