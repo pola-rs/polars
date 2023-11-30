@@ -42,7 +42,7 @@ pub(super) fn rolling_apply_agg_window<'a, Agg, T, Fo>(
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
     Agg: RollingAggWindowNoNulls<'a, T>,
-    T: Debug + IsFloat + NativeType,
+    T: Debug + NativeType,
 {
     let len = values.len();
     let (start, end) = det_offsets_fn(0, window_size, len);

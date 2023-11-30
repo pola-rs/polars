@@ -7,7 +7,7 @@ use polars_utils::slice::GetSaferUnchecked;
 use super::QuantileInterpolOptions::*;
 use super::*;
 
-pub struct QuantileWindow<'a, T: NativeType + IsFloat + PartialOrd> {
+pub struct QuantileWindow<'a, T: NativeType> {
     sorted: SortedBuf<'a, T>,
     prob: f64,
     interpol: QuantileInterpolOptions,
@@ -16,7 +16,6 @@ pub struct QuantileWindow<'a, T: NativeType + IsFloat + PartialOrd> {
 impl<
         'a,
         T: NativeType
-            + IsFloat
             + Float
             + std::iter::Sum
             + AddAssign
@@ -25,7 +24,6 @@ impl<
             + NumCast
             + One
             + Zero
-            + PartialOrd
             + Sub<Output = T>,
     > RollingAggWindowNoNulls<'a, T> for QuantileWindow<'a, T>
 {
@@ -111,7 +109,6 @@ pub fn rolling_quantile<T>(
 ) -> PolarsResult<ArrayRef>
 where
     T: NativeType
-        + IsFloat
         + Float
         + std::iter::Sum
         + AddAssign
@@ -167,8 +164,6 @@ where
         + NumCast
         + ToPrimitive
         + Zero
-        + IsFloat
-        + PartialOrd,
 {
     // There are a few ways to compute a weighted quantile but no "canonical" way.
     // This is mostly taken from the Julia implementation which was readable and reasonable
@@ -224,8 +219,6 @@ where
         + NumCast
         + ToPrimitive
         + Zero
-        + IsFloat
-        + PartialOrd,
 {
     assert_eq!(weights.len(), window_size);
     // Keep nonzero weights and their indices to know which values we need each iteration.
@@ -243,7 +236,7 @@ where
                     .zip(nz_idx_wts.iter())
                     .for_each(|(b, (i, w))| *b = (*values.get_unchecked(i + start), **w));
             }
-            buf.sort_unstable_by(|&a, &b| compare_fn_nan_max(&a.0, &b.0));
+            buf.sort_unstable_by(|&a, &b| a.0.tot_cmp(&b.0));
             compute_wq(&buf, p, wsum, interpolation)
         })
         .collect_trusted::<Vec<T>>();

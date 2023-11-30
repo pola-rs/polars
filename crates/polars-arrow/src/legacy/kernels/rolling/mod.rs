@@ -49,9 +49,9 @@ where
         let mut validity = MutableBitmap::with_capacity(len);
         validity.extend_constant(len, true);
 
-        // set the null values at the boundaries
+        // Set the null values at the boundaries
 
-        // head
+        // Head.
         for i in 0..len {
             let (start, end) = det_offsets_fn(i, window_size, len);
             if (end - start) < min_periods {
@@ -60,7 +60,7 @@ where
                 break;
             }
         }
-        // tail
+        // Tail.
         for i in (0..len).rev() {
             let (start, end) = det_offsets_fn(i, window_size, len);
             if (end - start) < min_periods {
@@ -75,20 +75,8 @@ where
         None
     }
 }
-pub(super) fn sort_buf<T>(buf: &mut [T])
-where
-    T: IsFloat + NativeType + PartialOrd,
-{
-    if T::is_float() {
-        buf.sort_by(|a, b| compare_fn_nan_max(a, b));
-    } else {
-        // Safety:
-        // all integers are Ord
-        unsafe { buf.sort_by(|a, b| a.partial_cmp(b).unwrap_unchecked()) };
-    }
-}
 
-//Parameters allowed for rolling operations.
+// Parameters allowed for rolling operations.
 #[derive(Clone, Copy, Debug)]
 pub struct RollingVarParams {
     pub ddof: u8,

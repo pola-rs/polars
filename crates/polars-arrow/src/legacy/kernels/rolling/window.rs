@@ -1,6 +1,8 @@
+use polars_utils::total_ord::TotalOrd;
+
 use super::*;
 
-pub(super) struct SortedBuf<'a, T: NativeType + IsFloat + PartialOrd> {
+pub(super) struct SortedBuf<'a, T: NativeType> {
     // slice over which the window slides
     slice: &'a [T],
     last_start: usize,
@@ -9,10 +11,10 @@ pub(super) struct SortedBuf<'a, T: NativeType + IsFloat + PartialOrd> {
     buf: Vec<T>,
 }
 
-impl<'a, T: NativeType + IsFloat + PartialOrd> SortedBuf<'a, T> {
+impl<'a, T: NativeType> SortedBuf<'a, T> {
     pub(super) fn new(slice: &'a [T], start: usize, end: usize) -> Self {
         let mut buf = slice[start..end].to_vec();
-        sort_buf(&mut buf);
+        buf.sort_by(TotalOrd::tot_cmp);
         Self {
             slice,
             last_start: start,
@@ -31,7 +33,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> SortedBuf<'a, T> {
             self.buf.clear();
             let new_window = self.slice.get_unchecked(start..end);
             self.buf.extend_from_slice(new_window);
-            sort_buf(&mut self.buf);
+            self.buf.sort_by(TotalOrd::tot_cmp);
         } else {
             // remove elements that should leave the window
             for idx in self.last_start..start {
@@ -42,7 +44,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> SortedBuf<'a, T> {
                 // value is present in buf
                 let remove_idx = self
                     .buf
-                    .binary_search_by(|a| compare_fn_nan_max(a, val))
+                    .binary_search_by(|a| a.tot_cmp(&val))
                     .unwrap_unchecked();
                 // this is O(n) but we need a sorted window
                 self.buf.remove(remove_idx);
@@ -55,7 +57,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> SortedBuf<'a, T> {
                 let val = *self.slice.get_unchecked(idx);
                 let insertion_idx = self
                     .buf
-                    .binary_search_by(|a| compare_fn_nan_max(a, &val))
+                    .binary_search_by(|a| a.tot_cmp(&val))
                     .unwrap_or_else(|insertion_idx| insertion_idx);
 
                 // this is O(n) but we need a sorted window
@@ -68,57 +70,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> SortedBuf<'a, T> {
     }
 }
 
-pub(super) fn sort_opt_buf<T>(buf: &mut [Option<T>])
-where
-    T: IsFloat + NativeType + PartialOrd,
-{
-    if T::is_float() {
-        buf.sort_by(|a, b| {
-            match (a, b) {
-                (Some(a), Some(b)) => {
-                    match (a.is_nan(), b.is_nan()) {
-                        // safety: we checked nans
-                        (false, false) => unsafe { a.partial_cmp(b).unwrap_unchecked() },
-                        (true, true) => Ordering::Equal,
-                        (true, false) => Ordering::Greater,
-                        (false, true) => Ordering::Less,
-                    }
-                },
-                _ => a.partial_cmp(b).unwrap(),
-            }
-        });
-    } else {
-        // Safety:
-        // all integers are Ord
-        unsafe { buf.sort_by(|a, b| a.partial_cmp(b).unwrap_unchecked()) };
-    }
-}
-
-fn compare_opt_fn<T>(a: Option<T>, b: Option<T>) -> Ordering
-where
-    T: PartialOrd + IsFloat + NativeType,
-{
-    if T::is_float() {
-        match (a, b) {
-            (Some(a), Some(b)) => {
-                match (a.is_nan(), b.is_nan()) {
-                    // safety: we checked nans
-                    (false, false) => unsafe { a.partial_cmp(&b).unwrap_unchecked() },
-                    (true, true) => Ordering::Equal,
-                    (true, false) => Ordering::Greater,
-                    (false, true) => Ordering::Less,
-                }
-            },
-            _ => a.partial_cmp(&b).unwrap(),
-        }
-    } else {
-        // Safety:
-        // all integers are Ord
-        unsafe { a.partial_cmp(&b).unwrap_unchecked() }
-    }
-}
-
-pub(super) struct SortedBufNulls<'a, T: NativeType + IsFloat + PartialOrd> {
+pub(super) struct SortedBufNulls<'a, T: NativeType> {
     // slice over which the window slides
     slice: &'a [T],
     validity: &'a Bitmap,
@@ -129,7 +81,7 @@ pub(super) struct SortedBufNulls<'a, T: NativeType + IsFloat + PartialOrd> {
     pub null_count: usize,
 }
 
-impl<'a, T: NativeType + IsFloat + PartialOrd> SortedBufNulls<'a, T> {
+impl<'a, T: NativeType> SortedBufNulls<'a, T> {
     unsafe fn fill_and_sort_buf(&mut self, start: usize, end: usize) {
         self.null_count = 0;
         let iter = (start..end).map(|idx| {
@@ -143,7 +95,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> SortedBufNulls<'a, T> {
 
         self.buf.clear();
         self.buf.extend(iter);
-        sort_opt_buf(&mut self.buf);
+        self.buf.sort_by(TotalOrd::tot_cmp);
     }
 
     pub(super) unsafe fn new(
@@ -191,7 +143,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> SortedBufNulls<'a, T> {
                 // value is present in buf
                 let remove_idx = self
                     .buf
-                    .binary_search_by(|a| compare_opt_fn(*a, val))
+                    .binary_search_by(|a| a.tot_cmp(&val))
                     .unwrap_unchecked();
                 // this is O(n) but we need a sorted window
                 self.buf.remove(remove_idx);
@@ -209,7 +161,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> SortedBufNulls<'a, T> {
                 };
                 let insertion_idx = self
                     .buf
-                    .binary_search_by(|a| compare_opt_fn(*a, val))
+                    .binary_search_by(|a| a.tot_cmp(&val))
                     .unwrap_or_else(|insertion_idx| insertion_idx);
 
                 // this is O(n) but we need a sorted window
