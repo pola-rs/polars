@@ -150,8 +150,7 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
                 self.m = self.prev[self.m as usize] as usize;
             },
             1 => {
-                self.current_index += 1;
-                self.m = self.next[self.m as usize] as usize;
+                self.advance()
             },
             i64::MIN..=0 => {
                 self.current_index -= i;
@@ -166,6 +165,16 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
                 }
             },
         }
+    }
+
+    fn advance(&mut self) {
+        self.current_index += 1;
+        self.m = self.next[self.m] as usize;
+    }
+
+    fn reset(&mut self) {
+        self.current_index = 0;
+        self.m = self.next[self.tail] as usize;
     }
 
     fn delete(&mut self, i: usize) {
@@ -252,11 +261,6 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
         self.set_median()
     }
 
-    fn advance(&mut self) {
-        self.m = self.next[self.m] as usize;
-        self.n_element += 1;
-    }
-
     fn at_end(&self) -> bool {
         self.m == self.tail
     }
@@ -301,14 +305,20 @@ impl<T: IsFloat + PartialOrd + NativeType> LenGet for &mut Block<'_, T> {
 struct BlockUnion<'a, T: IsFloat + PartialOrd + NativeType> {
     block_left: &'a mut Block<'a, T>,
     block_right: &'a mut Block<'a, T>,
+    // Current index position of sorted merge.
+    s: usize
 }
 
 impl<'a, T: IsFloat + PartialOrd + NativeType> BlockUnion<'a, T> {
-    fn new(block_left: &'a mut Block<'a, T>, block_right: &'a mut Block<'a, T> ) -> Self {
-        Self {
+    fn new(block_left: &'a mut Block<'a, T>, block_right: &'a mut Block<'a, T>, k: usize ) -> Self {
+        let out = Self {
             block_left,
-            block_right
-        }
+            block_right,
+            s: 0
+        };
+        debug_assert_eq!(out.len(), k);
+
+        out
     }
 }
 
@@ -320,16 +330,41 @@ impl<T: IsFloat + PartialOrd + NativeType> LenGet for BlockUnion<'_, T> {
     }
 
     fn get(&mut self, i: usize) -> Self::Item {
-        let i= if i < self.block_left.n_element {
+        // Simple case, all elements are left.
+        if self.block_right.n_element == 0 {
             self.block_left.traverse_to_index(i);
             return self.block_left.peek().unwrap()
-        } else if self.block_left.n_element == 0 {
-            i
-        } else{
-            i % self.block_left.n_element
-        };
-        self.block_right.traverse_to_index(i);
-        self.block_right.peek().unwrap()
+        }
+        let steps = i + 1 - self.s;
+        dbg!(steps);
+
+
+        let left = self.block_left.peek().unwrap();
+        let right = self.block_right.peek().unwrap();
+        dbg!(left, right);
+        match left.partial_cmp(&right).unwrap() {
+            // On equality, take the left as that one was first.
+            Ordering::Equal | Ordering::Less => {
+                self.block_left.advance();
+                left
+            },
+            Ordering::Greater => {
+                self.block_right.advance();
+                right
+            }
+        }
+
+
+        // let i= if i < self.block_left.n_element {
+        //     self.block_left.traverse_to_index(i);
+        //     return self.block_left.peek().unwrap()
+        // } else if self.block_left.n_element == 0 {
+        //     i
+        // } else{
+        //     i % self.block_left.n_element
+        // };
+        // self.block_right.traverse_to_index(i);
+        // self.block_right.peek().unwrap()
     }
 }
 
@@ -439,7 +474,7 @@ where
 
             dbg!(&block_left, &block_right);
             unsafe {
-                let union = BlockUnion::new(&mut *ptr_left, &mut *ptr_right);
+                let union = BlockUnion::new(&mut *ptr_left, &mut *ptr_right, k);
                 out.push(dbg!(MedianUpdate::new(union).median()))
 
             }
@@ -572,6 +607,56 @@ mod test {
         assert_eq!(b.peek(), Some(9));
         b.undelete_set_median(2);
         assert_eq!(b.peek(), Some(2));
+    }
+
+    #[test]
+    fn test_block_union() {
+        let alpha_a = [10, 4, 2];
+        let alpha_b = [3, 4, 1];
+
+        let mut scratch = vec![];
+        let mut prev = vec![];
+        let mut next = vec![];
+        let mut a = Block::new(&alpha_a, &mut scratch, &mut prev, &mut next);
+
+        let mut scratch = vec![];
+        let mut prev = vec![];
+        let mut next = vec![];
+        let mut b = Block::new(&alpha_b, &mut scratch, &mut prev, &mut next);
+
+        b.unwind();
+        let mut aub = BlockUnion::new(&mut a, &mut b, alpha_a.len());
+        assert_eq!(aub.len(), 3);
+        // STEP 0
+        // block 1:
+        // i:  10, 4, 2
+        // s:  2, 4, 10
+        // block 2: empty
+        assert_eq!(aub.get(0), 2);
+        assert_eq!(aub.get(1), 4);
+        assert_eq!(aub.get(2), 10);
+
+        // STEP 1
+        aub.block_left.reset();
+        aub.block_left.delete(0);
+        aub.block_right.undelete(0);
+        assert_eq!(aub.len(), 3);
+        // block 1:
+        // i:  4, 2
+        // s:  2, 4
+        // block 2:
+        // i:  3
+        // s:  3
+        // union s: [2, 3, 4]
+        assert_eq!(aub.get(0), 2);
+        assert_eq!(aub.get(1), 3);
+        dbg!(&aub.block_left);
+        dbg!(&aub.block_right);
+        dbg!(aub.get(0));
+
+
+
+        dbg!(aub.len());
     }
 
     #[test]
