@@ -59,7 +59,8 @@
 //! ## Float Encoding
 //!
 //! Floats are converted from IEEE 754 representation to a signed integer representation
-//! by flipping all bar the sign bit if they are negative.
+//! by flipping all bar the sign bit if they are negative after normalizing nans
+//! and signed zeros to a canonical representation.
 //!
 //! They are then encoded in the same manner as a signed integer.
 //!
@@ -247,12 +248,8 @@
 //!
 //! ## Float Ordering
 //!
-//! Floats are totally ordered in accordance to the `totalOrder` predicate as defined
-//! in the IEEE 754 (2008 revision) floating point standard.
-//!
-//! The ordering established by this does not always agree with the
-//! [`PartialOrd`] and [`PartialEq`] implementations of `f32`. For example,
-//! they consider negative and positive zero equal, while this does not
+//! Floats are totally ordered just like in the rest of Polars,
+//! -inf < neg < -0.0 = 0.0 < pos < inf < nan, with all nans being equal.
 //!
 //! ## Null Ordering
 //!
