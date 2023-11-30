@@ -116,12 +116,14 @@ impl days_ms {
 }
 
 impl TotalEq for days_ms {
+    #[inline]
     fn tot_eq(&self, other: &Self) -> bool {
         self == other
     }
 }
 
 impl TotalOrd for days_ms {
+    #[inline]
     fn tot_cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.days()
             .cmp(&other.days())
@@ -228,12 +230,14 @@ impl months_days_ns {
 }
 
 impl TotalEq for months_days_ns {
+    #[inline]
     fn tot_eq(&self, other: &Self) -> bool {
         self == other
     }
 }
 
 impl TotalOrd for months_days_ns {
+    #[inline]
     fn tot_cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.months()
             .cmp(&other.months())
@@ -522,6 +526,7 @@ impl std::fmt::Display for f16 {
 }
 
 impl TotalEq for f16 {
+    #[inline]
     fn tot_eq(&self, other: &Self) -> bool {
         if self.is_nan() {
             other.is_nan()
@@ -532,6 +537,7 @@ impl TotalEq for f16 {
 }
 
 impl TotalOrd for f16 {
+    #[inline]
     fn tot_cmp(&self, _other: &Self) -> std::cmp::Ordering {
         unimplemented!()
     }
@@ -600,12 +606,14 @@ unsafe impl Pod for i256 {}
 unsafe impl Zeroable for i256 {}
 
 impl TotalEq for i256 {
+    #[inline]
     fn tot_eq(&self, other: &Self) -> bool {
         self == other
     }
 }
 
 impl TotalOrd for i256 {
+    #[inline]
     fn tot_cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.cmp(other)
     }
