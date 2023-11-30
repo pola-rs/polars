@@ -294,7 +294,8 @@ impl Bitmap {
         } else {
             vec![0; length.saturating_add(7) / 8]
         };
-        unsafe { Bitmap::from_inner_unchecked(Arc::new(bytes.into()), 0, length, length) }
+        let unset_bits = if value { 0 } else { length };
+        unsafe { Bitmap::from_inner_unchecked(Arc::new(bytes.into()), 0, length, unset_bits) }
     }
 
     /// Counts the nulls (unset bits) starting from `offset` bits and for `length` bits.
