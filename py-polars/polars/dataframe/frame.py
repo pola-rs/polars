@@ -3909,7 +3909,7 @@ class DataFrame:
         mapping
             Key value pairs that map from old name to new name.
         strict
-            Throw an error if a column is not present
+            Throw an error if a column is not present.
 
         Examples
         --------

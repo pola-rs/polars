@@ -391,7 +391,7 @@ impl LazyFrame {
     /// corresponding new column names. Renaming happens to all `existing` columns
     /// simultaneously, not iteratively. (In particular, all columns in `existing` must
     /// already exist in the `LazyFrame` when `rename` is called.)
-    /// `strict` throw an error if a column is not present
+    /// `strict` throw an error if a column is not present.
     pub fn rename<I, J, T, S>(self, existing: I, new: J, strict: Option<bool>) -> Self
     where
         I: IntoIterator<Item = T>,

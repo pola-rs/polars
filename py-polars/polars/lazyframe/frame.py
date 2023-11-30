@@ -4236,7 +4236,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         mapping
             Key value pairs that map from old name to new name.
         strict
-            Throw an error if a column is not present
+            Throw an error if a column is not present.
 
         Notes
         -----
