@@ -777,13 +777,13 @@ def test_repr_short_expression() -> None:
     assert result == expected
 
 def test_repr_long_expression() -> None:
-    expr = pl.functions.all().approx_n_unique().name.prefix('approx_n_unique:')
+    expr = pl.functions.col(pl.Utf8).str.count_matches("")
 
     # we cut off the last ten characters because that includes the
     # memory location which will vary between runs
     result = repr(expr)[:-10]
 
     # note the … denoting that there was truncated text
-    expected = "<Expr ['.rename_alias(*.approx_n_uniqu…'] at 0x"
+    expected = "<Expr ['dtype_columns([Utf8]).str.coun…'] at 0x"
     assert result == expected
     assert repr(expr).endswith('>')
