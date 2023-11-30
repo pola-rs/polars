@@ -1388,6 +1388,7 @@ class DataFrame:
         op: ComparisonOperator,
     ) -> DataFrame:
         """Compare a DataFrame with a non-DataFrame object."""
+        _warn_null_comparison(other)
         if op == "eq":
             return self.select(F.all() == other)
         elif op == "neq":
@@ -1451,27 +1452,21 @@ class DataFrame:
         )
 
     def __eq__(self, other: Any) -> DataFrame:  # type: ignore[override]
-        _warn_null_comparison(other)
         return self._comp(other, "eq")
 
     def __ne__(self, other: Any) -> DataFrame:  # type: ignore[override]
-        _warn_null_comparison(other)
         return self._comp(other, "neq")
 
     def __gt__(self, other: Any) -> DataFrame:
-        _warn_null_comparison(other)
         return self._comp(other, "gt")
 
     def __lt__(self, other: Any) -> DataFrame:
-        _warn_null_comparison(other)
         return self._comp(other, "lt")
 
     def __ge__(self, other: Any) -> DataFrame:
-        _warn_null_comparison(other)
         return self._comp(other, "gt_eq")
 
     def __le__(self, other: Any) -> DataFrame:
-        _warn_null_comparison(other)
         return self._comp(other, "lt_eq")
 
     def __getstate__(self) -> list[Series]:

@@ -248,7 +248,7 @@ def _assert_series_nan_values_match(left: Series, right: Series) -> None:
     if nan_value_mismatch.any():
         raise_assertion_error(
             "Series",
-            "nan value mismatch - nans compare equal",
+            "nan value mismatch",
             left.to_list(),
             right.to_list(),
         )

@@ -124,7 +124,7 @@ def is_str_sequence(
 def _warn_null_comparison(obj: Any) -> None:
     if obj is None:
         warnings.warn(
-            "comparisons with None always result in null, consider using .is_null() or .is_not_null()",
+            "Comparisons with None always result in null. Consider using `.is_null()` or `.is_not_null()`.",
             UserWarning,
             stacklevel=find_stacklevel(),
         )

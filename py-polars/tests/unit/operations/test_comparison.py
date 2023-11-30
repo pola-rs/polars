@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import math
-import warnings
 from typing import Any
+from contextlib import nullcontext
 
 import pytest
 
@@ -201,11 +201,11 @@ def reference_ordering_missing(lhs: Any, rhs: Any) -> str:
 def verify_total_ordering(
     lhs: Any, rhs: Any, dummy: Any, dtype: pl.PolarsDataType
 ) -> None:
-    assert dummy is not None
     ref = reference_ordering_propagating(lhs, rhs)
     refmiss = reference_ordering_missing(lhs, rhs)
 
     # Add dummy variable so we don't broadcast or do full-null optimization.
+    assert dummy is not None
     df = pl.DataFrame(
         {"l": [lhs, dummy], "r": [rhs, dummy]}, schema={"l": dtype, "r": dtype}
     )
@@ -241,13 +241,11 @@ def verify_total_ordering(
 def verify_total_ordering_broadcast(
     lhs: Any, rhs: Any, dummy: Any, dtype: pl.PolarsDataType
 ) -> None:
-    # We do want to test None comparisons.
-    warnings.filterwarnings("ignore", category=UserWarning)
-
     ref = reference_ordering_propagating(lhs, rhs)
     refmiss = reference_ordering_missing(lhs, rhs)
 
     # Add dummy variable so we don't broadcast inherently.
+    assert dummy is not None
     df = pl.DataFrame(
         {"l": [lhs, dummy], "r": [rhs, dummy]}, schema={"l": dtype, "r": dtype}
     )
@@ -310,8 +308,10 @@ INTERESTING_FLOAT_VALUES = [
 def test_total_ordering_float_series(lhs: float | None, rhs: float | None) -> None:
     verify_total_ordering(lhs, rhs, 0.0, pl.Float32)
     verify_total_ordering(lhs, rhs, 0.0, pl.Float64)
-    verify_total_ordering_broadcast(lhs, rhs, 0.0, pl.Float32)
-    verify_total_ordering_broadcast(lhs, rhs, 0.0, pl.Float64)
+    context = pytest.warns(UserWarning) if rhs is None else nullcontext()
+    with context:
+        verify_total_ordering_broadcast(lhs, rhs, 0.0, pl.Float32)
+        verify_total_ordering_broadcast(lhs, rhs, 0.0, pl.Float64)
 
 
 INTERESTING_STRING_VALUES = [
@@ -329,7 +329,9 @@ INTERESTING_STRING_VALUES = [
 @pytest.mark.parametrize("rhs", INTERESTING_STRING_VALUES)
 def test_total_ordering_string_series(lhs: str | None, rhs: str | None) -> None:
     verify_total_ordering(lhs, rhs, "", pl.Utf8)
-    verify_total_ordering_broadcast(lhs, rhs, "", pl.Utf8)
+    context = pytest.warns(UserWarning) if rhs is None else nullcontext()
+    with context:
+        verify_total_ordering_broadcast(lhs, rhs, "", pl.Utf8)
 
 
 @pytest.mark.parametrize("str_lhs", INTERESTING_STRING_VALUES)
@@ -338,11 +340,15 @@ def test_total_ordering_binary_series(str_lhs: str | None, str_rhs: str | None) 
     lhs = None if str_lhs is None else str_lhs.encode("utf-8")
     rhs = None if str_rhs is None else str_rhs.encode("utf-8")
     verify_total_ordering(lhs, rhs, b"", pl.Binary)
-    verify_total_ordering_broadcast(lhs, rhs, b"", pl.Binary)
+    context = pytest.warns(UserWarning) if rhs is None else nullcontext()
+    with context:
+        verify_total_ordering_broadcast(lhs, rhs, b"", pl.Binary)
 
 
 @pytest.mark.parametrize("lhs", [None, False, True])
 @pytest.mark.parametrize("rhs", [None, False, True])
 def test_total_ordering_bool_series(lhs: bool | None, rhs: bool | None) -> None:
     verify_total_ordering(lhs, rhs, False, pl.Boolean)
-    verify_total_ordering_broadcast(lhs, rhs, False, pl.Boolean)
+    context = pytest.warns(UserWarning) if rhs is None else nullcontext()
+    with context:
+        verify_total_ordering_broadcast(lhs, rhs, False, pl.Boolean)
