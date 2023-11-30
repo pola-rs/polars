@@ -11,7 +11,7 @@ pub fn canonical_f32(x: f32) -> f32 {
     if convert_zero.is_nan() {
         f32::from_bits(0x7fc00000) // Canonical quiet NaN.
     } else {
-        x
+        convert_zero
     }
 }
 
@@ -23,7 +23,7 @@ pub fn canonical_f64(x: f64) -> f64 {
     if convert_zero.is_nan() {
         f64::from_bits(0x7ff8000000000000) // Canonical quiet NaN.
     } else {
-        x
+        convert_zero
     }
 }
 
