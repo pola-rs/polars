@@ -505,9 +505,10 @@ def _get_stack_locals(
 
 
 # this is called from rust
-def _polars_warn(msg: str) -> None:
+def _polars_warn(msg: str, category: type[Warning] = UserWarning) -> None:
     warnings.warn(
         msg,
+        category=category,
         stacklevel=find_stacklevel(),
     )
 

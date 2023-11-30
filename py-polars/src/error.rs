@@ -2,13 +2,16 @@ use std::fmt::{Debug, Formatter};
 use std::io::{Error, ErrorKind};
 
 use polars::prelude::PolarsError;
-use pyo3::create_exception;
+use polars_error::PolarsWarning;
 use pyo3::exceptions::{
     PyException, PyFileExistsError, PyFileNotFoundError, PyIOError, PyPermissionError,
-    PyRuntimeError,
+    PyRuntimeError, PyUserWarning, PyWarning,
 };
 use pyo3::prelude::*;
+use pyo3::{create_exception, PyTypeInfo};
 use thiserror::Error;
+
+use crate::Wrap;
 #[derive(Error)]
 pub enum PyPolarsErr {
     #[error(transparent)]
@@ -82,6 +85,11 @@ create_exception!(polars.exceptions, SchemaFieldNotFoundError, PyException);
 create_exception!(polars.exceptions, ShapeError, PyException);
 create_exception!(polars.exceptions, StringCacheMismatchError, PyException);
 create_exception!(polars.exceptions, StructFieldNotFoundError, PyException);
+create_exception!(
+    polars.exceptions,
+    PerformanceWarningCategoricalRemapping,
+    PyWarning
+);
 
 #[macro_export]
 macro_rules! raise_err(
@@ -90,3 +98,14 @@ macro_rules! raise_err(
         unreachable!()
     }}
 );
+
+impl IntoPy<PyObject> for Wrap<PolarsWarning> {
+    fn into_py(self, py: Python<'_>) -> PyObject {
+        match self.0 {
+            PolarsWarning::PerformanceCategoricalRemappingWarning => {
+                PerformanceWarningCategoricalRemapping::type_object(py).to_object(py)
+            },
+            PolarsWarning::UserWarning => PyUserWarning::type_object(py).to_object(py),
+        }
+    }
+}

@@ -6,6 +6,7 @@ try:
         InvalidOperationError,
         NoDataError,
         OutOfBoundsError,
+        PerformanceWarningCategoricalRemapping,
         PolarsPanicError,
         SchemaError,
         SchemaFieldNotFoundError,
@@ -52,6 +53,9 @@ except ImportError:
 
     class StructFieldNotFoundError(Exception):  # type: ignore[no-redef]
         """Exception raised when a specified schema field is not found."""
+
+    class PerformanceWarningCategoricalRemapping(Warning):  # type: ignore[no-redef]
+        """Warning raised when a categorical needs to be remapped to be compatible with another categorical."""  # noqa: W505
 
 
 class ChronoFormatWarning(Warning):
@@ -113,6 +117,7 @@ __all__ = [
     "NoRowsReturnedError",
     "OutOfBoundsError",
     "PolarsInefficientMapWarning",
+    "PerformanceWarningCategoricalRemapping",
     "PolarsPanicError",
     "RowsError",
     "SchemaError",
