@@ -69,12 +69,12 @@ from polars.exceptions import (
     InvalidOperationError,
     NoDataError,
     OutOfBoundsError,
+    PerformanceWarningCategoricalRemapping,
     PolarsPanicError,
     SchemaError,
     SchemaFieldNotFoundError,
     ShapeError,
     StructFieldNotFoundError,
-    PerformanceWarningCategoricalRemapping
 )
 from polars.expr import Expr
 from polars.functions import (
