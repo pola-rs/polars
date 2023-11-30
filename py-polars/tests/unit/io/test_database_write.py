@@ -76,14 +76,14 @@ def test_write_database_append_replace(engine: DbWriteEngine, tmp_path: Path) ->
         df.write_database(
             table_name=table_name,
             connection=test_db_uri,
-            if_exists="fail",
+            if_table_exists="fail",
             engine=engine,
         )
 
     df.write_database(
         table_name=table_name,
         connection=test_db_uri,
-        if_exists="replace",
+        if_table_exists="replace",
         engine=engine,
     )
     result = pl.read_database(
@@ -95,7 +95,7 @@ def test_write_database_append_replace(engine: DbWriteEngine, tmp_path: Path) ->
     df.write_database(
         table_name=table_name,
         connection=test_db_uri,
-        if_exists="append",
+        if_table_exists="append",
         engine=engine,
     )
     result = pl.read_database(
@@ -134,7 +134,7 @@ def test_write_database_create_quoted_tablename(
     df.write_database(
         table_name=qualified_table_name,
         connection=test_db_uri,
-        if_exists="replace",
+        if_table_exists="replace",
         engine=engine,
     )
     result = pl.read_database(
@@ -157,10 +157,13 @@ def test_write_database_errors() -> None:
             engine="sqlalchemy",
         )
 
-    with pytest.raises(ValueError, match="'do_something' is not valid for if_exists"):
+    with pytest.raises(
+        ValueError,
+        match="`if_table_exists` must be one of .* got 'do_something'",
+    ):
         df.write_database(
             connection="sqlite:///:memory:",
             table_name="main.test_errs",
-            if_exists="do_something",  # type: ignore[arg-type]
+            if_table_exists="do_something",  # type: ignore[arg-type]
             engine="sqlalchemy",
         )
