@@ -235,6 +235,7 @@ impl Series {
                 any_values_to_decimal(av, *precision, *scale)?.into_series()
             },
             DataType::List(inner) => any_values_to_list(av, inner, strict)?.into_series(),
+            #[cfg(feature = "dtype-array")]
             DataType::Array(inner, size) => any_values_to_list(av, inner, strict)?
                 .into_series()
                 .cast(&DataType::Array(inner.clone(), *size))?,
