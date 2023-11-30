@@ -1,6 +1,4 @@
 use arrow::legacy::prelude::QuantileInterpolOptions;
-use polars_utils::float::{f32_to_ordablef32, f64_to_ordablef64};
-use polars_utils::slice::Extrema;
 
 use super::*;
 
@@ -68,7 +66,7 @@ trait Sortable {
 impl<T> Sortable for ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    T::Native: Ord,
+    T::Native: TotalOrd,
 {
     fn sort(&self) -> Self {
         ChunkSort::sort(self, false)
@@ -87,7 +85,7 @@ impl Sortable for Float64Chunked {
 }
 
 // Uses quickselect instead of sorting all data
-fn quantile_slice<T: ToPrimitive + Ord>(
+fn quantile_slice<T: ToPrimitive + TotalOrd>(
     vals: &mut [T],
     quantile: f64,
     interpol: QuantileInterpolOptions,
@@ -103,20 +101,20 @@ fn quantile_slice<T: ToPrimitive + Ord>(
     }
     let (idx, float_idx, top_idx) = quantile_idx(quantile, vals.len(), 0, interpol);
 
-    let (_lhs, lower, rhs) = vals.select_nth_unstable(idx);
+    let (_lhs, lower, rhs) = vals.select_nth_unstable_by(idx, TotalOrd::tot_cmp);
     if idx == top_idx {
         Ok(lower.to_f64())
     } else {
         match interpol {
             QuantileInterpolOptions::Midpoint => {
-                let upper = rhs.min_value().unwrap();
+                let upper = rhs.iter().min_by(TotalOrd::tot_cmp).unwrap();
                 Ok(Some(midpoint_interpol(
                     lower.to_f64().unwrap(),
                     upper.to_f64().unwrap(),
                 )))
             },
             QuantileInterpolOptions::Linear => {
-                let upper = rhs.min_value().unwrap();
+                let upper = rhs.iter().min_by(TotalOrd::tot_cmp).unwrap();
                 Ok(linear_interpol(
                     lower.to_f64().unwrap(),
                     upper.to_f64().unwrap(),
@@ -181,7 +179,7 @@ where
 impl<T> ChunkQuantile<f64> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    T::Native: Ord,
+    T::Native: TotalOrd,
 {
     fn quantile(
         &self,
@@ -206,7 +204,7 @@ where
 impl<T> ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    T::Native: Ord,
+    T::Native: TotalOrd,
 {
     pub(crate) fn quantile_faster(
         mut self,
@@ -237,8 +235,7 @@ impl ChunkQuantile<f32> for Float32Chunked {
         // in case of sorted data, the sort is free, so don't take quickselect route
         let out = if let (Ok(slice), false) = (self.cont_slice(), self.is_sorted_ascending_flag()) {
             let mut owned = slice.to_vec();
-            let owned = f32_to_ordablef32(&mut owned);
-            quantile_slice(owned, quantile, interpol)
+            quantile_slice(&mut owned, quantile, interpol)
         } else {
             generic_quantile(self.clone(), quantile, interpol)
         };
@@ -259,8 +256,7 @@ impl ChunkQuantile<f64> for Float64Chunked {
         // in case of sorted data, the sort is free, so don't take quickselect route
         if let (Ok(slice), false) = (self.cont_slice(), self.is_sorted_ascending_flag()) {
             let mut owned = slice.to_vec();
-            let owned = f64_to_ordablef64(&mut owned);
-            quantile_slice(owned, quantile, interpol)
+            quantile_slice(&mut owned, quantile, interpol)
         } else {
             generic_quantile(self.clone(), quantile, interpol)
         }
@@ -280,7 +276,6 @@ impl Float64Chunked {
         // in case of sorted data, the sort is free, so don't take quickselect route
         let is_sorted = self.is_sorted_ascending_flag();
         if let (Some(slice), false) = (self.cont_slice_mut(), is_sorted) {
-            let slice = f64_to_ordablef64(slice);
             quantile_slice(slice, quantile, interpol)
         } else {
             self.quantile(quantile, interpol)
@@ -302,7 +297,6 @@ impl Float32Chunked {
         // in case of sorted data, the sort is free, so don't take quickselect route
         let is_sorted = self.is_sorted_ascending_flag();
         if let (Some(slice), false) = (self.cont_slice_mut(), is_sorted) {
-            let slice = f32_to_ordablef32(slice);
             quantile_slice(slice, quantile, interpol).map(|v| v.map(|v| v as f32))
         } else {
             self.quantile(quantile, interpol)

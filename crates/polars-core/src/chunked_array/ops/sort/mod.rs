@@ -32,14 +32,14 @@ use crate::POOL;
 
 /// Reverse sorting when there are no nulls
 #[inline]
-fn order_descending<T: Ord>(a: &T, b: &T) -> Ordering {
-    b.cmp(a)
+fn order_descending<T: TotalOrd>(a: &T, b: &T) -> Ordering {
+    b.tot_cmp(a)
 }
 
 /// Default sorting when there are no nulls
 #[inline]
-fn order_ascending<T: Ord>(a: &T, b: &T) -> Ordering {
-    a.cmp(b)
+fn order_ascending<T: TotalOrd>(a: &T, b: &T) -> Ordering {
+    a.tot_cmp(b)
 }
 
 #[inline]
@@ -307,7 +307,7 @@ fn arg_sort_multiple_numeric<T: PolarsNumericType>(
 impl<T> ChunkSort<T> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    T::Native: Default + Ord,
+    T::Native: Default + TotalOrd,
 {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<T> {
         sort_with_numeric(self, options, order_ascending, order_descending)
