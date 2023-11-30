@@ -2385,7 +2385,7 @@ class Expr:
         ):
             indices_lit = F.lit(pl.Series("", indices, dtype=UInt32))._pyexpr
         else:
-            indices_lit = parse_as_expression(indices)
+            indices_lit = parse_as_expression(indices)  # type: ignore[arg-type]
         return self._from_pyexpr(self._pyexpr.gather(indices_lit))
 
     def get(self, index: int | Expr) -> Self:
