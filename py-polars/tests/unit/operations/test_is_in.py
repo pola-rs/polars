@@ -207,3 +207,10 @@ def test_is_in_expr_list_series(
     else:
         with pytest.raises(pl.InvalidOperationError, match=expected_error):
             df.select(expr_is_in)
+
+
+def test_is_in_null_series() -> None:
+    df = pl.DataFrame({"a": ["a", "b", None]})
+    result = df.select(pl.col("a").is_in([None]))
+    expected = pl.DataFrame({"a": [False, False, None]})
+    assert_frame_equal(result, expected)
