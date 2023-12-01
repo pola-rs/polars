@@ -3,15 +3,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars.datatypes import (
-    NUMERIC_DTYPES,
+    FLOAT_DTYPES,
     Array,
     Categorical,
     Decimal,
     Float64,
-    Int64,
     List,
     Struct,
-    UInt64,
     Utf8,
     unpack_dtypes,
 )
@@ -51,9 +49,9 @@ def assert_series_equal(
     check_names
         Require names to match.
     check_exact
-        Require data values to match exactly. If set to `False`, values are considered
+        Require float values to match exactly. If set to `False`, values are considered
         equal when within tolerance of each other (see `rtol` and `atol`).
-        Logical types like dates are always checked exactly.
+        Only affects columns with a Float data type.
     rtol
         Relative tolerance for inexact checking, given as a fraction of the values in
         `right`.
@@ -153,7 +151,7 @@ def _assert_series_values_equal(
         )
 
     # Check nested dtypes in separate function
-    if _comparing_nested_numerics(left.dtype, right.dtype):
+    if _comparing_nested_floats(left.dtype, right.dtype):
         try:
             _assert_series_nested_values_equal(
                 left=left.filter(unequal),
@@ -178,8 +176,8 @@ def _assert_series_values_equal(
     if not unequal.any():
         return
 
-    # Only do inexact checking for numeric types
-    if check_exact or not left.dtype.is_numeric() or not right.dtype.is_numeric():
+    # Only do inexact checking for float types
+    if check_exact or not left.dtype.is_float() or not right.dtype.is_float():
         raise_assertion_error(
             "Series", "exact value mismatch", left=left.to_list(), right=right.to_list()
         )
@@ -266,11 +264,13 @@ def _comparing_structs(left: PolarsDataType, right: PolarsDataType) -> bool:
     return left == Struct and right == Struct
 
 
-def _comparing_nested_numerics(left: PolarsDataType, right: PolarsDataType) -> bool:
+def _comparing_nested_floats(left: PolarsDataType, right: PolarsDataType) -> bool:
     if not (_comparing_lists(left, right) or _comparing_structs(left, right)):
         return False
 
-    return bool(NUMERIC_DTYPES & unpack_dtypes(left, right))
+    return bool(FLOAT_DTYPES & unpack_dtypes(left)) and bool(
+        FLOAT_DTYPES & unpack_dtypes(right)
+    )
 
 
 def _assert_series_values_within_tolerance(
@@ -283,7 +283,7 @@ def _assert_series_values_within_tolerance(
 ) -> None:
     left_unequal, right_unequal = left.filter(unequal), right.filter(unequal)
 
-    difference = _calc_absolute_diff(left_unequal, right_unequal)
+    difference = (left_unequal - right_unequal).abs()
     tolerance = atol + rtol * right_unequal.abs()
     exceeds_tolerance = difference > tolerance
 
@@ -294,19 +294,6 @@ def _assert_series_values_within_tolerance(
             left.to_list(),
             right.to_list(),
         )
-
-
-def _calc_absolute_diff(left: Series, right: Series) -> Series:
-    if left.dtype.is_unsigned_integer() and right.dtype.is_unsigned_integer():
-        try:
-            left = left.cast(Int64)
-            right = right.cast(Int64)
-        except ComputeError:
-            # Handle big UInt64 values through conversion to Python
-            diff = [abs(v1 - v2) for v1, v2 in zip(left, right)]
-            return Series(diff, dtype=UInt64)
-
-    return (left - right).abs()
 
 
 def assert_series_not_equal(
@@ -336,9 +323,9 @@ def assert_series_not_equal(
     check_names
         Require names to match.
     check_exact
-        Require data values to match exactly. If set to `False`, values are considered
+        Require float values to match exactly. If set to `False`, values are considered
         equal when within tolerance of each other (see `rtol` and `atol`).
-        Logical types like dates are always checked exactly.
+        Only affects columns with a Float data type.
     rtol
         Relative tolerance for inexact checking, given as a fraction of the values in
         `right`.

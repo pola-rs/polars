@@ -377,7 +377,7 @@ def test_dst_offset_invalid() -> None:
         ("s", pl.Series(values=[1_577_836_800, 1_580_613_610], dtype=pl.Int64)),
         (
             "ms",
-            pl.Series(values=[1_577_836_800_000, 1_580_613_610_000], dtype=pl.Int64),
+            pl.Series(values=[1_577_836_800_000, 1_580_613_610_987], dtype=pl.Int64),
         ),
     ],
 )
