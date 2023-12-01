@@ -6,7 +6,6 @@ mod categorical;
 mod slice;
 
 use std::cmp::Ordering;
-use std::hint::unreachable_unchecked;
 use std::iter::FromIterator;
 
 pub(crate) use arg_sort_multiple::argsort_multiple_row_fmt;
@@ -15,8 +14,6 @@ use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
 use arrow::legacy::prelude::FromData;
 use arrow::legacy::trusted_len::TrustedLenPush;
-use num_traits::Float;
-use polars_utils::float::IsFloat;
 use polars_utils::ord::compare_fn_nan_max;
 use rayon::prelude::*;
 pub use slice::*;
@@ -30,95 +27,39 @@ use crate::series::IsSorted;
 use crate::utils::{CustomIterTools, NoNull};
 use crate::POOL;
 
-/// Reverse sorting when there are no nulls
-#[inline]
-fn order_descending<T: Ord>(a: &T, b: &T) -> Ordering {
-    b.cmp(a)
-}
-
-/// Default sorting when there are no nulls
-#[inline]
-fn order_ascending<T: Ord>(a: &T, b: &T) -> Ordering {
-    a.cmp(b)
-}
-
-#[inline]
-fn order_ascending_flt<T: Float>(a: &T, b: &T) -> Ordering {
-    a.partial_cmp(b).unwrap_or_else(|| {
-        match (a.is_nan(), b.is_nan()) {
-            (true, true) => Ordering::Equal,
-            (true, false) => Ordering::Greater,
-            (false, true) => Ordering::Less,
-            // Safety: PlIsNan is only implemented for numbers
-            _ => unsafe { unreachable_unchecked() },
-        }
-    })
-}
-
-#[inline]
-fn order_descending_flt<T: Float>(a: &T, b: &T) -> Ordering {
-    order_ascending_flt(b, a)
-}
-
-#[inline]
-fn sort_branch<T, Fd, Fr>(
-    slice: &mut [T],
-    descending: bool,
-    ascending_order_fn: Fd,
-    descending_order_fn: Fr,
-    parallel: bool,
-) where
-    T: PartialOrd + Send,
-    Fd: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync + Send,
-    Fr: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync + Send,
+pub(crate) fn sort_by_branch<T, C>(slice: &mut [T], descending: bool, cmp: C, parallel: bool)
+where
+    T: Send,
+    C: Send + Sync + Fn(&T, &T) -> Ordering,
 {
     if parallel {
         POOL.install(|| match descending {
-            true => slice.par_sort_unstable_by(descending_order_fn),
-            false => slice.par_sort_unstable_by(ascending_order_fn),
+            true => slice.par_sort_by(|a, b| cmp(b, a)),
+            false => slice.par_sort_by(cmp),
         })
     } else {
         match descending {
-            true => slice.sort_unstable_by(descending_order_fn),
-            false => slice.sort_unstable_by(ascending_order_fn),
+            true => slice.sort_by(|a, b| cmp(b, a)),
+            false => slice.sort_by(cmp),
         }
     }
 }
 
-pub fn arg_sort_no_nulls<Idx, T>(slice: &mut [(Idx, T)], descending: bool, parallel: bool)
+#[inline]
+fn sort_unstable_by_branch<T, C>(slice: &mut [T], descending: bool, cmp: C, parallel: bool)
 where
-    T: PartialOrd + Send + IsFloat,
-    Idx: PartialOrd + Send,
-{
-    arg_sort_branch(
-        slice,
-        descending,
-        |(_, a), (_, b)| compare_fn_nan_max(a, b),
-        |(_, a), (_, b)| compare_fn_nan_max(b, a),
-        parallel,
-    );
-}
-
-pub(crate) fn arg_sort_branch<T, Fd, Fr>(
-    slice: &mut [T],
-    descending: bool,
-    ascending_order_fn: Fd,
-    descending_order_fn: Fr,
-    parallel: bool,
-) where
-    T: PartialOrd + Send,
-    Fd: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync + Send,
-    Fr: FnMut(&T, &T) -> Ordering + for<'r, 's> Fn(&'r T, &'s T) -> Ordering + Sync + Send,
+    T: Send,
+    C: Send + Sync + Fn(&T, &T) -> Ordering,
 {
     if parallel {
         POOL.install(|| match descending {
-            true => slice.par_sort_by(descending_order_fn),
-            false => slice.par_sort_by(ascending_order_fn),
+            true => slice.par_sort_unstable_by(|a, b| cmp(b, a)),
+            false => slice.par_sort_unstable_by(cmp),
         })
     } else {
         match descending {
-            true => slice.sort_by(descending_order_fn),
-            false => slice.sort_by(ascending_order_fn),
+            true => slice.sort_unstable_by(|a, b| cmp(b, a)),
+            false => slice.sort_unstable_by(cmp),
         }
     }
 }
@@ -156,12 +97,7 @@ macro_rules! sort_with_fast_path {
     }}
 }
 
-fn sort_with_numeric<T>(
-    ca: &ChunkedArray<T>,
-    options: SortOptions,
-    order_ascending: fn(&T::Native, &T::Native) -> Ordering,
-    order_descending: fn(&T::Native, &T::Native) -> Ordering,
-) -> ChunkedArray<T>
+fn sort_with_numeric<T>(ca: &ChunkedArray<T>, options: SortOptions) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
@@ -169,11 +105,10 @@ where
     if ca.null_count() == 0 {
         let mut vals = ca.to_vec_null_aware().left().unwrap();
 
-        sort_branch(
+        sort_unstable_by_branch(
             vals.as_mut_slice(),
             options.descending,
-            order_ascending,
-            order_descending,
+            TotalOrd::tot_cmp,
             options.multithreaded,
         );
 
@@ -206,11 +141,10 @@ where
             &mut vals[null_count..]
         };
 
-        sort_branch(
+        sort_unstable_by_branch(
             mut_slice,
             options.descending,
-            order_ascending,
-            order_descending,
+            TotalOrd::tot_cmp,
             options.multithreaded,
         );
 
@@ -258,7 +192,12 @@ where
             vals.extend_trusted_len(iter);
         });
 
-        arg_sort_no_nulls(vals.as_mut_slice(), descending, options.multithreaded);
+        sort_by_branch(
+            vals.as_mut_slice(),
+            descending,
+            |a, b| a.1.tot_cmp(&b.1),
+            options.multithreaded,
+        );
 
         let out: NoNull<IdxCa> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
         let mut out = out.into_inner();
@@ -306,64 +245,13 @@ fn arg_sort_multiple_numeric<T: PolarsNumericType>(
 
 impl<T> ChunkSort<T> for ChunkedArray<T>
 where
-    T: PolarsIntegerType,
-    T::Native: Default + Ord,
+    T: PolarsNumericType,
 {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<T> {
-        sort_with_numeric(self, options, order_ascending, order_descending)
+        sort_with_numeric(self, options)
     }
 
     fn sort(&self, descending: bool) -> ChunkedArray<T> {
-        self.sort_with(SortOptions {
-            descending,
-            ..Default::default()
-        })
-    }
-
-    fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        arg_sort_numeric(self, options)
-    }
-
-    /// # Panics
-    ///
-    /// This function is very opinionated.
-    /// We assume that all numeric `Series` are of the same type, if not it will panic
-    fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
-        arg_sort_multiple_numeric(self, options)
-    }
-}
-
-impl ChunkSort<Float32Type> for Float32Chunked {
-    fn sort_with(&self, options: SortOptions) -> Float32Chunked {
-        sort_with_numeric(self, options, order_ascending_flt, order_descending_flt)
-    }
-
-    fn sort(&self, descending: bool) -> Float32Chunked {
-        self.sort_with(SortOptions {
-            descending,
-            ..Default::default()
-        })
-    }
-
-    fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        arg_sort_numeric(self, options)
-    }
-
-    /// # Panics
-    ///
-    /// This function is very opinionated.
-    /// We assume that all numeric `Series` are of the same type, if not it will panic
-    fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
-        arg_sort_multiple_numeric(self, options)
-    }
-}
-
-impl ChunkSort<Float64Type> for Float64Chunked {
-    fn sort_with(&self, options: SortOptions) -> Float64Chunked {
-        sort_with_numeric(self, options, order_ascending_flt, order_descending_flt)
-    }
-
-    fn sort(&self, descending: bool) -> Float64Chunked {
         self.sort_with(SortOptions {
             descending,
             ..Default::default()
@@ -443,11 +331,10 @@ impl ChunkSort<BinaryType> for BinaryChunked {
             Vec::from_iter(self.into_no_null_iter())
         };
 
-        sort_branch(
+        sort_unstable_by_branch(
             v.as_mut_slice(),
             options.descending,
-            order_ascending,
-            order_descending,
+            Ord::cmp,
             options.multithreaded,
         );
 
