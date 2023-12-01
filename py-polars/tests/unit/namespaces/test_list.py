@@ -699,7 +699,7 @@ def test_list_to_array() -> None:
 
     result = s.list.to_array(2)
 
-    expected = pl.Series(data, dtype=pl.Array(inner=pl.Float32, width=2))
+    expected = pl.Series(data, dtype=pl.Array(pl.Float32, 2))
     assert_series_equal(result, expected)
 
 

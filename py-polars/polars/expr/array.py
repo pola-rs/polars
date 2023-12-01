@@ -24,7 +24,7 @@ class ExprArrayNameSpace:
         --------
         >>> df = pl.DataFrame(
         ...     data={"a": [[1, 2], [4, 3]]},
-        ...     schema={"a": pl.Array(inner=pl.Int64, width=2)},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
         ... )
         >>> df.select(pl.col("a").arr.min())
         shape: (2, 1)
@@ -48,7 +48,7 @@ class ExprArrayNameSpace:
         --------
         >>> df = pl.DataFrame(
         ...     data={"a": [[1, 2], [4, 3]]},
-        ...     schema={"a": pl.Array(inner=pl.Int64, width=2)},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
         ... )
         >>> df.select(pl.col("a").arr.max())
         shape: (2, 1)
@@ -72,7 +72,7 @@ class ExprArrayNameSpace:
         --------
         >>> df = pl.DataFrame(
         ...     data={"a": [[1, 2], [4, 3]]},
-        ...     schema={"a": pl.Array(inner=pl.Int64, width=2)},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
         ... )
         >>> df.select(pl.col("a").arr.sum())
         shape: (2, 1)
@@ -103,7 +103,7 @@ class ExprArrayNameSpace:
         ...     {
         ...         "a": [[1, 1, 2]],
         ...     },
-        ...     schema={"a": pl.Array(inner=pl.Int64, width=3)},
+        ...     schema={"a": pl.Array(pl.Int64, 3)},
         ... )
         >>> df.select(pl.col("a").arr.unique())
         shape: (1, 1)
@@ -131,7 +131,7 @@ class ExprArrayNameSpace:
         --------
         >>> df = pl.DataFrame(
         ...     data={"a": [[1, 2], [3, 4]]},
-        ...     schema={"a": pl.Array(inner=pl.Int8, width=2)},
+        ...     schema={"a": pl.Array(pl.Int8, 2)},
         ... )
         >>> df.select(pl.col("a").arr.to_list())
         shape: (2, 1)

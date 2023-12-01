@@ -220,7 +220,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
         "c": pl.Datetime("us"),
         "d": pl.Datetime("ns"),
         "e": pl.Int32,
-        "decimal1": pl.Decimal(precision=2, scale=1),
+        "decimal1": pl.Decimal(2, 1),
     }
     expected_data = [
         (

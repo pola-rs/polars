@@ -539,7 +539,7 @@ def test_series_dtype_is() -> None:
     with pytest.deprecated_call():
         assert s.is_boolean() is False
 
-    s = pl.Series("s", [], dtype=pl.Decimal(precision=20, scale=15))
+    s = pl.Series("s", [], dtype=pl.Decimal(20, 15))
     assert not s.dtype.is_float()
     assert s.dtype.is_numeric()
     assert s.is_empty()
