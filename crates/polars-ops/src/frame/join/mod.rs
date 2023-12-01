@@ -39,7 +39,6 @@ use polars_core::POOL;
 use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;
 
-use super::hashing::{create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded};
 use super::IntoDf;
 
 pub trait DataFrameJoinOps: IntoDf {

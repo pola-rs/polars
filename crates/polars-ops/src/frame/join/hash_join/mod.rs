@@ -253,7 +253,7 @@ pub trait JoinDispatch: IntoDf {
             .unwrap();
 
         // Get the indexes of the joined relations
-        let opt_join_tuples = s_left.hash_join_outer(s_right, args.validation)?;
+        let opt_join_tuples = s_left.hash_join_outer(s_right, args.validation, args.join_nulls)?;
         let mut opt_join_tuples = &*opt_join_tuples;
 
         if let Some((offset, len)) = args.slice {

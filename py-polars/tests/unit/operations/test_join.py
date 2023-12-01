@@ -754,3 +754,11 @@ def test_join_null_matches() -> None:
         {"idx_a": [0, 1, 2], "a": [None, 1, 2], "idx_b": [None, 2, 1]}
     )
     assert_frame_equal(df_a.join(df_b, on="a", how="left"), expected)
+    expected = pl.DataFrame(
+        {
+            "idx_a": [None, 2, 1, None, 0],
+            "a": [None, 2, 1, None, None],
+            "idx_b": [0, 1, 2, 3, None],
+        }
+    )
+    assert_frame_equal(df_a.join(df_b, on="a", how="outer"), expected)

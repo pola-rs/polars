@@ -131,6 +131,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
         &self,
         other: &Series,
         validate: JoinValidation,
+        join_nulls: bool,
     ) -> PolarsResult<Vec<(Option<IdxSize>, Option<IdxSize>)>> {
         let s_self = self.as_series();
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
@@ -141,7 +142,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
             Utf8 => {
                 let lhs = lhs.cast(&Binary).unwrap();
                 let rhs = rhs.cast(&Binary).unwrap();
-                lhs.hash_join_outer(&rhs, JoinValidation::ManyToMany)
+                lhs.hash_join_outer(&rhs, JoinValidation::ManyToMany, join_nulls)
             },
             Binary => {
                 let lhs = lhs.binary().unwrap();
@@ -149,17 +150,17 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let (lhs, rhs, swapped, _) = prepare_binary(lhs, rhs, true);
                 let lhs = lhs.iter().collect::<Vec<_>>();
                 let rhs = rhs.iter().collect::<Vec<_>>();
-                hash_join_tuples_outer(lhs, rhs, swapped, validate)
+                hash_join_tuples_outer(lhs, rhs, swapped, validate, join_nulls)
             },
             _ => {
                 if s_self.bit_repr_is_large() {
                     let lhs = s_self.bit_repr_large();
                     let rhs = other.bit_repr_large();
-                    hash_join_outer(&lhs, &rhs, validate)
+                    hash_join_outer(&lhs, &rhs, validate, join_nulls)
                 } else {
                     let lhs = s_self.bit_repr_small();
                     let rhs = other.bit_repr_small();
-                    hash_join_outer(&lhs, &rhs, validate)
+                    hash_join_outer(&lhs, &rhs, validate, join_nulls)
                 }
             },
         }
@@ -327,6 +328,7 @@ fn hash_join_outer<T>(
     ca_in: &ChunkedArray<T>,
     other: &ChunkedArray<T>,
     validate: JoinValidation,
+    join_nulls: bool,
 ) -> PolarsResult<Vec<(Option<IdxSize>, Option<IdxSize>)>>
 where
     T: PolarsIntegerType + Sync,
@@ -348,7 +350,7 @@ where
                 .iter()
                 .flat_map(|ca| ca.downcast_iter().map(|arr| arr.values().as_slice()))
                 .collect::<Vec<_>>();
-            hash_join_tuples_outer(iters_a, iters_b, swapped, validate)
+            hash_join_tuples_outer(iters_a, iters_b, swapped, validate, join_nulls)
         },
         _ => {
             let iters_a = splitted_a
@@ -359,7 +361,7 @@ where
                 .iter()
                 .flat_map(|ca| ca.downcast_iter().map(|arr| arr.iter()))
                 .collect::<Vec<_>>();
-            hash_join_tuples_outer(iters_a, iters_b, swapped, validate)
+            hash_join_tuples_outer(iters_a, iters_b, swapped, validate, join_nulls)
         },
     }
 }
