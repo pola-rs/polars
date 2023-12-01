@@ -10,6 +10,7 @@ pub mod functions;
 pub mod hashing;
 pub mod idx_vec;
 pub mod mem;
+pub mod min_max;
 pub mod slice;
 pub mod sort;
 pub mod sync;
