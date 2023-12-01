@@ -60,8 +60,11 @@ impl TemporalFunction {
         use TemporalFunction::*;
         match self {
             Year | IsoYear => mapper.with_dtype(DataType::Int32),
-            Month | Quarter | Week | WeekDay | Day | OrdinalDay | Hour | Minute | Millisecond
-            | Microsecond | Nanosecond | Second => mapper.with_dtype(DataType::UInt32),
+            OrdinalDay => mapper.with_dtype(DataType::Int16),
+            Month | Quarter | Week | WeekDay | Day | Hour | Minute | Second => {
+                mapper.with_dtype(DataType::Int8)
+            },
+            Millisecond | Microsecond | Nanosecond => mapper.with_dtype(DataType::Int32),
             ToString(_) => mapper.with_dtype(DataType::Utf8),
             WithTimeUnit(_) => mapper.with_same_dtype(),
             CastTimeUnit(tu) => mapper.try_map_dtype(|dt| match dt {
