@@ -595,8 +595,8 @@ def test_assert_series_equal_unsigned_ints_underflow() -> None:
 
 @pytest.mark.parametrize("check_exact", [True, False])
 def test_assert_series_equal_array_equal(check_exact: bool) -> None:
-    s1 = pl.Series([[1.0, 2.0], [3.0, 4.0]], dtype=pl.Array(width=2, inner=pl.Float64))
-    s2 = pl.Series([[1.0, 2.0], [3.0, 4.2]], dtype=pl.Array(width=2, inner=pl.Float64))
+    s1 = pl.Series([[1.0, 2.0], [3.0, 4.0]], dtype=pl.Array(pl.Float64, 2))
+    s2 = pl.Series([[1.0, 2.0], [3.0, 4.2]], dtype=pl.Array(pl.Float64, 2))
 
     with pytest.raises(AssertionError):
         assert_series_equal(s1, s2, check_exact=check_exact)

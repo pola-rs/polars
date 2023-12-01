@@ -327,26 +327,9 @@ class Decimal(NumericType):
 
     def __init__(
         self,
-        *args: Any,
         precision: int | None = None,
         scale: int = 0,
     ):
-        from polars.utils.deprecation import issue_deprecation_warning
-
-        if args:
-            # TODO: When removing this deprecation, update the `to_object`
-            # implementation in py-polars/src/conversion.rs to use `call1` instead of
-            # `call`
-            issue_deprecation_warning(
-                "`Decimal` parameters `scale` and `precision` will change positions in the next breaking release."
-                " Use keyword arguments to keep current behavior and silence this warning.",
-                version="0.19.13",
-            )
-            if len(args) == 1:
-                scale = args[0]
-            else:
-                scale, precision = args[:2]
-
         self.precision = precision
         self.scale = scale
 
@@ -607,27 +590,20 @@ class Array(NestedType):
     inner: PolarsDataType | None = None
     width: int
 
-    def __init__(  # noqa: D417
-        self,
-        *args: Any,
-        inner: PolarsDataType | PythonDataType | None = None,
-        width: int | None = None,
-    ):
+    def __init__(self, inner: PolarsDataType | PythonDataType, width: int):
         """
         Fixed length list type.
 
         Parameters
         ----------
-        width
-            The length of the arrays.
         inner
             The `DataType` of the values within each array.
+        width
+            The length of the arrays.
 
         Examples
         --------
-        >>> s = pl.Series(
-        ...     "a", [[1, 2], [4, 3]], dtype=pl.Array(inner=pl.Int64, width=2)
-        ... )
+        >>> s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
         >>> s
         shape: (2,)
         Series: 'a' [array[i64, 2]]
@@ -637,41 +613,15 @@ class Array(NestedType):
         ]
 
         """
-        from polars.utils.deprecation import issue_deprecation_warning
-
-        if args:
-            # TODO: When removing this deprecation, update the `to_object`
-            # implementation in py-polars/src/conversion.rs to use `call1` instead of
-            # `call`
-            issue_deprecation_warning(
-                "`Array` parameters `width` and `inner` will change positions in the next breaking release."
-                " Use keyword arguments to keep current behavior and silence this warning.",
-                version="0.19.11",
-            )
-            if len(args) == 1:
-                width = args[0]
-            else:
-                width, inner = args[:2]
-        if width is None:
-            raise TypeError("`width` must be specified when initializing an `Array`")
-
-        if inner is None:
-            issue_deprecation_warning(
-                "The default value for the `inner` parameter of `Array` will be removed in the next breaking release."
-                " Pass `inner=pl.Null`to keep current behavior and silence this warning.",
-                version="0.19.11",
-            )
-            inner = Null
-
         self.width = width
         self.inner = polars.datatypes.py_type_to_dtype(inner)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # This equality check allows comparison of type classes and type instances.
         # If a parent type is not specific about its inner type, we infer it as equal:
-        # > fixed-size-list[i64] == fixed-size-list[i64] -> True
-        # > fixed-size-list[i64] == fixed-size-list[f32] -> False
-        # > fixed-size-list[i64] == fixed-size-list      -> True
+        # > array[i64] == array[i64] -> True
+        # > array[i64] == array[f32] -> False
+        # > array[i64] == array      -> True
 
         # allow comparing object instances to class
         if type(other) is DataTypeClass and issubclass(other, Array):
