@@ -5,15 +5,10 @@
         "url": "https://pola-rs.github.io/polars/docs/python/dev/"
     },
     {
-        "name": "0.20 (stable)",
-        "version": "0.20",
+        "name": "0.19 (stable)",
+        "version": "0.19",
         "url": "https://pola-rs.github.io/polars/py-polars/html/",
         "preferred": true
-    },
-    {
-        "name": "0.19",
-        "version": "0.19",
-        "url": "https://pola-rs.github.io/polars/docs/python/version/0.19/"
     },
     {
         "name": "0.18",
