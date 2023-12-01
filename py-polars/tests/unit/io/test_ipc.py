@@ -211,9 +211,7 @@ def test_from_float16() -> None:
 
 
 @pytest.mark.write_disk()
-def test_sink_categorical_ipc_6407(
-    tmp_path: Path
-) -> None:
+def test_sink_categorical_ipc_6407(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "small.ipc"
 
