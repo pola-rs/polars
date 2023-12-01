@@ -23,6 +23,7 @@ polars-time = { workspace = true, optional = true }
 ahash = { workspace = true }
 rand = { workspace = true }
 
+# Trigger CI
 [build-dependencies]
 version_check = { workspace = true }
 
