@@ -9,7 +9,7 @@ repository = { workspace = true }
 description = "Code examples included in the Polars documentation website"
 
 [dependencies]
-aws-config = { version = "0.57" }
+aws-config = { version = "1.0" }
 aws-sdk-s3 = { version = "1.4" }
 chrono = { workspace = true }
 rand = { workspace = true }
