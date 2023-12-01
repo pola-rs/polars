@@ -2744,3 +2744,52 @@ def test_rolling_duplicates() -> None:
     assert df.sort("ts").with_columns(
         pl.col("value").rolling_max("1d", by="ts", closed="right")
     )["value"].to_list() == [1, 1]
+
+
+def test_convert_tz_to_local_tz() -> None:
+    tz = timezone.utc
+    df = pl.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "date_col": [
+                datetime(2020, 10, 10, tzinfo=tz),
+                datetime(2020, 10, 15, tzinfo=tz),
+                datetime(2020, 10, 15, tzinfo=tz),
+            ],
+            "timezone": ["Europe/London", "Africa/Kigali", "Europe/Berlin"],
+        }
+    )
+    expected = pl.DataFrame(
+        [
+            pl.Series("id", [1, 2, 3], dtype=pl.Int64),
+            pl.Series(
+                "date_col",
+                [
+                    datetime(2020, 10, 10, 0, 0, tzinfo=tz),
+                    datetime(2020, 10, 15, 0, 0, tzinfo=tz),
+                    datetime(2020, 10, 15, 0, 0, tzinfo=tz),
+                ],
+                dtype=pl.Datetime(time_unit="us", time_zone="UTC"),
+            ),
+            pl.Series(
+                "timezone",
+                ["Europe/London", "Africa/Kigali", "Europe/Berlin"],
+                dtype=pl.Utf8,
+            ),
+            pl.Series(
+                "local_dt",
+                [
+                    datetime(2020, 10, 10, 1, 0),
+                    datetime(2020, 10, 15, 2, 0),
+                    datetime(2020, 10, 15, 2, 0),
+                ],
+                dtype=pl.Datetime(time_unit="us", time_zone=None),
+            ),
+        ]
+    )
+
+    result = df.with_columns(
+        pl.col("date_col").dt.to_local_timezone(pl.col("timezone")).alias("local_dt")
+    )
+
+    assert_frame_equal(result, expected)

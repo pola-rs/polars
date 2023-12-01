@@ -1427,10 +1427,7 @@ class ExprDateTimeNameSpace:
         self,
         convert_tz: Expr,
     ) -> Expr:
-        """
-        Convert and replaces the timezone at once.
-        """
-
+        """Convert and replaces the timezone at once."""
         return wrap_expr(
             self._pyexpr.dt_convert_and_replace_time_zone(None, convert_tz._pyexpr)
         )

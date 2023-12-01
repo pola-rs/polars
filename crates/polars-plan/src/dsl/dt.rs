@@ -233,7 +233,11 @@ impl DateLikeNameSpace {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn convert_and_replace_time_zone(self, replace_tz: Option<TimeZone>, convert_tz: Expr) -> Expr {
+    pub fn convert_and_replace_time_zone(
+        self,
+        replace_tz: Option<TimeZone>,
+        convert_tz: Expr,
+    ) -> Expr {
         self.0.map_many_private(
             FunctionExpr::TemporalExpr(TemporalFunction::ConvertAndReplaceTimeZone(replace_tz)),
             &[convert_tz],

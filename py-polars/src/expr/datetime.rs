@@ -52,14 +52,17 @@ impl PyExpr {
 
     #[cfg(feature = "timezones")]
     #[pyo3(signature = (replace_tz, convert_tz))]
-    fn dt_convert_and_replace_time_zone(&self, replace_tz: Option<String>, convert_tz: Self) -> Self {
+    fn dt_convert_and_replace_time_zone(
+        &self,
+        replace_tz: Option<String>,
+        convert_tz: Self,
+    ) -> Self {
         self.inner
             .clone()
             .dt()
             .convert_and_replace_time_zone(replace_tz, convert_tz.inner)
             .into()
     }
-
 
     fn dt_truncate(&self, every: Self, offset: String) -> Self {
         self.inner.clone().dt().truncate(every.inner, offset).into()

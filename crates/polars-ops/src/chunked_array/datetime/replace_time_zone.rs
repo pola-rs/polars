@@ -84,7 +84,6 @@ pub fn replace_time_zone(
     Ok(out)
 }
 
-
 pub fn convert_and_replace_time_zone(
     datetime: &Logical<DatetimeType, Int64Type>,
     replace_tz: Option<&str>,
@@ -116,19 +115,20 @@ pub fn convert_and_replace_time_zone(
             }),
             _ => Ok(datetime.0.apply(|_| None)),
         },
-        _ => try_binary_elementwise(datetime, convert_tz, |timestamp_opt, ambiguous_opt| {
-            match (timestamp_opt, ambiguous_opt) {
-                (Some(timestamp), Some(convert_tz)) => {
-                    let ndt = timestamp_to_datetime(timestamp);
-                    Ok(Some(datetime_to_timestamp(convert_to_naive_local(
-                        &parse_time_zone(convert_tz)?,
-                        &from_tz,
-                        ndt,
-                        Ambiguous::Raise,
-                    )?)))
-                },
-                _ => Ok(None),
-            }
+        _ => try_binary_elementwise(datetime, convert_tz, |timestamp_opt, ambiguous_opt| match (
+            timestamp_opt,
+            ambiguous_opt,
+        ) {
+            (Some(timestamp), Some(convert_tz)) => {
+                let ndt = timestamp_to_datetime(timestamp);
+                Ok(Some(datetime_to_timestamp(convert_to_naive_local(
+                    &parse_time_zone(convert_tz)?,
+                    &from_tz,
+                    ndt,
+                    Ambiguous::Raise,
+                )?)))
+            },
+            _ => Ok(None),
         }),
     };
     let out = out?.into_datetime(datetime.time_unit(), replace_tz.map(|x| x.to_string()));
