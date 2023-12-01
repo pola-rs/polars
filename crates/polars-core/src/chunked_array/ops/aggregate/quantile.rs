@@ -59,7 +59,7 @@ fn midpoint_interpol<T: Float>(lower: T, upper: T) -> T {
 }
 
 // Uses quickselect instead of sorting all data
-fn quantile_slice<T: ToPrimitive + TotalOrd>(
+fn quantile_slice<T: ToPrimitive + TotalOrd + Copy>(
     vals: &mut [T],
     quantile: f64,
     interpol: QuantileInterpolOptions,
@@ -81,14 +81,14 @@ fn quantile_slice<T: ToPrimitive + TotalOrd>(
     } else {
         match interpol {
             QuantileInterpolOptions::Midpoint => {
-                let upper = rhs.iter().min_by(TotalOrd::tot_cmp).unwrap();
+                let upper = rhs.iter().copied().min_by(TotalOrd::tot_cmp).unwrap();
                 Ok(Some(midpoint_interpol(
                     lower.to_f64().unwrap(),
                     upper.to_f64().unwrap(),
                 )))
             },
             QuantileInterpolOptions::Linear => {
-                let upper = rhs.iter().min_by(TotalOrd::tot_cmp).unwrap();
+                let upper = rhs.iter().copied().min_by(TotalOrd::tot_cmp).unwrap();
                 Ok(linear_interpol(
                     lower.to_f64().unwrap(),
                     upper.to_f64().unwrap(),

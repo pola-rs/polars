@@ -213,9 +213,9 @@ impl_trivial_total!(&str);
 impl_trivial_total!(&[u8]);
 impl_trivial_total!(String);
 
-macro_rules! impl_eq_ord_float {
-    ($f:ty) => {
-        impl TotalEq for $f {
+macro_rules! impl_float_eq_ord {
+    ($T:ty) => {
+        impl TotalEq for $T {
             #[inline(always)]
             fn tot_eq(&self, other: &Self) -> bool {
                 if self.is_nan() {
@@ -226,7 +226,7 @@ macro_rules! impl_eq_ord_float {
             }
         }
 
-        impl TotalOrd for $f {
+        impl TotalOrd for $T {
             #[inline(always)]
             fn tot_cmp(&self, other: &Self) -> Ordering {
                 if self.tot_lt(other) {
@@ -262,12 +262,13 @@ macro_rules! impl_eq_ord_float {
                 // equal to NaN except NaN itself, which we already handled earlier.
                 self.is_nan() | (self >= other)
             }
+
         }
     };
 }
 
-impl_eq_ord_float!(f32);
-impl_eq_ord_float!(f64);
+impl_float_eq_ord!(f32);
+impl_float_eq_ord!(f64);
 
 impl TotalHash for f32 {
     fn tot_hash<H>(&self, state: &mut H)
@@ -369,33 +370,6 @@ impl<T: TotalEq + ?Sized> TotalEq for &T {
     #[inline(always)]
     fn tot_ne(&self, other: &Self) -> bool {
         (*self).tot_ne(*other)
-    }
-}
-
-impl<T: TotalOrd + ?Sized> TotalOrd for &T {
-    #[inline(always)]
-    fn tot_cmp(&self, other: &Self) -> Ordering {
-        (*self).tot_cmp(*other)
-    }
-
-    #[inline(always)]
-    fn tot_lt(&self, other: &Self) -> bool {
-        (*self).tot_lt(*other)
-    }
-
-    #[inline(always)]
-    fn tot_gt(&self, other: &Self) -> bool {
-        (*self).tot_gt(*other)
-    }
-
-    #[inline(always)]
-    fn tot_le(&self, other: &Self) -> bool {
-        (*self).tot_le(*other)
-    }
-
-    #[inline(always)]
-    fn tot_ge(&self, other: &Self) -> bool {
-        (*self).tot_ge(*other)
     }
 }
 
