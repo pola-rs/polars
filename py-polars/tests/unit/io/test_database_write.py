@@ -34,10 +34,13 @@ def test_write_database_create(engine: DbWriteEngine, tmp_path: Path) -> None:
     test_db_uri = f"sqlite:///{test_db}"
     table_name = "test_create"
 
-    df.write_database(
-        table_name=table_name,
-        connection=test_db_uri,
-        engine=engine,
+    assert (
+        df.write_database(
+            table_name=table_name,
+            connection=test_db_uri,
+            engine=engine,
+        )
+        == 2
     )
     result = pl.read_database(
         query=f"SELECT * FROM {table_name}",
@@ -66,12 +69,14 @@ def test_write_database_append_replace(engine: DbWriteEngine, tmp_path: Path) ->
     test_db_uri = f"sqlite:///{test_db}"
     table_name = f"test_append_{engine}"
 
-    df.write_database(
-        table_name=table_name,
-        connection=test_db_uri,
-        engine=engine,
+    assert (
+        df.write_database(
+            table_name=table_name,
+            connection=test_db_uri,
+            engine=engine,
+        )
+        == 3
     )
-
     with pytest.raises(Exception):  # noqa: B017
         df.write_database(
             table_name=table_name,
@@ -80,11 +85,14 @@ def test_write_database_append_replace(engine: DbWriteEngine, tmp_path: Path) ->
             engine=engine,
         )
 
-    df.write_database(
-        table_name=table_name,
-        connection=test_db_uri,
-        if_table_exists="replace",
-        engine=engine,
+    assert (
+        df.write_database(
+            table_name=table_name,
+            connection=test_db_uri,
+            if_table_exists="replace",
+            engine=engine,
+        )
+        == 3
     )
     result = pl.read_database(
         query=f"SELECT * FROM {table_name}",
@@ -92,17 +100,20 @@ def test_write_database_append_replace(engine: DbWriteEngine, tmp_path: Path) ->
     )
     assert_frame_equal(result, df)
 
-    df.write_database(
-        table_name=table_name,
-        connection=test_db_uri,
-        if_table_exists="append",
-        engine=engine,
+    assert (
+        df[:2].write_database(
+            table_name=table_name,
+            connection=test_db_uri,
+            if_table_exists="append",
+            engine=engine,
+        )
+        == 2
     )
     result = pl.read_database(
         query=f"SELECT * FROM {table_name}",
         connection=create_engine(test_db_uri),
     )
-    assert_frame_equal(result, pl.concat([df, df]))
+    assert_frame_equal(result, pl.concat([df, df[:2]]))
 
 
 @pytest.mark.skipif(
@@ -126,16 +137,22 @@ def test_write_database_create_quoted_tablename(
     # table name requires quoting, and is qualified with the implicit 'main' schema
     qualified_table_name = f'main."test-append-{engine}"'
 
-    df.write_database(
-        table_name=qualified_table_name,
-        connection=test_db_uri,
-        engine=engine,
+    assert (
+        df.write_database(
+            table_name=qualified_table_name,
+            connection=test_db_uri,
+            engine=engine,
+        )
+        == 3
     )
-    df.write_database(
-        table_name=qualified_table_name,
-        connection=test_db_uri,
-        if_table_exists="replace",
-        engine=engine,
+    assert (
+        df.write_database(
+            table_name=qualified_table_name,
+            connection=test_db_uri,
+            if_table_exists="replace",
+            engine=engine,
+        )
+        == 3
     )
     result = pl.read_database(
         query=f"SELECT * FROM {qualified_table_name}",
@@ -144,7 +161,11 @@ def test_write_database_create_quoted_tablename(
     assert_frame_equal(result, df)
 
 
-def test_write_database_errors() -> None:
+@pytest.mark.parametrize(
+    "engine",
+    ["adbc", "sqlalchemy"],
+)
+def test_write_database_errors(engine: DbWriteEngine) -> None:
     # confirm that invalid parameter values raise errors
     df = pl.DataFrame({"colx": [1, 2, 3]})
 
@@ -154,7 +175,7 @@ def test_write_database_errors() -> None:
         df.write_database(
             connection="sqlite:///:memory:",
             table_name="w.x.y.z",
-            engine="sqlalchemy",
+            engine=engine,
         )
 
     with pytest.raises(
@@ -165,5 +186,5 @@ def test_write_database_errors() -> None:
             connection="sqlite:///:memory:",
             table_name="main.test_errs",
             if_table_exists="do_something",  # type: ignore[arg-type]
-            engine="sqlalchemy",
+            engine=engine,
         )
