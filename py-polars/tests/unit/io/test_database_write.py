@@ -30,7 +30,10 @@ if TYPE_CHECKING:
     ],
 )
 class TestWriteDatabase:
+    """Database write tests that share common pytest/parametrize options."""
+
     def test_write_database_create(self, engine: DbWriteEngine, tmp_path: Path) -> None:
+        """Test basic database table creation."""
         df = pl.DataFrame(
             {
                 "id": [1234, 5678],
@@ -60,6 +63,7 @@ class TestWriteDatabase:
     def test_write_database_append_replace(
         self, engine: DbWriteEngine, tmp_path: Path
     ) -> None:
+        """Test append/replace ops against existing database table."""
         df = pl.DataFrame(
             {
                 "key": ["xx", "yy", "zz"],
@@ -122,6 +126,7 @@ class TestWriteDatabase:
     def test_write_database_create_quoted_tablename(
         self, engine: DbWriteEngine, tmp_path: Path
     ) -> None:
+        """Test parsing/handling of quoted database table names."""
         df = pl.DataFrame({"col x": [100, 200, 300], "col y": ["a", "b", "c"]})
 
         tmp_path.mkdir(exist_ok=True)
@@ -155,7 +160,7 @@ class TestWriteDatabase:
         assert_frame_equal(result, df)
 
     def test_write_database_errors(self, engine: DbWriteEngine, tmp_path: Path) -> None:
-        # confirm that invalid parameter values raise errors
+        """Confirm that expected errors are raised."""
         df = pl.DataFrame({"colx": [1, 2, 3]})
 
         with pytest.raises(
