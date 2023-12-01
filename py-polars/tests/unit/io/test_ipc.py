@@ -208,3 +208,17 @@ def test_from_float16() -> None:
     pandas_df.to_feather(f)
     f.seek(0)
     assert pl.read_ipc(f, use_pyarrow=False).dtypes == [pl.Float32]
+
+
+@pytest.mark.write_disk()
+def test_sink_categorical_ipc_6047(
+    tmp_path: Path
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "small.ipc"
+
+    df = pl.DataFrame({"col": ["x", "y", "z"]})
+    df.lazy().with_columns(pl.col("col").cast(pl.Categorical)).sink_ipc(file_path)
+    result_scan = pl.scan_ipc(file_path).collect(streaming=True)
+
+    assert_frame_equal(result_scan, df, categorical_as_str=True)
