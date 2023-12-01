@@ -730,3 +730,27 @@ def test_outer_join_bool() -> None:
         "val": [1, 2],
         "val_right": [0, -1],
     }
+
+
+def test_join_null_matches() -> None:
+    # null values in joins should never find a match.
+    df_a = pl.DataFrame(
+        {
+            "idx_a": [0, 1, 2],
+            "a": [None, 1, 2],
+        }
+    )
+
+    df_b = pl.DataFrame(
+        {
+            "idx_b": [0, 1, 2, 3],
+            "a": [None, 2, 1, None],
+        }
+    )
+
+    expected = pl.DataFrame({"idx_a": [2, 1], "a": [2, 1], "idx_b": [1, 2]})
+    assert_frame_equal(df_a.join(df_b, on="a", how="inner"), expected)
+    expected = pl.DataFrame(
+        {"idx_a": [0, 1, 2], "a": [None, 1, 2], "idx_b": [None, 2, 1]}
+    )
+    assert_frame_equal(df_a.join(df_b, on="a", how="left"), expected)

@@ -1,5 +1,6 @@
 use polars_core::utils::flatten::flatten_par;
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
+use polars_utils::nulls::IsNull;
 
 use super::*;
 
@@ -110,7 +111,7 @@ pub(super) fn hash_join_tuples_left<T, I>(
 where
     I: IntoIterator<Item = T>,
     <I as IntoIterator>::IntoIter: Send + Sync + Clone,
-    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
+    T: Send + Hash + Eq + Sync + Copy + DirtyHash + IsNull,
 {
     let probe = probe.into_iter().map(|i| i.into_iter()).collect::<Vec<_>>();
     let build = build.into_iter().map(|i| i.into_iter()).collect::<Vec<_>>();

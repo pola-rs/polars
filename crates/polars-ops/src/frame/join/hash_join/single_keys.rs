@@ -1,5 +1,6 @@
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::idx_vec::IdxVec;
+use polars_utils::nulls::IsNull;
 use polars_utils::sync::SyncPtr;
 
 use super::*;
@@ -12,7 +13,7 @@ const MIN_ELEMS_PER_THREAD: usize = if cfg!(debug_assertions) { 1 } else { 128 }
 
 pub(crate) fn build_tables<T, I>(keys: Vec<I>) -> Vec<PlHashMap<T, IdxVec>>
 where
-    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
+    T: Send + Hash + Eq + Sync + Copy + DirtyHash + IsNull,
     I: IntoIterator<Item = T> + Send + Sync + Clone,
 {
     // FIXME: change interface to split the input here, instead of taking
@@ -30,7 +31,9 @@ where
         let mut offset = 0;
         for it in keys {
             for k in it {
-                hm.entry(k).or_default().push(offset);
+                if !k.is_null() {
+                    hm.entry(k).or_default().push(offset);
+                }
                 offset += 1;
             }
         }
@@ -130,17 +133,20 @@ where
                         }
 
                         let key = *scatter_keys.get_unchecked(i);
-                        let idx = *scatter_idxs.get_unchecked(i);
-                        match hm.entry(key) {
-                            Entry::Occupied(mut o) => {
-                                o.get_mut().push(idx as IdxSize);
-                            },
-                            Entry::Vacant(v) => {
-                                let mut iv = IdxVec::new();
-                                iv.push(idx as IdxSize);
-                                v.insert(iv);
-                            },
-                        };
+
+                        if !key.is_null() {
+                            let idx = *scatter_idxs.get_unchecked(i);
+                            match hm.entry(key) {
+                                Entry::Occupied(mut o) => {
+                                    o.get_mut().push(idx as IdxSize);
+                                },
+                                Entry::Vacant(v) => {
+                                    let mut iv = IdxVec::new();
+                                    iv.push(idx as IdxSize);
+                                    v.insert(iv);
+                                },
+                            };
+                        }
                     }
                 }
 

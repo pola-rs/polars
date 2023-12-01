@@ -37,6 +37,7 @@ pub mod wasm;
 pub mod float;
 pub mod index;
 pub mod io;
+pub mod nulls;
 pub mod ord;
 
 pub use io::open_file;

@@ -2,6 +2,7 @@ use polars_core::utils::flatten;
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::iter::EnumerateIdxTrait;
+use polars_utils::nulls::IsNull;
 use polars_utils::sync::SyncPtr;
 
 use super::*;
@@ -44,7 +45,7 @@ pub(super) fn hash_join_tuples_inner<T, I>(
 where
     I: IntoIterator<Item = T> + Send + Sync + Clone,
     // <I as IntoIterator>::IntoIter: TrustedLen,
-    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
+    T: Send + Hash + Eq + Sync + Copy + DirtyHash + IsNull,
 {
     // NOTE: see the left join for more elaborate comments
     // first we hash one relation
