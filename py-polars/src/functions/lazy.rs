@@ -1,7 +1,7 @@
 use polars::lazy::dsl;
 use polars::lazy::dsl::Expr;
 use polars::prelude::*;
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 
@@ -394,8 +394,8 @@ pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
         });
         Ok(dsl::lit(s).into())
     } else {
-        Err(PyValueError::new_err(format!(
-            "could not convert value {:?} as a Literal",
+        Err(PyTypeError::new_err(format!(
+            "invalid literal value: {:?}",
             value.str()?
         )))
     }
