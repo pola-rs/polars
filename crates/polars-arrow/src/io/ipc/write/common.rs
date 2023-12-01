@@ -366,11 +366,10 @@ impl DictionaryTracker {
                 // Same dictionary values => no need to emit it again
                 return Ok(false);
             } else if self.cannot_replace {
-                polars_bail!(InvalidOperation:
-                    "Dictionary replacement detected when writing IPC file format. \
-                     Arrow IPC files only support a single dictionary for a given field \
-                     across all batches."
-                );
+                // TODO: Perhaps concatenate `last` and `values` here?
+                // I'm not sure how to do that for `dyn Array`.
+
+                // Perhaps Ok(true) should be returned and the existing dictionary be overwritten.
             }
         };
 
