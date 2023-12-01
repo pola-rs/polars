@@ -33,7 +33,6 @@ from polars.datatypes import (
     Datetime,
     Duration,
     Enum,
-    Float32,
     List,
     Null,
     Object,
