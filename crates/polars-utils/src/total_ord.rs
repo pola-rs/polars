@@ -262,7 +262,6 @@ macro_rules! impl_float_eq_ord {
                 // equal to NaN except NaN itself, which we already handled earlier.
                 self.is_nan() | (self >= other)
             }
-
         }
     };
 }

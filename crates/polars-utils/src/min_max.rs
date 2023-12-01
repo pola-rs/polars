@@ -7,7 +7,7 @@
 // They also violate the regular total order for Option<T>: on top of the
 // above rules None's are always ignored, so only if both arguments are
 // None is the output None.
-pub trait MinMax : Sized {
+pub trait MinMax: Sized {
     fn min_ignore_nan(self, other: Self) -> Self;
     fn max_ignore_nan(self, other: Self) -> Self;
     fn min_propagate_nan(self, other: Self) -> Self;
@@ -37,7 +37,7 @@ macro_rules! impl_trivial_min_max {
                 self.max(other)
             }
         }
-    }
+    };
 }
 
 // We can't do a blanket impl because Rust complains f32 might implement
@@ -59,7 +59,6 @@ impl_trivial_min_max!(char);
 impl_trivial_min_max!(&str);
 impl_trivial_min_max!(&[u8]);
 impl_trivial_min_max!(String);
-
 
 macro_rules! impl_float_min_max {
     ($T: ty) => {
@@ -92,18 +91,14 @@ macro_rules! impl_float_min_max {
                 }
             }
         }
-    }
+    };
 }
 
 impl_float_min_max!(f32);
 impl_float_min_max!(f64);
 
 #[inline(always)]
-pub fn reduce_option<T, F: Fn(T, T) -> T>(
-    a: Option<T>,
-    b: Option<T>,
-    f: F,
-) -> Option<T> {
+pub fn reduce_option<T, F: Fn(T, T) -> T>(a: Option<T>, b: Option<T>, f: F) -> Option<T> {
     match (a, b) {
         (Some(l), Some(r)) => Some(f(l, r)),
         (Some(l), None) => Some(l),

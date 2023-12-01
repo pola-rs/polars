@@ -17,7 +17,7 @@ where
     Agg: Fn(T::Native, T::Native) -> T::Native + Copy,
 {
     ca.downcast_iter()
-        .map(|arr| {
+        .filter_map(|arr| {
             if arr.null_count() == 0 {
                 arr.values().iter().copied().reduce(min_or_max_fn)
             } else {
@@ -27,7 +27,6 @@ where
                     .reduce(min_or_max_fn)
             }
         })
-        .flatten()
         .reduce(min_or_max_fn)
 }
 
