@@ -51,8 +51,8 @@ use pyo3::wrap_pyfunction;
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::error::{
-    ColumnNotFoundError, ComputeError, DuplicateError, InvalidOperationError, NoDataError,
-    OutOfBoundsError, PerformanceWarningCategoricalRemapping, PyPolarsErr, SchemaError,
+    CategoricalRemappingWarning, ColumnNotFoundError, ComputeError, DuplicateError,
+    InvalidOperationError, NoDataError, OutOfBoundsError, PyPolarsErr, SchemaError,
     SchemaFieldNotFoundError, StructFieldNotFoundError,
 };
 use crate::expr::PyExpr;
@@ -274,8 +274,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     .unwrap();
     m.add("NoDataError", py.get_type::<NoDataError>()).unwrap();
     m.add(
-        "PerformanceWarningCategoricalRemapping",
-        py.get_type::<PerformanceWarningCategoricalRemapping>(),
+        "CategoricalRemappingWarning",
+        py.get_type::<CategoricalRemappingWarning>(),
     )
     .unwrap();
     m.add("OutOfBoundsError", py.get_type::<OutOfBoundsError>())

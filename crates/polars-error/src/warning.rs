@@ -13,7 +13,7 @@ pub unsafe fn set_warning_function(function: WarningFunction) {
 #[derive(Debug)]
 pub enum PolarsWarning {
     UserWarning,
-    PerformanceCategoricalRemappingWarning,
+    CategoricalRemappingWarning,
 }
 
 fn eprintln(fmt: &str, warning: PolarsWarning) {

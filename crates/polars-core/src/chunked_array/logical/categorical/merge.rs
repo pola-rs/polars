@@ -118,7 +118,7 @@ fn merge_local_rhs_categorical<'a>(
     // In case of local categorical we also need to change the physicals not only the revmap
 
     polars_warn!(
-        PerformanceCategoricalRemappingWarning,
+        CategoricalRemappingWarning,
         "Local categoricals have different encodings, expensive re-encoding is done \
     to perform this merge operation. Consider using a StringCache or an Enum type \
     if the categories are known in advance"

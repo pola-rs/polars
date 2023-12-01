@@ -1,12 +1,12 @@
 try:
     from polars.polars import (
+        CategoricalRemappingWarning,
         ColumnNotFoundError,
         ComputeError,
         DuplicateError,
         InvalidOperationError,
         NoDataError,
         OutOfBoundsError,
-        PerformanceWarningCategoricalRemapping,
         PolarsPanicError,
         SchemaError,
         SchemaFieldNotFoundError,
@@ -54,7 +54,7 @@ except ImportError:
     class StructFieldNotFoundError(Exception):  # type: ignore[no-redef]
         """Exception raised when a specified schema field is not found."""
 
-    class PerformanceWarningCategoricalRemapping(Warning):  # type: ignore[no-redef]
+    class CategoricalRemappingWarning(Warning):  # type: ignore[no-redef]
         """Warning raised when a categorical needs to be remapped to be compatible with another categorical."""  # noqa: W505
 
 
@@ -117,7 +117,7 @@ __all__ = [
     "NoRowsReturnedError",
     "OutOfBoundsError",
     "PolarsInefficientMapWarning",
-    "PerformanceWarningCategoricalRemapping",
+    "CategoricalRemappingWarning",
     "PolarsPanicError",
     "RowsError",
     "SchemaError",

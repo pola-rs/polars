@@ -85,11 +85,7 @@ create_exception!(polars.exceptions, SchemaFieldNotFoundError, PyException);
 create_exception!(polars.exceptions, ShapeError, PyException);
 create_exception!(polars.exceptions, StringCacheMismatchError, PyException);
 create_exception!(polars.exceptions, StructFieldNotFoundError, PyException);
-create_exception!(
-    polars.exceptions,
-    PerformanceWarningCategoricalRemapping,
-    PyWarning
-);
+create_exception!(polars.exceptions, CategoricalRemappingWarning, PyWarning);
 
 #[macro_export]
 macro_rules! raise_err(
@@ -102,8 +98,8 @@ macro_rules! raise_err(
 impl IntoPy<PyObject> for Wrap<PolarsWarning> {
     fn into_py(self, py: Python<'_>) -> PyObject {
         match self.0 {
-            PolarsWarning::PerformanceCategoricalRemappingWarning => {
-                PerformanceWarningCategoricalRemapping::type_object(py).to_object(py)
+            PolarsWarning::CategoricalRemappingWarning => {
+                CategoricalRemappingWarning::type_object(py).to_object(py)
             },
             PolarsWarning::UserWarning => PyUserWarning::type_object(py).to_object(py),
         }

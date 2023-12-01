@@ -3,7 +3,7 @@ from typing import Iterator
 import pytest
 
 import polars as pl
-from polars.exceptions import PerformanceWarningCategoricalRemapping
+from polars.exceptions import CategoricalRemappingWarning
 from polars.testing import assert_frame_equal
 
 
@@ -126,7 +126,7 @@ def test_string_cache_join() -> None:
     assert pl.using_string_cache() is False
 
     with pytest.warns(
-        PerformanceWarningCategoricalRemapping,
+        CategoricalRemappingWarning,
         match="Local categoricals have different encodings",
     ):
         df1a = df1.with_columns(pl.col("a").cast(pl.Categorical))
