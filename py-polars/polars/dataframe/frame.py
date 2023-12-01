@@ -3396,6 +3396,9 @@ class DataFrame:
             # needed below
             import pyarrow.parquet  # noqa: F401
 
+            if pyarrow_options is None:
+                pyarrow_options = {}
+
             if pyarrow_options is not None and pyarrow_options.get("partition_cols"):
                 pyarrow_options["compression"] = (
                     None if compression == "uncompressed" else compression
