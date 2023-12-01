@@ -533,14 +533,24 @@ def sequence_to_pyseries(
             and isinstance(value, np.ndarray)
             and len(value.shape) == 1
         ):
-            return PySeries.new_series_list(
-                name,
-                [
-                    numpy_to_pyseries("", v, strict=strict, nan_to_null=nan_to_null)
-                    for v in values
-                ],
-                strict,
-            )
+            n_elems = len(value)
+            if all(len(v) == n_elems for v in values):
+                # can take (much) faster path if all lists are the same length
+                return numpy_to_pyseries(
+                    name,
+                    np.vstack(values),
+                    strict=strict,
+                    nan_to_null=nan_to_null,
+                )
+            else:
+                return PySeries.new_series_list(
+                    name,
+                    [
+                        numpy_to_pyseries("", v, strict=strict, nan_to_null=nan_to_null)
+                        for v in values
+                    ],
+                    strict,
+                )
 
         elif python_dtype in (list, tuple):
             if isinstance(dtype, Object):
