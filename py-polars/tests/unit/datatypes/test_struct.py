@@ -153,7 +153,7 @@ def test_struct_unnest_multiple() -> None:
     # List input
     result = df_structs.unnest(["s1", "s2"])
     assert_frame_equal(result, df)
-    assert all(tp in pl.NESTED_DTYPES for tp in df_structs.dtypes)
+    assert all(tp.is_nested() for tp in df_structs.dtypes)
 
     # Positional input
     result = df_structs.unnest("s1", "s2")
