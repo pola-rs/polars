@@ -563,7 +563,7 @@ impl PhysicalExpr for WindowExpr {
                                 // group key from right column
                                 let right = &keys[0];
                                 group_by_columns[0]
-                                    .hash_join_left(right, JoinValidation::ManyToMany)
+                                    .hash_join_left(right, JoinValidation::ManyToMany, true)
                                     .unwrap()
                                     .1
                             } else {

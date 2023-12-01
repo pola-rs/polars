@@ -11,6 +11,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
         &self,
         other: &Series,
         validate: JoinValidation,
+        join_nulls: bool,
     ) -> PolarsResult<LeftJoinIds> {
         let s_self = self.as_series();
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
@@ -21,7 +22,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
             Utf8 => {
                 let lhs = lhs.cast(&Binary).unwrap();
                 let rhs = rhs.cast(&Binary).unwrap();
-                lhs.hash_join_left(&rhs, JoinValidation::ManyToMany)
+                lhs.hash_join_left(&rhs, JoinValidation::ManyToMany, join_nulls)
             },
             Binary => {
                 let lhs = lhs.binary().unwrap();
@@ -29,17 +30,17 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let (lhs, rhs, _, _) = prepare_binary(lhs, rhs, false);
                 let lhs = lhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
-                hash_join_tuples_left(lhs, rhs, None, None, validate)
+                hash_join_tuples_left(lhs, rhs, None, None, validate, join_nulls)
             },
             _ => {
                 if s_self.bit_repr_is_large() {
                     let lhs = lhs.bit_repr_large();
                     let rhs = rhs.bit_repr_large();
-                    num_group_join_left(&lhs, &rhs, validate)
+                    num_group_join_left(&lhs, &rhs, validate, join_nulls)
                 } else {
                     let lhs = lhs.bit_repr_small();
                     let rhs = rhs.bit_repr_small();
-                    num_group_join_left(&lhs, &rhs, validate)
+                    num_group_join_left(&lhs, &rhs, validate, join_nulls)
                 }
             },
         }
@@ -88,6 +89,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
         &self,
         other: &Series,
         validate: JoinValidation,
+        join_nulls: bool,
     ) -> PolarsResult<(InnerJoinIds, bool)> {
         let s_self = self.as_series();
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
@@ -98,7 +100,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
             Utf8 => {
                 let lhs = lhs.cast(&Binary).unwrap();
                 let rhs = rhs.cast(&Binary).unwrap();
-                lhs.hash_join_inner(&rhs, JoinValidation::ManyToMany)
+                lhs.hash_join_inner(&rhs, JoinValidation::ManyToMany, join_nulls)
             },
             Binary => {
                 let lhs = lhs.binary().unwrap();
@@ -107,7 +109,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let lhs = lhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
                 Ok((
-                    hash_join_tuples_inner(lhs, rhs, swapped, validate)?,
+                    hash_join_tuples_inner(lhs, rhs, swapped, validate, join_nulls)?,
                     !swapped,
                 ))
             },
@@ -115,11 +117,11 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 if s_self.bit_repr_is_large() {
                     let lhs = s_self.bit_repr_large();
                     let rhs = other.bit_repr_large();
-                    group_join_inner::<UInt64Type>(&lhs, &rhs, validate)
+                    group_join_inner::<UInt64Type>(&lhs, &rhs, validate, join_nulls)
                 } else {
                     let lhs = s_self.bit_repr_small();
                     let rhs = other.bit_repr_small();
-                    group_join_inner::<UInt32Type>(&lhs, &rhs, validate)
+                    group_join_inner::<UInt32Type>(&lhs, &rhs, validate, join_nulls)
                 }
             },
         }
@@ -184,6 +186,7 @@ fn group_join_inner<T>(
     left: &ChunkedArray<T>,
     right: &ChunkedArray<T>,
     validate: JoinValidation,
+    join_nulls: bool,
 ) -> PolarsResult<(InnerJoinIds, bool)>
 where
     T: PolarsDataType,
@@ -210,18 +213,18 @@ where
                     .map(|arr| arr.as_slice().unwrap())
                     .collect::<Vec<_>>();
                 Ok((
-                    hash_join_tuples_inner(splitted_a, splitted_b, swapped, validate)?,
+                    hash_join_tuples_inner(splitted_a, splitted_b, swapped, validate, join_nulls)?,
                     !swapped,
                 ))
             } else {
                 Ok((
-                    hash_join_tuples_inner(splitted_a, splitted_b, swapped, validate)?,
+                    hash_join_tuples_inner(splitted_a, splitted_b, swapped, validate, join_nulls)?,
                     !swapped,
                 ))
             }
         },
         _ => Ok((
-            hash_join_tuples_inner(splitted_a, splitted_b, swapped, validate)?,
+            hash_join_tuples_inner(splitted_a, splitted_b, swapped, validate, join_nulls)?,
             !swapped,
         )),
     }
@@ -267,6 +270,7 @@ fn num_group_join_left<T>(
     left: &ChunkedArray<T>,
     right: &ChunkedArray<T>,
     validate: JoinValidation,
+    join_nulls: bool,
 ) -> PolarsResult<LeftJoinIds>
 where
     T: PolarsIntegerType,
@@ -285,7 +289,7 @@ where
         (0, 0, 1, 1) => {
             let keys_a = chunks_as_slices(&splitted_a);
             let keys_b = chunks_as_slices(&splitted_b);
-            hash_join_tuples_left(keys_a, keys_b, None, None, validate)
+            hash_join_tuples_left(keys_a, keys_b, None, None, validate, join_nulls)
         },
         (0, 0, _, _) => {
             let keys_a = chunks_as_slices(&splitted_a);
@@ -299,6 +303,7 @@ where
                 mapping_left.as_deref(),
                 mapping_right.as_deref(),
                 validate,
+                join_nulls,
             )
         },
         _ => {
@@ -312,6 +317,7 @@ where
                 mapping_left.as_deref(),
                 mapping_right.as_deref(),
                 validate,
+                join_nulls,
             )
         },
     }

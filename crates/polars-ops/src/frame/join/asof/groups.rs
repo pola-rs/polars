@@ -91,7 +91,7 @@ where
         .iter()
         .map(|ca| ca.downcast_iter().next().unwrap().values_iter().copied())
         .collect();
-    let hash_tbls = build_tables(right_slices);
+    let hash_tbls = build_tables(right_slices, false);
     let n_tables = hash_tbls.len();
 
     // Now we probe the right hand side for each left hand side.
@@ -165,7 +165,7 @@ where
     let hb = RandomState::default();
     let prep_by_left = prepare_bytes(&split_by_left, &hb);
     let prep_by_right = prepare_bytes(&split_by_right, &hb);
-    let hash_tbls = build_tables(prep_by_right);
+    let hash_tbls = build_tables(prep_by_right, false);
     let n_tables = hash_tbls.len();
 
     // Now we probe the right hand side for each left hand side.

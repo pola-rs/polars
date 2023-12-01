@@ -6007,6 +6007,7 @@ class DataFrame:
         right_on: str | Expr | Sequence[str | Expr] | None = None,
         suffix: str = "_right",
         validate: JoinValidation = "m:m",
+        join_nulls: bool = False,
     ) -> DataFrame:
         """
         Join in SQL-like fashion.
@@ -6044,6 +6045,8 @@ class DataFrame:
 
                 - This is currently not supported the streaming engine.
                 - This is only supported when joined by single columns.
+        join_nulls
+            Join on null values. By default null values will never produce matches.
 
         Returns
         -------
@@ -6145,6 +6148,7 @@ class DataFrame:
                 how=how,
                 suffix=suffix,
                 validate=validate,
+                join_nulls=join_nulls,
             )
             .collect(_eager=True)
         )

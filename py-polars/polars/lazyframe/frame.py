@@ -3739,6 +3739,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         right_on: str | Expr | Sequence[str | Expr] | None = None,
         suffix: str = "_right",
         validate: JoinValidation = "m:m",
+        join_nulls: bool = False,
         allow_parallel: bool = True,
         force_parallel: bool = False,
     ) -> Self:
@@ -3779,6 +3780,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
                 - This is currently not supported the streaming engine.
                 - This is only supported when joined by single columns.
+        join_nulls
+            Join on null values. By default null values will never produce matches.
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
             DataFrames up to the join in parallel.
@@ -3895,6 +3898,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 pyexprs_right,
                 allow_parallel,
                 force_parallel,
+                join_nulls,
                 how,
                 suffix,
                 validate,

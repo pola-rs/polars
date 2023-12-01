@@ -198,7 +198,7 @@ pub trait JoinDispatch: IntoDf {
             right.as_single_chunk_par();
             s_right = s_right.rechunk();
         }
-        let ids = sort_or_hash_left(&s_left, &s_right, verbose, args.validation)?;
+        let ids = sort_or_hash_left(&s_left, &s_right, verbose, args.validation, args.join_nulls)?;
         left._finish_left_join(ids, &right.drop(s_right.name()).unwrap(), args)
     }
 

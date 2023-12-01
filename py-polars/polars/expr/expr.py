@@ -9317,7 +9317,7 @@ class Expr:
                 F.lit(True).alias(is_remapped_column)
             )
             mapped = df.lazy().join(
-                other=remap_frame, how="left", left_on=column, right_on=remap_key_column
+                other=remap_frame, how="left", left_on=column, right_on=remap_key_column, join_nulls=True
             )
             if default_value is None:
                 result_index = 1

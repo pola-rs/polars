@@ -41,6 +41,7 @@ pub(super) fn hash_join_tuples_inner<T, I>(
     // Because b should be the shorter relation we could need to swap to keep left left and right right.
     swapped: bool,
     validate: JoinValidation,
+    join_nulls: bool,
 ) -> PolarsResult<(Vec<IdxSize>, Vec<IdxSize>)>
 where
     I: IntoIterator<Item = T> + Send + Sync + Clone,
@@ -54,12 +55,12 @@ where
             .iter()
             .map(|v| v.clone().into_iter().size_hint().1.unwrap())
             .sum();
-        let hash_tbls = build_tables(build);
+        let hash_tbls = build_tables(build, join_nulls);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
         validate.validate_build(build_size, expected_size, swapped)?;
         hash_tbls
     } else {
-        build_tables(build)
+        build_tables(build, join_nulls)
     };
 
     let n_tables = hash_tbls.len();

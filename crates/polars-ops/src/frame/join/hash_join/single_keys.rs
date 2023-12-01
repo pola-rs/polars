@@ -11,7 +11,7 @@ use super::*;
 // Use a small element per thread threshold for debugging/testing purposes.
 const MIN_ELEMS_PER_THREAD: usize = if cfg!(debug_assertions) { 1 } else { 128 };
 
-pub(crate) fn build_tables<T, I>(keys: Vec<I>) -> Vec<PlHashMap<T, IdxVec>>
+pub(crate) fn build_tables<T, I>(keys: Vec<I>, join_nulls: bool) -> Vec<PlHashMap<T, IdxVec>>
 where
     T: Send + Hash + Eq + Sync + Copy + DirtyHash + IsNull,
     I: IntoIterator<Item = T> + Send + Sync + Clone,
@@ -31,7 +31,7 @@ where
         let mut offset = 0;
         for it in keys {
             for k in it {
-                if !k.is_null() {
+                if !k.is_null() || join_nulls {
                     hm.entry(k).or_default().push(offset);
                 }
                 offset += 1;
@@ -134,7 +134,7 @@ where
 
                         let key = *scatter_keys.get_unchecked(i);
 
-                        if !key.is_null() {
+                        if !key.is_null() || join_nulls {
                             let idx = *scatter_idxs.get_unchecked(i);
                             match hm.entry(key) {
                                 Entry::Occupied(mut o) => {

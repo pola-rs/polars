@@ -107,6 +107,7 @@ pub(super) fn hash_join_tuples_left<T, I>(
     chunk_mapping_left: Option<&[ChunkId]>,
     chunk_mapping_right: Option<&[ChunkId]>,
     validate: JoinValidation,
+    join_nulls: bool,
 ) -> PolarsResult<LeftJoinIds>
 where
     I: IntoIterator<Item = T>,
@@ -118,12 +119,12 @@ where
     // first we hash one relation
     let hash_tbls = if validate.needs_checks() {
         let expected_size = build.iter().map(|v| v.size_hint().1.unwrap()).sum();
-        let hash_tbls = build_tables(build);
+        let hash_tbls = build_tables(build, join_nulls);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
         validate.validate_build(build_size, expected_size, false)?;
         hash_tbls
     } else {
-        build_tables(build)
+        build_tables(build, join_nulls)
     };
     let n_tables = hash_tbls.len();
 

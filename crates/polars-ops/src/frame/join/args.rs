@@ -28,6 +28,7 @@ pub struct JoinArgs {
     pub validation: JoinValidation,
     pub suffix: Option<String>,
     pub slice: Option<(i64, usize)>,
+    pub join_nulls: bool,
 }
 
 impl JoinArgs {
@@ -37,6 +38,7 @@ impl JoinArgs {
             validation: Default::default(),
             suffix: None,
             slice: None,
+            join_nulls: false,
         }
     }
 

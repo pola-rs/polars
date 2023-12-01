@@ -483,7 +483,7 @@ trait DataFrameJoinOpsPrivate: IntoDf {
         #[cfg(feature = "dtype-categorical")]
         _check_categorical_src(s_left.dtype(), s_right.dtype())?;
         let ((join_tuples_left, join_tuples_right), sorted) =
-            _sort_or_hash_inner(s_left, s_right, verbose, args.validation)?;
+            _sort_or_hash_inner(s_left, s_right, verbose, args.validation, args.join_nulls)?;
 
         let mut join_tuples_left = &*join_tuples_left;
         let mut join_tuples_right = &*join_tuples_right;
