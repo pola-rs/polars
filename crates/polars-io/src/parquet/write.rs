@@ -101,7 +101,7 @@ pub struct ParquetWriter<W> {
     /// if `None` will be 512^2 rows
     row_group_size: Option<usize>,
     /// if `None` will be 1024^2 bytes
-    data_pagesize_limit: Option<usize>,
+    data_page_size: Option<usize>,
     /// Serialize columns in parallel
     parallel: bool,
 }
@@ -120,7 +120,7 @@ where
             compression: ParquetCompression::default().into(),
             statistics: false,
             row_group_size: None,
-            data_pagesize_limit: None,
+            data_page_size: None,
             parallel: true,
         }
     }
@@ -148,8 +148,8 @@ where
     }
 
     /// Sets the maximum bytes size of a data page. If `None` will be 1024^2 bytes.
-    pub fn with_data_pagesize_limit(mut self, limit: Option<usize>) -> Self {
-        self.data_pagesize_limit = limit;
+    pub fn with_data_page_size(mut self, limit: Option<usize>) -> Self {
+        self.data_page_size = limit;
         self
     }
 
@@ -164,7 +164,7 @@ where
             write_statistics: self.statistics,
             compression: self.compression,
             version: Version::V2,
-            data_pagesize_limit: self.data_pagesize_limit,
+            data_pagesize_limit: self.data_page_size,
         }
     }
 

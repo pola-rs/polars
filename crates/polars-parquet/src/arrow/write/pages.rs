@@ -8,14 +8,9 @@ use polars_error::{polars_bail, PolarsResult};
 
 use super::{array_to_pages, Encoding, WriteOptions};
 use crate::arrow::read::schema::is_nullable;
-use crate::parquet::page::{DataPage, DictPage, Page};
+use crate::parquet::page::Page;
 use crate::parquet::schema::types::{ParquetType, PrimitiveType as ParquetPrimitiveType};
-use crate::write::FlatIter;
-
-pub enum PageResult {
-    Data(Page),
-    DictAndData { dict: DictPage, data: DataPage },
-}
+use crate::write::DynIter;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ListNested<O: Offset> {
@@ -243,7 +238,7 @@ pub fn array_to_columns<A: AsRef<dyn Array> + Send + Sync>(
     type_: ParquetType,
     options: WriteOptions,
     encoding: &[Encoding],
-) -> PolarsResult<Vec<FlatIter>> {
+) -> PolarsResult<Vec<DynIter<'static, PolarsResult<Page>>>> {
     let array = array.as_ref();
     let nested = to_nested(array, &type_)?;
 
