@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 
 
 @overload
-def is_selector(obj: _selector_proxy_) -> Literal[True]:  # type: ignore[misc]
+def is_selector(obj: _selector_proxy_) -> Literal[True]:  # type: ignore[overload-overlap]
     ...
 
 

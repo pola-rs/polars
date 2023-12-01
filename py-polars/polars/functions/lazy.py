@@ -2063,7 +2063,7 @@ def rolling_corr(
 
 
 @overload
-def sql_expr(sql: str) -> Expr:  # type: ignore[misc]
+def sql_expr(sql: str) -> Expr:  # type: ignore[overload-overlap]
     ...
 
 

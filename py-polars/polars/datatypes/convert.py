@@ -10,11 +10,9 @@ from decimal import Decimal as PyDecimal
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Collection,
     ForwardRef,
     Optional,
-    TypeVar,
     Union,
     get_args,
     overload,
@@ -69,15 +67,6 @@ if TYPE_CHECKING:
     from typing import Literal
 
     from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict
-
-
-T = TypeVar("T")
-
-
-def cache(function: Callable[..., T]) -> T:  # noqa: D103
-    # need this to satisfy mypy issue with "@property/@cache combination"
-    # See: https://github.com/python/mypy/issues/5858
-    return functools.lru_cache()(function)  # type: ignore[return-value]
 
 
 PY_STR_TO_DTYPE: SchemaDict = {
@@ -219,7 +208,7 @@ def unpack_dtypes(
 
 class _DataTypeMappings:
     @property
-    @cache
+    @functools.lru_cache  # noqa: B019
     def DTYPE_TO_FFINAME(self) -> dict[PolarsDataType, str]:
         return {
             Int8: "i8",
@@ -247,7 +236,7 @@ class _DataTypeMappings:
         }
 
     @property
-    @cache
+    @functools.lru_cache  # noqa: B019
     def DTYPE_TO_CTYPE(self) -> dict[PolarsDataType, Any]:
         return {
             UInt8: ctypes.c_uint8,
@@ -267,7 +256,7 @@ class _DataTypeMappings:
         }
 
     @property
-    @cache
+    @functools.lru_cache  # noqa: B019
     def DTYPE_TO_PY_TYPE(self) -> dict[PolarsDataType, PythonDataType]:
         return {
             Float64: float,
@@ -293,7 +282,7 @@ class _DataTypeMappings:
         }
 
     @property
-    @cache
+    @functools.lru_cache  # noqa: B019
     def NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE(self) -> dict[tuple[str, int], PolarsDataType]:
         return {
             # (np.dtype().kind, np.dtype().itemsize)
@@ -311,7 +300,7 @@ class _DataTypeMappings:
         }
 
     @property
-    @cache
+    @functools.lru_cache  # noqa: B019
     def PY_TYPE_TO_ARROW_TYPE(self) -> dict[PythonDataType, pa.lib.DataType]:
         return {
             float: pa.float64(),
@@ -326,7 +315,7 @@ class _DataTypeMappings:
         }
 
     @property
-    @cache
+    @functools.lru_cache  # noqa: B019
     def REPR_TO_DTYPE(self) -> dict[str, PolarsDataType]:
         def _dtype_str_repr_safe(o: Any) -> PolarsDataType | None:
             try:

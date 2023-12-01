@@ -1579,7 +1579,7 @@ class DataFrame:
         # fail on ['col1', 'col2', ..., 'coln']
         if (
             isinstance(item, tuple)
-            and len(item) > 1
+            and len(item) > 1  # type: ignore[redundant-expr]
             and all(isinstance(x, str) for x in item)
         ):
             raise KeyError(item)
@@ -4286,7 +4286,7 @@ class DataFrame:
         summary = dict(zip(self.columns, list(zip(*described))))
         num_or_bool = NUMERIC_DTYPES | {Boolean}
         for c, tp in self.schema.items():
-            summary[c] = [
+            summary[c] = [  # type: ignore[assignment]
                 None
                 if (v is None or isinstance(v, dict))
                 else (float(v) if tp in num_or_bool else str(v))

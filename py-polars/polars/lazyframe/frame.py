@@ -367,7 +367,7 @@ class LazyFrame:
             sources = source
             source = None  # type: ignore[assignment]
         else:
-            sources = []  # type: ignore[assignment]
+            sources = []
 
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_csv(
@@ -432,7 +432,7 @@ class LazyFrame:
             can_use_fsspec = False
         else:
             can_use_fsspec = True
-            sources = []  # type: ignore[assignment]
+            sources = []
 
         # try fsspec scanner
         if (

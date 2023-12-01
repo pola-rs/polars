@@ -145,8 +145,8 @@ ArrayLike = Union[
     "Series",
     "pa.Array",
     "pa.ChunkedArray",
-    "np.ndarray",
-    "pd.Series",
+    "np.ndarray[Any, Any]",
+    "pd.Series[Any]",
     "pd.DatetimeIndex",
 ]
 
@@ -553,7 +553,7 @@ class Series:
         return self._from_pyseries(f(other))
 
     @overload  # type: ignore[override]
-    def __eq__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __eq__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -567,7 +567,7 @@ class Series:
         return self._comp(other, "eq")
 
     @overload  # type: ignore[override]
-    def __ne__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __ne__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -581,7 +581,7 @@ class Series:
         return self._comp(other, "neq")
 
     @overload
-    def __gt__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __gt__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -595,7 +595,7 @@ class Series:
         return self._comp(other, "gt")
 
     @overload
-    def __lt__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __lt__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -609,7 +609,7 @@ class Series:
         return self._comp(other, "lt")
 
     @overload
-    def __ge__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __ge__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -623,7 +623,7 @@ class Series:
         return self._comp(other, "gt_eq")
 
     @overload
-    def __le__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __le__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -700,7 +700,7 @@ class Series:
         return self.__ne__(other)
 
     @overload
-    def ne_missing(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def ne_missing(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -782,11 +782,11 @@ class Series:
         return self._from_pyseries(f(other))
 
     @overload
-    def __add__(self, other: DataFrame) -> DataFrame:  # type: ignore[misc]
+    def __add__(self, other: DataFrame) -> DataFrame:  # type: ignore[overload-overlap]
         ...
 
     @overload
-    def __add__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __add__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -803,7 +803,7 @@ class Series:
         return self._arithmetic(other, "add", "add_<>")
 
     @overload
-    def __sub__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __sub__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -816,7 +816,7 @@ class Series:
         return self._arithmetic(other, "sub", "sub_<>")
 
     @overload
-    def __truediv__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __truediv__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -836,7 +836,7 @@ class Series:
         return self.cast(Float64) / other
 
     @overload
-    def __floordiv__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __floordiv__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -857,11 +857,11 @@ class Series:
         return self.not_()
 
     @overload
-    def __mul__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __mul__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
-    def __mul__(self, other: DataFrame) -> DataFrame:  # type: ignore[misc]
+    def __mul__(self, other: DataFrame) -> DataFrame:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -879,7 +879,7 @@ class Series:
             return self._arithmetic(other, "mul", "mul_<>")
 
     @overload
-    def __mod__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __mod__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
