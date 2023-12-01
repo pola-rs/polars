@@ -12,8 +12,6 @@ use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::{serialize_statistics, PrimitiveStatistics};
 use crate::parquet::types::NativeType as ParquetNativeType;
 use crate::read::Page;
-use crate::write::dictionary::encode_as_dictionary_optional;
-use crate::write::pages::PageResult;
 
 pub(crate) fn encode_plain<T, P>(
     array: &PrimitiveArray<T>,
@@ -94,26 +92,20 @@ pub fn array_to_page_integer<T, P>(
     array: &PrimitiveArray<T>,
     options: WriteOptions,
     type_: PrimitiveType,
-    mut encoding: Encoding,
-) -> PolarsResult<PageResult>
+    encoding: Encoding,
+) -> PolarsResult<Page>
 where
     T: NativeType,
     P: ParquetNativeType,
     T: num_traits::AsPrimitive<P>,
     P: num_traits::AsPrimitive<i64>,
 {
-    if let Encoding::RleDictionary = encoding {
-        if let Some(result) = encode_as_dictionary_optional(array, type_.clone(), options) {
-            return result;
-        }
-        encoding = Encoding::Plain;
-    }
     match encoding {
-        Encoding::DeltaBinaryPacked => array_to_page(array, options, type_, encoding, encode_delta),
         Encoding::Plain => array_to_page(array, options, type_, encoding, encode_plain),
+        Encoding::DeltaBinaryPacked => array_to_page(array, options, type_, encoding, encode_delta),
         other => polars_bail!(nyi = "Encoding integer as {other:?}"),
     }
-    .map(|page| PageResult::Data(Page::Data(page)))
+    .map(Page::Data)
 }
 
 pub fn array_to_page<T, P, F: Fn(&PrimitiveArray<T>, bool, Vec<u8>) -> Vec<u8>>(

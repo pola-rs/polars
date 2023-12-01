@@ -10,8 +10,6 @@ use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::{
     serialize_statistics, BinaryStatistics, ParquetStatistics, Statistics,
 };
-use crate::write::dictionary::encode_as_dictionary_optional;
-use crate::write::pages::PageResult;
 use crate::write::Page;
 
 pub(crate) fn encode_plain<O: Offset>(
@@ -49,15 +47,8 @@ pub fn array_to_page<O: Offset>(
     array: &BinaryArray<O>,
     options: WriteOptions,
     type_: PrimitiveType,
-    mut encoding: Encoding,
-) -> PolarsResult<PageResult> {
-    if let Encoding::RleDictionary = encoding {
-        if let Some(result) = encode_as_dictionary_optional(array, type_.clone(), options) {
-            return result;
-        }
-        encoding = Encoding::Plain;
-    }
-
+    encoding: Encoding,
+) -> PolarsResult<Page> {
     let validity = array.validity();
     let is_optional = is_nullable(&type_.field_info);
 
@@ -108,7 +99,7 @@ pub fn array_to_page<O: Offset>(
         options,
         encoding,
     )
-    .map(|page| PageResult::Data(Page::Data(page)))
+    .map(Page::Data)
 }
 
 pub(crate) fn build_statistics<O: Offset>(

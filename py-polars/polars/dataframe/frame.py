@@ -3300,6 +3300,7 @@ class DataFrame:
         compression_level: int | None = None,
         statistics: bool = False,
         row_group_size: int | None = None,
+        data_page_size: int | None = None,
         use_pyarrow: bool = False,
         pyarrow_options: dict[str, Any] | None = None,
     ) -> None:
@@ -3327,6 +3328,8 @@ class DataFrame:
             Write statistics to the parquet headers. This requires extra compute.
         row_group_size
             Size of the row groups in number of rows. Defaults to 512^2 rows.
+        data_page_size
+            Size of the data page in bytes. Defaults to 1024^2 bytes.
         use_pyarrow
             Use C++ parquet implementation vs Rust parquet implementation.
             At the moment C++ supports more features.
@@ -3390,14 +3393,17 @@ class DataFrame:
             # needed below
             import pyarrow.parquet  # noqa: F401
 
-            if pyarrow_options is not None and pyarrow_options.get("partition_cols"):
-                pyarrow_options["compression"] = (
-                    None if compression == "uncompressed" else compression
-                )
-                pyarrow_options["compression_level"] = compression_level
-                pyarrow_options["write_statistics"] = statistics
-                pyarrow_options["row_group_size"] = row_group_size
+            if pyarrow_options is None:
+                pyarrow_options = {}
+            pyarrow_options["compression"] = (
+                None if compression == "uncompressed" else compression
+            )
+            pyarrow_options["compression_level"] = compression_level
+            pyarrow_options["write_statistics"] = statistics
+            pyarrow_options["row_group_size"] = row_group_size
+            pyarrow_options["data_page_size"] = data_page_size
 
+            if pyarrow_options.get("partition_cols"):
                 pa.parquet.write_to_dataset(
                     table=tbl,
                     root_path=file,
@@ -3407,16 +3413,17 @@ class DataFrame:
                 pa.parquet.write_table(
                     table=tbl,
                     where=file,
-                    row_group_size=row_group_size,
-                    compression=None if compression == "uncompressed" else compression,
-                    compression_level=compression_level,
-                    write_statistics=statistics,
                     **(pyarrow_options or {}),
                 )
 
         else:
             self._df.write_parquet(
-                file, compression, compression_level, statistics, row_group_size
+                file,
+                compression,
+                compression_level,
+                statistics,
+                row_group_size,
+                data_page_size,
             )
 
     @deprecate_renamed_parameter("connection_uri", "connection", version="0.18.9")
