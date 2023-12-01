@@ -75,6 +75,17 @@ def test_empty_9137() -> None:
     assert out.dtypes == [pl.Float32, pl.Float32]
 
 
+@pytest.mark.parametrize("set_dtype", [pl.Utf8, pl.Binary, pl.UInt32])
+@pytest.mark.parametrize(
+    "set_operation",
+    ["set_intersection", "set_union", "set_difference", "set_symmetric_difference"],
+)
+def test_empty_set_operations(set_operation: str, set_dtype: pl.DataType) -> None:
+    expr = getattr(pl.col("list1").list, set_operation)(pl.col("list2"))
+    df = pl.LazyFrame([], {"list1": pl.List(set_dtype), "list2": pl.List(set_dtype)})
+    assert df.select(expr).collect().is_empty()
+
+
 @pytest.mark.parametrize("name", ["sort", "unique", "head", "tail", "shift", "reverse"])
 def test_empty_list_namespace_output_9585(name: str) -> None:
     dtype = pl.List(pl.Utf8)
