@@ -10,7 +10,7 @@ description = "Code examples included in the Polars documentation website"
 
 [dependencies]
 aws-config = { version = "0.57" }
-aws-sdk-s3 = { version = "0.35" }
+aws-sdk-s3 = { version = "1.4" }
 chrono = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
