@@ -1,4 +1,3 @@
-use std::convert;
 use std::str::FromStr;
 
 use arrow::legacy::kernels::{convert_to_naive_local, Ambiguous};
