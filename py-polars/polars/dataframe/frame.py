@@ -9563,7 +9563,7 @@ class DataFrame:
         ...
 
     def iter_rows(
-        self, *, named: bool = False, buffer_size: int = 500
+        self, *, named: bool = False, buffer_size: int = 512
     ) -> Iterator[tuple[Any, ...]] | Iterator[dict[str, Any]]:
         """
         Returns an iterator over the DataFrame of rows of python-native values.
@@ -9624,17 +9624,16 @@ class DataFrame:
         # note: buffering rows results in a 2-4x speedup over individual calls
         # to ".row(i)", so it should only be disabled in extremely specific cases.
         if buffer_size and not has_object:
+            create_with_pyarrow = named and can_create_dicts_with_pyarrow(self.dtypes)
             for offset in range(0, self.height, buffer_size):
                 zerocopy_slice = self.slice(offset, buffer_size)
-                if named and can_create_dicts_with_pyarrow(self.dtypes):
+                if create_with_pyarrow:
                     yield from zerocopy_slice.to_arrow().to_pylist()
+                elif named:
+                    for row in zerocopy_slice.rows(named=False):
+                        yield dict_(zip_(columns, row))
                 else:
-                    rows_chunk = zerocopy_slice.rows(named=False)
-                    if named:
-                        for row in rows_chunk:
-                            yield dict_(zip_(columns, row))
-                    else:
-                        yield from rows_chunk
+                    yield from zerocopy_slice.rows(named=False)
         elif named:
             for i in range(self.height):
                 yield dict_(zip_(columns, get_row(i)))
