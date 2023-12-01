@@ -13,6 +13,7 @@ use polars::prelude::AnyValue;
 use polars::series::ops::NullBehavior;
 use polars_core::frame::row::any_values_to_dtype;
 use polars_core::prelude::{IndexOrder, QuantileInterpolOptions};
+use polars_core::utils::arrow::array::Utf8Array;
 use polars_core::utils::arrow::types::NativeType;
 use polars_lazy::prelude::*;
 #[cfg(feature = "cloud")]
@@ -346,7 +347,16 @@ impl ToPyObject for Wrap<DataType> {
             },
             #[cfg(feature = "object")]
             DataType::Object(_) => pl.getattr(intern!(py, "Object")).unwrap().into(),
-            DataType::Categorical(_) => pl.getattr(intern!(py, "Categorical")).unwrap().into(),
+            DataType::Categorical(rev_map) => {
+                if let Some(rev_map) = rev_map {
+                    if let RevMapping::Enum(categories, _) = &**rev_map {
+                        let enum_dt = pl.getattr(intern!(py, "Enum")).unwrap();
+                        let ca = Utf8Chunked::from_iter(categories);
+                        return enum_dt.call1((Wrap(&ca).to_object(py),)).unwrap().into();
+                    }
+                }
+                pl.getattr(intern!(py, "Categorical")).unwrap().into()
+            },
             DataType::Time => pl.getattr(intern!(py, "Time")).unwrap().into(),
             DataType::Struct(fields) => {
                 let field_class = pl.getattr(intern!(py, "Field")).unwrap();
@@ -418,6 +428,13 @@ impl FromPyObject<'_> for Wrap<DataType> {
                         )))
                     },
                 }
+            },
+            "Enum" => {
+                let categories = ob.getattr(intern!(py, "categories")).unwrap();
+                let categories = categories.extract::<Wrap<Utf8Chunked>>()?.0;
+                let arr = categories.rechunk().into_series().to_arrow(0);
+                let arr = arr.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+                create_enum_data_type(arr.clone())
             },
             "Duration" => {
                 let time_unit = ob.getattr(intern!(py, "time_unit")).unwrap();

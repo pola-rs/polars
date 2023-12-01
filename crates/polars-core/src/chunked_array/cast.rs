@@ -174,12 +174,26 @@ impl ChunkCast for Utf8Chunked {
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
         match data_type {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => {
-                let iter = self.into_iter();
-                let mut builder = CategoricalChunkedBuilder::new(self.name(), self.len());
-                builder.drain_iter(iter);
-                let ca = builder.finish();
-                Ok(ca.into_series())
+            DataType::Categorical(rev_map) => match rev_map {
+                None => {
+                    // Safety: length is correct
+                    let iter =
+                        unsafe { self.downcast_iter().flatten().trust_my_length(self.len()) };
+                    let mut builder = CategoricalChunkedBuilder::new(self.name(), self.len());
+                    builder.drain_iter(iter);
+                    let ca = builder.finish();
+                    Ok(ca.into_series())
+                },
+                Some(rev_map) => {
+                    polars_ensure!(rev_map.is_enum(), InvalidOperation: "casting to a non-enum variant with rev map is not supported for the user");
+                    CategoricalChunked::from_utf8_to_enum(self, rev_map.get_categories()).map(
+                        |ca| {
+                            let mut s = ca.into_series();
+                            s.rename(self.name());
+                            s
+                        },
+                    )
+                },
             },
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields),

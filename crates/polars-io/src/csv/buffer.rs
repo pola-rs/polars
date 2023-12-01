@@ -554,7 +554,11 @@ pub(crate) fn init_buffers<'a>(
                 #[cfg(feature = "dtype-date")]
                 &DataType::Date => Buffer::Date(DatetimeField::new(name, capacity)),
                 #[cfg(feature = "dtype-categorical")]
-                &DataType::Categorical(_) => {
+                DataType::Categorical(rev_map) => {
+                    if let Some(rev_map) = &rev_map {
+                        polars_ensure!(!rev_map.is_enum(),InvalidOperation: "user defined categoricals are not supported when reading csv")
+                    }
+
                     Buffer::Categorical(CategoricalField::new(name, capacity, quote_char))
                 },
                 dt => polars_bail!(
