@@ -1,4 +1,5 @@
 // --8<-- [start:read_parquet]
+use aws_config::BehaviorVersion;
 use polars::prelude::*;
 
 #[tokio::main]
@@ -6,7 +7,7 @@ async fn main() {
     let bucket = "<YOUR_BUCKET>";
     let path = "<YOUR_PATH>";
 
-    let config = aws_config::load_from_env().await;
+    let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
     let client = aws_sdk_s3::Client::new(&config);
 
     let object = client
