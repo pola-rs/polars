@@ -3398,15 +3398,15 @@ class DataFrame:
 
             if pyarrow_options is None:
                 pyarrow_options = {}
+            pyarrow_options["compression"] = (
+                None if compression == "uncompressed" else compression
+            )
+            pyarrow_options["compression_level"] = compression_level
+            pyarrow_options["write_statistics"] = statistics
+            pyarrow_options["row_group_size"] = row_group_size
+            pyarrow_options["data_page_size"] = data_page_size
 
             if pyarrow_options is not None and pyarrow_options.get("partition_cols"):
-                pyarrow_options["compression"] = (
-                    None if compression == "uncompressed" else compression
-                )
-                pyarrow_options["compression_level"] = compression_level
-                pyarrow_options["write_statistics"] = statistics
-                pyarrow_options["row_group_size"] = row_group_size
-
                 pa.parquet.write_to_dataset(
                     table=tbl,
                     root_path=file,
@@ -3420,7 +3420,6 @@ class DataFrame:
                     compression=None if compression == "uncompressed" else compression,
                     compression_level=compression_level,
                     write_statistics=statistics,
-                    data_page_size=data_page_size,
                     **(pyarrow_options or {}),
                 )
 
