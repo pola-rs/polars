@@ -564,13 +564,13 @@ def test_decimal_parquet(tmp_path: Path) -> None:
 
 def test_parquet_rle_non_nullable_12814() -> None:
     column = (
-        pl.select(x=pl.arange(0, 493569, dtype=pl.Int64) // 10).to_series().to_arrow()
+        pl.select(x=pl.arange(0, 1025, dtype=pl.Int64) // 10).to_series().to_arrow()
     )
     schema = pa.schema([pa.field("foo", pa.int64(), nullable=False)])
     table = pa.Table.from_arrays([column], schema=schema)
 
     f = io.BytesIO()
-    pq.write_table(table, f)
+    pq.write_table(table, f, data_page_size=1)
     f.seek(0)
 
     expect = pl.DataFrame(table).tail(10)
