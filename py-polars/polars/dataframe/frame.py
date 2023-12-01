@@ -3416,10 +3416,6 @@ class DataFrame:
                 pa.parquet.write_table(
                     table=tbl,
                     where=file,
-                    row_group_size=row_group_size,
-                    compression=None if compression == "uncompressed" else compression,
-                    compression_level=compression_level,
-                    write_statistics=statistics,
                     **(pyarrow_options or {}),
                 )
 
