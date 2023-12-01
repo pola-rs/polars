@@ -1423,6 +1423,18 @@ class ExprDateTimeNameSpace:
             self._pyexpr.dt_replace_time_zone(time_zone, ambiguous._pyexpr)
         )
 
+    def to_local_timezone(
+        self,
+        convert_tz: Expr,
+    ) -> Expr:
+        """
+        Convert and replaces the timezone at once.
+        """
+
+        return wrap_expr(
+            self._pyexpr.dt_convert_and_replace_time_zone(None, convert_tz._pyexpr)
+        )
+
     def total_days(self) -> Expr:
         """
         Extract the total days from a Duration type.
