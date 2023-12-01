@@ -3406,7 +3406,7 @@ class DataFrame:
             pyarrow_options["row_group_size"] = row_group_size
             pyarrow_options["data_page_size"] = data_page_size
 
-            if pyarrow_options is not None and pyarrow_options.get("partition_cols"):
+            if pyarrow_options.get("partition_cols"):
                 pa.parquet.write_to_dataset(
                     table=tbl,
                     root_path=file,

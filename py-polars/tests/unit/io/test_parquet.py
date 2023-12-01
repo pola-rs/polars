@@ -587,4 +587,4 @@ def test_parquet_12831() -> None:
     f = io.BytesIO()
     df.write_parquet(f, row_group_size=int(1e8), data_page_size=512)
     f.seek(0)
-    assert_frame_equal(pl.from_arrow(pq.read_table(f)), df)
+    assert_frame_equal(pl.from_arrow(pq.read_table(f)), df)  # type: ignore[arg-type]
