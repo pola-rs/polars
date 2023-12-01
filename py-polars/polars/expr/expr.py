@@ -25,7 +25,6 @@ import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import (
     Categorical,
-    Null,
     Struct,
     UInt32,
     Utf8,
@@ -5206,8 +5205,7 @@ class Expr:
         if isinstance(other, Collection) and not isinstance(other, str):
             if isinstance(other, (Set, FrozenSet)):
                 other = list(other)
-            implied_dtype = Null if len(other) == 0 else None
-            other = F.lit(pl.Series(other, dtype=implied_dtype))._pyexpr
+            other = F.lit(pl.Series(other))._pyexpr
         else:
             other = parse_as_expression(other)
         return self._from_pyexpr(self._pyexpr.is_in(other))
@@ -9147,7 +9145,7 @@ class Expr:
             name: str,
             values: Iterable[Any],
             dtype: PolarsDataType | None,
-            dtype_if_empty: PolarsDataType | None,
+            dtype_if_empty: PolarsDataType,
             dtype_keys: PolarsDataType | None,
             *,
             is_keys: bool,

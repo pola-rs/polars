@@ -124,7 +124,7 @@ def test_window_range_no_rows() -> None:
         out, pl.DataFrame({"x": [5, 5, 4, 4, 2, 2], "int": [0, 1, 0, 1, 0, 1]})
     )
 
-    df = pl.DataFrame({"x": []})
+    df = pl.DataFrame({"x": []}, schema={"x": pl.Float32})
     out = df.with_columns(expr)
 
     expected = pl.DataFrame(schema={"x": pl.Float32, "int": pl.Int64})

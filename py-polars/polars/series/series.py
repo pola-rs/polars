@@ -35,6 +35,7 @@ from polars.datatypes import (
     Int32,
     Int64,
     List,
+    Null,
     Object,
     Time,
     UInt32,
@@ -241,7 +242,7 @@ class Series:
         *,
         strict: bool = True,
         nan_to_null: bool = False,
-        dtype_if_empty: PolarsDataType | None = None,
+        dtype_if_empty: PolarsDataType = Null,
     ):
         # If 'Unknown' treat as None to attempt inference
         if dtype == Unknown:
