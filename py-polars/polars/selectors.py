@@ -17,6 +17,7 @@ from polars.datatypes import (
     Categorical,
     Date,
     Datetime,
+    Decimal,
     Duration,
     Object,
     Time,
@@ -964,6 +965,60 @@ def datetime(
         name="datetime",
         parameters={"time_unit": time_unit, "time_zone": time_zone},
     )
+
+
+def decimal() -> SelectorType:
+    """
+    Select all decimal columns.
+
+    See Also
+    --------
+    float : Select all float columns.
+    integer : Select all integer columns.
+    numeric : Select all numeric columns.
+
+    Examples
+    --------
+    >>> from decimal import Decimal as D
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "foo": ["x", "y"],
+    ...         "bar": [D(123), D(456)],
+    ...         "baz": [D("2.0005"), D("-50.5555")],
+    ...     },
+    ...     schema_overrides={"baz": pl.Decimal(scale=5, precision=10)},
+    ... )
+
+    Select all decimal columns:
+
+    >>> df.select(cs.decimal())
+    shape: (2, 2)
+    ┌──────────────┬───────────────┐
+    │ bar          ┆ baz           │
+    │ ---          ┆ ---           │
+    │ decimal[*,0] ┆ decimal[10,5] │
+    ╞══════════════╪═══════════════╡
+    │ 123          ┆ 2.00050       │
+    │ 456          ┆ -50.55550     │
+    └──────────────┴───────────────┘
+
+    Select all columns *except* the decimal ones:
+
+    >>> df.select(~cs.decimal())
+    shape: (2, 1)
+    ┌─────┐
+    │ foo │
+    │ --- │
+    │ str │
+    ╞═════╡
+    │ x   │
+    │ y   │
+    └─────┘
+
+    """
+    # TODO: allow explicit selection by scale/precision?
+    return _selector_proxy_(F.col(Decimal), name="decimal")
 
 
 def duration(
