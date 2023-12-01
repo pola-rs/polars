@@ -594,7 +594,11 @@ impl SQLContext {
                     polars_bail!(ComputeError: "relation '{}' was not found", tbl_name);
                 }
             },
-            TableFactor::Derived { lateral, subquery, alias } => {
+            TableFactor::Derived {
+                lateral,
+                subquery,
+                alias,
+            } => {
                 polars_ensure!(!(*lateral), ComputeError: "LATERAL not supported");
                 if let Some(alias) = alias {
                     let lf = self.execute_query_no_ctes(subquery)?;
