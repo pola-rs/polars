@@ -560,3 +560,20 @@ def test_decimal_parquet(tmp_path: Path) -> None:
     df.write_parquet(path, statistics=True)
     out = pl.scan_parquet(path).filter(foo=2).collect().to_dict(as_series=False)
     assert out == {"foo": [2], "bar": [Decimal("7")]}
+
+
+def test_parquet_rle_non_nullable_12814() -> None:
+    column = (
+        pl.select(x=pl.arange(0, 1025, dtype=pl.Int64) // 10).to_series().to_arrow()
+    )
+    schema = pa.schema([pa.field("foo", pa.int64(), nullable=False)])
+    table = pa.Table.from_arrays([column], schema=schema)
+
+    f = io.BytesIO()
+    pq.write_table(table, f, data_page_size=1)
+    f.seek(0)
+
+    expect = pl.DataFrame(table).tail(10)
+    actual = pl.read_parquet(f).tail(10)
+
+    assert_frame_equal(expect, actual)
