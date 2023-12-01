@@ -58,7 +58,7 @@ gevent
 hypothesis==6.88.1
 pytest==7.4.0
 pytest-cov==4.1.0
-pytest-xdist==3.3.1
+pytest-xdist==3.5.0
 
 # Need moto.server to mock s3fs - see: https://github.com/aio-libs/aiobotocore/issues/755
 moto[s3]==4.2.2
