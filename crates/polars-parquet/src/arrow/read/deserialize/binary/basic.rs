@@ -255,6 +255,7 @@ enum State<'a> {
     OptionalDictionary(OptionalPageValidity<'a>, ValuesDictionary<'a>),
     Delta(Delta<'a>),
     OptionalDelta(OptionalPageValidity<'a>, Delta<'a>),
+    DeltaByteArray(DeltaBytes<'a>),
     OptionalDeltaByteArray(OptionalPageValidity<'a>, DeltaBytes<'a>),
     FilteredRequired(FilteredRequired<'a>),
     FilteredDelta(FilteredDelta<'a>),
@@ -279,6 +280,7 @@ impl<'a> utils::PageState<'a> for State<'a> {
             State::FilteredOptionalDelta(state, _) => state.len(),
             State::FilteredRequiredDictionary(values) => values.len(),
             State::FilteredOptionalDictionary(optional, _) => optional.len(),
+            State::DeltaByteArray(values) => values.size_hint().0,
             State::OptionalDeltaByteArray(optional, _) => optional.len(),
         }
     }
@@ -390,6 +392,9 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                 OptionalPageValidity::try_new(page)?,
                 DeltaBytes::try_new(page)?,
             )),
+            (Encoding::DeltaByteArray, _, false, false) => {
+                Ok(State::DeltaByteArray(DeltaBytes::try_new(page)?))
+            },
             _ => Err(utils::not_implemented(page)),
         }
     }
@@ -540,6 +545,11 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                     values,
                     page_values,
                 )
+            },
+            State::DeltaByteArray(page_values) => {
+                for x in page_values.take(additional) {
+                    values.push(x)
+                }
             },
         }
 
