@@ -55,7 +55,7 @@ gevent
 # TOOLING
 # -------
 
-hypothesis==6.88.1
+hypothesis==6.91.0
 pytest==7.4.0
 pytest-cov==4.1.0
 pytest-xdist==3.5.0
