@@ -3303,6 +3303,7 @@ class DataFrame:
         compression_level: int | None = None,
         statistics: bool = False,
         row_group_size: int | None = None,
+        data_page_size: int | None = None,
         use_pyarrow: bool = False,
         pyarrow_options: dict[str, Any] | None = None,
     ) -> None:
@@ -3330,6 +3331,8 @@ class DataFrame:
             Write statistics to the parquet headers. This requires extra compute.
         row_group_size
             Size of the row groups in number of rows. Defaults to 512^2 rows.
+        data_page_size
+            Size of the data page in bytes. Defaults to 1024^2 bytes.
         use_pyarrow
             Use C++ parquet implementation vs Rust parquet implementation.
             At the moment C++ supports more features.
@@ -3414,12 +3417,18 @@ class DataFrame:
                     compression=None if compression == "uncompressed" else compression,
                     compression_level=compression_level,
                     write_statistics=statistics,
+                    data_page_size=data_page_size,
                     **(pyarrow_options or {}),
                 )
 
         else:
             self._df.write_parquet(
-                file, compression, compression_level, statistics, row_group_size
+                file,
+                compression,
+                compression_level,
+                statistics,
+                row_group_size,
+                data_page_size,
             )
 
     @deprecate_renamed_parameter("connection_uri", "connection", version="0.18.9")
