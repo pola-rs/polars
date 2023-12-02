@@ -762,3 +762,40 @@ def test_join_null_matches() -> None:
         }
     )
     assert_frame_equal(df_a.join(df_b, on="a", how="outer"), expected)
+
+
+def test_join_null_matches_multiple_keys() -> None:
+    df_a = pl.DataFrame(
+        {
+            "a": [None, 1, 2],
+            "idx": [0, 1, 2],
+        }
+    )
+
+    df_b = pl.DataFrame(
+        {
+            "a": [None, 2, 1, None, 1],
+            "idx": [0, 1, 2, 3, 1],
+            "c": [10, 20, 30, 40, 50],
+        }
+    )
+
+    expected = pl.DataFrame({"a": [1], "idx": [1], "c": [50]})
+    assert_frame_equal(df_a.join(df_b, on=["a", "idx"], how="inner"), expected)
+    expected = pl.DataFrame(
+        {"a": [None, 1, 2], "idx": [0, 1, 2], "c": [None, 50, None]}
+    )
+    assert_frame_equal(df_a.join(df_b, on=["a", "idx"], how="left"), expected)
+
+    # this looks a bit different to sql because we zip the outer join column
+    # TODO: don't?
+    expected = pl.DataFrame(
+        {
+            "a": [None, None, None, 1, 1, 2, 2],
+            "idx": [0, 3, 0, 2, 1, 1, 2],
+            "c": [10, 40, None, 30, 50, 20, None],
+        }
+    )
+    assert_frame_equal(
+        df_a.join(df_b, on=["a", "idx"], how="outer").sort("a"), expected
+    )

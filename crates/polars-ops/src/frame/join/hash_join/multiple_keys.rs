@@ -15,18 +15,13 @@ pub(crate) unsafe fn compare_df_rows2(
     right: &DataFrame,
     left_idx: usize,
     right_idx: usize,
-    join_nulls: bool
+    join_nulls: bool,
 ) -> bool {
     for (l, r) in left.get_columns().iter().zip(right.get_columns()) {
         let l = l.get_unchecked(left_idx);
         let r = r.get_unchecked(right_idx);
-        let is_equal = if join_nulls {
-            l.eq_missing(&r)
-        } else {
-            l.eq(&r)
-        };
-        if !is_equal {
-            return false
+        if !l.eq_missing(&r, join_nulls) {
+            return false;
         }
     }
     true
@@ -137,7 +132,7 @@ fn probe_inner<F>(
     a: &DataFrame,
     b: &DataFrame,
     swap_fn: F,
-    join_nulls: bool
+    join_nulls: bool,
 ) where
     F: Fn(IdxSize, IdxSize) -> (IdxSize, IdxSize),
 {
@@ -180,7 +175,7 @@ pub fn _inner_join_multiple_keys(
     a: &mut DataFrame,
     b: &mut DataFrame,
     swap: bool,
-    join_nulls: bool
+    join_nulls: bool,
 ) -> (Vec<IdxSize>, Vec<IdxSize>) {
     // we assume that the b DataFrame is the shorter relation.
     // b will be used for the build phase.
@@ -222,7 +217,7 @@ pub fn _inner_join_multiple_keys(
                         a,
                         b,
                         |idx_a, idx_b| (idx_b, idx_a),
-                        join_nulls
+                        join_nulls,
                     )
                 } else {
                     probe_inner(
@@ -234,7 +229,7 @@ pub fn _inner_join_multiple_keys(
                         a,
                         b,
                         |idx_a, idx_b| (idx_a, idx_b),
-                        join_nulls
+                        join_nulls,
                     )
                 }
 
@@ -251,11 +246,17 @@ pub fn private_left_join_multiple_keys(
     // only needed if we have non contiguous memory
     chunk_mapping_left: Option<&[ChunkId]>,
     chunk_mapping_right: Option<&[ChunkId]>,
-    join_nulls: bool
+    join_nulls: bool,
 ) -> LeftJoinIds {
     let mut a = DataFrame::new_no_checks(_to_physical_and_bit_repr(a.get_columns()));
     let mut b = DataFrame::new_no_checks(_to_physical_and_bit_repr(b.get_columns()));
-    _left_join_multiple_keys(&mut a, &mut b, chunk_mapping_left, chunk_mapping_right, join_nulls)
+    _left_join_multiple_keys(
+        &mut a,
+        &mut b,
+        chunk_mapping_left,
+        chunk_mapping_right,
+        join_nulls,
+    )
 }
 
 pub fn _left_join_multiple_keys(
@@ -265,7 +266,7 @@ pub fn _left_join_multiple_keys(
     // only needed if we have non contiguous memory
     chunk_mapping_left: Option<&[ChunkId]>,
     chunk_mapping_right: Option<&[ChunkId]>,
-    join_nulls: bool
+    join_nulls: bool,
 ) -> LeftJoinIds {
     // we should not join on logical types
     debug_assert!(!a.iter().any(|s| s.dtype().is_logical()));
@@ -312,7 +313,9 @@ pub fn _left_join_multiple_keys(
                             let idx_b = idx_hash.idx;
                             // Safety:
                             // indices in a join operation are always in bounds.
-                            unsafe { compare_df_rows2(a, b, idx_a as usize, idx_b as usize, join_nulls) }
+                            unsafe {
+                                compare_df_rows2(a, b, idx_a as usize, idx_b as usize, join_nulls)
+                            }
                         });
 
                         match entry {
@@ -394,7 +397,7 @@ pub(crate) fn create_build_table_semi_anti(
 pub(crate) fn semi_anti_join_multiple_keys_impl<'a>(
     a: &'a mut DataFrame,
     b: &'a mut DataFrame,
-    join_nulls: bool
+    join_nulls: bool,
 ) -> impl ParallelIterator<Item = (IdxSize, bool)> + 'a {
     // we should not join on logical types
     debug_assert!(!a.iter().any(|s| s.dtype().is_logical()));
@@ -439,7 +442,9 @@ pub(crate) fn semi_anti_join_multiple_keys_impl<'a>(
                             let idx_b = idx_hash.idx;
                             // Safety:
                             // indices in a join operation are always in bounds.
-                            unsafe { compare_df_rows2(a, b, idx_a as usize, idx_b as usize, join_nulls) }
+                            unsafe {
+                                compare_df_rows2(a, b, idx_a as usize, idx_b as usize, join_nulls)
+                            }
                         });
 
                         match entry {
@@ -458,7 +463,11 @@ pub(crate) fn semi_anti_join_multiple_keys_impl<'a>(
 }
 
 #[cfg(feature = "semi_anti_join")]
-pub fn _left_anti_multiple_keys(a: &mut DataFrame, b: &mut DataFrame, join_nulls: bool) -> Vec<IdxSize> {
+pub fn _left_anti_multiple_keys(
+    a: &mut DataFrame,
+    b: &mut DataFrame,
+    join_nulls: bool,
+) -> Vec<IdxSize> {
     semi_anti_join_multiple_keys_impl(a, b, join_nulls)
         .filter(|tpls| !tpls.1)
         .map(|tpls| tpls.0)
@@ -466,7 +475,11 @@ pub fn _left_anti_multiple_keys(a: &mut DataFrame, b: &mut DataFrame, join_nulls
 }
 
 #[cfg(feature = "semi_anti_join")]
-pub fn _left_semi_multiple_keys(a: &mut DataFrame, b: &mut DataFrame, join_nulls: bool) -> Vec<IdxSize> {
+pub fn _left_semi_multiple_keys(
+    a: &mut DataFrame,
+    b: &mut DataFrame,
+    join_nulls: bool,
+) -> Vec<IdxSize> {
     semi_anti_join_multiple_keys_impl(a, b, join_nulls)
         .filter(|tpls| tpls.1)
         .map(|tpls| tpls.0)
@@ -489,7 +502,7 @@ fn probe_outer<F, G, H>(
     swap_fn_no_match: G,
     // Function that get index_b from the build table that did not match any in A and pushes to result
     swap_fn_drain: H,
-    join_nulls: bool
+    join_nulls: bool,
 ) where
     // idx_a, idx_b -> ...
     F: Fn(IdxSize, IdxSize) -> (Option<IdxSize>, Option<IdxSize>),
@@ -516,7 +529,9 @@ fn probe_outer<F, G, H>(
                         let idx_b = idx_hash.idx;
                         // Safety:
                         // indices in a join operation are always in bounds.
-                        unsafe { compare_df_rows2(a, b, idx_a as usize, idx_b as usize, join_nulls) }
+                        unsafe {
+                            compare_df_rows2(a, b, idx_a as usize, idx_b as usize, join_nulls)
+                        }
                     });
 
                 match entry {
@@ -548,7 +563,7 @@ pub fn _outer_join_multiple_keys(
     a: &mut DataFrame,
     b: &mut DataFrame,
     swap: bool,
-    join_nulls: bool
+    join_nulls: bool,
 ) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
     // we assume that the b DataFrame is the shorter relation.
     // b will be used for the build phase.
@@ -585,7 +600,7 @@ pub fn _outer_join_multiple_keys(
             |idx_a, idx_b| (Some(idx_b), Some(idx_a)),
             |idx_a| (None, Some(idx_a)),
             |idx_b| (Some(idx_b), None),
-            join_nulls
+            join_nulls,
         )
     } else {
         probe_outer(
@@ -598,7 +613,7 @@ pub fn _outer_join_multiple_keys(
             |idx_a, idx_b| (Some(idx_a), Some(idx_b)),
             |idx_a| (Some(idx_a), None),
             |idx_b| (None, Some(idx_b)),
-            join_nulls
+            join_nulls,
         )
     }
     results

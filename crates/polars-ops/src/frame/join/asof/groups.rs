@@ -272,7 +272,7 @@ where
                                     by_right,
                                     idx_left,
                                     idx_right as usize,
-                                    false
+                                    false,
                                 )
                             }
                         });

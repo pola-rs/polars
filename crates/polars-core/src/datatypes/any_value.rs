@@ -787,18 +787,7 @@ impl<'a> From<AnyValue<'a>> for Option<i64> {
 
 impl AnyValue<'_> {
     #[inline]
-    pub fn eq_missing(&self, other: &Self) -> bool {
-        match (self, other) {
-            (AnyValue::Null, AnyValue::Null) => true,
-            _ => self.eq(other),
-        }
-
-    }
-}
-
-impl PartialEq for AnyValue<'_> {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
+    pub fn eq_missing(&self, other: &Self, null_equal: bool) -> bool {
         use AnyValue::*;
         match (self, other) {
             (UInt8(l), UInt8(r)) => *l == *r,
@@ -820,7 +809,7 @@ impl PartialEq for AnyValue<'_> {
             (BinaryOwned(l), BinaryOwned(r)) => l == r,
             (Binary(l), BinaryOwned(r)) => l == r,
             (BinaryOwned(l), Binary(r)) => l == r,
-            (Null, Null) => false,
+            (Null, Null) => null_equal,
             #[cfg(feature = "dtype-time")]
             (Time(l), Time(r)) => *l == *r,
             #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
@@ -863,6 +852,13 @@ impl PartialEq for AnyValue<'_> {
             },
             _ => false,
         }
+    }
+}
+
+impl PartialEq for AnyValue<'_> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.eq_missing(other, true)
     }
 }
 

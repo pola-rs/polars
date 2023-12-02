@@ -301,7 +301,8 @@ pub trait DataFrameJoinOps: IntoDf {
                 if let Some((offset, len)) = args.slice {
                     left = left.slice(offset, len);
                 }
-                let ids = _left_join_multiple_keys(&mut left, &mut right, None, None, args.join_nulls);
+                let ids =
+                    _left_join_multiple_keys(&mut left, &mut right, None, None, args.join_nulls);
                 left_df._finish_left_join(ids, &remove_selected(other, &selected_right), args)
             },
             JoinType::Outer => {
@@ -309,7 +310,8 @@ pub trait DataFrameJoinOps: IntoDf {
                 let right = DataFrame::new_no_checks(selected_right_physical);
 
                 let (mut left, mut right, swap) = det_hash_prone_order!(left, right);
-                let opt_join_tuples = _outer_join_multiple_keys(&mut left, &mut right, swap, args.join_nulls);
+                let opt_join_tuples =
+                    _outer_join_multiple_keys(&mut left, &mut right, swap, args.join_nulls);
 
                 let mut opt_join_tuples = &*opt_join_tuples;
 
