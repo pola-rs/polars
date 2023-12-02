@@ -1265,7 +1265,11 @@ def test_unique_counts_on_dates() -> None:
             pl.col("dt_ns").dt.cast_time_unit("ms").alias("dt_ms"),
             pl.col("dt_ns").cast(pl.Date).alias("date"),
         ]
-    ).select(pl.all().unique_counts().sum()).to_dict(as_series=False) == {
+    ).select(
+        pl.all().unique_counts().sum()
+    ).to_dict(
+        as_series=False
+    ) == {
         "dt_ns": [3],
         "dt_us": [3],
         "dt_ms": [3],
@@ -1302,7 +1306,9 @@ def test_rolling_by_ordering() -> None:
         [
             pl.col("val").sum().alias("sum val"),
         ]
-    ).to_dict(as_series=False) == {
+    ).to_dict(
+        as_series=False
+    ) == {
         "key": ["A", "A", "A", "A", "B", "B", "B"],
         "dt": [
             datetime(2022, 1, 1, 0, 1),
@@ -1401,7 +1407,9 @@ def test_sum_duration() -> None:
             pl.col("duration").sum(),
             pl.col("duration").dt.total_seconds().alias("sec").sum(),
         ]
-    ).to_dict(as_series=False) == {
+    ).to_dict(
+        as_series=False
+    ) == {
         "duration": [timedelta(seconds=150)],
         "sec": [150],
     }
@@ -2746,49 +2754,91 @@ def test_rolling_duplicates() -> None:
     )["value"].to_list() == [1, 1]
 
 
-def test_convert_tz_to_local_tz() -> None:
-    tz = timezone.utc
-    df = pl.DataFrame(
-        {
-            "id": [1, 2, 3],
-            "date_col": [
-                datetime(2020, 10, 10, tzinfo=tz),
-                datetime(2020, 10, 15, tzinfo=tz),
-                datetime(2020, 10, 15, tzinfo=tz),
-            ],
-            "timezone": ["Europe/London", "Africa/Kigali", "Europe/Berlin"],
-        }
-    )
-    expected = pl.DataFrame(
-        [
-            pl.Series("id", [1, 2, 3], dtype=pl.Int64),
-            pl.Series(
-                "date_col",
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        (
+            pl.DataFrame(
+                {
+                    "date_col": [
+                        datetime(2020, 10, 10, tzinfo=timezone.utc),
+                        datetime(2020, 10, 15, tzinfo=timezone.utc),
+                        datetime(2020, 10, 15, tzinfo=timezone.utc),
+                    ],
+                    "timezone": ["Europe/London", "Africa/Kigali", "Europe/Berlin"],
+                }
+            ),
+            pl.DataFrame(
                 [
-                    datetime(2020, 10, 10, 0, 0, tzinfo=tz),
-                    datetime(2020, 10, 15, 0, 0, tzinfo=tz),
-                    datetime(2020, 10, 15, 0, 0, tzinfo=tz),
-                ],
-                dtype=pl.Datetime(time_unit="us", time_zone="UTC"),
+                    pl.Series(
+                        "date_col",
+                        [
+                            datetime(2020, 10, 10, 0, 0, tzinfo=timezone.utc),
+                            datetime(2020, 10, 15, 0, 0, tzinfo=timezone.utc),
+                            datetime(2020, 10, 15, 0, 0, tzinfo=timezone.utc),
+                        ],
+                        dtype=pl.Datetime(time_unit="us", time_zone="UTC"),
+                    ),
+                    pl.Series(
+                        "timezone",
+                        ["Europe/London", "Africa/Kigali", "Europe/Berlin"],
+                        dtype=pl.Utf8,
+                    ),
+                    pl.Series(
+                        "local_dt",
+                        [
+                            datetime(2020, 10, 10, 1, 0),
+                            datetime(2020, 10, 15, 2, 0),
+                            datetime(2020, 10, 15, 2, 0),
+                        ],
+                        dtype=pl.Datetime(time_unit="us", time_zone=None),
+                    ),
+                ]
             ),
-            pl.Series(
-                "timezone",
-                ["Europe/London", "Africa/Kigali", "Europe/Berlin"],
-                dtype=pl.Utf8,
-            ),
-            pl.Series(
-                "local_dt",
+        ),
+        (
+            pl.DataFrame(
+                {
+                    "date_col": [
+                        datetime(2020, 10, 10, tzinfo=timezone.utc),
+                        datetime(2020, 10, 15, tzinfo=timezone.utc),
+                        datetime(2020, 10, 15, tzinfo=timezone.utc),
+                    ],
+                    "timezone": ["Europe/London", "Africa/Kigali", "Europe/Berlin"],
+                }
+            ).with_columns(pl.col("date_col").dt.convert_time_zone("Europe/London")),
+            pl.DataFrame(
                 [
-                    datetime(2020, 10, 10, 1, 0),
-                    datetime(2020, 10, 15, 2, 0),
-                    datetime(2020, 10, 15, 2, 0),
-                ],
-                dtype=pl.Datetime(time_unit="us", time_zone=None),
+                    pl.Series(
+                        "date_col",
+                        [
+                            datetime(2020, 10, 10, 0, 0),
+                            datetime(2020, 10, 15, 0, 0),
+                            datetime(2020, 10, 15, 0, 0),
+                        ],
+                        dtype=pl.Datetime(time_unit="us", time_zone="UTC"),
+                    ).dt.replace_time_zone("Europe/London"),
+                    pl.Series(
+                        "timezone",
+                        ["Europe/London", "Africa/Kigali", "Europe/Berlin"],
+                        dtype=pl.Utf8,
+                    ),
+                    pl.Series(
+                        "local_dt",
+                        [
+                            datetime(2020, 10, 10, 0, 0),
+                            datetime(2020, 10, 15, 1, 0),
+                            datetime(2020, 10, 15, 1, 0),
+                        ],
+                        dtype=pl.Datetime(time_unit="us", time_zone=None),
+                    ),
+                ]
             ),
-        ]
-    )
-
-    result = df.with_columns(
+        ),
+    ],
+)
+def test_convert_tz_to_local_tz(data: pl.DataFrame, expected: pl.DataFrame) -> None:
+    result = data.with_columns(
         pl.col("date_col")
         .dt.convert_to_local_timezone(pl.col("timezone"))
         .alias("local_dt")
