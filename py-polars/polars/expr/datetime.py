@@ -1423,13 +1423,29 @@ class ExprDateTimeNameSpace:
             self._pyexpr.dt_replace_time_zone(time_zone, ambiguous._pyexpr)
         )
 
-    def convert_to_local_timezone(
+    def convert_to_local_time_zone(
         self,
         local_time_zone: Expr,
+        ambiguous: Ambiguous = "raise",
     ) -> Expr:
-        """Converts to local timezone and then replaces timezone with None."""
+        """Converts to local timezone and then replaces timezone with None.
+
+        Parameters
+        ----------
+        local_time_zone
+            Time zone for the `Datetime` expression.
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - `'raise'` (default): raise
+            - `'earliest'`: use the earliest datetime
+            - `'latest'`: use the latest datetime
+
+        """
         return wrap_expr(
-            self._pyexpr.dt_convert_to_local_timezone(local_time_zone._pyexpr)
+            self._pyexpr.dt_convert_to_local_timezone(
+                local_time_zone._pyexpr, ambiguous
+            )
         )
 
     def total_days(self) -> Expr:

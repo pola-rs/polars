@@ -233,9 +233,9 @@ impl DateLikeNameSpace {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn convert_to_local_time_zone(self, convert_tz: Expr) -> Expr {
+    pub fn convert_to_local_time_zone(self, convert_tz: Expr, ambiguous: String) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::TemporalExpr(TemporalFunction::ConvertToLocalTimeZone),
+            FunctionExpr::TemporalExpr(TemporalFunction::ConvertToLocalTimeZone(ambiguous)),
             &[convert_tz],
             false,
             false,

@@ -2817,7 +2817,7 @@ def test_rolling_duplicates() -> None:
                             datetime(2020, 10, 15, 0, 0),
                         ],
                         dtype=pl.Datetime(time_unit="us", time_zone="UTC"),
-                    ).dt.replace_time_zone("Europe/London"),
+                    ).dt.convert_time_zone("Europe/London"),
                     pl.Series(
                         "timezone",
                         ["Europe/London", "Africa/Kigali", "Europe/Berlin"],
@@ -2840,7 +2840,7 @@ def test_rolling_duplicates() -> None:
 def test_convert_tz_to_local_tz(data: pl.DataFrame, expected: pl.DataFrame) -> None:
     result = data.with_columns(
         pl.col("date_col")
-        .dt.convert_to_local_timezone(pl.col("timezone"))
+        .dt.convert_to_local_time_zone(pl.col("timezone"))
         .alias("local_dt")
     )
 

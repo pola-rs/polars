@@ -52,8 +52,8 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             ReplaceTimeZone(tz) => {
                 map_as_slice!(dispatch::replace_time_zone, tz.as_deref())
             },
-            ConvertToLocalTimeZone => {
-                map_as_slice!(dispatch::convert_to_local_time_zone)
+            ConvertToLocalTimeZone(ambiguous) => {
+                map_as_slice!(dispatch::convert_to_local_time_zone, &ambiguous)
             },
             Combine(tu) => map_as_slice!(temporal::combine, tu),
             DatetimeFunction {

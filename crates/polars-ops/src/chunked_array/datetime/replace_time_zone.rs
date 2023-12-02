@@ -1,6 +1,7 @@
+use std::ops::Deref;
 use std::str::FromStr;
 
-use arrow::legacy::kernels::{convert_to_naive_local, Ambiguous};
+use arrow::legacy::kernels::{convert_to_naive_local, convert_to_new_timezone_and_local,  Ambiguous};
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
@@ -86,6 +87,7 @@ pub fn replace_time_zone(
 pub fn convert_to_local_time_zone(
     datetime: &Logical<DatetimeType, Int64Type>,
     convert_tz: &Utf8Chunked,
+    ambiguous: &str,
 ) -> PolarsResult<DatetimeChunked> {
     let from_time_zone = datetime.time_zone().as_deref().unwrap_or("UTC");
     let from_tz = parse_time_zone(from_time_zone)?;
@@ -104,11 +106,11 @@ pub fn convert_to_local_time_zone(
         1 => match unsafe { convert_tz.get_unchecked(0) } {
             Some(convert_tz) => datetime.0.try_apply(|timestamp| {
                 let ndt = timestamp_to_datetime(timestamp);
-                Ok(datetime_to_timestamp(convert_to_naive_local(
-                    &parse_time_zone(convert_tz)?,
+                Ok(datetime_to_timestamp(convert_to_new_timezone_and_local(
                     &from_tz,
+                    &parse_time_zone(convert_tz)?,
                     ndt,
-                    Ambiguous::Raise,
+                    Ambiguous::from_str(ambiguous)?,
                 )?))
             }),
             _ => Ok(datetime.0.apply(|_| None)),
@@ -119,11 +121,11 @@ pub fn convert_to_local_time_zone(
         ) {
             (Some(timestamp), Some(convert_tz)) => {
                 let ndt = timestamp_to_datetime(timestamp);
-                Ok(Some(datetime_to_timestamp(convert_to_naive_local(
-                    &parse_time_zone(convert_tz)?,
+                Ok(Some(datetime_to_timestamp(convert_to_new_timezone_and_local(
                     &from_tz,
+                    &parse_time_zone(convert_tz)?,
                     ndt,
-                    Ambiguous::Raise,
+                    Ambiguous::from_str(ambiguous)?,
                 )?)))
             },
             _ => Ok(None),
