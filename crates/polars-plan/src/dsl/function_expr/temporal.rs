@@ -52,6 +52,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             ReplaceTimeZone(tz) => {
                 map_as_slice!(dispatch::replace_time_zone, tz.as_deref())
             },
+            #[cfg(feature = "timezones")]
             ConvertToLocalTimeZone => {
                 map_as_slice!(dispatch::convert_to_local_time_zone)
             },

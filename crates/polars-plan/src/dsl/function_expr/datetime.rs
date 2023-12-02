@@ -48,6 +48,7 @@ pub enum TemporalFunction {
     Round(String, String),
     #[cfg(feature = "timezones")]
     ReplaceTimeZone(Option<TimeZone>),
+    #[cfg(feature = "timezones")]
     ConvertToLocalTimeZone,
     Combine(TimeUnit),
     DatetimeFunction {
@@ -98,6 +99,7 @@ impl TemporalFunction {
             Round(..) => mapper.with_same_dtype(),
             #[cfg(feature = "timezones")]
             ReplaceTimeZone(tz) => mapper.map_datetime_dtype_timezone(tz.as_ref()),
+            #[cfg(feature = "timezones")]
             ConvertToLocalTimeZone => mapper.map_datetime_dtype_timezone(None),
             DatetimeFunction {
                 time_unit,
@@ -157,6 +159,7 @@ impl Display for TemporalFunction {
             Round(..) => "round",
             #[cfg(feature = "timezones")]
             ReplaceTimeZone(_) => "replace_time_zone",
+            #[cfg(feature = "timezones")]
             ConvertToLocalTimeZone => "convert_to_local_time_zone",
             DatetimeFunction { .. } => return write!(f, "dt.datetime"),
             Combine(_) => "combine",
