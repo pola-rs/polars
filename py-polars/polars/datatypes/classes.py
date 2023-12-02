@@ -613,8 +613,8 @@ class Array(NestedType):
         ]
 
         """
-        self.width = width
         self.inner = polars.datatypes.py_type_to_dtype(inner)
+        self.width = width
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # This equality check allows comparison of type classes and type instances.
@@ -627,7 +627,9 @@ class Array(NestedType):
         if type(other) is DataTypeClass and issubclass(other, Array):
             return True
         if isinstance(other, Array):
-            if self.inner is None or other.inner is None:
+            if self.width != other.width:
+                return False
+            elif self.inner is None or other.inner is None:
                 return True
             else:
                 return self.inner == other.inner
