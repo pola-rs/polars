@@ -487,7 +487,7 @@ def test_skip_nulls_err() -> None:
         pytest.param(
             pl.DataFrame({"A": [1, 2, 3], "B": ["1", "2", "help"]}),
             pl.UInt32,
-            "Conversion .* failed",
+            "conversion .* failed",
             id="Unsigned integer",
         )
     ],

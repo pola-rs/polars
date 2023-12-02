@@ -111,7 +111,7 @@ def test_pow_dtype() -> None:
         )
         .drop(["a", "b", "c", "d", "e", "f", "g", "h"])
     )
-    assert df.collect().dtypes == [
+    expected = [
         pl.UInt32,
         pl.UInt32,
         pl.Float64,
@@ -124,20 +124,8 @@ def test_pow_dtype() -> None:
         pl.Int8,
         pl.UInt8,
     ]
-    # `scaled_foo2` currently is UInt32 (in the lazy plan) but should be Float64
-    assert df.dtypes == [
-        pl.UInt32,
-        pl.UInt32,
-        pl.UInt32,
-        pl.Int64,
-        pl.UInt64,
-        pl.Int32,
-        pl.UInt32,
-        pl.Int16,
-        pl.UInt16,
-        pl.Int8,
-        pl.UInt8,
-    ]
+    assert df.collect().dtypes == expected
+    assert df.dtypes == expected
 
 
 def test_bool_numeric_supertype() -> None:
