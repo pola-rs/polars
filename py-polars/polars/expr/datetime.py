@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from datetime import timedelta
 
     from polars import Expr
-    from polars.type_aliases import Ambiguous, EpochTimeUnit, TimeUnit
+    from polars.type_aliases import Ambiguous, EpochTimeUnit, IntoExpr, TimeUnit
 
 
 class ExprDateTimeNameSpace:
@@ -1425,7 +1425,7 @@ class ExprDateTimeNameSpace:
 
     def convert_to_local_time_zone(
         self,
-        local_time_zone: Expr,
+        local_time_zone: IntoExpr,
     ) -> Expr:
         """
         Converts to local timezone and then replaces timezone with None.
@@ -1434,10 +1434,37 @@ class ExprDateTimeNameSpace:
         ----------
         local_time_zone
             Time zone for the `Datetime` expression.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`DateTime`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "date_col": [datetime(2020, 10, 10)] * 3,
+        ...         "timezone": ["Europe/London", "Africa/Kigali", "America/New_York"],
+        ...     }
+        ... ).with_columns(pl.col("date_col").dt.replace_time_zone("UTC"))
+        >>> df.with_columns(
+        ...     pl.col("date_col").dt.convert_to_local_time_zone("timezone")
+        ... )
+        shape: (3, 3)
+        ┌─────────────────────────┬──────────────────┬─────────────────────┐
+        │ date_col                ┆ timezone         ┆ local_dt            │
+        │ ---                     ┆ ---              ┆ ---                 │
+        │ datetime[μs, UTC]       ┆ str              ┆ datetime[μs]        │
+        ╞═════════════════════════╪══════════════════╪═════════════════════╡
+        │ 2020-10-10 00:00:00 UTC ┆ Europe/London    ┆ 2020-10-10 01:00:00 │
+        │ 2020-10-15 00:00:00 UTC ┆ Africa/Kigali    ┆ 2020-10-15 02:00:00 │
+        │ 2020-10-15 00:00:00 UTC ┆ America/New_York ┆ 2020-10-14 20:00:00 │
+        └─────────────────────────┴──────────────────┴─────────────────────┘
+
         """
-        return wrap_expr(
-            self._pyexpr.dt_convert_to_local_timezone(local_time_zone._pyexpr)
-        )
+        local_tz = parse_as_expression(local_time_zone, str_as_lit=False)
+        return wrap_expr(self._pyexpr.dt_convert_to_local_timezone(local_tz))
 
     def total_days(self) -> Expr:
         """
