@@ -1,5 +1,6 @@
 use polars_core::utils::flatten::flatten_par;
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
+use polars_utils::nulls::IsNull;
 
 use super::*;
 
@@ -106,23 +107,24 @@ pub(super) fn hash_join_tuples_left<T, I>(
     chunk_mapping_left: Option<&[ChunkId]>,
     chunk_mapping_right: Option<&[ChunkId]>,
     validate: JoinValidation,
+    join_nulls: bool,
 ) -> PolarsResult<LeftJoinIds>
 where
     I: IntoIterator<Item = T>,
     <I as IntoIterator>::IntoIter: Send + Sync + Clone,
-    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
+    T: Send + Hash + Eq + Sync + Copy + DirtyHash + IsNull,
 {
     let probe = probe.into_iter().map(|i| i.into_iter()).collect::<Vec<_>>();
     let build = build.into_iter().map(|i| i.into_iter()).collect::<Vec<_>>();
     // first we hash one relation
     let hash_tbls = if validate.needs_checks() {
         let expected_size = build.iter().map(|v| v.size_hint().1.unwrap()).sum();
-        let hash_tbls = build_tables(build);
+        let hash_tbls = build_tables(build, join_nulls);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
         validate.validate_build(build_size, expected_size, false)?;
         hash_tbls
     } else {
-        build_tables(build)
+        build_tables(build, join_nulls)
     };
     let n_tables = hash_tbls.len();
 

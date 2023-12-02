@@ -42,7 +42,10 @@ def test_view_deprecated() -> None:
 
 def test_numpy_disambiguation() -> None:
     a = np.array([1, 2])
-    assert pl.DataFrame({"a": a}).with_columns(b=a).to_dict(as_series=False) == {
+    df = pl.DataFrame({"a": a})
+    result = df.with_columns(b=a).to_dict(as_series=False)  # type: ignore[arg-type]
+    expected = {
         "a": [1, 2],
         "b": [1, 2],
     }
+    assert result == expected

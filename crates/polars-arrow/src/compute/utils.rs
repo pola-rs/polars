@@ -1,14 +1,22 @@
+use std::ops::{BitAnd, BitOr};
+
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
 
 use crate::array::Array;
 use crate::bitmap::Bitmap;
 
-pub fn combine_validities(lhs: Option<&Bitmap>, rhs: Option<&Bitmap>) -> Option<Bitmap> {
-    match (lhs, rhs) {
-        (Some(lhs), None) => Some(lhs.clone()),
-        (None, Some(rhs)) => Some(rhs.clone()),
+pub fn combine_validities_and(opt_l: Option<&Bitmap>, opt_r: Option<&Bitmap>) -> Option<Bitmap> {
+    match (opt_l, opt_r) {
+        (Some(l), Some(r)) => Some(l.bitand(r)),
+        (None, Some(r)) => Some(r.clone()),
+        (Some(l), None) => Some(l.clone()),
         (None, None) => None,
-        (Some(lhs), Some(rhs)) => Some(lhs & rhs),
+    }
+}
+pub fn combine_validities_or(opt_l: Option<&Bitmap>, opt_r: Option<&Bitmap>) -> Option<Bitmap> {
+    match (opt_l, opt_r) {
+        (Some(l), Some(r)) => Some(l.bitor(r)),
+        _ => None,
     }
 }
 

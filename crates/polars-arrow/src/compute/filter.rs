@@ -246,25 +246,6 @@ pub fn build_filter(filter: &BooleanArray) -> PolarsResult<Filter> {
     }))
 }
 
-/// Filters an [Array], returning elements matching the filter (i.e. where the values are true).
-///
-/// Note that the nulls of `filter` are interpreted as `false` will lead to these elements being
-/// masked out.
-///
-/// # Example
-/// ```rust
-/// # use polars_arrow::array::{Int32Array, PrimitiveArray, BooleanArray};
-/// # use polars_arrow::error::Result;
-/// # use polars_arrow::compute::filter::filter;
-/// # fn main() -> Result<()> {
-/// let array = PrimitiveArray::from_slice([5, 6, 7, 8, 9]);
-/// let filter_array = BooleanArray::from_slice(&vec![true, false, false, true, false]);
-/// let c = filter(&array, &filter_array)?;
-/// let c = c.as_any().downcast_ref::<Int32Array>().unwrap();
-/// assert_eq!(c, &PrimitiveArray::from_slice(vec![5, 8]));
-/// # Ok(())
-/// # }
-/// ```
 pub fn filter(array: &dyn Array, filter: &BooleanArray) -> PolarsResult<Box<dyn Array>> {
     // The validities may be masking out `true` bits, making the filter operation
     // based on the values incorrect

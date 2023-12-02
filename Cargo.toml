@@ -45,7 +45,7 @@ hashbrown = { version = "0.14", features = ["rayon", "ahash"] }
 hex = "0.4.3"
 indexmap = { version = "2", features = ["std"] }
 itoa = "1.0.6"
-atoi_simd = "0.15"
+atoi_simd = "0.15.5"
 fast-float = { version = "0.2" }
 memchr = "2.6"
 multiversion = "0.7"
@@ -81,6 +81,7 @@ zstd = "0.13"
 polars = { version = "0.35.4", path = "crates/polars", default-features = false }
 polars-algo = { version = "0.35.4", path = "crates/polars-algo", default-features = false }
 polars-core = { version = "0.35.4", path = "crates/polars-core", default-features = false }
+polars-compute = { version = "0.35.4", path = "crates/polars-compute", default-features = false }
 polars-error = { version = "0.35.4", path = "crates/polars-error", default-features = false }
 polars-ffi = { version = "0.35.4", path = "crates/polars-ffi", default-features = false }
 polars-io = { version = "0.35.4", path = "crates/polars-io", default-features = false }
@@ -113,7 +114,6 @@ features = [
 ]
 
 [patch.crates-io]
-atoi_simd = { git = "https://github.com/orlp/atoi_simd", branch = "fix-parse-skipped-zeroes" }
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
 # simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
 

@@ -7,27 +7,25 @@ use polars_utils::slice::GetSaferUnchecked;
 use super::QuantileInterpolOptions::*;
 use super::*;
 
-pub struct QuantileWindow<'a, T: NativeType + IsFloat + PartialOrd> {
+pub struct QuantileWindow<'a, T: NativeType> {
     sorted: SortedBuf<'a, T>,
     prob: f64,
     interpol: QuantileInterpolOptions,
 }
 
 impl<
-        'a,
-        T: NativeType
-            + IsFloat
-            + Float
-            + std::iter::Sum
-            + AddAssign
-            + SubAssign
-            + Div<Output = T>
-            + NumCast
-            + One
-            + Zero
-            + PartialOrd
-            + Sub<Output = T>,
-    > RollingAggWindowNoNulls<'a, T> for QuantileWindow<'a, T>
+    'a,
+    T: NativeType
+    + Float
+    + std::iter::Sum
+    + AddAssign
+    + SubAssign
+    + Div<Output = T>
+    + NumCast
+    + One
+    + Zero
+    + Sub<Output = T>,
+> RollingAggWindowNoNulls<'a, T> for QuantileWindow<'a, T>
 {
     fn new(slice: &'a [T], start: usize, end: usize, params: DynArgs) -> Self {
         let params = params.unwrap();
@@ -64,6 +62,8 @@ impl<
             Midpoint => {
                 let length_f = length as f64;
                 let idx = (length_f * self.prob) as usize;
+                let idx = std::cmp::min(idx, length - 1);
+
                 let top_idx = ((length_f - 1.0) * self.prob).ceil() as usize;
                 return if top_idx == idx {
                     // safety
@@ -107,9 +107,8 @@ pub fn rolling_quantile<T>(
     weights: Option<&[f64]>,
     params: DynArgs,
 ) -> PolarsResult<ArrayRef>
-where
-    T: NativeType
-        + IsFloat
+    where
+        T: NativeType
         + Float
         + std::iter::Sum
         + AddAssign
@@ -157,16 +156,8 @@ where
 
 #[inline]
 fn compute_wq<T>(buf: &[(T, f64)], p: f64, wsum: f64, interp: QuantileInterpolOptions) -> T
-where
-    T: Debug
-        + NativeType
-        + Mul<Output = T>
-        + Sub<Output = T>
-        + NumCast
-        + ToPrimitive
-        + Zero
-        + IsFloat
-        + PartialOrd,
+    where
+        T: Debug + NativeType + Mul<Output = T> + Sub<Output = T> + NumCast + ToPrimitive + Zero,
 {
     // There are a few ways to compute a weighted quantile but no "canonical" way.
     // This is mostly taken from the Julia implementation which was readable and reasonable
@@ -213,17 +204,9 @@ fn rolling_apply_weighted_quantile<T, Fo>(
     weights: &[f64],
     wsum: f64,
 ) -> ArrayRef
-where
-    Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
-    T: Debug
-        + NativeType
-        + Mul<Output = T>
-        + Sub<Output = T>
-        + NumCast
-        + ToPrimitive
-        + Zero
-        + IsFloat
-        + PartialOrd,
+    where
+        Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
+        T: Debug + NativeType + Mul<Output = T> + Sub<Output = T> + NumCast + ToPrimitive + Zero,
 {
     assert_eq!(weights.len(), window_size);
     // Keep nonzero weights and their indices to know which values we need each iteration.
@@ -241,7 +224,7 @@ where
                     .zip(nz_idx_wts.iter())
                     .for_each(|(b, (i, w))| *b = (*values.get_unchecked(i + start), **w));
             }
-            buf.sort_unstable_by(|&a, &b| compare_fn_nan_max(&a.0, &b.0));
+            buf.sort_unstable_by(|&a, &b| a.0.tot_cmp(&b.0));
             compute_wq(&buf, p, wsum, interpolation)
         })
         .collect_trusted::<Vec<T>>();

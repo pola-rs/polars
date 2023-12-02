@@ -1,20 +1,5 @@
 use super::*;
 
-impl<T> ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    fn primitive_compare_scalar<Rhs: ToPrimitive>(
-        &self,
-        rhs: Rhs,
-        f: impl Fn(&PrimitiveArray<T::Native>, &dyn Scalar) -> BooleanArray,
-    ) -> BooleanChunked {
-        let rhs: T::Native = NumCast::from(rhs).unwrap();
-        let scalar = PrimitiveScalar::new(T::get_dtype().to_arrow(), Some(rhs));
-        self.apply_kernel_cast(&|arr| Box::new(f(arr, &scalar)))
-    }
-}
-
 /// Splits the ChunkedArray into a lower part, where is_lower returns true, and
 /// an upper part where it returns false, and returns a mask where the lower part
 /// has value lower_part, and the upper part !lower_part.
@@ -51,22 +36,27 @@ impl<T, Rhs> ChunkCompare<Rhs> for ChunkedArray<T>
 where
     T: PolarsNumericType,
     Rhs: ToPrimitive,
+    T::Array: TotalOrdKernel<Scalar = T::Native>,
 {
     type Item = BooleanChunked;
     fn equal(&self, rhs: Rhs) -> BooleanChunked {
-        self.primitive_compare_scalar(rhs, |l, rhs| comparison::eq_scalar(l, rhs))
+        let rhs: T::Native = NumCast::from(rhs).unwrap();
+        arity::unary_mut_values(self, |arr| arr.tot_eq_kernel_broadcast(&rhs).into())
     }
 
     fn equal_missing(&self, rhs: Rhs) -> BooleanChunked {
-        self.primitive_compare_scalar(rhs, |l, rhs| comparison::eq_scalar_and_validity(l, rhs))
+        let rhs: T::Native = NumCast::from(rhs).unwrap();
+        arity::unary_mut_with_options(self, |arr| arr.tot_eq_missing_kernel_broadcast(&rhs).into())
     }
 
     fn not_equal(&self, rhs: Rhs) -> BooleanChunked {
-        self.primitive_compare_scalar(rhs, |l, rhs| comparison::neq_scalar(l, rhs))
+        let rhs: T::Native = NumCast::from(rhs).unwrap();
+        arity::unary_mut_values(self, |arr| arr.tot_ne_kernel_broadcast(&rhs).into())
     }
 
     fn not_equal_missing(&self, rhs: Rhs) -> BooleanChunked {
-        self.primitive_compare_scalar(rhs, |l, rhs| comparison::neq_scalar_and_validity(l, rhs))
+        let rhs: T::Native = NumCast::from(rhs).unwrap();
+        arity::unary_mut_with_options(self, |arr| arr.tot_ne_missing_kernel_broadcast(&rhs).into())
     }
 
     fn gt(&self, rhs: Rhs) -> BooleanChunked {
@@ -79,7 +69,10 @@ where
                 let rhs: T::Native = NumCast::from(rhs).unwrap();
                 partition_mask(self, true, |x| x.tot_gt(&rhs))
             },
-            _ => self.primitive_compare_scalar(rhs, |l, rhs| comparison::gt_scalar(l, rhs)),
+            _ => {
+                let rhs: T::Native = NumCast::from(rhs).unwrap();
+                arity::unary_mut_values(self, |arr| arr.tot_gt_kernel_broadcast(&rhs).into())
+            },
         }
     }
 
@@ -93,7 +86,10 @@ where
                 let rhs: T::Native = NumCast::from(rhs).unwrap();
                 partition_mask(self, true, |x| x.tot_ge(&rhs))
             },
-            _ => self.primitive_compare_scalar(rhs, |l, rhs| comparison::gt_eq_scalar(l, rhs)),
+            _ => {
+                let rhs: T::Native = NumCast::from(rhs).unwrap();
+                arity::unary_mut_values(self, |arr| arr.tot_ge_kernel_broadcast(&rhs).into())
+            },
         }
     }
 
@@ -107,7 +103,10 @@ where
                 let rhs: T::Native = NumCast::from(rhs).unwrap();
                 partition_mask(self, false, |x| x.tot_ge(&rhs))
             },
-            _ => self.primitive_compare_scalar(rhs, |l, rhs| comparison::lt_scalar(l, rhs)),
+            _ => {
+                let rhs: T::Native = NumCast::from(rhs).unwrap();
+                arity::unary_mut_values(self, |arr| arr.tot_lt_kernel_broadcast(&rhs).into())
+            },
         }
     }
 
@@ -121,65 +120,83 @@ where
                 let rhs: T::Native = NumCast::from(rhs).unwrap();
                 partition_mask(self, false, |x| x.tot_gt(&rhs))
             },
-            _ => self.primitive_compare_scalar(rhs, |l, rhs| comparison::lt_eq_scalar(l, rhs)),
+            _ => {
+                let rhs: T::Native = NumCast::from(rhs).unwrap();
+                arity::unary_mut_values(self, |arr| arr.tot_le_kernel_broadcast(&rhs).into())
+            },
         }
-    }
-}
-
-impl Utf8Chunked {
-    pub(super) fn utf8_compare_scalar(
-        &self,
-        rhs: &str,
-        f: impl Fn(&Utf8Array<i64>, &dyn Scalar) -> BooleanArray,
-    ) -> BooleanChunked {
-        let scalar = Utf8Scalar::<i64>::new(Some(rhs));
-        self.apply_kernel_cast(&|arr| Box::new(f(arr, &scalar)))
-    }
-}
-
-impl BinaryChunked {
-    fn binary_compare_scalar(
-        &self,
-        rhs: &[u8],
-        f: impl Fn(&BinaryArray<i64>, &dyn Scalar) -> BooleanArray,
-    ) -> BooleanChunked {
-        let scalar = BinaryScalar::<i64>::new(Some(rhs));
-        self.apply_kernel_cast(&|arr| Box::new(f(arr, &scalar)))
     }
 }
 
 impl ChunkCompare<&[u8]> for BinaryChunked {
     type Item = BooleanChunked;
+
     fn equal(&self, rhs: &[u8]) -> BooleanChunked {
-        self.binary_compare_scalar(rhs, |l, rhs| comparison::eq_scalar(l, rhs))
+        arity::unary_mut_values(self, |arr| arr.tot_eq_kernel_broadcast(rhs).into())
     }
 
     fn equal_missing(&self, rhs: &[u8]) -> BooleanChunked {
-        self.binary_compare_scalar(rhs, |l, rhs| comparison::eq_scalar_and_validity(l, rhs))
+        arity::unary_mut_with_options(self, |arr| arr.tot_eq_missing_kernel_broadcast(rhs).into())
     }
 
     fn not_equal(&self, rhs: &[u8]) -> BooleanChunked {
-        self.binary_compare_scalar(rhs, |l, rhs| comparison::neq_scalar(l, rhs))
+        arity::unary_mut_values(self, |arr| arr.tot_ne_kernel_broadcast(rhs).into())
     }
 
     fn not_equal_missing(&self, rhs: &[u8]) -> BooleanChunked {
-        self.binary_compare_scalar(rhs, |l, rhs| comparison::neq_scalar_and_validity(l, rhs))
+        arity::unary_mut_with_options(self, |arr| arr.tot_ne_missing_kernel_broadcast(rhs).into())
     }
 
     fn gt(&self, rhs: &[u8]) -> BooleanChunked {
-        self.binary_compare_scalar(rhs, |l, rhs| comparison::gt_scalar(l, rhs))
+        arity::unary_mut_values(self, |arr| arr.tot_gt_kernel_broadcast(rhs).into())
     }
 
     fn gt_eq(&self, rhs: &[u8]) -> BooleanChunked {
-        self.binary_compare_scalar(rhs, |l, rhs| comparison::gt_eq_scalar(l, rhs))
+        arity::unary_mut_values(self, |arr| arr.tot_ge_kernel_broadcast(rhs).into())
     }
 
     fn lt(&self, rhs: &[u8]) -> BooleanChunked {
-        self.binary_compare_scalar(rhs, |l, rhs| comparison::lt_scalar(l, rhs))
+        arity::unary_mut_values(self, |arr| arr.tot_lt_kernel_broadcast(rhs).into())
     }
 
     fn lt_eq(&self, rhs: &[u8]) -> BooleanChunked {
-        self.binary_compare_scalar(rhs, |l, rhs| comparison::lt_eq_scalar(l, rhs))
+        arity::unary_mut_values(self, |arr| arr.tot_le_kernel_broadcast(rhs).into())
+    }
+}
+
+impl ChunkCompare<&str> for Utf8Chunked {
+    type Item = BooleanChunked;
+
+    fn equal(&self, rhs: &str) -> BooleanChunked {
+        arity::unary_mut_values(self, |arr| arr.tot_eq_kernel_broadcast(rhs).into())
+    }
+
+    fn equal_missing(&self, rhs: &str) -> BooleanChunked {
+        arity::unary_mut_with_options(self, |arr| arr.tot_eq_missing_kernel_broadcast(rhs).into())
+    }
+
+    fn not_equal(&self, rhs: &str) -> BooleanChunked {
+        arity::unary_mut_values(self, |arr| arr.tot_ne_kernel_broadcast(rhs).into())
+    }
+
+    fn not_equal_missing(&self, rhs: &str) -> BooleanChunked {
+        arity::unary_mut_with_options(self, |arr| arr.tot_ne_missing_kernel_broadcast(rhs).into())
+    }
+
+    fn gt(&self, rhs: &str) -> BooleanChunked {
+        arity::unary_mut_values(self, |arr| arr.tot_gt_kernel_broadcast(rhs).into())
+    }
+
+    fn gt_eq(&self, rhs: &str) -> BooleanChunked {
+        arity::unary_mut_values(self, |arr| arr.tot_ge_kernel_broadcast(rhs).into())
+    }
+
+    fn lt(&self, rhs: &str) -> BooleanChunked {
+        arity::unary_mut_values(self, |arr| arr.tot_lt_kernel_broadcast(rhs).into())
+    }
+
+    fn lt_eq(&self, rhs: &str) -> BooleanChunked {
+        arity::unary_mut_values(self, |arr| arr.tot_le_kernel_broadcast(rhs).into())
     }
 }
 

@@ -32,8 +32,9 @@ from polars.datatypes import (
     Date,
     Datetime,
     Duration,
-    Float32,
+    Enum,
     List,
+    Null,
     Object,
     Struct,
     Time,
@@ -299,7 +300,7 @@ def iterable_to_pyseries(
     values: Iterable[Any],
     dtype: PolarsDataType | None = None,
     *,
-    dtype_if_empty: PolarsDataType | None = None,
+    dtype_if_empty: PolarsDataType = Null,
     chunk_size: int = 1_000_000,
     strict: bool = True,
 ) -> PySeries:
@@ -387,7 +388,7 @@ def sequence_to_pyseries(
     values: Sequence[Any],
     dtype: PolarsDataType | None = None,
     *,
-    dtype_if_empty: PolarsDataType | None = None,
+    dtype_if_empty: PolarsDataType = Null,
     strict: bool = True,
     nan_to_null: bool = False,
 ) -> PySeries:
@@ -397,8 +398,8 @@ def sequence_to_pyseries(
     # empty sequence
     if not values and dtype is None:
         # if dtype for empty sequence could be guessed
-        # (e.g comparisons between self and other), default to Float32
-        dtype = dtype_if_empty or Float32
+        # (e.g comparisons between self and other), default to Null
+        dtype = dtype_if_empty
 
     # lists defer to subsequent handling; identify nested type
     elif dtype == List:
@@ -444,7 +445,7 @@ def sequence_to_pyseries(
         pyseries = _construct_series_with_fallbacks(
             constructor, name, values, dtype, strict=strict
         )
-        if dtype in (Date, Datetime, Duration, Time, Categorical, Boolean):
+        if dtype in (Date, Datetime, Duration, Time, Categorical, Boolean, Enum):
             if pyseries.dtype() != dtype:
                 pyseries = pyseries.cast(dtype, strict=True)
         return pyseries
@@ -460,11 +461,9 @@ def sequence_to_pyseries(
     else:
         if python_dtype is None:
             if value is None:
-                # Create a series with a dtype_if_empty dtype (if set) or Float32
+                # Create a series with a dtype_if_empty dtype (if set) or Null
                 # (if not set) for a sequence which contains only None values.
-                constructor = polars_type_to_constructor(
-                    dtype_if_empty if dtype_if_empty else Float32
-                )
+                constructor = polars_type_to_constructor(dtype_if_empty)
                 return _construct_series_with_fallbacks(
                     constructor, name, values, dtype, strict=strict
                 )
@@ -535,14 +534,24 @@ def sequence_to_pyseries(
             and isinstance(value, np.ndarray)
             and len(value.shape) == 1
         ):
-            return PySeries.new_series_list(
-                name,
-                [
-                    numpy_to_pyseries("", v, strict=strict, nan_to_null=nan_to_null)
-                    for v in values
-                ],
-                strict,
-            )
+            n_elems = len(value)
+            if all(len(v) == n_elems for v in values):
+                # can take (much) faster path if all lists are the same length
+                return numpy_to_pyseries(
+                    name,
+                    np.vstack(values),
+                    strict=strict,
+                    nan_to_null=nan_to_null,
+                )
+            else:
+                return PySeries.new_series_list(
+                    name,
+                    [
+                        numpy_to_pyseries("", v, strict=strict, nan_to_null=nan_to_null)
+                        for v in values
+                    ],
+                    strict,
+                )
 
         elif python_dtype in (list, tuple):
             if isinstance(dtype, Object):
@@ -693,6 +702,8 @@ def _post_apply_columns(
         pydf_dtype = pydf_dtypes[i]
         if dtype == Categorical != pydf_dtype:
             column_casts.append(F.col(col).cast(Categorical)._pyexpr)
+        elif dtype == Enum != pydf_dtype:
+            column_casts.append(F.col(col).cast(dtype)._pyexpr)
         elif structs and (struct := structs.get(col)) and struct != pydf_dtype:
             column_casts.append(F.col(col).cast(struct)._pyexpr)
         elif dtype is not None and dtype != Unknown and dtype != pydf_dtype:
@@ -1069,7 +1080,7 @@ def _sequence_of_sequence_to_pydf(
 
         unpack_nested = False
         for col, tp in local_schema_override.items():
-            if tp == Categorical:
+            if tp in (Categorical, Enum):
                 local_schema_override[col] = Utf8
             elif not unpack_nested and (tp.base_type() in (Unknown, Struct)):
                 unpack_nested = contains_nested(
@@ -1261,7 +1272,7 @@ def _establish_dataclass_or_model_schema(
             schema_overrides = overrides
 
     for col, tp in overrides.items():
-        if tp == Categorical:
+        if tp in (Categorical, Enum):
             overrides[col] = Utf8
         elif not unpack_nested and (tp.base_type() in (Unknown, Struct)):
             unpack_nested = contains_nested(
@@ -1319,7 +1330,7 @@ def _pydantic_models_to_pydf(
     """Initialise DataFrame from pydantic model objects."""
     import pydantic  # note: must already be available in the env here
 
-    old_pydantic = parse_version(pydantic.__version__) < parse_version("2.0")
+    old_pydantic = parse_version(pydantic.__version__) < (2, 0)
     model_fields = list(
         first_element.__fields__ if old_pydantic else first_element.model_fields
     )
@@ -1463,7 +1474,11 @@ def numpy_to_pydf(
             data_series = [
                 pl.Series(
                     name=column_names[i],
-                    values=(data if two_d and n_columns == 1 else data[:, i]),
+                    values=(
+                        data
+                        if two_d and n_columns == 1 and shape[1] > 1
+                        else data[:, i]
+                    ),
                     dtype=schema_overrides.get(column_names[i]),
                     nan_to_null=nan_to_null,
                 )._s
@@ -1473,7 +1488,9 @@ def numpy_to_pydf(
             data_series = [
                 pl.Series(
                     name=column_names[i],
-                    values=(data if two_d and n_columns == 1 else data[i]),
+                    values=(
+                        data if two_d and n_columns == 1 and shape[1] > 1 else data[i]
+                    ),
                     dtype=schema_overrides.get(column_names[i]),
                     nan_to_null=nan_to_null,
                 )._s

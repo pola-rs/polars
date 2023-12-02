@@ -210,6 +210,6 @@ mod test {
         assert_eq!(df2, df2);
         assert_ne!(df2, df3);
         assert_eq!(df3, df3);
-        assert_ne!(df4, df4);
+        assert_eq!(df4, df4);
     }
 }

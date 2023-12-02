@@ -16,7 +16,7 @@ impl From<&CategoricalChunked> for DictionaryArray<u32> {
             false,
         );
         match map {
-            RevMapping::Local(arr, _) => {
+            RevMapping::Local(arr, _) | RevMapping::Enum(arr, _) => {
                 // Safety:
                 // the keys are in bounds
                 unsafe {
@@ -53,7 +53,7 @@ impl From<&CategoricalChunked> for DictionaryArray<i64> {
         match map {
             // Safety:
             // the keys are in bounds
-            RevMapping::Local(arr, _) => unsafe {
+            RevMapping::Local(arr, _) | RevMapping::Enum(arr, _) => unsafe {
                 DictionaryArray::try_new_unchecked(
                     dtype,
                     cast(keys, &ArrowDataType::Int64)
@@ -93,7 +93,12 @@ impl CategoricalChunked {
     ) -> Self {
         if using_string_cache() {
             let mut builder = CategoricalChunkedBuilder::new(name, keys.len());
-            builder.global_map_from_local(keys, values.clone());
+            let capacity = keys.len();
+            builder.global_map_from_local(
+                [keys.iter().map(|v| v.copied())],
+                capacity,
+                values.clone(),
+            );
             builder.finish()
         } else {
             CategoricalChunked::from_chunks_original(

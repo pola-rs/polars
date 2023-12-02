@@ -1542,7 +1542,7 @@ def arg_sort_by(
     "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
 )
 def collect_all(
-    lazy_frames: Sequence[LazyFrame],
+    lazy_frames: Iterable[LazyFrame],
     *,
     type_coercion: bool = True,
     predicate_pushdown: bool = True,
@@ -1621,7 +1621,7 @@ def collect_all(
 
 @overload
 def collect_all_async(
-    lazy_frames: Sequence[LazyFrame],
+    lazy_frames: Iterable[LazyFrame],
     *,
     gevent: Literal[True],
     type_coercion: bool = True,
@@ -1639,7 +1639,7 @@ def collect_all_async(
 
 @overload
 def collect_all_async(
-    lazy_frames: Sequence[LazyFrame],
+    lazy_frames: Iterable[LazyFrame],
     *,
     gevent: Literal[False] = False,
     type_coercion: bool = True,
@@ -1656,7 +1656,7 @@ def collect_all_async(
 
 
 def collect_all_async(
-    lazy_frames: Sequence[LazyFrame],
+    lazy_frames: Iterable[LazyFrame],
     *,
     gevent: bool = False,
     type_coercion: bool = True,
@@ -2063,7 +2063,7 @@ def rolling_corr(
 
 
 @overload
-def sql_expr(sql: str) -> Expr:  # type: ignore[misc]
+def sql_expr(sql: str) -> Expr:  # type: ignore[overload-overlap]
     ...
 
 

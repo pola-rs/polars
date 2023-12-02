@@ -39,7 +39,6 @@ use polars_core::POOL;
 use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;
 
-use super::hashing::{create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded};
 use super::IntoDf;
 
 pub trait DataFrameJoinOps: IntoDf {
@@ -275,7 +274,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 let right = DataFrame::new_no_checks(selected_right_physical);
                 let (mut left, mut right, swap) = det_hash_prone_order!(left, right);
                 let (join_idx_left, join_idx_right) =
-                    _inner_join_multiple_keys(&mut left, &mut right, swap);
+                    _inner_join_multiple_keys(&mut left, &mut right, swap, args.join_nulls);
                 let mut join_idx_left = &*join_idx_left;
                 let mut join_idx_right = &*join_idx_right;
 
@@ -302,7 +301,8 @@ pub trait DataFrameJoinOps: IntoDf {
                 if let Some((offset, len)) = args.slice {
                     left = left.slice(offset, len);
                 }
-                let ids = _left_join_multiple_keys(&mut left, &mut right, None, None);
+                let ids =
+                    _left_join_multiple_keys(&mut left, &mut right, None, None, args.join_nulls);
                 left_df._finish_left_join(ids, &remove_selected(other, &selected_right), args)
             },
             JoinType::Outer => {
@@ -310,7 +310,8 @@ pub trait DataFrameJoinOps: IntoDf {
                 let right = DataFrame::new_no_checks(selected_right_physical);
 
                 let (mut left, mut right, swap) = det_hash_prone_order!(left, right);
-                let opt_join_tuples = _outer_join_multiple_keys(&mut left, &mut right, swap);
+                let opt_join_tuples =
+                    _outer_join_multiple_keys(&mut left, &mut right, swap, args.join_nulls);
 
                 let mut opt_join_tuples = &*opt_join_tuples;
 
@@ -360,9 +361,9 @@ pub trait DataFrameJoinOps: IntoDf {
                 let mut right = DataFrame::new_no_checks(selected_right_physical);
 
                 let idx = if matches!(args.how, JoinType::Anti) {
-                    _left_anti_multiple_keys(&mut left, &mut right)
+                    _left_anti_multiple_keys(&mut left, &mut right, args.join_nulls)
                 } else {
-                    _left_semi_multiple_keys(&mut left, &mut right)
+                    _left_semi_multiple_keys(&mut left, &mut right, args.join_nulls)
                 };
                 // Safety:
                 // indices are in bounds
@@ -483,7 +484,7 @@ trait DataFrameJoinOpsPrivate: IntoDf {
         #[cfg(feature = "dtype-categorical")]
         _check_categorical_src(s_left.dtype(), s_right.dtype())?;
         let ((join_tuples_left, join_tuples_right), sorted) =
-            _sort_or_hash_inner(s_left, s_right, verbose, args.validation)?;
+            _sort_or_hash_inner(s_left, s_right, verbose, args.validation, args.join_nulls)?;
 
         let mut join_tuples_left = &*join_tuples_left;
         let mut join_tuples_right = &*join_tuples_right;

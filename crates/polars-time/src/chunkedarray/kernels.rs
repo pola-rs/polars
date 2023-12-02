@@ -14,17 +14,17 @@ use super::super::windows::calendar::*;
 use super::*;
 
 trait PolarsIso {
-    fn p_weekday(&self) -> u32;
-    fn week(&self) -> u32;
+    fn p_weekday(&self) -> i8;
+    fn week(&self) -> i8;
     fn iso_year(&self) -> i32;
 }
 
 impl PolarsIso for NaiveDateTime {
-    fn p_weekday(&self) -> u32 {
-        self.weekday() as u32 + 1
+    fn p_weekday(&self) -> i8 {
+        self.weekday().number_from_monday().try_into().unwrap()
     }
-    fn week(&self) -> u32 {
-        self.iso_week().week()
+    fn week(&self) -> i8 {
+        self.iso_week().week().try_into().unwrap()
     }
     fn iso_year(&self) -> i32 {
         self.iso_week().year()
@@ -32,11 +32,11 @@ impl PolarsIso for NaiveDateTime {
 }
 
 impl PolarsIso for NaiveDate {
-    fn p_weekday(&self) -> u32 {
-        self.weekday() as u32 + 1
+    fn p_weekday(&self) -> i8 {
+        self.weekday().number_from_monday().try_into().unwrap()
     }
-    fn week(&self) -> u32 {
-        self.iso_week().week()
+    fn week(&self) -> i8 {
+        self.iso_week().week().try_into().unwrap()
     }
     fn iso_year(&self) -> i32 {
         self.iso_week().year()
@@ -53,7 +53,7 @@ macro_rules! to_temporal_unit {
                 arr,
                 |value| {
                     $to_datetime_fn(value)
-                        .map(|dt| dt.$chrono_method())
+                        .map(|dt| dt.$chrono_method() as $primitive_out)
                         .unwrap_or(value as $primitive_out)
                 },
                 $dtype_out,
@@ -90,8 +90,8 @@ to_temporal_unit!(
     week,
     date32_to_datetime_opt,
     i32,
-    u32,
-    ArrowDataType::UInt32
+    i8,
+    ArrowDataType::Int8
 );
 #[cfg(feature = "dtype-date")]
 to_temporal_unit!(
@@ -108,8 +108,8 @@ to_temporal_unit!(
     p_weekday,
     date32_to_datetime_opt,
     i32,
-    u32,
-    ArrowDataType::UInt32
+    i8,
+    ArrowDataType::Int8
 );
 #[cfg(feature = "dtype-date")]
 to_temporal_unit!(
@@ -134,8 +134,8 @@ to_temporal_unit!(
     month,
     date32_to_datetime_opt,
     i32,
-    u32,
-    ArrowDataType::UInt32
+    i8,
+    ArrowDataType::Int8
 );
 #[cfg(feature = "dtype-date")]
 to_temporal_unit!(
@@ -143,8 +143,8 @@ to_temporal_unit!(
     day,
     date32_to_datetime_opt,
     i32,
-    u32,
-    ArrowDataType::UInt32
+    i8,
+    ArrowDataType::Int8
 );
 #[cfg(feature = "dtype-date")]
 to_temporal_unit!(
@@ -152,8 +152,8 @@ to_temporal_unit!(
     ordinal,
     date32_to_datetime_opt,
     i32,
-    u32,
-    ArrowDataType::UInt32
+    i16,
+    ArrowDataType::Int16
 );
 
 // Times
@@ -163,8 +163,8 @@ to_temporal_unit!(
     hour,
     time64ns_to_time_opt,
     i64,
-    u32,
-    ArrowDataType::UInt32
+    i8,
+    ArrowDataType::Int8
 );
 #[cfg(feature = "dtype-time")]
 to_temporal_unit!(
@@ -172,8 +172,8 @@ to_temporal_unit!(
     minute,
     time64ns_to_time_opt,
     i64,
-    u32,
-    ArrowDataType::UInt32
+    i8,
+    ArrowDataType::Int8
 );
 #[cfg(feature = "dtype-time")]
 to_temporal_unit!(
@@ -181,8 +181,8 @@ to_temporal_unit!(
     second,
     time64ns_to_time_opt,
     i64,
-    u32,
-    ArrowDataType::UInt32
+    i8,
+    ArrowDataType::Int8
 );
 #[cfg(feature = "dtype-time")]
 to_temporal_unit!(
@@ -190,8 +190,8 @@ to_temporal_unit!(
     nanosecond,
     time64ns_to_time_opt,
     i64,
-    u32,
-    ArrowDataType::UInt32
+    i32,
+    ArrowDataType::Int32
 );
 
 #[cfg(feature = "dtype-datetime")]
@@ -200,8 +200,8 @@ to_temporal_unit!(
     ordinal,
     timestamp_ns_to_datetime_opt,
     i64,
-    u32,
-    ArrowDataType::UInt32
+    i16,
+    ArrowDataType::Int16
 );
 
 #[cfg(feature = "dtype-datetime")]
@@ -210,8 +210,8 @@ to_temporal_unit!(
     ordinal,
     timestamp_ms_to_datetime_opt,
     i64,
-    u32,
-    ArrowDataType::UInt32
+    i16,
+    ArrowDataType::Int16
 );
 #[cfg(feature = "dtype-datetime")]
 to_temporal_unit!(
@@ -219,8 +219,8 @@ to_temporal_unit!(
     ordinal,
     timestamp_us_to_datetime_opt,
     i64,
-    u32,
-    ArrowDataType::UInt32
+    i16,
+    ArrowDataType::Int16
 );
 
 #[cfg(feature = "dtype-datetime")]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Any
 
 import pytest
 
@@ -682,11 +683,13 @@ def test_sorted_flag_partition_by() -> None:
     )
 
 
-def test_sorted_flag_singletons() -> None:
-    assert pl.DataFrame({"x": [1]})["x"].flags["SORTED_ASC"]
-    assert pl.DataFrame({"x": ["a"]})["x"].flags["SORTED_ASC"]
-    assert pl.DataFrame({"x": [True]})["x"].flags["SORTED_ASC"]
-    assert pl.DataFrame({"x": [None]})["x"].flags["SORTED_ASC"]
+@pytest.mark.parametrize("value", [1, "a", True])
+def test_sorted_flag_singletons(value: Any) -> None:
+    assert pl.DataFrame({"x": [value]})["x"].flags["SORTED_ASC"] is True
+
+
+def test_sorted_flag_null() -> None:
+    assert pl.DataFrame({"x": [None]})["x"].flags["SORTED_ASC"] is False
 
 
 def test_sorted_update_flags_10327() -> None:

@@ -312,7 +312,7 @@ def test_explode_inner_null() -> None:
 def test_explode_array() -> None:
     df = pl.LazyFrame(
         {"a": [[1, 2], [2, 3]], "b": [1, 2]},
-        schema_overrides={"a": pl.Array(inner=pl.Int64, width=2)},
+        schema_overrides={"a": pl.Array(pl.Int64, 2)},
     )
     expected = pl.DataFrame({"a": [1, 2, 2, 3], "b": [1, 1, 2, 2]})
     for ex in ("a", ~cs.integer()):

@@ -2,7 +2,7 @@
 
 use polars_error::PolarsResult;
 
-use super::utils::{check_same_len, combine_validities};
+use super::utils::{check_same_len, combine_validities_and};
 use crate::array::PrimitiveArray;
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::ArrowDataType;
@@ -126,7 +126,7 @@ where
     // the iteration, then the validity is changed to None to mark the value
     // as Null
     let bitmap: Bitmap = mut_bitmap.into();
-    let validity = combine_validities(array.validity(), Some(&bitmap));
+    let validity = combine_validities_and(array.validity(), Some(&bitmap));
 
     PrimitiveArray::<O>::new(data_type, values, validity)
 }
@@ -158,7 +158,7 @@ where
 {
     check_same_len(lhs, rhs).unwrap();
 
-    let validity = combine_validities(lhs.validity(), rhs.validity());
+    let validity = combine_validities_and(lhs.validity(), rhs.validity());
 
     let values = lhs
         .values()
@@ -186,7 +186,7 @@ where
 {
     check_same_len(lhs, rhs)?;
 
-    let validity = combine_validities(lhs.validity(), rhs.validity());
+    let validity = combine_validities_and(lhs.validity(), rhs.validity());
 
     let values = lhs
         .values()
@@ -214,7 +214,7 @@ where
 {
     check_same_len(lhs, rhs).unwrap();
 
-    let validity = combine_validities(lhs.validity(), rhs.validity());
+    let validity = combine_validities_and(lhs.validity(), rhs.validity());
 
     let mut mut_bitmap = MutableBitmap::with_capacity(lhs.len());
 
@@ -272,13 +272,13 @@ where
         .into();
 
     let bitmap: Bitmap = mut_bitmap.into();
-    let validity = combine_validities(lhs.validity(), rhs.validity());
+    let validity = combine_validities_and(lhs.validity(), rhs.validity());
 
     // The validity has to be checked against the bitmap created during the
     // creation of the values with the iterator. If an error was found during
     // the iteration, then the validity is changed to None to mark the value
     // as Null
-    let validity = combine_validities(validity.as_ref(), Some(&bitmap));
+    let validity = combine_validities_and(validity.as_ref(), Some(&bitmap));
 
     PrimitiveArray::<T>::new(data_type, values, validity)
 }

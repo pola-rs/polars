@@ -64,7 +64,10 @@ def test_empty_sort_by_args() -> None:
 
 def test_empty_9137() -> None:
     out = (
-        pl.DataFrame({"id": [], "value": []})
+        pl.DataFrame(
+            {"id": [], "value": []},
+            schema={"id": pl.Float32, "value": pl.Float32},
+        )
         .group_by("id")
         .agg(pl.col("value").pow(2).mean())
     )

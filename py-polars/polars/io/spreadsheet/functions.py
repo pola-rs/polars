@@ -66,7 +66,7 @@ def read_excel(
 
 # note: 'ignore' required as mypy thinks that the return value for
 # Literal[0] overlaps with the return value for other integers
-@overload  # type: ignore[misc]
+@overload  # type: ignore[overload-overlap]
 def read_excel(
     source: str | BytesIO | Path | BinaryIO | bytes,
     *,
@@ -289,7 +289,7 @@ def read_ods(
     ...
 
 
-@overload  # type: ignore[misc]
+@overload  # type: ignore[overload-overlap]
 def read_ods(
     source: str | BytesIO | Path | BinaryIO | bytes,
     *,

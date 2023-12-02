@@ -35,6 +35,7 @@ from polars.datatypes import (
     Int32,
     Int64,
     List,
+    Null,
     Object,
     Time,
     UInt32,
@@ -58,7 +59,7 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import ShapeError
+from polars.exceptions import ModuleUpgradeRequired, ShapeError
 from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
@@ -94,6 +95,7 @@ from polars.utils.deprecation import (
 from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _is_generator,
+    _warn_null_comparison,
     no_default,
     parse_percentiles,
     parse_version,
@@ -143,8 +145,8 @@ ArrayLike = Union[
     "Series",
     "pa.Array",
     "pa.ChunkedArray",
-    "np.ndarray",
-    "pd.Series",
+    "np.ndarray[Any, Any]",
+    "pd.Series[Any]",
     "pd.DatetimeIndex",
 ]
 
@@ -240,7 +242,7 @@ class Series:
         *,
         strict: bool = True,
         nan_to_null: bool = False,
-        dtype_if_empty: PolarsDataType | None = None,
+        dtype_if_empty: PolarsDataType = Null,
     ):
         # If 'Unknown' treat as None to attempt inference
         if dtype == Unknown:
@@ -551,7 +553,7 @@ class Series:
         return self._from_pyseries(f(other))
 
     @overload  # type: ignore[override]
-    def __eq__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __eq__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -559,12 +561,13 @@ class Series:
         ...
 
     def __eq__(self, other: Any) -> Series | Expr:
+        _warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__eq__(other)
         return self._comp(other, "eq")
 
     @overload  # type: ignore[override]
-    def __ne__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __ne__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -572,12 +575,13 @@ class Series:
         ...
 
     def __ne__(self, other: Any) -> Series | Expr:
+        _warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__ne__(other)
         return self._comp(other, "neq")
 
     @overload
-    def __gt__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __gt__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -585,12 +589,13 @@ class Series:
         ...
 
     def __gt__(self, other: Any) -> Series | Expr:
+        _warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__gt__(other)
         return self._comp(other, "gt")
 
     @overload
-    def __lt__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __lt__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -598,12 +603,13 @@ class Series:
         ...
 
     def __lt__(self, other: Any) -> Series | Expr:
+        _warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__lt__(other)
         return self._comp(other, "lt")
 
     @overload
-    def __ge__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __ge__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -611,12 +617,13 @@ class Series:
         ...
 
     def __ge__(self, other: Any) -> Series | Expr:
+        _warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__ge__(other)
         return self._comp(other, "gt_eq")
 
     @overload
-    def __le__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __le__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -624,6 +631,7 @@ class Series:
         ...
 
     def __le__(self, other: Any) -> Series | Expr:
+        _warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__le__(other)
         return self._comp(other, "lt_eq")
@@ -692,7 +700,7 @@ class Series:
         return self.__ne__(other)
 
     @overload
-    def ne_missing(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def ne_missing(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -774,11 +782,11 @@ class Series:
         return self._from_pyseries(f(other))
 
     @overload
-    def __add__(self, other: DataFrame) -> DataFrame:  # type: ignore[misc]
+    def __add__(self, other: DataFrame) -> DataFrame:  # type: ignore[overload-overlap]
         ...
 
     @overload
-    def __add__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __add__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -795,7 +803,7 @@ class Series:
         return self._arithmetic(other, "add", "add_<>")
 
     @overload
-    def __sub__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __sub__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -808,7 +816,7 @@ class Series:
         return self._arithmetic(other, "sub", "sub_<>")
 
     @overload
-    def __truediv__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __truediv__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -828,7 +836,7 @@ class Series:
         return self.cast(Float64) / other
 
     @overload
-    def __floordiv__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __floordiv__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -849,11 +857,11 @@ class Series:
         return self.not_()
 
     @overload
-    def __mul__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __mul__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
-    def __mul__(self, other: DataFrame) -> DataFrame:  # type: ignore[misc]
+    def __mul__(self, other: DataFrame) -> DataFrame:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -871,7 +879,7 @@ class Series:
             return self._arithmetic(other, "mul", "mul_<>")
 
     @overload
-    def __mod__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __mod__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -4203,14 +4211,12 @@ class Series:
 
         """
         if use_pyarrow_extension_array:
-            if parse_version(pd.__version__) < parse_version("1.5"):
-                raise ModuleNotFoundError(
+            if parse_version(pd.__version__) < (1, 5):
+                raise ModuleUpgradeRequired(
                     f'pandas>=1.5.0 is required for `to_pandas("use_pyarrow_extension_array=True")`, found Pandas {pd.__version__}'
                 )
-            if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < parse_version(
-                "8"
-            ):
-                raise ModuleNotFoundError(
+            if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < (8, 0):
+                raise ModuleUpgradeRequired(
                     f'pyarrow>=8.0.0 is required for `to_pandas("use_pyarrow_extension_array=True")`'
                     f", found pyarrow {pa.__version__!r}"
                     if _PYARROW_AVAILABLE

@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.19.17"
+version = "0.19.18"
 edition = "2021"
 
 [lib]
@@ -88,7 +88,7 @@ features = [
 ]
 
 [build-dependencies]
-built = { version = "0.6", features = ["chrono", "git2"], optional = true }
+built = { version = "0.7", features = ["chrono", "git2", "cargo-lock"], optional = true }
 
 [target.'cfg(any(not(target_family = "unix"), use_mimalloc))'.dependencies]
 mimalloc = { version = "0.1", default-features = false }

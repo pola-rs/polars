@@ -275,7 +275,7 @@ def test_map_elements_10237() -> None:
 
 
 def test_map_elements_on_empty_col_10639() -> None:
-    df = pl.DataFrame({"A": [], "B": []})
+    df = pl.DataFrame({"A": [], "B": []}, schema={"A": pl.Float32, "B": pl.Float32})
     res = df.group_by("B").agg(
         pl.col("A")
         .map_elements(lambda x: x, return_dtype=pl.Int32, strategy="threading")
@@ -285,6 +285,7 @@ def test_map_elements_on_empty_col_10639() -> None:
         "B": [],
         "Foo": [],
     }
+
     res = df.group_by("B").agg(
         pl.col("A")
         .map_elements(lambda x: x, return_dtype=pl.Int32, strategy="thread_local")

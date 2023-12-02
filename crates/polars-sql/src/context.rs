@@ -594,6 +594,20 @@ impl SQLContext {
                     polars_bail!(ComputeError: "relation '{}' was not found", tbl_name);
                 }
             },
+            TableFactor::Derived {
+                lateral,
+                subquery,
+                alias,
+            } => {
+                polars_ensure!(!(*lateral), ComputeError: "LATERAL not supported");
+                if let Some(alias) = alias {
+                    let lf = self.execute_query_no_ctes(subquery)?;
+                    self.table_map.insert(alias.name.value.clone(), lf.clone());
+                    Ok((alias.name.value.clone(), lf))
+                } else {
+                    polars_bail!(ComputeError: "Derived tables must have aliases");
+                }
+            },
             // Support bare table, optional with alias for now
             _ => polars_bail!(ComputeError: "not implemented"),
         }

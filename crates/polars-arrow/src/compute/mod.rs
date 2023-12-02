@@ -31,9 +31,6 @@ pub mod boolean_kleene;
 #[cfg(feature = "compute_cast")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compute_cast")))]
 pub mod cast;
-#[cfg(feature = "compute_comparison")]
-#[cfg_attr(docsrs, doc(cfg(feature = "compute_comparison")))]
-pub mod comparison;
 #[cfg(feature = "compute_concatenate")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compute_concatenate")))]
 pub mod concatenate;
@@ -49,4 +46,4 @@ pub mod take;
 #[cfg(feature = "compute_temporal")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compute_temporal")))]
 pub mod temporal;
-mod utils;
+pub mod utils;

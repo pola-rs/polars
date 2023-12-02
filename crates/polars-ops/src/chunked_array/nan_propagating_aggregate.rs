@@ -4,82 +4,55 @@ use arrow::legacy::kernels::rolling::no_nulls::{MaxWindow, MinWindow};
 use arrow::legacy::kernels::take_agg::{
     take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
 };
-use polars_core::export::num::Bounded;
 use polars_core::frame::group_by::aggregations::{
     _agg_helper_idx, _agg_helper_slice, _rolling_apply_agg_window_no_nulls,
     _rolling_apply_agg_window_nulls, _slice_from_offsets, _use_rolling_kernels,
 };
 use polars_core::prelude::*;
-use polars_utils::float::IsFloat;
-
-#[inline(always)]
-fn nan_min<T: IsFloat + PartialOrd + Copy>(a: T, b: T) -> T {
-    // If b is nan, min is nan, because the comparison failed. We have
-    // to poison the result if a is nan.
-    let min = if a < b { a } else { b };
-    if a.is_nan() {
-        a
-    } else {
-        min
-    }
-}
-
-#[inline(always)]
-fn nan_max<T: IsFloat + PartialOrd + Copy>(a: T, b: T) -> T {
-    // See nan_min.
-    let max = if a > b { a } else { b };
-    if a.is_nan() {
-        a
-    } else {
-        max
-    }
-}
+use polars_utils::min_max::MinMax;
 
 fn ca_nan_agg<T, Agg>(ca: &ChunkedArray<T>, min_or_max_fn: Agg) -> Option<T::Native>
 where
     T: PolarsFloatType,
     Agg: Fn(T::Native, T::Native) -> T::Native + Copy,
 {
-    let mut cum_agg = None;
-    ca.downcast_iter().for_each(|arr| {
-        let agg = if arr.null_count() == 0 {
-            arr.values().iter().copied().reduce(min_or_max_fn)
-        } else {
-            arr.iter()
-                .unwrap_optional()
-                .filter_map(|opt| opt.copied())
-                .reduce(min_or_max_fn)
-        };
-        match cum_agg {
-            None => cum_agg = agg,
-            Some(a) => cum_agg = agg.map(|agg| agg + a),
-        }
-    });
-    cum_agg
+    ca.downcast_iter()
+        .filter_map(|arr| {
+            if arr.null_count() == 0 {
+                arr.values().iter().copied().reduce(min_or_max_fn)
+            } else {
+                arr.iter()
+                    .unwrap_optional()
+                    .filter_map(|opt| opt.copied())
+                    .reduce(min_or_max_fn)
+            }
+        })
+        .reduce(min_or_max_fn)
 }
 
 pub fn nan_min_s(s: &Series, name: &str) -> Series {
     match s.dtype() {
         DataType::Float32 => {
             let ca = s.f32().unwrap();
-            Series::new(name, [ca_nan_agg(ca, nan_min)])
+            Series::new(name, [ca_nan_agg(ca, MinMax::min_propagate_nan)])
         },
         DataType::Float64 => {
             let ca = s.f64().unwrap();
-            Series::new(name, [ca_nan_agg(ca, nan_min)])
+            Series::new(name, [ca_nan_agg(ca, MinMax::min_propagate_nan)])
         },
         _ => panic!("expected float"),
     }
 }
+
 pub fn nan_max_s(s: &Series, name: &str) -> Series {
     match s.dtype() {
         DataType::Float32 => {
             let ca = s.f32().unwrap();
-            Series::new(name, [ca_nan_agg(ca, nan_max)])
+            Series::new(name, [ca_nan_agg(ca, MinMax::max_propagate_nan)])
         },
         DataType::Float64 => {
             let ca = s.f64().unwrap();
-            Series::new(name, [ca_nan_agg(ca, nan_max)])
+            Series::new(name, [ca_nan_agg(ca, MinMax::max_propagate_nan)])
         },
         _ => panic!("expected float"),
     }
@@ -99,24 +72,19 @@ where
                 ca.get(first as usize)
             } else {
                 match (ca.has_validity(), ca.chunks().len()) {
-                    (false, 1) => Some({
-                        take_agg_no_null_primitive_iter_unchecked(
-                            ca.downcast_iter().next().unwrap(),
-                            idx.iter().map(|i| *i as usize),
-                            nan_max,
-                            T::Native::min_value(),
-                        )
-                    }),
-                    (_, 1) => take_agg_primitive_iter_unchecked::<T::Native, _, _>(
+                    (false, 1) => take_agg_no_null_primitive_iter_unchecked(
                         ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
-                        nan_max,
-                        T::Native::min_value(),
-                        idx.len() as IdxSize,
+                        MinMax::max_propagate_nan,
+                    ),
+                    (_, 1) => take_agg_primitive_iter_unchecked(
+                        ca.downcast_iter().next().unwrap(),
+                        idx.iter().map(|i| *i as usize),
+                        MinMax::max_propagate_nan,
                     ),
                     _ => {
                         let take = { ca.take_unchecked(idx) };
-                        ca_nan_agg(&take, nan_max)
+                        ca_nan_agg(&take, MinMax::max_propagate_nan)
                     },
                 }
             }
@@ -150,7 +118,7 @@ where
                         1 => ca.get(first as usize),
                         _ => {
                             let arr_group = _slice_from_offsets(ca, first, len);
-                            ca_nan_agg(&arr_group, nan_max)
+                            ca_nan_agg(&arr_group, MinMax::max_propagate_nan)
                         },
                     }
                 })
@@ -173,22 +141,19 @@ where
                 ca.get(first as usize)
             } else {
                 match (ca.has_validity(), ca.chunks().len()) {
-                    (false, 1) => Some(take_agg_no_null_primitive_iter_unchecked(
+                    (false, 1) => take_agg_no_null_primitive_iter_unchecked(
                         ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
-                        nan_min,
-                        T::Native::max_value(),
-                    )),
-                    (_, 1) => take_agg_primitive_iter_unchecked::<T::Native, _, _>(
+                        MinMax::min_propagate_nan,
+                    ),
+                    (_, 1) => take_agg_primitive_iter_unchecked(
                         ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
-                        nan_min,
-                        T::Native::max_value(),
-                        idx.len() as IdxSize,
+                        MinMax::min_propagate_nan,
                     ),
                     _ => {
                         let take = { ca.take_unchecked(idx) };
-                        ca_nan_agg(&take, nan_min)
+                        ca_nan_agg(&take, MinMax::min_propagate_nan)
                     },
                 }
             }
@@ -222,7 +187,7 @@ where
                         1 => ca.get(first as usize),
                         _ => {
                             let arr_group = _slice_from_offsets(ca, first, len);
-                            ca_nan_agg(&arr_group, nan_min)
+                            ca_nan_agg(&arr_group, MinMax::min_propagate_nan)
                         },
                     }
                 })

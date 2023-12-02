@@ -25,6 +25,7 @@ from typing import (
     TypeVar,
     Union,
     cast,
+    get_args,
     overload,
 )
 
@@ -43,6 +44,7 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.dependencies import (
+    _PANDAS_AVAILABLE,
     _PYARROW_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
@@ -52,7 +54,11 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import NoRowsReturnedError, TooManyRowsReturnedError
+from polars.exceptions import (
+    ModuleUpgradeRequired,
+    NoRowsReturnedError,
+    TooManyRowsReturnedError,
+)
 from polars.functions import col, lit
 from polars.io._utils import _is_glob_pattern, _is_local_file
 from polars.io.csv._utils import _check_arg_is_1byte
@@ -68,6 +74,7 @@ from polars.io.spreadsheet._write_utils import (
 )
 from polars.selectors import _expand_selector_dicts, _expand_selectors
 from polars.slice import PolarsSlice
+from polars.type_aliases import DbWriteMode
 from polars.utils._construction import (
     _post_apply_columns,
     arrow_to_pydf,
@@ -93,6 +100,7 @@ from polars.utils.deprecation import (
 from polars.utils.various import (
     _prepare_row_count_args,
     _process_null_values,
+    _warn_null_comparison,
     can_create_dicts_with_pyarrow,
     handle_projection_columns,
     is_bool_sequence,
@@ -133,7 +141,6 @@ if TYPE_CHECKING:
         CsvEncoding,
         CsvQuoteStyle,
         DbWriteEngine,
-        DbWriteMode,
         FillNullStrategy,
         FrameInitTypes,
         IndexOrder,
@@ -1387,6 +1394,7 @@ class DataFrame:
         op: ComparisonOperator,
     ) -> DataFrame:
         """Compare a DataFrame with a non-DataFrame object."""
+        _warn_null_comparison(other)
         if op == "eq":
             return self.select(F.all() == other)
         elif op == "neq":
@@ -1576,7 +1584,7 @@ class DataFrame:
         # fail on ['col1', 'col2', ..., 'coln']
         if (
             isinstance(item, tuple)
-            and len(item) > 1
+            and len(item) > 1  # type: ignore[redundant-expr]
             and all(isinstance(x, str) for x in item)
         ):
             raise KeyError(item)
@@ -2205,16 +2213,16 @@ class DataFrame:
         """
         if use_pyarrow_extension_array:
             if parse_version(pd.__version__) < parse_version("1.5"):
-                raise ModuleNotFoundError(
+                raise ModuleUpgradeRequired(
                     f'pandas>=1.5.0 is required for `to_pandas("use_pyarrow_extension_array=True")`, found Pandas {pd.__version__!r}'
                 )
-            if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < parse_version(
-                "8"
-            ):
+            if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < (8, 0):
                 msg = "pyarrow>=8.0.0 is required for `to_pandas(use_pyarrow_extension_array=True)`"
                 if _PYARROW_AVAILABLE:
                     msg += f", found pyarrow {pa.__version__!r}."
-                raise ModuleNotFoundError(msg)
+                    raise ModuleUpgradeRequired(msg)
+                else:
+                    raise ModuleNotFoundError(msg)
 
         record_batches = self._df.to_pandas()
         tbl = pa.Table.from_batches(record_batches)
@@ -3154,8 +3162,8 @@ class DataFrame:
         # table/rows all written; apply (optional) autofit
         if autofit and not is_empty:
             xlv = xlsxwriter.__version__
-            if parse_version(xlv) < parse_version("3.0.8"):
-                raise ModuleNotFoundError(
+            if parse_version(xlv) < (3, 0, 8):
+                raise ModuleUpgradeRequired(
                     f"`autofit=True` requires xlsxwriter 3.0.8 or higher, found {xlv}"
                 )
             ws.autofit()
@@ -3300,6 +3308,7 @@ class DataFrame:
         compression_level: int | None = None,
         statistics: bool = False,
         row_group_size: int | None = None,
+        data_page_size: int | None = None,
         use_pyarrow: bool = False,
         pyarrow_options: dict[str, Any] | None = None,
     ) -> None:
@@ -3327,6 +3336,8 @@ class DataFrame:
             Write statistics to the parquet headers. This requires extra compute.
         row_group_size
             Size of the row groups in number of rows. Defaults to 512^2 rows.
+        data_page_size
+            Size of the data page in bytes. Defaults to 1024^2 bytes.
         use_pyarrow
             Use C++ parquet implementation vs Rust parquet implementation.
             At the moment C++ supports more features.
@@ -3390,14 +3401,17 @@ class DataFrame:
             # needed below
             import pyarrow.parquet  # noqa: F401
 
-            if pyarrow_options is not None and pyarrow_options.get("partition_cols"):
-                pyarrow_options["compression"] = (
-                    None if compression == "uncompressed" else compression
-                )
-                pyarrow_options["compression_level"] = compression_level
-                pyarrow_options["write_statistics"] = statistics
-                pyarrow_options["row_group_size"] = row_group_size
+            if pyarrow_options is None:
+                pyarrow_options = {}
+            pyarrow_options["compression"] = (
+                None if compression == "uncompressed" else compression
+            )
+            pyarrow_options["compression_level"] = compression_level
+            pyarrow_options["write_statistics"] = statistics
+            pyarrow_options["row_group_size"] = row_group_size
+            pyarrow_options["data_page_size"] = data_page_size
 
+            if pyarrow_options.get("partition_cols"):
                 pa.parquet.write_to_dataset(
                     table=tbl,
                     root_path=file,
@@ -3407,27 +3421,29 @@ class DataFrame:
                 pa.parquet.write_table(
                     table=tbl,
                     where=file,
-                    row_group_size=row_group_size,
-                    compression=None if compression == "uncompressed" else compression,
-                    compression_level=compression_level,
-                    write_statistics=statistics,
                     **(pyarrow_options or {}),
                 )
 
         else:
             self._df.write_parquet(
-                file, compression, compression_level, statistics, row_group_size
+                file,
+                compression,
+                compression_level,
+                statistics,
+                row_group_size,
+                data_page_size,
             )
 
     @deprecate_renamed_parameter("connection_uri", "connection", version="0.18.9")
+    @deprecate_renamed_parameter("if_exists", "if_table_exists", version="0.20.0")
     def write_database(
         self,
         table_name: str,
         connection: str,
         *,
-        if_exists: DbWriteMode = "fail",
+        if_table_exists: DbWriteMode = "fail",
         engine: DbWriteEngine = "sqlalchemy",
-    ) -> None:
+    ) -> int:
         """
         Write a polars frame to a database.
 
@@ -3442,31 +3458,39 @@ class DataFrame:
 
             * "postgresql://user:pass@server:port/database"
             * "sqlite:////path/to/database.db"
-        if_exists : {'append', 'replace', 'fail'}
+        if_table_exists : {'append', 'replace', 'fail'}
             The insert mode:
 
             * 'replace' will create a new database table, overwriting an existing one.
             * 'append' will append to an existing table.
             * 'fail' will fail if table already exists.
         engine : {'sqlalchemy', 'adbc'}
-            Select the engine used for writing the data.
+            Select the engine to use for writing frame data.
+
+        Returns
+        -------
+        int
+            The number of rows affected, if the driver provides this information.
+            Otherwise, returns -1.
+
         """
         from polars.io.database import _open_adbc_connection
 
-        def unpack_table_name(name: str) -> tuple[str | None, str]:
-            """Unpack optionally qualified table name into schema/table pair."""
+        if if_table_exists not in (valid_write_modes := get_args(DbWriteMode)):
+            allowed = ", ".join(repr(m) for m in valid_write_modes)
+            raise ValueError(
+                f"write_database `if_table_exists` must be one of {{{allowed}}}, got {if_table_exists!r}"
+            )
+
+        def unpack_table_name(name: str) -> tuple[str | None, str | None, str]:
+            """Unpack optionally qualified table name to catalog/schema/table tuple."""
             from csv import reader as delimited_read
 
-            table_ident = next(delimited_read([name], delimiter="."))
-            if len(table_ident) > 2:
-                raise ValueError(f"`table_name` appears to be invalid: {name!r}")
-            elif len(table_ident) > 1:
-                schema = table_ident[0]
-                tbl = table_ident[1]
-            else:
-                schema = None
-                tbl = table_ident[0]
-            return schema, tbl
+            components: list[str | None] = next(delimited_read([name], delimiter="."))  # type: ignore[arg-type]
+            if len(components) > 3:
+                raise ValueError(f"`table_name` appears to be invalid: '{name}'")
+            catalog, schema, tbl = ([None] * (3 - len(components))) + components
+            return catalog, schema, tbl  # type: ignore[return-value]
 
         if engine == "adbc":
             try:
@@ -3481,38 +3505,37 @@ class DataFrame:
                     "\n\nInstall Polars with: pip install adbc_driver_manager"
                 ) from exc
 
-            if if_exists == "fail":
+            if if_table_exists == "fail":
                 # if the table exists, 'create' will raise an error,
                 # resulting in behaviour equivalent to 'fail'
                 mode = "create"
-            elif if_exists == "replace":
+            elif if_table_exists == "replace":
                 if adbc_version < (0, 7):
                     adbc_str_version = ".".join(str(v) for v in adbc_version)
-                    raise ModuleNotFoundError(
-                        f"`if_exists = 'replace'` requires ADBC version >= 0.7, found {adbc_str_version}"
+                    raise ModuleUpgradeRequired(
+                        f"`if_table_exists = 'replace'` requires ADBC version >= 0.7, found {adbc_str_version}"
                     )
                 mode = "replace"
-            elif if_exists == "append":
+            elif if_table_exists == "append":
                 mode = "append"
             else:
                 raise ValueError(
-                    f"unexpected value for `if_exists`: {if_exists!r}"
+                    f"unexpected value for `if_table_exists`: {if_table_exists!r}"
                     f"\n\nChoose one of {{'fail', 'replace', 'append'}}"
                 )
 
             with _open_adbc_connection(connection) as conn, conn.cursor() as cursor:
-                db_schema, unpacked_table_name = unpack_table_name(table_name)
+                catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
+                n_rows: int
                 if adbc_version >= (0, 7):
                     if "sqlite" in conn.adbc_get_info()["driver_name"].lower():
-                        if if_exists == "replace":
+                        if if_table_exists == "replace":
                             # note: adbc doesn't (yet) support 'replace' for sqlite
                             cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
                             mode = "create"
                         catalog, db_schema = db_schema, None
-                    else:
-                        catalog = None
 
-                    cursor.adbc_ingest(
+                    n_rows = cursor.adbc_ingest(
                         unpacked_table_name,
                         data=self.to_arrow(),
                         mode=mode,
@@ -3521,40 +3544,54 @@ class DataFrame:
                     )
                 elif db_schema is not None:
                     adbc_str_version = ".".join(str(v) for v in adbc_version)
-                    raise ModuleNotFoundError(
+                    raise ModuleUpgradeRequired(
                         # https://github.com/apache/arrow-adbc/issues/1000
                         # https://github.com/apache/arrow-adbc/issues/1109
                         f"use of schema-qualified table names requires ADBC version >= 0.8, found {adbc_str_version}"
                     )
                 else:
-                    cursor.adbc_ingest(unpacked_table_name, self.to_arrow(), mode)
+                    n_rows = cursor.adbc_ingest(
+                        unpacked_table_name, self.to_arrow(), mode
+                    )
                 conn.commit()
+            return n_rows
 
         elif engine == "sqlalchemy":
-            if parse_version(pd.__version__) < parse_version("1.5"):
+            if not _PANDAS_AVAILABLE:
                 raise ModuleNotFoundError(
+                    "writing with engine 'sqlalchemy' currently requires pandas.\n\nInstall with: pip install pandas"
+                )
+            elif parse_version(pd.__version__) < (1, 5):
+                raise ModuleUpgradeRequired(
                     f"writing with engine 'sqlalchemy' requires pandas 1.5.x or higher, found {pd.__version__!r}"
                 )
             try:
                 from sqlalchemy import create_engine
             except ModuleNotFoundError as exc:
                 raise ModuleNotFoundError(
-                    "sqlalchemy not found"
-                    "\n\nInstall Polars with: pip install polars[sqlalchemy]"
+                    "sqlalchemy not found\n\nInstall with: pip install polars[sqlalchemy]"
                 ) from exc
 
-            # ensure conversion to pandas uses the pyarrow extension array option
-            # so that we can make use of the sql/db export without copying data
+            # note: the catalog (database) should be a part of the connection string
             engine_sa = create_engine(connection)
-            db_schema, table_name = unpack_table_name(table_name)
+            catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
+            if catalog:
+                raise ValueError(
+                    f"Unexpected three-part table name; provide the database/catalog ({catalog!r}) on the connection URI"
+                )
 
-            self.to_pandas(use_pyarrow_extension_array=True).to_sql(
-                name=table_name,
+            # ensure conversion to pandas uses the pyarrow extension array option
+            # so that we can make use of the sql/db export *without* copying data
+            res: int | None = self.to_pandas(
+                use_pyarrow_extension_array=True,
+            ).to_sql(
+                name=unpacked_table_name,
                 schema=db_schema,
                 con=engine_sa,
-                if_exists=if_exists,
+                if_exists=if_table_exists,
                 index=False,
             )
+            return -1 if res is None else res
         else:
             raise ValueError(f"engine {engine!r} is not supported")
 
@@ -4276,7 +4313,7 @@ class DataFrame:
         summary = dict(zip(self.columns, list(zip(*described))))
         num_or_bool = NUMERIC_DTYPES | {Boolean}
         for c, tp in self.schema.items():
-            summary[c] = [
+            summary[c] = [  # type: ignore[assignment]
                 None
                 if (v is None or isinstance(v, dict))
                 else (float(v) if tp in num_or_bool else str(v))
@@ -4934,7 +4971,7 @@ class DataFrame:
         ┌──────┬──────┬──────┐
         │ a    ┆ b    ┆ c    │
         │ ---  ┆ ---  ┆ ---  │
-        │ f32  ┆ i64  ┆ i64  │
+        │ null ┆ i64  ┆ i64  │
         ╞══════╪══════╪══════╡
         │ null ┆ 1    ┆ 1    │
         │ null ┆ 2    ┆ null │
@@ -4949,7 +4986,7 @@ class DataFrame:
         ┌──────┬─────┬──────┐
         │ a    ┆ b   ┆ c    │
         │ ---  ┆ --- ┆ ---  │
-        │ f32  ┆ i64 ┆ i64  │
+        │ null ┆ i64 ┆ i64  │
         ╞══════╪═════╪══════╡
         │ null ┆ 1   ┆ 1    │
         │ null ┆ 2   ┆ null │
@@ -5990,6 +6027,7 @@ class DataFrame:
         right_on: str | Expr | Sequence[str | Expr] | None = None,
         suffix: str = "_right",
         validate: JoinValidation = "m:m",
+        join_nulls: bool = False,
     ) -> DataFrame:
         """
         Join in SQL-like fashion.
@@ -6027,6 +6065,8 @@ class DataFrame:
 
                 - This is currently not supported the streaming engine.
                 - This is only supported when joined by single columns.
+        join_nulls
+            Join on null values. By default null values will never produce matches.
 
         Returns
         -------
@@ -6128,6 +6168,7 @@ class DataFrame:
                 how=how,
                 suffix=suffix,
                 validate=validate,
+                join_nulls=join_nulls,
             )
             .collect(_eager=True)
         )
@@ -9553,7 +9594,7 @@ class DataFrame:
         ...
 
     def iter_rows(
-        self, *, named: bool = False, buffer_size: int = 500
+        self, *, named: bool = False, buffer_size: int = 512
     ) -> Iterator[tuple[Any, ...]] | Iterator[dict[str, Any]]:
         """
         Returns an iterator over the DataFrame of rows of python-native values.
@@ -9614,17 +9655,16 @@ class DataFrame:
         # note: buffering rows results in a 2-4x speedup over individual calls
         # to ".row(i)", so it should only be disabled in extremely specific cases.
         if buffer_size and not has_object:
+            create_with_pyarrow = named and can_create_dicts_with_pyarrow(self.dtypes)
             for offset in range(0, self.height, buffer_size):
                 zerocopy_slice = self.slice(offset, buffer_size)
-                if named and can_create_dicts_with_pyarrow(self.dtypes):
+                if create_with_pyarrow:
                     yield from zerocopy_slice.to_arrow().to_pylist()
+                elif named:
+                    for row in zerocopy_slice.rows(named=False):
+                        yield dict_(zip_(columns, row))
                 else:
-                    rows_chunk = zerocopy_slice.rows(named=False)
-                    if named:
-                        for row in rows_chunk:
-                            yield dict_(zip_(columns, row))
-                    else:
-                        yield from rows_chunk
+                    yield from zerocopy_slice.rows(named=False)
         elif named:
             for i in range(self.height):
                 yield dict_(zip_(columns, get_row(i)))
@@ -10100,14 +10140,14 @@ class DataFrame:
         """
         Update the values in this `DataFrame` with the values in `other`.
 
-        By default, null values in the right dataframe are ignored. Use
-        `ignore_nulls=False` to overwrite values in this frame with null values in other
-        frame.
+        By default, null values in the right frame are ignored. Use
+        `include_nulls=False` to overwrite values in this frame with
+        null values in the other frame.
 
         Notes
         -----
-        This is syntactic sugar for a left/inner join, with an optional coalesce when
-        `include_nulls = False`.
+        This is syntactic sugar for a left/inner join, with an optional coalesce
+        when `include_nulls = False`
 
         Warnings
         --------

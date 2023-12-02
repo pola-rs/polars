@@ -9,6 +9,13 @@ pub fn create_categorical_chunked_listbuilder(
     rev_map: Arc<RevMapping>,
 ) -> Box<dyn ListBuilderTrait> {
     match &*rev_map {
+        RevMapping::Enum(_, h) => Box::new(ListEnumCategoricalChunkedBuilder::new(
+            name,
+            capacity,
+            values_capacity,
+            (*rev_map).clone(),
+            *h,
+        )),
         RevMapping::Local(_, h) => Box::new(ListLocalCategoricalChunkedBuilder::new(
             name,
             capacity,
@@ -21,6 +28,57 @@ pub fn create_categorical_chunked_listbuilder(
             values_capacity,
             rev_map,
         )),
+    }
+}
+
+struct ListEnumCategoricalChunkedBuilder {
+    inner: ListPrimitiveChunkedBuilder<UInt32Type>,
+    rev_map: RevMapping,
+    hash: u128,
+}
+
+impl ListEnumCategoricalChunkedBuilder {
+    pub(super) fn new(
+        name: &str,
+        capacity: usize,
+        values_capacity: usize,
+        rev_map: RevMapping,
+        hash: u128,
+    ) -> Self {
+        Self {
+            inner: ListPrimitiveChunkedBuilder::new(
+                name,
+                capacity,
+                values_capacity,
+                DataType::UInt32,
+            ),
+            rev_map,
+            hash,
+        }
+    }
+}
+
+impl ListBuilderTrait for ListEnumCategoricalChunkedBuilder {
+    fn append_series(&mut self, s: &Series) -> PolarsResult<()> {
+        let DataType::Categorical(Some(rev_map)) = s.dtype() else {
+            polars_bail!(ComputeError: "expected categorical type")
+        };
+        let RevMapping::Enum(_, new_hash) = &**rev_map else {
+            polars_bail!(ComputeError: "Can not combine enum with categorical, consider casting to one of the two")
+        };
+        polars_ensure!(*new_hash == self.hash,ComputeError: "Can not combine enums with different variants");
+        self.inner.append_series(s)
+    }
+
+    fn append_null(&mut self) {
+        self.inner.append_null()
+    }
+
+    fn finish(&mut self) -> ListChunked {
+        let inner_dtype = DataType::Categorical(Some(Arc::new(self.rev_map.clone())));
+        let mut ca = self.inner.finish();
+        unsafe { ca.set_dtype(DataType::List(Box::new(inner_dtype))) }
+        ca
     }
 }
 

@@ -607,7 +607,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`UInt32`.
+            Expression of data type :class:`Int8`.
 
         Examples
         --------
@@ -620,7 +620,7 @@ class ExprDateTimeNameSpace:
         ┌────────────┬─────────┐
         │ date       ┆ quarter │
         │ ---        ┆ ---     │
-        │ date       ┆ u32     │
+        │ date       ┆ i8      │
         ╞════════════╪═════════╡
         │ 2001-01-01 ┆ 1       │
         │ 2001-06-30 ┆ 2       │
@@ -642,7 +642,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`UInt32`.
+            Expression of data type :class:`Int8`.
 
         Examples
         --------
@@ -655,7 +655,7 @@ class ExprDateTimeNameSpace:
         ┌────────────┬───────┐
         │ date       ┆ month │
         │ ---        ┆ ---   │
-        │ date       ┆ u32   │
+        │ date       ┆ i8    │
         ╞════════════╪═══════╡
         │ 2001-01-01 ┆ 1     │
         │ 2001-06-30 ┆ 6     │
@@ -677,7 +677,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`UInt32`.
+            Expression of data type :class:`Int8`.
 
         Examples
         --------
@@ -690,7 +690,7 @@ class ExprDateTimeNameSpace:
         ┌────────────┬──────┐
         │ date       ┆ week │
         │ ---        ┆ ---  │
-        │ date       ┆ u32  │
+        │ date       ┆ i8   │
         ╞════════════╪══════╡
         │ 2001-01-01 ┆ 1    │
         │ 2001-06-30 ┆ 26   │
@@ -711,7 +711,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`UInt32`.
+            Expression of data type :class:`Int8`.
 
         See Also
         --------
@@ -720,7 +720,7 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import timedelta, date
+        >>> from datetime import date
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
@@ -737,7 +737,7 @@ class ExprDateTimeNameSpace:
         ┌────────────┬─────────┬──────────────┬─────────────┐
         │ date       ┆ weekday ┆ day_of_month ┆ day_of_year │
         │ ---        ┆ ---     ┆ ---          ┆ ---         │
-        │ date       ┆ u32     ┆ u32          ┆ u32         │
+        │ date       ┆ i8      ┆ i8           ┆ i16         │
         ╞════════════╪═════════╪══════════════╪═════════════╡
         │ 2001-12-22 ┆ 6       ┆ 22           ┆ 356         │
         │ 2001-12-23 ┆ 7       ┆ 23           ┆ 357         │
@@ -760,7 +760,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`UInt32`.
+            Expression of data type :class:`Int8`.
 
         See Also
         --------
@@ -769,7 +769,7 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import timedelta, date
+        >>> from datetime import date
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
@@ -786,7 +786,7 @@ class ExprDateTimeNameSpace:
         ┌────────────┬─────────┬──────────────┬─────────────┐
         │ date       ┆ weekday ┆ day_of_month ┆ day_of_year │
         │ ---        ┆ ---     ┆ ---          ┆ ---         │
-        │ date       ┆ u32     ┆ u32          ┆ u32         │
+        │ date       ┆ i8      ┆ i8           ┆ i16         │
         ╞════════════╪═════════╪══════════════╪═════════════╡
         │ 2001-12-22 ┆ 6       ┆ 22           ┆ 356         │
         │ 2001-12-23 ┆ 7       ┆ 23           ┆ 357         │
@@ -809,7 +809,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`UInt32`.
+            Expression of data type :class:`Int16`.
 
         See Also
         --------
@@ -818,7 +818,7 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import timedelta, date
+        >>> from datetime import date
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
@@ -835,7 +835,7 @@ class ExprDateTimeNameSpace:
         ┌────────────┬─────────┬──────────────┬─────────────┐
         │ date       ┆ weekday ┆ day_of_month ┆ day_of_year │
         │ ---        ┆ ---     ┆ ---          ┆ ---         │
-        │ date       ┆ u32     ┆ u32          ┆ u32         │
+        │ date       ┆ i8      ┆ i8           ┆ i16         │
         ╞════════════╪═════════╪══════════════╪═════════════╡
         │ 2001-12-22 ┆ 6       ┆ 22           ┆ 356         │
         │ 2001-12-23 ┆ 7       ┆ 23           ┆ 357         │
@@ -899,7 +899,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`UInt32`.
+            Expression of data type :class:`Int8`.
 
         Examples
         --------
@@ -918,7 +918,7 @@ class ExprDateTimeNameSpace:
         ┌─────────────────────┬──────┐
         │ datetime            ┆ hour │
         │ ---                 ┆ ---  │
-        │ datetime[μs]        ┆ u32  │
+        │ datetime[μs]        ┆ i8   │
         ╞═════════════════════╪══════╡
         │ 2001-01-01 00:00:00 ┆ 0    │
         │ 2010-01-01 15:30:45 ┆ 15   │
@@ -939,7 +939,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`UInt32`.
+            Expression of data type :class:`Int8`.
 
         Examples
         --------
@@ -958,7 +958,7 @@ class ExprDateTimeNameSpace:
         ┌─────────────────────┬────────┐
         │ datetime            ┆ minute │
         │ ---                 ┆ ---    │
-        │ datetime[μs]        ┆ u32    │
+        │ datetime[μs]        ┆ i8     │
         ╞═════════════════════╪════════╡
         │ 2001-01-01 00:00:00 ┆ 0      │
         │ 2010-01-01 15:30:45 ┆ 30     │
@@ -986,7 +986,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`UInt32` or :class:`Float64`.
+            Expression of data type :class:`Int8` or :class:`Float64`.
 
         Examples
         --------
@@ -1005,7 +1005,7 @@ class ExprDateTimeNameSpace:
         ┌────────────────────────────┬────────┐
         │ datetime                   ┆ second │
         │ ---                        ┆ ---    │
-        │ datetime[μs]               ┆ u32    │
+        │ datetime[μs]               ┆ i8     │
         ╞════════════════════════════╪════════╡
         │ 2000-01-01 00:00:00.456789 ┆ 0      │
         │ 2000-01-01 00:00:03.111110 ┆ 3      │
@@ -1042,7 +1042,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`UInt32`.
+            Expression of data type :class:`Int32`.
 
         """
         return wrap_expr(self._pyexpr.dt_millisecond())
@@ -1056,7 +1056,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`UInt32`.
+            Expression of data type :class:`Int32`.
 
         Examples
         --------
@@ -1074,25 +1074,25 @@ class ExprDateTimeNameSpace:
         >>> df.select(
         ...     [
         ...         pl.col("date"),
-        ...         pl.col("date").dt.microsecond().alias("microseconds"),
+        ...         pl.col("date").dt.microsecond().alias("microsecond"),
         ...     ]
         ... )
         shape: (1_001, 2)
-        ┌─────────────────────────┬──────────────┐
-        │ date                    ┆ microseconds │
-        │ ---                     ┆ ---          │
-        │ datetime[μs]            ┆ u32          │
-        ╞═════════════════════════╪══════════════╡
-        │ 2020-01-01 00:00:00     ┆ 0            │
-        │ 2020-01-01 00:00:00.001 ┆ 1000         │
-        │ 2020-01-01 00:00:00.002 ┆ 2000         │
-        │ 2020-01-01 00:00:00.003 ┆ 3000         │
-        │ …                       ┆ …            │
-        │ 2020-01-01 00:00:00.997 ┆ 997000       │
-        │ 2020-01-01 00:00:00.998 ┆ 998000       │
-        │ 2020-01-01 00:00:00.999 ┆ 999000       │
-        │ 2020-01-01 00:00:01     ┆ 0            │
-        └─────────────────────────┴──────────────┘
+        ┌─────────────────────────┬─────────────┐
+        │ date                    ┆ microsecond │
+        │ ---                     ┆ ---         │
+        │ datetime[μs]            ┆ i32         │
+        ╞═════════════════════════╪═════════════╡
+        │ 2020-01-01 00:00:00     ┆ 0           │
+        │ 2020-01-01 00:00:00.001 ┆ 1000        │
+        │ 2020-01-01 00:00:00.002 ┆ 2000        │
+        │ 2020-01-01 00:00:00.003 ┆ 3000        │
+        │ …                       ┆ …           │
+        │ 2020-01-01 00:00:00.997 ┆ 997000      │
+        │ 2020-01-01 00:00:00.998 ┆ 998000      │
+        │ 2020-01-01 00:00:00.999 ┆ 999000      │
+        │ 2020-01-01 00:00:01     ┆ 0           │
+        └─────────────────────────┴─────────────┘
 
         """
         return wrap_expr(self._pyexpr.dt_microsecond())
@@ -1106,7 +1106,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`UInt32`.
+            Expression of data type :class:`Int32`.
 
         """
         return wrap_expr(self._pyexpr.dt_nanosecond())

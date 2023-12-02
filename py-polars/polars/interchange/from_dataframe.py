@@ -77,7 +77,7 @@ def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataF
 
 
 def _df_to_pyarrow_table(df: Any, *, allow_copy: bool = False) -> pa.Table:
-    if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < parse_version("11"):
+    if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < (11, 0):
         raise ImportError(
             "pyarrow>=11.0.0 is required for converting a dataframe interchange object"
             " to a Polars dataframe"

@@ -479,20 +479,13 @@ where
                     } else if idx.len() == 1 {
                         arr.get(first as usize)
                     } else if no_nulls {
-                        Some(take_agg_no_null_primitive_iter_unchecked(
+                        take_agg_no_null_primitive_iter_unchecked::<_, T::Native, _, _>(
                             arr,
                             idx2usize(idx),
                             |a, b| a.take_min(b),
-                            T::Native::max_value(),
-                        ))
-                    } else {
-                        take_agg_primitive_iter_unchecked::<T::Native, _, _>(
-                            arr,
-                            idx2usize(idx),
-                            |a, b| a.take_min(b),
-                            T::Native::max_value(),
-                            idx.len() as IdxSize,
                         )
+                    } else {
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| a.take_min(b))
                     }
                 })
             },
@@ -560,22 +553,13 @@ where
                     } else if idx.len() == 1 {
                         arr.get(first as usize)
                     } else if no_nulls {
-                        Some({
-                            take_agg_no_null_primitive_iter_unchecked(
-                                arr,
-                                idx2usize(idx),
-                                |a, b| a.take_max(b),
-                                T::Native::min_value(),
-                            )
-                        })
-                    } else {
-                        take_agg_primitive_iter_unchecked::<T::Native, _, _>(
+                        take_agg_no_null_primitive_iter_unchecked::<_, T::Native, _, _>(
                             arr,
                             idx2usize(idx),
                             |a, b| a.take_max(b),
-                            T::Native::min_value(),
-                            idx.len() as IdxSize,
                         )
+                    } else {
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| a.take_max(b))
                     }
                 })
             },
@@ -632,21 +616,11 @@ where
                     } else if idx.len() == 1 {
                         arr.get(first as usize).unwrap_or(T::Native::zero())
                     } else if no_nulls {
-                        take_agg_no_null_primitive_iter_unchecked(
-                            arr,
-                            idx2usize(idx),
-                            |a, b| a + b,
-                            T::Native::zero(),
-                        )
+                        take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| a + b)
+                            .unwrap_or(T::Native::zero())
                     } else {
-                        take_agg_primitive_iter_unchecked::<T::Native, _, _>(
-                            arr,
-                            idx2usize(idx),
-                            |a, b| a + b,
-                            T::Native::zero(),
-                            idx.len() as IdxSize,
-                        )
-                        .unwrap_or(T::Native::zero())
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| a + b)
+                            .unwrap_or(T::Native::zero())
                     }
                 })
             },
@@ -716,12 +690,12 @@ where
                     } else if idx.len() == 1 {
                         arr.get(first as usize).map(|sum| sum.to_f64().unwrap())
                     } else if no_nulls {
-                        take_agg_no_null_primitive_iter_unchecked(
+                        take_agg_no_null_primitive_iter_unchecked::<_, T::Native, _, _>(
                             arr,
                             idx2usize(idx),
                             |a, b| a + b,
-                            T::Native::zero(),
                         )
+                        .unwrap()
                         .to_f64()
                         .map(|sum| sum / idx.len() as f64)
                     } else {
@@ -955,15 +929,13 @@ where
                     } else {
                         match (self.has_validity(), self.chunks.len()) {
                             (false, 1) => {
-                                take_agg_no_null_primitive_iter_unchecked(
+                                take_agg_no_null_primitive_iter_unchecked::<_, f64, _, _>(
                                     self.downcast_iter().next().unwrap(),
                                     idx2usize(idx),
                                     |a, b| a + b,
-                                    0.0f64,
                                 )
-                            }
-                            .to_f64()
-                            .map(|sum| sum / idx.len() as f64),
+                                .map(|sum| sum / idx.len() as f64)
+                            },
                             (_, 1) => {
                                 {
                                     take_agg_primitive_iter_unchecked_count_nulls::<

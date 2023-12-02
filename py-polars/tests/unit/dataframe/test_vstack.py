@@ -69,5 +69,14 @@ def test_vstack_with_null_column() -> None:
 
     assert_frame_equal(result, expected)
 
-    with pytest.raises(pl.ShapeError):
+    with pytest.raises(pl.SchemaError):
         df2.vstack(df1)
+
+
+def test_vstack_with_nested_nulls() -> None:
+    a = pl.DataFrame({"x": [[3.5]]}, schema={"x": pl.List(pl.Float32)})
+    b = pl.DataFrame({"x": [[None]]}, schema={"x": pl.List(pl.Null)})
+
+    out = a.vstack(b)
+    expected = pl.DataFrame({"x": [[3.5], [None]]}, schema={"x": pl.List(pl.Float32)})
+    assert_frame_equal(out, expected)

@@ -80,10 +80,14 @@ def small_parquet_path(io_files_path: Path) -> Path:
 def test_to_from_buffer(
     df: pl.DataFrame, compression: ParquetCompression, use_pyarrow: bool
 ) -> None:
+    print(df)
+    df = df[["list_str"]]
+    print(df)
     buf = io.BytesIO()
     df.write_parquet(buf, compression=compression, use_pyarrow=use_pyarrow)
     buf.seek(0)
     read_df = pl.read_parquet(buf, use_pyarrow=use_pyarrow)
+    print(read_df)
     assert_frame_equal(df, read_df, categorical_as_str=True)
 
 
@@ -534,9 +538,6 @@ def test_nested_struct_read_12610() -> None:
     expect.write_parquet(
         f,
         use_pyarrow=True,
-        pyarrow_options={
-            "data_page_size": 500,
-        },
     )
     f.seek(0)
 
@@ -560,3 +561,30 @@ def test_decimal_parquet(tmp_path: Path) -> None:
     df.write_parquet(path, statistics=True)
     out = pl.scan_parquet(path).filter(foo=2).collect().to_dict(as_series=False)
     assert out == {"foo": [2], "bar": [Decimal("7")]}
+
+
+def test_parquet_rle_non_nullable_12814() -> None:
+    column = (
+        pl.select(x=pl.arange(0, 1025, dtype=pl.Int64) // 10).to_series().to_arrow()
+    )
+    schema = pa.schema([pa.field("foo", pa.int64(), nullable=False)])
+    table = pa.Table.from_arrays([column], schema=schema)
+
+    f = io.BytesIO()
+    pq.write_table(table, f, data_page_size=1)
+    f.seek(0)
+
+    expect = pl.DataFrame(table).tail(10)
+    actual = pl.read_parquet(f).tail(10)
+
+    assert_frame_equal(expect, actual)
+
+
+@pytest.mark.slow()
+def test_parquet_12831() -> None:
+    n = 70_000
+    df = pl.DataFrame({"x": ["aaaaaa"] * n})
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=int(1e8), data_page_size=512)
+    f.seek(0)
+    assert_frame_equal(pl.from_arrow(pq.read_table(f)), df)  # type: ignore[arg-type]

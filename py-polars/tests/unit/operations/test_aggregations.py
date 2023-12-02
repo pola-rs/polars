@@ -160,8 +160,8 @@ def test_mean_null_simd() -> None:
             .select(pl.when(pl.col("a") > 40).then(pl.col("a")))
         )
 
-    s = df["a"]
-    assert s.mean() == s.to_pandas().mean()
+        s = df["a"]
+        assert s.mean() == s.to_pandas().mean()
 
 
 def test_literal_group_agg_chunked_7968() -> None:
@@ -281,13 +281,16 @@ def test_mapped_literal_to_literal_9217() -> None:
 
 
 def test_sum_empty_and_null_set() -> None:
-    series = pl.Series("a", [])
+    series = pl.Series("a", [], dtype=pl.Float32)
     assert series.sum() == 0
 
-    series = pl.Series("a", [None])
+    series = pl.Series("a", [None], dtype=pl.Float32)
     assert series.sum() == 0
 
-    df = pl.DataFrame({"a": [None, None, None], "b": [1, 1, 1]})
+    df = pl.DataFrame(
+        {"a": [None, None, None], "b": [1, 1, 1]},
+        schema={"a": pl.Float32, "b": pl.Int64},
+    )
     assert df.select(pl.sum("a")).item() == 0.0
     assert df.group_by("b").agg(pl.sum("a"))["a"].item() == 0.0
 
@@ -328,3 +331,42 @@ def test_binary_op_agg_context_no_simplify_expr_12423() -> None:
             .agg(y=pl.lit(1) * pl.lit(1))
             .collect(simplify_expression=simplify_expression),
         )
+
+
+def test_nan_inf_aggregation() -> None:
+    df = pl.DataFrame(
+        [
+            ("both nan", np.nan),
+            ("both nan", np.nan),
+            ("nan and 5", np.nan),
+            ("nan and 5", 5),
+            ("nan and null", np.nan),
+            ("nan and null", None),
+            ("both none", None),
+            ("both none", None),
+            ("both inf", np.inf),
+            ("both inf", np.inf),
+            ("inf and null", np.inf),
+            ("inf and null", None),
+        ],
+        schema=["group", "value"],
+    )
+
+    assert_frame_equal(
+        df.group_by("group", maintain_order=True).agg(
+            min=pl.col("value").min(),
+            max=pl.col("value").max(),
+            mean=pl.col("value").mean(),
+        ),
+        pl.DataFrame(
+            [
+                ("both nan", np.nan, np.nan, np.nan),
+                ("nan and 5", 5, 5, np.nan),
+                ("nan and null", np.nan, np.nan, np.nan),
+                ("both none", None, None, None),
+                ("both inf", np.inf, np.inf, np.inf),
+                ("inf and null", np.inf, np.inf, np.inf),
+            ],
+            schema=["group", "min", "max", "mean"],
+        ),
+    )

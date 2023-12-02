@@ -31,7 +31,6 @@ mod primitive;
 mod structure;
 mod utf8;
 
-pub(crate) use boolean::take as take_boolean;
 use polars_error::PolarsResult;
 
 use crate::{match_integer_type, with_match_primitive_type};

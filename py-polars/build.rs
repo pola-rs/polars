@@ -15,10 +15,7 @@ fn main() {
         let out_dir = &env::var("OUT_DIR").unwrap();
         let dst = Path::new(&out_dir).join("built.rs");
 
-        let mut opts = built::Options::default();
-        opts.set_dependencies(true).set_compiler(true).set_env(true);
-
-        built::write_built_file_with_opts(&opts, src, &dst)
+        built::write_built_file_with_opts(Some(src), &dst)
             .expect("Failed to acquire build-time information");
     }
 }

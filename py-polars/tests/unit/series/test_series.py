@@ -17,9 +17,13 @@ from polars.datatypes import (
     Datetime,
     Field,
     Float64,
+    Int8,
+    Int16,
     Int32,
     Int64,
     Time,
+    UInt8,
+    UInt16,
     UInt32,
     UInt64,
     Unknown,
@@ -69,13 +73,13 @@ def test_init_inputs(monkeypatch: Any) -> None:
 
     assert pl.Series([1, 2]).dtype == pl.Int64
     assert pl.Series(values=[1, 2]).dtype == pl.Int64
-    assert pl.Series("a").dtype == pl.Float32  # f32 type used in case of no data
-    assert pl.Series().dtype == pl.Float32
-    assert pl.Series([]).dtype == pl.Float32
+    assert pl.Series("a").dtype == pl.Null  # Null dtype used in case of no data
+    assert pl.Series().dtype == pl.Null
+    assert pl.Series([]).dtype == pl.Null
     assert pl.Series(dtype_if_empty=pl.Utf8).dtype == pl.Utf8
     assert pl.Series([], dtype_if_empty=pl.UInt16).dtype == pl.UInt16
     assert (
-        pl.Series([None, None, None]).dtype == pl.Float32
+        pl.Series([None, None, None]).dtype == pl.Null
     )  # f32 type used for list with only None
     assert pl.Series([None, None, None], dtype_if_empty=pl.Int8).dtype == pl.Int8
     # note: "== []" will be cast to empty Series with Utf8 dtype.
@@ -435,6 +439,15 @@ def test_power() -> None:
     a = pl.Series([1, 2], dtype=Int64)
     b = pl.Series([None, 2.0], dtype=Float64)
     c = pl.Series([date(2020, 2, 28), date(2020, 3, 1)], dtype=Date)
+    d = pl.Series([1, 2], dtype=UInt8)
+    e = pl.Series([1, 2], dtype=Int8)
+    f = pl.Series([1, 2], dtype=UInt16)
+    g = pl.Series([1, 2], dtype=Int16)
+    h = pl.Series([1, 2], dtype=UInt32)
+    i = pl.Series([1, 2], dtype=Int32)
+    j = pl.Series([1, 2], dtype=UInt64)
+    k = pl.Series([1, 2], dtype=Int64)
+    m = pl.Series([2**33, 2**33], dtype=UInt64)
 
     # pow
     assert_series_equal(a**2, pl.Series([1.0, 4.0], dtype=Float64))
@@ -443,10 +456,24 @@ def test_power() -> None:
     assert_series_equal(b**b, pl.Series([None, 4.0], dtype=Float64))
     assert_series_equal(a**b, pl.Series([None, 4.0], dtype=Float64))
     assert_series_equal(a**None, pl.Series([None] * len(a), dtype=Float64))
+    assert_series_equal(d**d, pl.Series([1, 4], dtype=UInt8))
+    assert_series_equal(e**d, pl.Series([1, 4], dtype=Int8))
+    assert_series_equal(f**d, pl.Series([1, 4], dtype=UInt16))
+    assert_series_equal(g**d, pl.Series([1, 4], dtype=Int16))
+    assert_series_equal(h**d, pl.Series([1, 4], dtype=UInt32))
+    assert_series_equal(i**d, pl.Series([1, 4], dtype=Int32))
+    assert_series_equal(j**d, pl.Series([1, 4], dtype=UInt64))
+    assert_series_equal(k**d, pl.Series([1, 4], dtype=Int64))
     with pytest.raises(TypeError):
         c**2
     with pytest.raises(pl.ColumnNotFoundError):
         a ** "hi"  # type: ignore[operator]
+
+    # Raising to UInt64: raises if can't be downcast safely to UInt32...
+    with pytest.raises(pl.ComputeError, match="conversion from `u64` to `u32` failed"):
+        a**m
+    # ... but succeeds otherwise.
+    assert_series_equal(a**j, pl.Series([1, 4], dtype=Int64))
 
     # rpow
     assert_series_equal(2.0**a, pl.Series("literal", [2.0, 4.0], dtype=Float64))
@@ -539,7 +566,7 @@ def test_series_dtype_is() -> None:
     with pytest.deprecated_call():
         assert s.is_boolean() is False
 
-    s = pl.Series("s", [], dtype=pl.Decimal(precision=20, scale=15))
+    s = pl.Series("s", [], dtype=pl.Decimal(20, 15))
     assert not s.dtype.is_float()
     assert s.dtype.is_numeric()
     assert s.is_empty()
@@ -1136,11 +1163,11 @@ def test_empty() -> None:
     assert a.is_empty()
 
     a = pl.Series()
-    assert a.dtype == pl.Float32
+    assert a.dtype == pl.Null
     assert a.is_empty()
 
     a = pl.Series("name", [])
-    assert a.dtype == pl.Float32
+    assert a.dtype == pl.Null
     assert a.is_empty()
 
     a = pl.Series(values=(), dtype=pl.Int8)
@@ -1171,7 +1198,7 @@ def test_describe() -> None:
     date_s = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
     empty_s = pl.Series(np.empty(0))
 
-    assert dict(num_s.describe().rows()) == {  # type: ignore[arg-type]
+    assert dict(num_s.describe().rows()) == {
         "count": 3.0,
         "mean": 2.0,
         "null_count": 0.0,
@@ -1182,7 +1209,7 @@ def test_describe() -> None:
         "75%": 3.0,
         "max": 3.0,
     }
-    assert dict(float_s.describe().rows()) == {  # type: ignore[arg-type]
+    assert dict(float_s.describe().rows()) == {
         "count": 3.0,
         "mean": 4.933333333333334,
         "null_count": 0.0,
@@ -1193,17 +1220,17 @@ def test_describe() -> None:
         "75%": 8.9,
         "max": 8.9,
     }
-    assert dict(str_s.describe().rows()) == {  # type: ignore[arg-type]
+    assert dict(str_s.describe().rows()) == {
         "count": 3,
         "null_count": 0,
         "unique": 3,
     }
-    assert dict(bool_s.describe().rows()) == {  # type: ignore[arg-type]
+    assert dict(bool_s.describe().rows()) == {
         "count": 5,
         "null_count": 1,
         "sum": 3,
     }
-    assert dict(date_s.describe().rows()) == {  # type: ignore[arg-type]
+    assert dict(date_s.describe().rows()) == {
         "count": "3",
         "min": "2021-01-01",
         "50%": "2021-01-02",
@@ -2371,10 +2398,10 @@ def test_product() -> None:
     a = pl.Series("a", [None, 2, 3])
     out = a.product()
     assert out == 6
-    a = pl.Series("a", [])
+    a = pl.Series("a", [], dtype=pl.Float32)
     out = a.product()
     assert out == 1
-    a = pl.Series("a", [None, None])
+    a = pl.Series("a", [None, None], dtype=pl.Float32)
     out = a.product()
     assert out == 1
     a = pl.Series("a", [3.0, None, float("nan")])

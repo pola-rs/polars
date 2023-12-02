@@ -10,11 +10,13 @@ pub mod functions;
 pub mod hashing;
 pub mod idx_vec;
 pub mod mem;
+pub mod min_max;
 pub mod slice;
 pub mod sort;
 pub mod sync;
 #[cfg(feature = "sysinfo")]
 pub mod sys;
+pub mod total_ord;
 pub mod unwrap;
 
 pub use functions::*;
@@ -35,6 +37,7 @@ pub mod wasm;
 pub mod float;
 pub mod index;
 pub mod io;
+pub mod nulls;
 pub mod ord;
 mod doubly_linked_list;
 

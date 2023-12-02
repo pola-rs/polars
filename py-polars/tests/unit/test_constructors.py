@@ -98,7 +98,7 @@ def test_init_dict() -> None:
     # Empty dictionary/values
     df = pl.DataFrame({"a": [], "b": []})
     assert df.shape == (0, 2)
-    assert df.schema == {"a": pl.Float32, "b": pl.Float32}
+    assert df.schema == {"a": pl.Null, "b": pl.Null}
 
     for df in (
         pl.DataFrame({}, schema={"a": pl.Date, "b": pl.Utf8}),
@@ -544,7 +544,8 @@ def test_init_ndarray() -> None:
 
     # List column from 2D array with single-column schema
     df = pl.DataFrame(np.arange(4).reshape(-1, 1).astype(np.int64), schema=["a"])
-    assert_frame_equal(df, pl.DataFrame({"a": [[0], [1], [2], [3]]}))
+    assert_frame_equal(df, pl.DataFrame({"a": [0, 1, 2, 3]}))
+    assert np.array_equal(df.to_numpy(), np.arange(4).reshape(-1, 1).astype(np.int64))
 
     df = pl.DataFrame(np.arange(4).reshape(-1, 2).astype(np.int64), schema=["a"])
     assert_frame_equal(df, pl.DataFrame({"a": [[0, 1], [2, 3]]}))
@@ -1087,9 +1088,6 @@ def test_from_dicts_missing_columns() -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.xfail(
-    reason="Fails because of bug. See: https://github.com/pola-rs/polars/issues/12120"
-)
 def test_from_dicts_schema_columns_do_not_match() -> None:
     data = [{"a": 1, "b": 2}]
     result = pl.from_dicts(data, schema=["x"])

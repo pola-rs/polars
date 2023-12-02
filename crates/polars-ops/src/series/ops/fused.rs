@@ -1,5 +1,5 @@
 use arrow::array::PrimitiveArray;
-use arrow::legacy::utils::combine_validities_and;
+use arrow::compute::utils::combine_validities_and;
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_ternary;
 use polars_core::with_match_physical_numeric_polars_type;

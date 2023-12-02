@@ -3434,11 +3434,6 @@ fn ensure_can_extend(left: &Series, right: &Series) -> PolarsResult<()> {
         ShapeMismatch: "unable to vstack, column names don't match: {:?} and {:?}",
         left.name(), right.name(),
     );
-    polars_ensure!(
-        left.dtype() == right.dtype() || *right.dtype() == DataType::Null,
-        ShapeMismatch: "unable to vstack, dtypes for column {:?} don't match: `{}` and `{}`",
-        left.name(), left.dtype(), right.dtype(),
-    );
     Ok(())
 }
 

@@ -1,5 +1,5 @@
 use arrow::array::{Array, PrimitiveArray};
-use arrow::legacy::utils::combine_validities_and;
+use arrow::compute::utils::combine_validities_and;
 use num::NumCast;
 use polars_core::datatypes::PolarsNumericType;
 use polars_core::export::num;

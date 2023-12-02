@@ -766,3 +766,33 @@ def test_is_not_deprecated() -> None:
 
     expected = pl.DataFrame({"a": [False, True, False]})
     assert_frame_equal(result, expected)
+
+
+def test_repr_short_expression() -> None:
+    expr = pl.functions.all().len().name.prefix("length:")
+    # we cut off the last ten characters because that includes the
+    # memory location which will vary between runs
+    result = repr(expr).split("0x")[0]
+
+    expected = "<Expr ['.rename_alias(*.count())'] at "
+    assert result == expected
+
+
+def test_repr_long_expression() -> None:
+    expr = pl.functions.col(pl.Utf8).str.count_matches("")
+
+    # we cut off the last ten characters because that includes the
+    # memory location which will vary between runs
+    result = repr(expr).split("0x")[0]
+
+    # note the … denoting that there was truncated text
+    expected = "<Expr ['dtype_columns([Utf8]).str.coun…'] at "
+    assert result == expected
+    assert repr(expr).endswith(">")
+
+
+def test_repr_gather() -> None:
+    result = repr(pl.col("a").gather(0))
+    assert 'col("a").gather(0)' in result
+    result = repr(pl.col("a").get(0))
+    assert 'col("a").get(0)' in result

@@ -367,7 +367,7 @@ class LazyFrame:
             sources = source
             source = None  # type: ignore[assignment]
         else:
-            sources = []  # type: ignore[assignment]
+            sources = []
 
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_csv(
@@ -432,7 +432,7 @@ class LazyFrame:
             can_use_fsspec = False
         else:
             can_use_fsspec = True
-            sources = []  # type: ignore[assignment]
+            sources = []
 
         # try fsspec scanner
         if (
@@ -3739,6 +3739,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         right_on: str | Expr | Sequence[str | Expr] | None = None,
         suffix: str = "_right",
         validate: JoinValidation = "m:m",
+        join_nulls: bool = False,
         allow_parallel: bool = True,
         force_parallel: bool = False,
     ) -> Self:
@@ -3779,6 +3780,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
                 - This is currently not supported the streaming engine.
                 - This is only supported when joined by single columns.
+        join_nulls
+            Join on null values. By default null values will never produce matches.
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
             DataFrames up to the join in parallel.
@@ -3872,6 +3875,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     [],
                     allow_parallel,
                     force_parallel,
+                    join_nulls,
                     how,
                     suffix,
                     validate,
@@ -3895,6 +3899,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 pyexprs_right,
                 allow_parallel,
                 force_parallel,
+                join_nulls,
                 how,
                 suffix,
                 validate,
@@ -5358,7 +5363,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ┌──────┬──────┬──────┐
         │ a    ┆ b    ┆ c    │
         │ ---  ┆ ---  ┆ ---  │
-        │ f32  ┆ i64  ┆ i64  │
+        │ null ┆ i64  ┆ i64  │
         ╞══════╪══════╪══════╡
         │ null ┆ 1    ┆ 1    │
         │ null ┆ 2    ┆ null │
@@ -5373,7 +5378,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ┌──────┬─────┬──────┐
         │ a    ┆ b   ┆ c    │
         │ ---  ┆ --- ┆ ---  │
-        │ f32  ┆ i64 ┆ i64  │
+        │ null ┆ i64 ┆ i64  │
         ╞══════╪═════╪══════╡
         │ null ┆ 1   ┆ 1    │
         │ null ┆ 2   ┆ null │

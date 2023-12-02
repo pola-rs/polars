@@ -251,11 +251,13 @@ impl Series {
     ///
     /// See [`ChunkedArray::append`] and [`ChunkedArray::extend`].
     pub fn append(&mut self, other: &Series) -> PolarsResult<&mut Self> {
-        if *other.dtype() == DataType::Null && *self.dtype() != DataType::Null {
-            let other_null = Series::full_null(other.name(), other.len(), self.dtype());
-            self._get_inner_mut().append(&other_null)?
+        let must_cast = can_extend_dtype(self.dtype(), other.dtype())?;
+
+        if must_cast {
+            let other = other.cast(self.dtype())?;
+            self._get_inner_mut().append(&other)?;
         } else {
-            self._get_inner_mut().append(other)?
+            self._get_inner_mut().append(other)?;
         }
         Ok(self)
     }
@@ -269,11 +271,13 @@ impl Series {
     ///
     /// See [`ChunkedArray::extend`] and [`ChunkedArray::append`].
     pub fn extend(&mut self, other: &Series) -> PolarsResult<&mut Self> {
-        if *other.dtype() == DataType::Null && *self.dtype() != DataType::Null {
-            let other_null = Series::full_null(other.name(), other.len(), self.dtype());
-            self._get_inner_mut().extend(&other_null)?
+        let must_cast = can_extend_dtype(self.dtype(), other.dtype())?;
+
+        if must_cast {
+            let other = other.cast(self.dtype())?;
+            self._get_inner_mut().extend(&other)?;
         } else {
-            self._get_inner_mut().extend(other)?
+            self._get_inner_mut().extend(other)?;
         }
         Ok(self)
     }
@@ -865,7 +869,9 @@ impl Series {
         match self.dtype() {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(Some(rv)) => match &**rv {
-                RevMapping::Local(arr, _) => size += estimated_bytes_size(arr),
+                RevMapping::Local(arr, _) | RevMapping::Enum(arr, _) => {
+                    size += estimated_bytes_size(arr)
+                },
                 RevMapping::Global(map, arr, _) => {
                     size +=
                         map.capacity() * std::mem::size_of::<u32>() * 2 + estimated_bytes_size(arr);

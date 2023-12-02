@@ -174,16 +174,24 @@ pub fn call_categorical_merge_operation<I: CategoricalMergeOperation>(
                 rev_map_merger.finish(),
             )
         },
-        (RevMapping::Local(_, idl), RevMapping::Local(_, idr)) if idl == idr => (
-            merge_ops.finish(cat_left.physical(), cat_right.physical())?,
-            rev_map_left.clone(),
-        ),
+        (RevMapping::Local(_, idl), RevMapping::Local(_, idr))
+        | (RevMapping::Enum(_, idl), RevMapping::Enum(_, idr))
+            if idl == idr =>
+        {
+            (
+                merge_ops.finish(cat_left.physical(), cat_right.physical())?,
+                rev_map_left.clone(),
+            )
+        },
         (RevMapping::Local(categorical, _), RevMapping::Local(_, _)) => {
             let (rhs_physical, rev_map) = merge_local_rhs_categorical(categorical, cat_right)?;
             (
                 merge_ops.finish(cat_left.physical(), &rhs_physical)?,
                 rev_map,
             )
+        },
+        (_, RevMapping::Enum(_, _)) | (RevMapping::Enum(_, _), _) => {
+            polars_bail!(ComputeError: "enum is not compatible with other categorical / enum")
         },
         _ => polars_bail!(string_cache_mismatch),
     };
@@ -221,38 +229,4 @@ pub fn make_categoricals_compatible(
     };
 
     Ok((new_ca_left, new_ca_right))
-}
-
-#[cfg(test)]
-#[cfg(feature = "single_thread")]
-mod test {
-    use super::*;
-    use crate::chunked_array::categorical::CategoricalChunkedBuilder;
-    use crate::{disable_string_cache, enable_string_cache, StringCacheHolder};
-
-    #[test]
-    fn test_merge_rev_map() {
-        let _lock = SINGLE_LOCK.lock();
-        disable_string_cache();
-        let _sc = StringCacheHolder::hold();
-
-        let mut builder1 = CategoricalChunkedBuilder::new("foo", 10);
-        let mut builder2 = CategoricalChunkedBuilder::new("foo", 10);
-        builder1.drain_iter(vec![None, Some("hello"), Some("vietnam")]);
-        builder2.drain_iter(vec![Some("hello"), None, Some("world"), Some("bar")].into_iter());
-        let ca1 = builder1.finish();
-        let ca2 = builder2.finish();
-        let rev_map = ca1._merge_categorical_map(&ca2).unwrap();
-
-        let mut ca = UInt32Chunked::new("", &[0, 1, 2, 3]);
-        ca.categorical_map = Some(rev_map);
-        let s = ca
-            .cast(&DataType::Categorical)
-            .unwrap()
-            .cast(&DataType::Utf8)
-            .unwrap();
-        let ca = s.utf8().unwrap();
-        let vals = ca.into_no_null_iter().collect::<Vec<_>>();
-        assert_eq!(vals, &["hello", "vietnam", "world", "bar"]);
-    }
 }

@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use arrow::array::{ArrayRef, BinaryArray};
+use arrow::compute::utils::combine_validities_and;
 use polars_core::datatypes::ChunkId;
 use polars_core::error::PolarsResult;
 use polars_core::export::ahash::RandomState;
@@ -11,6 +12,7 @@ use polars_ops::frame::join::_finish_join;
 use polars_ops::prelude::JoinType;
 use polars_row::RowsEncoded;
 use polars_utils::hashing::hash_to_partition;
+use polars_utils::nulls::IsNull;
 use polars_utils::slice::GetSaferUnchecked;
 use smartstring::alias::String as SmartString;
 
@@ -60,6 +62,23 @@ pub struct GenericJoinProbe {
     // cached output names
     output_names: Option<Vec<SmartString>>,
     how: JoinType,
+    join_nulls: bool,
+}
+
+trait ToRow {
+    fn get_row(&self) -> &[u8];
+}
+
+impl ToRow for &[u8] {
+    fn get_row(&self) -> &[u8] {
+        self
+    }
+}
+
+impl ToRow for Option<&[u8]> {
+    fn get_row(&self) -> &[u8] {
+        self.unwrap()
+    }
 }
 
 impl GenericJoinProbe {
@@ -77,6 +96,7 @@ impl GenericJoinProbe {
         hashes: Vec<u64>,
         context: &PExecutionContext,
         how: JoinType,
+        join_nulls: bool,
     ) -> Self {
         if swapped_or_left {
             let tmp = DataChunk {
@@ -114,6 +134,7 @@ impl GenericJoinProbe {
             join_column_idx: None,
             output_names: None,
             how,
+            join_nulls,
         }
     }
     fn set_join_series(
@@ -151,7 +172,17 @@ impl GenericJoinProbe {
         polars_row::convert_columns_amortized_no_order(&self.join_columns, &mut self.current_rows);
 
         // safety: we keep rows-encode alive
-        unsafe { Ok(self.current_rows.borrow_array()) }
+        let array = unsafe { self.current_rows.borrow_array() };
+        Ok(if self.join_nulls {
+            array
+        } else {
+            let validity = self
+                .join_columns
+                .iter()
+                .map(|arr| arr.validity().cloned())
+                .fold(None, |l, r| combine_validities_and(l.as_ref(), r.as_ref()));
+            array.with_validity_typed(validity)
+        })
     }
 
     fn finish_join(
@@ -184,34 +215,32 @@ impl GenericJoinProbe {
         })
     }
 
-    fn execute_left(
-        &mut self,
-        context: &PExecutionContext,
-        chunk: &DataChunk,
-    ) -> PolarsResult<OperatorResult> {
-        // A left join holds the right table as build table
-        // and streams the left table through. This allows us to maintain
-        // the left table order
-
-        self.join_tuples_a_left_join.clear();
-        self.join_tuples_b.clear();
-        let mut hashes = std::mem::take(&mut self.hashes);
-        let rows = self.set_join_series(context, chunk)?;
-        hash_rows(&rows, &mut hashes, &self.hb);
-        self.hashes = hashes;
-
-        for (i, (h, row)) in self.hashes.iter().zip(rows.values_iter()).enumerate() {
+    fn match_left<'b, I, T>(&mut self, iter: I)
+    where
+        I: Iterator<Item = (usize, (&'b u64, T))> + 'b,
+        T: IsNull
+            // Temporary trait to get concrete &[u8]
+            // Input is either &[u8] or Option<&[u8]>
+            + ToRow,
+    {
+        for (i, (h, row)) in iter {
             let df_idx_left = i as IdxSize;
+
             // get the hashtable belonging by this hash partition
             let partition = hash_to_partition(*h, self.hash_tables.len());
             let current_table = unsafe { self.hash_tables.get_unchecked_release(partition) };
 
-            let entry = current_table
-                .raw_entry()
-                .from_hash(*h, |key| {
-                    compare_fn(key, *h, &self.materialized_join_cols, row)
-                })
-                .map(|key_val| key_val.1);
+            let entry = if row.is_null() {
+                None
+            } else {
+                let row = row.get_row();
+                current_table
+                    .raw_entry()
+                    .from_hash(*h, |key| {
+                        compare_fn(key, *h, &self.materialized_join_cols, row)
+                    })
+                    .map(|key_val| key_val.1)
+            };
 
             match entry {
                 Some(indexes_right) => {
@@ -226,6 +255,31 @@ impl GenericJoinProbe {
                 },
             }
         }
+    }
+
+    fn execute_left(
+        &mut self,
+        context: &PExecutionContext,
+        chunk: &DataChunk,
+    ) -> PolarsResult<OperatorResult> {
+        // A left join holds the right table as build table
+        // and streams the left table through. This allows us to maintain
+        // the left table order
+
+        self.join_tuples_a_left_join.clear();
+        self.join_tuples_b.clear();
+        let mut hashes = std::mem::take(&mut self.hashes);
+        let rows = self.set_join_series(context, chunk)?;
+        hash_rows(&rows, &mut hashes, &self.hb);
+
+        if self.join_nulls {
+            let iter = hashes.iter().zip(rows.values_iter()).enumerate();
+            self.match_left(iter);
+        } else {
+            let iter = hashes.iter().zip(rows.iter()).enumerate();
+            self.match_left(iter);
+        }
+        self.hashes = hashes;
         let right_df = self.df_a.as_ref();
 
         // join tuples of left joins are always sorted
@@ -247,19 +301,11 @@ impl GenericJoinProbe {
         Ok(OperatorResult::Finished(chunk.with_data(out)))
     }
 
-    fn execute_inner(
-        &mut self,
-        context: &PExecutionContext,
-        chunk: &DataChunk,
-    ) -> PolarsResult<OperatorResult> {
-        self.join_tuples_a.clear();
-        self.join_tuples_b.clear();
-        let mut hashes = std::mem::take(&mut self.hashes);
-        let rows = self.set_join_series(context, chunk)?;
-        hash_rows(&rows, &mut hashes, &self.hb);
-        self.hashes = hashes;
-
-        for (i, (h, row)) in self.hashes.iter().zip(rows.values_iter()).enumerate() {
+    fn match_inner<'b, I>(&mut self, iter: I)
+    where
+        I: Iterator<Item = (usize, (&'b u64, &'b [u8]))> + 'b,
+    {
+        for (i, (h, row)) in iter {
             let df_idx_right = i as IdxSize;
             // get the hashtable belonging by this hash partition
             let partition = hash_to_partition(*h, self.hash_tables.len());
@@ -278,6 +324,31 @@ impl GenericJoinProbe {
                     .extend(std::iter::repeat(df_idx_right).take(indexes_left.len()));
             }
         }
+    }
+
+    fn execute_inner(
+        &mut self,
+        context: &PExecutionContext,
+        chunk: &DataChunk,
+    ) -> PolarsResult<OperatorResult> {
+        self.join_tuples_a.clear();
+        self.join_tuples_b.clear();
+        let mut hashes = std::mem::take(&mut self.hashes);
+        let rows = self.set_join_series(context, chunk)?;
+        hash_rows(&rows, &mut hashes, &self.hb);
+
+        if self.join_nulls {
+            let iter = hashes.iter().zip(rows.values_iter()).enumerate();
+            self.match_inner(iter);
+        } else {
+            let iter = hashes
+                .iter()
+                .zip(rows.iter())
+                .enumerate()
+                .filter_map(|(i, (h, row))| row.map(|row| (i, (h, row))));
+            self.match_inner(iter);
+        }
+        self.hashes = hashes;
 
         let left_df = unsafe {
             self.df_a

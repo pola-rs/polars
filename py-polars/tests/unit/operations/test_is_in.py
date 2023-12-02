@@ -165,6 +165,14 @@ def test_is_in_invalid_shape() -> None:
         pl.Series("a", [1, 2, 3]).is_in([[]])
 
 
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+def test_is_in_float(dtype: pl.PolarsDataType) -> None:
+    s = pl.Series([float("nan"), 0.0], dtype=dtype)
+    result = s.is_in([-0.0, -float("nan")])
+    expected = pl.Series([True, True], dtype=pl.Boolean)
+    assert_series_equal(result, expected)
+
+
 @pytest.mark.parametrize(
     ("df", "matches", "expected_error"),
     [
@@ -207,3 +215,10 @@ def test_is_in_expr_list_series(
     else:
         with pytest.raises(pl.InvalidOperationError, match=expected_error):
             df.select(expr_is_in)
+
+
+def test_is_in_null_series() -> None:
+    df = pl.DataFrame({"a": ["a", "b", None]})
+    result = df.select(pl.col("a").is_in([None]))
+    expected = pl.DataFrame({"a": [False, False, None]})
+    assert_frame_equal(result, expected)
