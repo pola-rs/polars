@@ -1442,6 +1442,7 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
+        >>> from datetime import datetime
         >>> df = pl.DataFrame(
         ...     {
         ...         "date_col": [datetime(2020, 10, 10)] * 3,
