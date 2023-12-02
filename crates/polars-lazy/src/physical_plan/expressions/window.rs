@@ -563,13 +563,16 @@ impl PhysicalExpr for WindowExpr {
                                 // group key from right column
                                 let right = &keys[0];
                                 group_by_columns[0]
-                                    .hash_join_left(right, JoinValidation::ManyToMany)
+                                    .hash_join_left(right, JoinValidation::ManyToMany, true)
                                     .unwrap()
                                     .1
                             } else {
                                 let df_right = DataFrame::new_no_checks(keys);
                                 let df_left = DataFrame::new_no_checks(group_by_columns);
-                                private_left_join_multiple_keys(&df_left, &df_right, None, None).1
+                                private_left_join_multiple_keys(
+                                    &df_left, &df_right, None, None, false,
+                                )
+                                .1
                             }
                         };
 

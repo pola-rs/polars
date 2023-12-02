@@ -1,7 +1,5 @@
-use std::ops::{BitAnd, BitOr};
-
 use crate::array::PrimitiveArray;
-use crate::bitmap::{Bitmap, MutableBitmap};
+use crate::bitmap::MutableBitmap;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::bit_util::unset_bit_raw;
 use crate::legacy::trusted_len::{FromIteratorReversed, TrustedLen, TrustedLenPush};
@@ -51,20 +49,6 @@ where
     }
 }
 
-pub fn combine_validities_and(opt_l: Option<&Bitmap>, opt_r: Option<&Bitmap>) -> Option<Bitmap> {
-    match (opt_l, opt_r) {
-        (Some(l), Some(r)) => Some(l.bitand(r)),
-        (None, Some(r)) => Some(r.clone()),
-        (Some(l), None) => Some(l.clone()),
-        (None, None) => None,
-    }
-}
-pub fn combine_validities_or(opt_l: Option<&Bitmap>, opt_r: Option<&Bitmap>) -> Option<Bitmap> {
-    match (opt_l, opt_r) {
-        (Some(l), Some(r)) => Some(l.bitor(r)),
-        _ => None,
-    }
-}
 unsafe impl<I, J> crate::trusted_len::TrustedLen for TrustMyLength<I, J> where I: Iterator<Item = J> {}
 
 pub trait CustomIterTools: Iterator {
