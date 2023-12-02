@@ -30,7 +30,10 @@ impl FunctionExpr {
             #[cfg(feature = "abs")]
             Abs => mapper.with_same_dtype(),
             NullCount => mapper.with_dtype(IDX_DTYPE),
-            Pow(_) => mapper.map_to_float_dtype(),
+            Pow(pow_function) => match pow_function {
+                PowFunction::Generic => mapper.pow_dtype(),
+                _ => mapper.map_to_float_dtype(),
+            },
             Coalesce => mapper.map_to_supertype(),
             #[cfg(feature = "row_hash")]
             Hash(..) => mapper.with_dtype(DataType::UInt64),
@@ -406,6 +409,18 @@ impl<'a> FieldsMapper<'a> {
             first.coerce(dt);
         }
         Ok(first)
+    }
+
+    pub(super) fn pow_dtype(&self) -> PolarsResult<Field> {
+        // base, exponent
+        match (self.fields[0].data_type(), self.fields[1].data_type()) {
+            (
+                base_dtype,
+                DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64,
+            ) => Ok(Field::new(self.fields[0].name(), base_dtype.clone())),
+            (DataType::Float32, _) => Ok(Field::new(self.fields[0].name(), DataType::Float32)),
+            (_, _) => Ok(Field::new(self.fields[0].name(), DataType::Float64)),
+        }
     }
 
     #[cfg(feature = "extract_jsonpath")]
