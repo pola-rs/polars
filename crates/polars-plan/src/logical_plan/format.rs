@@ -286,7 +286,7 @@ impl Debug for Expr {
                 if *returns_scalar {
                     write!(f, "{expr:?}.get({idx:?})")
                 } else {
-                    write!(f, "{expr:?}.take({idx:?})")
+                    write!(f, "{expr:?}.gather({idx:?})")
                 }
             },
             SubPlan(lf, _) => {
