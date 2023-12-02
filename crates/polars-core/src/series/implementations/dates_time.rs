@@ -362,10 +362,9 @@ macro_rules! impl_dyn_series {
             }
             fn median_as_series(&self) -> Series {
                 let us = US_IN_DAY as f64;
-                Series::new(
-                    self.name(),
-                    &[self.median().map(|v| (v * us) as i64)],
-                )
+                Series::new(self.name(), &[self.median().map(|v| (v * us) as i64)])
+                    .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
+                    .unwrap()
             }
             fn var_as_series(&self, _ddof: u8) -> Series {
                 Int32Chunked::full_null(self.name(), 1)

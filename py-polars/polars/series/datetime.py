@@ -2,14 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars.datatypes import Date, Datetime, Duration
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
 from polars.utils.convert import (
     SECONDS_PER_DAY,
     US_PER_SECOND,
-    _to_python_datetime,
-    _to_python_timedelta,
 )
 from polars.utils.deprecation import deprecate_renamed_function
 
@@ -35,92 +32,6 @@ class DateTimeNameSpace:
     def __getitem__(self, item: int) -> dt.date | dt.datetime | dt.timedelta:
         s = wrap_s(self._s)
         return s[item]
-
-    def min(self) -> dt.date | dt.datetime | dt.timedelta | None:
-        """
-        Return minimum as Python datetime.
-
-        Examples
-        --------
-        >>> from datetime import date
-        >>> s = pl.Series([date(2001, 1, 1), date(2001, 1, 2), date(2001, 1, 3)])
-        >>> s.dt.min()
-        datetime.date(2001, 1, 1)
-
-        """
-        return wrap_s(self._s).min()  # type: ignore[return-value]
-
-    def max(self) -> dt.date | dt.datetime | dt.timedelta | None:
-        """
-        Return maximum as Python datetime.
-
-        Examples
-        --------
-        >>> from datetime import date
-        >>> s = pl.Series([date(2001, 1, 1), date(2001, 1, 2), date(2001, 1, 3)])
-        >>> s.dt.max()
-        datetime.date(2001, 1, 3)
-
-        """
-        return wrap_s(self._s).max()  # type: ignore[return-value]
-
-    def median(self) -> dt.datetime | dt.timedelta | None:
-        """
-        Return median as python DateTime.
-
-        Examples
-        --------
-        >>> from datetime import datetime
-        >>> date = pl.datetime_range(
-        ...     datetime(2001, 1, 1), datetime(2001, 1, 3), "1d", eager=True
-        ... )
-        >>> date
-        shape: (3,)
-        Series: 'datetime' [datetime[μs]]
-        [
-                2001-01-01 00:00:00
-                2001-01-02 00:00:00
-                2001-01-03 00:00:00
-        ]
-        >>> date.dt.median()
-        datetime.datetime(2001, 1, 2, 0, 0)
-
-        """
-        s = wrap_s(self._s)
-        out = s._s.median()
-        if out is not None:
-            if s.dtype == Date:
-                return _to_python_datetime(int(out * US_IN_DAY), "us")
-            elif s.dtype == Datetime:
-                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
-            elif s.dtype == Duration:
-                return _to_python_timedelta(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
-        return None
-
-    def mean(self) -> dt.datetime | dt.timedelta | None:
-        """
-        Return mean as python DateTime.
-
-        Examples
-        --------
-        >>> from datetime import datetime
-        >>> s = pl.Series(
-        ...     [datetime(2001, 1, 1), datetime(2001, 1, 2), datetime(2001, 1, 3)]
-        ... )
-        >>> s.dt.mean()
-        datetime.datetime(2001, 1, 2, 0, 0)
-
-        """
-        s = wrap_s(self._s)
-        out = s._s.mean()
-        if out is not None:
-            if s.dtype == Date:
-                return _to_python_datetime(int(out * US_IN_DAY), "us")
-            elif s.dtype == Datetime:
-                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
-            elif s.dtype == Duration:
-                return _to_python_timedelta(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
-        return None
 
     def to_string(self, format: str) -> Series:
         """

@@ -1634,9 +1634,9 @@ class Series:
             stats = {
                 "count": str(self.len()),
                 "null_count": str(self.null_count()),
-                "min": str(self.dt.min()),
-                "50%": str(self.dt.median()),
-                "max": str(self.dt.max()),
+                "min": str(self.min()),
+                "50%": str(self.median()),
+                "max": str(self.max()),
             }
         else:
             raise TypeError("this type is not supported")
@@ -1661,7 +1661,7 @@ class Series:
         """
         return self._s.sum()
 
-    def mean(self) -> int | float | datetime | timedelta | None:
+    def mean(self) -> PythonLiteral | None:
         """
         Reduce this Series to the mean value.
 
@@ -1672,10 +1672,7 @@ class Series:
         2.0
 
         """
-        if self.dtype.is_temporal():
-            return self.dt.mean()
-        else:
-            return self._s.mean()
+        return self._s.mean()
 
     def product(self) -> int | float:
         """Reduce this Series to the product value."""
@@ -1802,7 +1799,7 @@ class Series:
             return None
         return self.to_frame().select(F.col(self.name).var(ddof)).to_series().item()
 
-    def median(self) -> float | datetime | timedelta | None:
+    def median(self) -> PythonLiteral | None:
         """
         Get the median of this Series.
 
@@ -1813,10 +1810,7 @@ class Series:
         2.0
 
         """
-        if self.dtype.is_temporal():
-            return self.dt.median()
-        else:
-            return self._s.median()
+        return self._s.median()
 
     def quantile(
         self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"

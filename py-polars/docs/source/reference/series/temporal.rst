@@ -24,8 +24,6 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.is_leap_year
     Series.dt.iso_year
     Series.dt.max
-    Series.dt.mean
-    Series.dt.median
     Series.dt.microsecond
     Series.dt.microseconds
     Series.dt.millisecond
