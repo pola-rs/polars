@@ -33,6 +33,74 @@ class DateTimeNameSpace:
         s = wrap_s(self._s)
         return s[item]
 
+    def min(self) -> dt.date | dt.datetime | dt.timedelta | None:
+        """
+        Return minimum as Python datetime.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> s = pl.Series([date(2001, 1, 1), date(2001, 1, 2), date(2001, 1, 3)])
+        >>> s.dt.min()
+        datetime.date(2001, 1, 1)
+
+        """
+        return self._s.min()
+
+    def max(self) -> dt.date | dt.datetime | dt.timedelta | None:
+        """
+        Return maximum as Python datetime.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> s = pl.Series([date(2001, 1, 1), date(2001, 1, 2), date(2001, 1, 3)])
+        >>> s.dt.max()
+        datetime.date(2001, 1, 3)
+
+        """
+        return self._s.max()
+
+    def median(self) -> dt.datetime | dt.timedelta | None:
+        """
+        Return median as python DateTime.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> date = pl.datetime_range(
+        ...     datetime(2001, 1, 1), datetime(2001, 1, 3), "1d", eager=True
+        ... )
+        >>> date
+        shape: (3,)
+        Series: 'datetime' [datetime[μs]]
+        [
+                2001-01-01 00:00:00
+                2001-01-02 00:00:00
+                2001-01-03 00:00:00
+        ]
+        >>> date.dt.median()
+        datetime.datetime(2001, 1, 2, 0, 0)
+
+        """
+        return self._s.mean()
+
+    def mean(self) -> dt.datetime | dt.timedelta | None:
+        """
+        Return mean as python DateTime.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> s = pl.Series(
+        ...     [datetime(2001, 1, 1), datetime(2001, 1, 2), datetime(2001, 1, 3)]
+        ... )
+        >>> s.dt.mean()
+        datetime.datetime(2001, 1, 2, 0, 0)
+
+        """
+        return self._s.mean()
+
     def to_string(self, format: str) -> Series:
         """
         Convert a Date/Time/Datetime column into a Utf8 column with the given format.

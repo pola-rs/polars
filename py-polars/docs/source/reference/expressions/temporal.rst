@@ -23,10 +23,14 @@ The following methods are available under the `expr.dt` attribute.
     Expr.dt.hours
     Expr.dt.is_leap_year
     Expr.dt.iso_year
+    Expr.dt.max
+    Expr.dt.mean
+    Expr.dt.median
     Expr.dt.microsecond
     Expr.dt.microseconds
     Expr.dt.millisecond
     Expr.dt.milliseconds
+    Expr.dt.min
     Expr.dt.minute
     Expr.dt.minutes
     Expr.dt.month

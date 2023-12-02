@@ -23,10 +23,14 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.hours
     Series.dt.is_leap_year
     Series.dt.iso_year
+    Series.dt.max
+    Series.dt.mean
+    Series.dt.median
     Series.dt.microsecond
     Series.dt.microseconds
     Series.dt.millisecond
     Series.dt.milliseconds
+    Series.dt.min
     Series.dt.minute
     Series.dt.minutes
     Series.dt.month
