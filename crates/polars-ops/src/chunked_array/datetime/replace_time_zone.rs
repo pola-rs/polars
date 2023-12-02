@@ -116,22 +116,23 @@ pub fn convert_to_local_time_zone(
             }),
             _ => Ok(datetime.0.apply(|_| None)),
         },
-        _ => try_binary_elementwise(datetime, convert_tz, |timestamp_opt, ambiguous_opt| match (
-            timestamp_opt,
-            ambiguous_opt,
-        ) {
-            (Some(timestamp), Some(convert_tz)) => {
-                let ndt = timestamp_to_datetime(timestamp);
-                Ok(Some(datetime_to_timestamp(
-                    convert_to_new_timezone_and_naive_local(
-                        &from_tz,
-                        &parse_time_zone(convert_tz)?,
-                        ndt,
-                    )?,
-                )))
+        _ => try_binary_elementwise(
+            datetime,
+            convert_tz,
+            |timestamp_opt, convert_tz_opt| match (timestamp_opt, convert_tz_opt) {
+                (Some(timestamp), Some(convert_tz)) => {
+                    let ndt = timestamp_to_datetime(timestamp);
+                    Ok(Some(datetime_to_timestamp(
+                        convert_to_new_timezone_and_naive_local(
+                            &from_tz,
+                            &parse_time_zone(convert_tz)?,
+                            ndt,
+                        )?,
+                    )))
+                },
+                _ => Ok(None),
             },
-            _ => Ok(None),
-        }),
+        ),
     };
     let out = out?.into_datetime(datetime.time_unit(), None);
     Ok(out)

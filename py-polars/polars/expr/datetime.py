@@ -1425,14 +1425,14 @@ class ExprDateTimeNameSpace:
 
     def convert_to_local_time_zone(
         self,
-        local_time_zone: IntoExpr,
+        time_zone: IntoExpr,
     ) -> Expr:
         """
-        Converts to local timezone and then replaces timezone with None.
+        Convert to local datetime in given time zone.
 
         Parameters
         ----------
-        local_time_zone
+        time_zone
             Time zone for the `Datetime` expression.
 
         Returns
@@ -1466,7 +1466,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────────┴──────────────────┴─────────────────────┘
 
         """
-        local_tz = parse_as_expression(local_time_zone, str_as_lit=False)
+        local_tz = parse_as_expression(time_zone, str_as_lit=False)
         return wrap_expr(self._pyexpr.dt_convert_to_local_timezone(local_tz))
 
     def total_days(self) -> Expr:
