@@ -571,6 +571,7 @@ fn test_join_floats() -> PolarsResult<()> {
 
 #[test]
 #[cfg_attr(miri, ignore)]
+#[cfg(feature = "lazy")]
 fn test_4_threads_bit_offset() -> PolarsResult<()> {
     // run this locally with a thread pool size of 4
     // this was an obscure bug caused by not taking the offset of a bit into account.
