@@ -23,7 +23,6 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 
 if TYPE_CHECKING:
-    from datetime import datetime, timedelta
     from typing import Awaitable, Collection, Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
@@ -32,6 +31,7 @@ if TYPE_CHECKING:
         EpochTimeUnit,
         IntoExpr,
         PolarsDataType,
+        PythonLiteral,
         RollingInterpolationMethod,
     )
 
@@ -262,11 +262,11 @@ def mean(column: str) -> Expr:
 
 
 @overload
-def mean(column: Series) -> float | datetime | timedelta | None:
+def mean(column: Series) -> PythonLiteral | None:
     ...
 
 
-def mean(column: str | Series) -> Expr | float | datetime | timedelta | None:
+def mean(column: str | Series) -> Expr | PythonLiteral | None:
     """
     Get the mean value.
 
@@ -299,12 +299,12 @@ def avg(column: str) -> Expr:
 
 
 @overload
-def avg(column: Series) -> float:
+def avg(column: Series) -> PythonLiteral:
     ...
 
 
 @deprecate_renamed_function("mean", version="0.18.12")
-def avg(column: str | Series) -> Expr | float | datetime | timedelta | None:
+def avg(column: str | Series) -> Expr | PythonLiteral | None:
     """
     Alias for mean.
 
@@ -334,11 +334,11 @@ def median(column: str) -> Expr:
 
 
 @overload
-def median(column: Series) -> float | int:
+def median(column: Series) -> PythonLiteral | None:
     ...
 
 
-def median(column: str | Series) -> Expr | float | int | datetime | timedelta | None:
+def median(column: str | Series) -> Expr | PythonLiteral | None:
     """
     Get the median value.
 
