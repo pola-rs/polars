@@ -1,9 +1,9 @@
 use std::ops::{BitAnd, BitOr};
+
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
 
 use crate::array::Array;
 use crate::bitmap::Bitmap;
-
 
 pub fn combine_validities_and(opt_l: Option<&Bitmap>, opt_r: Option<&Bitmap>) -> Option<Bitmap> {
     match (opt_l, opt_r) {

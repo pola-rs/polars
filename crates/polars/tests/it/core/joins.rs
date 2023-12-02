@@ -599,7 +599,9 @@ fn test_4_threads_bit_offset() -> PolarsResult<()> {
         .on([col("a"), col("b")])
         .how(JoinType::Inner)
         .join_nulls(true)
-        .finish().collect().unwrap();
+        .finish()
+        .collect()
+        .unwrap();
     assert_eq!(out.shape(), (1, 2));
     Ok(())
 }

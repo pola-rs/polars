@@ -1,6 +1,6 @@
 use crate::array::PrimitiveArray;
-use crate::datatypes::ArrowDataType;
 use crate::compute::utils::combine_validities_and;
+use crate::datatypes::ArrowDataType;
 use crate::types::NativeType;
 
 pub mod arithmetics;

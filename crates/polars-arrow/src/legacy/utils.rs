@@ -1,5 +1,5 @@
 use crate::array::PrimitiveArray;
-use crate::bitmap::{MutableBitmap};
+use crate::bitmap::MutableBitmap;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::bit_util::unset_bit_raw;
 use crate::legacy::trusted_len::{FromIteratorReversed, TrustedLen, TrustedLenPush};
