@@ -407,6 +407,13 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     fn min_as_series(&self) -> Series {
         self.0.min_as_series().into_duration(self.0.time_unit())
     }
+    fn std_as_series(&self, ddof: u8) -> Series {
+        self.0.std_as_series(ddof).into_duration(self.0.time_unit())
+    }
+
+    fn var_as_series(&self, ddof: u8) -> Series {
+        self.0.var_as_series(ddof).into_duration(self.0.time_unit())
+    }
     fn median_as_series(&self) -> Series {
         self.0
             .median_as_series()
