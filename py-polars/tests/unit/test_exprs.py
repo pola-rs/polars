@@ -789,3 +789,10 @@ def test_repr_long_expression() -> None:
     expected = "<Expr ['dtype_columns([Utf8]).str.coun…'] at "
     assert result == expected
     assert repr(expr).endswith(">")
+
+
+def test_repr_gather() -> None:
+    result = repr(pl.col("a").gather(0))
+    assert 'col("a").gather(0)' in result
+    result = repr(pl.col("a").get(0))
+    assert 'col("a").get(0)' in result
