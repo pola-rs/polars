@@ -2789,7 +2789,9 @@ def test_convert_tz_to_local_tz() -> None:
     )
 
     result = df.with_columns(
-        pl.col("date_col").dt.to_local_timezone(pl.col("timezone")).alias("local_dt")
+        pl.col("date_col")
+        .dt.convert_to_local_timezone(pl.col("timezone"))
+        .alias("local_dt")
     )
 
     assert_frame_equal(result, expected)

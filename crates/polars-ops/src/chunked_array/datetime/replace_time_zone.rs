@@ -83,9 +83,8 @@ pub fn replace_time_zone(
     Ok(out)
 }
 
-pub fn convert_and_replace_time_zone(
+pub fn convert_to_local_time_zone(
     datetime: &Logical<DatetimeType, Int64Type>,
-    replace_tz: Option<&str>,
     convert_tz: &Utf8Chunked,
 ) -> PolarsResult<DatetimeChunked> {
     let from_time_zone = datetime.time_zone().as_deref().unwrap_or("UTC");
@@ -130,6 +129,6 @@ pub fn convert_and_replace_time_zone(
             _ => Ok(None),
         }),
     };
-    let out = out?.into_datetime(datetime.time_unit(), replace_tz.map(|x| x.to_string()));
+    let out = out?.into_datetime(datetime.time_unit(), None);
     Ok(out)
 }

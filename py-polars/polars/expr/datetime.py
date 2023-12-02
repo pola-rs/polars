@@ -1423,13 +1423,13 @@ class ExprDateTimeNameSpace:
             self._pyexpr.dt_replace_time_zone(time_zone, ambiguous._pyexpr)
         )
 
-    def to_local_timezone(
+    def convert_to_local_timezone(
         self,
-        convert_tz: Expr,
+        local_time_zone: Expr,
     ) -> Expr:
-        """Convert and replaces the timezone at once."""
+        """Converts to local timezone and then replaces timezone with None."""
         return wrap_expr(
-            self._pyexpr.dt_convert_and_replace_time_zone(None, convert_tz._pyexpr)
+            self._pyexpr.dt_convert_to_local_timezone(local_time_zone._pyexpr)
         )
 
     def total_days(self) -> Expr:
