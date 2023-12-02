@@ -71,26 +71,15 @@ pub fn convert_to_naive_local_opt(
     }
 }
 
-
 #[cfg(feature = "timezones")]
-pub fn convert_to_new_timezone_and_local(
+pub fn convert_to_new_timezone_and_naive_local(
     from_tz: &Tz,
     to_tz: &Tz,
     ndt: NaiveDateTime,
-    ambiguous: Ambiguous,
-) -> PolarsResult<NaiveDateTime> {   
-    match from_tz.from_local_datetime(&ndt) {
-        LocalResult::Single(dt) => Ok(dt.with_timezone(to_tz).naive_local()),
-        LocalResult::Ambiguous(dt_earliest, dt_latest) => match ambiguous {
-            Ambiguous::Earliest => Ok(dt_earliest.with_timezone(to_tz).naive_local()),
-            Ambiguous::Latest => Ok(dt_latest.with_timezone(to_tz).naive_local()),
-            Ambiguous::Raise => {
-                polars_bail!(ComputeError: "datetime '{}' is ambiguous in time zone '{}'. Please use `ambiguous` to tell how it should be localized.", ndt, to_tz)
-            },
-        },
-        LocalResult::None => polars_bail!(ComputeError:
-                "datetime '{}' is non-existent in time zone '{}'. Non-existent datetimes are not yet supported",
-                ndt, to_tz
-        ),
-    }
+) -> PolarsResult<NaiveDateTime> {
+    // ndt is already converted to UTC timezone
+    Ok(from_tz
+        .from_utc_datetime(&ndt)
+        .with_timezone(to_tz)
+        .naive_local())
 }

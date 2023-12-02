@@ -51,12 +51,12 @@ impl PyExpr {
     }
 
     #[cfg(feature = "timezones")]
-    #[pyo3(signature = (convert_tz, ambiguous))]
-    fn dt_convert_to_local_timezone(&self, convert_tz: Self, ambiguous: String) -> Self {
+    #[pyo3(signature = (convert_tz))]
+    fn dt_convert_to_local_timezone(&self, convert_tz: Self) -> Self {
         self.inner
             .clone()
             .dt()
-            .convert_to_local_time_zone(convert_tz.inner, ambiguous)
+            .convert_to_local_time_zone(convert_tz.inner)
             .into()
     }
 
