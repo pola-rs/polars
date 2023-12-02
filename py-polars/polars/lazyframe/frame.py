@@ -3875,6 +3875,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     [],
                     allow_parallel,
                     force_parallel,
+                    join_nulls,
                     how,
                     suffix,
                     validate,
