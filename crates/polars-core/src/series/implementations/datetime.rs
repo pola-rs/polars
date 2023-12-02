@@ -370,7 +370,6 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .cast(self.dtype())
             .unwrap()
     }
-
     fn var_as_series(&self, _ddof: u8) -> Series {
         Int32Chunked::full_null(self.name(), 1)
             .cast(self.dtype())
