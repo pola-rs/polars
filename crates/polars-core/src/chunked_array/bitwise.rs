@@ -2,7 +2,7 @@ use std::ops::{BitAnd, BitOr, BitXor, Not};
 
 use arrow::compute;
 use arrow::legacy::compute::bitwise;
-use arrow::legacy::utils::combine_validities_and;
+use arrow::compute::utils::combine_validities_and;
 
 use super::arithmetic::arithmetic_helper;
 use super::*;
