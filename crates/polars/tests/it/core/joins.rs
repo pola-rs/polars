@@ -571,22 +571,6 @@ fn test_join_floats() -> PolarsResult<()> {
 
 #[test]
 #[cfg_attr(miri, ignore)]
-fn test_join_nulls() -> PolarsResult<()> {
-    let a = df![
-        "a" => [Some(1), None, None]
-    ]?;
-    let b = df![
-        "a" => [Some(1), None, None, None, None]
-    ]?;
-
-    let out = a.inner_join(&b, ["a"], ["a"])?;
-
-    assert_eq!(out.shape(), (9, 1));
-    Ok(())
-}
-
-#[test]
-#[cfg_attr(miri, ignore)]
 fn test_4_threads_bit_offset() -> PolarsResult<()> {
     // run this locally with a thread pool size of 4
     // this was an obscure bug caused by not taking the offset of a bit into account.
@@ -610,7 +594,12 @@ fn test_4_threads_bit_offset() -> PolarsResult<()> {
     right_b.rename("b");
 
     let right_df = DataFrame::new(vec![right_a.into_series(), right_b.into_series()])?;
-    let out = left_df.join(&right_df, ["a", "b"], ["a", "b"], JoinType::Inner.into())?;
+    let out = JoinBuilder::new(left_df.lazy())
+        .with(right_df.lazy())
+        .on([col("a"), col("b")])
+        .how(JoinType::Inner)
+        .join_nulls(true)
+        .finish().collect().unwrap();
     assert_eq!(out.shape(), (1, 2));
     Ok(())
 }
