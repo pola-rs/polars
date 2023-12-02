@@ -13,7 +13,7 @@ mod rolling;
 mod slice;
 mod sort;
 mod sortby;
-mod take;
+mod gather;
 mod ternary;
 mod window;
 
@@ -39,7 +39,7 @@ pub(crate) use rolling::RollingExpr;
 pub(crate) use slice::*;
 pub(crate) use sort::*;
 pub(crate) use sortby::*;
-pub(crate) use take::*;
+pub(crate) use gather::*;
 pub(crate) use ternary::*;
 pub(crate) use window::*;
 

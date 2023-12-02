@@ -1684,18 +1684,18 @@ impl DataFrame {
     ///     df.take(&idx)
     /// }
     /// ```
-    pub fn take(&self, indices: &IdxCa) -> PolarsResult<Self> {
+    pub fn gather(&self, indices: &IdxCa) -> PolarsResult<Self> {
         let new_col = POOL.install(|| {
             self.try_apply_columns_par(&|s| match s.dtype() {
                 DataType::Utf8 => {
                     let ca = s.utf8().unwrap();
                     if ca.get_values_size() / 24 <= ca.len() {
-                        s.take(indices)
+                        s.gather(indices)
                     } else {
-                        s.take_threaded(indices, true)
+                        s.gather_threaded(indices, true)
                     }
                 },
-                _ => s.take(indices),
+                _ => s.gather(indices),
             })
         })?;
 
@@ -1713,11 +1713,14 @@ impl DataFrame {
             POOL.install(|| {
                 self.apply_columns_par(&|s| match s.dtype() {
                     DataType::Utf8 => s.take_unchecked_threaded(idx, true),
-                    _ => s.take_unchecked(idx),
+                    _ => s.gather_unchecked(idx),
                 })
             })
         } else {
-            self.columns.iter().map(|s| s.take_unchecked(idx)).collect()
+            self.columns
+                .iter()
+                .map(|s| s.gather_unchecked(idx))
+                .collect()
         };
         DataFrame::new_no_checks(cols)
     }
@@ -1731,13 +1734,13 @@ impl DataFrame {
             POOL.install(|| {
                 self.apply_columns_par(&|s| match s.dtype() {
                     DataType::Utf8 => s.take_slice_unchecked_threaded(idx, true),
-                    _ => s.take_slice_unchecked(idx),
+                    _ => s.gather_slice_unchecked(idx),
                 })
             })
         } else {
             self.columns
                 .iter()
-                .map(|s| s.take_slice_unchecked(idx))
+                .map(|s| s.gather_slice_unchecked(idx))
                 .collect()
         };
         DataFrame::new_no_checks(cols)

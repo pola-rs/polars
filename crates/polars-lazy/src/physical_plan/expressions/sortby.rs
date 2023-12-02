@@ -60,7 +60,7 @@ fn sort_by_groups_single_by(
     let new_idx = match indicator {
         GroupsIndicator::Idx((_, idx)) => {
             // SAFETY: group tuples are always in bounds.
-            let group = unsafe { sort_by_s.take_slice_unchecked(idx) };
+            let group = unsafe { sort_by_s.gather_slice_unchecked(idx) };
 
             let sorted_idx = group.arg_sort(SortOptions {
                 descending: descending[0],
@@ -111,7 +111,7 @@ fn sort_by_groups_no_match_single<'a>(
                         multithreaded: false,
                         ..Default::default()
                     });
-                    Ok(Some(unsafe { s.take_unchecked(&idx) }))
+                    Ok(Some(unsafe { s.gather_unchecked(&idx) }))
                 },
                 _ => Ok(None),
             })
@@ -132,7 +132,7 @@ fn sort_by_groups_multiple_by(
             // SAFETY: group tuples are always in bounds.
             let groups = sort_by_s
                 .iter()
-                .map(|s| unsafe { s.take_slice_unchecked(idx) })
+                .map(|s| unsafe { s.gather_slice_unchecked(idx) })
                 .collect::<Vec<_>>();
 
             let options = SortMultipleOptions {
@@ -215,7 +215,7 @@ impl PhysicalExpr for SortByExpr {
         );
 
         // SAFETY: sorted index are within bounds.
-        unsafe { Ok(series.take_unchecked(&sorted_idx)) }
+        unsafe { Ok(series.gather_unchecked(&sorted_idx)) }
     }
 
     #[allow(clippy::ptr_arg)]

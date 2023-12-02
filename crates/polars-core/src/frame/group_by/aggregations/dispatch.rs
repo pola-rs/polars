@@ -24,7 +24,7 @@ impl Series {
                 } else if !self.has_validity() {
                     Some(idx.len() as IdxSize)
                 } else {
-                    let take = unsafe { self.take_slice_unchecked(idx) };
+                    let take = unsafe { self.gather_slice_unchecked(idx) };
                     Some((take.len() - take.null_count()) as IdxSize)
                 }
             }),
@@ -61,7 +61,7 @@ impl Series {
                     )
                     .collect_ca("");
                 // SAFETY: groups are always in bounds.
-                self.take_unchecked(&indices)
+                self.gather_unchecked(&indices)
             },
             GroupsProxy::Slice { groups, .. } => {
                 let indices = groups
@@ -69,7 +69,7 @@ impl Series {
                     .map(|&[first, len]| if len == 0 { None } else { Some(first) })
                     .collect_ca("");
                 // SAFETY: groups are always in bounds.
-                self.take_unchecked(&indices)
+                self.gather_unchecked(&indices)
             },
         };
         if groups.is_sorted_flag() {
@@ -86,7 +86,7 @@ impl Series {
                 if idx.is_empty() {
                     None
                 } else {
-                    let take = self.take_slice_unchecked(idx);
+                    let take = self.gather_slice_unchecked(idx);
                     take.n_unique().ok().map(|v| v as IdxSize)
                 }
             }),
@@ -193,7 +193,7 @@ impl Series {
                         }
                     })
                     .collect_ca("");
-                self.take_unchecked(&indices)
+                self.gather_unchecked(&indices)
             },
             GroupsProxy::Slice { groups, .. } => {
                 let indices = groups
@@ -206,7 +206,7 @@ impl Series {
                         }
                     })
                     .collect_ca("");
-                self.take_unchecked(&indices)
+                self.gather_unchecked(&indices)
             },
         };
         self.restore_logical(out)

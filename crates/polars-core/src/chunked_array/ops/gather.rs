@@ -42,11 +42,11 @@ where
     ChunkedArray<T>: ChunkTakeUnchecked<I>,
 {
     /// Gather values from ChunkedArray by index.
-    fn take(&self, indices: &I) -> PolarsResult<Self> {
+    fn gather(&self, indices: &I) -> PolarsResult<Self> {
         check_bounds(indices.as_ref(), self.len() as IdxSize)?;
 
         // SAFETY: we just checked the indices are valid.
-        Ok(unsafe { self.take_unchecked(indices) })
+        Ok(unsafe { self.gather_unchecked(indices) })
     }
 }
 
@@ -55,11 +55,11 @@ where
     ChunkedArray<T>: ChunkTakeUnchecked<IdxCa>,
 {
     /// Gather values from ChunkedArray by index.
-    fn take(&self, indices: &IdxCa) -> PolarsResult<Self> {
+    fn gather(&self, indices: &IdxCa) -> PolarsResult<Self> {
         check_bounds_ca(indices, self.len() as IdxSize)?;
 
         // SAFETY: we just checked the indices are valid.
-        Ok(unsafe { self.take_unchecked(indices) })
+        Ok(unsafe { self.gather_unchecked(indices) })
     }
 }
 
@@ -144,7 +144,7 @@ unsafe fn gather_idx_array_unchecked<A: StaticArray>(
 
 impl<T: PolarsDataType, I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for ChunkedArray<T> {
     /// Gather values from ChunkedArray by index.
-    unsafe fn take_unchecked(&self, indices: &I) -> Self {
+    unsafe fn gather_unchecked(&self, indices: &I) -> Self {
         let rechunked;
         let mut ca = self;
         if self.chunks().len() > BINARY_SEARCH_LIMIT {
@@ -164,7 +164,7 @@ impl<T: PolarsDataType, I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for 
 
 impl<T: PolarsDataType> ChunkTakeUnchecked<IdxCa> for ChunkedArray<T> {
     /// Gather values from ChunkedArray by index.
-    unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
+    unsafe fn gather_unchecked(&self, indices: &IdxCa) -> Self {
         let rechunked;
         let mut ca = self;
         if self.chunks().len() > BINARY_SEARCH_LIMIT {

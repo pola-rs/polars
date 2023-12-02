@@ -107,19 +107,19 @@ impl SeriesTrait for NullChunked {
         NullChunked::new(self.name.clone(), by.len()).into_series()
     }
 
-    fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
+    fn gather(&self, indices: &IdxCa) -> PolarsResult<Series> {
         Ok(NullChunked::new(self.name.clone(), indices.len()).into_series())
     }
 
-    unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
+    unsafe fn gather_unchecked(&self, indices: &IdxCa) -> Series {
         NullChunked::new(self.name.clone(), indices.len()).into_series()
     }
 
-    fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
+    fn gather_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
         Ok(NullChunked::new(self.name.clone(), indices.len()).into_series())
     }
 
-    unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
+    unsafe fn gather_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
         NullChunked::new(self.name.clone(), indices.len()).into_series()
     }
 

@@ -192,27 +192,27 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
             .into_series()
     }
 
-    fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
+    fn gather(&self, indices: &IdxCa) -> PolarsResult<Series> {
         self.0
-            .try_apply_fields(|s| s.take(indices))
+            .try_apply_fields(|s| s.gather(indices))
             .map(|ca| ca.into_series())
     }
 
-    unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
+    unsafe fn gather_unchecked(&self, indices: &IdxCa) -> Series {
         self.0
-            .apply_fields(|s| s.take_unchecked(indices))
+            .apply_fields(|s| s.gather_unchecked(indices))
             .into_series()
     }
 
-    fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
+    fn gather_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
         self.0
-            .try_apply_fields(|s| s.take_slice(indices))
+            .try_apply_fields(|s| s.gather_slice(indices))
             .map(|ca| ca.into_series())
     }
 
-    unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
+    unsafe fn gather_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
         self.0
-            .apply_fields(|s| s.take_slice_unchecked(indices))
+            .apply_fields(|s| s.gather_slice_unchecked(indices))
             .into_series()
     }
 

@@ -83,7 +83,7 @@ where
                         MinMax::max_propagate_nan,
                     ),
                     _ => {
-                        let take = { ca.take_unchecked(idx) };
+                        let take = { ca.gather_unchecked(idx) };
                         ca_nan_agg(&take, MinMax::max_propagate_nan)
                     },
                 }
@@ -152,7 +152,7 @@ where
                         MinMax::min_propagate_nan,
                     ),
                     _ => {
-                        let take = { ca.take_unchecked(idx) };
+                        let take = { ca.gather_unchecked(idx) };
                         ca_nan_agg(&take, MinMax::min_propagate_nan)
                     },
                 }

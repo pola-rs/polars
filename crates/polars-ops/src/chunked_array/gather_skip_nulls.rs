@@ -73,7 +73,7 @@ where
 {
     fn gather_skip_nulls(&self, indices: &[IdxSize]) -> PolarsResult<Self> {
         if self.null_count() == 0 {
-            return self.take(indices);
+            return self.gather(indices);
         }
 
         // If we want many indices it's probably better to do a normal gather on
@@ -81,7 +81,7 @@ where
         if indices.len() >= self.len() / 4 {
             return ChunkFilter::filter(self, &self.is_not_null())
                 .unwrap()
-                .take(indices);
+                .gather(indices);
         }
 
         let bound = self.len() - self.null_count();
@@ -105,7 +105,7 @@ where
 {
     fn gather_skip_nulls(&self, indices: &IdxCa) -> PolarsResult<Self> {
         if self.null_count() == 0 {
-            return self.take(indices);
+            return self.gather(indices);
         }
 
         // If we want many indices it's probably better to do a normal gather on
@@ -113,7 +113,7 @@ where
         if indices.len() >= self.len() / 4 {
             return ChunkFilter::filter(self, &self.is_not_null())
                 .unwrap()
-                .take(indices);
+                .gather(indices);
         }
 
         let bound = self.len() - self.null_count();

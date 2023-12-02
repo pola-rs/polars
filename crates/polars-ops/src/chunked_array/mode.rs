@@ -16,7 +16,7 @@ where
 
     // Safety:
     // group indices are in bounds
-    Ok(unsafe { ca.take_unchecked(idx.as_slice()) })
+    Ok(unsafe { ca.gather_unchecked(idx.as_slice()) })
 }
 
 fn mode_f32(ca: &Float32Chunked) -> PolarsResult<Float32Chunked> {

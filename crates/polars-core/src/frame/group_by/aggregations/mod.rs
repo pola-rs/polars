@@ -355,7 +355,7 @@ where
                 if idx.is_empty() {
                     return None;
                 }
-                let take = { ca.take_unchecked(idx) };
+                let take = { ca.gather_unchecked(idx) };
                 // checked with invalid quantile check
                 take._quantile(quantile, interpol).unwrap_unchecked()
             })
@@ -429,7 +429,7 @@ where
                 if idx.is_empty() {
                     return None;
                 }
-                let take = { ca.take_unchecked(idx) };
+                let take = { ca.gather_unchecked(idx) };
                 take._median()
             })
         },
@@ -956,7 +956,7 @@ where
                                 })
                             },
                             _ => {
-                                let take = { self.take_unchecked(idx) };
+                                let take = { self.gather_unchecked(idx) };
                                 take.mean()
                             },
                         }

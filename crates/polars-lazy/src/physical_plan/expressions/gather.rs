@@ -8,14 +8,14 @@ use polars_core::utils::NoNull;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
-pub struct TakeExpr {
+pub struct GatherExpr {
     pub(crate) phys_expr: Arc<dyn PhysicalExpr>,
     pub(crate) idx: Arc<dyn PhysicalExpr>,
     pub(crate) expr: Expr,
     pub(crate) returns_scalar: bool,
 }
 
-impl TakeExpr {
+impl GatherExpr {
     fn finish(
         &self,
         df: &DataFrame,
@@ -30,7 +30,7 @@ impl TakeExpr {
         }
         let idx_ca = idx.idx()?;
 
-        series.take(idx_ca)
+        series.gather(idx_ca)
     }
 
     fn oob_err(&self) -> PolarsResult<()> {
@@ -38,7 +38,7 @@ impl TakeExpr {
     }
 }
 
-impl PhysicalExpr for TakeExpr {
+impl PhysicalExpr for GatherExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
@@ -101,7 +101,7 @@ impl PhysicalExpr for TakeExpr {
                             .collect_trusted()
                     },
                 };
-                let taken = ac.flat_naive().take(&idx)?;
+                let taken = ac.flat_naive().gather(&idx)?;
 
                 let taken = if self.returns_scalar {
                     taken
@@ -155,7 +155,7 @@ impl PhysicalExpr for TakeExpr {
                                     groups.iter().map(|g| g[0] + idx).collect_trusted()
                                 },
                             };
-                            let taken = ac.flat_naive().take(&idx.into_inner())?;
+                            let taken = ac.flat_naive().gather(&idx.into_inner())?;
 
                             let taken = if self.returns_scalar {
                                 taken
@@ -173,7 +173,7 @@ impl PhysicalExpr for TakeExpr {
                         .aggregated()
                         .list()
                         .unwrap()
-                        .try_apply_amortized(|s| s.as_ref().take(idx))?;
+                        .try_apply_amortized(|s| s.as_ref().gather(idx))?;
 
                     ac.with_series(out.into_series(), true, Some(&self.expr))?;
                     ac.with_update_groups(UpdateGroups::WithGroupsLen);
@@ -191,7 +191,7 @@ impl PhysicalExpr for TakeExpr {
                 .unwrap()
                 .amortized_iter()
                 .zip(idx.amortized_iter())
-                .map(|(s, idx)| Some(s?.as_ref().take(idx?.as_ref().idx().unwrap())))
+                .map(|(s, idx)| Some(s?.as_ref().gather(idx?.as_ref().idx().unwrap())))
                 .map(|opt_res| opt_res.transpose())
                 .collect::<PolarsResult<ListChunked>>()?
                 .with_name(ac.series().name())

@@ -199,23 +199,23 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.finish_with_state(false, cats).into_series()
     }
 
-    fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-        self.try_with_state(false, |cats| cats.take(indices))
+    fn gather(&self, indices: &IdxCa) -> PolarsResult<Series> {
+        self.try_with_state(false, |cats| cats.gather(indices))
             .map(|ca| ca.into_series())
     }
 
-    unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
-        self.with_state(false, |cats| cats.take_unchecked(indices))
+    unsafe fn gather_unchecked(&self, indices: &IdxCa) -> Series {
+        self.with_state(false, |cats| cats.gather_unchecked(indices))
             .into_series()
     }
 
-    fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
-        self.try_with_state(false, |cats| cats.take(indices))
+    fn gather_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
+        self.try_with_state(false, |cats| cats.gather(indices))
             .map(|ca| ca.into_series())
     }
 
-    unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
-        self.with_state(false, |cats| cats.take_unchecked(indices))
+    unsafe fn gather_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
+        self.with_state(false, |cats| cats.gather_unchecked(indices))
             .into_series()
     }
 

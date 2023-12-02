@@ -226,7 +226,7 @@ pub fn _sort_or_hash_inner(
                 multithreaded: true,
                 maintain_order: false,
             });
-            let s_right = unsafe { s_right.take_unchecked(&sort_idx) };
+            let s_right = unsafe { s_right.gather_unchecked(&sort_idx) };
             let ids = par_sorted_merge_inner_no_nulls(s_left, &s_right);
             let reverse_idx_map = create_reverse_map_from_arg_sort(sort_idx);
 
@@ -253,7 +253,7 @@ pub fn _sort_or_hash_inner(
                 multithreaded: true,
                 maintain_order: false,
             });
-            let s_left = unsafe { s_left.take_unchecked(&sort_idx) };
+            let s_left = unsafe { s_left.gather_unchecked(&sort_idx) };
             let ids = par_sorted_merge_inner_no_nulls(&s_left, s_right);
             let reverse_idx_map = create_reverse_map_from_arg_sort(sort_idx);
 
@@ -322,7 +322,7 @@ pub(super) fn sort_or_hash_left(
                 multithreaded: true,
                 maintain_order: false,
             });
-            let s_right = unsafe { s_right.take_unchecked(&sort_idx) };
+            let s_right = unsafe { s_right.gather_unchecked(&sort_idx) };
 
             let ids = par_sorted_merge_left(s_left, &s_right);
             let reverse_idx_map = create_reverse_map_from_arg_sort(sort_idx);

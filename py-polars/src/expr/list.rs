@@ -150,7 +150,7 @@ impl PyExpr {
         self.inner
             .clone()
             .list()
-            .take(index.inner, null_on_oob)
+            .gather(index.inner, null_on_oob)
             .into()
     }
 

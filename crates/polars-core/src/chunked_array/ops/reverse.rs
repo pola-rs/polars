@@ -83,6 +83,6 @@ impl ChunkReverse for ArrayChunked {
 impl<T: PolarsObject> ChunkReverse for ObjectChunked<T> {
     fn reverse(&self) -> Self {
         // SAFETY: we know we don't go out of bounds.
-        unsafe { self.take_unchecked(&(0..self.len() as IdxSize).rev().collect_ca("")) }
+        unsafe { self.gather_unchecked(&(0..self.len() as IdxSize).rev().collect_ca("")) }
     }
 }

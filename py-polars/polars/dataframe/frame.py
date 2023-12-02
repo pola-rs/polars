@@ -1534,8 +1534,8 @@ class DataFrame:
         else:
             return self.shape[dim] + idx
 
-    def _take_with_series(self, s: Series) -> DataFrame:
-        return self._from_pydf(self._df.take_with_series(s._s))
+    def _gather_with_series(self, s: Series) -> DataFrame:
+        return self._from_pydf(self._df.gather_with_series(s._s))
 
     @overload
     def __getitem__(self, item: str) -> Series:
@@ -1699,7 +1699,7 @@ class DataFrame:
                 raise TypeError("multi-dimensional NumPy arrays not supported as index")
             if item.dtype.kind in ("i", "u"):
                 # Numpy array with signed or unsigned integers.
-                return self._take_with_series(numpy_to_idxs(item, self.shape[0]))
+                return self._gather_with_series(numpy_to_idxs(item, self.shape[0]))
             if isinstance(item[0], str):
                 return self._from_pydf(self._df.select(item))
 
@@ -1715,7 +1715,7 @@ class DataFrame:
             if dtype == Utf8:
                 return self._from_pydf(self._df.select(item))
             elif dtype.is_integer():
-                return self._take_with_series(item._pos_idxs(self.shape[0]))
+                return self._gather_with_series(item._pos_idxs(self.shape[0]))
 
         # if no data has been returned, the operation is not supported
         raise TypeError(

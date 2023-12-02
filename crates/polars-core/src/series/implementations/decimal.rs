@@ -162,32 +162,32 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.apply_physical(|ca| ca.take_opt_chunked_unchecked(by))
     }
 
-    fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
+    fn gather(&self, indices: &IdxCa) -> PolarsResult<Series> {
         Ok(self
             .0
-            .take(indices)?
+            .gather(indices)?
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series())
     }
 
-    unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
+    unsafe fn gather_unchecked(&self, indices: &IdxCa) -> Series {
         self.0
-            .take_unchecked(indices)
+            .gather_unchecked(indices)
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series()
     }
 
-    fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
+    fn gather_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
         Ok(self
             .0
-            .take(indices)?
+            .gather(indices)?
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series())
     }
 
-    unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
+    unsafe fn gather_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
         self.0
-            .take_unchecked(indices)
+            .gather_unchecked(indices)
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series()
     }

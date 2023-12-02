@@ -255,22 +255,22 @@ pub trait SeriesTrait:
     unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series;
 
     /// Take by index. This operation is clone.
-    fn take(&self, _indices: &IdxCa) -> PolarsResult<Series>;
+    fn gather(&self, _indices: &IdxCa) -> PolarsResult<Series>;
 
     /// Take by index.
     ///
     /// # Safety
     /// This doesn't check any bounds.
-    unsafe fn take_unchecked(&self, _idx: &IdxCa) -> Series;
+    unsafe fn gather_unchecked(&self, _idx: &IdxCa) -> Series;
 
-    /// Take by index. This operation is clone.
-    fn take_slice(&self, _indices: &[IdxSize]) -> PolarsResult<Series>;
+    /// Take by index. This operation clones.
+    fn gather_slice(&self, _indices: &[IdxSize]) -> PolarsResult<Series>;
 
     /// Take by index.
     ///
     /// # Safety
     /// This doesn't check any bounds.
-    unsafe fn take_slice_unchecked(&self, _idx: &[IdxSize]) -> Series;
+    unsafe fn gather_slice_unchecked(&self, _idx: &[IdxSize]) -> Series;
 
     /// Get length of series.
     fn len(&self) -> usize;

@@ -424,7 +424,7 @@ pub(super) fn get(s: &mut [Series]) -> PolarsResult<Option<Series>> {
                 })
                 .collect::<IdxCa>();
             let s = Series::try_from((ca.name(), arr.values().clone())).unwrap();
-            unsafe { Ok(Some(s.take_unchecked(&take_by))) }
+            unsafe { Ok(Some(s.gather_unchecked(&take_by))) }
         },
         len => polars_bail!(
             ComputeError:

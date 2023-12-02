@@ -199,7 +199,7 @@ pub(crate) fn create_physical_expr(
         } => {
             let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
             let phys_idx = create_physical_expr(idx, ctxt, expr_arena, schema, state)?;
-            Ok(Arc::new(TakeExpr {
+            Ok(Arc::new(GatherExpr {
                 phys_expr,
                 idx: phys_idx,
                 expr: node_to_expr(expression, expr_arena),

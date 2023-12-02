@@ -287,9 +287,9 @@ impl PySeries {
         self.series.sort(descending).into()
     }
 
-    fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
+    fn gather_with_series(&self, indices: &PySeries) -> PyResult<Self> {
         let idx = indices.series.idx().map_err(PyPolarsErr::from)?;
-        let take = self.series.take(idx).map_err(PyPolarsErr::from)?;
+        let take = self.series.gather(idx).map_err(PyPolarsErr::from)?;
         Ok(take.into())
     }
 

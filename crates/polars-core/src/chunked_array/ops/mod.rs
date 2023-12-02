@@ -119,7 +119,7 @@ pub trait ChunkRollApply: AsRefDataType {
 
 pub trait ChunkTake<Idx: ?Sized>: ChunkTakeUnchecked<Idx> {
     /// Gather values from ChunkedArray by index.
-    fn take(&self, indices: &Idx) -> PolarsResult<Self>
+    fn gather(&self, indices: &Idx) -> PolarsResult<Self>
     where
         Self: Sized;
 }
@@ -129,7 +129,7 @@ pub trait ChunkTakeUnchecked<Idx: ?Sized> {
     ///
     /// # Safety
     /// The non-null indices must be valid.
-    unsafe fn take_unchecked(&self, indices: &Idx) -> Self;
+    unsafe fn gather_unchecked(&self, indices: &Idx) -> Self;
 }
 
 /// Create a `ChunkedArray` with new values by index or by boolean mask.

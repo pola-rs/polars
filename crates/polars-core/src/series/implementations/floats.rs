@@ -203,20 +203,20 @@ macro_rules! impl_dyn_series {
                 self.0.take_opt_chunked_unchecked(by).into_series()
             }
 
-            fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-                Ok(self.0.take(indices)?.into_series())
+            fn gather(&self, indices: &IdxCa) -> PolarsResult<Series> {
+                Ok(self.0.gather(indices)?.into_series())
             }
 
-            unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
-                self.0.take_unchecked(indices).into_series()
+            unsafe fn gather_unchecked(&self, indices: &IdxCa) -> Series {
+                self.0.gather_unchecked(indices).into_series()
             }
 
-            fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
-                Ok(self.0.take(indices)?.into_series())
+            fn gather_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
+                Ok(self.0.gather(indices)?.into_series())
             }
 
-            unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
-                self.0.take_unchecked(indices).into_series()
+            unsafe fn gather_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
+                self.0.gather_unchecked(indices).into_series()
             }
 
             fn len(&self) -> usize {

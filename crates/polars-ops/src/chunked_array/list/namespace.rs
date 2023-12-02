@@ -638,7 +638,7 @@ fn take_series(s: &Series, idx: Series, null_on_oob: bool) -> PolarsResult<Serie
     let len = s.len();
     let idx = cast_index(idx, len, null_on_oob)?;
     let idx = idx.idx().unwrap();
-    s.take(idx)
+    s.gather(idx)
 }
 
 #[cfg(feature = "list_gather")]

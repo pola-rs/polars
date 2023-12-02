@@ -413,7 +413,7 @@ mod test {
 
         assert_eq!(s.n_unique().unwrap(), 3);
         // Make sure that it does not take the fast path after take/slice.
-        let out = s.take(&IdxCa::new("", [1, 2])).unwrap();
+        let out = s.gather(&IdxCa::new("", [1, 2])).unwrap();
         assert_eq!(out.n_unique().unwrap(), 2);
         let out = s.slice(1, 2);
         assert_eq!(out.n_unique().unwrap(), 2);

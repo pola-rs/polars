@@ -121,7 +121,7 @@ impl WindowExpr {
 
         // Safety:
         // groups should always be in bounds.
-        unsafe { Ok(flattened.take_unchecked(&idx)) }
+        unsafe { Ok(flattened.gather_unchecked(&idx)) }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -632,7 +632,7 @@ fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Series) -> Se
 
         match join_opt_ids {
             Either::Left(ids) => unsafe {
-                out_column.take_unchecked(&ids.iter().copied().collect_ca(""))
+                out_column.gather_unchecked(&ids.iter().copied().collect_ca(""))
             },
             Either::Right(ids) => unsafe { out_column._take_opt_chunked_unchecked(ids) },
         }

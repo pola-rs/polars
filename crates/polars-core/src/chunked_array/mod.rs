@@ -748,7 +748,7 @@ pub(crate) mod test {
     #[test]
     fn take() {
         let a = get_chunked_array();
-        let new = a.take(&[0 as IdxSize, 1]).unwrap();
+        let new = a.gather(&[0 as IdxSize, 1]).unwrap();
         assert_eq!(new.len(), 2)
     }
 

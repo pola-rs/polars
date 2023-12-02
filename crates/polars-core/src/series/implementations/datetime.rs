@@ -219,28 +219,28 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
-    fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-        let ca = self.0.take(indices)?;
+    fn gather(&self, indices: &IdxCa) -> PolarsResult<Series> {
+        let ca = self.0.gather(indices)?;
         Ok(ca
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
             .into_series())
     }
 
-    unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
-        let ca = self.0.take_unchecked(indices);
+    unsafe fn gather_unchecked(&self, indices: &IdxCa) -> Series {
+        let ca = self.0.gather_unchecked(indices);
         ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
             .into_series()
     }
 
-    fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
-        let ca = self.0.take(indices)?;
+    fn gather_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
+        let ca = self.0.gather(indices)?;
         Ok(ca
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
             .into_series())
     }
 
-    unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
-        let ca = self.0.take_unchecked(indices);
+    unsafe fn gather_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
+        let ca = self.0.gather_unchecked(indices);
         ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
             .into_series()
     }

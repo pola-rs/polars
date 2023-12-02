@@ -115,7 +115,7 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
         }
         IdxCa::from_vec_validity(s.name(), out, validity).into_series()
     } else {
-        let sorted_values = unsafe { s.take_unchecked(&sort_idx_ca) };
+        let sorted_values = unsafe { s.gather_unchecked(&sort_idx_ca) };
         let not_consecutive_same = sorted_values
             .slice(1, sorted_values.len() - 1)
             .not_equal(&sorted_values.slice(0, sorted_values.len() - 1))

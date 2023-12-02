@@ -272,7 +272,7 @@ impl<'df> GroupBy<'df> {
                     match groups {
                         GroupsProxy::Idx(groups) => {
                             // SAFETY: groups are always in bounds.
-                            let mut out = unsafe { s.take_slice_unchecked(groups.first()) };
+                            let mut out = unsafe { s.gather_slice_unchecked(groups.first()) };
                             if groups.sorted {
                                 out.set_sorted_flag(s.is_sorted_flag());
                             };
@@ -291,7 +291,7 @@ impl<'df> GroupBy<'df> {
 
                             let indices = groups.iter().map(|&[first, _len]| first).collect_ca("");
                             // SAFETY: groups are always in bounds.
-                            let mut out = unsafe { s.take_unchecked(&indices) };
+                            let mut out = unsafe { s.gather_unchecked(&indices) };
                             // Sliced groups are always in order of discovery.
                             out.set_sorted_flag(s.is_sorted_flag());
                             out

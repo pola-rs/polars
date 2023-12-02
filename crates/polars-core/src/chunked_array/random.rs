@@ -95,13 +95,13 @@ impl Series {
                 let idx = create_rand_index_with_replacement(n, len, seed);
                 debug_assert_eq!(len, self.len());
                 // SAFETY: we know that we never go out of bounds.
-                unsafe { Ok(self.take_unchecked(&idx)) }
+                unsafe { Ok(self.gather_unchecked(&idx)) }
             },
             false => {
                 let idx = create_rand_index_no_replacement(n, len, seed, shuffle);
                 debug_assert_eq!(len, self.len());
                 // SAFETY: we know that we never go out of bounds.
-                unsafe { Ok(self.take_unchecked(&idx)) }
+                unsafe { Ok(self.gather_unchecked(&idx)) }
             },
         }
     }
@@ -124,7 +124,7 @@ impl Series {
         let idx = create_rand_index_no_replacement(n, len, seed, true);
         debug_assert_eq!(len, self.len());
         // SAFETY: we know that we never go out of bounds.
-        unsafe { self.take_unchecked(&idx) }
+        unsafe { self.gather_unchecked(&idx) }
     }
 }
 
@@ -149,13 +149,13 @@ where
                 let idx = create_rand_index_with_replacement(n, len, seed);
                 debug_assert_eq!(len, self.len());
                 // SAFETY: we know that we never go out of bounds.
-                unsafe { Ok(self.take_unchecked(&idx)) }
+                unsafe { Ok(self.gather_unchecked(&idx)) }
             },
             false => {
                 let idx = create_rand_index_no_replacement(n, len, seed, shuffle);
                 debug_assert_eq!(len, self.len());
                 // SAFETY: we know that we never go out of bounds.
-                unsafe { Ok(self.take_unchecked(&idx)) }
+                unsafe { Ok(self.gather_unchecked(&idx)) }
             },
         }
     }
