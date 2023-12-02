@@ -44,6 +44,7 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.dependencies import (
+    _PANDAS_AVAILABLE,
     _PYARROW_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
@@ -53,7 +54,11 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import NoRowsReturnedError, TooManyRowsReturnedError
+from polars.exceptions import (
+    ModuleUpgradeRequired,
+    NoRowsReturnedError,
+    TooManyRowsReturnedError,
+)
 from polars.functions import col, lit
 from polars.io._utils import _is_glob_pattern, _is_local_file
 from polars.io.csv._utils import _check_arg_is_1byte
@@ -2208,16 +2213,16 @@ class DataFrame:
         """
         if use_pyarrow_extension_array:
             if parse_version(pd.__version__) < parse_version("1.5"):
-                raise ModuleNotFoundError(
+                raise ModuleUpgradeRequired(
                     f'pandas>=1.5.0 is required for `to_pandas("use_pyarrow_extension_array=True")`, found Pandas {pd.__version__!r}'
                 )
-            if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < parse_version(
-                "8"
-            ):
+            if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < (8, 0):
                 msg = "pyarrow>=8.0.0 is required for `to_pandas(use_pyarrow_extension_array=True)`"
                 if _PYARROW_AVAILABLE:
                     msg += f", found pyarrow {pa.__version__!r}."
-                raise ModuleNotFoundError(msg)
+                    raise ModuleUpgradeRequired(msg)
+                else:
+                    raise ModuleNotFoundError(msg)
 
         record_batches = self._df.to_pandas()
         tbl = pa.Table.from_batches(record_batches)
@@ -3157,8 +3162,8 @@ class DataFrame:
         # table/rows all written; apply (optional) autofit
         if autofit and not is_empty:
             xlv = xlsxwriter.__version__
-            if parse_version(xlv) < parse_version("3.0.8"):
-                raise ModuleNotFoundError(
+            if parse_version(xlv) < (3, 0, 8):
+                raise ModuleUpgradeRequired(
                     f"`autofit=True` requires xlsxwriter 3.0.8 or higher, found {xlv}"
                 )
             ws.autofit()
@@ -3438,7 +3443,7 @@ class DataFrame:
         *,
         if_table_exists: DbWriteMode = "fail",
         engine: DbWriteEngine = "sqlalchemy",
-    ) -> None:
+    ) -> int:
         """
         Write a polars frame to a database.
 
@@ -3460,7 +3465,14 @@ class DataFrame:
             * 'append' will append to an existing table.
             * 'fail' will fail if table already exists.
         engine : {'sqlalchemy', 'adbc'}
-            Select the engine used for writing the data.
+            Select the engine to use for writing frame data.
+
+        Returns
+        -------
+        int
+            The number of rows affected, if the driver provides this information.
+            Otherwise, returns -1.
+
         """
         from polars.io.database import _open_adbc_connection
 
@@ -3470,20 +3482,15 @@ class DataFrame:
                 f"write_database `if_table_exists` must be one of {{{allowed}}}, got {if_table_exists!r}"
             )
 
-        def unpack_table_name(name: str) -> tuple[str | None, str]:
-            """Unpack optionally qualified table name into schema/table pair."""
+        def unpack_table_name(name: str) -> tuple[str | None, str | None, str]:
+            """Unpack optionally qualified table name to catalog/schema/table tuple."""
             from csv import reader as delimited_read
 
-            table_ident = next(delimited_read([name], delimiter="."))
-            if len(table_ident) > 2:
-                raise ValueError(f"`table_name` appears to be invalid: {name!r}")
-            elif len(table_ident) > 1:
-                schema = table_ident[0]
-                tbl = table_ident[1]
-            else:
-                schema = None
-                tbl = table_ident[0]
-            return schema, tbl
+            components: list[str | None] = next(delimited_read([name], delimiter="."))  # type: ignore[arg-type]
+            if len(components) > 3:
+                raise ValueError(f"`table_name` appears to be invalid: '{name}'")
+            catalog, schema, tbl = ([None] * (3 - len(components))) + components
+            return catalog, schema, tbl  # type: ignore[return-value]
 
         if engine == "adbc":
             try:
@@ -3505,7 +3512,7 @@ class DataFrame:
             elif if_table_exists == "replace":
                 if adbc_version < (0, 7):
                     adbc_str_version = ".".join(str(v) for v in adbc_version)
-                    raise ModuleNotFoundError(
+                    raise ModuleUpgradeRequired(
                         f"`if_table_exists = 'replace'` requires ADBC version >= 0.7, found {adbc_str_version}"
                     )
                 mode = "replace"
@@ -3518,7 +3525,8 @@ class DataFrame:
                 )
 
             with _open_adbc_connection(connection) as conn, conn.cursor() as cursor:
-                db_schema, unpacked_table_name = unpack_table_name(table_name)
+                catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
+                n_rows: int
                 if adbc_version >= (0, 7):
                     if "sqlite" in conn.adbc_get_info()["driver_name"].lower():
                         if if_table_exists == "replace":
@@ -3526,10 +3534,8 @@ class DataFrame:
                             cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
                             mode = "create"
                         catalog, db_schema = db_schema, None
-                    else:
-                        catalog = None
 
-                    cursor.adbc_ingest(
+                    n_rows = cursor.adbc_ingest(
                         unpacked_table_name,
                         data=self.to_arrow(),
                         mode=mode,
@@ -3538,40 +3544,54 @@ class DataFrame:
                     )
                 elif db_schema is not None:
                     adbc_str_version = ".".join(str(v) for v in adbc_version)
-                    raise ModuleNotFoundError(
+                    raise ModuleUpgradeRequired(
                         # https://github.com/apache/arrow-adbc/issues/1000
                         # https://github.com/apache/arrow-adbc/issues/1109
                         f"use of schema-qualified table names requires ADBC version >= 0.8, found {adbc_str_version}"
                     )
                 else:
-                    cursor.adbc_ingest(unpacked_table_name, self.to_arrow(), mode)
+                    n_rows = cursor.adbc_ingest(
+                        unpacked_table_name, self.to_arrow(), mode
+                    )
                 conn.commit()
+            return n_rows
 
         elif engine == "sqlalchemy":
-            if parse_version(pd.__version__) < parse_version("1.5"):
+            if not _PANDAS_AVAILABLE:
                 raise ModuleNotFoundError(
+                    "writing with engine 'sqlalchemy' currently requires pandas.\n\nInstall with: pip install pandas"
+                )
+            elif parse_version(pd.__version__) < (1, 5):
+                raise ModuleUpgradeRequired(
                     f"writing with engine 'sqlalchemy' requires pandas 1.5.x or higher, found {pd.__version__!r}"
                 )
             try:
                 from sqlalchemy import create_engine
             except ModuleNotFoundError as exc:
                 raise ModuleNotFoundError(
-                    "sqlalchemy not found"
-                    "\n\nInstall Polars with: pip install polars[sqlalchemy]"
+                    "sqlalchemy not found\n\nInstall with: pip install polars[sqlalchemy]"
                 ) from exc
 
-            # ensure conversion to pandas uses the pyarrow extension array option
-            # so that we can make use of the sql/db export without copying data
+            # note: the catalog (database) should be a part of the connection string
             engine_sa = create_engine(connection)
-            db_schema, table_name = unpack_table_name(table_name)
+            catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
+            if catalog:
+                raise ValueError(
+                    f"Unexpected three-part table name; provide the database/catalog ({catalog!r}) on the connection URI"
+                )
 
-            self.to_pandas(use_pyarrow_extension_array=True).to_sql(
-                name=table_name,
+            # ensure conversion to pandas uses the pyarrow extension array option
+            # so that we can make use of the sql/db export *without* copying data
+            res: int | None = self.to_pandas(
+                use_pyarrow_extension_array=True,
+            ).to_sql(
+                name=unpacked_table_name,
                 schema=db_schema,
                 con=engine_sa,
                 if_exists=if_table_exists,
                 index=False,
             )
+            return -1 if res is None else res
         else:
             raise ValueError(f"engine {engine!r} is not supported")
 

@@ -14,8 +14,7 @@ try:
         StructFieldNotFoundError,
     )
 except ImportError:
-    # They are only redefined for documentation purposes
-    # when there is no binary yet
+    # redefined for documentation purposes when there is no binary
 
     class ColumnNotFoundError(Exception):  # type: ignore[no-redef]
         """Exception raised when a specified column is not found."""
@@ -74,6 +73,10 @@ class RowsError(Exception):
     """Exception raised when the number of returned rows does not match expectation."""
 
 
+class ModuleUpgradeRequired(ModuleNotFoundError):
+    """Exception raised when the module is installed but needs to be upgraded."""
+
+
 class NoRowsReturnedError(RowsError):
     """Exception raised when no rows are returned, but at least one row is expected."""
 
@@ -109,6 +112,7 @@ __all__ = [
     "ChronoFormatWarning",
     "DuplicateError",
     "InvalidOperationError",
+    "ModuleUpgradeRequired",
     "NoDataError",
     "NoRowsReturnedError",
     "OutOfBoundsError",
