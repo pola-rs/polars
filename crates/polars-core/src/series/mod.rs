@@ -764,18 +764,6 @@ impl Series {
                 .clone()
                 .into_duration(timeunit)
                 .into_series(),
-            DataType::Float32 => self
-                .f32()
-                .unwrap()
-                .clone()
-                .into_duration(timeunit)
-                .into_series(),
-            DataType::Float64 => self
-                .f64()
-                .unwrap()
-                .clone()
-                .into_duration(timeunit)
-                .into_series(),
             DataType::Duration(_) => self
                 .duration()
                 .unwrap()

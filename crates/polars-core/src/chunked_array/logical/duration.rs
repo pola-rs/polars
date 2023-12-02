@@ -11,26 +11,6 @@ impl Int64Chunked {
     }
 }
 
-impl Float64Chunked {
-    pub fn into_duration(self, timeunit: TimeUnit) -> DurationChunked {
-        let mut dt = DurationChunked::new_logical(
-            self.cast(&DataType::Int64).unwrap().i64().unwrap().clone(),
-        );
-        dt.2 = Some(DataType::Duration(timeunit));
-        dt
-    }
-}
-
-impl Float32Chunked {
-    pub fn into_duration(self, timeunit: TimeUnit) -> DurationChunked {
-        let mut dt = DurationChunked::new_logical(
-            self.cast(&DataType::Int64).unwrap().i64().unwrap().clone(),
-        );
-        dt.2 = Some(DataType::Duration(timeunit));
-        dt
-    }
-}
-
 impl LogicalType for DurationChunked {
     fn dtype(&self) -> &DataType {
         self.2.as_ref().unwrap()
