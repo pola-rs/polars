@@ -8,7 +8,7 @@ from polars.utils.convert import (
     SECONDS_PER_DAY,
     US_PER_SECOND,
 )
-from polars.utils.deprecation import deprecate_renamed_function
+from polars.utils.deprecation import deprecate_function, deprecate_renamed_function
 
 if TYPE_CHECKING:
     import datetime as dt
@@ -33,6 +33,7 @@ class DateTimeNameSpace:
         s = wrap_s(self._s)
         return s[item]
 
+    @deprecate_function("Use `series.min` instead.", version="0.19.20")
     def min(self) -> dt.date | dt.datetime | dt.timedelta | None:
         """
         Return minimum as Python datetime.
@@ -47,6 +48,7 @@ class DateTimeNameSpace:
         """
         return self._s.min()
 
+    @deprecate_function("Use `series.max` instead.", version="0.19.20")
     def max(self) -> dt.date | dt.datetime | dt.timedelta | None:
         """
         Return maximum as Python datetime.
