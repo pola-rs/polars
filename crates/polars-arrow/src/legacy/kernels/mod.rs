@@ -24,7 +24,8 @@ mod time;
 pub use time::Ambiguous;
 #[cfg(feature = "timezones")]
 pub use time::{
-    convert_to_naive_local, convert_to_naive_local_opt, convert_to_new_timezone_and_naive_local,
+    convert_to_naive_local, convert_to_naive_local_opt, naive_local_to_naive_utc_in_new_time_zone,
+    naive_utc_to_naive_local_in_new_time_zone,
 };
 
 /// Internal state of [SlicesIterator]

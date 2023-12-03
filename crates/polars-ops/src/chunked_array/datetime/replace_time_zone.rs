@@ -1,7 +1,8 @@
 use std::str::FromStr;
 
 use arrow::legacy::kernels::{
-    convert_to_naive_local, convert_to_new_timezone_and_naive_local, Ambiguous,
+    convert_to_naive_local, naive_local_to_naive_utc_in_new_time_zone,
+    naive_utc_to_naive_local_in_new_time_zone, Ambiguous,
 };
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
@@ -85,7 +86,7 @@ pub fn replace_time_zone(
     Ok(out)
 }
 
-pub fn convert_to_local_time_zone(
+pub fn to_naive_local(
     datetime: &Logical<DatetimeType, Int64Type>,
     convert_tz: &Utf8Chunked,
 ) -> PolarsResult<DatetimeChunked> {
@@ -106,9 +107,9 @@ pub fn convert_to_local_time_zone(
         1 => match unsafe { convert_tz.get_unchecked(0) } {
             Some(convert_tz) => datetime.0.try_apply(|timestamp| {
                 let ndt = timestamp_to_datetime(timestamp);
-                let to_tz = &parse_time_zone(convert_tz)?;
+                let to_tz = parse_time_zone(convert_tz)?;
                 Ok(datetime_to_timestamp(
-                    convert_to_new_timezone_and_naive_local(&from_tz, to_tz, ndt),
+                    naive_utc_to_naive_local_in_new_time_zone(&from_tz, &to_tz, ndt),
                 ))
             }),
             _ => Ok(datetime.0.apply(|_| None)),
@@ -119,9 +120,9 @@ pub fn convert_to_local_time_zone(
             |timestamp_opt, convert_tz_opt| match (timestamp_opt, convert_tz_opt) {
                 (Some(timestamp), Some(convert_tz)) => {
                     let ndt = timestamp_to_datetime(timestamp);
-                    let to_tz = &parse_time_zone(convert_tz)?;
+                    let to_tz = parse_time_zone(convert_tz)?;
                     Ok(Some(datetime_to_timestamp(
-                        convert_to_new_timezone_and_naive_local(&from_tz, to_tz, ndt),
+                        naive_utc_to_naive_local_in_new_time_zone(&from_tz, &to_tz, ndt),
                     )))
                 },
                 _ => Ok(None),
@@ -129,5 +130,52 @@ pub fn convert_to_local_time_zone(
         ),
     };
     let out = out?.into_datetime(datetime.time_unit(), None);
+    Ok(out)
+}
+
+pub fn from_naive_local(
+    datetime: &Logical<DatetimeType, Int64Type>,
+    naive_tz: &Utf8Chunked,
+    out_tz: &str,
+    ambiguous: &str,
+) -> PolarsResult<DatetimeChunked> {
+    let to_tz = parse_time_zone(out_tz)?;
+    let ambig = Ambiguous::from_str(ambiguous)?;
+    let timestamp_to_datetime: fn(i64) -> NaiveDateTime = match datetime.time_unit() {
+        TimeUnit::Milliseconds => timestamp_ms_to_datetime,
+        TimeUnit::Microseconds => timestamp_us_to_datetime,
+        TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
+    };
+    let datetime_to_timestamp: fn(NaiveDateTime) -> i64 = match datetime.time_unit() {
+        TimeUnit::Milliseconds => datetime_to_timestamp_ms,
+        TimeUnit::Microseconds => datetime_to_timestamp_us,
+        TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
+    };
+    let out = match naive_tz.len() {
+        1 => match unsafe { naive_tz.get_unchecked(0) } {
+            Some(naive_tz) => datetime.0.try_apply(|timestamp| {
+                let ndt = timestamp_to_datetime(timestamp);
+                let from_tz = parse_time_zone(naive_tz)?;
+
+                Ok(datetime_to_timestamp(
+                    naive_local_to_naive_utc_in_new_time_zone(&from_tz, &to_tz, ndt, &ambig)?,
+                ))
+            }),
+            _ => Ok(datetime.0.apply(|_| None)),
+        },
+        _ => try_binary_elementwise(datetime, naive_tz, |timestamp_opt, naive_tz_opt| {
+            match (timestamp_opt, naive_tz_opt) {
+                (Some(timestamp), Some(naive_tz)) => {
+                    let ndt = timestamp_to_datetime(timestamp);
+                    let from_tz = parse_time_zone(naive_tz)?;
+                    Ok(Some(datetime_to_timestamp(
+                        naive_local_to_naive_utc_in_new_time_zone(&from_tz, &to_tz, ndt, &ambig)?,
+                    )))
+                },
+                _ => Ok(None),
+            }
+        }),
+    };
+    let out = out?.into_datetime(datetime.time_unit(), Some(out_tz.to_string()));
     Ok(out)
 }

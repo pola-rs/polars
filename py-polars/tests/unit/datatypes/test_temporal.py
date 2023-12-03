@@ -2831,9 +2831,61 @@ def test_rolling_duplicates() -> None:
 )
 def test_convert_tz_to_local_tz(data: pl.DataFrame, expected: pl.DataFrame) -> None:
     result = data.with_columns(
-        pl.col("date_col")
-        .dt.convert_to_local_time_zone(pl.col("timezone"))
-        .alias("local_dt")
+        pl.col("date_col").dt.to_naive_local(pl.col("timezone")).alias("local_dt")
+    )
+
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        (
+            pl.DataFrame(
+                {
+                    "local_dt": [
+                        datetime(2020, 10, 10, 1, 0),
+                        datetime(2020, 10, 15, 2, 0),
+                        datetime(2020, 10, 14, 20, 0),
+                    ],
+                    "timezone": ["Europe/London", "Africa/Kigali", "America/New_York"],
+                }
+            ),
+            pl.DataFrame(
+                [
+                    pl.Series(
+                        "local_dt",
+                        [
+                            datetime(2020, 10, 10, 1, 0),
+                            datetime(2020, 10, 15, 2, 0),
+                            datetime(2020, 10, 14, 20, 0),
+                        ],
+                        dtype=pl.Datetime(time_unit="us", time_zone=None),
+                    ),
+                    pl.Series(
+                        "timezone",
+                        ["Europe/London", "Africa/Kigali", "America/New_York"],
+                        dtype=pl.Utf8,
+                    ),
+                    pl.Series(
+                        "date_col",
+                        [
+                            datetime(2020, 10, 10, 0, 0),
+                            datetime(2020, 10, 15, 0, 0),
+                            datetime(2020, 10, 15, 0, 0),
+                        ],
+                        dtype=pl.Datetime(time_unit="us", time_zone="UTC"),
+                    ).dt.convert_time_zone("Europe/London"),
+                ]
+            ),
+        ),
+    ],
+)
+def test_convert_tz_from_local_tz(data: pl.DataFrame, expected: pl.DataFrame) -> None:
+    result = data.with_columns(
+        pl.col("local_dt")
+        .dt.from_naive_local(pl.col("timezone"), "Europe/London")
+        .alias("date_col")
     )
 
     assert_frame_equal(result, expected)

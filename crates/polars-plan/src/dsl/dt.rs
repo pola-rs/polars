@@ -233,10 +233,20 @@ impl DateLikeNameSpace {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn convert_to_local_time_zone(self, convert_tz: Expr) -> Expr {
+    pub fn to_naive_local(self, convert_tz: Expr) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::TemporalExpr(TemporalFunction::ConvertToLocalTimeZone),
+            FunctionExpr::TemporalExpr(TemporalFunction::ToNaiveLocal),
             &[convert_tz],
+            false,
+            false,
+        )
+    }
+
+    #[cfg(feature = "timezones")]
+    pub fn from_naive_local(self, naive_tz: Expr, out_tz: TimeZone, ambiguous: String) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::TemporalExpr(TemporalFunction::FromNaiveLocal(out_tz, ambiguous)),
+            &[naive_tz],
             false,
             false,
         )

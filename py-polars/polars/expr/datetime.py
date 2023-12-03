@@ -1423,16 +1423,16 @@ class ExprDateTimeNameSpace:
             self._pyexpr.dt_replace_time_zone(time_zone, ambiguous._pyexpr)
         )
 
-    def convert_to_local_time_zone(
+    def to_naive_local(
         self,
-        time_zone: IntoExpr,
+        tz: IntoExpr,
     ) -> Expr:
         """
         Convert to local datetime in given time zone.
 
         Parameters
         ----------
-        time_zone
+        tz
             Time zone for the `Datetime` expression.
 
         Returns
@@ -1466,8 +1466,41 @@ class ExprDateTimeNameSpace:
         └─────────────────────────┴──────────────────┴─────────────────────┘
 
         """
-        local_tz = parse_as_expression(time_zone, str_as_lit=False)
-        return wrap_expr(self._pyexpr.dt_convert_to_local_timezone(local_tz))
+        local_tz = parse_as_expression(tz, str_as_lit=False)
+        return wrap_expr(self._pyexpr.dt_to_naive_local(local_tz))
+
+    def from_naive_local(
+        self,
+        naive_tz: IntoExpr,
+        out_tz: str,
+        ambiguous: Ambiguous = "raise",
+    ) -> Expr:
+        """
+        Converts from local datetime in given time zone to new timezone.
+
+        Parameters
+        ----------
+        naive_tz
+            Current timezone of each datetime
+        out_tz
+            Timezone to convert to
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - `'raise'` (default): raise
+            - `'earliest'`: use the earliest datetime
+            - `'latest'`: use the latest datetime
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`DateTime`.
+
+        """
+        naive_time_zone = parse_as_expression(naive_tz, str_as_lit=False)
+        return wrap_expr(
+            self._pyexpr.dt_from_naive_local(naive_time_zone, out_tz, ambiguous)
+        )
 
     def total_days(self) -> Expr:
         """

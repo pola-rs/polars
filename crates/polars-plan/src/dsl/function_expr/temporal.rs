@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 #[cfg(feature = "date_offset")]
 use arrow::legacy::time_zone::Tz;
 #[cfg(feature = "date_offset")]
@@ -53,8 +55,11 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map_as_slice!(dispatch::replace_time_zone, tz.as_deref())
             },
             #[cfg(feature = "timezones")]
-            ConvertToLocalTimeZone => {
-                map_as_slice!(dispatch::convert_to_local_time_zone)
+            ToNaiveLocal => {
+                map_as_slice!(dispatch::to_naive_local)
+            },
+            FromNaiveLocal(tz, ambiguous) => {
+                map_as_slice!(dispatch::from_naive_local, tz.deref(), ambiguous.deref())
             },
             Combine(tu) => map_as_slice!(temporal::combine, tu),
             DatetimeFunction {

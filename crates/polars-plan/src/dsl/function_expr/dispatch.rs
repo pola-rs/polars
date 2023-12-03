@@ -43,11 +43,23 @@ pub(super) fn replace_time_zone(s: &[Series], time_zone: Option<&str>) -> Polars
 }
 
 #[cfg(feature = "timezones")]
-pub(super) fn convert_to_local_time_zone(s: &[Series]) -> PolarsResult<Series> {
+pub(super) fn to_naive_local(s: &[Series]) -> PolarsResult<Series> {
     let s1 = &s[0];
     let ca = s1.datetime().unwrap();
     let s2 = &s[1].utf8().unwrap();
-    Ok(polars_ops::prelude::convert_to_local_time_zone(ca, s2)?.into_series())
+    Ok(polars_ops::prelude::to_naive_local(ca, s2)?.into_series())
+}
+
+#[cfg(feature = "timezones")]
+pub(super) fn from_naive_local(
+    s: &[Series],
+    out_tz: &str,
+    ambiguous: &str,
+) -> PolarsResult<Series> {
+    let s1 = &s[0];
+    let ca = s1.datetime().unwrap();
+    let s2 = &s[1].utf8().unwrap();
+    Ok(polars_ops::prelude::from_naive_local(ca, s2, out_tz, ambiguous)?.into_series())
 }
 
 #[cfg(feature = "dtype-struct")]
