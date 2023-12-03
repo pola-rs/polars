@@ -1766,7 +1766,7 @@ class Series:
         """
         return self.to_frame().select(F.col(self.name).nan_min()).item()
 
-    def std(self, ddof: int = 1) -> float | None:
+    def std(self, ddof: int = 1) -> float | timedelta | None:
         """
         Get the standard deviation of this Series.
 
@@ -1783,10 +1783,20 @@ class Series:
         >>> s.std()
         1.0
 
+        >>> s = pl.Series(
+        ...     "a",
+        ...     [
+        ...         timedelta(microseconds=1),
+        ...         timedelta(microseconds=2),
+        ...         timedelta(microseconds=10),
+        ...     ],
+        ... )
+        >>> s.std()
+        datetime.timedelta(microseconds=4)
         """
         return self.to_frame().select(F.col(self.name).std(ddof)).to_series().item()
 
-    def var(self, ddof: int = 1) -> float | None:
+    def var(self, ddof: int = 1) -> float | timedelta | None:
         """
         Get variance of this Series.
 
@@ -1803,6 +1813,16 @@ class Series:
         >>> s.var()
         1.0
 
+        >>> s = pl.Series(
+        ...     "a",
+        ...     [
+        ...         timedelta(microseconds=1),
+        ...         timedelta(microseconds=2),
+        ...         timedelta(microseconds=10),
+        ...     ],
+        ... )
+        >>> s.std()
+        datetime.timedelta(microseconds=24)
         """
         return self.to_frame().select(F.col(self.name).var(ddof)).to_series().item()
 

@@ -23,6 +23,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 
 if TYPE_CHECKING:
+    from datetime import timedelta
     from typing import Awaitable, Collection, Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
@@ -165,11 +166,11 @@ def std(column: str, ddof: int = 1) -> Expr:
 
 
 @overload
-def std(column: Series, ddof: int = 1) -> float | None:
+def std(column: Series, ddof: int = 1) -> float | timedelta | None:
     ...
 
 
-def std(column: str | Series, ddof: int = 1) -> Expr | float | None:
+def std(column: str | Series, ddof: int = 1) -> Expr | float | timedelta | None:
     """
     Get the standard deviation.
 
@@ -213,11 +214,11 @@ def var(column: str, ddof: int = 1) -> Expr:
 
 
 @overload
-def var(column: Series, ddof: int = 1) -> float | None:
+def var(column: Series, ddof: int = 1) -> float | timedelta | None:
     ...
 
 
-def var(column: str | Series, ddof: int = 1) -> Expr | float | None:
+def var(column: str | Series, ddof: int = 1) -> Expr | float | timedelta | None:
     """
     Get the variance.
 
