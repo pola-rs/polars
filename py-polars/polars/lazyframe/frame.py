@@ -617,7 +617,7 @@ class LazyFrame:
         Read a logical plan from a JSON file to construct a LazyFrame.
 
         .. deprecated:: 0.18.12
-            This class method has been renamed to `deserialize`.
+            This class method has been renamed to :meth:`deserialize`.
 
         Parameters
         ----------

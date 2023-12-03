@@ -50,6 +50,7 @@ The following methods are available under the `expr.str` attribute.
     Expr.str.to_date
     Expr.str.to_datetime
     Expr.str.to_decimal
+    Expr.str.to_integer
     Expr.str.to_lowercase
     Expr.str.to_titlecase
     Expr.str.to_time

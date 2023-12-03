@@ -774,7 +774,7 @@ class ListNameSpace:
         Compute the SET UNION between the elements in this list and the elements of `other`.
 
         .. deprecated:: 0.18.10
-            This method has been renamed to `Series.list.set_union`.
+            This method has been renamed to :meth:`set_union`.
 
         """  # noqa: W505
         return self.set_union(other)
@@ -785,7 +785,7 @@ class ListNameSpace:
         Compute the SET DIFFERENCE between the elements in this list and the elements of `other`.
 
         .. deprecated:: 0.18.10
-            This method has been renamed to `Series.list.set_difference`.
+            This method has been renamed to :meth:`set_difference`.
 
         """  # noqa: W505
         return self.set_difference(other)
@@ -796,7 +796,7 @@ class ListNameSpace:
         Compute the SET INTERSECTION between the elements in this list and the elements of `other`.
 
         .. deprecated:: 0.18.10
-            This method has been renamed to `Series.list.set_intersection`.
+            This method has been renamed to :meth:`set_intersection`.
 
         """  # noqa: W505
         return self.set_intersection(other)
@@ -807,7 +807,7 @@ class ListNameSpace:
         Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of `other`.
 
         .. deprecated:: 0.18.10
-            This method has been renamed to `Series.list.set_symmetric_difference`.
+            This method has been renamed to :meth:`set_symmetric_difference`.
 
         """  # noqa: W505
         return self.set_symmetric_difference(other)
