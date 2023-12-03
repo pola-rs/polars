@@ -2801,3 +2801,14 @@ def test_series_cmp_fast_paths() -> None:
         pl.Series([None], dtype=pl.Boolean)
         == pl.Series([False, False], dtype=pl.Boolean)
     ).to_list() == [None, None]
+
+
+def test_series_duration_std_var() -> None:
+    s = pl.Series([timedelta(days=1), timedelta(days=2), timedelta(days=4)])
+    assert s.std() == timedelta(days=1, seconds=45578, microseconds=180014)
+    assert s.var() is None  # Way to large value so overflows
+
+    s = pl.Series([timedelta(seconds=1), timedelta(seconds=2), timedelta(seconds=4)])
+
+    assert s.std() == timedelta(seconds=1, microseconds=527525)
+    assert s.var() == timedelta(days=27, seconds=533, microseconds=333333)

@@ -1784,8 +1784,6 @@ class Series:
         1.0
 
         """
-        if not self.dtype.is_numeric():
-            return None
         return self.to_frame().select(F.col(self.name).std(ddof)).to_series().item()
 
     def var(self, ddof: int = 1) -> float | None:
@@ -1806,8 +1804,6 @@ class Series:
         1.0
 
         """
-        if not self.dtype.is_numeric():
-            return None
         return self.to_frame().select(F.col(self.name).var(ddof)).to_series().item()
 
     def median(self) -> float | None:
