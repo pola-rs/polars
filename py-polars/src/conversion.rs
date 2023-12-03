@@ -338,14 +338,9 @@ impl ToPyObject for Wrap<DataType> {
                 class.call0().unwrap().into()
             },
             DataType::Decimal(precision, scale) => {
-                let kwargs = PyDict::new(py);
-                kwargs.set_item("precision", *precision).unwrap();
-                kwargs.set_item("scale", *scale).unwrap();
-                pl.getattr(intern!(py, "Decimal"))
-                    .unwrap()
-                    .call((), Some(kwargs))
-                    .unwrap()
-                    .into()
+                let class = pl.getattr(intern!(py, "Decimal")).unwrap();
+                let args = (*precision, *scale);
+                class.call1(args).unwrap().into()
             },
             DataType::Boolean => {
                 let class = pl.getattr(intern!(py, "Boolean")).unwrap();
@@ -360,17 +355,15 @@ impl ToPyObject for Wrap<DataType> {
                 class.call0().unwrap().into()
             },
             DataType::Array(inner, size) => {
+                let class = pl.getattr(intern!(py, "Array")).unwrap();
                 let inner = Wrap(*inner.clone()).to_object(py);
-                let list_class = pl.getattr(intern!(py, "Array")).unwrap();
-                let kwargs = PyDict::new(py);
-                kwargs.set_item("inner", inner).unwrap();
-                kwargs.set_item("width", size).unwrap();
-                list_class.call((), Some(kwargs)).unwrap().into()
+                let args = (inner, *size);
+                class.call1(args).unwrap().into()
             },
             DataType::List(inner) => {
+                let class = pl.getattr(intern!(py, "List")).unwrap();
                 let inner = Wrap(*inner.clone()).to_object(py);
-                let list_class = pl.getattr(intern!(py, "List")).unwrap();
-                list_class.call1((inner,)).unwrap().into()
+                class.call1((inner,)).unwrap().into()
             },
             DataType::Date => {
                 let class = pl.getattr(intern!(py, "Date")).unwrap();
