@@ -1821,7 +1821,7 @@ class Series:
         ...         timedelta(microseconds=10),
         ...     ],
         ... )
-        >>> s.std()
+        >>> s.var()
         datetime.timedelta(microseconds=24)
         """
         return self.to_frame().select(F.col(self.name).var(ddof)).to_series().item()
