@@ -50,6 +50,7 @@ pub enum TemporalFunction {
     ReplaceTimeZone(Option<TimeZone>),
     #[cfg(feature = "timezones")]
     ToNaiveLocal,
+    #[cfg(feature = "timezones")]
     FromNaiveLocal(TimeZone, String),
     Combine(TimeUnit),
     DatetimeFunction {
@@ -102,6 +103,7 @@ impl TemporalFunction {
             ReplaceTimeZone(tz) => mapper.map_datetime_dtype_timezone(tz.as_ref()),
             #[cfg(feature = "timezones")]
             ToNaiveLocal => mapper.map_datetime_dtype_timezone(None),
+            #[cfg(feature = "timezones")]
             FromNaiveLocal(tz, _) => mapper.map_datetime_dtype_timezone(Some(tz)),
             DatetimeFunction {
                 time_unit,
@@ -163,6 +165,7 @@ impl Display for TemporalFunction {
             ReplaceTimeZone(_) => "replace_time_zone",
             #[cfg(feature = "timezones")]
             ToNaiveLocal => "to_naive_local",
+            #[cfg(feature = "timezones")]
             FromNaiveLocal(_, _) => "from_naive_local",
             DatetimeFunction { .. } => return write!(f, "dt.datetime"),
             Combine(_) => "combine",

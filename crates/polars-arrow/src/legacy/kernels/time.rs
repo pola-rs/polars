@@ -84,6 +84,7 @@ pub fn naive_utc_to_naive_local_in_new_time_zone(
         .naive_local()
 }
 
+#[cfg(feature = "timezones")]
 pub fn naive_local_to_naive_utc_in_new_time_zone(
     from_tz: &Tz,
     to_tz: &Tz,

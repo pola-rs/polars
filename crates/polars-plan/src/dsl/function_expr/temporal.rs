@@ -58,6 +58,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             ToNaiveLocal => {
                 map_as_slice!(dispatch::to_naive_local)
             },
+            #[cfg(feature = "timezones")]
             FromNaiveLocal(tz, ambiguous) => {
                 map_as_slice!(dispatch::from_naive_local, tz.deref(), ambiguous.deref())
             },
