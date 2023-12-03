@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 #[cfg(feature = "date_offset")]
 use arrow::legacy::time_zone::Tz;
 #[cfg(feature = "date_offset")]
