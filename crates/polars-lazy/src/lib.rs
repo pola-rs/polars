@@ -60,7 +60,7 @@
 //!
 //! assert!(new.column("new_column")
 //!     .unwrap()
-//!     .series_equal(
+//!     .equals(
 //!         &Series::new("new_column", &[50, 40, 30, 20, 10])
 //!     )
 //! );
@@ -93,7 +93,7 @@
 //!
 //! assert!(new.column("new_column")
 //!     .unwrap()
-//!     .series_equal(
+//!     .equals(
 //!         &Series::new("new_column", &[100, 100, 3, 4, 5])
 //!     )
 //! );

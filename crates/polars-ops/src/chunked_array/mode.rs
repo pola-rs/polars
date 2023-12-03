@@ -1,7 +1,7 @@
 use arrow::legacy::utils::CustomIterTools;
 use polars_core::frame::group_by::IntoGroupsProxy;
 use polars_core::prelude::*;
-use polars_core::with_match_physical_integer_polars_type;
+use polars_core::{with_match_physical_integer_polars_type, POOL};
 
 fn mode_primitive<T: PolarsDataType>(ca: &ChunkedArray<T>) -> PolarsResult<ChunkedArray<T>>
 where
@@ -10,7 +10,8 @@ where
     if ca.is_empty() {
         return Ok(ca.clone());
     }
-    let groups = ca.group_tuples(true, false).unwrap();
+    let parallel = !POOL.current_thread_has_pending_tasks().unwrap_or(false);
+    let groups = ca.group_tuples(parallel, false).unwrap();
     let idx = mode_indices(groups);
 
     // Safety:

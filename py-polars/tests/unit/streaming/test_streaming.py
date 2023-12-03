@@ -297,14 +297,12 @@ def test_null_sum_streaming_10455() -> None:
         {
             "x": [1] * 10,
             "y": [None] * 10,
-        }
+        },
+        schema={"x": pl.Int64, "y": pl.Float32},
     )
-    assert df.lazy().group_by("x").sum().collect(streaming=True).to_dict(
-        as_series=False
-    ) == {
-        "x": [1],
-        "y": [0.0],
-    }
+    result = df.lazy().group_by("x").sum().collect(streaming=True)
+    expected = {"x": [1], "y": [0.0]}
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_boolean_agg_schema() -> None:

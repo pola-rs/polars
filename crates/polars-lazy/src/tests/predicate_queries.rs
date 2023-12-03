@@ -187,15 +187,15 @@ fn test_filter_nulls_created_by_join() -> PolarsResult<()> {
         "bar" => [1],
         "flag" => &[None, Some(true)][0..1]
     ]?;
-    assert!(out.frame_equal_missing(&expected));
+    assert!(out.equals_missing(&expected));
 
     let out = a
         .lazy()
         .join(b, [col("key")], [col("key")], JoinType::Left.into())
-        .filter(col("flag").eq(lit(NULL)))
+        .filter(col("flag").is_null())
         .with_predicate_pushdown(false)
         .collect()?;
-    assert!(out.frame_equal_missing(&expected));
+    assert!(out.equals_missing(&expected));
 
     Ok(())
 }
@@ -217,7 +217,7 @@ fn test_filter_null_creation_by_cast() -> PolarsResult<()> {
         "int" => [3],
         "empty" => &[None, Some(1i32)][..1]
     ]?;
-    assert!(out.frame_equal_missing(&expected));
+    assert!(out.equals_missing(&expected));
 
     Ok(())
 }

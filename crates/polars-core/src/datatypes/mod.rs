@@ -23,11 +23,9 @@ use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub, SubAssign};
 
 pub use aliases::*;
 pub use any_value::*;
-use arrow::compute::comparison::Simd8;
 #[cfg(feature = "dtype-categorical")]
 use arrow::datatypes::IntegerType;
 pub use arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
-use arrow::legacy::data_types::IsFloat;
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use bytemuck::Zeroable;
@@ -35,6 +33,9 @@ pub use dtype::*;
 pub use field::*;
 use num_traits::{Bounded, FromPrimitive, Num, NumCast, One, Zero};
 use polars_utils::abs_diff::AbsDiff;
+use polars_utils::float::IsFloat;
+use polars_utils::min_max::MinMax;
+use polars_utils::nulls::IsNull;
 #[cfg(feature = "serde")]
 use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
@@ -246,7 +247,7 @@ pub trait NumericNative:
     + Zero
     + One
     + Simd
-    + Simd8
+    // + Simd8
     + std::iter::Sum<Self>
     + Add<Output = Self>
     + Sub<Output = Self>
@@ -260,6 +261,8 @@ pub trait NumericNative:
     + FromPrimitive
     + IsFloat
     + ArrayArithmetics
+    + MinMax
+    + IsNull
 {
     type PolarsType: PolarsNumericType;
 }

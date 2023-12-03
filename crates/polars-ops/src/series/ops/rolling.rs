@@ -1,4 +1,5 @@
 use polars_core::prelude::*;
+use polars_utils::float::IsFloat;
 #[cfg(feature = "moment")]
 use {
     crate::series::ops::moment::MomentSeries,

@@ -51,22 +51,7 @@ where
             IndexMap::with_capacity_and_hasher(iter.size_hint().0, ahash::RandomState::default());
         for fld in iter {
             let fld = fld.into();
-
-            #[cfg(feature = "dtype-decimal")]
-            let fld = match fld.dtype {
-                DataType::Decimal(_, _) => {
-                    if crate::config::decimal_is_active() {
-                        fld
-                    } else {
-                        let mut fld = fld.clone();
-                        fld.coerce(DataType::Float64);
-                        fld
-                    }
-                },
-                _ => fld,
-            };
-
-            map.insert(fld.name().clone(), fld.data_type().clone());
+            map.insert(fld.name, fld.dtype);
         }
         Self { inner: map }
     }

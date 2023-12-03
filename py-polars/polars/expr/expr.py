@@ -25,7 +25,6 @@ import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import (
     Categorical,
-    Null,
     Struct,
     UInt32,
     Utf8,
@@ -58,7 +57,7 @@ from polars.utils.deprecation import (
     warn_closed_future_change,
 )
 from polars.utils.meta import threadpool_size
-from polars.utils.various import no_default, sphinx_accessor
+from polars.utils.various import _warn_null_comparison, no_default, sphinx_accessor
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
@@ -132,6 +131,11 @@ class Expr:
     def _repr_html_(self) -> str:
         return self._pyexpr.to_str()
 
+    def __repr__(self) -> str:
+        if len(expr_str := self._pyexpr.to_str()) > 30:
+            expr_str = f"{expr_str[:30]}…"
+        return f"<{self.__class__.__name__} [{expr_str!r}] at 0x{id(self):X}>"
+
     def __str__(self) -> str:
         return self._pyexpr.to_str()
 
@@ -159,6 +163,7 @@ class Expr:
         return self._from_pyexpr(self._to_pyexpr(other)._and(self._pyexpr))
 
     def __eq__(self, other: Any) -> Self:  # type: ignore[override]
+        _warn_null_comparison(other)
         return self._from_pyexpr(self._pyexpr.eq(self._to_pyexpr(other)))
 
     def __floordiv__(self, other: Any) -> Self:
@@ -168,18 +173,22 @@ class Expr:
         return self._from_pyexpr(self._to_pyexpr(other) // self._pyexpr)
 
     def __ge__(self, other: Any) -> Self:
+        _warn_null_comparison(other)
         return self._from_pyexpr(self._pyexpr.gt_eq(self._to_pyexpr(other)))
 
     def __gt__(self, other: Any) -> Self:
+        _warn_null_comparison(other)
         return self._from_pyexpr(self._pyexpr.gt(self._to_pyexpr(other)))
 
     def __invert__(self) -> Self:
         return self.not_()
 
     def __le__(self, other: Any) -> Self:
+        _warn_null_comparison(other)
         return self._from_pyexpr(self._pyexpr.lt_eq(self._to_pyexpr(other)))
 
     def __lt__(self, other: Any) -> Self:
+        _warn_null_comparison(other)
         return self._from_pyexpr(self._pyexpr.lt(self._to_pyexpr(other)))
 
     def __mod__(self, other: Any) -> Self:
@@ -195,6 +204,7 @@ class Expr:
         return self._from_pyexpr(self._to_pyexpr(other) * self._pyexpr)
 
     def __ne__(self, other: Any) -> Self:  # type: ignore[override]
+        _warn_null_comparison(other)
         return self._from_pyexpr(self._pyexpr.neq(self._to_pyexpr(other)))
 
     def __neg__(self) -> Expr:
@@ -4587,7 +4597,7 @@ class Expr:
         ╞═════╪═════╪════════╡
         │ 1.0 ┆ 2.0 ┆ false  │
         │ 2.0 ┆ 2.0 ┆ true   │
-        │ NaN ┆ NaN ┆ false  │
+        │ NaN ┆ NaN ┆ true   │
         │ 4.0 ┆ 4.0 ┆ true   │
         └─────┴─────┴────────┘
 
@@ -4625,7 +4635,7 @@ class Expr:
         ╞══════╪══════╪════════╪════════════════╡
         │ 1.0  ┆ 2.0  ┆ false  ┆ false          │
         │ 2.0  ┆ 2.0  ┆ true   ┆ true           │
-        │ NaN  ┆ NaN  ┆ false  ┆ false          │
+        │ NaN  ┆ NaN  ┆ true   ┆ true           │
         │ 4.0  ┆ 4.0  ┆ true   ┆ true           │
         │ null ┆ 5.0  ┆ null   ┆ false          │
         │ null ┆ null ┆ null   ┆ true           │
@@ -4662,7 +4672,7 @@ class Expr:
         ╞═════╪═════╪════════╡
         │ 5.0 ┆ 5.0 ┆ true   │
         │ 4.0 ┆ 3.0 ┆ true   │
-        │ NaN ┆ NaN ┆ false  │
+        │ NaN ┆ NaN ┆ true   │
         │ 2.0 ┆ 1.0 ┆ true   │
         └─────┴─────┴────────┘
 
@@ -4732,7 +4742,7 @@ class Expr:
         ╞═════╪═════╪════════╡
         │ 5.0 ┆ 5.0 ┆ true   │
         │ 4.0 ┆ 3.5 ┆ false  │
-        │ NaN ┆ NaN ┆ false  │
+        │ NaN ┆ NaN ┆ true   │
         │ 0.5 ┆ 2.0 ┆ true   │
         └─────┴─────┴────────┘
 
@@ -4802,7 +4812,7 @@ class Expr:
         ╞═════╪═════╪════════╡
         │ 1.0 ┆ 2.0 ┆ true   │
         │ 2.0 ┆ 2.0 ┆ false  │
-        │ NaN ┆ NaN ┆ true   │
+        │ NaN ┆ NaN ┆ false  │
         │ 4.0 ┆ 4.0 ┆ false  │
         └─────┴─────┴────────┘
 
@@ -4840,7 +4850,7 @@ class Expr:
         ╞══════╪══════╪════════╪════════════════╡
         │ 1.0  ┆ 2.0  ┆ true   ┆ true           │
         │ 2.0  ┆ 2.0  ┆ false  ┆ false          │
-        │ NaN  ┆ NaN  ┆ true   ┆ true           │
+        │ NaN  ┆ NaN  ┆ false  ┆ false          │
         │ 4.0  ┆ 4.0  ┆ false  ┆ false          │
         │ null ┆ 5.0  ┆ null   ┆ true           │
         │ null ┆ null ┆ null   ┆ false          │
@@ -5195,8 +5205,7 @@ class Expr:
         if isinstance(other, Collection) and not isinstance(other, str):
             if isinstance(other, (Set, FrozenSet)):
                 other = list(other)
-            implied_dtype = Null if len(other) == 0 else None
-            other = F.lit(pl.Series(other, dtype=implied_dtype))._pyexpr
+            other = F.lit(pl.Series(other))._pyexpr
         else:
             other = parse_as_expression(other)
         return self._from_pyexpr(self._pyexpr.is_in(other))
@@ -9136,7 +9145,7 @@ class Expr:
             name: str,
             values: Iterable[Any],
             dtype: PolarsDataType | None,
-            dtype_if_empty: PolarsDataType | None,
+            dtype_if_empty: PolarsDataType,
             dtype_keys: PolarsDataType | None,
             *,
             is_keys: bool,
@@ -9308,7 +9317,11 @@ class Expr:
                 F.lit(True).alias(is_remapped_column)
             )
             mapped = df.lazy().join(
-                other=remap_frame, how="left", left_on=column, right_on=remap_key_column
+                other=remap_frame,
+                how="left",
+                left_on=column,
+                right_on=remap_key_column,
+                join_nulls=True,
             )
             if default_value is None:
                 result_index = 1

@@ -2,7 +2,7 @@
 
 This chapter is intended for new Polars users.
 The goal is to provide a quick overview of the most common functionality.
-Feel free to skip ahead to the [next chapter](../concepts/data-types.md) to dive into the details.
+Feel free to skip ahead to the [next chapter](../concepts/data-types/overview.md) to dive into the details.
 
 !!! rust "Rust Users Only"
 

@@ -121,6 +121,15 @@ def is_str_sequence(
     return isinstance(val, Sequence) and _is_iterable_of(val, str)
 
 
+def _warn_null_comparison(obj: Any) -> None:
+    if obj is None:
+        warnings.warn(
+            "Comparisons with None always result in null. Consider using `.is_null()` or `.is_not_null()`.",
+            UserWarning,
+            stacklevel=find_stacklevel(),
+        )
+
+
 def range_to_series(
     name: str, rng: range, dtype: PolarsIntegerType | None = None
 ) -> pl.Series:
@@ -505,9 +514,10 @@ def _get_stack_locals(
 
 
 # this is called from rust
-def _polars_warn(msg: str) -> None:
+def _polars_warn(msg: str, category: type[Warning] = UserWarning) -> None:
     warnings.warn(
         msg,
+        category=category,
         stacklevel=find_stacklevel(),
     )
 

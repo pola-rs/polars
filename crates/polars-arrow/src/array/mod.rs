@@ -669,6 +669,7 @@ mod null;
 mod primitive;
 pub mod specification;
 mod struct_;
+mod total_ord;
 mod union;
 mod utf8;
 

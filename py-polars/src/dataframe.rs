@@ -788,7 +788,7 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "parquet")]
-    #[pyo3(signature = (py_f, compression, compression_level, statistics, row_group_size))]
+    #[pyo3(signature = (py_f, compression, compression_level, statistics, row_group_size, data_page_size))]
     pub fn write_parquet(
         &mut self,
         py: Python,
@@ -797,6 +797,7 @@ impl PyDataFrame {
         compression_level: Option<i32>,
         statistics: bool,
         row_group_size: Option<usize>,
+        data_page_size: Option<usize>,
     ) -> PyResult<()> {
         let compression = parse_parquet_compression(compression, compression_level)?;
 
@@ -807,6 +808,7 @@ impl PyDataFrame {
                     .with_compression(compression)
                     .with_statistics(statistics)
                     .with_row_group_size(row_group_size)
+                    .with_data_page_size(data_page_size)
                     .finish(&mut self.df)
                     .map_err(PyPolarsErr::from)
             })?;
@@ -816,6 +818,7 @@ impl PyDataFrame {
                 .with_compression(compression)
                 .with_statistics(statistics)
                 .with_row_group_size(row_group_size)
+                .with_data_page_size(data_page_size)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         }
@@ -1127,9 +1130,9 @@ impl PyDataFrame {
 
     pub fn equals(&self, other: &PyDataFrame, null_equal: bool) -> bool {
         if null_equal {
-            self.df.frame_equal_missing(&other.df)
+            self.df.equals_missing(&other.df)
         } else {
-            self.df.frame_equal(&other.df)
+            self.df.equals(&other.df)
         }
     }
 

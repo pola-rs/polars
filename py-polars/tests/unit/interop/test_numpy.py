@@ -38,3 +38,14 @@ def test_view_deprecated() -> None:
         result = s.view()
     assert isinstance(result, np.ndarray)
     assert np.all(result == np.array([1.0, 2.5, 3.0]))
+
+
+def test_numpy_disambiguation() -> None:
+    a = np.array([1, 2])
+    df = pl.DataFrame({"a": a})
+    result = df.with_columns(b=a).to_dict(as_series=False)  # type: ignore[arg-type]
+    expected = {
+        "a": [1, 2],
+        "b": [1, 2],
+    }
+    assert result == expected

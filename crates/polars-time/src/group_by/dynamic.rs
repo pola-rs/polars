@@ -956,7 +956,7 @@ mod test {
             .unwrap();
         time_key.rename("");
         let lower_bound = keys[1].clone().with_name("");
-        assert!(time_key.series_equal(&lower_bound));
+        assert!(time_key.equals(&lower_bound));
         Ok(())
     }
 }

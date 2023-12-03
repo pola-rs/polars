@@ -54,7 +54,7 @@ def test_to_datetime_precision() -> None:
         "date", ["2022-09-12 21:54:36.789321456", "2022-09-13 12:34:56.987456321"]
     )
     ds = s.str.to_datetime()
-    assert ds.cast(pl.Date) != None  # noqa: E711  (note: *deliberately* testing "!=")
+    assert ds.cast(pl.Date).is_not_null().all()
     assert getattr(ds.dtype, "time_unit", None) == "us"
 
     time_units: list[TimeUnit] = ["ms", "us", "ns"]
@@ -141,7 +141,7 @@ def test_to_date_non_exact_strptime() -> None:
     ],
 )
 def test_non_exact_short_elements_10223(value: str, attr: str) -> None:
-    with pytest.raises(pl.ComputeError, match="Conversion .* failed"):
+    with pytest.raises(pl.ComputeError, match="conversion .* failed"):
         getattr(pl.Series(["2019-01-01", value]).str, attr)(exact=False)
 
 

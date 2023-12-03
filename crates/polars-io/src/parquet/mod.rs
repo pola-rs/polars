@@ -98,7 +98,7 @@ mod test {
         f.seek(SeekFrom::Start(0))?;
 
         let read = ParquetReader::new(f).finish()?;
-        assert!(read.frame_equal_missing(&df));
+        assert!(read.equals_missing(&df));
         Ok(())
     }
 
@@ -118,7 +118,7 @@ mod test {
             .finish()
             .unwrap();
         assert_eq!(df_read.shape(), (3, 2));
-        df_read.frame_equal(&expected);
+        df_read.equals(&expected);
     }
 
     #[test]
@@ -137,6 +137,6 @@ mod test {
             .finish()
             .unwrap();
         assert_eq!(df_read.shape(), (3, 2));
-        df_read.frame_equal(&expected);
+        df_read.equals(&expected);
     }
 }

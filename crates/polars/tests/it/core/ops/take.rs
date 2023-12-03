@@ -10,5 +10,5 @@ fn test_list_gather_nulls_and_empty() {
         .collect_ca("");
     let out = b.take(&indices).unwrap();
     let expected = Series::new("", &[None, Some(a), None]);
-    assert!(out.series_equal_missing(&expected))
+    assert!(out.equals_missing(&expected))
 }

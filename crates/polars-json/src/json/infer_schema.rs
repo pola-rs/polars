@@ -67,22 +67,10 @@ pub fn infer_records_schema(json: &BorrowedValue) -> PolarsResult<ArrowSchema> {
     })
 }
 
-fn filter_map_nulls(dt: ArrowDataType) -> Option<ArrowDataType> {
-    if dt == ArrowDataType::Null {
-        None
-    } else {
-        Some(dt)
-    }
-}
-
 fn infer_object(inner: &Object) -> PolarsResult<ArrowDataType> {
     let fields = inner
         .iter()
-        .filter_map(|(key, value)| {
-            infer(value)
-                .map(|dt| filter_map_nulls(dt).map(|dt| (key, dt)))
-                .transpose()
-        })
+        .map(|(key, value)| infer(value).map(|dt| (key, dt)))
         .map(|maybe_dt| {
             let (key, dt) = maybe_dt?;
             Ok(Field::new(key.as_ref(), dt, true))
@@ -95,7 +83,6 @@ fn infer_array(values: &[BorrowedValue]) -> PolarsResult<ArrowDataType> {
     let types = values
         .iter()
         .map(infer)
-        .filter_map(|x| x.map(filter_map_nulls).transpose())
         // deduplicate entries
         .collect::<PolarsResult<PlHashSet<_>>>()?;
 
@@ -106,13 +93,9 @@ fn infer_array(values: &[BorrowedValue]) -> PolarsResult<ArrowDataType> {
         ArrowDataType::Null
     };
 
-    // if a record contains only nulls, it is not
-    // added to values
-    Ok(if dt == ArrowDataType::Null {
-        dt
-    } else {
-        ArrowDataType::LargeList(Box::new(Field::new(ITEM_NAME, dt, true)))
-    })
+    Ok(ArrowDataType::LargeList(Box::new(Field::new(
+        ITEM_NAME, dt, true,
+    ))))
 }
 
 /// Coerce an heterogeneous set of [`ArrowDataType`] into a single one. Rules:

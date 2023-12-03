@@ -112,3 +112,12 @@ def test_head_tail_limit() -> None:
     assert len(df.head(-12)) == 0
     assert len(df.limit(-12)) == 0
     assert len(df.tail(-12)) == 0
+
+
+def test_hstack_slice_pushdown() -> None:
+    lf = pl.LazyFrame({f"column_{i}": [i] for i in range(2)})
+
+    out = lf.with_columns(pl.col("column_0") * 1000).slice(0, 5)
+    plan = out.explain()
+
+    assert not plan.startswith("SLICE")

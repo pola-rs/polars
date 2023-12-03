@@ -1,5 +1,5 @@
-use arrow::legacy::data_types::IsFloat;
 use polars_row::{convert_columns, RowsEncoded, SortField};
+use polars_utils::float::IsFloat;
 use polars_utils::iter::EnumerateIdxTrait;
 
 use super::*;

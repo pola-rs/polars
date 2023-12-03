@@ -212,6 +212,13 @@ def test_rolling_crossing_dst(
     assert_frame_equal(result, expected)
 
 
+def test_rolling_infinity() -> None:
+    s = pl.Series("col", ["-inf", "5", "5"]).cast(pl.Float64)
+    s = s.rolling_mean(2)
+    expected = pl.Series("col", [None, "-inf", "5"]).cast(pl.Float64)
+    assert_series_equal(s, expected)
+
+
 def test_rolling_extrema() -> None:
     # sorted data and nulls flags trigger different kernels
     df = (

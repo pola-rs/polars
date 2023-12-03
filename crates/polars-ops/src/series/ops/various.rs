@@ -13,17 +13,17 @@ pub trait SeriesMethods: SeriesSealed {
     fn value_counts(&self, sort: bool, parallel: bool) -> PolarsResult<DataFrame> {
         let s = self.as_series();
         polars_ensure!(
-            s.name() != "counts",
-            Duplicate: "using `value_counts` on a column named 'counts' would lead to duplicate column names"
+            s.name() != "count",
+            Duplicate: "using `value_counts` on a column named 'count' would lead to duplicate column names"
         );
         // we need to sort here as well in case of `maintain_order` because duplicates behavior is undefined
         let groups = s.group_tuples(parallel, sort)?;
         let values = unsafe { s.agg_first(&groups) };
-        let counts = groups.group_lengths("counts");
+        let counts = groups.group_lengths("count");
         let cols = vec![values, counts.into_series()];
         let df = DataFrame::new_no_checks(cols);
         if sort {
-            df.sort(["counts"], true, false)
+            df.sort(["count"], true, false)
         } else {
             Ok(df)
         }

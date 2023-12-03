@@ -269,16 +269,16 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"values": [[1], [2, 3]]})
-        >>> df.with_columns(min=pl.col("values").list.mean())
+        >>> df.with_columns(mean=pl.col("values").list.mean())
         shape: (2, 2)
-        ┌───────────┬─────┐
-        │ values    ┆ min │
-        │ ---       ┆ --- │
-        │ list[i64] ┆ f64 │
-        ╞═══════════╪═════╡
-        │ [1]       ┆ 1.0 │
-        │ [2, 3]    ┆ 2.5 │
-        └───────────┴─────┘
+        ┌───────────┬──────┐
+        │ values    ┆ mean │
+        │ ---       ┆ ---  │
+        │ list[i64] ┆ f64  │
+        ╞═══════════╪══════╡
+        │ [1]       ┆ 1.0  │
+        │ [2, 3]    ┆ 2.5  │
+        └───────────┴──────┘
 
         """
         return wrap_expr(self._pyexpr.list_mean())
@@ -1055,13 +1055,11 @@ class ExprListNameSpace:
         """
         if isinstance(fields, Sequence):
             field_names = list(fields)
-
-            def fields(idx: int) -> str:
-                return field_names[idx]
-
-        return wrap_expr(
-            self._pyexpr.list_to_struct(n_field_strategy, fields, upper_bound)
-        )
+            pyexpr = self._pyexpr.list_to_struct(n_field_strategy, None, upper_bound)
+            return wrap_expr(pyexpr).struct.rename_fields(field_names)
+        else:
+            pyexpr = self._pyexpr.list_to_struct(n_field_strategy, fields, upper_bound)
+            return wrap_expr(pyexpr)
 
     def eval(self, expr: Expr, *, parallel: bool = False) -> Expr:
         """
@@ -1324,6 +1322,9 @@ class ExprListNameSpace:
 
         The indices may be defined in a single column, or by sublists in another
         column of dtype `List`.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :func:`gather`.
 
         Parameters
         ----------

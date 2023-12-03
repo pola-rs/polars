@@ -1,5 +1,5 @@
-use crate::legacy::data_types::IsFloat;
-use crate::legacy::kernels::rolling::{compare_fn_nan_max, compare_fn_nan_min};
+use polars_utils::float::IsFloat;
+use polars_utils::ord::{compare_fn_nan_max, compare_fn_nan_min};
 
 pub trait ExtremaNanAware<T> {
     fn min_value_nan_aware(&self) -> Option<&T>;

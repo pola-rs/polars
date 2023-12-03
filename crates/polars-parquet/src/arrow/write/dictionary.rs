@@ -1,6 +1,7 @@
 use arrow::array::{Array, DictionaryArray, DictionaryKey};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::{ArrowDataType, IntegerType};
+use num_traits::ToPrimitive;
 use polars_error::{polars_bail, PolarsResult};
 
 use super::binary::{
@@ -20,14 +21,13 @@ use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{DictPage, Page};
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::{serialize_statistics, ParquetStatistics};
-use crate::write::pages::PageResult;
-use crate::write::{to_nested, ParquetType};
+use crate::write::{to_nested, DynIter, ParquetType};
 
 pub(crate) fn encode_as_dictionary_optional(
     array: &dyn Array,
     type_: PrimitiveType,
     options: WriteOptions,
-) -> Option<PolarsResult<PageResult>> {
+) -> Option<PolarsResult<DynIter<'static, PolarsResult<Page>>>> {
     let nested = to_nested(array, &ParquetType::PrimitiveType(type_.clone()))
         .ok()?
         .pop()
@@ -39,18 +39,42 @@ pub(crate) fn encode_as_dictionary_optional(
     // This does the group by.
     let array = arrow::compute::cast::cast(
         array,
-        &ArrowDataType::Dictionary(IntegerType::UInt16, dtype, false),
+        &ArrowDataType::Dictionary(IntegerType::UInt32, dtype, false),
         Default::default(),
     )
     .ok()?;
 
     let array = array
         .as_any()
-        .downcast_ref::<DictionaryArray<u16>>()
+        .downcast_ref::<DictionaryArray<u32>>()
         .unwrap();
 
     if (array.values().len() as f64) / (len_before as f64) > 0.75 {
         return None;
+    }
+    if array.values().len().to_u16().is_some() {
+        let array = arrow::compute::cast::cast(
+            array,
+            &ArrowDataType::Dictionary(
+                IntegerType::UInt16,
+                Box::new(array.values().data_type().clone()),
+                false,
+            ),
+            Default::default(),
+        )
+        .unwrap();
+
+        let array = array
+            .as_any()
+            .downcast_ref::<DictionaryArray<u16>>()
+            .unwrap();
+        return Some(array_to_pages(
+            array,
+            type_,
+            &nested,
+            options,
+            Encoding::RleDictionary,
+        ));
     }
 
     Some(array_to_pages(
@@ -214,7 +238,7 @@ pub fn array_to_pages<K: DictionaryKey>(
     nested: &[Nested],
     options: WriteOptions,
     encoding: Encoding,
-) -> PolarsResult<PageResult> {
+) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
     match encoding {
         Encoding::PlainDictionary | Encoding::RleDictionary => {
             // write DictPage
@@ -292,10 +316,11 @@ pub fn array_to_pages<K: DictionaryKey>(
             let data_page =
                 serialize_keys(array, type_, nested, statistics, options)?.unwrap_data();
 
-            Ok(PageResult::DictAndData {
-                dict: dict_page,
-                data: data_page,
-            })
+            Ok(DynIter::new(
+                [Page::Dict(dict_page), Page::Data(data_page)]
+                    .into_iter()
+                    .map(Ok),
+            ))
         },
         _ => polars_bail!(nyi = "Dictionary arrays only support dictionary encoding"),
     }

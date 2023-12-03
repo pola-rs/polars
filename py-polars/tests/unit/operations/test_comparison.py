@@ -1,3 +1,11 @@
+from __future__ import annotations
+
+import math
+from contextlib import nullcontext
+from typing import Any, ContextManager
+
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -144,3 +152,211 @@ def test_missing_equality_on_bools() -> None:
         True,
         False,
     ]
+
+
+def isnan(x: Any) -> bool:
+    return isinstance(x, float) and math.isnan(x)
+
+
+def reference_ordering_propagating(lhs: Any, rhs: Any) -> str | None:
+    # normal < nan, nan == nan, nulls propagate
+    if lhs is None or rhs is None:
+        return None
+
+    if isnan(lhs) and isnan(rhs):
+        return "="
+
+    if isnan(lhs) or lhs > rhs:
+        return ">"
+
+    if isnan(rhs) or lhs < rhs:
+        return "<"
+
+    return "="
+
+
+def reference_ordering_missing(lhs: Any, rhs: Any) -> str:
+    # null < normal < nan, nan == nan, null == null
+    if lhs is None and rhs is None:
+        return "="
+
+    if lhs is None:
+        return "<"
+
+    if rhs is None:
+        return ">"
+
+    if isnan(lhs) and isnan(rhs):
+        return "="
+
+    if isnan(lhs) or lhs > rhs:
+        return ">"
+
+    if isnan(rhs) or lhs < rhs:
+        return "<"
+
+    return "="
+
+
+def verify_total_ordering(
+    lhs: Any, rhs: Any, dummy: Any, dtype: pl.PolarsDataType
+) -> None:
+    ref = reference_ordering_propagating(lhs, rhs)
+    refmiss = reference_ordering_missing(lhs, rhs)
+
+    # Add dummy variable so we don't broadcast or do full-null optimization.
+    assert dummy is not None
+    df = pl.DataFrame(
+        {"l": [lhs, dummy], "r": [rhs, dummy]}, schema={"l": dtype, "r": dtype}
+    )
+
+    ans = df.select(
+        (pl.col("l") == pl.col("r")).alias("eq"),
+        (pl.col("l") != pl.col("r")).alias("ne"),
+        (pl.col("l") < pl.col("r")).alias("lt"),
+        (pl.col("l") <= pl.col("r")).alias("le"),
+        (pl.col("l") > pl.col("r")).alias("gt"),
+        (pl.col("l") >= pl.col("r")).alias("ge"),
+        pl.col("l").eq_missing(pl.col("r")).alias("eq_missing"),
+        pl.col("l").ne_missing(pl.col("r")).alias("ne_missing"),
+    )
+
+    ans_correct_dict = {
+        "eq": [ref and ref == "="],  # "ref and X" propagates ref is None
+        "ne": [ref and ref != "="],
+        "lt": [ref and ref == "<"],
+        "le": [ref and (ref == "<" or ref == "=")],
+        "gt": [ref and ref == ">"],
+        "ge": [ref and (ref == ">" or ref == "=")],
+        "eq_missing": [refmiss == "="],
+        "ne_missing": [refmiss != "="],
+    }
+    ans_correct = pl.DataFrame(
+        ans_correct_dict, schema={c: pl.Boolean for c in ans_correct_dict}
+    )
+
+    assert_frame_equal(ans[:1], ans_correct)
+
+
+def verify_total_ordering_broadcast(
+    lhs: Any, rhs: Any, dummy: Any, dtype: pl.PolarsDataType
+) -> None:
+    ref = reference_ordering_propagating(lhs, rhs)
+    refmiss = reference_ordering_missing(lhs, rhs)
+
+    # Add dummy variable so we don't broadcast inherently.
+    assert dummy is not None
+    df = pl.DataFrame(
+        {"l": [lhs, dummy], "r": [rhs, dummy]}, schema={"l": dtype, "r": dtype}
+    )
+
+    ans_first = df.select(
+        (pl.col("l") == pl.col("r").first()).alias("eq"),
+        (pl.col("l") != pl.col("r").first()).alias("ne"),
+        (pl.col("l") < pl.col("r").first()).alias("lt"),
+        (pl.col("l") <= pl.col("r").first()).alias("le"),
+        (pl.col("l") > pl.col("r").first()).alias("gt"),
+        (pl.col("l") >= pl.col("r").first()).alias("ge"),
+        pl.col("l").eq_missing(pl.col("r").first()).alias("eq_missing"),
+        pl.col("l").ne_missing(pl.col("r").first()).alias("ne_missing"),
+    )
+
+    ans_scalar = df.select(
+        (pl.col("l") == rhs).alias("eq"),
+        (pl.col("l") != rhs).alias("ne"),
+        (pl.col("l") < rhs).alias("lt"),
+        (pl.col("l") <= rhs).alias("le"),
+        (pl.col("l") > rhs).alias("gt"),
+        (pl.col("l") >= rhs).alias("ge"),
+        (pl.col("l").eq_missing(rhs)).alias("eq_missing"),
+        (pl.col("l").ne_missing(rhs)).alias("ne_missing"),
+    )
+
+    ans_correct_dict = {
+        "eq": [ref and ref == "="],  # "ref and X" propagates ref is None
+        "ne": [ref and ref != "="],
+        "lt": [ref and ref == "<"],
+        "le": [ref and (ref == "<" or ref == "=")],
+        "gt": [ref and ref == ">"],
+        "ge": [ref and (ref == ">" or ref == "=")],
+        "eq_missing": [refmiss == "="],
+        "ne_missing": [refmiss != "="],
+    }
+    ans_correct = pl.DataFrame(
+        ans_correct_dict, schema={c: pl.Boolean for c in ans_correct_dict}
+    )
+
+    assert_frame_equal(ans_first[:1], ans_correct)
+    assert_frame_equal(ans_scalar[:1], ans_correct)
+
+
+INTERESTING_FLOAT_VALUES = [
+    0.0,
+    -0.0,
+    -1.0,
+    1.0,
+    -float("nan"),
+    float("nan"),
+    -float("inf"),
+    float("inf"),
+    None,
+]
+
+
+@pytest.mark.parametrize("lhs", INTERESTING_FLOAT_VALUES)
+@pytest.mark.parametrize("rhs", INTERESTING_FLOAT_VALUES)
+def test_total_ordering_float_series(lhs: float | None, rhs: float | None) -> None:
+    verify_total_ordering(lhs, rhs, 0.0, pl.Float32)
+    verify_total_ordering(lhs, rhs, 0.0, pl.Float64)
+    context: pytest.WarningsRecorder | ContextManager[None] = (
+        pytest.warns(UserWarning) if rhs is None else nullcontext()
+    )
+    with context:
+        verify_total_ordering_broadcast(lhs, rhs, 0.0, pl.Float32)
+        verify_total_ordering_broadcast(lhs, rhs, 0.0, pl.Float64)
+
+
+INTERESTING_STRING_VALUES = [
+    "",
+    "foo",
+    "bar",
+    "fooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooom",
+    "foooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo",
+    "fooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooop",
+    None,
+]
+
+
+@pytest.mark.parametrize("lhs", INTERESTING_STRING_VALUES)
+@pytest.mark.parametrize("rhs", INTERESTING_STRING_VALUES)
+def test_total_ordering_string_series(lhs: str | None, rhs: str | None) -> None:
+    verify_total_ordering(lhs, rhs, "", pl.Utf8)
+    context: pytest.WarningsRecorder | ContextManager[None] = (
+        pytest.warns(UserWarning) if rhs is None else nullcontext()
+    )
+    with context:
+        verify_total_ordering_broadcast(lhs, rhs, "", pl.Utf8)
+
+
+@pytest.mark.parametrize("str_lhs", INTERESTING_STRING_VALUES)
+@pytest.mark.parametrize("str_rhs", INTERESTING_STRING_VALUES)
+def test_total_ordering_binary_series(str_lhs: str | None, str_rhs: str | None) -> None:
+    lhs = None if str_lhs is None else str_lhs.encode("utf-8")
+    rhs = None if str_rhs is None else str_rhs.encode("utf-8")
+    verify_total_ordering(lhs, rhs, b"", pl.Binary)
+    context: pytest.WarningsRecorder | ContextManager[None] = (
+        pytest.warns(UserWarning) if rhs is None else nullcontext()
+    )
+    with context:
+        verify_total_ordering_broadcast(lhs, rhs, b"", pl.Binary)
+
+
+@pytest.mark.parametrize("lhs", [None, False, True])
+@pytest.mark.parametrize("rhs", [None, False, True])
+def test_total_ordering_bool_series(lhs: bool | None, rhs: bool | None) -> None:
+    verify_total_ordering(lhs, rhs, False, pl.Boolean)
+    context: pytest.WarningsRecorder | ContextManager[None] = (
+        pytest.warns(UserWarning) if rhs is None else nullcontext()
+    )
+    with context:
+        verify_total_ordering_broadcast(lhs, rhs, False, pl.Boolean)

@@ -220,7 +220,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
         "c": pl.Datetime("us"),
         "d": pl.Datetime("ns"),
         "e": pl.Int32,
-        "decimal1": pl.Decimal(precision=2, scale=1),
+        "decimal1": pl.Decimal(2, 1),
     }
     expected_data = [
         (
@@ -1700,7 +1700,7 @@ def test_hashing_on_python_objects() -> None:
 
 
 def test_unique_unit_rows() -> None:
-    df = pl.DataFrame({"a": [1], "b": [None]})
+    df = pl.DataFrame({"a": [1], "b": [None]}, schema={"a": pl.Int64, "b": pl.Float32})
 
     # 'unique' one-row frame should be equal to the original frame
     assert_frame_equal(df, df.unique(subset="a"))
@@ -3548,3 +3548,10 @@ def test_negative_slice_12642() -> None:
     df = pl.DataFrame({"x": range(5)})
 
     assert_frame_equal(df.slice(-2, 1), df.tail(2).head(1))
+
+
+def test_iter_columns() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2], "b": [4, 5, 6]})
+    iter_columns = df.iter_columns()
+    assert_series_equal(next(iter_columns), pl.Series("a", [1, 1, 2]))
+    assert_series_equal(next(iter_columns), pl.Series("b", [4, 5, 6]))

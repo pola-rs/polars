@@ -78,7 +78,7 @@ fn test_expand_list() -> PolarsResult<()> {
         "b" => [2, 5]
     ]?;
 
-    assert!(out.frame_equal(&expected));
+    assert!(out.equals(&expected));
 
     Ok(())
 }

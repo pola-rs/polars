@@ -190,10 +190,10 @@ class ConnectionExecutor:
             if conn.driver == "databricks-sql-python":  # type: ignore[union-attr]
                 # take advantage of the raw connection to get arrow integration
                 self.driver_name = "databricks"
-                return conn.raw_connection().cursor()  # type: ignore[union-attr]
+                return conn.raw_connection().cursor()  # type: ignore[union-attr, return-value]
             else:
                 # sqlalchemy engine; direct use is deprecated, so prefer the connection
-                return conn.connect()  # type: ignore[union-attr]
+                return conn.connect()  # type: ignore[union-attr, return-value]
 
         elif hasattr(conn, "cursor"):
             # connection has a dedicated cursor; prefer over direct execute

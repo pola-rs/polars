@@ -36,5 +36,5 @@ fn iss_7436() {
         .limit(5)
         .collect()
         .unwrap();
-    assert!(df_sql.frame_equal(&expected));
+    assert!(df_sql.equals(&expected));
 }

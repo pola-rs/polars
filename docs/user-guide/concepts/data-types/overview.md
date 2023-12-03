@@ -1,4 +1,4 @@
-# Data types
+# Overview
 
 Polars is entirely based on Arrow data types and backed by Arrow memory arrays. This makes data processing
 cache-efficient and well-supported for Inter Process Communication. Most data types follow the exact implementation
@@ -27,6 +27,7 @@ from Arrow, with the exception of `Utf8` (this is actually `LargeUtf8`), `Catego
 |          | `Binary`      | Store data as bytes.                                                                                                                 |
 |          | `Object`      | A limited supported data type that can be any value.                                                                                 |
 |          | `Categorical` | A categorical encoding of a set of strings.                                                                                          |
+|          | `Enum`        | A fixed categorical encoding of a set of strings.                                                                                    |
 
 To learn more about the internal representation of these data types, check the [Arrow columnar format](https://arrow.apache.org/docs/format/Columnar.html).
 

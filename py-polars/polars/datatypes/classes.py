@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 from datetime import timezone
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence
 
 import polars.datatypes
 
@@ -20,20 +20,6 @@ class classinstmethod(classmethod):  # type: ignore[type-arg]
     def __get__(self, instance: Any, type_: type) -> Any:  # type: ignore[override]
         get = super().__get__ if instance is None else self.__func__.__get__
         return get(instance, type_)
-
-
-class classproperty:
-    """Equivalent to @property, but works on a class (doesn't require an instance)."""
-
-    def __init__(self, method: Callable[..., Any] | None = None) -> None:
-        self.fget = method
-
-    def __get__(self, instance: Any, cls: type | None = None) -> Any:
-        return self.fget(cls)  # type: ignore[misc]
-
-    def getter(self, method: Callable[..., Any]) -> Any:  # noqa: D102
-        self.fget = method
-        return self
 
 
 class DataTypeClass(type):
@@ -57,10 +43,6 @@ class DataTypeClass(type):
 
     @classmethod
     def is_not(cls, other: PolarsDataType) -> bool:  # noqa: D102
-        ...
-
-    @classproperty
-    def is_nested(self) -> bool:  # noqa: D102
         ...
 
     @classmethod
@@ -87,22 +69,31 @@ class DataTypeClass(type):
     def is_temporal(cls) -> bool:  # noqa: D102
         ...
 
+    @classmethod
+    def is_nested(self) -> bool:  # noqa: D102
+        ...
+
 
 class DataType(metaclass=DataTypeClass):
     """Base class for all Polars data types."""
-
-    def __new__(cls, *args: Any, **kwargs: Any) -> PolarsDataType:  # type: ignore[misc]  # noqa: D102
-        # this formulation allows for equivalent use of "pl.Type" and "pl.Type()", while
-        # still respecting types that take initialisation params (eg: Duration/Datetime)
-        if args or kwargs:
-            return super().__new__(cls)
-        return cls
 
     def __reduce__(self) -> Any:
         return (_custom_reconstruct, (type(self), object, None), self.__dict__)
 
     def _string_repr(self) -> str:
         return _dtype_str_repr(self)
+
+    def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
+        if type(other) is DataTypeClass:
+            return issubclass(other, type(self))
+        else:
+            return isinstance(other, type(self))
+
+    def __hash__(self) -> int:
+        return hash(self.__class__)
+
+    def __repr__(self) -> str:
+        return self.__class__.__name__
 
     @classmethod
     def base_type(cls) -> DataTypeClass:
@@ -176,25 +167,6 @@ class DataType(metaclass=DataTypeClass):
         )
         return not self.is_(other)
 
-    @classproperty
-    def is_nested(self) -> bool:
-        """
-        Check if this data type is nested.
-
-        .. deprecated:: 0.19.10
-            Use `dtype in pl.NESTED_DTYPES` instead.
-
-        """
-        from polars.utils.deprecation import issue_deprecation_warning
-
-        message = (
-            "`DataType.is_nested` is deprecated and will be removed in the next breaking release."
-            " It will be changed to a classmethod rather than a property."
-            " To silence this warning, use `dtype in pl.NESTED_DTYPES` instead."
-        )
-        issue_deprecation_warning(message, version="0.19.10")
-        return False
-
     @classmethod
     def is_numeric(cls) -> bool:
         """Check whether the data type is a numeric type."""
@@ -224,6 +196,11 @@ class DataType(metaclass=DataTypeClass):
     def is_temporal(cls) -> bool:
         """Check whether the data type is a temporal type."""
         return issubclass(cls, TemporalType)
+
+    @classmethod
+    def is_nested(cls) -> bool:
+        """Check whether the data type is a nested type."""
+        return issubclass(cls, NestedType)
 
 
 def _custom_reconstruct(
@@ -300,25 +277,6 @@ class TemporalType(DataType):
 class NestedType(DataType):
     """Base class for nested data types."""
 
-    @classproperty
-    def is_nested(self) -> bool:
-        """
-        Check if this data type is nested.
-
-        .. deprecated:: 0.19.10
-            Use `dtype in pl.NESTED_DTYPES` instead.
-
-        """
-        from polars.utils.deprecation import issue_deprecation_warning
-
-        message = (
-            "`DataType.is_nested` is deprecated and will be removed in the next breaking release."
-            " It will be changed to a classmethod rather than a property."
-            " To silence this warning, use `dtype in pl.NESTED_DTYPES` instead."
-        )
-        issue_deprecation_warning(message, version="0.19.10")
-        return True
-
 
 class Int8(SignedIntegerType):
     """8-bit signed integer type."""
@@ -374,26 +332,9 @@ class Decimal(NumericType):
 
     def __init__(
         self,
-        *args: Any,
         precision: int | None = None,
         scale: int = 0,
     ):
-        from polars.utils.deprecation import issue_deprecation_warning
-
-        if args:
-            # TODO: When removing this deprecation, update the `to_object`
-            # implementation in py-polars/src/conversion.rs to use `call1` instead of
-            # `call`
-            issue_deprecation_warning(
-                "`Decimal` parameters `scale` and `precision` will change positions in the next breaking release."
-                " Use keyword arguments to keep current behavior and silence this warning.",
-                version="0.19.13",
-            )
-            if len(args) == 1:
-                scale = args[0]
-            else:
-                scale, precision = args[:2]
-
         self.precision = precision
         self.scale = scale
 
@@ -534,6 +475,46 @@ class Categorical(DataType):
     """A categorical encoding of a set of strings."""
 
 
+class Enum(DataType):
+    """
+    A fixed set categorical encoding of a set of strings.
+
+    .. warning::
+        This is an experimental work-in-progress feature and may not work as expected.
+
+    """
+
+    categories: list[str]
+
+    def __init__(self, categories: list[str]):
+        """
+        A fixed set categorical encoding of a set of strings.
+
+        Parameters
+        ----------
+        categories
+            Categories in the dataset.
+
+        """
+        self.categories = categories
+
+    def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
+        # allow comparing object instances to class
+        if type(other) is DataTypeClass and issubclass(other, Enum):
+            return True
+        elif isinstance(other, Enum):
+            return self.categories == other.categories
+        else:
+            return False
+
+    def __hash__(self) -> int:
+        return hash((self.__class__, *self.categories))
+
+    def __repr__(self) -> str:
+        class_name = self.__class__.__name__
+        return f"{class_name}(categories={self.categories!r})"
+
+
 class Object(DataType):
     """Type for wrapping arbitrary Python objects."""
 
@@ -614,27 +595,20 @@ class Array(NestedType):
     inner: PolarsDataType | None = None
     width: int
 
-    def __init__(  # noqa: D417
-        self,
-        *args: Any,
-        inner: PolarsDataType | PythonDataType | None = None,
-        width: int | None = None,
-    ):
+    def __init__(self, inner: PolarsDataType | PythonDataType, width: int):
         """
         Fixed length list type.
 
         Parameters
         ----------
-        width
-            The length of the arrays.
         inner
             The `DataType` of the values within each array.
+        width
+            The length of the arrays.
 
         Examples
         --------
-        >>> s = pl.Series(
-        ...     "a", [[1, 2], [4, 3]], dtype=pl.Array(inner=pl.Int64, width=2)
-        ... )
+        >>> s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
         >>> s
         shape: (2,)
         Series: 'a' [array[i64, 2]]
@@ -644,47 +618,23 @@ class Array(NestedType):
         ]
 
         """
-        from polars.utils.deprecation import issue_deprecation_warning
-
-        if args:
-            # TODO: When removing this deprecation, update the `to_object`
-            # implementation in py-polars/src/conversion.rs to use `call1` instead of
-            # `call`
-            issue_deprecation_warning(
-                "`Array` parameters `width` and `inner` will change positions in the next breaking release."
-                " Use keyword arguments to keep current behavior and silence this warning.",
-                version="0.19.11",
-            )
-            if len(args) == 1:
-                width = args[0]
-            else:
-                width, inner = args[:2]
-        if width is None:
-            raise TypeError("`width` must be specified when initializing an `Array`")
-
-        if inner is None:
-            issue_deprecation_warning(
-                "The default value for the `inner` parameter of `Array` will be removed in the next breaking release."
-                " Pass `inner=pl.Null`to keep current behavior and silence this warning.",
-                version="0.19.11",
-            )
-            inner = Null
-
-        self.width = width
         self.inner = polars.datatypes.py_type_to_dtype(inner)
+        self.width = width
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # This equality check allows comparison of type classes and type instances.
         # If a parent type is not specific about its inner type, we infer it as equal:
-        # > fixed-size-list[i64] == fixed-size-list[i64] -> True
-        # > fixed-size-list[i64] == fixed-size-list[f32] -> False
-        # > fixed-size-list[i64] == fixed-size-list      -> True
+        # > array[i64] == array[i64] -> True
+        # > array[i64] == array[f32] -> False
+        # > array[i64] == array      -> True
 
         # allow comparing object instances to class
         if type(other) is DataTypeClass and issubclass(other, Array):
             return True
         if isinstance(other, Array):
-            if self.inner is None or other.inner is None:
+            if self.width != other.width:
+                return False
+            elif self.inner is None or other.inner is None:
                 return True
             else:
                 return self.inner == other.inner

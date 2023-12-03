@@ -41,6 +41,7 @@ from polars.datatypes import (
     Datetime,
     Decimal,
     Duration,
+    Enum,
     Field,
     Float32,
     Float64,
@@ -62,6 +63,7 @@ from polars.datatypes import (
 )
 from polars.exceptions import (
     ArrowError,
+    CategoricalRemappingWarning,
     ChronoFormatWarning,
     ColumnNotFoundError,
     ComputeError,
@@ -220,6 +222,8 @@ __all__ = [
     "SchemaFieldNotFoundError",
     "ShapeError",
     "StructFieldNotFoundError",
+    # warnings
+    "CategoricalRemappingWarning",
     # core classes
     "DataFrame",
     "Expr",
@@ -235,6 +239,7 @@ __all__ = [
     "Datetime",
     "Decimal",
     "Duration",
+    "Enum",
     "Field",
     "Float32",
     "Float64",

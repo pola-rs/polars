@@ -193,15 +193,15 @@ fn test_missing_data() {
     assert!(df
         .column("column_1")
         .unwrap()
-        .series_equal(&Series::new("column_1", &[1_i64, 1])));
+        .equals(&Series::new("column_1", &[1_i64, 1])));
     assert!(df
         .column("column_2")
         .unwrap()
-        .series_equal_missing(&Series::new("column_2", &[Some(2_i64), None])));
+        .equals_missing(&Series::new("column_2", &[Some(2_i64), None])));
     assert!(df
         .column("column_3")
         .unwrap()
-        .series_equal(&Series::new("column_3", &[3_i64, 3])));
+        .equals(&Series::new("column_3", &[3_i64, 3])));
 }
 
 #[test]
@@ -216,7 +216,7 @@ fn test_escape_comma() {
     assert!(df
         .column("column_3")
         .unwrap()
-        .series_equal(&Series::new("column_3", &[11_i64, 12])));
+        .equals(&Series::new("column_3", &[11_i64, 12])));
 }
 
 #[test]
@@ -228,7 +228,7 @@ fn test_escape_double_quotes() {
     let file = Cursor::new(csv);
     let df = CsvReader::new(file).finish().unwrap();
     assert_eq!(df.shape(), (2, 3));
-    assert!(df.column("column_2").unwrap().series_equal(&Series::new(
+    assert!(df.column("column_2").unwrap().equals(&Series::new(
         "column_2",
         &[
             r#"with "double quotes" US"#,
@@ -285,7 +285,7 @@ hello,","," ",world,"!"
         assert!(df
             .column(col)
             .unwrap()
-            .series_equal(&Series::new(col, &[&**val; 4])));
+            .equals(&Series::new(col, &[&**val; 4])));
     }
 }
 
@@ -304,7 +304,7 @@ versions of Lorem Ipsum.",11
     let file = Cursor::new(csv);
     let df = CsvReader::new(file).finish().unwrap();
 
-    assert!(df.column("column_2").unwrap().series_equal(&Series::new(
+    assert!(df.column("column_2").unwrap().equals(&Series::new(
         "column_2",
         &[
             r#"Lorem Ipsum is simply dummy text of the printing and typesetting
@@ -526,7 +526,7 @@ fn test_missing_fields() -> PolarsResult<()> {
         "column_4" => [Some(4), None, Some(4), None],
         "column_5" => [Some(5), None, Some(5), None]
     ]?;
-    assert!(df.frame_equal_missing(&expect));
+    assert!(df.equals_missing(&expect));
     Ok(())
 }
 
@@ -607,7 +607,7 @@ bar,bar";
         "a" => ["foo", "bar"],
         "b" => ["foo", "bar"]
     ]?;
-    assert!(df.frame_equal(&expect));
+    assert!(df.equals(&expect));
     Ok(())
 }
 
@@ -917,7 +917,7 @@ fn test_quoted_bool_ints() -> PolarsResult<()> {
         "bar" => [4, 5, 6],
         "baz" => [false, false, true],
     ]?;
-    assert!(df.frame_equal_missing(&expected));
+    assert!(df.equals_missing(&expected));
 
     Ok(())
 }
@@ -993,7 +993,7 @@ fn test_empty_string_cols() -> PolarsResult<()> {
         "column_1" => [None, Some("abc"), None, Some("xyz")],
         "column_2" => [None, Some(333i64), Some(666), Some(999)]
     ]?;
-    assert!(df.frame_equal_missing(&expected));
+    assert!(df.equals_missing(&expected));
     Ok(())
 }
 
@@ -1097,7 +1097,7 @@ fn test_whitespace_skipping() -> PolarsResult<()> {
         "a" => [12i64],
         "b" => [1435i64],
     ]?;
-    assert!(out.frame_equal(&expected));
+    assert!(out.equals(&expected));
 
     Ok(())
 }

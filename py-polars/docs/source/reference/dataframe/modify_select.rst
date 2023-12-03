@@ -35,6 +35,7 @@ Manipulation/selection
     DataFrame.insert_column
     DataFrame.interpolate
     DataFrame.item
+    DataFrame.iter_columns
     DataFrame.iter_rows
     DataFrame.iter_slices
     DataFrame.join

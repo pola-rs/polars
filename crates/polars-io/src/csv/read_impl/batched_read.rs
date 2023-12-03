@@ -445,6 +445,6 @@ mod test {
         assert_eq!(batches.len(), 5);
         let df = concat_df(&batches).unwrap();
         let expected = CsvReader::new(file).finish().unwrap();
-        assert!(df.frame_equal(&expected))
+        assert!(df.equals(&expected))
     }
 }

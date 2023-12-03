@@ -1,10 +1,11 @@
 use std::cmp::Ordering;
 
-use arrow::legacy::kernels::rolling::compare_fn_nan_max;
 use either::Either;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::sort::{sort_slice_ascending, sort_slice_descending};
 use polars_core::prelude::*;
+use polars_utils::float::IsFloat;
+use polars_utils::ord::compare_fn_nan_max;
 
 #[repr(transparent)]
 struct Compare<T>(T);

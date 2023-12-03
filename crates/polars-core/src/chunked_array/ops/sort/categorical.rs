@@ -1,26 +1,6 @@
 use super::*;
 use crate::utils::NoNull;
 
-/// Sort with null values, to reverse, swap the arguments.
-fn sort_with_nulls<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
-    match (a, b) {
-        (Some(a), Some(b)) => a.partial_cmp(b).unwrap(),
-        (None, Some(_)) => Ordering::Less,
-        (Some(_), None) => Ordering::Greater,
-        (None, None) => Ordering::Equal,
-    }
-}
-
-/// Default sorting nulls
-pub fn order_ascending_null<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
-    sort_with_nulls(a, b)
-}
-
-/// Default sorting nulls
-pub fn order_descending_null<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
-    sort_with_nulls(b, a)
-}
-
 impl CategoricalChunked {
     #[must_use]
     pub fn sort_with(&self, options: SortOptions) -> CategoricalChunked {
@@ -36,11 +16,10 @@ impl CategoricalChunked {
                 .zip(self.iter_str())
                 .collect_trusted::<Vec<_>>();
 
-            arg_sort_branch(
+            sort_unstable_by_branch(
                 vals.as_mut_slice(),
                 options.descending,
-                |(_, a), (_, b)| order_ascending_null(a, b),
-                |(_, a), (_, b)| order_descending_null(a, b),
+                |a, b| a.1.cmp(&b.1),
                 options.multithreaded,
             );
             let cats: NoNull<UInt32Chunked> =

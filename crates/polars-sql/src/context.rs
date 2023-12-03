@@ -96,7 +96,7 @@ impl SQLContext {
     ///
     /// ctx.register("df", df.clone().lazy());
     /// let sql_df = ctx.execute("SELECT * FROM df").unwrap().collect().unwrap();
-    /// assert!(sql_df.frame_equal(&df));
+    /// assert!(sql_df.equals(&df));
     /// # }
     ///```
     pub fn execute(&mut self, query: &str) -> PolarsResult<LazyFrame> {
@@ -592,6 +592,20 @@ impl SQLContext {
                     }
                 } else {
                     polars_bail!(ComputeError: "relation '{}' was not found", tbl_name);
+                }
+            },
+            TableFactor::Derived {
+                lateral,
+                subquery,
+                alias,
+            } => {
+                polars_ensure!(!(*lateral), ComputeError: "LATERAL not supported");
+                if let Some(alias) = alias {
+                    let lf = self.execute_query_no_ctes(subquery)?;
+                    self.table_map.insert(alias.name.value.clone(), lf.clone());
+                    Ok((alias.name.value.clone(), lf))
+                } else {
+                    polars_bail!(ComputeError: "Derived tables must have aliases");
                 }
             },
             // Support bare table, optional with alias for now

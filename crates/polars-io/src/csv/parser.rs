@@ -296,9 +296,9 @@ impl<'a> Iterator for SplitLines<'a> {
                     }
                 },
                 None => {
-                    // no new line found we are done
-                    // the rest will be done by last line specific code.
-                    return None;
+                    let remainder = self.v;
+                    self.v = &[];
+                    return Some(remainder);
                 },
             }
         }

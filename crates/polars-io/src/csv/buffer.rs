@@ -34,25 +34,25 @@ impl PrimitiveParser for Float64Type {
 impl PrimitiveParser for UInt32Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<u32> {
-        atoi_simd::parse(bytes).ok()
+        atoi_simd::parse_skipped(bytes).ok()
     }
 }
 impl PrimitiveParser for UInt64Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<u64> {
-        atoi_simd::parse(bytes).ok()
+        atoi_simd::parse_skipped(bytes).ok()
     }
 }
 impl PrimitiveParser for Int32Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<i32> {
-        atoi_simd::parse(bytes).ok()
+        atoi_simd::parse_skipped(bytes).ok()
     }
 }
 impl PrimitiveParser for Int64Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<i64> {
-        atoi_simd::parse(bytes).ok()
+        atoi_simd::parse_skipped(bytes).ok()
     }
 }
 
@@ -554,7 +554,11 @@ pub(crate) fn init_buffers<'a>(
                 #[cfg(feature = "dtype-date")]
                 &DataType::Date => Buffer::Date(DatetimeField::new(name, capacity)),
                 #[cfg(feature = "dtype-categorical")]
-                &DataType::Categorical(_) => {
+                DataType::Categorical(rev_map) => {
+                    if let Some(rev_map) = &rev_map {
+                        polars_ensure!(!rev_map.is_enum(),InvalidOperation: "user defined categoricals are not supported when reading csv")
+                    }
+
                     Buffer::Categorical(CategoricalField::new(name, capacity, quote_char))
                 },
                 dt => polars_bail!(

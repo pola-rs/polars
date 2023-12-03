@@ -64,7 +64,7 @@ fn test_shift_and_fill_window_function() -> PolarsResult<()> {
         ])
         .collect()?;
 
-    assert!(out1.frame_equal(&out2));
+    assert!(out1.equals(&out2));
 
     Ok(())
 }
@@ -196,7 +196,7 @@ fn test_window_mapping() -> PolarsResult<()> {
         .select([col("A").over([col("fruits")])])
         .collect()?;
 
-    assert!(out.column("A")?.series_equal(df.column("A")?));
+    assert!(out.column("A")?.equals(df.column("A")?));
 
     let out = df
         .clone()
@@ -213,7 +213,7 @@ fn test_window_mapping() -> PolarsResult<()> {
         .collect()?;
 
     let expected = Series::new("foo", [11, 12, 13, 14, 15]);
-    assert!(out.column("foo")?.series_equal(&expected));
+    assert!(out.column("foo")?.equals(&expected));
 
     let out = df
         .clone()
@@ -228,7 +228,7 @@ fn test_window_mapping() -> PolarsResult<()> {
         ])
         .collect()?;
     let expected = Series::new("foo", [11, 12, 8, 9, 15]);
-    assert!(out.column("foo")?.series_equal(&expected));
+    assert!(out.column("foo")?.equals(&expected));
 
     let out = df
         .clone()
@@ -243,7 +243,7 @@ fn test_window_mapping() -> PolarsResult<()> {
         ])
         .collect()?;
     let expected = Series::new("foo", [None, Some(3), None, Some(-1), Some(-1)]);
-    assert!(out.column("foo")?.series_equal_missing(&expected));
+    assert!(out.column("foo")?.equals_missing(&expected));
 
     // now sorted
     // this will trigger a fast path
@@ -255,7 +255,7 @@ fn test_window_mapping() -> PolarsResult<()> {
         .select([(lit(10) + col("A")).alias("foo").over([col("fruits")])])
         .collect()?;
     let expected = Series::new("foo", [13, 14, 11, 12, 15]);
-    assert!(out.column("foo")?.series_equal(&expected));
+    assert!(out.column("foo")?.equals(&expected));
 
     let out = df
         .clone()
@@ -271,7 +271,7 @@ fn test_window_mapping() -> PolarsResult<()> {
         .collect()?;
 
     let expected = Series::new("foo", [8, 9, 11, 12, 15]);
-    assert!(out.column("foo")?.series_equal(&expected));
+    assert!(out.column("foo")?.equals(&expected));
 
     let out = df
         .lazy()
@@ -286,7 +286,7 @@ fn test_window_mapping() -> PolarsResult<()> {
         .collect()?;
 
     let expected = Series::new("foo", [None, Some(-1), None, Some(3), Some(-1)]);
-    assert!(out.column("foo")?.series_equal_missing(&expected));
+    assert!(out.column("foo")?.equals_missing(&expected));
 
     Ok(())
 }
@@ -331,7 +331,7 @@ fn test_window_exprs_in_binary_exprs() -> PolarsResult<()> {
         "stdized3" => [0]
     ]?;
 
-    assert!(df.frame_equal(&expected));
+    assert!(df.equals(&expected));
 
     Ok(())
 }
@@ -353,7 +353,7 @@ fn test_window_exprs_any_all() -> PolarsResult<()> {
         "any" => [false, true, false, false, true, true, true, true],
         "all" => [false, true, false, false, false, false, true, true],
     ]?;
-    assert!(df.frame_equal(&expected));
+    assert!(df.equals(&expected));
     Ok(())
 }
 

@@ -83,36 +83,25 @@ impl<'a> Iterator for HybridRleDecoder<'a> {
         if self.remaining == 0 {
             return None;
         };
-        let result = match &mut self.state {
-            State::Single(opt_val) => {
-                // make sure to take so that next calls will return 'None'
-                // indicating that the iterator is finished.
-                opt_val.take()
-            },
-            State::Bitpacked(decoder) => decoder.next(),
-            State::Rle(iter) => iter.next(),
-            State::None => Some(0),
-        };
-        if let Some(result) = result {
-            self.remaining -= 1;
-            Some(Ok(result))
-        } else {
-            // Pattern match more cases so we recurse less.
-            match read_next(&mut self.decoder, self.remaining) {
-                // THis is the hottest case.
-                Ok(State::Single(Some(value))) => Some(Ok(value)),
-                Ok(State::None) => Some(Ok(0)),
-                Ok(State::Rle(mut iter)) => {
-                    let out = iter.next();
-                    self.state = State::Rle(iter);
 
-                    out.map(Ok)
+        loop {
+            if let Some(result) = match &mut self.state {
+                State::Single(opt_val) => {
+                    // make sure to take so that next calls will return 'None'
+                    // indicating that the iterator is finished.
+                    opt_val.take()
                 },
-                Ok(state) => {
-                    self.state = state;
-                    self.next()
-                },
-                Err(e) => Some(Err(e)),
+                State::Bitpacked(decoder) => decoder.next(),
+                State::Rle(iter) => iter.next(),
+                State::None => Some(0),
+            } {
+                self.remaining -= 1;
+                return Some(Ok(result));
+            }
+
+            self.state = match read_next(&mut self.decoder, self.remaining) {
+                Ok(state) => state,
+                Err(e) => return Some(Err(e)),
             }
         }
     }

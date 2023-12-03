@@ -18,7 +18,7 @@ def test_dtype() -> None:
     # inferred
     a = pl.Series("a", [[1, 2, 3], [2, 5], [6, 7, 8, 9]])
     assert a.dtype == pl.List
-    assert a.dtype.inner == pl.Int64  # type: ignore[union-attr]
+    assert a.dtype.inner == pl.Int64  # type: ignore[attr-defined]
     assert a.dtype.is_(pl.List(pl.Int64))
 
     # explicit
@@ -42,8 +42,8 @@ def test_dtype() -> None:
         "dt": pl.List(pl.Date),
         "dtm": pl.List(pl.Datetime),
     }
-    assert all(tp in pl.NESTED_DTYPES for tp in df.dtypes)
-    assert df.schema["i"].inner == pl.Int8  # type: ignore[union-attr]
+    assert all(tp.is_nested() for tp in df.dtypes)
+    assert df.schema["i"].inner == pl.Int8  # type: ignore[attr-defined]
     assert df.rows() == [
         (
             [1, 2, 3],
@@ -75,8 +75,8 @@ def test_categorical() -> None:
         .to_series(3)
     )
 
-    assert out.dtype.inner == pl.Categorical  # type: ignore[union-attr]
-    assert out.dtype.inner not in pl.NESTED_DTYPES  # type: ignore[union-attr]
+    assert out.dtype.inner == pl.Categorical  # type: ignore[attr-defined]
+    assert out.dtype.inner.is_nested() is False  # type: ignore[attr-defined]
 
 
 def test_cast_inner() -> None:
@@ -89,7 +89,7 @@ def test_cast_inner() -> None:
     # this creates an inner null type
     df = pl.from_pandas(pd.DataFrame(data=[[[]], [[]]], columns=["A"]))
     assert (
-        df["A"].cast(pl.List(int)).dtype.inner == pl.Int64  # type: ignore[union-attr]
+        df["A"].cast(pl.List(int)).dtype.inner == pl.Int64  # type: ignore[attr-defined]
     )
 
 
@@ -192,7 +192,7 @@ def test_local_categorical_list() -> None:
     values = [["a", "b"], ["c"], ["a", "d", "d"]]
     s = pl.Series(values, dtype=pl.List(pl.Categorical))
     assert s.dtype == pl.List
-    assert s.dtype.inner == pl.Categorical  # type: ignore[union-attr]
+    assert s.dtype.inner == pl.Categorical  # type: ignore[attr-defined]
     assert s.to_list() == values
 
     # Check that underlying physicals match
@@ -471,7 +471,7 @@ def test_logical_parallel_list_collect() -> None:
     assert out.to_dict(as_series=False) == {
         "Group": ["GroupA", "GroupA"],
         "Values": ["Value1", "Value2"],
-        "counts": [2, 1],
+        "count": [2, 1],
     }
 
 
@@ -593,9 +593,8 @@ def test_list_inner_cast_physical_11513() -> None:
 @pytest.mark.parametrize(
     ("dtype", "expected"), [(pl.List, True), (pl.Struct, True), (pl.Utf8, False)]
 )
-def test_list_is_nested_deprecated(dtype: PolarsDataType, expected: bool) -> None:
-    with pytest.deprecated_call():
-        assert dtype.is_nested is expected
+def test_datatype_is_nested(dtype: PolarsDataType, expected: bool) -> None:
+    assert dtype.is_nested() is expected
 
 
 def test_list_series_construction_with_dtype_11849_11878() -> None:

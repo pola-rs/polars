@@ -1285,8 +1285,8 @@ impl DataFrame {
     ///     "2" => &[2, 2, 2]
     /// }?;
     ///
-    /// assert!(df.select(&["0", "1"])?.frame_equal(&df.select_by_range(0..=1)?));
-    /// assert!(df.frame_equal(&df.select_by_range(..)?));
+    /// assert!(df.select(&["0", "1"])?.equals(&df.select_by_range(0..=1)?));
+    /// assert!(df.equals(&df.select_by_range(..)?));
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn select_by_range<R>(&self, range: R) -> PolarsResult<Self>
@@ -3434,11 +3434,6 @@ fn ensure_can_extend(left: &Series, right: &Series) -> PolarsResult<()> {
         ShapeMismatch: "unable to vstack, column names don't match: {:?} and {:?}",
         left.name(), right.name(),
     );
-    polars_ensure!(
-        left.dtype() == right.dtype(),
-        ShapeMismatch: "unable to vstack, dtypes for column {:?} don't match: `{}` and `{}`",
-        left.name(), left.dtype(), right.dtype(),
-    );
     Ok(())
 }
 
@@ -3564,7 +3559,7 @@ mod test {
             "str" => ["a", "b", "c"]
         }
         .unwrap();
-        assert!(df.frame_equal(&valid));
+        assert!(df.equals(&valid));
     }
 
     #[test]

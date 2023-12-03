@@ -10,7 +10,7 @@ pub fn _merge_sorted_dfs(
     check_schema: bool,
 ) -> PolarsResult<DataFrame> {
     if check_schema {
-        left.frame_equal_schema(right)?;
+        left.schema_equal(right)?;
     }
     let dtype_lhs = left_s.dtype();
     let dtype_rhs = right_s.dtype();

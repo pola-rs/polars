@@ -79,7 +79,7 @@ fn test_string_functions() {
         ])
         .collect()
         .unwrap();
-    assert!(df_sql.frame_equal_missing(&df_pl));
+    assert!(df_sql.equals_missing(&df_pl));
 }
 
 #[test]
@@ -122,5 +122,5 @@ fn array_to_string() {
         .collect()
         .unwrap();
 
-    assert!(df_sql.frame_equal_missing(&df_pl));
+    assert!(df_sql.equals_missing(&df_pl));
 }

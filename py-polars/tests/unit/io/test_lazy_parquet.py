@@ -369,7 +369,7 @@ def test_parquet_struct_categorical(tmp_path: Path) -> None:
 
     with pl.StringCache():
         out = pl.read_parquet(file_path).select(pl.col("b").value_counts())
-    assert out.to_dict(as_series=False) == {"b": [{"b": "foo", "counts": 1}]}
+    assert out.to_dict(as_series=False) == {"b": [{"b": "foo", "count": 1}]}
 
 
 def test_glob_n_rows(io_files_path: Path) -> None:
@@ -435,10 +435,10 @@ def test_parquet_many_row_groups_12297(tmp_path: Path) -> None:
 def test_row_count_empty_file(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "test.parquet"
-    pl.DataFrame({"a": []}).write_parquet(file_path)
-    assert pl.scan_parquet(file_path).with_row_count(
-        "idx"
-    ).collect().schema == OrderedDict([("idx", pl.UInt32), ("a", pl.Float32)])
+    df = pl.DataFrame({"a": []}, schema={"a": pl.Float32})
+    df.write_parquet(file_path)
+    result = pl.scan_parquet(file_path).with_row_count("idx").collect()
+    assert result.schema == OrderedDict([("idx", pl.UInt32), ("a", pl.Float32)])
 
 
 @pytest.mark.write_disk()

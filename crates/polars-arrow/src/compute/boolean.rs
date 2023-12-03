@@ -1,5 +1,5 @@
 //! null-preserving operators such as [`and`], [`or`] and [`not`].
-use super::utils::combine_validities;
+use super::utils::combine_validities_and;
 use crate::array::{Array, BooleanArray};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::ArrowDataType;
@@ -23,7 +23,7 @@ where
     F: Fn(&Bitmap, &Bitmap) -> Bitmap,
 {
     assert_lengths(lhs, rhs);
-    let validity = combine_validities(lhs.validity(), rhs.validity());
+    let validity = combine_validities_and(lhs.validity(), rhs.validity());
 
     let left_buffer = lhs.values();
     let right_buffer = rhs.values();

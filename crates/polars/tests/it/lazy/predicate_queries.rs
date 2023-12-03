@@ -19,7 +19,7 @@ fn test_predicate_after_renaming() -> PolarsResult<()> {
         "foo2" => [2],
         "bar2" => [2],
     ]?;
-    assert!(df.frame_equal(&expected));
+    assert!(df.equals(&expected));
 
     Ok(())
 }
@@ -48,7 +48,7 @@ fn filter_true_lit() -> PolarsResult<()> {
         .collect()?;
     let res = with_true.vstack(&with_not_true)?;
     let res = res.vstack(&with_null)?;
-    assert!(res.frame_equal_missing(&df));
+    assert!(res.equals_missing(&df));
     Ok(())
 }
 
@@ -147,7 +147,7 @@ fn test_is_in_categorical_3420() -> PolarsResult<()> {
         "b" => [1, 2, 3]
     ]?;
     expected.try_apply("a", |s| s.cast(&DataType::Categorical(None)))?;
-    assert!(out.frame_equal(&expected));
+    assert!(out.equals(&expected));
     Ok(())
 }
 
@@ -169,7 +169,7 @@ fn test_predicate_pushdown_blocked_by_outer_join() -> PolarsResult<()> {
         "b" => ["b1"],
         "c" => [null],
     ]?;
-    assert!(out.frame_equal_missing(&expected));
+    assert!(out.equals_missing(&expected));
     Ok(())
 }
 
@@ -220,7 +220,7 @@ fn test_count_blocked_at_union_3963() -> PolarsResult<()> {
         .filter(count().over([col("k")]).gt(lit(1)))
         .collect()?;
 
-        assert!(out.frame_equal(&expected));
+        assert!(out.equals(&expected));
     }
 
     Ok(())
