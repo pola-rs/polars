@@ -517,6 +517,29 @@ pub(super) fn unique(s: &Series, is_stable: bool) -> PolarsResult<Series> {
 pub(super) fn set_operation(s: &[Series], set_type: SetOperation) -> PolarsResult<Series> {
     let s0 = &s[0];
     let s1 = &s[1];
+
+    if s0.len() == 0 || s1.len() == 0 {
+        match set_type {
+            SetOperation::Intersection => {
+                if s0.len() == 0 {
+                    return Ok(s0.clone());
+                } else {
+                    return Ok(s1.clone().with_name(s0.name()));
+                }
+            },
+            SetOperation::Difference => {
+                return Ok(s0.clone());
+            },
+            SetOperation::Union | SetOperation::SymmetricDifference => {
+                if s0.len() == 0 {
+                    return Ok(s1.clone().with_name(s0.name()));
+                } else {
+                    return Ok(s0.clone());
+                }
+            },
+        }
+    }
+
     list_set_operation(s0.list()?, s1.list()?, set_type).map(|ca| ca.into_series())
 }
 

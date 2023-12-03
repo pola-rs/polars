@@ -149,14 +149,16 @@ where
         offsets_b
     };
     let first_a = offsets_a[0];
+    let second_a = offsets_a[1];
     let first_b = offsets_b[0];
+    let second_b = offsets_b[1];
     for i in 1..offsets_slice.len() {
         // If we go OOB we take the first element as we are then broadcasting.
         let start_a = *offsets_a.get(i - 1).unwrap_or(&first_a) as usize;
-        let end_a = *offsets_a.get(i).unwrap_or_else(|| &offsets_a[1]) as usize;
+        let end_a = *offsets_a.get(i).unwrap_or(&second_a) as usize;
 
         let start_b = *offsets_b.get(i - 1).unwrap_or(&first_b) as usize;
-        let end_b = *offsets_b.get(i).unwrap_or_else(|| &offsets_b[1]) as usize;
+        let end_b = *offsets_b.get(i).unwrap_or(&second_b) as usize;
 
         // The branches are the same every loop.
         // We rely on branch prediction here.
@@ -258,14 +260,16 @@ fn binary(
         offsets_b
     };
     let first_a = offsets_a[0];
+    let second_a = offsets_a[1];
     let first_b = offsets_b[0];
+    let second_b = offsets_b[1];
     for i in 1..offsets_slice.len() {
         // If we go OOB we take the first element as we are then broadcasting.
         let start_a = *offsets_a.get(i - 1).unwrap_or(&first_a) as usize;
-        let end_a = *offsets_a.get(i).unwrap_or_else(|| &offsets_a[1]) as usize;
+        let end_a = *offsets_a.get(i).unwrap_or(&second_a) as usize;
 
         let start_b = *offsets_b.get(i - 1).unwrap_or(&first_b) as usize;
-        let end_b = *offsets_b.get(i).unwrap_or_else(|| &offsets_b[1]) as usize;
+        let end_b = *offsets_b.get(i).unwrap_or(&second_b) as usize;
 
         // The branches are the same every loop.
         // We rely on branch prediction here.

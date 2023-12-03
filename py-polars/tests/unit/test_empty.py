@@ -75,15 +75,47 @@ def test_empty_9137() -> None:
     assert out.dtypes == [pl.Float32, pl.Float32]
 
 
-@pytest.mark.parametrize("set_dtype", [pl.Utf8, pl.Binary, pl.UInt32])
+@pytest.mark.parametrize("dtype", [pl.Utf8, pl.Binary, pl.UInt32])
 @pytest.mark.parametrize(
     "set_operation",
     ["set_intersection", "set_union", "set_difference", "set_symmetric_difference"],
 )
-def test_empty_set_operations(set_operation: str, set_dtype: pl.DataType) -> None:
+def test_empty_df_set_operations(set_operation: str, dtype: pl.DataType) -> None:
     expr = getattr(pl.col("list1").list, set_operation)(pl.col("list2"))
-    df = pl.LazyFrame([], {"list1": pl.List(set_dtype), "list2": pl.List(set_dtype)})
-    assert df.select(expr).collect().is_empty()
+    df = pl.DataFrame([], {"list1": pl.List(dtype), "list2": pl.List(dtype)})
+    assert df.select(expr).is_empty()
+
+
+def test_empty_set_intersection() -> None:
+    full = pl.Series("full", [[1, 2, 3]], pl.List(pl.UInt32))
+    empty = pl.Series("empty", [[]], pl.List(pl.UInt32))
+
+    assert_series_equal(empty.rename("full"), full.list.set_intersection(empty))
+    assert_series_equal(empty, empty.list.set_intersection(full))
+
+
+def test_empty_set_difference() -> None:
+    full = pl.Series("full", [[1, 2, 3]], pl.List(pl.UInt32))
+    empty = pl.Series("empty", [[]], pl.List(pl.UInt32))
+
+    assert_series_equal(full, full.list.set_difference(empty))
+    assert_series_equal(empty, empty.list.set_difference(full))
+
+
+def test_empty_set_union() -> None:
+    full = pl.Series("full", [[1, 2, 3]], pl.List(pl.UInt32))
+    empty = pl.Series("empty", [[]], pl.List(pl.UInt32))
+
+    assert_series_equal(full, full.list.set_union(empty))
+    assert_series_equal(full.rename("empty"), empty.list.set_union(full))
+
+
+def test_empty_set_symteric_difference() -> None:
+    full = pl.Series("full", [[1, 2, 3]], pl.List(pl.UInt32))
+    empty = pl.Series("empty", [[]], pl.List(pl.UInt32))
+
+    assert_series_equal(full, full.list.set_symmetric_difference(empty))
+    assert_series_equal(full.rename("empty"), empty.list.set_symmetric_difference(full))
 
 
 @pytest.mark.parametrize("name", ["sort", "unique", "head", "tail", "shift", "reverse"])
