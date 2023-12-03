@@ -1450,9 +1450,7 @@ class ExprDateTimeNameSpace:
         ...     }
         ... ).with_columns(pl.col("date_col").dt.replace_time_zone("UTC"))
         >>> df.with_columns(
-        ...     pl.col("date_col")
-        ...     .dt.convert_to_local_time_zone("timezone")
-        ...     .alias("local_dt")
+        ...     pl.col("date_col").dt.to_naive_local("timezone").alias("local_dt")
         ... )
         shape: (3, 3)
         ┌─────────────────────────┬──────────────────┬─────────────────────┐
