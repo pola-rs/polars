@@ -402,6 +402,9 @@ class Series:
         """
         Get the inner dtype in of a List typed Series.
 
+        .. deprecated:: 0.19.14
+            Use `Series.dtype.inner` instead.
+
         Returns
         -------
         DataType
