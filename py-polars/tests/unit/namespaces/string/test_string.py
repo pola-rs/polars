@@ -1137,3 +1137,21 @@ def test_string_extract_groups_lazy_schema_10305() -> None:
     )
 
     assert df.schema == {"candidate": pl.Utf8, "ref": pl.Utf8}
+
+
+def test_string_reverse() -> None:
+    df = pl.DataFrame(
+        {
+            "text": [None, "foo", "bar", "i like pizza&#", None],
+        }
+    )
+    expected = pl.DataFrame(
+        [
+            pl.Series(
+                "text", [None, "oof", "rab", "#&azzip ekil i", None], dtype=pl.Utf8
+            ),
+        ]
+    )
+
+    result = df.select(pl.col("text").str.reverse())
+    assert_frame_equal(result, expected)

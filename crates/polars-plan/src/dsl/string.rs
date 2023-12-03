@@ -330,6 +330,16 @@ impl StringNameSpace {
         )
     }
 
+    /// Reverse each string
+    pub fn reverse(self) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Reverse),
+            &[],
+            false,
+            false,
+        )
+    }
+
     /// Remove leading and trailing characters, or whitespace if matches is None.
     pub fn strip_chars(self, matches: Expr) -> Expr {
         self.0.map_many_private(

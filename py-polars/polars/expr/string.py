@@ -1944,6 +1944,26 @@ class ExprStringNameSpace:
         value = parse_as_expression(value, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_replace_all(pattern, value, literal))
 
+    def reverse(self) -> Expr:
+        """
+        Returns string values in reversed order.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"text": ["foo", "bar"]})
+        >>> df.with_columns(pl.col("text").str.reverse().alias("reversed"))
+        shape: (2, 2)
+        ┌──────┬──────────┐
+        │ text ┆ reversed │
+        │ ---  ┆ ---      │
+        │ str  ┆ str      │
+        ╞══════╪══════════╡
+        │ foo  ┆ oof      │
+        │ bar  ┆ rab      │
+        └──────┴──────────┘
+        """
+        return wrap_expr(self._pyexpr.str_reverse())
+
     def slice(self, offset: int, length: int | None = None) -> Expr:
         """
         Create subslices of the string values of a Utf8 Series.
