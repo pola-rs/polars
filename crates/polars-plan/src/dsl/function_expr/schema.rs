@@ -92,7 +92,7 @@ impl FunctionExpr {
             ValueCounts { .. } => mapper.map_dtype(|dt| {
                 DataType::Struct(vec![
                     Field::new(fields[0].name().as_str(), dt.clone()),
-                    Field::new("counts", IDX_DTYPE),
+                    Field::new("count", IDX_DTYPE),
                 ])
             }),
             #[cfg(feature = "unique_counts")]

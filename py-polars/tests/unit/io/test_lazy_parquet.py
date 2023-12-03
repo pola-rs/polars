@@ -369,7 +369,7 @@ def test_parquet_struct_categorical(tmp_path: Path) -> None:
 
     with pl.StringCache():
         out = pl.read_parquet(file_path).select(pl.col("b").value_counts())
-    assert out.to_dict(as_series=False) == {"b": [{"b": "foo", "counts": 1}]}
+    assert out.to_dict(as_series=False) == {"b": [{"b": "foo", "count": 1}]}
 
 
 def test_glob_n_rows(io_files_path: Path) -> None:
