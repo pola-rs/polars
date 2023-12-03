@@ -698,7 +698,7 @@ def test_from_null_column() -> None:
 
     assert df.shape == (2, 1)
     assert df.columns == ["n/a"]
-    assert df.dtypes[0] is pl.Null
+    assert df.dtypes[0] == pl.Null
 
 
 def test_to_pandas_series() -> None:

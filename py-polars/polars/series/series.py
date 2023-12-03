@@ -112,7 +112,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
 
-    from polars import DataFrame, Expr
+    from polars import DataFrame, DataType, Expr
     from polars.series._numpy import SeriesView
     from polars.type_aliases import (
         ClosedInterval,
@@ -365,7 +365,7 @@ class Series:
         return self._s.get_ptr()
 
     @property
-    def dtype(self) -> PolarsDataType:
+    def dtype(self) -> DataType:
         """
         Get the data type of this Series.
 
@@ -398,9 +398,12 @@ class Series:
         return out
 
     @property
-    def inner_dtype(self) -> PolarsDataType | None:
+    def inner_dtype(self) -> DataType | None:
         """
         Get the inner dtype in of a List typed Series.
+
+        .. deprecated:: 0.19.14
+            Use `Series.dtype.inner` instead.
 
         Returns
         -------
@@ -412,7 +415,7 @@ class Series:
             version="0.19.14",
         )
         try:
-            return self.dtype.inner  # type: ignore[union-attr]
+            return self.dtype.inner  # type: ignore[attr-defined]
         except AttributeError:
             return None
 
@@ -502,12 +505,12 @@ class Series:
                 time_unit = "us"
             elif self.dtype == Datetime:
                 # Use local time zone info
-                time_zone = self.dtype.time_zone  # type: ignore[union-attr]
+                time_zone = self.dtype.time_zone  # type: ignore[attr-defined]
                 if str(other.tzinfo) != str(time_zone):
                     raise TypeError(
                         f"Datetime time zone {other.tzinfo!r} does not match Series timezone {time_zone!r}"
                     )
-                time_unit = self.dtype.time_unit  # type: ignore[union-attr]
+                time_unit = self.dtype.time_unit  # type: ignore[attr-defined]
             else:
                 raise ValueError(
                     f"cannot compare datetime.datetime to Series of type {self.dtype}"
@@ -524,7 +527,7 @@ class Series:
             return self._from_pyseries(f(d))
 
         elif isinstance(other, timedelta) and self.dtype == Duration:
-            time_unit = self.dtype.time_unit  # type: ignore[union-attr]
+            time_unit = self.dtype.time_unit  # type: ignore[attr-defined]
             td = _timedelta_to_pl_timedelta(other, time_unit)  # type: ignore[arg-type]
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
@@ -4051,9 +4054,9 @@ class Series:
             if self.dtype == Date:
                 tp = "datetime64[D]"
             elif self.dtype == Duration:
-                tp = f"timedelta64[{self.dtype.time_unit}]"  # type: ignore[union-attr]
+                tp = f"timedelta64[{self.dtype.time_unit}]"  # type: ignore[attr-defined]
             else:
-                tp = f"datetime64[{self.dtype.time_unit}]"  # type: ignore[union-attr]
+                tp = f"datetime64[{self.dtype.time_unit}]"  # type: ignore[attr-defined]
             return arr.astype(tp)
 
         def raise_no_zero_copy() -> None:
@@ -4066,7 +4069,7 @@ class Series:
                 writable=writable,
                 use_pyarrow=use_pyarrow,
             )
-            np_array.shape = (self.len(), self.dtype.width)  # type: ignore[union-attr]
+            np_array.shape = (self.len(), self.dtype.width)  # type: ignore[attr-defined]
             return np_array
 
         if (
@@ -6972,7 +6975,7 @@ class Series:
         True
 
         """
-        return self.dtype is Boolean
+        return self.dtype == Boolean
 
     @deprecate_function("Use `Series.dtype == pl.Utf8` instead.", version="0.19.14")
     def is_utf8(self) -> bool:
@@ -6989,7 +6992,7 @@ class Series:
         True
 
         """
-        return self.dtype is Utf8
+        return self.dtype == Utf8
 
     @deprecate_renamed_function("gather_every", version="0.19.14")
     def take_every(self, n: int) -> Series:

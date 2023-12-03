@@ -77,18 +77,23 @@ class DataTypeClass(type):
 class DataType(metaclass=DataTypeClass):
     """Base class for all Polars data types."""
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> PolarsDataType:  # type: ignore[misc]  # noqa: D102
-        # this formulation allows for equivalent use of "pl.Type" and "pl.Type()", while
-        # still respecting types that take initialisation params (eg: Duration/Datetime)
-        if args or kwargs:
-            return super().__new__(cls)
-        return cls
-
     def __reduce__(self) -> Any:
         return (_custom_reconstruct, (type(self), object, None), self.__dict__)
 
     def _string_repr(self) -> str:
         return _dtype_str_repr(self)
+
+    def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
+        if type(other) is DataTypeClass:
+            return issubclass(other, type(self))
+        else:
+            return isinstance(other, type(self))
+
+    def __hash__(self) -> int:
+        return hash(self.__class__)
+
+    def __repr__(self) -> str:
+        return self.__class__.__name__
 
     @classmethod
     def base_type(cls) -> DataTypeClass:
