@@ -63,6 +63,7 @@ class DateTimeNameSpace:
         """
         return self._s.max()
 
+    @deprecate_function("Use `series.median` instead.", version="0.19.20")
     def median(self) -> dt.datetime | dt.timedelta | None:
         """
         Return median as python DateTime.
@@ -87,6 +88,7 @@ class DateTimeNameSpace:
         """
         return self._s.mean()
 
+    @deprecate_function("Use `series.mean` instead.", version="0.19.20")
     def mean(self) -> dt.datetime | dt.timedelta | None:
         """
         Return mean as python DateTime.
