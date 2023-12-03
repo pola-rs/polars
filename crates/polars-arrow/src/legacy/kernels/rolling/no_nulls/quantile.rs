@@ -14,18 +14,18 @@ pub struct QuantileWindow<'a, T: NativeType> {
 }
 
 impl<
-    'a,
-    T: NativeType
-    + Float
-    + std::iter::Sum
-    + AddAssign
-    + SubAssign
-    + Div<Output = T>
-    + NumCast
-    + One
-    + Zero
-    + Sub<Output = T>,
-> RollingAggWindowNoNulls<'a, T> for QuantileWindow<'a, T>
+        'a,
+        T: NativeType
+            + Float
+            + std::iter::Sum
+            + AddAssign
+            + SubAssign
+            + Div<Output = T>
+            + NumCast
+            + One
+            + Zero
+            + Sub<Output = T>,
+    > RollingAggWindowNoNulls<'a, T> for QuantileWindow<'a, T>
 {
     fn new(slice: &'a [T], start: usize, end: usize, params: DynArgs) -> Self {
         let params = params.unwrap();
@@ -107,8 +107,8 @@ pub fn rolling_quantile<T>(
     weights: Option<&[f64]>,
     params: DynArgs,
 ) -> PolarsResult<ArrayRef>
-    where
-        T: NativeType
+where
+    T: NativeType
         + Float
         + std::iter::Sum
         + AddAssign
@@ -156,8 +156,8 @@ pub fn rolling_quantile<T>(
 
 #[inline]
 fn compute_wq<T>(buf: &[(T, f64)], p: f64, wsum: f64, interp: QuantileInterpolOptions) -> T
-    where
-        T: Debug + NativeType + Mul<Output = T> + Sub<Output = T> + NumCast + ToPrimitive + Zero,
+where
+    T: Debug + NativeType + Mul<Output = T> + Sub<Output = T> + NumCast + ToPrimitive + Zero,
 {
     // There are a few ways to compute a weighted quantile but no "canonical" way.
     // This is mostly taken from the Julia implementation which was readable and reasonable
@@ -204,9 +204,9 @@ fn rolling_apply_weighted_quantile<T, Fo>(
     weights: &[f64],
     wsum: f64,
 ) -> ArrayRef
-    where
-        Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
-        T: Debug + NativeType + Mul<Output = T> + Sub<Output = T> + NumCast + ToPrimitive + Zero,
+where
+    Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
+    T: Debug + NativeType + Mul<Output = T> + Sub<Output = T> + NumCast + ToPrimitive + Zero,
 {
     assert_eq!(weights.len(), window_size);
     // Keep nonzero weights and their indices to know which values we need each iteration.

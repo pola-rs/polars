@@ -5,8 +5,8 @@
 use std::cmp::Ordering;
 use std::fmt::{Debug, Formatter};
 use std::ops::{Add, Mul, Sub};
-use num_traits::NumCast;
 
+use num_traits::NumCast;
 use polars_utils::float::IsFloat;
 use polars_utils::sort::arg_sort_ascending;
 use polars_utils::IdxSize;
@@ -35,8 +35,14 @@ impl<T: NativeType + IsFloat> Debug for Block<'_, T> {
         }
         writeln!(f, "elements in list: {}", self.n_element)?;
         writeln!(f, "m: {}", self.m)?;
-        writeln!(f, "m_index: {}", self.current_index)?;
-        writeln!(f, "α[m]: {:?}", self.alpha[self.m])?;
+        if self.current_index != self.n_element {
+            writeln!(f, "m_index: {}", self.current_index)?;
+            writeln!(f, "α[m]: {:?}", self.alpha[self.m])?;
+        } else {
+            // Index is at tail, so OOB.
+            writeln!(f, "m_index: tail")?;
+            writeln!(f, "α[m]: tail")?;
+        }
 
         let mut p = self.m as u32;
 
@@ -141,7 +147,7 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
     }
 
     fn traverse_to_index(&mut self, i: usize) {
-        match i as i64 - self.current_index as i64 {
+        match (i as i64 - self.current_index as i64) {
             0 => {
                 // pass
             },
@@ -149,9 +155,7 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
                 self.current_index -= 1;
                 self.m = self.prev[self.m as usize] as usize;
             },
-            1 => {
-                self.advance()
-            },
+            1 => self.advance(),
             i64::MIN..=0 => {
                 self.current_index -= i;
                 for _ in i..0 {
@@ -167,9 +171,16 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
         }
     }
 
+    fn reverse(&mut self) {
+        self.current_index -= 1;
+        self.m = self.prev[self.m] as usize;
+    }
+
     fn advance(&mut self) {
-        self.current_index += 1;
-        self.m = self.next[self.m] as usize;
+        if self.current_index < self.n_element {
+            self.current_index += 1;
+            self.m = self.next[self.m] as usize;
+        }
     }
 
     fn reset(&mut self) {
@@ -178,6 +189,9 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
     }
 
     fn delete(&mut self, i: usize) {
+        if self.at_end() {
+            self.reverse()
+        }
         let delete = self.get_pair(i);
 
         let current = self.get_pair(self.m);
@@ -203,8 +217,16 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
                 // 1, 2, [3], 4, 5
                 // 1, 2, [4], 5
                 // go to next position because the link was deleted
-                if self.n_element > self.current_index {
-                    self.m = self.next[self.m as usize] as usize;
+                if self.n_element >= self.current_index {
+                    let next_m = self.next[self.m as usize] as usize;
+
+                    if next_m == self.tail && self.n_element > 0 {
+                        // The index points to tail,  set the index in the array again.
+                        self.current_index -= 1;
+                        self.m = self.prev[self.m as usize] as usize
+                    } else {
+                        self.m = self.next[self.m as usize] as usize;
+                    }
                 } else {
                     // move to previous position because the link was deleted
                     // 1, [2],
@@ -216,10 +238,13 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
     }
 
     fn undelete(&mut self, i: usize) {
+        if !self.is_empty() && self.at_end() {
+            self.reverse()
+        }
         // undelete from links
         self.undelete_link(i);
 
-        if self.at_end() {
+        if self.is_empty() {
             self.m = self.prev[self.m] as usize;
             self.n_element = 1;
             self.current_index = 0;
@@ -265,6 +290,10 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
         self.m == self.tail
     }
 
+    fn is_empty(&self) -> bool {
+        self.n_element == 0
+    }
+
     fn peek(&self) -> Option<T> {
         if self.at_end() {
             None
@@ -305,16 +334,13 @@ impl<T: IsFloat + PartialOrd + NativeType> LenGet for &mut Block<'_, T> {
 struct BlockUnion<'a, T: IsFloat + PartialOrd + NativeType> {
     block_left: &'a mut Block<'a, T>,
     block_right: &'a mut Block<'a, T>,
-    // Current index position of sorted merge.
-    s: usize
 }
 
 impl<'a, T: IsFloat + PartialOrd + NativeType> BlockUnion<'a, T> {
-    fn new(block_left: &'a mut Block<'a, T>, block_right: &'a mut Block<'a, T>, k: usize ) -> Self {
+    fn new(block_left: &'a mut Block<'a, T>, block_right: &'a mut Block<'a, T>, k: usize) -> Self {
         let out = Self {
             block_left,
             block_right,
-            s: 0
         };
         debug_assert_eq!(out.len(), k);
 
@@ -333,62 +359,61 @@ impl<T: IsFloat + PartialOrd + NativeType> LenGet for BlockUnion<'_, T> {
         // Simple case, all elements are left.
         if self.block_right.n_element == 0 {
             self.block_left.traverse_to_index(i);
-            return self.block_left.peek().unwrap()
+            return self.block_left.peek().unwrap();
         }
-        let steps = i + 1 - self.s;
-        dbg!(steps);
+        // Current index position of merge sort
+        let s = self.block_left.current_index + self.block_right.current_index;
+        // For now only support advancing by one.
+        assert_eq!(s, i);
 
-
-        let left = self.block_left.peek().unwrap();
-        let right = self.block_right.peek().unwrap();
-        dbg!(left, right);
-        match left.partial_cmp(&right).unwrap() {
-            // On equality, take the left as that one was first.
-            Ordering::Equal | Ordering::Less => {
+        let left = self.block_left.peek();
+        let right = self.block_right.peek();
+        match (left, right) {
+            (Some(left), None) => {
                 self.block_left.advance();
                 left
             },
-            Ordering::Greater => {
+            (None, Some(right)) => {
                 self.block_right.advance();
                 right
-            }
+            },
+            (Some(left), Some(right)) => {
+                match left.partial_cmp(&right).unwrap() {
+                    // On equality, take the left as that one was first.
+                    Ordering::Equal | Ordering::Less => {
+                        self.block_left.advance();
+                        left
+                    },
+                    Ordering::Greater => {
+                        self.block_right.advance();
+                        right
+                    },
+                }
+            },
+            _ => panic!(),
         }
-
-
-        // let i= if i < self.block_left.n_element {
-        //     self.block_left.traverse_to_index(i);
-        //     return self.block_left.peek().unwrap()
-        // } else if self.block_left.n_element == 0 {
-        //     i
-        // } else{
-        //     i % self.block_left.n_element
-        // };
-        // self.block_right.traverse_to_index(i);
-        // self.block_right.peek().unwrap()
     }
 }
 
 struct MedianUpdate<M: LenGet> {
-    inner: M
+    inner: M,
 }
 
 impl<M> MedianUpdate<M>
-where M: LenGet,
-<M as LenGet>::Item:
-Sub<Output=<M as LenGet>::Item>
-+ Mul<Output=<M as LenGet>::Item>
-+ Add<Output=<M as LenGet>::Item>
-+ NumCast
+where
+    M: LenGet,
+    <M as LenGet>::Item: Sub<Output = <M as LenGet>::Item>
+        + Mul<Output = <M as LenGet>::Item>
+        + Add<Output = <M as LenGet>::Item>
+        + NumCast,
 {
     fn new(inner: M) -> Self {
-        Self {
-            inner
-        }
+        Self { inner }
     }
 
     fn median(&mut self) -> M::Item {
         let lenght = self.inner.len();
-        let length_f =  lenght as f64;
+        let length_f = lenght as f64;
         let idx = ((length_f - 1.0) * 0.5).floor() as usize;
 
         let float_idx_top = (length_f - 1.0) * 0.5;
@@ -397,23 +422,25 @@ Sub<Output=<M as LenGet>::Item>
         return if idx == top_idx {
             self.inner.get(idx)
         } else {
-            let proportion : M::Item = NumCast::from(float_idx_top - idx as f64).unwrap();
+            let proportion: M::Item = NumCast::from(float_idx_top - idx as f64).unwrap();
             let vi = self.inner.get(idx);
             let vj = self.inner.get(top_idx);
 
             proportion * (vj - vi) + vi
         };
     }
-
 }
 
 fn rolling_median<T>(k: usize, slice: &[T])
 where
-    T: IsFloat + NativeType + PartialOrd + Sub + NumCast
-+ Sub<Output=T>
-+ Mul<Output=T>
-+ Add<Output=T>
-,
+    T: IsFloat
+        + NativeType
+        + PartialOrd
+        + Sub
+        + NumCast
+        + Sub<Output = T>
+        + Mul<Output = T>
+        + Add<Output = T>,
 {
     let mut scratch_left = vec![];
     let mut prev_left = vec![];
@@ -437,8 +464,22 @@ where
 
     let n_blocks = slice.len() / k;
 
-    let mut block_left = unsafe { Block::new(alpha, &mut *scratch_left_ptr, &mut *prev_left_ptr, &mut *next_left_ptr) };
-    let mut block_right = unsafe { Block::new(&alpha[..1], &mut *scratch_right_ptr, &mut *prev_right_ptr, &mut *next_right_ptr) };
+    let mut block_left = unsafe {
+        Block::new(
+            alpha,
+            &mut *scratch_left_ptr,
+            &mut *prev_left_ptr,
+            &mut *next_left_ptr,
+        )
+    };
+    let mut block_right = unsafe {
+        Block::new(
+            &alpha[..1],
+            &mut *scratch_right_ptr,
+            &mut *prev_right_ptr,
+            &mut *next_right_ptr,
+        )
+    };
 
     let ptr_left = &mut block_left as *mut Block<'_, _>;
     let ptr_right = &mut block_right as *mut Block<'_, _>;
@@ -461,8 +502,15 @@ where
         // |-------------||-------------|
         //   - WINDOW -
         // |--------------|
-        let alpha = &slice[i * k..(i + 1) *k];
-        block_right = unsafe { Block::new(alpha, &mut *scratch_right_ptr, &mut *prev_right_ptr, &mut *next_right_ptr) };
+        let alpha = &slice[i * k..(i + 1) * k];
+        block_right = unsafe {
+            Block::new(
+                alpha,
+                &mut *scratch_right_ptr,
+                &mut *prev_right_ptr,
+                &mut *next_right_ptr,
+            )
+        };
 
         // Time reverse the rhs so we can undelete in sorted order.
         block_right.unwind();
@@ -476,7 +524,6 @@ where
             unsafe {
                 let union = BlockUnion::new(&mut *ptr_left, &mut *ptr_right, k);
                 out.push(dbg!(MedianUpdate::new(union).median()))
-
             }
         }
         unsafe {
@@ -531,7 +578,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_block() {
+    fn test_block_1() {
         //                    0, 1, 2, 3, 4, 5, 6, 7
         let values = [2, 8, 5, 9, 1, 3, 4, 10];
         let mut scratch = vec![];
@@ -650,13 +697,20 @@ mod test {
         // union s: [2, 3, 4]
         assert_eq!(aub.get(0), 2);
         assert_eq!(aub.get(1), 3);
-        dbg!(&aub.block_left);
-        dbg!(&aub.block_right);
-        dbg!(aub.get(0));
+        assert_eq!(aub.get(2), 4);
 
-
-
-        dbg!(aub.len());
+        // STEP 2
+        // i:  2
+        // s:  2
+        // block 2:
+        // i:  3, 4
+        // s:  3, 4
+        // union s: [2, 3, 4]
+        aub.block_left.delete(1);
+        aub.block_right.undelete(1);
+        assert_eq!(aub.get(0), 2);
+        assert_eq!(aub.get(1), 3);
+        assert_eq!(aub.get(2), 4);
     }
 
     #[test]
