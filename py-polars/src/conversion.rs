@@ -453,7 +453,6 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Binary" => DataType::Binary,
                     "Boolean" => DataType::Boolean,
                     "Categorical" => DataType::Categorical(None),
-                    "Enum" => DataType::Categorical(None), // TODO: Is this correct?
                     "Date" => DataType::Date,
                     "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
                     "Time" => DataType::Time,
