@@ -851,7 +851,7 @@ class ListNameSpace:
         Take sublists by multiple indices.
 
         .. deprecated:: 0.19.14
-            This method has been renamed to :func:`len`.
+            This method has been renamed to :func:`gather`.
 
         Parameters
         ----------

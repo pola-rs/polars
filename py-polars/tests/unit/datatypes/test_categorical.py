@@ -204,9 +204,9 @@ def test_categorical_in_struct_nulls() -> None:
     df = pl.DataFrame([s])
     s = (df.select(pl.col("job").value_counts(sort=True)))["job"]
 
-    assert s[0] == {"job": None, "counts": 3}
-    assert s[1] == {"job": "doctor", "counts": 2}
-    assert s[2] == {"job": "waiter", "counts": 1}
+    assert s[0] == {"job": None, "count": 3}
+    assert s[1] == {"job": "doctor", "count": 2}
+    assert s[2] == {"job": "waiter", "count": 1}
 
 
 def test_cast_inner_categorical() -> None:

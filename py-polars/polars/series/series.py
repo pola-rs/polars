@@ -2423,29 +2423,29 @@ class Series:
         >>> s = pl.Series("color", ["red", "blue", "red", "green", "blue", "blue"])
         >>> s.value_counts()  # doctest: +IGNORE_RESULT
         shape: (3, 2)
-        ┌───────┬────────┐
-        │ color ┆ counts │
-        │ ---   ┆ ---    │
-        │ str   ┆ u32    │
-        ╞═══════╪════════╡
-        │ red   ┆ 2      │
-        │ green ┆ 1      │
-        │ blue  ┆ 3      │
-        └───────┴────────┘
+        ┌───────┬───────┐
+        │ color ┆ count │
+        │ ---   ┆ ---   │
+        │ str   ┆ u32   │
+        ╞═══════╪═══════╡
+        │ red   ┆ 2     │
+        │ green ┆ 1     │
+        │ blue  ┆ 3     │
+        └───────┴───────┘
 
         Sort the output by count.
 
+        >>> s.value_counts(sort=True)
         shape: (3, 2)
-        ┌───────┬────────┐
-        │ color ┆ counts │
-        │ ---   ┆ ---    │
-        │ str   ┆ u32    │
-        ╞═══════╪════════╡
-        │ blue  ┆ 3      │
-        │ red   ┆ 2      │
-        │ green ┆ 1      │
-        └───────┴────────┘
-
+        ┌───────┬───────┐
+        │ color ┆ count │
+        │ ---   ┆ ---   │
+        │ str   ┆ u32   │
+        ╞═══════╪═══════╡
+        │ blue  ┆ 3     │
+        │ red   ┆ 2     │
+        │ green ┆ 1     │
+        └───────┴───────┘
         """
         return (
             self.to_frame()
