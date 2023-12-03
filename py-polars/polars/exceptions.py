@@ -1,5 +1,6 @@
 try:
     from polars.polars import (
+        CategoricalRemappingWarning,
         ColumnNotFoundError,
         ComputeError,
         DuplicateError,
@@ -14,8 +15,7 @@ try:
         StructFieldNotFoundError,
     )
 except ImportError:
-    # They are only redefined for documentation purposes
-    # when there is no binary yet
+    # redefined for documentation purposes when there is no binary
 
     class ColumnNotFoundError(Exception):  # type: ignore[no-redef]
         """Exception raised when a specified column is not found."""
@@ -53,6 +53,9 @@ except ImportError:
     class StructFieldNotFoundError(Exception):  # type: ignore[no-redef]
         """Exception raised when a specified schema field is not found."""
 
+    class CategoricalRemappingWarning(Warning):  # type: ignore[no-redef]
+        """Warning raised when a categorical needs to be remapped to be compatible with another categorical."""  # noqa: W505
+
 
 class ChronoFormatWarning(Warning):
     """
@@ -72,6 +75,10 @@ class InvalidAssert(Exception):
 
 class RowsError(Exception):
     """Exception raised when the number of returned rows does not match expectation."""
+
+
+class ModuleUpgradeRequired(ModuleNotFoundError):
+    """Exception raised when the module is installed but needs to be upgraded."""
 
 
 class NoRowsReturnedError(RowsError):
@@ -109,10 +116,12 @@ __all__ = [
     "ChronoFormatWarning",
     "DuplicateError",
     "InvalidOperationError",
+    "ModuleUpgradeRequired",
     "NoDataError",
     "NoRowsReturnedError",
     "OutOfBoundsError",
     "PolarsInefficientMapWarning",
+    "CategoricalRemappingWarning",
     "PolarsPanicError",
     "RowsError",
     "SchemaError",

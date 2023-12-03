@@ -1791,6 +1791,7 @@ pub struct JoinBuilder {
     force_parallel: bool,
     suffix: Option<String>,
     validation: JoinValidation,
+    join_nulls: bool,
 }
 impl JoinBuilder {
     /// Create the `JoinBuilder` with the provided `LazyFrame` as the left table.
@@ -1803,6 +1804,7 @@ impl JoinBuilder {
             right_on: vec![],
             allow_parallel: true,
             force_parallel: false,
+            join_nulls: false,
             suffix: None,
             validation: Default::default(),
         }
@@ -1863,6 +1865,12 @@ impl JoinBuilder {
         self
     }
 
+    /// Join on null values. By default null values will never produce matches.
+    pub fn join_nulls(mut self, join_nulls: bool) -> Self {
+        self.join_nulls = join_nulls;
+        self
+    }
+
     /// Suffix to add duplicate column names in join.
     /// Defaults to `"_right"` if this method is never called.
     pub fn suffix<S: AsRef<str>>(mut self, suffix: S) -> Self {
@@ -1883,6 +1891,7 @@ impl JoinBuilder {
             validation: self.validation,
             suffix: self.suffix,
             slice: None,
+            join_nulls: self.join_nulls,
         };
 
         let lp = self

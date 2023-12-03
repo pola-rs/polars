@@ -17,9 +17,13 @@ from polars.datatypes import (
     Datetime,
     Field,
     Float64,
+    Int8,
+    Int16,
     Int32,
     Int64,
     Time,
+    UInt8,
+    UInt16,
     UInt32,
     UInt64,
     Unknown,
@@ -138,8 +142,8 @@ def test_init_inputs(monkeypatch: Any) -> None:
     s = pl.Series([date(2023, 1, 1), date(2023, 1, 2)], dtype=pl.Datetime)
     assert s.to_list() == [datetime(2023, 1, 1), datetime(2023, 1, 2)]
     assert Datetime == s.dtype
-    assert s.dtype.time_unit == "us"  # type: ignore[union-attr]
-    assert s.dtype.time_zone is None  # type: ignore[union-attr]
+    assert s.dtype.time_unit == "us"  # type: ignore[attr-defined]
+    assert s.dtype.time_zone is None  # type: ignore[attr-defined]
 
     # conversion of Date to Datetime with specified timezone and units
     tu: TimeUnit = "ms"
@@ -149,8 +153,8 @@ def test_init_inputs(monkeypatch: Any) -> None:
     d2 = datetime(2023, 1, 2, 0, 0, 0, 0, ZoneInfo(tz))
     assert s.to_list() == [d1, d2]
     assert Datetime == s.dtype
-    assert s.dtype.time_unit == tu  # type: ignore[union-attr]
-    assert s.dtype.time_zone == tz  # type: ignore[union-attr]
+    assert s.dtype.time_unit == tu  # type: ignore[attr-defined]
+    assert s.dtype.time_zone == tz  # type: ignore[attr-defined]
 
     # datetime64: check timeunit (auto-detect, implicit/explicit) and NaT
     d64 = pd.date_range(date(2021, 8, 1), date(2021, 8, 3)).values
@@ -161,10 +165,10 @@ def test_init_inputs(monkeypatch: Any) -> None:
         s = pl.Series("dates", d64, dtype)
         assert s.to_list() == expected
         assert Datetime == s.dtype
-        assert s.dtype.time_unit == "ns"  # type: ignore[union-attr]
+        assert s.dtype.time_unit == "ns"  # type: ignore[attr-defined]
 
     s = pl.Series(values=d64.astype("<M8[ms]"))
-    assert s.dtype.time_unit == "ms"  # type: ignore[union-attr]
+    assert s.dtype.time_unit == "ms"  # type: ignore[attr-defined]
     assert expected == s.to_list()
 
     # pandas
@@ -217,7 +221,7 @@ def test_init_structured_objects() -> None:
         s = pl.Series("t", [t0, t1, t2])
 
         assert isinstance(s, pl.Series)
-        assert s.dtype.fields == [  # type: ignore[union-attr]
+        assert s.dtype.fields == [  # type: ignore[attr-defined]
             Field("exporter", pl.Utf8),
             Field("importer", pl.Utf8),
             Field("product", pl.Utf8),
@@ -435,6 +439,15 @@ def test_power() -> None:
     a = pl.Series([1, 2], dtype=Int64)
     b = pl.Series([None, 2.0], dtype=Float64)
     c = pl.Series([date(2020, 2, 28), date(2020, 3, 1)], dtype=Date)
+    d = pl.Series([1, 2], dtype=UInt8)
+    e = pl.Series([1, 2], dtype=Int8)
+    f = pl.Series([1, 2], dtype=UInt16)
+    g = pl.Series([1, 2], dtype=Int16)
+    h = pl.Series([1, 2], dtype=UInt32)
+    i = pl.Series([1, 2], dtype=Int32)
+    j = pl.Series([1, 2], dtype=UInt64)
+    k = pl.Series([1, 2], dtype=Int64)
+    m = pl.Series([2**33, 2**33], dtype=UInt64)
 
     # pow
     assert_series_equal(a**2, pl.Series([1.0, 4.0], dtype=Float64))
@@ -443,10 +456,24 @@ def test_power() -> None:
     assert_series_equal(b**b, pl.Series([None, 4.0], dtype=Float64))
     assert_series_equal(a**b, pl.Series([None, 4.0], dtype=Float64))
     assert_series_equal(a**None, pl.Series([None] * len(a), dtype=Float64))
+    assert_series_equal(d**d, pl.Series([1, 4], dtype=UInt8))
+    assert_series_equal(e**d, pl.Series([1, 4], dtype=Int8))
+    assert_series_equal(f**d, pl.Series([1, 4], dtype=UInt16))
+    assert_series_equal(g**d, pl.Series([1, 4], dtype=Int16))
+    assert_series_equal(h**d, pl.Series([1, 4], dtype=UInt32))
+    assert_series_equal(i**d, pl.Series([1, 4], dtype=Int32))
+    assert_series_equal(j**d, pl.Series([1, 4], dtype=UInt64))
+    assert_series_equal(k**d, pl.Series([1, 4], dtype=Int64))
     with pytest.raises(TypeError):
         c**2
     with pytest.raises(pl.ColumnNotFoundError):
         a ** "hi"  # type: ignore[operator]
+
+    # Raising to UInt64: raises if can't be downcast safely to UInt32...
+    with pytest.raises(pl.ComputeError, match="conversion from `u64` to `u32` failed"):
+        a**m
+    # ... but succeeds otherwise.
+    assert_series_equal(a**j, pl.Series([1, 4], dtype=Int64))
 
     # rpow
     assert_series_equal(2.0**a, pl.Series("literal", [2.0, 4.0], dtype=Float64))

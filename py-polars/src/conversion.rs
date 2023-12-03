@@ -297,43 +297,78 @@ impl ToPyObject for Wrap<DataType> {
         let pl = POLARS.as_ref(py);
 
         match &self.0 {
-            DataType::Int8 => pl.getattr(intern!(py, "Int8")).unwrap().into(),
-            DataType::Int16 => pl.getattr(intern!(py, "Int16")).unwrap().into(),
-            DataType::Int32 => pl.getattr(intern!(py, "Int32")).unwrap().into(),
-            DataType::Int64 => pl.getattr(intern!(py, "Int64")).unwrap().into(),
-            DataType::UInt8 => pl.getattr(intern!(py, "UInt8")).unwrap().into(),
-            DataType::UInt16 => pl.getattr(intern!(py, "UInt16")).unwrap().into(),
-            DataType::UInt32 => pl.getattr(intern!(py, "UInt32")).unwrap().into(),
-            DataType::UInt64 => pl.getattr(intern!(py, "UInt64")).unwrap().into(),
-            DataType::Float32 => pl.getattr(intern!(py, "Float32")).unwrap().into(),
-            DataType::Float64 => pl.getattr(intern!(py, "Float64")).unwrap().into(),
-            DataType::Decimal(precision, scale) => {
-                let kwargs = PyDict::new(py);
-                kwargs.set_item("precision", *precision).unwrap();
-                kwargs.set_item("scale", *scale).unwrap();
-                pl.getattr(intern!(py, "Decimal"))
-                    .unwrap()
-                    .call((), Some(kwargs))
-                    .unwrap()
-                    .into()
+            DataType::Int8 => {
+                let class = pl.getattr(intern!(py, "Int8")).unwrap();
+                class.call0().unwrap().into()
             },
-            DataType::Boolean => pl.getattr(intern!(py, "Boolean")).unwrap().into(),
-            DataType::Utf8 => pl.getattr(intern!(py, "Utf8")).unwrap().into(),
-            DataType::Binary => pl.getattr(intern!(py, "Binary")).unwrap().into(),
+            DataType::Int16 => {
+                let class = pl.getattr(intern!(py, "Int16")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::Int32 => {
+                let class = pl.getattr(intern!(py, "Int32")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::Int64 => {
+                let class = pl.getattr(intern!(py, "Int64")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::UInt8 => {
+                let class = pl.getattr(intern!(py, "UInt8")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::UInt16 => {
+                let class = pl.getattr(intern!(py, "UInt16")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::UInt32 => {
+                let class = pl.getattr(intern!(py, "UInt32")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::UInt64 => {
+                let class = pl.getattr(intern!(py, "UInt64")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::Float32 => {
+                let class = pl.getattr(intern!(py, "Float32")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::Float64 => {
+                let class = pl.getattr(intern!(py, "Float64")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::Decimal(precision, scale) => {
+                let class = pl.getattr(intern!(py, "Decimal")).unwrap();
+                let args = (*precision, *scale);
+                class.call1(args).unwrap().into()
+            },
+            DataType::Boolean => {
+                let class = pl.getattr(intern!(py, "Boolean")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::Utf8 => {
+                let class = pl.getattr(intern!(py, "Utf8")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::Binary => {
+                let class = pl.getattr(intern!(py, "Binary")).unwrap();
+                class.call0().unwrap().into()
+            },
             DataType::Array(inner, size) => {
+                let class = pl.getattr(intern!(py, "Array")).unwrap();
                 let inner = Wrap(*inner.clone()).to_object(py);
-                let list_class = pl.getattr(intern!(py, "Array")).unwrap();
-                let kwargs = PyDict::new(py);
-                kwargs.set_item("inner", inner).unwrap();
-                kwargs.set_item("width", size).unwrap();
-                list_class.call((), Some(kwargs)).unwrap().into()
+                let args = (inner, *size);
+                class.call1(args).unwrap().into()
             },
             DataType::List(inner) => {
+                let class = pl.getattr(intern!(py, "List")).unwrap();
                 let inner = Wrap(*inner.clone()).to_object(py);
-                let list_class = pl.getattr(intern!(py, "List")).unwrap();
-                list_class.call1((inner,)).unwrap().into()
+                class.call1((inner,)).unwrap().into()
             },
-            DataType::Date => pl.getattr(intern!(py, "Date")).unwrap().into(),
+            DataType::Date => {
+                let class = pl.getattr(intern!(py, "Date")).unwrap();
+                class.call0().unwrap().into()
+            },
             DataType::Datetime(tu, tz) => {
                 let datetime_class = pl.getattr(intern!(py, "Datetime")).unwrap();
                 datetime_class
@@ -346,16 +381,20 @@ impl ToPyObject for Wrap<DataType> {
                 duration_class.call1((tu.to_ascii(),)).unwrap().into()
             },
             #[cfg(feature = "object")]
-            DataType::Object(_) => pl.getattr(intern!(py, "Object")).unwrap().into(),
+            DataType::Object(_) => {
+                let class = pl.getattr(intern!(py, "Object")).unwrap();
+                class.call0().unwrap().into()
+            },
             DataType::Categorical(rev_map) => {
                 if let Some(rev_map) = rev_map {
                     if let RevMapping::Enum(categories, _) = &**rev_map {
-                        let enum_dt = pl.getattr(intern!(py, "Enum")).unwrap();
+                        let class = pl.getattr(intern!(py, "Enum")).unwrap();
                         let ca = Utf8Chunked::from_iter(categories);
-                        return enum_dt.call1((Wrap(&ca).to_object(py),)).unwrap().into();
+                        return class.call1((Wrap(&ca).to_object(py),)).unwrap().into();
                     }
                 }
-                pl.getattr(intern!(py, "Categorical")).unwrap().into()
+                let class = pl.getattr(intern!(py, "Categorical")).unwrap();
+                class.call0().unwrap().into()
             },
             DataType::Time => pl.getattr(intern!(py, "Time")).unwrap().into(),
             DataType::Struct(fields) => {
@@ -369,8 +408,14 @@ impl ToPyObject for Wrap<DataType> {
                 let struct_class = pl.getattr(intern!(py, "Struct")).unwrap();
                 struct_class.call1((fields,)).unwrap().into()
             },
-            DataType::Null => pl.getattr(intern!(py, "Null")).unwrap().into(),
-            DataType::Unknown => pl.getattr(intern!(py, "Unknown")).unwrap().into(),
+            DataType::Null => {
+                let class = pl.getattr(intern!(py, "Null")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::Unknown => {
+                let class = pl.getattr(intern!(py, "Unknown")).unwrap();
+                class.call0().unwrap().into()
+            },
         }
     }
 }
@@ -429,6 +474,18 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     },
                 }
             },
+            "Int8" => DataType::Int8,
+            "Int16" => DataType::Int16,
+            "Int32" => DataType::Int32,
+            "Int64" => DataType::Int64,
+            "UInt8" => DataType::UInt8,
+            "UInt16" => DataType::UInt16,
+            "UInt32" => DataType::UInt32,
+            "UInt64" => DataType::UInt64,
+            "Utf8" => DataType::Utf8,
+            "Binary" => DataType::Binary,
+            "Boolean" => DataType::Boolean,
+            "Categorical" => DataType::Categorical(None),
             "Enum" => {
                 let categories = ob.getattr(intern!(py, "categories")).unwrap();
                 let categories = categories.extract::<Wrap<Utf8Chunked>>()?.0;
@@ -436,6 +493,12 @@ impl FromPyObject<'_> for Wrap<DataType> {
                 let arr = arr.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
                 create_enum_data_type(arr.clone())
             },
+            "Date" => DataType::Date,
+            "Time" => DataType::Time,
+            "Float32" => DataType::Float32,
+            "Float64" => DataType::Float64,
+            "Null" => DataType::Null,
+            "Unknown" => DataType::Unknown,
             "Duration" => {
                 let time_unit = ob.getattr(intern!(py, "time_unit")).unwrap();
                 let time_unit = time_unit.extract::<Wrap<TimeUnit>>()?.0;

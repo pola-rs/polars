@@ -19,7 +19,7 @@ def test_compare_series_value_mismatch() -> None:
 
     assert_series_not_equal(srs1, srs2)
     with pytest.raises(
-        AssertionError, match=r"Series are different \(value mismatch\)"
+        AssertionError, match=r"Series are different \(exact value mismatch\)"
     ):
         assert_series_equal(srs1, srs2)
 
@@ -147,29 +147,6 @@ def test_assert_series_equal_int_overflow() -> None:
         assert_series_equal(s0, s0, check_exact=check_exact)
         with pytest.raises(AssertionError):
             assert_series_equal(s1, s2, check_exact=check_exact)
-
-
-def test_assert_series_equal_uint_overflow() -> None:
-    # 'atol' is checked following "(left-right).abs()", which can overflow on uint
-    s1 = pl.Series([1, 2, 3], dtype=pl.UInt8)
-    s2 = pl.Series([2, 3, 4], dtype=pl.UInt8)
-
-    with pytest.raises(AssertionError):
-        assert_series_equal(s1, s2, atol=0)
-    assert_series_equal(s1, s2, atol=1)
-
-    # confirm no OverflowError in the below test case:
-    # as "(left-right).abs()" > max(Int64)
-    left = pl.Series(
-        values=[2810428175213635359],
-        dtype=pl.UInt64,
-    )
-    right = pl.Series(
-        values=[15807433754238349345],
-        dtype=pl.UInt64,
-    )
-    with pytest.raises(AssertionError):
-        assert_series_equal(left, right)
 
 
 @pytest.mark.parametrize(
@@ -364,12 +341,6 @@ def test_assert_series_equal_temporal(data1: Any, data2: Any) -> None:
             id="struct_approx_equal",
         ),
         pytest.param(
-            pl.struct(a=0, b=1.09, eager=True),
-            pl.struct(a=0, b=1, eager=True),
-            {"atol": 0.1, "rtol": 0, "check_dtype": False},
-            id="struct_approx_equal_different_type",
-        ),
-        pytest.param(
             pl.struct(a=0, b=[0.0, 1.1], eager=True),
             pl.struct(a=0, b=[0.0, 1.11], eager=True),
             {"atol": 0.1},
@@ -480,6 +451,12 @@ def test_assert_series_equal_passes_assertion(
             {"atol": 0.1, "rtol": 0, "check_dtype": True},
             id="struct_approx_equal_different_type",
         ),
+        pytest.param(
+            pl.struct(a=0, b=1.09, eager=True),
+            pl.struct(a=0, b=1, eager=True),
+            {"atol": 0.1, "rtol": 0, "check_dtype": False},
+            id="struct_approx_equal_different_type",
+        ),
     ],
 )
 def test_assert_series_equal_raises_assertion_error(
@@ -515,7 +492,7 @@ def test_assert_series_equal_full_series() -> None:
     s1 = pl.Series([1, 2, 3])
     s2 = pl.Series([1, 2, 4])
     msg = (
-        r"Series are different \(value mismatch\)\n"
+        r"Series are different \(exact value mismatch\)\n"
         r"\[left\]:  \[1, 2, 3\]\n"
         r"\[right\]: \[1, 2, 4\]"
     )
@@ -586,11 +563,43 @@ def test_assert_series_equal_nested_list_none() -> None:
     assert_series_equal(s1, s2)
 
 
-def test_assert_series_equal_unsigned_ints_underflow() -> None:
+def test_assert_series_equal_uint_overflow() -> None:
+    s1 = pl.Series([1, 2, 3], dtype=pl.UInt8)
+    s2 = pl.Series([2, 3, 4], dtype=pl.UInt8)
+
+    with pytest.raises(AssertionError):
+        assert_series_equal(s1, s2, atol=0)
+    with pytest.raises(AssertionError):
+        assert_series_equal(s1, s2, atol=1)
+
+    left = pl.Series(
+        values=[2810428175213635359],
+        dtype=pl.UInt64,
+    )
+    right = pl.Series(
+        values=[15807433754238349345],
+        dtype=pl.UInt64,
+    )
+    with pytest.raises(AssertionError):
+        assert_series_equal(left, right)
+
+
+def test_assert_series_equal_uint_always_checked_exactly() -> None:
     s1 = pl.Series([1, 3], dtype=pl.UInt8)
     s2 = pl.Series([2, 4], dtype=pl.Int64)
 
-    assert_series_equal(s1, s2, atol=1, check_dtype=False)
+    with pytest.raises(AssertionError):
+        assert_series_equal(s1, s2, atol=1, check_dtype=False)
+
+
+def test_assert_series_equal_nested_int_always_checked_exactly() -> None:
+    s1 = pl.Series([[1, 2], [3, 4]])
+    s2 = pl.Series([[1, 2], [3, 5]])
+
+    with pytest.raises(AssertionError):
+        assert_series_equal(s1, s2, atol=1)
+    with pytest.raises(AssertionError):
+        assert_series_equal(s1, s2, check_exact=True)
 
 
 @pytest.mark.parametrize("check_exact", [True, False])
@@ -600,15 +609,6 @@ def test_assert_series_equal_array_equal(check_exact: bool) -> None:
 
     with pytest.raises(AssertionError):
         assert_series_equal(s1, s2, check_exact=check_exact)
-
-
-def test_assert_series_equal_nested_int() -> None:
-    s1 = pl.Series([[1, 2], [3, 4]])
-    s2 = pl.Series([[1, 2], [3, 5]])
-
-    assert_series_equal(s1, s2, atol=1)
-    with pytest.raises(AssertionError):
-        assert_series_equal(s1, s2, check_exact=True)
 
 
 def test_series_equal_nested_lengths_mismatch() -> None:
@@ -637,3 +637,10 @@ def test_series_equal_decimals_inexact_fail() -> None:
     s2 = pl.Series([D("1.00000"), D("2.00001")], dtype=pl.Decimal)
     with pytest.raises(AssertionError, match="value mismatch"):
         assert_series_equal(s1, s2, check_exact=False, rtol=0)
+
+
+def test_assert_series_equal_w_large_integers_12328() -> None:
+    left = pl.Series([1577840521123000])
+    right = pl.Series([1577840521123543])
+    with pytest.raises(AssertionError):
+        assert_series_equal(left, right)

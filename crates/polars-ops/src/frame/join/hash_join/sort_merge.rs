@@ -179,8 +179,9 @@ pub fn _sort_or_hash_inner(
     s_right: &Series,
     _verbose: bool,
     validate: JoinValidation,
+    join_nulls: bool,
 ) -> PolarsResult<(InnerJoinIds, bool)> {
-    s_left.hash_join_inner(s_right, validate)
+    s_left.hash_join_inner(s_right, validate, join_nulls)
 }
 
 #[cfg(feature = "performant")]
@@ -189,6 +190,7 @@ pub fn _sort_or_hash_inner(
     s_right: &Series,
     verbose: bool,
     validate: JoinValidation,
+    join_nulls: bool,
 ) -> PolarsResult<(InnerJoinIds, bool)> {
     // We check if keys are sorted.
     // - If they are we can do a sorted merge join
@@ -202,7 +204,7 @@ pub fn _sort_or_hash_inner(
     let is_numeric = s_left.dtype().to_physical().is_numeric();
 
     if validate.needs_checks() {
-        return s_left.hash_join_inner(s_right, validate);
+        return s_left.hash_join_inner(s_right, validate, join_nulls);
     }
 
     let no_nulls = s_left.null_count() == 0 && s_right.null_count() == 0;
@@ -268,7 +270,7 @@ pub fn _sort_or_hash_inner(
             // set sorted to `false` as we descending sorted the left key.
             Ok(((left, right), false))
         },
-        _ => s_left.hash_join_inner(s_right, validate),
+        _ => s_left.hash_join_inner(s_right, validate, join_nulls),
     }
 }
 
@@ -278,8 +280,9 @@ pub(super) fn sort_or_hash_left(
     s_right: &Series,
     _verbose: bool,
     validate: JoinValidation,
+    join_nulls: bool,
 ) -> PolarsResult<LeftJoinIds> {
-    s_left.hash_join_left(s_right, validate)
+    s_left.hash_join_left(s_right, validate, join_nulls)
 }
 
 #[cfg(feature = "performant")]
@@ -288,9 +291,10 @@ pub(super) fn sort_or_hash_left(
     s_right: &Series,
     verbose: bool,
     validate: JoinValidation,
+    join_nulls: bool,
 ) -> PolarsResult<LeftJoinIds> {
     if validate.needs_checks() {
-        return s_left.hash_join_left(s_right, validate);
+        return s_left.hash_join_left(s_right, validate, join_nulls);
     }
 
     let size_factor_rhs = s_right.len() as f32 / s_left.len() as f32;
@@ -338,6 +342,6 @@ pub(super) fn sort_or_hash_left(
             Ok(to_left_join_ids(left, right))
         },
         // don't reverse sort a left join key yet. Have to figure out how to set sorted flag
-        _ => s_left.hash_join_left(s_right, validate),
+        _ => s_left.hash_join_left(s_right, validate, join_nulls),
     }
 }

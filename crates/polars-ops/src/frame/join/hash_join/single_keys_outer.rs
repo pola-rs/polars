@@ -1,8 +1,94 @@
+use arrow::legacy::utils::CustomIterTools;
 use polars_utils::hashing::hash_to_partition;
+use polars_utils::nulls::IsNull;
 
 use super::*;
 
-/// Probe the build table and add tuples to the results (inner join)
+pub(crate) fn create_hash_and_keys_threaded_vectorized<I, T>(
+    iters: Vec<I>,
+    build_hasher: Option<RandomState>,
+) -> (Vec<Vec<(u64, T)>>, RandomState)
+where
+    I: IntoIterator<Item = T> + Send,
+    I::IntoIter: TrustedLen,
+    T: Send + Hash + Eq,
+{
+    let build_hasher = build_hasher.unwrap_or_default();
+    let hashes = POOL.install(|| {
+        iters
+            .into_par_iter()
+            .map(|iter| {
+                // create hashes and keys
+                iter.into_iter()
+                    .map(|val| (build_hasher.hash_one(&val), val))
+                    .collect_trusted::<Vec<_>>()
+            })
+            .collect()
+    });
+    (hashes, build_hasher)
+}
+
+pub(crate) fn prepare_hashed_relation_threaded<T, I>(
+    iters: Vec<I>,
+) -> Vec<PlHashMap<T, (bool, Vec<IdxSize>)>>
+where
+    I: Iterator<Item = T> + Send + TrustedLen,
+    T: Send + Hash + Eq + Sync + Copy,
+{
+    let n_partitions = _set_partition_size();
+    let (hashes_and_keys, build_hasher) = create_hash_and_keys_threaded_vectorized(iters, None);
+
+    // We will create a hashtable in every thread.
+    // We use the hash to partition the keys to the matching hashtable.
+    // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
+    POOL.install(|| {
+        (0..n_partitions)
+            .into_par_iter()
+            .map(|partition_no| {
+                let build_hasher = build_hasher.clone();
+                let hashes_and_keys = &hashes_and_keys;
+                let mut hash_tbl: PlHashMap<T, (bool, Vec<IdxSize>)> =
+                    PlHashMap::with_hasher(build_hasher);
+
+                let mut offset = 0;
+                for hashes_and_keys in hashes_and_keys {
+                    let len = hashes_and_keys.len();
+                    hashes_and_keys
+                        .iter()
+                        .enumerate()
+                        .for_each(|(idx, (h, k))| {
+                            let idx = idx as IdxSize;
+                            // partition hashes by thread no.
+                            // So only a part of the hashes go to this hashmap
+                            if partition_no == hash_to_partition(*h, n_partitions) {
+                                let idx = idx + offset;
+                                let entry = hash_tbl
+                                    .raw_entry_mut()
+                                    // uses the key to check equality to find and entry
+                                    .from_key_hashed_nocheck(*h, k);
+
+                                match entry {
+                                    RawEntryMut::Vacant(entry) => {
+                                        entry.insert_hashed_nocheck(*h, *k, (false, vec![idx]));
+                                    },
+                                    RawEntryMut::Occupied(mut entry) => {
+                                        let (_k, v) = entry.get_key_value_mut();
+                                        v.1.push(idx);
+                                    },
+                                }
+                            }
+                        });
+
+                    offset += len as IdxSize;
+                }
+                hash_tbl
+            })
+            .collect()
+    })
+}
+
+/// Probe the build table and add tuples to the results.
+#[allow(clippy::too_many_arguments)]
 fn probe_outer<T, F, G, H>(
     probe_hashes: &[Vec<(u64, T)>],
     hash_tbls: &mut [PlHashMap<T, (bool, Vec<IdxSize>)>],
@@ -14,8 +100,9 @@ fn probe_outer<T, F, G, H>(
     swap_fn_no_match: G,
     // Function that get index_b from the build table that did not match any in A and pushes to result
     swap_fn_drain: H,
+    join_nulls: bool,
 ) where
-    T: Send + Hash + Eq + Sync + Copy,
+    T: Send + Hash + Eq + Sync + Copy + IsNull,
     // idx_a, idx_b -> ...
     F: Fn(IdxSize, IdxSize) -> (Option<IdxSize>, Option<IdxSize>),
     // idx_a -> ...
@@ -39,9 +126,13 @@ fn probe_outer<T, F, G, H>(
             match entry {
                 // match and remove
                 RawEntryMut::Occupied(mut occupied) => {
-                    let (tracker, indexes_b) = occupied.get_mut();
-                    *tracker = true;
-                    results.extend(indexes_b.iter().map(|&idx_b| swap_fn_match(idx_a, idx_b)))
+                    if key.is_null() && !join_nulls {
+                        results.push(swap_fn_no_match(idx_a))
+                    } else {
+                        let (tracker, indexes_b) = occupied.get_mut();
+                        *tracker = true;
+                        results.extend(indexes_b.iter().map(|&idx_b| swap_fn_match(idx_a, idx_b)))
+                    }
                 },
                 // no match
                 RawEntryMut::Vacant(_) => results.push(swap_fn_no_match(idx_a)),
@@ -66,13 +157,14 @@ pub(super) fn hash_join_tuples_outer<T, I, J>(
     build: Vec<J>,
     swapped: bool,
     validate: JoinValidation,
+    join_nulls: bool,
 ) -> PolarsResult<Vec<(Option<IdxSize>, Option<IdxSize>)>>
 where
     I: IntoIterator<Item = T>,
     J: IntoIterator<Item = T>,
     <J as IntoIterator>::IntoIter: TrustedLen + Send,
     <I as IntoIterator>::IntoIter: TrustedLen + Send,
-    T: Hash + Eq + Copy + Sync + Send,
+    T: Hash + Eq + Copy + Sync + Send + IsNull,
 {
     let probe = probe.into_iter().map(|i| i.into_iter()).collect::<Vec<_>>();
     let build = build.into_iter().map(|i| i.into_iter()).collect::<Vec<_>>();
@@ -125,6 +217,7 @@ where
             |idx_a, idx_b| (Some(idx_b), Some(idx_a)),
             |idx_a| (None, Some(idx_a)),
             |idx_b| (Some(idx_b), None),
+            join_nulls,
         )
     } else {
         probe_outer(
@@ -135,6 +228,7 @@ where
             |idx_a, idx_b| (Some(idx_a), Some(idx_b)),
             |idx_a| (Some(idx_a), None),
             |idx_b| (None, Some(idx_b)),
+            join_nulls,
         )
     }
     Ok(results)

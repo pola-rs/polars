@@ -1330,7 +1330,7 @@ def _pydantic_models_to_pydf(
     """Initialise DataFrame from pydantic model objects."""
     import pydantic  # note: must already be available in the env here
 
-    old_pydantic = parse_version(pydantic.__version__) < parse_version("2.0")
+    old_pydantic = parse_version(pydantic.__version__) < (2, 0)
     model_fields = list(
         first_element.__fields__ if old_pydantic else first_element.model_fields
     )

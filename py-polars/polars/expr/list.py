@@ -1323,6 +1323,9 @@ class ExprListNameSpace:
         The indices may be defined in a single column, or by sublists in another
         column of dtype `List`.
 
+        .. deprecated:: 0.19.14
+            This method has been renamed to :func:`gather`.
+
         Parameters
         ----------
         indices

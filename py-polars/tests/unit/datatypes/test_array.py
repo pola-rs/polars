@@ -141,3 +141,11 @@ def test_array_in_list() -> None:
         dtype=pl.List(pl.Array(pl.Int8, 2)),
     )
     assert s.dtype == pl.List(pl.Array(pl.Int8, 2))
+
+
+def test_array_data_type_equality() -> None:
+    assert pl.Array(pl.Int64, 2) == pl.Array
+    assert pl.Array(pl.Int64, 2) == pl.Array(pl.Int64, 2)
+    assert pl.Array(pl.Int64, 2) != pl.Array(pl.Int64, 3)
+    assert pl.Array(pl.Int64, 2) != pl.Array(pl.Utf8, 2)
+    assert pl.Array(pl.Int64, 2) != pl.List(pl.Int64)

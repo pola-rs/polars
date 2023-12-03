@@ -34,6 +34,8 @@ pub use field::*;
 use num_traits::{Bounded, FromPrimitive, Num, NumCast, One, Zero};
 use polars_utils::abs_diff::AbsDiff;
 use polars_utils::float::IsFloat;
+use polars_utils::min_max::MinMax;
+use polars_utils::nulls::IsNull;
 #[cfg(feature = "serde")]
 use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
@@ -259,6 +261,8 @@ pub trait NumericNative:
     + FromPrimitive
     + IsFloat
     + ArrayArithmetics
+    + MinMax
+    + IsNull
 {
     type PolarsType: PolarsNumericType;
 }
