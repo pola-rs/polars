@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use arrow::array::{ArrayRef, BinaryArray};
+use arrow::array::{Array, ArrayRef, BinaryArray};
 use arrow::compute::utils::combine_validities_and;
 use polars_core::datatypes::ChunkId;
 use polars_core::error::PolarsResult;
@@ -272,7 +272,7 @@ impl GenericJoinProbe {
         let rows = self.set_join_series(context, chunk)?;
         hash_rows(&rows, &mut hashes, &self.hb);
 
-        if self.join_nulls {
+        if self.join_nulls || rows.null_count() == 0 {
             let iter = hashes.iter().zip(rows.values_iter()).enumerate();
             self.match_left(iter);
         } else {
@@ -337,7 +337,7 @@ impl GenericJoinProbe {
         let rows = self.set_join_series(context, chunk)?;
         hash_rows(&rows, &mut hashes, &self.hb);
 
-        if self.join_nulls {
+        if self.join_nulls || rows.null_count() == 0 {
             let iter = hashes.iter().zip(rows.values_iter()).enumerate();
             self.match_inner(iter);
         } else {
