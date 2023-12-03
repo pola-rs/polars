@@ -76,10 +76,10 @@ pub fn convert_to_new_timezone_and_naive_local(
     from_tz: &Tz,
     to_tz: &Tz,
     ndt: NaiveDateTime,
-) -> PolarsResult<NaiveDateTime> {
-    // ndt is already converted to UTC timezone
-    Ok(from_tz
+) -> NaiveDateTime {
+    // ndt is in UTC datetime corresponding to the datetime in from_tz timezone
+    from_tz
         .from_utc_datetime(&ndt)
         .with_timezone(to_tz)
-        .naive_local())
+        .naive_local()
 }
