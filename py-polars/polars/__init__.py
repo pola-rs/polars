@@ -63,6 +63,7 @@ from polars.datatypes import (
 )
 from polars.exceptions import (
     ArrowError,
+    CategoricalRemappingWarning,
     ChronoFormatWarning,
     ColumnNotFoundError,
     ComputeError,
@@ -221,6 +222,8 @@ __all__ = [
     "SchemaFieldNotFoundError",
     "ShapeError",
     "StructFieldNotFoundError",
+    # warnings
+    "CategoricalRemappingWarning",
     # core classes
     "DataFrame",
     "Expr",
