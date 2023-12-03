@@ -9845,7 +9845,7 @@ class DataFrame:
 
         Notes
         -----
-        This implementation of :func:`hash_rows` does not guarantee stable results
+        This implementation of `hash_rows` does not guarantee stable results
         across different Polars versions. Its stability is only guaranteed within a
         single version.
 

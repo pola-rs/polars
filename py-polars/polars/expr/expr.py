@@ -5379,7 +5379,7 @@ class Expr:
 
         Notes
         -----
-        This implementation of :func:`rows` does not guarantee stable results
+        This implementation of `hash` does not guarantee stable results
         across different Polars versions. Its stability is only guaranteed within a
         single version.
 
