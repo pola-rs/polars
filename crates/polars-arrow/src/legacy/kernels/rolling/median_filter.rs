@@ -157,23 +157,25 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
             },
             1 => self.advance(),
             i64::MIN..=0 => {
-                self.current_index -= i;
-                for _ in i..0 {
+                for _ in i..self.current_index {
                     self.m = self.prev[self.m as usize] as usize;
                 }
+                self.current_index = i;
             },
             _ => {
-                self.current_index += i;
-                for _ in 0..i {
+                for _ in self.current_index..i {
                     self.m = self.next[self.m as usize] as usize;
                 }
+                self.current_index = i;
             },
         }
     }
 
     fn reverse(&mut self) {
-        self.current_index -= 1;
-        self.m = self.prev[self.m] as usize;
+        if self.current_index > 0 {
+            self.current_index -= 1;
+            self.m = self.prev[self.m] as usize;
+        }
     }
 
     fn advance(&mut self) {
@@ -346,6 +348,11 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> BlockUnion<'a, T> {
 
         out
     }
+
+    fn set_state(&mut self, i: usize) {
+        self.block_left.delete(i);
+        self.block_right.undelete(i);
+    }
 }
 
 impl<T: IsFloat + PartialOrd + NativeType> LenGet for BlockUnion<'_, T> {
@@ -361,36 +368,54 @@ impl<T: IsFloat + PartialOrd + NativeType> LenGet for BlockUnion<'_, T> {
             self.block_left.traverse_to_index(i);
             return self.block_left.peek().unwrap();
         }
-        // Current index position of merge sort
-        let s = self.block_left.current_index + self.block_right.current_index;
-        // For now only support advancing by one.
-        assert_eq!(s, i);
 
-        let left = self.block_left.peek();
-        let right = self.block_right.peek();
-        match (left, right) {
-            (Some(left), None) => {
-                self.block_left.advance();
-                left
-            },
-            (None, Some(right)) => {
-                self.block_right.advance();
-                right
-            },
-            (Some(left), Some(right)) => {
-                match left.partial_cmp(&right).unwrap() {
-                    // On equality, take the left as that one was first.
-                    Ordering::Equal | Ordering::Less => {
-                        self.block_left.advance();
-                        left
-                    },
-                    Ordering::Greater => {
-                        self.block_right.advance();
-                        right
-                    },
-                }
-            },
-            _ => panic!(),
+        loop {
+            // Current index position of merge sort
+            let s = self.block_left.current_index + self.block_right.current_index;
+            if i < s {
+                self.block_left.reverse();
+                self.block_right.reverse();
+            }
+
+            let left = self.block_left.peek();
+            let right = self.block_right.peek();
+            match (left, right) {
+                (Some(left), None) => {
+                    if s == i {
+                        return left;
+                    }
+                    // Only advance on next iteration as the state can change when a new
+                    // delete/undelete occurs. So next get call we might hit a different branch.
+                    self.block_left.advance();
+                },
+                (None, Some(right)) => {
+                    if s == i {
+                        return right;
+                    }
+                    self.block_right.advance();
+                },
+                (Some(left), Some(right)) => {
+                    match left.partial_cmp(&right).unwrap() {
+                        // On equality, take the left as that one was first.
+                        Ordering::Equal | Ordering::Less => {
+                            if s == i {
+                                return left;
+                            }
+                            self.block_left.advance();
+                        },
+                        Ordering::Greater => {
+                            if s == i
+                                // Left is only a single element and larger than right, so we can immediately take right.
+                                || self.block_left.n_element == 1
+                            {
+                                return right;
+                            }
+                            self.block_right.advance();
+                        },
+                    }
+                },
+                _ => panic!(),
+            }
         }
     }
 }
@@ -657,7 +682,7 @@ mod test {
     }
 
     #[test]
-    fn test_block_union() {
+    fn test_block_union_1() {
         let alpha_a = [10, 4, 2];
         let alpha_b = [3, 4, 1];
 
@@ -685,8 +710,7 @@ mod test {
 
         // STEP 1
         aub.block_left.reset();
-        aub.block_left.delete(0);
-        aub.block_right.undelete(0);
+        aub.set_state(0);
         assert_eq!(aub.len(), 3);
         // block 1:
         // i:  4, 2
@@ -706,11 +730,167 @@ mod test {
         // i:  3, 4
         // s:  3, 4
         // union s: [2, 3, 4]
-        aub.block_left.delete(1);
-        aub.block_right.undelete(1);
+        aub.set_state(1);
         assert_eq!(aub.get(0), 2);
         assert_eq!(aub.get(1), 3);
         assert_eq!(aub.get(2), 4);
+    }
+
+    #[test]
+    fn test_block_union_2() {
+        let alpha_a = [3, 4, 5, 7, 3, 9, 2, 6, 9, 8];
+        let alpha_b = [2, 2, 1, 7, 5, 3, 2, 6, 1, 7];
+
+        let mut scratch = vec![];
+        let mut prev = vec![];
+        let mut next = vec![];
+        let mut a = Block::new(&alpha_a, &mut scratch, &mut prev, &mut next);
+
+        let mut scratch = vec![];
+        let mut prev = vec![];
+        let mut next = vec![];
+        let mut b = Block::new(&alpha_b, &mut scratch, &mut prev, &mut next);
+
+        b.unwind();
+        let mut aub = BlockUnion::new(&mut a, &mut b, alpha_a.len());
+        assert_eq!(aub.len(), 10);
+        // STEP 0
+        // block 1:
+        // i:  3, 4, 5, 7, 3, 9, 2, 6, 9, 8
+        // s:  2, 3, 3, 4, 5, 6, 7, 8, 9, 9
+        // block 2: empty
+        assert_eq!(aub.get(0), 2);
+        assert_eq!(aub.get(1), 3);
+        assert_eq!(aub.get(2), 3);
+        // skip a step
+        assert_eq!(aub.get(4), 5);
+        // skip to end
+        assert_eq!(aub.get(9), 9);
+
+        // get median
+        assert_eq!(aub.get(5), 6);
+
+        // STEP 1
+        aub.set_state(0);
+        assert_eq!(aub.len(), 10);
+        // block 1:
+        // i:  4, 5, 7, 3, 9, 2, 6, 9, 8
+        // s:  2, 3, 4, 5, 6, 7, 8, 9, 9
+        // block 2:
+        // i:  2
+        // s:  2
+        // union s: 2, 2, 3, 4, 5, [6], 7, 8, 9, 9
+        assert_eq!(aub.get(5), 6);
+        assert_eq!(aub.get(7), 8);
+
+        // STEP 2
+        aub.set_state(1);
+
+        // Back to index 4
+        aub.block_left.reset();
+        aub.block_right.reset();
+        assert_eq!(aub.get(4), 5);
+        // block 1:
+        // i:  5, 7, 3, 9, 2, 6, 9, 8
+        // s:  2, 3, 5, 6, 7, 8, 9, 9
+        // block 2:
+        // i:  2, 2
+        // s:  2, 2
+        // union s: 2, 2, 3, 4, 5, [6], 7, 8, 9, 9
+        assert_eq!(aub.get(5), 6);
+
+        // STEP 3
+        aub.set_state(2);
+        // block 1:
+        // i:  7, 3, 9, 2, 6, 9, 8
+        // s:  2, 3, 6, 7, 8, 9, 9
+        // block 2:
+        // i:  2, 2, 1
+        // s:  1, 2, 2
+        // union s: 1, 2, 2, 3, 4, [6], 7, 8, 9, 9
+        assert_eq!(aub.get(5), 6);
+
+        // STEP 4
+        aub.set_state(3);
+        // block 1:
+        // i:  3, 9, 2, 6, 9, 8
+        // s:  2, 3, 6, 8, 9, 9
+        // block 2:
+        // i:  2, 2, 1, 7
+        // s:  1, 2, 2, 7
+        // union s: 1, 2, 2, 3, 4, [6], 7, 8, 9, 9
+        assert_eq!(aub.get(5), 6);
+
+        // STEP 5
+        aub.set_state(4);
+        // block 1:
+        // i:  9, 2, 6, 9, 8
+        // s:  2, 6, 8, 9, 9
+        // block 2:
+        // i:  2, 2, 1, 7, 5
+        // s:  1, 2, 2, 5, 7
+        // union s: 1, 2, 2, 2, 5, [6], 7, 8, 9, 9
+        assert_eq!(aub.get(5), 6);
+        assert_eq!(aub.len(), 10);
+
+        // STEP 6
+        aub.set_state(5);
+        // LEFT IS phasing out
+        // block 1:
+        // i:  2, 6, 9, 8
+        // s:  2, 6, 8, 9
+        // block 2:
+        // i:  2, 2, 1, 7, 5, 3
+        // s:  1, 2, 2, 3, 5, 7
+        // union s: 1, 2, 2, 2, 4, [5], 6, 7, 8, 9
+        assert_eq!(aub.len(), 10);
+        assert_eq!(aub.get(5), 5);
+
+        // STEP 7
+        aub.set_state(6);
+        // block 1:
+        // i:  6, 9, 8
+        // s:  6, 8, 9
+        // block 2:
+        // i:  2, 2, 1, 7, 5, 3, 2
+        // s:  1, 2, 2, 2, 3, 5, 7
+        // union s: 1, 2, 2, 2, 3, [5], 6, 7, 8, 9
+        assert_eq!(aub.len(), 10);
+        assert_eq!(aub.get(5), 5);
+
+        // STEP 8
+        aub.set_state(7);
+        // block 1:
+        // i:  9, 8
+        // s:  8, 9
+        // block 2:
+        // i:  2, 2, 1, 7, 5, 3, 2, 6
+        // s:  1, 2, 2, 2, 3, 5, 6, 7
+        // union s: 1, 2, 2, 2, 3, [5], 6, 7, 8, 9
+        assert_eq!(aub.len(), 10);
+        assert_eq!(aub.get(5), 5);
+
+        // STEP 9
+        aub.set_state(8);
+        // block 1:
+        // i:  8
+        // s:  8
+        // block 2:
+        // i:  2, 2, 1, 7, 5, 3, 2, 6, 1
+        // s:  1, 1, 2, 2, 2, 3, 5, 6, 7
+        // union s: 1, 1, 2, 2, 2, [3], 5, 6, 7, 8
+        assert_eq!(aub.len(), 10);
+        assert_eq!(aub.get(5), 3);
+
+        // STEP 10
+        aub.set_state(9);
+        // block 1: empty
+        // block 2:
+        // i:  2, 2, 1, 7, 5, 3, 2, 6, 1, 7
+        // s:  1, 1, 2, 2, 2, 3, 5, 6, 7
+        // union s: 1, 1, 2, 2, 2, [3], 5, 6, 7, 7
+        assert_eq!(aub.len(), 10);
+        assert_eq!(aub.get(5), 3);
     }
 
     #[test]
