@@ -54,7 +54,6 @@ from polars.utils.deprecation import (
     deprecate_renamed_function,
     deprecate_renamed_parameter,
     deprecate_saturating,
-    warn_closed_future_change,
 )
 from polars.utils.meta import threadpool_size
 from polars.utils.various import _warn_null_comparison, no_default, sphinx_accessor
@@ -5557,7 +5556,6 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.interpolate(method))
 
-    @warn_closed_future_change()
     def rolling_min(
         self,
         window_size: int | timedelta | str,
@@ -5566,7 +5564,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
@@ -5768,7 +5766,6 @@ class Expr:
             )
         )
 
-    @warn_closed_future_change()
     def rolling_max(
         self,
         window_size: int | timedelta | str,
@@ -5777,7 +5774,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
@@ -6002,7 +5999,6 @@ class Expr:
             )
         )
 
-    @warn_closed_future_change()
     def rolling_mean(
         self,
         window_size: int | timedelta | str,
@@ -6011,7 +6007,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
@@ -6246,7 +6242,6 @@ class Expr:
             )
         )
 
-    @warn_closed_future_change()
     def rolling_sum(
         self,
         window_size: int | timedelta | str,
@@ -6255,7 +6250,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
@@ -6480,7 +6475,6 @@ class Expr:
             )
         )
 
-    @warn_closed_future_change()
     def rolling_std(
         self,
         window_size: int | timedelta | str,
@@ -6489,7 +6483,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
         ddof: int = 1,
         warn_if_unsorted: bool = True,
     ) -> Self:
@@ -6724,7 +6718,6 @@ class Expr:
             )
         )
 
-    @warn_closed_future_change()
     def rolling_var(
         self,
         window_size: int | timedelta | str,
@@ -6733,7 +6726,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
         ddof: int = 1,
         warn_if_unsorted: bool = True,
     ) -> Self:
@@ -6968,7 +6961,6 @@ class Expr:
             )
         )
 
-    @warn_closed_future_change()
     def rolling_median(
         self,
         window_size: int | timedelta | str,
@@ -6977,7 +6969,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
@@ -7128,7 +7120,6 @@ class Expr:
             )
         )
 
-    @warn_closed_future_change()
     def rolling_quantile(
         self,
         quantile: float,
@@ -7139,7 +7130,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
