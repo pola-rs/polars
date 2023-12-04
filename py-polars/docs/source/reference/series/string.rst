@@ -33,6 +33,7 @@ The following methods are available under the `Series.str` attribute.
     Series.str.pad_start
     Series.str.replace
     Series.str.replace_all
+    Series.str.reverse
     Series.str.rjust
     Series.str.rstrip
     Series.str.slice

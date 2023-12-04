@@ -33,6 +33,7 @@ The following methods are available under the `expr.str` attribute.
     Expr.str.pad_start
     Expr.str.replace
     Expr.str.replace_all
+    Expr.str.reverse
     Expr.str.rjust
     Expr.str.rstrip
     Expr.str.slice
