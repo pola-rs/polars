@@ -1142,13 +1142,15 @@ def test_string_extract_groups_lazy_schema_10305() -> None:
 def test_string_reverse() -> None:
     df = pl.DataFrame(
         {
-            "text": [None, "foo", "bar", "i like pizza&#", None],
+            "text": [None, "foo", "bar", "i like pizza&#", None, "man\u0303ana"],
         }
     )
     expected = pl.DataFrame(
         [
             pl.Series(
-                "text", [None, "oof", "rab", "#&azzip ekil i", None], dtype=pl.Utf8
+                "text",
+                [None, "oof", "rab", "#&azzip ekil i", None, "anan\u0303am"],
+                dtype=pl.Utf8,
             ),
         ]
     )

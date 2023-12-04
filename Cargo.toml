@@ -73,6 +73,7 @@ strum_macros = "0.25"
 thiserror = "1"
 tokio = "1.26"
 tokio-util = "0.7.8"
+unicode-reverse = "1.0.8"
 url = "2.4"
 version_check = "0.9.4"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }

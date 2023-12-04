@@ -1950,17 +1950,18 @@ class ExprStringNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"text": ["foo", "bar"]})
+        >>> df = pl.DataFrame({"text": ["foo", "bar", "man\u0303ana"]})
         >>> df.with_columns(pl.col("text").str.reverse().alias("reversed"))
-        shape: (2, 2)
-        ┌──────┬──────────┐
-        │ text ┆ reversed │
-        │ ---  ┆ ---      │
-        │ str  ┆ str      │
-        ╞══════╪══════════╡
-        │ foo  ┆ oof      │
-        │ bar  ┆ rab      │
-        └──────┴──────────┘
+        shape: (3, 2)
+        ┌────────┬──────────┐
+        │ text   ┆ reversed │
+        │ ---    ┆ ---      │
+        │ str    ┆ str      │
+        ╞════════╪══════════╡
+        │ foo    ┆ oof      │
+        │ bar    ┆ rab      │
+        │ mañana ┆ anañam   │
+        └────────┴──────────┘
         """
         return wrap_expr(self._pyexpr.str_reverse())
 
