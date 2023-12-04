@@ -585,55 +585,6 @@ class LazyFrame:
         return self
 
     @classmethod
-    @deprecate_function(
-        "Convert the JSON string to `StringIO` and then use `LazyFrame.deserialize`.",
-        version="0.18.12",
-    )
-    def from_json(cls, json: str) -> Self:
-        """
-        Read a logical plan from a JSON string to construct a LazyFrame.
-
-        .. deprecated:: 0.18.12
-            This method is deprecated. Convert the JSON string to `StringIO`
-            and then use `LazyFrame.deserialize`.
-
-        Parameters
-        ----------
-        json
-            String in JSON format.
-
-        See Also
-        --------
-        deserialize
-
-        """
-        return cls.deserialize(StringIO(json))
-
-    @classmethod
-    @deprecate_renamed_function("deserialize", version="0.18.12")
-    @deprecate_renamed_parameter("file", "source", version="0.18.12")
-    def read_json(cls, source: str | Path | IOBase) -> Self:
-        """
-        Read a logical plan from a JSON file to construct a LazyFrame.
-
-        .. deprecated:: 0.18.12
-            This class method has been renamed to :meth:`deserialize`.
-
-        Parameters
-        ----------
-        source
-            Path to a file or a file-like object (by file-like object, we refer to
-            objects that have a `read()` method, such as a file handler (e.g.
-            via builtin `open` function) or `BytesIO`).
-
-        See Also
-        --------
-        deserialize
-
-        """
-        return cls.deserialize(source)
-
-    @classmethod
     def deserialize(cls, source: str | Path | IOBase) -> Self:
         """
         Read a logical plan from a JSON file to construct a LazyFrame.
@@ -913,30 +864,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         else:
             self._ldf.serialize(file)
         return None
-
-    @overload
-    def write_json(self, file: None = ...) -> str:
-        ...
-
-    @overload
-    def write_json(self, file: IOBase | str | Path) -> None:
-        ...
-
-    @deprecate_renamed_function("serialize", version="0.18.12")
-    def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
-        """
-        Serialize the logical plan of this LazyFrame to a file or string in JSON format.
-
-        .. deprecated:: 0.18.12
-            This method has been renamed to :func:`LazyFrame.serialize`.
-
-        Parameters
-        ----------
-        file
-            File path to which the result should be written. If set to `None`
-            (default), the output is returned as a string instead.
-        """
-        return self.serialize(file)
 
     def pipe(
         self,

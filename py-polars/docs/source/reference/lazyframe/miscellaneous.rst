@@ -23,7 +23,4 @@ Read/write logical plan
    :toctree: api/
 
     LazyFrame.deserialize
-    LazyFrame.from_json
-    LazyFrame.read_json
     LazyFrame.serialize
-    LazyFrame.write_json
