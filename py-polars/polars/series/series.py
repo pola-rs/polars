@@ -2233,13 +2233,13 @@ class Series:
             issue_deprecation_warning(
                 "The `break_point_label` parameter for `Series.cut` will be removed."
                 " Use `Series.struct.rename_fields` to rename the field instead.",
-                version="0.18.14",
+                version="0.19.0",
             )
         if category_label != "category":
             issue_deprecation_warning(
                 "The `category_label` parameter for `Series.cut` will be removed."
                 " Use `Series.struct.rename_fields` to rename the field instead.",
-                version="0.18.14",
+                version="0.19.0",
             )
         if not as_series:
             issue_deprecation_warning(
@@ -2247,7 +2247,7 @@ class Series:
                 " The same behavior can be achieved by setting `include_breaks=True`,"
                 " unnesting the resulting struct Series,"
                 " and adding the result to the original Series.",
-                version="0.18.14",
+                version="0.19.0",
             )
             temp_name = self.name + "_bin"
             return (
