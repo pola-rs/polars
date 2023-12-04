@@ -27,6 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:example2]
     let time_zones_operations = time_zones_df
+        .clone()
         .lazy()
         .select([
             col("tz_aware")
@@ -48,6 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --8<-- [start:example3]
     let local_time_zones_operations = time_zones_df
+        .clone()
         .lazy()
         .select([
             col("tz_aware"),
