@@ -81,7 +81,7 @@ jobs:
           # TODO: Re-enable coverage for for Ubuntu + Python 3.12 tests
           # Currently skipped due to performance issues in coverage:
           # https://github.com/nedbat/coveragepy/issues/1665
-          COV: ${{ !(matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12') && '--cov' || '' }}
+          COV: ${{ !(matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12') && '--cov' || '--no-cov' }}
         run: pytest $COV -n auto --dist loadgroup -m "not benchmark and not docs"
 
       - name: Run tests async reader tests
