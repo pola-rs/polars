@@ -86,7 +86,7 @@ pub fn replace_time_zone(
     Ok(out)
 }
 
-pub fn to_naive_local(
+pub fn to_local_datetime(
     datetime: &Logical<DatetimeType, Int64Type>,
     convert_tz: &Utf8Chunked,
 ) -> PolarsResult<DatetimeChunked> {
@@ -133,7 +133,7 @@ pub fn to_naive_local(
     Ok(out)
 }
 
-pub fn from_naive_local(
+pub fn from_local_datetime(
     datetime: &Logical<DatetimeType, Int64Type>,
     naive_tz: &Utf8Chunked,
     out_tz: &str,

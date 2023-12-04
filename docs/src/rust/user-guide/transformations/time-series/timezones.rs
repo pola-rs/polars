@@ -5,8 +5,10 @@ use polars::prelude::*;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:example]
     let ts = ["2021-03-27 03:00", "2021-03-28 03:00"];
+    let tz = ["Africa/Kigali", "America/New_York"];
     let tz_naive = Series::new("tz_naive", &ts);
-    let time_zones_df = DataFrame::new(vec![tz_naive])?
+    let timezones = Series::new("timezone", &tz);
+    let time_zones_df = DataFrame::new(vec![tz_naive, timezones])?
         .lazy()
         .select([col("tz_naive").str().to_datetime(
             Some(TimeUnit::Milliseconds),
@@ -43,6 +45,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect()?;
     println!("{}", &time_zones_operations);
     // --8<-- [end:example2]
+
+    // --8<-- [start:example3]
+    let local_time_zones_operations = time_zones_df
+        .lazy()
+        .select([
+            col("tz_aware"),
+            col("timezone"),
+            col("tz_aware")
+                .dt()
+                .to_local_datetime(col("timezone"))
+                .alias("local_dt"),
+        ])
+        .with_columns([col("local_dt")
+            .dt()
+            .from_local_datetime(col("timezone"), "UTC".to_string(), "raise".to_string())
+            .alias("tz_aware_again")])
+        .collect()?;
+    println!("{}", &local_time_zones_operations);
+    // --8<-- [end:example3]
 
     Ok(())
 }

@@ -233,9 +233,9 @@ impl DateLikeNameSpace {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn to_naive_local(self, convert_tz: Expr) -> Expr {
+    pub fn to_local_datetime(self, convert_tz: Expr) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::TemporalExpr(TemporalFunction::ToNaiveLocal),
+            FunctionExpr::TemporalExpr(TemporalFunction::ToLocalDatetime),
             &[convert_tz],
             false,
             false,
@@ -243,9 +243,9 @@ impl DateLikeNameSpace {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn from_naive_local(self, naive_tz: Expr, out_tz: TimeZone, ambiguous: String) -> Expr {
+    pub fn from_local_datetime(self, naive_tz: Expr, out_tz: TimeZone, ambiguous: String) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::TemporalExpr(TemporalFunction::FromNaiveLocal(out_tz, ambiguous)),
+            FunctionExpr::TemporalExpr(TemporalFunction::FromLocalDatetime(out_tz, ambiguous)),
             &[naive_tz],
             false,
             false,

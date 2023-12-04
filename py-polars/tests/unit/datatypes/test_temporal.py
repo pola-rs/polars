@@ -2747,145 +2747,74 @@ def test_rolling_duplicates() -> None:
 
 
 @pytest.mark.parametrize(
-    ("data", "expected"),
+    ("date", "timezone", "local_date"),
     [
         (
-            pl.DataFrame(
-                {
-                    "date_col": [
-                        datetime(2020, 10, 10, tzinfo=timezone.utc),
-                        datetime(2020, 10, 15, tzinfo=timezone.utc),
-                        datetime(2020, 10, 15, tzinfo=timezone.utc),
-                    ],
-                    "timezone": ["Europe/London", "Africa/Kigali", "Europe/Berlin"],
-                }
-            ),
-            pl.DataFrame(
-                [
-                    pl.Series(
-                        "date_col",
-                        [
-                            datetime(2020, 10, 10, 0, 0, tzinfo=timezone.utc),
-                            datetime(2020, 10, 15, 0, 0, tzinfo=timezone.utc),
-                            datetime(2020, 10, 15, 0, 0, tzinfo=timezone.utc),
-                        ],
-                        dtype=pl.Datetime(time_unit="us", time_zone="UTC"),
-                    ),
-                    pl.Series(
-                        "timezone",
-                        ["Europe/London", "Africa/Kigali", "Europe/Berlin"],
-                        dtype=pl.Utf8,
-                    ),
-                    pl.Series(
-                        "local_dt",
-                        [
-                            datetime(2020, 10, 10, 1, 0),
-                            datetime(2020, 10, 15, 2, 0),
-                            datetime(2020, 10, 15, 2, 0),
-                        ],
-                        dtype=pl.Datetime(time_unit="us", time_zone=None),
-                    ),
-                ]
-            ),
+            datetime(2020, 10, 10, tzinfo=timezone.utc),
+            "Europe/London",
+            datetime(2020, 10, 10, 1, 0),
         ),
         (
-            pl.DataFrame(
-                {
-                    "date_col": [
-                        datetime(2020, 10, 10, tzinfo=timezone.utc),
-                        datetime(2020, 10, 15, tzinfo=timezone.utc),
-                        datetime(2020, 10, 15, tzinfo=timezone.utc),
-                    ],
-                    "timezone": ["Europe/London", "Africa/Kigali", "America/New_York"],
-                }
-            ).with_columns(pl.col("date_col").dt.convert_time_zone("Europe/London")),
-            pl.DataFrame(
-                [
-                    pl.Series(
-                        "date_col",
-                        [
-                            datetime(2020, 10, 10, 0, 0),
-                            datetime(2020, 10, 15, 0, 0),
-                            datetime(2020, 10, 15, 0, 0),
-                        ],
-                        dtype=pl.Datetime(time_unit="us", time_zone="UTC"),
-                    ).dt.convert_time_zone("Europe/London"),
-                    pl.Series(
-                        "timezone",
-                        ["Europe/London", "Africa/Kigali", "America/New_York"],
-                        dtype=pl.Utf8,
-                    ),
-                    pl.Series(
-                        "local_dt",
-                        [
-                            datetime(2020, 10, 10, 1, 0),
-                            datetime(2020, 10, 15, 2, 0),
-                            datetime(2020, 10, 14, 20, 0),
-                        ],
-                        dtype=pl.Datetime(time_unit="us", time_zone=None),
-                    ),
-                ]
-            ),
+            datetime(2020, 10, 15, tzinfo=timezone.utc),
+            "Africa/Kigali",
+            datetime(2020, 10, 15, 2, 0),
+        ),
+        (
+            datetime(2020, 10, 15, tzinfo=timezone.utc),
+            "America/New_York",
+            datetime(2020, 10, 14, 20, 0),
         ),
     ],
 )
-def test_convert_tz_to_local_tz(data: pl.DataFrame, expected: pl.DataFrame) -> None:
-    result = data.with_columns(
-        pl.col("date_col").dt.to_naive_local(pl.col("timezone")).alias("local_dt")
+def test_convert_tz_to_local_datetime(
+    date: datetime, timezone: str, local_date: datetime
+) -> None:
+    df = pl.DataFrame({"date": [date], "timezone": [timezone]}).with_columns(
+        pl.col("date").dt.convert_time_zone("Europe/London")
+    )
+
+    expected = df.with_columns(pl.lit(local_date).alias("local_dt"))
+
+    result = df.with_columns(
+        pl.col("date").dt.to_local_datetime(pl.col("timezone")).alias("local_dt")
     )
 
     assert_frame_equal(result, expected)
 
 
 @pytest.mark.parametrize(
-    ("data", "expected"),
+    ("local_date", "timezone", "date"),
     [
         (
-            pl.DataFrame(
-                {
-                    "local_dt": [
-                        datetime(2020, 10, 10, 1, 0),
-                        datetime(2020, 10, 15, 2, 0),
-                        datetime(2020, 10, 14, 20, 0),
-                    ],
-                    "timezone": ["Europe/London", "Africa/Kigali", "America/New_York"],
-                }
-            ),
-            pl.DataFrame(
-                [
-                    pl.Series(
-                        "local_dt",
-                        [
-                            datetime(2020, 10, 10, 1, 0),
-                            datetime(2020, 10, 15, 2, 0),
-                            datetime(2020, 10, 14, 20, 0),
-                        ],
-                        dtype=pl.Datetime(time_unit="us", time_zone=None),
-                    ),
-                    pl.Series(
-                        "timezone",
-                        ["Europe/London", "Africa/Kigali", "America/New_York"],
-                        dtype=pl.Utf8,
-                    ),
-                    pl.Series(
-                        "date_col",
-                        [
-                            datetime(2020, 10, 10, 0, 0),
-                            datetime(2020, 10, 15, 0, 0),
-                            datetime(2020, 10, 15, 0, 0),
-                        ],
-                        dtype=pl.Datetime(time_unit="us", time_zone="UTC"),
-                    ).dt.convert_time_zone("Europe/London"),
-                ]
-            ),
+            datetime(2020, 10, 10, 1, 0),
+            "Europe/London",
+            datetime(2020, 10, 10, tzinfo=timezone.utc),
+        ),
+        (
+            datetime(2020, 10, 15, 2, 0),
+            "Africa/Kigali",
+            datetime(2020, 10, 15, tzinfo=timezone.utc),
+        ),
+        (
+            datetime(2020, 10, 14, 20, 0),
+            "America/New_York",
+            datetime(2020, 10, 15, tzinfo=timezone.utc),
         ),
     ],
 )
-def test_convert_tz_from_local_tz(data: pl.DataFrame, expected: pl.DataFrame) -> None:
-    result = data.with_columns(
-        pl.col("local_dt")
-        .dt.from_naive_local(pl.col("timezone"), "Europe/London")
-        .alias("date_col")
+def test_convert_tz_from_local_datetime(
+    local_date: datetime, timezone: str, date: datetime
+) -> None:
+    df = pl.DataFrame({"local_date": [local_date], "timezone": [timezone]})
+
+    expected = df.with_columns(
+        pl.lit(date).alias("date").dt.convert_time_zone("Europe/London")
+    )
+
+    result = df.with_columns(
+        pl.col("local_date")
+        .dt.from_local_datetime(pl.col("timezone"), "Europe/London")
+        .alias("date")
     )
 
     assert_frame_equal(result, expected)

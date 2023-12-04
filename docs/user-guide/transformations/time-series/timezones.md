@@ -29,6 +29,8 @@ The main methods for setting and converting between time zones are:
 
 - `dt.convert_time_zone`: convert from one time zone to another.
 - `dt.replace_time_zone`: set/unset/change time zone.
+- `dt.to_local_datetime`: adjust a datetime to it's naive local datetime
+- `dt.from_local_datetime`: go from a local datetime to a new timezone
 
 Let's look at some examples of common operations:
 
@@ -43,4 +45,10 @@ Let's look at some examples of common operations:
 
 ```python exec="on" result="text" session="user-guide/transformations/ts/timezones"
 --8<-- "python/user-guide/transformations/time-series/timezones.py:example2"
+```
+
+{{code_block('user-guide/transformations/time-series/timezones','example3',['dt.to_local_datetime','dt.from_local_datetime'])}}
+
+```python exec="on" result="text" session="user-guide/transformations/ts/timezones"
+--8<-- "python/user-guide/transformations/time-series/timezones.py:example3"
 ```

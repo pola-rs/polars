@@ -15,6 +15,8 @@ The following methods are available under the `expr.dt` attribute.
     Expr.dt.combine
     Expr.dt.date
     Expr.dt.datetime
+    Expr.dt.to_local_datetime
+    Expr.dt.from_local_datetime
     Expr.dt.day
     Expr.dt.days
     Expr.dt.dst_offset

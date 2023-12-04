@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from datetime import timedelta
 
     from polars import Expr
-    from polars.type_aliases import Ambiguous, EpochTimeUnit, IntoExpr, TimeUnit
+    from polars.type_aliases import Ambiguous, EpochTimeUnit, TimeUnit
 
 
 class ExprDateTimeNameSpace:
@@ -1423,9 +1423,9 @@ class ExprDateTimeNameSpace:
             self._pyexpr.dt_replace_time_zone(time_zone, ambiguous._pyexpr)
         )
 
-    def to_naive_local(
+    def to_local_datetime(
         self,
-        tz: IntoExpr,
+        tz: str | Expr,
     ) -> Expr:
         """
         Convert to local datetime in given time zone.
@@ -1450,7 +1450,9 @@ class ExprDateTimeNameSpace:
         ...     }
         ... ).with_columns(pl.col("date_col").dt.replace_time_zone("UTC"))
         >>> df.with_columns(
-        ...     pl.col("date_col").dt.to_naive_local("timezone").alias("local_dt")
+        ...     pl.col("date_col")
+        ...     .dt.to_local_datetime(pl.col("timezone"))
+        ...     .alias("local_dt")
         ... )
         shape: (3, 3)
         ┌─────────────────────────┬──────────────────┬─────────────────────┐
@@ -1464,12 +1466,12 @@ class ExprDateTimeNameSpace:
         └─────────────────────────┴──────────────────┴─────────────────────┘
 
         """
-        local_tz = parse_as_expression(tz, str_as_lit=False)
-        return wrap_expr(self._pyexpr.dt_to_naive_local(local_tz))
+        local_tz = parse_as_expression(tz, str_as_lit=True)
+        return wrap_expr(self._pyexpr.dt_to_local_datetime(local_tz))
 
-    def from_naive_local(
+    def from_local_datetime(
         self,
-        naive_tz: IntoExpr,
+        naive_tz: str | Expr,
         out_tz: str,
         ambiguous: Ambiguous = "raise",
     ) -> Expr:
@@ -1494,10 +1496,38 @@ class ExprDateTimeNameSpace:
         Expr
             Expression of data type :class:`DateTime`.
 
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "local_dt": [
+        ...             datetime(2020, 10, 10, 1),
+        ...             datetime(2020, 10, 10, 2),
+        ...             datetime(2020, 10, 9, 20),
+        ...         ],
+        ...         "timezone": ["Europe/London", "Africa/Kigali", "America/New_York"],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("local_dt")
+        ...     .dt.from_local_datetime(pl.col("timezone"), "UTC")
+        ...     .alias("date")
+        ... )
+        shape: (3, 3)
+        ┌─────────────────────┬──────────────────┬─────────────────────────┐
+        │ local_dt            ┆ timezone         ┆ date                    │
+        │ ---                 ┆ ---              ┆ ---                     │
+        │ datetime[μs]        ┆ str              ┆ datetime[μs, UTC]       │
+        ╞═════════════════════╪══════════════════╪═════════════════════════╡
+        │ 2020-10-10 01:00:00 ┆ Europe/London    ┆ 2020-10-10 00:00:00 UTC │
+        │ 2020-10-10 02:00:00 ┆ Africa/Kigali    ┆ 2020-10-10 00:00:00 UTC │
+        │ 2020-10-10 20:00:00 ┆ America/New_York ┆ 2020-10-10 00:00:00 UTC │
+        └─────────────────────┴──────────────────┴─────────────────────────┘
         """
-        naive_time_zone = parse_as_expression(naive_tz, str_as_lit=False)
+        naive_time_zone = parse_as_expression(naive_tz, str_as_lit=True)
         return wrap_expr(
-            self._pyexpr.dt_from_naive_local(naive_time_zone, out_tz, ambiguous)
+            self._pyexpr.dt_from_local_datetime(naive_time_zone, out_tz, ambiguous)
         )
 
     def total_days(self) -> Expr:

@@ -53,12 +53,16 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map_as_slice!(dispatch::replace_time_zone, tz.as_deref())
             },
             #[cfg(feature = "timezones")]
-            ToNaiveLocal => {
-                map_as_slice!(dispatch::to_naive_local)
+            ToLocalDatetime => {
+                map_as_slice!(dispatch::to_local_datetime)
             },
             #[cfg(feature = "timezones")]
-            FromNaiveLocal(tz, ambiguous) => {
-                map_as_slice!(dispatch::from_naive_local, tz.as_str(), ambiguous.as_str())
+            FromLocalDatetime(tz, ambiguous) => {
+                map_as_slice!(
+                    dispatch::from_local_datetime,
+                    tz.as_str(),
+                    ambiguous.as_str()
+                )
             },
             Combine(tu) => map_as_slice!(temporal::combine, tu),
             DatetimeFunction {
