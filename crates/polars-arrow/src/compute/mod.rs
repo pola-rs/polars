@@ -46,4 +46,4 @@ pub mod take;
 #[cfg(feature = "compute_temporal")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compute_temporal")))]
 pub mod temporal;
-mod utils;
+pub mod utils;

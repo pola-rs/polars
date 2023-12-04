@@ -63,6 +63,7 @@ from polars.datatypes import (
 )
 from polars.exceptions import (
     ArrowError,
+    CategoricalRemappingWarning,
     ChronoFormatWarning,
     ColumnNotFoundError,
     ComputeError,
@@ -90,7 +91,6 @@ from polars.functions import (
     arctan2d,
     arg_sort_by,
     arg_where,
-    avg,
     coalesce,
     col,
     collect_all,
@@ -221,6 +221,8 @@ __all__ = [
     "SchemaFieldNotFoundError",
     "ShapeError",
     "StructFieldNotFoundError",
+    # warnings
+    "CategoricalRemappingWarning",
     # core classes
     "DataFrame",
     "Expr",
@@ -333,7 +335,6 @@ __all__ = [
     "arctan2",
     "arctan2d",
     "arg_sort_by",
-    "avg",
     "coalesce",
     "col",
     "collect_all",

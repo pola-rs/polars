@@ -16,8 +16,8 @@ with contextlib.suppress(ImportError):
 if TYPE_CHECKING:
     from io import BytesIO
 
-    from polars import DataFrame, LazyFrame
-    from polars.type_aliases import ParallelStrategy, PolarsDataType
+    from polars import DataFrame, DataType, LazyFrame
+    from polars.type_aliases import ParallelStrategy
 
 
 def read_parquet(
@@ -143,7 +143,7 @@ def read_parquet(
 
 def read_parquet_schema(
     source: str | BinaryIO | Path | bytes,
-) -> dict[str, PolarsDataType]:
+) -> dict[str, DataType]:
     """
     Get the schema of a Parquet file without reading data.
 

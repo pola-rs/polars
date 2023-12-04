@@ -2741,9 +2741,9 @@ def test_rolling_duplicates() -> None:
             "value": [0, 1],
         }
     )
-    assert df.sort("ts").with_columns(
-        pl.col("value").rolling_max("1d", by="ts", closed="right")
-    )["value"].to_list() == [1, 1]
+    assert df.sort("ts").with_columns(pl.col("value").rolling_max("1d", by="ts"))[
+        "value"
+    ].to_list() == [1, 1]
 
 
 @pytest.mark.parametrize(

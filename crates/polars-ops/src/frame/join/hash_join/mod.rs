@@ -198,7 +198,7 @@ pub trait JoinDispatch: IntoDf {
             right.as_single_chunk_par();
             s_right = s_right.rechunk();
         }
-        let ids = sort_or_hash_left(&s_left, &s_right, verbose, args.validation)?;
+        let ids = sort_or_hash_left(&s_left, &s_right, verbose, args.validation, args.join_nulls)?;
         left._finish_left_join(ids, &right.drop(s_right.name()).unwrap(), args)
     }
 
@@ -253,7 +253,7 @@ pub trait JoinDispatch: IntoDf {
             .unwrap();
 
         // Get the indexes of the joined relations
-        let opt_join_tuples = s_left.hash_join_outer(s_right, args.validation)?;
+        let opt_join_tuples = s_left.hash_join_outer(s_right, args.validation, args.join_nulls)?;
         let mut opt_join_tuples = &*opt_join_tuples;
 
         if let Some((offset, len)) = args.slice {

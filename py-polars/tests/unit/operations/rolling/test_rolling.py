@@ -618,9 +618,7 @@ def test_rolling_aggregations_unsorted_raise_10991() -> None:
     with pytest.warns(
         UserWarning, match="Series is not known to be sorted by `by` column."
     ):
-        _ = df.with_columns(
-            roll=pl.col("val").rolling_sum("2d", by="dt", closed="right")
-        )
+        df.with_columns(roll=pl.col("val").rolling_sum("2d", by="dt"))
 
 
 def test_rolling_aggregations_with_over_11225() -> None:
@@ -733,9 +731,7 @@ def test_rolling_by_date() -> None:
         }
     ).sort("dt")
 
-    result = df.with_columns(
-        roll=pl.col("val").rolling_sum("2d", by="dt", closed="right")
-    )
+    result = df.with_columns(roll=pl.col("val").rolling_sum("2d", by="dt"))
     expected = df.with_columns(roll=pl.Series([1, 3, 5]))
     assert_frame_equal(result, expected)
 
@@ -752,9 +748,7 @@ def test_rolling_nanoseconds_11003() -> None:
         }
     )
     df = df.with_columns(pl.col("dt").str.to_datetime(time_unit="ns")).set_sorted("dt")
-    result = df.with_columns(
-        pl.col("val").rolling_sum("500ns", by="dt", closed="right")
-    )
+    result = df.with_columns(pl.col("val").rolling_sum("500ns", by="dt"))
     expected = df.with_columns(val=pl.Series([1, 3, 6]))
     assert_frame_equal(result, expected)
 

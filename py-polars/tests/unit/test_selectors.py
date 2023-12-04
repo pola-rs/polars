@@ -175,6 +175,20 @@ def test_selector_datetime(df: pl.DataFrame) -> None:
     )
 
 
+def test_select_decimal(df: pl.DataFrame) -> None:
+    assert df.select(cs.decimal()).columns == []
+    df = pl.DataFrame(
+        schema={
+            "zz0": pl.Float64,
+            "zz1": pl.Decimal,
+            "zz2": pl.Decimal(10, 10),
+        }
+    )
+    assert df.select(cs.numeric()).columns == ["zz0", "zz1", "zz2"]
+    assert df.select(cs.decimal()).columns == ["zz1", "zz2"]
+    assert df.select(~cs.decimal()).columns == ["zz0"]
+
+
 def test_selector_drop(df: pl.DataFrame) -> None:
     dfd = df.drop(cs.numeric(), cs.temporal())
     assert dfd.columns == ["eee", "fgg", "qqR"]

@@ -1238,50 +1238,6 @@ class ExprListNameSpace:
         other = parse_as_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))
 
-    @deprecate_renamed_function("set_union", version="0.18.10")
-    def union(self, other: IntoExpr) -> Expr:
-        """
-        Compute the SET UNION between the elements in this list and the elements of `other`.
-
-        .. deprecated:: 0.18.10
-            This method has been renamed to `Expr.list.set_union`.
-
-        """  # noqa: W505
-        return self.set_union(other)
-
-    @deprecate_renamed_function("set_difference", version="0.18.10")
-    def difference(self, other: IntoExpr) -> Expr:
-        """
-        Compute the SET DIFFERENCE between the elements in this list and the elements of `other`.
-
-        .. deprecated:: 0.18.10
-            This method has been renamed to `Expr.list.set_difference`.
-
-        """  # noqa: W505
-        return self.set_difference(other)
-
-    @deprecate_renamed_function("set_intersection", version="0.18.10")
-    def intersection(self, other: IntoExpr) -> Expr:
-        """
-        Compute the SET INTERSECTION between the elements in this list and the elements of `other`.
-
-        .. deprecated:: 0.18.10
-            This method has been renamed to `Expr.list.set_intersection`.
-
-        """  # noqa: W505
-        return self.set_intersection(other)
-
-    @deprecate_renamed_function("set_symmetric_difference", version="0.18.10")
-    def symmetric_difference(self, other: IntoExpr) -> Expr:
-        """
-        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of `other`.
-
-        .. deprecated:: 0.18.10
-            This method has been renamed to `Expr.list.set_symmetric_difference`.
-
-        """  # noqa: W505
-        return self.set_symmetric_difference(other)
-
     @deprecate_renamed_function("count_matches", version="0.19.3")
     def count_match(self, element: IntoExpr) -> Expr:
         """
@@ -1322,6 +1278,9 @@ class ExprListNameSpace:
 
         The indices may be defined in a single column, or by sublists in another
         column of dtype `List`.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :func:`gather`.
 
         Parameters
         ----------

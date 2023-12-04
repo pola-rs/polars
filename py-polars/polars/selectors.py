@@ -17,6 +17,7 @@ from polars.datatypes import (
     Categorical,
     Date,
     Datetime,
+    Decimal,
     Duration,
     Object,
     Time,
@@ -24,7 +25,7 @@ from polars.datatypes import (
     is_polars_dtype,
 )
 from polars.expr import Expr
-from polars.utils.deprecation import deprecate_function, deprecate_nonkeyword_arguments
+from polars.utils.deprecation import deprecate_nonkeyword_arguments
 
 if TYPE_CHECKING:
     import sys
@@ -119,30 +120,6 @@ def expand_selector(
         target = DataFrame(schema=target)
 
     return tuple(target.select(selector).columns)
-
-
-@deprecate_function(
-    message="This function has been superseded by `expand_selector`; please update accordingly",
-    version="0.18.14",
-)
-def selector_column_names(
-    frame: DataFrame | LazyFrame, selector: SelectorType
-) -> tuple[str, ...]:
-    """
-    Return the column names that would be selected from the given frame.
-
-    .. deprecated:: 0.18.14
-       Use :func:`expand_selector` instead.
-
-    Parameters
-    ----------
-    frame
-        A polars DataFrame or LazyFrame.
-    selector
-        An arbitrary polars selector (or compound selector).
-
-    """
-    return expand_selector(target=frame, selector=selector)
 
 
 def _expand_selectors(
@@ -964,6 +941,60 @@ def datetime(
         name="datetime",
         parameters={"time_unit": time_unit, "time_zone": time_zone},
     )
+
+
+def decimal() -> SelectorType:
+    """
+    Select all decimal columns.
+
+    See Also
+    --------
+    float : Select all float columns.
+    integer : Select all integer columns.
+    numeric : Select all numeric columns.
+
+    Examples
+    --------
+    >>> from decimal import Decimal as D
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "foo": ["x", "y"],
+    ...         "bar": [D(123), D(456)],
+    ...         "baz": [D("2.0005"), D("-50.5555")],
+    ...     },
+    ...     schema_overrides={"baz": pl.Decimal(scale=5, precision=10)},
+    ... )
+
+    Select all decimal columns:
+
+    >>> df.select(cs.decimal())
+    shape: (2, 2)
+    ┌──────────────┬───────────────┐
+    │ bar          ┆ baz           │
+    │ ---          ┆ ---           │
+    │ decimal[*,0] ┆ decimal[10,5] │
+    ╞══════════════╪═══════════════╡
+    │ 123          ┆ 2.00050       │
+    │ 456          ┆ -50.55550     │
+    └──────────────┴───────────────┘
+
+    Select all columns *except* the decimal ones:
+
+    >>> df.select(~cs.decimal())
+    shape: (2, 1)
+    ┌─────┐
+    │ foo │
+    │ --- │
+    │ str │
+    ╞═════╡
+    │ x   │
+    │ y   │
+    └─────┘
+
+    """
+    # TODO: allow explicit selection by scale/precision?
+    return _selector_proxy_(F.col(Decimal), name="decimal")
 
 
 def duration(

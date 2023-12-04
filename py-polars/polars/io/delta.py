@@ -12,8 +12,7 @@ from polars.dependencies import pyarrow as pa
 from polars.io.pyarrow_dataset import scan_pyarrow_dataset
 
 if TYPE_CHECKING:
-    from polars import DataFrame, LazyFrame
-    from polars.type_aliases import PolarsDataType
+    from polars import DataFrame, DataType, LazyFrame
 
 
 def read_delta(
@@ -320,7 +319,7 @@ def _check_if_delta_available() -> None:
         )
 
 
-def _check_for_unsupported_types(dtypes: list[PolarsDataType]) -> None:
+def _check_for_unsupported_types(dtypes: list[DataType]) -> None:
     schema_dtypes = unpack_dtypes(*dtypes)
     unsupported_types = {Time, Categorical, Null}
     overlap = schema_dtypes & unsupported_types

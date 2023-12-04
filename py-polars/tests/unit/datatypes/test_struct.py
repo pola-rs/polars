@@ -618,9 +618,9 @@ def test_struct_categorical_5843() -> None:
     result = df.select(pl.col("foo").value_counts(sort=True))
     assert result.to_dict(as_series=False) == {
         "foo": [
-            {"foo": "a", "counts": 2},
-            {"foo": "b", "counts": 1},
-            {"foo": "c", "counts": 1},
+            {"foo": "a", "count": 2},
+            {"foo": "b", "count": 1},
+            {"foo": "c", "count": 1},
         ]
     }
 
@@ -820,25 +820,20 @@ def test_struct_name_passed_in_agg_apply() -> None:
 
     assert df.group_by("k").agg(
         pl.struct(
-            [
-                pl.col("val").value_counts(sort=True).struct.field("val").alias("val"),
-                pl.col("val")
-                .value_counts(sort=True)
-                .struct.field("counts")
-                .alias("counts"),
-            ]
+            pl.col("val").value_counts(sort=True).struct.field("val").alias("val"),
+            pl.col("val").value_counts(sort=True).struct.field("count").alias("count"),
         )
     ).to_dict(as_series=False) == {
         "k": [0],
         "val": [
             [
-                {"val": -3, "counts": 1},
-                {"val": -2, "counts": 1},
-                {"val": -1, "counts": 1},
-                {"val": 0, "counts": 1},
-                {"val": 1, "counts": 1},
-                {"val": 2, "counts": 1},
-                {"val": 3, "counts": 1},
+                {"val": -3, "count": 1},
+                {"val": -2, "count": 1},
+                {"val": -1, "count": 1},
+                {"val": 0, "count": 1},
+                {"val": 1, "count": 1},
+                {"val": 2, "count": 1},
+                {"val": 3, "count": 1},
             ]
         ],
     }

@@ -6,7 +6,7 @@ use arrow::array::{
     PrimitiveArray, Utf8Array,
 };
 use arrow::bitmap::Bitmap;
-use arrow::legacy::utils::combine_validities_and;
+use arrow::compute::utils::combine_validities_and;
 use arrow::offset::OffsetsBuffer;
 use arrow::types::NativeType;
 use polars_core::prelude::*;

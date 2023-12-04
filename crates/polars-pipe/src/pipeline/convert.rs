@@ -279,6 +279,7 @@ where
                         swapped,
                         join_columns_left,
                         join_columns_right,
+                        options.args.join_nulls,
                     )) as Box<dyn SinkTrait>
                 },
                 _ => unimplemented!(),

@@ -7,6 +7,7 @@ use polars_core::utils::{split_ca, split_df};
 use polars_core::POOL;
 use polars_utils::abs_diff::AbsDiff;
 use polars_utils::hashing::{hash_to_partition, DirtyHash};
+use polars_utils::nulls::IsNull;
 use rayon::prelude::*;
 use smartstring::alias::String as SmartString;
 
@@ -70,7 +71,7 @@ fn asof_join_by_numeric<T, S, A, F>(
 where
     T: PolarsDataType,
     S: PolarsNumericType,
-    S::Native: Hash + Eq + DirtyHash,
+    S::Native: Hash + Eq + DirtyHash + IsNull,
     A: for<'a> AsofJoinState<T::Physical<'a>>,
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
@@ -88,9 +89,9 @@ where
     // ignoring the validity mask, and ignore the nulls later.
     let right_slices = split_by_right
         .iter()
-        .map(|ca| ca.downcast_iter().next().unwrap().values_iter())
+        .map(|ca| ca.downcast_iter().next().unwrap().values_iter().copied())
         .collect();
-    let hash_tbls = build_tables(right_slices);
+    let hash_tbls = build_tables(right_slices, false);
     let n_tables = hash_tbls.len();
 
     // Now we probe the right hand side for each left hand side.
@@ -164,7 +165,7 @@ where
     let hb = RandomState::default();
     let prep_by_left = prepare_bytes(&split_by_left, &hb);
     let prep_by_right = prepare_bytes(&split_by_right, &hb);
-    let hash_tbls = build_tables(prep_by_right);
+    let hash_tbls = build_tables(prep_by_right, false);
     let n_tables = hash_tbls.len();
 
     // Now we probe the right hand side for each left hand side.
@@ -271,6 +272,7 @@ where
                                     by_right,
                                     idx_left,
                                     idx_right as usize,
+                                    false,
                                 )
                             }
                         });
