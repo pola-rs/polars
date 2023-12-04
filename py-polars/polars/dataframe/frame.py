@@ -3434,7 +3434,6 @@ class DataFrame:
                 data_page_size,
             )
 
-    @deprecate_renamed_parameter("connection_uri", "connection", version="0.18.9")
     @deprecate_renamed_parameter("if_exists", "if_table_exists", version="0.20.0")
     def write_database(
         self,
@@ -6320,7 +6319,6 @@ class DataFrame:
         else:
             return self._from_pydf(self._df.hstack([s._s for s in columns]))
 
-    @deprecate_renamed_parameter("df", "other", version="0.18.8")
     def vstack(self, other: DataFrame, *, in_place: bool = False) -> Self:
         """
         Grow this DataFrame vertically by stacking a DataFrame to it.
@@ -9005,17 +9003,6 @@ class DataFrame:
 
         """
         return self.lazy().approx_n_unique().collect(_eager=True)
-
-    @deprecate_renamed_function("approx_n_unique", version="0.18.12")
-    def approx_unique(self) -> DataFrame:
-        """
-        Approximate count of unique values.
-
-        .. deprecated:: 0.18.12
-            This method has been renamed to :func:`DataFrame.approx_n_unique`.
-
-        """
-        return self.approx_n_unique()
 
     def rechunk(self) -> Self:
         """
