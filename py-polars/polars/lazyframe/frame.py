@@ -938,9 +938,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return function(self, *args, **kwargs)
 
-    @deprecate_renamed_parameter(
-        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
-    )
     def explain(
         self,
         *,
@@ -1011,9 +1008,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             return ldf.describe_optimized_plan()
         return self._ldf.describe_plan()
 
-    @deprecate_renamed_parameter(
-        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
-    )
     def show_graph(
         self,
         *,
@@ -1435,9 +1429,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             self._ldf.bottom_k(k, by, descending, nulls_last, maintain_order)
         )
 
-    @deprecate_renamed_parameter(
-        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
-    )
     def profile(
         self,
         *,
@@ -1588,9 +1579,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return df, timings
 
-    @deprecate_renamed_parameter(
-        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
-    )
     def collect(
         self,
         *,
@@ -2256,9 +2244,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             _eager=False,
         )
 
-    @deprecate_renamed_parameter(
-        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
-    )
     def fetch(
         self,
         n_rows: int = 500,

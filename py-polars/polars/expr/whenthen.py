@@ -9,10 +9,7 @@ from polars.utils._parse_expr_input import (
     parse_when_constraint_expressions,
 )
 from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import (
-    deprecate_renamed_parameter,
-    issue_deprecation_warning,
-)
+from polars.utils.deprecation import issue_deprecation_warning
 
 if TYPE_CHECKING:
     from polars.polars import PyExpr
@@ -32,7 +29,6 @@ class When:
     def __init__(self, when: Any):
         self._when = when
 
-    @deprecate_renamed_parameter("expr", "statement", version="0.18.9")
     def then(self, statement: IntoExpr) -> Then:
         """
         Attach a statement to the corresponding condition.
@@ -69,7 +65,6 @@ class Then(Expr):
     def _pyexpr(self) -> PyExpr:
         return self._then.otherwise(F.lit(None)._pyexpr)
 
-    @deprecate_renamed_parameter("predicate", "condition", version="0.18.9")
     def when(
         self,
         *predicates: IntoExpr | Iterable[IntoExpr],
@@ -93,7 +88,6 @@ class Then(Expr):
         condition_pyexpr = parse_when_constraint_expressions(*predicates, **constraints)
         return ChainedWhen(self._then.when(condition_pyexpr))
 
-    @deprecate_renamed_parameter("expr", "statement", version="0.18.9")
     def otherwise(self, statement: IntoExpr) -> Expr:
         """
         Define a default for the `when-then-otherwise` expression.
@@ -124,7 +118,6 @@ class ChainedWhen(Expr):
     def __init__(self, chained_when: Any):
         self._chained_when = chained_when
 
-    @deprecate_renamed_parameter("expr", "statement", version="0.18.9")
     def then(self, statement: IntoExpr) -> ChainedThen:
         """
         Attach a statement to the corresponding condition.
@@ -161,7 +154,6 @@ class ChainedThen(Expr):
     def _pyexpr(self) -> PyExpr:
         return self._chained_then.otherwise(F.lit(None)._pyexpr)
 
-    @deprecate_renamed_parameter("predicate", "condition", version="0.18.9")
     def when(
         self,
         *predicates: IntoExpr | Iterable[IntoExpr],
@@ -185,7 +177,6 @@ class ChainedThen(Expr):
         condition_pyexpr = parse_when_constraint_expressions(*predicates, **constraints)
         return ChainedWhen(self._chained_then.when(condition_pyexpr))
 
-    @deprecate_renamed_parameter("expr", "statement", version="0.18.9")
     def otherwise(self, statement: IntoExpr) -> Expr:
         """
         Define a default for the `when-then-otherwise` expression.

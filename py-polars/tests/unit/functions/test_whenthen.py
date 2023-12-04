@@ -502,13 +502,6 @@ def test_when_then_binary_op_predicate_agg_12526() -> None:
     assert_frame_equal(expect, actual)
 
 
-def test_when_then_deprecation() -> None:
-    df = pl.DataFrame({"foo": [5, 4, 3], "bar": [2, 1, 0]})
-    for param_name in ("expr", "condition"):
-        with pytest.warns(DeprecationWarning, match="pass as a positional argument"):
-            df.select(pl.when(**{param_name: pl.col("bar") >= 0}).then(99))
-
-
 def test_when_predicates_kwargs() -> None:
     df = pl.DataFrame(
         {

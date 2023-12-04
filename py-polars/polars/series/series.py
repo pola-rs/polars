@@ -1915,7 +1915,6 @@ class Series:
         ...
 
     @deprecate_nonkeyword_arguments(["self", "breaks"], version="0.19.0")
-    @deprecate_renamed_parameter("bins", "breaks", version="0.18.8")
     @deprecate_renamed_parameter("series", "as_series", version="0.19.0")
     def cut(
         self,
@@ -2111,8 +2110,6 @@ class Series:
     ) -> Series | DataFrame:
         ...
 
-    @deprecate_renamed_parameter("series", "as_series", version="0.18.14")
-    @deprecate_renamed_parameter("q", "quantiles", version="0.18.12")
     def qcut(
         self,
         quantiles: Sequence[float] | int,

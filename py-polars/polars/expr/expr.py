@@ -3706,8 +3706,6 @@ class Expr:
         )
 
     @deprecate_nonkeyword_arguments(["self", "quantiles"], version="0.18.14")
-    @deprecate_renamed_parameter("probs", "quantiles", version="0.18.8")
-    @deprecate_renamed_parameter("q", "quantiles", version="0.18.12")
     def qcut(
         self,
         quantiles: Sequence[float] | int,

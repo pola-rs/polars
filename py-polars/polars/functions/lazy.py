@@ -14,7 +14,6 @@ from polars.utils._parse_expr_input import (
 from polars.utils._wrap import wrap_df, wrap_expr
 from polars.utils.deprecation import (
     deprecate_renamed_function,
-    deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
 
@@ -1538,9 +1537,6 @@ def arg_sort_by(
     return wrap_expr(plr.arg_sort_by(exprs, descending))
 
 
-@deprecate_renamed_parameter(
-    "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
-)
 def collect_all(
     lazy_frames: Iterable[LazyFrame],
     *,

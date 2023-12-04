@@ -3434,7 +3434,6 @@ class DataFrame:
                 data_page_size,
             )
 
-    @deprecate_renamed_parameter("connection_uri", "connection", version="0.18.9")
     @deprecate_renamed_parameter("if_exists", "if_table_exists", version="0.20.0")
     def write_database(
         self,
@@ -6320,7 +6319,6 @@ class DataFrame:
         else:
             return self._from_pydf(self._df.hstack([s._s for s in columns]))
 
-    @deprecate_renamed_parameter("df", "other", version="0.18.8")
     def vstack(self, other: DataFrame, *, in_place: bool = False) -> Self:
         """
         Grow this DataFrame vertically by stacking a DataFrame to it.

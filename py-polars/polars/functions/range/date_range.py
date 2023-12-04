@@ -9,7 +9,6 @@ from polars.functions.range._utils import parse_interval_argument
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.deprecation import (
-    deprecate_renamed_parameter,
     deprecate_saturating,
     issue_deprecation_warning,
 )
@@ -70,8 +69,6 @@ def date_range(
     ...
 
 
-@deprecate_renamed_parameter("low", "start", version="0.18.0")
-@deprecate_renamed_parameter("high", "end", version="0.18.0")
 def date_range(
     start: date | datetime | IntoExprColumn,
     end: date | datetime | IntoExprColumn,
