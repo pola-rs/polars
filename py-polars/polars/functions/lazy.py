@@ -19,7 +19,6 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 
 if TYPE_CHECKING:
-    from datetime import timedelta
     from typing import Awaitable, Collection, Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
@@ -28,7 +27,6 @@ if TYPE_CHECKING:
         EpochTimeUnit,
         IntoExpr,
         PolarsDataType,
-        PythonLiteral,
         RollingInterpolationMethod,
     )
 
