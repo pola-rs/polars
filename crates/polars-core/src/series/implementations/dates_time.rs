@@ -23,6 +23,8 @@ use crate::chunked_array::AsSinglePtr;
 use crate::frame::group_by::*;
 use crate::prelude::*;
 
+const US_PER_DAY: f64 = US_IN_DAY as f64;
+
 macro_rules! impl_dyn_series {
     ($ca: ident, $into_logical: ident) => {
         unsafe impl IntoSeries for $ca {
@@ -360,23 +362,21 @@ macro_rules! impl_dyn_series {
             fn min_as_series(&self) -> Series {
                 self.0.min_as_series().$into_logical()
             }
+
             fn median_as_series(&self) -> Series {
-                let us = US_IN_DAY as f64;
-                Series::new(self.name(), &[self.median().map(|v| (v * us) as i64)])
+                Series::new(self.name(), &[self.median().map(|v| (v * US_PER_DAY) as i64)])
                     .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
                     .unwrap()
             }
-            fn var_as_series(&self, _ddof: u8) -> Series {
-                Int32Chunked::full_null(self.name(), 1)
-                    .cast(self.dtype())
+            fn std_as_series(&self, ddof: u8) -> Series {
+                (
+                    self.0
+                    .std_as_series(ddof)
+                    .cast(&DataType::Float64).unwrap()
+                    * US_PER_DAY
+                ).cast(&DataType::Datetime(TimeUnit::Microseconds, None).to_physical())
                     .unwrap()
-                    .into()
-            }
-            fn std_as_series(&self, _ddof: u8) -> Series {
-                Int32Chunked::full_null(self.name(), 1)
-                    .cast(self.dtype())
-                    .unwrap()
-                    .into()
+                    .into_duration(TimeUnit::Microseconds)
             }
             fn quantile_as_series(
                 &self,

@@ -2614,7 +2614,6 @@ impl DataFrame {
     #[must_use]
     pub fn std(&self, ddof: u8) -> Self {
         let columns = self.apply_columns_par(&|s| s.std_as_series(ddof));
-
         DataFrame::new_no_checks(columns)
     }
     /// Aggregate the columns to their variation values.

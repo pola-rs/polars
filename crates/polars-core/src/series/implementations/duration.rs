@@ -414,7 +414,6 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             .unwrap()
             .into_duration(self.0.time_unit())
     }
-
     fn var_as_series(&self, ddof: u8) -> Series {
         self.0
             .var_as_series(ddof)

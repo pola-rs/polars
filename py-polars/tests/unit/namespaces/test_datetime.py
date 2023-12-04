@@ -990,6 +990,28 @@ def test_median(
 
 
 @pytest.mark.parametrize(
+    ("values", "expected_std"),
+    [
+        ([], None),
+        ([None, None], None),
+        ([date(2022, 1, 1), date(2022, 1, 2)], timedelta(0, 61094, 25894)),
+        ([datetime(2022, 1, 1), datetime(2022, 1, 2)], timedelta(0, 61094, 25894)),
+        ([timedelta(0, 1, 0), timedelta(0, 2, 0)], timedelta(0, 0, 707106)),
+    ],
+    ids=[
+        "empty",
+        "Nones",
+        "date",
+        "datetime",
+        "timedelta",
+    ],
+)
+def test_std(values: list[date | None], expected_std: timedelta | None) -> None:
+    result = pl.Series(values).std()
+    assert result == expected_std
+
+
+@pytest.mark.parametrize(
     ("values", "expected_mean"),
     [
         ([], None),

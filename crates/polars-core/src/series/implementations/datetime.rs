@@ -370,15 +370,12 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .cast(self.dtype())
             .unwrap()
     }
-    fn var_as_series(&self, _ddof: u8) -> Series {
-        Int32Chunked::full_null(self.name(), 1)
-            .cast(self.dtype())
+    fn std_as_series(&self, ddof: u8) -> Series {
+        self.0
+            .std_as_series(ddof)
+            .cast(&self.dtype().to_physical())
             .unwrap()
-    }
-    fn std_as_series(&self, _ddof: u8) -> Series {
-        Int32Chunked::full_null(self.name(), 1)
-            .cast(self.dtype())
-            .unwrap()
+            .into_duration(self.0.time_unit())
     }
     fn quantile_as_series(
         &self,
