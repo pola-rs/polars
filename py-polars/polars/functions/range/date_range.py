@@ -34,7 +34,6 @@ def date_range(
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
     eager: Literal[False] = ...,
-    name: str | None = ...,
 ) -> Expr:
     ...
 
@@ -49,7 +48,6 @@ def date_range(
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
     eager: Literal[True],
-    name: str | None = ...,
 ) -> Series:
     ...
 
@@ -64,7 +62,6 @@ def date_range(
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
     eager: bool,
-    name: str | None = ...,
 ) -> Series | Expr:
     ...
 
@@ -78,7 +75,6 @@ def date_range(
     time_unit: TimeUnit | None = None,
     time_zone: str | None = None,
     eager: bool = False,
-    name: str | None = None,
 ) -> Series | Expr:
     """
     Generate a date range.
@@ -103,11 +99,6 @@ def date_range(
     eager
         Evaluate immediately and return a `Series`.
         If set to `False` (default), return an expression instead.
-    name
-        Name of the output column.
-
-        .. deprecated:: 0.18.0
-            This argument is deprecated. Use the `alias` method instead.
 
     Returns
     -------
@@ -180,11 +171,6 @@ def date_range(
 
     """
     interval = deprecate_saturating(interval)
-    if name is not None:
-        issue_deprecation_warning(
-            "the `name` argument is deprecated. Use the `alias` method instead.",
-            version="0.18.0",
-        )
 
     interval = parse_interval_argument(interval)
     if time_unit is None and "ns" in interval:
@@ -197,9 +183,6 @@ def date_range(
     result = wrap_expr(
         plr.date_range(start_pyexpr, end_pyexpr, interval, closed, time_unit, time_zone)
     )
-
-    if name is not None:
-        result = result.alias(name)
 
     if eager:
         return F.select(result).to_series()
