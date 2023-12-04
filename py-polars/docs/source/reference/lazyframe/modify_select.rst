@@ -7,7 +7,6 @@ Manipulation/selection
    :toctree: api/
 
     LazyFrame.approx_n_unique
-    LazyFrame.approx_unique
     LazyFrame.bottom_k
     LazyFrame.cast
     LazyFrame.clear
