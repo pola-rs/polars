@@ -167,7 +167,7 @@ def test_pivot_categorical_index() -> None:
 
     # test expression dispatch
     result = df.pivot(
-        index=["A"], columns="B", values="B", aggregate_function=pl.count()
+        values="B", index=["A"], columns="B", aggregate_function=pl.count()
     )
     assert result.to_dict(as_series=False) == expected
 
@@ -305,7 +305,7 @@ def test_pivot_reinterpret_5907() -> None:
     )
 
     result = df.pivot(
-        values=["C"], index=["A"], columns=["B"], aggregate_function=pl.element().sum()
+        index=["A"], values=["C"], columns=["B"], aggregate_function=pl.element().sum()
     )
     expected = {"A": [3, -2], "x": [100, 50], "y": [500, -80]}
     assert result.to_dict(as_series=False) == expected
@@ -331,7 +331,7 @@ def test_pivot_temporal_logical_types() -> None:
         }
     )
     assert df.pivot(
-        values="value", index="idx", columns="foo", aggregate_function=None
+        index="idx", columns="foo", values="value", aggregate_function=None
     ).to_dict(as_series=False) == {
         "idx": [
             datetime(1977, 1, 1, 0, 0),
@@ -356,7 +356,7 @@ def test_pivot_negative_duration() -> None:
         [pl.Series(name="value", values=range(len(df1) * len(df2)))]
     )
     assert df.pivot(
-        values="value", index="delta", columns="root", aggregate_function=None
+        index="delta", columns="root", values="value", aggregate_function=None
     ).to_dict(as_series=False) == {
         "delta": [
             timedelta(days=-2),

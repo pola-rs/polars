@@ -6977,7 +6977,7 @@ class DataFrame:
         ...         "baz": [1, 2, 3, 4, 5, 6],
         ...     }
         ... )
-        >>> df.pivot(index="foo", columns="bar", values="baz", aggregate_function="sum")
+        >>> df.pivot(values="baz", index="foo", columns="bar", aggregate_function="sum")
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ y   ┆ x   │
@@ -6992,9 +6992,9 @@ class DataFrame:
 
         >>> import polars.selectors as cs
         >>> df.pivot(
+        ...     values=cs.numeric(),
         ...     index=cs.string(),
         ...     columns=cs.string(),
-        ...     values=cs.numeric(),
         ...     aggregate_function="sum",
         ...     sort_columns=True,
         ... ).sort(
