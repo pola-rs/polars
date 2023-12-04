@@ -3626,13 +3626,13 @@ class Expr:
         quantile = parse_as_expression(quantile)
         return self._from_pyexpr(self._pyexpr.quantile(quantile, interpolation))
 
-    @deprecate_nonkeyword_arguments(["self", "breaks"], version="0.18.14")
     def cut(
         self,
         breaks: Sequence[float],
+        *,
         labels: Sequence[str] | None = None,
-        left_closed: bool = False,  # noqa: FBT001
-        include_breaks: bool = False,  # noqa: FBT001
+        left_closed: bool = False,
+        include_breaks: bool = False,
     ) -> Self:
         """
         Bin continuous values into discrete categories.
@@ -3705,14 +3705,14 @@ class Expr:
             self._pyexpr.cut(breaks, labels, left_closed, include_breaks)
         )
 
-    @deprecate_nonkeyword_arguments(["self", "quantiles"], version="0.18.14")
     def qcut(
         self,
         quantiles: Sequence[float] | int,
+        *,
         labels: Sequence[str] | None = None,
-        left_closed: bool = False,  # noqa: FBT001
-        allow_duplicates: bool = False,  # noqa: FBT001
-        include_breaks: bool = False,  # noqa: FBT001
+        left_closed: bool = False,
+        allow_duplicates: bool = False,
+        include_breaks: bool = False,
     ) -> Self:
         """
         Bin continuous values into discrete categories based on their quantiles.
