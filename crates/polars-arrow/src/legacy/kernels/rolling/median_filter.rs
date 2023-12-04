@@ -371,10 +371,11 @@ impl<T: IsFloat + PartialOrd + NativeType> LenGet for BlockUnion<'_, T> {
 
         loop {
             // Current index position of merge sort
-            let s = self.block_left.current_index + self.block_right.current_index;
+            let mut s = self.block_left.current_index + self.block_right.current_index;
             if i < s {
                 self.block_left.reverse();
                 self.block_right.reverse();
+                s = self.block_left.current_index + self.block_right.current_index;
             }
 
             let left = self.block_left.peek();
@@ -542,23 +543,38 @@ where
 
         // Here the window will move from BLOCK_LEFT into BLOCK_RIGHT
         for j in 0..block_right.capacity() {
-            block_left.delete(j);
-            block_right.undelete(j);
 
-            dbg!(&block_left, &block_right);
+            // dbg!(&block_left, &block_right);
             unsafe {
-                let union = BlockUnion::new(&mut *ptr_left, &mut *ptr_right, k);
-                out.push(dbg!(MedianUpdate::new(union).median()))
+                let mut union = BlockUnion::new(&mut *ptr_left, &mut *ptr_right, k);
+                union.set_state(j);
+
+                out.push(MedianUpdate::new(union).median());
+            }
+            // dbg!(&block_left, &block_right);
+        }
+
+        if i != n_blocks {
+            unsafe {
+                std::ptr::swap_nonoverlapping(ptr_left, ptr_right, 1);
+                std::ptr::swap_nonoverlapping(scratch_left_ptr, scratch_right_ptr, 1);
+                std::ptr::swap_nonoverlapping(prev_left_ptr, prev_right_ptr, 1);
+                std::ptr::swap_nonoverlapping(next_left_ptr, next_right_ptr, 1);
             }
         }
-        unsafe {
-            std::ptr::swap_nonoverlapping(ptr_left, ptr_right, 1);
-            std::ptr::swap_nonoverlapping(scratch_left_ptr, scratch_right_ptr, 1);
-            std::ptr::swap_nonoverlapping(prev_left_ptr, prev_right_ptr, 1);
-            std::ptr::swap_nonoverlapping(next_left_ptr, next_right_ptr, 1);
-        }
     }
-    dbg!(&out);
+    // let mut final_block = block_right;
+    //
+    // let mut i = 0;
+    // while out.len() < slice.len() {
+    //     final_block.undelete(i);
+    //     i += 1;
+    //
+    //     let mut mu = MedianUpdate::new(&mut block_left);
+    //     out.push(mu.median());
+    // }
+    // dbg!(&final_block);
+    dbg!(&out, out.len());
     // mu.
 
     // let mut block_b = Block::new(h, alpha, &mut scratch_b, &mut prev_b, &mut next_b);
@@ -895,11 +911,11 @@ mod test {
 
     #[test]
     fn test_median() {
-        let values = [2.0, 8.0, 5.0, 9.0, 1.0, 2.0, 4.0, 2.0];
+        let values = [2.0, 8.0, 5.0, 9.0, 1.0, 2.0, 4.0, 2.0, 4.0, 8.1, -1.0];
         let k = 3;
 
         //    block 1
-        // i:  2, 8, 5
+        // i:  2, 8, 51
         // s:  2, 5, 8
         //              block 2
         // i:           9, 1, 2
