@@ -453,6 +453,11 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Binary" => DataType::Binary,
                     "Boolean" => DataType::Boolean,
                     "Categorical" => DataType::Categorical(None),
+                    "Enum" => {
+                        return Err(PyTypeError::new_err(
+                            "Enum types must be instantiated with a list of categories",
+                        ))
+                    },
                     "Date" => DataType::Date,
                     "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
                     "Time" => DataType::Time,
@@ -468,8 +473,8 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Null" => DataType::Null,
                     "Unknown" => DataType::Unknown,
                     dt => {
-                        return Err(PyValueError::new_err(format!(
-                            "{dt} is not a recognised polars DataType.",
+                        return Err(PyTypeError::new_err(format!(
+                            "'{dt}' is not a Polars data type",
                         )))
                     },
                 }
@@ -539,8 +544,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
             },
             dt => {
                 return Err(PyTypeError::new_err(format!(
-                    "A {dt} object is not a recognised polars DataType. \
-                    Hint: use the class without instantiating it.",
+                    "'{dt}' is not a Polars data type",
                 )))
             },
         };
