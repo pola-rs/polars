@@ -1,5 +1,4 @@
 use std::any::Any;
-use std::cmp::Ordering;
 
 use enum_dispatch::enum_dispatch;
 use polars_core::datatypes::DataType;
@@ -83,16 +82,16 @@ pub(crate) enum AggregateFunction {
     MeanF32(MeanAgg<f32>),
     MeanF64(MeanAgg<f64>),
     Null(NullAgg),
-    MinMaxF32(MinMaxAgg<f32, fn(&f32, &f32) -> Ordering>),
-    MinMaxF64(MinMaxAgg<f64, fn(&f64, &f64) -> Ordering>),
-    MinMaxU8(MinMaxAgg<u8, fn(&u8, &u8) -> Ordering>),
-    MinMaxU16(MinMaxAgg<u16, fn(&u16, &u16) -> Ordering>),
-    MinMaxU32(MinMaxAgg<u32, fn(&u32, &u32) -> Ordering>),
-    MinMaxU64(MinMaxAgg<u64, fn(&u64, &u64) -> Ordering>),
-    MinMaxI8(MinMaxAgg<i8, fn(&i8, &i8) -> Ordering>),
-    MinMaxI16(MinMaxAgg<i16, fn(&i16, &i16) -> Ordering>),
-    MinMaxI32(MinMaxAgg<i32, fn(&i32, &i32) -> Ordering>),
-    MinMaxI64(MinMaxAgg<i64, fn(&i64, &i64) -> Ordering>),
+    MinMaxF32(MinMaxAgg<f32, fn(f32, f32) -> f32>),
+    MinMaxF64(MinMaxAgg<f64, fn(f64, f64) -> f64>),
+    MinMaxU8(MinMaxAgg<u8, fn(u8, u8) -> u8>),
+    MinMaxU16(MinMaxAgg<u16, fn(u16, u16) -> u16>),
+    MinMaxU32(MinMaxAgg<u32, fn(u32, u32) -> u32>),
+    MinMaxU64(MinMaxAgg<u64, fn(u64, u64) -> u64>),
+    MinMaxI8(MinMaxAgg<i8, fn(i8, i8) -> i8>),
+    MinMaxI16(MinMaxAgg<i16, fn(i16, i16) -> i16>),
+    MinMaxI32(MinMaxAgg<i32, fn(i32, i32) -> i32>),
+    MinMaxI64(MinMaxAgg<i64, fn(i64, i64) -> i64>),
 }
 
 impl AggregateFunction {

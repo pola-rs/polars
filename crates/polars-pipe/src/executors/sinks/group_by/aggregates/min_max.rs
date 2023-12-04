@@ -1,5 +1,4 @@
 use std::any::Any;
-use std::cmp::Ordering;
 
 use arrow::array::PrimitiveArray;
 use arrow::compute::aggregate::SimdOrd;
@@ -8,37 +7,31 @@ use polars_core::export::arrow::types::simd::Simd;
 use polars_core::export::num::NumCast;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::compute::aggregate::{max_primitive, min_primitive};
-use polars_utils::ord::{compare_fn_nan_max, compare_fn_nan_min};
+use polars_utils::min_max::MinMax;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::*;
 use crate::operators::{ArrowDataType, IdxSize};
 
-#[inline]
-fn compare_fn_min<T: NumericNative>(a: &T, b: &T) -> Ordering {
-    // reverse the ordering
-    compare_fn_nan_max(b, a)
+pub(super) fn new_min<K: NumericNative>() -> MinMaxAgg<K, fn(K, K) -> K> {
+    MinMaxAgg::new(MinMax::min_ignore_nan, true)
 }
 
-pub(super) fn new_min<K: NumericNative>() -> MinMaxAgg<K, fn(&K, &K) -> Ordering> {
-    MinMaxAgg::new(compare_fn_min, true)
+pub(super) fn new_max<K: NumericNative>() -> MinMaxAgg<K, fn(K, K) -> K> {
+    MinMaxAgg::new(MinMax::max_ignore_nan, false)
 }
 
-pub(super) fn new_max<K: NumericNative>() -> MinMaxAgg<K, fn(&K, &K) -> Ordering> {
-    MinMaxAgg::new(compare_fn_nan_min, false)
-}
-
-pub struct MinMaxAgg<K: NumericNative, F: Fn(&K, &K) -> Ordering> {
+pub struct MinMaxAgg<K: NumericNative, F> {
     agg: Option<K>,
-    cmp_fn: F,
+    agg_fn: F,
     is_min: bool,
 }
 
-impl<K: NumericNative, F: Fn(&K, &K) -> Ordering + Copy> MinMaxAgg<K, F> {
+impl<K: NumericNative, F: Fn(K, K) -> K + Copy> MinMaxAgg<K, F> {
     pub(crate) fn new(f: F, is_min: bool) -> Self {
         MinMaxAgg {
             agg: None,
-            cmp_fn: f,
+            agg_fn: f,
             is_min,
         }
     }
@@ -46,21 +39,17 @@ impl<K: NumericNative, F: Fn(&K, &K) -> Ordering + Copy> MinMaxAgg<K, F> {
     pub(crate) fn split(&self) -> Self {
         MinMaxAgg {
             agg: None,
-            cmp_fn: self.cmp_fn,
+            agg_fn: self.agg_fn,
             is_min: self.is_min,
         }
     }
 }
 
-impl<K: NumericNative, F: Fn(&K, &K) -> Ordering> MinMaxAgg<K, F> {
+impl<K: NumericNative, F: Fn(K, K) -> K> MinMaxAgg<K, F> {
     fn pre_agg_primitive<T: NumCast>(&mut self, item: Option<T>) {
         match (item.map(|v| K::from(v).unwrap()), self.agg) {
             (Some(val), Some(current_agg)) => {
-                // The ordering is static, we swap the arguments in the compare fn to minic
-                // min/max behavior.
-                if (self.cmp_fn)(&current_agg, &val) == Ordering::Less {
-                    self.agg = Some(val);
-                }
+                self.agg = Some((self.agg_fn)(current_agg, val));
             },
             (Some(val), None) => self.agg = Some(val),
             (None, _) => {},
@@ -68,7 +57,7 @@ impl<K: NumericNative, F: Fn(&K, &K) -> Ordering> MinMaxAgg<K, F> {
     }
 }
 
-impl<K, F: Fn(&K, &K) -> Ordering + Send + Sync + 'static> AggregateFn for MinMaxAgg<K, F>
+impl<K, F: Fn(K, K) -> K + Send + Sync + 'static> AggregateFn for MinMaxAgg<K, F>
 where
     K: Simd + NumericNative,
     <K as Simd>::Simd: SimdOrd<K>,
