@@ -3,7 +3,7 @@ from datetime import datetime
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing import assert_frame_equal
 
 
 def test_when_then() -> None:
@@ -240,22 +240,6 @@ def test_comp_categorical_lit_dtype() -> None:
         .otherwise(pl.col("column"))
         .alias("column")
     ).dtypes == [pl.Categorical, pl.Int32]
-
-
-def test_when_then_deprecated_string_input() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [True, False],
-            "b": [1, 2],
-            "c": [3, 4],
-        }
-    )
-
-    with pytest.deprecated_call():
-        result = df.select(pl.when("a").then("b").otherwise("c").alias("when"))
-
-    expected = pl.Series("when", ["b", "c"])
-    assert_series_equal(result.to_series(), expected)
 
 
 def test_predicate_broadcast() -> None:

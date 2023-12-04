@@ -9,7 +9,6 @@ from polars.utils._parse_expr_input import (
     parse_when_constraint_expressions,
 )
 from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import issue_deprecation_warning
 
 if TYPE_CHECKING:
     from polars.polars import PyExpr
@@ -40,9 +39,7 @@ class When:
             Accepts expression input. Non-expression inputs are parsed as literals.
 
         """
-        if isinstance(statement, str):
-            _warn_for_deprecated_string_input_behavior(statement)
-        statement_pyexpr = parse_as_expression(statement, str_as_lit=True)
+        statement_pyexpr = parse_as_expression(statement)
         return Then(self._when.then(statement_pyexpr))
 
 
@@ -99,9 +96,7 @@ class Then(Expr):
             Accepts expression input. Non-expression inputs are parsed as literals.
 
         """
-        if isinstance(statement, str):
-            _warn_for_deprecated_string_input_behavior(statement)
-        statement_pyexpr = parse_as_expression(statement, str_as_lit=True)
+        statement_pyexpr = parse_as_expression(statement)
         return wrap_expr(self._then.otherwise(statement_pyexpr))
 
 
@@ -129,9 +124,7 @@ class ChainedWhen(Expr):
             Accepts expression input. Non-expression inputs are parsed as literals.
 
         """
-        if isinstance(statement, str):
-            _warn_for_deprecated_string_input_behavior(statement)
-        statement_pyexpr = parse_as_expression(statement, str_as_lit=True)
+        statement_pyexpr = parse_as_expression(statement)
         return ChainedThen(self._chained_when.then(statement_pyexpr))
 
 
@@ -188,15 +181,5 @@ class ChainedThen(Expr):
             Accepts expression input. Non-expression inputs are parsed as literals.
 
         """
-        if isinstance(statement, str):
-            _warn_for_deprecated_string_input_behavior(statement)
-        statement_pyexpr = parse_as_expression(statement, str_as_lit=True)
+        statement_pyexpr = parse_as_expression(statement)
         return wrap_expr(self._chained_then.otherwise(statement_pyexpr))
-
-
-def _warn_for_deprecated_string_input_behavior(input: str) -> None:
-    issue_deprecation_warning(
-        "in a future version, string input will be parsed as a column name rather than a string literal."
-        f" To silence this warning, pass the input as an expression instead: `pl.lit({input!r})`",
-        version="0.18.9",
-    )
