@@ -358,8 +358,6 @@ def test_lazy_functions() -> None:
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
     out = df.select(pl.count("a"))
     assert list(out["a"]) == [3]
-    with pytest.deprecated_call():
-        assert pl.count(df["a"]) == 3
     out = df.select(
         [
             pl.var("b").alias("1"),
@@ -428,16 +426,10 @@ def test_lazy_functions() -> None:
 
 
 def test_head_tail(fruits_cars: pl.DataFrame) -> None:
-    res_expr = fruits_cars.select([pl.head("A", 2)])
-    with pytest.deprecated_call():
-        res_series = pl.head(fruits_cars["A"], 2)
+    res_expr = fruits_cars.select(pl.head("A", 2))
     expected = pl.Series("A", [1, 2])
-    assert_series_equal(res_expr.to_series(0), expected)
-    assert_series_equal(res_series, expected)
+    assert_series_equal(res_expr.to_series(), expected)
 
-    res_expr = fruits_cars.select([pl.tail("A", 2)])
-    with pytest.deprecated_call():
-        res_series = pl.tail(fruits_cars["A"], 2)
+    res_expr = fruits_cars.select(pl.tail("A", 2))
     expected = pl.Series("A", [4, 5])
-    assert_series_equal(res_expr.to_series(0), expected)
-    assert_series_equal(res_series, expected)
+    assert_series_equal(res_expr.to_series(), expected)
