@@ -29,8 +29,8 @@ The main methods for setting and converting between time zones are:
 
 - `dt.convert_time_zone`: convert from one time zone to another.
 - `dt.replace_time_zone`: set/unset/change time zone.
-- `dt.to_local_datetime`: adjust a datetime to it's naive local datetime
-- `dt.from_local_datetime`: go from a local datetime to a new timezone
+- `dt.to_local_datetime`: convert to the local datetime in a given time zone
+- `dt.from_local_datetime`: convert local datetime from given time zone to new time zone
 
 Let's look at some examples of common operations:
 

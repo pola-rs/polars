@@ -13,14 +13,14 @@ The following methods are available under the `expr.dt` attribute.
     Expr.dt.cast_time_unit
     Expr.dt.replace_time_zone
     Expr.dt.combine
+    Expr.dt.convert_time_zone
     Expr.dt.date
     Expr.dt.datetime
-    Expr.dt.to_local_datetime
-    Expr.dt.from_local_datetime
     Expr.dt.day
     Expr.dt.days
     Expr.dt.dst_offset
     Expr.dt.epoch
+    Expr.dt.from_local_datetime
     Expr.dt.hour
     Expr.dt.hours
     Expr.dt.is_leap_year
@@ -45,6 +45,7 @@ The following methods are available under the `expr.dt` attribute.
     Expr.dt.strftime
     Expr.dt.time
     Expr.dt.timestamp
+    Expr.dt.to_local_datetime
     Expr.dt.to_string
     Expr.dt.total_days
     Expr.dt.total_hours
@@ -57,5 +58,4 @@ The following methods are available under the `expr.dt` attribute.
     Expr.dt.week
     Expr.dt.weekday
     Expr.dt.with_time_unit
-    Expr.dt.convert_time_zone
     Expr.dt.year

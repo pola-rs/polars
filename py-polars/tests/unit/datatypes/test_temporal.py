@@ -1265,7 +1265,11 @@ def test_unique_counts_on_dates() -> None:
             pl.col("dt_ns").dt.cast_time_unit("ms").alias("dt_ms"),
             pl.col("dt_ns").cast(pl.Date).alias("date"),
         ]
-    ).select(pl.all().unique_counts().sum()).to_dict(as_series=False) == {
+    ).select(
+        pl.all().unique_counts().sum()
+    ).to_dict(
+        as_series=False
+    ) == {
         "dt_ns": [3],
         "dt_us": [3],
         "dt_ms": [3],
@@ -1302,7 +1306,9 @@ def test_rolling_by_ordering() -> None:
         [
             pl.col("val").sum().alias("sum val"),
         ]
-    ).to_dict(as_series=False) == {
+    ).to_dict(
+        as_series=False
+    ) == {
         "key": ["A", "A", "A", "A", "B", "B", "B"],
         "dt": [
             datetime(2022, 1, 1, 0, 1),
@@ -1401,7 +1407,9 @@ def test_sum_duration() -> None:
             pl.col("duration").sum(),
             pl.col("duration").dt.total_seconds().alias("sec").sum(),
         ]
-    ).to_dict(as_series=False) == {
+    ).to_dict(
+        as_series=False
+    ) == {
         "duration": [timedelta(seconds=150)],
         "sec": [150],
     }
@@ -2815,6 +2823,37 @@ def test_convert_tz_from_local_datetime(
         pl.col("local_date")
         .dt.from_local_datetime(pl.col("timezone"), "Europe/London")
         .alias("date")
+    )
+
+    assert_frame_equal(result, expected)
+
+
+def test_convert_tz_from_local_datetime_literal() -> None:
+    df = pl.DataFrame({"local_date": [datetime(2020, 10, 14, 20, 0)]})
+
+    expected = df.with_columns(
+        pl.lit(datetime(2020, 10, 15, tzinfo=timezone.utc))
+        .alias("date")
+        .dt.convert_time_zone("Europe/London")
+    )
+
+    result = df.with_columns(
+        pl.col("local_date")
+        .dt.from_local_datetime("America/New_York", "Europe/London")
+        .alias("date")
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_convert_tz_to_local_datetime_literal() -> None:
+    df = pl.DataFrame(
+        {"date": [datetime(2020, 10, 15, tzinfo=timezone.utc)]}
+    ).with_columns(pl.col("date").dt.convert_time_zone("Europe/London"))
+
+    expected = df.with_columns(pl.lit(datetime(2020, 10, 14, 20, 0)).alias("local_dt"))
+
+    result = df.with_columns(
+        pl.col("date").dt.to_local_datetime("America/New_York").alias("local_dt")
     )
 
     assert_frame_equal(result, expected)
