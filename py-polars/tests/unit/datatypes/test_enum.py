@@ -126,3 +126,10 @@ def test_extend_to_an_enum() -> None:
     s.extend(s2)
     assert s.len() == 8
     assert s.null_count() == 1
+
+
+def test_series_init_uninstantiated_enum() -> None:
+    with pytest.raises(
+        TypeError, match="Enum types must be instantiated with a list of categories"
+    ):
+        pl.Series(["a", "b", "a"], dtype=pl.Enum)

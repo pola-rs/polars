@@ -320,7 +320,7 @@ class _DataTypeMappings:
         def _dtype_str_repr_safe(o: Any) -> PolarsDataType | None:
             try:
                 return _dtype_str_repr(o.base_type()).split("[")[0]
-            except ValueError:
+            except TypeError:
                 return None
 
         return {
