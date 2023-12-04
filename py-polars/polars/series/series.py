@@ -2767,42 +2767,16 @@ class Series:
 
         """
 
-    def append(self, other: Series, *, append_chunks: bool | None = None) -> Self:
+    def append(self, other: Series) -> Self:
         """
         Append a Series to this one.
+
+        The resulting series will consist of multiple chunks.
 
         Parameters
         ----------
         other
             Series to append.
-        append_chunks
-            .. deprecated:: 0.18.8
-                This argument will be removed and `append` will change to always
-                behave like `append_chunks=True` (the previous default). For the
-                behavior of `append_chunks=False`, use `Series.extend`.
-
-            If set to `True` the append operation will add the chunks from `other` to
-            self. This is super cheap.
-
-            If set to `False` the append operation will do the same as
-            `DataFrame.extend` which extends the memory backed by this `Series` with
-            the values from `other`.
-
-            Different from `append chunks`, `extend` appends the data from `other` to
-            the underlying memory locations and thus may cause a reallocation (which are
-            expensive).
-
-            If this does not cause a reallocation, the resulting data structure will not
-            have any extra chunks and thus will yield faster queries.
-
-            Prefer `extend` over `append_chunks` when you want to do a query after a
-            single append. For instance during online operations where you add `n` rows
-            and rerun a query.
-
-            Prefer `append_chunks` over `extend` when you want to append many times
-            before doing a query. For instance when you read in multiple files and when
-            to store them in a single `Series`. In the latter case, finish the sequence
-            of `append_chunks` operations with a `rechunk`.
 
         Warnings
         --------
@@ -2834,19 +2808,6 @@ class Series:
         2
 
         """
-        if append_chunks is not None:
-            issue_deprecation_warning(
-                "the `append_chunks` argument will be removed and `append` will change"
-                " to always behave like `append_chunks=True` (the previous default)."
-                " For the behavior of `append_chunks=False`, use `Series.extend`.",
-                version="0.18.8",
-            )
-        else:
-            append_chunks = True
-
-        if not append_chunks:
-            return self.extend(other)
-
         try:
             self._s.append(other._s)
         except RuntimeError as exc:
