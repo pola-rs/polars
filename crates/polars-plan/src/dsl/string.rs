@@ -330,6 +330,7 @@ impl StringNameSpace {
         )
     }
 
+    #[cfg(feature = "string_reverse")]
     /// Reverse each string
     pub fn reverse(self) -> Expr {
         self.0.map_many_private(

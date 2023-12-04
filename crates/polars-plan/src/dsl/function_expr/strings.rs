@@ -64,6 +64,7 @@ pub enum StringFunction {
         n: i64,
         literal: bool,
     },
+    #[cfg(feature = "string_reverse")]
     Reverse,
     #[cfg(feature = "string_pad")]
     PadStart {
@@ -132,6 +133,7 @@ impl StringFunction {
             LenChars => mapper.with_dtype(DataType::UInt32),
             #[cfg(feature = "regex")]
             Replace { .. } => mapper.with_same_dtype(),
+            #[cfg(feature = "string_reverse")]
             Reverse => mapper.with_same_dtype(),
             #[cfg(feature = "temporal")]
             Strptime(dtype, _) => mapper.with_dtype(dtype.clone()),
@@ -204,6 +206,7 @@ impl Display for StringFunction {
             PadStart { .. } => "pad_start",
             #[cfg(feature = "regex")]
             Replace { .. } => "replace",
+            #[cfg(feature = "string_reverse")]
             Reverse => "reverse",
             #[cfg(feature = "string_encoding")]
             HexEncode => "hex_encode",
@@ -306,6 +309,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             ConcatHorizontal(delimiter) => map_as_slice!(strings::concat_hor, &delimiter),
             #[cfg(feature = "regex")]
             Replace { n, literal } => map_as_slice!(strings::replace, literal, n),
+            #[cfg(feature = "string_reverse")]
             Reverse => map!(strings::reverse),
             Uppercase => map!(strings::uppercase),
             Lowercase => map!(strings::lowercase),
@@ -806,6 +810,7 @@ pub(super) fn replace(s: &[Series], literal: bool, n: i64) -> PolarsResult<Serie
     .map(|ca| ca.into_series())
 }
 
+#[cfg(feature = "string_reverse")]
 pub(super) fn reverse(s: &Series) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     Ok(ca.str_reverse().into_series())

@@ -522,6 +522,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
     /// Reverses the string values
     #[must_use]
+    #[cfg(feature = "string_reverse")]
     fn str_reverse(&self) -> Utf8Chunked {
         let ca = self.as_utf8();
         reverse::reverse(ca)

@@ -33,7 +33,7 @@ use polars_core::prelude::*;
 pub use split::*;
 #[cfg(feature = "strings")]
 pub use strip::*;
-#[cfg(feature = "strings")]
+#[cfg(feature = "string_reverse")]
 mod reverse;
 
 pub trait AsUtf8 {
