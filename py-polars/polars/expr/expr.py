@@ -24,10 +24,7 @@ from typing import (
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import (
-    Categorical,
-    Struct,
     UInt32,
-    Utf8,
     is_polars_dtype,
     py_type_to_dtype,
 )
@@ -9196,209 +9193,15 @@ class Expr:
         │ 3      ┆ null         ┆ unspecified │
         └────────┴──────────────┴─────────────┘
         """
+        old = F.lit(pl.Series(mapping.keys()))._pyexpr
+        new = F.lit(pl.Series(mapping.values()))._pyexpr
+        default = (
+            None
+            if default is no_default
+            else parse_as_expression(default, str_as_lit=True)
+        )
 
-        def _remap_key_or_value_series(
-            name: str,
-            values: Iterable[Any],
-            dtype: PolarsDataType | None,
-            dtype_if_empty: PolarsDataType,
-            dtype_keys: PolarsDataType | None,
-            *,
-            is_keys: bool,
-        ) -> Series:
-            """
-            Convert mapping keys or mapping values to `Series` with `dtype`.
-
-            Try to convert the mapping keys or mapping values to `Series` with
-            the specified dtype and check that none of the values are accidentally
-            lost (replaced by nulls) during the conversion.
-
-            Parameters
-            ----------
-            name
-                Name of the keys or values Series.
-            values
-                Values for the Series: `mapping.keys()` or `mapping.values()`.
-            dtype
-                User specified dtype. If None,
-            dtype_if_empty
-                If no dtype is specified and values contains None, an empty list,
-                or a list with only None values, set the Polars dtype of the Series
-                data.
-            dtype_keys
-                If user set dtype is None, try to see if Series for mapping.values()
-                can be converted to same dtype as the mapping.keys() Series dtype.
-            is_keys
-                If values contains keys or values from mapping dict.
-
-            """
-            try:
-                if dtype is None:
-                    # If no dtype was set, which should only happen when:
-                    #     values = mapping.values()
-                    # create a Series from those values and infer the dtype.
-                    s = pl.Series(
-                        name,
-                        values,
-                        dtype=None,
-                        dtype_if_empty=dtype_if_empty,
-                        strict=True,
-                    )
-
-                    if dtype_keys is not None:
-                        if s.dtype == dtype_keys:
-                            # Values Series has same dtype as keys Series.
-                            dtype = s.dtype
-                        elif (
-                            (s.dtype.is_integer() and dtype_keys.is_integer())
-                            or (s.dtype.is_float() and dtype_keys.is_float())
-                            or (s.dtype == Utf8 and dtype_keys == Categorical)
-                        ):
-                            # Values Series and keys Series are of similar dtypes,
-                            # that we can assume that the user wants the values Series
-                            # of the same dtype as the key Series.
-                            dtype = dtype_keys
-                            s = pl.Series(
-                                name,
-                                values,
-                                dtype=dtype_keys,
-                                dtype_if_empty=dtype_if_empty,
-                                strict=True,
-                            )
-                            if dtype != s.dtype:
-                                raise ValueError(
-                                    f"mapping values for `replace` could not be converted to {dtype!r}: found {s.dtype!r}"
-                                )
-                else:
-                    # dtype was set, which should always be the case when:
-                    #     values = mapping.keys()
-                    # and in cases where the user set the output dtype when:
-                    #     values = mapping.values()
-                    s = pl.Series(
-                        name,
-                        values,
-                        dtype=dtype,
-                        dtype_if_empty=dtype_if_empty,
-                        strict=True,
-                    )
-                    if dtype != s.dtype:
-                        raise ValueError(
-                            f"mapping {'keys' if is_keys else 'values'} for `replace` could not be converted to {dtype!r}: found {s.dtype!r}"
-                        )
-
-            except OverflowError as exc:
-                if is_keys:
-                    raise ValueError(
-                        f"mapping keys for `replace` could not be converted to {dtype!r}: {exc!s}"
-                    ) from exc
-                else:
-                    raise ValueError(
-                        f"choose a more suitable output dtype for `replace` as mapping value could not be converted to {dtype!r}: {exc!s}"
-                    ) from exc
-
-            if is_keys:
-                # values = mapping.keys()
-                if s.null_count() == 0:  # noqa: SIM114
-                    pass
-                elif s.null_count() == 1 and None in mapping:
-                    pass
-                else:
-                    raise ValueError(
-                        f"mapping keys for `replace` could not be converted to {dtype!r} without losing values in the conversion"
-                    )
-            else:
-                # values = mapping.values()
-                if s.null_count() == 0:  # noqa: SIM114
-                    pass
-                elif s.len() - s.null_count() == len(list(filter(None, values))):
-                    pass
-                else:
-                    raise ValueError(
-                        f"remapping values for `replace` could not be converted to {dtype!r} without losing values in the conversion"
-                    )
-            return s
-
-        def inner_func(s: Series, default_value: Any = None) -> Series:
-            # Convert Series to:
-            #   - multicolumn DataFrame, if Series is a Struct.
-            #   - one column DataFrame in other cases.
-            df = s.to_frame().unnest(s.name) if s.dtype == Struct else s.to_frame()
-
-            # For struct we always apply mapping to the first column.
-            column = df.columns[0]
-            input_dtype = df.dtypes[0]
-            remap_key_column = f"__POLARS_REMAP_KEY_{column}"
-            remap_value_column = f"__POLARS_REMAP_VALUE_{column}"
-            is_remapped_column = f"__POLARS_REMAP_IS_REMAPPED_{column}"
-
-            # Set output dtype:
-            #  - to dtype, if specified.
-            #  - to same dtype as expression specified as default value.
-            #  - to None, if dtype was not specified and default was not an expression.
-            return_dtype_ = (
-                df.lazy().select(default).dtypes[0]
-                if return_dtype is None and isinstance(default, Expr)
-                else return_dtype
-            )
-            remap_key_s = _remap_key_or_value_series(
-                name=remap_key_column,
-                values=mapping.keys(),
-                dtype=input_dtype,
-                dtype_if_empty=input_dtype,
-                dtype_keys=input_dtype,
-                is_keys=True,
-            )
-            if return_dtype_:
-                # Create remap value Series with specified output dtype.
-                remap_value_s = pl.Series(
-                    remap_value_column,
-                    mapping.values(),
-                    dtype=return_dtype_,
-                    dtype_if_empty=input_dtype,
-                )
-            else:
-                # Create remap value Series with same output dtype as remap key Series,
-                # if possible (if both are integers, both are floats or remap value
-                # Series is pl.Utf8 and remap key Series is pl.Categorical).
-                remap_value_s = _remap_key_or_value_series(
-                    name=remap_value_column,
-                    values=mapping.values(),
-                    dtype=None,
-                    dtype_if_empty=input_dtype,
-                    dtype_keys=input_dtype,
-                    is_keys=False,
-                )
-
-            remap_frame = pl.LazyFrame(data=[remap_key_s, remap_value_s]).with_columns(
-                F.lit(True).alias(is_remapped_column)
-            )
-            mapped = df.lazy().join(
-                other=remap_frame,
-                how="left",
-                left_on=column,
-                right_on=remap_key_column,
-                join_nulls=True,
-            )
-            if default_value is None:
-                result_index = 1
-            else:
-                expr_default = parse_as_expression(default_value, str_as_lit=True)
-                default_parsed = self._from_pyexpr(expr_default)
-                mapped = mapped.select(
-                    F.when(F.col(is_remapped_column).is_not_null())
-                    .then(F.col(remap_value_column))
-                    .otherwise(default_parsed)
-                    .alias(column)
-                )
-                result_index = 0
-
-            return mapped.collect(no_optimization=True).to_series(index=result_index)
-
-        if default is no_default:
-            default = F.first()
-
-        mapping_func = partial(inner_func, default_value=default)
-        return self.map_batches(function=mapping_func, return_dtype=return_dtype)
+        return self._from_pyexpr(self._pyexpr.replace(old, new, default))
 
     @deprecate_renamed_function("map_batches", version="0.19.0")
     def map(

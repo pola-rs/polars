@@ -275,6 +275,10 @@ impl FunctionExpr {
             EwmStd { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "ewma")]
             EwmVar { .. } => mapper.map_to_float_dtype(),
+            #[cfg(feature = "replace")]
+            Replace => mapper.with_same_dtype(), // TODO
+            #[cfg(feature = "replace")]
+            ReplaceWithDefault => mapper.with_same_dtype(), // TODO
         }
     }
 }

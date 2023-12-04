@@ -68,6 +68,7 @@ features = [
   "range",
   "rank",
   "reinterpret",
+  "replace",
   "rolling_window",
   "round_series",
   "row_hash",

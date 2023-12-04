@@ -1308,6 +1308,21 @@ impl Expr {
         self.apply_private(FunctionExpr::Rank { options, seed })
     }
 
+    #[cfg(feature = "replace")]
+    /// Replace the given values with other values.
+    pub fn replace<E: Into<Expr>>(self, old: E, new: E, default: Option<E>) -> Expr {
+        match default {
+            Some(default) => {
+                let arguments: &[Expr] = &[old.into(), new.into(), default.into()];
+                self.apply_many_private(FunctionExpr::ReplaceWithDefault, arguments, false, false)
+            },
+            None => {
+                let arguments: &[Expr] = &[old.into(), new.into()];
+                self.apply_many_private(FunctionExpr::Replace, arguments, false, false)
+            },
+        }
+    }
+
     #[cfg(feature = "cutqcut")]
     /// Bin continuous values into discrete categories.
     pub fn cut(

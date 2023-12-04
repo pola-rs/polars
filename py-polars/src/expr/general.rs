@@ -870,6 +870,13 @@ impl PyExpr {
         self.inner.clone().set_sorted_flag(is_sorted).into()
     }
 
+    fn replace(&self, old: PyExpr, new: PyExpr, default: Option<PyExpr>) -> Self {
+        self.inner
+            .clone()
+            .replace(old.inner, new.inner, default.map(|e| e.inner))
+            .into()
+    }
+
     #[cfg(feature = "ffi_plugin")]
     fn register_plugin(
         &self,

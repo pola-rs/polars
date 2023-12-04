@@ -129,3 +129,13 @@ pub(super) fn hist(
     let s = &s[0];
     hist_series(s, bin_count, bins, include_category, include_breakpoint)
 }
+
+#[cfg(feature = "replace")]
+pub(super) fn replace(s: &[Series]) -> PolarsResult<Series> {
+    polars_ops::series::replace(&s[0], &s[1], &s[2])
+}
+
+#[cfg(feature = "replace")]
+pub(super) fn replace_with_default(s: &[Series]) -> PolarsResult<Series> {
+    polars_ops::series::replace_with_default(&s[0], &s[1], &s[2], &s[3])
+}

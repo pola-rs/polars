@@ -150,6 +150,7 @@ hive_partitions = []
 peaks = ["polars-ops/peaks"]
 cov = ["polars-ops/cov"]
 hist = ["polars-ops/hist"]
+replace = ["polars-ops/replace"]
 
 bigidx = ["polars-core/bigidx"]
 
