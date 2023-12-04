@@ -54,7 +54,6 @@ from polars.utils.deprecation import (
     deprecate_renamed_function,
     deprecate_renamed_parameter,
     deprecate_saturating,
-    warn_closed_future_change,
 )
 from polars.utils.meta import threadpool_size
 from polars.utils.various import _warn_null_comparison, no_default, sphinx_accessor
@@ -3627,13 +3626,13 @@ class Expr:
         quantile = parse_as_expression(quantile)
         return self._from_pyexpr(self._pyexpr.quantile(quantile, interpolation))
 
-    @deprecate_nonkeyword_arguments(["self", "breaks"], version="0.18.14")
     def cut(
         self,
         breaks: Sequence[float],
+        *,
         labels: Sequence[str] | None = None,
-        left_closed: bool = False,  # noqa: FBT001
-        include_breaks: bool = False,  # noqa: FBT001
+        left_closed: bool = False,
+        include_breaks: bool = False,
     ) -> Self:
         """
         Bin continuous values into discrete categories.
@@ -3706,16 +3705,14 @@ class Expr:
             self._pyexpr.cut(breaks, labels, left_closed, include_breaks)
         )
 
-    @deprecate_nonkeyword_arguments(["self", "quantiles"], version="0.18.14")
-    @deprecate_renamed_parameter("probs", "quantiles", version="0.18.8")
-    @deprecate_renamed_parameter("q", "quantiles", version="0.18.12")
     def qcut(
         self,
         quantiles: Sequence[float] | int,
+        *,
         labels: Sequence[str] | None = None,
-        left_closed: bool = False,  # noqa: FBT001
-        allow_duplicates: bool = False,  # noqa: FBT001
-        include_breaks: bool = False,  # noqa: FBT001
+        left_closed: bool = False,
+        allow_duplicates: bool = False,
+        include_breaks: bool = False,
     ) -> Self:
         """
         Bin continuous values into discrete categories based on their quantiles.
@@ -5379,7 +5376,7 @@ class Expr:
 
         Notes
         -----
-        This implementation of :func:`rows` does not guarantee stable results
+        This implementation of `hash` does not guarantee stable results
         across different Polars versions. Its stability is only guaranteed within a
         single version.
 
@@ -5557,7 +5554,6 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.interpolate(method))
 
-    @warn_closed_future_change()
     def rolling_min(
         self,
         window_size: int | timedelta | str,
@@ -5566,7 +5562,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
@@ -5768,7 +5764,6 @@ class Expr:
             )
         )
 
-    @warn_closed_future_change()
     def rolling_max(
         self,
         window_size: int | timedelta | str,
@@ -5777,7 +5772,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
@@ -6002,7 +5997,6 @@ class Expr:
             )
         )
 
-    @warn_closed_future_change()
     def rolling_mean(
         self,
         window_size: int | timedelta | str,
@@ -6011,7 +6005,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
@@ -6246,7 +6240,6 @@ class Expr:
             )
         )
 
-    @warn_closed_future_change()
     def rolling_sum(
         self,
         window_size: int | timedelta | str,
@@ -6255,7 +6248,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
@@ -6480,7 +6473,6 @@ class Expr:
             )
         )
 
-    @warn_closed_future_change()
     def rolling_std(
         self,
         window_size: int | timedelta | str,
@@ -6489,7 +6481,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
         ddof: int = 1,
         warn_if_unsorted: bool = True,
     ) -> Self:
@@ -6724,7 +6716,6 @@ class Expr:
             )
         )
 
-    @warn_closed_future_change()
     def rolling_var(
         self,
         window_size: int | timedelta | str,
@@ -6733,7 +6724,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
         ddof: int = 1,
         warn_if_unsorted: bool = True,
     ) -> Self:
@@ -6968,7 +6959,6 @@ class Expr:
             )
         )
 
-    @warn_closed_future_change()
     def rolling_median(
         self,
         window_size: int | timedelta | str,
@@ -6977,7 +6967,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
@@ -7128,7 +7118,6 @@ class Expr:
             )
         )
 
-    @warn_closed_future_change()
     def rolling_quantile(
         self,
         quantile: float,
@@ -7139,7 +7128,7 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
         warn_if_unsorted: bool = True,
     ) -> Self:
         """
@@ -9002,24 +8991,6 @@ class Expr:
 
         """
         return self._from_pyexpr(self._pyexpr.shrink_dtype())
-
-    @deprecate_function(
-        "This method now does nothing. It has been superseded by the"
-        " `comm_subexpr_elim` setting on `LazyFrame.collect`, which automatically"
-        " caches expressions that are equal.",
-        version="0.18.9",
-    )
-    def cache(self) -> Self:
-        """
-        Cache this expression so that it only is executed once per context.
-
-        .. deprecated:: 0.18.9
-            This method now does nothing. It has been superseded by the
-            `comm_subexpr_elim` setting on `LazyFrame.collect`, which automatically
-            caches expressions that are equal.
-
-        """
-        return self
 
     def replace(
         self,

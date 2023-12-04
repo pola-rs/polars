@@ -25,7 +25,7 @@ from polars.datatypes import (
     is_polars_dtype,
 )
 from polars.expr import Expr
-from polars.utils.deprecation import deprecate_function, deprecate_nonkeyword_arguments
+from polars.utils.deprecation import deprecate_nonkeyword_arguments
 
 if TYPE_CHECKING:
     import sys
@@ -120,30 +120,6 @@ def expand_selector(
         target = DataFrame(schema=target)
 
     return tuple(target.select(selector).columns)
-
-
-@deprecate_function(
-    message="This function has been superseded by `expand_selector`; please update accordingly",
-    version="0.18.14",
-)
-def selector_column_names(
-    frame: DataFrame | LazyFrame, selector: SelectorType
-) -> tuple[str, ...]:
-    """
-    Return the column names that would be selected from the given frame.
-
-    .. deprecated:: 0.18.14
-       Use :func:`expand_selector` instead.
-
-    Parameters
-    ----------
-    frame
-        A polars DataFrame or LazyFrame.
-    selector
-        An arbitrary polars selector (or compound selector).
-
-    """
-    return expand_selector(target=frame, selector=selector)
 
 
 def _expand_selectors(

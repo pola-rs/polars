@@ -242,15 +242,3 @@ def test_time_range_name() -> None:
 
     result_lazy = pl.select(pl.time_range(time(10), time(12), eager=False)).to_series()
     assert result_lazy.name == expected_name
-
-
-def test_deprecated_name_arg() -> None:
-    name = "x"
-
-    with pytest.deprecated_call():
-        result_lazy = pl.time_range(time(10), time(12), name=name)
-        assert result_lazy.meta.output_name() == name
-
-    with pytest.deprecated_call():
-        result_eager = pl.time_range(time(10), time(12), name=name, eager=True)
-        assert result_eager.name == name

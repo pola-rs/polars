@@ -585,55 +585,6 @@ class LazyFrame:
         return self
 
     @classmethod
-    @deprecate_function(
-        "Convert the JSON string to `StringIO` and then use `LazyFrame.deserialize`.",
-        version="0.18.12",
-    )
-    def from_json(cls, json: str) -> Self:
-        """
-        Read a logical plan from a JSON string to construct a LazyFrame.
-
-        .. deprecated:: 0.18.12
-            This method is deprecated. Convert the JSON string to `StringIO`
-            and then use `LazyFrame.deserialize`.
-
-        Parameters
-        ----------
-        json
-            String in JSON format.
-
-        See Also
-        --------
-        deserialize
-
-        """
-        return cls.deserialize(StringIO(json))
-
-    @classmethod
-    @deprecate_renamed_function("deserialize", version="0.18.12")
-    @deprecate_renamed_parameter("file", "source", version="0.18.12")
-    def read_json(cls, source: str | Path | IOBase) -> Self:
-        """
-        Read a logical plan from a JSON file to construct a LazyFrame.
-
-        .. deprecated:: 0.18.12
-            This class method has been renamed to `deserialize`.
-
-        Parameters
-        ----------
-        source
-            Path to a file or a file-like object (by file-like object, we refer to
-            objects that have a `read()` method, such as a file handler (e.g.
-            via builtin `open` function) or `BytesIO`).
-
-        See Also
-        --------
-        deserialize
-
-        """
-        return cls.deserialize(source)
-
-    @classmethod
     def deserialize(cls, source: str | Path | IOBase) -> Self:
         """
         Read a logical plan from a JSON file to construct a LazyFrame.
@@ -914,30 +865,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             self._ldf.serialize(file)
         return None
 
-    @overload
-    def write_json(self, file: None = ...) -> str:
-        ...
-
-    @overload
-    def write_json(self, file: IOBase | str | Path) -> None:
-        ...
-
-    @deprecate_renamed_function("serialize", version="0.18.12")
-    def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
-        """
-        Serialize the logical plan of this LazyFrame to a file or string in JSON format.
-
-        .. deprecated:: 0.18.12
-            This method has been renamed to :func:`LazyFrame.serialize`.
-
-        Parameters
-        ----------
-        file
-            File path to which the result should be written. If set to `None`
-            (default), the output is returned as a string instead.
-        """
-        return self.serialize(file)
-
     def pipe(
         self,
         function: Callable[Concatenate[LazyFrame, P], T],
@@ -1011,9 +938,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return function(self, *args, **kwargs)
 
-    @deprecate_renamed_parameter(
-        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
-    )
     def explain(
         self,
         *,
@@ -1084,9 +1008,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             return ldf.describe_optimized_plan()
         return self._ldf.describe_plan()
 
-    @deprecate_renamed_parameter(
-        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
-    )
     def show_graph(
         self,
         *,
@@ -1508,9 +1429,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             self._ldf.bottom_k(k, by, descending, nulls_last, maintain_order)
         )
 
-    @deprecate_renamed_parameter(
-        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
-    )
     def profile(
         self,
         *,
@@ -1661,9 +1579,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return df, timings
 
-    @deprecate_renamed_parameter(
-        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
-    )
     def collect(
         self,
         *,
@@ -2329,9 +2244,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             _eager=False,
         )
 
-    @deprecate_renamed_parameter(
-        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
-    )
     def fetch(
         self,
         n_rows: int = 500,
@@ -4640,17 +4552,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         return self.select(F.all().approx_n_unique())
-
-    @deprecate_renamed_function("approx_n_unique", version="0.18.12")
-    def approx_unique(self) -> Self:
-        """
-        Approximate count of unique values.
-
-        .. deprecated:: 0.18.12
-            This method has been renamed to :func:`LazyFrame.approx_n_unique`.
-
-        """
-        return self.approx_n_unique()
 
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
         """

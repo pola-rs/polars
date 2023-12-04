@@ -7,7 +7,6 @@ from polars import functions as F
 from polars.datatypes import Float64
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import issue_deprecation_warning
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -27,7 +26,6 @@ def repeat(
     *,
     dtype: PolarsDataType | None = ...,
     eager: Literal[False] = ...,
-    name: str | None = ...,
 ) -> Expr:
     ...
 
@@ -39,7 +37,6 @@ def repeat(
     *,
     dtype: PolarsDataType | None = ...,
     eager: Literal[True],
-    name: str | None = ...,
 ) -> Series:
     ...
 
@@ -51,7 +48,6 @@ def repeat(
     *,
     dtype: PolarsDataType | None = ...,
     eager: bool,
-    name: str | None = ...,
 ) -> Expr | Series:
     ...
 
@@ -62,7 +58,6 @@ def repeat(
     *,
     dtype: PolarsDataType | None = None,
     eager: bool = False,
-    name: str | None = None,
 ) -> Expr | Series:
     """
     Construct a column of length `n` filled with the given value.
@@ -80,11 +75,6 @@ def repeat(
     eager
         Evaluate immediately and return a `Series`. If set to `False` (default),
         return an expression instead.
-    name
-        Name of the resulting column.
-
-        .. deprecated:: 0.17.15
-            This argument is deprecated. Use the `alias` method instead.
 
     Notes
     -----
@@ -120,18 +110,10 @@ def repeat(
     ]
 
     """
-    if name is not None:
-        issue_deprecation_warning(
-            "the `name` argument is deprecated. Use the `alias` method instead.",
-            version="0.18.0",
-        )
-
     if isinstance(n, int):
         n = F.lit(n)
     value = parse_as_expression(value, str_as_lit=True)
     expr = wrap_expr(plr.repeat(value, n._pyexpr, dtype))
-    if name is not None:
-        expr = expr.alias(name)
     if eager:
         return F.select(expr).to_series()
     return expr

@@ -199,19 +199,6 @@ def test_date_range_eager() -> None:
     assert_series_equal(result, expected)
 
 
-def test_deprecated_name_arg() -> None:
-    name = "x"
-    with pytest.deprecated_call():
-        result_lazy = pl.date_range(date(2023, 1, 1), date(2023, 1, 3), name=name)
-        assert result_lazy.meta.output_name() == name
-
-    with pytest.deprecated_call():
-        result_eager = pl.date_range(
-            date(2023, 1, 1), date(2023, 1, 3), name=name, eager=True
-        )
-        assert result_eager.name == name
-
-
 @pytest.mark.parametrize(
     (
         "input_time_unit",

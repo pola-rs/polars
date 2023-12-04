@@ -3,7 +3,7 @@ from datetime import datetime
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing import assert_frame_equal
 
 
 def test_when_then() -> None:
@@ -240,22 +240,6 @@ def test_comp_categorical_lit_dtype() -> None:
         .otherwise(pl.col("column"))
         .alias("column")
     ).dtypes == [pl.Categorical, pl.Int32]
-
-
-def test_when_then_deprecated_string_input() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [True, False],
-            "b": [1, 2],
-            "c": [3, 4],
-        }
-    )
-
-    with pytest.deprecated_call():
-        result = df.select(pl.when("a").then("b").otherwise("c").alias("when"))
-
-    expected = pl.Series("when", ["b", "c"])
-    assert_series_equal(result.to_series(), expected)
 
 
 def test_predicate_broadcast() -> None:
@@ -500,13 +484,6 @@ def test_when_then_binary_op_predicate_agg_12526() -> None:
     )
 
     assert_frame_equal(expect, actual)
-
-
-def test_when_then_deprecation() -> None:
-    df = pl.DataFrame({"foo": [5, 4, 3], "bar": [2, 1, 0]})
-    for param_name in ("expr", "condition"):
-        with pytest.warns(DeprecationWarning, match="pass as a positional argument"):
-            df.select(pl.when(**{param_name: pl.col("bar") >= 0}).then(99))
 
 
 def test_when_predicates_kwargs() -> None:
