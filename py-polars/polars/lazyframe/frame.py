@@ -4641,17 +4641,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.select(F.all().approx_n_unique())
 
-    @deprecate_renamed_function("approx_n_unique", version="0.18.12")
-    def approx_unique(self) -> Self:
-        """
-        Approximate count of unique values.
-
-        .. deprecated:: 0.18.12
-            This method has been renamed to :func:`LazyFrame.approx_n_unique`.
-
-        """
-        return self.approx_n_unique()
-
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
         """
         Add a column at index 0 that counts the rows.

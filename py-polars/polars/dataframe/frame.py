@@ -9006,17 +9006,6 @@ class DataFrame:
         """
         return self.lazy().approx_n_unique().collect(_eager=True)
 
-    @deprecate_renamed_function("approx_n_unique", version="0.18.12")
-    def approx_unique(self) -> DataFrame:
-        """
-        Approximate count of unique values.
-
-        .. deprecated:: 0.18.12
-            This method has been renamed to :func:`DataFrame.approx_n_unique`.
-
-        """
-        return self.approx_n_unique()
-
     def rechunk(self) -> Self:
         """
         Rechunk the data in this DataFrame to a contiguous allocation.
