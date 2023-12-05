@@ -1,4 +1,6 @@
+use std::fmt::Debug;
 use std::mem::MaybeUninit;
+use num_traits::FromPrimitive;
 use rayon::prelude::*;
 use rayon::ThreadPool;
 use crate::float::IsFloat;
@@ -89,21 +91,23 @@ unsafe fn assume_init_mut<T>(slice: &mut [MaybeUninit<T>]) -> &mut [T] {
     &mut *(slice as *mut [MaybeUninit<T>] as *mut [T])
 }
 
-pub fn arg_sort_ascending<'a, T: IsFloat + PartialOrd + Copy + 'a>(v: &[T], scratch: &'a mut Vec<u8>) -> &'a mut [IdxSize] {
+pub fn arg_sort_ascending<'a, T: IsFloat + PartialOrd + Copy + 'a, I, >(v: &[T], scratch: &'a mut Vec<u8>) -> &'a mut [I]
+where I: FromPrimitive + Copy,
+{
     // Needed to be able to write back to back in the same buffer.
-    debug_assert_eq!(std::mem::align_of::<T>(), std::mem::align_of::<(T, IdxSize)>());
+    debug_assert_eq!(std::mem::align_of::<T>(), std::mem::align_of::<(T, I)>());
     let n = v.len();
-    let size = std::mem::size_of::<(T, IdxSize)>();
+    let size = std::mem::size_of::<(T, I)>();
     let upper_bound = size * v.len() + size;
     scratch.reserve(upper_bound);
     let scratch_slice = unsafe {
         let cap_slice = scratch.spare_capacity_mut();
-        let (_, scratch_slice, _) = cap_slice.align_to_mut::<MaybeUninit<(T, IdxSize)>>();
+        let (_, scratch_slice, _) = cap_slice.align_to_mut::<MaybeUninit<(T, I)>>();
         &mut scratch_slice[..n]
     };
 
-    for ((i, v), dst) in v.iter().enumerate_idx().zip(scratch_slice.iter_mut()) {
-        *dst = MaybeUninit::new((*v, i));
+    for ((i, v), dst) in v.iter().enumerate().zip(scratch_slice.iter_mut()) {
+        *dst = MaybeUninit::new((*v, I::from_usize(i).unwrap()));
     }
     debug_assert_eq!(v.len(), scratch_slice.len());
 
@@ -117,7 +121,7 @@ pub fn arg_sort_ascending<'a, T: IsFloat + PartialOrd + Copy + 'a>(v: &[T], scra
     unsafe {
         let src = scratch_slice.as_ptr();
 
-        let (_, scratch_slice_aligned_to_idx, _) = scratch_slice.align_to_mut::<IdxSize>();
+        let (_, scratch_slice_aligned_to_idx, _) = scratch_slice.align_to_mut::<I>();
 
         let dst = scratch_slice_aligned_to_idx.as_mut_ptr();
 

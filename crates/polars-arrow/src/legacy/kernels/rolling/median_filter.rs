@@ -9,7 +9,6 @@ use std::ops::{Add, Mul, Sub};
 use num_traits::NumCast;
 use polars_utils::float::IsFloat;
 use polars_utils::sort::arg_sort_ascending;
-use polars_utils::IdxSize;
 
 use crate::legacy::kernels::rolling::Idx;
 use crate::types::NativeType;
@@ -82,6 +81,7 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
         prev: &'a mut Vec<u32>,
         next: &'a mut Vec<u32>,
     ) -> Self {
+        debug_assert!(!alpha.is_empty());
         let k = alpha.len();
         let pi = arg_sort_ascending(alpha, scratch);
 
@@ -304,6 +304,15 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
         }
     }
 
+    fn peek_previous(&self) -> Option<T> {
+        let m = self.prev[self.m];
+        if m == self.tail as u32 {
+            None
+        } else {
+            Some(self.alpha[m as usize])
+        }
+    }
+
     fn get_pair(&self, i: usize) -> (T, u32) {
         (self.alpha[i], i as u32)
     }
@@ -318,6 +327,8 @@ trait LenGet {
     fn len(&self) -> usize;
 
     fn get(&mut self, i: usize) -> Self::Item;
+
+    fn reverse(&mut self);
 }
 
 impl<T: IsFloat + PartialOrd + NativeType> LenGet for &mut Block<'_, T> {
@@ -330,6 +341,10 @@ impl<T: IsFloat + PartialOrd + NativeType> LenGet for &mut Block<'_, T> {
     fn get(&mut self, i: usize) -> Self::Item {
         self.traverse_to_index(i);
         self.peek().unwrap()
+    }
+
+    fn reverse(&mut self) {
+        // no-op
     }
 }
 
@@ -367,14 +382,16 @@ impl<T: IsFloat + PartialOrd + NativeType> LenGet for BlockUnion<'_, T> {
         if self.block_right.n_element == 0 {
             self.block_left.traverse_to_index(i);
             return self.block_left.peek().unwrap();
+        } else if self.block_left.n_element == 0 {
+            self.block_right.traverse_to_index(i);
+            return self.block_right.peek().unwrap();
         }
 
         loop {
             // Current index position of merge sort
             let mut s = self.block_left.current_index + self.block_right.current_index;
-            if i < s {
-                self.block_left.reverse();
-                self.block_right.reverse();
+            while i < s {
+                self.reverse();
                 s = self.block_left.current_index + self.block_right.current_index;
             }
 
@@ -396,7 +413,7 @@ impl<T: IsFloat + PartialOrd + NativeType> LenGet for BlockUnion<'_, T> {
                     self.block_right.advance();
                 },
                 (Some(left), Some(right)) => {
-                    match left.partial_cmp(&right).unwrap() {
+                    match (left.partial_cmp(&right).unwrap()) {
                         // On equality, take the left as that one was first.
                         Ordering::Equal | Ordering::Less => {
                             if s == i {
@@ -406,8 +423,6 @@ impl<T: IsFloat + PartialOrd + NativeType> LenGet for BlockUnion<'_, T> {
                         },
                         Ordering::Greater => {
                             if s == i
-                                // Left is only a single element and larger than right, so we can immediately take right.
-                                || self.block_left.n_element == 1
                             {
                                 return right;
                             }
@@ -415,8 +430,34 @@ impl<T: IsFloat + PartialOrd + NativeType> LenGet for BlockUnion<'_, T> {
                         },
                     }
                 },
-                _ => panic!(),
+                _ => {
+                    panic!()
+                },
             }
+        }
+    }
+
+    fn reverse(&mut self) {
+        let left = self.block_left.peek_previous();
+        let right = self.block_right.peek_previous();
+        match (left, right) {
+            (Some(_), None) => {
+                self.block_left.reverse();
+            },
+            (None, Some(_)) => {
+                self.block_right.reverse();
+            },
+            (Some(left), Some(right)) => {
+                match (left.partial_cmp(&right).unwrap()) {
+                    Ordering::Equal | Ordering::Less => {
+                        self.block_right.reverse();
+                    },
+                    Ordering::Greater => {
+                        self.block_left.reverse();
+                    },
+                }
+            },
+            (None, None) => {}
         }
     }
 }
@@ -449,15 +490,15 @@ where
             self.inner.get(idx)
         } else {
             let proportion: M::Item = NumCast::from(float_idx_top - idx as f64).unwrap();
+            self.inner.reverse();
             let vi = self.inner.get(idx);
             let vj = self.inner.get(top_idx);
-
             proportion * (vj - vi) + vi
         };
     }
 }
 
-fn rolling_median<T>(k: usize, slice: &[T])
+fn rolling_median<T>(k: usize, slice: &[T]) -> Vec<T>
 where
     T: IsFloat
         + NativeType
@@ -518,7 +559,7 @@ where
         let mut mu = MedianUpdate::new(&mut block_left);
         out.push(mu.median());
     }
-    for i in 1..n_blocks {
+    for i in 1..n_blocks + 1 {
         // Block left is now completely full as it is completely filled coming from the boundary effects.
         debug_assert!(block_left.n_element == k);
 
@@ -528,13 +569,26 @@ where
         // |-------------||-------------|
         //   - WINDOW -
         // |--------------|
-        let alpha = &slice[i * k..(i + 1) * k];
+        let end = std::cmp::min((i + 1) * k, slice.len());
+        let alpha = &slice[i * k..end];
+
+        if alpha.is_empty() {
+            break
+        }
+
+        // Find the scratch that belongs to the left window that has gone out of scope
+        let (scratch, prev, next) = if i % 2 == 0 {
+            (scratch_left_ptr, prev_left_ptr, next_left_ptr)
+        } else {
+            (scratch_right_ptr, prev_right_ptr, next_right_ptr)
+        };
+
         block_right = unsafe {
             Block::new(
                 alpha,
-                &mut *scratch_right_ptr,
-                &mut *prev_right_ptr,
-                &mut *next_right_ptr,
+                &mut *scratch,
+                &mut *prev,
+                &mut *next,
             )
         };
 
@@ -543,76 +597,17 @@ where
 
         // Here the window will move from BLOCK_LEFT into BLOCK_RIGHT
         for j in 0..block_right.capacity() {
-
-            // dbg!(&block_left, &block_right);
             unsafe {
                 let mut union = BlockUnion::new(&mut *ptr_left, &mut *ptr_right, k);
                 union.set_state(j);
 
-                out.push(MedianUpdate::new(union).median());
+                out.push((MedianUpdate::new(union).median()));
             }
-            // dbg!(&block_left, &block_right);
         }
 
-        if i != n_blocks {
-            unsafe {
-                std::ptr::swap_nonoverlapping(ptr_left, ptr_right, 1);
-                std::ptr::swap_nonoverlapping(scratch_left_ptr, scratch_right_ptr, 1);
-                std::ptr::swap_nonoverlapping(prev_left_ptr, prev_right_ptr, 1);
-                std::ptr::swap_nonoverlapping(next_left_ptr, next_right_ptr, 1);
-            }
-        }
+        std::mem::swap(&mut block_left, &mut block_right);
     }
-    // let mut final_block = block_right;
-    //
-    // let mut i = 0;
-    // while out.len() < slice.len() {
-    //     final_block.undelete(i);
-    //     i += 1;
-    //
-    //     let mut mu = MedianUpdate::new(&mut block_left);
-    //     out.push(mu.median());
-    // }
-    // dbg!(&final_block);
-    dbg!(&out, out.len());
-    // mu.
-
-    // let mut block_b = Block::new(h, alpha, &mut scratch_b, &mut prev_b, &mut next_b);
-    // out.push(block_b.peek());
-    //
-    // for j in 1..b {
-    //     block_a = block_b;
-    //
-    //     let alpha = &slice[j * k..(j + 1) *k];
-    //     block_b = if j % 2 == 0 {
-    //         Block::new(h, alpha, &mut scratch_b, &mut prev_b, &mut next_b)
-    //     } else {
-    //         Block::new(h, alpha, &mut scratch_a, &mut prev_a, &mut next_a)
-    //     };
-    //
-    //     block_b.unwind();
-    //     debug_assert_eq!(block_a.counter, h);
-    //     debug_assert_eq!(block_b.counter, h);
-    //
-    //     for i in 0..k {
-    //         block_a.delete(i);
-    //         block_b.undelete(i);
-    //         debug_assert!(block_a.counter + block_b.counter <= h);
-    //
-    //         if block_a.counter + block_b.counter <= h {
-    //             if block_a.peek() <= block_b.peek() {
-    //                 block_a.advance()
-    //             } else {
-    //                 block_b.advance()
-    //             }
-    //         }
-    //         debug_assert_eq!(block_a.counter + block_b.counter, h)
-    //         out.push(std::cmp::min(block_a.peek(), block_b.peek()));
-    //     }
-    //     debug_assert_eq!(block_a.counter, 0);
-    //     debug_assert_eq!(block_b.counter, h);
-    // }
-    // dbg!(out);
+    out
 }
 
 mod test {
@@ -911,16 +906,18 @@ mod test {
 
     #[test]
     fn test_median() {
-        let values = [2.0, 8.0, 5.0, 9.0, 1.0, 2.0, 4.0, 2.0, 4.0, 8.1, -1.0];
-        let k = 3;
-
-        //    block 1
-        // i:  2, 8, 51
-        // s:  2, 5, 8
-        //              block 2
-        // i:           9, 1, 2
-        // s:           1, 2, 9
-
-        rolling_median(k, &values);
+        let values = [2.0, 8.0, 5.0, 9.0, 1.0, 2.0, 4.0, 2.0, 4.0, 8.1, -1.0, 2.9, 1.2, 23.0];
+        let out = rolling_median(3, &values);
+        let expected = [2.0, 5.0, 5.0, 8.0, 5.0, 2.0, 2.0, 2.0, 4.0, 4.0, 4.0, 2.9, 1.2, 2.9];
+        assert_eq!(out, expected);
+        let out = rolling_median(5, &values);
+        let expected = [2.0, 5.0, 5.0, 6.5, 5.0, 5.0, 4.0, 2.0, 2.0, 4.0, 4.0, 2.9, 2.9, 2.9];
+        assert_eq!(out, expected);
+        let out = rolling_median(7, &values);
+        let expected = [2.0, 5.0, 5.0, 6.5, 5.0, 3.5, 4.0, 4.0, 4.0, 4.0, 2.0, 2.9, 2.9, 2.9];
+        assert_eq!(out, expected);
+        let out = rolling_median(4, &values);
+        let expected = [2.0, 5.0, 5.0, 6.5, 6.5, 3.5, 3.0, 2.0, 3.0, 4.0, 3.0, 3.45, 2.05, 2.05];
+        assert_eq!(out, expected);
     }
 }
