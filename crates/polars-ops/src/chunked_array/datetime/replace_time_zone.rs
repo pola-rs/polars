@@ -103,15 +103,19 @@ pub fn to_local_datetime(
         TimeUnit::Microseconds => datetime_to_timestamp_us,
         TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
     };
-    let out = match convert_tz.len() {
+    let out: Result<ChunkedArray<Int64Type>, PolarsError> = match convert_tz.len() {
         1 => match unsafe { convert_tz.get_unchecked(0) } {
-            Some(convert_tz) => datetime.0.try_apply(|timestamp| {
-                let ndt = timestamp_to_datetime(timestamp);
+            Some(convert_tz) => {
                 let to_tz = parse_time_zone(convert_tz)?;
-                Ok(datetime_to_timestamp(
-                    naive_utc_to_naive_local_in_new_time_zone(&from_tz, &to_tz, ndt),
-                ))
-            }),
+                Ok(datetime.0.apply(|timestamp_opt| {
+                    timestamp_opt.map(|ts| {
+                        let ndt = timestamp_to_datetime(ts);
+                        datetime_to_timestamp(naive_utc_to_naive_local_in_new_time_zone(
+                            &from_tz, &to_tz, ndt,
+                        ))
+                    })
+                }))
+            },
             _ => Ok(datetime.0.apply(|_| None)),
         },
         _ => try_binary_elementwise(
