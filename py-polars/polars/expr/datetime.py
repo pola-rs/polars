@@ -1442,6 +1442,9 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
+        You can use `to_local_datetime` to figure out how a tz-aware datetime
+        will be expressed as a local datetime.
+
         >>> from datetime import datetime
         >>> df = pl.DataFrame(
         ...     {
@@ -1498,6 +1501,9 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
+        You can go from a localized datetime back to expressing the datetimes
+        in a single timezone with `from_local_datetime`.
+
         >>> from datetime import datetime
         >>> df = pl.DataFrame(
         ...     {
