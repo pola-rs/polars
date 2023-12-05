@@ -3663,10 +3663,10 @@ class DataFrame:
             * See a list of supported storage options for Azure `here <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants>`__.
         delta_write_options
             Additional keyword arguments while writing a Delta lake Table.
-            See a list of supported write options `here <https://github.com/delta-io/delta-rs/blob/395d48b47ea638b70415899dc035cc895b220e55/python/deltalake/writer.py#L65>`__.
+            See a list of supported write options `here <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__.
         delta_merge_options
             Keyword arguments which are required to `MERGE` a Delta lake Table.
-            See a list of supported merge options `here <https://github.com/delta-io/delta-rs/blob/d833f080367276003af0e2c73c658ff96e671913/python/deltalake/table.py#L595C14-L595C14`__.
+            See a list of supported merge options `here <https://delta-io.github.io/delta-rs/api/delta_table/#deltalake.DeltaTable.merge>`__.
 
         Raises
         ------
@@ -3742,9 +3742,9 @@ class DataFrame:
 
         Merging dataframe to the local filesystem as a Delta Lake table. For a
         cloud object store just pass storage_options or a DeltaTable object.
-        For all additional TableMerger methods check the deltalake docs `here <https://delta-io.github.io/delta-rs/python/api_reference.html#deltalake.table.TableMerger`__.
+        For all additional TableMerger methods check the deltalake docs `here <https://delta-io.github.io/delta-rs/api/delta_table/delta_table_merger/>`__.
 
-        Schema evolution is currently not yet support in deltalake, therefore
+        Schema evolution is currently not yet supported in deltalake, therefore
         overwrite_schema won't have any effect during `MERGE`.
 
         >>> df = pl.DataFrame(
@@ -3792,7 +3792,6 @@ class DataFrame:
                 raise ValueError(
                     "You need to pass delta_merge_options with at least a given predicate for `MERGE` to work."
                 )
-
             if isinstance(target, str):
                 dt = DeltaTable(table_uri=target, storage_options=storage_options)
             else:
