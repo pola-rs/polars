@@ -208,7 +208,10 @@ impl PyExpr {
             warn_if_unsorted,
         };
 
-        self.inner.clone().rolling_quantile(interpolation.0, quantile, options).into()
+        self.inner
+            .clone()
+            .rolling_quantile(interpolation.0, quantile, options)
+            .into()
     }
 
     fn rolling_skew(&self, window_size: usize, bias: bool) -> Self {

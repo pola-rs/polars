@@ -827,3 +827,11 @@ def test_index_expr_output_name_12244() -> None:
         "int": [0, 1, 2],
         "A": [[1], [1, 2], [2, 3]],
     }
+
+
+def test_rolling_median() -> None:
+    for n in range(10, 25):
+        array = np.random.randint(0, 20, n)
+        for k in [3, 5, 7]:
+            a = pl.Series(array)
+            assert_series_equal( a.rolling_median(k), pl.from_pandas(a.to_pandas().rolling(k).median()))

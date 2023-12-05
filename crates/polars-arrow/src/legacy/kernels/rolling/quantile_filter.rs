@@ -382,13 +382,14 @@ impl<T: IsFloat + PartialOrd + NativeType> LenGet for BlockUnion<'_, T> {
             return self.block_right.peek().unwrap();
         }
 
+        // Needed: one of the block can point too far depending on what was (un)deleted in the other
+        // block.
+        self.reverse();
+
         loop {
             // Current index position of merge sort
-            let mut s = self.block_left.current_index + self.block_right.current_index;
-            while i < s {
-                self.reverse();
-                s = self.block_left.current_index + self.block_right.current_index;
-            }
+            let s = self.block_left.current_index + self.block_right.current_index;
+            debug_assert!(i >= s);
 
             let left = self.block_left.peek();
             let right = self.block_right.peek();
@@ -483,7 +484,6 @@ where
             self.inner.get(idx)
         } else {
             let proportion: M::Item = NumCast::from(float_idx_top - idx as f64).unwrap();
-            self.inner.reverse();
             let vi = self.inner.get(idx);
             let vj = self.inner.get(top_idx);
             proportion * (vj - vi) + vi
@@ -891,7 +891,7 @@ mod test {
     }
 
     #[test]
-    fn test_median() {
+    fn test_median_1() {
         let values = [
             2.0, 8.0, 5.0, 9.0, 1.0, 2.0, 4.0, 2.0, 4.0, 8.1, -1.0, 2.9, 1.2, 23.0,
         ];
@@ -914,6 +914,14 @@ mod test {
         let expected = [
             2.0, 5.0, 5.0, 6.5, 6.5, 3.5, 3.0, 2.0, 3.0, 4.0, 3.0, 3.45, 2.05, 2.05,
         ];
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn test_median_2() {
+        let values = [10, 10, 15, 13, 9, 5, 3, 13, 19, 15, 19];
+        let out = rolling_quantile(3, &values, 0.5);
+        let expected = [10, 10, 10, 13, 13, 9, 5, 5, 13, 15, 19];
         assert_eq!(out, expected);
     }
 }
