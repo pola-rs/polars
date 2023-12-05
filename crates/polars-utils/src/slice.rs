@@ -6,7 +6,7 @@ use std::ops::Range;
 pub trait SliceAble {
     unsafe fn slice_unchecked(&self, range: Range<usize>) -> Self;
 
-    unsafe fn slice(&self, range: Range<usize>) -> Self;
+    fn slice(&self, range: Range<usize>) -> Self;
 }
 
 impl<T> SliceAble for &[T] {
@@ -14,7 +14,7 @@ impl<T> SliceAble for &[T] {
         self.get_unchecked_release(range)
     }
 
-    unsafe fn slice(&self, range: Range<usize>) -> Self {
+    fn slice(&self, range: Range<usize>) -> Self {
         self.get(range).unwrap()
     }
 }

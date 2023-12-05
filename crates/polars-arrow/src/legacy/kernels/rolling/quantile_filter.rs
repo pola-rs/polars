@@ -8,16 +8,22 @@ use std::ops::{Add, Mul, Sub};
 
 use num_traits::NumCast;
 use polars_utils::float::IsFloat;
+use polars_utils::{
+    index::Indexable,
+    slice::SliceAble
+};
+use polars_utils::index::Bounded;
+use polars_utils::iter::IntoIteratorCopied;
 use polars_utils::sort::arg_sort_ascending;
 use polars_utils::total_ord::TotalOrd;
 
 use crate::types::NativeType;
 
-struct Block<'a, T: NativeType> {
+struct Block<'a, A> {
     k: usize,
     tail: usize,
     n_element: usize,
-    alpha: &'a [T],
+    alpha: A,
     pi: &'a mut [u32],
     prev: &'a mut Vec<u32>,
     next: &'a mut Vec<u32>,
@@ -27,7 +33,10 @@ struct Block<'a, T: NativeType> {
     current_index: usize,
 }
 
-impl<T: NativeType> Debug for Block<'_, T> {
+impl<'a, A> Debug for Block<'a, A>
+where A: Indexable,
+A::Item: NativeType
+{
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.n_element == 0 {
             return writeln!(f, "empty block");
@@ -36,7 +45,7 @@ impl<T: NativeType> Debug for Block<'_, T> {
         writeln!(f, "m: {}", self.m)?;
         if self.current_index != self.n_element {
             writeln!(f, "m_index: {}", self.current_index)?;
-            writeln!(f, "α[m]: {:?}", self.alpha[self.m])?;
+            writeln!(f, "α[m]: {:?}", self.alpha.get(self.m))?;
         } else {
             // Index is at tail, so OOB.
             writeln!(f, "m_index: tail")?;
@@ -57,7 +66,7 @@ impl<T: NativeType> Debug for Block<'_, T> {
         // Find all elements from start.
         let mut current = Vec::with_capacity(self.n_element);
         for _ in 0..self.n_element {
-            current.push(self.alpha[p as usize]);
+            current.push(self.alpha.get(p as usize));
             p = self.next[p as usize];
         }
 
@@ -74,16 +83,19 @@ impl<T: NativeType> Debug for Block<'_, T> {
     }
 }
 
-impl<'a, T: NativeType> Block<'a, T> {
+impl<'a, A> Block<'a, A>
+where A: Indexable + Bounded + IntoIteratorCopied<Item=<A as Indexable>::Item> + Clone,
+<A as Indexable>::Item: NativeType
+{
     fn new(
-        alpha: &'a [T],
+        alpha: A,
         scratch: &'a mut Vec<u8>,
         prev: &'a mut Vec<u32>,
         next: &'a mut Vec<u32>,
     ) -> Self {
         debug_assert!(!alpha.is_empty());
         let k = alpha.len();
-        let pi = arg_sort_ascending(alpha, scratch);
+        let pi = arg_sort_ascending(<A as IntoIteratorCopied>::into_iter(alpha.clone()), scratch, alpha.len());
 
         let m_index = k / 2;
         let m = pi[m_index] as usize;
@@ -300,25 +312,25 @@ impl<'a, T: NativeType> Block<'a, T> {
         self.n_element == 0
     }
 
-    fn peek(&self) -> Option<T> {
+    fn peek(&self) -> Option<<A as Indexable>::Item> {
         if self.at_end() {
             None
         } else {
-            Some(self.alpha[self.m as usize])
+            Some(self.alpha.get(self.m as usize))
         }
     }
 
-    fn peek_previous(&self) -> Option<T> {
+    fn peek_previous(&self) -> Option<<A as Indexable>::Item> {
         let m = self.prev[self.m];
         if m == self.tail as u32 {
             None
         } else {
-            Some(self.alpha[m as usize])
+            Some(self.alpha.get(self.m as usize))
         }
     }
 
-    fn get_pair(&self, i: usize) -> (T, u32) {
-        (self.alpha[i], i as u32)
+    fn get_pair(&self, i: usize) -> (<A as Indexable>::Item, u32) {
+        unsafe { (self.alpha.get_unchecked(i), i as u32) }
     }
 }
 
@@ -331,8 +343,11 @@ trait LenGet {
     fn reverse(&mut self);
 }
 
-impl<T: NativeType> LenGet for &mut Block<'_, T> {
-    type Item = T;
+impl<'a, A> LenGet for &mut Block<'a, A>
+    where A: Indexable + Bounded + IntoIteratorCopied<Item=<A as Indexable>::Item> + Clone,
+          <A as Indexable>::Item: NativeType
+{
+    type Item = <A as Indexable>::Item;
 
     fn len(&self) -> usize {
         self.n_element
@@ -348,13 +363,18 @@ impl<T: NativeType> LenGet for &mut Block<'_, T> {
     }
 }
 
-struct BlockUnion<'a, T: NativeType> {
-    block_left: &'a mut Block<'a, T>,
-    block_right: &'a mut Block<'a, T>,
+struct BlockUnion<'a, A: Indexable>
+where A::Item: NativeType
+{
+    block_left: &'a mut Block<'a, A>,
+    block_right: &'a mut Block<'a, A>,
 }
 
-impl<'a, T: NativeType> BlockUnion<'a, T> {
-    fn new(block_left: &'a mut Block<'a, T>, block_right: &'a mut Block<'a, T>, k: usize) -> Self {
+impl<'a, A> BlockUnion<'a, A>
+where A: Indexable + Bounded + IntoIteratorCopied<Item=<A as Indexable>::Item> + Clone,
+<A as Indexable>::Item: NativeType
+{
+    fn new(block_left: &'a mut Block<'a, A>, block_right: &'a mut Block<'a, A>, k: usize) -> Self {
         let out = Self {
             block_left,
             block_right,
@@ -370,8 +390,11 @@ impl<'a, T: NativeType> BlockUnion<'a, T> {
     }
 }
 
-impl<T: NativeType> LenGet for BlockUnion<'_, T> {
-    type Item = T;
+impl<'a, A> LenGet for BlockUnion<'a, A>
+    where A: Indexable + Bounded + IntoIteratorCopied<Item=<A as Indexable>::Item> + Clone,
+          <A as Indexable>::Item: NativeType
+{
+    type Item = <A as Indexable>::Item;
 
     fn len(&self) -> usize {
         self.block_left.n_element + self.block_right.n_element
@@ -496,9 +519,10 @@ where
     }
 }
 
-pub fn rolling_quantile<T>(k: usize, slice: &[T], quantile: f64) -> Vec<T>
-where
-    T: IsFloat + NativeType + Sub + NumCast + Sub<Output = T> + Mul<Output = T> + Add<Output = T>,
+pub fn rolling_quantile<A>(k: usize, slice: A, quantile: f64) -> Vec<<A as Indexable>::Item>
+where A: Indexable + SliceAble + Bounded + IntoIteratorCopied<Item=<A as Indexable>::Item> + Clone,
+<A as Indexable>::Item: NativeType + NumCast + Sub<Output = <A as Indexable>::Item> + Mul<Output = <A as Indexable>::Item> + Add<Output = <A as Indexable>::Item>
+
 {
     let mut scratch_left = vec![];
     let mut prev_left = vec![];
@@ -509,7 +533,7 @@ where
     let mut next_right = vec![];
 
     let k = std::cmp::min(k, slice.len());
-    let alpha = &slice[..k];
+    let alpha = slice.slice(0..k);
 
     let mut out = Vec::with_capacity(slice.len());
 
@@ -532,7 +556,7 @@ where
     };
     let mut block_right = unsafe {
         Block::new(
-            &alpha[..1],
+            slice.slice(0..1),
             &mut *scratch_right_ptr,
             &mut *prev_right_ptr,
             &mut *next_right_ptr,
@@ -561,7 +585,7 @@ where
         //   - WINDOW -
         // |--------------|
         let end = std::cmp::min((i + 1) * k, slice.len());
-        let alpha = &slice[i * k..end];
+        let alpha = slice.slice(i * k..end);
 
         if alpha.is_empty() {
             break;
@@ -601,11 +625,11 @@ mod test {
     #[test]
     fn test_block_1() {
         //                    0, 1, 2, 3, 4, 5, 6, 7
-        let values = [2, 8, 5, 9, 1, 3, 4, 10];
+        let values = [2, 8, 5, 9, 1, 3, 4, 10].as_ref();
         let mut scratch = vec![];
         let mut prev = vec![];
         let mut next = vec![];
-        let mut b = Block::new(&values, &mut scratch, &mut prev, &mut next);
+        let mut b = Block::new(values, &mut scratch, &mut prev, &mut next);
 
         // Unwind to get temporal window
         b.unwind();
@@ -662,11 +686,11 @@ mod test {
 
     #[test]
     fn test_block_2() {
-        let values = [9, 1, 2];
+        let values = [9, 1, 2].as_ref();
         let mut scratch = vec![];
         let mut prev = vec![];
         let mut next = vec![];
-        let mut b = Block::new(&values, &mut scratch, &mut prev, &mut next);
+        let mut b = Block::new(values, &mut scratch, &mut prev, &mut next);
 
         b.unwind();
         b.undelete_set_median(0);
@@ -685,12 +709,12 @@ mod test {
         let mut scratch = vec![];
         let mut prev = vec![];
         let mut next = vec![];
-        let mut a = Block::new(&alpha_a, &mut scratch, &mut prev, &mut next);
+        let mut a = Block::new(alpha_a.as_ref(), &mut scratch, &mut prev, &mut next);
 
         let mut scratch = vec![];
         let mut prev = vec![];
         let mut next = vec![];
-        let mut b = Block::new(&alpha_b, &mut scratch, &mut prev, &mut next);
+        let mut b = Block::new(alpha_b.as_ref(), &mut scratch, &mut prev, &mut next);
 
         b.unwind();
         let mut aub = BlockUnion::new(&mut a, &mut b, alpha_a.len());
@@ -734,18 +758,18 @@ mod test {
 
     #[test]
     fn test_block_union_2() {
-        let alpha_a = [3, 4, 5, 7, 3, 9, 2, 6, 9, 8];
-        let alpha_b = [2, 2, 1, 7, 5, 3, 2, 6, 1, 7];
+        let alpha_a = [3, 4, 5, 7, 3, 9, 2, 6, 9, 8].as_ref();
+        let alpha_b = [2, 2, 1, 7, 5, 3, 2, 6, 1, 7].as_ref();
 
         let mut scratch = vec![];
         let mut prev = vec![];
         let mut next = vec![];
-        let mut a = Block::new(&alpha_a, &mut scratch, &mut prev, &mut next);
+        let mut a = Block::new(alpha_a, &mut scratch, &mut prev, &mut next);
 
         let mut scratch = vec![];
         let mut prev = vec![];
         let mut next = vec![];
-        let mut b = Block::new(&alpha_b, &mut scratch, &mut prev, &mut next);
+        let mut b = Block::new(alpha_b, &mut scratch, &mut prev, &mut next);
 
         b.unwind();
         let mut aub = BlockUnion::new(&mut a, &mut b, alpha_a.len());
@@ -893,23 +917,23 @@ mod test {
     fn test_median_1() {
         let values = [
             2.0, 8.0, 5.0, 9.0, 1.0, 2.0, 4.0, 2.0, 4.0, 8.1, -1.0, 2.9, 1.2, 23.0,
-        ];
-        let out = rolling_quantile(3, &values, 0.5);
+        ].as_ref();
+        let out = rolling_quantile(3, values, 0.5);
         let expected = [
             2.0, 5.0, 5.0, 8.0, 5.0, 2.0, 2.0, 2.0, 4.0, 4.0, 4.0, 2.9, 1.2, 2.9,
         ];
         assert_eq!(out, expected);
-        let out = rolling_quantile(5, &values, 0.5);
+        let out = rolling_quantile(5, values, 0.5);
         let expected = [
             2.0, 5.0, 5.0, 6.5, 5.0, 5.0, 4.0, 2.0, 2.0, 4.0, 4.0, 2.9, 2.9, 2.9,
         ];
         assert_eq!(out, expected);
-        let out = rolling_quantile(7, &values, 0.5);
+        let out = rolling_quantile(7, values, 0.5);
         let expected = [
             2.0, 5.0, 5.0, 6.5, 5.0, 3.5, 4.0, 4.0, 4.0, 4.0, 2.0, 2.9, 2.9, 2.9,
         ];
         assert_eq!(out, expected);
-        let out = rolling_quantile(4, &values, 0.5);
+        let out = rolling_quantile(4, values, 0.5);
         let expected = [
             2.0, 5.0, 5.0, 6.5, 6.5, 3.5, 3.0, 2.0, 3.0, 4.0, 3.0, 3.45, 2.05, 2.05,
         ];
@@ -918,8 +942,8 @@ mod test {
 
     #[test]
     fn test_median_2() {
-        let values = [10, 10, 15, 13, 9, 5, 3, 13, 19, 15, 19];
-        let out = rolling_quantile(3, &values, 0.5);
+        let values = [10, 10, 15, 13, 9, 5, 3, 13, 19, 15, 19].as_ref();
+        let out = rolling_quantile(3, values, 0.5);
         let expected = [10, 10, 10, 13, 13, 9, 5, 5, 13, 15, 19];
         assert_eq!(out, expected);
     }

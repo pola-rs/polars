@@ -447,15 +447,15 @@ impl<T: NativeType> SliceAble for PrimitiveArray<T> {
         self.clone().sliced_unchecked(range.start, range.len())
     }
 
-    unsafe fn slice(&self, range: Range<usize>) -> Self {
+    fn slice(&self, range: Range<usize>) -> Self {
         self.clone().sliced(range.start, range.len())
     }
 }
 
 impl<T: NativeType> Indexable for PrimitiveArray<T> {
-    type Item<'a> = Option<T>;
+    type Item = Option<T>;
 
-    fn get(&self, i: usize) -> Self::Item<'_> {
+    fn get(&self, i: usize) -> Self::Item {
         if !self.is_null(i) {
             // soundness: Array::is_null panics if i >= self.len
             unsafe { Some(self.value_unchecked(i)) }
@@ -464,7 +464,7 @@ impl<T: NativeType> Indexable for PrimitiveArray<T> {
         }
     }
 
-    unsafe fn get_unchecked(&self, i: usize) -> Self::Item<'_> {
+    unsafe fn get_unchecked(&self, i: usize) -> Self::Item {
         if !self.is_null_unchecked(i) {
             Some(self.value_unchecked(i))
         } else {

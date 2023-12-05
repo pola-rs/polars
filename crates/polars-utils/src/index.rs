@@ -3,29 +3,41 @@ use polars_error::{polars_bail, polars_ensure, PolarsResult};
 use crate::slice::GetSaferUnchecked;
 use crate::IdxSize;
 
-pub trait Indexable {
-    type Item<'a>
-    where
-        Self: 'a;
+pub trait Bounded {
+    fn len(&self) -> usize;
 
-    fn get(&self, i: usize) -> Self::Item<'_>;
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+impl<T> Bounded for &[T] {
+    fn len(&self) -> usize {
+        <[T]>::len(self)
+    }
+}
+
+pub trait Indexable {
+    type Item;
+
+    fn get(&self, i: usize) -> Self::Item;
 
     /// # Safety
     /// Doesn't do any bound checks.
-    unsafe fn get_unchecked(&self, i: usize) -> Self::Item<'_>;
+    unsafe fn get_unchecked(&self, i: usize) -> Self::Item;
 }
 
-impl<T> Indexable for &[T] {
-    type Item<'a> = &'a T where Self: 'a;
+impl<T: Copy> Indexable for &[T] {
+    type Item = T;
 
-    fn get(&self, i: usize) -> Self::Item<'_> {
-        &self[i]
+    fn get(&self, i: usize) -> Self::Item {
+        self[i]
     }
 
     /// # Safety
     /// Doesn't do any bound checks.
-    unsafe fn get_unchecked(&self, i: usize) -> Self::Item<'_> {
-        self.get_unchecked_release(i)
+    unsafe fn get_unchecked(&self, i: usize) -> Self::Item {
+        *self.get_unchecked_release(i)
     }
 }
 

@@ -91,29 +91,29 @@ unsafe fn assume_init_mut<T>(slice: &mut [MaybeUninit<T>]) -> &mut [T] {
     &mut *(slice as *mut [MaybeUninit<T>] as *mut [T])
 }
 
-pub fn arg_sort_ascending<'a, T: TotalOrd + Copy + 'a, I>(
-    v: &[T],
+pub fn arg_sort_ascending<'a, T: TotalOrd + Copy + 'a, Idx, I: IntoIterator<Item=T>>(
+    v: I,
     scratch: &'a mut Vec<u8>,
-) -> &'a mut [I]
+    n: usize
+) -> &'a mut [Idx]
 where
-    I: FromPrimitive + Copy,
+    Idx: FromPrimitive + Copy,
 {
     // Needed to be able to write back to back in the same buffer.
-    debug_assert_eq!(std::mem::align_of::<T>(), std::mem::align_of::<(T, I)>());
-    let n = v.len();
-    let size = std::mem::size_of::<(T, I)>();
-    let upper_bound = size * v.len() + size;
+    debug_assert_eq!(std::mem::align_of::<T>(), std::mem::align_of::<(T, Idx)>());
+    let size = std::mem::size_of::<(T, Idx)>();
+    let upper_bound = size * n + size;
     scratch.reserve(upper_bound);
     let scratch_slice = unsafe {
         let cap_slice = scratch.spare_capacity_mut();
-        let (_, scratch_slice, _) = cap_slice.align_to_mut::<MaybeUninit<(T, I)>>();
+        let (_, scratch_slice, _) = cap_slice.align_to_mut::<MaybeUninit<(T, Idx)>>();
         &mut scratch_slice[..n]
     };
 
-    for ((i, v), dst) in v.iter().enumerate().zip(scratch_slice.iter_mut()) {
-        *dst = MaybeUninit::new((*v, I::from_usize(i).unwrap()));
+    for ((i, v), dst) in v.into_iter().enumerate().zip(scratch_slice.iter_mut()) {
+        *dst = MaybeUninit::new((v, Idx::from_usize(i).unwrap()));
     }
-    debug_assert_eq!(v.len(), scratch_slice.len());
+    debug_assert_eq!(n, scratch_slice.len());
 
     let scratch_slice = unsafe { assume_init_mut(scratch_slice) };
     scratch_slice.sort_by(|key1, key2| key1.0.tot_cmp(&key2.0));
@@ -123,7 +123,7 @@ where
     unsafe {
         let src = scratch_slice.as_ptr();
 
-        let (_, scratch_slice_aligned_to_idx, _) = scratch_slice.align_to_mut::<I>();
+        let (_, scratch_slice_aligned_to_idx, _) = scratch_slice.align_to_mut::<Idx>();
 
         let dst = scratch_slice_aligned_to_idx.as_mut_ptr();
 
@@ -143,7 +143,7 @@ mod test {
         let array = &[3, 1, 9, 23, 2];
 
         let scratch = &mut vec![];
-        let out = arg_sort_ascending(array, scratch);
+        let out = arg_sort_ascending(array, scratch, array.len());
 
         dbg!(out);
     }
