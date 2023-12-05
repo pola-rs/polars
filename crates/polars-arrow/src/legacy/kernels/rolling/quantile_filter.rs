@@ -9,10 +9,11 @@ use std::ops::{Add, Mul, Sub};
 use num_traits::NumCast;
 use polars_utils::float::IsFloat;
 use polars_utils::sort::arg_sort_ascending;
+use polars_utils::total_ord::TotalOrd;
 
 use crate::types::NativeType;
 
-struct Block<'a, T: NativeType + IsFloat> {
+struct Block<'a, T: NativeType> {
     k: usize,
     tail: usize,
     n_element: usize,
@@ -26,7 +27,7 @@ struct Block<'a, T: NativeType + IsFloat> {
     current_index: usize,
 }
 
-impl<T: NativeType + IsFloat> Debug for Block<'_, T> {
+impl<T: NativeType> Debug for Block<'_, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.n_element == 0 {
             return writeln!(f, "empty block");
@@ -73,7 +74,7 @@ impl<T: NativeType + IsFloat> Debug for Block<'_, T> {
     }
 }
 
-impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
+impl<'a, T: NativeType> Block<'a, T> {
     fn new(
         alpha: &'a [T],
         scratch: &'a mut Vec<u8>,
@@ -139,6 +140,7 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
         self.n_element = 0;
     }
 
+    #[cfg(test)]
     fn set_median(&mut self) {
         // median index position
         let new_index = self.n_element / 2;
@@ -184,6 +186,7 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
         }
     }
 
+    #[cfg(test)]
     fn reset(&mut self) {
         self.current_index = 0;
         self.m = self.next[self.tail] as usize;
@@ -202,7 +205,7 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
 
         self.n_element -= 1;
 
-        match delete.partial_cmp(&current).unwrap() {
+        match delete.tot_cmp(&current) {
             Ordering::Less => {
                 // 1, 2, [3], 4, 5
                 //    2, [3], 4, 5
@@ -256,7 +259,7 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
 
         self.n_element += 1;
 
-        match added.partial_cmp(&current).unwrap() {
+        match added.tot_cmp(&current) {
             Ordering::Less => {
                 //    2, [3], 4, 5
                 // 1, 2, [3], 4, 5
@@ -277,11 +280,13 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
         };
     }
 
+    #[cfg(test)]
     fn delete_set_median(&mut self, i: usize) {
         self.delete(i);
         self.set_median()
     }
 
+    #[cfg(test)]
     fn undelete_set_median(&mut self, i: usize) {
         self.undelete(i);
         self.set_median()
@@ -326,7 +331,7 @@ trait LenGet {
     fn reverse(&mut self);
 }
 
-impl<T: IsFloat + PartialOrd + NativeType> LenGet for &mut Block<'_, T> {
+impl<T: NativeType> LenGet for &mut Block<'_, T> {
     type Item = T;
 
     fn len(&self) -> usize {
@@ -343,12 +348,12 @@ impl<T: IsFloat + PartialOrd + NativeType> LenGet for &mut Block<'_, T> {
     }
 }
 
-struct BlockUnion<'a, T: IsFloat + PartialOrd + NativeType> {
+struct BlockUnion<'a, T: NativeType> {
     block_left: &'a mut Block<'a, T>,
     block_right: &'a mut Block<'a, T>,
 }
 
-impl<'a, T: IsFloat + PartialOrd + NativeType> BlockUnion<'a, T> {
+impl<'a, T: NativeType> BlockUnion<'a, T> {
     fn new(block_left: &'a mut Block<'a, T>, block_right: &'a mut Block<'a, T>, k: usize) -> Self {
         let out = Self {
             block_left,
@@ -365,7 +370,7 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> BlockUnion<'a, T> {
     }
 }
 
-impl<T: IsFloat + PartialOrd + NativeType> LenGet for BlockUnion<'_, T> {
+impl<T: NativeType> LenGet for BlockUnion<'_, T> {
     type Item = T;
 
     fn len(&self) -> usize {
@@ -409,7 +414,7 @@ impl<T: IsFloat + PartialOrd + NativeType> LenGet for BlockUnion<'_, T> {
                     self.block_right.advance();
                 },
                 (Some(left), Some(right)) => {
-                    match left.partial_cmp(&right).unwrap() {
+                    match left.tot_cmp(&right) {
                         // On equality, take the left as that one was first.
                         Ordering::Equal | Ordering::Less => {
                             if s == i {
@@ -442,7 +447,7 @@ impl<T: IsFloat + PartialOrd + NativeType> LenGet for BlockUnion<'_, T> {
             (None, Some(_)) => {
                 self.block_right.reverse();
             },
-            (Some(left), Some(right)) => match left.partial_cmp(&right).unwrap() {
+            (Some(left), Some(right)) => match left.tot_cmp(&right) {
                 Ordering::Equal | Ordering::Less => {
                     self.block_right.reverse();
                 },
@@ -480,27 +485,20 @@ where
         let idx = float_idx_top.floor() as usize;
         let top_idx = float_idx_top.ceil() as usize;
 
-        return if idx == top_idx {
+        if idx == top_idx {
             self.inner.get(idx)
         } else {
             let proportion: M::Item = NumCast::from(float_idx_top - idx as f64).unwrap();
             let vi = self.inner.get(idx);
             let vj = self.inner.get(top_idx);
             proportion * (vj - vi) + vi
-        };
+        }
     }
 }
 
 pub fn rolling_quantile<T>(k: usize, slice: &[T], quantile: f64) -> Vec<T>
 where
-    T: IsFloat
-        + NativeType
-        + PartialOrd
-        + Sub
-        + NumCast
-        + Sub<Output = T>
-        + Mul<Output = T>
-        + Add<Output = T>,
+    T: IsFloat + NativeType + Sub + NumCast + Sub<Output = T> + Mul<Output = T> + Add<Output = T>,
 {
     let mut scratch_left = vec![];
     let mut prev_left = vec![];
@@ -596,6 +594,7 @@ where
     out
 }
 
+#[cfg(test)]
 mod test {
     use super::*;
 

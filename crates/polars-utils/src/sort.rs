@@ -6,6 +6,7 @@ use rayon::ThreadPool;
 
 use crate::float::IsFloat;
 use crate::ord::compare_fn_nan_max;
+use crate::total_ord::TotalOrd;
 use crate::IdxSize;
 
 /// This is a perfect sort particularly useful for an arg_sort of an arg_sort
@@ -90,7 +91,7 @@ unsafe fn assume_init_mut<T>(slice: &mut [MaybeUninit<T>]) -> &mut [T] {
     &mut *(slice as *mut [MaybeUninit<T>] as *mut [T])
 }
 
-pub fn arg_sort_ascending<'a, T: IsFloat + PartialOrd + Copy + 'a, I>(
+pub fn arg_sort_ascending<'a, T: TotalOrd + Copy + 'a, I>(
     v: &[T],
     scratch: &'a mut Vec<u8>,
 ) -> &'a mut [I]
@@ -115,7 +116,7 @@ where
     debug_assert_eq!(v.len(), scratch_slice.len());
 
     let scratch_slice = unsafe { assume_init_mut(scratch_slice) };
-    scratch_slice.sort_by(|key1, key2| compare_fn_nan_max(&key1.0, &key2.0));
+    scratch_slice.sort_by(|key1, key2| key1.0.tot_cmp(&key2.0));
 
     // now we write the indexes in the same array.
     // So from <T, Idxsize> to <IdxSize>

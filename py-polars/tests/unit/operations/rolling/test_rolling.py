@@ -834,4 +834,6 @@ def test_rolling_median() -> None:
         array = np.random.randint(0, 20, n)
         for k in [3, 5, 7]:
             a = pl.Series(array)
-            assert_series_equal( a.rolling_median(k), pl.from_pandas(a.to_pandas().rolling(k).median()))
+            assert_series_equal(
+                a.rolling_median(k), pl.from_pandas(a.to_pandas().rolling(k).median())
+            )
