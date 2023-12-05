@@ -76,6 +76,7 @@ features = [
   "semi_anti_join",
   "serde-lazy",
   "string_encoding",
+  "string_reverse",
   "string_to_integer",
   "string_pad",
   "strings",
