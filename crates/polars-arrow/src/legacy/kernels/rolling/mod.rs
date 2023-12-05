@@ -1,4 +1,4 @@
-mod median_filter;
+mod quantile_filter;
 pub mod no_nulls;
 pub mod nulls;
 mod window;

@@ -10,7 +10,6 @@ use num_traits::NumCast;
 use polars_utils::float::IsFloat;
 use polars_utils::sort::arg_sort_ascending;
 
-use crate::legacy::kernels::rolling::Idx;
 use crate::types::NativeType;
 
 struct Block<'a, T: NativeType + IsFloat> {
@@ -147,7 +146,7 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
     }
 
     fn traverse_to_index(&mut self, i: usize) {
-        match (i as i64 - self.current_index as i64) {
+        match i as i64 - self.current_index as i64 {
             0 => {
                 // pass
             },
@@ -316,10 +315,6 @@ impl<'a, T: IsFloat + PartialOrd + NativeType> Block<'a, T> {
     fn get_pair(&self, i: usize) -> (T, u32) {
         (self.alpha[i], i as u32)
     }
-
-    fn is_small(&self, i: usize) -> bool {
-        self.at_end() || self.get_pair(i) < self.get_pair(self.m as usize)
-    }
 }
 
 trait LenGet {
@@ -354,7 +349,8 @@ struct BlockUnion<'a, T: IsFloat + PartialOrd + NativeType> {
 }
 
 impl<'a, T: IsFloat + PartialOrd + NativeType> BlockUnion<'a, T> {
-    fn new(block_left: &'a mut Block<'a, T>, block_right: &'a mut Block<'a, T>, k: usize) -> Self {
+    fn new(
+        block_left: &'a mut Block<'a, T>, block_right: &'a mut Block<'a, T>, k: usize) -> Self {
         let out = Self {
             block_left,
             block_right,
@@ -413,7 +409,7 @@ impl<T: IsFloat + PartialOrd + NativeType> LenGet for BlockUnion<'_, T> {
                     self.block_right.advance();
                 },
                 (Some(left), Some(right)) => {
-                    match (left.partial_cmp(&right).unwrap()) {
+                    match left.partial_cmp(&right).unwrap() {
                         // On equality, take the left as that one was first.
                         Ordering::Equal | Ordering::Less => {
                             if s == i {
@@ -448,7 +444,7 @@ impl<T: IsFloat + PartialOrd + NativeType> LenGet for BlockUnion<'_, T> {
                 self.block_right.reverse();
             },
             (Some(left), Some(right)) => {
-                match (left.partial_cmp(&right).unwrap()) {
+                match left.partial_cmp(&right).unwrap() {
                     Ordering::Equal | Ordering::Less => {
                         self.block_right.reverse();
                     },
@@ -462,11 +458,12 @@ impl<T: IsFloat + PartialOrd + NativeType> LenGet for BlockUnion<'_, T> {
     }
 }
 
-struct MedianUpdate<M: LenGet> {
+struct QuantileUpdate<M: LenGet> {
     inner: M,
+    quantile: f64,
 }
 
-impl<M> MedianUpdate<M>
+impl<M> QuantileUpdate<M>
 where
     M: LenGet,
     <M as LenGet>::Item: Sub<Output = <M as LenGet>::Item>
@@ -474,16 +471,18 @@ where
         + Add<Output = <M as LenGet>::Item>
         + NumCast,
 {
-    fn new(inner: M) -> Self {
-        Self { inner }
+    fn new(quantile: f64, inner: M) -> Self {
+        Self {
+            quantile,
+            inner }
     }
 
-    fn median(&mut self) -> M::Item {
+    fn quantile(&mut self) -> M::Item {
         let lenght = self.inner.len();
         let length_f = lenght as f64;
-        let idx = ((length_f - 1.0) * 0.5).floor() as usize;
 
-        let float_idx_top = (length_f - 1.0) * 0.5;
+        let float_idx_top = (length_f - 1.0) * self.quantile;
+        let idx = float_idx_top.floor() as usize;
         let top_idx = float_idx_top.ceil() as usize;
 
         return if idx == top_idx {
@@ -498,7 +497,7 @@ where
     }
 }
 
-fn rolling_median<T>(k: usize, slice: &[T]) -> Vec<T>
+fn rolling_quantile<T>(k: usize, slice: &[T], quantile: f64) -> Vec<T>
 where
     T: IsFloat
         + NativeType
@@ -556,8 +555,8 @@ where
     for i in 0..block_left.capacity() {
         block_left.undelete(i);
 
-        let mut mu = MedianUpdate::new(&mut block_left);
-        out.push(mu.median());
+        let mut mu = QuantileUpdate::new(quantile, &mut block_left);
+        out.push(mu.quantile());
     }
     for i in 1..n_blocks + 1 {
         // Block left is now completely full as it is completely filled coming from the boundary effects.
@@ -601,7 +600,7 @@ where
                 let mut union = BlockUnion::new(&mut *ptr_left, &mut *ptr_right, k);
                 union.set_state(j);
 
-                out.push((MedianUpdate::new(union).median()));
+                out.push(QuantileUpdate::new(quantile, union).quantile());
             }
         }
 
@@ -907,16 +906,16 @@ mod test {
     #[test]
     fn test_median() {
         let values = [2.0, 8.0, 5.0, 9.0, 1.0, 2.0, 4.0, 2.0, 4.0, 8.1, -1.0, 2.9, 1.2, 23.0];
-        let out = rolling_median(3, &values);
+        let out = rolling_quantile(3, &values, 0.5);
         let expected = [2.0, 5.0, 5.0, 8.0, 5.0, 2.0, 2.0, 2.0, 4.0, 4.0, 4.0, 2.9, 1.2, 2.9];
         assert_eq!(out, expected);
-        let out = rolling_median(5, &values);
+        let out = rolling_quantile(5, &values, 0.5);
         let expected = [2.0, 5.0, 5.0, 6.5, 5.0, 5.0, 4.0, 2.0, 2.0, 4.0, 4.0, 2.9, 2.9, 2.9];
         assert_eq!(out, expected);
-        let out = rolling_median(7, &values);
+        let out = rolling_quantile(7, &values, 0.5);
         let expected = [2.0, 5.0, 5.0, 6.5, 5.0, 3.5, 4.0, 4.0, 4.0, 4.0, 2.0, 2.9, 2.9, 2.9];
         assert_eq!(out, expected);
-        let out = rolling_median(4, &values);
+        let out = rolling_quantile(4, &values, 0.5);
         let expected = [2.0, 5.0, 5.0, 6.5, 6.5, 3.5, 3.0, 2.0, 3.0, 4.0, 3.0, 3.45, 2.05, 2.05];
         assert_eq!(out, expected);
     }

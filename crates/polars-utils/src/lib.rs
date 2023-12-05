@@ -39,6 +39,5 @@ pub mod index;
 pub mod io;
 pub mod nulls;
 pub mod ord;
-mod doubly_linked_list;
 
 pub use io::open_file;
