@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use either::Either;
 
 use super::Array;
@@ -18,6 +20,8 @@ mod iterator;
 mod mutable;
 pub use mutable::*;
 use polars_error::{polars_bail, PolarsResult};
+use polars_utils::index::Indexable;
+use polars_utils::slice::SliceAble;
 
 /// A [`PrimitiveArray`] is Arrow's semantically equivalent of an immutable `Vec<Option<T>>` where
 /// T is [`NativeType`] (e.g. [`i32`]). It implements [`Array`].
@@ -190,18 +194,18 @@ impl<T: NativeType> PrimitiveArray<T> {
         *self.values.get_unchecked(i)
     }
 
-    /// Returns the element at index `i` or `None` if it is null
-    /// # Panics
-    /// iff `i >= self.len()`
-    #[inline]
-    pub fn get(&self, i: usize) -> Option<T> {
-        if !self.is_null(i) {
-            // soundness: Array::is_null panics if i >= self.len
-            unsafe { Some(self.value_unchecked(i)) }
-        } else {
-            None
-        }
-    }
+    // /// Returns the element at index `i` or `None` if it is null
+    // /// # Panics
+    // /// iff `i >= self.len()`
+    // #[inline]
+    // pub fn get(&self, i: usize) -> Option<T> {
+    //     if !self.is_null(i) {
+    //         // soundness: Array::is_null panics if i >= self.len
+    //         unsafe { Some(self.value_unchecked(i)) }
+    //     } else {
+    //         None
+    //     }
+    // }
 
     /// Slices this [`PrimitiveArray`] by an offset and length.
     /// # Implementation
@@ -435,6 +439,37 @@ impl<T: NativeType> Array for PrimitiveArray<T> {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
+    }
+}
+
+impl<T: NativeType> SliceAble for PrimitiveArray<T> {
+    unsafe fn slice_unchecked(&self, range: Range<usize>) -> Self {
+        self.clone().sliced_unchecked(range.start, range.len())
+    }
+
+    unsafe fn slice(&self, range: Range<usize>) -> Self {
+        self.clone().sliced(range.start, range.len())
+    }
+}
+
+impl<T: NativeType> Indexable for PrimitiveArray<T> {
+    type Item<'a> = Option<T>;
+
+    fn get(&self, i: usize) -> Self::Item<'_> {
+        if !self.is_null(i) {
+            // soundness: Array::is_null panics if i >= self.len
+            unsafe { Some(self.value_unchecked(i)) }
+        } else {
+            None
+        }
+    }
+
+    unsafe fn get_unchecked(&self, i: usize) -> Self::Item<'_> {
+        if !self.is_null_unchecked(i) {
+            Some(self.value_unchecked(i))
+        } else {
+            None
+        }
     }
 }
 
