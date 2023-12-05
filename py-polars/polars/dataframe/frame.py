@@ -2049,6 +2049,7 @@ class DataFrame:
         structured: bool = False,  # noqa: FBT001
         *,
         order: IndexOrder = "fortran",
+        use_pyarrow: bool = True,
     ) -> np.ndarray[Any, Any]:
         """
         Convert DataFrame to a 2D NumPy array.
@@ -2060,6 +2061,7 @@ class DataFrame:
         structured
             Optionally return a structured array, with field names and
             dtypes that correspond to the DataFrame schema.
+
         order
             The index order of the returned NumPy array, either C-like or
             Fortran-like. In general, using the Fortran-like index order is faster.
@@ -2068,11 +2070,16 @@ class DataFrame:
             one-dimensional array. Note that this option only takes effect if
             `structured` is set to `False` and the DataFrame dtypes allow for a
             global dtype for all columns.
+        use_pyarrow
+            Use `pyarrow.Array.to_numpy
+            <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
+
+            function for the conversion to numpy if necessary.
 
         Notes
         -----
-        If you're attempting to convert Utf8 to an array you'll need to install
-        `pyarrow`.
+        If you're attempting to convert Utf8 or Decimal to an array, you'll need to
+        install `pyarrow`.
 
         Examples
         --------
@@ -2112,7 +2119,7 @@ class DataFrame:
             arrays = []
             for c, tp in self.schema.items():
                 s = self[c]
-                a = s.to_numpy()
+                a = s.to_numpy(use_pyarrow=use_pyarrow)
                 arrays.append(
                     a.astype(str, copy=False)
                     if tp == Utf8 and not s.null_count()
@@ -2128,7 +2135,10 @@ class DataFrame:
             out = self._df.to_numpy(order)
             if out is None:
                 return np.vstack(
-                    [self.to_series(i).to_numpy() for i in range(self.width)]
+                    [
+                        self.to_series(i).to_numpy(use_pyarrow=use_pyarrow)
+                        for i in range(self.width)
+                    ]
                 ).T
 
         return out

@@ -4040,9 +4040,9 @@ class Series:
                 *args, zero_copy_only=zero_copy_only, writable=writable
             )
 
-        elif self.dtype == Time:
+        elif self.dtype in (Time, Decimal):
             raise_no_zero_copy()
-            # note: there is no native numpy "time" dtype
+            # note: there are no native numpy "time" or "decimal" dtypes
             return np.array(self.to_list(), dtype="object")
         else:
             if not self.null_count():

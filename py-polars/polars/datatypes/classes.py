@@ -50,6 +50,10 @@ class DataTypeClass(type):
         ...
 
     @classmethod
+    def is_decimal(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
     def is_integer(cls) -> bool:  # noqa: D102
         ...
 
@@ -171,6 +175,11 @@ class DataType(metaclass=DataTypeClass):
     def is_numeric(cls) -> bool:
         """Check whether the data type is a numeric type."""
         return issubclass(cls, NumericType)
+
+    @classmethod
+    def is_decimal(cls) -> bool:
+        """Check whether the data type is a decimal type."""
+        return issubclass(cls, Decimal)
 
     @classmethod
     def is_integer(cls) -> bool:
