@@ -349,8 +349,7 @@ struct BlockUnion<'a, T: IsFloat + PartialOrd + NativeType> {
 }
 
 impl<'a, T: IsFloat + PartialOrd + NativeType> BlockUnion<'a, T> {
-    fn new(
-        block_left: &'a mut Block<'a, T>, block_right: &'a mut Block<'a, T>, k: usize) -> Self {
+    fn new(block_left: &'a mut Block<'a, T>, block_right: &'a mut Block<'a, T>, k: usize) -> Self {
         let out = Self {
             block_left,
             block_right,
@@ -418,8 +417,7 @@ impl<T: IsFloat + PartialOrd + NativeType> LenGet for BlockUnion<'_, T> {
                             self.block_left.advance();
                         },
                         Ordering::Greater => {
-                            if s == i
-                            {
+                            if s == i {
                                 return right;
                             }
                             self.block_right.advance();
@@ -443,17 +441,15 @@ impl<T: IsFloat + PartialOrd + NativeType> LenGet for BlockUnion<'_, T> {
             (None, Some(_)) => {
                 self.block_right.reverse();
             },
-            (Some(left), Some(right)) => {
-                match left.partial_cmp(&right).unwrap() {
-                    Ordering::Equal | Ordering::Less => {
-                        self.block_right.reverse();
-                    },
-                    Ordering::Greater => {
-                        self.block_left.reverse();
-                    },
-                }
+            (Some(left), Some(right)) => match left.partial_cmp(&right).unwrap() {
+                Ordering::Equal | Ordering::Less => {
+                    self.block_right.reverse();
+                },
+                Ordering::Greater => {
+                    self.block_left.reverse();
+                },
             },
-            (None, None) => {}
+            (None, None) => {},
         }
     }
 }
@@ -472,9 +468,7 @@ where
         + NumCast,
 {
     fn new(quantile: f64, inner: M) -> Self {
-        Self {
-            quantile,
-            inner }
+        Self { quantile, inner }
     }
 
     fn quantile(&mut self) -> M::Item {
@@ -497,7 +491,7 @@ where
     }
 }
 
-fn rolling_quantile<T>(k: usize, slice: &[T], quantile: f64) -> Vec<T>
+pub fn rolling_quantile<T>(k: usize, slice: &[T], quantile: f64) -> Vec<T>
 where
     T: IsFloat
         + NativeType
@@ -572,7 +566,7 @@ where
         let alpha = &slice[i * k..end];
 
         if alpha.is_empty() {
-            break
+            break;
         }
 
         // Find the scratch that belongs to the left window that has gone out of scope
@@ -582,14 +576,7 @@ where
             (scratch_right_ptr, prev_right_ptr, next_right_ptr)
         };
 
-        block_right = unsafe {
-            Block::new(
-                alpha,
-                &mut *scratch,
-                &mut *prev,
-                &mut *next,
-            )
-        };
+        block_right = unsafe { Block::new(alpha, &mut *scratch, &mut *prev, &mut *next) };
 
         // Time reverse the rhs so we can undelete in sorted order.
         block_right.unwind();
@@ -905,18 +892,28 @@ mod test {
 
     #[test]
     fn test_median() {
-        let values = [2.0, 8.0, 5.0, 9.0, 1.0, 2.0, 4.0, 2.0, 4.0, 8.1, -1.0, 2.9, 1.2, 23.0];
+        let values = [
+            2.0, 8.0, 5.0, 9.0, 1.0, 2.0, 4.0, 2.0, 4.0, 8.1, -1.0, 2.9, 1.2, 23.0,
+        ];
         let out = rolling_quantile(3, &values, 0.5);
-        let expected = [2.0, 5.0, 5.0, 8.0, 5.0, 2.0, 2.0, 2.0, 4.0, 4.0, 4.0, 2.9, 1.2, 2.9];
+        let expected = [
+            2.0, 5.0, 5.0, 8.0, 5.0, 2.0, 2.0, 2.0, 4.0, 4.0, 4.0, 2.9, 1.2, 2.9,
+        ];
         assert_eq!(out, expected);
         let out = rolling_quantile(5, &values, 0.5);
-        let expected = [2.0, 5.0, 5.0, 6.5, 5.0, 5.0, 4.0, 2.0, 2.0, 4.0, 4.0, 2.9, 2.9, 2.9];
+        let expected = [
+            2.0, 5.0, 5.0, 6.5, 5.0, 5.0, 4.0, 2.0, 2.0, 4.0, 4.0, 2.9, 2.9, 2.9,
+        ];
         assert_eq!(out, expected);
         let out = rolling_quantile(7, &values, 0.5);
-        let expected = [2.0, 5.0, 5.0, 6.5, 5.0, 3.5, 4.0, 4.0, 4.0, 4.0, 2.0, 2.9, 2.9, 2.9];
+        let expected = [
+            2.0, 5.0, 5.0, 6.5, 5.0, 3.5, 4.0, 4.0, 4.0, 4.0, 2.0, 2.9, 2.9, 2.9,
+        ];
         assert_eq!(out, expected);
         let out = rolling_quantile(4, &values, 0.5);
-        let expected = [2.0, 5.0, 5.0, 6.5, 6.5, 3.5, 3.0, 2.0, 3.0, 4.0, 3.0, 3.45, 2.05, 2.05];
+        let expected = [
+            2.0, 5.0, 5.0, 6.5, 6.5, 3.5, 3.0, 2.0, 3.0, 4.0, 3.0, 3.45, 2.05, 2.05,
+        ];
         assert_eq!(out, expected);
     }
 }

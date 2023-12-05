@@ -1,10 +1,11 @@
 use std::mem::MaybeUninit;
+
 use num_traits::FromPrimitive;
 use rayon::prelude::*;
 use rayon::ThreadPool;
+
 use crate::float::IsFloat;
 use crate::ord::compare_fn_nan_max;
-
 use crate::IdxSize;
 
 /// This is a perfect sort particularly useful for an arg_sort of an arg_sort
@@ -89,8 +90,12 @@ unsafe fn assume_init_mut<T>(slice: &mut [MaybeUninit<T>]) -> &mut [T] {
     &mut *(slice as *mut [MaybeUninit<T>] as *mut [T])
 }
 
-pub fn arg_sort_ascending<'a, T: IsFloat + PartialOrd + Copy + 'a, I, >(v: &[T], scratch: &'a mut Vec<u8>) -> &'a mut [I]
-where I: FromPrimitive + Copy,
+pub fn arg_sort_ascending<'a, T: IsFloat + PartialOrd + Copy + 'a, I>(
+    v: &[T],
+    scratch: &'a mut Vec<u8>,
+) -> &'a mut [I]
+where
+    I: FromPrimitive + Copy,
 {
     // Needed to be able to write back to back in the same buffer.
     debug_assert_eq!(std::mem::align_of::<T>(), std::mem::align_of::<(T, I)>());
@@ -109,10 +114,8 @@ where I: FromPrimitive + Copy,
     }
     debug_assert_eq!(v.len(), scratch_slice.len());
 
-    let scratch_slice = unsafe {
-        assume_init_mut(scratch_slice)
-    };
-    scratch_slice.sort_by(|key1,  key2| compare_fn_nan_max(&key1.0, &key2.0));
+    let scratch_slice = unsafe { assume_init_mut(scratch_slice) };
+    scratch_slice.sort_by(|key1, key2| compare_fn_nan_max(&key1.0, &key2.0));
 
     // now we write the indexes in the same array.
     // So from <T, Idxsize> to <IdxSize>
@@ -123,7 +126,7 @@ where I: FromPrimitive + Copy,
 
         let dst = scratch_slice_aligned_to_idx.as_mut_ptr();
 
-        for i  in 0..n {
+        for i in 0..n {
             dst.add(i).write((*src.add(i)).1);
         }
 
@@ -132,17 +135,15 @@ where I: FromPrimitive + Copy,
 }
 
 #[cfg(test)]
-mod test{
+mod test {
     use super::*;
     #[test]
-    fn test_argsort_ascending()  {
+    fn test_argsort_ascending() {
         let array = &[3, 1, 9, 23, 2];
 
         let scratch = &mut vec![];
         let out = arg_sort_ascending(array, scratch);
 
         dbg!(out);
-
     }
-
 }

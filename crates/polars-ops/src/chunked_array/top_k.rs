@@ -2,10 +2,10 @@ use std::cmp::Ordering;
 
 use either::Either;
 use polars_core::downcast_as_macro_arg_physical;
-use polars_utils::sort::{sort_slice_ascending, sort_slice_descending};
 use polars_core::prelude::*;
 use polars_utils::float::IsFloat;
 use polars_utils::ord::compare_fn_nan_max;
+use polars_utils::sort::{sort_slice_ascending, sort_slice_descending};
 
 #[repr(transparent)]
 struct Compare<T>(T);

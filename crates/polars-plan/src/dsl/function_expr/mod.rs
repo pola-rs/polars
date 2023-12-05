@@ -824,8 +824,6 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     MeanBy(options) => map_as_slice!(rolling::rolling_mean_by, options.clone()),
                     Sum(options) => map!(rolling::rolling_sum, options.clone()),
                     SumBy(options) => map_as_slice!(rolling::rolling_sum_by, options.clone()),
-                    Median(options) => map!(rolling::rolling_median, options.clone()),
-                    MedianBy(options) => map_as_slice!(rolling::rolling_median_by, options.clone()),
                     Quantile(options) => map!(rolling::rolling_quantile, options.clone()),
                     QuantileBy(options) => {
                         map_as_slice!(rolling::rolling_quantile_by, options.clone())

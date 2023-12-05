@@ -1,8 +1,7 @@
-mod quantile_filter;
 pub mod no_nulls;
 pub mod nulls;
+pub mod quantile_filter;
 mod window;
-// mod median_filter;
 
 use std::any::Any;
 use std::cmp::Ordering;

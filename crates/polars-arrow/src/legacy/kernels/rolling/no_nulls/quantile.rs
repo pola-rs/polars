@@ -109,6 +109,7 @@ pub fn rolling_quantile<T>(
 ) -> PolarsResult<ArrayRef>
 where
     T: NativeType
+        + IsFloat
         + Float
         + std::iter::Sum
         + AddAssign
@@ -125,13 +126,31 @@ where
         false => det_offsets,
     };
     match weights {
-        None => rolling_apply_agg_window::<QuantileWindow<_>, _, _>(
-            values,
-            window_size,
-            min_periods,
-            offset_fn,
-            params,
-        ),
+        None => {
+            if !center {
+                let params = params.as_ref().unwrap();
+                let params = params.downcast_ref::<RollingQuantileParams>().unwrap();
+                if let QuantileInterpolOptions::Linear = params.interpol {
+                    let out =
+                        super::quantile_filter::rolling_quantile(window_size, values, params.prob);
+                    let validity =
+                        create_validity(min_periods, values.len(), window_size, offset_fn);
+                    return Ok(Box::new(PrimitiveArray::new(
+                        T::PRIMITIVE.into(),
+                        out.into(),
+                        validity.map(|b| b.into()),
+                    )));
+                }
+            }
+
+            rolling_apply_agg_window::<QuantileWindow<_>, _, _>(
+                values,
+                window_size,
+                min_periods,
+                offset_fn,
+                params,
+            )
+        },
         Some(weights) => {
             let wsum = weights.iter().sum();
             polars_ensure!(
