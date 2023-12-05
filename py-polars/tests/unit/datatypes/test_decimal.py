@@ -271,15 +271,18 @@ def test_decimal_write_parquet_12375() -> None:
     df.write_parquet(f)
 
 
-def test_decimal_numpy_export() -> None:
-    decimal_data = [D("1.234"), D("2.345"), D("3.456")]
+@pytest.mark.parametrize("use_pyarrow", [True, False])
+def test_decimal_numpy_export(use_pyarrow: bool) -> None:
+    decimal_data = [D("1.234"), D("2.345"), D("-3.456")]
 
     s = pl.Series("n", decimal_data)
     df = s.to_frame()
 
-    for pl_obj in (s, df):
-        with pytest.raises(ValueError, match="requires `use_pyarrow=True`"):
-            pl_obj.to_numpy(use_pyarrow=False)  # type: ignore[attr-defined]
-
-    assert_array_equal(np.array(decimal_data), s.to_numpy())
-    assert_array_equal(np.array(decimal_data).reshape((-1, 1)), df.to_numpy())
+    assert_array_equal(
+        np.array(decimal_data),
+        s.to_numpy(use_pyarrow=use_pyarrow),
+    )
+    assert_array_equal(
+        np.array(decimal_data).reshape((-1, 1)),
+        df.to_numpy(use_pyarrow=use_pyarrow),
+    )
