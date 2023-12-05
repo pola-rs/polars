@@ -27,7 +27,7 @@ use num_traits::NumCast;
 use rayon::prelude::*;
 pub use series_trait::{IsSorted, *};
 
-#[cfg(feature = "dtype-datetime")]
+#[cfg(feature = "dtype-date")]
 use crate::chunked_array::temporal::conversion::US_IN_DAY;
 use crate::chunked_array::Settings;
 #[cfg(feature = "zip_with")]
@@ -821,6 +821,7 @@ impl Series {
                 let val = &[self.mean()];
                 Series::new(self.name(), val)
             },
+            #[cfg(feature = "dtype-date")]
             DataType::Date => {
                 let us = US_IN_DAY as f64;
                 Series::new(self.name(), &[self.mean().map(|v| (v * us) as i64)])

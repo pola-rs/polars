@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(feature = "dtype-date")]
+use crate::chunked_array::temporal::conversion::US_IN_DAY;
 
 // implemented on the series because we don't need types
 impl Series {
@@ -115,6 +117,7 @@ impl Series {
             dt if dt.is_numeric() => {
                 apply_method_physical_integer!(self, agg_median, groups)
             },
+            #[cfg(feature = "dtype-date")]
             Date => {
                 let s = self.cast(&Int64).unwrap() * (US_IN_DAY as f64);
                 // agg_median returns Float64
@@ -176,6 +179,7 @@ impl Series {
             dt if dt.is_numeric() => {
                 apply_method_physical_integer!(self, agg_mean, groups)
             },
+            #[cfg(feature = "dtype-date")]
             Date => {
                 let s = self.cast(&Int64).unwrap() * (US_IN_DAY as f64);
                 // agg_mean returns Float64
