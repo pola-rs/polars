@@ -14,7 +14,6 @@ use polars_utils::nulls::IsNull;
 use polars_utils::slice::{GetSaferUnchecked, SliceAble};
 use polars_utils::sort::arg_sort_ascending;
 use polars_utils::total_ord::TotalOrd;
-use crate::legacy::index::IdxSize;
 
 use crate::types::NativeType;
 
@@ -30,7 +29,7 @@ struct Block<'a, A> {
     m: usize,
     // index in the list
     current_index: usize,
-    nulls_in_window: IdxSize
+    nulls_in_window: usize
 }
 
 impl<'a, A> Debug for Block<'a, A>
@@ -364,7 +363,7 @@ trait LenGet {
 
     fn get(&mut self, i: usize) -> Self::Item;
 
-    fn reverse(&mut self);
+    fn null_count(&self) -> usize;
 }
 
 impl<'a, A> LenGet for &mut Block<'a, A>
@@ -384,8 +383,8 @@ where
         self.peek().unwrap()
     }
 
-    fn reverse(&mut self) {
-        // no-op
+    fn null_count(&self) -> usize {
+        self.nulls_in_window
     }
 }
 
@@ -415,6 +414,28 @@ where
     unsafe fn set_state(&mut self, i: usize) {
         self.block_left.delete(i);
         self.block_right.undelete(i);
+    }
+
+    fn reverse(&mut self) {
+        let left = self.block_left.peek_previous();
+        let right = self.block_right.peek_previous();
+        match (left, right) {
+            (Some(_), None) => {
+                self.block_left.reverse();
+            },
+            (None, Some(_)) => {
+                self.block_right.reverse();
+            },
+            (Some(left), Some(right)) => match left.tot_cmp(&right) {
+                Ordering::Equal | Ordering::Less => {
+                    self.block_right.reverse();
+                },
+                Ordering::Greater => {
+                    self.block_left.reverse();
+                },
+            },
+            (None, None) => {},
+        }
     }
 }
 
@@ -489,32 +510,15 @@ where
         }
     }
 
-    fn reverse(&mut self) {
-        let left = self.block_left.peek_previous();
-        let right = self.block_right.peek_previous();
-        match (left, right) {
-            (Some(_), None) => {
-                self.block_left.reverse();
-            },
-            (None, Some(_)) => {
-                self.block_right.reverse();
-            },
-            (Some(left), Some(right)) => match left.tot_cmp(&right) {
-                Ordering::Equal | Ordering::Less => {
-                    self.block_right.reverse();
-                },
-                Ordering::Greater => {
-                    self.block_left.reverse();
-                },
-            },
-            (None, None) => {},
-        }
+    fn null_count(&self) -> usize {
+        self.block_left.nulls_in_window + self.block_right.nulls_in_window
     }
 }
 
 struct QuantileUpdate<M: LenGet> {
     inner: M,
     quantile: f64,
+    min_periods: usize
 }
 
 impl<M> QuantileUpdate<M>
@@ -525,11 +529,16 @@ where
         + Add<Output = <M as LenGet>::Item>
         + NumCast,
 {
-    fn new(quantile: f64, inner: M) -> Self {
-        Self { quantile, inner }
+    fn new(min_periods: usize, quantile: f64, inner: M) -> Self {
+        Self { min_periods, quantile, inner }
     }
 
     fn quantile(&mut self) -> M::Item {
+        if M::Item::HAS_NULLS && (self.inner.len() - self.inner.null_count()) < self.min_periods {
+            // Default is None
+            return M::Item::default()
+        }
+
         let lenght = self.inner.len();
         let length_f = lenght as f64;
 
@@ -548,7 +557,7 @@ where
     }
 }
 
-pub fn rolling_quantile<A>(k: usize, values: A, quantile: f64) -> Vec<<A as Indexable>::Item>
+pub fn rolling_quantile<A>(min_periods: usize, k: usize, values: A, quantile: f64) -> Vec<<A as Indexable>::Item>
 where
     A: Indexable + SliceAble + Bounded + IntoIteratorCopied<OwnedItem= <A as Indexable>::Item> + Clone,
     <A as Indexable>::Item: NativeType
@@ -605,7 +614,7 @@ where
         // SAFETY: bounded by capacity
         unsafe { block_left.undelete(i) };
 
-        let mut mu = QuantileUpdate::new(quantile, &mut block_left);
+        let mut mu = QuantileUpdate::new(min_periods, quantile, &mut block_left);
         out.push(mu.quantile());
     }
     for i in 1..n_blocks + 1 {
@@ -643,7 +652,7 @@ where
                 let mut union = BlockUnion::new(&mut *ptr_left, &mut *ptr_right, k);
                 union.set_state(j);
 
-                out.push(QuantileUpdate::new(quantile, union).quantile());
+                out.push(QuantileUpdate::new(min_periods, quantile, union).quantile());
             }
         }
 
@@ -957,22 +966,22 @@ mod test {
             2.0, 8.0, 5.0, 9.0, 1.0, 2.0, 4.0, 2.0, 4.0, 8.1, -1.0, 2.9, 1.2, 23.0,
         ]
         .as_ref();
-        let out = rolling_quantile(3, values, 0.5);
+        let out = rolling_quantile(0, 3, values, 0.5);
         let expected = [
             2.0, 5.0, 5.0, 8.0, 5.0, 2.0, 2.0, 2.0, 4.0, 4.0, 4.0, 2.9, 1.2, 2.9,
         ];
         assert_eq!(out, expected);
-        let out = rolling_quantile(5, values, 0.5);
+        let out = rolling_quantile(0, 5, values, 0.5);
         let expected = [
             2.0, 5.0, 5.0, 6.5, 5.0, 5.0, 4.0, 2.0, 2.0, 4.0, 4.0, 2.9, 2.9, 2.9,
         ];
         assert_eq!(out, expected);
-        let out = rolling_quantile(7, values, 0.5);
+        let out = rolling_quantile(0, 7, values, 0.5);
         let expected = [
             2.0, 5.0, 5.0, 6.5, 5.0, 3.5, 4.0, 4.0, 4.0, 4.0, 2.0, 2.9, 2.9, 2.9,
         ];
         assert_eq!(out, expected);
-        let out = rolling_quantile(4, values, 0.5);
+        let out = rolling_quantile(0, 4, values, 0.5);
         let expected = [
             2.0, 5.0, 5.0, 6.5, 6.5, 3.5, 3.0, 2.0, 3.0, 4.0, 3.0, 3.45, 2.05, 2.05,
         ];
@@ -982,7 +991,7 @@ mod test {
     #[test]
     fn test_median_2() {
         let values = [10, 10, 15, 13, 9, 5, 3, 13, 19, 15, 19].as_ref();
-        let out = rolling_quantile(3, values, 0.5);
+        let out = rolling_quantile(0,3, values, 0.5);
         let expected = [10, 10, 10, 13, 13, 9, 5, 5, 13, 15, 19];
         assert_eq!(out, expected);
     }

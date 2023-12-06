@@ -132,7 +132,7 @@ where
                 let params = params.downcast_ref::<RollingQuantileParams>().unwrap();
                 if let QuantileInterpolOptions::Linear = params.interpol {
                     let out =
-                        super::quantile_filter::rolling_quantile(window_size, values, params.prob);
+                        super::quantile_filter::rolling_quantile(min_periods, window_size, values, params.prob);
                     let validity =
                         create_validity(min_periods, values.len(), window_size, offset_fn);
                     return Ok(Box::new(PrimitiveArray::new(
