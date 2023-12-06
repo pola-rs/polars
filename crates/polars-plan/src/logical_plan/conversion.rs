@@ -173,13 +173,13 @@ pub fn to_alp(
     let v = match lp {
         LogicalPlan::Scan {
             file_info,
-            reader_factories: paths,
+            scan_locations: paths,
             predicate,
             scan_type,
             file_options: options,
         } => ALogicalPlan::Scan {
             file_info,
-            paths,
+            scan_locations: paths,
             output_schema: None,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
             scan_type,
@@ -607,14 +607,14 @@ impl ALogicalPlan {
         };
         match lp {
             ALogicalPlan::Scan {
-                reader_factories,
+                scan_locations,
                 file_info,
                 predicate,
                 scan_type,
                 output_schema: _,
                 file_options: options,
             } => LogicalPlan::Scan {
-                reader_factories,
+                scan_locations,
                 file_info,
                 predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
                 scan_type,

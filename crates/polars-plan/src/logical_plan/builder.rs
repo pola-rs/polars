@@ -120,7 +120,7 @@ impl LogicalPlanBuilder {
         };
 
         Ok(LogicalPlan::Scan {
-            reader_factories: Arc::new([]),
+            scan_locations: Arc::new([]),
             file_info,
             predicate: None,
             file_options,
@@ -138,7 +138,7 @@ impl LogicalPlanBuilder {
     #[cfg(any(feature = "parquet", feature = "parquet_async"))]
     #[allow(clippy::too_many_arguments)]
     pub fn scan_parquet(
-        reader_factories: Arc<[ScanLocation]>,
+        scan_locations: Arc<[ScanLocation]>,
         n_rows: Option<usize>,
         cache: bool,
         parallel: polars_io::parquet::ParallelStrategy,
@@ -153,12 +153,12 @@ impl LogicalPlanBuilder {
 
         use polars_io::SerReader as _;
 
-        polars_ensure!(reader_factories.len() >= 1, ComputeError: "expected at least 1 path");
+        polars_ensure!(scan_locations.len() >= 1, ComputeError: "expected at least 1 path");
 
         // Use first reader to get schema.
-        let reader_factory = reader_factories[0];
+        let scan_location = scan_locations[0];
 
-        let (schema, reader_schema, num_rows, metadata, uri) = match reader_factory {
+        let (schema, reader_schema, num_rows, metadata, uri) = match scan_location {
             ScanLocation::RemoteFile { uri } => {
                 #[cfg(not(feature = "cloud"))]
                 panic!(
@@ -226,7 +226,7 @@ impl LogicalPlanBuilder {
             hive_partitioning,
         };
         Ok(LogicalPlan::Scan {
-            reader_factories,
+            scan_locations,
             file_info,
             file_options: options,
             predicate: None,
@@ -245,7 +245,7 @@ impl LogicalPlanBuilder {
 
     #[cfg(feature = "ipc")]
     pub fn scan_ipc(
-        reader_factory: ScanLocation,
+        scan_location: ScanLocation,
         options: IpcScanOptions,
         n_rows: Option<usize>,
         cache: bool,
@@ -254,7 +254,7 @@ impl LogicalPlanBuilder {
     ) -> PolarsResult<Self> {
         use polars_io::SerReader as _;
 
-        let reader = reader_factory.mmapbytesreader()?;
+        let reader = scan_location.mmapbytesreader()?;
         let mut reader = IpcReader::new(reader);
 
         let reader_schema = reader.schema()?;
@@ -277,7 +277,7 @@ impl LogicalPlanBuilder {
             hive_partitioning: false,
         };
         Ok(LogicalPlan::Scan {
-            reader_factories: Arc::new([reader_factory]),
+            scan_locations: Arc::new([scan_location]),
             file_info,
             file_options,
             predicate: None,
@@ -289,7 +289,7 @@ impl LogicalPlanBuilder {
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv")]
     pub fn scan_csv(
-        reader_factory: ScanLocation,
+        scan_location: ScanLocation,
         separator: u8,
         has_header: bool,
         ignore_errors: bool,
@@ -312,8 +312,8 @@ impl LogicalPlanBuilder {
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
     ) -> PolarsResult<Self> {
-        let mut reader = reader_factory.mmapbytesreader()?;
-        let reader_factories = Arc::new([reader_factory]);
+        let mut reader = scan_location.mmapbytesreader()?;
+        let scan_locations = Arc::new([scan_location]);
         let mut magic_nr = [0u8; 2];
         let res = reader.read_exact(&mut magic_nr);
         if raise_if_empty {
@@ -377,7 +377,7 @@ impl LogicalPlanBuilder {
             hive_partitioning: false,
         };
         Ok(LogicalPlan::Scan {
-            reader_factories,
+            scan_locations,
             file_info,
             file_options: options,
             predicate: None,

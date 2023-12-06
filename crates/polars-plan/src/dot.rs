@@ -312,7 +312,7 @@ impl LogicalPlan {
                 }
             },
             Scan {
-                reader_factories,
+                scan_locations,
                 file_info,
                 predicate,
                 scan_type,
@@ -324,7 +324,7 @@ impl LogicalPlan {
                     acc_str,
                     prev_node,
                     name,
-                    reader_factories.iter().map(|rf|rf.to_string()).collect::<Vec<String>>().as_ref(),
+                    scan_locations.iter().map(|rf|rf.to_string()).collect::<Vec<String>>().as_ref(),
                     options.with_columns.as_ref().map(|cols| cols.as_slice()),
                     file_info.schema.len(),
                     predicate,

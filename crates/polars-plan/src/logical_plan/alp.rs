@@ -30,7 +30,7 @@ pub enum ALogicalPlan {
         predicate: Node,
     },
     Scan {
-        reader_factories: Arc<[ScanLocation]>,
+        scan_locations: Arc<[ScanLocation]>,
         file_info: FileInfo,
         predicate: Option<Node>,
         /// schema of the projected file
@@ -293,7 +293,7 @@ impl ALogicalPlan {
                 options: *options,
             },
             Scan {
-                reader_factories,
+                scan_locations,
                 file_info,
                 output_schema,
                 predicate,
@@ -305,7 +305,7 @@ impl ALogicalPlan {
                     new_predicate = exprs.pop()
                 }
                 Scan {
-                    reader_factories: reader_factories.clone(),
+                    scan_locations: scan_locations.clone(),
                     file_info: file_info.clone(),
                     output_schema: output_schema.clone(),
                     file_options: options.clone(),

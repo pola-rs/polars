@@ -162,7 +162,7 @@ pub enum LogicalPlan {
         count: usize,
     },
     Scan {
-        reader_factories: Arc<[ScanLocation]>,
+        scan_locations: Arc<[ScanLocation]>,
         file_info: FileInfo,
         predicate: Option<Expr>,
         file_options: FileScanOptions,
