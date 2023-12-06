@@ -91,10 +91,10 @@ unsafe fn assume_init_mut<T>(slice: &mut [MaybeUninit<T>]) -> &mut [T] {
     &mut *(slice as *mut [MaybeUninit<T>] as *mut [T])
 }
 
-pub fn arg_sort_ascending<'a, T: TotalOrd + Copy + 'a, Idx, I: IntoIterator<Item=T>>(
+pub fn arg_sort_ascending<'a, T: TotalOrd + Copy + 'a, Idx, I: IntoIterator<Item = T>>(
     v: I,
     scratch: &'a mut Vec<u8>,
-    n: usize
+    n: usize,
 ) -> &'a mut [Idx]
 where
     Idx: FromPrimitive + Copy,

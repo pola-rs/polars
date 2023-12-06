@@ -8,12 +8,9 @@ use std::ops::{Add, Mul, Sub};
 
 use num_traits::NumCast;
 use polars_utils::float::IsFloat;
-use polars_utils::{
-    index::Indexable,
-    slice::SliceAble
-};
-use polars_utils::index::Bounded;
+use polars_utils::index::{Bounded, Indexable};
 use polars_utils::iter::IntoIteratorCopied;
+use polars_utils::slice::SliceAble;
 use polars_utils::sort::arg_sort_ascending;
 use polars_utils::total_ord::TotalOrd;
 
@@ -34,8 +31,9 @@ struct Block<'a, A> {
 }
 
 impl<'a, A> Debug for Block<'a, A>
-where A: Indexable,
-A::Item: NativeType
+where
+    A: Indexable,
+    A::Item: NativeType,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.n_element == 0 {
@@ -84,8 +82,9 @@ A::Item: NativeType
 }
 
 impl<'a, A> Block<'a, A>
-where A: Indexable + Bounded + IntoIteratorCopied<Item=<A as Indexable>::Item> + Clone,
-<A as Indexable>::Item: NativeType
+where
+    A: Indexable + Bounded + IntoIteratorCopied<Item = <A as Indexable>::Item> + Clone,
+    <A as Indexable>::Item: NativeType,
 {
     fn new(
         alpha: A,
@@ -95,7 +94,11 @@ where A: Indexable + Bounded + IntoIteratorCopied<Item=<A as Indexable>::Item> +
     ) -> Self {
         debug_assert!(!alpha.is_empty());
         let k = alpha.len();
-        let pi = arg_sort_ascending(<A as IntoIteratorCopied>::into_iter(alpha.clone()), scratch, alpha.len());
+        let pi = arg_sort_ascending(
+            <A as IntoIteratorCopied>::into_iter(alpha.clone()),
+            scratch,
+            alpha.len(),
+        );
 
         let m_index = k / 2;
         let m = pi[m_index] as usize;
@@ -325,7 +328,7 @@ where A: Indexable + Bounded + IntoIteratorCopied<Item=<A as Indexable>::Item> +
         if m == self.tail as u32 {
             None
         } else {
-            Some(self.alpha.get(self.m as usize))
+            Some(self.alpha.get(m as usize))
         }
     }
 
@@ -344,8 +347,9 @@ trait LenGet {
 }
 
 impl<'a, A> LenGet for &mut Block<'a, A>
-    where A: Indexable + Bounded + IntoIteratorCopied<Item=<A as Indexable>::Item> + Clone,
-          <A as Indexable>::Item: NativeType
+where
+    A: Indexable + Bounded + IntoIteratorCopied<Item = <A as Indexable>::Item> + Clone,
+    <A as Indexable>::Item: NativeType,
 {
     type Item = <A as Indexable>::Item;
 
@@ -364,15 +368,17 @@ impl<'a, A> LenGet for &mut Block<'a, A>
 }
 
 struct BlockUnion<'a, A: Indexable>
-where A::Item: NativeType
+where
+    A::Item: NativeType,
 {
     block_left: &'a mut Block<'a, A>,
     block_right: &'a mut Block<'a, A>,
 }
 
 impl<'a, A> BlockUnion<'a, A>
-where A: Indexable + Bounded + IntoIteratorCopied<Item=<A as Indexable>::Item> + Clone,
-<A as Indexable>::Item: NativeType
+where
+    A: Indexable + Bounded + IntoIteratorCopied<Item = <A as Indexable>::Item> + Clone,
+    <A as Indexable>::Item: NativeType,
 {
     fn new(block_left: &'a mut Block<'a, A>, block_right: &'a mut Block<'a, A>, k: usize) -> Self {
         let out = Self {
@@ -391,8 +397,9 @@ where A: Indexable + Bounded + IntoIteratorCopied<Item=<A as Indexable>::Item> +
 }
 
 impl<'a, A> LenGet for BlockUnion<'a, A>
-    where A: Indexable + Bounded + IntoIteratorCopied<Item=<A as Indexable>::Item> + Clone,
-          <A as Indexable>::Item: NativeType
+where
+    A: Indexable + Bounded + IntoIteratorCopied<Item = <A as Indexable>::Item> + Clone,
+    <A as Indexable>::Item: NativeType,
 {
     type Item = <A as Indexable>::Item;
 
@@ -520,9 +527,13 @@ where
 }
 
 pub fn rolling_quantile<A>(k: usize, slice: A, quantile: f64) -> Vec<<A as Indexable>::Item>
-where A: Indexable + SliceAble + Bounded + IntoIteratorCopied<Item=<A as Indexable>::Item> + Clone,
-<A as Indexable>::Item: NativeType + NumCast + Sub<Output = <A as Indexable>::Item> + Mul<Output = <A as Indexable>::Item> + Add<Output = <A as Indexable>::Item>
-
+where
+    A: Indexable + SliceAble + Bounded + IntoIteratorCopied<Item = <A as Indexable>::Item> + Clone,
+    <A as Indexable>::Item: NativeType
+        + NumCast
+        + Sub<Output = <A as Indexable>::Item>
+        + Mul<Output = <A as Indexable>::Item>
+        + Add<Output = <A as Indexable>::Item>,
 {
     let mut scratch_left = vec![];
     let mut prev_left = vec![];
@@ -917,7 +928,8 @@ mod test {
     fn test_median_1() {
         let values = [
             2.0, 8.0, 5.0, 9.0, 1.0, 2.0, 4.0, 2.0, 4.0, 8.1, -1.0, 2.9, 1.2, 23.0,
-        ].as_ref();
+        ]
+        .as_ref();
         let out = rolling_quantile(3, values, 0.5);
         let expected = [
             2.0, 5.0, 5.0, 8.0, 5.0, 2.0, 2.0, 2.0, 4.0, 4.0, 4.0, 2.9, 1.2, 2.9,
