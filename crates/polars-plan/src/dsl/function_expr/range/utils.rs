@@ -1,11 +1,9 @@
-// use std::iter::zip;
+use std::iter::zip;
 
-// use polars_core::chunked_array::builder::ListPrimitiveChunkedBuilder;
-// use polars_core::prelude::{
-//     polars_bail, polars_ensure, ChunkedArray, PolarsIterator, PolarsResult, *,
-// };
-use polars_core::prelude::{polars_bail, polars_ensure, PolarsResult};
-use polars_core::series::Series;
+use polars_core::prelude::{
+    polars_bail, polars_ensure, ChunkedArray, IntoSeries, ListBuilderTrait,
+    ListPrimitiveChunkedBuilder, PolarsIntegerType, PolarsResult, Series,
+};
 
 pub(super) fn temporal_series_to_i64_scalar(s: &Series) -> Option<i64> {
     s.to_physical_repr().get(0).unwrap().extract::<i64>()
@@ -49,79 +47,104 @@ pub(super) fn broadcast_scalar_inputs(
     }
 }
 
-// pub(super) fn broadcast_scalar_inputs_iter<T>(
-//     start: &ChunkedArray<T>,
-//     end: &ChunkedArray<T>,
-//     builder: ListPrimitiveChunkedBuilder<T>,
-//     range_impl: dyn Fn(T::Native, T::Native) -> PolarsResult<TimeChunked>,
-// ) -> PolarsResult<Series>
-// where
-//     T: PolarsNumericType,
-// {
-//     match (start.len(), end.len()) {
-//         (len_start, len_end) if len_start == len_end => {
-//             for (start, end) in zip(start, end) {
-//                 match (start, end) {
-//                     (Some(start), Some(end)) => {
-//                         let rng = range_impl(start, end)?;
-//                         builder.append_slice(rng.cont_slice().unwrap())
-//                     },
-//                     _ => builder.append_null(),
-//                 }
-//             }
-//         },
-//         (1, len_end) => {
-//             let start_scalar = unsafe { start.get_unchecked(0) };
-//             match start_scalar {
-//                 Some(start) => {
-//                     let range_impl = |end| range_impl(start, end);
-//                     for end_scalar in end {
-//                         match end_scalar {
-//                             Some(end) => {
-//                                 let rng = range_impl(end)?;
-//                                 builder.append_slice(rng.cont_slice().unwrap())
-//                             },
-//                             None => builder.append_null(),
-//                         }
-//                     }
-//                 },
-//                 None => {
-//                     for _ in 0..len_end {
-//                         builder.append_null()
-//                     }
-//                 },
-//             }
-//         },
-//         (len_start, 1) => {
-//             let end_scalar = unsafe { end.get_unchecked(0) };
-//             match end_scalar {
-//                 Some(end) => {
-//                     let range_impl = |start| range_impl(start, end);
-//                     for start_scalar in start {
-//                         match start_scalar {
-//                             Some(start) => {
-//                                 let rng = range_impl(start)?;
-//                                 builder.append_slice(rng.cont_slice().unwrap())
-//                             },
-//                             None => builder.append_null(),
-//                         }
-//                     }
-//                 },
-//                 None => {
-//                     for _ in 0..len_start {
-//                         builder.append_null()
-//                     }
-//                 },
-//             }
-//         },
-//         (len_start, len_end) => {
-//             polars_bail!(
-//                 ComputeError:
-//                 "lengths of `start` ({}) and `end` ({}) do not match",
-//                 len_start, len_end
-//             )
-//         },
-//     };
-//     let out = builder.finish().into_series();
-//     Ok(out)
-// }
+/// Create a ranges column from the given start/end columns and a range function.
+pub(super) fn ranges_impl_broadcast<T, F>(
+    builder: &mut ListPrimitiveChunkedBuilder<T>,
+    start: &ChunkedArray<T>,
+    end: &ChunkedArray<T>,
+    range_impl: F,
+) -> PolarsResult<Series>
+where
+    T: PolarsIntegerType,
+    F: Fn(T::Native, T::Native) -> PolarsResult<ChunkedArray<T>>,
+{
+    match (start.len(), end.len()) {
+        (len_start, len_end) if len_start == len_end => {
+            ranges_double_impl(builder, start, end, range_impl)?;
+        },
+        (1, len_end) => {
+            let start_scalar = unsafe { start.get_unchecked(0) };
+            match start_scalar {
+                Some(start) => {
+                    let range_impl = |end| range_impl(start, end);
+                    ranges_single_impl(builder, end, range_impl)?
+                },
+                None => build_nulls(builder, len_end),
+            }
+        },
+        (len_start, 1) => {
+            let end_scalar = unsafe { end.get_unchecked(0) };
+            match end_scalar {
+                Some(end) => {
+                    let range_impl = |start| range_impl(start, end);
+                    ranges_single_impl(builder, start, range_impl)?
+                },
+                None => build_nulls(builder, len_start),
+            }
+        },
+        (len_start, len_end) => {
+            polars_bail!(
+                ComputeError:
+                "lengths of `start` ({}) and `end` ({}) do not match",
+                len_start, len_end
+            )
+        },
+    };
+    let out = builder.finish().into_series();
+    Ok(out)
+}
+
+/// Iterate over a start AND end column and create a range for each entry.
+fn ranges_double_impl<T, F>(
+    builder: &mut ListPrimitiveChunkedBuilder<T>,
+    start: &ChunkedArray<T>,
+    end: &ChunkedArray<T>,
+    range_impl: F,
+) -> PolarsResult<()>
+where
+    T: PolarsIntegerType,
+    F: Fn(T::Native, T::Native) -> PolarsResult<ChunkedArray<T>>,
+{
+    for (start, end) in zip(start, end) {
+        match (start, end) {
+            (Some(start), Some(end)) => {
+                let rng = range_impl(start, end)?;
+                builder.append_slice(rng.cont_slice().unwrap())
+            },
+            _ => builder.append_null(),
+        }
+    }
+    Ok(())
+}
+
+/// Iterate over a start OR end column and create a range for each entry.
+fn ranges_single_impl<T, F>(
+    builder: &mut ListPrimitiveChunkedBuilder<T>,
+    ca: &ChunkedArray<T>,
+    range_impl: F,
+) -> PolarsResult<()>
+where
+    T: PolarsIntegerType,
+    F: Fn(T::Native) -> PolarsResult<ChunkedArray<T>>,
+{
+    for ca_scalar in ca {
+        match ca_scalar {
+            Some(ca_scalar) => {
+                let rng = range_impl(ca_scalar)?;
+                builder.append_slice(rng.cont_slice().unwrap())
+            },
+            None => builder.append_null(),
+        }
+    }
+    Ok(())
+}
+
+/// Add nulls to the builder.
+fn build_nulls<T>(builder: &mut ListPrimitiveChunkedBuilder<T>, n: usize)
+where
+    T: PolarsIntegerType,
+{
+    for _ in 0..n {
+        builder.append_null()
+    }
+}
