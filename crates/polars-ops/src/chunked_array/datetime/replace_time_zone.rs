@@ -139,7 +139,7 @@ pub fn to_local_datetime(
 
 pub fn from_local_datetime(
     datetime: &Logical<DatetimeType, Int64Type>,
-    naive_tz: &Utf8Chunked,
+    from_tz: &Utf8Chunked,
     out_tz: &str,
     ambiguous: &str,
 ) -> PolarsResult<DatetimeChunked> {
@@ -155,10 +155,10 @@ pub fn from_local_datetime(
         TimeUnit::Microseconds => datetime_to_timestamp_us,
         TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
     };
-    let out = match naive_tz.len() {
-        1 => match unsafe { naive_tz.get_unchecked(0) } {
-            Some(naive_tz) => {
-                let from_tz = parse_time_zone(naive_tz)?;
+    let out = match from_tz.len() {
+        1 => match unsafe { from_tz.get_unchecked(0) } {
+            Some(from_tz) => {
+                let from_tz = parse_time_zone(from_tz)?;
                 datetime.0.try_apply(|timestamp| {
                     let ndt = timestamp_to_datetime(timestamp);
                     Ok(datetime_to_timestamp(
@@ -168,11 +168,11 @@ pub fn from_local_datetime(
             },
             _ => Ok(datetime.0.apply(|_| None)),
         },
-        _ => try_binary_elementwise(datetime, naive_tz, |timestamp_opt, naive_tz_opt| {
-            match (timestamp_opt, naive_tz_opt) {
-                (Some(timestamp), Some(naive_tz)) => {
+        _ => try_binary_elementwise(datetime, from_tz, |timestamp_opt, from_tz_opt| {
+            match (timestamp_opt, from_tz_opt) {
+                (Some(timestamp), Some(from_tz)) => {
                     let ndt = timestamp_to_datetime(timestamp);
-                    let from_tz = parse_time_zone(naive_tz)?;
+                    let from_tz = parse_time_zone(from_tz)?;
                     Ok(Some(datetime_to_timestamp(
                         naive_local_to_naive_utc_in_new_time_zone(&from_tz, &to_tz, ndt, &ambig)?,
                     )))

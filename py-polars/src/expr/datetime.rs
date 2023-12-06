@@ -61,12 +61,12 @@ impl PyExpr {
     }
 
     #[cfg(feature = "timezones")]
-    #[pyo3(signature = (naive_tz, out_tz, ambiguous))]
-    fn dt_from_local_datetime(&self, naive_tz: Self, out_tz: String, ambiguous: String) -> Self {
+    #[pyo3(signature = (from_tz, out_tz, ambiguous))]
+    fn dt_from_local_datetime(&self, from_tz: Self, out_tz: String, ambiguous: String) -> Self {
         self.inner
             .clone()
             .dt()
-            .from_local_datetime(naive_tz.inner, out_tz, ambiguous)
+            .from_local_datetime(from_tz.inner, out_tz, ambiguous)
             .into()
     }
 
