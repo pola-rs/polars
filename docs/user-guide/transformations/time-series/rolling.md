@@ -111,7 +111,7 @@ Below we show an example where we use **group_by_dynamic** to compute:
 
 ## Grouping by rolling windows
 
-The rolling group by, `group_by_rolling`, is another entrance to the `group_by` context. But different from the `group_by_dynamic` where the windows are fixed by a parameter `every` and `period`. In a rolling group by, the windows are not fixed at all! They are determined
+The rolling operation, `rolling`, is another entrance to the `group_by`/`agg` context. But different from the `group_by_dynamic` where the windows are fixed by a parameter `every` and `period`. In a `rolling`, the windows are not fixed at all! They are determined
 by the values in the `index_column`.
 
 So imagine having a time column with the values `{2021-01-06, 2021-01-10}` and a `period="5d"` this would create the following
