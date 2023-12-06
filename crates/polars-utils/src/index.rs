@@ -10,15 +10,27 @@ pub trait Bounded {
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
+}
 
-    fn null_count(&self) -> usize;
+pub trait NullCount {
+    fn null_count(&self) -> usize {
+        0
+    }
+}
+
+impl<T: NullCount> NullCount for &T {
+    fn null_count(&self) -> usize {
+        (*self).null_count()
+    }
 }
 
 impl<T> Bounded for &[T] {
     fn len(&self) -> usize {
         <[T]>::len(self)
     }
+}
 
+impl<T> NullCount for &[T] {
     fn null_count(&self) -> usize {
         0
     }

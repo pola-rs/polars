@@ -7,7 +7,7 @@ use std::fmt::{Debug, Formatter};
 use std::ops::{Add, Div, Mul, Sub};
 
 use num_traits::NumCast;
-use polars_utils::index::{Bounded, Indexable};
+use polars_utils::index::{Bounded, Indexable, NullCount};
 use polars_utils::iter::IntoIteratorCopied;
 use polars_utils::nulls::IsNull;
 use polars_utils::slice::{GetSaferUnchecked, SliceAble};
@@ -86,7 +86,11 @@ where
 
 impl<'a, A> Block<'a, A>
 where
-    A: Indexable + Bounded + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item> + Clone,
+    A: Indexable
+        + Bounded
+        + NullCount
+        + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item>
+        + Clone,
     <A as Indexable>::Item: TotalOrd + Copy + IsNull + Debug + 'a,
 {
     fn new(
@@ -380,7 +384,11 @@ trait LenGet {
 
 impl<'a, A> LenGet for &mut Block<'a, A>
 where
-    A: Indexable + Bounded + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item> + Clone,
+    A: Indexable
+        + Bounded
+        + NullCount
+        + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item>
+        + Clone,
     <A as Indexable>::Item: Copy + TotalOrd + Debug + 'a,
 {
     type Item = <A as Indexable>::Item;
@@ -410,7 +418,11 @@ where
 
 impl<'a, A> BlockUnion<'a, A>
 where
-    A: Indexable + Bounded + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item> + Clone,
+    A: Indexable
+        + Bounded
+        + NullCount
+        + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item>
+        + Clone,
     <A as Indexable>::Item: TotalOrd + Copy + Debug,
 {
     fn new(block_left: &'a mut Block<'a, A>, block_right: &'a mut Block<'a, A>) -> Self {
@@ -450,7 +462,11 @@ where
 
 impl<'a, A> LenGet for BlockUnion<'a, A>
 where
-    A: Indexable + Bounded + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item> + Clone,
+    A: Indexable
+        + Bounded
+        + NullCount
+        + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item>
+        + Clone,
     <A as Indexable>::Item: TotalOrd + Copy + Debug,
 {
     type Item = <A as Indexable>::Item;
@@ -661,6 +677,7 @@ where
     A: Indexable
         + SliceAble
         + Bounded
+        + NullCount
         + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item>
         + Clone,
     <A as Indexable>::Item: Default + TotalOrd + Copy + FinishLinear + Debug,

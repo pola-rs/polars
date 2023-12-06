@@ -20,7 +20,7 @@ mod iterator;
 mod mutable;
 pub use mutable::*;
 use polars_error::{polars_bail, PolarsResult};
-use polars_utils::index::{Bounded, Indexable};
+use polars_utils::index::{Bounded, Indexable, NullCount};
 use polars_utils::slice::SliceAble;
 
 /// A [`PrimitiveArray`] is Arrow's semantically equivalent of an immutable `Vec<Option<T>>` where
@@ -545,6 +545,9 @@ impl<T: NativeType> Bounded for PrimitiveArray<T> {
     fn len(&self) -> usize {
         self.values.len()
     }
+}
+
+impl<T: NativeType> NullCount for PrimitiveArray<T> {
     fn null_count(&self) -> usize {
         <Self as Array>::null_count(self)
     }
