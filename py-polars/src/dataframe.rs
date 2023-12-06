@@ -22,6 +22,7 @@ use polars_core::utils::try_get_supertype;
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
+use pyo3::exceptions::PyOSError;
 
 #[cfg(feature = "parquet")]
 use crate::conversion::parse_parquet_compression;
@@ -617,7 +618,10 @@ impl PyDataFrame {
 
         if let Ok(s) = py_f.extract::<&str>(py) {
             py.allow_threads(|| {
-                let f = std::fs::File::create(s).unwrap();
+                // let f = std::fs::File::create(s)?;
+                let f = std::fs::File::create(s).map_err(|e| PyOSError::new_err(e.to_string()))?;
+                // let f = std::fs::File::create(s)?;
+                
                 // No need for a buffered writer, because the csv writer does internal buffering.
                 CsvWriter::new(f)
                     .include_bom(include_bom)
