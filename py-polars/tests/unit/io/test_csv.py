@@ -1718,5 +1718,5 @@ def test_write_csv_no_location_raise_io_exception() -> None:
         pytest.fail(
             "Testing on a non existing path failed because the path does exist."
         )
-    with pytest.raises(IOError):
+    with pytest.raises(FileNotFoundError):
         df.write_csv(non_existing_path)
