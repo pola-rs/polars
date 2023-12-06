@@ -59,7 +59,7 @@ pub(super) fn time_ranges(
         Ok(())
     };
 
-    let out = ranges_impl_broadcast(&mut builder, start, end, range_impl)?;
+    let out = ranges_impl_broadcast(start, end, range_impl, &mut builder)?;
 
     let to_type = DataType::List(Box::new(DataType::Time));
     out.cast(&to_type)

@@ -172,7 +172,7 @@ pub(super) fn datetime_ranges(
                 Ok(())
             };
 
-            ranges_impl_broadcast(&mut builder, start, end, range_impl)?
+            ranges_impl_broadcast(start, end, range_impl, &mut builder)?
         },
         _ => unimplemented!(),
     };

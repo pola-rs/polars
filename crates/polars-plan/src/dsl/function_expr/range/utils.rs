@@ -48,28 +48,29 @@ pub(super) fn broadcast_scalar_inputs(
 }
 
 /// Create a ranges column from the given start/end columns and a range function.
-pub(super) fn ranges_impl_broadcast<T, F>(
-    builder: &mut ListPrimitiveChunkedBuilder<T>,
+pub(super) fn ranges_impl_broadcast<T, U, F>(
     start: &ChunkedArray<T>,
     end: &ChunkedArray<T>,
     range_impl: F,
+    builder: &mut ListPrimitiveChunkedBuilder<U>,
 ) -> PolarsResult<Series>
 where
     T: PolarsIntegerType,
-    F: Fn(T::Native, T::Native, &mut ListPrimitiveChunkedBuilder<T>) -> PolarsResult<()>,
+    U: PolarsIntegerType,
+    F: Fn(T::Native, T::Native, &mut ListPrimitiveChunkedBuilder<U>) -> PolarsResult<()>,
 {
     match (start.len(), end.len()) {
         (len_start, len_end) if len_start == len_end => {
-            ranges_double_impl(builder, start, end, range_impl)?;
+            ranges_double_impl(start, end, range_impl, builder)?;
         },
         (1, len_end) => {
             let start_scalar = unsafe { start.get_unchecked(0) };
             match start_scalar {
                 Some(start) => {
-                    let range_impl = |end, builder: &mut ListPrimitiveChunkedBuilder<T>| {
+                    let range_impl = |end, builder: &mut ListPrimitiveChunkedBuilder<U>| {
                         range_impl(start, end, builder)
                     };
-                    ranges_single_impl(builder, end, range_impl)?
+                    ranges_single_impl(end, range_impl, builder)?
                 },
                 None => build_nulls(builder, len_end),
             }
@@ -78,10 +79,10 @@ where
             let end_scalar = unsafe { end.get_unchecked(0) };
             match end_scalar {
                 Some(end) => {
-                    let range_impl = |start, builder: &mut ListPrimitiveChunkedBuilder<T>| {
+                    let range_impl = |start, builder: &mut ListPrimitiveChunkedBuilder<U>| {
                         range_impl(start, end, builder)
                     };
-                    ranges_single_impl(builder, start, range_impl)?
+                    ranges_single_impl(start, range_impl, builder)?
                 },
                 None => build_nulls(builder, len_start),
             }
@@ -99,15 +100,16 @@ where
 }
 
 /// Iterate over a start AND end column and create a range for each entry.
-fn ranges_double_impl<T, F>(
-    builder: &mut ListPrimitiveChunkedBuilder<T>,
+fn ranges_double_impl<T, U, F>(
     start: &ChunkedArray<T>,
     end: &ChunkedArray<T>,
     range_impl: F,
+    builder: &mut ListPrimitiveChunkedBuilder<U>,
 ) -> PolarsResult<()>
 where
     T: PolarsIntegerType,
-    F: Fn(T::Native, T::Native, &mut ListPrimitiveChunkedBuilder<T>) -> PolarsResult<()>,
+    U: PolarsIntegerType,
+    F: Fn(T::Native, T::Native, &mut ListPrimitiveChunkedBuilder<U>) -> PolarsResult<()>,
 {
     for (start, end) in zip(start, end) {
         match (start, end) {
@@ -119,14 +121,15 @@ where
 }
 
 /// Iterate over a start OR end column and create a range for each entry.
-fn ranges_single_impl<T, F>(
-    builder: &mut ListPrimitiveChunkedBuilder<T>,
+fn ranges_single_impl<T, U, F>(
     ca: &ChunkedArray<T>,
     range_impl: F,
+    builder: &mut ListPrimitiveChunkedBuilder<U>,
 ) -> PolarsResult<()>
 where
     T: PolarsIntegerType,
-    F: Fn(T::Native, &mut ListPrimitiveChunkedBuilder<T>) -> PolarsResult<()>,
+    U: PolarsIntegerType,
+    F: Fn(T::Native, &mut ListPrimitiveChunkedBuilder<U>) -> PolarsResult<()>,
 {
     for ca_scalar in ca {
         match ca_scalar {
@@ -138,9 +141,9 @@ where
 }
 
 /// Add nulls to the builder.
-fn build_nulls<T>(builder: &mut ListPrimitiveChunkedBuilder<T>, n: usize)
+fn build_nulls<U>(builder: &mut ListPrimitiveChunkedBuilder<U>, n: usize)
 where
-    T: PolarsIntegerType,
+    U: PolarsIntegerType,
 {
     for _ in 0..n {
         builder.append_null()
