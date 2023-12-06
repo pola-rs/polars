@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from collections import OrderedDict
 from datetime import timezone
 from inspect import isclass
 from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence
@@ -748,6 +749,6 @@ class Struct(NestedType):
         class_name = self.__class__.__name__
         return f"{class_name}({dict(self)})"
 
-    def to_schema(self) -> SchemaDict:
+    def to_schema(self) -> OrderedDict[str, PolarsDataType]:
         """Return Struct dtype as a schema dict."""
-        return dict(self)
+        return OrderedDict(self)
