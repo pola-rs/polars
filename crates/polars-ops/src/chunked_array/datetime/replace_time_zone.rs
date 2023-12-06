@@ -157,14 +157,15 @@ pub fn from_local_datetime(
     };
     let out = match naive_tz.len() {
         1 => match unsafe { naive_tz.get_unchecked(0) } {
-            Some(naive_tz) => datetime.0.try_apply(|timestamp| {
-                let ndt = timestamp_to_datetime(timestamp);
+            Some(naive_tz) => {
                 let from_tz = parse_time_zone(naive_tz)?;
-
-                Ok(datetime_to_timestamp(
-                    naive_local_to_naive_utc_in_new_time_zone(&from_tz, &to_tz, ndt, &ambig)?,
-                ))
-            }),
+                datetime.0.try_apply(|timestamp| {
+                    let ndt = timestamp_to_datetime(timestamp);
+                    Ok(datetime_to_timestamp(
+                        naive_local_to_naive_utc_in_new_time_zone(&from_tz, &to_tz, ndt, &ambig)?,
+                    ))
+                })
+            },
             _ => Ok(datetime.0.apply(|_| None)),
         },
         _ => try_binary_elementwise(datetime, naive_tz, |timestamp_opt, naive_tz_opt| {
