@@ -217,10 +217,26 @@ pub trait SeriesOpsTime: AsSeries {
     #[cfg(feature = "rolling_window")]
     fn rolling_var(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         let s = self.as_series().to_float()?;
+
         with_match_physical_float_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+            let mut ca = ca.clone();
+
+            if let Some(idx) = ca.first_non_null() {
+                let k = ca.get(idx).unwrap();
+                // TODO! remove this!
+                // This is a temporary hack to improve numeric stability.
+                // var(X) = var(X - k)
+                // This is temporary as we will rework the rolling methods
+                // the 100.0 absolute boundary is arbitrarily chosen.
+                // the algorithm will square numbers, so it loses precision rapidly
+                if k.abs() > 100.0 {
+                    ca = ca - k;
+                }
+            }
+
             rolling_agg(
-                ca,
+                &ca,
                 options,
                 &rolling::no_nulls::rolling_var,
                 &rolling::nulls::rolling_var,
