@@ -452,7 +452,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
                         Some(fld)
                     },
                     #[cfg(feature = "dtype-categorical")]
-                    Categorical(_) => {
+                    Categorical(_, _) => {
                         _has_categorical = true;
                         Some(fld)
                     },
@@ -637,7 +637,7 @@ where
                     .map(|schema| {
                         schema
                             .iter_dtypes()
-                            .any(|dtype| matches!(dtype, DataType::Categorical(_)))
+                            .any(|dtype| matches!(dtype, DataType::Categorical(_, _)))
                     })
                     .unwrap_or(false);
                 if has_cat {

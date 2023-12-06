@@ -22,12 +22,15 @@ unsafe impl IntoSeries for CategoricalChunked {
 impl SeriesWrap<CategoricalChunked> {
     fn finish_with_state(&self, keep_fast_unique: bool, cats: UInt32Chunked) -> CategoricalChunked {
         let mut out = unsafe {
-            CategoricalChunked::from_cats_and_rev_map_unchecked(cats, self.0.get_rev_map().clone())
+            CategoricalChunked::from_cats_and_rev_map_unchecked(
+                cats,
+                self.0.get_rev_map().clone(),
+                self.0.get_ordering(),
+            )
         };
         if keep_fast_unique && self.0.can_fast_unique() {
             out.set_fast_unique(true)
         }
-        out.set_lexical_ordering(self.0.uses_lexical_ordering());
         out
     }
 

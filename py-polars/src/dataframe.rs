@@ -851,7 +851,7 @@ impl PyDataFrame {
                 .get_columns()
                 .iter()
                 .enumerate()
-                .filter(|(_i, s)| matches!(s.dtype(), DataType::Categorical(_)))
+                .filter(|(_i, s)| matches!(s.dtype(), DataType::Categorical(_, _)))
                 .map(|(i, _)| i)
                 .collect::<Vec<_>>();
 

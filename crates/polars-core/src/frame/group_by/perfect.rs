@@ -190,7 +190,7 @@ where
 impl CategoricalChunked {
     // Use the indexes as perfect groups
     pub fn group_tuples_perfect(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
-        let DataType::Categorical(Some(rev_map)) = self.dtype() else {
+        let DataType::Categorical(Some(rev_map), _) = self.dtype() else {
             unreachable!()
         };
         if self.is_empty() {

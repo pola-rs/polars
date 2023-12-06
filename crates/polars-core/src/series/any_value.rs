@@ -326,7 +326,7 @@ impl Series {
             },
             DataType::Null => Series::full_null(name, av.len(), &DataType::Null),
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(rev_map) => {
+            DataType::Categorical(rev_map, ordering) => {
                 let ca = if let Some(single_av) = av.first() {
                     match single_av {
                         AnyValue::Utf8(_) | AnyValue::Utf8Owned(_) | AnyValue::Null => {
@@ -342,7 +342,8 @@ impl Series {
                     Utf8Chunked::full("", "", 0)
                 };
 
-                ca.cast(&DataType::Categorical(rev_map.clone())).unwrap()
+                ca.cast(&DataType::Categorical(rev_map.clone(), *ordering))
+                    .unwrap()
             },
             dt => panic!("{dt:?} not supported"),
         };
@@ -424,11 +425,14 @@ impl<'a> From<&AnyValue<'a>> for DataType {
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, rev_map, arr) => {
                 if arr.is_null() {
-                    DataType::Categorical(Some(Arc::new((*rev_map).clone())))
+                    DataType::Categorical(
+                        Some(Arc::new((*rev_map).clone())),
+                        CategoricalOrdering::Physical,
+                    )
                 } else {
                     let array = unsafe { arr.deref_unchecked().clone() };
                     let rev_map = RevMapping::build_local(array);
-                    DataType::Categorical(Some(Arc::new(rev_map)))
+                    DataType::Categorical(Some(Arc::new(rev_map)), CategoricalOrdering::Physical)
                 }
             },
             #[cfg(feature = "object")]

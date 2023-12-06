@@ -92,7 +92,8 @@ impl CategoricalChunked {
         values: &Utf8Array<i64>,
     ) -> Self {
         if using_string_cache() {
-            let mut builder = CategoricalChunkedBuilder::new(name, keys.len());
+            let mut builder =
+                CategoricalChunkedBuilder::new(name, keys.len(), CategoricalOrdering::Physical);
             let capacity = keys.len();
             builder.global_map_from_local(
                 [keys.iter().map(|v| v.copied())],
@@ -105,6 +106,7 @@ impl CategoricalChunked {
                 name,
                 keys.clone(),
                 RevMapping::build_local(values.clone()),
+                CategoricalOrdering::Physical,
             )
         }
     }

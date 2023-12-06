@@ -92,7 +92,7 @@ impl From<&DataType> for SerializableDataType {
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds.clone()),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_) => Self::Categorical,
+            Categorical(_, _) => Self::Categorical,
             #[cfg(feature = "object")]
             Object(name) => Self::Object(name.to_string()),
             dt => panic!("{dt:?} not supported"),
@@ -126,7 +126,7 @@ impl From<SerializableDataType> for DataType {
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds),
             #[cfg(feature = "dtype-categorical")]
-            Categorical => Self::Categorical(None),
+            Categorical => Self::Categorical(None, CategoricalOrdering::Physical),
             #[cfg(feature = "object")]
             Object(_) => Self::Object("unknown"),
         }

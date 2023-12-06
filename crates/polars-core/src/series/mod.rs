@@ -459,7 +459,7 @@ impl Series {
             Date => Cow::Owned(self.cast(&Int32).unwrap()),
             Datetime(_, _) | Duration(_) | Time => Cow::Owned(self.cast(&Int64).unwrap()),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_) => Cow::Owned(self.cast(&UInt32).unwrap()),
+            Categorical(_, _) => Cow::Owned(self.cast(&UInt32).unwrap()),
             List(inner) => Cow::Owned(self.cast(&List(Box::new(inner.to_physical()))).unwrap()),
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
@@ -868,7 +868,7 @@ impl Series {
             .sum();
         match self.dtype() {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(Some(rv)) => match &**rv {
+            DataType::Categorical(Some(rv), _) => match &**rv {
                 RevMapping::Local(arr, _) | RevMapping::Enum(arr, _) => {
                     size += estimated_bytes_size(arr)
                 },

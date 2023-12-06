@@ -45,7 +45,7 @@ pub enum DataType {
     #[cfg(feature = "dtype-categorical")]
     // The RevMapping has the internal state.
     // This is ignored with comparisons, hashing etc.
-    Categorical(Option<Arc<RevMapping>>),
+    Categorical(Option<Arc<RevMapping>>, CategoricalOrdering),
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<Field>),
     // some logical types we cannot know statically, e.g. Datetime
@@ -70,7 +70,7 @@ impl PartialEq for DataType {
             match (self, other) {
                 // Don't include rev maps in comparisons
                 #[cfg(feature = "dtype-categorical")]
-                (Categorical(_), Categorical(_)) => true,
+                (Categorical(_, _), Categorical(_, _)) => true,
                 (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r)) => tu_l == tu_r && tz_l == tz_r,
                 (List(left_inner), List(right_inner)) => left_inner == right_inner,
                 #[cfg(feature = "dtype-duration")]
@@ -130,7 +130,7 @@ impl DataType {
             Duration(_) => Int64,
             Time => Int64,
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_) => UInt32,
+            Categorical(_, _) => UInt32,
             List(dt) => List(Box::new(dt.to_physical())),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
@@ -269,7 +269,7 @@ impl DataType {
                 polars_bail!(InvalidOperation: "cannot convert Object dtype data to Arrow")
             },
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_) => Ok(ArrowDataType::Dictionary(
+            Categorical(_, _) => Ok(ArrowDataType::Dictionary(
                 IntegerType::UInt32,
                 Box::new(ArrowDataType::LargeUtf8),
                 false,
@@ -347,7 +347,7 @@ impl Display for DataType {
             #[cfg(feature = "object")]
             DataType::Object(s) => s,
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => "cat",
+            DataType::Categorical(_, _) => "cat",
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
             DataType::Unknown => "unknown",
@@ -361,12 +361,12 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
     use DataType::*;
     Ok(match (left, right) {
         #[cfg(feature = "dtype-categorical")]
-        (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r))) => {
+        (Categorical(Some(rev_map_l), ordering), Categorical(Some(rev_map_r), _)) => {
             match (&**rev_map_l, &**rev_map_r) {
                 (RevMapping::Global(_, _, idl), RevMapping::Global(_, _, idr)) if idl == idr => {
                     let mut merger = GlobalRevMapMerger::new(rev_map_l.clone());
                     merger.merge_map(rev_map_r)?;
-                    Categorical(Some(merger.finish()))
+                    Categorical(Some(merger.finish()), *ordering)
                 },
                 (RevMapping::Local(_, idl), RevMapping::Local(_, idr)) if idl == idr => {
                     left.clone()
@@ -418,5 +418,5 @@ pub(crate) fn can_extend_dtype(left: &DataType, right: &DataType) -> PolarsResul
 #[cfg(feature = "dtype-categorical")]
 pub fn create_enum_data_type(categories: Utf8Array<i64>) -> DataType {
     let rev_map = RevMapping::build_enum(categories.clone());
-    DataType::Categorical(Some(Arc::new(rev_map)))
+    DataType::Categorical(Some(Arc::new(rev_map)), CategoricalOrdering::Physical)
 }

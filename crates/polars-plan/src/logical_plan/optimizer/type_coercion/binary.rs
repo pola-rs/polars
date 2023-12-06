@@ -20,7 +20,7 @@ fn compares_cat_to_string(type_left: &DataType, type_right: &DataType, op: Opera
                 type_left,
                 type_right,
                 DataType::Utf8,
-                DataType::Categorical(_)
+                DataType::Categorical(_, _)
             )
     }
     #[cfg(not(feature = "dtype-categorical"))]
@@ -64,7 +64,7 @@ fn is_cat_str_binary(type_left: &DataType, type_right: &DataType) -> bool {
             type_left,
             type_right,
             DataType::Utf8,
-            DataType::Categorical(_)
+            DataType::Categorical(_, _)
         )
     }
     #[cfg(not(feature = "dtype-categorical"))]
@@ -223,7 +223,7 @@ pub(super) fn process_binary(
             return Ok(None)
         },
         #[cfg(feature = "dtype-categorical")]
-        (Utf8 | Categorical(_), dt, op) | (dt, Utf8 | Categorical(_), op)
+        (Utf8 | Categorical(_, _), dt, op) | (dt, Utf8 | Categorical(_, _), op)
             if op.is_comparison() && dt.is_numeric() =>
         {
             return Ok(None)

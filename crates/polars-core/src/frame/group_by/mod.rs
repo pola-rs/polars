@@ -32,7 +32,7 @@ fn prepare_dataframe_unsorted(by: &[Series]) -> DataFrame {
         by.iter()
             .map(|s| match s.dtype() {
                 #[cfg(feature = "dtype-categorical")]
-                DataType::Categorical(_) => s.cast(&DataType::UInt32).unwrap(),
+                DataType::Categorical(_, _) => s.cast(&DataType::UInt32).unwrap(),
                 _ => {
                     if s.dtype().to_physical().is_numeric() {
                         let s = s.to_physical_repr();

@@ -365,7 +365,7 @@ impl<'a> AnyValue<'a> {
             Boolean(_) => DataType::Boolean,
             Utf8(_) => DataType::Utf8,
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _, _) => DataType::Categorical(None),
+            Categorical(_, _, _) => DataType::Categorical(None, CategoricalOrdering::Physical),
             List(s) => DataType::List(Box::new(s.dtype().clone())),
             #[cfg(feature = "dtype-struct")]
             Struct(_, _, fields) => DataType::Struct(fields.to_vec()),

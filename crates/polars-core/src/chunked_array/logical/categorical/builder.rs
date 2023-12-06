@@ -12,6 +12,12 @@ use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::{using_string_cache, StringCache, POOL};
 
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum CategoricalOrdering {
+    Physical,
+    Lexical,
+}
+
 pub enum RevMappingBuilder {
     /// Hashmap: maps the indexes from the global cache/categorical array to indexes in the local Utf8Array
     /// Utf8Array: caches the string values
@@ -243,6 +249,7 @@ impl<'a> PartialEq for StrHashLocal<'a> {
 pub struct CategoricalChunkedBuilder<'a> {
     cat_builder: UInt32Vec,
     name: String,
+    ordering: CategoricalOrdering,
     reverse_mapping: RevMappingBuilder,
     // hashmap utilized by the local builder
     local_mapping: PlHashMap<StrHashLocal<'a>, u32>,
@@ -251,13 +258,14 @@ pub struct CategoricalChunkedBuilder<'a> {
 }
 
 impl CategoricalChunkedBuilder<'_> {
-    pub fn new(name: &str, capacity: usize) -> Self {
+    pub fn new(name: &str, capacity: usize, ordering: CategoricalOrdering) -> Self {
         let builder = MutableUtf8Array::<i64>::with_capacity(capacity / 10);
         let reverse_mapping = RevMappingBuilder::Local(builder);
 
         Self {
             cat_builder: UInt32Vec::with_capacity(capacity),
             name: name.to_string(),
+            ordering,
             reverse_mapping,
             local_mapping: Default::default(),
             hashes: vec![],
@@ -491,6 +499,7 @@ impl<'a> CategoricalChunkedBuilder<'a> {
             &self.name,
             self.cat_builder.into(),
             self.reverse_mapping.finish(),
+            self.ordering,
         )
     }
 }
@@ -508,7 +517,10 @@ fn fill_global_to_local(local_to_global: &[u32], global_to_local: &mut PlHashMap
 impl CategoricalChunked {
     /// Create a [`CategoricalChunked`] from a categorical indices. The indices will
     /// probe the global string cache.
-    pub(crate) fn from_global_indices(cats: UInt32Chunked) -> PolarsResult<CategoricalChunked> {
+    pub(crate) fn from_global_indices(
+        cats: UInt32Chunked,
+        ordering: CategoricalOrdering,
+    ) -> PolarsResult<CategoricalChunked> {
         let len = crate::STRING_CACHE.read_map().len() as u32;
         let oob = cats.into_iter().flatten().any(|cat| cat >= len);
         polars_ensure!(
@@ -516,7 +528,7 @@ impl CategoricalChunked {
             ComputeError:
             "cannot construct Categorical from these categories; at least one of them is out of bounds"
         );
-        Ok(unsafe { Self::from_global_indices_unchecked(cats) })
+        Ok(unsafe { Self::from_global_indices_unchecked(cats, ordering) })
     }
 
     /// Create a [`CategoricalChunked`] from a categorical indices. The indices will
@@ -525,7 +537,10 @@ impl CategoricalChunked {
     /// # Safety
     ///
     /// This does not do any bound checks
-    pub unsafe fn from_global_indices_unchecked(cats: UInt32Chunked) -> CategoricalChunked {
+    pub unsafe fn from_global_indices_unchecked(
+        cats: UInt32Chunked,
+        ordering: CategoricalOrdering,
+    ) -> CategoricalChunked {
         let cache = crate::STRING_CACHE.read_map();
 
         let cap = std::cmp::min(std::cmp::min(cats.len(), cache.len()), _HASHMAP_INIT_SIZE);
@@ -546,7 +561,7 @@ impl CategoricalChunked {
 
         let rev_map = RevMapping::Global(rev_map, str_values.into(), cache.uuid);
 
-        CategoricalChunked::from_cats_and_rev_map_unchecked(cats, Arc::new(rev_map))
+        CategoricalChunked::from_cats_and_rev_map_unchecked(cats, Arc::new(rev_map), ordering)
     }
 
     /// Create a [`CategoricalChunked`] from a fixed list of categories and a List of strings.
@@ -554,6 +569,7 @@ impl CategoricalChunked {
     pub fn from_utf8_to_enum(
         values: &Utf8Chunked,
         categories: &Utf8Array<i64>,
+        ordering: CategoricalOrdering,
     ) -> PolarsResult<CategoricalChunked> {
         polars_ensure!(categories.null_count()  == 0, ComputeError: "categories can not contain null values");
 
@@ -581,6 +597,7 @@ impl CategoricalChunked {
             Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
                 ca_idx,
                 Arc::new(rev_map),
+                ordering,
             ))
         }
     }

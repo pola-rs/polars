@@ -7,7 +7,10 @@ use crate::PyExpr;
 #[pymethods]
 impl PyExpr {
     fn cat_set_ordering(&self, ordering: Wrap<CategoricalOrdering>) -> Self {
-        self.inner.clone().cat().set_ordering(ordering.0).into()
+        self.inner
+            .clone()
+            .cast(DataType::Categorical(None, ordering.0))
+            .into()
     }
 
     fn cat_get_categories(&self) -> Self {

@@ -33,6 +33,7 @@ impl CategoricalChunked {
                 CategoricalChunked::from_cats_and_rev_map_unchecked(
                     cats,
                     self.get_rev_map().clone(),
+                    self.get_ordering(),
                 )
             };
         }
@@ -40,7 +41,11 @@ impl CategoricalChunked {
         // safety:
         // we only reordered the indexes so we are still in bounds
         unsafe {
-            CategoricalChunked::from_cats_and_rev_map_unchecked(cats, self.get_rev_map().clone())
+            CategoricalChunked::from_cats_and_rev_map_unchecked(
+                cats,
+                self.get_rev_map().clone(),
+                self.get_ordering(),
+            )
         }
     }
 
