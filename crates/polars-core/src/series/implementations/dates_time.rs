@@ -374,7 +374,6 @@ macro_rules! impl_dyn_series {
                     }
                 }
                 .unwrap()
-                .into()
             }
             fn var_as_series(&self, _ddof: u8) -> Series {
                 Int32Chunked::full_null(self.name(), 1)
