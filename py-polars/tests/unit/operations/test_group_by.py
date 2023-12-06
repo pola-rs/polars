@@ -127,7 +127,6 @@ def test_group_by_args() -> None:
 @pytest.mark.parametrize(
     ("input", "expected", "input_dtype", "output_dtype"),
     [
-        # fmt: off
         ([1, 2, 3, 4], [2, 4], pl.UInt8, pl.Float64),
         ([1, 2, 3, 4], [2, 4], pl.Int8, pl.Float64),
         ([1, 2, 3, 4], [2, 4], pl.UInt16, pl.Float64),
@@ -196,7 +195,6 @@ def test_group_by_args() -> None:
             pl.Duration("ns"),
         ),
         ([time(1), time(2), time(3), time(4)], [time(2), time(4)], pl.Time, pl.Time),
-        # fmt: on
     ],
 )
 def test_group_by_mean_by_dtype(
