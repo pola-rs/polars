@@ -103,9 +103,9 @@ fn from_chunk_u32(chunk: u32) -> m16x32 {
         1024, 2048, 4096, 8192, 16384, 32768,
     ]);
 
-    let a = chunk.to_ne_bytes();
-    let a1 = u16::from_ne_bytes([a[2], a[3]]);
-    let a2 = u16::from_ne_bytes([a[0], a[1]]);
+    let a = chunk.to_le_bytes();
+    let a1 = u16::from_le_bytes([a[0], a[1]]);
+    let a2 = u16::from_le_bytes([a[2], a[3]]);
 
     let vecmask1 = u16x32::splat(a1);
     let vecmask2 = u16x32::splat(a2);
