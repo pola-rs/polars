@@ -52,15 +52,10 @@ impl PyExpr {
 
     #[cfg(feature = "timezones")]
     fn dt_to_local_datetime(&self, tz: Self) -> Self {
-        self.inner
-            .clone()
-            .dt()
-            .to_local_datetime(tz.inner)
-            .into()
+        self.inner.clone().dt().to_local_datetime(tz.inner).into()
     }
 
     #[cfg(feature = "timezones")]
-    #[pyo3(signature = (from_tz, out_tz, ambiguous))]
     fn dt_from_local_datetime(&self, from_tz: Self, to_tz: String, ambiguous: String) -> Self {
         self.inner
             .clone()

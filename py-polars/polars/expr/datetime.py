@@ -1532,9 +1532,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴──────────────────┴─────────────────────────┘
         """
         from_tz = parse_as_expression(from_tz, str_as_lit=True)
-        return wrap_expr(
-            self._pyexpr.dt_from_local_datetime(from_tz, to_tz, ambiguous)
-        )
+        return wrap_expr(self._pyexpr.dt_from_local_datetime(from_tz, to_tz, ambiguous))
 
     def total_days(self) -> Expr:
         """

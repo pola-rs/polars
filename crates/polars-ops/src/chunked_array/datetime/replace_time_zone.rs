@@ -118,10 +118,8 @@ pub fn to_local_datetime(
             },
             _ => Ok(datetime.0.apply(|_| None)),
         },
-        _ => try_binary_elementwise(
-            datetime,
-            tz,
-            |timestamp_opt, convert_tz_opt| match (timestamp_opt, convert_tz_opt) {
+        _ => try_binary_elementwise(datetime, tz, |timestamp_opt, convert_tz_opt| {
+            match (timestamp_opt, convert_tz_opt) {
                 (Some(timestamp), Some(convert_tz)) => {
                     let ndt = timestamp_to_datetime(timestamp);
                     let to_tz = parse_time_zone(convert_tz)?;
@@ -130,8 +128,8 @@ pub fn to_local_datetime(
                     )))
                 },
                 _ => Ok(None),
-            },
-        ),
+            }
+        }),
     };
     let out = out?.into_datetime(datetime.time_unit(), None);
     Ok(out)
