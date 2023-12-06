@@ -26,7 +26,7 @@ use polars_io::{
     csv::CommentPrefix,
     csv::CsvEncoding,
     csv::NullValues,
-    mmap::ReaderFactory,
+    mmap::ScanLocation,
     utils::get_reader_bytes,
 };
 
@@ -138,7 +138,7 @@ impl LogicalPlanBuilder {
     #[cfg(any(feature = "parquet", feature = "parquet_async"))]
     #[allow(clippy::too_many_arguments)]
     pub fn scan_parquet(
-        reader_factories: Arc<[ReaderFactory]>,
+        reader_factories: Arc<[ScanLocation]>,
         n_rows: Option<usize>,
         cache: bool,
         parallel: polars_io::parquet::ParallelStrategy,
@@ -159,7 +159,7 @@ impl LogicalPlanBuilder {
         let reader_factory = reader_factories[0];
 
         let (schema, reader_schema, num_rows, metadata, uri) = match reader_factory {
-            ReaderFactory::RemoteFile { uri } => {
+            ScanLocation::RemoteFile { uri } => {
                 #[cfg(not(feature = "cloud"))]
                 panic!(
                     "One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled."
@@ -186,7 +186,7 @@ impl LogicalPlanBuilder {
                     })?
                 }
             },
-            ReaderFactory::LocalFile { path } => {
+            ScanLocation::LocalFile { path } => {
                 let file = polars_utils::open_file(path)?;
                 let mut reader = ParquetReader::new(file);
                 let reader_schema = reader.schema()?;
@@ -245,7 +245,7 @@ impl LogicalPlanBuilder {
 
     #[cfg(feature = "ipc")]
     pub fn scan_ipc(
-        reader_factory: ReaderFactory,
+        reader_factory: ScanLocation,
         options: IpcScanOptions,
         n_rows: Option<usize>,
         cache: bool,
@@ -289,7 +289,7 @@ impl LogicalPlanBuilder {
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv")]
     pub fn scan_csv(
-        reader_factory: ReaderFactory,
+        reader_factory: ScanLocation,
         separator: u8,
         has_header: bool,
         ignore_errors: bool,

@@ -95,7 +95,7 @@ impl<'a, T: 'a + MmapBytesReader> From<&'a T> for ReaderBytes<'a> {
 /// Create MmapBytesReaders for a specific "file", either locally or remotely.
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum ReaderFactory {
+pub enum ScanLocation {
     /// A specific local file on the filesystem:
     LocalFile {
         path: PathBuf,
@@ -108,24 +108,24 @@ pub enum ReaderFactory {
     // PyFileFactory { factory: PythonFunction }
 }
 
-impl Display for ReaderFactory {
+impl Display for ScanLocation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ReaderFactory::LocalFile { path, .. } => write!(f, "{}", path.to_string_lossy()),
-            ReaderFactory::RemoteFile { uri: location } => write!(f, "{location}"),
+            ScanLocation::LocalFile { path, .. } => write!(f, "{}", path.to_string_lossy()),
+            ScanLocation::RemoteFile { uri: location } => write!(f, "{location}"),
         }
     }
 }
 
-impl ReaderFactory {
+impl ScanLocation {
     /// Open the underlying file. Only works for non-RemoteFile.
     pub fn mmapbytesreader(&self) -> PolarsResult<Box<dyn MmapBytesReader>> {
         match self {
-            ReaderFactory::LocalFile { path, .. } => {
+            ScanLocation::LocalFile { path, .. } => {
                 let file = polars_utils::open_file(path)?;
                 Ok(Box::new(file))
             },
-            ReaderFactory::RemoteFile { .. } => panic!("RemoteFile needs to be handled by async code, not as MmapBytesReader"),
+            ScanLocation::RemoteFile { .. } => panic!("RemoteFile needs to be handled by async code, not as MmapBytesReader"),
         }
     }
 }

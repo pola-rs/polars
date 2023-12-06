@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use polars_core::prelude::*;
 #[cfg(any(feature = "cloud", feature = "parquet"))]
 use polars_io::cloud::CloudOptions;
-use polars_io::mmap::ReaderFactory;
+use polars_io::mmap::ScanLocation;
 
 use crate::logical_plan::LogicalPlan::DataFrameScan;
 use crate::prelude::*;
@@ -162,7 +162,7 @@ pub enum LogicalPlan {
         count: usize,
     },
     Scan {
-        reader_factories: Arc<[ReaderFactory]>,
+        reader_factories: Arc<[ScanLocation]>,
         file_info: FileInfo,
         predicate: Option<Expr>,
         file_options: FileScanOptions,

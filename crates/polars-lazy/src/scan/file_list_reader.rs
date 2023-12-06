@@ -5,19 +5,19 @@ use std::path::{Path, PathBuf};
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
-use polars_io::mmap::{MmapBytesReader, ReaderFactory};
+use polars_io::mmap::{MmapBytesReader, ScanLocation};
 use polars_io::{is_cloud_url, RowCount};
 
 use crate::prelude::*;
 
-pub type ReaderIterator = Box<dyn Iterator<Item = PolarsResult<ReaderFactory>>>;
+pub type ScanLocationIterator = Box<dyn Iterator<Item = PolarsResult<ScanLocation>>>;
 
 // cloud_options is used only with async feature
 #[allow(unused_variables)]
 fn polars_glob(
     pattern: &str,
     cloud_options: Option<&CloudOptions>,
-) -> PolarsResult<ReaderIterator> {
+) -> PolarsResult<ScanLocationIterator> {
     if is_cloud_url(pattern) {
         #[cfg(feature = "async")]
         {
@@ -25,7 +25,7 @@ fn polars_glob(
             Ok(Box::new(
                 paths
                     .into_iter()
-                    .map(|a| Ok(ReaderFactory::Remote { uri: a })),
+                    .map(|a| Ok(ScanLocation::Remote { uri: a })),
             ))
         }
         #[cfg(not(feature = "async"))]
@@ -36,7 +36,7 @@ fn polars_glob(
         let paths = paths.map(|v| {
             v.map_err(to_compute_err).and_then(|p| {
                 File::open(p)
-                    .map(|f| ReaderFactory::Local {
+                    .map(|f| ScanLocation::Local {
                         path: p,
                         reader: Box::new(f),
                     })
@@ -47,13 +47,13 @@ fn polars_glob(
     }
 }
 
-/// Convert a more convenient input into an iterator over [ReaderFactory].
+/// Convert a more convenient input into an iterator over [ScanLocation].
 pub trait TryIntoScanLocations {
     // We can't use TryInto/TryFrom because of the need for cloud_options.
     fn try_into_scanlocations(
         &self,
         cloud_options: Option<&CloudOptions>,
-    ) -> PolarsResult<ReaderIterator>;
+    ) -> PolarsResult<ScanLocationIterator>;
 }
 
 impl TryIntoScanLocations for &Path {
@@ -68,12 +68,12 @@ impl<P: Into<PathBuf>> TryIntoScanLocations for Vec<P> {
         Ok(Box::new(paths.clone().into_iter().map(|path| {
             let path_str = path.to_string_lossy();
             if is_cloud_url(path_str.as_ref()) {
-                Ok(ReaderFactory::Remote {
+                Ok(ScanLocation::Remote {
                     location: path_str.to_string(),
                 })
             } else {
                 let f = File::open(path)?;
-                Ok(ReaderFactory::Local {
+                Ok(ScanLocation::Local {
                     path,
                     reader: Box::new(f),
                 })
@@ -140,11 +140,11 @@ pub trait LazyFileListReader: Clone {
     /// loaded, nor will globbing be done.
     fn load_specific_file<P: Into<PathBuf>>(self, path: P) -> PolarsResult<LazyFrame> {
         let path = path.into();
-        self.load_specific(ReaderFactory::LocalFile { path })
+        self.load_specific(ScanLocation::LocalFile { path })
     }
 
     /// Get the final [LazyFrame].
-    fn load_specific(self, reader: ReaderFactory) -> PolarsResult<LazyFrame>;
+    fn load_specific(self, reader: ScanLocation) -> PolarsResult<LazyFrame>;
 
     /// Rechunk the memory to contiguous chunks when parsing is done.
     fn rechunk(&self) -> bool;
