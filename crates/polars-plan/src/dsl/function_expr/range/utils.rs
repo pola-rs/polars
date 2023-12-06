@@ -23,30 +23,6 @@ pub(super) fn ensure_range_bounds_contain_exactly_one_value(
     Ok(())
 }
 
-pub(super) fn broadcast_scalar_inputs(
-    start: Series,
-    end: Series,
-) -> PolarsResult<(Series, Series)> {
-    match (start.len(), end.len()) {
-        (len1, len2) if len1 == len2 => Ok((start, end)),
-        (1, len2) => {
-            let start_matched = start.new_from_index(0, len2);
-            Ok((start_matched, end))
-        },
-        (len1, 1) => {
-            let end_matched = end.new_from_index(0, len1);
-            Ok((start, end_matched))
-        },
-        (len1, len2) => {
-            polars_bail!(
-                ComputeError:
-                "lengths of `start` ({}) and `end` ({}) do not match",
-                len1, len2
-            )
-        },
-    }
-}
-
 /// Create a ranges column from the given start/end columns and a range function.
 pub(super) fn ranges_impl_broadcast<T, U, F>(
     start: &ChunkedArray<T>,
