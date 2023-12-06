@@ -1469,8 +1469,8 @@ class ExprDateTimeNameSpace:
         └─────────────────────────┴──────────────────┴─────────────────────┘
 
         """
-        local_tz = parse_as_expression(tz, str_as_lit=True)
-        return wrap_expr(self._pyexpr.dt_to_local_datetime(local_tz))
+        tz = parse_as_expression(tz, str_as_lit=True)
+        return wrap_expr(self._pyexpr.dt_to_local_datetime(tz))
 
     def from_local_datetime(
         self,
