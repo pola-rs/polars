@@ -1,7 +1,5 @@
-// h: size of half window
-// k: size of window
-// alpha: slice of length k
-
+// Combine dancing links with sort merge.
+// https://arxiv.org/abs/1406.1717
 use std::cmp::Ordering;
 use std::fmt::{Debug, Formatter};
 use std::ops::{Add, Div, Mul, Sub};
@@ -22,7 +20,9 @@ struct Block<'a, A> {
     k: usize,
     tail: usize,
     n_element: usize,
+    // Values buffer
     alpha: A,
+    // Permutation
     pi: &'a mut [u32],
     prev: &'a mut Vec<u32>,
     next: &'a mut Vec<u32>,
@@ -323,7 +323,7 @@ where
             Ordering::Equal => {
                 // 1, 2,      4, 5
                 // 1, 2, [3], 4, 5
-                // go to prev position because hte link was added
+                // go to prev position because the link was added
                 // self.m = self.prev[self.m as usize] as usize;
             },
         };

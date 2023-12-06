@@ -134,17 +134,3 @@ where
         &mut scratch_slice_aligned_to_idx[..n]
     }
 }
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    #[test]
-    fn test_argsort_ascending() {
-        let array = &[3, 1, 9, 23, 2];
-
-        let scratch = &mut vec![];
-        let out = arg_sort_ascending(array, scratch, array.len());
-
-        dbg!(out);
-    }
-}
