@@ -1711,10 +1711,9 @@ def test_csv_no_new_line_last() -> None:
         "b": [1.0, 2.0, 2.1],
     }
 
+
 def test_write_csv_no_location_raise_io_exception() -> None:
-    df = pl.DataFrame({'a':[1]})
+    df = pl.DataFrame({"a": [1]})
     # TODO: check dir don't exists before writing
     with pytest.raises(IOError):
         df.write_csv("non/existing/path/file.csv")
-
-
