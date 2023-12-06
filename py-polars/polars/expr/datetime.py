@@ -1475,7 +1475,7 @@ class ExprDateTimeNameSpace:
     def from_local_datetime(
         self,
         from_tz: str | Expr,
-        out_tz: str,
+        to_tz: str,
         ambiguous: Ambiguous = "raise",
     ) -> Expr:
         """
@@ -1485,7 +1485,7 @@ class ExprDateTimeNameSpace:
         ----------
         from_tz
             Current timezone of each datetime
-        out_tz
+        to_tz
             Timezone to convert to
         ambiguous
             Determine how to deal with ambiguous datetimes:
@@ -1531,9 +1531,9 @@ class ExprDateTimeNameSpace:
         │ 2020-10-09 20:00:00 ┆ America/New_York ┆ 2020-10-10 00:00:00 UTC │
         └─────────────────────┴──────────────────┴─────────────────────────┘
         """
-        from_tz= parse_as_expression(from_tz, str_as_lit=True)
+        from_tz = parse_as_expression(from_tz, str_as_lit=True)
         return wrap_expr(
-            self._pyexpr.dt_from_local_datetime(from_tz, out_tz, ambiguous)
+            self._pyexpr.dt_from_local_datetime(from_tz, to_tz, ambiguous)
         )
 
     def total_days(self) -> Expr:

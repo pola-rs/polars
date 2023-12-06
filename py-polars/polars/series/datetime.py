@@ -1138,7 +1138,7 @@ class DateTimeNameSpace:
     def from_local_datetime(
         self,
         from_tz: str | Series,
-        out_tz: str,
+        to_tz: str,
         ambiguous: Ambiguous = "raise",
     ) -> Series:
         """
@@ -1148,7 +1148,7 @@ class DateTimeNameSpace:
         ----------
         from_tz
             Current timezone of each datetime
-        out_tz
+        to_tz
             Timezone to convert to
         ambiguous
             Determine how to deal with ambiguous datetimes:

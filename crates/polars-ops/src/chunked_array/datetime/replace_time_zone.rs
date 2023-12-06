@@ -88,7 +88,7 @@ pub fn replace_time_zone(
 
 pub fn to_local_datetime(
     datetime: &Logical<DatetimeType, Int64Type>,
-    convert_tz: &Utf8Chunked,
+    tz: &Utf8Chunked,
 ) -> PolarsResult<DatetimeChunked> {
     let from_time_zone = datetime.time_zone().as_deref().unwrap_or("UTC");
     let from_tz = parse_time_zone(from_time_zone)?;
@@ -103,8 +103,8 @@ pub fn to_local_datetime(
         TimeUnit::Microseconds => datetime_to_timestamp_us,
         TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
     };
-    let out: Result<ChunkedArray<Int64Type>, PolarsError> = match convert_tz.len() {
-        1 => match unsafe { convert_tz.get_unchecked(0) } {
+    let out: Result<ChunkedArray<Int64Type>, PolarsError> = match tz.len() {
+        1 => match unsafe { tz.get_unchecked(0) } {
             Some(convert_tz) => {
                 let to_tz = parse_time_zone(convert_tz)?;
                 Ok(datetime.0.apply(|timestamp_opt| {
@@ -120,7 +120,7 @@ pub fn to_local_datetime(
         },
         _ => try_binary_elementwise(
             datetime,
-            convert_tz,
+            tz,
             |timestamp_opt, convert_tz_opt| match (timestamp_opt, convert_tz_opt) {
                 (Some(timestamp), Some(convert_tz)) => {
                     let ndt = timestamp_to_datetime(timestamp);
