@@ -370,4 +370,25 @@ impl ListNameSpace {
         let other = other.into();
         self.set_operation(other, SetOperation::SymmetricDifference)
     }
+
+    /// Return true if the set has no elements in common with other
+    #[cfg(feature = "list_sets")]
+    pub fn is_disjoint<E: Into<Expr>>(self, other: E) -> Expr {
+        let other = other.into();
+        self.set_operation(other, SetOperation::IsDisjoint)
+    }
+
+    /// Test whether every element in the set is in other
+    #[cfg(feature = "list_sets")]
+    pub fn is_subset<E: Into<Expr>>(self, other: E) -> Expr {
+        let other = other.into();
+        self.set_operation(other, SetOperation::IsDisjoint)
+    }
+
+    /// Test whether every element in other is in the set
+    #[cfg(feature = "list_sets")]
+    pub fn is_superset<E: Into<Expr>>(self, other: E) -> Expr {
+        let other = other.into();
+        self.set_operation(other, SetOperation::IsDisjoint)
+    }
 }

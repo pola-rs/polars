@@ -535,10 +535,17 @@ pub(super) fn set_operation(s: &[Series], set_type: SetOperation) -> PolarsResul
                     Ok(s0.clone())
                 }
             },
+            SetOperation::IsDisjoint => Ok(Series::new(s0.name(), [true])),
+            SetOperation::IsSubset => Ok(Series::new(s0.name(), [s0.len() == 0])),
+            SetOperation::IsSuperset => Ok(Series::new(s0.name(), [s1.len() == 0])),
         };
     }
 
-    list_set_operation(s0.list()?, s1.list()?, set_type).map(|ca| ca.into_series())
+    if set_type.is_boolean() {
+        boolean_list_set_operation(s0.list()?, s1.list()?, set_type).map(|ca| ca.into_series())
+    } else {
+        list_set_operation(s0.list()?, s1.list()?, set_type).map(|ca| ca.into_series())
+    }
 }
 
 #[cfg(feature = "list_any_all")]

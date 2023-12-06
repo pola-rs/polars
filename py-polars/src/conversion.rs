@@ -1583,6 +1583,9 @@ impl FromPyObject<'_> for Wrap<SetOperation> {
             "difference" => SetOperation::Difference,
             "intersection" => SetOperation::Intersection,
             "symmetric_difference" => SetOperation::SymmetricDifference,
+            "is_disjoint" => SetOperation::IsDisjoint,
+            "is_subset" => SetOperation::IsSubset,
+            "is_superset" => SetOperation::IsSuperset,
             v => {
                 return Err(PyValueError::new_err(format!(
                     "set operation must be one of {{'union', 'difference', 'intersection', 'symmetric_difference'}}, got {v}",

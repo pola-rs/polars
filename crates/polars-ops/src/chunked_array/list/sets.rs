@@ -1,14 +1,16 @@
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
+use std::ops::Not;
 
 use arrow::array::{
-    BinaryArray, ListArray, MutableArray, MutableBinaryArray, MutablePrimitiveArray,
-    PrimitiveArray, Utf8Array,
+    BinaryArray, BooleanArray, ListArray, MutableArray, MutableBinaryArray, MutableBooleanArray,
+    MutablePrimitiveArray, PrimitiveArray, Utf8Array,
 };
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and;
 use arrow::offset::OffsetsBuffer;
 use arrow::types::NativeType;
+use either::Either;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_type;
 #[cfg(feature = "serde")]
@@ -36,12 +38,20 @@ impl<'a> MaterializeValues<Option<&'a [u8]>> for MutableBinaryArray<i64> {
     }
 }
 
-fn set_operation<K, I, J, R>(
+impl MaterializeValues<bool> for MutableBooleanArray {
+    fn extend_buf<I: Iterator<Item = bool>>(&mut self, values: I) -> usize {
+        self.extend(values.map(Some));
+        self.len()
+    }
+}
+
+fn set_operation<K, I, J, R, B>(
     set: &mut PlIndexSet<K>,
     set2: &mut PlIndexSet<K>,
     a: I,
     b: J,
     out: &mut R,
+    bool_out: &mut B,
     set_op: SetOperation,
     broadcast_rhs: bool,
 ) -> usize
@@ -50,6 +60,7 @@ where
     I: IntoIterator<Item = K>,
     J: IntoIterator<Item = K>,
     R: MaterializeValues<K>,
+    B: MaterializeValues<bool>,
 {
     set.clear();
     let a = a.into_iter();
@@ -88,6 +99,34 @@ where
             set.extend(a);
             out.extend_buf(set.symmetric_difference(set2).copied())
         },
+        SetOperation::IsDisjoint => {
+            set.extend(a);
+            // If broadcast `set2` should already be filled.
+            if !broadcast_rhs {
+                set2.clear();
+                set2.extend(b);
+            }
+
+            bool_out.extend_buf([set.is_disjoint(set2)].into_iter())
+        },
+        SetOperation::IsSubset => {
+            set.extend(a);
+            // If broadcast `set2` should already be filled.
+            if !broadcast_rhs {
+                set2.clear();
+                set2.extend(b);
+            }
+            bool_out.extend_buf([set.is_subset(set2)].into_iter())
+        },
+        SetOperation::IsSuperset => {
+            set.extend(a);
+            // If broadcast `set2` should already be filled.
+            if !broadcast_rhs {
+                set2.clear();
+                set2.extend(b);
+            }
+            bool_out.extend_buf([set.is_superset(set2)].into_iter())
+        },
     }
 }
 
@@ -102,6 +141,18 @@ pub enum SetOperation {
     Union,
     Difference,
     SymmetricDifference,
+    IsDisjoint,
+    IsSubset,
+    IsSuperset,
+}
+
+impl SetOperation {
+    pub fn is_boolean(&self) -> bool {
+        match self {
+            SetOperation::IsDisjoint | SetOperation::IsSubset | SetOperation::IsSuperset => true,
+            _ => false,
+        }
+    }
 }
 
 impl Display for SetOperation {
@@ -111,6 +162,9 @@ impl Display for SetOperation {
             SetOperation::Union => "union",
             SetOperation::Difference => "difference",
             SetOperation::SymmetricDifference => "symmetric_difference",
+            SetOperation::IsDisjoint => "is_disjoint",
+            SetOperation::IsSubset => "is_subset",
+            SetOperation::IsSuperset => "is_superset",
         };
         write!(f, "{s}")
     }
@@ -123,9 +177,9 @@ fn primitive<T>(
     offsets_b: &[i64],
     set_op: SetOperation,
     validity: Option<Bitmap>,
-) -> PolarsResult<ListArray<i64>>
+) -> PolarsResult<Either<ListArray<i64>, BooleanArray>>
 where
-    T: NativeType + Hash + Copy + Eq,
+    T: NativeType + Hash + Copy + Eq + Not,
 {
     let broadcast_lhs = offsets_a.len() == 2;
     let broadcast_rhs = offsets_b.len() == 2;
@@ -133,10 +187,17 @@ where
     let mut set = Default::default();
     let mut set2: PlIndexSet<Option<T>> = Default::default();
 
-    let mut values_out = MutablePrimitiveArray::with_capacity(std::cmp::max(
-        *offsets_a.last().unwrap(),
-        *offsets_b.last().unwrap(),
-    ) as usize);
+    let mut values_out = MutablePrimitiveArray::new();
+    let mut bool_values_out = MutableBooleanArray::new();
+
+    if set_op.is_boolean() {
+        bool_values_out
+            .reserve(std::cmp::max(*offsets_a.last().unwrap(), *offsets_b.last().unwrap()) as usize)
+    } else {
+        values_out
+            .reserve(std::cmp::max(*offsets_a.last().unwrap(), *offsets_b.last().unwrap()) as usize)
+    }
+
     let mut offsets = Vec::with_capacity(std::cmp::max(offsets_a.len(), offsets_b.len()));
     offsets.push(0i64);
 
@@ -176,6 +237,7 @@ where
                 a_iter,
                 b_iter,
                 &mut values_out,
+                &mut bool_values_out,
                 set_op,
                 true,
             )
@@ -194,6 +256,7 @@ where
                 a_iter,
                 b_iter,
                 &mut values_out,
+                &mut bool_values_out,
                 set_op,
                 false,
             )
@@ -216,6 +279,7 @@ where
                 a_iter,
                 b_iter,
                 &mut values_out,
+                &mut bool_values_out,
                 set_op,
                 false,
             )
@@ -227,7 +291,12 @@ where
     let dtype = ListArray::<i64>::default_datatype(values_out.data_type().clone());
 
     let values: PrimitiveArray<T> = values_out.into();
-    Ok(ListArray::new(dtype, offsets, values.boxed(), validity))
+    Ok(Either::Left(ListArray::new(
+        dtype,
+        offsets,
+        values.boxed(),
+        validity,
+    )))
 }
 
 fn binary(
@@ -238,16 +307,26 @@ fn binary(
     set_op: SetOperation,
     validity: Option<Bitmap>,
     as_utf8: bool,
-) -> PolarsResult<ListArray<i64>> {
+) -> PolarsResult<Either<ListArray<i64>, BooleanArray>> {
     let broadcast_lhs = offsets_a.len() == 2;
     let broadcast_rhs = offsets_b.len() == 2;
     let mut set = Default::default();
     let mut set2: PlIndexSet<Option<&[u8]>> = Default::default();
 
-    let mut values_out = MutableBinaryArray::with_capacity(std::cmp::max(
-        *offsets_a.last().unwrap(),
-        *offsets_b.last().unwrap(),
-    ) as usize);
+    let mut values_out = MutableBinaryArray::new();
+    let mut bool_values_out = MutableBooleanArray::new();
+    if set_op.is_boolean() {
+        bool_values_out
+            .reserve(
+                std::cmp::max(*offsets_a.last().unwrap(), *offsets_b.last().unwrap()) as usize,
+            );
+    } else {
+        values_out.reserve(
+            std::cmp::max(*offsets_a.last().unwrap(), *offsets_b.last().unwrap()) as usize,
+            0,
+        );
+    }
+
     let mut offsets = Vec::with_capacity(std::cmp::max(offsets_a.len(), offsets_b.len()));
     offsets.push(0i64);
 
@@ -283,6 +362,7 @@ fn binary(
                 a_iter,
                 b_iter,
                 &mut values_out,
+                &mut bool_values_out,
                 set_op,
                 true,
             )
@@ -295,6 +375,7 @@ fn binary(
                 a_iter,
                 b_iter,
                 &mut values_out,
+                &mut bool_values_out,
                 set_op,
                 false,
             )
@@ -308,6 +389,7 @@ fn binary(
                 a_iter,
                 b_iter,
                 &mut values_out,
+                &mut bool_values_out,
                 set_op,
                 false,
             )
@@ -327,10 +409,20 @@ fn binary(
             )
         };
         let dtype = ListArray::<i64>::default_datatype(values.data_type().clone());
-        Ok(ListArray::new(dtype, offsets, values.boxed(), validity))
+        Ok(Either::Left(ListArray::new(
+            dtype,
+            offsets,
+            values.boxed(),
+            validity,
+        )))
     } else {
         let dtype = ListArray::<i64>::default_datatype(values.data_type().clone());
-        Ok(ListArray::new(dtype, offsets, values.boxed(), validity))
+        Ok(Either::Left(ListArray::new(
+            dtype,
+            offsets,
+            values.boxed(),
+            validity,
+        )))
     }
 }
 
@@ -347,7 +439,7 @@ fn array_set_operation(
     a: &ListArray<i64>,
     b: &ListArray<i64>,
     set_op: SetOperation,
-) -> PolarsResult<ListArray<i64>> {
+) -> PolarsResult<Either<ListArray<i64>, BooleanArray>> {
     let offsets_a = a.offsets().as_slice();
     let offsets_b = b.offsets().as_slice();
 
@@ -410,9 +502,26 @@ pub fn list_set_operation(
         arity::try_binary_unchecked_same_type(
             &a,
             &b,
-            |a, b| array_set_operation(a, b, set_op).map(|arr| arr.boxed()),
+            |a, b| array_set_operation(a, b, set_op).map(|arr| arr.unwrap_left().boxed()),
             false,
             false,
         )
     }
+}
+
+pub fn boolean_list_set_operation(
+    a: &ListChunked,
+    b: &ListChunked,
+    set_op: SetOperation,
+) -> PolarsResult<BooleanChunked> {
+    polars_ensure!(a.len() == b.len() || b.len() == 1 || a.len() == 1, ShapeMismatch: "column lengths don't match");
+
+    let mut a = a.clone();
+    let mut b = b.clone();
+    if a.len() != b.len() {
+        a = a.rechunk();
+        b = b.rechunk();
+    }
+
+    unimplemented!("WIP")
 }
