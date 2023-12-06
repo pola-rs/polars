@@ -8,7 +8,6 @@ use polars_io::RowCount;
 
 use crate::frame::LazyFileListReader;
 use crate::prelude::*;
-use crate::scan::SpecificOrMultipleReaderFactories;
 
 /// Initially this should be constructed with multiple ReaderFactory instances,
 /// and then LazyFileListReader::finish() is used to clone() an instance,
@@ -17,7 +16,6 @@ use crate::scan::SpecificOrMultipleReaderFactories;
 #[derive(Clone)]
 #[cfg(feature = "csv")]
 pub struct LazyCsvReader<'a> {
-    reader_or_sources: SpecificOrMultipleReaderFactories,
     separator: u8,
     has_header: bool,
     ignore_errors: bool,
@@ -44,9 +42,8 @@ pub struct LazyCsvReader<'a> {
 
 #[cfg(feature = "csv")]
 impl<'a> LazyCsvReader<'a> {
-    pub fn new(sources: MultipleReaderFactories) -> Self {
+    pub fn new() -> Self {
         LazyCsvReader {
-            reader_or_sources: SpecificOrMultipleReaderFactories::Multiple { sources: Arc::new(sources) },
             separator: b',',
             has_header: true,
             ignore_errors: false,
@@ -270,7 +267,7 @@ impl<'a> LazyCsvReader<'a> {
 }
 
 impl LazyFileListReader for LazyCsvReader<'_> {
-    fn finish_no_glob(self, reader: ReaderFactory) -> PolarsResult<LazyFrame> {
+    fn load_specific(self, reader: ReaderFactory) -> PolarsResult<LazyFrame> {
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_csv(
             reader.mmapbytesreader(),
             self.separator,
@@ -299,32 +296,6 @@ impl LazyFileListReader for LazyCsvReader<'_> {
         .into();
         lf.opt_state.file_caching = true;
         Ok(lf)
-    }
-
-    fn specific_reader(&mut self) -> Option<&mut ReaderFactory> {
-        if let SpecificOrMultipleReaderFactories::Specific{mut reader} = self.reader_or_sources {
-            Some(&mut *reader)
-        } else {
-            None
-        }
-    }
-
-    fn multiple_readers(&self) -> Option<&MultipleReaderFactories> {
-        if let SpecificOrMultipleReaderFactories::Multiple{sources} = self.reader_or_sources {
-            Some(&*sources)
-        } else {
-            None
-        }
-    }
-
-    fn with_specific_reader(mut self, reader: Arc<ReaderFactory>) -> Self {
-        self.reader_or_sources = SpecificOrMultipleReaderFactories::Specific { reader };
-        self
-    }
-
-    fn with_multiple_readers(mut self, sources: Arc<MultipleReaderFactories>) -> Self {
-        self.reader_or_sources = SpecificOrMultipleReaderFactories::Multiple { sources };
-        self
     }
 
     fn rechunk(&self) -> bool {
