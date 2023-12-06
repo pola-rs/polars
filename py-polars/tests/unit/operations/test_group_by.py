@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from datetime import datetime, timedelta
-from typing import Any
+from datetime import date, datetime, time, timedelta
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars.type_aliases import PolarsDataType
 
 
 def test_group_by() -> None:
@@ -119,6 +122,204 @@ def test_group_by_args() -> None:
     assert df.group_by("a").agg("b", "c").columns == expected
     # Multiple aggregations as keyword arguments
     assert df.group_by("a").agg(q="b", r="c").columns == ["a", "q", "r"]
+
+
+@pytest.mark.parametrize(
+    ("input", "expected", "input_dtype", "output_dtype"),
+    [
+        # fmt: off
+        ([1, 2, 3, 4], [2, 4], pl.UInt8, pl.Float64),
+        ([1, 2, 3, 4], [2, 4], pl.Int8, pl.Float64),
+        ([1, 2, 3, 4], [2, 4], pl.UInt16, pl.Float64),
+        ([1, 2, 3, 4], [2, 4], pl.Int16, pl.Float64),
+        ([1, 2, 3, 4], [2, 4], pl.UInt32, pl.Float64),
+        ([1, 2, 3, 4], [2, 4], pl.Int32, pl.Float64),
+        ([1, 2, 3, 4], [2, 4], pl.UInt64, pl.Float64),
+        ([1, 2, 3, 4], [2, 4], pl.Float32, pl.Float32),
+        ([1, 2, 3, 4], [2, 4], pl.Float64, pl.Float64),
+        ([False, True, True, True], [2 / 3, 1], pl.Boolean, pl.Float64),
+        (
+            [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3), date(2023, 1, 4)],
+            [datetime(2023, 1, 2), datetime(2023, 1, 4)],
+            pl.Date,
+            pl.Datetime("us"),
+        ),
+        (
+            [
+                datetime(2023, 1, 1),
+                datetime(2023, 1, 2),
+                datetime(2023, 1, 3),
+                datetime(2023, 1, 4),
+            ],
+            [datetime(2023, 1, 2), datetime(2023, 1, 4)],
+            pl.Datetime("ms"),
+            pl.Datetime("ms"),
+        ),
+        (
+            [
+                datetime(2023, 1, 1),
+                datetime(2023, 1, 2),
+                datetime(2023, 1, 3),
+                datetime(2023, 1, 4),
+            ],
+            [datetime(2023, 1, 2), datetime(2023, 1, 4)],
+            pl.Datetime("us"),
+            pl.Datetime("us"),
+        ),
+        (
+            [
+                datetime(2023, 1, 1),
+                datetime(2023, 1, 2),
+                datetime(2023, 1, 3),
+                datetime(2023, 1, 4),
+            ],
+            [datetime(2023, 1, 2), datetime(2023, 1, 4)],
+            pl.Datetime("ns"),
+            pl.Datetime("ns"),
+        ),
+        (
+            [timedelta(1), timedelta(2), timedelta(3), timedelta(4)],
+            [timedelta(2), timedelta(4)],
+            pl.Duration("ms"),
+            pl.Duration("ms"),
+        ),
+        (
+            [timedelta(1), timedelta(2), timedelta(3), timedelta(4)],
+            [timedelta(2), timedelta(4)],
+            pl.Duration("us"),
+            pl.Duration("us"),
+        ),
+        (
+            [timedelta(1), timedelta(2), timedelta(3), timedelta(4)],
+            [timedelta(2), timedelta(4)],
+            pl.Duration("ns"),
+            pl.Duration("ns"),
+        ),
+        ([time(1), time(2), time(3), time(4)], [time(2), time(4)], pl.Time, pl.Time),
+        # fmt: on
+    ],
+)
+def test_group_by_mean_by_dtype(
+    input: list[Any],
+    expected: list[Any],
+    input_dtype: PolarsDataType,
+    output_dtype: PolarsDataType,
+) -> None:
+    # groups are defined by first 3 values, then last value
+    name = str(input_dtype)
+    key = ["a", "a", "a", "b"]
+    df = pl.DataFrame(
+        {
+            "key": key,
+            name: pl.Series(input, dtype=input_dtype),
+        }
+    )
+    result = df.group_by("key", maintain_order=True).mean()
+    df_expected = pl.DataFrame(
+        {
+            "key": ["a", "b"],
+            name: pl.Series(expected, dtype=output_dtype),
+        }
+    )
+    assert_frame_equal(result, df_expected)
+
+
+@pytest.mark.parametrize(
+    ("input", "expected", "input_dtype", "output_dtype"),
+    [
+        ([1, 2, 4, 5], [2, 5], pl.UInt8, pl.Float64),
+        ([1, 2, 4, 5], [2, 5], pl.Int8, pl.Float64),
+        ([1, 2, 4, 5], [2, 5], pl.UInt16, pl.Float64),
+        ([1, 2, 4, 5], [2, 5], pl.Int16, pl.Float64),
+        ([1, 2, 4, 5], [2, 5], pl.UInt32, pl.Float64),
+        ([1, 2, 4, 5], [2, 5], pl.Int32, pl.Float64),
+        ([1, 2, 4, 5], [2, 5], pl.UInt64, pl.Float64),
+        ([1, 2, 4, 5], [2, 5], pl.Float32, pl.Float32),
+        ([1, 2, 4, 5], [2, 5], pl.Float64, pl.Float64),
+        ([False, True, True, True], [1, 1], pl.Boolean, pl.Float64),
+        (
+            [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 4), date(2023, 1, 5)],
+            [datetime(2023, 1, 2), datetime(2023, 1, 5)],
+            pl.Date,
+            pl.Datetime("us"),
+        ),
+        (
+            [
+                datetime(2023, 1, 1),
+                datetime(2023, 1, 2),
+                datetime(2023, 1, 4),
+                datetime(2023, 1, 5),
+            ],
+            [datetime(2023, 1, 2), datetime(2023, 1, 5)],
+            pl.Datetime("ms"),
+            pl.Datetime("ms"),
+        ),
+        (
+            [
+                datetime(2023, 1, 1),
+                datetime(2023, 1, 2),
+                datetime(2023, 1, 4),
+                datetime(2023, 1, 5),
+            ],
+            [datetime(2023, 1, 2), datetime(2023, 1, 5)],
+            pl.Datetime("us"),
+            pl.Datetime("us"),
+        ),
+        (
+            [
+                datetime(2023, 1, 1),
+                datetime(2023, 1, 2),
+                datetime(2023, 1, 4),
+                datetime(2023, 1, 5),
+            ],
+            [datetime(2023, 1, 2), datetime(2023, 1, 5)],
+            pl.Datetime("ns"),
+            pl.Datetime("ns"),
+        ),
+        (
+            [timedelta(1), timedelta(2), timedelta(4), timedelta(5)],
+            [timedelta(2), timedelta(5)],
+            pl.Duration("ms"),
+            pl.Duration("ms"),
+        ),
+        (
+            [timedelta(1), timedelta(2), timedelta(4), timedelta(5)],
+            [timedelta(2), timedelta(5)],
+            pl.Duration("us"),
+            pl.Duration("us"),
+        ),
+        (
+            [timedelta(1), timedelta(2), timedelta(4), timedelta(5)],
+            [timedelta(2), timedelta(5)],
+            pl.Duration("ns"),
+            pl.Duration("ns"),
+        ),
+        ([time(1), time(2), time(4), time(5)], [time(2), time(5)], pl.Time, pl.Time),
+    ],
+)
+def test_group_by_median_by_dtype(
+    input: list[Any],
+    expected: list[Any],
+    input_dtype: PolarsDataType,
+    output_dtype: PolarsDataType,
+) -> None:
+    # groups are defined by first 3 values, then last value
+    name = str(input_dtype)
+    key = ["a", "a", "a", "b"]
+    df = pl.DataFrame(
+        {
+            "key": key,
+            name: pl.Series(input, dtype=input_dtype),
+        }
+    )
+    result = df.group_by("key", maintain_order=True).median()
+    df_expected = pl.DataFrame(
+        {
+            "key": ["a", "b"],
+            name: pl.Series(expected, dtype=output_dtype),
+        }
+    )
+    assert_frame_equal(result, df_expected)
 
 
 def test_group_by_empty() -> None:
