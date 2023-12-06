@@ -8,6 +8,7 @@ import pyarrow.fs
 import pytest
 from deltalake import DeltaTable
 from deltalake.exceptions import TableNotFoundError
+from deltalake.table import TableMerger
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_frame_not_equal
@@ -379,3 +380,28 @@ def test_write_delta_with_merge_and_no_table(tmp_path: Path) -> None:
         df.write_delta(
             tmp_path, mode="merge", delta_merge_options={"predicate": "a = a"}
         )
+
+
+def test_write_delta_with_merge(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    df.write_delta(tmp_path, mode="append")
+
+    merger = df.write_delta(
+        tmp_path,
+        mode="merge",
+        delta_merge_options={
+            "predicate": "s.a = t.a",
+            "source_alias": "s",
+            "target_alias": "t",
+        },
+    )
+
+    assert isinstance(merger, TableMerger)
+    assert merger.predicate == "s.a = t.a"
+
+    merger.when_matched_delete(predicate="t.a > 2").execute()
+
+    table = pl.read_delta(str(tmp_path))
+
+    assert_frame_equal(df.filter(pl.col("a") <= 2), table)
