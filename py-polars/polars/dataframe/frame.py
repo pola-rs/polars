@@ -3648,19 +3648,21 @@ class DataFrame:
         mode : {'error', 'append', 'overwrite', 'ignore', 'merge'}
             How to handle existing data.
 
-            * If 'error', throw an error if the table already exists (default).
-            * If 'append', will add new data.
-            * If 'overwrite', will replace table with new data.
-            * If 'ignore', will not write anything if table already exists.
+            - If 'error', throw an error if the table already exists (default).
+            - If 'append', will add new data.
+            - If 'overwrite', will replace table with new data.
+            - If 'ignore', will not write anything if table already exists.
+            - If 'merge', return a `TableMerger` object to merge data from the DataFrame
+              with the existing data.
         overwrite_schema
             If True, allows updating the schema of the table.
         storage_options
             Extra options for the storage backends supported by `deltalake`.
             For cloud storages, this may include configurations for authentication etc.
 
-            * See a list of supported storage options for S3 `here <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html#variants>`__.
-            * See a list of supported storage options for GCS `here <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html#variants>`__.
-            * See a list of supported storage options for Azure `here <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants>`__.
+            - See a list of supported storage options for S3 `here <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html#variants>`__.
+            - See a list of supported storage options for GCS `here <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html#variants>`__.
+            - See a list of supported storage options for Azure `here <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants>`__.
         delta_write_options
             Additional keyword arguments while writing a Delta lake Table.
             See a list of supported write options `here <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__.
@@ -3717,7 +3719,7 @@ class DataFrame:
         ...     existing_table_path, mode="overwrite", overwrite_schema=True
         ... )  # doctest: +SKIP
 
-        Write a dataframe as a Delta Lake table to a cloud object store like S3.
+        Write a DataFrame as a Delta Lake table to a cloud object store like S3.
 
         >>> table_path = "s3://bucket/prefix/to/delta-table/"
         >>> df.write_delta(
@@ -3740,12 +3742,12 @@ class DataFrame:
         ...     },
         ... )  # doctest: +SKIP
 
-        Merging dataframe to the local filesystem as a Delta Lake table. For a
-        cloud object store just pass storage_options or a DeltaTable object.
-        For all additional TableMerger methods check the deltalake docs `here <https://delta-io.github.io/delta-rs/api/delta_table/delta_table_merger/>`__.
+        Merge the DataFrame with an existing Delta Lake table.
+        For all `TableMerger` methods, check the deltalake docs
+        `here <https://delta-io.github.io/delta-rs/api/delta_table/delta_table_merger/>`__.
 
-        Schema evolution is currently not yet supported in deltalake, therefore
-        overwrite_schema won't have any effect during `MERGE`.
+        Schema evolution is not yet supported in by the `deltalake` package, therefore
+        `overwrite_schema` will not have any effect on a merge operation.
 
         >>> df = pl.DataFrame(
         ...     {
