@@ -36,30 +36,6 @@ class ExprCatNameSpace:
             - 'physical' -> Use the physical representation of the categories to
                 determine the order (default).
             - 'lexical' -> Use the string values to determine the ordering.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {"cats": ["z", "z", "k", "a", "b"], "vals": [3, 1, 2, 2, 3]}
-        ... ).with_columns(
-        ...     [
-        ...         pl.col("cats").cast(pl.Categorical).cat.set_ordering("lexical"),
-        ...     ]
-        ... )
-        >>> df.sort(["cats", "vals"])
-        shape: (5, 2)
-        ┌──────┬──────┐
-        │ cats ┆ vals │
-        │ ---  ┆ ---  │
-        │ cat  ┆ i64  │
-        ╞══════╪══════╡
-        │ a    ┆ 2    │
-        │ b    ┆ 3    │
-        │ k    ┆ 2    │
-        │ z    ┆ 1    │
-        │ z    ┆ 3    │
-        └──────┴──────┘
-
         """
         return wrap_expr(self._pyexpr.cat_set_ordering(ordering))
 

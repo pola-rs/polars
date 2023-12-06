@@ -39,30 +39,6 @@ class CatNameSpace:
             - 'physical' -> Use the physical representation of the categories to
                 determine the order (default).
             - 'lexical' -> Use the string values to determine the ordering.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {"cats": ["z", "z", "k", "a", "b"], "vals": [3, 1, 2, 2, 3]}
-        ... ).with_columns(
-        ...     [
-        ...         pl.col("cats").cast(pl.Categorical).cat.set_ordering("lexical"),
-        ...     ]
-        ... )
-        >>> df.sort(["cats", "vals"])
-        shape: (5, 2)
-        ┌──────┬──────┐
-        │ cats ┆ vals │
-        │ ---  ┆ ---  │
-        │ cat  ┆ i64  │
-        ╞══════╪══════╡
-        │ a    ┆ 2    │
-        │ b    ┆ 3    │
-        │ k    ┆ 2    │
-        │ z    ┆ 1    │
-        │ z    ┆ 3    │
-        └──────┴──────┘
-
         """
 
     def get_categories(self) -> Series:
@@ -163,7 +139,7 @@ class CatNameSpace:
         >>> s = pl.Series(["b", "a", "b"]).cast(pl.Categorical)
         >>> s.cat.uses_lexical_ordering()
         False
-        >>> s = s.cat.set_ordering("lexical")
+        >>> s = s.cast(pl.Categorical("lexical"))
         >>> s.cat.uses_lexical_ordering()
         True
 
