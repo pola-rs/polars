@@ -727,9 +727,7 @@ class Struct(NestedType):
         if isclass(other) and issubclass(other, Struct):
             return True
         elif isinstance(other, Struct):
-            return any((f is None) for f in (self.fields, other.fields)) or (
-                self.fields == other.fields
-            )
+            return self.fields == other.fields
         else:
             return False
 
