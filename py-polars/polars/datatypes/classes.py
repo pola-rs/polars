@@ -746,7 +746,7 @@ class Struct(NestedType):
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        return f"{class_name}({self.fields})"
+        return f"{class_name}({dict(self)})"
 
     def to_schema(self) -> SchemaDict | None:
         """Return Struct dtype as a schema dict."""
