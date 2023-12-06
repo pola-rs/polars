@@ -4,7 +4,12 @@ use crate::offset::{Offset, Offsets};
 use crate::types::NativeType;
 
 /// A private trait representing structs that can receive elements.
-pub trait Pushable<T>: Sized {
+pub trait Pushable<T>: Sized + Default {
+    fn with_capacity(capacity: usize) -> Self {
+        let mut new = Self::default();
+        new.reserve(capacity);
+        new
+    }
     fn reserve(&mut self, additional: usize);
     fn push(&mut self, value: T);
     fn len(&self) -> usize;

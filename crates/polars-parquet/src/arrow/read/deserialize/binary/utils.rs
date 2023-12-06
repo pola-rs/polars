@@ -2,7 +2,7 @@ use arrow::offset::{Offset, Offsets};
 use arrow::pushable::Pushable;
 
 /// [`Pushable`] for variable length binary data.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Binary<O: Offset> {
     pub offsets: Offsets<O>,
     pub values: Vec<u8>,

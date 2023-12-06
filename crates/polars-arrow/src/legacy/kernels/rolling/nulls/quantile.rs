@@ -1,4 +1,5 @@
 use polars_utils::slice::GetSaferUnchecked;
+use crate::array::MutablePrimitiveArray;
 
 use super::*;
 
@@ -126,6 +127,21 @@ where
         true => det_offsets_center,
         false => det_offsets,
     };
+    if !center {
+        let params = params.as_ref().unwrap();
+        let params = params.downcast_ref::<RollingQuantileParams>().unwrap();
+        if let QuantileInterpolOptions::Linear = params.interpol {
+            // let out =
+            //     super::quantile_filter::rolling_quantile::<_, MutablePrimitiveArray<_>>(min_periods, window_size, arr.clone(), params.prob);
+
+            todo!()
+            // return Box::new(PrimitiveArray::new(
+            //     T::PRIMITIVE.into(),
+            //     out.into(),
+            //     validity.map(|b| b.into()),
+            // ));
+        }
+    }
     rolling_apply_agg_window::<QuantileWindow<_>, _, _>(
         arr.values().as_slice(),
         arr.validity().as_ref().unwrap(),

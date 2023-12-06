@@ -18,12 +18,18 @@ impl<'a> BytesHash<'a> {
     }
 }
 
-impl IsNull for BytesHash<'_> {
+impl<'a> IsNull for BytesHash<'a> {
     const HAS_NULLS: bool = true;
+    type Inner = BytesHash<'a>;
 
     #[inline(always)]
     fn is_null(&self) -> bool {
         self.payload.is_none()
+    }
+
+    fn unwrap(self) -> Self::Inner {
+        assert!(self.payload.is_some());
+        self
     }
 }
 

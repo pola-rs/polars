@@ -2,6 +2,7 @@ use polars_error::{polars_bail, polars_ensure, PolarsResult};
 
 use crate::slice::GetSaferUnchecked;
 use crate::IdxSize;
+use crate::nulls::IsNull;
 
 pub trait Bounded {
     fn len(&self) -> usize;
@@ -18,7 +19,7 @@ impl<T> Bounded for &[T] {
 }
 
 pub trait Indexable {
-    type Item;
+    type Item: IsNull;
 
     fn get(&self, i: usize) -> Self::Item;
 
@@ -27,7 +28,7 @@ pub trait Indexable {
     unsafe fn get_unchecked(&self, i: usize) -> Self::Item;
 }
 
-impl<T: Copy> Indexable for &[T] {
+impl<T: Copy + IsNull> Indexable for &[T] {
     type Item = T;
 
     fn get(&self, i: usize) -> Self::Item {

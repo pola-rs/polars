@@ -209,9 +209,14 @@ pub struct months_days_ns(pub i32, pub i32, pub i64);
 
 impl IsNull for months_days_ns {
     const HAS_NULLS: bool = false;
+    type Inner = months_days_ns;
 
     fn is_null(&self) -> bool {
         false
+    }
+
+    fn unwrap(self) -> Self::Inner {
+        self
     }
 }
 
@@ -350,8 +355,12 @@ impl NativeType for months_days_ns {
 
 impl IsNull for days_ms {
     const HAS_NULLS: bool = false;
+    type Inner = days_ms;
     fn is_null(&self) -> bool {
         false
+    }
+    fn unwrap(self) -> Self::Inner {
+        self
     }
 }
 
@@ -404,9 +413,14 @@ impl PartialEq for f16 {
 
 impl IsNull for f16 {
     const HAS_NULLS: bool = false;
+    type Inner = f16;
+
     #[inline(always)]
     fn is_null(&self) -> bool {
         false
+    }
+    fn unwrap(self) -> Self::Inner {
+        self
     }
 }
 
@@ -609,9 +623,13 @@ impl i256 {
 
 impl IsNull for i256 {
     const HAS_NULLS: bool = false;
+    type Inner = i256;
     #[inline(always)]
     fn is_null(&self) -> bool {
         false
+    }
+    fn unwrap(self) -> Self::Inner {
+        self
     }
 }
 

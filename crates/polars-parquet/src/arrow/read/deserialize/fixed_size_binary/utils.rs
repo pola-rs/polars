@@ -1,7 +1,7 @@
 use arrow::pushable::Pushable;
 
 /// A [`Pushable`] for fixed sized binary data
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct FixedSizeBinary {
     pub values: Vec<u8>,
     pub size: usize,
