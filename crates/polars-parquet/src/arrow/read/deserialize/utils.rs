@@ -28,7 +28,6 @@ pub fn not_implemented(page: &DataPage) -> PolarsError {
     )
 }
 
-
 /// The state of a partially deserialized page
 pub(super) trait PageValidity<'a> {
     fn next_limited(&mut self, limit: usize) -> Option<FilteredHybridEncoded<'a>>;

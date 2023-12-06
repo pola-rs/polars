@@ -130,21 +130,19 @@ where
             if !center {
                 let params = params.as_ref().unwrap();
                 let params = params.downcast_ref::<RollingQuantileParams>().unwrap();
-                if let QuantileInterpolOptions::Linear = params.interpol {
-                    let out = super::quantile_filter::rolling_quantile::<_, Vec<_>>(
-                        min_periods,
-                        window_size,
-                        values,
-                        params.prob,
-                    );
-                    let validity =
-                        create_validity(min_periods, values.len(), window_size, offset_fn);
-                    return Ok(Box::new(PrimitiveArray::new(
-                        T::PRIMITIVE.into(),
-                        out.into(),
-                        validity.map(|b| b.into()),
-                    )));
-                }
+                let out = super::quantile_filter::rolling_quantile::<_, Vec<_>>(
+                    params.interpol,
+                    min_periods,
+                    window_size,
+                    values,
+                    params.prob,
+                );
+                let validity = create_validity(min_periods, values.len(), window_size, offset_fn);
+                return Ok(Box::new(PrimitiveArray::new(
+                    T::PRIMITIVE.into(),
+                    out.into(),
+                    validity.map(|b| b.into()),
+                )));
             }
 
             rolling_apply_agg_window::<QuantileWindow<_>, _, _>(

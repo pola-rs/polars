@@ -4,7 +4,7 @@
 
 use std::cmp::Ordering;
 use std::fmt::{Debug, Formatter};
-use std::ops::{Add, Mul, Sub};
+use std::ops::{Add, Div, Mul, Sub};
 
 use num_traits::NumCast;
 use polars_utils::float::IsFloat;
@@ -15,6 +15,7 @@ use polars_utils::slice::{GetSaferUnchecked, SliceAble};
 use polars_utils::sort::arg_sort_ascending;
 use polars_utils::total_ord::TotalOrd;
 
+use crate::legacy::prelude::QuantileInterpolOptions;
 use crate::pushable::Pushable;
 use crate::types::NativeType;
 
@@ -87,7 +88,7 @@ where
 impl<'a, A> Block<'a, A>
 where
     A: Indexable + Bounded + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item> + Clone,
-    <A as Indexable>::Item: TotalOrd + Copy + IsNull + 'a,
+    <A as Indexable>::Item: TotalOrd + Copy + IsNull + Debug + 'a,
 {
     fn new(
         alpha: A,
@@ -103,6 +104,7 @@ where
             alpha.len(),
         );
 
+        let nulls_in_window = alpha.null_count();
         let m_index = k / 2;
         let m = pi[m_index] as usize;
 
@@ -118,7 +120,7 @@ where
             n_element: k,
             tail: k,
             alpha,
-            nulls_in_window: 0,
+            nulls_in_window,
         };
         b.init_links();
         b
@@ -198,18 +200,18 @@ where
             },
             -1 => {
                 self.current_index -= 1;
-                self.m = self.prev[self.m as usize] as usize;
+                self.m = *self.prev.get_unchecked_release(self.m as usize) as usize;
             },
             1 => self.advance(),
             i64::MIN..=0 => {
                 for _ in i..self.current_index {
-                    self.m = self.prev[self.m as usize] as usize;
+                    self.m = *self.prev.get_unchecked_release(self.m as usize) as usize;
                 }
                 self.current_index = i;
             },
             _ => {
                 for _ in self.current_index..i {
-                    self.m = self.next[self.m as usize] as usize;
+                    self.m = *self.next.get_unchecked_release(self.m as usize) as usize;
                 }
                 self.current_index = i;
             },
@@ -380,7 +382,7 @@ trait LenGet {
 impl<'a, A> LenGet for &mut Block<'a, A>
 where
     A: Indexable + Bounded + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item> + Clone,
-    <A as Indexable>::Item: Copy + TotalOrd + 'a,
+    <A as Indexable>::Item: Copy + TotalOrd + Debug + 'a,
 {
     type Item = <A as Indexable>::Item;
 
@@ -410,15 +412,13 @@ where
 impl<'a, A> BlockUnion<'a, A>
 where
     A: Indexable + Bounded + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item> + Clone,
-    <A as Indexable>::Item: TotalOrd + Copy,
+    <A as Indexable>::Item: TotalOrd + Copy + Debug,
 {
     fn new(block_left: &'a mut Block<'a, A>, block_right: &'a mut Block<'a, A>, k: usize) -> Self {
         let out = Self {
             block_left,
             block_right,
         };
-        debug_assert_eq!(out.len(), k);
-
         out
     }
 
@@ -453,7 +453,7 @@ where
 impl<'a, A> LenGet for BlockUnion<'a, A>
 where
     A: Indexable + Bounded + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item> + Clone,
-    <A as Indexable>::Item: TotalOrd + Copy,
+    <A as Indexable>::Item: TotalOrd + Copy + Debug,
 {
     type Item = <A as Indexable>::Item;
 
@@ -528,14 +528,27 @@ where
 
 pub(super) trait FinishLinear {
     fn finish(proportion: f64, lower: Self, upper: Self) -> Self;
+    fn finish_midpoint(lower: Self, upper: Self) -> Self;
 }
 
-impl<T: NativeType + NumCast + Add<Output = T> + Sub<Output = T> + Mul<Output = T>> FinishLinear
-    for T
+impl<
+        T: NativeType
+            + NumCast
+            + Add<Output = T>
+            + Sub<Output = T>
+            + Div<Output = T>
+            + Mul<Output = T>
+            + Debug,
+    > FinishLinear for T
 {
     fn finish(proportion: f64, lower: Self, upper: Self) -> Self {
+        debug_assert!(proportion >= 0.0);
+        debug_assert!(proportion <= 1.0);
         let proportion: T = NumCast::from(proportion).unwrap();
         proportion * (upper - lower) + lower
+    }
+    fn finish_midpoint(lower: Self, upper: Self) -> Self {
+        (lower + upper) / NumCast::from(2).unwrap()
     }
 }
 
@@ -543,6 +556,16 @@ impl<T: FinishLinear> FinishLinear for Option<T> {
     fn finish(proportion: f64, lower: Self, upper: Self) -> Self {
         match (lower, upper) {
             (Some(lower), Some(upper)) => Some(T::finish(proportion, lower, upper)),
+            (Some(lower), _) => Some(lower),
+            (None, Some(upper)) => Some(upper),
+            _ => None,
+        }
+    }
+    fn finish_midpoint(lower: Self, upper: Self) -> Self {
+        match (lower, upper) {
+            (Some(lower), Some(upper)) => Some(T::finish_midpoint(lower, upper)),
+            (Some(lower), _) => Some(lower),
+            (None, Some(upper)) => Some(upper),
             _ => None,
         }
     }
@@ -552,46 +575,85 @@ struct QuantileUpdate<M: LenGet> {
     inner: M,
     quantile: f64,
     min_periods: usize,
+    interpol: QuantileInterpolOptions,
 }
 
 impl<M> QuantileUpdate<M>
 where
     M: LenGet,
-    <M as LenGet>::Item: Default + IsNull + Copy + FinishLinear,
+    <M as LenGet>::Item: Default + IsNull + Copy + FinishLinear + Debug,
 {
-    fn new(min_periods: usize, quantile: f64, inner: M) -> Self {
+    fn new(interpol: QuantileInterpolOptions, min_periods: usize, quantile: f64, inner: M) -> Self {
         Self {
             min_periods,
             quantile,
             inner,
+            interpol,
         }
     }
 
     fn quantile(&mut self) -> M::Item {
-        if M::Item::HAS_NULLS && (self.inner.len() - self.inner.null_count()) < self.min_periods {
+        // nulls are ignored in median position.
+        let null_count = self.inner.null_count();
+        let valid_length = self.inner.len() - null_count;
+
+        if M::Item::HAS_NULLS && valid_length < self.min_periods {
             // Default is None
             return M::Item::default();
         }
 
-        let lenght = self.inner.len();
-        let length_f = lenght as f64;
+        let valid_length_f = valid_length as f64;
 
-        let float_idx_top = (length_f - 1.0) * self.quantile;
-        let idx = float_idx_top.floor() as usize;
-        let top_idx = float_idx_top.ceil() as usize;
+        use QuantileInterpolOptions::*;
+        match self.interpol {
+            Linear => {
+                let float_idx_top = (valid_length_f - 1.0) * self.quantile;
+                let idx = float_idx_top.floor() as usize;
+                let top_idx = float_idx_top.ceil() as usize;
 
-        if idx == top_idx {
-            self.inner.get(idx)
-        } else {
-            let vi = self.inner.get(idx);
-            let vj = self.inner.get(top_idx);
-            let proportion = float_idx_top - idx as f64;
-            <<M as LenGet>::Item>::finish(proportion, vi, vj)
+                if idx == top_idx {
+                    self.inner.get(idx + null_count)
+                } else {
+                    let vi = self.inner.get(idx + null_count);
+                    let vj = self.inner.get(top_idx + null_count);
+                    let proportion = float_idx_top - idx as f64;
+                    <<M as LenGet>::Item>::finish(proportion, vi, vj)
+                }
+            },
+            Nearest => {
+                let idx = (valid_length_f * self.quantile) as usize;
+                let idx = std::cmp::min(idx, valid_length - 1);
+                self.inner.get(idx + null_count)
+            },
+            Midpoint => {
+                let idx = (valid_length_f * self.quantile) as usize;
+                let idx = std::cmp::min(idx, valid_length - 1);
+
+                let top_idx = ((valid_length_f - 1.0) * self.quantile).ceil() as usize;
+                if top_idx == idx {
+                    self.inner.get(idx + null_count)
+                } else {
+                    let mid = self.inner.get(idx + null_count);
+                    let mid_1 = self.inner.get(top_idx + null_count);
+                    <<M as LenGet>::Item>::finish_midpoint(mid, mid_1)
+                }
+            },
+            Lower => {
+                let idx = ((valid_length_f - 1.0) * self.quantile).floor() as usize;
+                let idx = std::cmp::min(idx, valid_length - 1);
+                self.inner.get(idx + null_count)
+            },
+            Higher => {
+                let idx = ((valid_length_f - 1.0) * self.quantile).ceil() as usize;
+                let idx = std::cmp::min(idx, valid_length - 1);
+                self.inner.get(idx + null_count)
+            },
         }
     }
 }
 
 pub(super) fn rolling_quantile<A, Out: Pushable<<A as Indexable>::Item>>(
+    interpol: QuantileInterpolOptions,
     min_periods: usize,
     k: usize,
     values: A,
@@ -603,7 +665,7 @@ where
         + Bounded
         + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item>
         + Clone,
-    <A as Indexable>::Item: Default + TotalOrd + Copy + FinishLinear,
+    <A as Indexable>::Item: Default + TotalOrd + Copy + FinishLinear + Debug,
 {
     let mut scratch_left = vec![];
     let mut prev_left = vec![];
@@ -653,7 +715,7 @@ where
         // SAFETY: bounded by capacity
         unsafe { block_left.undelete(i) };
 
-        let mut mu = QuantileUpdate::new(min_periods, quantile, &mut block_left);
+        let mut mu = QuantileUpdate::new(interpol, min_periods, quantile, &mut block_left);
         out.push(mu.quantile());
     }
     for i in 1..n_blocks + 1 {
@@ -691,7 +753,7 @@ where
                 let mut union = BlockUnion::new(&mut *ptr_left, &mut *ptr_right, k);
                 union.set_state(j);
 
-                out.push(QuantileUpdate::new(min_periods, quantile, union).quantile());
+                out.push(QuantileUpdate::new(interpol, min_periods, quantile, union).quantile());
             }
         }
 
@@ -1005,22 +1067,22 @@ mod test {
             2.0, 8.0, 5.0, 9.0, 1.0, 2.0, 4.0, 2.0, 4.0, 8.1, -1.0, 2.9, 1.2, 23.0,
         ]
         .as_ref();
-        let out: Vec<_> = rolling_quantile(0, 3, values, 0.5);
+        let out: Vec<_> = rolling_quantile(QuantileInterpolOptions::Linear, 0, 3, values, 0.5);
         let expected = [
             2.0, 5.0, 5.0, 8.0, 5.0, 2.0, 2.0, 2.0, 4.0, 4.0, 4.0, 2.9, 1.2, 2.9,
         ];
         assert_eq!(out, expected);
-        let out: Vec<_> = rolling_quantile(0, 5, values, 0.5);
+        let out: Vec<_> = rolling_quantile(QuantileInterpolOptions::Linear, 0, 5, values, 0.5);
         let expected = [
             2.0, 5.0, 5.0, 6.5, 5.0, 5.0, 4.0, 2.0, 2.0, 4.0, 4.0, 2.9, 2.9, 2.9,
         ];
         assert_eq!(out, expected);
-        let out: Vec<_> = rolling_quantile(0, 7, values, 0.5);
+        let out: Vec<_> = rolling_quantile(QuantileInterpolOptions::Linear, 0, 7, values, 0.5);
         let expected = [
             2.0, 5.0, 5.0, 6.5, 5.0, 3.5, 4.0, 4.0, 4.0, 4.0, 2.0, 2.9, 2.9, 2.9,
         ];
         assert_eq!(out, expected);
-        let out: Vec<_> = rolling_quantile(0, 4, values, 0.5);
+        let out: Vec<_> = rolling_quantile(QuantileInterpolOptions::Linear, 0, 4, values, 0.5);
         let expected = [
             2.0, 5.0, 5.0, 6.5, 6.5, 3.5, 3.0, 2.0, 3.0, 4.0, 3.0, 3.45, 2.05, 2.05,
         ];
@@ -1030,7 +1092,7 @@ mod test {
     #[test]
     fn test_median_2() {
         let values = [10, 10, 15, 13, 9, 5, 3, 13, 19, 15, 19].as_ref();
-        let out: Vec<_> = rolling_quantile(0, 3, values, 0.5);
+        let out: Vec<_> = rolling_quantile(QuantileInterpolOptions::Linear, 0, 3, values, 0.5);
         let expected = [10, 10, 10, 13, 13, 9, 5, 5, 13, 15, 19];
         assert_eq!(out, expected);
     }

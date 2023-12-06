@@ -545,4 +545,7 @@ impl<T: NativeType> Bounded for PrimitiveArray<T> {
     fn len(&self) -> usize {
         self.values.len()
     }
+    fn null_count(&self) -> usize {
+        <Self as Array>::null_count(self)
+    }
 }

@@ -1,8 +1,8 @@
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
 
+use crate::nulls::IsNull;
 use crate::slice::GetSaferUnchecked;
 use crate::IdxSize;
-use crate::nulls::IsNull;
 
 pub trait Bounded {
     fn len(&self) -> usize;
@@ -10,11 +10,17 @@ pub trait Bounded {
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    fn null_count(&self) -> usize;
 }
 
 impl<T> Bounded for &[T] {
     fn len(&self) -> usize {
         <[T]>::len(self)
+    }
+
+    fn null_count(&self) -> usize {
+        0
     }
 }
 

@@ -130,21 +130,15 @@ where
     if !center {
         let params = params.as_ref().unwrap();
         let params = params.downcast_ref::<RollingQuantileParams>().unwrap();
-        if let QuantileInterpolOptions::Linear = params.interpol {
-            let out = super::quantile_filter::rolling_quantile::<_, MutablePrimitiveArray<_>>(
-                min_periods,
-                window_size,
-                arr.clone(),
-                params.prob,
-            );
-
-            todo!()
-            // return Box::new(PrimitiveArray::new(
-            //     T::PRIMITIVE.into(),
-            //     out.into(),
-            //     validity.map(|b| b.into()),
-            // ));
-        }
+        let out = super::quantile_filter::rolling_quantile::<_, MutablePrimitiveArray<_>>(
+            params.interpol,
+            min_periods,
+            window_size,
+            arr.clone(),
+            params.prob,
+        );
+        let out: PrimitiveArray<T> = out.into();
+        return Box::new(out);
     }
     rolling_apply_agg_window::<QuantileWindow<_>, _, _>(
         arr.values().as_slice(),

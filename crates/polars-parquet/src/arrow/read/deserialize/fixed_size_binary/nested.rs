@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use arrow::array::FixedSizeBinaryArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::ArrowDataType;
+use arrow::pushable::Pushable;
 use polars_error::PolarsResult;
 
 use super::super::utils::{not_implemented, MaybeNext, PageState};
@@ -11,7 +12,6 @@ use crate::arrow::read::deserialize::fixed_size_binary::basic::{
     finish, Dict, Optional, OptionalDictionary, Required, RequiredDictionary,
 };
 use crate::arrow::read::deserialize::nested_utils::{next, NestedDecoder};
-use arrow::pushable::Pushable;
 use crate::arrow::read::{InitNested, NestedState, PagesIter};
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{DataPage, DictPage};
