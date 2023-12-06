@@ -122,7 +122,7 @@ impl Series {
                 let s = self.cast(&Int64).unwrap() * (US_IN_DAY as f64);
                 // agg_median returns Float64
                 let out = s.agg_median(groups);
-                // cast back to Int64 and then to logical duration type
+                // cast back to Int64 and then to logical temporal type
                 out.cast(&Int64)
                     .unwrap()
                     .cast(&Datetime(TimeUnit::Microseconds, None))
@@ -132,7 +132,7 @@ impl Series {
                 let s = self.to_physical_repr();
                 // agg_median returns Float64
                 let out = s.agg_median(groups);
-                // cast back to Int64 and then to logical duration type
+                // cast back to Int64 and then to logical type
                 out.cast(&Int64).unwrap().cast(dt).unwrap()
             },
             _ => Series::full_null("", groups.len(), self.dtype()),
@@ -184,7 +184,7 @@ impl Series {
                 let s = self.cast(&Int64).unwrap() * (US_IN_DAY as f64);
                 // agg_mean returns Float64
                 let out = s.agg_mean(groups);
-                // cast back to Int64 and then to logical duration type
+                // cast back to Int64 and then to logical temporal type
                 out.cast(&Int64)
                     .unwrap()
                     .cast(&Datetime(TimeUnit::Microseconds, None))
@@ -194,7 +194,7 @@ impl Series {
                 let s = self.to_physical_repr();
                 // agg_mean returns Float64
                 let out = s.agg_mean(groups);
-                // cast back to Int64 and then to logical duration type
+                // cast back to Int64 and then to logical type
                 out.cast(&Int64).unwrap().cast(dt).unwrap()
             },
             _ => Series::full_null("", groups.len(), self.dtype()),
