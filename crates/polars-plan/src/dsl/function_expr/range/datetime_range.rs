@@ -3,7 +3,7 @@ use polars_core::series::Series;
 use polars_time::{datetime_range_impl, ClosedWindow, Duration};
 
 use super::utils::{
-    broadcast_scalar_inputs, ensure_range_bounds_contain_exactly_one_value,
+    ensure_range_bounds_contain_exactly_one_value, ranges_impl_broadcast,
     temporal_series_to_i64_scalar,
 };
 use crate::dsl::function_expr::FieldsMapper;
@@ -114,7 +114,7 @@ pub(super) fn datetime_ranges(
         _ => unreachable!(),
     };
 
-    let (mut start, mut end) = match dtype {
+    let (start, end) = match dtype {
         #[cfg(feature = "timezones")]
         DataType::Datetime(_, Some(_)) => (
             polars_ops::prelude::replace_time_zone(
@@ -145,8 +145,6 @@ pub(super) fn datetime_ranges(
         ),
     };
 
-    (start, end) = broadcast_scalar_inputs(start, end)?;
-
     // overwrite time zone, if specified
     match (&dtype, &time_zone) {
         #[cfg(feature = "timezones")]
@@ -159,7 +157,7 @@ pub(super) fn datetime_ranges(
     let start = start.i64().unwrap();
     let end = end.i64().unwrap();
 
-    let list = match dtype {
+    let out = match dtype {
         DataType::Datetime(tu, ref tz) => {
             let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
                 "datetime_range",
@@ -167,23 +165,19 @@ pub(super) fn datetime_ranges(
                 start.len() * CAPACITY_FACTOR,
                 DataType::Int64,
             );
-            for (start, end) in start.into_iter().zip(end) {
-                match (start, end) {
-                    (Some(start), Some(end)) => {
-                        let rng =
-                            datetime_range_impl("", start, end, interval, closed, tu, tz.as_ref())?;
-                        builder.append_slice(rng.cont_slice().unwrap())
-                    },
-                    _ => builder.append_null(),
-                }
-            }
-            builder.finish().into_series()
+
+            let range_impl = |start, end| {
+                let rng = datetime_range_impl("", start, end, interval, closed, tu, tz.as_ref())?;
+                Ok(rng.0)
+            };
+
+            ranges_impl_broadcast(&mut builder, start, end, range_impl)?
         },
         _ => unimplemented!(),
     };
 
     let to_type = DataType::List(Box::new(dtype));
-    list.cast(&to_type)
+    out.cast(&to_type)
 }
 
 impl<'a> FieldsMapper<'a> {
