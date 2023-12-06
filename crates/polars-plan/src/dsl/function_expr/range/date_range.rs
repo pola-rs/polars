@@ -5,7 +5,7 @@ use polars_time::{datetime_range_impl, ClosedWindow, Duration};
 
 use super::datetime_range::{datetime_range, datetime_ranges};
 use super::utils::{
-    broadcast_scalar_inputs, ensure_range_bounds_contain_exactly_one_value,
+    ensure_range_bounds_contain_exactly_one_value, ranges_impl_broadcast,
     temporal_series_to_i64_scalar,
 };
 use crate::dsl::function_expr::FieldsMapper;
@@ -76,47 +76,40 @@ fn date_ranges(s: &[Series], interval: Duration, closed: ClosedWindow) -> Polars
     let start = &s[0];
     let end = &s[1];
 
-    let output_name = "date_range";
-
-    let mut start = start.cast(&DataType::Int64)?;
-    let mut end = end.cast(&DataType::Int64)?;
-
-    (start, end) = broadcast_scalar_inputs(start, end)?;
+    let start = start.cast(&DataType::Int64)?;
+    let end = end.cast(&DataType::Int64)?;
 
     let start = start.i64().unwrap() * MILLISECONDS_IN_DAY;
     let end = end.i64().unwrap() * MILLISECONDS_IN_DAY;
 
     let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
-        output_name,
+        "date_range",
         start.len(),
         start.len() * CAPACITY_FACTOR,
         DataType::Int32,
     );
-    for (start, end) in start.as_ref().into_iter().zip(&end) {
-        match (start, end) {
-            (Some(start), Some(end)) => {
-                // TODO: Implement an i32 version of `date_range_impl`
-                let rng = datetime_range_impl(
-                    "",
-                    start,
-                    end,
-                    interval,
-                    closed,
-                    TimeUnit::Milliseconds,
-                    None,
-                )?;
-                let rng = rng.cast(&DataType::Date).unwrap();
-                let rng = rng.to_physical_repr();
-                let rng = rng.i32().unwrap();
-                builder.append_slice(rng.cont_slice().unwrap())
-            },
-            _ => builder.append_null(),
-        }
-    }
-    let list = builder.finish().into_series();
+
+    let range_impl = |start, end, builder: &mut ListPrimitiveChunkedBuilder<Int32Type>| {
+        let rng = datetime_range_impl(
+            "",
+            start,
+            end,
+            interval,
+            closed,
+            TimeUnit::Milliseconds,
+            None,
+        )?;
+        let rng = rng.cast(&DataType::Date).unwrap();
+        let rng = rng.to_physical_repr();
+        let rng = rng.i32().unwrap();
+        builder.append_slice(rng.cont_slice().unwrap());
+        Ok(())
+    };
+
+    let out = ranges_impl_broadcast(&start, &end, range_impl, &mut builder)?;
 
     let to_type = DataType::List(Box::new(DataType::Date));
-    list.cast(&to_type)
+    out.cast(&to_type)
 }
 
 impl<'a> FieldsMapper<'a> {

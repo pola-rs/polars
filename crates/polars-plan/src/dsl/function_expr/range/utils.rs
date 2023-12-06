@@ -140,7 +140,7 @@ where
     Ok(())
 }
 
-/// Add nulls to the builder.
+/// Add `n` nulls to the builder.
 fn build_nulls<U>(builder: &mut ListPrimitiveChunkedBuilder<U>, n: usize)
 where
     U: PolarsIntegerType,
