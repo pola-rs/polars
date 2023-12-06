@@ -737,17 +737,17 @@ class Struct(NestedType):
         return hash((self.__class__, tuple(self.fields)))
 
     def __iter__(self) -> Iterator[tuple[str, PolarsDataType]]:
-        for fld in self.fields or []:
+        for fld in self.fields:
             yield fld.name, fld.dtype
 
     def __reversed__(self) -> Iterator[tuple[str, PolarsDataType]]:
-        for fld in reversed(self.fields or []):
+        for fld in reversed(self.fields):
             yield fld.name, fld.dtype
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
         return f"{class_name}({dict(self)})"
 
-    def to_schema(self) -> SchemaDict | None:
+    def to_schema(self) -> SchemaDict:
         """Return Struct dtype as a schema dict."""
         return dict(self)
