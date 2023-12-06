@@ -876,7 +876,7 @@ mod test {
         let mut b = Block::new(alpha_b.as_ref(), &mut scratch, &mut prev, &mut next);
 
         b.unwind();
-        let mut aub = BlockUnion::new(&mut a, &mut b, alpha_a.len());
+        let mut aub = BlockUnion::new(&mut a, &mut b);
         assert_eq!(aub.len(), 3);
         // STEP 0
         // block 1:
@@ -933,7 +933,7 @@ mod test {
         let mut b = Block::new(alpha_b, &mut scratch, &mut prev, &mut next);
 
         b.unwind();
-        let mut aub = BlockUnion::new(&mut a, &mut b, alpha_a.len());
+        let mut aub = BlockUnion::new(&mut a, &mut b);
         assert_eq!(aub.len(), 10);
         // STEP 0
         // block 1:
