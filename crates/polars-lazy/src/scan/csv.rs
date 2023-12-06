@@ -228,11 +228,11 @@ impl<'a> LazyCsvReader<'a> {
     /// Modify a schema before we run the lazy scanning.
     ///
     /// Important! Run this function latest in the builder!
-    pub fn with_schema_modify<F>(mut self, f: F) -> PolarsResult<Self>
+    pub fn with_schema_modify<F>(mut self, f: F, location: &ScanLocation) -> PolarsResult<Self>
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
-        let mut mmap_bytes_reader = self.specific_reader().expect("There should be a specific ReaderFactory set at this point").mmapbytesreader()?;
+        let mut mmap_bytes_reader = location.mmapbytesreader()?;
         let reader_bytes = get_reader_bytes(&mut mmap_bytes_reader).expect("could not mmap file");
         let mut skip_rows = self.skip_rows;
 
