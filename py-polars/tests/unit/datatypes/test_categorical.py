@@ -259,6 +259,7 @@ def test_categorical_sort_order_by_parameter(
 
 
 @StringCache()
+@pytest.mark.filterwarnings("ignore:`set_ordering` is deprecated:DeprecationWarning")
 def test_categorical_sort_order(monkeypatch: Any) -> None:
     # create the categorical ordering first
     pl.Series(["foo", "bar", "baz"], dtype=pl.Categorical)

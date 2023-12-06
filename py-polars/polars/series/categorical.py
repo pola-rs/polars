@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
+from polars.utils.deprecation import deprecate_function
 
 if TYPE_CHECKING:
     from polars import Series
@@ -20,6 +21,12 @@ class CatNameSpace:
     def __init__(self, series: Series):
         self._s: PySeries = series._s
 
+    @deprecate_function(
+        "Set the ordering directly on the datatype `pl.Categorical('lexical')`"
+        " or `pl.Categorical('physical')` or `cast()` to the intended data type."
+        " This method will be removed in the next breaking change",
+        version="0.19.19",
+    )
     def set_ordering(self, ordering: CategoricalOrdering) -> Series:
         """
         Determine how this categorical series should be sorted.

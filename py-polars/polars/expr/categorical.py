@@ -21,7 +21,7 @@ class ExprCatNameSpace:
     @deprecate_function(
         "Set the ordering directly on the datatype `pl.Categorical('lexical')`"
         " or `pl.Categorical('physical')` or `cast()` to the intended data type."
-        "This method will be removed in the next breaking change",
+        " This method will be removed in the next breaking change",
         version="0.19.19",
     )
     def set_ordering(self, ordering: CategoricalOrdering) -> Expr:
