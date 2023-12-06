@@ -1469,7 +1469,10 @@ def test_numpy_float_construction_av() -> None:
 
 
 def test_df_init_dict_raise_on_expression_input() -> None:
-    with pytest.raises(TypeError):
+    with pytest.raises(
+        TypeError,
+        match="passing Expr objects to the DataFrame constructor is not supported",
+    ):
         pl.DataFrame({"a": pl.int_range(0, 3)})
     with pytest.raises(TypeError):
         pl.DataFrame({"a": pl.int_range(0, 3), "b": [3, 4, 5]})
