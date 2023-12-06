@@ -1531,9 +1531,9 @@ class ExprDateTimeNameSpace:
         │ 2020-10-09 20:00:00 ┆ America/New_York ┆ 2020-10-10 00:00:00 UTC │
         └─────────────────────┴──────────────────┴─────────────────────────┘
         """
-        naive_time_zone = parse_as_expression(from_tz, str_as_lit=True)
+        from_tz= parse_as_expression(from_tz, str_as_lit=True)
         return wrap_expr(
-            self._pyexpr.dt_from_local_datetime(naive_time_zone, out_tz, ambiguous)
+            self._pyexpr.dt_from_local_datetime(from_tz, out_tz, ambiguous)
         )
 
     def total_days(self) -> Expr:
