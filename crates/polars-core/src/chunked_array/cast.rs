@@ -535,8 +535,12 @@ mod test {
     fn test_cast_noop() {
         // check if we can cast categorical twice without panic
         let ca = Utf8Chunked::new("foo", &["bar", "ham"]);
-        let out = ca.cast(&DataType::Categorical(None)).unwrap();
-        let out = out.cast(&DataType::Categorical(None)).unwrap();
-        assert!(matches!(out.dtype(), &DataType::Categorical(_)))
+        let out = ca
+            .cast(&DataType::Categorical(None, CategoricalOrdering::Physical))
+            .unwrap();
+        let out = out
+            .cast(&DataType::Categorical(None, CategoricalOrdering::Physical))
+            .unwrap();
+        assert!(matches!(out.dtype(), &DataType::Categorical(_, _)))
     }
 }

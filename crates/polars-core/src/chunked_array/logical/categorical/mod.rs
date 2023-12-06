@@ -403,12 +403,12 @@ mod test {
             Some("bar"),
         ];
         let ca = Utf8Chunked::new("a", slice);
-        let ca = ca.cast(&DataType::Categorical(None))?;
+        let ca = ca.cast(&DataType::Categorical(None, CategoricalOrdering::Physical))?;
         let ca = ca.categorical().unwrap();
 
         let arr: DictionaryArray<u32> = (ca).into();
         let s = Series::try_from(("foo", Box::new(arr) as ArrayRef))?;
-        assert!(matches!(s.dtype(), &DataType::Categorical(_)));
+        assert!(matches!(s.dtype(), &DataType::Categorical(_, _)));
         assert_eq!(s.null_count(), 1);
         assert_eq!(s.len(), 6);
 
@@ -422,10 +422,10 @@ mod test {
         enable_string_cache();
 
         let mut s1 = Series::new("1", vec!["a", "b", "c"])
-            .cast(&DataType::Categorical(None))
+            .cast(&DataType::Categorical(None, CategoricalOrdering::Physical))
             .unwrap();
         let s2 = Series::new("2", vec!["a", "x", "y"])
-            .cast(&DataType::Categorical(None))
+            .cast(&DataType::Categorical(None, CategoricalOrdering::Physical))
             .unwrap();
         let appended = s1.append(&s2).unwrap();
         assert_eq!(appended.str_value(0).unwrap(), "a");
@@ -438,7 +438,7 @@ mod test {
     fn test_fast_unique() {
         let _lock = SINGLE_LOCK.lock();
         let s = Series::new("1", vec!["a", "b", "c"])
-            .cast(&DataType::Categorical(None))
+            .cast(&DataType::Categorical(None, CategoricalOrdering::Physical))
             .unwrap();
 
         assert_eq!(s.n_unique().unwrap(), 3);
@@ -455,11 +455,15 @@ mod test {
         disable_string_cache();
 
         // tests several things that may lose the dtype information
-        let s = Series::new("a", vec!["a", "b", "c"]).cast(&DataType::Categorical(None))?;
+        let s = Series::new("a", vec!["a", "b", "c"])
+            .cast(&DataType::Categorical(None, CategoricalOrdering::Physical))?;
 
         assert_eq!(
             s.field().into_owned(),
-            Field::new("a", DataType::Categorical(None))
+            Field::new(
+                "a",
+                DataType::Categorical(None, CategoricalOrdering::Physical)
+            )
         );
         assert!(matches!(
             s.get(0)?,
@@ -470,7 +474,7 @@ mod test {
         let aggregated = unsafe { s.agg_list(&groups?) };
         match aggregated.get(0)? {
             AnyValue::List(s) => {
-                assert!(matches!(s.dtype(), DataType::Categorical(_)));
+                assert!(matches!(s.dtype(), DataType::Categorical(_, _)));
                 let str_s = s.cast(&DataType::Utf8).unwrap();
                 assert_eq!(str_s.get(0)?, AnyValue::Utf8("a"));
                 assert_eq!(s.len(), 1);

@@ -610,7 +610,7 @@ mod test {
 
         let df = DataFrame::new(Vec::from([Series::new_empty(
             "fruits",
-            &DataType::Categorical(None),
+            &DataType::Categorical(None, CategoricalOrdering::Physical),
         )]))
         .unwrap();
 

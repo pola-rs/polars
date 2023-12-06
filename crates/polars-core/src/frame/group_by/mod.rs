@@ -1100,8 +1100,11 @@ mod test {
         }
         .unwrap();
 
-        df.apply("foo", |s| s.cast(&DataType::Categorical(None)).unwrap())
-            .unwrap();
+        df.apply("foo", |s| {
+            s.cast(&DataType::Categorical(None, CategoricalOrdering::Physical))
+                .unwrap()
+        })
+        .unwrap();
 
         // Use of deprecated `sum()` for testing purposes
         #[allow(deprecated)]
@@ -1172,7 +1175,9 @@ mod test {
             "int" => [1, 2, 3, 1, 1]
         ]?;
 
-        df.try_apply("g", |s| s.cast(&DataType::Categorical(None)))?;
+        df.try_apply("g", |s| {
+            s.cast(&DataType::Categorical(None, CategoricalOrdering::Physical))
+        })?;
 
         // Use of deprecated `sum()` for testing purposes
         #[allow(deprecated)]

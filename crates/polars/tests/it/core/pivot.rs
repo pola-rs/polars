@@ -124,7 +124,9 @@ fn test_pivot_categorical() -> PolarsResult<()> {
         "B" => [8, 2, 3, 6, 3, 6, 2, 2],
         "C" => ["a", "b", "c", "a", "b", "c", "a", "b"]
     ]?;
-    df.try_apply("C", |s| s.cast(&DataType::Categorical(None)))?;
+    df.try_apply("C", |s| {
+        s.cast(&DataType::Categorical(None, CategoricalOrdering::Physical))
+    })?;
 
     let out = pivot(&df, ["A"], ["B"], ["C"], true, Some(PivotAgg::Count), None)?;
     assert_eq!(out.get_column_names(), &["B", "a", "b", "c"]);

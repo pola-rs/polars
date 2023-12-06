@@ -1166,7 +1166,7 @@ mod test {
             ),
             (
                 ArrowDataType::Dictionary(IntegerType::UInt32, ArrowDataType::Utf8.into(), false),
-                DataType::Categorical(None),
+                DataType::Categorical(None, CategoricalOrdering::Physical),
             ),
             (
                 ArrowDataType::Dictionary(
@@ -1174,7 +1174,7 @@ mod test {
                     ArrowDataType::LargeUtf8.into(),
                     false,
                 ),
-                DataType::Categorical(None),
+                DataType::Categorical(None, CategoricalOrdering::Physical),
             ),
             (
                 ArrowDataType::Dictionary(
@@ -1182,7 +1182,7 @@ mod test {
                     ArrowDataType::LargeUtf8.into(),
                     false,
                 ),
-                DataType::Categorical(None),
+                DataType::Categorical(None, CategoricalOrdering::Physical),
             ),
         ];
 
