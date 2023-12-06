@@ -19,6 +19,8 @@ impl<'a> BytesHash<'a> {
 }
 
 impl IsNull for BytesHash<'_> {
+    const HAS_NULLS: bool = true;
+
     #[inline(always)]
     fn is_null(&self) -> bool {
         self.payload.is_none()

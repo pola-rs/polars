@@ -10,9 +10,11 @@ use num_traits::NumCast;
 use polars_utils::float::IsFloat;
 use polars_utils::index::{Bounded, Indexable};
 use polars_utils::iter::IntoIteratorCopied;
-use polars_utils::slice::SliceAble;
+use polars_utils::nulls::IsNull;
+use polars_utils::slice::{GetSaferUnchecked, SliceAble};
 use polars_utils::sort::arg_sort_ascending;
 use polars_utils::total_ord::TotalOrd;
+use crate::legacy::index::IdxSize;
 
 use crate::types::NativeType;
 
@@ -28,6 +30,7 @@ struct Block<'a, A> {
     m: usize,
     // index in the list
     current_index: usize,
+    nulls_in_window: IdxSize
 }
 
 impl<'a, A> Debug for Block<'a, A>
@@ -83,7 +86,7 @@ where
 
 impl<'a, A> Block<'a, A>
 where
-    A: Indexable + Bounded + IntoIteratorCopied<Item = <A as Indexable>::Item> + Clone,
+    A: Indexable + Bounded + IntoIteratorCopied<OwnedItem= <A as Indexable>::Item> + Clone,
     <A as Indexable>::Item: NativeType,
 {
     fn new(
@@ -115,6 +118,7 @@ where
             n_element: k,
             tail: k,
             alpha,
+            nulls_in_window: 0
         };
         b.init_links();
         b
@@ -128,28 +132,42 @@ where
         let mut p = self.tail;
 
         for &q in self.pi.iter() {
-            self.next[p as usize] = q;
-            self.prev[q as usize] = p as u32;
+            // SAFETY: bounded by pi
+            unsafe {
+                *self.next.get_unchecked_release_mut(p as usize) = q;
+                *self.prev.get_unchecked_release_mut(q as usize) = p as u32;
+            }
 
             p = q as usize;
         }
-        self.next[p as usize] = self.tail as u32;
-        self.prev[self.tail] = p as u32;
+        unsafe  {
+            *self.next.get_unchecked_release_mut(p as usize) = self.tail as u32;
+            *self.prev.get_unchecked_release_mut(self.tail) = p as u32;
+        }
     }
 
-    fn delete_link(&mut self, i: usize) {
-        self.next[self.prev[i] as usize] = self.next[i];
-        self.prev[self.next[i] as usize] = self.prev[i];
+    unsafe fn delete_link(&mut self, i: usize) {
+        if <A as Indexable>::Item::HAS_NULLS && self.alpha.get_unchecked(i).is_null() {
+            self.nulls_in_window -= 1
+        }
+
+        *self.next.get_unchecked_release_mut(*self.prev.get_unchecked_release(i) as usize) = *self.next.get_unchecked_release(i);
+        *self.prev.get_unchecked_release_mut(*self.next.get_unchecked_release(i) as usize) = *self.prev.get_unchecked_release(i);
     }
 
-    fn undelete_link(&mut self, i: usize) {
-        self.next[self.prev[i] as usize] = i as u32;
-        self.prev[self.next[i] as usize] = i as u32;
+    unsafe fn undelete_link(&mut self, i: usize) {
+        if <A as Indexable>::Item::HAS_NULLS && self.alpha.get_unchecked(i).is_null() {
+            self.nulls_in_window += 1
+        }
+
+        *self.next.get_unchecked_release_mut(*self.prev.get_unchecked_release(i) as usize) = i as u32;
+        *self.prev.get_unchecked_release_mut(*self.next.get_unchecked_release(i) as usize) = i as u32;
     }
 
     fn unwind(&mut self) {
         for i in (0..self.k).rev() {
-            self.delete_link(i)
+            // SAFETY: k is upper bound
+            unsafe { self.delete_link(i) }
         }
         self.m = self.tail;
         self.n_element = 0;
@@ -159,10 +177,11 @@ where
     fn set_median(&mut self) {
         // median index position
         let new_index = self.n_element / 2;
-        self.traverse_to_index(new_index)
+        // SAFETY: only used in tests.
+        unsafe { self.traverse_to_index(new_index) }
     }
 
-    fn traverse_to_index(&mut self, i: usize) {
+    unsafe fn traverse_to_index(&mut self, i: usize) {
         match i as i64 - self.current_index as i64 {
             0 => {
                 // pass
@@ -190,14 +209,14 @@ where
     fn reverse(&mut self) {
         if self.current_index > 0 {
             self.current_index -= 1;
-            self.m = self.prev[self.m] as usize;
+            self.m = unsafe { *self.prev.get_unchecked_release(self.m) as usize };
         }
     }
 
     fn advance(&mut self) {
         if self.current_index < self.n_element {
             self.current_index += 1;
-            self.m = self.next[self.m] as usize;
+            self.m = unsafe { *self.next.get_unchecked_release(self.m) as usize };
         }
     }
 
@@ -207,7 +226,7 @@ where
         self.m = self.next[self.tail] as usize;
     }
 
-    fn delete(&mut self, i: usize) {
+    unsafe fn delete(&mut self, i: usize) {
         if self.at_end() {
             self.reverse()
         }
@@ -237,26 +256,26 @@ where
                 // 1, 2, [4], 5
                 // go to next position because the link was deleted
                 if self.n_element >= self.current_index {
-                    let next_m = self.next[self.m as usize] as usize;
+                    let next_m = *self.next.get_unchecked_release(self.m as usize) as usize;
 
                     if next_m == self.tail && self.n_element > 0 {
                         // The index points to tail,  set the index in the array again.
                         self.current_index -= 1;
-                        self.m = self.prev[self.m as usize] as usize
+                        self.m = *self.prev.get_unchecked_release(self.m as usize) as usize
                     } else {
-                        self.m = self.next[self.m as usize] as usize;
+                        self.m = *self.next.get_unchecked_release(self.m as usize) as usize;
                     }
                 } else {
                     // move to previous position because the link was deleted
                     // 1, [2],
                     // [1]
-                    self.m = self.prev[self.m as usize] as usize
+                    self.m = *self.prev.get_unchecked_release(self.m as usize) as usize
                 }
             },
         };
     }
 
-    fn undelete(&mut self, i: usize) {
+    unsafe fn undelete(&mut self, i: usize) {
         if !self.is_empty() && self.at_end() {
             self.reverse()
         }
@@ -297,13 +316,15 @@ where
 
     #[cfg(test)]
     fn delete_set_median(&mut self, i: usize) {
-        self.delete(i);
+        // SAFETY: only used in testing
+        unsafe { self.delete(i) };
         self.set_median()
     }
 
     #[cfg(test)]
     fn undelete_set_median(&mut self, i: usize) {
-        self.undelete(i);
+        // SAFETY: only used in testing
+        unsafe { self.undelete(i) };
         self.set_median()
     }
 
@@ -348,7 +369,7 @@ trait LenGet {
 
 impl<'a, A> LenGet for &mut Block<'a, A>
 where
-    A: Indexable + Bounded + IntoIteratorCopied<Item = <A as Indexable>::Item> + Clone,
+    A: Indexable + Bounded + IntoIteratorCopied<OwnedItem= <A as Indexable>::Item> + Clone,
     <A as Indexable>::Item: NativeType,
 {
     type Item = <A as Indexable>::Item;
@@ -358,7 +379,8 @@ where
     }
 
     fn get(&mut self, i: usize) -> Self::Item {
-        self.traverse_to_index(i);
+        // ONLY PRIVATE USE
+        unsafe { self.traverse_to_index(i) };
         self.peek().unwrap()
     }
 
@@ -377,7 +399,7 @@ where
 
 impl<'a, A> BlockUnion<'a, A>
 where
-    A: Indexable + Bounded + IntoIteratorCopied<Item = <A as Indexable>::Item> + Clone,
+    A: Indexable + Bounded + IntoIteratorCopied<OwnedItem= <A as Indexable>::Item> + Clone,
     <A as Indexable>::Item: NativeType,
 {
     fn new(block_left: &'a mut Block<'a, A>, block_right: &'a mut Block<'a, A>, k: usize) -> Self {
@@ -390,7 +412,7 @@ where
         out
     }
 
-    fn set_state(&mut self, i: usize) {
+    unsafe fn set_state(&mut self, i: usize) {
         self.block_left.delete(i);
         self.block_right.undelete(i);
     }
@@ -398,7 +420,7 @@ where
 
 impl<'a, A> LenGet for BlockUnion<'a, A>
 where
-    A: Indexable + Bounded + IntoIteratorCopied<Item = <A as Indexable>::Item> + Clone,
+    A: Indexable + Bounded + IntoIteratorCopied<OwnedItem= <A as Indexable>::Item> + Clone,
     <A as Indexable>::Item: NativeType,
 {
     type Item = <A as Indexable>::Item;
@@ -410,10 +432,10 @@ where
     fn get(&mut self, i: usize) -> Self::Item {
         // Simple case, all elements are left.
         if self.block_right.n_element == 0 {
-            self.block_left.traverse_to_index(i);
+            unsafe { self.block_left.traverse_to_index(i) };
             return self.block_left.peek().unwrap();
         } else if self.block_left.n_element == 0 {
-            self.block_right.traverse_to_index(i);
+            unsafe { self.block_right.traverse_to_index(i) };
             return self.block_right.peek().unwrap();
         }
 
@@ -526,9 +548,9 @@ where
     }
 }
 
-pub fn rolling_quantile<A>(k: usize, slice: A, quantile: f64) -> Vec<<A as Indexable>::Item>
+pub fn rolling_quantile<A>(k: usize, values: A, quantile: f64) -> Vec<<A as Indexable>::Item>
 where
-    A: Indexable + SliceAble + Bounded + IntoIteratorCopied<Item = <A as Indexable>::Item> + Clone,
+    A: Indexable + SliceAble + Bounded + IntoIteratorCopied<OwnedItem= <A as Indexable>::Item> + Clone,
     <A as Indexable>::Item: NativeType
         + NumCast
         + Sub<Output = <A as Indexable>::Item>
@@ -543,10 +565,10 @@ where
     let mut prev_right = vec![];
     let mut next_right = vec![];
 
-    let k = std::cmp::min(k, slice.len());
-    let alpha = slice.slice(0..k);
+    let k = std::cmp::min(k, values.len());
+    let alpha = values.slice(0..k);
 
-    let mut out = Vec::with_capacity(slice.len());
+    let mut out = Vec::with_capacity(values.len());
 
     let scratch_right_ptr = &mut scratch_right as *mut Vec<u8>;
     let scratch_left_ptr = &mut scratch_left as *mut Vec<u8>;
@@ -555,7 +577,7 @@ where
     let next_right_ptr = &mut next_right as *mut Vec<_>;
     let next_left_ptr = &mut next_left as *mut Vec<_>;
 
-    let n_blocks = slice.len() / k;
+    let n_blocks = values.len() / k;
 
     let mut block_left = unsafe {
         Block::new(
@@ -567,7 +589,7 @@ where
     };
     let mut block_right = unsafe {
         Block::new(
-            slice.slice(0..1),
+            values.slice(0..1),
             &mut *scratch_right_ptr,
             &mut *prev_right_ptr,
             &mut *next_right_ptr,
@@ -580,7 +602,8 @@ where
     block_left.unwind();
 
     for i in 0..block_left.capacity() {
-        block_left.undelete(i);
+        // SAFETY: bounded by capacity
+        unsafe { block_left.undelete(i) };
 
         let mut mu = QuantileUpdate::new(quantile, &mut block_left);
         out.push(mu.quantile());
@@ -595,8 +618,8 @@ where
         // |-------------||-------------|
         //   - WINDOW -
         // |--------------|
-        let end = std::cmp::min((i + 1) * k, slice.len());
-        let alpha = slice.slice(i * k..end);
+        let end = std::cmp::min((i + 1) * k, values.len());
+        let alpha = unsafe { values.slice_unchecked(i * k..end) };
 
         if alpha.is_empty() {
             break;
@@ -739,32 +762,34 @@ mod test {
         assert_eq!(aub.get(1), 4);
         assert_eq!(aub.get(2), 10);
 
-        // STEP 1
-        aub.block_left.reset();
-        aub.set_state(0);
-        assert_eq!(aub.len(), 3);
-        // block 1:
-        // i:  4, 2
-        // s:  2, 4
-        // block 2:
-        // i:  3
-        // s:  3
-        // union s: [2, 3, 4]
-        assert_eq!(aub.get(0), 2);
-        assert_eq!(aub.get(1), 3);
-        assert_eq!(aub.get(2), 4);
+        unsafe {
+            // STEP 1
+            aub.block_left.reset();
+            aub.set_state(0);
+            assert_eq!(aub.len(), 3);
+            // block 1:
+            // i:  4, 2
+            // s:  2, 4
+            // block 2:
+            // i:  3
+            // s:  3
+            // union s: [2, 3, 4]
+            assert_eq!(aub.get(0), 2);
+            assert_eq!(aub.get(1), 3);
+            assert_eq!(aub.get(2), 4);
 
-        // STEP 2
-        // i:  2
-        // s:  2
-        // block 2:
-        // i:  3, 4
-        // s:  3, 4
-        // union s: [2, 3, 4]
-        aub.set_state(1);
-        assert_eq!(aub.get(0), 2);
-        assert_eq!(aub.get(1), 3);
-        assert_eq!(aub.get(2), 4);
+            // STEP 2
+            // i:  2
+            // s:  2
+            // block 2:
+            // i:  3, 4
+            // s:  3, 4
+            // union s: [2, 3, 4]
+            aub.set_state(1);
+            assert_eq!(aub.get(0), 2);
+            assert_eq!(aub.get(1), 3);
+            assert_eq!(aub.get(2), 4);
+        }
     }
 
     #[test]
@@ -801,127 +826,129 @@ mod test {
         // get median
         assert_eq!(aub.get(5), 6);
 
-        // STEP 1
-        aub.set_state(0);
-        assert_eq!(aub.len(), 10);
-        // block 1:
-        // i:  4, 5, 7, 3, 9, 2, 6, 9, 8
-        // s:  2, 3, 4, 5, 6, 7, 8, 9, 9
-        // block 2:
-        // i:  2
-        // s:  2
-        // union s: 2, 2, 3, 4, 5, [6], 7, 8, 9, 9
-        assert_eq!(aub.get(5), 6);
-        assert_eq!(aub.get(7), 8);
+        unsafe {
+            // STEP 1
+            aub.set_state(0);
+            assert_eq!(aub.len(), 10);
+            // block 1:
+            // i:  4, 5, 7, 3, 9, 2, 6, 9, 8
+            // s:  2, 3, 4, 5, 6, 7, 8, 9, 9
+            // block 2:
+            // i:  2
+            // s:  2
+            // union s: 2, 2, 3, 4, 5, [6], 7, 8, 9, 9
+            assert_eq!(aub.get(5), 6);
+            assert_eq!(aub.get(7), 8);
 
-        // STEP 2
-        aub.set_state(1);
+            // STEP 2
+            aub.set_state(1);
 
-        // Back to index 4
-        aub.block_left.reset();
-        aub.block_right.reset();
-        assert_eq!(aub.get(4), 5);
-        // block 1:
-        // i:  5, 7, 3, 9, 2, 6, 9, 8
-        // s:  2, 3, 5, 6, 7, 8, 9, 9
-        // block 2:
-        // i:  2, 2
-        // s:  2, 2
-        // union s: 2, 2, 3, 4, 5, [6], 7, 8, 9, 9
-        assert_eq!(aub.get(5), 6);
+            // Back to index 4
+            aub.block_left.reset();
+            aub.block_right.reset();
+            assert_eq!(aub.get(4), 5);
+            // block 1:
+            // i:  5, 7, 3, 9, 2, 6, 9, 8
+            // s:  2, 3, 5, 6, 7, 8, 9, 9
+            // block 2:
+            // i:  2, 2
+            // s:  2, 2
+            // union s: 2, 2, 3, 4, 5, [6], 7, 8, 9, 9
+            assert_eq!(aub.get(5), 6);
 
-        // STEP 3
-        aub.set_state(2);
-        // block 1:
-        // i:  7, 3, 9, 2, 6, 9, 8
-        // s:  2, 3, 6, 7, 8, 9, 9
-        // block 2:
-        // i:  2, 2, 1
-        // s:  1, 2, 2
-        // union s: 1, 2, 2, 3, 4, [6], 7, 8, 9, 9
-        assert_eq!(aub.get(5), 6);
+            // STEP 3
+            aub.set_state(2);
+            // block 1:
+            // i:  7, 3, 9, 2, 6, 9, 8
+            // s:  2, 3, 6, 7, 8, 9, 9
+            // block 2:
+            // i:  2, 2, 1
+            // s:  1, 2, 2
+            // union s: 1, 2, 2, 3, 4, [6], 7, 8, 9, 9
+            assert_eq!(aub.get(5), 6);
 
-        // STEP 4
-        aub.set_state(3);
-        // block 1:
-        // i:  3, 9, 2, 6, 9, 8
-        // s:  2, 3, 6, 8, 9, 9
-        // block 2:
-        // i:  2, 2, 1, 7
-        // s:  1, 2, 2, 7
-        // union s: 1, 2, 2, 3, 4, [6], 7, 8, 9, 9
-        assert_eq!(aub.get(5), 6);
+            // STEP 4
+            aub.set_state(3);
+            // block 1:
+            // i:  3, 9, 2, 6, 9, 8
+            // s:  2, 3, 6, 8, 9, 9
+            // block 2:
+            // i:  2, 2, 1, 7
+            // s:  1, 2, 2, 7
+            // union s: 1, 2, 2, 3, 4, [6], 7, 8, 9, 9
+            assert_eq!(aub.get(5), 6);
 
-        // STEP 5
-        aub.set_state(4);
-        // block 1:
-        // i:  9, 2, 6, 9, 8
-        // s:  2, 6, 8, 9, 9
-        // block 2:
-        // i:  2, 2, 1, 7, 5
-        // s:  1, 2, 2, 5, 7
-        // union s: 1, 2, 2, 2, 5, [6], 7, 8, 9, 9
-        assert_eq!(aub.get(5), 6);
-        assert_eq!(aub.len(), 10);
+            // STEP 5
+            aub.set_state(4);
+            // block 1:
+            // i:  9, 2, 6, 9, 8
+            // s:  2, 6, 8, 9, 9
+            // block 2:
+            // i:  2, 2, 1, 7, 5
+            // s:  1, 2, 2, 5, 7
+            // union s: 1, 2, 2, 2, 5, [6], 7, 8, 9, 9
+            assert_eq!(aub.get(5), 6);
+            assert_eq!(aub.len(), 10);
 
-        // STEP 6
-        aub.set_state(5);
-        // LEFT IS phasing out
-        // block 1:
-        // i:  2, 6, 9, 8
-        // s:  2, 6, 8, 9
-        // block 2:
-        // i:  2, 2, 1, 7, 5, 3
-        // s:  1, 2, 2, 3, 5, 7
-        // union s: 1, 2, 2, 2, 4, [5], 6, 7, 8, 9
-        assert_eq!(aub.len(), 10);
-        assert_eq!(aub.get(5), 5);
+            // STEP 6
+            aub.set_state(5);
+            // LEFT IS phasing out
+            // block 1:
+            // i:  2, 6, 9, 8
+            // s:  2, 6, 8, 9
+            // block 2:
+            // i:  2, 2, 1, 7, 5, 3
+            // s:  1, 2, 2, 3, 5, 7
+            // union s: 1, 2, 2, 2, 4, [5], 6, 7, 8, 9
+            assert_eq!(aub.len(), 10);
+            assert_eq!(aub.get(5), 5);
 
-        // STEP 7
-        aub.set_state(6);
-        // block 1:
-        // i:  6, 9, 8
-        // s:  6, 8, 9
-        // block 2:
-        // i:  2, 2, 1, 7, 5, 3, 2
-        // s:  1, 2, 2, 2, 3, 5, 7
-        // union s: 1, 2, 2, 2, 3, [5], 6, 7, 8, 9
-        assert_eq!(aub.len(), 10);
-        assert_eq!(aub.get(5), 5);
+            // STEP 7
+            aub.set_state(6);
+            // block 1:
+            // i:  6, 9, 8
+            // s:  6, 8, 9
+            // block 2:
+            // i:  2, 2, 1, 7, 5, 3, 2
+            // s:  1, 2, 2, 2, 3, 5, 7
+            // union s: 1, 2, 2, 2, 3, [5], 6, 7, 8, 9
+            assert_eq!(aub.len(), 10);
+            assert_eq!(aub.get(5), 5);
 
-        // STEP 8
-        aub.set_state(7);
-        // block 1:
-        // i:  9, 8
-        // s:  8, 9
-        // block 2:
-        // i:  2, 2, 1, 7, 5, 3, 2, 6
-        // s:  1, 2, 2, 2, 3, 5, 6, 7
-        // union s: 1, 2, 2, 2, 3, [5], 6, 7, 8, 9
-        assert_eq!(aub.len(), 10);
-        assert_eq!(aub.get(5), 5);
+            // STEP 8
+            aub.set_state(7);
+            // block 1:
+            // i:  9, 8
+            // s:  8, 9
+            // block 2:
+            // i:  2, 2, 1, 7, 5, 3, 2, 6
+            // s:  1, 2, 2, 2, 3, 5, 6, 7
+            // union s: 1, 2, 2, 2, 3, [5], 6, 7, 8, 9
+            assert_eq!(aub.len(), 10);
+            assert_eq!(aub.get(5), 5);
 
-        // STEP 9
-        aub.set_state(8);
-        // block 1:
-        // i:  8
-        // s:  8
-        // block 2:
-        // i:  2, 2, 1, 7, 5, 3, 2, 6, 1
-        // s:  1, 1, 2, 2, 2, 3, 5, 6, 7
-        // union s: 1, 1, 2, 2, 2, [3], 5, 6, 7, 8
-        assert_eq!(aub.len(), 10);
-        assert_eq!(aub.get(5), 3);
+            // STEP 9
+            aub.set_state(8);
+            // block 1:
+            // i:  8
+            // s:  8
+            // block 2:
+            // i:  2, 2, 1, 7, 5, 3, 2, 6, 1
+            // s:  1, 1, 2, 2, 2, 3, 5, 6, 7
+            // union s: 1, 1, 2, 2, 2, [3], 5, 6, 7, 8
+            assert_eq!(aub.len(), 10);
+            assert_eq!(aub.get(5), 3);
 
-        // STEP 10
-        aub.set_state(9);
-        // block 1: empty
-        // block 2:
-        // i:  2, 2, 1, 7, 5, 3, 2, 6, 1, 7
-        // s:  1, 1, 2, 2, 2, 3, 5, 6, 7
-        // union s: 1, 1, 2, 2, 2, [3], 5, 6, 7, 7
-        assert_eq!(aub.len(), 10);
-        assert_eq!(aub.get(5), 3);
+            // STEP 10
+            aub.set_state(9);
+            // block 1: empty
+            // block 2:
+            // i:  2, 2, 1, 7, 5, 3, 2, 6, 1, 7
+            // s:  1, 1, 2, 2, 2, 3, 5, 6, 7
+            // union s: 1, 1, 2, 2, 2, [3], 5, 6, 7, 7
+            assert_eq!(aub.len(), 10);
+            assert_eq!(aub.get(5), 3);
+        }
     }
 
     #[test]

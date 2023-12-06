@@ -1,8 +1,12 @@
 pub trait IsNull {
+    const HAS_NULLS: bool;
+
     fn is_null(&self) -> bool;
 }
 
 impl<T> IsNull for Option<T> {
+    const HAS_NULLS: bool = true;
+
     #[inline(always)]
     fn is_null(&self) -> bool {
         self.is_none()
@@ -12,6 +16,8 @@ impl<T> IsNull for Option<T> {
 macro_rules! impl_is_null (
     ($($ty:tt)*) => {
         impl IsNull for $($ty)* {
+            const HAS_NULLS: bool = false;
+
             #[inline(always)]
             fn is_null(&self) -> bool {
                 false
@@ -35,6 +41,8 @@ impl_is_null!(u64);
 impl_is_null!(&[u8]);
 
 impl<T: IsNull + ?Sized> IsNull for &T {
+    const HAS_NULLS: bool = false;
+
     fn is_null(&self) -> bool {
         (*self).is_null()
     }

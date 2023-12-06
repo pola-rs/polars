@@ -3,6 +3,7 @@ use std::ops::Neg;
 use std::panic::RefUnwindSafe;
 
 use bytemuck::{Pod, Zeroable};
+use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::{TotalEq, TotalOrd};
 
 use super::PrimitiveType;
@@ -23,6 +24,8 @@ pub trait NativeType:
     + Default
     + Copy
     + TotalOrd
+    + IsNull
+
 {
     /// The corresponding variant of [`PrimitiveType`].
     const PRIMITIVE: PrimitiveType;
@@ -204,6 +207,14 @@ impl NativeType for days_ms {
 #[repr(C)]
 pub struct months_days_ns(pub i32, pub i32, pub i64);
 
+impl IsNull for months_days_ns {
+    const HAS_NULLS: bool = false;
+
+    fn is_null(&self) -> bool {
+        false
+    }
+}
+
 impl months_days_ns {
     /// A new [`months_days_ns`].
     #[inline]
@@ -337,6 +348,13 @@ impl NativeType for months_days_ns {
     }
 }
 
+impl IsNull for days_ms {
+    const HAS_NULLS: bool = false;
+    fn is_null(&self) -> bool {
+        false
+    }
+}
+
 impl std::fmt::Display for days_ms {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}d {}ms", self.days(), self.milliseconds())
@@ -381,6 +399,14 @@ impl PartialEq for f16 {
         } else {
             (self.0 == other.0) || ((self.0 | other.0) & 0x7FFFu16 == 0)
         }
+    }
+}
+
+impl IsNull for f16 {
+    const HAS_NULLS: bool = false;
+    #[inline(always)]
+    fn is_null(&self) -> bool {
+        false
     }
 }
 
@@ -578,6 +604,14 @@ impl i256 {
     /// Returns a new [`i256`] from two `i128`.
     pub fn from_words(hi: i128, lo: i128) -> Self {
         Self(ethnum::I256::from_words(hi, lo))
+    }
+}
+
+impl IsNull for i256 {
+    const HAS_NULLS: bool = false;
+    #[inline(always)]
+    fn is_null(&self) -> bool {
+        false
     }
 }
 
