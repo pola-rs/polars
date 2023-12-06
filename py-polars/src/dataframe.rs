@@ -618,7 +618,7 @@ impl PyDataFrame {
 
         if let Ok(s) = py_f.extract::<&str>(py) {
             py.allow_threads(|| {
-                let f = std::fs::File::create(s).map_err(|e| PyOSError::new_err(e.to_string()))?;
+                let f = std::fs::File::create(s).map_err(|e| PolarsError::Io(e))?;
                 
                 // No need for a buffered writer, because the csv writer does internal buffering.
                 CsvWriter::new(f)
