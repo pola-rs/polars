@@ -1466,3 +1466,14 @@ def test_list_null_constructor() -> None:
 def test_numpy_float_construction_av() -> None:
     np_dict = {"a": np.float64(1)}
     assert_frame_equal(pl.DataFrame(np_dict), pl.DataFrame({"a": 1.0}))
+
+
+def test_df_init_dict_raise_on_expression_input() -> None:
+    with pytest.raises(TypeError):
+        pl.DataFrame({"a": pl.int_range(0, 3)})
+    with pytest.raises(TypeError):
+        pl.DataFrame({"a": pl.int_range(0, 3), "b": [3, 4, 5]})
+
+    # Passing a list of expressions is allowed
+    df = pl.DataFrame({"a": [pl.int_range(0, 3)]})
+    assert df.get_column("a").dtype == pl.Object
