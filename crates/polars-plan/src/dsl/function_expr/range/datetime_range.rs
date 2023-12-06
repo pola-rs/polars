@@ -166,9 +166,10 @@ pub(super) fn datetime_ranges(
                 DataType::Int64,
             );
 
-            let range_impl = |start, end| {
+            let range_impl = |start, end, builder: &mut ListPrimitiveChunkedBuilder<Int64Type>| {
                 let rng = datetime_range_impl("", start, end, interval, closed, tu, tz.as_ref())?;
-                Ok(rng.0)
+                builder.append_slice(rng.cont_slice().unwrap());
+                Ok(())
             };
 
             ranges_impl_broadcast(&mut builder, start, end, range_impl)?

@@ -56,7 +56,7 @@ pub(super) fn ranges_impl_broadcast<T, F>(
 ) -> PolarsResult<Series>
 where
     T: PolarsIntegerType,
-    F: Fn(T::Native, T::Native) -> PolarsResult<ChunkedArray<T>>,
+    F: Fn(T::Native, T::Native, &mut ListPrimitiveChunkedBuilder<T>) -> PolarsResult<()>,
 {
     match (start.len(), end.len()) {
         (len_start, len_end) if len_start == len_end => {
@@ -66,7 +66,9 @@ where
             let start_scalar = unsafe { start.get_unchecked(0) };
             match start_scalar {
                 Some(start) => {
-                    let range_impl = |end| range_impl(start, end);
+                    let range_impl = |end, builder: &mut ListPrimitiveChunkedBuilder<T>| {
+                        range_impl(start, end, builder)
+                    };
                     ranges_single_impl(builder, end, range_impl)?
                 },
                 None => build_nulls(builder, len_end),
@@ -76,7 +78,9 @@ where
             let end_scalar = unsafe { end.get_unchecked(0) };
             match end_scalar {
                 Some(end) => {
-                    let range_impl = |start| range_impl(start, end);
+                    let range_impl = |start, builder: &mut ListPrimitiveChunkedBuilder<T>| {
+                        range_impl(start, end, builder)
+                    };
                     ranges_single_impl(builder, start, range_impl)?
                 },
                 None => build_nulls(builder, len_start),
@@ -103,14 +107,11 @@ fn ranges_double_impl<T, F>(
 ) -> PolarsResult<()>
 where
     T: PolarsIntegerType,
-    F: Fn(T::Native, T::Native) -> PolarsResult<ChunkedArray<T>>,
+    F: Fn(T::Native, T::Native, &mut ListPrimitiveChunkedBuilder<T>) -> PolarsResult<()>,
 {
     for (start, end) in zip(start, end) {
         match (start, end) {
-            (Some(start), Some(end)) => {
-                let rng = range_impl(start, end)?;
-                builder.append_slice(rng.cont_slice().unwrap())
-            },
+            (Some(start), Some(end)) => range_impl(start, end, builder)?,
             _ => builder.append_null(),
         }
     }
@@ -125,14 +126,11 @@ fn ranges_single_impl<T, F>(
 ) -> PolarsResult<()>
 where
     T: PolarsIntegerType,
-    F: Fn(T::Native) -> PolarsResult<ChunkedArray<T>>,
+    F: Fn(T::Native, &mut ListPrimitiveChunkedBuilder<T>) -> PolarsResult<()>,
 {
     for ca_scalar in ca {
         match ca_scalar {
-            Some(ca_scalar) => {
-                let rng = range_impl(ca_scalar)?;
-                builder.append_slice(rng.cont_slice().unwrap())
-            },
+            Some(ca_scalar) => range_impl(ca_scalar, builder)?,
             None => builder.append_null(),
         }
     }
