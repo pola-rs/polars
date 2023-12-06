@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     fn test_basic1() {
-        let a = u32::from_le_bytes([0b00010001, 0u8, 0u8, 0u8]);
+        let a = 0b00000000000000000000000000010001u32;
         let a = from_chunk_u32(a);
         for i in 0..8 {
             assert_eq!(a.test(i), i % 4 == 0)
