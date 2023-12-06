@@ -8,8 +8,9 @@ use polars_error::PolarsResult;
 use super::super::utils::{
     dict_indices_decoder, extend_from_decoder, get_selected_rows, next, not_implemented,
     DecodedState, Decoder, FilteredOptionalPageValidity, MaybeNext, OptionalPageValidity,
-    PageState, Pushable,
+    PageState
 };
+use arrow::pushable::Pushable;
 use super::super::PagesIter;
 use super::utils::FixedSizeBinary;
 use crate::parquet::deserialize::SliceFilteredIter;

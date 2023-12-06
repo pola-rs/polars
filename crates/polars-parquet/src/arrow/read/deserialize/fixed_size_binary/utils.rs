@@ -1,4 +1,4 @@
-use super::super::utils::Pushable;
+use arrow::pushable::Pushable;
 
 /// A [`Pushable`] for fixed sized binary data
 #[derive(Debug)]

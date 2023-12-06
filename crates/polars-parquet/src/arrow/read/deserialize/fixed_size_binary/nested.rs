@@ -11,7 +11,7 @@ use crate::arrow::read::deserialize::fixed_size_binary::basic::{
     finish, Dict, Optional, OptionalDictionary, Required, RequiredDictionary,
 };
 use crate::arrow::read::deserialize::nested_utils::{next, NestedDecoder};
-use crate::arrow::read::deserialize::utils::Pushable;
+use arrow::pushable::Pushable;
 use crate::arrow::read::{InitNested, NestedState, PagesIter};
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{DataPage, DictPage};

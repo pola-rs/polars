@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 
 use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::MutableBitmap;
+use arrow::pushable::Pushable;
 use polars_error::{polars_err, to_compute_err, PolarsError, PolarsResult};
 
 use super::super::PagesIter;
@@ -27,66 +28,6 @@ pub fn not_implemented(page: &DataPage) -> PolarsError {
     )
 }
 
-/// A private trait representing structs that can receive elements.
-pub(super) trait Pushable<T>: Sized {
-    fn reserve(&mut self, additional: usize);
-    fn push(&mut self, value: T);
-    fn len(&self) -> usize;
-    fn push_null(&mut self);
-    fn extend_constant(&mut self, additional: usize, value: T);
-}
-
-impl Pushable<bool> for MutableBitmap {
-    #[inline]
-    fn reserve(&mut self, additional: usize) {
-        MutableBitmap::reserve(self, additional)
-    }
-    #[inline]
-    fn len(&self) -> usize {
-        self.len()
-    }
-
-    #[inline]
-    fn push(&mut self, value: bool) {
-        self.push(value)
-    }
-
-    #[inline]
-    fn push_null(&mut self) {
-        self.push(false)
-    }
-
-    #[inline]
-    fn extend_constant(&mut self, additional: usize, value: bool) {
-        self.extend_constant(additional, value)
-    }
-}
-
-impl<A: Copy + Default> Pushable<A> for Vec<A> {
-    #[inline]
-    fn reserve(&mut self, additional: usize) {
-        Vec::reserve(self, additional)
-    }
-    #[inline]
-    fn len(&self) -> usize {
-        self.len()
-    }
-
-    #[inline]
-    fn push_null(&mut self) {
-        self.push(A::default())
-    }
-
-    #[inline]
-    fn push(&mut self, value: A) {
-        self.push(value)
-    }
-
-    #[inline]
-    fn extend_constant(&mut self, additional: usize, value: A) {
-        self.resize(self.len() + additional, value);
-    }
-}
 
 /// The state of a partially deserialized page
 pub(super) trait PageValidity<'a> {
