@@ -1,4 +1,5 @@
 use polars_utils::iter::IntoIteratorCopied;
+
 use super::{MutablePrimitiveArray, PrimitiveArray};
 use crate::array::MutableArray;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
@@ -46,7 +47,6 @@ impl<'a, T: NativeType> MutablePrimitiveArray<T> {
         self.values().iter()
     }
 }
-
 
 impl<T: NativeType> IntoIteratorCopied for PrimitiveArray<T> {
     type OwnedItem = Option<T>;

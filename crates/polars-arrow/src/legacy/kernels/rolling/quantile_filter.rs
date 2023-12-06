@@ -14,8 +14,8 @@ use polars_utils::nulls::IsNull;
 use polars_utils::slice::{GetSaferUnchecked, SliceAble};
 use polars_utils::sort::arg_sort_ascending;
 use polars_utils::total_ord::TotalOrd;
-use crate::pushable::Pushable;
 
+use crate::pushable::Pushable;
 use crate::types::NativeType;
 
 struct Block<'a, A> {
@@ -30,13 +30,13 @@ struct Block<'a, A> {
     m: usize,
     // index in the list
     current_index: usize,
-    nulls_in_window: usize
+    nulls_in_window: usize,
 }
 
 impl<'a, A> Debug for Block<'a, A>
 where
     A: Indexable,
-    A::Item: NativeType,
+    A::Item: Debug + Copy,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.n_element == 0 {
@@ -86,8 +86,8 @@ where
 
 impl<'a, A> Block<'a, A>
 where
-    A: Indexable + Bounded + IntoIteratorCopied<OwnedItem= <A as Indexable>::Item> + Clone,
-    <A as Indexable>::Item: NativeType,
+    A: Indexable + Bounded + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item> + Clone,
+    <A as Indexable>::Item: TotalOrd + Copy + IsNull + 'a,
 {
     fn new(
         alpha: A,
@@ -118,7 +118,7 @@ where
             n_element: k,
             tail: k,
             alpha,
-            nulls_in_window: 0
+            nulls_in_window: 0,
         };
         b.init_links();
         b
@@ -140,7 +140,7 @@ where
 
             p = q as usize;
         }
-        unsafe  {
+        unsafe {
             *self.next.get_unchecked_release_mut(p as usize) = self.tail as u32;
             *self.prev.get_unchecked_release_mut(self.tail) = p as u32;
         }
@@ -151,8 +151,14 @@ where
             self.nulls_in_window -= 1
         }
 
-        *self.next.get_unchecked_release_mut(*self.prev.get_unchecked_release(i) as usize) = *self.next.get_unchecked_release(i);
-        *self.prev.get_unchecked_release_mut(*self.next.get_unchecked_release(i) as usize) = *self.prev.get_unchecked_release(i);
+        *self
+            .next
+            .get_unchecked_release_mut(*self.prev.get_unchecked_release(i) as usize) =
+            *self.next.get_unchecked_release(i);
+        *self
+            .prev
+            .get_unchecked_release_mut(*self.next.get_unchecked_release(i) as usize) =
+            *self.prev.get_unchecked_release(i);
     }
 
     unsafe fn undelete_link(&mut self, i: usize) {
@@ -160,8 +166,12 @@ where
             self.nulls_in_window += 1
         }
 
-        *self.next.get_unchecked_release_mut(*self.prev.get_unchecked_release(i) as usize) = i as u32;
-        *self.prev.get_unchecked_release_mut(*self.next.get_unchecked_release(i) as usize) = i as u32;
+        *self
+            .next
+            .get_unchecked_release_mut(*self.prev.get_unchecked_release(i) as usize) = i as u32;
+        *self
+            .prev
+            .get_unchecked_release_mut(*self.next.get_unchecked_release(i) as usize) = i as u32;
     }
 
     fn unwind(&mut self) {
@@ -359,7 +369,7 @@ where
 }
 
 trait LenGet {
-    type Item: NativeType;
+    type Item;
     fn len(&self) -> usize;
 
     fn get(&mut self, i: usize) -> Self::Item;
@@ -369,8 +379,8 @@ trait LenGet {
 
 impl<'a, A> LenGet for &mut Block<'a, A>
 where
-    A: Indexable + Bounded + IntoIteratorCopied<OwnedItem= <A as Indexable>::Item> + Clone,
-    <A as Indexable>::Item: NativeType,
+    A: Indexable + Bounded + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item> + Clone,
+    <A as Indexable>::Item: Copy + TotalOrd + 'a,
 {
     type Item = <A as Indexable>::Item;
 
@@ -391,7 +401,7 @@ where
 
 struct BlockUnion<'a, A: Indexable>
 where
-    A::Item: NativeType,
+    A::Item: TotalOrd + Copy,
 {
     block_left: &'a mut Block<'a, A>,
     block_right: &'a mut Block<'a, A>,
@@ -399,8 +409,8 @@ where
 
 impl<'a, A> BlockUnion<'a, A>
 where
-    A: Indexable + Bounded + IntoIteratorCopied<OwnedItem= <A as Indexable>::Item> + Clone,
-    <A as Indexable>::Item: NativeType,
+    A: Indexable + Bounded + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item> + Clone,
+    <A as Indexable>::Item: TotalOrd + Copy,
 {
     fn new(block_left: &'a mut Block<'a, A>, block_right: &'a mut Block<'a, A>, k: usize) -> Self {
         let out = Self {
@@ -442,8 +452,8 @@ where
 
 impl<'a, A> LenGet for BlockUnion<'a, A>
 where
-    A: Indexable + Bounded + IntoIteratorCopied<OwnedItem= <A as Indexable>::Item> + Clone,
-    <A as Indexable>::Item: NativeType,
+    A: Indexable + Bounded + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item> + Clone,
+    <A as Indexable>::Item: TotalOrd + Copy,
 {
     type Item = <A as Indexable>::Item;
 
@@ -516,28 +526,51 @@ where
     }
 }
 
+pub(super) trait FinishLinear {
+    fn finish(proportion: f64, lower: Self, upper: Self) -> Self;
+}
+
+impl<T: NativeType + NumCast + Add<Output = T> + Sub<Output = T> + Mul<Output = T>> FinishLinear
+    for T
+{
+    fn finish(proportion: f64, lower: Self, upper: Self) -> Self {
+        let proportion: T = NumCast::from(proportion).unwrap();
+        proportion * (upper - lower) + lower
+    }
+}
+
+impl<T: FinishLinear> FinishLinear for Option<T> {
+    fn finish(proportion: f64, lower: Self, upper: Self) -> Self {
+        match (lower, upper) {
+            (Some(lower), Some(upper)) => Some(T::finish(proportion, lower, upper)),
+            _ => None,
+        }
+    }
+}
+
 struct QuantileUpdate<M: LenGet> {
     inner: M,
     quantile: f64,
-    min_periods: usize
+    min_periods: usize,
 }
 
 impl<M> QuantileUpdate<M>
 where
     M: LenGet,
-    <M as LenGet>::Item: Sub<Output = <M as LenGet>::Item>
-        + Mul<Output = <M as LenGet>::Item>
-        + Add<Output = <M as LenGet>::Item>
-        + NumCast,
+    <M as LenGet>::Item: Default + IsNull + Copy + FinishLinear,
 {
     fn new(min_periods: usize, quantile: f64, inner: M) -> Self {
-        Self { min_periods, quantile, inner }
+        Self {
+            min_periods,
+            quantile,
+            inner,
+        }
     }
 
     fn quantile(&mut self) -> M::Item {
         if M::Item::HAS_NULLS && (self.inner.len() - self.inner.null_count()) < self.min_periods {
             // Default is None
-            return M::Item::default()
+            return M::Item::default();
         }
 
         let lenght = self.inner.len();
@@ -550,22 +583,27 @@ where
         if idx == top_idx {
             self.inner.get(idx)
         } else {
-            let proportion: M::Item = NumCast::from(float_idx_top - idx as f64).unwrap();
             let vi = self.inner.get(idx);
             let vj = self.inner.get(top_idx);
-            proportion * (vj - vi) + vi
+            let proportion = float_idx_top - idx as f64;
+            <<M as LenGet>::Item>::finish(proportion, vi, vj)
         }
     }
 }
 
-pub fn rolling_quantile<A, Out: Pushable<<A as Indexable>::Item>>(min_periods: usize, k: usize, values: A, quantile: f64) -> Out
+pub(super) fn rolling_quantile<A, Out: Pushable<<A as Indexable>::Item>>(
+    min_periods: usize,
+    k: usize,
+    values: A,
+    quantile: f64,
+) -> Out
 where
-    A: Indexable + SliceAble + Bounded + IntoIteratorCopied<OwnedItem= <A as Indexable>::Item> + Clone,
-    <A as Indexable>::Item: NativeType
-        + NumCast
-        + Sub<Output = <A as Indexable>::Item>
-        + Mul<Output = <A as Indexable>::Item>
-        + Add<Output = <A as Indexable>::Item>,
+    A: Indexable
+        + SliceAble
+        + Bounded
+        + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item>
+        + Clone,
+    <A as Indexable>::Item: Default + TotalOrd + Copy + FinishLinear,
 {
     let mut scratch_left = vec![];
     let mut prev_left = vec![];
@@ -992,7 +1030,7 @@ mod test {
     #[test]
     fn test_median_2() {
         let values = [10, 10, 15, 13, 9, 5, 3, 13, 19, 15, 19].as_ref();
-        let out: Vec<_> = rolling_quantile(0,3, values, 0.5);
+        let out: Vec<_> = rolling_quantile(0, 3, values, 0.5);
         let expected = [10, 10, 10, 13, 13, 9, 5, 5, 13, 15, 19];
         assert_eq!(out, expected);
     }

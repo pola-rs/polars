@@ -25,7 +25,6 @@ pub trait NativeType:
     + Copy
     + TotalOrd
     + IsNull
-
 {
     /// The corresponding variant of [`PrimitiveType`].
     const PRIMITIVE: PrimitiveType;

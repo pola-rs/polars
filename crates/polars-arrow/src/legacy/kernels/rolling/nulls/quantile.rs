@@ -1,7 +1,7 @@
 use polars_utils::slice::GetSaferUnchecked;
-use crate::array::MutablePrimitiveArray;
 
 use super::*;
+use crate::array::MutablePrimitiveArray;
 
 pub struct QuantileWindow<'a, T: NativeType + IsFloat + PartialOrd> {
     sorted: SortedBufNulls<'a, T>,
@@ -131,8 +131,12 @@ where
         let params = params.as_ref().unwrap();
         let params = params.downcast_ref::<RollingQuantileParams>().unwrap();
         if let QuantileInterpolOptions::Linear = params.interpol {
-            // let out =
-            //     super::quantile_filter::rolling_quantile::<_, MutablePrimitiveArray<_>>(min_periods, window_size, arr.clone(), params.prob);
+            let out = super::quantile_filter::rolling_quantile::<_, MutablePrimitiveArray<_>>(
+                min_periods,
+                window_size,
+                arr.clone(),
+                params.prob,
+            );
 
             todo!()
             // return Box::new(PrimitiveArray::new(

@@ -36,8 +36,8 @@ pub mod datatypes;
 
 pub mod ffi;
 pub mod legacy;
-pub mod util;
 pub mod pushable;
+pub mod util;
 
 // re-exported because we return `Either` in our public API
 // re-exported to construct dictionaries
