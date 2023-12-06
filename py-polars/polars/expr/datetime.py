@@ -1474,7 +1474,7 @@ class ExprDateTimeNameSpace:
 
     def from_local_datetime(
         self,
-        naive_tz: str | Expr,
+        from_tz: str | Expr,
         out_tz: str,
         ambiguous: Ambiguous = "raise",
     ) -> Expr:
@@ -1483,7 +1483,7 @@ class ExprDateTimeNameSpace:
 
         Parameters
         ----------
-        naive_tz
+        from_tz
             Current timezone of each datetime
         out_tz
             Timezone to convert to
@@ -1531,7 +1531,7 @@ class ExprDateTimeNameSpace:
         │ 2020-10-09 20:00:00 ┆ America/New_York ┆ 2020-10-10 00:00:00 UTC │
         └─────────────────────┴──────────────────┴─────────────────────────┘
         """
-        naive_time_zone = parse_as_expression(naive_tz, str_as_lit=True)
+        naive_time_zone = parse_as_expression(from_tz, str_as_lit=True)
         return wrap_expr(
             self._pyexpr.dt_from_local_datetime(naive_time_zone, out_tz, ambiguous)
         )

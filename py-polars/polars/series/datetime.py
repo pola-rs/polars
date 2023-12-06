@@ -1098,6 +1098,97 @@ class DateTimeNameSpace:
 
         """
 
+    def to_local_datetime(
+        self,
+        tz: str | Series,
+    ) -> Series:
+        """
+        Convert to local datetime in given time zone.
+
+        Parameters
+        ----------
+        tz
+            Time zone for the `Datetime` expression.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`DateTime`.
+
+        Examples
+        --------
+        You can use `to_local_datetime` to figure out how a tz-aware datetime
+        will be expressed as a local datetime.
+
+        >>> from datetime import datetime
+        >>> s = pl.Series("date_col", [datetime(2020, 10, 10)] * 3)
+        >>> s_tz = pl.Series(
+        ...     "timezone", ["Europe/London", "Africa/Kigali", "America/New_York"]
+        ... )
+        >>> s.dt.to_local_datetime(s_tz)
+        shape: (3,)
+        Series: 'date_col' [datetime[μs]]
+        [
+            2020-10-10 01:00:00
+            2020-10-10 02:00:00
+            2020-10-09 20:00:00
+        ]
+        """
+
+    def from_local_datetime(
+        self,
+        from_tz: str | Series,
+        out_tz: str,
+        ambiguous: Ambiguous = "raise",
+    ) -> Series:
+        """
+        Converts from local datetime in given time zone to new timezone.
+
+        Parameters
+        ----------
+        from_tz
+            Current timezone of each datetime
+        out_tz
+            Timezone to convert to
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - `'raise'` (default): raise
+            - `'earliest'`: use the earliest datetime
+            - `'latest'`: use the latest datetime
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`DateTime`.
+
+        Examples
+        --------
+        You can go from a localized datetime back to expressing the datetimes
+        in a single timezone with `from_local_datetime`.
+
+        >>> from datetime import datetime
+        >>> s = pl.Series(
+        ...     "local_dt",
+        ...     [
+        ...         datetime(2020, 10, 10, 1),
+        ...         datetime(2020, 10, 10, 2),
+        ...         datetime(2020, 10, 9, 20),
+        ...     ],
+        ... )
+        >>> s_tz = pl.Series(
+        ...     "timezone", ["Europe/London", "Africa/Kigali", "America/New_York"]
+        ... )
+        >>> s.dt.from_local_datetime(s_tz, "UTC")
+        shape: (3,)
+        Series: 'local_dt' [datetime[μs, UTC]]
+        [
+            2020-10-10 00:00:00 UTC
+            2020-10-10 00:00:00 UTC
+            2020-10-10 00:00:00 UTC
+        ]
+        """
+
     def total_days(self) -> Series:
         """
         Extract the total days from a Duration type.

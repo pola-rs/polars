@@ -925,3 +925,42 @@ def test_median(values: list[date | None], expected_median: date | None) -> None
 def test_mean(values: list[date | None], expected_mean: date | None) -> None:
     result = pl.Series(values).cast(pl.Date).dt.mean()
     assert result == expected_mean
+
+
+def test_to_local_datetime() -> None:
+    s = pl.Series("date_col", [datetime(2020, 10, 10)] * 3)
+    s_tz = pl.Series("timezone", ["Europe/London", "Africa/Kigali", "America/New_York"])
+
+    expected = pl.Series(
+        "date_col",
+        [
+            datetime(2020, 10, 10, 1, 0),
+            datetime(2020, 10, 10, 2, 0),
+            datetime(2020, 10, 9, 20, 0),
+        ],
+        dtype=pl.Datetime(time_unit="us", time_zone=None),
+    )
+    result = s.dt.to_local_datetime(s_tz)
+
+    assert_series_equal(result, expected)
+
+
+def test_from_local_datetime() -> None:
+    s = pl.Series(
+        "local_dt",
+        [
+            datetime(2020, 10, 10, 1, 0),
+            datetime(2020, 10, 10, 2, 0),
+            datetime(2020, 10, 9, 20, 0),
+        ],
+        dtype=pl.Datetime(time_unit="us", time_zone=None),
+    )
+    s_tz = pl.Series("timezone", ["Europe/London", "Africa/Kigali", "America/New_York"])
+    expected = pl.Series(
+        "local_dt",
+        [datetime(2020, 10, 10)] * 3,
+        pl.Datetime(time_unit="us", time_zone="UTC"),
+    )
+    result = s.dt.from_local_datetime(s_tz, "UTC")
+
+    assert_series_equal(result, expected)
