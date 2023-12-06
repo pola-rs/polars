@@ -690,6 +690,8 @@ class Field:
 class Struct(NestedType):
     """Struct composite type."""
 
+    fields: list[Field]
+
     def __init__(self, fields: Sequence[Field] | SchemaDict):
         """
         Struct composite type.
