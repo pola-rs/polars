@@ -3632,7 +3632,7 @@ class DataFrame:
         self,
         target: str | Path | deltalake.DeltaTable,
         *,
-        mode: Literal["merge", "error", "append", "overwrite", "ignore"] = "error",
+        mode: Literal["error", "append", "overwrite", "ignore", "merge"] = "error",
         overwrite_schema: bool = False,
         storage_options: dict[str, str] | None = None,
         delta_write_options: dict[str, Any] | None = None,
