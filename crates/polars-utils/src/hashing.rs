@@ -27,7 +27,7 @@ impl<'a> IsNull for BytesHash<'a> {
         self.payload.is_none()
     }
 
-    fn unwrap(self) -> Self::Inner {
+    fn unwrap_inner(self) -> Self::Inner {
         assert!(self.payload.is_some());
         self
     }

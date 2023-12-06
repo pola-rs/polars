@@ -214,7 +214,7 @@ impl IsNull for months_days_ns {
         false
     }
 
-    fn unwrap(self) -> Self::Inner {
+    fn unwrap_inner(self) -> Self::Inner {
         self
     }
 }
@@ -358,7 +358,7 @@ impl IsNull for days_ms {
     fn is_null(&self) -> bool {
         false
     }
-    fn unwrap(self) -> Self::Inner {
+    fn unwrap_inner(self) -> Self::Inner {
         self
     }
 }
@@ -418,7 +418,7 @@ impl IsNull for f16 {
     fn is_null(&self) -> bool {
         false
     }
-    fn unwrap(self) -> Self::Inner {
+    fn unwrap_inner(self) -> Self::Inner {
         self
     }
 }
@@ -627,7 +627,7 @@ impl IsNull for i256 {
     fn is_null(&self) -> bool {
         false
     }
-    fn unwrap(self) -> Self::Inner {
+    fn unwrap_inner(self) -> Self::Inner {
         self
     }
 }

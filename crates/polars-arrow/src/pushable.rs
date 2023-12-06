@@ -1,4 +1,4 @@
-use crate::array::{MutablePrimitiveArray, PrimitiveArray};
+use crate::array::MutablePrimitiveArray;
 use crate::bitmap::MutableBitmap;
 use crate::offset::{Offset, Offsets};
 use crate::types::NativeType;

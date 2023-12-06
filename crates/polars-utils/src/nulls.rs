@@ -4,7 +4,7 @@ pub trait IsNull {
 
     fn is_null(&self) -> bool;
 
-    fn unwrap(self) -> Self::Inner;
+    fn unwrap_inner(self) -> Self::Inner;
 }
 
 impl<T> IsNull for Option<T> {
@@ -17,7 +17,7 @@ impl<T> IsNull for Option<T> {
     }
 
     #[inline(always)]
-    fn unwrap(self) -> Self::Inner {
+    fn unwrap_inner(self) -> Self::Inner {
         Option::unwrap(self)
     }
 }
@@ -35,7 +35,7 @@ macro_rules! impl_is_null (
             }
 
             #[inline(always)]
-            fn unwrap(self) -> $($ty)* {
+            fn unwrap_inner(self) -> $($ty)* {
                 self
             }
         }
@@ -65,7 +65,7 @@ impl<'a> IsNull for &'a [u8] {
     }
 
     #[inline(always)]
-    fn unwrap(self) -> Self::Inner {
+    fn unwrap_inner(self) -> Self::Inner {
         self
     }
 }
@@ -78,7 +78,7 @@ impl<'a, T: IsNull + ?Sized> IsNull for &'a T {
         (*self).is_null()
     }
 
-    fn unwrap(self) -> Self::Inner {
+    fn unwrap_inner(self) -> Self::Inner {
         self
     }
 }

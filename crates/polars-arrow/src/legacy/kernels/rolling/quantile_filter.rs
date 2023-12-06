@@ -7,7 +7,6 @@ use std::fmt::{Debug, Formatter};
 use std::ops::{Add, Div, Mul, Sub};
 
 use num_traits::NumCast;
-use polars_utils::float::IsFloat;
 use polars_utils::index::{Bounded, Indexable};
 use polars_utils::iter::IntoIteratorCopied;
 use polars_utils::nulls::IsNull;
@@ -108,8 +107,8 @@ where
         let m_index = k / 2;
         let m = pi[m_index] as usize;
 
-        prev.resize(k + 1, 0 as u32);
-        next.resize(k + 1, 0 as u32);
+        prev.resize(k + 1, 0);
+        next.resize(k + 1, 0);
         let mut b = Self {
             k,
             pi,
@@ -136,14 +135,14 @@ where
         for &q in self.pi.iter() {
             // SAFETY: bounded by pi
             unsafe {
-                *self.next.get_unchecked_release_mut(p as usize) = q;
+                *self.next.get_unchecked_release_mut(p) = q;
                 *self.prev.get_unchecked_release_mut(q as usize) = p as u32;
             }
 
             p = q as usize;
         }
         unsafe {
-            *self.next.get_unchecked_release_mut(p as usize) = self.tail as u32;
+            *self.next.get_unchecked_release_mut(p) = self.tail as u32;
             *self.prev.get_unchecked_release_mut(self.tail) = p as u32;
         }
     }
@@ -200,18 +199,18 @@ where
             },
             -1 => {
                 self.current_index -= 1;
-                self.m = *self.prev.get_unchecked_release(self.m as usize) as usize;
+                self.m = *self.prev.get_unchecked_release(self.m) as usize;
             },
             1 => self.advance(),
             i64::MIN..=0 => {
                 for _ in i..self.current_index {
-                    self.m = *self.prev.get_unchecked_release(self.m as usize) as usize;
+                    self.m = *self.prev.get_unchecked_release(self.m) as usize;
                 }
                 self.current_index = i;
             },
             _ => {
                 for _ in self.current_index..i {
-                    self.m = *self.next.get_unchecked_release(self.m as usize) as usize;
+                    self.m = *self.next.get_unchecked_release(self.m) as usize;
                 }
                 self.current_index = i;
             },
@@ -268,20 +267,20 @@ where
                 // 1, 2, [4], 5
                 // go to next position because the link was deleted
                 if self.n_element >= self.current_index {
-                    let next_m = *self.next.get_unchecked_release(self.m as usize) as usize;
+                    let next_m = *self.next.get_unchecked_release(self.m) as usize;
 
                     if next_m == self.tail && self.n_element > 0 {
                         // The index points to tail,  set the index in the array again.
                         self.current_index -= 1;
-                        self.m = *self.prev.get_unchecked_release(self.m as usize) as usize
+                        self.m = *self.prev.get_unchecked_release(self.m) as usize
                     } else {
-                        self.m = *self.next.get_unchecked_release(self.m as usize) as usize;
+                        self.m = *self.next.get_unchecked_release(self.m) as usize;
                     }
                 } else {
                     // move to previous position because the link was deleted
                     // 1, [2],
                     // [1]
-                    self.m = *self.prev.get_unchecked_release(self.m as usize) as usize
+                    self.m = *self.prev.get_unchecked_release(self.m) as usize
                 }
             },
         };
@@ -352,7 +351,7 @@ where
         if self.at_end() {
             None
         } else {
-            Some(self.alpha.get(self.m as usize))
+            Some(self.alpha.get(self.m))
         }
     }
 
@@ -414,12 +413,11 @@ where
     A: Indexable + Bounded + IntoIteratorCopied<OwnedItem = <A as Indexable>::Item> + Clone,
     <A as Indexable>::Item: TotalOrd + Copy + Debug,
 {
-    fn new(block_left: &'a mut Block<'a, A>, block_right: &'a mut Block<'a, A>, k: usize) -> Self {
-        let out = Self {
+    fn new(block_left: &'a mut Block<'a, A>, block_right: &'a mut Block<'a, A>) -> Self {
+        Self {
             block_left,
             block_right,
-        };
-        out
+        }
     }
 
     unsafe fn set_state(&mut self, i: usize) {
@@ -750,7 +748,7 @@ where
         // Here the window will move from BLOCK_LEFT into BLOCK_RIGHT
         for j in 0..block_right.capacity() {
             unsafe {
-                let mut union = BlockUnion::new(&mut *ptr_left, &mut *ptr_right, k);
+                let mut union = BlockUnion::new(&mut *ptr_left, &mut *ptr_right);
                 union.set_state(j);
 
                 out.push(QuantileUpdate::new(interpol, min_periods, quantile, union).quantile());

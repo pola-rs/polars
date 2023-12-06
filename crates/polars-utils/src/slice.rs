@@ -4,6 +4,8 @@ use std::mem::MaybeUninit;
 use std::ops::Range;
 
 pub trait SliceAble {
+    /// # Safety
+    /// no bound checks.
     unsafe fn slice_unchecked(&self, range: Range<usize>) -> Self;
 
     fn slice(&self, range: Range<usize>) -> Self;
