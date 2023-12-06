@@ -144,7 +144,7 @@ pub trait LazyFileListReader: Clone {
     }
 
     /// Get the final [LazyFrame].
-    fn load_specific(self, reader: ScanLocation) -> PolarsResult<LazyFrame>;
+    fn load_specific(self, location: ScanLocation) -> PolarsResult<LazyFrame>;
 
     /// Rechunk the memory to contiguous chunks when parsing is done.
     fn rechunk(&self) -> bool;

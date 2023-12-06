@@ -9,10 +9,9 @@ use polars_io::RowCount;
 use crate::frame::LazyFileListReader;
 use crate::prelude::*;
 
-/// Initially this should be constructed with multiple ReaderFactory instances,
-/// and then LazyFileListReader::finish() is used to clone() an instance,
-/// temporarily turn them into LazyCsvReaders with a specific ReaderFactory, and
-/// then combines them into a LazyFrame.
+/// To load files once this is fully configured, use
+/// [LazyFileListReader::load_multiple],
+/// [LazyFileListReader::load_specific_file] or other related methods.
 #[derive(Clone)]
 #[cfg(feature = "csv")]
 pub struct LazyCsvReader<'a> {
@@ -267,9 +266,9 @@ impl<'a> LazyCsvReader<'a> {
 }
 
 impl LazyFileListReader for LazyCsvReader<'_> {
-    fn load_specific(self, reader: ReaderFactory) -> PolarsResult<LazyFrame> {
+    fn load_specific(self, location: ScanLocation) -> PolarsResult<LazyFrame> {
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_csv(
-            reader.mmapbytesreader(),
+            location.mmapbytesreader(),
             self.separator,
             self.has_header,
             self.ignore_errors,
