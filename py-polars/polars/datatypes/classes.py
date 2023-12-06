@@ -700,22 +700,35 @@ class Struct(NestedType):
         Parameters
         ----------
         fields
-            The sequence of fields that make up the struct
+            The fields that make up the struct. Can be either a sequence of Field
+            objects or a mapping of column names to data types.
 
         Examples
         --------
-        >>> s = pl.Series(
-        ...     "struct_series",
-        ...     [{"a": [1], "b": [2], "c": [3]}, {"a": [4], "b": [5], "c": [6]}],
-        ... )
+        Initialize using a dictionary:
+
+        >>> dtype = pl.Struct({"a": pl.Int8, "b": pl.List(pl.Utf8)})
+        >>> dtype
+        Struct({'a': Int8, 'b': List(Utf8)})
+
+        Initialize using a list of Field objects:
+
+        >>> dtype = pl.Struct([pl.Field("a", pl.Int8), pl.Field("b", pl.List(pl.Utf8))])
+        >>> dtype
+        Struct({'a': Int8, 'b': List(Utf8)})
+
+        When initializing a Series, Polars can infer a struct data type from the data.
+
+        >>> s = pl.Series([{"a": 1, "b": ["x", "y"]}, {"a": 2, "b": ["z"]}])
         >>> s
         shape: (2,)
-        Series: 'struct_series' [struct[3]]
+        Series: '' [struct[2]]
         [
-                {[1],[2],[3]}
-                {[4],[5],[6]}
+                {1,["x", "y"]}
+                {2,["z"]}
         ]
-
+        >>> s.dtype
+        Struct({'a': Int64, 'b': List(Utf8)})
         """
         if isinstance(fields, Mapping):
             self.fields = [Field(name, dtype) for name, dtype in fields.items()]
