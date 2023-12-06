@@ -507,7 +507,7 @@ class Categorical(DataType):
         self.ordering = ordering
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(ordering={self.ordering})"
+        return f"{self.__class__.__name__}(ordering={self.ordering!r})"
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
