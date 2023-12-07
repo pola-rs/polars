@@ -678,7 +678,7 @@ mod ffi;
 mod fmt;
 #[doc(hidden)]
 pub mod indexable;
-mod iterator;
+pub mod iterator;
 
 pub mod growable;
 mod values;

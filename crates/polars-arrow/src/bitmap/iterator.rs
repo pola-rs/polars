@@ -1,5 +1,72 @@
+use super::bitmask::BitMask;
 use super::Bitmap;
 use crate::trusted_len::TrustedLen;
+
+pub struct TrueIdxIter<'a> {
+    mask: BitMask<'a>,
+    first_unknown: usize,
+    i: usize,
+    len: usize,
+    remaining: usize,
+}
+
+impl<'a> TrueIdxIter<'a> {
+    #[inline]
+    pub fn new(len: usize, validity: Option<&'a Bitmap>) -> Self {
+        if let Some(bitmap) = validity {
+            assert!(len == bitmap.len());
+            Self {
+                mask: BitMask::from_bitmap(bitmap),
+                first_unknown: 0,
+                i: 0,
+                remaining: len,
+                len,
+            }
+        } else {
+            Self {
+                mask: BitMask::default(),
+                first_unknown: len,
+                i: 0,
+                remaining: len,
+                len,
+            }
+        }
+    }
+}
+
+impl<'a> Iterator for TrueIdxIter<'a> {
+    type Item = usize;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.i < self.first_unknown {
+            let ret = self.i;
+            self.i += 1;
+            self.remaining -= 1;
+            return Some(ret);
+        }
+
+        while self.i < self.len {
+            let mask = self.mask.get_u32(self.i);
+            let num_null = mask.trailing_zeros();
+            self.i += num_null as usize;
+            if num_null < 32 {
+                self.first_unknown = self.i + (mask >> num_null).trailing_ones() as usize;
+                self.remaining -= 1;
+                return Some(self.i);
+            }
+        }
+
+        None
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.remaining, Some(self.remaining))
+    }
+}
+
+unsafe impl<'a> TrustedLen for TrueIdxIter<'a> {}
 
 /// This crates' equivalent of [`std::vec::IntoIter`] for [`Bitmap`].
 #[derive(Debug, Clone)]

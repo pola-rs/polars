@@ -15,7 +15,9 @@ mod data;
 mod ffi;
 pub(super) mod fmt;
 mod from_natural;
-mod iterator;
+pub mod iterator;
+
+use iterator::NonNullValuesIter;
 
 mod mutable;
 pub use mutable::*;
@@ -148,6 +150,12 @@ impl<T: NativeType> PrimitiveArray<T> {
     #[inline]
     pub fn values_iter(&self) -> std::slice::Iter<T> {
         self.values().iter()
+    }
+
+    /// Returns an iterator of the values, `&T`, ignoring the arrays' validity.
+    #[inline]
+    pub fn non_null_values_iter(&self) -> NonNullValuesIter<'_, T> {
+        NonNullValuesIter::new(self)
     }
 
     /// Returns the length of this array
