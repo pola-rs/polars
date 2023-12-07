@@ -6,7 +6,6 @@ import sys
 import textwrap
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
-from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
 import numpy as np
@@ -20,6 +19,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils.various import normalize_filepath
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from polars.type_aliases import TimeUnit
 
 
@@ -1709,4 +1710,3 @@ def test_csv_no_new_line_last() -> None:
         "a": [1, 2, 3],
         "b": [1.0, 2.0, 2.1],
     }
-
