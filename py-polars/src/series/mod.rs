@@ -679,12 +679,12 @@ impl PySeries {
         self.series.clear().into()
     }
 
-    fn head(&self, n: Option<usize>) -> Self {
-        self.series.head(n).into()
+    fn head(&self, n: usize) -> Self {
+        self.series.head(Some(n)).into()
     }
 
-    fn tail(&self, n: Option<usize>) -> Self {
-        self.series.tail(n).into()
+    fn tail(&self, n: usize) -> Self {
+        self.series.tail(Some(n)).into()
     }
 
     fn hist(&self, bins: Option<Self>, bin_count: Option<usize>) -> PyResult<PyDataFrame> {
