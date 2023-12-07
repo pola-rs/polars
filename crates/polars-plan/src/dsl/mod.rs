@@ -3,6 +3,7 @@
 #[cfg(feature = "dtype-categorical")]
 pub mod cat;
 
+#[cfg(feature = "rolling_window")]
 use std::any::Any;
 
 #[cfg(feature = "dtype-categorical")]
