@@ -1006,7 +1006,11 @@ impl Expr {
     /// or
     /// Get counts of the group by operation.
     pub fn count(self) -> Self {
-        AggExpr::Count(Box::new(self)).into()
+        AggExpr::Count(Box::new(self), false).into()
+    }
+
+    pub fn len(self) -> Self {
+        AggExpr::Count(Box::new(self), true).into()
     }
 
     /// Standard deviation of the values of the Series.

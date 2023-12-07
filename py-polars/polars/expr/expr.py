@@ -1291,8 +1291,6 @@ class Expr:
 
         Null values are treated like regular elements in this context.
 
-        Alias for :func:`count`.
-
         Examples
         --------
         >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
@@ -1307,7 +1305,7 @@ class Expr:
         └─────┴─────┘
 
         """
-        return self.count()
+        return self._from_pyexpr(self._pyexpr.len())
 
     def slice(self, offset: int | Expr, length: int | Expr | None = None) -> Self:
         """

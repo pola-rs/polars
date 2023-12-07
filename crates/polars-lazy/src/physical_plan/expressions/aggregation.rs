@@ -93,8 +93,8 @@ impl PhysicalExpr for AggregationExpr {
                     let agg_s = s.agg_sum(&groups);
                     AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
-                GroupByMethod::Count => {
-                    if ac.series().null_count() == 0 {
+                GroupByMethod::Count { include_nulls } => {
+                    if include_nulls || ac.series().null_count() == 0 {
                         // a few fast paths that prevent materializing new groups
                         match ac.update_groups {
                             UpdateGroups::WithSeriesLen => {
@@ -398,7 +398,9 @@ impl PartitionedAggregation for AggregationExpr {
                     agg.rename(series.name());
                     Ok(agg)
                 },
-                GroupByMethod::Count => {
+                GroupByMethod::Count {
+                    include_nulls: true,
+                } => {
                     let mut ca = groups.group_count();
                     ca.rename(series.name());
                     Ok(ca.into_series())
@@ -417,7 +419,10 @@ impl PartitionedAggregation for AggregationExpr {
         _state: &ExecutionState,
     ) -> PolarsResult<Series> {
         match self.agg_type {
-            GroupByMethod::Count | GroupByMethod::Sum => {
+            GroupByMethod::Count {
+                include_nulls: true,
+            }
+            | GroupByMethod::Sum => {
                 let mut agg = unsafe { partitioned.agg_sum(groups) };
                 agg.rename(partitioned.name());
                 Ok(agg)

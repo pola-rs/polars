@@ -696,7 +696,12 @@ impl<'df> GroupBy<'df> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
 
         for agg_col in agg_cols {
-            let new_name = fmt_group_by_column(agg_col.name(), GroupByMethod::Count);
+            let new_name = fmt_group_by_column(
+                agg_col.name(),
+                GroupByMethod::Count {
+                    include_nulls: true,
+                },
+            );
             let mut ca = self.groups.group_count();
             ca.rename(&new_name);
             cols.push(ca.into_series());
@@ -860,7 +865,7 @@ pub enum GroupByMethod {
     Groups,
     NUnique,
     Quantile(f64, QuantileInterpolOptions),
-    Count,
+    Count { include_nulls: bool },
     Implode,
     Std(u8),
     Var(u8),
@@ -882,7 +887,7 @@ impl Display for GroupByMethod {
             Groups => "groups",
             NUnique => "n_unique",
             Quantile(_, _) => "quantile",
-            Count => "count",
+            Count { .. } => "count",
             Implode => "list",
             Std(_) => "std",
             Var(_) => "var",
@@ -906,7 +911,7 @@ pub fn fmt_group_by_column(name: &str, method: GroupByMethod) -> String {
         Sum => format!("{name}_sum"),
         Groups => "groups".to_string(),
         NUnique => format!("{name}_n_unique"),
-        Count => format!("{name}_count"),
+        Count { .. } => format!("{name}_count"),
         Implode => format!("{name}_agg_list"),
         Quantile(quantile, _interpol) => format!("{name}_quantile_{quantile:.2}"),
         Std(_) => format!("{name}_agg_std"),

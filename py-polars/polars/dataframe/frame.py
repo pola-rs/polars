@@ -4363,7 +4363,7 @@ class DataFrame:
 
         # execute metrics in parallel
         df_metrics = self.select(
-            F.all().count().name.prefix("count:"),
+            F.all().len().name.prefix("count:"),
             F.all().null_count().name.prefix("null_count:"),
             F.all().mean().name.prefix("mean:"),
             F.all().std().name.prefix("std:"),
