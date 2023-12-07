@@ -12,21 +12,29 @@ pub(super) fn int_range(s: &[Series], step: i64, dtype: DataType) -> PolarsResul
 
     let (start_storage, end_storage);
     if *start.dtype() != dtype {
-        start_storage = start.cast(&dtype)?;
+        start_storage = start.strict_cast(&dtype)?;
         start = &start_storage;
     }
     if *end.dtype() != dtype {
-        end_storage = end.cast(&dtype)?;
+        end_storage = end.strict_cast(&dtype)?;
         end = &end_storage;
     }
 
     with_match_physical_integer_polars_type!(dtype, |$T| {
-        let start_ca: &ChunkedArray<$T> = start.as_any().downcast_ref().unwrap();
-        let end_ca: &ChunkedArray<$T> = end.as_any().downcast_ref().unwrap();
-        let start_v = start_ca.get(0).unwrap();
-        let end_v = end_ca.get(0).unwrap();
+        let start_v = get_first_series_value::<$T>(start)?;
+        let end_v = get_first_series_value::<$T>(end)?;
         int_range_impl::<$T>(start_v, end_v, step)
     })
+}
+
+fn get_first_series_value<T>(s: &Series) -> PolarsResult<T::Native>
+where
+    T: PolarsIntegerType,
+{
+    let ca: &ChunkedArray<T> = s.as_any().downcast_ref().unwrap();
+    let value_opt = unsafe { ca.get_unchecked(0) };
+    let value = value_opt.ok_or(polars_err!(ComputeError: "invalid null input for `int_range`"))?;
+    Ok(value)
 }
 
 fn int_range_impl<T>(start: T::Native, end: T::Native, step: i64) -> PolarsResult<Series>
