@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from collections.abc import Reversible
 
     from polars import DataFrame
-    from polars.type_aliases import PolarsDataType, PolarsIntegerType, SizeUnit
+    from polars.type_aliases import PolarsDataType, SizeUnit
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec, TypeGuard
@@ -131,17 +131,19 @@ def _warn_null_comparison(obj: Any) -> None:
 
 
 def range_to_series(
-    name: str, rng: range, dtype: PolarsIntegerType | None = None
+    name: str, rng: range, dtype: PolarsDataType | None = None
 ) -> pl.Series:
     """Fast conversion of the given range to a Series."""
     dtype = dtype or Int64
-    return F.int_range(
-        start=rng.start,
-        end=rng.stop,
-        step=rng.step,
-        dtype=dtype,
-        eager=True,
-    ).alias(name)
+    if dtype.is_integer():
+        range = F.int_range(  # type: ignore[call-overload]
+            start=rng.start, end=rng.stop, step=rng.step, dtype=dtype, eager=True
+        )
+    else:
+        range = F.int_range(
+            start=rng.start, end=rng.stop, step=rng.step, eager=True
+        ).cast(dtype)
+    return range.alias(name)
 
 
 def range_to_slice(rng: range) -> slice:
