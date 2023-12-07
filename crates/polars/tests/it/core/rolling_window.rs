@@ -1,7 +1,3 @@
-use std::any::Any;
-
-use polars_core::prelude::QuantileInterpolOptions::Linear;
-
 use super::*;
 
 #[test]
