@@ -4232,11 +4232,8 @@ class Series:
             f'pl.Series("{self.name}", {self.head(n).to_list()}, dtype=pl.{self.dtype})'
         )
 
-    def count(self) -> Self:
-        """
-        Return the number of non-null elements in the column.
-
-        """
+    def count(self) -> int:
+        """Return the number of non-null elements in the column."""
         return len(self) - self.null_count()
 
     def set(self, filter: Series, value: int | float | str | bool | None) -> Series:
