@@ -7,12 +7,13 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
+import polars.interchange
 from polars.testing import assert_frame_equal
 
 
 def test_from_dataframe_polars() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]})
-    result = pl.from_dataframe(df, allow_copy=False)
+    result = pl.interchange.from_dataframe(df, allow_copy=False)
     assert_frame_equal(result, df)
 
 
@@ -22,7 +23,7 @@ def test_from_dataframe_polars_interchange_fast_path() -> None:
         schema_overrides={"c": pl.Categorical},
     )
     dfi = df.__dataframe__()
-    result = pl.from_dataframe(dfi, allow_copy=False)
+    result = pl.interchange.from_dataframe(dfi, allow_copy=False)
     assert_frame_equal(result, df)
 
 
@@ -31,7 +32,7 @@ def test_from_dataframe_categorical_zero_copy() -> None:
     df_pa = df.to_arrow()
 
     with pytest.raises(TypeError):
-        pl.from_dataframe(df_pa, allow_copy=False)
+        pl.interchange.from_dataframe(df_pa, allow_copy=False)
 
 
 def test_from_dataframe_pandas() -> None:
@@ -39,7 +40,7 @@ def test_from_dataframe_pandas() -> None:
 
     # Pandas dataframe
     df = pd.DataFrame(data)
-    result = pl.from_dataframe(df)
+    result = pl.interchange.from_dataframe(df)
     expected = pl.DataFrame(data)
     assert_frame_equal(result, expected)
 
@@ -48,7 +49,7 @@ def test_from_dataframe_pyarrow_table_zero_copy() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]})
     df_pa = df.to_arrow()
 
-    result = pl.from_dataframe(df_pa, allow_copy=False)
+    result = pl.interchange.from_dataframe(df_pa, allow_copy=False)
     assert_frame_equal(result, df)
 
 
@@ -58,7 +59,7 @@ def test_from_dataframe_pyarrow_recordbatch_zero_copy() -> None:
     c = pa.array(["foo", "bar"])
 
     batch = pa.record_batch([a, b, c], names=["a", "b", "c"])
-    result = pl.from_dataframe(batch, allow_copy=False)
+    result = pl.interchange.from_dataframe(batch, allow_copy=False)
     expected = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]})
 
     assert_frame_equal(result, expected)
@@ -67,34 +68,34 @@ def test_from_dataframe_pyarrow_recordbatch_zero_copy() -> None:
 def test_from_dataframe_allow_copy() -> None:
     # Zero copy only allowed when input is already a Polars dataframe
     df = pl.DataFrame({"a": [1, 2]})
-    result = pl.from_dataframe(df, allow_copy=True)
+    result = pl.interchange.from_dataframe(df, allow_copy=True)
     assert_frame_equal(result, df)
 
     df1_pandas = pd.DataFrame({"a": [1, 2]})
-    result_from_pandas = pl.from_dataframe(df1_pandas, allow_copy=False)
+    result_from_pandas = pl.interchange.from_dataframe(df1_pandas, allow_copy=False)
     assert_frame_equal(result_from_pandas, df)
 
     # Zero copy cannot be guaranteed for other inputs at this time
     df2_pandas = pd.DataFrame({"a": ["A", "B"]})
     with pytest.raises(RuntimeError):
-        pl.from_dataframe(df2_pandas, allow_copy=False)
+        pl.interchange.from_dataframe(df2_pandas, allow_copy=False)
 
 
 def test_from_dataframe_invalid_type() -> None:
     df = [[1, 2], [3, 4]]
     with pytest.raises(TypeError):
-        pl.from_dataframe(df)  # type: ignore[arg-type]
+        pl.interchange.from_dataframe(df)  # type: ignore[arg-type]
 
 
 def test_from_dataframe_pyarrow_required(monkeypatch: Any) -> None:
-    monkeypatch.setattr(pl.interchange.from_dataframe, "_PYARROW_AVAILABLE", False)
+    monkeypatch.setattr(pl.interchange.from_dataframe_, "_PYARROW_AVAILABLE", False)
 
     df = pl.DataFrame({"a": [1, 2]})
     with pytest.raises(ImportError, match="pyarrow"):
-        pl.from_dataframe(df.to_pandas())
+        pl.interchange.from_dataframe(df.to_pandas())
 
     # 'Converting' from a Polars dataframe does not hit this requirement
-    result = pl.from_dataframe(df)
+    result = pl.interchange.from_dataframe(df)
     assert_frame_equal(result, df)
 
 
@@ -108,7 +109,7 @@ def test_from_dataframe_pyarrow_min_version(monkeypatch: Any) -> None:
     )
 
     with pytest.raises(ImportError, match="pyarrow"):
-        pl.from_dataframe(dfi)
+        pl.interchange.from_dataframe(dfi)
 
 
 @pytest.mark.parametrize("dtype", [pl.Date, pl.Time, pl.Duration])
@@ -118,7 +119,7 @@ def test_from_dataframe_data_type_not_implemented_by_arrow(
     df = pl.Series([0], dtype=dtype).to_frame().to_arrow()
     dfi = df.__dataframe__()
     with pytest.raises(ValueError, match="not supported"):
-        pl.from_dataframe(dfi)
+        pl.interchange.from_dataframe(dfi)
 
 
 def test_from_dataframe_empty_arrow_interchange_object() -> None:
@@ -126,6 +127,6 @@ def test_from_dataframe_empty_arrow_interchange_object() -> None:
     df_pa = df.to_arrow()
     dfi = df_pa.__dataframe__()
 
-    result = pl.from_dataframe(dfi)
+    result = pl.interchange.from_dataframe(dfi)
 
     assert_frame_equal(result, df)

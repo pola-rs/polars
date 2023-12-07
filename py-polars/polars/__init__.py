@@ -160,7 +160,6 @@ from polars.functions import (
     when,
     zeros,
 )
-from polars.interchange.from_dataframe import from_dataframe
 from polars.io import (
     read_avro,
     read_csv,
@@ -383,7 +382,6 @@ __all__ = [
     "set_random_seed",
     # polars.convert
     "from_arrow",
-    "from_dataframe",
     "from_dict",
     "from_dicts",
     "from_numpy",

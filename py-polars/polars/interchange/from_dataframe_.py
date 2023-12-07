@@ -47,10 +47,11 @@ def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataF
     --------
     Convert a pandas dataframe to Polars through the interchange protocol.
 
+    >>> import polars.interchange
     >>> import pandas as pd
     >>> df_pd = pd.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["x", "y"]})
     >>> dfi = df_pd.__dataframe__()
-    >>> pl.from_dataframe(dfi)
+    >>> pl.interchange.from_dataframe(dfi)
     shape: (2, 3)
     ┌─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   │
