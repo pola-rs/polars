@@ -56,8 +56,9 @@ impl FunctionExpr {
             RollingExpr(rolling_func, ..) => {
                 use RollingFunction::*;
                 match rolling_func {
-                    Min(_) | MinBy(_) | Max(_) | MaxBy(_) | Sum(_) | SumBy(_) | Median(_)
-                    | MedianBy(_) => mapper.with_same_dtype(),
+                    Min(_) | MinBy(_) | Max(_) | MaxBy(_) | Sum(_) | SumBy(_) => {
+                        mapper.with_same_dtype()
+                    },
                     Mean(_) | MeanBy(_) | Quantile(_) | QuantileBy(_) | Var(_) | VarBy(_)
                     | Std(_) | StdBy(_) => mapper.map_to_float_dtype(),
                     #[cfg(feature = "moment")]

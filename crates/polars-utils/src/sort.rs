@@ -1,6 +1,12 @@
+use std::mem::MaybeUninit;
+
+use num_traits::FromPrimitive;
 use rayon::prelude::*;
 use rayon::ThreadPool;
 
+use crate::float::IsFloat;
+use crate::ord::compare_fn_nan_max;
+use crate::total_ord::TotalOrd;
 use crate::IdxSize;
 
 /// This is a perfect sort particularly useful for an arg_sort of an arg_sort
@@ -71,4 +77,60 @@ pub unsafe fn perfect_sort(
     // Safety:
     // all elements are written
     out.set_len(idx.len());
+}
+
+/// used a lot, ensure there is a single impl
+pub fn sort_slice_ascending<T: IsFloat + PartialOrd>(v: &mut [T]) {
+    v.sort_unstable_by(|a, b| compare_fn_nan_max(a, b))
+}
+pub fn sort_slice_descending<T: IsFloat + PartialOrd>(v: &mut [T]) {
+    v.sort_unstable_by(|a, b| compare_fn_nan_max(b, a))
+}
+
+unsafe fn assume_init_mut<T>(slice: &mut [MaybeUninit<T>]) -> &mut [T] {
+    &mut *(slice as *mut [MaybeUninit<T>] as *mut [T])
+}
+
+pub fn arg_sort_ascending<'a, T: TotalOrd + Copy + 'a, Idx, I: IntoIterator<Item = T>>(
+    v: I,
+    scratch: &'a mut Vec<u8>,
+    n: usize,
+) -> &'a mut [Idx]
+where
+    Idx: FromPrimitive + Copy,
+{
+    // Needed to be able to write back to back in the same buffer.
+    debug_assert_eq!(std::mem::align_of::<T>(), std::mem::align_of::<(T, Idx)>());
+    let size = std::mem::size_of::<(T, Idx)>();
+    let upper_bound = size * n + size;
+    scratch.reserve(upper_bound);
+    let scratch_slice = unsafe {
+        let cap_slice = scratch.spare_capacity_mut();
+        let (_, scratch_slice, _) = cap_slice.align_to_mut::<MaybeUninit<(T, Idx)>>();
+        &mut scratch_slice[..n]
+    };
+
+    for ((i, v), dst) in v.into_iter().enumerate().zip(scratch_slice.iter_mut()) {
+        *dst = MaybeUninit::new((v, Idx::from_usize(i).unwrap()));
+    }
+    debug_assert_eq!(n, scratch_slice.len());
+
+    let scratch_slice = unsafe { assume_init_mut(scratch_slice) };
+    scratch_slice.sort_by(|key1, key2| key1.0.tot_cmp(&key2.0));
+
+    // now we write the indexes in the same array.
+    // So from <T, Idxsize> to <IdxSize>
+    unsafe {
+        let src = scratch_slice.as_ptr();
+
+        let (_, scratch_slice_aligned_to_idx, _) = scratch_slice.align_to_mut::<Idx>();
+
+        let dst = scratch_slice_aligned_to_idx.as_mut_ptr();
+
+        for i in 0..n {
+            dst.add(i).write((*src.add(i)).1);
+        }
+
+        &mut scratch_slice_aligned_to_idx[..n]
+    }
 }

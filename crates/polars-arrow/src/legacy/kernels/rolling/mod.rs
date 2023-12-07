@@ -1,5 +1,6 @@
 pub mod no_nulls;
 pub mod nulls;
+pub mod quantile_filter;
 mod window;
 
 use std::any::Any;

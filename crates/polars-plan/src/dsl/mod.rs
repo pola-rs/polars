@@ -2,6 +2,10 @@
 //! Domain specific language for the Lazy API.
 #[cfg(feature = "dtype-categorical")]
 pub mod cat;
+
+#[cfg(feature = "rolling_window")]
+use std::any::Any;
+
 #[cfg(feature = "dtype-categorical")]
 pub use cat::*;
 mod arithmetic;
@@ -1242,14 +1246,24 @@ impl Expr {
     /// See: [`RollingAgg::rolling_median`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_median(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(options, RollingFunction::Median, RollingFunction::MedianBy)
+        self.rolling_quantile(QuantileInterpolOptions::Linear, 0.5, options)
     }
 
     /// Apply a rolling quantile.
     ///
     /// See: [`RollingAgg::rolling_quantile`]
     #[cfg(feature = "rolling_window")]
-    pub fn rolling_quantile(self, options: RollingOptions) -> Expr {
+    pub fn rolling_quantile(
+        self,
+        interpol: QuantileInterpolOptions,
+        quantile: f64,
+        mut options: RollingOptions,
+    ) -> Expr {
+        options.fn_params = Some(Arc::new(RollingQuantileParams {
+            prob: quantile,
+            interpol,
+        }) as Arc<dyn Any + Send + Sync>);
+
         self.finish_rolling(
             options,
             RollingFunction::Quantile,
