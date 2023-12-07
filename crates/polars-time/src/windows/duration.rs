@@ -7,7 +7,7 @@ use arrow::legacy::time_zone::Tz;
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
 };
-use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Weekday};
+use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use polars_core::export::arrow::temporal_conversions::MICROSECONDS;
 use polars_core::prelude::{
     datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, polars_bail,
@@ -487,40 +487,53 @@ impl Duration {
         &self,
         t: i64,
         tz: Option<&Tz>,
-        timestamp_to_datetime: G,
-        datetime_to_timestamp: J,
+        _timestamp_to_datetime: G,
+        _datetime_to_timestamp: J,
+        daily_duration: i64,
     ) -> PolarsResult<i64>
     where
         G: Fn(i64) -> NaiveDateTime,
         J: Fn(NaiveDateTime) -> i64,
     {
-        let _original_dt_utc;
-        let original_dt_naive;
-        let dt = match tz {
+        let _original_dt_utc: Option<NaiveDateTime>;
+        let _original_dt_naive: Option<NaiveDateTime>;
+        let t = match tz {
             #[cfg(feature = "timezones")]
             Some(tz) => {
-                _original_dt_utc = timestamp_to_datetime(t);
-                original_dt_naive = unlocalize_datetime(_original_dt_utc, tz);
-                original_dt_naive.date()
+                _original_dt_utc = Some(_timestamp_to_datetime(t));
+                _original_dt_naive = Some(unlocalize_datetime(_original_dt_utc.unwrap(), tz));
+                _datetime_to_timestamp(_original_dt_naive.unwrap())
             },
             _ => {
-                _original_dt_utc = timestamp_to_datetime(t);
-                original_dt_naive = _original_dt_utc;
-                original_dt_naive.date()
+                _original_dt_utc = None;
+                _original_dt_naive = None;
+                t
             },
         };
-        let week_timestamp = dt.week(Weekday::Mon);
-        let first_day_of_week =
-            week_timestamp.first_day() - chrono::Duration::weeks(self.weeks - 1);
-        let result_dt_naive = first_day_of_week.and_time(NaiveTime::default());
+        // If we did
+        //   t - (t % (7 * self.weeks * daily_duration))
+        // then the timestamp would get truncated to the previous Thursday,
+        // because 1970-01-01 (timestamp 0) is a Thursday.
+        // So, we adjust by 4 days to get to Monday.
+        let mut result_t_naive = t - ((t - 4 * daily_duration) % (7 * self.weeks * daily_duration));
+        // This might happen if `t` is negative, so subtract another self.weeks weeks to ensure
+        // that the truncated value is before the original one.
+        if result_t_naive > t {
+            result_t_naive -= 7 * self.weeks * daily_duration;
+        }
         match tz {
             #[cfg(feature = "timezones")]
             Some(tz) => {
-                let result_dt_utc =
-                    self.localize_result(original_dt_naive, _original_dt_utc, result_dt_naive, tz);
-                Ok(datetime_to_timestamp(result_dt_utc))
+                let result_dt_naive = _timestamp_to_datetime(result_t_naive);
+                let result_dt_utc = self.localize_result(
+                    _original_dt_naive.unwrap(),
+                    _original_dt_utc.unwrap(),
+                    result_dt_naive,
+                    tz,
+                );
+                Ok(_datetime_to_timestamp(result_dt_utc))
             },
-            _ => Ok(datetime_to_timestamp(result_dt_naive)),
+            _ => Ok(result_t_naive),
         }
     }
     fn truncate_monthly<G, J>(
@@ -612,7 +625,14 @@ impl Duration {
             },
             // truncate by weeks
             (0, _, 0, 0) => {
-                self.truncate_weekly(t, tz, timestamp_to_datetime, datetime_to_timestamp)
+                let duration = nsecs_to_unit(NS_DAY);
+                self.truncate_weekly(
+                    t,
+                    tz,
+                    timestamp_to_datetime,
+                    datetime_to_timestamp,
+                    duration,
+                )
             },
             // truncate by months
             (_, 0, 0, 0) => {
