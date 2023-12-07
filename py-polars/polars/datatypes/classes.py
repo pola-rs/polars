@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from collections import OrderedDict
 from datetime import timezone
 from inspect import isclass
 from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence
@@ -690,6 +691,8 @@ class Field:
 class Struct(NestedType):
     """Struct composite type."""
 
+    fields: list[Field]
+
     def __init__(self, fields: Sequence[Field] | SchemaDict):
         """
         Struct composite type.
@@ -697,22 +700,35 @@ class Struct(NestedType):
         Parameters
         ----------
         fields
-            The sequence of fields that make up the struct
+            The fields that make up the struct. Can be either a sequence of Field
+            objects or a mapping of column names to data types.
 
         Examples
         --------
-        >>> s = pl.Series(
-        ...     "struct_series",
-        ...     [{"a": [1], "b": [2], "c": [3]}, {"a": [4], "b": [5], "c": [6]}],
-        ... )
+        Initialize using a dictionary:
+
+        >>> dtype = pl.Struct({"a": pl.Int8, "b": pl.List(pl.Utf8)})
+        >>> dtype
+        Struct({'a': Int8, 'b': List(Utf8)})
+
+        Initialize using a list of Field objects:
+
+        >>> dtype = pl.Struct([pl.Field("a", pl.Int8), pl.Field("b", pl.List(pl.Utf8))])
+        >>> dtype
+        Struct({'a': Int8, 'b': List(Utf8)})
+
+        When initializing a Series, Polars can infer a struct data type from the data.
+
+        >>> s = pl.Series([{"a": 1, "b": ["x", "y"]}, {"a": 2, "b": ["z"]}])
         >>> s
         shape: (2,)
-        Series: 'struct_series' [struct[3]]
+        Series: '' [struct[2]]
         [
-                {[1],[2],[3]}
-                {[4],[5],[6]}
+                {1,["x", "y"]}
+                {2,["z"]}
         ]
-
+        >>> s.dtype
+        Struct({'a': Int64, 'b': List(Utf8)})
         """
         if isinstance(fields, Mapping):
             self.fields = [Field(name, dtype) for name, dtype in fields.items()]
@@ -727,9 +743,7 @@ class Struct(NestedType):
         if isclass(other) and issubclass(other, Struct):
             return True
         elif isinstance(other, Struct):
-            return any((f is None) for f in (self.fields, other.fields)) or (
-                self.fields == other.fields
-            )
+            return self.fields == other.fields
         else:
             return False
 
@@ -737,17 +751,17 @@ class Struct(NestedType):
         return hash((self.__class__, tuple(self.fields)))
 
     def __iter__(self) -> Iterator[tuple[str, PolarsDataType]]:
-        for fld in self.fields or []:
+        for fld in self.fields:
             yield fld.name, fld.dtype
 
     def __reversed__(self) -> Iterator[tuple[str, PolarsDataType]]:
-        for fld in reversed(self.fields or []):
+        for fld in reversed(self.fields):
             yield fld.name, fld.dtype
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        return f"{class_name}({self.fields})"
+        return f"{class_name}({dict(self)})"
 
-    def to_schema(self) -> SchemaDict | None:
+    def to_schema(self) -> OrderedDict[str, PolarsDataType]:
         """Return Struct dtype as a schema dict."""
-        return dict(self)
+        return OrderedDict(self)
