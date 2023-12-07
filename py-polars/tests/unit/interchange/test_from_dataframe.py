@@ -102,7 +102,7 @@ def test_from_dataframe_pyarrow_min_version(monkeypatch: Any) -> None:
     dfi = pl.DataFrame({"a": [1, 2]}).to_arrow().__dataframe__()
 
     monkeypatch.setattr(
-        pl.convert.pa,  # type: ignore[attr-defined]
+        pl.interchange.from_dataframe.pa,  # type: ignore[attr-defined]
         "__version__",
         "10.0.0",
     )
