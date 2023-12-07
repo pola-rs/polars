@@ -1,29 +1,73 @@
 use polars_core::prelude::*;
 use polars_core::series::{IsSorted, Series};
+use polars_core::utils::try_get_supertype;
+use polars_core::with_match_physical_integer_polars_type;
 
 use super::utils::ensure_range_bounds_contain_exactly_one_value;
 
 pub(super) fn int_range(s: &[Series], step: i64) -> PolarsResult<Series> {
-    let start = &s[0];
-    let end = &s[1];
+    let mut start = &s[0];
+    let mut end = &s[1];
 
     ensure_range_bounds_contain_exactly_one_value(start, end)?;
 
-    match start.dtype() {
-        dt if dt == &IDX_DTYPE => {
-            let start = start.idx()?.get(0).unwrap();
-            let end = end.cast(&IDX_DTYPE)?;
-            let end = end.idx()?.get(0).unwrap();
-            int_range_impl::<IdxType>(start, end, step)
-        },
-        _ => {
-            let start = start.cast(&DataType::Int64)?;
-            let end = end.cast(&DataType::Int64)?;
-            let start = start.i64()?.get(0).unwrap();
-            let end = end.i64()?.get(0).unwrap();
-            int_range_impl::<Int64Type>(start, end, step)
-        },
+    let range_dtype = determine_int_range_dtype(start, end)?;
+
+    let (start_storage, end_storage);
+    if *start.dtype() != range_dtype {
+        start_storage = start.cast(&range_dtype)?;
+        start = &start_storage;
     }
+    if *end.dtype() != range_dtype {
+        end_storage = end.cast(&range_dtype)?;
+        end = &end_storage;
+    }
+
+    with_match_physical_integer_polars_type!(range_dtype, |$T| {
+        let start_ca: &ChunkedArray<$T> = start.as_any().downcast_ref().unwrap();
+        let end_ca: &ChunkedArray<$T> = end.as_any().downcast_ref().unwrap();
+        let start_v = start_ca.get(0).unwrap();
+        let end_v = end_ca.get(0).unwrap();
+        int_range_impl::<$T>(start_v, end_v, step)
+    })
+}
+
+pub(super) fn determine_int_range_dtype(start: &Series, end: &Series) -> PolarsResult<DataType> {
+    let mut supertype = try_get_supertype(start.dtype(), end.dtype())?;
+    if !supertype.is_integer() {
+        supertype = DataType::Int64;
+    }
+    Ok(supertype)
+}
+
+fn int_range_impl<T>(start: T::Native, end: T::Native, step: i64) -> PolarsResult<Series>
+where
+    T: PolarsIntegerType,
+    ChunkedArray<T>: IntoSeries,
+    std::ops::Range<T::Native>: DoubleEndedIterator<Item = T::Native>,
+{
+    let name = "int";
+
+    let mut ca = match step {
+        0 => polars_bail!(InvalidOperation: "step must not be zero"),
+        1 => ChunkedArray::<T>::from_iter_values(name, start..end),
+        2.. => ChunkedArray::<T>::from_iter_values(name, (start..end).step_by(step as usize)),
+        _ => ChunkedArray::<T>::from_iter_values(
+            name,
+            (end..start)
+                .step_by(step.unsigned_abs() as usize)
+                .map(|x| start - (x - end)),
+        ),
+    };
+
+    let is_sorted = if end < start {
+        IsSorted::Descending
+    } else {
+        IsSorted::Ascending
+    };
+    ca.set_sorted_flag(is_sorted);
+
+    Ok(ca.into_series())
 }
 
 pub(super) fn int_ranges(s: &[Series], step: i64) -> PolarsResult<Series> {
@@ -96,34 +140,4 @@ pub(super) fn int_ranges(s: &[Series], step: i64) -> PolarsResult<Series> {
     }
 
     Ok(builder.finish().into_series())
-}
-
-fn int_range_impl<T>(start: T::Native, end: T::Native, step: i64) -> PolarsResult<Series>
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
-    std::ops::Range<T::Native>: DoubleEndedIterator<Item = T::Native>,
-{
-    let name = "int";
-
-    let mut ca = match step {
-        0 => polars_bail!(InvalidOperation: "step must not be zero"),
-        1 => ChunkedArray::<T>::from_iter_values(name, start..end),
-        2.. => ChunkedArray::<T>::from_iter_values(name, (start..end).step_by(step as usize)),
-        _ => ChunkedArray::<T>::from_iter_values(
-            name,
-            (end..start)
-                .step_by(step.unsigned_abs() as usize)
-                .map(|x| start - (x - end)),
-        ),
-    };
-
-    let is_sorted = if end < start {
-        IsSorted::Descending
-    } else {
-        IsSorted::Ascending
-    };
-    ca.set_sorted_flag(is_sorted);
-
-    Ok(ca.into_series())
 }

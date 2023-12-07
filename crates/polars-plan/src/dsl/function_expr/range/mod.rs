@@ -74,7 +74,13 @@ impl RangeFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use RangeFunction::*;
         let field = match self {
-            IntRange { .. } => Field::new("int", DataType::Int64),
+            IntRange { .. } => {
+                let mut range_dtype = mapper.map_to_supertype()?.dtype;
+                if !range_dtype.is_integer() {
+                    range_dtype = DataType::Int64;
+                }
+                Field::new("int", range_dtype)
+            },
             IntRanges { .. } => Field::new("int_range", DataType::List(Box::new(DataType::Int64))),
             #[cfg(feature = "temporal")]
             DateRange {
