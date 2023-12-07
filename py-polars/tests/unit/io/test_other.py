@@ -33,6 +33,28 @@ def test_read_missing_file(read_function: Callable[[Any], pl.DataFrame]) -> None
     with pytest.raises(FileNotFoundError, match=match):
         read_function("fake_file_path")
 
+@pytest.mark.parametrize(
+    "write_method_name",
+    [
+        "write_csv",
+        "write_ipc",
+        "write_json",
+        "write_parquet",
+        "write_avro",
+    ],
+)
+def test_write_missing_directory(write_method_name: str) -> None:
+    df = pl.DataFrame({"a": [1]})
+    non_existing_path = Path("non", "existing", "path", "file.csv")
+    if non_existing_path.exists():
+        pytest.fail(
+            "Testing on a non existing path failed because the path does exist."
+        )
+    with pytest.raises(FileNotFoundError):
+        write_method = getattr(df, write_method_name)
+        write_method(non_existing_path)
+
+
 
 def test_read_missing_file_path_truncated() -> None:
     content = "lskdfj".join(str(i) for i in range(25))

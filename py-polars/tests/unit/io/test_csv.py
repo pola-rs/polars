@@ -1710,13 +1710,3 @@ def test_csv_no_new_line_last() -> None:
         "b": [1.0, 2.0, 2.1],
     }
 
-
-def test_write_csv_no_location_raise_io_exception() -> None:
-    df = pl.DataFrame({"a": [1]})
-    non_existing_path = Path("non", "existing", "path", "file.csv")
-    if non_existing_path.exists():
-        pytest.fail(
-            "Testing on a non existing path failed because the path does exist."
-        )
-    with pytest.raises(FileNotFoundError):
-        df.write_csv(non_existing_path)
