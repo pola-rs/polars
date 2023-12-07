@@ -391,7 +391,7 @@ impl PyDataFrame {
         use polars::io::avro::AvroWriter;
 
         if let Ok(s) = py_f.extract::<&str>(py) {
-            let f = std::fs::File::create(s).unwrap();
+            let f = std::fs::File::create(s)?;
             AvroWriter::new(f)
                 .with_compression(compression.0)
                 .with_name(name)
@@ -667,7 +667,7 @@ impl PyDataFrame {
     ) -> PyResult<()> {
         if let Ok(s) = py_f.extract::<&str>(py) {
             py.allow_threads(|| {
-                let f = std::fs::File::create(s).unwrap();
+                let f = std::fs::File::create(s).map_err(PolarsError::Io)?;
                 IpcWriter::new(f)
                     .with_compression(compression.0)
                     .finish(&mut self.df)
@@ -693,7 +693,7 @@ impl PyDataFrame {
     ) -> PyResult<()> {
         if let Ok(s) = py_f.extract::<&str>(py) {
             py.allow_threads(|| {
-                let f = std::fs::File::create(s).unwrap();
+                let f = std::fs::File::create(s).map_err(PolarsError::Io)?;
                 IpcStreamWriter::new(f)
                     .with_compression(compression.0)
                     .finish(&mut self.df)
@@ -803,7 +803,7 @@ impl PyDataFrame {
         let compression = parse_parquet_compression(compression, compression_level)?;
 
         if let Ok(s) = py_f.extract::<&str>(py) {
-            let f = std::fs::File::create(s).unwrap();
+            let f = std::fs::File::create(s)?;
             py.allow_threads(|| {
                 ParquetWriter::new(f)
                     .with_compression(compression)
