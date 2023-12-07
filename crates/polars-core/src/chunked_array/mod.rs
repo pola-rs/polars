@@ -689,7 +689,7 @@ pub(crate) mod test {
         let b = a
             .sort(false)
             .into_iter()
-            .map(|opt| opt.unwrap_inner())
+            .map(|opt| opt.unwrap())
             .collect::<Vec<_>>();
         assert_eq!(b, [1, 2, 3, 9]);
         let a = Utf8Chunked::new("a", &["b", "a", "c"]);
@@ -716,11 +716,7 @@ pub(crate) mod test {
     fn iter() {
         let s1 = get_chunked_array();
         // sum
-        assert_eq!(
-            s1.into_iter()
-                .fold(0, |acc, val| { acc + val.unwrap_inner() }),
-            6
-        )
+        assert_eq!(s1.into_iter().fold(0, |acc, val| { acc + val.unwrap() }), 6)
     }
 
     #[test]
@@ -768,9 +764,7 @@ pub(crate) mod test {
         T: PolarsNumericType,
     {
         assert_eq!(
-            ca.into_iter()
-                .map(|opt| opt.unwrap_inner())
-                .collect::<Vec<_>>(),
+            ca.into_iter().map(|opt| opt.unwrap()).collect::<Vec<_>>(),
             eq
         )
     }
