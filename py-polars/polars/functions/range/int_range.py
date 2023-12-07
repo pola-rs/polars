@@ -59,7 +59,7 @@ def arange(
     end: int | IntoExprColumn,
     step: int = 1,
     *,
-    dtype: PolarsIntegerType | None = None,
+    dtype: PolarsIntegerType = Int64,
     eager: bool = False,
 ) -> Expr | Series:
     """
@@ -84,7 +84,7 @@ def arange(
     Returns
     -------
     Expr or Series
-        Column of an integer data type.
+        Column of integer data type `dtype`.
 
     See Also
     --------
@@ -101,7 +101,6 @@ def arange(
             1
             2
     ]
-
     """
     return int_range(start, end, step, dtype=dtype, eager=eager)
 
@@ -147,7 +146,7 @@ def int_range(
     end: int | IntoExprColumn,
     step: int = 1,
     *,
-    dtype: PolarsIntegerType | None = None,
+    dtype: PolarsIntegerType = Int64,
     eager: bool = False,
 ) -> Expr | Series:
     """
@@ -162,8 +161,7 @@ def int_range(
     step
         Step size of the range.
     dtype
-        Data type of the range. If set to `None` (default), infers the data type from
-        the `start` and `end` inputs.
+        Data type of the range.
     eager
         Evaluate immediately and return a `Series`.
         If set to `False` (default), return an expression instead.
@@ -171,7 +169,7 @@ def int_range(
     Returns
     -------
     Expr or Series
-        Column of an integer data type.
+        Column of integer data type `dtype`.
 
     See Also
     --------
@@ -187,7 +185,6 @@ def int_range(
             1
             2
     ]
-
     """
     start = parse_as_expression(start)
     end = parse_as_expression(end)

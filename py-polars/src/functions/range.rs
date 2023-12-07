@@ -5,15 +5,11 @@ use crate::prelude::*;
 use crate::PyExpr;
 
 #[pyfunction]
-pub fn int_range(start: PyExpr, end: PyExpr, step: i64, dtype: Option<Wrap<DataType>>) -> PyExpr {
-    let mut result = dsl::int_range(start.inner, end.inner, step);
-
-    if let Some(dt) = dtype {
-        let dt = dt.0;
-        result = result.cast(dt);
-    }
-
-    result.into()
+pub fn int_range(start: PyExpr, end: PyExpr, step: i64, dtype: Wrap<DataType>) -> PyExpr {
+    let start = start.inner;
+    let end = end.inner;
+    let dtype = dtype.0;
+    dsl::int_range(start, end, step, dtype).into()
 }
 
 #[pyfunction]

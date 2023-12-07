@@ -1,43 +1,32 @@
 use polars_core::prelude::*;
 use polars_core::series::{IsSorted, Series};
-use polars_core::utils::try_get_supertype;
 use polars_core::with_match_physical_integer_polars_type;
 
 use super::utils::ensure_range_bounds_contain_exactly_one_value;
 
-pub(super) fn int_range(s: &[Series], step: i64) -> PolarsResult<Series> {
+pub(super) fn int_range(s: &[Series], step: i64, dtype: DataType) -> PolarsResult<Series> {
     let mut start = &s[0];
     let mut end = &s[1];
 
     ensure_range_bounds_contain_exactly_one_value(start, end)?;
 
-    let range_dtype = determine_int_range_dtype(start, end)?;
-
     let (start_storage, end_storage);
-    if *start.dtype() != range_dtype {
-        start_storage = start.cast(&range_dtype)?;
+    if *start.dtype() != dtype {
+        start_storage = start.cast(&dtype)?;
         start = &start_storage;
     }
-    if *end.dtype() != range_dtype {
-        end_storage = end.cast(&range_dtype)?;
+    if *end.dtype() != dtype {
+        end_storage = end.cast(&dtype)?;
         end = &end_storage;
     }
 
-    with_match_physical_integer_polars_type!(range_dtype, |$T| {
+    with_match_physical_integer_polars_type!(dtype, |$T| {
         let start_ca: &ChunkedArray<$T> = start.as_any().downcast_ref().unwrap();
         let end_ca: &ChunkedArray<$T> = end.as_any().downcast_ref().unwrap();
         let start_v = start_ca.get(0).unwrap();
         let end_v = end_ca.get(0).unwrap();
         int_range_impl::<$T>(start_v, end_v, step)
     })
-}
-
-pub(super) fn determine_int_range_dtype(start: &Series, end: &Series) -> PolarsResult<DataType> {
-    let mut supertype = try_get_supertype(start.dtype(), end.dtype())?;
-    if !supertype.is_integer() {
-        supertype = DataType::Int64;
-    }
-    Ok(supertype)
 }
 
 fn int_range_impl<T>(start: T::Native, end: T::Native, step: i64) -> PolarsResult<Series>
