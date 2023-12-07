@@ -380,7 +380,7 @@ pub(crate) fn create_physical_expr(
                         },
                         AAggExpr::Count(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                             let s = std::mem::take(&mut s[0]);
-                            let count = s.len();
+                            let count = s.len() - s.null_count();
                             Ok(Some(
                                 IdxCa::from_slice(s.name(), &[count as IdxSize]).into_series(),
                             ))

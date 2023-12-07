@@ -126,7 +126,7 @@ def test_predicate_order_explode_5950() -> None:
     assert (
         df.lazy()
         .explode("i")
-        .filter(pl.col("n").count().over(["i"]) == 2)
+        .filter(pl.count().over(["i"]) == 2)
         .filter(pl.col("n").is_not_null())
     ).collect().to_dict(as_series=False) == {"i": [1], "n": [0]}
 
