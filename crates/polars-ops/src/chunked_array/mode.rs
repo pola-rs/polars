@@ -114,8 +114,7 @@ mod test {
         let vec_result4: Vec<Option<&str>> = result.into_iter().collect();
         assert_eq!(vec_result4, &[Some("test")]);
 
-        let mut ca_builder =
-            CategoricalChunkedBuilder::new("test", 5, CategoricalOrdering::Physical);
+        let mut ca_builder = CategoricalChunkedBuilder::new("test", 5, Default::default());
         ca_builder.append_value("test");
         ca_builder.append_value("test");
         ca_builder.append_value("test2");

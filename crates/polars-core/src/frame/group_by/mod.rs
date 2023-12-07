@@ -1101,7 +1101,7 @@ mod test {
         .unwrap();
 
         df.apply("foo", |s| {
-            s.cast(&DataType::Categorical(None, CategoricalOrdering::Physical))
+            s.cast(&DataType::Categorical(None, Default::default()))
                 .unwrap()
         })
         .unwrap();
@@ -1176,7 +1176,7 @@ mod test {
         ]?;
 
         df.try_apply("g", |s| {
-            s.cast(&DataType::Categorical(None, CategoricalOrdering::Physical))
+            s.cast(&DataType::Categorical(None, Default::default()))
         })?;
 
         // Use of deprecated `sum()` for testing purposes

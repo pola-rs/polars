@@ -12,8 +12,9 @@ use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::{using_string_cache, StringCache, POOL};
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub enum CategoricalOrdering {
+    #[default]
     Physical,
     Lexical,
 }
@@ -622,29 +623,29 @@ mod test {
             Some("bar"),
         ];
         let ca = Utf8Chunked::new("a", slice);
-        let out = ca.cast(&DataType::Categorical(None, CategoricalOrdering::Physical))?;
+        let out = ca.cast(&DataType::Categorical(None, Default::default()))?;
         let out = out.categorical().unwrap().clone();
         assert_eq!(out.get_rev_map().len(), 2);
 
         // test the global branch
         enable_string_cache();
         // empty global cache
-        let out = ca.cast(&DataType::Categorical(None, CategoricalOrdering::Physical))?;
+        let out = ca.cast(&DataType::Categorical(None, Default::default()))?;
         let out = out.categorical().unwrap().clone();
         assert_eq!(out.get_rev_map().len(), 2);
         // full global cache
-        let out = ca.cast(&DataType::Categorical(None, CategoricalOrdering::Physical))?;
+        let out = ca.cast(&DataType::Categorical(None, Default::default()))?;
         let out = out.categorical().unwrap().clone();
         assert_eq!(out.get_rev_map().len(), 2);
 
         // Check that we don't panic if we append two categorical arrays
         // build under the same string cache
         // https://github.com/pola-rs/polars/issues/1115
-        let ca1 = Utf8Chunked::new("a", slice)
-            .cast(&DataType::Categorical(None, CategoricalOrdering::Physical))?;
+        let ca1 =
+            Utf8Chunked::new("a", slice).cast(&DataType::Categorical(None, Default::default()))?;
         let mut ca1 = ca1.categorical().unwrap().clone();
-        let ca2 = Utf8Chunked::new("a", slice)
-            .cast(&DataType::Categorical(None, CategoricalOrdering::Physical))?;
+        let ca2 =
+            Utf8Chunked::new("a", slice).cast(&DataType::Categorical(None, Default::default()))?;
         let ca2 = ca2.categorical().unwrap();
         ca1.append(ca2).unwrap();
 
@@ -663,10 +664,8 @@ mod test {
 
             // Use 2 builders to check if the global string cache
             // does not interfere with the index mapping
-            let mut builder1 =
-                CategoricalChunkedBuilder::new("foo", 10, CategoricalOrdering::Physical);
-            let mut builder2 =
-                CategoricalChunkedBuilder::new("foo", 10, CategoricalOrdering::Physical);
+            let mut builder1 = CategoricalChunkedBuilder::new("foo", 10, Default::default());
+            let mut builder2 = CategoricalChunkedBuilder::new("foo", 10, Default::default());
             builder1.drain_iter(vec![None, Some("hello"), Some("vietnam")]);
             builder2.drain_iter(vec![Some("hello"), None, Some("world")]);
 

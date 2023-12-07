@@ -110,7 +110,7 @@ impl From<PyDataType> for DataType {
             PyDataType::Time => Time,
             #[cfg(feature = "object")]
             PyDataType::Object => Object(OBJECT_NAME),
-            PyDataType::Categorical => Categorical(None, CategoricalOrdering::Physical),
+            PyDataType::Categorical => Categorical(None, Default::default()),
             PyDataType::Enum(categories) => create_enum_data_type(categories),
             PyDataType::Struct => Struct(vec![]),
             PyDataType::Decimal(p, s) => Decimal(p, Some(s)),

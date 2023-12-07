@@ -455,7 +455,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Utf8" => DataType::Utf8,
                     "Binary" => DataType::Binary,
                     "Boolean" => DataType::Boolean,
-                    "Categorical" => DataType::Categorical(None, CategoricalOrdering::Physical),
+                    "Categorical" => DataType::Categorical(None, Default::default()),
                     "Enum" => {
                         return Err(PyTypeError::new_err(
                             "Enum types must be instantiated with a list of categories",

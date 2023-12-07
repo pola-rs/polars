@@ -841,7 +841,7 @@ pub(crate) mod test {
         disable_string_cache();
         let ca = Utf8Chunked::new("", &[Some("foo"), None, Some("bar"), Some("ham")]);
         let ca = ca
-            .cast(&DataType::Categorical(None, CategoricalOrdering::Physical))
+            .cast(&DataType::Categorical(None, Default::default()))
             .unwrap();
         let ca = ca.categorical().unwrap();
         let v: Vec<_> = ca.physical().into_iter().collect();

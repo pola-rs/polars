@@ -263,11 +263,11 @@ fn test_join_categorical() {
     let (mut df_a, mut df_b) = get_dfs();
 
     df_a.try_apply("b", |s| {
-        s.cast(&DataType::Categorical(None, CategoricalOrdering::Physical))
+        s.cast(&DataType::Categorical(None, Default::default()))
     })
     .unwrap();
     df_b.try_apply("bar", |s| {
-        s.cast(&DataType::Categorical(None, CategoricalOrdering::Physical))
+        s.cast(&DataType::Categorical(None, Default::default()))
     })
     .unwrap();
 
@@ -294,14 +294,14 @@ fn test_join_categorical() {
         let out = out.column("b").unwrap();
         assert_eq!(
             out.dtype(),
-            &DataType::Categorical(None, CategoricalOrdering::Physical)
+            &DataType::Categorical(None, Default::default())
         );
     }
 
     // Test error when joining on different string cache
     let (mut df_a, mut df_b) = get_dfs();
     df_a.try_apply("b", |s| {
-        s.cast(&DataType::Categorical(None, CategoricalOrdering::Physical))
+        s.cast(&DataType::Categorical(None, Default::default()))
     })
     .unwrap();
 
@@ -310,7 +310,7 @@ fn test_join_categorical() {
     let _sc = StringCacheHolder::hold();
 
     df_b.try_apply("bar", |s| {
-        s.cast(&DataType::Categorical(None, CategoricalOrdering::Physical))
+        s.cast(&DataType::Categorical(None, Default::default()))
     })
     .unwrap();
     let out = df_a.join(&df_b, ["b"], ["bar"], JoinType::Left.into());

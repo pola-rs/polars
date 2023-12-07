@@ -728,7 +728,7 @@ impl<'a> Buffer<'a> {
             Buffer::Categorical(_) => {
                 #[cfg(feature = "dtype-categorical")]
                 {
-                    DataType::Categorical(None, CategoricalOrdering::Physical)
+                    DataType::Categorical(None, Default::default())
                 }
 
                 #[cfg(not(feature = "dtype-categorical"))]

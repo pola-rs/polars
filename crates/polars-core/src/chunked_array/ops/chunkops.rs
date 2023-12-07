@@ -217,7 +217,7 @@ mod test {
     fn test_categorical_map_after_rechunk() {
         let s = Series::new("", &["foo", "bar", "spam"]);
         let mut a = s
-            .cast(&DataType::Categorical(None, CategoricalOrdering::Physical))
+            .cast(&DataType::Categorical(None, Default::default()))
             .unwrap();
 
         a.append(&a.slice(0, 2)).unwrap();

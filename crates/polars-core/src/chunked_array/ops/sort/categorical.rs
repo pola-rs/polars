@@ -131,8 +131,7 @@ mod test {
             let out = ca_lexical.sort(false);
             assert_order(&out, &["a", "b", "c", "d"]);
 
-            let s = Series::new("", init)
-                .cast(&DataType::Categorical(None, CategoricalOrdering::Physical))?;
+            let s = Series::new("", init).cast(&DataType::Categorical(None, Default::default()))?;
             let ca = s.categorical()?;
 
             let out = ca.sort(false);

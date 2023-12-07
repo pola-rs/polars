@@ -130,8 +130,8 @@ fn test_when_then_otherwise_cats() -> PolarsResult<()> {
     ]?.lazy();
 
     let out = lf
-        .with_column(col("book").cast(DataType::Categorical(None, CategoricalOrdering::Physical)))
-        .with_column(col("user").cast(DataType::Categorical(None, CategoricalOrdering::Physical)))
+        .with_column(col("book").cast(DataType::Categorical(None, Default::default())))
+        .with_column(col("user").cast(DataType::Categorical(None, Default::default())))
         .with_column(
             when(col("book").is_null())
                 .then(col("user"))

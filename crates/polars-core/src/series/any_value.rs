@@ -425,14 +425,11 @@ impl<'a> From<&AnyValue<'a>> for DataType {
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, rev_map, arr) => {
                 if arr.is_null() {
-                    DataType::Categorical(
-                        Some(Arc::new((*rev_map).clone())),
-                        CategoricalOrdering::Physical,
-                    )
+                    DataType::Categorical(Some(Arc::new((*rev_map).clone())), Default::default())
                 } else {
                     let array = unsafe { arr.deref_unchecked().clone() };
                     let rev_map = RevMapping::build_local(array);
-                    DataType::Categorical(Some(Arc::new(rev_map)), CategoricalOrdering::Physical)
+                    DataType::Categorical(Some(Arc::new(rev_map)), Default::default())
                 }
             },
             #[cfg(feature = "object")]

@@ -1367,8 +1367,8 @@ fn test_categorical_addition() -> PolarsResult<()> {
     let out = df
         .lazy()
         .select([
-            col("fruits").cast(DataType::Categorical(None, CategoricalOrdering::Physical)),
-            col("cars").cast(DataType::Categorical(None, CategoricalOrdering::Physical)),
+            col("fruits").cast(DataType::Categorical(None, Default::default())),
+            col("cars").cast(DataType::Categorical(None, Default::default())),
         ])
         .select([(col("fruits") + lit(" ") + col("cars")).alias("foo")])
         .collect()?;

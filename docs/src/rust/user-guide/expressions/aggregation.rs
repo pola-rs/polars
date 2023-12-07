@@ -11,23 +11,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut schema = Schema::new();
     schema.with_column(
         "first_name".into(),
-        DataType::Categorical(None, CategoricalOrdering::Physical),
+        DataType::Categorical(None, Default::default()),
     );
     schema.with_column(
         "gender".into(),
-        DataType::Categorical(None, CategoricalOrdering::Physical),
+        DataType::Categorical(None, Default::default()),
     );
     schema.with_column(
         "type".into(),
-        DataType::Categorical(None, CategoricalOrdering::Physical),
+        DataType::Categorical(None, Default::default()),
     );
     schema.with_column(
         "state".into(),
-        DataType::Categorical(None, CategoricalOrdering::Physical),
+        DataType::Categorical(None, Default::default()),
     );
     schema.with_column(
         "party".into(),
-        DataType::Categorical(None, CategoricalOrdering::Physical),
+        DataType::Categorical(None, Default::default()),
     );
     schema.with_column("birthday".into(), DataType::Date);
 

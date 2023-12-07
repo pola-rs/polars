@@ -538,10 +538,10 @@ mod test {
         // check if we can cast categorical twice without panic
         let ca = Utf8Chunked::new("foo", &["bar", "ham"]);
         let out = ca
-            .cast(&DataType::Categorical(None, CategoricalOrdering::Physical))
+            .cast(&DataType::Categorical(None, Default::default()))
             .unwrap();
         let out = out
-            .cast(&DataType::Categorical(None, CategoricalOrdering::Physical))
+            .cast(&DataType::Categorical(None, Default::default()))
             .unwrap();
         assert!(matches!(out.dtype(), &DataType::Categorical(_, _)))
     }
