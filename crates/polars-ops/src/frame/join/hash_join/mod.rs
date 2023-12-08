@@ -246,12 +246,6 @@ pub trait JoinDispatch: IntoDf {
         #[cfg(feature = "dtype-categorical")]
         _check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
-        // store this so that we can keep original column order.
-        let join_column_index = ca_self
-            .iter()
-            .position(|s| s.name() == s_left.name())
-            .unwrap();
-
         // Get the indexes of the joined relations
         let opt_join_tuples = s_left.hash_join_outer(s_right, args.validation, args.join_nulls)?;
         let mut opt_join_tuples = &*opt_join_tuples;
@@ -263,7 +257,7 @@ pub trait JoinDispatch: IntoDf {
         // Take the left and right dataframes by join tuples
         let (mut df_left, df_right) = POOL.join(
             || unsafe {
-                ca_self.drop(s_left.name()).unwrap().take_unchecked(
+                ca_self.take_unchecked(
                     &opt_join_tuples
                         .iter()
                         .copied()
@@ -272,7 +266,7 @@ pub trait JoinDispatch: IntoDf {
                 )
             },
             || unsafe {
-                other.drop(s_right.name()).unwrap().take_unchecked(
+                other.take_unchecked(
                     &opt_join_tuples
                         .iter()
                         .copied()
@@ -282,11 +276,6 @@ pub trait JoinDispatch: IntoDf {
             },
         );
 
-        let s = unsafe {
-            zip_outer_join_column(s_left, s_right, opt_join_tuples).with_name(s_left.name())
-        };
-
-        unsafe { df_left.get_columns_mut().insert(join_column_index, s) };
         _finish_join(df_left, df_right, args.suffix.as_deref())
     }
 }

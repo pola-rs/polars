@@ -62,6 +62,19 @@ pub enum JoinType {
     Anti,
 }
 
+impl JoinType {
+    pub fn merges_join_keys(&self) -> bool {
+        match self {
+            // Always merges them
+            Self::Outer => false,
+            // Merges them if they are equal
+            #[cfg(feature = "asof_join")]
+            Self::AsOf(_) => false,
+            _ => true,
+        }
+    }
+}
+
 impl From<JoinType> for JoinArgs {
     fn from(value: JoinType) -> Self {
         JoinArgs::new(value)

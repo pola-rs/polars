@@ -322,7 +322,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 // Take the left and right dataframes by join tuples
                 let (df_left, df_right) = POOL.join(
                     || unsafe {
-                        remove_selected(left_df, &selected_left).take_unchecked(
+                        left_df.take_unchecked(
                             &opt_join_tuples
                                 .iter()
                                 .map(|(left, _right)| *left)
@@ -330,7 +330,7 @@ pub trait DataFrameJoinOps: IntoDf {
                         )
                     },
                     || unsafe {
-                        remove_selected(other, &selected_right).take_unchecked(
+                        other.take_unchecked(
                             &opt_join_tuples
                                 .iter()
                                 .map(|(_left, right)| *right)
@@ -338,17 +338,6 @@ pub trait DataFrameJoinOps: IntoDf {
                         )
                     },
                 );
-                // Allocate a new vec for df_left so that the keys are left and then other values.
-                let mut keys = Vec::with_capacity(selected_left.len() + df_left.width());
-                for (s_left, s_right) in selected_left.iter().zip(&selected_right) {
-                    let s = unsafe {
-                        zip_outer_join_column(s_left, s_right, opt_join_tuples)
-                            .with_name(s_left.name())
-                    };
-                    keys.push(s)
-                }
-                keys.extend_from_slice(df_left.get_columns());
-                let df_left = DataFrame::new_no_checks(keys);
                 _finish_join(df_left, df_right, args.suffix.as_deref())
             },
             #[cfg(feature = "asof_join")]
