@@ -335,7 +335,7 @@ impl Debug for Series {
             #[cfg(feature = "object")]
             DataType::Object(_) => format_object_array(f, self, self.name(), "Series"),
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(rev_map) => {
+            DataType::Categorical(rev_map, _) => {
                 if let Some(rev_map) = rev_map {
                     if rev_map.is_enum() {
                         return format_array!(

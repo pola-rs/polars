@@ -380,3 +380,17 @@ impl<T: TotalHash + ?Sized> TotalHash for &T {
         (*self).tot_hash(state)
     }
 }
+
+impl<T: TotalEq, U: TotalEq> TotalEq for (T, U) {
+    fn tot_eq(&self, other: &Self) -> bool {
+        self.0.tot_eq(&other.0) && self.1.tot_eq(&other.1)
+    }
+}
+
+impl<T: TotalOrd, U: TotalOrd> TotalOrd for (T, U) {
+    fn tot_cmp(&self, other: &Self) -> Ordering {
+        self.0
+            .tot_cmp(&other.0)
+            .then_with(|| self.1.tot_cmp(&other.1))
+    }
+}

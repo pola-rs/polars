@@ -814,6 +814,14 @@ def _expand_dict_scalars(
     """Expand any scalar values in dict data (propagate literal as array)."""
     updated_data = {}
     if data:
+        if any(isinstance(val, pl.Expr) for val in data.values()):
+            raise TypeError(
+                "passing Expr objects to the DataFrame constructor is not supported"
+                "\n\nHint: Try evaluating the expression first using `select`,"
+                " or if you meant to create an Object column containing expressions,"
+                " pass a list of Expr objects instead."
+            )
+
         dtypes = schema_overrides or {}
         data = _expand_dict_data(data, dtypes)
         array_len = max((arrlen(val) or 0) for val in data.values())

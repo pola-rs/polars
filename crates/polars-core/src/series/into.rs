@@ -57,7 +57,7 @@ impl Series {
                 Box::new(arr)
             },
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => {
+            DataType::Categorical(_, ordering) => {
                 let ca = self.categorical().unwrap();
                 let arr = ca.physical().chunks()[chunk_idx].clone();
                 // SAFETY: categoricals are always u32's.
@@ -68,6 +68,7 @@ impl Series {
                     CategoricalChunked::from_cats_and_rev_map_unchecked(
                         cats,
                         ca.get_rev_map().clone(),
+                        *ordering,
                     )
                 };
 

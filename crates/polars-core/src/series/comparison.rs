@@ -84,8 +84,8 @@ fn validate_types(left: &DataType, right: &DataType) -> PolarsResult<()> {
     use DataType::*;
     #[cfg(feature = "dtype-categorical")]
     {
-        let mismatch = matches!(left, Utf8 | Categorical(_)) && right.is_numeric()
-            || left.is_numeric() && matches!(right, Utf8 | Categorical(_));
+        let mismatch = matches!(left, Utf8 | Categorical(_, _)) && right.is_numeric()
+            || left.is_numeric() && matches!(right, Utf8 | Categorical(_, _));
         polars_ensure!(!mismatch, ComputeError: "cannot compare utf-8 with numeric data");
     }
     #[cfg(not(feature = "dtype-categorical"))]
@@ -106,7 +106,7 @@ impl ChunkCompare<&Series> for Series {
         use DataType::*;
         let mut out = match (self.dtype(), rhs.dtype(), self.len(), rhs.len()) {
             #[cfg(feature = "dtype-categorical")]
-            (Categorical(_), Utf8, _, 1) => {
+            (Categorical(_, _), Utf8, _, 1) => {
                 return compare_cat_to_str_series(
                     self,
                     rhs,
@@ -116,7 +116,7 @@ impl ChunkCompare<&Series> for Series {
                 );
             },
             #[cfg(feature = "dtype-categorical")]
-            (Utf8, Categorical(_), 1, _) => {
+            (Utf8, Categorical(_, _), 1, _) => {
                 return compare_cat_to_str_series(
                     rhs,
                     self,
@@ -126,7 +126,7 @@ impl ChunkCompare<&Series> for Series {
                 );
             },
             #[cfg(feature = "dtype-categorical")]
-            (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r)), _, _) => {
+            (Categorical(Some(rev_map_l), _), Categorical(Some(rev_map_r), _), _, _) => {
                 if rev_map_l.same_src(rev_map_r) {
                     let rhs = rhs.categorical().unwrap().physical();
 
@@ -162,7 +162,7 @@ impl ChunkCompare<&Series> for Series {
         use DataType::*;
         let mut out = match (self.dtype(), rhs.dtype(), self.len(), rhs.len()) {
             #[cfg(feature = "dtype-categorical")]
-            (Categorical(_), Utf8, _, 1) => {
+            (Categorical(_, _), Utf8, _, 1) => {
                 return compare_cat_to_str_series(
                     self,
                     rhs,
@@ -172,7 +172,7 @@ impl ChunkCompare<&Series> for Series {
                 );
             },
             #[cfg(feature = "dtype-categorical")]
-            (Utf8, Categorical(_), 1, _) => {
+            (Utf8, Categorical(_, _), 1, _) => {
                 return compare_cat_to_str_series(
                     rhs,
                     self,
@@ -182,7 +182,7 @@ impl ChunkCompare<&Series> for Series {
                 );
             },
             #[cfg(feature = "dtype-categorical")]
-            (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r)), _, _) => {
+            (Categorical(Some(rev_map_l), _), Categorical(Some(rev_map_r), _), _, _) => {
                 if rev_map_l.same_src(rev_map_r) {
                     let rhs = rhs.categorical().unwrap().physical();
 
@@ -218,7 +218,7 @@ impl ChunkCompare<&Series> for Series {
         use DataType::*;
         let mut out = match (self.dtype(), rhs.dtype(), self.len(), rhs.len()) {
             #[cfg(feature = "dtype-categorical")]
-            (Categorical(_), Utf8, _, 1) => {
+            (Categorical(_, _), Utf8, _, 1) => {
                 return compare_cat_to_str_series(
                     self,
                     rhs,
@@ -228,7 +228,7 @@ impl ChunkCompare<&Series> for Series {
                 );
             },
             #[cfg(feature = "dtype-categorical")]
-            (Utf8, Categorical(_), 1, _) => {
+            (Utf8, Categorical(_, _), 1, _) => {
                 return compare_cat_to_str_series(
                     rhs,
                     self,
@@ -238,7 +238,7 @@ impl ChunkCompare<&Series> for Series {
                 );
             },
             #[cfg(feature = "dtype-categorical")]
-            (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r)), _, _) => {
+            (Categorical(Some(rev_map_l), _), Categorical(Some(rev_map_r), _), _, _) => {
                 if rev_map_l.same_src(rev_map_r) {
                     let rhs = rhs.categorical().unwrap().physical();
 
@@ -274,7 +274,7 @@ impl ChunkCompare<&Series> for Series {
         use DataType::*;
         let mut out = match (self.dtype(), rhs.dtype(), self.len(), rhs.len()) {
             #[cfg(feature = "dtype-categorical")]
-            (Categorical(_), Utf8, _, 1) => {
+            (Categorical(_, _), Utf8, _, 1) => {
                 return compare_cat_to_str_series(
                     self,
                     rhs,
@@ -284,7 +284,7 @@ impl ChunkCompare<&Series> for Series {
                 );
             },
             #[cfg(feature = "dtype-categorical")]
-            (Utf8, Categorical(_), 1, _) => {
+            (Utf8, Categorical(_, _), 1, _) => {
                 return compare_cat_to_str_series(
                     rhs,
                     self,
@@ -294,7 +294,7 @@ impl ChunkCompare<&Series> for Series {
                 );
             },
             #[cfg(feature = "dtype-categorical")]
-            (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r)), _, _) => {
+            (Categorical(Some(rev_map_l), _), Categorical(Some(rev_map_r), _), _, _) => {
                 if rev_map_l.same_src(rev_map_r) {
                     let rhs = rhs.categorical().unwrap().physical();
 
@@ -437,7 +437,7 @@ impl ChunkCompare<&str> for Series {
         match self.dtype() {
             Utf8 => Ok(self.utf8().unwrap().equal(rhs)),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_) => {
+            Categorical(_, _) => {
                 compare_cat_to_str_value(self, rhs, self.name(), |lhs, idx| lhs.equal(idx), false)
             },
             _ => Ok(BooleanChunked::full(self.name(), false, self.len())),
@@ -450,7 +450,7 @@ impl ChunkCompare<&str> for Series {
         match self.dtype() {
             Utf8 => Ok(self.utf8().unwrap().equal(rhs)),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_) => compare_cat_to_str_value(
+            Categorical(_, _) => compare_cat_to_str_value(
                 self,
                 rhs,
                 self.name(),
@@ -467,7 +467,7 @@ impl ChunkCompare<&str> for Series {
         match self.dtype() {
             Utf8 => Ok(self.utf8().unwrap().not_equal(rhs)),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_) => compare_cat_to_str_value(
+            Categorical(_, _) => compare_cat_to_str_value(
                 self,
                 rhs,
                 self.name(),
@@ -484,7 +484,7 @@ impl ChunkCompare<&str> for Series {
         match self.dtype() {
             Utf8 => Ok(self.utf8().unwrap().not_equal(rhs)),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_) => compare_cat_to_str_value(
+            Categorical(_, _) => compare_cat_to_str_value(
                 self,
                 rhs,
                 self.name(),

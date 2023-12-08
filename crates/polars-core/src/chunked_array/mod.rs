@@ -840,7 +840,9 @@ pub(crate) mod test {
         let _lock = SINGLE_LOCK.lock();
         disable_string_cache();
         let ca = Utf8Chunked::new("", &[Some("foo"), None, Some("bar"), Some("ham")]);
-        let ca = ca.cast(&DataType::Categorical(None)).unwrap();
+        let ca = ca
+            .cast(&DataType::Categorical(None, Default::default()))
+            .unwrap();
         let ca = ca.categorical().unwrap();
         let v: Vec<_> = ca.physical().into_iter().collect();
         assert_eq!(v, &[Some(0), None, Some(1), Some(2)]);

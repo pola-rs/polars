@@ -141,6 +141,10 @@ impl PyExpr {
             .into()
     }
 
+    fn str_reverse(&self) -> Self {
+        self.inner.clone().str().reverse().into()
+    }
+
     fn str_pad_start(&self, length: usize, fill_char: char) -> Self {
         self.inner.clone().str().pad_start(length, fill_char).into()
     }

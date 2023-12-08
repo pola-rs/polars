@@ -479,6 +479,15 @@ def test_merge_sorted() -> None:
     }
 
 
+def test_merge_sorted_one_empty() -> None:
+    df1 = pl.DataFrame({"key": [1, 2, 3], "a": [1, 2, 3]})
+    df2 = pl.DataFrame([], schema=df1.schema)
+    out = df1.merge_sorted(df2, key="a")
+    assert_frame_equal(out, df1)
+    out = df2.merge_sorted(df1, key="a")
+    assert_frame_equal(out, df1)
+
+
 def test_sort_args() -> None:
     df = pl.DataFrame(
         {

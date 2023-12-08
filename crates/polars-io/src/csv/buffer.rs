@@ -265,8 +265,13 @@ pub(crate) struct CategoricalField<'a> {
 
 #[cfg(feature = "dtype-categorical")]
 impl<'a> CategoricalField<'a> {
-    fn new(name: &str, capacity: usize, quote_char: Option<u8>) -> Self {
-        let builder = CategoricalChunkedBuilder::new(name, capacity);
+    fn new(
+        name: &str,
+        capacity: usize,
+        quote_char: Option<u8>,
+        ordering: CategoricalOrdering,
+    ) -> Self {
+        let builder = CategoricalChunkedBuilder::new(name, capacity, ordering);
 
         Self {
             escape_scratch: vec![],
@@ -554,12 +559,12 @@ pub(crate) fn init_buffers<'a>(
                 #[cfg(feature = "dtype-date")]
                 &DataType::Date => Buffer::Date(DatetimeField::new(name, capacity)),
                 #[cfg(feature = "dtype-categorical")]
-                DataType::Categorical(rev_map) => {
+                DataType::Categorical(rev_map,ordering) => {
                     if let Some(rev_map) = &rev_map {
                         polars_ensure!(!rev_map.is_enum(),InvalidOperation: "user defined categoricals are not supported when reading csv")
                     }
 
-                    Buffer::Categorical(CategoricalField::new(name, capacity, quote_char))
+                    Buffer::Categorical(CategoricalField::new(name, capacity, quote_char,*ordering))
                 },
                 dt => polars_bail!(
                     ComputeError: "unsupported data type when reading CSV: {} when reading CSV", dt,
@@ -723,7 +728,7 @@ impl<'a> Buffer<'a> {
             Buffer::Categorical(_) => {
                 #[cfg(feature = "dtype-categorical")]
                 {
-                    DataType::Categorical(None)
+                    DataType::Categorical(None, Default::default())
                 }
 
                 #[cfg(not(feature = "dtype-categorical"))]

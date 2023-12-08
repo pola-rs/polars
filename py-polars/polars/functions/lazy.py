@@ -77,25 +77,34 @@ def element() -> Expr:
 
 def count(column: str | None = None) -> Expr:
     """
-    Count the number of values in this column/context.
+    Either return the number of rows in the context, or return the number of non-null values in the column.
 
-    This function has different behavior depending on the input type:
+    If no arguments are passed, returns the number of rows in the context.
+    Rows containing null values count towards the total.
+    This is similar to `COUNT(*)` in SQL.
 
-    - `None` -> Expression to count the number of values in this context.
-    - `str` -> Syntactic sugar for `pl.col(column).count()`.
-
-    .. warning::
-        `null` is deemed a value in this context.
+    Otherwise, this function is syntactic sugar for `col(column).count()`.
 
     Parameters
     ----------
     column
-        Column name. If set to `None` (default), returns an expression to take the first
-        column of the context instead.
+        Column name.
+
+    Returns
+    -------
+    Expr
+        Expression of data type :class:`UInt32`.
+
+    See Also
+    --------
+    Expr.count
 
     Examples
     --------
-    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    Return the number of rows in a context. Note that rows containing null values are
+    counted towards the total.
+
+    >>> df = pl.DataFrame({"a": [1, 2, None], "b": [3, None, None]})
     >>> df.select(pl.count())
     shape: (1, 1)
     ┌───────┐
@@ -105,18 +114,19 @@ def count(column: str | None = None) -> Expr:
     ╞═══════╡
     │ 3     │
     └───────┘
-    >>> df.group_by("c", maintain_order=True).agg(pl.count())
-    shape: (2, 2)
-    ┌─────┬───────┐
-    │ c   ┆ count │
-    │ --- ┆ ---   │
-    │ str ┆ u32   │
-    ╞═════╪═══════╡
-    │ foo ┆ 2     │
-    │ bar ┆ 1     │
-    └─────┴───────┘
 
-    """
+    Return the number of non-null values in a column.
+
+    >>> df.select(pl.count("a"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ u32 │
+    ╞═════╡
+    │ 2   │
+    └─────┘
+    """  # noqa: W505
     if column is None:
         return wrap_expr(plr.count())
 

@@ -16,8 +16,11 @@ impl CategoricalChunked {
             // safety:
             // we only removed some indexes so we are still in bounds
             unsafe {
-                let mut out =
-                    CategoricalChunked::from_cats_and_rev_map_unchecked(ca, cat_map.clone());
+                let mut out = CategoricalChunked::from_cats_and_rev_map_unchecked(
+                    ca,
+                    cat_map.clone(),
+                    self.get_ordering(),
+                );
                 out.set_fast_unique(true);
                 Ok(out)
             }
@@ -29,6 +32,7 @@ impl CategoricalChunked {
                 Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
                     ca,
                     cat_map.clone(),
+                    self.get_ordering(),
                 ))
             }
         }

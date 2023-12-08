@@ -58,6 +58,25 @@ def test_casting_to_an_enum_from_categorical() -> None:
     assert_series_equal(s2, expected)
 
 
+def test_casting_to_an_enum_from_integer() -> None:
+    dtype = pl.Enum(["a", "b", "c"])
+    expected = pl.Series([None, "b", "a", "c"], dtype=dtype)
+    s = pl.Series([None, 1, 0, 2], dtype=pl.UInt32)
+    s_enum = s.cast(dtype)
+    assert s_enum.dtype == dtype
+    assert s_enum.null_count() == 1
+    assert_series_equal(s_enum, expected)
+
+
+def test_casting_to_an_enum_oob_from_integer() -> None:
+    dtype = pl.Enum(["a", "b", "c"])
+    s = pl.Series([None, 1, 0, 5], dtype=pl.UInt32)
+    with pytest.raises(
+        pl.OutOfBoundsError, match=("index 5 is bigger than the number of categories 3")
+    ):
+        s.cast(dtype)
+
+
 def test_casting_to_an_enum_from_categorical_nonexistent() -> None:
     with pytest.raises(
         pl.ComputeError,
@@ -126,3 +145,10 @@ def test_extend_to_an_enum() -> None:
     s.extend(s2)
     assert s.len() == 8
     assert s.null_count() == 1
+
+
+def test_series_init_uninstantiated_enum() -> None:
+    with pytest.raises(
+        TypeError, match="Enum types must be instantiated with a list of categories"
+    ):
+        pl.Series(["a", "b", "a"], dtype=pl.Enum)

@@ -1,6 +1,25 @@
 use core::slice::SliceIndex;
 use std::cmp::Ordering;
 use std::mem::MaybeUninit;
+use std::ops::Range;
+
+pub trait SliceAble {
+    /// # Safety
+    /// no bound checks.
+    unsafe fn slice_unchecked(&self, range: Range<usize>) -> Self;
+
+    fn slice(&self, range: Range<usize>) -> Self;
+}
+
+impl<T> SliceAble for &[T] {
+    unsafe fn slice_unchecked(&self, range: Range<usize>) -> Self {
+        self.get_unchecked_release(range)
+    }
+
+    fn slice(&self, range: Range<usize>) -> Self {
+        self.get(range).unwrap()
+    }
+}
 
 pub trait Extrema<T> {
     fn min_value(&self) -> Option<&T>;

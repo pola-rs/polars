@@ -63,6 +63,14 @@ impl LiteralValue {
         matches!(self, LiteralValue::Float32(_) | LiteralValue::Float64(_))
     }
 
+    pub(crate) fn projects_as_scalar(&self) -> bool {
+        match self {
+            LiteralValue::Range { low, high, .. } => high.saturating_sub(*low) == 1,
+            LiteralValue::Series(s) => s.len() == 1,
+            _ => true,
+        }
+    }
+
     pub fn to_anyvalue(&self) -> Option<AnyValue> {
         use LiteralValue::*;
         let av = match self {

@@ -520,6 +520,14 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         ca + other
     }
 
+    /// Reverses the string values
+    #[must_use]
+    #[cfg(feature = "string_reverse")]
+    fn str_reverse(&self) -> Utf8Chunked {
+        let ca = self.as_utf8();
+        reverse::reverse(ca)
+    }
+
     /// Slice the string values.
     ///
     /// Determines a substring starting from `start` and with optional length `length` of each of the elements in `array`.

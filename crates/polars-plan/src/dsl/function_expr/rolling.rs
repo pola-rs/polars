@@ -11,8 +11,6 @@ pub enum RollingFunction {
     MeanBy(RollingOptions),
     Sum(RollingOptions),
     SumBy(RollingOptions),
-    Median(RollingOptions),
-    MedianBy(RollingOptions),
     Quantile(RollingOptions),
     QuantileBy(RollingOptions),
     Var(RollingOptions),
@@ -36,8 +34,6 @@ impl Display for RollingFunction {
             MeanBy(_) => "rolling_mean_by",
             Sum(_) => "rolling_sum",
             SumBy(_) => "rolling_sum_by",
-            Median(_) => "rolling_median",
-            MedianBy(_) => "rolling_median_by",
             Quantile(_) => "rolling_quantile",
             QuantileBy(_) => "rolling_quantile_by",
             Var(_) => "rolling_var",
@@ -157,14 +153,6 @@ pub(super) fn rolling_sum(s: &Series, options: RollingOptions) -> PolarsResult<S
 
 pub(super) fn rolling_sum_by(s: &[Series], options: RollingOptions) -> PolarsResult<Series> {
     convert(|options| s[0].rolling_sum(options), s, "rolling_sum")(options)
-}
-
-pub(super) fn rolling_median(s: &Series, options: RollingOptions) -> PolarsResult<Series> {
-    s.rolling_median(options.clone().into())
-}
-
-pub(super) fn rolling_median_by(s: &[Series], options: RollingOptions) -> PolarsResult<Series> {
-    convert(|options| s[0].rolling_median(options), s, "rolling_median")(options)
 }
 
 pub(super) fn rolling_quantile(s: &Series, options: RollingOptions) -> PolarsResult<Series> {

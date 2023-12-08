@@ -385,7 +385,7 @@ impl ToPyObject for Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Object")).unwrap();
                 class.call0().unwrap().into()
             },
-            DataType::Categorical(rev_map) => {
+            DataType::Categorical(rev_map, ordering) => {
                 if let Some(rev_map) = rev_map {
                     if let RevMapping::Enum(categories, _) = &**rev_map {
                         let class = pl.getattr(intern!(py, "Enum")).unwrap();
@@ -394,7 +394,10 @@ impl ToPyObject for Wrap<DataType> {
                     }
                 }
                 let class = pl.getattr(intern!(py, "Categorical")).unwrap();
-                class.call0().unwrap().into()
+                class
+                    .call1((Wrap(*ordering).to_object(py),))
+                    .unwrap()
+                    .into()
             },
             DataType::Time => pl.getattr(intern!(py, "Time")).unwrap().into(),
             DataType::Struct(fields) => {
@@ -452,7 +455,12 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Utf8" => DataType::Utf8,
                     "Binary" => DataType::Binary,
                     "Boolean" => DataType::Boolean,
-                    "Categorical" => DataType::Categorical(None),
+                    "Categorical" => DataType::Categorical(None, Default::default()),
+                    "Enum" => {
+                        return Err(PyTypeError::new_err(
+                            "Enum types must be instantiated with a list of categories",
+                        ))
+                    },
                     "Date" => DataType::Date,
                     "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
                     "Time" => DataType::Time,
@@ -468,8 +476,8 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Null" => DataType::Null,
                     "Unknown" => DataType::Unknown,
                     dt => {
-                        return Err(PyValueError::new_err(format!(
-                            "{dt} is not a recognised polars DataType.",
+                        return Err(PyTypeError::new_err(format!(
+                            "'{dt}' is not a Polars data type",
                         )))
                     },
                 }
@@ -485,7 +493,11 @@ impl FromPyObject<'_> for Wrap<DataType> {
             "Utf8" => DataType::Utf8,
             "Binary" => DataType::Binary,
             "Boolean" => DataType::Boolean,
-            "Categorical" => DataType::Categorical(None),
+            "Categorical" => {
+                let ordering = ob.getattr(intern!(py, "ordering")).unwrap();
+                let ordering = ordering.extract::<Wrap<CategoricalOrdering>>()?.0;
+                DataType::Categorical(None, ordering)
+            },
             "Enum" => {
                 let categories = ob.getattr(intern!(py, "categories")).unwrap();
                 let categories = categories.extract::<Wrap<Utf8Chunked>>()?.0;
@@ -539,8 +551,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
             },
             dt => {
                 return Err(PyTypeError::new_err(format!(
-                    "A {dt} object is not a recognised polars DataType. \
-                    Hint: use the class without instantiating it.",
+                    "'{dt}' is not a Polars data type",
                 )))
             },
         };
@@ -551,6 +562,16 @@ impl FromPyObject<'_> for Wrap<DataType> {
 impl ToPyObject for Wrap<AnyValue<'_>> {
     fn to_object(&self, py: Python) -> PyObject {
         self.clone().into_py(py)
+    }
+}
+
+impl ToPyObject for Wrap<CategoricalOrdering> {
+    fn to_object(&self, py: Python<'_>) -> PyObject {
+        let ordering = match self.0 {
+            CategoricalOrdering::Physical => "physical",
+            CategoricalOrdering::Lexical => "lexical",
+        };
+        ordering.into_py(py)
     }
 }
 

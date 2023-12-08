@@ -276,7 +276,7 @@ class Series:
             self._s = series_to_pyseries(name, values)
 
         elif isinstance(values, range):
-            self._s = range_to_series(name, values, dtype=dtype)._s  # type: ignore[arg-type]
+            self._s = range_to_series(name, values, dtype=dtype)._s
 
         elif isinstance(values, Sequence):
             self._s = sequence_to_pyseries(
@@ -3737,21 +3737,6 @@ class Series:
         """
         return self._s.equals(other._s, null_equal, strict)
 
-    def len(self) -> int:
-        """
-        Return the number of elements in this Series.
-
-        Null values are treated like regular elements in this context.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, 2, None])
-        >>> s.len()
-        3
-
-        """
-        return self._s.len()
-
     def cast(
         self,
         dtype: (PolarsDataType | type[int] | type[float] | type[str] | type[bool]),
@@ -4040,9 +4025,9 @@ class Series:
                 *args, zero_copy_only=zero_copy_only, writable=writable
             )
 
-        elif self.dtype == Time:
+        elif self.dtype in (Time, Decimal):
             raise_no_zero_copy()
-            # note: there is no native numpy "time" dtype
+            # note: there are no native numpy "time" or "decimal" dtypes
             return np.array(self.to_list(), dtype="object")
         else:
             if not self.null_count():
@@ -4231,6 +4216,40 @@ class Series:
         return (
             f'pl.Series("{self.name}", {self.head(n).to_list()}, dtype=pl.{self.dtype})'
         )
+
+    def count(self) -> int:
+        """
+        Return the number of non-null elements in the column.
+
+        See Also
+        --------
+        len
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, None])
+        >>> s.count()
+        2
+        """
+        return self.len() - self.null_count()
+
+    def len(self) -> int:
+        """
+        Return the number of elements in the Series.
+
+        Null values count towards the total.
+
+        See Also
+        --------
+        count
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, None])
+        >>> s.len()
+        3
+        """
+        return self._s.len()
 
     def set(self, filter: Series, value: int | float | str | bool | None) -> Series:
         """

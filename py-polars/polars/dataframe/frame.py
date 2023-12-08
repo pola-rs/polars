@@ -2049,6 +2049,7 @@ class DataFrame:
         structured: bool = False,  # noqa: FBT001
         *,
         order: IndexOrder = "fortran",
+        use_pyarrow: bool = True,
     ) -> np.ndarray[Any, Any]:
         """
         Convert DataFrame to a 2D NumPy array.
@@ -2060,6 +2061,7 @@ class DataFrame:
         structured
             Optionally return a structured array, with field names and
             dtypes that correspond to the DataFrame schema.
+
         order
             The index order of the returned NumPy array, either C-like or
             Fortran-like. In general, using the Fortran-like index order is faster.
@@ -2068,11 +2070,16 @@ class DataFrame:
             one-dimensional array. Note that this option only takes effect if
             `structured` is set to `False` and the DataFrame dtypes allow for a
             global dtype for all columns.
+        use_pyarrow
+            Use `pyarrow.Array.to_numpy
+            <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
+
+            function for the conversion to numpy if necessary.
 
         Notes
         -----
-        If you're attempting to convert Utf8 to an array you'll need to install
-        `pyarrow`.
+        If you're attempting to convert Utf8 or Decimal to an array, you'll need to
+        install `pyarrow`.
 
         Examples
         --------
@@ -2112,7 +2119,7 @@ class DataFrame:
             arrays = []
             for c, tp in self.schema.items():
                 s = self[c]
-                a = s.to_numpy()
+                a = s.to_numpy(use_pyarrow=use_pyarrow)
                 arrays.append(
                     a.astype(str, copy=False)
                     if tp == Utf8 and not s.null_count()
@@ -2128,7 +2135,10 @@ class DataFrame:
             out = self._df.to_numpy(order)
             if out is None:
                 return np.vstack(
-                    [self.to_series(i).to_numpy() for i in range(self.width)]
+                    [
+                        self.to_series(i).to_numpy(use_pyarrow=use_pyarrow)
+                        for i in range(self.width)
+                    ]
                 ).T
 
         return out
@@ -2298,7 +2308,7 @@ class DataFrame:
         ...     [
         ...         pl.Series("foo", [1, 2, 3], dtype=pl.UInt8),
         ...         pl.Series("bar", [6.0, 7.0, 8.0], dtype=pl.Float32),
-        ...         pl.Series("ham", ["a", "b", "c"], dtype=pl.Categorical),
+        ...         pl.Series("ham", ["a", "b", "c"], dtype=pl.Utf8),
         ...     ]
         ... )
         >>> print(df.to_init_repr())
@@ -2306,7 +2316,7 @@ class DataFrame:
             [
                 pl.Series("foo", [1, 2, 3], dtype=pl.UInt8),
                 pl.Series("bar", [6.0, 7.0, 8.0], dtype=pl.Float32),
-                pl.Series("ham", ['a', 'b', 'c'], dtype=pl.Categorical),
+                pl.Series("ham", ['a', 'b', 'c'], dtype=pl.Utf8),
             ]
         )
 
@@ -2316,7 +2326,7 @@ class DataFrame:
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
-        │ u8  ┆ f32 ┆ cat │
+        │ u8  ┆ f32 ┆ str │
         ╞═════╪═════╪═════╡
         │ 1   ┆ 6.0 ┆ a   │
         │ 2   ┆ 7.0 ┆ b   │
@@ -3594,15 +3604,40 @@ class DataFrame:
         else:
             raise ValueError(f"engine {engine!r} is not supported")
 
+    @overload
     def write_delta(
         self,
         target: str | Path | deltalake.DeltaTable,
         *,
-        mode: Literal["error", "append", "overwrite", "ignore"] = "error",
+        mode: Literal["error", "append", "overwrite", "ignore"] = ...,
+        overwrite_schema: bool = ...,
+        storage_options: dict[str, str] | None = ...,
+        delta_write_options: dict[str, Any] | None = ...,
+    ) -> None:
+        ...
+
+    @overload
+    def write_delta(
+        self,
+        target: str | Path | deltalake.DeltaTable,
+        *,
+        mode: Literal["merge"],
+        overwrite_schema: bool = ...,
+        storage_options: dict[str, str] | None = ...,
+        delta_merge_options: dict[str, Any],
+    ) -> deltalake.table.TableMerger:
+        ...
+
+    def write_delta(
+        self,
+        target: str | Path | deltalake.DeltaTable,
+        *,
+        mode: Literal["error", "append", "overwrite", "ignore", "merge"] = "error",
         overwrite_schema: bool = False,
         storage_options: dict[str, str] | None = None,
         delta_write_options: dict[str, Any] | None = None,
-    ) -> None:
+        delta_merge_options: dict[str, Any] | None = None,
+    ) -> deltalake.table.TableMerger | None:
         """
         Write DataFrame as delta table.
 
@@ -3610,25 +3645,30 @@ class DataFrame:
         ----------
         target
             URI of a table or a DeltaTable object.
-        mode : {'error', 'append', 'overwrite', 'ignore'}
+        mode : {'error', 'append', 'overwrite', 'ignore', 'merge'}
             How to handle existing data.
 
-            * If 'error', throw an error if the table already exists (default).
-            * If 'append', will add new data.
-            * If 'overwrite', will replace table with new data.
-            * If 'ignore', will not write anything if table already exists.
+            - If 'error', throw an error if the table already exists (default).
+            - If 'append', will add new data.
+            - If 'overwrite', will replace table with new data.
+            - If 'ignore', will not write anything if table already exists.
+            - If 'merge', return a `TableMerger` object to merge data from the DataFrame
+              with the existing data.
         overwrite_schema
             If True, allows updating the schema of the table.
         storage_options
             Extra options for the storage backends supported by `deltalake`.
             For cloud storages, this may include configurations for authentication etc.
 
-            * See a list of supported storage options for S3 `here <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html#variants>`__.
-            * See a list of supported storage options for GCS `here <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html#variants>`__.
-            * See a list of supported storage options for Azure `here <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants>`__.
+            - See a list of supported storage options for S3 `here <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html#variants>`__.
+            - See a list of supported storage options for GCS `here <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html#variants>`__.
+            - See a list of supported storage options for Azure `here <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants>`__.
         delta_write_options
             Additional keyword arguments while writing a Delta lake Table.
-            See a list of supported write options `here <https://github.com/delta-io/delta-rs/blob/395d48b47ea638b70415899dc035cc895b220e55/python/deltalake/writer.py#L65>`__.
+            See a list of supported write options `here <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__.
+        delta_merge_options
+            Keyword arguments which are required to `MERGE` a Delta lake Table.
+            See a list of supported merge options `here <https://delta-io.github.io/delta-rs/api/delta_table/#deltalake.DeltaTable.merge>`__.
 
         Raises
         ------
@@ -3637,21 +3677,14 @@ class DataFrame:
         ArrowInvalidError
             If the DataFrame contains data types that could not be cast to their
             primitive type.
+        TableNotFoundError
+            If the delta table doesn't exist and MERGE action is triggered
 
         Notes
         -----
         The Polars data types :class:`Null`, :class:`Categorical` and :class:`Time`
         are not supported by the delta protocol specification and will raise a
         TypeError.
-
-        Some other data types are not supported but have an associated `primitive type
-        <https://github.com/delta-io/delta/blob/master/PROTOCOL.md#primitive-types>`__
-        to which they can be cast. This affects the following data types:
-
-        - Unsigned integers
-        - :class:`Datetime` types with millisecond or nanosecond precision or with
-            time zone information
-        - :class:`Utf8`, :class:`Binary`, and :class:`List` ('large' types)
 
         Polars columns are always nullable. To write data to a delta table with
         non-nullable columns, a custom pyarrow schema has to be passed to the
@@ -3686,7 +3719,7 @@ class DataFrame:
         ...     existing_table_path, mode="overwrite", overwrite_schema=True
         ... )  # doctest: +SKIP
 
-        Write a dataframe as a Delta Lake table to a cloud object store like S3.
+        Write a DataFrame as a Delta Lake table to a cloud object store like S3.
 
         >>> table_path = "s3://bucket/prefix/to/delta-table/"
         >>> df.write_delta(
@@ -3709,44 +3742,81 @@ class DataFrame:
         ...     },
         ... )  # doctest: +SKIP
 
+        Merge the DataFrame with an existing Delta Lake table.
+        For all `TableMerger` methods, check the deltalake docs
+        `here <https://delta-io.github.io/delta-rs/api/delta_table/delta_table_merger/>`__.
+
+        Schema evolution is not yet supported in by the `deltalake` package, therefore
+        `overwrite_schema` will not have any effect on a merge operation.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3, 4, 5],
+        ...         "bar": [6, 7, 8, 9, 10],
+        ...         "ham": ["a", "b", "c", "d", "e"],
+        ...     }
+        ... )
+        >>> table_path = "/path/to/delta-table/"
+        >>> (
+        ...     df.write_delta(
+        ...         "table_path",
+        ...         mode="merge",
+        ...         delta_merge_options={
+        ...             "predicate": "s.foo = t.foo",
+        ...             "source_alias": "s",
+        ...             "target_alias": "t",
+        ...         },
+        ...     )
+        ...     .when_matched_update_all()
+        ...     .when_not_matched_insert_all()
+        ...     .execute()
+        ... )  # doctest: +SKIP
         """
         from polars.io.delta import (
             _check_for_unsupported_types,
             _check_if_delta_available,
-            _convert_pa_schema_to_delta,
             _resolve_delta_lake_uri,
         )
 
         _check_if_delta_available()
 
-        from deltalake.writer import write_deltalake
+        from deltalake import DeltaTable, write_deltalake
 
-        if delta_write_options is None:
-            delta_write_options = {}
+        _check_for_unsupported_types(self.dtypes)
 
         if isinstance(target, (str, Path)):
             target = _resolve_delta_lake_uri(str(target), strict=False)
 
-        _check_for_unsupported_types(self.dtypes)
-
         data = self.to_arrow()
 
-        schema = delta_write_options.pop("schema", None)
-        if schema is None:
-            schema = _convert_pa_schema_to_delta(data.schema)
+        if mode == "merge":
+            if delta_merge_options is None:
+                raise ValueError(
+                    "You need to pass delta_merge_options with at least a given predicate for `MERGE` to work."
+                )
+            if isinstance(target, str):
+                dt = DeltaTable(table_uri=target, storage_options=storage_options)
+            else:
+                dt = target
 
-        data = data.cast(schema)
+            return dt.merge(data, **delta_merge_options)
 
-        write_deltalake(
-            table_or_uri=target,
-            data=data,
-            schema=schema,
-            mode=mode,
-            overwrite_schema=overwrite_schema,
-            storage_options=storage_options,
-            large_dtypes=True,
-            **delta_write_options,
-        )
+        else:
+            if delta_write_options is None:
+                delta_write_options = {}
+
+            schema = delta_write_options.pop("schema", None)
+            write_deltalake(
+                table_or_uri=target,
+                data=data,
+                schema=schema,
+                mode=mode,
+                overwrite_schema=overwrite_schema,
+                storage_options=storage_options,
+                large_dtypes=True,
+                **delta_write_options,
+            )
+            return None
 
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
@@ -4293,7 +4363,7 @@ class DataFrame:
 
         # execute metrics in parallel
         df_metrics = self.select(
-            F.all().count().name.prefix("count:"),
+            F.all().len().name.prefix("count:"),
             F.all().null_count().name.prefix("null_count:"),
             F.all().mean().name.prefix("mean:"),
             F.all().std().name.prefix("std:"),

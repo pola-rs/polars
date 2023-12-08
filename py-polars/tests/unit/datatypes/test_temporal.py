@@ -2312,12 +2312,33 @@ def test_truncate_by_multiple_weeks() -> None:
             ]
         )
     ).to_dict(as_series=False) == {
-        "2w": [date(2022, 4, 11), date(2022, 11, 21)],
-        "3w": [date(2022, 4, 4), date(2022, 11, 14)],
-        "4w": [date(2022, 3, 28), date(2022, 11, 7)],
-        "5w": [date(2022, 3, 21), date(2022, 10, 31)],
-        "17w": [date(2021, 12, 27), date(2022, 8, 8)],
+        "2w": [date(2022, 4, 18), date(2022, 11, 28)],
+        "3w": [date(2022, 4, 11), date(2022, 11, 28)],
+        "4w": [date(2022, 4, 18), date(2022, 11, 28)],
+        "5w": [date(2022, 3, 28), date(2022, 11, 28)],
+        "17w": [date(2022, 2, 21), date(2022, 10, 17)],
     }
+
+
+def test_truncate_by_multiple_weeks_diffs() -> None:
+    df = pl.DataFrame(
+        {
+            "ts": pl.date_range(date(2020, 1, 1), date(2020, 2, 1), eager=True),
+        }
+    )
+    result = df.select(
+        pl.col("ts").dt.truncate("1w").alias("1w"),
+        pl.col("ts").dt.truncate("2w").alias("2w"),
+        pl.col("ts").dt.truncate("3w").alias("3w"),
+    ).select(pl.all().diff().drop_nulls().unique())
+    expected = pl.DataFrame(
+        {
+            "1w": [timedelta(0), timedelta(days=7)],
+            "2w": [timedelta(0), timedelta(days=14)],
+            "3w": [timedelta(0), timedelta(days=21)],
+        }
+    ).select(pl.all().cast(pl.Duration("ms")))
+    assert_frame_equal(result, expected)
 
 
 def test_truncate_use_earliest() -> None:

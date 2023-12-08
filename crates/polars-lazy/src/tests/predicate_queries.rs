@@ -40,7 +40,7 @@ fn test_issue_2472() -> PolarsResult<()> {
     ]?;
     let base = df
         .lazy()
-        .with_column(col("group").cast(DataType::Categorical(None)));
+        .with_column(col("group").cast(DataType::Categorical(None, Default::default())));
 
     let extract = col("group")
         .cast(DataType::Utf8)

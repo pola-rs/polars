@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import io
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -12,6 +12,9 @@ from polars.exceptions import (
     StringCacheMismatchError,
 )
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars.type_aliases import PolarsDataType
 
 
 @StringCache()
@@ -239,7 +242,24 @@ def test_stringcache() -> None:
         }
 
 
+@pytest.mark.parametrize(
+    ("dtype", "outcome"),
+    [
+        (pl.Categorical, ["foo", "bar", "baz"]),
+        (pl.Categorical("physical"), ["foo", "bar", "baz"]),
+        (pl.Categorical("lexical"), ["bar", "baz", "foo"]),
+    ],
+)
+def test_categorical_sort_order_by_parameter(
+    dtype: PolarsDataType, outcome: list[str]
+) -> None:
+    s = pl.Series(["foo", "bar", "baz"], dtype=dtype)
+    df = pl.DataFrame({"cat": s})
+    assert df.sort(["cat"])["cat"].to_list() == outcome
+
+
 @StringCache()
+@pytest.mark.filterwarnings("ignore:`set_ordering` is deprecated:DeprecationWarning")
 def test_categorical_sort_order(monkeypatch: Any) -> None:
     # create the categorical ordering first
     pl.Series(["foo", "bar", "baz"], dtype=pl.Categorical)
@@ -260,6 +280,9 @@ def test_categorical_sort_order(monkeypatch: Any) -> None:
     assert df.with_columns(pl.col("x").cat.set_ordering("lexical")).sort(["n", "x"])[
         "x"
     ].to_list() == ["bar", "baz", "foo"]
+    assert df.with_columns(pl.col("x").cast(pl.Categorical("lexical"))).sort(
+        ["n", "x"]
+    )["x"].to_list() == ["bar", "baz", "foo"]
 
 
 def test_err_on_categorical_asof_join_by_arg() -> None:

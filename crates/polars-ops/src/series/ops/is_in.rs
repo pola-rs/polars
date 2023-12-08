@@ -82,8 +82,8 @@ where
 fn is_in_utf8(ca_in: &Utf8Chunked, other: &Series) -> PolarsResult<BooleanChunked> {
     match other.dtype() {
         #[cfg(feature = "dtype-categorical")]
-        DataType::List(dt) if matches!(&**dt, DataType::Categorical(_)) => {
-            if let DataType::Categorical(Some(rev_map)) = &**dt {
+        DataType::List(dt) if matches!(&**dt, DataType::Categorical(_, _)) => {
+            if let DataType::Categorical(Some(rev_map), _) = &**dt {
                 let opt_val = ca_in.get(0);
 
                 let other = other.list()?;
@@ -338,7 +338,7 @@ fn is_in_struct(ca_in: &StructChunked, other: &Series) -> PolarsResult<BooleanCh
 pub fn is_in(s: &Series, other: &Series) -> PolarsResult<BooleanChunked> {
     match s.dtype() {
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(_) => {
+        DataType::Categorical(_, _) => {
             use crate::frame::join::_check_categorical_src;
             _check_categorical_src(s.dtype(), other.dtype())?;
             let ca = s.categorical().unwrap();

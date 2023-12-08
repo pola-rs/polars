@@ -482,7 +482,7 @@ macro_rules! impl_sliced {
                 offset + length <= self.len(),
                 "the offset of the new Buffer cannot exceed the existing length"
             );
-            unsafe { self.sliced_unchecked(offset, length) }
+            unsafe { Self::sliced_unchecked(self, offset, length) }
         }
 
         /// Returns this array sliced.
@@ -493,7 +493,7 @@ macro_rules! impl_sliced {
         #[inline]
         #[must_use]
         pub unsafe fn sliced_unchecked(mut self, offset: usize, length: usize) -> Self {
-            self.slice_unchecked(offset, length);
+            Self::slice_unchecked(&mut self, offset, length);
             self
         }
     };

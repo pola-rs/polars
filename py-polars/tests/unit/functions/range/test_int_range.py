@@ -161,3 +161,27 @@ def test_int_range_input_shape_multiple_values() -> None:
         pl.ComputeError, match="`start` must contain exactly one value, got 2 values"
     ):
         pl.int_range(multiple, multiple, eager=True)
+
+
+# https://github.com/pola-rs/polars/issues/10867
+def test_int_range_index_type_negative() -> None:
+    result = pl.select(pl.int_range(pl.lit(3).cast(pl.UInt32), -1, -1))
+    expected = pl.DataFrame({"int": [3, 2, 1, 0]})
+    assert_frame_equal(result, expected)
+
+
+def test_int_range_null_input() -> None:
+    with pytest.raises(pl.ComputeError, match="invalid null input for `int_range`"):
+        pl.select(pl.int_range(3, pl.lit(None), -1, dtype=pl.UInt32))
+
+
+def test_int_range_invalid_conversion() -> None:
+    with pytest.raises(pl.ComputeError, match="conversion from `i32` to `u32` failed"):
+        pl.select(pl.int_range(3, -1, -1, dtype=pl.UInt32))
+
+
+def test_int_range_non_integer_dtype() -> None:
+    with pytest.raises(
+        pl.ComputeError, match="non-integer `dtype` passed to `int_range`: Float64"
+    ):
+        pl.select(pl.int_range(3, -1, -1, dtype=pl.Float64))  # type: ignore[arg-type]

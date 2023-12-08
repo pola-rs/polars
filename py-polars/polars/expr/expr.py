@@ -1267,14 +1267,20 @@ class Expr:
 
     def count(self) -> Self:
         """
-        Return the number of elements in the column.
+        Return the number of non-null elements in the column.
 
-        .. warning::
-            Null values are treated like regular elements in this context.
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`UInt32`.
+
+        See Also
+        --------
+        len
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [None, 4, 4]})
         >>> df.select(pl.all().count())
         shape: (1, 2)
         ┌─────┬─────┐
@@ -1282,9 +1288,8 @@ class Expr:
         │ --- ┆ --- │
         │ u32 ┆ u32 │
         ╞═════╪═════╡
-        │ 3   ┆ 3   │
+        │ 3   ┆ 2   │
         └─────┴─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.count())
 
@@ -1292,13 +1297,20 @@ class Expr:
         """
         Return the number of elements in the column.
 
-        Null values are treated like regular elements in this context.
+        Null values count towards the total.
 
-        Alias for :func:`count`.
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`UInt32`.
+
+        See Also
+        --------
+        count
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [None, 4, 4]})
         >>> df.select(pl.all().len())
         shape: (1, 2)
         ┌─────┬─────┐
@@ -1308,9 +1320,8 @@ class Expr:
         ╞═════╪═════╡
         │ 3   ┆ 3   │
         └─────┴─────┘
-
         """
-        return self.count()
+        return self._from_pyexpr(self._pyexpr.len())
 
     def slice(self, offset: int | Expr, length: int | Expr | None = None) -> Self:
         """
@@ -9790,12 +9801,12 @@ class Expr:
         >>> df = pl.DataFrame({"values": ["a", "b"]}).select(
         ...     pl.col("values").cast(pl.Categorical)
         ... )
-        >>> df.select(pl.col("values").cat.set_ordering(ordering="physical"))
+        >>> df.select(pl.col("values").cat.get_categories())
         shape: (2, 1)
         ┌────────┐
         │ values │
         │ ---    │
-        │ cat    │
+        │ str    │
         ╞════════╡
         │ a      │
         │ b      │

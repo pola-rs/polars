@@ -90,7 +90,7 @@ fn partitionable_gb(
                                                 | AAggExpr::Sum(_)
                                                 | AAggExpr::Last(_)
                                                 | AAggExpr::First(_)
-                                                | AAggExpr::Count(_)
+                                                | AAggExpr::Count(_, true)
                                         )
                         },
                         Function {input, options, ..} => {

@@ -12,7 +12,7 @@ impl Series {
                 ArrayChunked::full_null_with_dtype(name, size, inner_dtype, *width).into_series()
             },
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(rev_map) => {
+            DataType::Categorical(rev_map, _) => {
                 let mut ca = CategoricalChunked::full_null(name, size);
                 // ensure we keep the rev-map of a cleared series
                 if let Some(rev_map) = rev_map {

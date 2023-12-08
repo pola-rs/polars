@@ -33,6 +33,7 @@ impl CategoricalChunked {
                 CategoricalChunked::from_cats_and_rev_map_unchecked(
                     cats,
                     self.get_rev_map().clone(),
+                    self.get_ordering(),
                 )
             };
         }
@@ -40,7 +41,11 @@ impl CategoricalChunked {
         // safety:
         // we only reordered the indexes so we are still in bounds
         unsafe {
-            CategoricalChunked::from_cats_and_rev_map_unchecked(cats, self.get_rev_map().clone())
+            CategoricalChunked::from_cats_and_rev_map_unchecked(
+                cats,
+                self.get_rev_map().clone(),
+                self.get_ordering(),
+            )
         }
     }
 
@@ -118,13 +123,17 @@ mod test {
                 enable_string_cache();
             }
 
-            let s = Series::new("", init).cast(&DataType::Categorical(None))?;
+            let s = Series::new("", init)
+                .cast(&DataType::Categorical(None, CategoricalOrdering::Lexical))?;
             let ca = s.categorical()?;
-            let mut ca_lexical = ca.clone();
-            ca_lexical.set_lexical_ordering(true);
+            let ca_lexical = ca.clone();
 
             let out = ca_lexical.sort(false);
             assert_order(&out, &["a", "b", "c", "d"]);
+
+            let s = Series::new("", init).cast(&DataType::Categorical(None, Default::default()))?;
+            let ca = s.categorical()?;
+
             let out = ca.sort(false);
             assert_order(&out, init);
 
@@ -149,10 +158,10 @@ mod test {
                 enable_string_cache();
             }
 
-            let s = Series::new("", init).cast(&DataType::Categorical(None))?;
+            let s = Series::new("", init)
+                .cast(&DataType::Categorical(None, CategoricalOrdering::Lexical))?;
             let ca = s.categorical()?;
-            let mut ca_lexical: CategoricalChunked = ca.clone();
-            ca_lexical.set_lexical_ordering(true);
+            let ca_lexical: CategoricalChunked = ca.clone();
 
             let series = ca_lexical.into_series();
 

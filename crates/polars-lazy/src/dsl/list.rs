@@ -149,7 +149,7 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
                 match e {
                     #[cfg(feature = "dtype-categorical")]
                     Expr::Cast {
-                        data_type: DataType::Categorical(_),
+                        data_type: DataType::Categorical(_, _),
                         ..
                     } => {
                         polars_bail!(
