@@ -276,7 +276,7 @@ class Series:
             self._s = series_to_pyseries(name, values)
 
         elif isinstance(values, range):
-            self._s = range_to_series(name, values, dtype=dtype)._s  # type: ignore[arg-type]
+            self._s = range_to_series(name, values, dtype=dtype)._s
 
         elif isinstance(values, Sequence):
             self._s = sequence_to_pyseries(
