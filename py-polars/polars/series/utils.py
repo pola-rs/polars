@@ -97,7 +97,7 @@ def call_expr(func: SeriesMethod) -> SeriesMethod:
         if namespace is not None:
             expr = getattr(expr, namespace)
         f = getattr(expr, func.__name__)
-        return s.to_frame().select(f(*args, **kwargs)).to_series()
+        return s.to_frame().select_seq(f(*args, **kwargs)).to_series()
 
     # note: applying explicit '__signature__' helps IDEs (especially PyCharm)
     # with proper autocomplete, in addition to what @functools.wraps does
