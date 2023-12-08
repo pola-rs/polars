@@ -1105,7 +1105,7 @@ class DateTimeNameSpace:
         Parameters
         ----------
         tz
-            Time zone to convert to local datetime of.
+            Time zone to convert to.
 
         Returns
         -------
