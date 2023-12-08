@@ -3,8 +3,8 @@ use std::ops::Neg;
 use std::panic::RefUnwindSafe;
 
 use bytemuck::{Pod, Zeroable};
-use polars_utils::nulls::IsNull;
 use polars_utils::min_max::MinMax;
+use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::{TotalEq, TotalOrd};
 
 use super::PrimitiveType;
