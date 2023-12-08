@@ -3737,21 +3737,6 @@ class Series:
         """
         return self._s.equals(other._s, null_equal, strict)
 
-    def len(self) -> int:
-        """
-        Return the number of elements in this Series.
-
-        Null values are treated like regular elements in this context.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, 2, None])
-        >>> s.len()
-        3
-
-        """
-        return self._s.len()
-
     def cast(
         self,
         dtype: (PolarsDataType | type[int] | type[float] | type[str] | type[bool]),
@@ -4233,8 +4218,38 @@ class Series:
         )
 
     def count(self) -> int:
-        """Return the number of non-null elements in the column."""
-        return len(self) - self.null_count()
+        """
+        Return the number of non-null elements in the column.
+
+        See Also
+        --------
+        len
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, None])
+        >>> s.count()
+        2
+        """
+        return self.len() - self.null_count()
+
+    def len(self) -> int:
+        """
+        Return the number of elements in the Series.
+
+        Null values count towards the total.
+
+        See Also
+        --------
+        count
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, None])
+        >>> s.len()
+        3
+        """
+        return self._s.len()
 
     def set(self, filter: Series, value: int | float | str | bool | None) -> Series:
         """

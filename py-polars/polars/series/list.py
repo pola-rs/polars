@@ -88,7 +88,7 @@ class ListNameSpace:
         """
         Return the number of elements in each list.
 
-        Null values are treated like regular elements in this context.
+        Null values count towards the total.
 
         Returns
         -------
