@@ -1,12 +1,10 @@
 use std::any::Any;
 
 use arrow::array::PrimitiveArray;
-use arrow::compute::aggregate::SimdOrd;
+use polars_compute::min_max::MinMaxKernel;
 use polars_core::datatypes::{AnyValue, DataType};
-use polars_core::export::arrow::types::simd::Simd;
 use polars_core::export::num::NumCast;
 use polars_core::prelude::*;
-use polars_core::utils::arrow::compute::aggregate::{max_primitive, min_primitive};
 use polars_utils::min_max::MinMax;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
@@ -59,8 +57,8 @@ impl<K: NumericNative, F: Fn(K, K) -> K> MinMaxAgg<K, F> {
 
 impl<K, F: Fn(K, K) -> K + Send + Sync + 'static> AggregateFn for MinMaxAgg<K, F>
 where
-    K: Simd + NumericNative,
-    <K as Simd>::Simd: SimdOrd<K>,
+    K: NumericNative,
+    PrimitiveArray<K>: for<'a> MinMaxKernel<Scalar<'a> = K>,
 {
     fn has_physical_agg(&self) -> bool {
         true
@@ -84,9 +82,9 @@ where
         // convince the compiler that K::POLARSTYPE::Native == K
         let arr = unsafe { std::mem::transmute::<PrimitiveArray<_>, PrimitiveArray<K>>(arr) };
         let agg = if self.is_min {
-            min_primitive(&arr)
+            arr.min_ignore_nan_kernel()
         } else {
-            max_primitive(&arr)
+            arr.max_ignore_nan_kernel()
         };
         self.pre_agg_primitive(agg)
     }

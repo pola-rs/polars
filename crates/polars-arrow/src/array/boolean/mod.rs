@@ -1,6 +1,7 @@
 use either::Either;
 
 use super::Array;
+use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::{ArrowDataType, PhysicalType};
@@ -93,6 +94,12 @@ impl BooleanArray {
     #[inline]
     pub fn values_iter(&self) -> BitmapIter {
         self.values().iter()
+    }
+
+    /// Returns an iterator of the non-null values.
+    #[inline]
+    pub fn non_null_values_iter(&self) -> NonNullValuesIter<'_, BooleanArray> {
+        NonNullValuesIter::new(self, self.validity())
     }
 
     /// Returns the length of this array

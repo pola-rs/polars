@@ -10,9 +10,7 @@ pub trait VarAggSeries {
 impl<T> ChunkVar for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
-        + compute::aggregate::Sum<T::Native>
-        + compute::aggregate::SimdOrd<T::Native>,
+    ChunkedArray<T>: ChunkAgg<T::Native>,
 {
     fn var(&self, ddof: u8) -> Option<f64> {
         let n_values = self.len() - self.null_count();

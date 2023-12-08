@@ -1,43 +1,25 @@
 use polars_utils::iter::IntoIteratorCopied;
 
 use super::{MutablePrimitiveArray, PrimitiveArray};
-use crate::array::MutableArray;
-use crate::bitmap::iterator::TrueIdxIter;
+use crate::array::{ArrayAccessor, MutableArray};
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::IntoIter as BitmapIntoIter;
 use crate::buffer::IntoIter;
-use crate::trusted_len::TrustedLen;
 use crate::types::NativeType;
 
-pub struct NonNullValuesIter<'a, T> {
-    values: &'a [T],
-    idxs: TrueIdxIter<'a>,
-}
-
-impl<'a, T: NativeType> NonNullValuesIter<'a, T> {
-    pub fn new(arr: &'a PrimitiveArray<T>) -> Self {
-        Self {
-            values: arr.values(),
-            idxs: TrueIdxIter::new(arr.len(), arr.validity()),
-        }
-    }
-}
-
-impl<'a, T: NativeType> Iterator for NonNullValuesIter<'a, T> {
-    type Item = &'a T;
+unsafe impl<'a, T: NativeType> ArrayAccessor<'a> for [T] {
+    type Item = T;
 
     #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        self.idxs.next().map(|i| unsafe { self.values.get_unchecked(i) })
+    unsafe fn value_unchecked(&'a self, index: usize) -> Self::Item {
+        *self.get_unchecked(index)
     }
 
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.idxs.size_hint()
+    #[inline]
+    fn len(&self) -> usize {
+        (*self).len()
     }
 }
-
-unsafe impl<'a, T: NativeType> TrustedLen for NonNullValuesIter<'a, T> { }
-    
 
 impl<T: NativeType> IntoIterator for PrimitiveArray<T> {
     type Item = Option<T>;

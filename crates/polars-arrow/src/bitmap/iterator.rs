@@ -39,6 +39,7 @@ impl<'a> Iterator for TrueIdxIter<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
+        // Fast path for many non-nulls in a row.
         if self.i < self.first_unknown {
             let ret = self.i;
             self.i += 1;
@@ -52,8 +53,10 @@ impl<'a> Iterator for TrueIdxIter<'a> {
             self.i += num_null as usize;
             if num_null < 32 {
                 self.first_unknown = self.i + (mask >> num_null).trailing_ones() as usize;
+                let ret = self.i;
+                self.i += 1;
                 self.remaining -= 1;
-                return Some(self.i);
+                return Some(ret);
             }
         }
 

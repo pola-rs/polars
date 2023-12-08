@@ -282,7 +282,6 @@ impl TotalOrd for months_days_ns {
     }
 }
 
-
 impl MinMax for months_days_ns {
     fn min_ignore_nan(self, other: Self) -> Self {
         self.min(other)
