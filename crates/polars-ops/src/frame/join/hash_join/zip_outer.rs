@@ -29,7 +29,7 @@ pub(crate) unsafe fn zip_outer_join_column(
             Series::full_null(left_column.name(), opt_join_tuples.len(), &DataType::Null)
         },
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(_) => {
+        DataType::Categorical(_, _) => {
             let left_column = left_column.categorical().unwrap();
             let right_column = right_column.categorical().unwrap();
 

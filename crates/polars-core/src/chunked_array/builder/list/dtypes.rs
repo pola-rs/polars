@@ -2,7 +2,7 @@ use super::*;
 
 pub(super) enum DtypeMerger {
     #[cfg(feature = "dtype-categorical")]
-    Categorical(GlobalRevMapMerger),
+    Categorical(GlobalRevMapMerger, CategoricalOrdering),
     Other(Option<DataType>),
 }
 
@@ -16,8 +16,8 @@ impl DtypeMerger {
     pub(super) fn new(dtype: Option<DataType>) -> Self {
         match dtype {
             #[cfg(feature = "dtype-categorical")]
-            Some(DataType::Categorical(Some(rev_map))) if rev_map.is_global() => {
-                DtypeMerger::Categorical(GlobalRevMapMerger::new(rev_map))
+            Some(DataType::Categorical(Some(rev_map), ordering)) if rev_map.is_global() => {
+                DtypeMerger::Categorical(GlobalRevMapMerger::new(rev_map), ordering)
             },
             _ => DtypeMerger::Other(dtype),
         }
@@ -27,8 +27,8 @@ impl DtypeMerger {
     pub(super) fn update(&mut self, dtype: &DataType) -> PolarsResult<()> {
         match self {
             #[cfg(feature = "dtype-categorical")]
-            DtypeMerger::Categorical(merger) => {
-                let DataType::Categorical(Some(rev_map)) = dtype else {
+            DtypeMerger::Categorical(merger, _) => {
+                let DataType::Categorical(Some(rev_map), _) = dtype else {
                     polars_bail!(ComputeError: "expected categorical rev-map")
                 };
                 polars_ensure!(rev_map.is_global(), string_cache_mismatch);
@@ -45,7 +45,9 @@ impl DtypeMerger {
     pub(super) fn materialize(self) -> Option<DataType> {
         match self {
             #[cfg(feature = "dtype-categorical")]
-            DtypeMerger::Categorical(merger) => Some(DataType::Categorical(Some(merger.finish()))),
+            DtypeMerger::Categorical(merger, ordering) => {
+                Some(DataType::Categorical(Some(merger.finish()), ordering))
+            },
             DtypeMerger::Other(dtype) => dtype,
         }
     }

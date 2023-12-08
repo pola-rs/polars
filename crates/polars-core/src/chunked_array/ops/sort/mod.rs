@@ -539,7 +539,7 @@ pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series>
     use DataType::*;
     let out = match s.dtype() {
         #[cfg(feature = "dtype-categorical")]
-        Categorical(_) => s.rechunk(),
+        Categorical(_, _) => s.rechunk(),
         Binary | Boolean => s.clone(),
         Utf8 => s.cast(&Binary).unwrap(),
         #[cfg(feature = "dtype-struct")]

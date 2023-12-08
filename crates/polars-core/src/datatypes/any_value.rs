@@ -365,7 +365,7 @@ impl<'a> AnyValue<'a> {
             Boolean(_) => DataType::Boolean,
             Utf8(_) => DataType::Utf8,
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _, _) => DataType::Categorical(None),
+            Categorical(_, _, _) => DataType::Categorical(None, Default::default()),
             List(s) => DataType::List(Box::new(s.dtype().clone())),
             #[cfg(feature = "dtype-struct")]
             Struct(_, _, fields) => DataType::Struct(fields.to_vec()),
@@ -1166,7 +1166,7 @@ mod test {
             ),
             (
                 ArrowDataType::Dictionary(IntegerType::UInt32, ArrowDataType::Utf8.into(), false),
-                DataType::Categorical(None),
+                DataType::Categorical(None, Default::default()),
             ),
             (
                 ArrowDataType::Dictionary(
@@ -1174,7 +1174,7 @@ mod test {
                     ArrowDataType::LargeUtf8.into(),
                     false,
                 ),
-                DataType::Categorical(None),
+                DataType::Categorical(None, Default::default()),
             ),
             (
                 ArrowDataType::Dictionary(
@@ -1182,7 +1182,7 @@ mod test {
                     ArrowDataType::LargeUtf8.into(),
                     false,
                 ),
-                DataType::Categorical(None),
+                DataType::Categorical(None, Default::default()),
             ),
         ];
 

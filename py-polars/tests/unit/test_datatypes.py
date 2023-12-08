@@ -30,7 +30,6 @@ SIMPLE_DTYPES: list[DataTypeClass] = list(
         pl.Binary,
         pl.Time,
         pl.Date,
-        pl.Categorical,
         pl.Object,
         pl.Null,
         pl.Unknown,

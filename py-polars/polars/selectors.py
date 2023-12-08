@@ -1816,7 +1816,7 @@ def string(include_categorical: bool = False) -> SelectorType:  # noqa: FBT001
     ...         "z": ["a", "b", "a", "b", "b"],
     ...     },
     ... ).with_columns(
-    ...     z=pl.col("z").cast(pl.Categorical).cat.set_ordering("lexical"),
+    ...     z=pl.col("z").cast(pl.Categorical("lexical")),
     ... )
 
     Group by all string columns, sum the numeric columns, then sort by the string cols:

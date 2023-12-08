@@ -49,7 +49,7 @@ impl Serialize for Series {
                 ca.serialize(serializer)
             },
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => {
+            DataType::Categorical(_, _) => {
                 let ca = self.categorical().unwrap();
                 ca.serialize(serializer)
             },
@@ -226,10 +226,10 @@ impl<'de> Deserialize<'de> for Series {
                         Ok(s)
                     },
                     #[cfg(feature = "dtype-categorical")]
-                    DataType::Categorical(_) => {
+                    DataType::Categorical(_, ordering) => {
                         let values: Vec<Option<Cow<str>>> = map.next_value()?;
                         Ok(Series::new(&name, values)
-                            .cast(&DataType::Categorical(None))
+                            .cast(&DataType::Categorical(None, ordering))
                             .unwrap())
                     },
                     dt => {

@@ -12,7 +12,13 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import dtype_str_repr as _dtype_str_repr
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict, TimeUnit
+    from polars.type_aliases import (
+        CategoricalOrdering,
+        PolarsDataType,
+        PythonDataType,
+        SchemaDict,
+        TimeUnit,
+    )
 
 
 class classinstmethod(classmethod):  # type: ignore[type-arg]
@@ -482,7 +488,39 @@ class Duration(TemporalType):
 
 
 class Categorical(DataType):
-    """A categorical encoding of a set of strings."""
+    """
+    A categorical encoding of a set of strings.
+
+    Parameters
+    ----------
+        ordering : {'lexical', 'physical'}
+            Ordering by order of appearance (physical, default)
+            or string value (lexical).
+
+    """
+
+    ordering: CategoricalOrdering | None
+
+    def __init__(
+        self,
+        ordering: CategoricalOrdering | None = "physical",
+    ):
+        self.ordering = ordering
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(ordering={self.ordering!r})"
+
+    def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
+        # allow comparing object instances to class
+        if type(other) is DataTypeClass and issubclass(other, Categorical):
+            return True
+        elif isinstance(other, Categorical):
+            return self.ordering == other.ordering
+        else:
+            return False
+
+    def __hash__(self) -> int:
+        return hash((self.__class__, self.ordering))
 
 
 class Enum(DataType):

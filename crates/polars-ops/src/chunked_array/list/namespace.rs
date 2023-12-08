@@ -496,14 +496,14 @@ pub trait ListNameSpaceImpl: AsList {
                 DataType::List(inner_type) => {
                     inner_super_type = try_get_supertype(&inner_super_type, inner_type)?;
                     #[cfg(feature = "dtype-categorical")]
-                    if let DataType::Categorical(_) = &inner_super_type {
+                    if let DataType::Categorical(_, _) = &inner_super_type {
                         inner_super_type = merge_dtypes(&inner_super_type, inner_type)?;
                     }
                 },
                 dt => {
                     inner_super_type = try_get_supertype(&inner_super_type, dt)?;
                     #[cfg(feature = "dtype-categorical")]
-                    if let DataType::Categorical(_) = &inner_super_type {
+                    if let DataType::Categorical(_, _) = &inner_super_type {
                         inner_super_type = merge_dtypes(&inner_super_type, dt)?;
                     }
                 },

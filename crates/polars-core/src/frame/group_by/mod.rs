@@ -32,7 +32,7 @@ fn prepare_dataframe_unsorted(by: &[Series]) -> DataFrame {
         by.iter()
             .map(|s| match s.dtype() {
                 #[cfg(feature = "dtype-categorical")]
-                DataType::Categorical(_) => s.cast(&DataType::UInt32).unwrap(),
+                DataType::Categorical(_, _) => s.cast(&DataType::UInt32).unwrap(),
                 _ => {
                     if s.dtype().to_physical().is_numeric() {
                         let s = s.to_physical_repr();
@@ -1105,8 +1105,11 @@ mod test {
         }
         .unwrap();
 
-        df.apply("foo", |s| s.cast(&DataType::Categorical(None)).unwrap())
-            .unwrap();
+        df.apply("foo", |s| {
+            s.cast(&DataType::Categorical(None, Default::default()))
+                .unwrap()
+        })
+        .unwrap();
 
         // Use of deprecated `sum()` for testing purposes
         #[allow(deprecated)]
@@ -1177,7 +1180,9 @@ mod test {
             "int" => [1, 2, 3, 1, 1]
         ]?;
 
-        df.try_apply("g", |s| s.cast(&DataType::Categorical(None)))?;
+        df.try_apply("g", |s| {
+            s.cast(&DataType::Categorical(None, Default::default()))
+        })?;
 
         // Use of deprecated `sum()` for testing purposes
         #[allow(deprecated)]

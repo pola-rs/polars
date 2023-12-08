@@ -628,7 +628,7 @@ fn inline_cast(input: &AExpr, dtype: &DataType, strict: bool) -> PolarsResult<Op
                     #[cfg(feature = "dtype-duration")]
                     (AnyValue::Duration(_, _), _) => return Ok(None),
                     #[cfg(feature = "dtype-categorical")]
-                    (AnyValue::Categorical(_, _, _), _) | (_, DataType::Categorical(_)) => {
+                    (AnyValue::Categorical(_, _, _), _) | (_, DataType::Categorical(_, _)) => {
                         return Ok(None)
                     },
                     #[cfg(feature = "dtype-struct")]

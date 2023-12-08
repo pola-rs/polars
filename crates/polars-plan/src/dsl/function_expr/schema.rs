@@ -176,7 +176,7 @@ impl FunctionExpr {
             Cut {
                 include_breaks: false,
                 ..
-            } => mapper.with_dtype(DataType::Categorical(None)),
+            } => mapper.with_dtype(DataType::Categorical(None, Default::default())),
             #[cfg(feature = "cutqcut")]
             Cut {
                 include_breaks: true,
@@ -186,7 +186,10 @@ impl FunctionExpr {
                 let name_bin = format!("{}_bin", name);
                 let struct_dt = DataType::Struct(vec![
                     Field::new("brk", DataType::Float64),
-                    Field::new(name_bin.as_str(), DataType::Categorical(None)),
+                    Field::new(
+                        name_bin.as_str(),
+                        DataType::Categorical(None, Default::default()),
+                    ),
                 ]);
                 mapper.with_dtype(struct_dt)
             },
@@ -204,7 +207,7 @@ impl FunctionExpr {
             QCut {
                 include_breaks: false,
                 ..
-            } => mapper.with_dtype(DataType::Categorical(None)),
+            } => mapper.with_dtype(DataType::Categorical(None, Default::default())),
             #[cfg(feature = "cutqcut")]
             QCut {
                 include_breaks: true,
@@ -214,7 +217,10 @@ impl FunctionExpr {
                 let name_bin = format!("{}_bin", name);
                 let struct_dt = DataType::Struct(vec![
                     Field::new("brk", DataType::Float64),
-                    Field::new(name_bin.as_str(), DataType::Categorical(None)),
+                    Field::new(
+                        name_bin.as_str(),
+                        DataType::Categorical(None, Default::default()),
+                    ),
                 ]);
                 mapper.with_dtype(struct_dt)
             },

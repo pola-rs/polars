@@ -85,11 +85,12 @@ impl Series {
             Utf8 => Utf8Chunked::from_chunks(name, chunks).into_series(),
             Binary => BinaryChunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(rev_map) => {
+            Categorical(rev_map, ordering) => {
                 let cats = UInt32Chunked::from_chunks(name, chunks);
                 let mut ca = CategoricalChunked::from_cats_and_rev_map_unchecked(
                     cats,
                     rev_map.clone().unwrap(),
+                    *ordering,
                 );
                 ca.set_fast_unique(false);
                 ca.into_series()
