@@ -42,7 +42,7 @@ macro_rules! push_expr {
                     First(e) => $push(e),
                     Last(e) => $push(e),
                     Implode(e) => $push(e),
-                    Count(e) => $push(e),
+                    Count(e, _) => $push(e),
                     Quantile { expr, .. } => $push(expr),
                     Sum(e) => $push(e),
                     AggGroups(e) => $push(e),

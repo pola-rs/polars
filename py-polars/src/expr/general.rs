@@ -241,6 +241,9 @@ impl PyExpr {
     fn count(&self) -> Self {
         self.inner.clone().count().into()
     }
+    fn len(&self) -> Self {
+        self.inner.clone().len().into()
+    }
     fn value_counts(&self, sort: bool, parallel: bool) -> Self {
         self.inner.clone().value_counts(sort, parallel).into()
     }

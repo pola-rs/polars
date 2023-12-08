@@ -1267,10 +1267,7 @@ class Expr:
 
     def count(self) -> Self:
         """
-        Return the number of elements in the column.
-
-        .. warning::
-            Null values are treated like regular elements in this context.
+        Return the number of non-null elements in the column.
 
         Examples
         --------
@@ -1282,7 +1279,7 @@ class Expr:
         │ --- ┆ --- │
         │ u32 ┆ u32 │
         ╞═════╪═════╡
-        │ 3   ┆ 3   │
+        │ 3   ┆ 2   │
         └─────┴─────┘
 
         """
@@ -1293,8 +1290,6 @@ class Expr:
         Return the number of elements in the column.
 
         Null values are treated like regular elements in this context.
-
-        Alias for :func:`count`.
 
         Examples
         --------
@@ -1310,7 +1305,7 @@ class Expr:
         └─────┴─────┘
 
         """
-        return self.count()
+        return self._from_pyexpr(self._pyexpr.len())
 
     def slice(self, offset: int | Expr, length: int | Expr | None = None) -> Self:
         """

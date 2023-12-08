@@ -88,7 +88,7 @@ pub fn can_convert_to_hash_agg(
                         | AAggExpr::First(_)
                         | AAggExpr::Last(_)
                         | AAggExpr::Mean(_)
-                        | AAggExpr::Count(_)
+                        | AAggExpr::Count(_, false)
                 ) || (matches!(
                     agg_fn,
                     AAggExpr::Max {
@@ -248,7 +248,7 @@ where
                     AggregateFunction::Last(LastAgg::new(logical_dtype.to_physical())),
                 )
             },
-            AAggExpr::Count(input) => {
+            AAggExpr::Count(input, _) => {
                 let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
                 let logical_dtype = phys_expr.field(schema).unwrap().dtype;
                 (
