@@ -178,3 +178,10 @@ def test_int_range_null_input() -> None:
 def test_int_range_invalid_conversion() -> None:
     with pytest.raises(pl.ComputeError, match="conversion from `i32` to `u32` failed"):
         pl.select(pl.int_range(3, -1, -1, dtype=pl.UInt32))
+
+
+def test_int_range_non_integer_dtype() -> None:
+    with pytest.raises(
+        pl.ComputeError, match="non-integer `dtype` passed to `int_range`: Float64"
+    ):
+        pl.select(pl.int_range(3, -1, -1, dtype=pl.Float64))  # type: ignore[arg-type]

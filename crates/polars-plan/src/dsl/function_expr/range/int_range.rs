@@ -9,6 +9,7 @@ pub(super) fn int_range(s: &[Series], step: i64, dtype: DataType) -> PolarsResul
     let mut end = &s[1];
 
     ensure_range_bounds_contain_exactly_one_value(start, end)?;
+    polars_ensure!(dtype.is_integer(), ComputeError: "non-integer `dtype` passed to `int_range`: {:?}", dtype);
 
     let (start_storage, end_storage);
     if *start.dtype() != dtype {
