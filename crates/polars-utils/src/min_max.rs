@@ -8,33 +8,61 @@
 // above rules None's are always ignored, so only if both arguments are
 // None is the output None.
 pub trait MinMax: Sized {
-    fn min_ignore_nan(self, other: Self) -> Self;
-    fn max_ignore_nan(self, other: Self) -> Self;
-    fn min_propagate_nan(self, other: Self) -> Self;
-    fn max_propagate_nan(self, other: Self) -> Self;
+    // Comparison operators that either consider nan to be the smallest, or the
+    // largest possible value. Use tot_eq for equality. Prefer directly using
+    // min/max, they're slightly faster.
+    fn nan_min_lt(&self, other: &Self) -> bool;
+    fn nan_max_lt(&self, other: &Self) -> bool;
+
+    // Binary operators that return either the minimum or maximum.
+    #[inline(always)]
+    fn min_propagate_nan(self, other: Self) -> Self {
+        if self.nan_min_lt(&other) {
+            self
+        } else {
+            other
+        }
+    }
+
+    #[inline(always)]
+    fn max_propagate_nan(self, other: Self) -> Self {
+        if self.nan_max_lt(&other) {
+            other
+        } else {
+            self
+        }
+    }
+
+    #[inline(always)]
+    fn min_ignore_nan(self, other: Self) -> Self {
+        if self.nan_max_lt(&other) {
+            self
+        } else {
+            other
+        }
+    }
+
+    #[inline(always)]
+    fn max_ignore_nan(self, other: Self) -> Self {
+        if self.nan_min_lt(&other) {
+            other
+        } else {
+            self
+        }
+    }
 }
 
 macro_rules! impl_trivial_min_max {
     ($T: ty) => {
         impl MinMax for $T {
             #[inline(always)]
-            fn min_ignore_nan(self, other: Self) -> Self {
-                self.min(other)
+            fn nan_min_lt(&self, other: &Self) -> bool {
+                self < other
             }
 
             #[inline(always)]
-            fn max_ignore_nan(self, other: Self) -> Self {
-                self.max(other)
-            }
-
-            #[inline(always)]
-            fn min_propagate_nan(self, other: Self) -> Self {
-                self.min(other)
-            }
-
-            #[inline(always)]
-            fn max_propagate_nan(self, other: Self) -> Self {
-                self.max(other)
+            fn nan_max_lt(&self, other: &Self) -> bool {
+                self < other
             }
         }
     };
@@ -63,6 +91,16 @@ impl_trivial_min_max!(String);
 macro_rules! impl_float_min_max {
     ($T: ty) => {
         impl MinMax for $T {
+            #[inline(always)]
+            fn nan_min_lt(&self, other: &Self) -> bool {
+                !(other.is_nan() | (self >= other))
+            }
+
+            #[inline(always)]
+            fn nan_max_lt(&self, other: &Self) -> bool {
+                !(self.is_nan() | (self >= other))
+            }
+
             #[inline(always)]
             fn min_ignore_nan(self, other: Self) -> Self {
                 <$T>::min(self, other)
@@ -96,35 +134,3 @@ macro_rules! impl_float_min_max {
 
 impl_float_min_max!(f32);
 impl_float_min_max!(f64);
-
-#[inline(always)]
-pub fn reduce_option<T, F: Fn(T, T) -> T>(a: Option<T>, b: Option<T>, f: F) -> Option<T> {
-    match (a, b) {
-        (Some(l), Some(r)) => Some(f(l, r)),
-        (Some(l), None) => Some(l),
-        (None, Some(r)) => Some(r),
-        (None, None) => None,
-    }
-}
-
-impl<T: MinMax> MinMax for Option<T> {
-    #[inline(always)]
-    fn min_ignore_nan(self, other: Self) -> Self {
-        reduce_option(self, other, MinMax::min_ignore_nan)
-    }
-
-    #[inline(always)]
-    fn max_ignore_nan(self, other: Self) -> Self {
-        reduce_option(self, other, MinMax::max_ignore_nan)
-    }
-
-    #[inline(always)]
-    fn min_propagate_nan(self, other: Self) -> Self {
-        reduce_option(self, other, MinMax::min_propagate_nan)
-    }
-
-    #[inline(always)]
-    fn max_propagate_nan(self, other: Self) -> Self {
-        reduce_option(self, other, MinMax::max_propagate_nan)
-    }
-}

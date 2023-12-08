@@ -137,20 +137,12 @@ impl TotalOrd for days_ms {
 }
 
 impl MinMax for days_ms {
-    fn min_ignore_nan(self, other: Self) -> Self {
-        self.min(other)
+    fn nan_min_lt(&self, other: &Self) -> bool {
+        self < other
     }
 
-    fn max_ignore_nan(self, other: Self) -> Self {
-        self.max(other)
-    }
-
-    fn min_propagate_nan(self, other: Self) -> Self {
-        self.min(other)
-    }
-
-    fn max_propagate_nan(self, other: Self) -> Self {
-        self.max(other)
+    fn nan_max_lt(&self, other: &Self) -> bool {
+        self < other
     }
 }
 
@@ -283,20 +275,12 @@ impl TotalOrd for months_days_ns {
 }
 
 impl MinMax for months_days_ns {
-    fn min_ignore_nan(self, other: Self) -> Self {
-        self.min(other)
+    fn nan_min_lt(&self, other: &Self) -> bool {
+        self < other
     }
 
-    fn max_ignore_nan(self, other: Self) -> Self {
-        self.max(other)
-    }
-
-    fn min_propagate_nan(self, other: Self) -> Self {
-        self.min(other)
-    }
-
-    fn max_propagate_nan(self, other: Self) -> Self {
-        self.max(other)
+    fn nan_max_lt(&self, other: &Self) -> bool {
+        self < other
     }
 }
 
@@ -622,19 +606,11 @@ impl TotalOrd for f16 {
 }
 
 impl MinMax for f16 {
-    fn min_ignore_nan(self, _other: Self) -> Self {
+    fn nan_min_lt(&self, _other: &Self) -> bool {
         unimplemented!()
     }
 
-    fn max_ignore_nan(self, _other: Self) -> Self {
-        unimplemented!()
-    }
-
-    fn min_propagate_nan(self, _other: Self) -> Self {
-        unimplemented!()
-    }
-
-    fn max_propagate_nan(self, _other: Self) -> Self {
+    fn nan_max_lt(&self, _other: &Self) -> bool {
         unimplemented!()
     }
 }
@@ -728,20 +704,12 @@ impl TotalOrd for i256 {
 }
 
 impl MinMax for i256 {
-    fn min_ignore_nan(self, other: Self) -> Self {
-        self.min(other)
+    fn nan_min_lt(&self, other: &Self) -> bool {
+        self < other
     }
 
-    fn max_ignore_nan(self, other: Self) -> Self {
-        self.max(other)
-    }
-
-    fn min_propagate_nan(self, other: Self) -> Self {
-        self.min(other)
-    }
-
-    fn max_propagate_nan(self, other: Self) -> Self {
-        self.max(other)
+    fn nan_max_lt(&self, other: &Self) -> bool {
+        self < other
     }
 }
 
