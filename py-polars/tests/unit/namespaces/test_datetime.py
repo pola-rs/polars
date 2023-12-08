@@ -908,6 +908,7 @@ def test_weekday(time_unit: TimeUnit) -> None:
             datetime(2022, 1, 2),
         ),
         ([timedelta(1, 6, 30), timedelta(3, 8, 40)], timedelta(2, 7, 35)),
+        ([time(0, 0, 0, 1), time(0, 0, 0, 2)], time(0, 0, 0, 1)),
     ],
     ids=[
         "empty",
@@ -916,18 +917,15 @@ def test_weekday(time_unit: TimeUnit) -> None:
         "spread_even",
         "spread_skewed",
         "spread_skewed_dt",
-        "delta",
+        "timedelta",
+        "time",
     ],
 )
 def test_median(
-    values: list[date | None], expected_median: datetime | timedelta | None
+    values: list[date | None], expected_median: datetime | timedelta | time | None
 ) -> None:
     assert pl.Series(values).median() == expected_median
     assert pl.Series(values).dt.median() == expected_median
-
-
-def test_median_time() -> None:
-    assert pl.Series([1000, 2000, 3000], dtype=pl.Time).median() == time(microsecond=2)
 
 
 @pytest.mark.parametrize(
@@ -946,6 +944,7 @@ def test_median_time() -> None:
             datetime(2022, 10, 16, 16, 0, 0),
         ),
         ([timedelta(1, 6, 30), timedelta(3, 8, 40)], timedelta(2, 7, 35)),
+        ([time(0, 0, 0, 1), time(0, 0, 0, 3)], time(0, 0, 0, 2)),
     ],
     ids=[
         "empty",
@@ -954,7 +953,8 @@ def test_median_time() -> None:
         "spread_even",
         "spread_skewed",
         "spread_skewed_dt",
-        "delta",
+        "timedelta",
+        "time",
     ],
 )
 def test_mean(
@@ -962,10 +962,6 @@ def test_mean(
 ) -> None:
     assert pl.Series(values).mean() == expected_mean
     assert pl.Series(values).dt.mean() == expected_mean
-
-
-def test_mean_time() -> None:
-    assert pl.Series([1000, 2000, 3000], dtype=pl.Time).mean() == time(microsecond=2)
 
 
 @pytest.mark.parametrize(
