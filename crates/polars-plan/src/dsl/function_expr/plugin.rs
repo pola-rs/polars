@@ -1,4 +1,4 @@
-use std::ffi::CString;
+use std::ffi::CStr;
 use std::process::abort;
 use std::sync::RwLock;
 
@@ -41,11 +41,11 @@ fn get_lib(lib: &str) -> PolarsResult<&'static PluginAndVersion> {
     }
 }
 
-unsafe fn retrieve_error_msg(lib: &Library) -> CString {
+unsafe fn retrieve_error_msg(lib: &Library) -> &CStr {
     let symbol: libloading::Symbol<unsafe extern "C" fn() -> *mut std::os::raw::c_char> =
         lib.get(b"_polars_plugin_get_last_error_message\0").unwrap();
     let msg_ptr = symbol();
-    CString::from_raw(msg_ptr)
+    CStr::from_ptr(msg_ptr)
 }
 
 pub(super) unsafe fn call_plugin(
