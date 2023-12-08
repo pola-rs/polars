@@ -7,7 +7,7 @@ use arrow::legacy::time_zone::Tz;
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
 };
-use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Weekday};
+use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use polars_core::export::arrow::temporal_conversions::MICROSECONDS;
 use polars_core::prelude::{
     datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, polars_bail,
@@ -412,32 +412,32 @@ impl Duration {
     /// For example, 2022-11-06 01:30:00 CST truncated by 1 hour becomes 2022-11-06 01:00:00 CST,
     /// whereas 2022-11-06 01:30:00 CDT truncated by 1 hour becomes 2022-11-06 01:00:00 CDT.
     ///
-    /// * `original_dt_naive` - original datetime, without time zone.
+    /// * `original_dt_local` - original datetime, without time zone.
     ///   E.g. if the original datetime was 2022-11-06 01:30:00 CST, then this would
     ///   be 2022-11-06 01:30:00.
     /// * `original_dt_utc` - original datetime converted to UTC. E.g. if the
     ///   original datetime was 2022-11-06 01:30:00 CST, then this would
     ///   be 2022-11-06 07:30:00.
-    /// * `result_dt_naive` - result, without time zone.
+    /// * `result_dt_local` - result, without time zone.
     #[cfg(feature = "timezones")]
     fn localize_result(
         &self,
-        original_dt_naive: NaiveDateTime,
+        original_dt_local: NaiveDateTime,
         original_dt_utc: NaiveDateTime,
-        result_dt_naive: NaiveDateTime,
+        result_dt_local: NaiveDateTime,
         tz: &Tz,
     ) -> NaiveDateTime {
-        match localize_datetime_opt(result_dt_naive, tz, Ambiguous::Raise) {
+        match localize_datetime_opt(result_dt_local, tz, Ambiguous::Raise) {
             Some(dt) => dt,
             None => {
-                if try_localize_datetime(original_dt_naive, tz, Ambiguous::Earliest).unwrap()
+                if try_localize_datetime(original_dt_local, tz, Ambiguous::Earliest).unwrap()
                     == original_dt_utc
                 {
-                    try_localize_datetime(result_dt_naive, tz, Ambiguous::Earliest).unwrap()
-                } else if try_localize_datetime(original_dt_naive, tz, Ambiguous::Latest).unwrap()
+                    try_localize_datetime(result_dt_local, tz, Ambiguous::Earliest).unwrap()
+                } else if try_localize_datetime(original_dt_local, tz, Ambiguous::Latest).unwrap()
                     == original_dt_utc
                 {
-                    try_localize_datetime(result_dt_naive, tz, Ambiguous::Latest).unwrap()
+                    try_localize_datetime(result_dt_local, tz, Ambiguous::Latest).unwrap()
                 } else {
                     unreachable!()
                 }
@@ -461,16 +461,16 @@ impl Duration {
             #[cfg(feature = "timezones")]
             Some(tz) => {
                 let original_dt_utc = _timestamp_to_datetime(t);
-                let original_dt_naive = unlocalize_datetime(original_dt_utc, tz);
-                let t = _datetime_to_timestamp(original_dt_naive);
+                let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
+                let t = _datetime_to_timestamp(original_dt_local);
                 let mut remainder = t % duration;
                 if remainder < 0 {
                     remainder += duration
                 }
                 let result_timestamp = t - remainder;
-                let result_dt_naive = _timestamp_to_datetime(result_timestamp);
+                let result_dt_local = _timestamp_to_datetime(result_timestamp);
                 let result_dt_utc =
-                    self.localize_result(original_dt_naive, original_dt_utc, result_dt_naive, tz);
+                    self.localize_result(original_dt_local, original_dt_utc, result_dt_local, tz);
                 Ok(_datetime_to_timestamp(result_dt_utc))
             },
             _ => {
@@ -487,40 +487,52 @@ impl Duration {
         &self,
         t: i64,
         tz: Option<&Tz>,
-        timestamp_to_datetime: G,
-        datetime_to_timestamp: J,
+        _timestamp_to_datetime: G,
+        _datetime_to_timestamp: J,
+        daily_duration: i64,
     ) -> PolarsResult<i64>
     where
         G: Fn(i64) -> NaiveDateTime,
         J: Fn(NaiveDateTime) -> i64,
     {
-        let _original_dt_utc;
-        let original_dt_naive;
-        let dt = match tz {
+        let _original_dt_utc: Option<NaiveDateTime>;
+        let _original_dt_local: Option<NaiveDateTime>;
+        let t = match tz {
             #[cfg(feature = "timezones")]
             Some(tz) => {
-                _original_dt_utc = timestamp_to_datetime(t);
-                original_dt_naive = unlocalize_datetime(_original_dt_utc, tz);
-                original_dt_naive.date()
+                _original_dt_utc = Some(_timestamp_to_datetime(t));
+                _original_dt_local = Some(unlocalize_datetime(_original_dt_utc.unwrap(), tz));
+                _datetime_to_timestamp(_original_dt_local.unwrap())
             },
             _ => {
-                _original_dt_utc = timestamp_to_datetime(t);
-                original_dt_naive = _original_dt_utc;
-                original_dt_naive.date()
+                _original_dt_utc = None;
+                _original_dt_local = None;
+                t
             },
         };
-        let week_timestamp = dt.week(Weekday::Mon);
-        let first_day_of_week =
-            week_timestamp.first_day() - chrono::Duration::weeks(self.weeks - 1);
-        let result_dt_naive = first_day_of_week.and_time(NaiveTime::default());
+        // If we did
+        //   t - (t % (7 * self.weeks * daily_duration))
+        // then the timestamp would get truncated to the previous Thursday,
+        // because 1970-01-01 (timestamp 0) is a Thursday.
+        // So, we adjust by 4 days to get to Monday.
+        let mut remainder = (t - 4 * daily_duration) % (7 * self.weeks * daily_duration);
+        if remainder < 0 {
+            remainder += 7 * self.weeks * daily_duration
+        }
+        let result_t_local = t - remainder;
         match tz {
             #[cfg(feature = "timezones")]
             Some(tz) => {
-                let result_dt_utc =
-                    self.localize_result(original_dt_naive, _original_dt_utc, result_dt_naive, tz);
-                Ok(datetime_to_timestamp(result_dt_utc))
+                let result_dt_local = _timestamp_to_datetime(result_t_local);
+                let result_dt_utc = self.localize_result(
+                    _original_dt_local.unwrap(),
+                    _original_dt_utc.unwrap(),
+                    result_dt_local,
+                    tz,
+                );
+                Ok(_datetime_to_timestamp(result_dt_utc))
             },
-            _ => Ok(datetime_to_timestamp(result_dt_naive)),
+            _ => Ok(result_t_local),
         }
     }
     fn truncate_monthly<G, J>(
@@ -535,19 +547,19 @@ impl Duration {
         J: Fn(NaiveDateTime) -> i64,
     {
         let original_dt_utc;
-        let original_dt_naive;
+        let original_dt_local;
         match tz {
             #[cfg(feature = "timezones")]
             Some(tz) => {
                 original_dt_utc = timestamp_to_datetime(t);
-                original_dt_naive = unlocalize_datetime(original_dt_utc, tz);
+                original_dt_local = unlocalize_datetime(original_dt_utc, tz);
             },
             _ => {
                 original_dt_utc = timestamp_to_datetime(t);
-                original_dt_naive = original_dt_utc;
+                original_dt_local = original_dt_utc;
             },
         };
-        let (year, month) = (original_dt_naive.year(), original_dt_naive.month());
+        let (year, month) = (original_dt_local.year(), original_dt_local.month());
 
         // determine the total number of months and truncate
         // the number of months by the duration amount
@@ -558,17 +570,17 @@ impl Duration {
         // recreate a new time from the year and month combination
         let (year, month) = ((total / 12), ((total % 12) + 1) as u32);
 
-        let result_dt_naive = new_datetime(year, month, 1, 0, 0, 0, 0).ok_or(polars_err!(
+        let result_dt_local = new_datetime(year, month, 1, 0, 0, 0, 0).ok_or(polars_err!(
             ComputeError: format!("date '{}-{}-1' does not exist", year, month)
         ))?;
         match tz {
             #[cfg(feature = "timezones")]
             Some(tz) => {
                 let result_dt_utc =
-                    self.localize_result(original_dt_naive, original_dt_utc, result_dt_naive, tz);
+                    self.localize_result(original_dt_local, original_dt_utc, result_dt_local, tz);
                 Ok(datetime_to_timestamp(result_dt_utc))
             },
-            _ => Ok(datetime_to_timestamp(result_dt_naive)),
+            _ => Ok(datetime_to_timestamp(result_dt_local)),
         }
     }
 
@@ -612,7 +624,14 @@ impl Duration {
             },
             // truncate by weeks
             (0, _, 0, 0) => {
-                self.truncate_weekly(t, tz, timestamp_to_datetime, datetime_to_timestamp)
+                let duration = nsecs_to_unit(NS_DAY);
+                self.truncate_weekly(
+                    t,
+                    tz,
+                    timestamp_to_datetime,
+                    datetime_to_timestamp,
+                    duration,
+                )
             },
             // truncate by months
             (_, 0, 0, 0) => {
