@@ -111,7 +111,13 @@ pub(crate) fn datetime_range_i64(
     tu: TimeUnit,
     tz: Option<&Tz>,
 ) -> PolarsResult<Vec<i64>> {
-    check_range_bounds(start, end, interval)?;
+    if start > end {
+        return Ok(Vec::new());
+    }
+    polars_ensure!(
+        !interval.negative && !interval.is_zero(),
+        ComputeError: "`interval` must be positive"
+    );
 
     let size: usize;
     let offset_fn: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>;
@@ -156,10 +162,4 @@ pub(crate) fn datetime_range_i64(
     }
     debug_assert!(size >= ts.len());
     Ok(ts)
-}
-
-fn check_range_bounds(start: i64, end: i64, interval: Duration) -> PolarsResult<()> {
-    polars_ensure!(end >= start, ComputeError: "`end` must be equal to or greater than `start`");
-    polars_ensure!(!interval.negative && !interval.is_zero(), ComputeError: "`interval` must be positive");
-    Ok(())
 }
