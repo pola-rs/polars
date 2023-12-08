@@ -1098,17 +1098,14 @@ class DateTimeNameSpace:
 
         """
 
-    def to_local_datetime(
-        self,
-        tz: str | Series,
-    ) -> Series:
+    def to_local_datetime(self, tz: str | Series) -> Series:
         """
         Convert to local datetime in given time zone.
 
         Parameters
         ----------
         tz
-            Time zone for the `Datetime` expression.
+            Time zone to convert to local datetime of.
 
         Returns
         -------

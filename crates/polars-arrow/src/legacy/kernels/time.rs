@@ -77,7 +77,7 @@ pub fn naive_utc_to_naive_local_in_new_time_zone(
     to_tz: &Tz,
     ndt: NaiveDateTime,
 ) -> NaiveDateTime {
-    // ndt is in UTC datetime corresponding to the datetime in from_tz timezone
+    // ndt is the UTC datetime corresponding to the datetime in from_tz timezone
     from_tz
         .from_utc_datetime(&ndt)
         .with_timezone(to_tz)

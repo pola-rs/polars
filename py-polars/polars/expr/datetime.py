@@ -1423,17 +1423,14 @@ class ExprDateTimeNameSpace:
             self._pyexpr.dt_replace_time_zone(time_zone, ambiguous._pyexpr)
         )
 
-    def to_local_datetime(
-        self,
-        tz: str | Expr,
-    ) -> Expr:
+    def to_local_datetime(self, tz: str | Expr) -> Expr:
         """
         Convert to local datetime in given time zone.
 
         Parameters
         ----------
         tz
-            Time zone for the `Datetime` expression.
+            Time zone to convert to local datetime of.
 
         Returns
         -------

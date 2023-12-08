@@ -19,6 +19,7 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.days
     Series.dt.dst_offset
     Series.dt.epoch
+    Series.dt.from_local_datetime
     Series.dt.hour
     Series.dt.hours
     Series.dt.is_leap_year
@@ -47,6 +48,7 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.strftime
     Series.dt.time
     Series.dt.timestamp
+    Series.dt.to_local_datetime
     Series.dt.to_string
     Series.dt.total_days
     Series.dt.total_hours
