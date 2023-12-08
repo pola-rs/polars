@@ -16,6 +16,7 @@ from polars import api
 from polars.config import Config
 from polars.convert import (
     from_arrow,
+    from_dataframe,
     from_dict,
     from_dicts,
     from_numpy,
@@ -160,7 +161,6 @@ from polars.functions import (
     when,
     zeros,
 )
-from polars.interchange.from_dataframe import from_dataframe
 from polars.io import (
     read_avro,
     read_csv,
