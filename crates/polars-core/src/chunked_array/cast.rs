@@ -100,7 +100,7 @@ where
         }
         match data_type {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_, ordering) => {
+            DataType::Categorical(rev_map, ordering) => {
                 polars_ensure!(
                     self.dtype() == &DataType::UInt32,
                     ComputeError: "cannot cast numeric types to 'Categorical'"
@@ -108,6 +108,27 @@ where
                 // SAFETY
                 // we are guarded by the type system
                 let ca = unsafe { &*(self as *const ChunkedArray<T> as *const UInt32Chunked) };
+                if let Some(rev_map) = rev_map {
+                    if let RevMapping::Enum(categories, _) = &**rev_map {
+                        // Check if indices are in bounds
+                        if let Some(m) = ca.max() {
+                            if m >= categories.len() as u32 {
+                                polars_bail!(OutOfBounds: "index {} is bigger than the number of categories {}",m,categories.len());
+                            }
+                        }
+
+                        // SAFETY indices are in bound
+                        unsafe {
+                            return Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
+                                ca.clone(),
+                                rev_map.clone(),
+                                *ordering,
+                            )
+                            .into_series());
+                        }
+                    }
+                }
+
                 CategoricalChunked::from_global_indices(ca.clone(), *ordering)
                     .map(|ca| ca.into_series())
             },
