@@ -316,7 +316,7 @@ def test_group_by_dynamic_flat_agg_4814() -> None:
         (timedelta(seconds=10), "100s"),
     ],
 )
-@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu"])
+@pytest.mark.parametrize("time_zone", [None, "UTC", "Asia/Kathmandu"])
 def test_group_by_dynamic_overlapping_groups_flat_apply_multiple_5038(
     every: str | timedelta, period: str | timedelta, time_zone: str | None
 ) -> None:
