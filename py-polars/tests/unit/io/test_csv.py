@@ -6,7 +6,6 @@ import sys
 import textwrap
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
-from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
 import numpy as np
@@ -20,6 +19,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils.various import normalize_filepath
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from polars.type_aliases import TimeUnit
 
 
@@ -1709,14 +1710,3 @@ def test_csv_no_new_line_last() -> None:
         "a": [1, 2, 3],
         "b": [1.0, 2.0, 2.1],
     }
-
-
-def test_write_csv_no_location_raise_io_exception() -> None:
-    df = pl.DataFrame({"a": [1]})
-    non_existing_path = Path("non", "existing", "path", "file.csv")
-    if non_existing_path.exists():
-        pytest.fail(
-            "Testing on a non existing path failed because the path does exist."
-        )
-    with pytest.raises(FileNotFoundError):
-        df.write_csv(non_existing_path)

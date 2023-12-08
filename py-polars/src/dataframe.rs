@@ -391,7 +391,7 @@ impl PyDataFrame {
         use polars::io::avro::AvroWriter;
 
         if let Ok(s) = py_f.extract::<&str>(py) {
-            let f = std::fs::File::create(s).unwrap();
+            let f = std::fs::File::create(s)?;
             AvroWriter::new(f)
                 .with_compression(compression.0)
                 .with_name(name)
@@ -616,9 +616,8 @@ impl PyDataFrame {
         let null = null_value.unwrap_or_default();
 
         if let Ok(s) = py_f.extract::<&str>(py) {
+            let f = std::fs::File::create(s)?;
             py.allow_threads(|| {
-                let f = std::fs::File::create(s).map_err(PolarsError::Io)?;
-
                 // No need for a buffered writer, because the csv writer does internal buffering.
                 CsvWriter::new(f)
                     .include_bom(include_bom)
@@ -666,8 +665,8 @@ impl PyDataFrame {
         compression: Wrap<Option<IpcCompression>>,
     ) -> PyResult<()> {
         if let Ok(s) = py_f.extract::<&str>(py) {
+            let f = std::fs::File::create(s)?;
             py.allow_threads(|| {
-                let f = std::fs::File::create(s).unwrap();
                 IpcWriter::new(f)
                     .with_compression(compression.0)
                     .finish(&mut self.df)
@@ -692,8 +691,8 @@ impl PyDataFrame {
         compression: Wrap<Option<IpcCompression>>,
     ) -> PyResult<()> {
         if let Ok(s) = py_f.extract::<&str>(py) {
+            let f = std::fs::File::create(s)?;
             py.allow_threads(|| {
-                let f = std::fs::File::create(s).unwrap();
                 IpcStreamWriter::new(f)
                     .with_compression(compression.0)
                     .finish(&mut self.df)
@@ -803,7 +802,7 @@ impl PyDataFrame {
         let compression = parse_parquet_compression(compression, compression_level)?;
 
         if let Ok(s) = py_f.extract::<&str>(py) {
-            let f = std::fs::File::create(s).unwrap();
+            let f = std::fs::File::create(s)?;
             py.allow_threads(|| {
                 ParquetWriter::new(f)
                     .with_compression(compression)
