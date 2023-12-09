@@ -459,7 +459,8 @@ impl Duration {
     {
         match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => {
+            // for UTC, use fastpath below (same as naive)
+            Some(tz) if tz != &chrono_tz::UTC => {
                 let original_dt_utc = _timestamp_to_datetime(t);
                 let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
                 let t = _datetime_to_timestamp(original_dt_local);
@@ -499,7 +500,8 @@ impl Duration {
         let _original_dt_local: Option<NaiveDateTime>;
         let t = match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => {
+            // for UTC, use fastpath below (same as naive)
+            Some(tz) if tz != &chrono_tz::UTC => {
                 _original_dt_utc = Some(_timestamp_to_datetime(t));
                 _original_dt_local = Some(unlocalize_datetime(_original_dt_utc.unwrap(), tz));
                 _datetime_to_timestamp(_original_dt_local.unwrap())
@@ -522,7 +524,8 @@ impl Duration {
         let result_t_local = t - remainder;
         match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => {
+            // for UTC, use fastpath below (same as naive)
+            Some(tz) if tz != &chrono_tz::UTC => {
                 let result_dt_local = _timestamp_to_datetime(result_t_local);
                 let result_dt_utc = self.localize_result(
                     _original_dt_local.unwrap(),
@@ -550,7 +553,8 @@ impl Duration {
         let original_dt_local;
         match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => {
+            // for UTC, use fastpath below (same as naive)
+            Some(tz) if tz != &chrono_tz::UTC => {
                 original_dt_utc = timestamp_to_datetime(t);
                 original_dt_local = unlocalize_datetime(original_dt_utc, tz);
             },
@@ -575,7 +579,8 @@ impl Duration {
         ))?;
         match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => {
+            // for UTC, use fastpath below (same as naive)
+            Some(tz) if tz != &chrono_tz::UTC => {
                 let result_dt_utc =
                     self.localize_result(original_dt_local, original_dt_utc, result_dt_local, tz);
                 Ok(datetime_to_timestamp(result_dt_utc))
@@ -698,13 +703,19 @@ impl Duration {
         if d.months > 0 {
             let ts = match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => unlocalize_datetime(timestamp_to_datetime(t), tz),
+                // for UTC, use fastpath below (same as naive)
+                Some(tz) if tz != &chrono_tz::UTC => {
+                    unlocalize_datetime(timestamp_to_datetime(t), tz)
+                },
                 _ => timestamp_to_datetime(t),
             };
             let dt = Self::add_month(ts, d.months, d.negative);
             new_t = match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => datetime_to_timestamp(try_localize_datetime(dt, tz, Ambiguous::Raise)?),
+                // for UTC, use fastpath below (same as naive)
+                Some(tz) if tz != &chrono_tz::UTC => {
+                    datetime_to_timestamp(try_localize_datetime(dt, tz, Ambiguous::Raise)?)
+                },
                 _ => datetime_to_timestamp(dt),
             };
         }
@@ -713,7 +724,8 @@ impl Duration {
             let t_weeks = nsecs_to_unit(NS_WEEK) * self.weeks;
             match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => {
+                // for UTC, use fastpath below (same as naive)
+                Some(tz) if tz != &chrono_tz::UTC => {
                     new_t =
                         datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
                     new_t += if d.negative { -t_weeks } else { t_weeks };
@@ -731,7 +743,8 @@ impl Duration {
             let t_days = nsecs_to_unit(NS_DAY) * self.days;
             match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => {
+                // for UTC, use fastpath below (same as naive)
+                Some(tz) if tz != &chrono_tz::UTC => {
                     new_t =
                         datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
                     new_t += if d.negative { -t_days } else { t_days };
