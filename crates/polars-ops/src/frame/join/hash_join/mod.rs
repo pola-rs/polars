@@ -7,7 +7,6 @@ mod single_keys_outer;
 #[cfg(feature = "semi_anti_join")]
 mod single_keys_semi_anti;
 pub(super) mod sort_merge;
-mod zip_outer;
 
 use arrow::array::ArrayRef;
 pub use multiple_keys::private_left_join_multiple_keys;
@@ -24,7 +23,6 @@ use single_keys_outer::*;
 #[cfg(feature = "semi_anti_join")]
 use single_keys_semi_anti::*;
 pub use sort_merge::*;
-pub(super) use zip_outer::zip_outer_join_column;
 
 pub use super::*;
 
@@ -255,7 +253,7 @@ pub trait JoinDispatch: IntoDf {
         }
 
         // Take the left and right dataframes by join tuples
-        let (mut df_left, df_right) = POOL.join(
+        let (df_left, df_right) = POOL.join(
             || unsafe {
                 ca_self.take_unchecked(
                     &opt_join_tuples
