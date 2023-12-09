@@ -4,7 +4,6 @@ pub mod quantile_filter;
 mod window;
 
 use std::any::Any;
-use std::cmp::Ordering;
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 use std::sync::Arc;
 

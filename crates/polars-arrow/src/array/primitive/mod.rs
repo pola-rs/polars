@@ -3,6 +3,7 @@ use std::ops::Range;
 use either::Either;
 
 use super::Array;
+use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
@@ -15,7 +16,7 @@ mod data;
 mod ffi;
 pub(super) mod fmt;
 mod from_natural;
-mod iterator;
+pub mod iterator;
 
 mod mutable;
 pub use mutable::*;
@@ -148,6 +149,12 @@ impl<T: NativeType> PrimitiveArray<T> {
     #[inline]
     pub fn values_iter(&self) -> std::slice::Iter<T> {
         self.values().iter()
+    }
+
+    /// Returns an iterator of the non-null values `T`.
+    #[inline]
+    pub fn non_null_values_iter(&self) -> NonNullValuesIter<'_, [T]> {
+        NonNullValuesIter::new(self.values(), self.validity())
     }
 
     /// Returns the length of this array

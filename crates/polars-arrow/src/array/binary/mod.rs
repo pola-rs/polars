@@ -2,6 +2,7 @@ use either::Either;
 
 use super::specification::try_check_offsets_bounds;
 use super::{Array, GenericBinaryArray};
+use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
@@ -136,6 +137,12 @@ impl<O: Offset> BinaryArray<O> {
     /// Returns an iterator of `&[u8]` over every element of this array, ignoring the validity
     pub fn values_iter(&self) -> BinaryValueIter<O> {
         BinaryValueIter::new(self)
+    }
+
+    /// Returns an iterator of the non-null values.
+    #[inline]
+    pub fn non_null_values_iter(&self) -> NonNullValuesIter<'_, BinaryArray<O>> {
+        NonNullValuesIter::new(self, self.validity())
     }
 
     /// Returns the length of this array

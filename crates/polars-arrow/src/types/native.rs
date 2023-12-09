@@ -3,6 +3,7 @@ use std::ops::Neg;
 use std::panic::RefUnwindSafe;
 
 use bytemuck::{Pod, Zeroable};
+use polars_utils::min_max::MinMax;
 use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::{TotalEq, TotalOrd};
 
@@ -25,6 +26,7 @@ pub trait NativeType:
     + Copy
     + TotalOrd
     + IsNull
+    + MinMax
 {
     /// The corresponding variant of [`PrimitiveType`].
     const PRIMITIVE: PrimitiveType;
@@ -93,7 +95,7 @@ native_type!(f64, PrimitiveType::Float64);
 native_type!(i128, PrimitiveType::Int128);
 
 /// The in-memory representation of the DayMillisecond variant of arrow's "Interval" logical type.
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Hash, Zeroable, Pod)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroable, Pod)]
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct days_ms(pub i32, pub i32);
@@ -131,6 +133,16 @@ impl TotalOrd for days_ms {
         self.days()
             .cmp(&other.days())
             .then(self.milliseconds().cmp(&other.milliseconds()))
+    }
+}
+
+impl MinMax for days_ms {
+    fn nan_min_lt(&self, other: &Self) -> bool {
+        self < other
+    }
+
+    fn nan_max_lt(&self, other: &Self) -> bool {
+        self < other
     }
 }
 
@@ -201,7 +213,7 @@ impl NativeType for days_ms {
 }
 
 /// The in-memory representation of the MonthDayNano variant of the "Interval" logical type.
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Hash, Zeroable, Pod)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroable, Pod)]
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct months_days_ns(pub i32, pub i32, pub i64);
@@ -259,6 +271,16 @@ impl TotalOrd for months_days_ns {
             .cmp(&other.months())
             .then(self.days().cmp(&other.days()))
             .then(self.ns().cmp(&other.ns()))
+    }
+}
+
+impl MinMax for months_days_ns {
+    fn nan_min_lt(&self, other: &Self) -> bool {
+        self < other
+    }
+
+    fn nan_max_lt(&self, other: &Self) -> bool {
+        self < other
     }
 }
 
@@ -583,6 +605,16 @@ impl TotalOrd for f16 {
     }
 }
 
+impl MinMax for f16 {
+    fn nan_min_lt(&self, _other: &Self) -> bool {
+        unimplemented!()
+    }
+
+    fn nan_max_lt(&self, _other: &Self) -> bool {
+        unimplemented!()
+    }
+}
+
 impl NativeType for f16 {
     const PRIMITIVE: PrimitiveType = PrimitiveType::Float16;
     type Bytes = [u8; 2];
@@ -668,6 +700,16 @@ impl TotalOrd for i256 {
     #[inline]
     fn tot_cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.cmp(other)
+    }
+}
+
+impl MinMax for i256 {
+    fn nan_min_lt(&self, other: &Self) -> bool {
+        self < other
+    }
+
+    fn nan_max_lt(&self, other: &Self) -> bool {
+        self < other
     }
 }
 

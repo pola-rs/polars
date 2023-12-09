@@ -2,6 +2,7 @@ use either::Either;
 
 use super::specification::try_check_utf8;
 use super::{Array, GenericBinaryArray};
+use crate::array::iterator::NonNullValuesIter;
 use crate::array::BinaryArray;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
@@ -131,6 +132,12 @@ impl<O: Offset> Utf8Array<O> {
     /// Returns an iterator of `&str`
     pub fn values_iter(&self) -> Utf8ValuesIter<O> {
         Utf8ValuesIter::new(self)
+    }
+
+    /// Returns an iterator of the non-null values `&str.
+    #[inline]
+    pub fn non_null_values_iter(&self) -> NonNullValuesIter<'_, Utf8Array<O>> {
+        NonNullValuesIter::new(self, self.validity())
     }
 
     /// Returns the length of this array

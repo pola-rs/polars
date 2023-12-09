@@ -2,14 +2,14 @@
 mod quantile;
 mod var;
 
-use std::cmp::Ordering;
 use std::ops::Add;
 
 use arrow::compute;
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num_traits::{Float, One, ToPrimitive, Zero};
-use polars_utils::ord::{compare_fn_nan_max, compare_fn_nan_min};
+use polars_compute::min_max::MinMaxKernel;
+use polars_utils::min_max::MinMax;
 pub use quantile::*;
 pub use var::*;
 
@@ -44,9 +44,7 @@ pub trait ChunkAggSeries {
 fn sum<T: NumericNative + NativeType>(array: &PrimitiveArray<T>) -> T
 where
     T: NumericNative + NativeType,
-    <T as Simd>::Simd: Add<Output = <T as Simd>::Simd>
-        + compute::aggregate::Sum<T>
-        + compute::aggregate::SimdOrd<T>,
+    <T as Simd>::Simd: Add<Output = <T as Simd>::Simd> + compute::aggregate::Sum<T>,
 {
     if array.null_count() == array.len() {
         return T::default();
@@ -82,9 +80,9 @@ where
 impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
-        + compute::aggregate::Sum<T::Native>
-        + compute::aggregate::SimdOrd<T::Native>,
+    PrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
+    <T::Native as Simd>::Simd:
+        Add<Output = <T::Native as Simd>::Simd> + compute::aggregate::Sum<T::Native>,
 {
     fn sum(&self) -> Option<T::Native> {
         Some(
@@ -101,28 +99,20 @@ where
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 self.first_non_null().and_then(|idx| {
-                    // Safety:
-                    // first_non_null returns in bound index
+                    // SAFETY: first_non_null returns in bound index.
                     unsafe { self.get_unchecked(idx) }
                 })
             },
             IsSorted::Descending => {
                 self.last_non_null().and_then(|idx| {
-                    // Safety:
-                    // last returns in bound index
+                    // SAFETY: last returns in bound index.
                     unsafe { self.get_unchecked(idx) }
                 })
             },
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(compute::aggregate::min_primitive)
-                .reduce(|acc, v| {
-                    if matches!(compare_fn_nan_max(&acc, &v), Ordering::Less) {
-                        acc
-                    } else {
-                        v
-                    }
-                }),
+                .filter_map(MinMaxKernel::min_ignore_nan_kernel)
+                .reduce(MinMax::min_ignore_nan),
         }
     }
 
@@ -133,28 +123,22 @@ where
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 self.last_non_null().and_then(|idx| {
-                    // Safety:
+                    // SAFETY:
                     // last_non_null returns in bound index
                     unsafe { self.get_unchecked(idx) }
                 })
             },
             IsSorted::Descending => {
                 self.first_non_null().and_then(|idx| {
-                    // Safety:
+                    // SAFETY:
                     // first_non_null returns in bound index
                     unsafe { self.get_unchecked(idx) }
                 })
             },
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(compute::aggregate::max_primitive)
-                .reduce(|acc, v| {
-                    if matches!(compare_fn_nan_min(&acc, &v), Ordering::Greater) {
-                        acc
-                    } else {
-                        v
-                    }
-                }),
+                .filter_map(MinMaxKernel::max_ignore_nan_kernel)
+                .reduce(MinMax::max_ignore_nan),
         }
     }
 
@@ -279,9 +263,9 @@ impl BooleanChunked {
 impl<T> ChunkAggSeries for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
-        + compute::aggregate::Sum<T::Native>
-        + compute::aggregate::SimdOrd<T::Native>,
+    PrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
+    <T::Native as Simd>::Simd:
+        Add<Output = <T::Native as Simd>::Simd> + compute::aggregate::Sum<T::Native>,
     ChunkedArray<T>: IntoSeries,
 {
     fn sum_as_series(&self) -> Series {
@@ -327,9 +311,7 @@ where
 impl<T> VarAggSeries for ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
-        + compute::aggregate::Sum<T::Native>
-        + compute::aggregate::SimdOrd<T::Native>,
+    ChunkedArray<T>: ChunkVar,
 {
     fn var_as_series(&self, ddof: u8) -> Series {
         as_series::<Float64Type>(self.name(), self.var(ddof))
@@ -364,9 +346,8 @@ impl<T> QuantileAggSeries for ChunkedArray<T>
 where
     T: PolarsIntegerType,
     T::Native: Ord,
-    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
-        + compute::aggregate::Sum<T::Native>
-        + compute::aggregate::SimdOrd<T::Native>,
+    <T::Native as Simd>::Simd:
+        Add<Output = <T::Native as Simd>::Simd> + compute::aggregate::Sum<T::Native>,
 {
     fn quantile_as_series(
         &self,
@@ -441,22 +422,20 @@ impl Utf8Chunked {
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 self.last_non_null().and_then(|idx| {
-                    // Safety:
-                    // last_non_null returns in bound index
+                    // SAFETY: last_non_null returns in bound index
                     unsafe { self.get_unchecked(idx) }
                 })
             },
             IsSorted::Descending => {
                 self.first_non_null().and_then(|idx| {
-                    // Safety:
-                    // first_non_null returns in bound index
+                    // SAFETY: first_non_null returns in bound index
                     unsafe { self.get_unchecked(idx) }
                 })
             },
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(compute::aggregate::max_string)
-                .reduce(|acc, v| if acc > v { acc } else { v }),
+                .filter_map(MinMaxKernel::max_ignore_nan_kernel)
+                .reduce(MinMax::max_ignore_nan),
         }
     }
     pub(crate) fn min_str(&self) -> Option<&str> {
@@ -466,22 +445,20 @@ impl Utf8Chunked {
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 self.first_non_null().and_then(|idx| {
-                    // Safety:
-                    // first_non_null returns in bound index
+                    // SAFETY: first_non_null returns in bound index
                     unsafe { self.get_unchecked(idx) }
                 })
             },
             IsSorted::Descending => {
                 self.last_non_null().and_then(|idx| {
-                    // Safety:
-                    // last_non_null returns in bound index
+                    // SAFETY: last_non_null returns in bound index
                     unsafe { self.get_unchecked(idx) }
                 })
             },
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(compute::aggregate::min_string)
-                .reduce(|acc, v| if acc < v { acc } else { v }),
+                .filter_map(MinMaxKernel::min_ignore_nan_kernel)
+                .reduce(MinMax::min_ignore_nan),
         }
     }
 }
@@ -518,8 +495,8 @@ impl BinaryChunked {
             },
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(compute::aggregate::max_binary)
-                .reduce(|acc, v| if acc > v { acc } else { v }),
+                .filter_map(MinMaxKernel::max_ignore_nan_kernel)
+                .reduce(MinMax::max_ignore_nan),
         }
     }
 
@@ -542,8 +519,8 @@ impl BinaryChunked {
             },
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(compute::aggregate::min_binary)
-                .reduce(|acc, v| if acc < v { acc } else { v }),
+                .filter_map(MinMaxKernel::min_ignore_nan_kernel)
+                .reduce(MinMax::min_ignore_nan),
         }
     }
 }

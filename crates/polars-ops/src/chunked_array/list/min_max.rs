@@ -1,18 +1,17 @@
 use arrow::array::{Array, ArrayRef, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::legacy::array::PolarsArray;
-use arrow::legacy::slice::ExtremaNanAware;
-use arrow::legacy::utils::CustomIterTools;
 use arrow::types::NativeType;
+use polars_compute::min_max::MinMaxKernel;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
-use polars_utils::float::IsFloat;
 
 use crate::chunked_array::list::namespace::has_inner_nulls;
 
 fn min_between_offsets<T>(values: &[T], offset: &[i64]) -> PrimitiveArray<T>
 where
-    T: NativeType + PartialOrd + IsFloat,
+    T: NativeType,
+    [T]: for<'a> MinMaxKernel<Scalar<'a> = T>,
 {
     let mut running_offset = offset[0];
 
@@ -23,14 +22,15 @@ where
             running_offset = *end;
 
             let slice = unsafe { values.get_unchecked(current_offset as usize..*end as usize) };
-            slice.min_value_nan_aware().copied()
+            slice.min_ignore_nan_kernel()
         })
-        .collect_trusted()
+        .collect()
 }
 
 fn dispatch_min<T>(arr: &dyn Array, offsets: &[i64], validity: Option<&Bitmap>) -> ArrayRef
 where
-    T: NativeType + PartialOrd + IsFloat,
+    T: NativeType,
+    [T]: for<'a> MinMaxKernel<Scalar<'a> = T>,
 {
     let values = arr.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
     let values = values.values().as_slice();
@@ -112,7 +112,8 @@ pub(super) fn list_min_function(ca: &ListChunked) -> Series {
 
 fn max_between_offsets<T>(values: &[T], offset: &[i64]) -> PrimitiveArray<T>
 where
-    T: NativeType + PartialOrd + IsFloat,
+    T: NativeType,
+    [T]: for<'a> MinMaxKernel<Scalar<'a> = T>,
 {
     let mut running_offset = offset[0];
 
@@ -123,14 +124,15 @@ where
             running_offset = *end;
 
             let slice = unsafe { values.get_unchecked(current_offset as usize..*end as usize) };
-            slice.max_value_nan_aware().copied()
+            slice.max_ignore_nan_kernel()
         })
-        .collect_trusted()
+        .collect()
 }
 
 fn dispatch_max<T>(arr: &dyn Array, offsets: &[i64], validity: Option<&Bitmap>) -> ArrayRef
 where
-    T: NativeType + PartialOrd + IsFloat,
+    T: NativeType,
+    [T]: for<'a> MinMaxKernel<Scalar<'a> = T>,
 {
     let values = arr.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
     let values = values.values().as_slice();

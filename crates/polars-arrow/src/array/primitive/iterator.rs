@@ -1,11 +1,25 @@
 use polars_utils::iter::IntoIteratorCopied;
 
 use super::{MutablePrimitiveArray, PrimitiveArray};
-use crate::array::MutableArray;
+use crate::array::{ArrayAccessor, MutableArray};
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::IntoIter as BitmapIntoIter;
 use crate::buffer::IntoIter;
 use crate::types::NativeType;
+
+unsafe impl<'a, T: NativeType> ArrayAccessor<'a> for [T] {
+    type Item = T;
+
+    #[inline]
+    unsafe fn value_unchecked(&'a self, index: usize) -> Self::Item {
+        *self.get_unchecked(index)
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        (*self).len()
+    }
+}
 
 impl<T: NativeType> IntoIterator for PrimitiveArray<T> {
     type Item = Option<T>;
