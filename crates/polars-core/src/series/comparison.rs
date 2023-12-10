@@ -11,6 +11,8 @@ use crate::series::arithmetic::coerce_lhs_rhs;
 macro_rules! impl_compare {
     ($self:expr, $rhs:expr, $method:ident) => {{
         let (lhs, rhs) = ($self, $rhs);
+
+        #[cfg(feature = "dtype-categorical")]
         if matches!(lhs.dtype(), DataType::Categorical(_, _))
             && matches!(lhs.dtype(), DataType::Categorical(_, _))
         {
