@@ -197,6 +197,19 @@ pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
     polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
 
+    // We prefer this path as the optimizer can better deal with the binary operations.
+    // However if we have a single expression, we might loose information.
+    // E.g. `all().is_null()` would reduce to `all().is_null()` (the & is not needed as there is no rhs (yet)
+    // And upon expansion, it becomes
+    // `col(i).is_null() for i in len(df))`
+    // so we would miss the boolean operator.
+    if exprs.len() > 1 {
+        return Ok(exprs
+            .into_iter()
+            .reduce(|l, r| l.cast(DataType::Boolean).and(r.cast(DataType::Boolean)))
+            .unwrap());
+    }
+
     Ok(Expr::Function {
         input: exprs,
         function: FunctionExpr::Boolean(BooleanFunction::AllHorizontal),
@@ -217,6 +230,14 @@ pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
 pub fn any_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
     polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
+
+    // See comment in `all_horizontal`.
+    if exprs.len() > 1 {
+        return Ok(exprs
+            .into_iter()
+            .reduce(|l, r| l.cast(DataType::Boolean).or(r.cast(DataType::Boolean)))
+            .unwrap());
+    }
 
     Ok(Expr::Function {
         input: exprs,
