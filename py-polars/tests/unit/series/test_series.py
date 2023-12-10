@@ -301,15 +301,21 @@ def test_bitwise_ops() -> None:
     # Note that the type annotations only allow Series to be passed in, but there is
     # specific code to deal with non-Series inputs.
     assert_series_equal(
-        (True & a),  # type: ignore[operator]
+        (
+            True & a  # type: ignore[operator]
+        ),
         pl.Series([True, False, True]),
     )
     assert_series_equal(
-        (True | a),  # type: ignore[operator]
+        (
+            True | a  # type: ignore[operator]
+        ),
         pl.Series([True, True, True]),
     )
     assert_series_equal(
-        (True ^ a),  # type: ignore[operator]
+        (
+            True ^ a  # type: ignore[operator]
+        ),
         pl.Series([False, True, False]),
     )
 

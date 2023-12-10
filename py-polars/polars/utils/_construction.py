@@ -138,7 +138,9 @@ def include_unknowns(
 ) -> MutableMapping[str, PolarsDataType]:
     """Complete partial schema dict by including Unknown type."""
     return {
-        col: (schema.get(col, Unknown) or Unknown)  # type: ignore[truthy-bool]
+        col: (
+            schema.get(col, Unknown) or Unknown  # type: ignore[truthy-bool]
+        )
         for col in cols
     }
 
