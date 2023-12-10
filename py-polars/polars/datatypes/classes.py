@@ -556,7 +556,7 @@ class Enum(DataType):
             return False
 
     def __hash__(self) -> int:
-        return hash((self.__class__, *self.categories))
+        return hash((self.__class__, tuple(self.categories)))
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
@@ -694,7 +694,7 @@ class Array(NestedType):
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        return f"{class_name}({self.inner!r}, {self.width})"
+        return f"{class_name}({self.inner!r}, width={self.width})"
 
 
 class Field:
