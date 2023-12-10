@@ -44,3 +44,10 @@ def test_extend_with_null_series() -> None:
     assert_series_equal(a, expected)
     assert_series_equal(result, expected)
     assert a.n_chunks() == 1
+
+
+def test_extend_sliced_12968() -> None:
+    assert pl.Series(["a", "b"]).slice(0, 1).extend(pl.Series(["c"])).to_list() == [
+        "a",
+        "c",
+    ]
