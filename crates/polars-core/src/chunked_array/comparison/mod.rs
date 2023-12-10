@@ -503,7 +503,8 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
     }
 }
 
-fn cat_cmp_helper<'a, 'b, Compare>(
+#[cfg(feature = "dtype-categorical")]
+fn cat_equality_helper<'a, 'b, Compare>(
     lhs: &'a CategoricalChunked,
     rhs: &'b CategoricalChunked,
     fill_value: bool,
@@ -525,40 +526,56 @@ where
     }
     Ok(compare_function(lhs.physical(), rhs))
 }
+
+fn cat_compare_helper<'a, 'b, Compare>(
+    lhs: &'a CategoricalChunked,
+    rhs: &'b CategoricalChunked,
+    compare_function: Compare,
+) -> PolarsResult<BooleanChunked>
+where
+    Compare: Fn(&'a UInt32Chunked, &'b UInt32Chunked) -> BooleanChunked,
+{
+    let rev_map_l = lhs.get_rev_map();
+    let rev_map_r = rhs.get_rev_map();
+    polars_ensure!(rev_map_l.is_enum() && rev_map_r.is_enum(), ComputeError: "can not compare (<, <=, >, >=) two categoricals, unless they are of Enum type");
+    polars_ensure!(rev_map_l.same_src(rev_map_r), ComputeError: "can only compare Enum types with the same categories {:?} vs {:?}", rev_map_l.get_categories(), rev_map_r.get_categories());
+
+    Ok(compare_function(lhs.physical(), rhs.physical()))
+}
 #[cfg(feature = "dtype-categorical")]
 impl ChunkCompare<&CategoricalChunked> for CategoricalChunked {
     type Item = PolarsResult<BooleanChunked>;
 
     fn equal(&self, rhs: &CategoricalChunked) -> Self::Item {
-        cat_cmp_helper(self, rhs, false, UInt32Chunked::equal)
+        cat_equality_helper(self, rhs, false, UInt32Chunked::equal)
     }
 
     fn equal_missing(&self, rhs: &CategoricalChunked) -> Self::Item {
-        cat_cmp_helper(self, rhs, false, UInt32Chunked::equal_missing)
+        cat_equality_helper(self, rhs, false, UInt32Chunked::equal_missing)
     }
 
     fn not_equal(&self, rhs: &CategoricalChunked) -> Self::Item {
-        cat_cmp_helper(self, rhs, false, UInt32Chunked::not_equal)
+        cat_equality_helper(self, rhs, true, UInt32Chunked::not_equal)
     }
 
     fn not_equal_missing(&self, rhs: &CategoricalChunked) -> Self::Item {
-        cat_cmp_helper(self, rhs, false, UInt32Chunked::not_equal_missing)
+        cat_equality_helper(self, rhs, true, UInt32Chunked::not_equal_missing)
     }
 
     fn gt(&self, rhs: &CategoricalChunked) -> Self::Item {
-        todo!()
+        cat_compare_helper(self, rhs, UInt32Chunked::gt)
     }
 
     fn gt_eq(&self, rhs: &CategoricalChunked) -> Self::Item {
-        todo!()
+        cat_compare_helper(self, rhs, UInt32Chunked::gt_eq)
     }
 
     fn lt(&self, rhs: &CategoricalChunked) -> Self::Item {
-        todo!()
+        cat_compare_helper(self, rhs, UInt32Chunked::lt)
     }
 
     fn lt_eq(&self, rhs: &CategoricalChunked) -> Self::Item {
-        todo!()
+        cat_compare_helper(self, rhs, UInt32Chunked::lt_eq)
     }
 }
 

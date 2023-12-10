@@ -3,7 +3,9 @@ from __future__ import annotations
 import io
 from typing import TYPE_CHECKING, Any
 
+import re
 import pytest
+import operator
 
 import polars as pl
 from polars import StringCache
@@ -123,6 +125,65 @@ def test_unset_sorted_on_append() -> None:
     df = pl.concat([df1, df2], rechunk=False)
     assert df.group_by("key").count()["count"].to_list() == [4, 4]
 
+def test_categorical_equality() -> None:
+    df_cat = pl.DataFrame(
+        [
+            pl.Series("a_cat", ["a", "b", "c", "c", "b","a"], dtype=pl.Categorical),
+            pl.Series("b_cat", ["a", "b", "c", "a", "b","c"], dtype=pl.Categorical),
+        ]
+    )
+    df_cat_eq = df_cat.filter(pl.col("a_cat") == pl.col("b_cat"))
+    assert df_cat_eq.select(pl.col("a_cat")).to_dict(as_series=False) == {"a_cat":["a","b","c","b"]}
+
+    df_cat_neq = df_cat.filter(pl.col("a_cat") != pl.col("b_cat"))
+    assert df_cat_neq.select(pl.col("a_cat")).to_dict(as_series=False) == {"a_cat":["c","a"]}
+
+def test_categorical_error_on_local_ordering() -> None:
+    df_cat = pl.DataFrame(
+        [
+            pl.Series("a_cat", ["c", "a", "b", "c", "b"], dtype=pl.Categorical),
+            pl.Series("b_cat", ["c", "a", "b", "c", "b"], dtype=pl.Categorical),
+        ]
+    )
+    for op in [operator.gt,operator.ge, operator.lt,operator.le]:
+        with pytest.raises(
+                pl.ComputeError,
+                match=re.escape("can not compare (<, <=, >, >=) two categoricals, unless they are of Enum type"),
+        ):
+            df_cat.filter(op(pl.col("a_cat"),pl.col("b_cat")))
+
+def test_different_enum_comparison_order() -> None:
+    df_enum = pl.DataFrame(
+        [
+            pl.Series("a_cat", ["c", "a", "b", "c", "b"], dtype=pl.Enum(["a","b","c"])),
+            pl.Series("b_cat", ["F", "G", "E", "G", "G"], dtype=pl.Enum(["F","G","E"])),
+        ]
+    )
+    for op in [operator.gt,operator.ge, operator.lt,operator.le]:
+        with pytest.raises(
+                pl.ComputeError,
+                match="can only compare Enum types with the same categories",
+        ):
+            df_enum.filter(op(pl.col("a_cat"), pl.col("b_cat")))
+
+def test_enum_comparison_order() -> None:
+    dtype=pl.Enum(["LOW","MEDIUM","HIGH"])
+    df_enum = pl.DataFrame(
+        [
+            pl.Series("a_cat", ["LOW", "MEDIUM", "MEDIUM", "HIGH", "MEDIUM"],dtype=dtype),
+            pl.Series("b_cat", ["HIGH", "HIGH", "MEDIUM", "LOW", "LOW"], dtype=dtype),
+        ]
+    )
+
+    df_cmp = df_enum.select((pl.col("a_cat") <= pl.col("b_cat")).alias("cmp"))
+    assert df_cmp.to_dict(as_series=False) == {"cmp":[True,True,True,False,False]}
+
+    df_cmp = df_enum.select((pl.col("a_cat") > pl.col("b_cat")).alias("cmp"))
+    assert df_cmp.to_dict(as_series=False) == {"cmp":[False,False,False,True,True]}
+
+    df_cmp = df_enum.select((pl.col("a_cat") >= pl.col("b_cat")).alias("cmp"))
+    assert df_cmp.to_dict(as_series=False) == {"cmp":[False,False,True,True,True]}
+
 
 def test_categorical_error_on_local_cmp() -> None:
     df_cat = pl.DataFrame(
@@ -132,11 +193,8 @@ def test_categorical_error_on_local_cmp() -> None:
         ]
     )
     with pytest.raises(
-        pl.ComputeError,
-        match=(
-            "cannot compare categoricals originating from different sources; consider"
-            " setting a global string cache"
-        ),
+        StringCacheMismatchError,
+        match="cannot compare categoricals coming from different sources",
     ):
         df_cat.filter(pl.col("a_cat") == pl.col("b_cat"))
 
