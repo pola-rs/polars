@@ -196,19 +196,7 @@ where
 pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
     polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
-
-    Ok(Expr::Function {
-        input: exprs,
-        function: FunctionExpr::Boolean(BooleanFunction::AllHorizontal),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            input_wildcard_expansion: true,
-            returns_scalar: false,
-            cast_to_supertypes: false,
-            allow_rename: true,
-            ..Default::default()
-        },
-    })
+    Ok(exprs.into_iter().reduce(|l, r| l.and(r)).unwrap())
 }
 
 /// Create a new column with the bitwise-or of the elements in each row.
@@ -217,19 +205,7 @@ pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
 pub fn any_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
     polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
-
-    Ok(Expr::Function {
-        input: exprs,
-        function: FunctionExpr::Boolean(BooleanFunction::AnyHorizontal),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            input_wildcard_expansion: true,
-            returns_scalar: false,
-            cast_to_supertypes: false,
-            allow_rename: true,
-            ..Default::default()
-        },
-    })
+    Ok(exprs.into_iter().reduce(|l, r| l.or(r)).unwrap())
 }
 
 /// Create a new column with the maximum value per row.

@@ -3,7 +3,7 @@ use std::ops::Not;
 use super::*;
 #[cfg(feature = "is_in")]
 use crate::wrap;
-use crate::{map, map_as_slice};
+use crate::{map};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
@@ -30,19 +30,12 @@ pub enum BooleanFunction {
     IsDuplicated,
     #[cfg(feature = "is_in")]
     IsIn,
-    AllHorizontal,
-    AnyHorizontal,
     Not,
 }
 
 impl BooleanFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
-        use BooleanFunction::*;
-        match self {
-            AllHorizontal => Ok(Field::new("all", DataType::Boolean)),
-            AnyHorizontal => Ok(Field::new("any", DataType::Boolean)),
-            _ => mapper.with_dtype(DataType::Boolean),
-        }
+        mapper.with_dtype(DataType::Boolean)
     }
 }
 
@@ -68,8 +61,6 @@ impl Display for BooleanFunction {
             IsDuplicated => "is_duplicated",
             #[cfg(feature = "is_in")]
             IsIn => "is_in",
-            AnyHorizontal => "any_horizontal",
-            AllHorizontal => "all_horizontal",
             Not => "not",
         };
         write!(f, "{s}")
@@ -98,8 +89,6 @@ impl From<BooleanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             IsDuplicated => map!(is_duplicated),
             #[cfg(feature = "is_in")]
             IsIn => wrap!(is_in),
-            AllHorizontal => map_as_slice!(all_horizontal),
-            AnyHorizontal => map_as_slice!(any_horizontal),
             Not => map!(not),
         }
     }
@@ -178,14 +167,6 @@ fn is_in(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     let left = &s[0];
     let other = &s[1];
     polars_ops::prelude::is_in(left, other).map(|ca| Some(ca.into_series()))
-}
-
-fn any_horizontal(s: &[Series]) -> PolarsResult<Series> {
-    polars_ops::prelude::any_horizontal(s)
-}
-
-fn all_horizontal(s: &[Series]) -> PolarsResult<Series> {
-    polars_ops::prelude::all_horizontal(s)
 }
 
 fn not(s: &Series) -> PolarsResult<Series> {

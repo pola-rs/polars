@@ -1,6 +1,4 @@
 use std::borrow::Cow;
-use std::ops::{BitAnd, BitOr};
-
 use polars_core::prelude::*;
 use polars_core::POOL;
 use rayon::prelude::*;
@@ -29,42 +27,6 @@ pub fn sum_horizontal(s: &[Series]) -> PolarsResult<Series> {
         },
     };
     out.map(|ok| ok.with_name("sum"))
-}
-
-pub fn any_horizontal(s: &[Series]) -> PolarsResult<Series> {
-    let out = POOL
-        .install(|| {
-            s.par_iter()
-                .try_fold(
-                    || BooleanChunked::new("", &[false]),
-                    |acc, b| {
-                        let b = b.cast(&DataType::Boolean)?;
-                        let b = b.bool()?;
-                        PolarsResult::Ok((&acc).bitor(b))
-                    },
-                )
-                .try_reduce(|| BooleanChunked::new("", [false]), |a, b| Ok(a.bitor(b)))
-        })?
-        .with_name("any");
-    Ok(out.into_series())
-}
-
-pub fn all_horizontal(s: &[Series]) -> PolarsResult<Series> {
-    let out = POOL
-        .install(|| {
-            s.par_iter()
-                .try_fold(
-                    || BooleanChunked::new("", &[true]),
-                    |acc, b| {
-                        let b = b.cast(&DataType::Boolean)?;
-                        let b = b.bool()?;
-                        PolarsResult::Ok((&acc).bitand(b))
-                    },
-                )
-                .try_reduce(|| BooleanChunked::new("", [true]), |a, b| Ok(a.bitand(b)))
-        })?
-        .with_name("all");
-    Ok(out.into_series())
 }
 
 #[cfg(feature = "zip_with")]
