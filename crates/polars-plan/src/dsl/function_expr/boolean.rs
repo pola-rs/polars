@@ -1,9 +1,9 @@
 use std::ops::Not;
 
 use super::*;
+use crate::map;
 #[cfg(feature = "is_in")]
 use crate::wrap;
-use crate::{map};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
