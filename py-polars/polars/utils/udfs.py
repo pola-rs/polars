@@ -432,22 +432,24 @@ class BytecodeParser:
                 apitype = "series"
                 clsname = "Series"
 
-            before_after_suggestion = (
+            before, after = (
                 (
-                    f"  \033[31m- {target_name}.map_elements({func_name})\033[0m\n"
-                    f"  \033[32m+ {suggested_expression}\033[0m\n{addendum}"
+                    f"  \033[31m- {target_name}.map_elements({func_name})\033[0m\n",
+                    f"  \033[32m+ {suggested_expression}\033[0m\n{addendum}",
                 )
                 if in_terminal_that_supports_colour()
                 else (
-                    f"  - {target_name}.map_elements({func_name})\n"
-                    f"  + {suggested_expression}\n{addendum}"
+                    f"  - {target_name}.map_elements({func_name})\n",
+                    f"  + {suggested_expression}\n{addendum}",
                 )
             )
             warnings.warn(
                 f"\n{clsname}.map_elements is significantly slower than the native {apitype} API.\n"
                 "Only use if you absolutely CANNOT implement your logic otherwise.\n"
-                "In this case, you can replace your `map_elements` with the following:\n"
-                f"{before_after_suggestion}",
+                "Don't do this:\n"
+                f"{before}"
+                "Do this instead:\n"
+                f"{after}",
                 PolarsInefficientMapWarning,
                 stacklevel=find_stacklevel(),
             )
