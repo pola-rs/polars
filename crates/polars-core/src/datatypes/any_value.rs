@@ -482,7 +482,6 @@ impl<'a> AnyValue<'a> {
         );
 
         let new_av = match self {
-            AnyValue::Boolean(_) | AnyValue::Float32(_) | AnyValue::Float64(_) => cast_to!(self),
             _ if (self.is_boolean()
                 | self.is_signed_integer()
                 | self.is_unsigned_integer()
