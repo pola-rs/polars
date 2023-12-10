@@ -11,7 +11,9 @@ pub(super) mod sort_merge;
 use arrow::array::ArrayRef;
 pub use multiple_keys::private_left_join_multiple_keys;
 pub(super) use multiple_keys::*;
-use polars_core::utils::{_set_partition_size, slice_slice, split_ca};
+#[cfg(any(feature = "chunked_ids", feature = "semi_anti_join"))]
+use polars_core::utils::slice_slice;
+use polars_core::utils::{_set_partition_size, slice_offsets, split_ca};
 use polars_core::POOL;
 pub(super) use single_keys::*;
 #[cfg(feature = "asof_join")]
@@ -245,33 +247,21 @@ pub trait JoinDispatch: IntoDf {
         _check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
         // Get the indexes of the joined relations
-        let opt_join_tuples = s_left.hash_join_outer(s_right, args.validation, args.join_nulls)?;
-        let mut opt_join_tuples = &*opt_join_tuples;
+        let (mut join_idx_l, mut join_idx_r) =
+            s_left.hash_join_outer(s_right, args.validation, args.join_nulls)?;
 
         if let Some((offset, len)) = args.slice {
-            opt_join_tuples = slice_slice(opt_join_tuples, offset, len);
+            let (offset, len) = slice_offsets(offset, len, join_idx_l.len());
+            join_idx_l.slice(offset, len);
+            join_idx_r.slice(offset, len);
         }
+        let idx_ca_l = IdxCa::with_chunk("", join_idx_l);
+        let idx_ca_r = IdxCa::with_chunk("", join_idx_r);
 
         // Take the left and right dataframes by join tuples
         let (df_left, df_right) = POOL.join(
-            || unsafe {
-                ca_self.take_unchecked(
-                    &opt_join_tuples
-                        .iter()
-                        .copied()
-                        .map(|(left, _right)| left)
-                        .collect_ca("outer-join-left-indices"),
-                )
-            },
-            || unsafe {
-                other.take_unchecked(
-                    &opt_join_tuples
-                        .iter()
-                        .copied()
-                        .map(|(_left, right)| right)
-                        .collect_ca("outer-join-right-indices"),
-                )
-            },
+            || unsafe { ca_self.take_unchecked(&idx_ca_l) },
+            || unsafe { other.take_unchecked(&idx_ca_r) },
         );
 
         _finish_join(df_left, df_right, args.suffix.as_deref())
