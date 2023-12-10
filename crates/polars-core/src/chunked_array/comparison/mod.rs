@@ -503,6 +503,65 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
     }
 }
 
+fn cat_cmp_helper<'a, 'b, Compare>(
+    lhs: &'a CategoricalChunked,
+    rhs: &'b CategoricalChunked,
+    fill_value: bool,
+    compare_function: Compare,
+) -> PolarsResult<BooleanChunked>
+where
+    Compare: Fn(&'a UInt32Chunked, &'b UInt32Chunked) -> BooleanChunked,
+{
+    let rev_map_l = lhs.get_rev_map();
+    polars_ensure!(rev_map_l.same_src(rhs.get_rev_map()), string_cache_mismatch);
+    let rhs = rhs.physical();
+
+    // Fast path for globals
+    if rhs.len() == 1 && rhs.null_count() == 0 {
+        let rhs = rhs.get(0).unwrap();
+        if rev_map_l.get_optional(rhs).is_none() {
+            return Ok(BooleanChunked::full(lhs.name(), fill_value, lhs.len()));
+        }
+    }
+    Ok(compare_function(lhs.physical(), rhs))
+}
+#[cfg(feature = "dtype-categorical")]
+impl ChunkCompare<&CategoricalChunked> for CategoricalChunked {
+    type Item = PolarsResult<BooleanChunked>;
+
+    fn equal(&self, rhs: &CategoricalChunked) -> Self::Item {
+        cat_cmp_helper(self, rhs, false, UInt32Chunked::equal)
+    }
+
+    fn equal_missing(&self, rhs: &CategoricalChunked) -> Self::Item {
+        cat_cmp_helper(self, rhs, false, UInt32Chunked::equal_missing)
+    }
+
+    fn not_equal(&self, rhs: &CategoricalChunked) -> Self::Item {
+        cat_cmp_helper(self, rhs, false, UInt32Chunked::not_equal)
+    }
+
+    fn not_equal_missing(&self, rhs: &CategoricalChunked) -> Self::Item {
+        cat_cmp_helper(self, rhs, false, UInt32Chunked::not_equal_missing)
+    }
+
+    fn gt(&self, rhs: &CategoricalChunked) -> Self::Item {
+        todo!()
+    }
+
+    fn gt_eq(&self, rhs: &CategoricalChunked) -> Self::Item {
+        todo!()
+    }
+
+    fn lt(&self, rhs: &CategoricalChunked) -> Self::Item {
+        todo!()
+    }
+
+    fn lt_eq(&self, rhs: &CategoricalChunked) -> Self::Item {
+        todo!()
+    }
+}
+
 #[doc(hidden)]
 fn _list_comparison_helper<F>(lhs: &ListChunked, rhs: &ListChunked, op: F) -> BooleanChunked
 where

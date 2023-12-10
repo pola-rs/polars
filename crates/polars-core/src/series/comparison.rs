@@ -10,10 +10,20 @@ use crate::series::arithmetic::coerce_lhs_rhs;
 
 macro_rules! impl_compare {
     ($self:expr, $rhs:expr, $method:ident) => {{
-        let (lhs, rhs) = coerce_lhs_rhs($self, $rhs).expect("cannot coerce datatypes");
+        let (lhs, rhs) = ($self, $rhs);
+        if matches!(lhs.dtype(), DataType::Categorical(_, _))
+            && matches!(lhs.dtype(), DataType::Categorical(_, _))
+        {
+            return lhs
+                .categorical()
+                .unwrap()
+                .$method(rhs.categorical().unwrap());
+        }
+
+        let (lhs, rhs) = coerce_lhs_rhs(lhs, rhs).expect("cannot coerce datatypes");
         let lhs = lhs.to_physical_repr();
         let rhs = rhs.to_physical_repr();
-        match lhs.dtype() {
+        let out = match lhs.dtype() {
             DataType::Boolean => lhs.bool().unwrap().$method(rhs.bool().unwrap()),
             DataType::Utf8 => lhs.utf8().unwrap().$method(rhs.utf8().unwrap()),
             DataType::Binary => lhs.binary().unwrap().$method(rhs.binary().unwrap()),
@@ -37,7 +47,8 @@ macro_rules! impl_compare {
                 .$method(rhs.struct_().unwrap().deref()),
 
             _ => unimplemented!(),
-        }
+        };
+        Ok(out) as PolarsResult<BooleanChunked>
     }};
 }
 
@@ -125,32 +136,8 @@ impl ChunkCompare<&Series> for Series {
                     false,
                 );
             },
-            #[cfg(feature = "dtype-categorical")]
-            (Categorical(Some(rev_map_l), _), Categorical(Some(rev_map_r), _), _, _) => {
-                if rev_map_l.same_src(rev_map_r) {
-                    let rhs = rhs.categorical().unwrap().physical();
-
-                    // first check the rev-map
-                    if rhs.len() == 1 && rhs.null_count() == 0 {
-                        let rhs = rhs.get(0).unwrap();
-                        if rev_map_l.get_optional(rhs).is_none() {
-                            return Ok(BooleanChunked::full(self.name(), false, self.len()));
-                        }
-                    }
-
-                    self.categorical().unwrap().physical().equal(rhs)
-                } else {
-                    polars_bail!(
-                        ComputeError:
-                        "cannot compare categoricals originating from different sources; \
-                        consider setting a global string cache"
-                    );
-                }
-            },
             (Null, Null, _, _) => BooleanChunked::full_null(self.name(), self.len()),
-            _ => {
-                impl_compare!(self, rhs, equal)
-            },
+            _ => impl_compare!(self, rhs, equal)?,
         };
         out.rename(self.name());
         Ok(out)
@@ -181,32 +168,8 @@ impl ChunkCompare<&Series> for Series {
                     false,
                 );
             },
-            #[cfg(feature = "dtype-categorical")]
-            (Categorical(Some(rev_map_l), _), Categorical(Some(rev_map_r), _), _, _) => {
-                if rev_map_l.same_src(rev_map_r) {
-                    let rhs = rhs.categorical().unwrap().physical();
-
-                    // first check the rev-map
-                    if rhs.len() == 1 && rhs.null_count() == 0 {
-                        let rhs = rhs.get(0).unwrap();
-                        if rev_map_l.get_optional(rhs).is_none() {
-                            return Ok(BooleanChunked::full(self.name(), false, self.len()));
-                        }
-                    }
-
-                    self.categorical().unwrap().physical().equal_missing(rhs)
-                } else {
-                    polars_bail!(
-                        ComputeError:
-                        "cannot compare categoricals originating from different sources; \
-                        consider setting a global string cache"
-                    );
-                }
-            },
             (Null, Null, _, _) => BooleanChunked::full(self.name(), true, self.len()),
-            _ => {
-                impl_compare!(self, rhs, equal_missing)
-            },
+            _ => impl_compare!(self, rhs, equal_missing)?,
         };
         out.rename(self.name());
         Ok(out)
@@ -237,32 +200,8 @@ impl ChunkCompare<&Series> for Series {
                     true,
                 );
             },
-            #[cfg(feature = "dtype-categorical")]
-            (Categorical(Some(rev_map_l), _), Categorical(Some(rev_map_r), _), _, _) => {
-                if rev_map_l.same_src(rev_map_r) {
-                    let rhs = rhs.categorical().unwrap().physical();
-
-                    // first check the rev-map
-                    if rhs.len() == 1 && rhs.null_count() == 0 {
-                        let rhs = rhs.get(0).unwrap();
-                        if rev_map_l.get_optional(rhs).is_none() {
-                            return Ok(BooleanChunked::full(self.name(), true, self.len()));
-                        }
-                    }
-
-                    self.categorical().unwrap().physical().not_equal(rhs)
-                } else {
-                    polars_bail!(
-                        ComputeError:
-                        "cannot compare categoricals originating from different sources; \
-                        consider setting a global string cache"
-                    );
-                }
-            },
             (Null, Null, _, _) => BooleanChunked::full_null(self.name(), self.len()),
-            _ => {
-                impl_compare!(self, rhs, not_equal)
-            },
+            _ => impl_compare!(self, rhs, not_equal)?,
         };
         out.rename(self.name());
         Ok(out)
@@ -291,37 +230,10 @@ impl ChunkCompare<&Series> for Series {
                     self.name(),
                     |s, idx| s.not_equal_missing(idx),
                     true,
-                );
-            },
-            #[cfg(feature = "dtype-categorical")]
-            (Categorical(Some(rev_map_l), _), Categorical(Some(rev_map_r), _), _, _) => {
-                if rev_map_l.same_src(rev_map_r) {
-                    let rhs = rhs.categorical().unwrap().physical();
-
-                    // first check the rev-map
-                    if rhs.len() == 1 && rhs.null_count() == 0 {
-                        let rhs = rhs.get(0).unwrap();
-                        if rev_map_l.get_optional(rhs).is_none() {
-                            return Ok(BooleanChunked::full(self.name(), true, self.len()));
-                        }
-                    }
-
-                    self.categorical()
-                        .unwrap()
-                        .physical()
-                        .not_equal_missing(rhs)
-                } else {
-                    polars_bail!(
-                        ComputeError:
-                        "cannot compare categoricals originating from different sources; \
-                        consider setting a global string cache"
-                    );
-                }
+                )
             },
             (Null, Null, _, _) => BooleanChunked::full(self.name(), false, self.len()),
-            _ => {
-                impl_compare!(self, rhs, not_equal_missing)
-            },
+            _ => impl_compare!(self, rhs, not_equal_missing)?,
         };
         out.rename(self.name());
         Ok(out)
@@ -330,7 +242,7 @@ impl ChunkCompare<&Series> for Series {
     /// Create a boolean mask by checking if self > rhs.
     fn gt(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), rhs.dtype())?;
-        let mut out = impl_compare!(self, rhs, gt);
+        let mut out = impl_compare!(self, rhs, gt)?;
         out.rename(self.name());
         Ok(out)
     }
@@ -338,7 +250,7 @@ impl ChunkCompare<&Series> for Series {
     /// Create a boolean mask by checking if self >= rhs.
     fn gt_eq(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), rhs.dtype())?;
-        let mut out = impl_compare!(self, rhs, gt_eq);
+        let mut out = impl_compare!(self, rhs, gt_eq)?;
         out.rename(self.name());
         Ok(out)
     }
@@ -346,7 +258,7 @@ impl ChunkCompare<&Series> for Series {
     /// Create a boolean mask by checking if self < rhs.
     fn lt(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), rhs.dtype())?;
-        let mut out = impl_compare!(self, rhs, lt);
+        let mut out = impl_compare!(self, rhs, lt)?;
         out.rename(self.name());
         Ok(out)
     }
@@ -354,7 +266,7 @@ impl ChunkCompare<&Series> for Series {
     /// Create a boolean mask by checking if self <= rhs.
     fn lt_eq(&self, rhs: &Series) -> PolarsResult<BooleanChunked> {
         validate_types(self.dtype(), rhs.dtype())?;
-        let mut out = impl_compare!(self, rhs, lt_eq);
+        let mut out = impl_compare!(self, rhs, lt_eq)?;
         out.rename(self.name());
         Ok(out)
     }
