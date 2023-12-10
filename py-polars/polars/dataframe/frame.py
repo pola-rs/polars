@@ -2061,7 +2061,6 @@ class DataFrame:
         structured
             Optionally return a structured array, with field names and
             dtypes that correspond to the DataFrame schema.
-
         order
             The index order of the returned NumPy array, either C-like or
             Fortran-like. In general, using the Fortran-like index order is faster.
@@ -2106,7 +2105,7 @@ class DataFrame:
         array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
               dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
 
-        ...optionally zero-copying as a record array view:
+        ...optionally going on to view as a record array:
 
         >>> import numpy as np
         >>> df.to_numpy(structured=True).view(np.recarray)
