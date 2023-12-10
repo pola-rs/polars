@@ -45,7 +45,7 @@ pub fn any_horizontal(s: &[Series]) -> PolarsResult<Series> {
                 )
                 .try_reduce(|| BooleanChunked::new("", [false]), |a, b| Ok(a.bitor(b)))
         })?
-        .with_name("any");
+        .with_name(s[0].name());
     Ok(out.into_series())
 }
 
@@ -63,7 +63,7 @@ pub fn all_horizontal(s: &[Series]) -> PolarsResult<Series> {
                 )
                 .try_reduce(|| BooleanChunked::new("", [true]), |a, b| Ok(a.bitand(b)))
         })?
-        .with_name("all");
+        .with_name(s[0].name());
     Ok(out.into_series())
 }
 
