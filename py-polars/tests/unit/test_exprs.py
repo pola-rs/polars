@@ -568,7 +568,7 @@ def test_lit_dtypes() -> None:
         (2**63, pl.UInt64, pl.Int64, False),
     ],
 )
-def test_lit_int_strict_cast(
+def test_int_strict_cast(
     value: int,
     from_dtype: pl.PolarsDataType,
     to_dtype: pl.PolarsDataType,
@@ -588,6 +588,46 @@ def test_lit_int_strict_cast(
         with pytest.raises(pl.exceptions.ComputeError):
             # lit cast
             pl.select(pl.lit(value, dtype=from_dtype).cast(to_dtype)).item()
+
+
+@pytest.mark.parametrize(
+    ("value", "from_dtype", "to_dtype", "expected"),
+    [
+        (-1, pl.Int8, pl.UInt8, None),
+        (-1, pl.Int16, pl.UInt16, None),
+        (-1, pl.Int32, pl.UInt32, None),
+        (-1, pl.Int64, pl.UInt64, None),
+        (2**7 - 1, pl.UInt8, pl.Int8, 2**7 - 1),
+        (2**7, pl.UInt8, pl.Int8, None),
+        (2**15 - 1, pl.UInt16, pl.Int16, 2**15 - 1),
+        (2**15, pl.UInt16, pl.Int16, None),
+        (2**31 - 1, pl.UInt32, pl.Int32, 2**31 - 1),
+        (2**31, pl.UInt32, pl.Int32, None),
+        (2**63 - 1, pl.UInt64, pl.Int64, 2**63 - 1),
+        (2**63, pl.UInt64, pl.Int64, None),
+    ],
+)
+def test_int_nonstrict_cast(
+    value: int,
+    from_dtype: pl.PolarsDataType,
+    to_dtype: pl.PolarsDataType,
+    expected: int | None,
+) -> None:
+    s = pl.Series("a", [value], dtype=from_dtype)
+
+    # series cast
+    assert s.cast(to_dtype, strict=False).item() == expected
+
+    # expr cast
+    assert (
+        s.to_frame().select(pl.col("a").cast(to_dtype, strict=False)).item() == expected
+    )
+
+    # lit cast
+    assert (
+        pl.select(pl.lit(value, dtype=from_dtype).cast(to_dtype, strict=False)).item()
+        == expected
+    )
 
 
 def test_incompatible_lit_dtype() -> None:
