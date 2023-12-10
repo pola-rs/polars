@@ -14,7 +14,7 @@ macro_rules! impl_compare {
 
         #[cfg(feature = "dtype-categorical")]
         if matches!(lhs.dtype(), DataType::Categorical(_, _))
-            && matches!(lhs.dtype(), DataType::Categorical(_, _))
+            && matches!(rhs.dtype(), DataType::Categorical(_, _))
         {
             return lhs
                 .categorical()
