@@ -40,9 +40,9 @@ You can change the output name of an expression by using the `alias` function
 In case of multiple columns for example when using `all()` or `col(*)` you can apply a mapping function `name.map` to change the original column name into something else. In case you want to add a suffix (`name.suffix()`) or prefix (`name.prefix()`) these are also built in.
 
 === ":fontawesome-brands-python: Python"
-[:material-api: `prefix`](https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.name.prefix.html)
-[:material-api: `suffix`](https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.name.suffix.html)
-[:material-api: `map_alias`](https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.name.map.html)
+[:material-api: `name.prefix`](https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.name.prefix.html)
+[:material-api: `name.suffix`](https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.name.suffix.html)
+[:material-api: `name.map`](https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.name.map.html)
 
 ## Count unique values
 
