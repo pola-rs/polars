@@ -474,8 +474,8 @@ impl<'a> AnyValue<'a> {
                     #[cfg(feature="dtype-time")]
                     DataType::Time => AnyValue::Time($av.try_extract::<i64>()?),
                     DataType::Utf8 => AnyValue::Utf8Owned(format_smartstring!("{}", $av.try_extract::<i64>()?)),
-                     _ => polars_bail!(
-                         ComputeError: "cannot cast any-value {:?} to dtype '{}'", self, dtype,
+                    _ => polars_bail!(
+                        ComputeError: "cannot cast any-value {:?} to dtype '{}'", self, dtype,
                     ),
                 }
             }
