@@ -466,14 +466,14 @@ impl<'a> AnyValue<'a> {
                     DataType::Float32 => AnyValue::Float32($av.try_extract::<f32>()?),
                     DataType::Float64 => AnyValue::Float64($av.try_extract::<f64>()?),
                     #[cfg(feature="dtype-date")]
-                    DataType::Date => AnyValue::Date($av.try_extract::<i32>().unwrap()),
+                    DataType::Date => AnyValue::Date($av.try_extract::<i32>()?),
                     #[cfg(feature="dtype-datetime")]
-                    DataType::Datetime(tu, tz) => AnyValue::Datetime($av.try_extract::<i64>().unwrap(), *tu, tz),
+                    DataType::Datetime(tu, tz) => AnyValue::Datetime($av.try_extract::<i64>()?, *tu, tz),
                     #[cfg(feature="dtype-duration")]
-                    DataType::Duration(tu) => AnyValue::Duration($av.try_extract::<i64>().unwrap(), *tu),
+                    DataType::Duration(tu) => AnyValue::Duration($av.try_extract::<i64>()?, *tu),
                     #[cfg(feature="dtype-time")]
-                    DataType::Time => AnyValue::Time($av.try_extract::<i64>().unwrap()),
-                    DataType::Utf8 => AnyValue::Utf8Owned(format_smartstring!("{}", $av.try_extract::<i64>().unwrap())),
+                    DataType::Time => AnyValue::Time($av.try_extract::<i64>()?),
+                    DataType::Utf8 => AnyValue::Utf8Owned(format_smartstring!("{}", $av.try_extract::<i64>()?)),
                      _ => polars_bail!(
                          ComputeError: "cannot cast any-value {:?} to dtype '{}'", self, dtype,
                     ),
