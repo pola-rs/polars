@@ -34,7 +34,7 @@ pub use merge_sorted::_merge_sorted_dfs;
 use polars_core::hashing::{_df_rows_to_hashes_threaded_vertical, _HASHMAP_INIT_SIZE};
 use polars_core::prelude::*;
 pub(super) use polars_core::series::IsSorted;
-use polars_core::utils::{_to_physical_and_bit_repr, slice_slice};
+use polars_core::utils::{_to_physical_and_bit_repr, slice_offsets, slice_slice};
 use polars_core::POOL;
 use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;
@@ -313,34 +313,23 @@ pub trait DataFrameJoinOps: IntoDf {
                 let right = DataFrame::new_no_checks(selected_right_physical);
 
                 let (mut left, mut right, swap) = det_hash_prone_order!(left, right);
-                let opt_join_tuples =
+                let (mut join_idx_l, mut join_idx_r) =
                     _outer_join_multiple_keys(&mut left, &mut right, swap, args.join_nulls);
 
-                let mut opt_join_tuples = &*opt_join_tuples;
-
                 if let Some((offset, len)) = args.slice {
-                    opt_join_tuples = slice_slice(opt_join_tuples, offset, len);
+                    let (offset, len) = slice_offsets(offset, len, join_idx_l.len());
+                    join_idx_l.slice(offset, len);
+                    join_idx_r.slice(offset, len);
                 }
+                let idx_ca_l = IdxCa::with_chunk("", join_idx_l);
+                let idx_ca_r = IdxCa::with_chunk("", join_idx_r);
 
                 // Take the left and right dataframes by join tuples
                 let (df_left, df_right) = POOL.join(
-                    || unsafe {
-                        left_df.take_unchecked(
-                            &opt_join_tuples
-                                .iter()
-                                .map(|(left, _right)| *left)
-                                .collect_ca(""),
-                        )
-                    },
-                    || unsafe {
-                        other.take_unchecked(
-                            &opt_join_tuples
-                                .iter()
-                                .map(|(_left, right)| *right)
-                                .collect_ca(""),
-                        )
-                    },
+                    || unsafe { left_df.take_unchecked(&idx_ca_l) },
+                    || unsafe { other.take_unchecked(&idx_ca_r) },
                 );
+
                 let JoinType::Outer { coalesce } = args.how else {
                     unreachable!()
                 };
