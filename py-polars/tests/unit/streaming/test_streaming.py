@@ -157,7 +157,7 @@ def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
 
     q = pl.DataFrame({"a": [1, 2]}).lazy()
 
-    with pytest.warns(PolarsInefficientMapWarning, match="Do this instead"):
+    with pytest.warns(PolarsInefficientMapWarning, match="with this one instead"):
         (
             q.select(
                 pl.col("a").map_elements(lambda x: x * 2, return_dtype=pl.Int64)

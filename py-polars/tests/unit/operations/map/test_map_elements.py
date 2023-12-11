@@ -24,7 +24,7 @@ def test_map_elements_infer_list() -> None:
 
 def test_map_elements_arithmetic_consistency() -> None:
     df = pl.DataFrame({"A": ["a", "a"], "B": [2, 3]})
-    with pytest.warns(PolarsInefficientMapWarning, match="Do this instead"):
+    with pytest.warns(PolarsInefficientMapWarning, match="with this one instead"):
         assert df.group_by("A").agg(pl.col("B").map_elements(lambda x: x + 1.0))[
             "B"
         ].to_list() == [[3.0, 4.0]]
@@ -82,7 +82,7 @@ def test_datelike_identity() -> None:
 def test_map_elements_list_anyvalue_fallback() -> None:
     with pytest.warns(
         PolarsInefficientMapWarning,
-        match=r'(?s)Do this instead:.*pl.col\("text"\).str.json_decode()',
+        match=r'(?s)with this one instead:.*pl.col\("text"\).str.json_decode()',
     ):
         df = pl.DataFrame({"text": ['[{"x": 1, "y": 2}, {"x": 3, "y": 4}]']})
         assert df.select(pl.col("text").map_elements(json.loads)).to_dict(
@@ -170,7 +170,7 @@ def test_map_elements_skip_nulls() -> None:
 def test_map_elements_object_dtypes() -> None:
     with pytest.warns(
         PolarsInefficientMapWarning,
-        match=r"(?s)Don't do this:.*lambda x:",
+        match=r"(?s)Replace this expression.*lambda x:",
     ):
         assert pl.DataFrame(
             {"a": pl.Series([1, 2, "a", 4, 5], dtype=pl.Object)}
@@ -209,7 +209,7 @@ def test_map_elements_explicit_list_output_type() -> None:
 def test_map_elements_dict() -> None:
     with pytest.warns(
         PolarsInefficientMapWarning,
-        match=r'(?s)Do this instead:.*pl.col\("abc"\).str.json_decode()',
+        match=r'(?s)with this one instead:.*pl.col\("abc"\).str.json_decode()',
     ):
         df = pl.DataFrame({"abc": ['{"A":"Value1"}', '{"B":"Value2"}']})
         assert df.select(pl.col("abc").map_elements(json.loads)).to_dict(

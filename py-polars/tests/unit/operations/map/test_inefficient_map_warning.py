@@ -199,7 +199,7 @@ def test_parse_invalid_function(func: str) -> None:
 def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
     with pytest.warns(
         PolarsInefficientMapWarning,
-        match=r"(?s)Expr\.map_elements.*Do this instead",
+        match=r"(?s)Expr\.map_elements.*with this one instead",
     ):
         parser = BytecodeParser(eval(func), map_target="expr")
         suggested_expression = parser.to_expression(col)
@@ -238,7 +238,7 @@ def test_parse_apply_raw_functions() -> None:
         # ...but we ARE still able to warn
         with pytest.warns(
             PolarsInefficientMapWarning,
-            match=rf"(?s)Expr\.map_elements.*Don't do this.*np\.{func_name}",
+            match=rf"(?s)Expr\.map_elements.*Replace this expression.*np\.{func_name}",
         ):
             df1 = lf.select(pl.col("a").map_elements(func)).collect()
             df2 = lf.select(getattr(pl.col("a"), func_name)()).collect()
@@ -248,7 +248,7 @@ def test_parse_apply_raw_functions() -> None:
     result_frames = []
     with pytest.warns(
         PolarsInefficientMapWarning,
-        match=r"(?s)Expr\.map_elements.*Do this instead:.*\.str\.json_decode",
+        match=r"(?s)Expr\.map_elements.*with this one instead:.*\.str\.json_decode",
     ):
         for expr in (
             pl.col("value").str.json_decode(),
@@ -267,7 +267,7 @@ def test_parse_apply_raw_functions() -> None:
     for py_cast, pl_dtype in ((str, pl.Utf8), (int, pl.Int64), (float, pl.Float64)):
         with pytest.warns(
             PolarsInefficientMapWarning,
-            match=rf'(?s)Do this instead.*pl\.col\("a"\)\.cast\(pl\.{pl_dtype.__name__}\)',
+            match=rf'(?s)with this one instead.*pl\.col\("a"\)\.cast\(pl\.{pl_dtype.__name__}\)',
         ):
             assert_frame_equal(
                 lf.select(pl.col("a").map_elements(py_cast)).collect(),
@@ -294,7 +294,7 @@ def test_parse_apply_miscellaneous() -> None:
     # literals as method parameters
     with pytest.warns(
         PolarsInefficientMapWarning,
-        match=r"(?s)Series\.map_elements.*Do this instead.*\(np\.cos\(3\) \+ s\) - abs\(-1\)",
+        match=r"(?s)Series\.map_elements.*with this one instead.*\(np\.cos\(3\) \+ s\) - abs\(-1\)",
     ):
         pl_series = pl.Series("srs", [0, 1, 2, 3, 4])
         assert_series_equal(
@@ -358,9 +358,9 @@ def test_expr_exact_warning_message() -> None:
         "\n"
         "Expr.map_elements is significantly slower than the native expressions API.\n"
         "Only use if you absolutely CANNOT implement your logic otherwise.\n"
-        "Don't do this:\n"
+        "Replace this expression...\n"
         f'  {red}- pl.col("a").map_elements(lambda x: ...){end_escape}\n'
-        "Do this instead:\n"
+        "with this one instead:\n"
         f'  {green}+ pl.col("a") + 1{end_escape}\n'
     )
     # Check the EXACT warning message. If modifying the message in the future,

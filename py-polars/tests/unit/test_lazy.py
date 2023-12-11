@@ -75,7 +75,7 @@ def test_apply() -> None:
     assert_frame_equal(new, expected)
     assert_frame_equal(new.collect(), expected.collect())
 
-    with pytest.warns(PolarsInefficientMapWarning, match="Do this instead"):
+    with pytest.warns(PolarsInefficientMapWarning, match="with this one instead"):
         for strategy in ["thread_local", "threading"]:
             ldf = pl.LazyFrame({"a": [1, 2, 3] * 20, "b": [1.0, 2.0, 3.0] * 20})
             new = ldf.with_columns(

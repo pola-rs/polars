@@ -446,9 +446,9 @@ class BytecodeParser:
             warnings.warn(
                 f"\n{clsname}.map_elements is significantly slower than the native {apitype} API.\n"
                 "Only use if you absolutely CANNOT implement your logic otherwise.\n"
-                "Don't do this:\n"
+                "Replace this expression...\n"
                 f"{before}"
-                "Do this instead:\n"
+                "with this one instead:\n"
                 f"{after}",
                 PolarsInefficientMapWarning,
                 stacklevel=find_stacklevel(),
