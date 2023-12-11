@@ -202,7 +202,7 @@ pub fn set_estimated_row_counts(
                         let (known_size, estimated_size) = options.rows_left;
                         (known_size, estimated_size, filter_count_left)
                     },
-                    JoinType::Cross | JoinType::Outer => {
+                    JoinType::Cross | JoinType::Outer { .. } => {
                         let (known_size_left, estimated_size_left) = options.rows_left;
                         let (known_size_right, estimated_size_right) = options.rows_right;
                         match (known_size_left, known_size_right) {
@@ -330,7 +330,7 @@ pub(crate) fn det_join_schema(
 
             for (name, dtype) in schema_right.iter() {
                 if !join_on_right.contains(name.as_str())  // The names that are joined on are merged
-                || matches!(&options.args.how, JoinType::Outer)
+                || matches!(&options.args.how, JoinType::Outer{coalesce: false})
                 // The names are not merged
                 {
                     if schema_left.contains(name.as_str()) {

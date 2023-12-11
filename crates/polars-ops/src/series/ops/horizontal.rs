@@ -80,3 +80,18 @@ pub fn min_horizontal(s: &[Series]) -> PolarsResult<Option<Series>> {
     df.min_horizontal()
         .map(|opt_s| opt_s.map(|s| s.with_name("min")))
 }
+
+pub fn coalesce_series(s: &[Series]) -> PolarsResult<Series> {
+    // TODO! this can be faster if we have more than two inputs.
+    polars_ensure!(!s.is_empty(), NoData: "cannot coalesce empty list");
+    let mut out = s[0].clone();
+    for s in s {
+        if !out.null_count() == 0 {
+            return Ok(out);
+        } else {
+            let mask = out.is_not_null();
+            out = out.zip_with_same_type(&mask, s)?;
+        }
+    }
+    Ok(out)
+}

@@ -558,6 +558,8 @@ def test_update() -> None:
     assert [1, 3] == list(
         a.update(b, how="inner", left_on="a", right_on="c").collect().to_series()
     )
+    print(a, b)
+    print(a.update(b.rename({"b": "a"}), how="outer", on="a").collect())
     assert [1, 2, 3, 4, 5] == sorted(
         a.update(b.rename({"b": "a"}), how="outer", on="a").collect().to_series()
     )

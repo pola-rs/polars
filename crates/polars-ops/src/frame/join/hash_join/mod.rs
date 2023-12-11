@@ -54,6 +54,8 @@ macro_rules! det_hash_prone_order {
 use arrow::legacy::conversion::primitive_to_vec;
 pub(super) use det_hash_prone_order;
 
+use crate::frame::join::general::coalesce_outer_join;
+
 pub trait JoinDispatch: IntoDf {
     /// # Safety
     /// Join tuples must be in bounds
@@ -264,7 +266,20 @@ pub trait JoinDispatch: IntoDf {
             || unsafe { other.take_unchecked(&idx_ca_r) },
         );
 
-        _finish_join(df_left, df_right, args.suffix.as_deref())
+        let JoinType::Outer { coalesce } = args.how else {
+            unreachable!()
+        };
+        let out = _finish_join(df_left, df_right, args.suffix.as_deref());
+        if coalesce {
+            Ok(coalesce_outer_join(
+                out?,
+                &[s_left.name()],
+                &[s_right.name()],
+                args.suffix.as_deref(),
+            ))
+        } else {
+            out
+        }
     }
 }
 

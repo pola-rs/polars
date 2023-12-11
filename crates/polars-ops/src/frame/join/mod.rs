@@ -40,6 +40,7 @@ use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;
 
 use super::IntoDf;
+use crate::frame::join::general::coalesce_outer_join;
 
 pub trait DataFrameJoinOps: IntoDf {
     /// Generic join method. Can be used to join on multiple columns.
@@ -205,7 +206,9 @@ pub trait DataFrameJoinOps: IntoDf {
                 JoinType::Left => {
                     left_df._left_join_from_series(other, s_left, s_right, args, _verbose)
                 },
-                JoinType::Outer => left_df._outer_join_from_series(other, s_left, s_right, args),
+                JoinType::Outer { .. } => {
+                    left_df._outer_join_from_series(other, s_left, s_right, args)
+                },
                 #[cfg(feature = "semi_anti_join")]
                 JoinType::Anti => {
                     left_df._semi_anti_join_from_series(s_left, s_right, args.slice, true)
@@ -305,7 +308,7 @@ pub trait DataFrameJoinOps: IntoDf {
                     _left_join_multiple_keys(&mut left, &mut right, None, None, args.join_nulls);
                 left_df._finish_left_join(ids, &remove_selected(other, &selected_right), args)
             },
-            JoinType::Outer => {
+            JoinType::Outer { .. } => {
                 let left = DataFrame::new_no_checks(selected_left_physical);
                 let right = DataFrame::new_no_checks(selected_right_physical);
 
@@ -338,7 +341,22 @@ pub trait DataFrameJoinOps: IntoDf {
                         )
                     },
                 );
-                _finish_join(df_left, df_right, args.suffix.as_deref())
+                let JoinType::Outer { coalesce } = args.how else {
+                    unreachable!()
+                };
+                let names_left = selected_left.iter().map(|s| s.name()).collect::<Vec<_>>();
+                let names_right = selected_right.iter().map(|s| s.name()).collect::<Vec<_>>();
+                let out = _finish_join(df_left, df_right, args.suffix.as_deref());
+                if coalesce {
+                    Ok(coalesce_outer_join(
+                        out?,
+                        &names_left,
+                        &names_right,
+                        args.suffix.as_deref(),
+                    ))
+                } else {
+                    out
+                }
             },
             #[cfg(feature = "asof_join")]
             JoinType::AsOf(_) => polars_bail!(
@@ -451,7 +469,12 @@ pub trait DataFrameJoinOps: IntoDf {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        self.join(other, left_on, right_on, JoinArgs::new(JoinType::Outer))
+        self.join(
+            other,
+            left_on,
+            right_on,
+            JoinArgs::new(JoinType::Outer { coalesce: false }),
+        )
     }
 }
 
