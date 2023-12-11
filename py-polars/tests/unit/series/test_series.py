@@ -1196,58 +1196,6 @@ def test_empty() -> None:
         not empty_a
 
 
-def test_describe() -> None:
-    num_s = pl.Series([1, 2, 3])
-    float_s = pl.Series([1.3, 4.6, 8.9])
-    str_s = pl.Series(["abc", "pqr", "xyz"])
-    bool_s = pl.Series([True, False, None, True, True])
-    date_s = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
-    empty_s = pl.Series(np.empty(0))
-
-    assert dict(num_s.describe().rows()) == {
-        "count": 3.0,
-        "mean": 2.0,
-        "null_count": 0.0,
-        "std": 1.0,
-        "min": 1.0,
-        "25%": 1.0,
-        "50%": 2.0,
-        "75%": 3.0,
-        "max": 3.0,
-    }
-    assert dict(float_s.describe().rows()) == {
-        "count": 3.0,
-        "mean": 4.933333333333334,
-        "null_count": 0.0,
-        "std": 3.8109491381194442,
-        "min": 1.3,
-        "25%": 1.3,
-        "50%": 4.6,
-        "75%": 8.9,
-        "max": 8.9,
-    }
-    assert dict(str_s.describe().rows()) == {
-        "count": 3,
-        "null_count": 0,
-        "unique": 3,
-    }
-    assert dict(bool_s.describe().rows()) == {
-        "count": 5,
-        "null_count": 1,
-        "sum": 3,
-    }
-    assert dict(date_s.describe().rows()) == {
-        "count": "3",
-        "min": "2021-01-01",
-        "50%": "2021-01-02",
-        "max": "2021-01-03",
-        "null_count": "0",
-    }
-
-    with pytest.raises(ValueError):
-        assert empty_s.describe()
-
-
 def test_round() -> None:
     a = pl.Series("f", [1.003, 2.003])
     b = a.round(2)

@@ -1612,12 +1612,12 @@ class Series:
         stats: dict[str, PythonLiteral | None]
 
         if self.len() == 0:
-            raise ValueError("Series must contain at least one value")
+            raise TypeError("Series must contain at least one value")
 
         elif self.dtype.is_numeric():
             s = self.cast(Float64)
             stats = {
-                "count": s.len(),
+                "len": s.len(),
                 "null_count": s.null_count(),
                 "mean": s.mean(),
                 "std": s.std(),
@@ -1629,13 +1629,13 @@ class Series:
 
         elif self.dtype == Boolean:
             stats = {
-                "count": self.len(),
+                "len": self.len(),
                 "null_count": self.null_count(),
                 "sum": self.sum(),
             }
         elif self.dtype == Utf8:
             stats = {
-                "count": self.len(),
+                "len": self.len(),
                 "null_count": self.null_count(),
                 "unique": len(self.unique()),
             }
@@ -1643,7 +1643,7 @@ class Series:
             # we coerce all to string, because a polars column
             # only has a single dtype and dates: datetime and count: int don't match
             stats = {
-                "count": str(self.len()),
+                "len": str(self.len()),
                 "null_count": str(self.null_count()),
                 "min": str(self.dt.min()),
                 "50%": str(self.dt.median()),
