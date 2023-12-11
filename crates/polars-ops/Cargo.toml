@@ -10,7 +10,7 @@ description = "More operations on Polars data structures"
 
 [dependencies]
 polars-compute = { workspace = true }
-polars-core = { workspace = true, features = ["algorithm_group_by"] }
+polars-core = { workspace = true, features = ["algorithm_group_by", "zip_with"] }
 polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
 polars-utils = { workspace = true }
