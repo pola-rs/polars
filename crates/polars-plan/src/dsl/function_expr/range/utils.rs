@@ -35,14 +35,19 @@ where
 {
     match (start.len(), end.len()) {
         (len_start, len_end) if len_start == len_end => {
-            build_ranges::<_, _, T, U, F>(start.into_iter(), end.into_iter(), range_impl, builder)?;
+            build_ranges::<_, _, T, U, F>(
+                start.downcast_iter().flatten(),
+                end.downcast_iter().flatten(),
+                range_impl,
+                builder,
+            )?;
         },
         (1, len_end) => {
             let start_scalar = start.get(0);
             match start_scalar {
                 Some(start) => build_ranges::<_, _, T, U, F>(
-                    std::iter::repeat(Some(start)),
-                    end.into_iter(),
+                    std::iter::repeat(Some(&start)),
+                    end.downcast_iter().flatten(),
                     range_impl,
                     builder,
                 )?,
@@ -53,8 +58,8 @@ where
             let end_scalar = end.get(0);
             match end_scalar {
                 Some(end) => build_ranges::<_, _, T, U, F>(
-                    start.into_iter(),
-                    std::iter::repeat(Some(end)),
+                    start.downcast_iter().flatten(),
+                    std::iter::repeat(Some(&end)),
                     range_impl,
                     builder,
                 )?,
@@ -74,22 +79,22 @@ where
 }
 
 /// Iterate over a start and end column and create a range for each entry.
-fn build_ranges<I, J, T, U, F>(
+fn build_ranges<'a, I, J, T, U, F>(
     start: I,
     end: J,
     range_impl: F,
     builder: &mut ListPrimitiveChunkedBuilder<U>,
 ) -> PolarsResult<()>
 where
-    I: Iterator<Item = Option<T::Native>>,
-    J: Iterator<Item = Option<T::Native>>,
+    I: Iterator<Item = Option<&'a T::Native>>,
+    J: Iterator<Item = Option<&'a T::Native>>,
     T: PolarsIntegerType,
     U: PolarsIntegerType,
     F: Fn(T::Native, T::Native, &mut ListPrimitiveChunkedBuilder<U>) -> PolarsResult<()>,
 {
     for (start, end) in start.zip(end) {
         match (start, end) {
-            (Some(start), Some(end)) => range_impl(start, end, builder)?,
+            (Some(start), Some(end)) => range_impl(*start, *end, builder)?,
             _ => builder.append_null(),
         }
     }
