@@ -338,11 +338,10 @@ def test_date_range_input_shape_multiple_values() -> None:
         pl.date_range(multiple, multiple, eager=True)
 
 
-def test_date_range_invalid_start_end() -> None:
-    with pytest.raises(
-        pl.ComputeError, match="`end` must be equal to or greater than `start`"
-    ):
-        pl.date_range(date(2000, 3, 20), date(2000, 3, 5), eager=True)
+def test_date_range_start_later_than_end() -> None:
+    result = pl.date_range(date(2000, 3, 20), date(2000, 3, 5), eager=True)
+    expected = pl.Series("date", dtype=pl.Date)
+    assert_series_equal(result, expected)
 
 
 def test_date_range_24h_interval_results_in_datetime() -> None:

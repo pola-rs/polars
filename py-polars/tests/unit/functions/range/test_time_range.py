@@ -109,11 +109,10 @@ def test_time_range_start_equals_end_open(closed: ClosedInterval) -> None:
     assert_series_equal(result, expected)
 
 
-def test_time_range_invalid_start_end() -> None:
-    with pytest.raises(
-        pl.ComputeError, match="`end` must be equal to or greater than `start`"
-    ):
-        pl.time_range(time(12), time(11), eager=True)
+def test_time_range_start_later_than_end() -> None:
+    result = pl.time_range(time(12), time(11), eager=True)
+    expected = pl.Series("time", dtype=pl.Time)
+    assert_series_equal(result, expected)
 
 
 @pytest.mark.parametrize("interval", [timedelta(0), timedelta(minutes=-10)])
