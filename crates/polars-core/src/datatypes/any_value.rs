@@ -437,6 +437,22 @@ impl<'a> AnyValue<'a> {
         matches!(self, AnyValue::Float32(_) | AnyValue::Float64(_))
     }
 
+    pub fn is_numeric(&self) -> bool {
+        matches!(
+            self,
+            AnyValue::Float32(_)
+                | AnyValue::Float64(_)
+                | AnyValue::Int8(_)
+                | AnyValue::Int16(_)
+                | AnyValue::Int32(_)
+                | AnyValue::Int64(_)
+                | AnyValue::UInt8(_)
+                | AnyValue::UInt16(_)
+                | AnyValue::UInt32(_)
+                | AnyValue::UInt64(_)
+        )
+    }
+
     pub fn is_signed_integer(&self) -> bool {
         matches!(
             self,
@@ -452,44 +468,49 @@ impl<'a> AnyValue<'a> {
     }
 
     pub fn strict_cast(&self, dtype: &'a DataType) -> PolarsResult<AnyValue<'a>> {
+        macro_rules! cast_numeric(
+            ($av:expr) => {
+                match dtype {
+                    DataType::UInt8 => AnyValue::UInt8($av.try_extract::<u8>()?),
+                    DataType::UInt16 => AnyValue::UInt16($av.try_extract::<u16>()?),
+                    DataType::UInt32 => AnyValue::UInt32($av.try_extract::<u32>()?),
+                    DataType::UInt64 => AnyValue::UInt64($av.try_extract::<u64>()?),
+                    DataType::Int8 => AnyValue::Int8($av.try_extract::<i8>()?),
+                    DataType::Int16 => AnyValue::Int16($av.try_extract::<i16>()?),
+                    DataType::Int32 => AnyValue::Int32($av.try_extract::<i32>()?),
+                    DataType::Int64 => AnyValue::Int64($av.try_extract::<i64>()?),
+                    DataType::Float32 => AnyValue::Float32($av.try_extract::<f32>()?),
+                    DataType::Float64 => AnyValue::Float64($av.try_extract::<f64>()?),
+                    _ => polars_bail!(ComputeError: "cannot cast any-value {:?} to dtype '{}'", $av, dtype),
+                }
+            }
+        );
+
         let new_av = match self {
-            v if (self.is_boolean()
+            _ if (self.is_boolean()
                 | self.is_signed_integer()
                 | self.is_unsigned_integer()
                 | self.is_float()) =>
             {
                 match dtype {
-                    DataType::UInt8 => AnyValue::UInt8(v.try_extract::<u8>()?),
-                    DataType::UInt16 => AnyValue::UInt16(v.try_extract::<u16>()?),
-                    DataType::UInt32 => AnyValue::UInt32(v.try_extract::<u32>()?),
-                    DataType::UInt64 => AnyValue::UInt64(v.try_extract::<u64>()?),
-                    DataType::Int8 => AnyValue::Int8(v.try_extract::<i8>()?),
-                    DataType::Int16 => AnyValue::Int16(v.try_extract::<i16>()?),
-                    DataType::Int32 => AnyValue::Int32(v.try_extract::<i32>()?),
-                    DataType::Int64 => AnyValue::Int64(v.try_extract::<i64>()?),
-                    DataType::Float32 => AnyValue::Float32(v.try_extract::<f32>()?),
-                    DataType::Float64 => AnyValue::Float64(v.try_extract::<f64>()?),
                     #[cfg(feature = "dtype-date")]
-                    DataType::Date => AnyValue::Date(v.try_extract::<i32>()?),
+                    DataType::Date => AnyValue::Date(self.try_extract::<i32>()?),
                     #[cfg(feature = "dtype-datetime")]
                     DataType::Datetime(tu, tz) => {
-                        AnyValue::Datetime(v.try_extract::<i64>()?, *tu, tz)
+                        AnyValue::Datetime(self.try_extract::<i64>()?, *tu, tz)
                     },
                     #[cfg(feature = "dtype-duration")]
-                    DataType::Duration(tu) => AnyValue::Duration(v.try_extract::<i64>()?, *tu),
+                    DataType::Duration(tu) => AnyValue::Duration(self.try_extract::<i64>()?, *tu),
                     #[cfg(feature = "dtype-time")]
-                    DataType::Time => AnyValue::Time(v.try_extract::<i64>()?),
+                    DataType::Time => AnyValue::Time(self.try_extract::<i64>()?),
                     DataType::Utf8 => {
-                        AnyValue::Utf8Owned(format_smartstring!("{}", v.try_extract::<i64>()?))
+                        AnyValue::Utf8Owned(format_smartstring!("{}", self.try_extract::<i64>()?))
                     },
-                    _ => polars_bail!(
-                        ComputeError: "cannot cast any-value {:?} to dtype '{}'", v, dtype,
-                    ),
+                    _ => cast_numeric!(self),
                 }
             },
             #[cfg(feature = "dtype-datetime")]
             AnyValue::Datetime(v, tu, None) => match dtype {
-                DataType::Int64 => AnyValue::Int64(*v),
                 #[cfg(feature = "dtype-date")]
                 DataType::Date => {
                     let convert = match tu {
@@ -501,21 +522,18 @@ impl<'a> AnyValue<'a> {
                     let date_value = naive_datetime_to_date(ndt);
                     AnyValue::Date(date_value)
                 },
-                _ => polars_bail!(
-                    ComputeError: format!("cannot cast 'datetime' any-value to dtype {dtype}")
-                ),
+                _ => cast_numeric!(self),
+            },
+            #[cfg(feature = "dtype-duration")]
+            AnyValue::Duration(_, _) => {
+                cast_numeric!(self)
             },
             #[cfg(feature = "dtype-time")]
-            AnyValue::Time(v) => match dtype {
-                DataType::Int64 => AnyValue::Int64(*v),
-                _ => polars_bail!(
-                    ComputeError: format!("cannot cast 'time' any-value to dtype {dtype}")
-                ),
+            AnyValue::Time(_) => {
+                cast_numeric!(self)
             },
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => match dtype {
-                DataType::Int32 => AnyValue::Int32(*v),
-                DataType::Int64 => AnyValue::Int64(*v as i64),
                 #[cfg(feature = "dtype-datetime")]
                 DataType::Datetime(tu, None) => {
                     let ndt = arrow::temporal_conversions::date32_to_datetime(*v);
@@ -527,9 +545,7 @@ impl<'a> AnyValue<'a> {
                     let value = func(ndt);
                     AnyValue::Datetime(value, *tu, &None)
                 },
-                _ => polars_bail!(
-                    ComputeError: format!("cannot cast 'date' any-value to dtype {dtype}")
-                ),
+                _ => cast_numeric!(self),
             },
             _ => polars_bail!(ComputeError: "cannot cast non numeric any-value to numeric dtype"),
         };
