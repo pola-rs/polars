@@ -1,4 +1,4 @@
-use std::iter::zip;
+use std::iter::{repeat, zip};
 
 use polars_core::prelude::{
     polars_bail, polars_ensure, ChunkedArray, IntoSeries, ListBuilderTrait,
@@ -37,29 +37,29 @@ where
 {
     match (start.len(), end.len()) {
         (len_start, len_end) if len_start == len_end => {
-            ranges_double_impl(start, end, range_impl, builder)?;
+            build_ranges::<T, U, F>(start.into_iter(), end.into_iter(), range_impl, builder)?;
         },
         (1, len_end) => {
             let start_scalar = start.get(0);
             match start_scalar {
-                Some(start) => {
-                    let range_impl = |end, builder: &mut ListPrimitiveChunkedBuilder<U>| {
-                        range_impl(start, end, builder)
-                    };
-                    ranges_single_impl(end, range_impl, builder)?
-                },
+                Some(start) => build_ranges::<T, U, F>(
+                    repeat(Some(start)),
+                    end.into_iter(),
+                    range_impl,
+                    builder,
+                )?,
                 None => build_nulls(builder, len_end),
             }
         },
         (len_start, 1) => {
             let end_scalar = end.get(0);
             match end_scalar {
-                Some(end) => {
-                    let range_impl = |start, builder: &mut ListPrimitiveChunkedBuilder<U>| {
-                        range_impl(start, end, builder)
-                    };
-                    ranges_single_impl(start, range_impl, builder)?
-                },
+                Some(end) => build_ranges::<T, U, F>(
+                    start.into_iter(),
+                    repeat(Some(end)),
+                    range_impl,
+                    builder,
+                )?,
                 None => build_nulls(builder, len_start),
             }
         },
@@ -75,10 +75,10 @@ where
     Ok(out)
 }
 
-/// Iterate over a start AND end column and create a range for each entry.
-fn ranges_double_impl<T, U, F>(
-    start: &ChunkedArray<T>,
-    end: &ChunkedArray<T>,
+/// Iterate over a start and end column and create a range for each entry.
+fn build_ranges<T, U, F>(
+    start: impl Iterator<Item = Option<T::Native>>,
+    end: impl Iterator<Item = Option<T::Native>>,
     range_impl: F,
     builder: &mut ListPrimitiveChunkedBuilder<U>,
 ) -> PolarsResult<()>
@@ -91,26 +91,6 @@ where
         match (start, end) {
             (Some(start), Some(end)) => range_impl(start, end, builder)?,
             _ => builder.append_null(),
-        }
-    }
-    Ok(())
-}
-
-/// Iterate over a start OR end column and create a range for each entry.
-fn ranges_single_impl<T, U, F>(
-    ca: &ChunkedArray<T>,
-    range_impl: F,
-    builder: &mut ListPrimitiveChunkedBuilder<U>,
-) -> PolarsResult<()>
-where
-    T: PolarsIntegerType,
-    U: PolarsIntegerType,
-    F: Fn(T::Native, &mut ListPrimitiveChunkedBuilder<U>) -> PolarsResult<()>,
-{
-    for ca_scalar in ca {
-        match ca_scalar {
-            Some(ca_scalar) => range_impl(ca_scalar, builder)?,
-            None => builder.append_null(),
         }
     }
     Ok(())
