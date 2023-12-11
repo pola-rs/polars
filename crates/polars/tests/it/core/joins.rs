@@ -467,7 +467,12 @@ fn test_joins_with_duplicates() -> PolarsResult<()> {
     assert_eq!(df_left_join.column("dbl_col")?.null_count(), 1);
 
     let df_outer_join = df_left
-        .outer_join(&df_right, ["col1"], ["join_col1"])
+        .join(
+            &df_right,
+            ["col1"],
+            ["join_col1"],
+            JoinArgs::new(JoinType::Outer { coalesce: true }),
+        )
         .unwrap();
 
     // ensure the column names don't get swapped by the drop we do
