@@ -2948,7 +2948,7 @@ class Series:
         """
         if n < 0:
             n = max(0, self.len() + n)
-        return self.to_frame().select(F.col(self.name).head(n)).to_series()
+        return self._from_pyseries(self._s.head(n))
 
     def tail(self, n: int = 10) -> Series:
         """
@@ -2989,7 +2989,7 @@ class Series:
         """
         if n < 0:
             n = max(0, self.len() + n)
-        return self.to_frame().select(F.col(self.name).tail(n)).to_series()
+        return self._from_pyseries(self._s.tail(n))
 
     def limit(self, n: int = 10) -> Series:
         """
