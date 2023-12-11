@@ -60,6 +60,14 @@ These are some tools that share similar functionality to what Polars does.
   CuDF doesn't optimize your query, so is not uncommon that on ETL jobs Polars will be faster because it can elide
   unneeded work and materializations.
 
+- Ibis
+
+  Ibis is a Python DataFrame library originally created
+  by the author of pandas. It decouples the API from the
+  execution engine, supporting over a dozen backends including
+  DuckDB (the default), Polars, and numerous cloud data
+  platforms.
+
 - Any
 
   Polars is written in Rust. This gives it strong safety, performance and concurrency guarantees.
