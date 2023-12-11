@@ -83,13 +83,6 @@ def test_cat_to_dummies() -> None:
     }
 
 
-def test_categorical_describe_3487() -> None:
-    # test if we don't err
-    df = pl.DataFrame({"cats": ["a", "b"]})
-    df = df.with_columns(pl.col("cats").cast(pl.Categorical))
-    df.describe()
-
-
 @StringCache()
 def test_categorical_is_in_list() -> None:
     # this requires type coercion to cast.

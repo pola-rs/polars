@@ -1605,18 +1605,19 @@ class Series:
         │ ---        ┆ ---   │
         │ str        ┆ i64   │
         ╞════════════╪═══════╡
-        │ count      ┆ 5     │
+        │ count      ┆ 4     │
         │ null_count ┆ 1     │
         │ unique     ┆ 4     │
         └────────────┴───────┘
 
         """
         stats: dict[str, PythonLiteral | None]
+        stats_dtype: PolarsDataType
 
         if self.dtype.is_numeric():
             stats_dtype = Float64
             stats = {
-                "len": self.len(),
+                "count": self.count(),
                 "null_count": self.null_count(),
                 "mean": self.mean(),
                 "std": self.std(),
@@ -1629,14 +1630,14 @@ class Series:
         elif self.dtype == Boolean:
             stats_dtype = Int64
             stats = {
-                "len": self.len(),
+                "count": self.count(),
                 "null_count": self.null_count(),
                 "sum": self.sum(),
             }
         elif self.dtype == Utf8:
             stats_dtype = Int64
             stats = {
-                "len": self.len(),
+                "count": self.count(),
                 "null_count": self.null_count(),
                 "unique": self.n_unique(),
             }
@@ -1645,7 +1646,7 @@ class Series:
             # only has a single dtype and dates: datetime and count: int don't match
             stats_dtype = Utf8
             stats = {
-                "len": str(self.len()),
+                "count": str(self.count()),
                 "null_count": str(self.null_count()),
                 "min": str(self.dt.min()),
                 "50%": str(self.dt.median()),

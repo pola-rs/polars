@@ -11,7 +11,7 @@ def test_series_describe_int() -> None:
     result = s.describe()
 
     stats = {
-        "len": 3.0,
+        "count": 3.0,
         "null_count": 0.0,
         "mean": 2.0,
         "std": 1.0,
@@ -30,7 +30,7 @@ def test_series_describe_float() -> None:
     result = s.describe()
 
     stats = {
-        "len": 3.0,
+        "count": 3.0,
         "null_count": 0.0,
         "mean": 4.933333333333334,
         "std": 3.8109491381194442,
@@ -49,7 +49,7 @@ def test_series_describe_string() -> None:
     result = s.describe()
 
     stats = {
-        "len": 3,
+        "count": 3,
         "null_count": 0,
         "unique": 3,
     }
@@ -62,7 +62,7 @@ def test_series_describe_boolean() -> None:
     result = s.describe()
 
     stats = {
-        "len": 5,
+        "count": 4,
         "null_count": 1,
         "sum": 3,
     }
@@ -75,7 +75,7 @@ def test_series_describe_date() -> None:
     result = s.describe()
 
     stats = {
-        "len": "3",
+        "count": "3",
         "null_count": "0",
         "min": "2021-01-01",
         "50%": "2021-01-02",
@@ -90,7 +90,7 @@ def test_series_describe_empty() -> None:
     result = s.describe()
     print(result)
     stats = {
-        "len": 0.0,
+        "count": 0.0,
         "null_count": 0.0,
         "mean": None,
         "std": None,

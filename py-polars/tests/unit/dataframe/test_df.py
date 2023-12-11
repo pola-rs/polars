@@ -913,7 +913,6 @@ def test_cast_frame() -> None:
     }
 
 
-
 def test_duration_arithmetic() -> None:
     df = pl.DataFrame(
         {"a": [datetime(2022, 1, 1, 0, 0, 0), datetime(2022, 1, 2, 0, 0, 0)]}

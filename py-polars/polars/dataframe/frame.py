@@ -4339,7 +4339,7 @@ class DataFrame:
         │ ---        ┆ ---      ┆ ---      ┆ ---      ┆ ---  ┆ ---  ┆ ---        │
         │ str        ┆ f64      ┆ f64      ┆ f64      ┆ str  ┆ str  ┆ str        │
         ╞════════════╪══════════╪══════════╪══════════╪══════╪══════╪════════════╡
-        │ count      ┆ 3.0      ┆ 3.0      ┆ 3.0      ┆ 3    ┆ 3    ┆ 3          │
+        │ count      ┆ 3.0      ┆ 2.0      ┆ 3.0      ┆ 2    ┆ 2    ┆ 3          │
         │ null_count ┆ 0.0      ┆ 1.0      ┆ 0.0      ┆ 1    ┆ 1    ┆ 0          │
         │ mean       ┆ 2.266667 ┆ 4.5      ┆ 0.666667 ┆ null ┆ null ┆ null       │
         │ std        ┆ 1.101514 ┆ 0.707107 ┆ 0.57735  ┆ null ┆ null ┆ null       │
@@ -4351,6 +4351,9 @@ class DataFrame:
         └────────────┴──────────┴──────────┴──────────┴──────┴──────┴────────────┘
 
         """
+        if not self.columns:
+            raise TypeError("cannot describe a DataFrame without any columns")
+
         # Determine which columns should get std/mean/percentile statistics
         stat_cols = {
             c for c, dt in self.schema.items() if dt.is_numeric() or dt == Boolean
@@ -4378,18 +4381,18 @@ class DataFrame:
 
         # Calculate metrics in parallel
         df_metrics = self.select(
-            F.all().len().name.prefix("count:"),
+            F.all().count().name.prefix("count:"),
             F.all().null_count().name.prefix("null_count:"),
             *mean_exprs,
             *std_exprs,
             F.all().min().name.prefix("min:"),
             *percentile_exprs,
             F.all().max().name.prefix("max:"),
-        ).row(0)
+        )
 
         # Reshape wide result
         described = [
-            df_metrics[(n * self.width) : (n + 1) * self.width]
+            df_metrics.row(0)[(n * self.width) : (n + 1) * self.width]
             for n in range(len(metrics))
         ]
 
