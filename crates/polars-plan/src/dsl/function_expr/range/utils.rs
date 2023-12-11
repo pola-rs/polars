@@ -40,7 +40,7 @@ where
             ranges_double_impl(start, end, range_impl, builder)?;
         },
         (1, len_end) => {
-            let start_scalar = unsafe { start.get_unchecked(0) };
+            let start_scalar = start.get(0);
             match start_scalar {
                 Some(start) => {
                     let range_impl = |end, builder: &mut ListPrimitiveChunkedBuilder<U>| {
@@ -52,7 +52,7 @@ where
             }
         },
         (len_start, 1) => {
-            let end_scalar = unsafe { end.get_unchecked(0) };
+            let end_scalar = end.get(0);
             match end_scalar {
                 Some(end) => {
                     let range_impl = |start, builder: &mut ListPrimitiveChunkedBuilder<U>| {
