@@ -4,7 +4,7 @@ import contextlib
 from collections import OrderedDict
 from datetime import timezone
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence, cast
 
 import polars.datatypes
 
@@ -532,9 +532,9 @@ class Enum(DataType):
 
     """
 
-    categories: list[str]
+    categories: tuple[str]
 
-    def __init__(self, categories: list[str]):
+    def __init__(self, categories: list[str] | tuple[str]):
         """
         A fixed set categorical encoding of a set of strings.
 
@@ -544,7 +544,7 @@ class Enum(DataType):
             Categories in the dataset.
 
         """
-        self.categories = categories
+        self.categories = cast(tuple[str], tuple(categories))
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class

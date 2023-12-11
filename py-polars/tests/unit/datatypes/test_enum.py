@@ -5,8 +5,9 @@ from polars import StringCache
 from polars.testing import assert_series_equal
 
 
-def test_enum_creation() -> None:
-    s = pl.Series([None, "a", "b"], dtype=pl.Enum(categories=["a", "b"]))
+@pytest.mark.parametrize(("iter_method"), ([list, tuple]))
+def test_enum_creation(iter_method: type) -> None:
+    s = pl.Series([None, "a", "b"], dtype=pl.Enum(categories=iter_method(["a", "b"])))
     assert s.null_count() == 1
     assert s.len() == 3
     assert s.dtype == pl.Enum(categories=["a", "b"])
