@@ -276,9 +276,9 @@ impl FunctionExpr {
             #[cfg(feature = "ewma")]
             EwmVar { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "replace")]
-            Replace => mapper.with_same_dtype(), // TODO
+            Replace => mapper.replace_dtype(),
             #[cfg(feature = "replace")]
-            ReplaceWithDefault => mapper.with_same_dtype(), // TODO
+            ReplaceWithDefault => mapper.replace_with_default_dtype(),
         }
     }
 }
@@ -461,5 +461,20 @@ impl<'a> FieldsMapper<'a> {
     pub fn with_opt_dtype(&self, dtype: Option<DataType>) -> PolarsResult<Field> {
         let dtype = dtype.unwrap_or(DataType::Unknown);
         self.with_dtype(dtype)
+    }
+}
+
+#[cfg(feature = "replace")]
+impl<'a> FieldsMapper<'a> {
+    pub fn replace_dtype(&self) -> PolarsResult<Field> {
+        // Supertype of input and `new`
+        let st = try_get_supertype(self.fields[0].data_type(), self.fields[2].data_type())?;
+        self.with_dtype(st)
+    }
+
+    pub fn replace_with_default_dtype(&self) -> PolarsResult<Field> {
+        // Supertype of `new` and `default`
+        let st = try_get_supertype(self.fields[2].data_type(), self.fields[3].data_type())?;
+        self.with_dtype(st)
     }
 }
