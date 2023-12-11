@@ -244,7 +244,12 @@ fn test_join_multiple_columns() {
 
     let joined_outer_hack = df_a.outer_join(&df_b, ["dummy"], ["dummy"]).unwrap();
     let joined_outer = df_a
-        .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Outer.into())
+        .join(
+            &df_b,
+            ["a", "b"],
+            ["foo", "bar"],
+            JoinType::Outer { coalesce: true }.into(),
+        )
         .unwrap();
     assert!(joined_outer_hack
         .column("ham")
@@ -523,7 +528,7 @@ fn test_multi_joins_with_duplicates() -> PolarsResult<()> {
             &df_right,
             &["col1", "join_col2"],
             &["join_col1", "col2"],
-            JoinType::Outer.into(),
+            JoinType::Outer { coalesce: true }.into(),
         )
         .unwrap();
 
@@ -566,7 +571,7 @@ fn test_join_floats() -> PolarsResult<()> {
         &df_b,
         vec!["a", "c"],
         vec!["foo", "bar"],
-        JoinType::Outer.into(),
+        JoinType::Outer { coalesce: true }.into(),
     )?;
     assert_eq!(
         out.dtypes(),
