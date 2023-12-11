@@ -10,40 +10,52 @@ use crate::series::arithmetic::coerce_lhs_rhs;
 
 macro_rules! impl_compare {
     ($self:expr, $rhs:expr, $method:ident) => {{
+        use DataType::*;
         let (lhs, rhs) = ($self, $rhs);
 
         #[cfg(feature = "dtype-categorical")]
-        if matches!(lhs.dtype(), DataType::Categorical(_, _))
-            && matches!(rhs.dtype(), DataType::Categorical(_, _))
-        {
-            return lhs
-                .categorical()
-                .unwrap()
-                .$method(rhs.categorical().unwrap());
-        }
+        match (lhs.dtype(), rhs.dtype()) {
+            (Categorical(_, _), Categorical(_, _)) => {
+                return lhs
+                    .categorical()
+                    .unwrap()
+                    .$method(rhs.categorical().unwrap());
+            },
+            (Categorical(_, _), Utf8) => {
+                return lhs.categorical().unwrap().$method(rhs.utf8().unwrap());
+            },
+            (Utf8, Categorical(_, _)) => {
+                return Ok(rhs
+                    .categorical()
+                    .unwrap()
+                    .$method(lhs.utf8().unwrap())?
+                    .with_name(lhs.name()));
+            },
+            _ => (),
+        };
 
         let (lhs, rhs) = coerce_lhs_rhs(lhs, rhs).expect("cannot coerce datatypes");
         let lhs = lhs.to_physical_repr();
         let rhs = rhs.to_physical_repr();
         let out = match lhs.dtype() {
-            DataType::Boolean => lhs.bool().unwrap().$method(rhs.bool().unwrap()),
-            DataType::Utf8 => lhs.utf8().unwrap().$method(rhs.utf8().unwrap()),
-            DataType::Binary => lhs.binary().unwrap().$method(rhs.binary().unwrap()),
-            DataType::UInt8 => lhs.u8().unwrap().$method(rhs.u8().unwrap()),
-            DataType::UInt16 => lhs.u16().unwrap().$method(rhs.u16().unwrap()),
-            DataType::UInt32 => lhs.u32().unwrap().$method(rhs.u32().unwrap()),
-            DataType::UInt64 => lhs.u64().unwrap().$method(rhs.u64().unwrap()),
-            DataType::Int8 => lhs.i8().unwrap().$method(rhs.i8().unwrap()),
-            DataType::Int16 => lhs.i16().unwrap().$method(rhs.i16().unwrap()),
-            DataType::Int32 => lhs.i32().unwrap().$method(rhs.i32().unwrap()),
-            DataType::Int64 => lhs.i64().unwrap().$method(rhs.i64().unwrap()),
-            DataType::Float32 => lhs.f32().unwrap().$method(rhs.f32().unwrap()),
-            DataType::Float64 => lhs.f64().unwrap().$method(rhs.f64().unwrap()),
-            DataType::List(_) => lhs.list().unwrap().$method(rhs.list().unwrap()),
+            Boolean => lhs.bool().unwrap().$method(rhs.bool().unwrap()),
+            Utf8 => lhs.utf8().unwrap().$method(rhs.utf8().unwrap()),
+            Binary => lhs.binary().unwrap().$method(rhs.binary().unwrap()),
+            UInt8 => lhs.u8().unwrap().$method(rhs.u8().unwrap()),
+            UInt16 => lhs.u16().unwrap().$method(rhs.u16().unwrap()),
+            UInt32 => lhs.u32().unwrap().$method(rhs.u32().unwrap()),
+            UInt64 => lhs.u64().unwrap().$method(rhs.u64().unwrap()),
+            Int8 => lhs.i8().unwrap().$method(rhs.i8().unwrap()),
+            Int16 => lhs.i16().unwrap().$method(rhs.i16().unwrap()),
+            Int32 => lhs.i32().unwrap().$method(rhs.i32().unwrap()),
+            Int64 => lhs.i64().unwrap().$method(rhs.i64().unwrap()),
+            Float32 => lhs.f32().unwrap().$method(rhs.f32().unwrap()),
+            Float64 => lhs.f64().unwrap().$method(rhs.f64().unwrap()),
+            List(_) => lhs.list().unwrap().$method(rhs.list().unwrap()),
             #[cfg(feature = "dtype-array")]
-            DataType::Array(_, _) => lhs.array().unwrap().$method(rhs.array().unwrap()),
+            Array(_, _) => lhs.array().unwrap().$method(rhs.array().unwrap()),
             #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => lhs
+            Struct(_) => lhs
                 .struct_()
                 .unwrap()
                 .$method(rhs.struct_().unwrap().deref()),
@@ -76,23 +88,6 @@ where
     }
 }
 
-#[cfg(feature = "dtype-categorical")]
-fn compare_cat_to_str_series<Compare>(
-    cat: &Series,
-    string: &Series,
-    name: &str,
-    compare: Compare,
-    fill_value: bool,
-) -> PolarsResult<BooleanChunked>
-where
-    Compare: Fn(&Series, u32) -> PolarsResult<BooleanChunked>,
-{
-    match string.utf8()?.get(0) {
-        None => Ok(cat.is_null()),
-        Some(value) => compare_cat_to_str_value(cat, value, name, compare, fill_value),
-    }
-}
-
 fn validate_types(left: &DataType, right: &DataType) -> PolarsResult<()> {
     use DataType::*;
     #[cfg(feature = "dtype-categorical")]
@@ -118,26 +113,6 @@ impl ChunkCompare<&Series> for Series {
         validate_types(self.dtype(), rhs.dtype())?;
         use DataType::*;
         let mut out = match (self.dtype(), rhs.dtype(), self.len(), rhs.len()) {
-            #[cfg(feature = "dtype-categorical")]
-            (Categorical(_, _), Utf8, _, 1) => {
-                return compare_cat_to_str_series(
-                    self,
-                    rhs,
-                    self.name(),
-                    |s, idx| s.equal(idx),
-                    false,
-                );
-            },
-            #[cfg(feature = "dtype-categorical")]
-            (Utf8, Categorical(_, _), 1, _) => {
-                return compare_cat_to_str_series(
-                    rhs,
-                    self,
-                    self.name(),
-                    |s, idx| s.equal(idx),
-                    false,
-                );
-            },
             (Null, Null, _, _) => BooleanChunked::full_null(self.name(), self.len()),
             _ => impl_compare!(self, rhs, equal)?,
         };
@@ -150,26 +125,6 @@ impl ChunkCompare<&Series> for Series {
         validate_types(self.dtype(), rhs.dtype())?;
         use DataType::*;
         let mut out = match (self.dtype(), rhs.dtype(), self.len(), rhs.len()) {
-            #[cfg(feature = "dtype-categorical")]
-            (Categorical(_, _), Utf8, _, 1) => {
-                return compare_cat_to_str_series(
-                    self,
-                    rhs,
-                    self.name(),
-                    |s, idx| s.equal_missing(idx),
-                    false,
-                );
-            },
-            #[cfg(feature = "dtype-categorical")]
-            (Utf8, Categorical(_, _), 1, _) => {
-                return compare_cat_to_str_series(
-                    rhs,
-                    self,
-                    self.name(),
-                    |s, idx| s.equal_missing(idx),
-                    false,
-                );
-            },
             (Null, Null, _, _) => BooleanChunked::full(self.name(), true, self.len()),
             _ => impl_compare!(self, rhs, equal_missing)?,
         };
@@ -182,26 +137,6 @@ impl ChunkCompare<&Series> for Series {
         validate_types(self.dtype(), rhs.dtype())?;
         use DataType::*;
         let mut out = match (self.dtype(), rhs.dtype(), self.len(), rhs.len()) {
-            #[cfg(feature = "dtype-categorical")]
-            (Categorical(_, _), Utf8, _, 1) => {
-                return compare_cat_to_str_series(
-                    self,
-                    rhs,
-                    self.name(),
-                    |s, idx| s.not_equal(idx),
-                    true,
-                );
-            },
-            #[cfg(feature = "dtype-categorical")]
-            (Utf8, Categorical(_, _), 1, _) => {
-                return compare_cat_to_str_series(
-                    rhs,
-                    self,
-                    self.name(),
-                    |s, idx| s.not_equal(idx),
-                    true,
-                );
-            },
             (Null, Null, _, _) => BooleanChunked::full_null(self.name(), self.len()),
             _ => impl_compare!(self, rhs, not_equal)?,
         };
@@ -214,26 +149,6 @@ impl ChunkCompare<&Series> for Series {
         validate_types(self.dtype(), rhs.dtype())?;
         use DataType::*;
         let mut out = match (self.dtype(), rhs.dtype(), self.len(), rhs.len()) {
-            #[cfg(feature = "dtype-categorical")]
-            (Categorical(_, _), Utf8, _, 1) => {
-                return compare_cat_to_str_series(
-                    self,
-                    rhs,
-                    self.name(),
-                    |s, idx| s.not_equal_missing(idx),
-                    true,
-                );
-            },
-            #[cfg(feature = "dtype-categorical")]
-            (Utf8, Categorical(_, _), 1, _) => {
-                return compare_cat_to_str_series(
-                    rhs,
-                    self,
-                    self.name(),
-                    |s, idx| s.not_equal_missing(idx),
-                    true,
-                )
-            },
             (Null, Null, _, _) => BooleanChunked::full(self.name(), false, self.len()),
             _ => impl_compare!(self, rhs, not_equal_missing)?,
         };

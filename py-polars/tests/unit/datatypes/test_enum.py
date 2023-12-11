@@ -152,3 +152,19 @@ def test_series_init_uninstantiated_enum() -> None:
         TypeError, match="Enum types must be instantiated with a list of categories"
     ):
         pl.Series(["a", "b", "a"], dtype=pl.Enum)
+
+
+def test_equality_enum() -> None:
+    s = pl.Series([None, "a", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
+    s2 = pl.Series([None, "c", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
+
+    expected = pl.Series([None, False, True, True], dtype=pl.Boolean)
+    assert_series_equal(s == s2, expected)
+
+    s_utf = pl.Series(["c"], dtype=pl.Utf8)
+    expected = pl.Series([None, True, False, True], dtype=pl.Boolean)
+    assert_series_equal(s2 == s_utf, expected)
+
+    s_utf = pl.Series(["d", "d", "d", "c"], dtype=pl.Utf8)
+    expected = pl.Series([None, False, False, True], dtype=pl.Boolean)
+    assert_series_equal(s2 == s_utf, expected)

@@ -106,6 +106,7 @@ impl RevMapping {
         matches!(self, Self::Local(_, _))
     }
 
+    #[inline]
     pub fn is_enum(&self) -> bool {
         matches!(self, Self::Enum(_, _))
     }
