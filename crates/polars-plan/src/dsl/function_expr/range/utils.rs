@@ -37,12 +37,12 @@ where
 {
     match (start.len(), end.len()) {
         (len_start, len_end) if len_start == len_end => {
-            build_ranges::<T, U, F>(start.into_iter(), end.into_iter(), range_impl, builder)?;
+            build_ranges::<_, _, T, U, F>(start.into_iter(), end.into_iter(), range_impl, builder)?;
         },
         (1, len_end) => {
             let start_scalar = start.get(0);
             match start_scalar {
-                Some(start) => build_ranges::<T, U, F>(
+                Some(start) => build_ranges::<_, _, T, U, F>(
                     repeat(Some(start)),
                     end.into_iter(),
                     range_impl,
@@ -54,7 +54,7 @@ where
         (len_start, 1) => {
             let end_scalar = end.get(0);
             match end_scalar {
-                Some(end) => build_ranges::<T, U, F>(
+                Some(end) => build_ranges::<_, _, T, U, F>(
                     start.into_iter(),
                     repeat(Some(end)),
                     range_impl,
@@ -76,13 +76,15 @@ where
 }
 
 /// Iterate over a start and end column and create a range for each entry.
-fn build_ranges<T, U, F>(
-    start: impl Iterator<Item = Option<T::Native>>,
-    end: impl Iterator<Item = Option<T::Native>>,
+fn build_ranges<I, J, T, U, F>(
+    start: I,
+    end: J,
     range_impl: F,
     builder: &mut ListPrimitiveChunkedBuilder<U>,
 ) -> PolarsResult<()>
 where
+    I: Iterator<Item = Option<T::Native>>,
+    J: Iterator<Item = Option<T::Native>>,
     T: PolarsIntegerType,
     U: PolarsIntegerType,
     F: Fn(T::Native, T::Native, &mut ListPrimitiveChunkedBuilder<U>) -> PolarsResult<()>,
