@@ -1,4 +1,4 @@
-use std::iter::{repeat, zip};
+use std::iter::repeat;
 
 use polars_core::prelude::{
     polars_bail, polars_ensure, ChunkedArray, IntoSeries, ListBuilderTrait,
@@ -87,7 +87,7 @@ where
     U: PolarsIntegerType,
     F: Fn(T::Native, T::Native, &mut ListPrimitiveChunkedBuilder<U>) -> PolarsResult<()>,
 {
-    for (start, end) in zip(start, end) {
+    for (start, end) in start.zip(end) {
         match (start, end) {
             (Some(start), Some(end)) => range_impl(start, end, builder)?,
             _ => builder.append_null(),
