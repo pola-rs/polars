@@ -3665,8 +3665,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         on
             Join column of both DataFrames. If set, `left_on` and `right_on` should be
             None.
-        how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross'}
+        how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross', 'outer_coalesce'}
             Join strategy.
+
+            * *inner*
+                Returns rows that have matching values in both tables
+            * *left*
+                Returns all rows from the left table, and the matched rows from the
+                right table
+            * *outer*
+                 Returns all rows when there is a match in either left or right table
+            * *outer_coalesce*
+                 Same as 'outer', but coalesces the key columns
+            * *cross*
+                 Returns the cartisian product of rows from both tables
+            * *semi*
+                 Filter rows that have a match in the right table.
+            * *anti*
+                 Filter rows that not have a match in the right table.
 
             .. note::
                 A left join preserves the row order of the left DataFrame.
@@ -3731,17 +3747,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2   ┆ 7.0 ┆ b   ┆ y     │
         └─────┴─────┴─────┴───────┘
         >>> lf.join(other_lf, on="ham", how="outer").collect()
-        shape: (4, 4)
-        ┌──────┬──────┬─────┬───────┐
-        │ foo  ┆ bar  ┆ ham ┆ apple │
-        │ ---  ┆ ---  ┆ --- ┆ ---   │
-        │ i64  ┆ f64  ┆ str ┆ str   │
-        ╞══════╪══════╪═════╪═══════╡
-        │ 1    ┆ 6.0  ┆ a   ┆ x     │
-        │ 2    ┆ 7.0  ┆ b   ┆ y     │
-        │ null ┆ null ┆ d   ┆ z     │
-        │ 3    ┆ 8.0  ┆ c   ┆ null  │
-        └──────┴──────┴─────┴───────┘
+        shape: (4, 5)
+        ┌──────┬──────┬──────┬───────┬───────────┐
+        │ foo  ┆ bar  ┆ ham  ┆ apple ┆ ham_right │
+        │ ---  ┆ ---  ┆ ---  ┆ ---   ┆ ---       │
+        │ i64  ┆ f64  ┆ str  ┆ str   ┆ str       │
+        ╞══════╪══════╪══════╪═══════╪═══════════╡
+        │ 1    ┆ 6.0  ┆ a    ┆ x     ┆ a         │
+        │ 2    ┆ 7.0  ┆ b    ┆ y     ┆ b         │
+        │ null ┆ null ┆ null ┆ z     ┆ d         │
+        │ 3    ┆ 8.0  ┆ c    ┆ null  ┆ null      │
+        └──────┴──────┴──────┴───────┴───────────┘
         >>> lf.join(other_lf, on="ham", how="left").collect()
         shape: (3, 4)
         ┌─────┬─────┬─────┬───────┐
@@ -5773,6 +5789,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             raise ValueError(
                 f"`how` must be one of {{'left', 'inner', 'outer'}}; found {how!r}"
             )
+        if how == "outer":
+            how = "outer_coalesce"  # type: ignore[assignment]
 
         row_count_used = False
         if on is None:
@@ -5808,7 +5826,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 raise ValueError(f"right join column {name!r} not found")
 
         # no need to join if *only* join columns are in other (inner/left update only)
-        if how != "outer" and len(other.columns) == len(right_on):
+        if how != "outer_coalesce" and len(other.columns) == len(right_on):  # type: ignore[comparison-overlap, redundant-expr]
             if row_count_used:
                 return self.drop(row_count_name)
             return self

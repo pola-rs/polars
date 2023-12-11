@@ -40,6 +40,7 @@ use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;
 
 use super::IntoDf;
+use crate::frame::join::general::coalesce_outer_join;
 
 pub trait DataFrameJoinOps: IntoDf {
     /// Generic join method. Can be used to join on multiple columns.
@@ -205,7 +206,9 @@ pub trait DataFrameJoinOps: IntoDf {
                 JoinType::Left => {
                     left_df._left_join_from_series(other, s_left, s_right, args, _verbose)
                 },
-                JoinType::Outer => left_df._outer_join_from_series(other, s_left, s_right, args),
+                JoinType::Outer { .. } => {
+                    left_df._outer_join_from_series(other, s_left, s_right, args)
+                },
                 #[cfg(feature = "semi_anti_join")]
                 JoinType::Anti => {
                     left_df._semi_anti_join_from_series(s_left, s_right, args.slice, true)
@@ -305,7 +308,7 @@ pub trait DataFrameJoinOps: IntoDf {
                     _left_join_multiple_keys(&mut left, &mut right, None, None, args.join_nulls);
                 left_df._finish_left_join(ids, &remove_selected(other, &selected_right), args)
             },
-            JoinType::Outer => {
+            JoinType::Outer { .. } => {
                 let left = DataFrame::new_no_checks(selected_left_physical);
                 let right = DataFrame::new_no_checks(selected_right_physical);
 
@@ -322,7 +325,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 // Take the left and right dataframes by join tuples
                 let (df_left, df_right) = POOL.join(
                     || unsafe {
-                        remove_selected(left_df, &selected_left).take_unchecked(
+                        left_df.take_unchecked(
                             &opt_join_tuples
                                 .iter()
                                 .map(|(left, _right)| *left)
@@ -330,7 +333,7 @@ pub trait DataFrameJoinOps: IntoDf {
                         )
                     },
                     || unsafe {
-                        remove_selected(other, &selected_right).take_unchecked(
+                        other.take_unchecked(
                             &opt_join_tuples
                                 .iter()
                                 .map(|(_left, right)| *right)
@@ -338,18 +341,22 @@ pub trait DataFrameJoinOps: IntoDf {
                         )
                     },
                 );
-                // Allocate a new vec for df_left so that the keys are left and then other values.
-                let mut keys = Vec::with_capacity(selected_left.len() + df_left.width());
-                for (s_left, s_right) in selected_left.iter().zip(&selected_right) {
-                    let s = unsafe {
-                        zip_outer_join_column(s_left, s_right, opt_join_tuples)
-                            .with_name(s_left.name())
-                    };
-                    keys.push(s)
+                let JoinType::Outer { coalesce } = args.how else {
+                    unreachable!()
+                };
+                let names_left = selected_left.iter().map(|s| s.name()).collect::<Vec<_>>();
+                let names_right = selected_right.iter().map(|s| s.name()).collect::<Vec<_>>();
+                let out = _finish_join(df_left, df_right, args.suffix.as_deref());
+                if coalesce {
+                    Ok(coalesce_outer_join(
+                        out?,
+                        &names_left,
+                        &names_right,
+                        args.suffix.as_deref(),
+                    ))
+                } else {
+                    out
                 }
-                keys.extend_from_slice(df_left.get_columns());
-                let df_left = DataFrame::new_no_checks(keys);
-                _finish_join(df_left, df_right, args.suffix.as_deref())
             },
             #[cfg(feature = "asof_join")]
             JoinType::AsOf(_) => polars_bail!(
@@ -462,7 +469,12 @@ pub trait DataFrameJoinOps: IntoDf {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        self.join(other, left_on, right_on, JoinArgs::new(JoinType::Outer))
+        self.join(
+            other,
+            left_on,
+            right_on,
+            JoinArgs::new(JoinType::Outer { coalesce: false }),
+        )
     }
 }
 

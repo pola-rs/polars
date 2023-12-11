@@ -1,3 +1,4 @@
+use arrow::array::{MutablePrimitiveArray, PrimitiveArray};
 use arrow::legacy::utils::CustomIterTools;
 use polars_utils::hashing::hash_to_partition;
 use polars_utils::nulls::IsNull;
@@ -92,7 +93,10 @@ where
 fn probe_outer<T, F, G, H>(
     probe_hashes: &[Vec<(u64, T)>],
     hash_tbls: &mut [PlHashMap<T, (bool, Vec<IdxSize>)>],
-    results: &mut Vec<(Option<IdxSize>, Option<IdxSize>)>,
+    results: &mut (
+        MutablePrimitiveArray<IdxSize>,
+        MutablePrimitiveArray<IdxSize>,
+    ),
     n_tables: usize,
     // Function that get index_a, index_b when there is a match and pushes to result
     swap_fn_match: F,
@@ -127,15 +131,24 @@ fn probe_outer<T, F, G, H>(
                 // match and remove
                 RawEntryMut::Occupied(mut occupied) => {
                     if key.is_null() && !join_nulls {
-                        results.push(swap_fn_no_match(idx_a))
+                        let (l, r) = swap_fn_no_match(idx_a);
+                        results.0.push(l);
+                        results.1.push(r);
                     } else {
                         let (tracker, indexes_b) = occupied.get_mut();
                         *tracker = true;
-                        results.extend(indexes_b.iter().map(|&idx_b| swap_fn_match(idx_a, idx_b)))
+                        for (l, r) in indexes_b.iter().map(|&idx_b| swap_fn_match(idx_a, idx_b)) {
+                            results.0.push(l);
+                            results.1.push(r);
+                        }
                     }
                 },
                 // no match
-                RawEntryMut::Vacant(_) => results.push(swap_fn_no_match(idx_a)),
+                RawEntryMut::Vacant(_) => {
+                    let (l, r) = swap_fn_no_match(idx_a);
+                    results.0.push(l);
+                    results.1.push(r);
+                },
             }
             idx_a += 1;
         }
@@ -145,7 +158,10 @@ fn probe_outer<T, F, G, H>(
         hash_tbl.iter().for_each(|(_k, (tracker, indexes_b))| {
             // remaining joined values from the right table
             if !*tracker {
-                results.extend(indexes_b.iter().map(|&idx_b| swap_fn_drain(idx_b)))
+                for (l, r) in indexes_b.iter().map(|&idx_b| swap_fn_drain(idx_b)) {
+                    results.0.push(l);
+                    results.1.push(r);
+                }
             }
         });
     }
@@ -158,7 +174,7 @@ pub(super) fn hash_join_tuples_outer<T, I, J>(
     swapped: bool,
     validate: JoinValidation,
     join_nulls: bool,
-) -> PolarsResult<Vec<(Option<IdxSize>, Option<IdxSize>)>>
+) -> PolarsResult<(PrimitiveArray<IdxSize>, PrimitiveArray<IdxSize>)>
 where
     I: IntoIterator<Item = T>,
     J: IntoIterator<Item = T>,
@@ -184,7 +200,10 @@ where
             .iter()
             .map(|b| b.size_hint().1.unwrap())
             .sum::<usize>();
-    let mut results = Vec::with_capacity(size);
+    let mut results = (
+        MutablePrimitiveArray::with_capacity(size),
+        MutablePrimitiveArray::with_capacity(size),
+    );
 
     // prepare hash table
     let mut hash_tbls = if validate.needs_checks() {
@@ -231,5 +250,5 @@ where
             join_nulls,
         )
     }
-    Ok(results)
+    Ok((results.0.into(), results.1.into()))
 }

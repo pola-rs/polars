@@ -1160,7 +1160,7 @@ impl LazyFrame {
             other,
             [left_on.into()],
             [right_on.into()],
-            JoinArgs::new(JoinType::Outer),
+            JoinArgs::new(JoinType::Outer { coalesce: false }),
         )
     }
 

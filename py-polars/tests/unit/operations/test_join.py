@@ -178,7 +178,7 @@ def test_join() -> None:
     assert joined["c"].null_count() == 1
     assert joined["b"].null_count() == 1
     assert joined["k"].null_count() == 1
-    assert joined["a"].null_count() == 0
+    assert joined["a"].null_count() == 1
 
     # we need to pass in a column to join on, either by supplying `on`, or both
     # `left_on` and `right_on`
@@ -558,6 +558,8 @@ def test_update() -> None:
     assert [1, 3] == list(
         a.update(b, how="inner", left_on="a", right_on="c").collect().to_series()
     )
+    print(a, b)
+    print(a.update(b.rename({"b": "a"}), how="outer", on="a").collect())
     assert [1, 2, 3, 4, 5] == sorted(
         a.update(b.rename({"b": "a"}), how="outer", on="a").collect().to_series()
     )
@@ -639,6 +641,7 @@ def test_join_sorted_fast_paths_null() -> None:
     assert df1.join(df2, on="x", how="semi").to_dict(as_series=False) == {"x": [0, 0]}
     assert df1.join(df2, on="x", how="outer").to_dict(as_series=False) == {
         "x": [0, 0, 1, None],
+        "x_right": [0, 0, None, None],
         "y": [0, 0, None, 1],
     }
 
@@ -649,8 +652,9 @@ def test_outer_join_list_() -> None:
     df1 = pl.DataFrame({"id": [1], "vals": [[]]}, schema=schema)  # type: ignore[arg-type]
     df2 = pl.DataFrame({"id": [2, 3], "vals": [[], [4]]}, schema=schema)  # type: ignore[arg-type]
     assert df1.join(df2, on="id", how="outer").to_dict(as_series=False) == {
-        "id": [2, 3, 1],
+        "id": [None, None, 1],
         "vals": [None, None, []],
+        "id_right": [2, 3, None],
         "vals_right": [[], [4.0], None],
     }
 
@@ -728,6 +732,7 @@ def test_outer_join_bool() -> None:
     assert df1.join(df2, on="id", how="outer").to_dict(as_series=False) == {
         "id": [True, False],
         "val": [1, 2],
+        "id_right": [True, False],
         "val_right": [0, -1],
     }
 
@@ -764,6 +769,7 @@ def test_join_null_matches(streaming: bool) -> None:
             "idx_a": [None, 2, 1, None, 0],
             "a": [None, 2, 1, None, None],
             "idx_b": [0, 1, 2, 3, None],
+            "a_right": [None, 2, 1, None, None],
         }
     )
     assert_frame_equal(df_a.join(df_b, on="a", how="outer").collect(), expected)
@@ -799,13 +805,13 @@ def test_join_null_matches_multiple_keys(streaming: bool) -> None:
         expected,
     )
 
-    # this looks a bit different to sql because we zip the outer join column
-    # TODO: don't?
     expected = pl.DataFrame(
         {
-            "a": [None, None, None, 1, 1, 2, 2],
-            "idx": [0, 3, 0, 2, 1, 1, 2],
-            "c": [10, 40, None, 30, 50, 20, None],
+            "a": [None, None, None, None, None, 1, 2],
+            "idx": [None, None, None, None, 0, 1, 2],
+            "a_right": [None, 2, 1, None, None, 1, None],
+            "idx_right": [0, 1, 2, 3, None, 1, None],
+            "c": [10, 20, 30, 40, None, 50, None],
         }
     )
     assert_frame_equal(

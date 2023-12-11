@@ -6106,8 +6106,24 @@ class DataFrame:
             DataFrame to join with.
         on
             Name(s) of the join columns in both DataFrames.
-        how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross'}
+        how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross', 'outer_coalesce'}
             Join strategy.
+
+            * *inner*
+                Returns rows that have matching values in both tables
+            * *left*
+                Returns all rows from the left table, and the matched rows from the
+                right table
+            * *outer*
+                 Returns all rows when there is a match in either left or right table
+            * *outer_coalesce*
+                 Same as 'outer', but coalesces the key columns
+            * *cross*
+                 Returns the cartisian product of rows from both tables
+            * *semi*
+                 Filter rows that have a match in the right table.
+            * *anti*
+                 Filter rows that not have a match in the right table.
 
             .. note::
                 A left join preserves the row order of the left DataFrame.
@@ -6171,17 +6187,17 @@ class DataFrame:
         └─────┴─────┴─────┴───────┘
 
         >>> df.join(other_df, on="ham", how="outer")
-        shape: (4, 4)
-        ┌──────┬──────┬─────┬───────┐
-        │ foo  ┆ bar  ┆ ham ┆ apple │
-        │ ---  ┆ ---  ┆ --- ┆ ---   │
-        │ i64  ┆ f64  ┆ str ┆ str   │
-        ╞══════╪══════╪═════╪═══════╡
-        │ 1    ┆ 6.0  ┆ a   ┆ x     │
-        │ 2    ┆ 7.0  ┆ b   ┆ y     │
-        │ null ┆ null ┆ d   ┆ z     │
-        │ 3    ┆ 8.0  ┆ c   ┆ null  │
-        └──────┴──────┴─────┴───────┘
+        shape: (4, 5)
+        ┌──────┬──────┬──────┬───────┬───────────┐
+        │ foo  ┆ bar  ┆ ham  ┆ apple ┆ ham_right │
+        │ ---  ┆ ---  ┆ ---  ┆ ---   ┆ ---       │
+        │ i64  ┆ f64  ┆ str  ┆ str   ┆ str       │
+        ╞══════╪══════╪══════╪═══════╪═══════════╡
+        │ 1    ┆ 6.0  ┆ a    ┆ x     ┆ a         │
+        │ 2    ┆ 7.0  ┆ b    ┆ y     ┆ b         │
+        │ null ┆ null ┆ null ┆ z     ┆ d         │
+        │ 3    ┆ 8.0  ┆ c    ┆ null  ┆ null      │
+        └──────┴──────┴──────┴───────┴───────────┘
 
         >>> df.join(other_df, on="ham", how="left")
         shape: (3, 4)

@@ -23,7 +23,7 @@ fn join_nans_outer() -> PolarsResult<()> {
         .with(a2)
         .left_on(vec![col("w"), col("t")])
         .right_on(vec![col("w"), col("t")])
-        .how(JoinType::Outer)
+        .how(JoinType::Outer { coalesce: true })
         .join_nulls(true)
         .finish()
         .collect()?;

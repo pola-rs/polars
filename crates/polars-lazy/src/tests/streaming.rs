@@ -293,7 +293,7 @@ fn test_streaming_partial() -> PolarsResult<()> {
         .left_on([col("a")])
         .right_on([col("a")])
         .suffix("_foo")
-        .how(JoinType::Outer)
+        .how(JoinType::Outer { coalesce: true })
         .finish();
 
     let q = q.left_join(

@@ -10,7 +10,7 @@ description = "More operations on Polars data structures"
 
 [dependencies]
 polars-compute = { workspace = true }
-polars-core = { workspace = true, features = ["algorithm_group_by"] }
+polars-core = { workspace = true, features = ["algorithm_group_by", "zip_with"] }
 polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
 polars-utils = { workspace = true }
@@ -94,7 +94,6 @@ string_to_integer = ["polars-core/strings"]
 extract_jsonpath = ["serde_json", "jsonpath_lib", "polars-json"]
 log = []
 hash = []
-zip_with = ["polars-core/zip_with"]
 group_by_list = ["polars-core/group_by_list"]
 rolling_window = ["polars-core/rolling_window"]
 moment = []
