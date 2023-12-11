@@ -55,17 +55,6 @@ impl<W: std::io::Write> SinkWriter for polars_io::ipc::BatchedWriter<W> {
     }
 }
 
-#[cfg(feature = "csv")]
-impl SinkWriter for polars_io::csv::BatchedWriter<std::fs::File> {
-    fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
-        self.write_batch(df)
-    }
-
-    fn _finish(&mut self) -> PolarsResult<()> {
-        Ok(())
-    }
-}
-
 #[cfg(feature = "json")]
 impl SinkWriter for BatchedWriter<std::fs::File> {
     fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
