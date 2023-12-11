@@ -1,5 +1,3 @@
-use std::iter::repeat;
-
 use polars_core::prelude::{
     polars_bail, polars_ensure, ChunkedArray, IntoSeries, ListBuilderTrait,
     ListPrimitiveChunkedBuilder, PolarsIntegerType, PolarsResult, Series,
@@ -43,7 +41,7 @@ where
             let start_scalar = start.get(0);
             match start_scalar {
                 Some(start) => build_ranges::<_, _, T, U, F>(
-                    repeat(Some(start)),
+                    std::iter::repeat(Some(start)),
                     end.into_iter(),
                     range_impl,
                     builder,
@@ -56,7 +54,7 @@ where
             match end_scalar {
                 Some(end) => build_ranges::<_, _, T, U, F>(
                     start.into_iter(),
-                    repeat(Some(end)),
+                    std::iter::repeat(Some(end)),
                     range_impl,
                     builder,
                 )?,
