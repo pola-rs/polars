@@ -87,5 +87,26 @@ def test_series_describe_date() -> None:
 
 def test_series_describe_empty() -> None:
     s = pl.Series(dtype=pl.Float64)
-    with pytest.raises(TypeError):
+    result = s.describe()
+    print(result)
+    stats = {
+        "len": 0.0,
+        "null_count": 0.0,
+        "mean": None,
+        "std": None,
+        "min": None,
+        "25%": None,
+        "50%": None,
+        "75%": None,
+        "max": None,
+    }
+    expected = pl.DataFrame({"statistic": stats.keys(), "value": stats.values()})
+    assert_frame_equal(expected, result)
+
+
+def test_series_describe_unsupported_dtype() -> None:
+    s = pl.Series(dtype=pl.List(pl.Int64))
+    with pytest.raises(
+        TypeError, match="cannot describe Series of data type List\\(Int64\\)"
+    ):
         s.describe()

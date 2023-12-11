@@ -1576,8 +1576,8 @@ class Series:
 
         Examples
         --------
-        >>> series_num = pl.Series([1, 2, 3, 4, 5])
-        >>> series_num.describe()
+        >>> s = pl.Series([1, 2, 3, 4, 5])
+        >>> s.describe()
         shape: (9, 2)
         ┌────────────┬──────────┐
         │ statistic  ┆ value    │
@@ -1595,8 +1595,10 @@ class Series:
         │ max        ┆ 5.0      │
         └────────────┴──────────┘
 
-        >>> series_str = pl.Series(["a", "a", None, "b", "c"])
-        >>> series_str.describe()
+        Non-numeric data types may not have all statistics available.
+
+        >>> s = pl.Series(["a", "a", None, "b", "c"])
+        >>> s.describe()
         shape: (3, 2)
         ┌────────────┬───────┐
         │ statistic  ┆ value │
@@ -1611,37 +1613,37 @@ class Series:
         """
         stats: dict[str, PythonLiteral | None]
 
-        if self.len() == 0:
-            raise TypeError("Series must contain at least one value")
-
-        elif self.dtype.is_numeric():
-            s = self.cast(Float64)
+        if self.dtype.is_numeric():
+            stats_dtype = Float64
             stats = {
-                "len": s.len(),
-                "null_count": s.null_count(),
-                "mean": s.mean(),
-                "std": s.std(),
-                "min": s.min(),
+                "len": self.len(),
+                "null_count": self.null_count(),
+                "mean": self.mean(),
+                "std": self.std(),
+                "min": self.min(),
             }
             for p in parse_percentiles(percentiles):
-                stats[f"{p:.0%}"] = s.quantile(p)
-            stats["max"] = s.max()
+                stats[f"{p:.0%}"] = self.quantile(p)
+            stats["max"] = self.max()
 
         elif self.dtype == Boolean:
+            stats_dtype = Int64
             stats = {
                 "len": self.len(),
                 "null_count": self.null_count(),
                 "sum": self.sum(),
             }
         elif self.dtype == Utf8:
+            stats_dtype = Int64
             stats = {
                 "len": self.len(),
                 "null_count": self.null_count(),
-                "unique": len(self.unique()),
+                "unique": self.n_unique(),
             }
         elif self.dtype.is_temporal():
             # we coerce all to string, because a polars column
             # only has a single dtype and dates: datetime and count: int don't match
+            stats_dtype = Utf8
             stats = {
                 "len": str(self.len()),
                 "null_count": str(self.null_count()),
@@ -1650,9 +1652,12 @@ class Series:
                 "max": str(self.dt.max()),
             }
         else:
-            raise TypeError("this type is not supported")
+            raise TypeError(f"cannot describe Series of data type {self.dtype}")
 
-        return pl.DataFrame({"statistic": stats.keys(), "value": stats.values()})
+        return pl.DataFrame(
+            {"statistic": stats.keys(), "value": stats.values()},
+            schema={"statistic": Utf8, "value": stats_dtype},
+        )
 
     def sum(self) -> int | float:
         """
