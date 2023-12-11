@@ -17,7 +17,7 @@ polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-ffi = { workspace = true, optional = true }
 polars-io = { workspace = true, features = ["lazy"] }
 polars-json = { workspace = true, optional = true }
-polars-ops = { workspace = true, features = ["zip_with"] }
+polars-ops = { workspace = true, features = [] }
 polars-parquet = { workspace = true, optional = true }
 polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
