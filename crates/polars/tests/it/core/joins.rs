@@ -294,7 +294,11 @@ fn test_join_categorical() {
     assert_eq!(Vec::from(ca), correct_ham);
 
     // test dispatch
-    for jt in [JoinType::Left, JoinType::Inner, JoinType::Outer] {
+    for jt in [
+        JoinType::Left,
+        JoinType::Inner,
+        JoinType::Outer { coalesce: true },
+    ] {
         let out = df_a.join(&df_b, ["b"], ["bar"], jt.into()).unwrap();
         let out = out.column("b").unwrap();
         assert_eq!(
