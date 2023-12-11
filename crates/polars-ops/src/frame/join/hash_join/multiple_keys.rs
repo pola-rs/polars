@@ -1,3 +1,4 @@
+use arrow::array::{MutablePrimitiveArray, PrimitiveArray};
 use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
 use polars_core::hashing::{
@@ -492,7 +493,10 @@ pub fn _left_semi_multiple_keys(
 fn probe_outer<F, G, H>(
     probe_hashes: &[UInt64Chunked],
     hash_tbls: &mut [HashMap<IdxHash, (bool, Vec<IdxSize>), IdBuildHasher>],
-    results: &mut Vec<(Option<IdxSize>, Option<IdxSize>)>,
+    results: &mut (
+        MutablePrimitiveArray<IdxSize>,
+        MutablePrimitiveArray<IdxSize>,
+    ),
     n_tables: usize,
     a: &DataFrame,
     b: &DataFrame,
@@ -539,10 +543,18 @@ fn probe_outer<F, G, H>(
                     RawEntryMut::Occupied(mut occupied) => {
                         let (tracker, indexes_b) = occupied.get_mut();
                         *tracker = true;
-                        results.extend(indexes_b.iter().map(|&idx_b| swap_fn_match(idx_a, idx_b)))
+
+                        for (l, r) in indexes_b.iter().map(|&idx_b| swap_fn_match(idx_a, idx_b)) {
+                            results.0.push(l);
+                            results.1.push(r);
+                        }
                     },
                     // no match
-                    RawEntryMut::Vacant(_) => results.push(swap_fn_no_match(idx_a)),
+                    RawEntryMut::Vacant(_) => {
+                        let (l, r) = swap_fn_no_match(idx_a);
+                        results.0.push(l);
+                        results.1.push(r);
+                    },
                 }
                 idx_a += 1;
             }
@@ -553,7 +565,10 @@ fn probe_outer<F, G, H>(
         hash_tbl.iter().for_each(|(_k, (tracker, indexes_b))| {
             // remaining unmatched joined values from the right table
             if !*tracker {
-                results.extend(indexes_b.iter().map(|&idx_b| swap_fn_drain(idx_b)))
+                for (l, r) in indexes_b.iter().map(|&idx_b| swap_fn_drain(idx_b)) {
+                    results.0.push(l);
+                    results.1.push(r);
+                }
             }
         });
     }
@@ -564,12 +579,15 @@ pub fn _outer_join_multiple_keys(
     b: &mut DataFrame,
     swap: bool,
     join_nulls: bool,
-) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
+) -> (PrimitiveArray<IdxSize>, PrimitiveArray<IdxSize>) {
     // we assume that the b DataFrame is the shorter relation.
     // b will be used for the build phase.
 
     let size = a.height() + b.height();
-    let mut results = Vec::with_capacity(size);
+    let mut results = (
+        MutablePrimitiveArray::with_capacity(size),
+        MutablePrimitiveArray::with_capacity(size),
+    );
 
     let n_threads = POOL.current_num_threads();
     let dfs_a = split_df(a, n_threads).unwrap();
@@ -616,5 +634,5 @@ pub fn _outer_join_multiple_keys(
             join_nulls,
         )
     }
-    results
+    (results.0.into(), results.1.into())
 }
