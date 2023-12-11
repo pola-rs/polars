@@ -451,43 +451,41 @@ impl<'a> AnyValue<'a> {
         )
     }
 
-    pub fn cast(&self, dtype: &'a DataType) -> PolarsResult<AnyValue<'a>> {
-        macro_rules! cast_to (
-            ($av:expr) => {
-                match dtype {
-                    DataType::UInt8 => AnyValue::UInt8($av.try_extract::<u8>()?),
-                    DataType::UInt16 => AnyValue::UInt16($av.try_extract::<u16>()?),
-                    DataType::UInt32 => AnyValue::UInt32($av.try_extract::<u32>()?),
-                    DataType::UInt64 => AnyValue::UInt64($av.try_extract::<u64>()?),
-                    DataType::Int8 => AnyValue::Int8($av.try_extract::<i8>()?),
-                    DataType::Int16 => AnyValue::Int16($av.try_extract::<i16>()?),
-                    DataType::Int32 => AnyValue::Int32($av.try_extract::<i32>()?),
-                    DataType::Int64 => AnyValue::Int64($av.try_extract::<i64>()?),
-                    DataType::Float32 => AnyValue::Float32($av.try_extract::<f32>()?),
-                    DataType::Float64 => AnyValue::Float64($av.try_extract::<f64>()?),
-                    #[cfg(feature="dtype-date")]
-                    DataType::Date => AnyValue::Date($av.try_extract::<i32>()?),
-                    #[cfg(feature="dtype-datetime")]
-                    DataType::Datetime(tu, tz) => AnyValue::Datetime($av.try_extract::<i64>()?, *tu, tz),
-                    #[cfg(feature="dtype-duration")]
-                    DataType::Duration(tu) => AnyValue::Duration($av.try_extract::<i64>()?, *tu),
-                    #[cfg(feature="dtype-time")]
-                    DataType::Time => AnyValue::Time($av.try_extract::<i64>()?),
-                    DataType::Utf8 => AnyValue::Utf8Owned(format_smartstring!("{}", $av.try_extract::<i64>()?)),
-                    _ => polars_bail!(
-                        ComputeError: "cannot cast any-value {:?} to dtype '{}'", self, dtype,
-                    ),
-                }
-            }
-        );
-
+    pub fn strict_cast(&self, dtype: &'a DataType) -> PolarsResult<AnyValue<'a>> {
         let new_av = match self {
-            _ if (self.is_boolean()
+            v if (self.is_boolean()
                 | self.is_signed_integer()
                 | self.is_unsigned_integer()
                 | self.is_float()) =>
             {
-                cast_to!(self)
+                match dtype {
+                    DataType::UInt8 => AnyValue::UInt8(v.try_extract::<u8>()?),
+                    DataType::UInt16 => AnyValue::UInt16(v.try_extract::<u16>()?),
+                    DataType::UInt32 => AnyValue::UInt32(v.try_extract::<u32>()?),
+                    DataType::UInt64 => AnyValue::UInt64(v.try_extract::<u64>()?),
+                    DataType::Int8 => AnyValue::Int8(v.try_extract::<i8>()?),
+                    DataType::Int16 => AnyValue::Int16(v.try_extract::<i16>()?),
+                    DataType::Int32 => AnyValue::Int32(v.try_extract::<i32>()?),
+                    DataType::Int64 => AnyValue::Int64(v.try_extract::<i64>()?),
+                    DataType::Float32 => AnyValue::Float32(v.try_extract::<f32>()?),
+                    DataType::Float64 => AnyValue::Float64(v.try_extract::<f64>()?),
+                    #[cfg(feature = "dtype-date")]
+                    DataType::Date => AnyValue::Date(v.try_extract::<i32>()?),
+                    #[cfg(feature = "dtype-datetime")]
+                    DataType::Datetime(tu, tz) => {
+                        AnyValue::Datetime(v.try_extract::<i64>()?, *tu, tz)
+                    },
+                    #[cfg(feature = "dtype-duration")]
+                    DataType::Duration(tu) => AnyValue::Duration(v.try_extract::<i64>()?, *tu),
+                    #[cfg(feature = "dtype-time")]
+                    DataType::Time => AnyValue::Time(v.try_extract::<i64>()?),
+                    DataType::Utf8 => {
+                        AnyValue::Utf8Owned(format_smartstring!("{}", v.try_extract::<i64>()?))
+                    },
+                    _ => polars_bail!(
+                        ComputeError: "cannot cast any-value {:?} to dtype '{}'", v, dtype,
+                    ),
+                }
             },
             #[cfg(feature = "dtype-datetime")]
             AnyValue::Datetime(v, tu, None) => match dtype {
@@ -536,6 +534,19 @@ impl<'a> AnyValue<'a> {
             _ => polars_bail!(ComputeError: "cannot cast non numeric any-value to numeric dtype"),
         };
         Ok(new_av)
+    }
+
+    pub fn cast(&self, dtype: &'a DataType, strict: bool) -> PolarsResult<AnyValue<'a>> {
+        match self.strict_cast(dtype) {
+            Ok(s) => Ok(s),
+            Err(e) => {
+                if strict {
+                    Err(e)
+                } else {
+                    Ok(AnyValue::Null)
+                }
+            },
+        }
     }
 }
 
