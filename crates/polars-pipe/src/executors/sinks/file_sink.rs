@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::path::Path;
+use std::sync::Mutex;
 use std::thread::JoinHandle;
 
 use crossbeam_channel::{bounded, Receiver, Sender};
@@ -229,11 +230,14 @@ impl IpcCloudSink {
 }
 
 #[cfg(feature = "csv")]
-pub struct CsvSink {}
+#[derive(Clone)]
+pub struct CsvSink {
+    writer: Arc<Mutex<polars_io::csv::BatchedWriter<std::fs::File>>>,
+}
 #[cfg(feature = "csv")]
 impl CsvSink {
     #[allow(clippy::new_ret_no_self)]
-    pub fn new(path: &Path, options: CsvWriterOptions, schema: &Schema) -> PolarsResult<FilesSink> {
+    pub fn new(path: &Path, options: CsvWriterOptions, schema: &Schema) -> PolarsResult<Self> {
         let file = std::fs::File::create(path)?;
         let writer = CsvWriter::new(file)
             .include_bom(options.include_bom)
@@ -250,23 +254,39 @@ impl CsvSink {
             .with_quote_style(options.serialize_options.quote_style)
             .batched(schema)?;
 
-        let writer = Box::new(writer) as Box<dyn SinkWriter + Send + Sync>;
-
-        let morsels_per_sink = morsels_per_sink();
-        let backpressure = morsels_per_sink * 2;
-        let (sender, receiver) = bounded(backpressure);
-
-        let io_thread_handle = Arc::new(Some(init_writer_thread(
-            receiver,
-            writer,
-            options.maintain_order,
-            morsels_per_sink,
-        )));
-
-        Ok(FilesSink {
-            sender,
-            io_thread_handle,
+        Ok(Self {
+            writer: Arc::new(Mutex::new(writer)),
         })
+    }
+}
+
+// Csv has a sync implementation because it writes in parallel. The file sink would deadlock.
+#[cfg(feature = "csv")]
+impl Sink for CsvSink {
+    fn sink(&mut self, _: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
+        let mut writer = self.writer.lock().unwrap();
+        writer.write_batch(&chunk.data)?;
+        Ok(SinkResult::CanHaveMoreInput)
+    }
+
+    fn combine(&mut self, _other: &mut dyn Sink) {
+        // already synchronized
+    }
+
+    fn split(&self, _thread_no: usize) -> Box<dyn Sink> {
+        Box::new(self.clone())
+    }
+
+    fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
+        Ok(FinalizedSink::Finished(Default::default()))
+    }
+
+    fn as_any(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn fmt(&self) -> &str {
+        "csv_sink"
     }
 }
 
@@ -408,6 +428,6 @@ impl Sink for FilesSink {
         self
     }
     fn fmt(&self) -> &str {
-        "parquet_sink"
+        "file_sink"
     }
 }
