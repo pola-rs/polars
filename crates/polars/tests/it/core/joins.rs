@@ -70,7 +70,6 @@ fn test_inner_join() {
         ])
         .unwrap();
 
-        println!("{}", joined);
         assert!(joined.equals(&true_df));
     }
 }
@@ -89,7 +88,6 @@ fn test_left_join() {
         let s1 = Series::new("rain", &[0.1, 0.2]);
         let rain = DataFrame::new(vec![s0, s1]).unwrap();
         let joined = temp.left_join(&rain, ["days"], ["days"]).unwrap();
-        println!("{}", &joined);
         assert_eq!(
             (joined.column("rain").unwrap().sum::<f32>().unwrap() * 10.).round(),
             3.
@@ -105,7 +103,6 @@ fn test_left_join() {
         let s1 = Series::new("rain", &[0.1, 0.2]);
         let rain = DataFrame::new(vec![s0, s1]).unwrap();
         let joined = temp.left_join(&rain, ["days"], ["days"]).unwrap();
-        println!("{}", &joined);
         assert_eq!(
             (joined.column("rain").unwrap().sum::<f32>().unwrap() * 10.).round(),
             3.
@@ -118,8 +115,12 @@ fn test_left_join() {
 #[cfg_attr(miri, ignore)]
 fn test_outer_join() -> PolarsResult<()> {
     let (temp, rain) = create_frames();
-    let joined = temp.outer_join(&rain, ["days"], ["days"])?;
-    println!("{:?}", &joined);
+    let joined = temp.join(
+        &rain,
+        ["days"],
+        ["days"],
+        JoinArgs::new(JoinType::Outer { coalesce: true }),
+    )?;
     assert_eq!(joined.height(), 5);
     assert_eq!(joined.column("days")?.sum::<i32>(), Some(7));
 
@@ -134,7 +135,12 @@ fn test_outer_join() -> PolarsResult<()> {
             "c"=> [1, 0, 2, 1]
     )?;
 
-    let out = df_left.outer_join(&df_right, ["a"], ["a"])?;
+    let out = df_left.join(
+        &df_right,
+        ["a"],
+        ["a"],
+        JoinArgs::new(JoinType::Outer { coalesce: true }),
+    )?;
     assert_eq!(out.column("c_right")?.null_count(), 1);
 
     Ok(())
@@ -581,8 +587,8 @@ fn test_join_floats() -> PolarsResult<()> {
         out.dtypes(),
         &[
             DataType::Float64,
-            DataType::Float64,
             DataType::Utf8,
+            DataType::Float64,
             DataType::Utf8
         ]
     );
