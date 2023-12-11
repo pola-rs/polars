@@ -9990,7 +9990,7 @@ class DataFrame:
         """
         return self.height == 0
 
-    def to_struct(self, name: str) -> Series:
+    def to_struct(self, name: str = "") -> Series:
         """
         Convert a `DataFrame` to a `Series` of type `Struct`.
 
