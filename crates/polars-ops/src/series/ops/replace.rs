@@ -1,21 +1,19 @@
-use polars_core::prelude::Series;
+use polars_core::prelude::*;
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
 
+use crate::frame::join::*;
+use crate::prelude::*;
+use crate::series::ops::coalesce_series;
+
 pub fn replace(s: &Series, old: &Series, new: &Series) -> PolarsResult<Series> {
-    // TODO: Allow 'broadcasting' `new` here for many-to-one replace?
-    polars_ensure!(
-        old.len() == new.len(),
-        ComputeError: "`old` and `new` inputs for `replace` must have the same length"
-    );
+    if old.len() == 0 {
+        return Ok(s.clone());
+    }
 
-    match old.len() {
-        0 => return Ok(s.clone()),
-        1 => (), // dispatch to when/then
-        _ => (),
-    };
+    // TODO: Add fast path for replacing a single value
+    let replaced = join_replacer(s, old, new)?;
 
-    let s = s.clone();
-    Ok(s)
+    coalesce_series(&[replaced, s.clone()])
 }
 
 pub fn replace_with_default(
@@ -24,18 +22,52 @@ pub fn replace_with_default(
     new: &Series,
     default: &Series,
 ) -> PolarsResult<Series> {
-    // TODO: Allow 'broadcasting' `new` here for many-to-one replace?
-    polars_ensure!(
-        old.len() == new.len(),
-        ComputeError: "`old` and `new` inputs for `replace` must have the same length"
-    );
-
-    match old.len() {
-        0 => return Ok(default.clone()),
-        1 => (), // dispatch to when/then
-        _ => (),
+    let default = match default.len() {
+        len if len == s.len() => default.clone(),
+        1 => default.new_from_index(0, s.len()),
+        _ => {
+            polars_bail!(
+                ComputeError:
+                "`default` input for `replace` must be the same length as the input or have length 1"
+            )
+        },
     };
 
-    let s = s.clone();
-    Ok(s)
+    if old.len() == 0 {
+        return Ok(default);
+    }
+
+    // TODO: Add fast path for replacing a single value
+    let replaced = join_replacer(s, old, new)?;
+
+    coalesce_series(&[replaced, default])
+}
+
+fn join_replacer(s: &Series, old: &Series, new: &Series) -> PolarsResult<Series> {
+    // length 1 is many-to-one replace, otherwise it's one-to-one
+    polars_ensure!(
+        (new.len() == old.len()) || new.len() == 1,
+        ComputeError: "`new` input for `replace` must be the same length as `old` or have length 1"
+    );
+
+    let df = DataFrame::new_no_checks(vec![s.clone()]);
+
+    let mut old = old.clone();
+    old.rename("__POLARS_REPLACE_OLD");
+    let mut new = match new.len() {
+        1 => new.new_from_index(0, old.len()),
+        _ => new.clone(),
+    };
+    new.rename("__POLARS_REPLACE_NEW");
+    let replacer = DataFrame::new_no_checks(vec![old, new]);
+
+    let df_joined = df.join(
+        &replacer,
+        [s.name()],
+        ["__POLARS_REPLACE_OLD"],
+        JoinArgs::new(JoinType::Left),
+    )?;
+
+    let s_joined = df_joined.column("__POLARS_REPLACE_NEW").unwrap();
+    Ok(s_joined.clone())
 }
