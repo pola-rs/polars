@@ -113,7 +113,7 @@ sort_multiple = ["polars-core/sort_multiple"]
 # extra operations
 approx_unique = ["polars-lazy?/approx_unique", "polars-ops/approx_unique"]
 is_in = ["polars-lazy?/is_in"]
-zip_with = ["polars-core/zip_with", "polars-ops/zip_with"]
+zip_with = ["polars-core/zip_with"]
 round_series = ["polars-ops/round_series", "polars-lazy?/round_series"]
 checked_arithmetic = ["polars-core/checked_arithmetic"]
 repeat_by = ["polars-ops/repeat_by", "polars-lazy?/repeat_by"]

@@ -185,3 +185,26 @@ def test_int_range_non_integer_dtype() -> None:
         pl.ComputeError, match="non-integer `dtype` passed to `int_range`: Float64"
     ):
         pl.select(pl.int_range(3, -1, -1, dtype=pl.Float64))  # type: ignore[arg-type]
+
+
+def test_int_ranges_broadcasting() -> None:
+    df = pl.DataFrame({"int": [1, 2, 3]})
+    result = df.select(
+        pl.int_ranges("int", 3).alias("end"),
+        pl.int_ranges(1, "int").alias("start"),
+    )
+    expected = pl.DataFrame(
+        {
+            "end": [
+                [1, 2],
+                [2],
+                [],
+            ],
+            "start": [
+                [],
+                [1],
+                [1, 2],
+            ],
+        }
+    )
+    assert_frame_equal(result, expected)

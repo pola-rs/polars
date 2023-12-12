@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars.type_aliases import ClosedInterval
@@ -109,11 +109,10 @@ def test_time_range_start_equals_end_open(closed: ClosedInterval) -> None:
     assert_series_equal(result, expected)
 
 
-def test_time_range_invalid_start_end() -> None:
-    with pytest.raises(
-        pl.ComputeError, match="`end` must be equal to or greater than `start`"
-    ):
-        pl.time_range(time(12), time(11), eager=True)
+def test_time_range_start_later_than_end() -> None:
+    result = pl.time_range(time(12), time(11), eager=True)
+    expected = pl.Series("time", dtype=pl.Time)
+    assert_series_equal(result, expected)
 
 
 @pytest.mark.parametrize("interval", [timedelta(0), timedelta(minutes=-10)])
@@ -242,3 +241,45 @@ def test_time_range_name() -> None:
 
     result_lazy = pl.select(pl.time_range(time(10), time(12), eager=False)).to_series()
     assert result_lazy.name == expected_name
+
+
+def test_time_ranges_broadcasting() -> None:
+    df = pl.DataFrame({"time": [time(10, 0), time(11, 0), time(12, 0)]})
+    result = df.select(
+        pl.time_ranges(start="time", end=time(12, 0)).alias("end"),
+        pl.time_ranges(start=time(10, 0), end="time").alias("start"),
+    )
+    expected = pl.DataFrame(
+        {
+            "end": [
+                [time(10, 0), time(11, 0), time(12, 0)],
+                [time(11, 0), time(12, 0)],
+                [time(12, 0)],
+            ],
+            "start": [
+                [time(10, 0)],
+                [time(10, 0), time(11, 0)],
+                [time(10, 0), time(11, 0), time(12, 0)],
+            ],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_time_ranges_mismatched_chunks() -> None:
+    s1 = pl.Series([time(10), time(11)])
+    s1.append(pl.Series([time(12)]))
+
+    s2 = pl.Series([time(12)])
+    s2.append(pl.Series([time(12), time(12)]))
+
+    result = pl.time_ranges(s1, s2, eager=True)
+    expected = pl.Series(
+        "time_range",
+        [
+            [time(10, 0), time(11, 0), time(12, 0)],
+            [time(11, 0), time(12, 0)],
+            [time(12, 0)],
+        ],
+    )
+    assert_series_equal(result, expected)

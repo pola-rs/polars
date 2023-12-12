@@ -36,8 +36,15 @@ def test_categorical_outer_join() -> None:
     ).lazy()
 
     expected = pl.DataFrame(
-        {"key1": [42], "key2": ["bar"], "val1": [1], "val2": [2]},
-        schema_overrides={"key2": pl.Categorical},
+        {
+            "key1": [42],
+            "key2": ["bar"],
+            "val1": [1],
+            "key1_right": [42],
+            "key2_right": ["bar"],
+            "val2": [2],
+        },
+        schema_overrides={"key2": pl.Categorical, "key2_right": pl.Categorical},
     )
 
     out = df1.join(df2, on=["key1", "key2"], how="outer").collect()
@@ -58,7 +65,8 @@ def test_categorical_outer_join() -> None:
 
     df = dfa.join(dfb, on="key", how="outer")
     # the cast is important to test the rev map
-    assert df["key"].cast(pl.Utf8).to_list() == ["bar", "baz", "foo"]
+    assert df["key"].cast(pl.Utf8).to_list() == ["bar", None, "foo"]
+    assert df["key_right"].cast(pl.Utf8).to_list() == ["bar", "baz", None]
 
 
 def test_read_csv_categorical() -> None:
@@ -81,13 +89,6 @@ def test_cat_to_dummies() -> None:
         "bar_b": [0, 1, 0, 0],
         "bar_c": [0, 0, 0, 1],
     }
-
-
-def test_categorical_describe_3487() -> None:
-    # test if we don't err
-    df = pl.DataFrame({"cats": ["a", "b"]})
-    df = df.with_columns(pl.col("cats").cast(pl.Categorical))
-    df.describe()
 
 
 @StringCache()

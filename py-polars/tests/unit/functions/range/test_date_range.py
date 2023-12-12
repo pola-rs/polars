@@ -338,11 +338,10 @@ def test_date_range_input_shape_multiple_values() -> None:
         pl.date_range(multiple, multiple, eager=True)
 
 
-def test_date_range_invalid_start_end() -> None:
-    with pytest.raises(
-        pl.ComputeError, match="`end` must be equal to or greater than `start`"
-    ):
-        pl.date_range(date(2000, 3, 20), date(2000, 3, 5), eager=True)
+def test_date_range_start_later_than_end() -> None:
+    result = pl.date_range(date(2000, 3, 20), date(2000, 3, 5), eager=True)
+    expected = pl.Series("date", dtype=pl.Date)
+    assert_series_equal(result, expected)
 
 
 def test_date_range_24h_interval_results_in_datetime() -> None:
@@ -363,3 +362,36 @@ def test_long_date_range_12461() -> None:
     assert result[0] == date(1900, 1, 1)
     assert result[-1] == date(2300, 1, 1)
     assert (result.diff()[1:].dt.total_days() == 1).all()
+
+
+def test_date_ranges_broadcasting() -> None:
+    df = pl.DataFrame({"dates": [date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)]})
+    result = df.select(
+        pl.date_ranges(start="dates", end=date(2021, 1, 3)).alias("end"),
+        pl.date_ranges(start=date(2021, 1, 1), end="dates").alias("start"),
+    )
+    expected = pl.DataFrame(
+        {
+            "end": [
+                [date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)],
+                [date(2021, 1, 2), date(2021, 1, 3)],
+                [date(2021, 1, 3)],
+            ],
+            "start": [
+                [date(2021, 1, 1)],
+                [date(2021, 1, 1), date(2021, 1, 2)],
+                [date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)],
+            ],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_date_ranges_broadcasting_fail() -> None:
+    start = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
+    end = pl.Series([date(2021, 1, 2), date(2021, 1, 3)])
+
+    with pytest.raises(
+        pl.ComputeError, match=r"lengths of `start` \(3\) and `end` \(2\) do not match"
+    ):
+        pl.date_ranges(start, end, eager=True)

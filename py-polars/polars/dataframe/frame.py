@@ -36,7 +36,6 @@ from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.datatypes import (
     INTEGER_DTYPES,
     N_INFER_DEFAULT,
-    NUMERIC_DTYPES,
     Boolean,
     Float64,
     Object,
@@ -2061,7 +2060,6 @@ class DataFrame:
         structured
             Optionally return a structured array, with field names and
             dtypes that correspond to the DataFrame schema.
-
         order
             The index order of the returned NumPy array, either C-like or
             Fortran-like. In general, using the Fortran-like index order is faster.
@@ -2106,7 +2104,7 @@ class DataFrame:
         array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
               dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
 
-        ...optionally zero-copying as a record array view:
+        ...optionally going on to view as a record array:
 
         >>> import numpy as np
         >>> df.to_numpy(structured=True).view(np.recarray)
@@ -4341,7 +4339,7 @@ class DataFrame:
         │ ---        ┆ ---      ┆ ---      ┆ ---      ┆ ---  ┆ ---  ┆ ---        │
         │ str        ┆ f64      ┆ f64      ┆ f64      ┆ str  ┆ str  ┆ str        │
         ╞════════════╪══════════╪══════════╪══════════╪══════╪══════╪════════════╡
-        │ count      ┆ 3.0      ┆ 3.0      ┆ 3.0      ┆ 3    ┆ 3    ┆ 3          │
+        │ count      ┆ 3.0      ┆ 2.0      ┆ 3.0      ┆ 2    ┆ 2    ┆ 3          │
         │ null_count ┆ 0.0      ┆ 1.0      ┆ 0.0      ┆ 1    ┆ 1    ┆ 0          │
         │ mean       ┆ 2.266667 ┆ 4.5      ┆ 0.666667 ┆ null ┆ null ┆ null       │
         │ std        ┆ 1.101514 ┆ 0.707107 ┆ 0.57735  ┆ null ┆ null ┆ null       │
@@ -4353,44 +4351,63 @@ class DataFrame:
         └────────────┴──────────┴──────────┴──────────┴──────┴──────┴────────────┘
 
         """
-        # determine metrics and optional/additional percentiles
+        if not self.columns:
+            raise TypeError("cannot describe a DataFrame without any columns")
+
+        # Determine which columns should get std/mean/percentile statistics
+        stat_cols = {
+            c for c, dt in self.schema.items() if dt.is_numeric() or dt == Boolean
+        }
+
+        # Determine metrics and optional/additional percentiles
         metrics = ["count", "null_count", "mean", "std", "min"]
         percentile_exprs = []
         for p in parse_percentiles(percentiles):
-            percentile_exprs.append(F.all().quantile(p).name.prefix(f"{p}:"))
+            for c in self.columns:
+                expr = F.col(c).quantile(p) if c in stat_cols else F.lit(None)
+                expr = expr.alias(f"{p}:{c}")
+                percentile_exprs.append(expr)
             metrics.append(f"{p:.0%}")
         metrics.append("max")
 
-        # execute metrics in parallel
+        mean_exprs = [
+            (F.col(c).mean() if c in stat_cols else F.lit(None)).alias(f"mean:{c}")
+            for c in self.columns
+        ]
+        std_exprs = [
+            (F.col(c).std() if c in stat_cols else F.lit(None)).alias(f"std:{c}")
+            for c in self.columns
+        ]
+
+        # Calculate metrics in parallel
         df_metrics = self.select(
-            F.all().len().name.prefix("count:"),
+            F.all().count().name.prefix("count:"),
             F.all().null_count().name.prefix("null_count:"),
-            F.all().mean().name.prefix("mean:"),
-            F.all().std().name.prefix("std:"),
+            *mean_exprs,
+            *std_exprs,
             F.all().min().name.prefix("min:"),
             *percentile_exprs,
             F.all().max().name.prefix("max:"),
-        ).row(0)
+        )
 
-        # reshape wide result
-        n_cols = len(self.columns)
+        # Reshape wide result
         described = [
-            df_metrics[(n * n_cols) : (n + 1) * n_cols] for n in range(len(metrics))
+            df_metrics.row(0)[(n * self.width) : (n + 1) * self.width]
+            for n in range(len(metrics))
         ]
 
-        # cast by column type (numeric/bool -> float), (other -> string)
+        # Cast by column type (numeric/bool -> float), (other -> string)
         summary = dict(zip(self.columns, list(zip(*described))))
-        num_or_bool = NUMERIC_DTYPES | {Boolean}
-        for c, tp in self.schema.items():
+        for c in self.columns:
             summary[c] = [  # type: ignore[assignment]
                 None
                 if (v is None or isinstance(v, dict))
-                else (float(v) if tp in num_or_bool else str(v))
+                else (float(v) if c in stat_cols else str(v))
                 for v in summary[c]
             ]
 
-        # return results as a frame
-        df_summary = self.__class__(summary)
+        # Return results as a DataFrame
+        df_summary = self._from_dict(summary)
         df_summary.insert_column(0, pl.Series("describe", metrics))
         return df_summary
 
@@ -6107,8 +6124,24 @@ class DataFrame:
             DataFrame to join with.
         on
             Name(s) of the join columns in both DataFrames.
-        how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross'}
+        how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross', 'outer_coalesce'}
             Join strategy.
+
+            * *inner*
+                Returns rows that have matching values in both tables
+            * *left*
+                Returns all rows from the left table, and the matched rows from the
+                right table
+            * *outer*
+                 Returns all rows when there is a match in either left or right table
+            * *outer_coalesce*
+                 Same as 'outer', but coalesces the key columns
+            * *cross*
+                 Returns the cartisian product of rows from both tables
+            * *semi*
+                 Filter rows that have a match in the right table.
+            * *anti*
+                 Filter rows that not have a match in the right table.
 
             .. note::
                 A left join preserves the row order of the left DataFrame.
@@ -6172,17 +6205,17 @@ class DataFrame:
         └─────┴─────┴─────┴───────┘
 
         >>> df.join(other_df, on="ham", how="outer")
-        shape: (4, 4)
-        ┌──────┬──────┬─────┬───────┐
-        │ foo  ┆ bar  ┆ ham ┆ apple │
-        │ ---  ┆ ---  ┆ --- ┆ ---   │
-        │ i64  ┆ f64  ┆ str ┆ str   │
-        ╞══════╪══════╪═════╪═══════╡
-        │ 1    ┆ 6.0  ┆ a   ┆ x     │
-        │ 2    ┆ 7.0  ┆ b   ┆ y     │
-        │ null ┆ null ┆ d   ┆ z     │
-        │ 3    ┆ 8.0  ┆ c   ┆ null  │
-        └──────┴──────┴─────┴───────┘
+        shape: (4, 5)
+        ┌──────┬──────┬──────┬───────┬───────────┐
+        │ foo  ┆ bar  ┆ ham  ┆ apple ┆ ham_right │
+        │ ---  ┆ ---  ┆ ---  ┆ ---   ┆ ---       │
+        │ i64  ┆ f64  ┆ str  ┆ str   ┆ str       │
+        ╞══════╪══════╪══════╪═══════╪═══════════╡
+        │ 1    ┆ 6.0  ┆ a    ┆ x     ┆ a         │
+        │ 2    ┆ 7.0  ┆ b    ┆ y     ┆ b         │
+        │ null ┆ null ┆ null ┆ z     ┆ d         │
+        │ 3    ┆ 8.0  ┆ c    ┆ null  ┆ null      │
+        └──────┴──────┴──────┴───────┴───────────┘
 
         >>> df.join(other_df, on="ham", how="left")
         shape: (3, 4)
@@ -9975,7 +10008,7 @@ class DataFrame:
         """
         return self.height == 0
 
-    def to_struct(self, name: str) -> Series:
+    def to_struct(self, name: str = "") -> Series:
         """
         Convert a `DataFrame` to a `Series` of type `Struct`.
 
@@ -10189,27 +10222,22 @@ class DataFrame:
         self,
         other: DataFrame,
         on: str | Sequence[str] | None = None,
+        how: Literal["left", "inner", "outer"] = "left",
+        *,
         left_on: str | Sequence[str] | None = None,
         right_on: str | Sequence[str] | None = None,
-        how: Literal["left", "inner", "outer"] = "left",
-        include_nulls: bool | None = False,
+        include_nulls: bool = False,
     ) -> DataFrame:
         """
         Update the values in this `DataFrame` with the values in `other`.
 
+        .. warning::
+            This functionality is experimental and may change without it being
+            considered a breaking change.
+
         By default, null values in the right frame are ignored. Use
         `include_nulls=False` to overwrite values in this frame with
         null values in the other frame.
-
-        Notes
-        -----
-        This is syntactic sugar for a left/inner join, with an optional coalesce
-        when `include_nulls = False`
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Parameters
         ----------
@@ -10218,19 +10246,24 @@ class DataFrame:
         on
             Column names that will be joined on.
             If none given the row count is used.
-        left_on
-           Join column(s) of the left DataFrame.
-        right_on
-           Join column(s) of the right DataFrame.
         how : {'left', 'inner', 'outer'}
             * 'left' will keep all rows from the left table; rows may be duplicated
               if multiple rows in the right frame match the left row's key.
             * 'inner' keeps only those rows where the key exists in both frames.
             * 'outer' will update existing rows where the key matches while also
               adding any new rows contained in the given frame.
+        left_on
+           Join column(s) of the left DataFrame.
+        right_on
+           Join column(s) of the right DataFrame.
         include_nulls
             If True, null values from the right dataframe will be used to update the
             left dataframe.
+
+        Notes
+        -----
+        This is syntactic sugar for a left/inner join, with an optional coalesce
+        when `include_nulls = False`
 
         Examples
         --------
@@ -10328,7 +10361,14 @@ class DataFrame:
         """
         return (
             self.lazy()
-            .update(other.lazy(), on, left_on, right_on, how, include_nulls)
+            .update(
+                other.lazy(),
+                on,
+                how,
+                left_on=left_on,
+                right_on=right_on,
+                include_nulls=include_nulls,
+            )
             .collect(_eager=True)
         )
 

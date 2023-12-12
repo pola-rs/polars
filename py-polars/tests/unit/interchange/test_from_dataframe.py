@@ -7,6 +7,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
+import polars.interchange.from_dataframe
 from polars.testing import assert_frame_equal
 
 

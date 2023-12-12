@@ -494,3 +494,34 @@ def test_datetime_range_end_of_month_5441(
     result = pl.datetime_range(start, stop, interval="1mo", closed=closed, eager=True)
     expected = pl.Series("datetime", expected_values)
     assert_series_equal(result, expected)
+
+
+def test_datetime_ranges_broadcasting() -> None:
+    df = pl.DataFrame(
+        {
+            "datetimes": [
+                datetime(2021, 1, 1),
+                datetime(2021, 1, 2),
+                datetime(2021, 1, 3),
+            ]
+        }
+    )
+    result = df.select(
+        pl.datetime_ranges(start="datetimes", end=datetime(2021, 1, 3)).alias("end"),
+        pl.datetime_ranges(start=datetime(2021, 1, 1), end="datetimes").alias("start"),
+    )
+    expected = pl.DataFrame(
+        {
+            "end": [
+                [datetime(2021, 1, 1), datetime(2021, 1, 2), datetime(2021, 1, 3)],
+                [datetime(2021, 1, 2), datetime(2021, 1, 3)],
+                [datetime(2021, 1, 3)],
+            ],
+            "start": [
+                [datetime(2021, 1, 1)],
+                [datetime(2021, 1, 1), datetime(2021, 1, 2)],
+                [datetime(2021, 1, 1), datetime(2021, 1, 2), datetime(2021, 1, 3)],
+            ],
+        }
+    )
+    assert_frame_equal(result, expected)

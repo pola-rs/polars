@@ -100,7 +100,7 @@ def test_filter_aggregation_any() -> None:
     result = (
         df.group_by("group")
         .agg(
-            pl.any_horizontal("pred_a", "pred_b"),
+            pl.any_horizontal("pred_a", "pred_b").alias("any"),
             pl.col("id")
             .filter(pl.any_horizontal("pred_a", "pred_b"))
             .alias("filtered"),

@@ -202,7 +202,7 @@ pub fn set_estimated_row_counts(
                         let (known_size, estimated_size) = options.rows_left;
                         (known_size, estimated_size, filter_count_left)
                     },
-                    JoinType::Cross | JoinType::Outer => {
+                    JoinType::Cross | JoinType::Outer { .. } => {
                         let (known_size_left, estimated_size_left) = options.rows_left;
                         let (known_size_right, estimated_size_right) = options.rows_right;
                         match (known_size_left, known_size_right) {
@@ -283,13 +283,9 @@ pub(crate) fn det_join_schema(
         #[cfg(feature = "semi_anti_join")]
         JoinType::Semi | JoinType::Anti => Ok(schema_left.clone()),
         _ => {
-            // column names of left table
-            let mut names: PlHashSet<&str> =
-                PlHashSet::with_capacity(schema_left.len() + schema_right.len());
             let mut new_schema = Schema::with_capacity(schema_left.len() + schema_right.len());
 
             for (name, dtype) in schema_left.iter() {
-                names.insert(name.as_str());
                 new_schema.with_column(name.clone(), dtype.clone());
             }
 
@@ -307,7 +303,7 @@ pub(crate) fn det_join_schema(
             // so the columns that are joined on, may have different
             // values so if the right has a different name, it is added to the schema
             #[cfg(feature = "asof_join")]
-            if let JoinType::AsOf(_) = &options.args.how {
+            if !options.args.how.merges_join_keys() {
                 for (left_on, right_on) in left_on.iter().zip(right_on) {
                     let field_left =
                         left_on.to_field_amortized(schema_left, Context::Default, &mut arena)?;
@@ -326,15 +322,18 @@ pub(crate) fn det_join_schema(
                 }
             }
 
-            let mut right_names: PlHashSet<_> = PlHashSet::with_capacity(right_on.len());
+            let mut join_on_right: PlHashSet<_> = PlHashSet::with_capacity(right_on.len());
             for e in right_on {
                 let field = e.to_field_amortized(schema_right, Context::Default, &mut arena)?;
-                right_names.insert(field.name);
+                join_on_right.insert(field.name);
             }
 
             for (name, dtype) in schema_right.iter() {
-                if !right_names.contains(name.as_str()) {
-                    if names.contains(name.as_str()) {
+                if !join_on_right.contains(name.as_str())  // The names that are joined on are merged
+                || matches!(&options.args.how, JoinType::Outer{coalesce: false})
+                // The names are not merged
+                {
+                    if schema_left.contains(name.as_str()) {
                         #[cfg(feature = "asof_join")]
                         if let JoinType::AsOf(asof_options) = &options.args.how {
                             if let (Some(left_by), Some(right_by)) =

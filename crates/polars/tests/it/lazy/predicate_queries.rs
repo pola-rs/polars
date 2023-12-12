@@ -170,6 +170,7 @@ fn test_predicate_pushdown_blocked_by_outer_join() -> PolarsResult<()> {
     let expected = df![
         "a" => ["a1"],
         "b" => ["b1"],
+        "b_right" => [null],
         "c" => [null],
     ]?;
     assert!(out.equals_missing(&expected));

@@ -37,7 +37,7 @@ def all_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     ...         "c": ["w", "x", "y", "z"],
     ...     }
     ... )
-    >>> df.with_columns(pl.all_horizontal("a", "b"))
+    >>> df.with_columns(all=pl.all_horizontal("a", "b"))
     shape: (4, 4)
     ┌───────┬───────┬─────┬───────┐
     │ a     ┆ b     ┆ c   ┆ all   │
@@ -74,7 +74,7 @@ def any_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     ...         "c": ["w", "x", "y", "z"],
     ...     }
     ... )
-    >>> df.with_columns(pl.any_horizontal("a", "b"))
+    >>> df.with_columns(any=pl.any_horizontal("a", "b"))
     shape: (4, 4)
     ┌───────┬───────┬─────┬───────┐
     │ a     ┆ b     ┆ c   ┆ any   │

@@ -45,7 +45,7 @@ pub fn any_horizontal(s: &[Series]) -> PolarsResult<Series> {
                 )
                 .try_reduce(|| BooleanChunked::new("", [false]), |a, b| Ok(a.bitor(b)))
         })?
-        .with_name("any");
+        .with_name(s[0].name());
     Ok(out.into_series())
 }
 
@@ -63,20 +63,33 @@ pub fn all_horizontal(s: &[Series]) -> PolarsResult<Series> {
                 )
                 .try_reduce(|| BooleanChunked::new("", [true]), |a, b| Ok(a.bitand(b)))
         })?
-        .with_name("all");
+        .with_name(s[0].name());
     Ok(out.into_series())
 }
 
-#[cfg(feature = "zip_with")]
 pub fn max_horizontal(s: &[Series]) -> PolarsResult<Option<Series>> {
     let df = DataFrame::new_no_checks(Vec::from(s));
     df.max_horizontal()
         .map(|opt_s| opt_s.map(|s| s.with_name("max")))
 }
 
-#[cfg(feature = "zip_with")]
 pub fn min_horizontal(s: &[Series]) -> PolarsResult<Option<Series>> {
     let df = DataFrame::new_no_checks(Vec::from(s));
     df.min_horizontal()
         .map(|opt_s| opt_s.map(|s| s.with_name("min")))
+}
+
+pub fn coalesce_series(s: &[Series]) -> PolarsResult<Series> {
+    // TODO! this can be faster if we have more than two inputs.
+    polars_ensure!(!s.is_empty(), NoData: "cannot coalesce empty list");
+    let mut out = s[0].clone();
+    for s in s {
+        if !out.null_count() == 0 {
+            return Ok(out);
+        } else {
+            let mask = out.is_not_null();
+            out = out.zip_with_same_type(&mask, s)?;
+        }
+    }
+    Ok(out)
 }
