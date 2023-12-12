@@ -33,7 +33,7 @@ pub fn replace_with_default(
         _ => {
             polars_bail!(
                 ComputeError:
-                "`default` input for `replace` must be the same length as the input or have length 1"
+                "`default` input for `replace` must have the same length as the input or have length 1"
             )
         },
     };
@@ -48,16 +48,20 @@ pub fn replace_with_default(
     coalesce_series(&[replaced, default])
 }
 
+/// Create a Series containing only the replaced values at the right indices
+/// and nulls everywhere else
 fn join_replacer(s: &Series, old: &Series, new: &Series) -> PolarsResult<Series> {
     // length 1 is many-to-one replace, otherwise it's one-to-one
     polars_ensure!(
         (new.len() == old.len()) || new.len() == 1,
-        ComputeError: "`new` input for `replace` must be the same length as `old` or have length 1"
+        ComputeError: "`new` input for `replace` must have the same length as `old` or have length 1"
     );
 
-    let df = DataFrame::new_no_checks(vec![s.clone()]);
+    let join_dtype = try_get_supertype(s.dtype(), old.dtype())?;
 
-    let mut old = old.clone();
+    let df = DataFrame::new_no_checks(vec![s.cast(&join_dtype)?]);
+
+    let mut old = old.cast(&join_dtype)?;
     old.rename("__POLARS_REPLACE_OLD");
     let mut new = match new.len() {
         1 => new.new_from_index(0, old.len()),
@@ -70,7 +74,11 @@ fn join_replacer(s: &Series, old: &Series, new: &Series) -> PolarsResult<Series>
         &replacer,
         [s.name()],
         ["__POLARS_REPLACE_OLD"],
-        JoinArgs::new(JoinType::Left),
+        JoinArgs {
+            how: JoinType::Left,
+            join_nulls: true,
+            ..Default::default()
+        },
     )?;
 
     let s_joined = df_joined.column("__POLARS_REPLACE_NEW").unwrap();
