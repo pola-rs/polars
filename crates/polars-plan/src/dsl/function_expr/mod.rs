@@ -123,6 +123,12 @@ pub enum FunctionExpr {
     Boolean(BooleanFunction),
     #[cfg(feature = "abs")]
     Abs,
+    #[cfg(feature = "hist")]
+    Hist {
+        bin_count: Option<usize>,
+        include_category: bool,
+        include_breakpoint: bool,
+    },
     NullCount,
     Pow(PowFunction),
     #[cfg(feature = "row_hash")]
@@ -499,6 +505,16 @@ impl Hash for FunctionExpr {
             EwmStd { options } => options.hash(state),
             #[cfg(feature = "ewma")]
             EwmVar { options } => options.hash(state),
+            #[cfg(feature = "hist")]
+            Hist {
+                bin_count,
+                include_category,
+                include_breakpoint,
+            } => {
+                bin_count.hash(state);
+                include_category.hash(state);
+                include_breakpoint.hash(state);
+            },
         }
     }
 }
@@ -663,6 +679,8 @@ impl Display for FunctionExpr {
             EwmStd { .. } => "ewm_std",
             #[cfg(feature = "ewma")]
             EwmVar { .. } => "ewm_var",
+            #[cfg(feature = "hist")]
+            Hist { .. } => "hist",
         };
         write!(f, "{s}")
     }
@@ -835,6 +853,19 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     #[cfg(feature = "moment")]
                     Skew(window_size, bias) => map!(rolling::rolling_skew, window_size, bias),
                 }
+            },
+            #[cfg(feature = "hist")]
+            Hist {
+                bin_count,
+                include_category,
+                include_breakpoint,
+            } => {
+                map_as_slice!(
+                    dispatch::hist,
+                    bin_count,
+                    include_category,
+                    include_breakpoint
+                )
             },
             ShiftAndFill => {
                 map_as_slice!(shift_and_fill::shift_and_fill)

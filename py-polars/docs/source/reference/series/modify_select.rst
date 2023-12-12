@@ -30,7 +30,6 @@ Manipulation/selection
     Series.gather
     Series.gather_every
     Series.head
-    Series.hist
     Series.interpolate
     Series.item
     Series.limit
