@@ -39,7 +39,7 @@ smartstring = { workspace = true }
 unicode-reverse = { workspace = true, optional = true }
 
 [dev-dependencies]
-rand = { workspace = true }
+rand = { workspace = true, features = ["small_rng"] }
 
 [build-dependencies]
 version_check = { workspace = true }
@@ -113,6 +113,7 @@ list_drop_nulls = []
 list_sample = []
 extract_groups = ["dtype-struct", "polars-core/regex"]
 is_in = ["polars-core/reinterpret"]
+hist = ["dtype-categorical", "dtype-struct"]
 convert_index = []
 repeat_by = []
 peaks = []
@@ -120,3 +121,4 @@ cum_agg = []
 ewma = []
 abs = []
 cov = []
+gather = []

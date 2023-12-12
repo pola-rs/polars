@@ -113,3 +113,19 @@ pub(super) fn arg_unique(s: &Series) -> PolarsResult<Series> {
 pub(super) fn rank(s: &Series, options: RankOptions, seed: Option<u64>) -> PolarsResult<Series> {
     Ok(s.rank(options, seed))
 }
+
+
+#[cfg(feature = "hist")]
+pub(super) fn hist(s: &[Series],
+                   bin_count: Option<usize>,
+                   include_category: bool,
+                   include_breakpoint: bool,
+) -> PolarsResult<Series> {
+    let bins = if s.len() == 2 {
+        Some(s[1].clone())
+    } else {
+        None
+    };
+    let s = &s[0];
+    hist_series(s, bin_count, bins, include_category, include_breakpoint)
+}

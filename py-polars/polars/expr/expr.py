@@ -9003,6 +9003,21 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.shrink_dtype())
 
+    def hist(self,
+             bins: IntoExpr | None = None,
+             *,
+             bin_count: int | None = None,
+             include_category: bool = True,
+             include_breakpoint: bool = True,
+             ) -> Self:
+
+        if bins is not None:
+            if isinstance(bins, list):
+                bins = pl.Series(bins)
+            bins = parse_as_expression(bins)
+        return self._from_pyexpr(self._pyexpr.hist(bins, bin_count, include_category, include_breakpoint))
+
+
     def replace(
         self,
         mapping: dict[Any, Any],

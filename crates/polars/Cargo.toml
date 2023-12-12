@@ -290,6 +290,7 @@ dtype-struct = [
   "polars-ops/dtype-struct",
   "polars-io/dtype-struct",
 ]
+hist = ["polars-ops/hist", "polars-lazy/hist"]
 
 docs-selection = [
   "csv",

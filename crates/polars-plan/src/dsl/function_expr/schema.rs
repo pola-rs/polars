@@ -111,6 +111,24 @@ impl FunctionExpr {
             CumMax { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => mapper.with_dtype(IDX_DTYPE),
+            #[cfg(feature = "hist")]
+            Hist {
+                include_category, include_breakpoint, ..
+            } => {
+                if *include_breakpoint || *include_category {
+                    let mut fields = Vec::with_capacity(3);
+                    if *include_breakpoint {
+                       fields.push(Field::new("break_point",DataType::Float64));
+                    }
+                    if *include_category {
+                        fields.push(Field::new("category", DataType::Categorical(None, Default::default())));
+                    }
+                    fields.push(Field::new("count", IDX_DTYPE));
+                    mapper.with_dtype(DataType::Struct(fields))
+                } else {
+                    mapper.with_dtype(IDX_DTYPE)
+                }
+            }
             #[cfg(feature = "diff")]
             Diff(_, _) => mapper.map_dtype(|dt| match dt {
                 #[cfg(feature = "dtype-datetime")]

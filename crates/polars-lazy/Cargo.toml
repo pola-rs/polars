@@ -154,6 +154,7 @@ rle = ["polars-plan/rle", "polars-ops/rle"]
 extract_groups = ["polars-plan/extract_groups"]
 peaks = ["polars-plan/peaks"]
 cov = ["polars-ops/cov", "polars-plan/cov"]
+hist = ["polars-plan/hist"]
 
 binary_encoding = ["polars-plan/binary_encoding"]
 string_encoding = ["polars-plan/string_encoding"]
@@ -295,6 +296,7 @@ features = [
   "cumulative_eval",
   "list_eval",
   "diagonal_concat",
+  "hist",
 ]
 # defines the configuration attribute `docsrs`
 rustdoc-args = ["--cfg", "docsrs"]

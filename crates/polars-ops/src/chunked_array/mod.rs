@@ -21,7 +21,10 @@ pub mod mode;
 
 #[cfg(feature = "cov")]
 pub mod cov;
+#[cfg(feature = "gather")]
 pub mod gather_skip_nulls;
+#[cfg(feature = "hist")]
+mod hist;
 #[cfg(feature = "repeat_by")]
 mod repeat_by;
 
@@ -39,6 +42,8 @@ pub use set::ChunkedSet;
 pub use strings::*;
 #[cfg(feature = "top_k")]
 pub use top_k::*;
+#[cfg(feature = "hist")]
+pub use hist::*;
 
 #[allow(unused_imports)]
 use crate::prelude::*;
