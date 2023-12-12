@@ -8404,7 +8404,7 @@ class Expr:
         *,
         adjust: bool = True,
         min_periods: int = 1,
-        ignore_nulls: bool = True,
+        ignore_nulls: bool = False,
     ) -> Self:
         r"""
         Exponentially-weighted moving average.

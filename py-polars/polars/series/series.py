@@ -6365,7 +6365,7 @@ class Series:
         *,
         adjust: bool = True,
         min_periods: int = 1,
-        ignore_nulls: bool = True,
+        ignore_nulls: bool = False,
     ) -> Series:
         r"""
         Exponentially-weighted moving average.
