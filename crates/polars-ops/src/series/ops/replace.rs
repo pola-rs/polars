@@ -1,4 +1,5 @@
 use polars_core::prelude::*;
+use polars_core::utils::try_get_supertype;
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
 
 use crate::frame::join::*;
@@ -6,14 +7,16 @@ use crate::prelude::*;
 use crate::series::ops::coalesce_series;
 
 pub fn replace(s: &Series, old: &Series, new: &Series) -> PolarsResult<Series> {
+    let output_dtype = try_get_supertype(s.dtype(), new.dtype())?;
+
     if old.len() == 0 {
-        return Ok(s.clone());
+        return s.cast(&output_dtype);
     }
 
-    // TODO: Add fast path for replacing a single value
+    // TODO: Add fast path for replacing a single value (ZIP WITH?)
     let replaced = join_replacer(s, old, new)?;
 
-    coalesce_series(&[replaced, s.clone()])
+    coalesce_series(&[replaced, s.cast(&output_dtype)?])
 }
 
 pub fn replace_with_default(
@@ -22,9 +25,11 @@ pub fn replace_with_default(
     new: &Series,
     default: &Series,
 ) -> PolarsResult<Series> {
+    let output_dtype = try_get_supertype(new.dtype(), default.dtype())?;
+
     let default = match default.len() {
-        len if len == s.len() => default.clone(),
-        1 => default.new_from_index(0, s.len()),
+        len if len == s.len() => default.cast(&output_dtype)?,
+        1 => default.cast(&output_dtype)?.new_from_index(0, s.len()),
         _ => {
             polars_bail!(
                 ComputeError:
