@@ -8,7 +8,6 @@ name = "polars"
 crate-type = ["cdylib"]
 
 [dependencies]
-polars-algo = { workspace = true }
 polars-core = { workspace = true, features = ["python"] }
 polars-error = { workspace = true }
 polars-lazy = { workspace = true, features = ["python"] }

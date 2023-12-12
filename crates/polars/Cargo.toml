@@ -11,7 +11,6 @@ repository = { workspace = true }
 description = "DataFrame library based on Apache Arrow"
 
 [dependencies]
-polars-algo = { workspace = true, optional = true }
 polars-core = { workspace = true }
 polars-io = { workspace = true, optional = true }
 polars-lazy = { workspace = true, optional = true }
@@ -183,7 +182,6 @@ trigonometry = ["polars-lazy?/trigonometry"]
 sign = ["polars-lazy?/sign"]
 pivot = ["polars-lazy?/pivot"]
 top_k = ["polars-lazy?/top_k"]
-algo = ["polars-algo"]
 cse = ["polars-lazy?/cse"]
 propagate_nans = ["polars-lazy?/propagate_nans"]
 coalesce = ["polars-lazy?/coalesce"]
