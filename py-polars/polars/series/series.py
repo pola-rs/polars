@@ -1693,7 +1693,7 @@ class Series:
 
     def product(self) -> int | float:
         """Reduce this Series to the product value."""
-        return self.to_frame().select(F.col(self.name).product()).to_series().item()
+        return self._s.product()
 
     def pow(self, exponent: int | float | None | Series) -> Series:
         """
@@ -1760,7 +1760,8 @@ class Series:
         whereas polars defaults to ignoring them.
 
         """
-        return self.to_frame().select(F.col(self.name).nan_max()).item()
+        # return self.to_frame().select(F.col(self.name).nan_max()).item()
+        return self._s.nan_max()
 
     def nan_min(self) -> int | float | date | datetime | timedelta | str:
         """
@@ -1792,7 +1793,8 @@ class Series:
         """
         if not self.dtype.is_numeric():
             return None
-        return self.to_frame().select(F.col(self.name).std(ddof)).to_series().item()
+        # return self.to_frame().select(F.col(self.name).std(ddof)).to_series().item()
+        return self._s.std(ddof)
 
     def var(self, ddof: int = 1) -> float | None:
         """
@@ -1814,7 +1816,7 @@ class Series:
         """
         if not self.dtype.is_numeric():
             return None
-        return self.to_frame().select(F.col(self.name).var(ddof)).to_series().item()
+        return self._s.var(ddof)
 
     def median(self) -> float | None:
         """
@@ -2453,10 +2455,8 @@ class Series:
         │ green ┆ 1     │
         └───────┴───────┘
         """
-        return (
-            self.to_frame()
-            .select(F.col(self.name).value_counts(sort=sort, parallel=parallel))
-            .unnest(self.name)
+        return pl.DataFrame._from_pydf(
+            self._s.value_counts(sort=sort, parallel=parallel)
         )
 
     def unique_counts(self) -> Series:
@@ -2500,12 +2500,7 @@ class Series:
         0.8568409950394724
 
         """
-        return (
-            self.to_frame()
-            .select(F.col(self.name).entropy(base, normalize=normalize))
-            .to_series()
-            .item()
-        )
+        return self._s.entropy(base=base, normalize=normalize)
 
     def cumulative_eval(
         self, expr: Expr, min_periods: int = 1, *, parallel: bool = False
@@ -2772,6 +2767,7 @@ class Series:
         ]
 
         """
+        return self._from_pyseries(self._s.slice(offset=offset, length=length))
 
     def append(self, other: Series) -> Self:
         """
@@ -3940,16 +3936,19 @@ class Series:
         ]
 
         """
-        if isinstance(lower_bound, str):
-            lower_bound = F.lit(lower_bound)
-        if isinstance(upper_bound, str):
-            upper_bound = F.lit(upper_bound)
+        if closed == "none":
+            out = (self > lower_bound) & (self < upper_bound)
+        elif closed == "both":
+            out = (self >= lower_bound) & (self <= upper_bound)
+        elif closed == "right":
+            out = (self > lower_bound) & (self <= upper_bound)
+        elif closed == "left":
+            out = (self >= lower_bound) & (self < upper_bound)
 
-        return (
-            self.to_frame()
-            .select(F.col(self.name).is_between(lower_bound, upper_bound, closed))
-            .to_series()
-        )
+        if isinstance(out, pl.Expr):
+            out = F.select(out).to_series()
+
+        return out
 
     def to_numpy(
         self,

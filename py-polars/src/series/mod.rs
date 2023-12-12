@@ -679,6 +679,12 @@ impl PySeries {
         self.series.clear().into()
     }
 
+    fn hist(&self, bins: Option<Self>, bin_count: Option<usize>) -> PyResult<PyDataFrame> {
+        let bins = bins.map(|s| s.series);
+        let out = hist(&self.series, bins.as_ref(), bin_count).map_err(PyPolarsErr::from)?;
+        Ok(out.into())
+    }
+
     fn head(&self, n: usize) -> Self {
         self.series.head(Some(n)).into()
     }
@@ -687,10 +693,17 @@ impl PySeries {
         self.series.tail(Some(n)).into()
     }
 
-    fn hist(&self, bins: Option<Self>, bin_count: Option<usize>) -> PyResult<PyDataFrame> {
-        let bins = bins.map(|s| s.series);
-        let out = hist(&self.series, bins.as_ref(), bin_count).map_err(PyPolarsErr::from)?;
+    fn value_counts(&self, sort: bool, parallel: bool) -> PyResult<PyDataFrame> {
+        let out = self
+            .series
+            .value_counts(sort, parallel)
+            .map_err(PyPolarsErr::from)?;
         Ok(out.into())
+    }
+
+    fn slice(&self, offset: i64, length: Option<usize>) -> Self {
+        let length = length.unwrap_or_else(|| self.series.len());
+        self.series.slice(offset, length).into()
     }
 }
 
