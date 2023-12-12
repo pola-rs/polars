@@ -36,7 +36,6 @@ from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.datatypes import (
     INTEGER_DTYPES,
     N_INFER_DEFAULT,
-    NUMERIC_DTYPES,
     Boolean,
     Float64,
     Object,
@@ -4340,7 +4339,7 @@ class DataFrame:
         │ ---        ┆ ---      ┆ ---      ┆ ---      ┆ ---  ┆ ---  ┆ ---        │
         │ str        ┆ f64      ┆ f64      ┆ f64      ┆ str  ┆ str  ┆ str        │
         ╞════════════╪══════════╪══════════╪══════════╪══════╪══════╪════════════╡
-        │ count      ┆ 3.0      ┆ 3.0      ┆ 3.0      ┆ 3    ┆ 3    ┆ 3          │
+        │ count      ┆ 3.0      ┆ 2.0      ┆ 3.0      ┆ 2    ┆ 2    ┆ 3          │
         │ null_count ┆ 0.0      ┆ 1.0      ┆ 0.0      ┆ 1    ┆ 1    ┆ 0          │
         │ mean       ┆ 2.266667 ┆ 4.5      ┆ 0.666667 ┆ null ┆ null ┆ null       │
         │ std        ┆ 1.101514 ┆ 0.707107 ┆ 0.57735  ┆ null ┆ null ┆ null       │
@@ -4352,44 +4351,63 @@ class DataFrame:
         └────────────┴──────────┴──────────┴──────────┴──────┴──────┴────────────┘
 
         """
-        # determine metrics and optional/additional percentiles
+        if not self.columns:
+            raise TypeError("cannot describe a DataFrame without any columns")
+
+        # Determine which columns should get std/mean/percentile statistics
+        stat_cols = {
+            c for c, dt in self.schema.items() if dt.is_numeric() or dt == Boolean
+        }
+
+        # Determine metrics and optional/additional percentiles
         metrics = ["count", "null_count", "mean", "std", "min"]
         percentile_exprs = []
         for p in parse_percentiles(percentiles):
-            percentile_exprs.append(F.all().quantile(p).name.prefix(f"{p}:"))
+            for c in self.columns:
+                expr = F.col(c).quantile(p) if c in stat_cols else F.lit(None)
+                expr = expr.alias(f"{p}:{c}")
+                percentile_exprs.append(expr)
             metrics.append(f"{p:.0%}")
         metrics.append("max")
 
-        # execute metrics in parallel
+        mean_exprs = [
+            (F.col(c).mean() if c in stat_cols else F.lit(None)).alias(f"mean:{c}")
+            for c in self.columns
+        ]
+        std_exprs = [
+            (F.col(c).std() if c in stat_cols else F.lit(None)).alias(f"std:{c}")
+            for c in self.columns
+        ]
+
+        # Calculate metrics in parallel
         df_metrics = self.select(
-            F.all().len().name.prefix("count:"),
+            F.all().count().name.prefix("count:"),
             F.all().null_count().name.prefix("null_count:"),
-            F.all().mean().name.prefix("mean:"),
-            F.all().std().name.prefix("std:"),
+            *mean_exprs,
+            *std_exprs,
             F.all().min().name.prefix("min:"),
             *percentile_exprs,
             F.all().max().name.prefix("max:"),
-        ).row(0)
+        )
 
-        # reshape wide result
-        n_cols = len(self.columns)
+        # Reshape wide result
         described = [
-            df_metrics[(n * n_cols) : (n + 1) * n_cols] for n in range(len(metrics))
+            df_metrics.row(0)[(n * self.width) : (n + 1) * self.width]
+            for n in range(len(metrics))
         ]
 
-        # cast by column type (numeric/bool -> float), (other -> string)
+        # Cast by column type (numeric/bool -> float), (other -> string)
         summary = dict(zip(self.columns, list(zip(*described))))
-        num_or_bool = NUMERIC_DTYPES | {Boolean}
-        for c, tp in self.schema.items():
+        for c in self.columns:
             summary[c] = [  # type: ignore[assignment]
                 None
                 if (v is None or isinstance(v, dict))
-                else (float(v) if tp in num_or_bool else str(v))
+                else (float(v) if c in stat_cols else str(v))
                 for v in summary[c]
             ]
 
-        # return results as a frame
-        df_summary = self.__class__(summary)
+        # Return results as a DataFrame
+        df_summary = self._from_dict(summary)
         df_summary.insert_column(0, pl.Series("describe", metrics))
         return df_summary
 
