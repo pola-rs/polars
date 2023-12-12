@@ -2275,29 +2275,29 @@ def test_ewm_mean_leading_nulls() -> None:
     for min_periods in [1, 2, 3]:
         assert (
             pl.Series([1, 2, 3, 4])
-            .ewm_mean(com=3, min_periods=min_periods)
+            .ewm_mean(com=3, min_periods=min_periods, ignore_nulls=True)
             .null_count()
             == min_periods - 1
         )
     assert pl.Series([None, 1.0, 1.0, 1.0]).ewm_mean(
-        alpha=0.5, min_periods=1
+        alpha=0.5, min_periods=1, ignore_nulls=True
     ).to_list() == [None, 1.0, 1.0, 1.0]
     assert pl.Series([None, 1.0, 1.0, 1.0]).ewm_mean(
-        alpha=0.5, min_periods=2
+        alpha=0.5, min_periods=2, ignore_nulls=True
     ).to_list() == [None, None, 1.0, 1.0]
 
 
 def test_ewm_mean_min_periods() -> None:
     series = pl.Series([1.0, None, None, None])
 
-    ewm_mean = series.ewm_mean(alpha=0.5, min_periods=1)
+    ewm_mean = series.ewm_mean(alpha=0.5, min_periods=1, ignore_nulls=True)
     assert ewm_mean.to_list() == [1.0, 1.0, 1.0, 1.0]
-    ewm_mean = series.ewm_mean(alpha=0.5, min_periods=2)
+    ewm_mean = series.ewm_mean(alpha=0.5, min_periods=2, ignore_nulls=True)
     assert ewm_mean.to_list() == [None, None, None, None]
 
     series = pl.Series([1.0, None, 2.0, None, 3.0])
 
-    ewm_mean = series.ewm_mean(alpha=0.5, min_periods=1)
+    ewm_mean = series.ewm_mean(alpha=0.5, min_periods=1, ignore_nulls=True)
     assert_series_equal(
         ewm_mean,
         pl.Series(
