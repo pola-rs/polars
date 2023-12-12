@@ -64,11 +64,12 @@ impl Expr {
 
     /// Compute the histogram of a dataset.
     #[cfg(feature = "hist")]
-    pub fn hist(self,
-                bins: Option<Expr>,
-                bin_count: Option<usize>,
-                include_category: bool,
-                include_breakpoint: bool,
+    pub fn hist(
+        self,
+        bins: Option<Expr>,
+        bin_count: Option<usize>,
+        include_category: bool,
+        include_breakpoint: bool,
     ) -> Self {
         let mut input = vec![self];
         if let Some(bins) = bins {
@@ -77,10 +78,10 @@ impl Expr {
 
         Expr::Function {
             input,
-            function: FunctionExpr::Hist{
+            function: FunctionExpr::Hist {
                 bin_count,
                 include_category,
-                include_breakpoint
+                include_breakpoint,
             },
             options: FunctionOptions {
                 collect_groups: ApplyOptions::GroupWise,

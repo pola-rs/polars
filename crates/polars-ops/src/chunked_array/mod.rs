@@ -31,6 +31,8 @@ mod repeat_by;
 pub use binary::*;
 #[cfg(feature = "timezones")]
 pub use datetime::*;
+#[cfg(feature = "hist")]
+pub use hist::*;
 #[cfg(feature = "interpolate")]
 pub use interpolate::*;
 pub use list::*;
@@ -42,8 +44,6 @@ pub use set::ChunkedSet;
 pub use strings::*;
 #[cfg(feature = "top_k")]
 pub use top_k::*;
-#[cfg(feature = "hist")]
-pub use hist::*;
 
 #[allow(unused_imports)]
 use crate::prelude::*;

@@ -2353,6 +2353,8 @@ class Series:
         bins: list[float] | None = None,
         *,
         bin_count: int | None = None,
+        include_category: bool = True,
+        include_breakpoint: bool = True,
     ) -> DataFrame:
         """
         Bin values into buckets and count their occurrences.
@@ -2365,6 +2367,10 @@ class Series:
         bin_count
             If no bins provided, this will be used to determine
             the distance of the bins
+        include_breakpoint
+            Include a column that indicates the upper breakpoint.
+        include_category
+            Include a column that shows the intervals as categories.
 
         Returns
         -------
@@ -2393,9 +2399,22 @@ class Series:
         └─────────────┴─────────────┴─────────┘
 
         """
-        if bins:
-            bins = Series(bins, dtype=Float64)._s
-        return wrap_df(self._s.hist(bins, bin_count))
+        out = (
+            self.to_frame()
+            .select_seq(
+                F.col(self.name).hist(
+                    bins=bins,
+                    bin_count=bin_count,
+                    include_category=include_category,
+                    include_breakpoint=include_breakpoint,
+                )
+            )
+            .to_series()
+        )
+        if not include_breakpoint and not include_category:
+            return out.to_frame()
+        else:
+            return out.struct.unnest()
 
     def value_counts(self, *, sort: bool = False, parallel: bool = False) -> DataFrame:
         """

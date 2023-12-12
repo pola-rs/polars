@@ -114,12 +114,12 @@ pub(super) fn rank(s: &Series, options: RankOptions, seed: Option<u64>) -> Polar
     Ok(s.rank(options, seed))
 }
 
-
 #[cfg(feature = "hist")]
-pub(super) fn hist(s: &[Series],
-                   bin_count: Option<usize>,
-                   include_category: bool,
-                   include_breakpoint: bool,
+pub(super) fn hist(
+    s: &[Series],
+    bin_count: Option<usize>,
+    include_category: bool,
+    include_breakpoint: bool,
 ) -> PolarsResult<Series> {
     let bins = if s.len() == 2 {
         Some(s[1].clone())

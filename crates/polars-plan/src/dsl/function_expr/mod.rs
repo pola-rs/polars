@@ -124,7 +124,7 @@ pub enum FunctionExpr {
     #[cfg(feature = "abs")]
     Abs,
     #[cfg(feature = "hist")]
-    Hist{
+    Hist {
         bin_count: Option<usize>,
         include_category: bool,
         include_breakpoint: bool,
@@ -506,7 +506,7 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "ewma")]
             EwmVar { options } => options.hash(state),
             #[cfg(feature = "hist")]
-            Hist{
+            Hist {
                 bin_count,
                 include_category,
                 include_breakpoint,
@@ -680,7 +680,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "ewma")]
             EwmVar { .. } => "ewm_var",
             #[cfg(feature = "hist")]
-            Hist{..} => "hist",
+            Hist { .. } => "hist",
         };
         write!(f, "{s}")
     }
@@ -856,10 +856,17 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             },
             #[cfg(feature = "hist")]
             Hist {
-                bin_count, include_category, include_breakpoint
+                bin_count,
+                include_category,
+                include_breakpoint,
             } => {
-                map_as_slice!(dispatch::hist, bin_count, include_category, include_breakpoint)
-            }
+                map_as_slice!(
+                    dispatch::hist,
+                    bin_count,
+                    include_category,
+                    include_breakpoint
+                )
+            },
             ShiftAndFill => {
                 map_as_slice!(shift_and_fill::shift_and_fill)
             },

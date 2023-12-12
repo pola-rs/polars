@@ -6,7 +6,7 @@ use arrow::legacy::index::IdxSize;
 use arrow::types::simd::Simd;
 use num_traits::ToPrimitive;
 use polars_compute::min_max::MinMaxKernel;
-use polars_core::datatypes::{PolarsNumericType};
+use polars_core::datatypes::PolarsNumericType;
 use polars_core::prelude::{
     ChunkCast, ChunkSort, ChunkedArray, DataType, StructChunked, UInt32Type, Utf8ChunkedBuilder, *,
 };
@@ -66,6 +66,10 @@ where
         }
         // Add last value, this is the garbage bin. E.g. anything that doesn't fit in the bounds.
         count.push(current_count);
+        // Add the remaining buckets
+        while count.len() < breaks.len() {
+            count.push(0)
+        }
         (breaks, count)
     } else {
         let min = ca.min().unwrap().to_f64().unwrap();
@@ -91,10 +95,24 @@ where
         breaks.push(f64::INFINITY);
 
         let mut count: Vec<IdxSize> = vec![0; breaks.len()];
+        let end_idx = count.len() - 1;
+
+        // start is the closed rhs of the interval, so we subtract the bucket width
+        let start_range = start - interval;
         for chunk in ca.downcast_iter() {
             for item in chunk.non_null_values_iter() {
-                let item = item.to_f64().unwrap();
-                let idx = (item / interval) as usize;
+                let item = item.to_f64().unwrap() - start_range;
+
+                // This is needed for numeric statility.
+                let item = item / interval;
+                let item = if (item.round() - item).abs() < 0.0000001 {
+                    item.round() - 1.0
+                } else {
+                    item.ceil() - 1.0
+                };
+
+                let idx = item as usize;
+                let idx = std::cmp::min(idx, end_idx);
                 count[idx] += 1;
             }
         }
@@ -131,9 +149,10 @@ where
         let out = fields.pop().unwrap();
         out.with_name(ca.name())
     } else {
-        StructChunked::new(ca.name(), &fields).unwrap().into_series()
+        StructChunked::new(ca.name(), &fields)
+            .unwrap()
+            .into_series()
     }
-
 }
 
 pub fn hist_series(
@@ -162,11 +181,4 @@ pub fn hist_series(
          compute_hist(ca, bin_count, bins_arg, include_category, include_breakpoint)
     });
     Ok(out)
-}
-
-#[test]
-fn test_hist() {
-    let ca = ChunkedArray::<UInt32Type>::new_vec("a", [1, 2, 3, 5, 5].to_vec());
-
-    dbg!(compute_hist(&ca, None, Some(&[2.0, 3.0]), true, true).into_series());
 }

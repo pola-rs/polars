@@ -920,13 +920,17 @@ impl PyExpr {
 
     #[cfg(feature = "hist")]
     #[pyo3(signature = (bins, bin_count, include_category, include_breakpoint))]
-    fn hist(&self,
-            bins: Option<PyExpr>,
-            bin_count: Option<usize>,
-            include_category: bool,
-            include_breakpoint: bool,
+    fn hist(
+        &self,
+        bins: Option<PyExpr>,
+        bin_count: Option<usize>,
+        include_category: bool,
+        include_breakpoint: bool,
     ) -> Self {
         let bins = bins.map(|e| e.inner);
-        self.inner.clone().hist(bins, bin_count, include_category, include_breakpoint).into()
+        self.inner
+            .clone()
+            .hist(bins, bin_count, include_category, include_breakpoint)
+            .into()
     }
 }

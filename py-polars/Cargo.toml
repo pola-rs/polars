@@ -185,7 +185,7 @@ operations = [
   "propagate_nans",
   "timezones",
   "peaks",
-  "hist"
+  "hist",
 ]
 
 io = [
