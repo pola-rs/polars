@@ -251,11 +251,10 @@ def concat(
 
 
 def _alignment_join(
-    *idx_frames: tuple[int, FrameType],
+    *idx_frames: tuple[int, LazyFrame],
     align_on: list[str],
     how: JoinStrategy = "outer",
     descending: bool | Sequence[bool] = False,
-    batch_size: int = 25,
 ) -> LazyFrame:
     """Create a single master frame with all rows aligned on the common key values."""
     # note: can stackoverflow if the join becomes too large, so we
@@ -265,19 +264,16 @@ def _alignment_join(
         how = "outer_coalesce"
 
     def join_func(
-        idx_x: tuple[int, FrameType],
-        idx_y: tuple[int, FrameType],
+        idx_x: tuple[int, LazyFrame],
+        idx_y: tuple[int, LazyFrame],
     ) -> tuple[int, LazyFrame]:
         (_, x), (y_idx, y) = idx_x, idx_y
-        return y_idx, x.lazy().join(y.lazy(), how=how, on=align_on, suffix=f":{y_idx}")
+        return y_idx, x.join(y, how=how, on=align_on, suffix=f":{y_idx}")
 
-    df_joined = reduce(join_func, idx_frames)[1].sort(  # type: ignore[arg-type]
-        by=align_on, descending=descending
-    )
+    joined = reduce(join_func, idx_frames)[1].sort(by=align_on, descending=descending)
     if post_align_collect:
-        df_joined = df_joined.collect(no_optimization=True)  # type: ignore[assignment,attr-defined]
-
-    return df_joined.lazy()
+        joined = joined.collect(no_optimization=True).lazy()
+    return joined
 
 
 def align_frames(
@@ -428,12 +424,13 @@ def align_frames(
             "input frames must be of a consistent type (all LazyFrame or all DataFrame)"
         )
 
+    eager = isinstance(frames[0], pl.DataFrame)
     on = [on] if (isinstance(on, str) or not isinstance(on, Sequence)) else on
     align_on = [(c.meta.output_name() if isinstance(c, pl.Expr) else c) for c in on]
 
     # create aligned master frame (this is the most expensive part; afterwards
     # we just subselect out the columns representing the component frames)
-    idx_frames = tuple(enumerate(frames))
+    idx_frames = tuple((idx, df.lazy()) for idx, df in enumerate(frames))
     alignment_frame = _alignment_join(
         *idx_frames, align_on=align_on, how=how, descending=descending
     )
@@ -452,7 +449,7 @@ def align_frames(
             f = f.select(select)
         aligned_frames.append(f)
 
-    eager = isinstance(idx_frames[0][1], pl.DataFrame)
     return cast(
-        List[FrameType], F.collect_all(aligned_frames) if eager else aligned_frames
+        List[FrameType],
+        F.collect_all(aligned_frames) if eager else aligned_frames,
     )
