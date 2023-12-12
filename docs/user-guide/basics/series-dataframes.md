@@ -49,7 +49,7 @@ Similar to strings, there is a separate namespace for datetime related operation
 
 ## DataFrame
 
-A `DataFrame` is a 2-dimensional data structure that is backed by a `Series`, and it could be seen as an abstraction of on collection (e.g. list) of `Series`. Operations that can be executed on `DataFrame` are very similar to what is done in a `SQL` like query. You can `GROUP BY`, `JOIN`, `PIVOT`, but also define custom functions. In the next pages we will cover how to perform these transformations.
+A `DataFrame` is a 2-dimensional data structure that is backed by a `Series`, and it could be seen as an abstraction of a collection (e.g. list) of `Series`. Operations that can be executed on `DataFrame` are very similar to what is done in a `SQL` like query. You can `GROUP BY`, `JOIN`, `PIVOT`, but also define custom functions. In the next pages we will cover how to perform these transformations.
 
 {{code_block('user-guide/basics/series-dataframes','dataframe',['DataFrame'])}}
 
