@@ -197,17 +197,18 @@ def test_replace_int_to_int_df() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_replace_str_to_int() -> None:
+def test_replace_str_to_int_fill_null() -> None:
     lf = pl.LazyFrame({"a": ["one", "two"]})
     mapping = {"one": 1}
 
     with pytest.deprecated_call():
-        result = lf.with_columns(
-            pl.col("a").replace(mapping, default=None, return_dtype=pl.UInt32)
+        result = lf.select(
+            pl.col("a")
+            .replace(mapping, default=None, return_dtype=pl.UInt32)
+            .fill_null(999)
         )
-    result = result.fill_null(999)
 
-    expected = pl.LazyFrame({"a": [1, 999]}, schema_overrides={"a": pl.UInt32})
+    expected = pl.LazyFrame({"a": [1, 999]})
     assert_frame_equal(result, expected)
 
 
@@ -250,17 +251,17 @@ def test_replace_int_to_int1(int_mapping: dict[int, int]) -> None:
 
 # TODO: Check return dtype
 def test_replace_int_to_int2(int_mapping: dict[int, int]) -> None:
-    s = pl.Series([-1, 22, None, 44, -5], dtype=pl.Int16)
+    s = pl.Series([1, 22, None, 44, -5], dtype=pl.Int16)
     result = s.replace(int_mapping, default=None)
-    expected = pl.Series([None, 22, None, 44, None], dtype=pl.Int64)
+    expected = pl.Series([11, None, None, None, None], dtype=pl.Int64)
     assert_series_equal(result, expected)
 
 
 # TODO: Check return dtype
 def test_replace_int_to_int21(int_mapping: dict[int, int]) -> None:
-    s = pl.Series([-1, 22, None, 44, -5], dtype=pl.Int16)
+    s = pl.Series([1, 22, None, 44, -5], dtype=pl.Int16)
     result = s.replace(int_mapping, default=9)
-    expected = pl.Series([9, 22, 9, 44, 9], dtype=pl.Int64)
+    expected = pl.Series([11, 9, 9, 9, 9], dtype=pl.Int64)
     assert_series_equal(result, expected)
 
 
@@ -281,10 +282,10 @@ def test_replace_int_to_int4_return_dtype(int_mapping: dict[int, int]) -> None:
 
 
 def test_replace_int_to_int5_return_dtype(int_mapping: dict[int, int]) -> None:
-    s = pl.Series([-1, 22, None, 44, -5], dtype=pl.Int16)
+    s = pl.Series([1, 22, None, 44, -5], dtype=pl.Int16)
     with pytest.deprecated_call():
         result = s.replace(int_mapping, default=9, return_dtype=pl.Float32)
-    expected = pl.Series([9.0, 22.0, 9.0, 44.0, 9.0], dtype=pl.Float32)
+    expected = pl.Series([11.0, 9.0, 9.0, 9.0, 9.0], dtype=pl.Float32)
     assert_series_equal(result, expected)
 
 
