@@ -51,6 +51,7 @@ from polars.utils.deprecation import (
     deprecate_renamed_function,
     deprecate_renamed_parameter,
     deprecate_saturating,
+    issue_deprecation_warning,
 )
 from polars.utils.meta import threadpool_size
 from polars.utils.various import _warn_null_comparison, no_default, sphinx_accessor
@@ -9201,7 +9202,16 @@ class Expr:
             else parse_as_expression(default, str_as_lit=True)
         )
 
-        return self._from_pyexpr(self._pyexpr.replace(old, new, default))
+        result = self._from_pyexpr(self._pyexpr.replace(old, new, default))
+
+        if return_dtype is not None:
+            issue_deprecation_warning(
+                "cast the result or the inputs instead",
+                version="0.20.0",
+            )
+            result = result.cast(return_dtype)
+
+        return result
 
     @deprecate_renamed_function("map_batches", version="0.19.0")
     def map(
