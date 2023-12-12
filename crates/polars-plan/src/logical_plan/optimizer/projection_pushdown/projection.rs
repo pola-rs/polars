@@ -46,25 +46,7 @@ pub(super) fn process_projection(
 ) -> PolarsResult<ALogicalPlan> {
     let mut local_projection = Vec::with_capacity(exprs.len());
 
-    // path for `SELECT count(*) FROM`
-    // as there would be no projections and we would read
-    // the whole file while we only want the count
-    if exprs.len() == 1 && is_count(exprs[0], expr_arena) {
-        let input_schema = lp_arena.get(input).schema(lp_arena);
-        // simply select the first column
-        let (first_name, _) = input_schema.try_get_at_index(0)?;
-        let expr = expr_arena.add(AExpr::Column(Arc::from(first_name.as_str())));
-        if !acc_projections.is_empty() {
-            check_double_projection(
-                &exprs[0],
-                expr_arena,
-                &mut acc_projections,
-                &mut projected_names,
-            );
-        }
-        add_expr_to_accumulated(expr, &mut acc_projections, &mut projected_names, expr_arena);
-        local_projection.push(exprs[0]);
-    } else {
+    {
         // A projection can consist of a chain of expressions followed by an alias.
         // We want to do the chain locally because it can have complicated side effects.
         // The only thing we push down is the root name of the projection.
