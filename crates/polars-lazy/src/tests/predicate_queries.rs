@@ -25,7 +25,7 @@ fn test_multiple_roots() -> PolarsResult<()> {
 }
 
 #[test]
-#[cfg(all(feature = "is_in", feature = "strings"))]
+#[cfg(all(feature = "is_in", feature = "strings", feature = "dtype-categorical"))]
 fn test_issue_2472() -> PolarsResult<()> {
     let df = df![
         "group" => ["54360-2001-0-20020312-4-1"
