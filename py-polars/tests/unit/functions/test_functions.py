@@ -136,7 +136,7 @@ def test_align_frames() -> None:
     import pandas as pd
 
     # setup some test frames
-    df1 = pd.DataFrame(
+    pdf1 = pd.DataFrame(
         {
             "date": pd.date_range(start="2019-01-02", periods=9),
             "a": np.array([0, 1, 2, np.nan, 4, 5, 6, 7, 8], dtype=np.float64),
@@ -144,7 +144,7 @@ def test_align_frames() -> None:
         }
     ).set_index("date")
 
-    df2 = pd.DataFrame(
+    pdf2 = pd.DataFrame(
         {
             "date": pd.date_range(start="2019-01-04", periods=7),
             "a": np.arange(9, 16, dtype=np.float64),
@@ -153,14 +153,14 @@ def test_align_frames() -> None:
     ).set_index("date")
 
     # calculate dot-product in pandas
-    pd_dot = (df1 * df2).sum(axis="columns").to_frame("dot").reset_index()
+    pd_dot = (pdf1 * pdf2).sum(axis="columns").to_frame("dot").reset_index()
 
     # use "align_frames" to calculate dot-product from disjoint rows. pandas uses an
     # index to automatically infer the correct frame-alignment for the calculation;
     # we need to do it explicitly (which also makes it clearer what is happening)
     pf1, pf2 = pl.align_frames(
-        pl.from_pandas(df1.reset_index()),
-        pl.from_pandas(df2.reset_index()),
+        pl.from_pandas(pdf1.reset_index()),
+        pl.from_pandas(pdf2.reset_index()),
         on="date",
     )
     pl_dot = (
@@ -175,8 +175,8 @@ def test_align_frames() -> None:
 
     # (also: confirm alignment function works with lazyframes)
     lf1, lf2 = pl.align_frames(
-        pl.from_pandas(df1.reset_index()).lazy(),
-        pl.from_pandas(df2.reset_index()).lazy(),
+        pl.from_pandas(pdf1.reset_index()).lazy(),
+        pl.from_pandas(pdf2.reset_index()).lazy(),
         on="date",
     )
     assert isinstance(lf1, pl.LazyFrame)
@@ -189,20 +189,24 @@ def test_align_frames() -> None:
     # expected error condition
     with pytest.raises(TypeError):
         pl.align_frames(  # type: ignore[type-var]
-            pl.from_pandas(df1.reset_index()).lazy(),
-            pl.from_pandas(df2.reset_index()),
+            pl.from_pandas(pdf1.reset_index()).lazy(),
+            pl.from_pandas(pdf2.reset_index()),
             on="date",
         )
 
-    # descending
-    pf1, pf2 = pl.align_frames(
-        pl.DataFrame([[3, 5, 6], [5, 8, 9]], orient="row"),
-        pl.DataFrame([[2, 5, 6], [3, 8, 9], [4, 2, 0]], orient="row"),
-        on="column_0",
-        descending=True,
-    )
+    # descending result
+    df1 = pl.DataFrame([[3, 5, 6], [5, 8, 9]], orient="row")
+    df2 = pl.DataFrame([[2, 5, 6], [3, 8, 9], [4, 2, 0]], orient="row")
+
+    pf1, pf2 = pl.align_frames(df1, df2, on="column_0", descending=True)
     assert pf1.rows() == [(5, 8, 9), (4, None, None), (3, 5, 6), (2, None, None)]
     assert pf2.rows() == [(5, None, None), (4, 2, 0), (3, 8, 9), (2, 5, 6)]
+
+    # handle identical frames
+    pf1, pf2, pf3 = pl.align_frames(df1, df2, df2, on="column_0", descending=True)
+    assert pf1.rows() == [(5, 8, 9), (4, None, None), (3, 5, 6), (2, None, None)]
+    for pf in (pf2, pf3):
+        assert pf.rows() == [(5, None, None), (4, 2, 0), (3, 8, 9), (2, 5, 6)]
 
 
 def test_align_frames_duplicate_key() -> None:
