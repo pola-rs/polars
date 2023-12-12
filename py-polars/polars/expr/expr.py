@@ -9038,7 +9038,7 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame("a", [1, 3, 8, 8, 2, 1, 3])
+        >>> df = pl.DataFrame({"a": [1, 3, 8, 8, 2, 1, 3]})
         >>> df.select(pl.col("a").hist(bins=[1, 2, 3]))
         shape: (4, 1)
         ┌─────┐

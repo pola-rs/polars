@@ -12,6 +12,7 @@ use polars_core::prelude::{
 };
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_error::PolarsResult;
+use polars_utils::float::IsFloat;
 use polars_utils::total_ord::TotalOrdWrap;
 
 fn compute_hist<T>(
@@ -24,6 +25,7 @@ fn compute_hist<T>(
 where
     T: PolarsNumericType,
     PrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
+    T::Native: IsFloat,
     <T::Native as Simd>::Simd:
         Add<Output = <T::Native as Simd>::Simd> + arrow::compute::aggregate::Sum<T::Native>,
 {
@@ -103,9 +105,11 @@ where
             for item in chunk.non_null_values_iter() {
                 let item = item.to_f64().unwrap() - start_range;
 
-                // This is needed for numeric statility.
+                // This is needed for numeric stability.
+                // Only for integers.
+                // we can fall directly on a boundary with an integer.
                 let item = item / interval;
-                let item = if (item.round() - item).abs() < 0.0000001 {
+                let item = if !T::Native::is_float() && (item.round() - item).abs() < 0.0000001 {
                     item.round() - 1.0
                 } else {
                     item.ceil() - 1.0
