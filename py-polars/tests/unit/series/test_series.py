@@ -2310,7 +2310,7 @@ def test_ewm_mean_min_periods() -> None:
             ]
         ),
     )
-    ewm_mean = series.ewm_mean(alpha=0.5, min_periods=2)
+    ewm_mean = series.ewm_mean(alpha=0.5, min_periods=2, ignore_nulls=True)
     assert_series_equal(
         ewm_mean,
         pl.Series(
