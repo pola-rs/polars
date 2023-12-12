@@ -901,9 +901,8 @@ def test_sql_substr() -> None:
     with pytest.raises(
         InvalidOperationError,
         match="Invalid 'start' for Substring: -1",
-    ):
-        with pl.SQLContext(df=df) as ctx:
-            ctx.execute("SELECT SUBSTR(scol,-1) FROM df")
+    ), pl.SQLContext(df=df) as ctx:
+        ctx.execute("SELECT SUBSTR(scol,-1) FROM df")
 
 
 def test_sql_trim(foods_ipc_path: Path) -> None:
