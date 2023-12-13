@@ -50,7 +50,7 @@ pub fn deserialize_iter<'a>(
     }
     buf.push(']');
 
-    if arr.len() == 0 {
+    if arr.is_empty() {
         _deserializer(&mut buf, data_type.clone())
     } else {
         arr.push(_deserializer(&mut buf, data_type.clone())?);
