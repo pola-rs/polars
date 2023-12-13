@@ -1,4 +1,3 @@
-use polars_core::prelude::arity::binary_elementwise;
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
@@ -16,8 +15,8 @@ pub fn replace(s: &Series, old: &Series, new: &Series) -> PolarsResult<Series> {
         return replace_many_to_one(s, old, new, s);
     }
 
-    let replaced = get_replaced(s, old, new)?;
-    coalesce_replaced(&replaced, s, s, old, new)
+    let (replaced, mask) = get_replaced(s, old, new)?;
+    coalesce_replaced(&replaced, s, &mask)
 }
 
 pub fn replace_with_default(
@@ -46,8 +45,8 @@ pub fn replace_with_default(
         return replace_many_to_one(s, old, new, &default);
     }
 
-    let replaced = get_replaced(s, old, new)?;
-    coalesce_replaced(&replaced, &default, s, old, new)
+    let (replaced, mask) = get_replaced(s, old, new)?;
+    coalesce_replaced(&replaced, &default, &mask)
 }
 
 // Fast path for replacing by a single value
@@ -63,7 +62,7 @@ fn replace_many_to_one(
 }
 
 /// Create a Series containing only the replaced values and nulls everywhere else.
-fn get_replaced(s: &Series, old: &Series, new: &Series) -> PolarsResult<Series> {
+fn get_replaced(s: &Series, old: &Series, new: &Series) -> PolarsResult<(Series, Series)> {
     // length 1 is many-to-one replace, otherwise it's one-to-one
     polars_ensure!(
         (new.len() == old.len()) || new.len() == 1,
@@ -72,15 +71,24 @@ fn get_replaced(s: &Series, old: &Series, new: &Series) -> PolarsResult<Series> 
 
     let df = DataFrame::new_no_checks(vec![s.clone()]);
 
+    // Build replacer dataframe
     let mut old = if old.dtype() == s.dtype() {
         old.clone()
     } else {
         old.cast(s.dtype())?
     };
-    let mut new = new.clone();
     old.rename("__POLARS_REPLACE_OLD");
+
+    let mut new = new.clone();
     new.rename("__POLARS_REPLACE_NEW");
-    let replacer = DataFrame::new_no_checks(vec![old, new]);
+
+    let replacer = if new.null_count() > 0 {
+        // If we replace some values by null, we need to track which values were replaced
+        let mask = Series::new("__POLARS_REPLACE_MASK", &[true]).new_from_index(0, new.len());
+        DataFrame::new_no_checks(vec![old, new, mask])
+    } else {
+        DataFrame::new_no_checks(vec![old, new])
+    };
 
     let joined = df.join(
         &replacer,
@@ -93,43 +101,16 @@ fn get_replaced(s: &Series, old: &Series, new: &Series) -> PolarsResult<Series> 
         },
     )?;
 
-    let out = joined.column("__POLARS_REPLACE_NEW").unwrap().clone();
-    Ok(out)
+    let replaced = joined.column("__POLARS_REPLACE_NEW").unwrap().clone();
+    let mask = match joined.column("__POLARS_REPLACE_MASK").ok() {
+        Some(col) => col.clone(),
+        None => replaced.is_not_null().into_series(),
+    };
+
+    Ok((replaced, mask))
 }
 
 /// Coalesce the replaced values with another column to get the final result.
-fn coalesce_replaced(
-    replaced: &Series,
-    other: &Series,
-    s: &Series,
-    old: &Series,
-    new: &Series,
-) -> PolarsResult<Series> {
-    let mask = match new.null_count() {
-        0 => replaced.is_not_null(),
-        _ => {
-            //  If we replace some values by null, we cannot do a regular coalesce
-            let is_not_null = replaced.is_not_null();
-
-            let null_keys = determine_null_keys(old, new).unwrap();
-            let mapped_to_null = is_in(s, &null_keys)?;
-
-            let opt_or = |l: Option<bool>, r: Option<bool>| {
-                let l = l.unwrap();
-                match r {
-                    Some(r) => l | r,
-                    None => false,
-                }
-            };
-            binary_elementwise(&is_not_null, &mapped_to_null, opt_or)
-        },
-    };
-
-    let out = replaced.zip_with(&mask, other)?;
-    Ok(out)
-}
-
-/// Determine the keys that map to null values
-fn determine_null_keys(old: &Series, new: &Series) -> PolarsResult<Series> {
-    old.filter(&new.is_null())
+fn coalesce_replaced(replaced: &Series, other: &Series, mask: &Series) -> PolarsResult<Series> {
+    replaced.zip_with(mask.bool()?, other)
 }
