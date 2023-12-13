@@ -42,19 +42,7 @@ pub fn deserialize_iter<'a>(
                 let _ = buf.pop();
             }
             buf.push(']');
-            let copy_buf = buf.clone();
-
-            // let slice = unsafe { copy_buf.as_bytes_mut()};
-            // let out = simd_json::to_borrowed_value(slice)
-            //     .map_err(|e| PolarsError::ComputeError(format!("json parsing error: '{e}'").into()))?;
-            // let json_arr = if let BorrowedValue::Array(rows) = out {
-            //     super::super::json::deserialize::_deserialize(
-            //         &rows, data_type.clone(),
-            //     )
-            // } else {
-            //     unreachable!()
-            // };
-            arr.push(_deserializer(copy_buf, data_type.clone())?);
+            arr.push(_deserializer(buf.clone(), data_type.clone())?);
             buf.clear();
             buf.push('[');
         }
