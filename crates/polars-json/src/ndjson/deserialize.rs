@@ -53,15 +53,5 @@ pub fn deserialize_iter<'a>(
     buf.push(']');
 
     arr.push(_deserializer(buf, data_type.clone())?);
-    // let slice = unsafe { buf.as_bytes_mut() };
-    // let out = simd_json::to_borrowed_value(slice)
-    //     .map_err(|e| PolarsError::ComputeError(format!("json parsing error: '{e}'").into()))?;
-    // if let BorrowedValue::Array(rows) = out {
-    //     arr.push(super::super::json::deserialize::_deserialize(
-    //         &rows, data_type,
-    //     ))
-    // } else {
-    //     unreachable!()
-    // };
     concatenate(&arr.clone().iter().map(|v| v.as_ref()).collect::<Vec<_>>())
 }
