@@ -12,7 +12,7 @@ use object_store::azure::MicrosoftAzureBuilder;
 use object_store::gcp::GoogleCloudStorageBuilder;
 #[cfg(feature = "gcp")]
 pub use object_store::gcp::GoogleConfigKey;
-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
 use object_store::ClientOptions;
 #[cfg(feature = "cloud")]
 use object_store::ObjectStore;
