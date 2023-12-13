@@ -263,6 +263,7 @@ Polars will raise an `OutOfBounds` error when a value is encountered which is no
 --8<-- "python/user-guide/concepts/data-types/categoricals.py:setup"
 --8<-- "python/user-guide/concepts/data-types/categoricals.py:enum_error"
 ```
+
 ### Comparisons
 
 The following types of comparisons operators are allowed for categorical data:
@@ -272,7 +273,7 @@ The following types of comparisons operators are allowed for categorical data:
 
 #### `Categorical` Type
 
-For the `Categorical` type comparisons are valid if they have the same global cache set or if they have the same underlying categories in the same order.  
+For the `Categorical` type comparisons are valid if they have the same global cache set or if they have the same underlying categories in the same order.
 
 {{code_block('user-guide/concepts/data-types/categoricals','global_equality',[])}}
 
@@ -309,20 +310,17 @@ For `Enum` vs `Utf8` comparisons the order within the categories is used instead
 
 {{code_block('user-guide/concepts/data-types/categoricals','str_enum_compare_error',[])}}
 
-
 ```python exec="on" result="text" session="user-guide/datatypes/categoricals"
 --8<-- "python/user-guide/concepts/data-types/categoricals.py:str_enum_compare_error"
 ```
 
 {{code_block('user-guide/concepts/data-types/categoricals','str_enum_compare_single',[])}}
 
-
 ```python exec="on" result="text" session="user-guide/datatypes/categoricals"
 --8<-- "python/user-guide/concepts/data-types/categoricals.py:str_enum_compare_single"
 ```
 
 {{code_block('user-guide/concepts/data-types/categoricals','str_enum_compare',[])}}
-
 
 ```python exec="on" result="text" session="user-guide/datatypes/categoricals"
 --8<-- "python/user-guide/concepts/data-types/categoricals.py:str_enum_compare"

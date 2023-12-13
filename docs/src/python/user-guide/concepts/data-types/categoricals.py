@@ -1,5 +1,6 @@
 # --8<-- [start:setup]
 import polars as pl
+
 # --8<-- [end:setup]
 
 # --8<-- [start:example]
@@ -83,7 +84,9 @@ print(cat_series <= cat_series_utf)
 
 # --8<-- [start:str_enum_compare_error]
 try:
-    cat_series = pl.Series(["Low", "Medium", "High"], dtype=pl.Enum(["Low", "Medium", "High"]))
+    cat_series = pl.Series(
+        ["Low", "Medium", "High"], dtype=pl.Enum(["Low", "Medium", "High"])
+    )
     cat_series <= "Excellent"
 except Exception as e:
     print(e)
@@ -101,4 +104,3 @@ cat_series = pl.Series(["Low", "Medium", "High"], dtype=dtype)
 cat_series2 = pl.Series(["High", "High", "Low"], dtype=dtype)
 print(cat_series <= cat_series2)
 # --8<-- [end:str_enum_compare]
-
