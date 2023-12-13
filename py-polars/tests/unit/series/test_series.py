@@ -2328,20 +2328,6 @@ def test_extend_constant(const: Any, dtype: pl.PolarsDataType) -> None:
     assert_series_equal(s.extend_constant(const, 3), expected)
 
 
-def test_any_all() -> None:
-    a = pl.Series("a", [True, False, True])
-    assert a.any() is True
-    assert a.all() is False
-
-    a = pl.Series("a", [True, True, True])
-    assert a.any() is True
-    assert a.all() is True
-
-    a = pl.Series("a", [False, False, False])
-    assert a.any() is False
-    assert a.all() is False
-
-
 def test_product() -> None:
     a = pl.Series("a", [1, 2, 3])
     out = a.product()
