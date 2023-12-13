@@ -37,7 +37,7 @@ pub fn deserialize_iter<'a>(
         buf.push_str(row);
         buf.push(',');
 
-        if buf.len() + row.len() > std::u32::MAX as usize {
+        if buf.len() + row.len() > (std::u32::MAX << 1) as usize {
             let _ = buf.pop();
             buf.push(']');
             arr.push(_deserializer(&mut buf, data_type.clone())?);
