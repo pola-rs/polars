@@ -203,13 +203,14 @@ impl Series {
             #[cfg(feature = "dtype-datetime")]
             ArrowDataType::Timestamp(tu, tz) => {
                 let mut tz = tz.clone();
-                if tz.as_deref() == Some("") {
-                    tz = None;
-                } else if tz.as_deref() == Some("+00:00") {
-                    tz = Some("UTC".to_string());
-                } else if let Some(_tz) = &tz {
-                    #[cfg(feature = "timezones")]
-                    validate_time_zone(_tz)?;
+                match tz.as_deref() {
+                    Some("") => tz = None,
+                    Some("+00:00") | Some("00:00") => tz = Some("UTC".to_string()),
+                    Some(_tz) => {
+                        #[cfg(feature = "timezones")]
+                        validate_time_zone(_tz)?;
+                    },
+                    None => (),
                 }
                 let chunks = cast_chunks(&chunks, &DataType::Int64, false).unwrap();
                 let s = Int64Chunked::from_chunks(name, chunks)
