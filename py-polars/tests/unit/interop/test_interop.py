@@ -1181,7 +1181,7 @@ def test_from_arrow_invalid_time_zone() -> None:
         pl.from_arrow(arr)
 
 
-def test_from_avro_invalid_time_zone_13032() -> None:
+def test_from_avro_valid_time_zone_13032() -> None:
     arr = pa.array(
         [datetime(2021, 1, 1, 0, 0, 0, 0)], type=pa.timestamp("ns", tz="00:00")
     )
