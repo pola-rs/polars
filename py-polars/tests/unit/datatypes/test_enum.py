@@ -1,3 +1,5 @@
+import operator
+
 import pytest
 
 import polars as pl
@@ -165,6 +167,46 @@ def test_equality_enum() -> None:
     expected = pl.Series([None, True, False, True], dtype=pl.Boolean)
     assert_series_equal(s2 == s_utf, expected)
 
-    s_utf = pl.Series(["d", "d", "d", "c"], dtype=pl.Utf8)
-    expected = pl.Series([None, False, False, True], dtype=pl.Boolean)
-    assert_series_equal(s2 == s_utf, expected)
+    with pytest.raises(pl.ComputeError,match="value 'd' is not present in Enum"):
+        pl.Series(["d", "d", "d", "c"], dtype=pl.Utf8) == s2
+
+
+@pytest.mark.parametrize(("op","expected"),[
+    (operator.le, pl.Series([None, True, True, True])),
+    (operator.lt, pl.Series([None, True, False, False])),
+    (operator.ge, pl.Series([None, False, True, True])),
+    (operator.gt, pl.Series([None, False, False, False]))
+
+])
+def test_compare_enum(op,expected) -> None:
+    s = pl.Series([None, "a", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
+    s2 = pl.Series([None, "c", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
+
+    assert_series_equal(op(s,s2), expected)
+
+    s2_string = s2.cast(pl.Utf8)
+    assert_series_equal(op(s,s2_string), expected)
+
+
+@pytest.mark.parametrize(("op","expected"),[
+    (operator.le, pl.Series([None, True, True, True])),
+    (operator.lt, pl.Series([None, True, False, False])),
+    (operator.ge, pl.Series([None, False, True, True])),
+    (operator.gt, pl.Series([None, False, False, False]))
+])
+def test_compare_enum_str(op,expected) -> None:
+    s = pl.Series([None, "a", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
+    s2 = pl.Series([None, "c", "b", "c"])
+
+    assert_series_equal(op(s,s2), expected)
+
+
+def test_compare_enum_str_raise() -> None:
+    s = pl.Series([None, "a", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
+    s2 = pl.Series([None, "d", "d", "d"])
+    s_broadcast = pl.Series(["d"])
+
+    for s_compare in [s2,s_broadcast]:
+        for op in [operator.le,operator.gt,operator.ge,operator.lt]:
+            with pytest.raises(pl.ComputeError,match="value 'd' is not present in Enum"):
+                op(s,s_compare)
