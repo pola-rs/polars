@@ -19,6 +19,7 @@ cat_series = pl.Series(
 cat2_series = pl.Series(
     ["Panda", "Brown", "Brown", "Polar", "Polar"], dtype=pl.Categorical
 )
+# Triggers a CategoricalRemappingWarning: Local categoricals have different encodings, expensive re-encoding is done
 print(cat_series.append(cat2_series))
 # --8<-- [end:append]
 
@@ -67,7 +68,7 @@ with pl.StringCache():
 # --8<-- [start:equality]
 dtype = pl.Enum(["Polar", "Panda", "Brown"])
 cat_series = pl.Series(["Brown", "Panda", "Polar"], dtype=dtype)
-cat_series2 = pl.Series(["Polar", "Panda", "Brown", "Black"], dtype=dtype)
+cat_series2 = pl.Series(["Polar", "Panda", "Brown"], dtype=dtype)
 print(cat_series == cat_series2)
 # --8<-- [end:equality]
 
