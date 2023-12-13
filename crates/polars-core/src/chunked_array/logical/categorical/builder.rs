@@ -587,9 +587,9 @@ impl CategoricalChunked {
             .map(|opt_s: Option<&str>| {
                 opt_s
                     .map(|s| {
-                        map.get(s).copied().ok_or_else(
-                            || polars_err!(ComputeError: "value '{}' is not present in Enum: {:?}",s,categories),
-                        )
+                        map.get(s).copied().ok_or_else(|| {
+                            polars_err!(not_in_enum, value = s, categories = categories)
+                        })
                     })
                     .transpose()
             })

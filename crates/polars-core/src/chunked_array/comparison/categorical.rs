@@ -99,18 +99,14 @@ where
     if rev_map.is_enum() {
         let rhs_cat = rhs.cast(lhs.dtype())?;
         cat_compare_function(lhs, rhs_cat.categorical().unwrap())
-    } else {
-        if rhs.len() == 1 {
-            match rhs.get(0) {
-                None => Ok(missing_compare_function(&lhs)),
-                Some(s) => {
-                    cat_single_str_equality_helper(lhs, s, fill_value, phys_compare_function)
-                },
-            }
-        } else {
-            let lhs_string = lhs.cast(&DataType::Utf8)?;
-            Ok(str_compare_function(lhs_string.utf8().unwrap(), rhs))
+    } else if rhs.len() == 1 {
+        match rhs.get(0) {
+            None => Ok(missing_compare_function(lhs)),
+            Some(s) => cat_single_str_equality_helper(lhs, s, fill_value, phys_compare_function),
         }
+    } else {
+        let lhs_string = lhs.cast(&DataType::Utf8)?;
+        Ok(str_compare_function(lhs_string.utf8().unwrap(), rhs))
     }
 }
 
@@ -132,21 +128,19 @@ where
     if rev_map.is_enum() {
         let rhs_cat = rhs.cast(lhs.dtype())?;
         cat_compare_function(lhs, rhs_cat.categorical().unwrap())
-    } else {
-        if rhs.len() == 1 {
-            match rhs.get(0) {
-                None => Ok(BooleanChunked::full_null(lhs.name(), lhs.len())),
-                Some(s) => cat_single_str_compare_helper(
-                    lhs,
-                    s,
-                    phys_compare_function,
-                    str_single_compare_function,
-                ),
-            }
-        } else {
-            let lhs_string = lhs.cast(&DataType::Utf8)?;
-            Ok(str_compare_function(lhs_string.utf8().unwrap(), rhs))
+    } else if rhs.len() == 1 {
+        match rhs.get(0) {
+            None => Ok(BooleanChunked::full_null(lhs.name(), lhs.len())),
+            Some(s) => cat_single_str_compare_helper(
+                lhs,
+                s,
+                phys_compare_function,
+                str_single_compare_function,
+            ),
         }
+    } else {
+        let lhs_string = lhs.cast(&DataType::Utf8)?;
+        Ok(str_compare_function(lhs_string.utf8().unwrap(), rhs))
     }
 }
 
@@ -257,7 +251,11 @@ where
     if rev_map.is_enum() {
         match rev_map.find(rhs) {
             None => {
-                polars_bail!(ComputeError: "value '{}' is not present in Enum: {:?}",rhs,rev_map.get_categories())
+                polars_bail!(
+                    not_in_enum,
+                    value = rhs,
+                    categories = rev_map.get_categories()
+                )
             },
             Some(idx) => Ok(phys_compare_function(lhs.physical(), idx)),
         }
@@ -298,9 +296,7 @@ where
         Ok(BooleanChunked::from_iter_trusted_length(
             lhs.physical().into_iter().map(|opt_idx| {
                 // Safety: indexing into bitmap with same length as original array
-                opt_idx.map_or(None, |idx| unsafe {
-                    Some(bitmap.get_bit_unchecked(idx as usize))
-                })
+                opt_idx.map(|idx| unsafe { bitmap.get_bit_unchecked(idx as usize) })
             }),
         ))
     }
