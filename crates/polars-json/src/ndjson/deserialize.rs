@@ -21,7 +21,7 @@ pub fn deserialize_iter<'a>(
     let mut buf = String::with_capacity(std::u32::MAX as usize);
     buf.push('[');
 
-    fn _deserializer(s: &mut String, data_type: ArrowDataType) -> PolarsResult<Box<dyn Array>> {
+    fn _deserializer(s: &mut str, data_type: ArrowDataType) -> PolarsResult<Box<dyn Array>> {
         // let mut buf = s.clone();
         let slice = unsafe { s.as_bytes_mut() };
         let out = simd_json::to_borrowed_value(slice)
