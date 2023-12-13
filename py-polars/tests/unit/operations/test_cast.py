@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
@@ -169,12 +171,22 @@ def test_leading_plus_zero_float(dtype: pl.DataType) -> None:
     )
 
 
-def _cast_series(val, dtype_in, dtype_out, strict):  # type:ignore[no-untyped-def]
-    return pl.Series("a", [val], dtype=dtype_in).cast(dtype_out, strict=strict).item()
+def _cast_series(
+    val: int | datetime | date | time | timedelta,
+    dtype_in: pl.PolarsDataType,
+    dtype_out: pl.PolarsDataType,
+    strict: bool,
+) -> int | datetime | date | time | timedelta | None:
+    return pl.Series("a", [val], dtype=dtype_in).cast(dtype_out, strict=strict).item()  # type: ignore[no-any-return]
 
 
-def _cast_expr(val, dtype_in, dtype_out, strict):  # type:ignore[no-untyped-def]
-    return (
+def _cast_expr(
+    val: int | datetime | date | time | timedelta,
+    dtype_in: pl.PolarsDataType,
+    dtype_out: pl.PolarsDataType,
+    strict: bool,
+) -> int | datetime | date | time | timedelta | None:
+    return (  # type: ignore[no-any-return]
         pl.Series("a", [val], dtype=dtype_in)
         .to_frame()
         .select(pl.col("a").cast(dtype_out, strict=strict))
@@ -182,8 +194,13 @@ def _cast_expr(val, dtype_in, dtype_out, strict):  # type:ignore[no-untyped-def]
     )
 
 
-def _cast_lit(val, dtype_in, dtype_out, strict):  # type:ignore[no-untyped-def]
-    return pl.select(pl.lit(val, dtype=dtype_in).cast(dtype_out, strict=strict)).item()
+def _cast_lit(
+    val: int | datetime | date | time | timedelta,
+    dtype_in: pl.PolarsDataType,
+    dtype_out: pl.PolarsDataType,
+    strict: bool,
+) -> int | datetime | date | time | timedelta | None:
+    return pl.select(pl.lit(val, dtype=dtype_in).cast(dtype_out, strict=strict)).item()  # type: ignore[no-any-return]
 
 
 @pytest.mark.parametrize(
@@ -212,16 +229,16 @@ def test_strict_cast_int(
 ) -> None:
     args = [value, from_dtype, to_dtype, True]
     if should_succeed:
-        assert _cast_series(*args) == expected_value  # type: ignore[no-untyped-call]
-        assert _cast_expr(*args) == expected_value  # type: ignore[no-untyped-call]
-        assert _cast_lit(*args) == expected_value  # type: ignore[no-untyped-call]
+        assert _cast_series(*args) == expected_value  # type: ignore[arg-type]
+        assert _cast_expr(*args) == expected_value  # type: ignore[arg-type]
+        assert _cast_lit(*args) == expected_value  # type: ignore[arg-type]
     else:
         with pytest.raises(pl.exceptions.ComputeError):
-            _cast_series(*args)  # type: ignore[no-untyped-call]
+            _cast_series(*args)  # type: ignore[arg-type]
         with pytest.raises(pl.exceptions.ComputeError):
-            _cast_expr(*args)  # type: ignore[no-untyped-call]
+            _cast_expr(*args)  # type: ignore[arg-type]
         with pytest.raises(pl.exceptions.ComputeError):
-            _cast_lit(*args)  # type: ignore[no-untyped-call]
+            _cast_lit(*args)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
@@ -248,16 +265,26 @@ def test_cast_int(
     expected_value: Any,
 ) -> None:
     args = [value, from_dtype, to_dtype, False]
-    assert _cast_series(*args) == expected_value  # type: ignore[no-untyped-call]
-    assert _cast_expr(*args) == expected_value  # type: ignore[no-untyped-call]
-    assert _cast_lit(*args) == expected_value  # type: ignore[no-untyped-call]
+    assert _cast_series(*args) == expected_value  # type: ignore[arg-type]
+    assert _cast_expr(*args) == expected_value  # type: ignore[arg-type]
+    assert _cast_lit(*args) == expected_value  # type: ignore[arg-type]
 
 
-def _cast_series_t(val, dtype_in, dtype_out, strict):  # type: ignore[no-untyped-def]
+def _cast_series_t(
+    val: int | datetime | date | time | timedelta,
+    dtype_in: pl.PolarsDataType,
+    dtype_out: pl.PolarsDataType,
+    strict: bool,
+) -> pl.Series:
     return pl.Series("a", [val], dtype=dtype_in).cast(dtype_out, strict=strict)
 
 
-def _cast_expr_t(val, dtype_in, dtype_out, strict):  # type: ignore[no-untyped-def]
+def _cast_expr_t(
+    val: int | datetime | date | time | timedelta,
+    dtype_in: pl.PolarsDataType,
+    dtype_out: pl.PolarsDataType,
+    strict: bool,
+) -> pl.Series:
     return (
         pl.Series("a", [val], dtype=dtype_in)
         .to_frame()
@@ -266,7 +293,12 @@ def _cast_expr_t(val, dtype_in, dtype_out, strict):  # type: ignore[no-untyped-d
     )
 
 
-def _cast_lit_t(val, dtype_in, dtype_out, strict):  # type: ignore[no-untyped-def]
+def _cast_lit_t(
+    val: int | datetime | date | time | timedelta,
+    dtype_in: pl.PolarsDataType,
+    dtype_out: pl.PolarsDataType,
+    strict: bool,
+) -> pl.Series:
     return pl.select(
         pl.lit(val, dtype=dtype_in).cast(dtype_out, strict=strict)
     ).to_series()
@@ -330,22 +362,22 @@ def test_strict_cast_temporal(
 ) -> None:
     args = [value, from_dtype, to_dtype, True]
     if should_succeed:
-        out = _cast_series_t(*args)  # type: ignore[no-untyped-call]
+        out = _cast_series_t(*args)  # type: ignore[arg-type]
         assert out.item() == expected_value
         assert out.dtype == to_dtype
-        out = _cast_expr_t(*args)  # type: ignore[no-untyped-call]
+        out = _cast_expr_t(*args)  # type: ignore[arg-type]
         assert out.item() == expected_value
         assert out.dtype == to_dtype
-        out = _cast_lit_t(*args)  # type: ignore[no-untyped-call]
+        out = _cast_lit_t(*args)  # type: ignore[arg-type]
         assert out.item() == expected_value
         assert out.dtype == to_dtype
     else:
         with pytest.raises(pl.exceptions.ComputeError):
-            _cast_series_t(*args)  # type: ignore[no-untyped-call]
+            _cast_series_t(*args)  # type: ignore[arg-type]
         with pytest.raises(pl.exceptions.ComputeError):
-            _cast_expr_t(*args)  # type: ignore[no-untyped-call]
+            _cast_expr_t(*args)  # type: ignore[arg-type]
         with pytest.raises(pl.exceptions.ComputeError):
-            _cast_lit_t(*args)  # type: ignore[no-untyped-call]
+            _cast_lit_t(*args)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
@@ -403,21 +435,21 @@ def test_cast_temporal(
     expected_value: Any,
 ) -> None:
     args = [value, from_dtype, to_dtype, False]
-    out = _cast_series_t(*args)  # type: ignore[no-untyped-call]
+    out = _cast_series_t(*args)  # type: ignore[arg-type]
     if expected_value is None:
         assert out.item() is None
     else:
         assert out.item() == expected_value
         assert out.dtype == to_dtype
 
-    out = _cast_expr_t(*args)  # type: ignore[no-untyped-call]
+    out = _cast_expr_t(*args)  # type: ignore[arg-type]
     if expected_value is None:
         assert out.item() is None
     else:
         assert out.item() == expected_value
         assert out.dtype == to_dtype
 
-    out = _cast_lit_t(*args)  # type: ignore[no-untyped-call]
+    out = _cast_lit_t(*args)  # type: ignore[arg-type]
     if expected_value is None:
         assert out.item() is None
     else:
