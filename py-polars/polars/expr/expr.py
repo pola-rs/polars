@@ -9207,11 +9207,11 @@ class Expr:
         └────────┴──────────────┴─────────────┘
         """
         if new is no_default and isinstance(old, Mapping):
-            new = F.lit(pl.Series(old.values()))._pyexpr
-            old = F.lit(pl.Series(old.keys()))._pyexpr
-        else:
-            old = parse_as_expression(old, str_as_lit=True)
-            new = parse_as_expression(new, str_as_lit=True)
+            new = pl.Series(old.values())
+            old = pl.Series(old.keys())
+
+        old = parse_as_expression(old, str_as_lit=True)  # type: ignore[arg-type]
+        new = parse_as_expression(new, str_as_lit=True)  # type: ignore[arg-type]
 
         default = (
             None
