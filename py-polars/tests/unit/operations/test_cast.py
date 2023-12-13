@@ -1,4 +1,5 @@
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
+from typing import Any
 
 import pytest
 
@@ -6,6 +7,11 @@ import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
+from polars.utils.convert import (
+    MS_PER_SECOND,
+    NS_PER_SECOND,
+    US_PER_SECOND,
+)
 
 
 def test_utf8_date() -> None:
@@ -161,3 +167,259 @@ def test_leading_plus_zero_float(dtype: pl.DataType) -> None:
             [-2.0, -1.0, -0.5, 0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 2.0, 3.0], dtype=dtype
         ),
     )
+
+
+def _cast_series(val, dtype_in, dtype_out, strict):  # type:ignore[no-untyped-def]
+    return pl.Series("a", [val], dtype=dtype_in).cast(dtype_out, strict=strict).item()
+
+
+def _cast_expr(val, dtype_in, dtype_out, strict):  # type:ignore[no-untyped-def]
+    return (
+        pl.Series("a", [val], dtype=dtype_in)
+        .to_frame()
+        .select(pl.col("a").cast(dtype_out, strict=strict))
+        .item()
+    )
+
+
+def _cast_lit(val, dtype_in, dtype_out, strict):  # type:ignore[no-untyped-def]
+    return pl.select(pl.lit(val, dtype=dtype_in).cast(dtype_out, strict=strict)).item()
+
+
+@pytest.mark.parametrize(
+    ("value", "from_dtype", "to_dtype", "should_succeed", "expected_value"),
+    [
+        (-1, pl.Int8, pl.UInt8, False, None),
+        (-1, pl.Int16, pl.UInt16, False, None),
+        (-1, pl.Int32, pl.UInt32, False, None),
+        (-1, pl.Int64, pl.UInt64, False, None),
+        (2**7, pl.UInt8, pl.Int8, False, None),
+        (2**15, pl.UInt16, pl.Int16, False, None),
+        (2**31, pl.UInt32, pl.Int32, False, None),
+        (2**63, pl.UInt64, pl.Int64, False, None),
+        (2**7 - 1, pl.UInt8, pl.Int8, True, 2**7 - 1),
+        (2**15 - 1, pl.UInt16, pl.Int16, True, 2**15 - 1),
+        (2**31 - 1, pl.UInt32, pl.Int32, True, 2**31 - 1),
+        (2**63 - 1, pl.UInt64, pl.Int64, True, 2**63 - 1),
+    ],
+)
+def test_strict_cast_int(
+    value: int,
+    from_dtype: pl.PolarsDataType,
+    to_dtype: pl.PolarsDataType,
+    should_succeed: bool,
+    expected_value: Any,
+) -> None:
+    args = [value, from_dtype, to_dtype, True]
+    if should_succeed:
+        assert _cast_series(*args) == expected_value  # type: ignore[no-untyped-call]
+        assert _cast_expr(*args) == expected_value  # type: ignore[no-untyped-call]
+        assert _cast_lit(*args) == expected_value  # type: ignore[no-untyped-call]
+    else:
+        with pytest.raises(pl.exceptions.ComputeError):
+            _cast_series(*args)  # type: ignore[no-untyped-call]
+        with pytest.raises(pl.exceptions.ComputeError):
+            _cast_expr(*args)  # type: ignore[no-untyped-call]
+        with pytest.raises(pl.exceptions.ComputeError):
+            _cast_lit(*args)  # type: ignore[no-untyped-call]
+
+
+@pytest.mark.parametrize(
+    ("value", "from_dtype", "to_dtype", "expected_value"),
+    [
+        (-1, pl.Int8, pl.UInt8, None),
+        (-1, pl.Int16, pl.UInt16, None),
+        (-1, pl.Int32, pl.UInt32, None),
+        (-1, pl.Int64, pl.UInt64, None),
+        (2**7, pl.UInt8, pl.Int8, None),
+        (2**15, pl.UInt16, pl.Int16, None),
+        (2**31, pl.UInt32, pl.Int32, None),
+        (2**63, pl.UInt64, pl.Int64, None),
+        (2**7 - 1, pl.UInt8, pl.Int8, 2**7 - 1),
+        (2**15 - 1, pl.UInt16, pl.Int16, 2**15 - 1),
+        (2**31 - 1, pl.UInt32, pl.Int32, 2**31 - 1),
+        (2**63 - 1, pl.UInt64, pl.Int64, 2**63 - 1),
+    ],
+)
+def test_cast_int(
+    value: int,
+    from_dtype: pl.PolarsDataType,
+    to_dtype: pl.PolarsDataType,
+    expected_value: Any,
+) -> None:
+    args = [value, from_dtype, to_dtype, False]
+    assert _cast_series(*args) == expected_value  # type: ignore[no-untyped-call]
+    assert _cast_expr(*args) == expected_value  # type: ignore[no-untyped-call]
+    assert _cast_lit(*args) == expected_value  # type: ignore[no-untyped-call]
+
+
+def _cast_series_t(val, dtype_in, dtype_out, strict):  # type: ignore[no-untyped-def]
+    return pl.Series("a", [val], dtype=dtype_in).cast(dtype_out, strict=strict)
+
+
+def _cast_expr_t(val, dtype_in, dtype_out, strict):  # type: ignore[no-untyped-def]
+    return (
+        pl.Series("a", [val], dtype=dtype_in)
+        .to_frame()
+        .select(pl.col("a").cast(dtype_out, strict=strict))
+        .to_series()
+    )
+
+
+def _cast_lit_t(val, dtype_in, dtype_out, strict):  # type: ignore[no-untyped-def]
+    return pl.select(
+        pl.lit(val, dtype=dtype_in).cast(dtype_out, strict=strict)
+    ).to_series()
+
+
+@pytest.mark.parametrize(
+    (
+        "value",
+        "from_dtype",
+        "to_dtype",
+        "should_succeed",
+        "expected_value",
+    ),
+    [
+        # fmt: off
+        # date to datetime
+        (date(1970, 1, 1), pl.Date, pl.Datetime("ms"), True, datetime(1970, 1, 1)),
+        (date(1970, 1, 1), pl.Date, pl.Datetime("us"), True, datetime(1970, 1, 1)),
+        (date(1970, 1, 1), pl.Date, pl.Datetime("ns"), True, datetime(1970, 1, 1)),
+        # datetime to date
+        (datetime(1970, 1, 1), pl.Datetime("ms"), pl.Date, True, date(1970, 1, 1)),
+        (datetime(1970, 1, 1), pl.Datetime("us"), pl.Date, True, date(1970, 1, 1)),
+        (datetime(1970, 1, 1), pl.Datetime("ns"), pl.Date, True, date(1970, 1, 1)),
+        # datetime to time
+        (datetime(2000, 1, 1, 1, 0, 0), pl.Datetime("ms"), pl.Time, True, time(hour=1)),
+        (datetime(2000, 1, 1, 1, 0, 0), pl.Datetime("us"), pl.Time, True, time(hour=1)),
+        (datetime(2000, 1, 1, 1, 0, 0), pl.Datetime("ns"), pl.Time, True, time(hour=1)),
+        # duration to int
+        (timedelta(seconds=1), pl.Duration("ms"), pl.Int32, True, MS_PER_SECOND),
+        (timedelta(seconds=1), pl.Duration("us"), pl.Int64, True, US_PER_SECOND),
+        (timedelta(seconds=1), pl.Duration("ns"), pl.Int64, True, NS_PER_SECOND),
+        # time to duration
+        (time(hour=1), pl.Time, pl.Duration("ms"), True, timedelta(hours=1)),
+        (time(hour=1), pl.Time, pl.Duration("us"), True, timedelta(hours=1)),
+        (time(hour=1), pl.Time, pl.Duration("ns"), True, timedelta(hours=1)),
+        # int to date
+        (100, pl.UInt8, pl.Date, True, date(1970, 4, 11)),
+        (100, pl.UInt16, pl.Date, True, date(1970, 4, 11)),
+        (100, pl.UInt32, pl.Date, True, date(1970, 4, 11)),
+        (100, pl.UInt64, pl.Date, True, date(1970, 4, 11)),
+        (100, pl.Int8, pl.Date, True, date(1970, 4, 11)),
+        (100, pl.Int16, pl.Date, True, date(1970, 4, 11)),
+        (100, pl.Int32, pl.Date, True, date(1970, 4, 11)),
+        (100, pl.Int64, pl.Date, True, date(1970, 4, 11)),
+        # failures
+        (2**63 - 1, pl.Int64, pl.Date, False, None),
+        (-(2**62), pl.Int64, pl.Date, False, None),
+        (date(1970, 5, 10), pl.Date, pl.Int8, False, None),
+        (date(2149, 6, 7), pl.Date, pl.Int16, False, None),
+        (datetime(9999, 12, 31), pl.Datetime, pl.Int8, False, None),
+        (datetime(9999, 12, 31), pl.Datetime, pl.Int16, False, None),
+        # fmt: on
+    ],
+)
+def test_strict_cast_temporal(
+    value: int,
+    from_dtype: pl.PolarsDataType,
+    to_dtype: pl.PolarsDataType,
+    should_succeed: bool,
+    expected_value: Any,
+) -> None:
+    args = [value, from_dtype, to_dtype, True]
+    if should_succeed:
+        out = _cast_series_t(*args)  # type: ignore[no-untyped-call]
+        assert out.item() == expected_value
+        assert out.dtype == to_dtype
+        out = _cast_expr_t(*args)  # type: ignore[no-untyped-call]
+        assert out.item() == expected_value
+        assert out.dtype == to_dtype
+        out = _cast_lit_t(*args)  # type: ignore[no-untyped-call]
+        assert out.item() == expected_value
+        assert out.dtype == to_dtype
+    else:
+        with pytest.raises(pl.exceptions.ComputeError):
+            _cast_series_t(*args)  # type: ignore[no-untyped-call]
+        with pytest.raises(pl.exceptions.ComputeError):
+            _cast_expr_t(*args)  # type: ignore[no-untyped-call]
+        with pytest.raises(pl.exceptions.ComputeError):
+            _cast_lit_t(*args)  # type: ignore[no-untyped-call]
+
+
+@pytest.mark.parametrize(
+    (
+        "value",
+        "from_dtype",
+        "to_dtype",
+        "expected_value",
+    ),
+    [
+        # fmt: off
+        # date to datetime
+        (date(1970, 1, 1), pl.Date, pl.Datetime("ms"), datetime(1970, 1, 1)),
+        (date(1970, 1, 1), pl.Date, pl.Datetime("us"), datetime(1970, 1, 1)),
+        (date(1970, 1, 1), pl.Date, pl.Datetime("ns"), datetime(1970, 1, 1)),
+        # datetime to date
+        (datetime(1970, 1, 1), pl.Datetime("ms"), pl.Date, date(1970, 1, 1)),
+        (datetime(1970, 1, 1), pl.Datetime("us"), pl.Date, date(1970, 1, 1)),
+        (datetime(1970, 1, 1), pl.Datetime("ns"), pl.Date, date(1970, 1, 1)),
+        # datetime to time
+        (datetime(2000, 1, 1, 1, 0, 0), pl.Datetime("ms"), pl.Time, time(hour=1)),
+        (datetime(2000, 1, 1, 1, 0, 0), pl.Datetime("us"), pl.Time, time(hour=1)),
+        (datetime(2000, 1, 1, 1, 0, 0), pl.Datetime("ns"), pl.Time, time(hour=1)),
+        # duration to int
+        (timedelta(seconds=1), pl.Duration("ms"), pl.Int32, MS_PER_SECOND),
+        (timedelta(seconds=1), pl.Duration("us"), pl.Int64, US_PER_SECOND),
+        (timedelta(seconds=1), pl.Duration("ns"), pl.Int64, NS_PER_SECOND),
+        # time to duration
+        (time(hour=1), pl.Time, pl.Duration("ms"), timedelta(hours=1)),
+        (time(hour=1), pl.Time, pl.Duration("us"), timedelta(hours=1)),
+        (time(hour=1), pl.Time, pl.Duration("ns"), timedelta(hours=1)),
+        # int to date
+        (100, pl.UInt8, pl.Date, date(1970, 4, 11)),
+        (100, pl.UInt16, pl.Date, date(1970, 4, 11)),
+        (100, pl.UInt32, pl.Date, date(1970, 4, 11)),
+        (100, pl.UInt64, pl.Date, date(1970, 4, 11)),
+        (100, pl.Int8, pl.Date, date(1970, 4, 11)),
+        (100, pl.Int16, pl.Date, date(1970, 4, 11)),
+        (100, pl.Int32, pl.Date, date(1970, 4, 11)),
+        (100, pl.Int64, pl.Date, date(1970, 4, 11)),
+        # failures
+        (2**63 - 1, pl.Int64, pl.Date, None),
+        (-(2**62), pl.Int64, pl.Date, None),
+        (date(1970, 5, 10), pl.Date, pl.Int8, None),
+        (date(2149, 6, 7), pl.Date, pl.Int16, None),
+        (datetime(9999, 12, 31), pl.Datetime, pl.Int8, None),
+        (datetime(9999, 12, 31), pl.Datetime, pl.Int16, None),
+        # fmt: on
+    ],
+)
+def test_cast_temporal(
+    value: int,
+    from_dtype: pl.PolarsDataType,
+    to_dtype: pl.PolarsDataType,
+    expected_value: Any,
+) -> None:
+    args = [value, from_dtype, to_dtype, False]
+    out = _cast_series_t(*args)  # type: ignore[no-untyped-call]
+    if expected_value is None:
+        assert out.item() is None
+    else:
+        assert out.item() == expected_value
+        assert out.dtype == to_dtype
+
+    out = _cast_expr_t(*args)  # type: ignore[no-untyped-call]
+    if expected_value is None:
+        assert out.item() is None
+    else:
+        assert out.item() == expected_value
+        assert out.dtype == to_dtype
+
+    out = _cast_lit_t(*args)  # type: ignore[no-untyped-call]
+    if expected_value is None:
+        assert out.item() is None
+    else:
+        assert out.item() == expected_value
+        assert out.dtype == to_dtype

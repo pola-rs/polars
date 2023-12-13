@@ -437,22 +437,6 @@ impl<'a> AnyValue<'a> {
         matches!(self, AnyValue::Float32(_) | AnyValue::Float64(_))
     }
 
-    pub fn is_numeric(&self) -> bool {
-        matches!(
-            self,
-            AnyValue::Float32(_)
-                | AnyValue::Float64(_)
-                | AnyValue::Int8(_)
-                | AnyValue::Int16(_)
-                | AnyValue::Int32(_)
-                | AnyValue::Int64(_)
-                | AnyValue::UInt8(_)
-                | AnyValue::UInt16(_)
-                | AnyValue::UInt32(_)
-                | AnyValue::UInt64(_)
-        )
-    }
-
     pub fn is_signed_integer(&self) -> bool {
         matches!(
             self,
@@ -512,6 +496,7 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-datetime")]
             AnyValue::Datetime(v, tu, None) => match dtype {
                 #[cfg(feature = "dtype-date")]
+                // Datetime to Date
                 DataType::Date => {
                     let convert = match tu {
                         TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
@@ -522,19 +507,43 @@ impl<'a> AnyValue<'a> {
                     let date_value = naive_datetime_to_date(ndt);
                     AnyValue::Date(date_value)
                 },
+                #[cfg(feature = "dtype-time")]
+                // Datetime to Time
+                DataType::Time => {
+                    let ns_since_midnight = match tu {
+                        TimeUnit::Nanoseconds => *v % NS_IN_DAY,
+                        TimeUnit::Microseconds => (*v % US_IN_DAY) * 1_000i64,
+                        TimeUnit::Milliseconds => (*v % MS_IN_DAY) * 1_000_000i64,
+                    };
+                    AnyValue::Time(ns_since_midnight)
+                },
                 _ => cast_numeric!(self),
             },
             #[cfg(feature = "dtype-duration")]
-            AnyValue::Duration(_, _) => {
-                cast_numeric!(self)
+            AnyValue::Duration(v, _) => match dtype {
+                DataType::Time | DataType::Date | DataType::Datetime(_, _) => {
+                    polars_bail!(ComputeError: "cannot cast any-value {:?} to dtype '{}'", v, dtype)
+                },
+                _ => cast_numeric!(self),
             },
             #[cfg(feature = "dtype-time")]
-            AnyValue::Time(_) => {
-                cast_numeric!(self)
+            AnyValue::Time(v) => match dtype {
+                #[cfg(feature = "dtype-duration")]
+                // Time to Duration
+                DataType::Duration(tu) => {
+                    let duration_value = match tu {
+                        TimeUnit::Nanoseconds => *v,
+                        TimeUnit::Microseconds => *v / 1_000i64,
+                        TimeUnit::Milliseconds => *v / 1_000_000i64,
+                    };
+                    AnyValue::Duration(duration_value, *tu)
+                },
+                _ => cast_numeric!(self),
             },
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => match dtype {
                 #[cfg(feature = "dtype-datetime")]
+                // Date to Datetime
                 DataType::Datetime(tu, None) => {
                     let ndt = arrow::temporal_conversions::date32_to_datetime(*v);
                     let func = match tu {
