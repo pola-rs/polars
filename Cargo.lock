@@ -2590,7 +2590,6 @@ version = "0.35.4"
 dependencies = [
  "ahash",
  "getrandom",
- "polars-algo",
  "polars-core",
  "polars-io",
  "polars-lazy",
@@ -2599,15 +2598,6 @@ dependencies = [
  "polars-time",
  "rand",
  "version_check",
-]
-
-[[package]]
-name = "polars-algo"
-version = "0.35.4"
-dependencies = [
- "polars-core",
- "polars-lazy",
- "polars-ops",
 ]
 
 [[package]]
@@ -3087,7 +3077,6 @@ dependencies = [
  "numpy",
  "once_cell",
  "polars",
- "polars-algo",
  "polars-core",
  "polars-error",
  "polars-lazy",

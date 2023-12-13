@@ -9,7 +9,6 @@ mod scatter;
 
 use std::io::Cursor;
 
-use polars_algo::hist;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -685,12 +684,6 @@ impl PySeries {
 
     fn tail(&self, n: usize) -> Self {
         self.series.tail(Some(n)).into()
-    }
-
-    fn hist(&self, bins: Option<Self>, bin_count: Option<usize>) -> PyResult<PyDataFrame> {
-        let bins = bins.map(|s| s.series);
-        let out = hist(&self.series, bins.as_ref(), bin_count).map_err(PyPolarsErr::from)?;
-        Ok(out.into())
     }
 }
 

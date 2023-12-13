@@ -21,13 +21,18 @@ pub mod mode;
 
 #[cfg(feature = "cov")]
 pub mod cov;
+#[cfg(feature = "gather")]
 pub mod gather_skip_nulls;
+#[cfg(feature = "hist")]
+mod hist;
 #[cfg(feature = "repeat_by")]
 mod repeat_by;
 
 pub use binary::*;
 #[cfg(feature = "timezones")]
 pub use datetime::*;
+#[cfg(feature = "hist")]
+pub use hist::*;
 #[cfg(feature = "interpolate")]
 pub use interpolate::*;
 pub use list::*;

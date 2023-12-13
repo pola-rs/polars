@@ -39,6 +39,7 @@ Computation
     Expr.ewm_var
     Expr.exp
     Expr.hash
+    Expr.hist
     Expr.kurtosis
     Expr.log
     Expr.log10
