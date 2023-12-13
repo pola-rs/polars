@@ -12,6 +12,8 @@ use object_store::azure::MicrosoftAzureBuilder;
 use object_store::gcp::GoogleCloudStorageBuilder;
 #[cfg(feature = "gcp")]
 pub use object_store::gcp::GoogleConfigKey;
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+use object_store::ClientOptions;
 #[cfg(feature = "cloud")]
 use object_store::ObjectStore;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
@@ -153,6 +155,14 @@ fn get_retry_config(max_retries: usize) -> RetryConfig {
     }
 }
 
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+pub(super) fn get_client_options() -> ClientOptions {
+    // We set timeout super high as the timeout isn't reset at ACK,
+    // but starts from the moment we start downloading a body.
+    // https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html#method.timeout
+    ClientOptions::default().with_timeout(std::time::Duration::from_secs(60 * 5))
+}
+
 impl CloudOptions {
     /// Set the configuration for AWS connections. This is the preferred API from rust.
     #[cfg(feature = "aws")]
@@ -218,6 +228,7 @@ impl CloudOptions {
         };
 
         builder
+            .with_client_options(get_client_options())
             .with_retry(get_retry_config(self.max_retries))
             .build()
             .map_err(to_compute_err)
@@ -250,6 +261,7 @@ impl CloudOptions {
         }
 
         builder
+            .with_client_options(get_client_options())
             .with_url(url)
             .with_retry(get_retry_config(self.max_retries))
             .build()
@@ -283,6 +295,7 @@ impl CloudOptions {
         }
 
         builder
+            .with_client_options(get_client_options())
             .with_url(url)
             .with_retry(get_retry_config(self.max_retries))
             .build()
