@@ -678,12 +678,6 @@ impl PySeries {
         self.series.clear().into()
     }
 
-    fn hist(&self, bins: Option<Self>, bin_count: Option<usize>) -> PyResult<PyDataFrame> {
-        let bins = bins.map(|s| s.series);
-        let out = hist(&self.series, bins.as_ref(), bin_count).map_err(PyPolarsErr::from)?;
-        Ok(out.into())
-    }
-
     fn head(&self, n: usize) -> Self {
         self.series.head(Some(n)).into()
     }

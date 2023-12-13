@@ -1760,8 +1760,7 @@ class Series:
         whereas polars defaults to ignoring them.
 
         """
-        # return self.to_frame().select(F.col(self.name).nan_max()).item()
-        return self._s.nan_max()
+        return self.to_frame().select_seq(F.col(self.name).nan_max()).item()
 
     def nan_min(self) -> int | float | date | datetime | timedelta | str:
         """
@@ -1771,7 +1770,7 @@ class Series:
         whereas polars defaults to ignoring them.
 
         """
-        return self.to_frame().select(F.col(self.name).nan_min()).item()
+        return self.to_frame().select_seq(F.col(self.name).nan_min()).item()
 
     def std(self, ddof: int = 1) -> float | None:
         """
@@ -1793,7 +1792,6 @@ class Series:
         """
         if not self.dtype.is_numeric():
             return None
-        # return self.to_frame().select(F.col(self.name).std(ddof)).to_series().item()
         return self._s.std(ddof)
 
     def var(self, ddof: int = 1) -> float | None:
@@ -2057,7 +2055,7 @@ class Series:
 
         result = (
             self.to_frame()
-            .select(
+            .select_seq(
                 F.col(self.name).cut(
                     breaks,
                     labels=labels,
@@ -2519,7 +2517,12 @@ class Series:
         0.8568409950394724
 
         """
-        return self._s.entropy(base=base, normalize=normalize)
+        return (
+            self.to_frame()
+            .select_seq(F.col(self.name).entropy(base, normalize=normalize))
+            .to_series()
+            .item()
+        )
 
     def cumulative_eval(
         self, expr: Expr, min_periods: int = 1, *, parallel: bool = False
