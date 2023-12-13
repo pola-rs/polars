@@ -1,5 +1,5 @@
 use arrow::array::Array;
-use arrow::compute::concatenate::concatenate;
+use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use simd_json::BorrowedValue;
 
 use super::*;
@@ -41,7 +41,7 @@ pub fn deserialize_iter<'a>(
         buf.push(',');
 
         let next_row_length = row_iter.peek().map(|row| row.len()).unwrap_or(0);
-        if buf.len() + next_row_length > (std::u32::MAX << 1) as usize {
+        if buf.len() + next_row_length > std::u32::MAX as usize {
             let _ = buf.pop();
             buf.push(']');
             arr.push(_deserializer(&mut buf, data_type.clone())?);
@@ -58,6 +58,6 @@ pub fn deserialize_iter<'a>(
         _deserializer(&mut buf, data_type.clone())
     } else {
         arr.push(_deserializer(&mut buf, data_type.clone())?);
-        concatenate(&arr.clone().iter().map(|v| v.as_ref()).collect::<Vec<_>>())
+        concatenate_owned_unchecked(&arr)
     }
 }
