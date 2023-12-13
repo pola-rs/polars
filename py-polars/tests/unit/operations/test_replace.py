@@ -403,6 +403,34 @@ def test_replace_old_new_mismatched_lengths() -> None:
         s.replace([2, 3, 4], [8, 9])
 
 
+def test_replace_fast_path_one_to_one() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 2, 3]})
+    result = lf.select(pl.col("a").replace(2, 100))
+    expected = pl.LazyFrame({"a": [1, 100, 100, 3]})
+    assert_frame_equal(result, expected)
+
+
+def test_replace_fast_path_many_to_one() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 2, 3]})
+    result = lf.select(pl.col("a").replace([2, 3], 100))
+    expected = pl.LazyFrame({"a": [1, 100, 100, 100]})
+    assert_frame_equal(result, expected)
+
+
+def test_replace_fast_path_many_to_one_default() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 2, 3]})
+    result = lf.select(pl.col("a").replace([2, 3], 100, default=-1))
+    expected = pl.LazyFrame({"a": [-1, 100, 100, 100]}, schema={"a": pl.Int32})
+    assert_frame_equal(result, expected)
+
+
+def test_replace_fast_path_many_to_one_null() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 2, 3]})
+    result = lf.select(pl.col("a").replace([2, 3], None, default=-1))
+    expected = pl.LazyFrame({"a": [-1, None, None, None]}, schema={"a": pl.Int32})
+    assert_frame_equal(result, expected)
+
+
 def test_map_dict_deprecated() -> None:
     s = pl.Series("a", [1, 2, 3])
     with pytest.deprecated_call():

@@ -12,10 +12,11 @@ pub fn replace(s: &Series, old: &Series, new: &Series) -> PolarsResult<Series> {
         let output_dtype = try_get_supertype(s.dtype(), new.dtype())?;
         return s.cast(&output_dtype);
     }
+    if new.len() == 1 {
+        return replace_many_to_one(s, old, new, s);
+    }
 
-    // TODO: Add fast path for replacing a single value (ZIP WITH?)
     let replaced = get_replaced(s, old, new)?;
-
     coalesce_replaced(&replaced, s, s, old, new)
 }
 
@@ -41,11 +42,24 @@ pub fn replace_with_default(
     if old.len() == 0 {
         return Ok(default);
     }
+    if new.len() == 1 {
+        return replace_many_to_one(s, old, new, &default);
+    }
 
-    // TODO: Add fast path for replacing a single value
     let replaced = get_replaced(s, old, new)?;
-
     coalesce_replaced(&replaced, &default, s, old, new)
+}
+
+// Fast path for replacing by a single value
+fn replace_many_to_one(
+    s: &Series,
+    old: &Series,
+    new: &Series,
+    default: &Series,
+) -> PolarsResult<Series> {
+    let condition = is_in(s, old)?;
+    let new = new.new_from_index(0, default.len());
+    new.zip_with(&condition, default)
 }
 
 /// Create a Series containing only the replaced values and nulls everywhere else.
@@ -63,10 +77,7 @@ fn get_replaced(s: &Series, old: &Series, new: &Series) -> PolarsResult<Series> 
     } else {
         old.cast(s.dtype())?
     };
-    let mut new = match new.len() {
-        1 => new.new_from_index(0, old.len()),
-        _ => new.clone(),
-    };
+    let mut new = new.clone();
     old.rename("__POLARS_REPLACE_OLD");
     new.rename("__POLARS_REPLACE_NEW");
     let replacer = DataFrame::new_no_checks(vec![old, new]);
