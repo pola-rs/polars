@@ -9085,43 +9085,55 @@ class Expr:
 
     def replace(
         self,
-        old: IntoExpr | Mapping[Any, Any],
-        new: IntoExpr | NoDefault = no_default,
+        old: IntoExpr | Sequence[Any] | Mapping[Any, Any],
+        new: IntoExpr | Sequence[Any] | NoDefault = no_default,
         *,
         default: IntoExpr | NoDefault = no_default,
         return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
-        Replace values according to the given mapping.
-
-        Needs a global string cache for lazily evaluated queries on columns of
-        type `Categorical`.
+        Replace values by different values.
 
         Parameters
         ----------
         old
-            Mapping of values to their replacement.
-            ...
+            Value or sequence of values to replace.
+            Accepts expression input. Sequences are parsed as Series,
+            other non-expression inputs are parsed as literals.
+            Also accepts a mapping of values to their replacement as syntactic sugar for
+            `replace(new=Series(mapping.keys()), old=Series(mapping.values()))`.
         new
-            ...
+            Value or sequence of values to replace by.
+            Accepts expression input. Sequences are parsed as Series,
+            other non-expression inputs are parsed as literals.
+            Length must match the length of `old` or have length 1.
         default
-            Value to use when the mapping does not contain the lookup value.
-            Defaults to keeping the original value. Accepts expression input.
-            Non-expression inputs are parsed as literals.
+            Set values that were not replaced to this value.
+            Defaults to keeping the original value.
+            Accepts expression input. Non-expression inputs are parsed as literals.
         return_dtype
             Set return dtype to override automatic return dtype determination.
+
+            .. deprecated:: 0.20.0
+                Cast the output to the desired data type, or make sure the inputs are
+                of the correct types instead.
 
         See Also
         --------
         str.replace
 
+        Notes
+        -----
+        Needs a global string cache for lazily evaluated queries on columns of
+        type `Categorical`.
+
         Examples
         --------
-        Replace a single value by another value. Values not in the mapping remain
+        Replace a single value by another value. Values that were not replaced remain
         unchanged.
 
         >>> df = pl.DataFrame({"a": [1, 2, 2, 3]})
-        >>> df.with_columns(pl.col("a").replace({2: 100}).alias("replaced"))
+        >>> df.with_columns(replaced=pl.col("a").replace(2, 100))
         shape: (4, 2)
         ┌─────┬──────────┐
         │ a   ┆ replaced │
@@ -9134,81 +9146,97 @@ class Expr:
         │ 3   ┆ 3        │
         └─────┴──────────┘
 
-        Replace multiple values. Specify a default to set values not in the given map
-        to the default value.
+        Replace multiple values by passing sequences to the `old` and `new` parameters.
 
-        >>> df = pl.DataFrame({"country_code": ["FR", "ES", "DE", None]})
-        >>> country_code_map = {
-        ...     "CA": "Canada",
-        ...     "DE": "Germany",
-        ...     "FR": "France",
-        ...     None: "unspecified",
-        ... }
-        >>> df.with_columns(
-        ...     pl.col("country_code")
-        ...     .replace(country_code_map, default=None)
-        ...     .alias("replaced")
-        ... )
+        >>> df.with_columns(replaced=pl.col("a").replace([2, 3], [100, 200]))
         shape: (4, 2)
-        ┌──────────────┬─────────────┐
-        │ country_code ┆ replaced    │
-        │ ---          ┆ ---         │
-        │ str          ┆ str         │
-        ╞══════════════╪═════════════╡
-        │ FR           ┆ France      │
-        │ ES           ┆ null        │
-        │ DE           ┆ Germany     │
-        │ null         ┆ unspecified │
-        └──────────────┴─────────────┘
+        ┌─────┬──────────┐
+        │ a   ┆ replaced │
+        │ --- ┆ ---      │
+        │ i64 ┆ i64      │
+        ╞═════╪══════════╡
+        │ 1   ┆ 1        │
+        │ 2   ┆ 100      │
+        │ 2   ┆ 100      │
+        │ 3   ┆ 200      │
+        └─────┴──────────┘
 
-        The return type can be overridden with the `return_dtype` argument.
+        Passing a mapping with replacements is also supported as syntactic sugar.
+        Specify a default to set all values that were not matched.
 
-        >>> df = df.with_row_count()
-        >>> df.select(
-        ...     "row_nr",
-        ...     pl.col("row_nr")
-        ...     .replace({1: 10, 2: 20}, default=0, return_dtype=pl.UInt8)
-        ...     .alias("replaced"),
-        ... )
+        >>> mapping = {2: 100, 3: 200}
+        >>> df.with_columns(replaced=pl.col("a").replace(mapping, default=-1))
         shape: (4, 2)
-        ┌────────┬──────────┐
-        │ row_nr ┆ replaced │
-        │ ---    ┆ ---      │
-        │ u32    ┆ u8       │
-        ╞════════╪══════════╡
-        │ 0      ┆ 0        │
-        │ 1      ┆ 10       │
-        │ 2      ┆ 20       │
-        │ 3      ┆ 0        │
-        └────────┴──────────┘
+        ┌─────┬──────────┐
+        │ a   ┆ replaced │
+        │ --- ┆ ---      │
+        │ i64 ┆ i64      │
+        ╞═════╪══════════╡
+        │ 1   ┆ -1       │
+        │ 2   ┆ 100      │
+        │ 2   ┆ 100      │
+        │ 3   ┆ 200      │
+        └─────┴──────────┘
 
-        To reference other columns as a `default` value, a struct column must be
-        constructed first. The first field must be the column in which values are
-        replaced. The other columns can be used in the default expression.
+        Replacing by values of a different data type sets the return type based on
+        a combination of the `new` data type and either the original data type or the
+        default data type if it was set.
 
+        >>> df = pl.DataFrame({"a": ["x", "y", "z"]})
+        >>> mapping = {"x": 1, "y": 2, "z": 3}
+        >>> df.with_columns(replaced=pl.col("a").replace(mapping))
+        shape: (3, 2)
+        ┌─────┬──────────┐
+        │ a   ┆ replaced │
+        │ --- ┆ ---      │
+        │ str ┆ str      │
+        ╞═════╪══════════╡
+        │ x   ┆ 1        │
+        │ y   ┆ 2        │
+        │ z   ┆ 3        │
+        └─────┴──────────┘
+        >>> df.with_columns(replaced=pl.col("a").replace(mapping, default=None))
+        shape: (3, 2)
+        ┌─────┬──────────┐
+        │ a   ┆ replaced │
+        │ --- ┆ ---      │
+        │ str ┆ i64      │
+        ╞═════╪══════════╡
+        │ x   ┆ 1        │
+        │ y   ┆ 2        │
+        │ z   ┆ 3        │
+        └─────┴──────────┘
+
+        Expression input is supported for all parameters.
+
+        >>> df = pl.DataFrame({"a": [1, 2, 2, 3], "b": [1.5, 2.5, 5.0, 1.0]})
         >>> df.with_columns(
-        ...     pl.struct("country_code", "row_nr")
-        ...     .replace(
-        ...         mapping=country_code_map,
-        ...         default=pl.col("row_nr").cast(pl.Utf8),
+        ...     replaced=pl.col("a").replace(
+        ...         old=pl.col("a").max(),
+        ...         new=pl.col("b").sum(),
+        ...         default=pl.col("b"),
         ...     )
-        ...     .alias("replaced")
         ... )
         shape: (4, 3)
-        ┌────────┬──────────────┬─────────────┐
-        │ row_nr ┆ country_code ┆ replaced    │
-        │ ---    ┆ ---          ┆ ---         │
-        │ u32    ┆ str          ┆ str         │
-        ╞════════╪══════════════╪═════════════╡
-        │ 0      ┆ FR           ┆ France      │
-        │ 1      ┆ ES           ┆ 1           │
-        │ 2      ┆ DE           ┆ Germany     │
-        │ 3      ┆ null         ┆ unspecified │
-        └────────┴──────────────┴─────────────┘
+        ┌─────┬─────┬──────────┐
+        │ a   ┆ b   ┆ replaced │
+        │ --- ┆ --- ┆ ---      │
+        │ i64 ┆ f64 ┆ f64      │
+        ╞═════╪═════╪══════════╡
+        │ 1   ┆ 1.5 ┆ 1.5      │
+        │ 2   ┆ 2.5 ┆ 2.5      │
+        │ 2   ┆ 5.0 ┆ 5.0      │
+        │ 3   ┆ 1.0 ┆ 10.0     │
+        └─────┴─────┴──────────┘
         """
         if new is no_default and isinstance(old, Mapping):
             new = pl.Series(old.values())
             old = pl.Series(old.keys())
+        else:
+            if isinstance(old, Sequence) and not isinstance(old, (str, pl.Series)):
+                old = pl.Series(old)
+            if isinstance(new, Sequence) and not isinstance(new, (str, pl.Series)):
+                new = pl.Series(new)
 
         old = parse_as_expression(old, str_as_lit=True)  # type: ignore[arg-type]
         new = parse_as_expression(new, str_as_lit=True)  # type: ignore[arg-type]

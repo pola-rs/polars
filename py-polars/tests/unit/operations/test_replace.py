@@ -378,17 +378,15 @@ def test_replace_old_new() -> None:
 
 def test_replace_old_new_many_to_one() -> None:
     s = pl.Series([1, 2, 2, 3])
-    result = s.replace(pl.Series([2, 3]), 9)
+    result = s.replace([2, 3], 9)
     expected = s = pl.Series([1, 9, 9, 9])
     assert_series_equal(result, expected)
 
 
 def test_replace_old_new_mismatched_lengths() -> None:
     s = pl.Series([1, 2, 2, 3, 4])
-    old = pl.Series([2, 3, 4])
-    new = pl.Series([8, 9])
     with pytest.raises(pl.ComputeError):
-        s.replace(old, new)
+        s.replace([2, 3, 4], [8, 9])
 
 
 def test_map_dict_deprecated() -> None:
