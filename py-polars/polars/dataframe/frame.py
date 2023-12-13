@@ -826,6 +826,7 @@ class DataFrame:
         low_memory: bool = False,
         use_statistics: bool = True,
         rechunk: bool = True,
+        use_glob: bool = True,
     ) -> DataFrame:
         """
         Read into a DataFrame from a parquet file.
@@ -842,28 +843,29 @@ class DataFrame:
         if isinstance(columns, str):
             columns = [columns]
 
-        if isinstance(source, str) and _is_glob_pattern(source):
-            from polars import scan_parquet
+        if use_glob:
+            if isinstance(source, str) and _is_glob_pattern(source):
+                from polars import scan_parquet
 
-            scan = scan_parquet(
-                source,
-                n_rows=n_rows,
-                rechunk=True,
-                parallel=parallel,
-                row_count_name=row_count_name,
-                row_count_offset=row_count_offset,
-                low_memory=low_memory,
-            )
-
-            if columns is None:
-                return scan.collect()
-            elif is_str_sequence(columns, allow_str=False):
-                return scan.select(columns).collect()
-            else:
-                raise TypeError(
-                    "cannot use glob patterns and integer based projection as `columns` argument"
-                    "\n\nUse columns: List[str]"
+                scan = scan_parquet(
+                    source,
+                    n_rows=n_rows,
+                    rechunk=True,
+                    parallel=parallel,
+                    row_count_name=row_count_name,
+                    row_count_offset=row_count_offset,
+                    low_memory=low_memory,
                 )
+
+                if columns is None:
+                    return scan.collect()
+                elif is_str_sequence(columns, allow_str=False):
+                    return scan.select(columns).collect()
+                else:
+                    raise TypeError(
+                        "cannot use glob patterns and integer based projection as `columns` argument"
+                        "\n\nUse columns: List[str]"
+                    )
 
         projection, columns = handle_projection_columns(columns)
         self = cls.__new__(cls)

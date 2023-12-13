@@ -215,8 +215,22 @@ def test_glob_parquet(df: pl.DataFrame, tmp_path: Path) -> None:
     df.write_parquet(file_path)
 
     path_glob = tmp_path / "small*.parquet"
-    assert pl.read_parquet(path_glob).shape == (3, 16)
-    assert pl.scan_parquet(path_glob).collect().shape == (3, 16)
+    assert pl.read_parquet(path_glob, use_glob=True).shape == (3, 16)
+    assert pl.scan_parquet(path_glob, use_glob=True).collect().shape == (3, 16)
+
+
+def test_glob_flag(df: pl.DataFrame, tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "type..hash.[36]string.parquet"
+    df.write_parquet(file_path)
+
+    assert pl.read_parquet(file_path, use_glob=False).shape == (3, 16)
+
+    # TODO: this should raise ComputeError, but with the current implementation
+    # this leads to a recursion error. See #12876
+
+    # with pytest.raises(pl.ComputeError):
+    #     pl.read_parquet(file_path, use_glob=True)
 
 
 def test_chunked_round_trip() -> None:

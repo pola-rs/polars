@@ -35,6 +35,7 @@ def read_parquet(
     pyarrow_options: dict[str, Any] | None = None,
     use_statistics: bool = True,
     rechunk: bool = True,
+    use_glob: bool = True,
 ) -> DataFrame:
     """
     Read into a DataFrame from a parquet file.
@@ -90,6 +91,8 @@ def read_parquet(
     rechunk
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
+    use_glob
+        If `source` is a glob pattern, use it to match files.
 
     See Also
     --------
@@ -138,6 +141,7 @@ def read_parquet(
             low_memory=low_memory,
             use_statistics=use_statistics,
             rechunk=rechunk,
+            use_glob=use_glob,
         )
 
 
