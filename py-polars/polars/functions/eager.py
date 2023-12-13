@@ -3,14 +3,7 @@ from __future__ import annotations
 import contextlib
 from functools import reduce
 from itertools import chain
-from typing import (
-    TYPE_CHECKING,
-    Iterable,
-    List,
-    Sequence,
-    cast,
-    get_args,
-)
+from typing import TYPE_CHECKING, Iterable, List, Sequence, cast, get_args
 
 import polars._reexport as pl
 from polars import functions as F
@@ -258,42 +251,29 @@ def concat(
 
 
 def _alignment_join(
-    *frames: FrameType,
+    *idx_frames: tuple[int, LazyFrame],
     align_on: list[str],
     how: JoinStrategy = "outer",
     descending: bool | Sequence[bool] = False,
 ) -> LazyFrame:
-    """Creates a single master frame with all rows aligned on the common key values."""
-    # note: can stackoverflow if the join becomes too large, so
-    # we branch when hitting a large enough number of frames
-    join_lazy = len(frames) < 250
+    """Create a single master frame with all rows aligned on the common key values."""
+    # note: can stackoverflow if the join becomes too large, so we
+    # collect eagerly when hitting a large enough number of frames
+    post_align_collect = len(idx_frames) >= 250
+    if how == "outer":
+        how = "outer_coalesce"
 
-    def join_func(x: FrameType, y: FrameType) -> FrameType:
-        if how != "outer":
-            # join key cols are merged/coalesced
-            return (x.lazy() if join_lazy else x).join(  # type: ignore[attr-defined]
-                y.lazy(), how=how, on=align_on, suffix=str(id(y))
-            )
-        else:
-            return (
-                (x.lazy() if join_lazy else x)
-                # type: ignore[attr-defined]
-                .join(y.lazy(), how=how, on=align_on, suffix=str(id(y)))
-                .with_columns(
-                    F.when(F.col(c).is_null())
-                    .then(F.col(f"{c}{id(y)!s}"))
-                    .otherwise(F.col(c))
-                    .alias(c)
-                    for c in align_on
-                )
-                .select(F.exclude(*(f"{c}{id(y)!s}" for c in align_on)))
-            )
+    def join_func(
+        idx_x: tuple[int, LazyFrame],
+        idx_y: tuple[int, LazyFrame],
+    ) -> tuple[int, LazyFrame]:
+        (_, x), (y_idx, y) = idx_x, idx_y
+        return y_idx, x.join(y, how=how, on=align_on, suffix=f":{y_idx}")
 
-    df_joined = reduce(join_func, frames).sort(by=align_on, descending=descending)
-    if join_lazy:
-        return df_joined.collect(no_optimization=True).lazy()  # type: ignore[attr-defined]
-    else:
-        return df_joined.lazy()
+    joined = reduce(join_func, idx_frames)[1].sort(by=align_on, descending=descending)
+    if post_align_collect:
+        joined = joined.collect(no_optimization=True).lazy()
+    return joined
 
 
 def align_frames(
@@ -444,23 +424,22 @@ def align_frames(
             "input frames must be of a consistent type (all LazyFrame or all DataFrame)"
         )
 
+    eager = isinstance(frames[0], pl.DataFrame)
     on = [on] if (isinstance(on, str) or not isinstance(on, Sequence)) else on
     align_on = [(c.meta.output_name() if isinstance(c, pl.Expr) else c) for c in on]
 
     # create aligned master frame (this is the most expensive part; afterwards
     # we just subselect out the columns representing the component frames)
+    idx_frames = tuple((idx, df.lazy()) for idx, df in enumerate(frames))
     alignment_frame = _alignment_join(
-        *frames,
-        align_on=align_on,
-        how=how,
-        descending=descending,
+        *idx_frames, align_on=align_on, how=how, descending=descending
     )
 
     # select-out aligned components from the master frame
     aligned_cols = set(alignment_frame.columns)
     aligned_frames = []
-    for df in frames:
-        sfx = str(id(df))
+    for idx, df in idx_frames:
+        sfx = f":{idx}"
         df_cols = [
             F.col(f"{c}{sfx}").alias(c) if f"{c}{sfx}" in aligned_cols else F.col(c)
             for c in df.columns
@@ -470,7 +449,7 @@ def align_frames(
             f = f.select(select)
         aligned_frames.append(f)
 
-    eager = isinstance(frames[0], pl.DataFrame)
     return cast(
-        List[FrameType], F.collect_all(aligned_frames) if eager else aligned_frames
+        List[FrameType],
+        F.collect_all(aligned_frames) if eager else aligned_frames,
     )
