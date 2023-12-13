@@ -9223,7 +9223,9 @@ class Expr:
 
         if return_dtype is not None:
             issue_deprecation_warning(
-                "cast the result or the inputs instead",
+                "The `return_dtype` parameter for `replace` is deprecated."
+                " Cast the output to the desired data type,"
+                " or make sure the inputs are of the correct types instead.",
                 version="0.20.0",
             )
             result = result.cast(return_dtype)
