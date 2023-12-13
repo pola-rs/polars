@@ -196,19 +196,36 @@ def test_compare_enum(
 @pytest.mark.parametrize(
     ("op", "expected"),
     [
-        (operator.le, pl.Series([None, True, True, True])),
-        (operator.lt, pl.Series([None, True, False, False])),
-        (operator.ge, pl.Series([None, False, True, True])),
-        (operator.gt, pl.Series([None, False, False, False])),
+        (operator.le, pl.Series([None, False, True, True])),
+        (operator.lt, pl.Series([None, False, False, True])),
+        (operator.ge, pl.Series([None, True, True, False])),
+        (operator.gt, pl.Series([None, True, False, False])),
     ],
 )
-def test_compare_enum_str(
+def test_compare_enum_str_single(
     op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
 ) -> None:
-    s = pl.Series([None, "a", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
-    s2 = pl.Series([None, "c", "b", "c"])
+    s = pl.Series(
+        [None, "HIGH", "MEDIUM", "LOW"], dtype=pl.Enum(["LOW", "MEDIUM", "HIGH"])
+    )
+    s2 = "MEDIUM"
 
-    assert_series_equal(op(s, s2), expected)
+    assert_series_equal(op(s, s2), expected)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(("op"), [operator.le, operator.lt, operator.ge, operator.gt])
+def test_compare_enum_str_single_raise(
+    op: Callable[[pl.Series, pl.Series], pl.Series]
+) -> None:
+    s = pl.Series(
+        [None, "HIGH", "MEDIUM", "LOW"], dtype=pl.Enum(["LOW", "MEDIUM", "HIGH"])
+    )
+    s2 = "NOTEXIST"
+
+    with pytest.raises(
+        pl.ComputeError, match="value 'NOTEXIST' is not present in Enum"
+    ):
+        op(s, s2)  # type: ignore[arg-type]
 
 
 def test_compare_enum_str_raise() -> None:
@@ -222,3 +239,22 @@ def test_compare_enum_str_raise() -> None:
                 pl.ComputeError, match="value 'd' is not present in Enum"
             ):
                 op(s, s_compare)
+
+
+def test_different_enum_comparison_order() -> None:
+    df_enum = pl.DataFrame(
+        [
+            pl.Series(
+                "a_cat", ["c", "a", "b", "c", "b"], dtype=pl.Enum(["a", "b", "c"])
+            ),
+            pl.Series(
+                "b_cat", ["F", "G", "E", "G", "G"], dtype=pl.Enum(["F", "G", "E"])
+            ),
+        ]
+    )
+    for op in [operator.gt, operator.ge, operator.lt, operator.le]:
+        with pytest.raises(
+            pl.ComputeError,
+            match="can only compare Enum types with the same categories",
+        ):
+            df_enum.filter(op(pl.col("a_cat"), pl.col("b_cat")))

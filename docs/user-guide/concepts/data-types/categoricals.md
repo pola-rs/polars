@@ -258,3 +258,72 @@ In the `Enum` data type we specify the categories in advance. This way we ensure
 Polars will raise an `OutOfBounds` error when a value is encountered which is not specified in the `Enum`.
 
 {{code_block('user-guide/concepts/data-types/categoricals','enum_error',[])}}
+
+```python exec="on" result="text" session="user-guide/datatypes/categoricals"
+--8<-- "python/user-guide/concepts/data-types/categoricals.py:setup"
+--8<-- "python/user-guide/concepts/data-types/categoricals.py:enum_error"
+```
+### Comparisons
+
+The following types of comparisons operators are allowed for categorical data:
+
+- Categorical vs Categorical
+- Categorical vs Utf8
+
+#### `Categorical` Type
+
+For the `Categorical` type comparisons are valid if they have the same global cache set or if they have the same underlying categories in the same order.  
+
+{{code_block('user-guide/concepts/data-types/categoricals','global_equality',[])}}
+
+```python exec="on" result="text" session="user-guide/datatypes/categoricals"
+--8<-- "python/user-guide/concepts/data-types/categoricals.py:setup"
+--8<-- "python/user-guide/concepts/data-types/categoricals.py:global_equality"
+```
+
+For `Categorical` vs `Utf8` comparisons Polars uses lexical ordering to determine the result:
+
+{{code_block('user-guide/concepts/data-types/categoricals','str_compare_single',[])}}
+
+```python exec="on" result="text" session="user-guide/datatypes/categoricals"
+--8<-- "python/user-guide/concepts/data-types/categoricals.py:str_compare_single"
+```
+
+{{code_block('user-guide/concepts/data-types/categoricals','str_compare',[])}}
+
+```python exec="on" result="text" session="user-guide/datatypes/categoricals"
+--8<-- "python/user-guide/concepts/data-types/categoricals.py:str_compare"
+```
+
+#### `Enum` Type
+
+For `Enum` type comparisons are valid if they have the same categories.
+
+{{code_block('user-guide/concepts/data-types/categoricals','equality',[])}}
+
+```python exec="on" result="text" session="user-guide/datatypes/categoricals"
+--8<-- "python/user-guide/concepts/data-types/categoricals.py:equality"
+```
+
+For `Enum` vs `Utf8` comparisons the order within the categories is used instead of lexical ordering. In order for a comparison to be valid all values in the `Utf8` column should be present in the `Enum` categories list.
+
+{{code_block('user-guide/concepts/data-types/categoricals','str_enum_compare_error',[])}}
+
+
+```python exec="on" result="text" session="user-guide/datatypes/categoricals"
+--8<-- "python/user-guide/concepts/data-types/categoricals.py:str_enum_compare_error"
+```
+
+{{code_block('user-guide/concepts/data-types/categoricals','str_enum_compare_single',[])}}
+
+
+```python exec="on" result="text" session="user-guide/datatypes/categoricals"
+--8<-- "python/user-guide/concepts/data-types/categoricals.py:str_enum_compare_single"
+```
+
+{{code_block('user-guide/concepts/data-types/categoricals','str_enum_compare',[])}}
+
+
+```python exec="on" result="text" session="user-guide/datatypes/categoricals"
+--8<-- "python/user-guide/concepts/data-types/categoricals.py:str_enum_compare"
+```

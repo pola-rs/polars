@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import operator
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
 
@@ -13,7 +13,7 @@ from polars.exceptions import (
     CategoricalRemappingWarning,
     StringCacheMismatchError,
 )
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars.type_aliases import PolarsDataType
@@ -161,44 +161,40 @@ def test_categorical_error_on_local_ordering() -> None:
             df_cat.filter(op(pl.col("a_cat"), pl.col("b_cat")))
 
 
-def test_different_enum_comparison_order() -> None:
-    df_enum = pl.DataFrame(
-        [
-            pl.Series(
-                "a_cat", ["c", "a", "b", "c", "b"], dtype=pl.Enum(["a", "b", "c"])
-            ),
-            pl.Series(
-                "b_cat", ["F", "G", "E", "G", "G"], dtype=pl.Enum(["F", "G", "E"])
-            ),
-        ]
-    )
-    for op in [operator.gt, operator.ge, operator.lt, operator.le]:
-        with pytest.raises(
-            pl.ComputeError,
-            match="can only compare Enum types with the same categories",
-        ):
-            df_enum.filter(op(pl.col("a_cat"), pl.col("b_cat")))
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        (operator.le, pl.Series([None, True, True, True, True, True])),
+        (operator.lt, pl.Series([None, False, False, False, True, True])),
+        (operator.ge, pl.Series([None, True, True, True, False, False])),
+        (operator.gt, pl.Series([None, False, False, False, False, False])),
+    ],
+)
+def test_compare_categorical(
+    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
+) -> None:
+    s = pl.Series([None, "a", "b", "c", "b", "a"], dtype=pl.Categorical)
+    s2 = pl.Series([None, "a", "b", "c", "c", "b"])
+
+    assert_series_equal(op(s, s2), expected)
 
 
-def test_enum_comparison_order() -> None:
-    dtype = pl.Enum(["LOW", "MEDIUM", "HIGH"])
-    df_enum = pl.DataFrame(
-        [
-            pl.Series(
-                "a_cat", ["LOW", "MEDIUM", "MEDIUM", "HIGH", "MEDIUM"], dtype=dtype
-            ),
-            pl.Series("b_cat", ["HIGH", "HIGH", "MEDIUM", "LOW", "LOW"], dtype=dtype),
-        ]
-    )
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        (operator.le, pl.Series([None, True, True, False, True, True])),
+        (operator.lt, pl.Series([None, True, False, False, False, True])),
+        (operator.ge, pl.Series([None, False, True, True, True, False])),
+        (operator.gt, pl.Series([None, False, False, True, False, False])),
+    ],
+)
+def test_compare_categorical_single(
+    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
+) -> None:
+    s = pl.Series([None, "a", "b", "c", "b", "a"], dtype=pl.Categorical)
+    s2 = "b"
 
-    df_cmp = df_enum.select((pl.col("a_cat") <= pl.col("b_cat")).alias("cmp"))
-    assert df_cmp.to_dict(as_series=False) == {"cmp": [True, True, True, False, False]}
-
-    df_cmp = df_enum.select((pl.col("a_cat") > pl.col("b_cat")).alias("cmp"))
-    assert df_cmp.to_dict(as_series=False) == {"cmp": [False, False, False, True, True]}
-
-    df_cmp = df_enum.select((pl.col("a_cat") >= pl.col("b_cat")).alias("cmp"))
-    assert df_cmp.to_dict(as_series=False) == {"cmp": [False, False, True, True, True]}
+    assert_series_equal(op(s, s2), expected)  # type: ignore[arg-type]
 
 
 def test_categorical_error_on_local_cmp() -> None:
