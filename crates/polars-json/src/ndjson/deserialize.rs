@@ -21,9 +21,9 @@ pub fn deserialize_iter<'a>(
     let mut buf = String::with_capacity(std::u32::MAX as usize);
     buf.push('[');
 
-    fn _deserializer(s: String, data_type: ArrowDataType) -> PolarsResult<Box<dyn Array>> {
-        let mut buf = s.clone();
-        let slice = unsafe { buf.as_bytes_mut() };
+    fn _deserializer(s: &mut String, data_type: ArrowDataType) -> PolarsResult<Box<dyn Array>> {
+        // let mut buf = s.clone();
+        let slice = unsafe { s.as_bytes_mut() };
         let out = simd_json::to_borrowed_value(slice)
             .map_err(|e| PolarsError::ComputeError(format!("json parsing error: '{e}'").into()))?;
         Ok(if let BorrowedValue::Array(rows) = out {
@@ -38,11 +38,9 @@ pub fn deserialize_iter<'a>(
         buf.push(',');
 
         if buf.len() + row.len() > std::u32::MAX as usize {
-            if buf.len() > 1 {
-                let _ = buf.pop();
-            }
+            let _ = buf.pop();
             buf.push(']');
-            arr.push(_deserializer(buf.clone(), data_type.clone())?);
+            arr.push(_deserializer(&mut buf, data_type.clone())?);
             buf.clear();
             buf.push('[');
         }
@@ -52,6 +50,10 @@ pub fn deserialize_iter<'a>(
     }
     buf.push(']');
 
-    arr.push(_deserializer(buf, data_type.clone())?);
-    concatenate(&arr.clone().iter().map(|v| v.as_ref()).collect::<Vec<_>>())
+    if arr.len() == 0 {
+        _deserializer(&mut buf, data_type.clone())
+    } else {
+        arr.push(_deserializer(&mut buf, data_type.clone())?);
+        concatenate(&arr.clone().iter().map(|v| v.as_ref()).collect::<Vec<_>>())
+    }
 }
