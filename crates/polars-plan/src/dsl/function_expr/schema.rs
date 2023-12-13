@@ -464,11 +464,11 @@ impl<'a> FieldsMapper<'a> {
     #[cfg(feature = "replace")]
     pub fn replace_dtype(&self, default: bool) -> PolarsResult<Field> {
         let supertype = if default {
-            // Supertype of input and `new`
-            try_get_supertype(self.fields[0].data_type(), self.fields[2].data_type())?
-        } else {
             // Supertype of `new` and `default`
             try_get_supertype(self.fields[2].data_type(), self.fields[3].data_type())?
+        } else {
+            // Supertype of input and `new`
+            try_get_supertype(self.fields[0].data_type(), self.fields[2].data_type())?
         };
         self.with_dtype(supertype)
     }
