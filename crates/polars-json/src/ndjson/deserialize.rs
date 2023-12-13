@@ -37,7 +37,7 @@ pub fn deserialize_iter<'a>(
         buf.push_str(row);
         buf.push(',');
 
-        if buf.len() + row.len() > 5000000 {
+        if buf.len() + row.len() > std::u32::MAX as usize {
             if buf.len() > 1 {
                 let _ = buf.pop();
             }
