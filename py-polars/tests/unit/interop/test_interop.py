@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time
-from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
@@ -1183,5 +1182,9 @@ def test_from_arrow_invalid_time_zone() -> None:
 
 
 def test_from_avro_invalid_time_zone_13032() -> None:
-    result = pl.read_avro(Path("tests") / "unit/io/files/out.avro.txt")
-    assert result.schema["reg_id_first_swipe_at"] == pl.Datetime("us", "UTC")
+    arr = pa.array(
+        [datetime(2021, 1, 1, 0, 0, 0, 0)], type=pa.timestamp("ns", tz="00:00")
+    )
+    result = cast(pl.Series, pl.from_arrow(arr))
+    expected = pl.Series([datetime(2021, 1, 1)], dtype=pl.Datetime("ns", "UTC"))
+    assert_series_equal(result, expected)
