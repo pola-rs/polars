@@ -38,7 +38,9 @@ from polars.datatypes import (
     N_INFER_DEFAULT,
     Boolean,
     Float64,
+    Null,
     Object,
+    Unknown,
     Utf8,
     py_type_to_dtype,
 )
@@ -4379,15 +4381,29 @@ class DataFrame:
             for c in self.columns
         ]
 
+        minmax_cols = {
+            c
+            for c, dt in self.schema.items()
+            if not dt.is_nested() and dt not in (Object, Null, Unknown)
+        }
+        min_exprs = [
+            (F.col(c).min() if c in minmax_cols else F.lit(None)).alias(f"min:{c}")
+            for c in self.columns
+        ]
+        max_exprs = [
+            (F.col(c).max() if c in minmax_cols else F.lit(None)).alias(f"max:{c}")
+            for c in self.columns
+        ]
+
         # Calculate metrics in parallel
         df_metrics = self.select(
             F.all().count().name.prefix("count:"),
             F.all().null_count().name.prefix("null_count:"),
             *mean_exprs,
             *std_exprs,
-            F.all().min().name.prefix("min:"),
+            *min_exprs,
             *percentile_exprs,
-            F.all().max().name.prefix("max:"),
+            *max_exprs,
         )
 
         # Reshape wide result
