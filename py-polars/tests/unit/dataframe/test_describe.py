@@ -31,7 +31,7 @@ def test_df_describe() -> None:
             ("std", 1.101514, 0.707107, 0.57735, None, None, None),
             ("min", 1.0, 4.0, 0.0, "b", None, "2020-01-01"),
             ("25%", 1.0, 4.0, None, None, None, None),
-            ("50%", 2.8, 5.0, None, None, None, None),
+            ("50%", 2.8, 5.0, None, None, None, "2020-12-31 16:00:00"),
             ("75%", 3.0, 5.0, None, None, None, None),
             ("max", 3.0, 5.0, 1.0, "c", None, "2022-01-01"),
         ],
