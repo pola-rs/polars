@@ -9,7 +9,6 @@ mod scatter;
 
 use std::io::Cursor;
 
-use polars_algo::hist;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
 use polars_core::with_match_physical_numeric_polars_type;

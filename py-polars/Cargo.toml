@@ -8,7 +8,6 @@ name = "polars"
 crate-type = ["cdylib"]
 
 [dependencies]
-polars-algo = { workspace = true }
 polars-core = { workspace = true, features = ["python"] }
 polars-error = { workspace = true }
 polars-lazy = { workspace = true, features = ["python"] }
@@ -148,6 +147,7 @@ extract_groups = ["polars/extract_groups"]
 ffi_plugin = ["polars-plan/ffi_plugin"]
 cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure", "polars/http"]
 peaks = ["polars/peaks"]
+hist = ["polars/hist"]
 
 dtypes = [
   "dtype-i8",
@@ -184,6 +184,7 @@ operations = [
   "propagate_nans",
   "timezones",
   "peaks",
+  "hist",
 ]
 
 io = [
