@@ -317,9 +317,9 @@ pub enum FunctionExpr {
         options: EWMOptions,
     },
     #[cfg(feature = "replace")]
-    Replace,
-    #[cfg(feature = "replace")]
-    ReplaceWithDefault,
+    Replace {
+        default: bool,
+    },
 }
 
 impl Hash for FunctionExpr {
@@ -520,9 +520,7 @@ impl Hash for FunctionExpr {
                 include_breakpoint.hash(state);
             },
             #[cfg(feature = "replace")]
-            Replace => {},
-            #[cfg(feature = "replace")]
-            ReplaceWithDefault => {},
+            Replace { default } => default.hash(state),
         }
     }
 }
@@ -690,9 +688,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "hist")]
             Hist { .. } => "hist",
             #[cfg(feature = "replace")]
-            Replace => "replace",
-            #[cfg(feature = "replace")]
-            ReplaceWithDefault => "replace_with_default",
+            Replace { .. } => "replace",
         };
         write!(f, "{s}")
     }
@@ -1041,12 +1037,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "ewma")]
             EwmVar { options } => map!(ewm::ewm_var, options),
             #[cfg(feature = "replace")]
-            Replace => {
-                map_as_slice!(dispatch::replace)
-            },
-            #[cfg(feature = "replace")]
-            ReplaceWithDefault => {
-                map_as_slice!(dispatch::replace_with_default)
+            Replace { default } => {
+                map_as_slice!(dispatch::replace, default)
             },
         }
     }

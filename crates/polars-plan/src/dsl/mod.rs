@@ -1313,12 +1313,14 @@ impl Expr {
     pub fn replace<E: Into<Expr>>(self, old: E, new: E, default: Option<E>) -> Expr {
         match default {
             Some(default) => {
-                let arguments: &[Expr] = &[old.into(), new.into(), default.into()];
-                self.apply_many_private(FunctionExpr::ReplaceWithDefault, arguments, false, false)
+                let func = FunctionExpr::Replace { default: true };
+                let args: &[Expr] = &[old.into(), new.into(), default.into()];
+                self.apply_many_private(func, args, false, false)
             },
             None => {
-                let arguments: &[Expr] = &[old.into(), new.into()];
-                self.apply_many_private(FunctionExpr::Replace, arguments, false, false)
+                let func = FunctionExpr::Replace { default: false };
+                let args: &[Expr] = &[old.into(), new.into(), lit(NULL)];
+                self.apply_many_private(func, args, false, false)
             },
         }
     }
