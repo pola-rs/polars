@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time
+from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
@@ -1179,3 +1180,8 @@ def test_from_arrow_invalid_time_zone() -> None:
     )
     with pytest.raises(ComputeError, match=r"unable to parse time zone: '\+01:00'"):
         pl.from_arrow(arr)
+
+
+def test_from_avro_invalid_time_zone_13032() -> None:
+    result = pl.read_avro(Path("tests") / "unit/io/files/out.avro.txt")
+    assert result.schema["reg_id_first_swipe_at"] == pl.Datetime("us", "UTC")
