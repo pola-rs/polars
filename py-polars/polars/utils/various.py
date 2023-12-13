@@ -353,9 +353,8 @@ def _cast_repr_strings_with_schema(
                 )
             elif tp == Boolean:
                 cast_cols[c] = F.col(c).replace(
-                    mapping={"true": True, "false": False},
+                    {"true": True, "false": False},
                     default=None,
-                    return_dtype=Boolean,
                 )
             elif tp in INTEGER_DTYPES:
                 int_string = F.col(c).str.replace_all(r"[^\d+-]", "")

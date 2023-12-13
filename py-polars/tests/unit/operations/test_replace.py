@@ -55,20 +55,33 @@ def test_replace_str_to_str_default_other(str_mapping: dict[str | None, str]) ->
     assert_frame_equal(result, expected)
 
 
-# TODO: Check return dtype
+@pl.StringCache()
+def test_replace_cat_to_str(str_mapping: dict[str | None, str]) -> None:
+    df = pl.DataFrame(
+        {"country_code": ["FR", None, "ES", "DE"]},
+        schema={"country_code": pl.Categorical},
+    )
+
+    with pytest.raises(pl.InvalidOperationError):
+        df.select(pl.col("country_code").replace(str_mapping))
+
+
 @pl.StringCache()
 def test_replace_cat_to_cat(str_mapping: dict[str | None, str]) -> None:
     lf = pl.LazyFrame(
         {"country_code": ["FR", None, "ES", "DE"]},
         schema={"country_code": pl.Categorical},
     )
-
-    result = lf.select(
-        replaced=pl.col("country_code").cast(pl.Categorical).replace(str_mapping)
+    old = pl.Series(["CA", "DE", "FR", None], dtype=pl.Categorical)
+    new = pl.Series(
+        ["Canada", "Germany", "France", "Not specified"], dtype=pl.Categorical
     )
+
+    result = lf.select(replaced=pl.col("country_code").replace(old, new))
+
     expected = pl.LazyFrame(
         {"replaced": ["France", "Not specified", "ES", "Germany"]},
-        schema={"replaced": pl.Utf8},
+        schema_overrides={"replaced": pl.Categorical},
     )
     assert_frame_equal(result, expected)
 
@@ -152,31 +165,29 @@ def test_replace_empty_mapping_default() -> None:
     assert_frame_equal(result, expected)
 
 
-# TODO: Probably does not need to raise an error anymore
-@pytest.mark.skip()  # Skip for now
-@pytest.mark.parametrize("mapping", [{1: "b", 3: "d"}, {1: "b", 3: "d", None: "e"}])
-def test_replace_errors(mapping: dict[int | None, str]) -> None:
+def test_replace_mapping_different_dtype_str_int() -> None:
+    df = pl.DataFrame({"int": [None, "1", None, "3"]})
+    mapping = {1: "b", 3: "d"}
+
+    result = df.select(pl.col("int").replace(mapping))
+    expected = pl.DataFrame({"int": [None, "b", None, "d"]})
+    assert_frame_equal(result, expected)
+
+
+def test_replace_mapping_different_dtype_map_none() -> None:
     df = pl.DataFrame({"int": [None, "1", None, "3"]})
     mapping = {1: "b", 3: "d", None: "e"}
-
-    with pytest.raises(
-        pl.ComputeError,
-        match="mapping keys for `replace` could not be converted to Utf8 without losing values in the conversion",
-    ):
-        df.select(pl.col("int").replace(mapping))
+    result = df.select(pl.col("int").replace(mapping))
+    expected = pl.DataFrame({"int": ["e", "b", "e", "d"]})
+    assert_frame_equal(result, expected)
 
 
-# TODO: Probably does not need to raise an error anymore
-@pytest.mark.skip()  # Skip for now
-def test_replace_errors2() -> None:
+def test_replace_mapping_different_dtype_str_float() -> None:
     df = pl.DataFrame({"int": [None, "1", None, "3"]})
     mapping = {1.0: "b", 3.0: "d"}
 
-    with pytest.raises(
-        pl.ComputeError,
-        match=".*'float' object cannot be interpreted as an integer",
-    ):
-        df.select(pl.col("int").replace(mapping))
+    result = df.select(pl.col("int").replace(mapping))
+    assert_frame_equal(result, df)
 
 
 # https://github.com/pola-rs/polars/issues/7132
@@ -305,6 +316,22 @@ def test_replace_bool_to_str() -> None:
     assert_series_equal(result, expected)
 
 
+def test_replace_str_to_bool_without_default() -> None:
+    s = pl.Series(["True", "False", "False", None])
+    mapping = {"True": True, "False": False}
+    result = s.replace(mapping)
+    expected = pl.Series(["true", "false", "false", None])
+    assert_series_equal(result, expected)
+
+
+def test_replace_str_to_bool_with_default() -> None:
+    s = pl.Series(["True", "False", "False", None])
+    mapping = {"True": True, "False": False}
+    result = s.replace(mapping, default=None)
+    expected = pl.Series([True, False, False, None])
+    assert_series_equal(result, expected)
+
+
 def test_replace_int_to_str() -> None:
     s = pl.Series("a", [-1, 2, None, 4, -5])
     mapping = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five"}
@@ -329,9 +356,7 @@ def test_replace_int_to_str_with_default() -> None:
 def test_replace_str_to_int2() -> None:
     s = pl.Series(["a", "b"])
     mapping = {"a": 1, "b": 2}
-
     result = s.replace(mapping)
-
     expected = pl.Series(["1", "2"])
     assert_series_equal(result, expected)
 
@@ -339,11 +364,31 @@ def test_replace_str_to_int2() -> None:
 def test_replace_str_to_int_with_default() -> None:
     s = pl.Series(["a", "b"])
     mapping = {"a": 1, "b": 2}
-
     result = s.replace(mapping, default=None)
-
     expected = pl.Series([1, 2])
     assert_series_equal(result, expected)
+
+
+def test_replace_old_new() -> None:
+    s = pl.Series([1, 2, 2, 3])
+    result = s.replace(2, 9)
+    expected = s = pl.Series([1, 9, 9, 3])
+    assert_series_equal(result, expected)
+
+
+def test_replace_old_new_many_to_one() -> None:
+    s = pl.Series([1, 2, 2, 3])
+    result = s.replace(pl.Series([2, 3]), 9)
+    expected = s = pl.Series([1, 9, 9, 9])
+    assert_series_equal(result, expected)
+
+
+def test_replace_old_new_mismatched_lengths() -> None:
+    s = pl.Series([1, 2, 2, 3, 4])
+    old = pl.Series([2, 3, 4])
+    new = pl.Series([8, 9])
+    with pytest.raises(pl.ComputeError):
+        s.replace(old, new)
 
 
 def test_map_dict_deprecated() -> None:

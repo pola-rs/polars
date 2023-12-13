@@ -13,6 +13,7 @@ from typing import (
     Generator,
     Iterable,
     Literal,
+    Mapping,
     NoReturn,
     Sequence,
     Union,
@@ -131,6 +132,9 @@ if TYPE_CHECKING:
         SearchSortedSide,
         SizeUnit,
         TemporalLiteral,
+    )
+    from polars.utils.various import (
+        NoDefault,
     )
 
     if sys.version_info >= (3, 11):
@@ -6245,9 +6249,10 @@ class Series:
 
     def replace(
         self,
-        mapping: dict[Any, Any],
+        old: IntoExpr | Mapping[Any, Any],
+        new: IntoExpr | NoDefault = no_default,
         *,
-        default: Any = no_default,
+        default: IntoExpr | NoDefault = no_default,
         return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
@@ -6258,8 +6263,11 @@ class Series:
 
         Parameters
         ----------
-        mapping
+        old
             Mapping of values to their replacement.
+            ...
+        new
+            ...
         default
             Value to use when the mapping does not contain the lookup value.
             Defaults to keeping the original value.

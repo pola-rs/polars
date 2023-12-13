@@ -15,6 +15,7 @@ from typing import (
     Collection,
     FrozenSet,
     Iterable,
+    Mapping,
     NoReturn,
     Sequence,
     Set,
@@ -54,7 +55,11 @@ from polars.utils.deprecation import (
     issue_deprecation_warning,
 )
 from polars.utils.meta import threadpool_size
-from polars.utils.various import _warn_null_comparison, no_default, sphinx_accessor
+from polars.utils.various import (
+    _warn_null_comparison,
+    no_default,
+    sphinx_accessor,
+)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
@@ -83,6 +88,9 @@ if TYPE_CHECKING:
         SearchSortedSide,
         TemporalLiteral,
         WindowMappingStrategy,
+    )
+    from polars.utils.various import (
+        NoDefault,
     )
 
     if sys.version_info >= (3, 11):
@@ -9077,9 +9085,10 @@ class Expr:
 
     def replace(
         self,
-        mapping: dict[Any, Any],
+        old: IntoExpr | Mapping[Any, Any],
+        new: IntoExpr | NoDefault = no_default,
         *,
-        default: Any = no_default,
+        default: IntoExpr | NoDefault = no_default,
         return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
@@ -9090,8 +9099,11 @@ class Expr:
 
         Parameters
         ----------
-        mapping
+        old
             Mapping of values to their replacement.
+            ...
+        new
+            ...
         default
             Value to use when the mapping does not contain the lookup value.
             Defaults to keeping the original value. Accepts expression input.
@@ -9194,8 +9206,13 @@ class Expr:
         │ 3      ┆ null         ┆ unspecified │
         └────────┴──────────────┴─────────────┘
         """
-        old = F.lit(pl.Series(mapping.keys()))._pyexpr
-        new = F.lit(pl.Series(mapping.values()))._pyexpr
+        if new is no_default and isinstance(old, Mapping):
+            new = F.lit(pl.Series(old.values()))._pyexpr
+            old = F.lit(pl.Series(old.keys()))._pyexpr
+        else:
+            old = parse_as_expression(old, str_as_lit=True)
+            new = parse_as_expression(new, str_as_lit=True)
+
         default = (
             None
             if default is no_default
