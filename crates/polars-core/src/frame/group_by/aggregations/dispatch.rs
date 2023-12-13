@@ -109,19 +109,28 @@ impl Series {
         use DataType::*;
 
         match self.dtype() {
+            Boolean => self.cast(&Float64).unwrap().agg_mean(groups),
             Float32 => SeriesWrap(self.f32().unwrap().clone()).agg_median(groups),
             Float64 => SeriesWrap(self.f64().unwrap().clone()).agg_median(groups),
-            dt if dt.is_numeric() || dt.is_temporal() => {
-                let ca = self.to_physical_repr();
-                let physical_type = ca.dtype();
-                let s = apply_method_physical_integer!(ca, agg_median, groups);
-                if dt.is_logical() {
-                    // back to physical and then
-                    // back to logical type
-                    s.cast(physical_type).unwrap().cast(dt).unwrap()
-                } else {
-                    s
-                }
+            dt if dt.is_numeric() => {
+                apply_method_physical_integer!(self, agg_median, groups)
+            },
+            Date => {
+                let s = self.cast(&Int64).unwrap() * (US_IN_DAY as f64);
+                // agg_median returns Float64
+                let out = s.agg_median(groups);
+                // cast back to Int64 and then to logical duration type
+                out.cast(&Int64)
+                    .unwrap()
+                    .cast(&Datetime(TimeUnit::Microseconds, None))
+                    .unwrap()
+            },
+            dt @ (Datetime(_, _) | Duration(_) | Time) => {
+                let s = self.to_physical_repr();
+                // agg_median returns Float64
+                let out = s.agg_median(groups);
+                // cast back to Int64 and then to logical duration type
+                out.cast(&Int64).unwrap().cast(dt).unwrap()
             },
             _ => Series::full_null("", groups.len(), self.dtype()),
         }
@@ -167,7 +176,17 @@ impl Series {
             dt if dt.is_numeric() => {
                 apply_method_physical_integer!(self, agg_mean, groups)
             },
-            dt @ Duration(_) => {
+            Date => {
+                let s = self.cast(&Int64).unwrap() * (US_IN_DAY as f64);
+                // agg_mean returns Float64
+                let out = s.agg_mean(groups);
+                // cast back to Int64 and then to logical duration type
+                out.cast(&Int64)
+                    .unwrap()
+                    .cast(&Datetime(TimeUnit::Microseconds, None))
+                    .unwrap()
+            },
+            dt @ (Datetime(_, _) | Duration(_) | Time) => {
                 let s = self.to_physical_repr();
                 // agg_mean returns Float64
                 let out = s.agg_mean(groups);

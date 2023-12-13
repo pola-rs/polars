@@ -2,10 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars.datatypes import Date
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
-from polars.utils.convert import _to_python_date, _to_python_datetime
 from polars.utils.deprecation import deprecate_renamed_function
 
 if TYPE_CHECKING:
@@ -13,7 +11,7 @@ if TYPE_CHECKING:
 
     from polars import Expr, Series
     from polars.polars import PySeries
-    from polars.type_aliases import Ambiguous, EpochTimeUnit, TimeUnit
+    from polars.type_aliases import Ambiguous, EpochTimeUnit, TemporalLiteral, TimeUnit
 
 
 @expr_dispatch
@@ -57,7 +55,7 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s).max()  # type: ignore[return-value]
 
-    def median(self) -> dt.date | dt.datetime | dt.timedelta | None:
+    def median(self) -> TemporalLiteral | float | None:
         """
         Return median as python DateTime.
 
@@ -79,16 +77,9 @@ class DateTimeNameSpace:
         datetime.datetime(2001, 1, 2, 0, 0)
 
         """
-        s = wrap_s(self._s)
-        out = s.median()
-        if out is not None:
-            if s.dtype == Date:
-                return _to_python_date(int(out))
-            else:
-                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[attr-defined]
-        return None
+        return self._s.median()
 
-    def mean(self) -> dt.date | dt.datetime | None:
+    def mean(self) -> TemporalLiteral | None:
         """
         Return mean as python DateTime.
 
@@ -102,14 +93,7 @@ class DateTimeNameSpace:
         datetime.datetime(2001, 1, 2, 0, 0)
 
         """
-        s = wrap_s(self._s)
-        out = s.mean()
-        if out is not None:
-            if s.dtype == Date:
-                return _to_python_date(int(out))
-            else:
-                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[attr-defined]
-        return None
+        return self._s.mean()
 
     def to_string(self, format: str) -> Series:
         """

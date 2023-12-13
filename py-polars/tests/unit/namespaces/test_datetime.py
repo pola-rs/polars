@@ -900,15 +900,34 @@ def test_weekday(time_unit: TimeUnit) -> None:
     [
         ([], None),
         ([None, None], None),
-        ([date(2022, 1, 1)], date(2022, 1, 1)),
-        ([date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)], date(2022, 1, 2)),
-        ([date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)], date(2022, 1, 2)),
+        ([date(2022, 1, 1)], datetime(2022, 1, 1)),
+        ([date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)], datetime(2022, 1, 2)),
+        ([date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)], datetime(2022, 1, 2)),
+        (
+            [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2024, 5, 15)],
+            datetime(2022, 1, 2),
+        ),
+        ([timedelta(1, 6, 30), timedelta(3, 8, 40)], timedelta(2, 7, 35)),
     ],
-    ids=["empty", "Nones", "single", "spread_even", "spread_skewed"],
+    ids=[
+        "empty",
+        "Nones",
+        "single",
+        "spread_even",
+        "spread_skewed",
+        "spread_skewed_dt",
+        "delta",
+    ],
 )
-def test_median(values: list[date | None], expected_median: date | None) -> None:
-    result = pl.Series(values).cast(pl.Date).dt.median()
-    assert result == expected_median
+def test_median(
+    values: list[date | None], expected_median: datetime | timedelta | None
+) -> None:
+    assert pl.Series(values).median() == expected_median
+    assert pl.Series(values).dt.median() == expected_median
+
+
+def test_median_time() -> None:
+    assert pl.Series([1000, 2000, 3000], dtype=pl.Time).median() == time(microsecond=2)
 
 
 @pytest.mark.parametrize(
@@ -916,12 +935,290 @@ def test_median(values: list[date | None], expected_median: date | None) -> None
     [
         ([], None),
         ([None, None], None),
-        ([date(2022, 1, 1)], date(2022, 1, 1)),
-        ([date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)], date(2022, 1, 2)),
-        ([date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)], date(2022, 10, 16)),
+        ([date(2022, 1, 1)], datetime(2022, 1, 1)),
+        ([date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)], datetime(2022, 1, 2)),
+        (
+            [date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)],
+            datetime(2022, 10, 16, 16, 0, 0),
+        ),
+        (
+            [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2024, 5, 15)],
+            datetime(2022, 10, 16, 16, 0, 0),
+        ),
+        ([timedelta(1, 6, 30), timedelta(3, 8, 40)], timedelta(2, 7, 35)),
     ],
-    ids=["empty", "Nones", "single", "spread_even", "spread_skewed"],
+    ids=[
+        "empty",
+        "Nones",
+        "single",
+        "spread_even",
+        "spread_skewed",
+        "spread_skewed_dt",
+        "delta",
+    ],
 )
-def test_mean(values: list[date | None], expected_mean: date | None) -> None:
-    result = pl.Series(values).cast(pl.Date).dt.mean()
-    assert result == expected_mean
+def test_mean(
+    values: list[date | None], expected_mean: datetime | timedelta | None
+) -> None:
+    assert pl.Series(values).mean() == expected_mean
+    assert pl.Series(values).dt.mean() == expected_mean
+
+
+def test_mean_time() -> None:
+    assert pl.Series([1000, 2000, 3000], dtype=pl.Time).mean() == time(microsecond=2)
+
+
+@pytest.mark.parametrize(
+    ("values", "expected_mean"),
+    [
+        (
+            [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2024, 5, 15)],
+            datetime(2022, 10, 16, 16, 0, 0),
+        ),
+    ],
+    ids=["spread_skewed_dt"],
+)
+def test_datetime_mean_with_tu(values: list[datetime], expected_mean: datetime) -> None:
+    assert pl.Series(values, dtype=pl.Datetime("ms")).mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Datetime("ms")).dt.mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Datetime("us")).mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Datetime("us")).dt.mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Datetime("ns")).mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Datetime("ns")).dt.mean() == expected_mean
+
+
+@pytest.mark.parametrize(
+    ("values", "expected_mean"),
+    [
+        (
+            [
+                timedelta(days=1, hours=6, minutes=30),
+                timedelta(days=3, hours=8, minutes=40),
+            ],
+            timedelta(days=2, hours=7, minutes=35),
+        ),
+    ],
+    ids=["delta"],
+)
+def test_duration_mean_with_tu(
+    values: list[timedelta], expected_mean: timedelta
+) -> None:
+    assert pl.Series(values, dtype=pl.Duration("ms")).mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Duration("ms")).dt.mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Duration("us")).mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Duration("us")).dt.mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Duration("ns")).mean() == expected_mean
+    assert pl.Series(values, dtype=pl.Duration("ns")).dt.mean() == expected_mean
+
+
+def test_agg_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "date": pl.Series(
+                [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 4)], dtype=pl.Date
+            ),
+            "datetime_ms": pl.Series(
+                [datetime(2023, 1, 1), datetime(2023, 1, 2), datetime(2023, 1, 4)],
+                dtype=pl.Datetime("ms"),
+            ),
+            "datetime_us": pl.Series(
+                [datetime(2023, 1, 1), datetime(2023, 1, 2), datetime(2023, 1, 4)],
+                dtype=pl.Datetime("us"),
+            ),
+            "datetime_ns": pl.Series(
+                [datetime(2023, 1, 1), datetime(2023, 1, 2), datetime(2023, 1, 4)],
+                dtype=pl.Datetime("ns"),
+            ),
+            "duration_ms": pl.Series(
+                [timedelta(days=1), timedelta(days=2), timedelta(days=4)],
+                dtype=pl.Duration("ms"),
+            ),
+            "duration_us": pl.Series(
+                [timedelta(days=1), timedelta(days=2), timedelta(days=4)],
+                dtype=pl.Duration("us"),
+            ),
+            "duration_ns": pl.Series(
+                [timedelta(days=1), timedelta(days=2), timedelta(days=4)],
+                dtype=pl.Duration("ns"),
+            ),
+            "time": pl.Series([1000, 2000, 3000], dtype=pl.Time),
+        }
+    )
+
+    expected = pl.DataFrame(
+        {
+            "date": pl.Series(
+                [datetime(2023, 1, 2, 8, 0, 0)],
+                dtype=pl.Datetime("us"),
+            ),
+            "datetime_ms": pl.Series(
+                [datetime(2023, 1, 2, 8, 0, 0)], dtype=pl.Datetime("ms")
+            ),
+            "datetime_us": pl.Series(
+                [datetime(2023, 1, 2, 8, 0, 0)], dtype=pl.Datetime("us")
+            ),
+            "datetime_ns": pl.Series(
+                [datetime(2023, 1, 2, 8, 0, 0)], dtype=pl.Datetime("ns")
+            ),
+            "duration_ms": pl.Series(
+                [timedelta(days=2, hours=8)], dtype=pl.Duration("ms")
+            ),
+            "duration_us": pl.Series(
+                [timedelta(days=2, hours=8)], dtype=pl.Duration("us")
+            ),
+            "duration_ns": pl.Series(
+                [timedelta(days=2, hours=8)], dtype=pl.Duration("ns")
+            ),
+            "time": pl.Series([2000], dtype=pl.Time),
+        }
+    )
+
+    assert_frame_equal(df.select(pl.all().mean()), expected)
+
+
+def test_groupby_mean() -> None:
+    df = pl.DataFrame(
+        {
+            "key": ["a", "a", "b"],
+            "date": pl.Series(
+                [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 4)], dtype=pl.Date
+            ),
+            "datetime_ms": pl.Series(
+                [datetime(2023, 1, 1), datetime(2023, 1, 2), datetime(2023, 1, 4)],
+                dtype=pl.Datetime("ms"),
+            ),
+            "datetime_us": pl.Series(
+                [datetime(2023, 1, 1), datetime(2023, 1, 2), datetime(2023, 1, 4)],
+                dtype=pl.Datetime("us"),
+            ),
+            "datetime_ns": pl.Series(
+                [datetime(2023, 1, 1), datetime(2023, 1, 2), datetime(2023, 1, 4)],
+                dtype=pl.Datetime("ns"),
+            ),
+            "duration_ms": pl.Series(
+                [timedelta(days=1), timedelta(days=2), timedelta(days=4)],
+                dtype=pl.Duration("ms"),
+            ),
+            "duration_us": pl.Series(
+                [timedelta(days=1), timedelta(days=2), timedelta(days=4)],
+                dtype=pl.Duration("us"),
+            ),
+            "duration_ns": pl.Series(
+                [timedelta(days=1), timedelta(days=2), timedelta(days=4)],
+                dtype=pl.Duration("ns"),
+            ),
+            "time": pl.Series([1000, 2000, 4000], dtype=pl.Time),
+        }
+    )
+
+    expected = pl.DataFrame(
+        {
+            "key": ["a", "b"],
+            "date": pl.Series(
+                [datetime(2023, 1, 1, 12, 0, 0), datetime(2023, 1, 4)],
+                dtype=pl.Datetime("us"),
+            ),
+            "datetime_ms": pl.Series(
+                [datetime(2023, 1, 1, 12, 0, 0), datetime(2023, 1, 4)],
+                dtype=pl.Datetime("ms"),
+            ),
+            "datetime_us": pl.Series(
+                [datetime(2023, 1, 1, 12, 0, 0), datetime(2023, 1, 4)],
+                dtype=pl.Datetime("us"),
+            ),
+            "datetime_ns": pl.Series(
+                [datetime(2023, 1, 1, 12, 0, 0), datetime(2023, 1, 4)],
+                dtype=pl.Datetime("ns"),
+            ),
+            "duration_ms": pl.Series(
+                [timedelta(1, 12 * 3600, 0), timedelta(4, 0, 0)],
+                dtype=pl.Duration("ms"),
+            ),
+            "duration_us": pl.Series(
+                [timedelta(1, 12 * 3600, 0), timedelta(4, 0, 0)],
+                dtype=pl.Duration("us"),
+            ),
+            "duration_ns": pl.Series(
+                [timedelta(1, 12 * 3600, 0), timedelta(4, 0, 0)],
+                dtype=pl.Duration("ns"),
+            ),
+            "time": pl.Series([1500, 4000], dtype=pl.Time),
+        }
+    )
+
+    result = df.group_by("key", maintain_order=True).mean()
+    assert_frame_equal(result, expected)
+
+
+def test_groupby_median() -> None:
+    df = pl.DataFrame(
+        {
+            "key": ["a", "a", "b"],
+            "date": pl.Series(
+                [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 4)], dtype=pl.Date
+            ),
+            "datetime_ms": pl.Series(
+                [datetime(2023, 1, 1), datetime(2023, 1, 2), datetime(2023, 1, 4)],
+                dtype=pl.Datetime("ms"),
+            ),
+            "datetime_us": pl.Series(
+                [datetime(2023, 1, 1), datetime(2023, 1, 2), datetime(2023, 1, 4)],
+                dtype=pl.Datetime("us"),
+            ),
+            "datetime_ns": pl.Series(
+                [datetime(2023, 1, 1), datetime(2023, 1, 2), datetime(2023, 1, 4)],
+                dtype=pl.Datetime("ns"),
+            ),
+            "duration_ms": pl.Series(
+                [timedelta(days=1), timedelta(days=2), timedelta(days=4)],
+                dtype=pl.Duration("ms"),
+            ),
+            "duration_us": pl.Series(
+                [timedelta(days=1), timedelta(days=2), timedelta(days=4)],
+                dtype=pl.Duration("us"),
+            ),
+            "duration_ns": pl.Series(
+                [timedelta(days=1), timedelta(days=2), timedelta(days=4)],
+                dtype=pl.Duration("ns"),
+            ),
+            "time": pl.Series([1000, 2000, 4000], dtype=pl.Time),
+        }
+    )
+
+    expected = pl.DataFrame(
+        {
+            "key": ["a", "b"],
+            "date": pl.Series(
+                [datetime(2023, 1, 1, 12, 0, 0), datetime(2023, 1, 4)],
+                dtype=pl.Datetime("us"),
+            ),
+            "datetime_ms": pl.Series(
+                [datetime(2023, 1, 1, 12, 0, 0), datetime(2023, 1, 4)],
+                dtype=pl.Datetime("ms"),
+            ),
+            "datetime_us": pl.Series(
+                [datetime(2023, 1, 1, 12, 0, 0), datetime(2023, 1, 4)],
+                dtype=pl.Datetime("us"),
+            ),
+            "datetime_ns": pl.Series(
+                [datetime(2023, 1, 1, 12, 0, 0), datetime(2023, 1, 4)],
+                dtype=pl.Datetime("ns"),
+            ),
+            "duration_ms": pl.Series(
+                [timedelta(1, 12 * 3600, 0), timedelta(4, 0, 0)],
+                dtype=pl.Duration("ms"),
+            ),
+            "duration_us": pl.Series(
+                [timedelta(1, 12 * 3600, 0), timedelta(4, 0, 0)],
+                dtype=pl.Duration("us"),
+            ),
+            "duration_ns": pl.Series(
+                [timedelta(1, 12 * 3600, 0), timedelta(4, 0, 0)],
+                dtype=pl.Duration("ns"),
+            ),
+            "time": pl.Series([1500, 4000], dtype=pl.Time),
+        }
+    )
+
+    result = df.group_by("key", maintain_order=True).median()
+    assert_frame_equal(result, expected)

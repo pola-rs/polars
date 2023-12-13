@@ -16,6 +16,8 @@ use arrow::legacy::prelude::QuantileInterpolOptions;
 use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::ops::ToBitRepr;
+#[cfg(feature = "dtype-datetime")]
+use crate::chunked_array::temporal::conversion::US_IN_DAY;
 use crate::chunked_array::AsSinglePtr;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
@@ -359,10 +361,19 @@ macro_rules! impl_dyn_series {
                 self.0.min_as_series().$into_logical()
             }
             fn median_as_series(&self) -> Series {
-                Int32Chunked::full_null(self.name(), 1)
-                    .cast(self.dtype())
-                    .unwrap()
-                    .into()
+                match self.dtype() {
+                    DataType::Date => {
+                        let us = US_IN_DAY as f64;
+                        Series::new(self.name(), &[self.median().map(|v| (v * us) as i64)])
+                            .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
+                    },
+                    dt => {
+                        Series::new(self.name(), &[self.median().map(|v| v as i64)])
+                            .cast(dt)
+                    }
+                }
+                .unwrap()
+                .into()
             }
             fn var_as_series(&self, _ddof: u8) -> Series {
                 Int32Chunked::full_null(self.name(), 1)

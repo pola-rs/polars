@@ -24,23 +24,51 @@ impl PySeries {
         .into_py(py))
     }
 
-    fn mean(&self) -> Option<f64> {
+    fn mean(&self, py: Python) -> PyResult<PyObject> {
         match self.series.dtype() {
-            DataType::Boolean => {
-                let s = self.series.cast(&DataType::UInt8).unwrap();
-                s.mean()
+            DataType::Boolean => Ok(Wrap(
+                self.series
+                    .cast(&DataType::UInt8)
+                    .unwrap()
+                    .mean_as_series()
+                    .get(0)
+                    .map_err(PyPolarsErr::from)?,
+            )
+            .into_py(py)),
+            DataType::Date | DataType::Datetime(_, _) | DataType::Duration(_) | DataType::Time => {
+                Ok(Wrap(
+                    self.series
+                        .mean_as_series()
+                        .get(0)
+                        .map_err(PyPolarsErr::from)?,
+                )
+                .into_py(py))
             },
-            _ => self.series.mean(),
+            _ => Ok(self.series.mean().into_py(py)),
         }
     }
 
-    fn median(&self) -> Option<f64> {
+    fn median(&self, py: Python) -> PyResult<PyObject> {
         match self.series.dtype() {
-            DataType::Boolean => {
-                let s = self.series.cast(&DataType::UInt8).unwrap();
-                s.median()
+            DataType::Boolean => Ok(Wrap(
+                self.series
+                    .cast(&DataType::UInt8)
+                    .unwrap()
+                    .median_as_series()
+                    .get(0)
+                    .map_err(PyPolarsErr::from)?,
+            )
+            .into_py(py)),
+            DataType::Date | DataType::Datetime(_, _) | DataType::Duration(_) | DataType::Time => {
+                Ok(Wrap(
+                    self.series
+                        .median_as_series()
+                        .get(0)
+                        .map_err(PyPolarsErr::from)?,
+                )
+                .into_py(py))
             },
-            _ => self.series.median(),
+            _ => Ok(self.series.median().into_py(py)),
         }
     }
 
