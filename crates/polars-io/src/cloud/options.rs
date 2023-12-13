@@ -157,10 +157,13 @@ fn get_retry_config(max_retries: usize) -> RetryConfig {
 
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
 pub(super) fn get_client_options() -> ClientOptions {
-    // We set timeout super high as the timeout isn't reset at ACK,
-    // but starts from the moment we start downloading a body.
-    // https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html#method.timeout
-    ClientOptions::default().with_timeout(std::time::Duration::from_secs(60 * 5))
+    ClientOptions::default()
+        // We set request timeout super high as the timeout isn't reset at ACK,
+        // but starts from the moment we start downloading a body.
+        // https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html#method.timeout
+        .with_timeout(std::time::Duration::from_secs(60 * 5))
+        // Concurrency can increase connection latency, so also set high.
+        .with_connect_timeout(std::time::Duration::from_secs(30))
 }
 
 impl CloudOptions {

@@ -1,51 +1,36 @@
 use std::future::Future;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::RwLock;
 use std::thread::ThreadId;
-use std::time::Duration;
 
 use once_cell::sync::Lazy;
 use polars_core::POOL;
 use polars_utils::aliases::PlHashSet;
 use tokio::runtime::{Builder, Runtime};
+use tokio::sync::Semaphore;
 
-static CONCURRENCY_BUDGET: std::sync::OnceLock<(AtomicI32, u16)> = std::sync::OnceLock::new();
+static CONCURRENCY_BUDGET: std::sync::OnceLock<(Semaphore, u32)> = std::sync::OnceLock::new();
 pub(super) const MAX_BUDGET_PER_REQUEST: usize = 10;
 
-pub async fn with_concurrency_budget<F, Fut>(requested_budget: u16, callable: F) -> Fut::Output
+pub async fn with_concurrency_budget<F, Fut>(requested_budget: u32, callable: F) -> Fut::Output
 where
     F: FnOnce() -> Fut,
     Fut: Future,
 {
-    let (global_budget, initial_budget) = CONCURRENCY_BUDGET.get_or_init(|| {
-        let budget = std::env::var("POLARS_CONCURRENCY_BUDGET")
-            .map(|s| s.parse::<i32>().expect("integer"))
-            .unwrap_or_else(|_| {
-                std::cmp::max(POOL.current_num_threads(), MAX_BUDGET_PER_REQUEST) as i32
-            });
-
-        (AtomicI32::new(budget), budget as u16)
+    let (semaphore, initial_budget) = CONCURRENCY_BUDGET.get_or_init(|| {
+        let permits = std::env::var("POLARS_CONCURRENCY_BUDGET")
+            .map(|s| s.parse::<usize>().expect("integer"))
+            .unwrap_or_else(|_| std::cmp::max(POOL.current_num_threads(), MAX_BUDGET_PER_REQUEST));
+        (Semaphore::new(permits), permits as u32)
     });
 
     // This would never finish otherwise.
     assert!(requested_budget <= *initial_budget);
-    loop {
-        let requested_budget = requested_budget as i32;
-        let available_budget = global_budget.fetch_sub(requested_budget, Ordering::Relaxed);
 
-        // Bail out, there was no budget
-        if available_budget < 0 {
-            global_budget.fetch_add(requested_budget, Ordering::Relaxed);
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        } else {
-            let fut = callable();
-            let out = fut.await;
-            global_budget.fetch_add(requested_budget, Ordering::Relaxed);
-
-            return out;
-        }
-    }
+    // Keep permit around.
+    // On drop it is returned to the semaphore.
+    let _permit_acq = semaphore.acquire_many(requested_budget).await.unwrap();
+    callable().await
 }
 
 pub struct RuntimeManager {
