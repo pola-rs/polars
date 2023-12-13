@@ -6,18 +6,12 @@ use crate::PySeries;
 
 #[pymethods]
 impl PySeries {
-    fn any(&self) -> Option<bool> {
-        match self.series.dtype() {
-            DataType::Boolean => Some(self.series.bool().unwrap().any()),
-            _ => None,
-        }
+    fn any(&self) -> bool {
+        self.series.bool().unwrap().any()
     }
 
-    fn all(&self) -> Option<bool> {
-        match self.series.dtype() {
-            DataType::Boolean => Some(self.series.bool().unwrap().all()),
-            _ => None,
-        }
+    fn all(&self) -> bool {
+        self.series.bool().unwrap().all()
     }
 
     fn arg_max(&self) -> Option<usize> {
