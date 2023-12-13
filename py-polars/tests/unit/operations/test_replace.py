@@ -86,13 +86,24 @@ def test_replace_cat_to_cat(str_mapping: dict[str | None, str]) -> None:
     assert_frame_equal(result, expected)
 
 
-# TODO: Check return dtype
-def test_replace_int_to_int23() -> None:
+def test_replace_int_to_int() -> None:
     df = pl.DataFrame({"int": [None, 1, None, 3]}, schema={"int": pl.Int16})
     mapping = {1: 5, 3: 7}
     result = df.select(replaced=pl.col("int").replace(mapping))
     expected = pl.DataFrame(
         {"replaced": [None, 5, None, 7]}, schema={"replaced": pl.Int64}
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_replace_int_to_int_keep_dtype() -> None:
+    df = pl.DataFrame({"int": [None, 1, None, 3]}, schema={"int": pl.Int16})
+    old = [1, 3]
+    new = pl.Series([5, 7], dtype=pl.Int16)
+
+    result = df.select(replaced=pl.col("int").replace(old, new))
+    expected = pl.DataFrame(
+        {"replaced": [None, 5, None, 7]}, schema={"replaced": pl.Int16}
     )
     assert_frame_equal(result, expected)
 
@@ -199,12 +210,18 @@ def test_replace_str_to_str_replace_all() -> None:
     assert_frame_equal(result, expected)
 
 
-# TODO: Check return dtype
 def test_replace_int_to_int_df() -> None:
-    lf = pl.LazyFrame({"a": [1, 2, 3]})
+    lf = pl.LazyFrame({"a": [1, 2, 3]}, schema={"a": pl.UInt8})
     mapping = {1: 11, 2: 22}
-    result = lf.select(pl.col("a").cast(pl.UInt8).replace(mapping, default=99))
-    expected = pl.LazyFrame({"a": [11, 22, 99]}, schema_overrides={"a": pl.Int64})
+
+    result = lf.select(
+        pl.col("a").replace(
+            old=pl.Series(mapping.keys()),
+            new=pl.Series(mapping.values(), dtype=pl.UInt8),
+            default=pl.lit(99).cast(pl.UInt8),
+        )
+    )
+    expected = pl.LazyFrame({"a": [11, 22, 99]}, schema_overrides={"a": pl.UInt8})
     assert_frame_equal(result, expected)
 
 
@@ -260,27 +277,24 @@ def test_replace_int_to_int1(int_mapping: dict[int, int]) -> None:
     assert_series_equal(result, expected)
 
 
-# TODO: Check return dtype
 def test_replace_int_to_int2(int_mapping: dict[int, int]) -> None:
-    s = pl.Series([1, 22, None, 44, -5], dtype=pl.Int16)
+    s = pl.Series([1, 22, None, 44, -5])
     result = s.replace(int_mapping, default=None)
     expected = pl.Series([11, None, None, None, None], dtype=pl.Int64)
     assert_series_equal(result, expected)
 
 
-# TODO: Check return dtype
-def test_replace_int_to_int21(int_mapping: dict[int, int]) -> None:
+def test_replace_int_to_int3(int_mapping: dict[int, int]) -> None:
     s = pl.Series([1, 22, None, 44, -5], dtype=pl.Int16)
     result = s.replace(int_mapping, default=9)
     expected = pl.Series([11, 9, 9, 9, 9], dtype=pl.Int64)
     assert_series_equal(result, expected)
 
 
-# TODO: Check return dtype
-def test_replace_int_to_int3(int_mapping: dict[int, int]) -> None:
-    s = pl.Series([-1, 22, None, 44, -5], dtype=pl.Int16)
+def test_replace_int_to_int4(int_mapping: dict[int, int]) -> None:
+    s = pl.Series([-1, 22, None, 44, -5])
     result = s.replace(int_mapping)
-    expected = pl.Series([-1, 22, None, 44, -5], dtype=pl.Int64)
+    expected = pl.Series([-1, 22, None, 44, -5])
     assert_series_equal(result, expected)
 
 
