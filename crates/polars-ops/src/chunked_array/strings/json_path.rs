@@ -75,17 +75,10 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
             Some(dt) => dt,
             None => ca.json_infer(infer_schema_len)?,
         };
-
-        let buf_size = ca.get_values_size() + ca.null_count() * "null".len();
         let iter = ca.into_iter().map(|x| x.unwrap_or("null"));
 
-        let array = polars_json::ndjson::deserialize::deserialize_iter(
-            iter,
-            dtype.to_arrow(),
-            buf_size,
-            ca.len(),
-        )
-        .map_err(|e| polars_err!(ComputeError: "error deserializing JSON: {}", e))?;
+        let array = polars_json::ndjson::deserialize::deserialize_iter(iter, dtype.to_arrow())
+            .map_err(|e| polars_err!(ComputeError: "error deserializing JSON: {}", e))?;
         Series::try_from(("", array))
     }
 

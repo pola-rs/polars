@@ -1,3 +1,5 @@
+use arrow::array::Array;
+use arrow::compute::concatenate::concatenate;
 use simd_json::BorrowedValue;
 
 use super::*;
@@ -14,27 +16,64 @@ use super::*;
 pub fn deserialize_iter<'a>(
     rows: impl Iterator<Item = &'a str>,
     data_type: ArrowDataType,
-    buf_size: usize,
-    count: usize,
 ) -> PolarsResult<ArrayRef> {
-    let mut buf = String::with_capacity(buf_size + count + 2);
+    let mut arr: Vec<Box<dyn Array>> = Vec::new();
+    let mut buf = String::with_capacity(std::u32::MAX as usize);
     buf.push('[');
+
+    fn _deserializer(s: String, data_type: ArrowDataType) -> PolarsResult<Box<dyn Array>> {
+        let mut buf = s.clone();
+        let slice = unsafe { buf.as_bytes_mut() };
+        let out = simd_json::to_borrowed_value(slice)
+            .map_err(|e| PolarsError::ComputeError(format!("json parsing error: '{e}'").into()))?;
+        Ok(if let BorrowedValue::Array(rows) = out {
+            super::super::json::deserialize::_deserialize(&rows, data_type.clone())
+        } else {
+            unreachable!()
+        })
+    }
+
     for row in rows {
         buf.push_str(row);
-        buf.push(',')
+        buf.push(',');
+
+        if buf.len() + row.len() > 5000000 {
+            if buf.len() > 1 {
+                let _ = buf.pop();
+            }
+            buf.push(']');
+            let copy_buf = buf.clone();
+
+            // let slice = unsafe { copy_buf.as_bytes_mut()};
+            // let out = simd_json::to_borrowed_value(slice)
+            //     .map_err(|e| PolarsError::ComputeError(format!("json parsing error: '{e}'").into()))?;
+            // let json_arr = if let BorrowedValue::Array(rows) = out {
+            //     super::super::json::deserialize::_deserialize(
+            //         &rows, data_type.clone(),
+            //     )
+            // } else {
+            //     unreachable!()
+            // };
+            arr.push(_deserializer(copy_buf, data_type.clone())?);
+            buf.clear();
+            buf.push('[');
+        }
     }
     if buf.len() > 1 {
         let _ = buf.pop();
     }
     buf.push(']');
-    let slice = unsafe { buf.as_bytes_mut() };
-    let out = simd_json::to_borrowed_value(slice)
-        .map_err(|e| PolarsError::ComputeError(format!("json parsing error: '{e}'").into()))?;
-    if let BorrowedValue::Array(rows) = out {
-        Ok(super::super::json::deserialize::_deserialize(
-            &rows, data_type,
-        ))
-    } else {
-        unreachable!()
-    }
+
+    arr.push(_deserializer(buf, data_type.clone())?);
+    // let slice = unsafe { buf.as_bytes_mut() };
+    // let out = simd_json::to_borrowed_value(slice)
+    //     .map_err(|e| PolarsError::ComputeError(format!("json parsing error: '{e}'").into()))?;
+    // if let BorrowedValue::Array(rows) = out {
+    //     arr.push(super::super::json::deserialize::_deserialize(
+    //         &rows, data_type,
+    //     ))
+    // } else {
+    //     unreachable!()
+    // };
+    concatenate(&arr.clone().iter().map(|v| v.as_ref()).collect::<Vec<_>>())
 }
