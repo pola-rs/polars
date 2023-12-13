@@ -27,11 +27,6 @@ pub fn replace_with_default(
 ) -> PolarsResult<Series> {
     let output_dtype = try_get_supertype(new.dtype(), default.dtype())?;
 
-    println!("{:?}", s.dtype());
-    println!("{:?}", old.dtype());
-    println!("{:?}", new.dtype());
-    println!("{:?}", output_dtype);
-
     let default = match default.len() {
         len if len == s.len() => default.cast(&output_dtype)?,
         1 => default.cast(&output_dtype)?.new_from_index(0, s.len()),
@@ -61,24 +56,22 @@ fn get_replaced(s: &Series, old: &Series, new: &Series) -> PolarsResult<Series> 
         ComputeError: "`new` input for `replace` must have the same length as `old` or have length 1"
     );
 
-    let join_dtype = try_get_supertype(s.dtype(), old.dtype())?;
+    let df = DataFrame::new_no_checks(vec![s.clone()]);
 
-    let df = DataFrame::new_no_checks(vec![s.cast(&join_dtype)?]);
-
-    println!("{:?}", df);
-
-    let mut old = old.cast(&join_dtype)?;
-    old.rename("__POLARS_REPLACE_OLD");
+    let mut old = if old.dtype() == s.dtype() {
+        old.clone()
+    } else {
+        old.cast(s.dtype())?
+    };
     let mut new = match new.len() {
         1 => new.new_from_index(0, old.len()),
         _ => new.clone(),
     };
+    old.rename("__POLARS_REPLACE_OLD");
     new.rename("__POLARS_REPLACE_NEW");
     let replacer = DataFrame::new_no_checks(vec![old, new]);
 
-    println!("{:?}", replacer);
-
-    let df_joined = df.join(
+    let joined = df.join(
         &replacer,
         [s.name()],
         ["__POLARS_REPLACE_OLD"],
@@ -89,10 +82,8 @@ fn get_replaced(s: &Series, old: &Series, new: &Series) -> PolarsResult<Series> 
         },
     )?;
 
-    println!("{:?}", df_joined);
-
-    let s_joined = df_joined.column("__POLARS_REPLACE_NEW").unwrap();
-    Ok(s_joined.clone())
+    let out = joined.column("__POLARS_REPLACE_NEW").unwrap().clone();
+    Ok(out)
 }
 
 /// Coalesce the replaced values with another column to get the final result.
@@ -109,12 +100,8 @@ fn coalesce_replaced(
             //  If we replace some values by null, we cannot do a regular coalesce
             let is_not_null = replaced.is_not_null();
 
-            println!("{:?}", is_not_null);
-
             let null_keys = determine_null_keys(old, new).unwrap();
             let mapped_to_null = is_in(s, &null_keys)?;
-
-            println!("{:?}", mapped_to_null);
 
             let opt_or = |l: Option<bool>, r: Option<bool>| {
                 let l = l.unwrap();
@@ -126,10 +113,6 @@ fn coalesce_replaced(
             binary_elementwise(&is_not_null, &mapped_to_null, opt_or)
         },
     };
-
-    println!("{:?}", replaced);
-    println!("{:?}", other);
-    println!("{:?}", mask);
 
     let out = replaced.zip_with(&mask, other)?;
     Ok(out)
