@@ -216,7 +216,7 @@ def test_glob_parquet(df: pl.DataFrame, tmp_path: Path) -> None:
 
     path_glob = tmp_path / "small*.parquet"
     assert pl.read_parquet(path_glob, use_glob=True).shape == (3, 16)
-    assert pl.scan_parquet(path_glob, use_glob=True).collect().shape == (3, 16)
+    assert pl.scan_parquet(path_glob).collect().shape == (3, 16)
 
 
 def test_glob_flag(df: pl.DataFrame, tmp_path: Path) -> None:
