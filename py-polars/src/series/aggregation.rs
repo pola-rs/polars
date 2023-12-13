@@ -6,12 +6,20 @@ use crate::PySeries;
 
 #[pymethods]
 impl PySeries {
-    fn any(&self) -> bool {
-        self.series.bool().unwrap().any()
+    fn any(&self, ignore_nulls: bool) -> Option<bool> {
+        if ignore_nulls {
+            Some(self.series.bool().unwrap().any())
+        } else {
+            self.series.bool().unwrap().any_kleene()
+        }
     }
 
-    fn all(&self) -> bool {
-        self.series.bool().unwrap().all()
+    fn all(&self, ignore_nulls: bool) -> Option<bool> {
+        if ignore_nulls {
+            Some(self.series.bool().unwrap().all())
+        } else {
+            self.series.bool().unwrap().all_kleene()
+        }
     }
 
     fn arg_max(&self) -> Option<usize> {

@@ -1383,11 +1383,7 @@ class Series:
         >>> pl.Series([None, False]).any(ignore_nulls=False)  # Returns None
 
         """
-        return (
-            self.to_frame()
-            .select(F.col(self.name).any(ignore_nulls=ignore_nulls))
-            .item()
-        )
+        return self._s.any(ignore_nulls=ignore_nulls)
 
     @overload
     def all(self, *, ignore_nulls: Literal[True] = ...) -> bool:
@@ -1433,11 +1429,7 @@ class Series:
         >>> pl.Series([None, True]).all(ignore_nulls=False)  # Returns None
 
         """
-        return (
-            self.to_frame()
-            .select(F.col(self.name).all(ignore_nulls=ignore_nulls))
-            .item()
-        )
+        return self._s.all(ignore_nulls=ignore_nulls)
 
     def log(self, base: float = math.e) -> Series:
         """Compute the logarithm to a given base."""
