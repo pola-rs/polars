@@ -16,13 +16,15 @@ use super::*;
 pub fn deserialize_iter<'a>(
     rows: impl Iterator<Item = &'a str>,
     data_type: ArrowDataType,
+    buf_size: usize,
+    count: usize,
 ) -> PolarsResult<ArrayRef> {
     let mut arr: Vec<Box<dyn Array>> = Vec::new();
-    let mut buf = String::with_capacity(std::u32::MAX as usize);
+    let mut buf =
+        String::with_capacity(std::cmp::min(buf_size + count + 2, std::u32::MAX as usize));
     buf.push('[');
 
     fn _deserializer(s: &mut str, data_type: ArrowDataType) -> PolarsResult<Box<dyn Array>> {
-        // let mut buf = s.clone();
         let slice = unsafe { s.as_bytes_mut() };
         let out = simd_json::to_borrowed_value(slice)
             .map_err(|e| PolarsError::ComputeError(format!("json parsing error: '{e}'").into()))?;
@@ -32,12 +34,14 @@ pub fn deserialize_iter<'a>(
             unreachable!()
         })
     }
+    let mut row_iter = rows.peekable();
 
-    for row in rows {
+    while let Some(row) = row_iter.next() {
         buf.push_str(row);
         buf.push(',');
 
-        if buf.len() + row.len() > (std::u32::MAX << 1) as usize {
+        let next_row_length = row_iter.peek().map(|row| row.len()).unwrap_or(0);
+        if buf.len() + next_row_length > (std::u32::MAX << 1) as usize {
             let _ = buf.pop();
             buf.push(']');
             arr.push(_deserializer(&mut buf, data_type.clone())?);
