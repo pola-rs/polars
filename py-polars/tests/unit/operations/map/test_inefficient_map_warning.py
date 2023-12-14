@@ -70,29 +70,34 @@ TEST_CASES = [
     # ---------------------------------------------
     # numpy
     # ---------------------------------------------
-    ("a", "lambda x: 0 + numpy.cbrt(x)", '0 + pl.col("a").cbrt()'),
-    ("a", "lambda x: np.sin(x) + 1", 'pl.col("a").sin() + 1'),
-    (
-        "a",  # note: functions operate on consts
-        "lambda x: np.sin(3.14159265358979) + (x - 1) + abs(-3)",
-        '(np.sin(3.14159265358979) + (pl.col("a") - 1)) + abs(-3)',
-    ),
-    ("a", "lambda x: np.sign(x)", 'pl.col("a").sign()'),
-    ("e", "lambda x: np.tanh(x)", 'pl.col("e").tanh()'),
-    ("e", "lambda x: np.degrees(x)", 'pl.col("e").degrees()'),
-    ("e", "lambda x: np.log10(x)", 'pl.col("e").log10()'),
-    ("e", "lambda x: np.log(x)", 'pl.col("e").log()'),
     ("e", "lambda x: np.arccos(x)", 'pl.col("e").arccos()'),
     ("e", "lambda x: np.arccosh(x)", 'pl.col("e").arccosh()'),
     ("e", "lambda x: np.arcsin(x)", 'pl.col("e").arcsin()'),
     ("e", "lambda x: np.arcsinh(x)", 'pl.col("e").arcsinh()'),
     ("e", "lambda x: np.arctan(x)", 'pl.col("e").arctan()'),
     ("e", "lambda x: np.arctanh(x)", 'pl.col("e").arctanh()'),
+    ("a", "lambda x: 0 + numpy.cbrt(x)", '0 + pl.col("a").cbrt()'),
     ("e", "lambda x: np.ceil(x)", 'pl.col("e").ceil()'),
+    ("e", "lambda x: np.cos(x)", 'pl.col("e").cos()'),
+    ("e", "lambda x: np.cosh(x)", 'pl.col("e").cosh()'),
+    ("e", "lambda x: np.degrees(x)", 'pl.col("e").degrees()'),
     ("e", "lambda x: np.exp(x)", 'pl.col("e").exp()'),
     ("e", "lambda x: np.floor(x)", 'pl.col("e").floor()'),
+    ("e", "lambda x: np.log(x)", 'pl.col("e").log()'),
+    ("e", "lambda x: np.log10(x)", 'pl.col("e").log10()'),
     ("e", "lambda x: np.log1p(x)", 'pl.col("e").log1p()'),
     ("e", "lambda x: np.radians(x)", 'pl.col("e").radians()'),
+    ("a", "lambda x: np.sign(x)", 'pl.col("a").sign()'),
+    ("a", "lambda x: np.sin(x) + 1", 'pl.col("a").sin() + 1'),
+    (
+        "a",  # note: functions operate on consts
+        "lambda x: np.sin(3.14159265358979) + (x - 1) + abs(-3)",
+        '(np.sin(3.14159265358979) + (pl.col("a") - 1)) + abs(-3)',
+    ),
+    ("a", "lambda x: np.sinh(x) + 1", 'pl.col("a").sinh() + 1'),
+    ("a", "lambda x: np.sqrt(x) + 1", 'pl.col("a").sqrt() + 1'),
+    ("a", "lambda x: np.tan(x) + 1", 'pl.col("a").tan() + 1'),
+    ("e", "lambda x: np.tanh(x)", 'pl.col("e").tanh()'),
     # ---------------------------------------------
     # logical 'and/or' (validate nesting levels)
     # ---------------------------------------------
