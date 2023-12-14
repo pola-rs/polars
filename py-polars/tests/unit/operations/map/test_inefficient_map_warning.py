@@ -77,6 +77,22 @@ TEST_CASES = [
         "lambda x: np.sin(3.14159265358979) + (x - 1) + abs(-3)",
         '(np.sin(3.14159265358979) + (pl.col("a") - 1)) + abs(-3)',
     ),
+    ("a", "lambda x: np.sign(x)", 'pl.col("a").sign()'),
+    ("e", "lambda x: np.tanh(x)", 'pl.col("e").tanh()'),
+    ("e", "lambda x: np.degrees(x)", 'pl.col("e").degrees()'),
+    ("e", "lambda x: np.log10(x)", 'pl.col("e").log10()'),
+    ("e", "lambda x: np.log(x)", 'pl.col("e").log()'),
+    ("e", "lambda x: np.arccos(x)", 'pl.col("e").arccos()'),
+    ("e", "lambda x: np.arccosh(x)", 'pl.col("e").arccosh()'),
+    ("e", "lambda x: np.arcsin(x)", 'pl.col("e").arcsin()'),
+    ("e", "lambda x: np.arcsinh(x)", 'pl.col("e").arcsinh()'),
+    ("e", "lambda x: np.arctan(x)", 'pl.col("e").arctan()'),
+    ("e", "lambda x: np.arctanh(x)", 'pl.col("e").arctanh()'),
+    ("e", "lambda x: np.ceil(x)", 'pl.col("e").ceil()'),
+    ("e", "lambda x: np.exp(x)", 'pl.col("e").exp()'),
+    ("e", "lambda x: np.floor(x)", 'pl.col("e").floor()'),
+    ("e", "lambda x: np.log1p(x)", 'pl.col("e").log1p()'),
+    ("e", "lambda x: np.radians(x)", 'pl.col("e").radians()'),
     # ---------------------------------------------
     # logical 'and/or' (validate nesting levels)
     # ---------------------------------------------
@@ -172,6 +188,7 @@ NOOP_TEST_CASES = [
     "lambda x: MY_LIST[x]",
     "lambda x: MY_DICT[1]",
     'lambda x: "first" if x == 1 else "not first"',
+    'lambda x: np.sign(x, casting="unsafe")',
 ]
 
 EVAL_ENVIRONMENT = {
@@ -214,6 +231,7 @@ def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
                 "b": ["AB", "cd", "eF"],
                 "c": ['{"a": 1}', '{"b": 2}', '{"c": 3}'],
                 "d": ["2020-01-01", "2020-01-02", "2020-01-03"],
+                "e": [1.5, 2.4, 3.1],
             }
         )
         result_frame = df.select(
@@ -228,7 +246,7 @@ def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
 
 
 def test_parse_apply_raw_functions() -> None:
-    lf = pl.LazyFrame({"a": [1, 2, 3]})
+    lf = pl.LazyFrame({"a": [1.1, 2.0, 3.4]})
 
     # test bare 'numpy' functions
     for func_name in _NUMPY_FUNCTIONS:
@@ -245,6 +263,10 @@ def test_parse_apply_raw_functions() -> None:
         ):
             df1 = lf.select(pl.col("a").map_elements(func)).collect()
             df2 = lf.select(getattr(pl.col("a"), func_name)()).collect()
+            if func_name == "sign":
+                # note: Polars' 'sign' function returns an Int64, while numpy's
+                # 'sign' function returns a Float64
+                df1 = df1.with_columns(pl.col("a").cast(pl.Int64))
             assert_frame_equal(df1, df2)
 
     # test bare 'json.loads'
