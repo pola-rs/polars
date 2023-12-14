@@ -13,7 +13,6 @@ use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
 use arrow::legacy::prelude::FromData;
 use arrow::legacy::trusted_len::TrustedLenPush;
-use polars_utils::ord::compare_fn_nan_max;
 use rayon::prelude::*;
 pub use slice::*;
 
