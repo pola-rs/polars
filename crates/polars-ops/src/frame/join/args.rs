@@ -31,6 +31,18 @@ pub struct JoinArgs {
     pub join_nulls: bool,
 }
 
+impl Default for JoinArgs {
+    fn default() -> Self {
+        Self {
+            how: JoinType::Inner,
+            validation: Default::default(),
+            suffix: None,
+            slice: None,
+            join_nulls: false,
+        }
+    }
+}
+
 impl JoinArgs {
     pub fn new(how: JoinType) -> Self {
         Self {

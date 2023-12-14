@@ -15,6 +15,7 @@ from typing import (
     Collection,
     FrozenSet,
     Iterable,
+    Mapping,
     NoReturn,
     Sequence,
     Set,
@@ -24,10 +25,7 @@ from typing import (
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import (
-    Categorical,
-    Struct,
     UInt32,
-    Utf8,
     is_polars_dtype,
     py_type_to_dtype,
 )
@@ -56,7 +54,11 @@ from polars.utils.deprecation import (
     deprecate_saturating,
 )
 from polars.utils.meta import threadpool_size
-from polars.utils.various import _warn_null_comparison, no_default, sphinx_accessor
+from polars.utils.various import (
+    _warn_null_comparison,
+    no_default,
+    sphinx_accessor,
+)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
@@ -85,6 +87,9 @@ if TYPE_CHECKING:
         SearchSortedSide,
         TemporalLiteral,
         WindowMappingStrategy,
+    )
+    from polars.utils.various import (
+        NoDefault,
     )
 
     if sys.version_info >= (3, 11):
@@ -9079,39 +9084,51 @@ class Expr:
 
     def replace(
         self,
-        mapping: dict[Any, Any],
+        old: IntoExpr | Sequence[Any] | Mapping[Any, Any],
+        new: IntoExpr | Sequence[Any] | NoDefault = no_default,
         *,
-        default: Any = no_default,
+        default: IntoExpr | NoDefault = no_default,
         return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
-        Replace values according to the given mapping.
-
-        Needs a global string cache for lazily evaluated queries on columns of
-        type `Categorical`.
+        Replace values by different values.
 
         Parameters
         ----------
-        mapping
-            Mapping of values to their replacement.
+        old
+            Value or sequence of values to replace.
+            Accepts expression input. Sequences are parsed as Series,
+            other non-expression inputs are parsed as literals.
+            Also accepts a mapping of values to their replacement as syntactic sugar for
+            `replace(new=Series(mapping.keys()), old=Series(mapping.values()))`.
+        new
+            Value or sequence of values to replace by.
+            Accepts expression input. Sequences are parsed as Series,
+            other non-expression inputs are parsed as literals.
+            Length must match the length of `old` or have length 1.
         default
-            Value to use when the mapping does not contain the lookup value.
-            Defaults to keeping the original value. Accepts expression input.
-            Non-expression inputs are parsed as literals.
+            Set values that were not replaced to this value.
+            Defaults to keeping the original value.
+            Accepts expression input. Non-expression inputs are parsed as literals.
         return_dtype
-            Set return dtype to override automatic return dtype determination.
+            The data type of the resulting expression. If set to `None` (default),
+            the data type is determined automatically based on the other inputs.
 
         See Also
         --------
         str.replace
 
+        Notes
+        -----
+        The global string cache must be enabled when replacing categorical values.
+
         Examples
         --------
-        Replace a single value by another value. Values not in the mapping remain
+        Replace a single value by another value. Values that were not replaced remain
         unchanged.
 
         >>> df = pl.DataFrame({"a": [1, 2, 2, 3]})
-        >>> df.with_columns(pl.col("a").replace({2: 100}).alias("replaced"))
+        >>> df.with_columns(replaced=pl.col("a").replace(2, 100))
         shape: (4, 2)
         ┌─────┬──────────┐
         │ a   ┆ replaced │
@@ -9124,281 +9141,124 @@ class Expr:
         │ 3   ┆ 3        │
         └─────┴──────────┘
 
-        Replace multiple values. Specify a default to set values not in the given map
-        to the default value.
+        Replace multiple values by passing sequences to the `old` and `new` parameters.
 
-        >>> df = pl.DataFrame({"country_code": ["FR", "ES", "DE", None]})
-        >>> country_code_map = {
-        ...     "CA": "Canada",
-        ...     "DE": "Germany",
-        ...     "FR": "France",
-        ...     None: "unspecified",
-        ... }
-        >>> df.with_columns(
-        ...     pl.col("country_code")
-        ...     .replace(country_code_map, default=None)
-        ...     .alias("replaced")
-        ... )
+        >>> df.with_columns(replaced=pl.col("a").replace([2, 3], [100, 200]))
         shape: (4, 2)
-        ┌──────────────┬─────────────┐
-        │ country_code ┆ replaced    │
-        │ ---          ┆ ---         │
-        │ str          ┆ str         │
-        ╞══════════════╪═════════════╡
-        │ FR           ┆ France      │
-        │ ES           ┆ null        │
-        │ DE           ┆ Germany     │
-        │ null         ┆ unspecified │
-        └──────────────┴─────────────┘
+        ┌─────┬──────────┐
+        │ a   ┆ replaced │
+        │ --- ┆ ---      │
+        │ i64 ┆ i64      │
+        ╞═════╪══════════╡
+        │ 1   ┆ 1        │
+        │ 2   ┆ 100      │
+        │ 2   ┆ 100      │
+        │ 3   ┆ 200      │
+        └─────┴──────────┘
 
-        The return type can be overridden with the `return_dtype` argument.
+        Passing a mapping with replacements is also supported as syntactic sugar.
+        Specify a default to set all values that were not matched.
 
-        >>> df = df.with_row_count()
-        >>> df.select(
-        ...     "row_nr",
-        ...     pl.col("row_nr")
-        ...     .replace({1: 10, 2: 20}, default=0, return_dtype=pl.UInt8)
-        ...     .alias("replaced"),
-        ... )
+        >>> mapping = {2: 100, 3: 200}
+        >>> df.with_columns(replaced=pl.col("a").replace(mapping, default=-1))
         shape: (4, 2)
-        ┌────────┬──────────┐
-        │ row_nr ┆ replaced │
-        │ ---    ┆ ---      │
-        │ u32    ┆ u8       │
-        ╞════════╪══════════╡
-        │ 0      ┆ 0        │
-        │ 1      ┆ 10       │
-        │ 2      ┆ 20       │
-        │ 3      ┆ 0        │
-        └────────┴──────────┘
+        ┌─────┬──────────┐
+        │ a   ┆ replaced │
+        │ --- ┆ ---      │
+        │ i64 ┆ i64      │
+        ╞═════╪══════════╡
+        │ 1   ┆ -1       │
+        │ 2   ┆ 100      │
+        │ 2   ┆ 100      │
+        │ 3   ┆ 200      │
+        └─────┴──────────┘
 
-        To reference other columns as a `default` value, a struct column must be
-        constructed first. The first field must be the column in which values are
-        replaced. The other columns can be used in the default expression.
+        Replacing by values of a different data type sets the return type based on
+        a combination of the `new` data type and either the original data type or the
+        default data type if it was set.
+
+        >>> df = pl.DataFrame({"a": ["x", "y", "z"]})
+        >>> mapping = {"x": 1, "y": 2, "z": 3}
+        >>> df.with_columns(replaced=pl.col("a").replace(mapping))
+        shape: (3, 2)
+        ┌─────┬──────────┐
+        │ a   ┆ replaced │
+        │ --- ┆ ---      │
+        │ str ┆ str      │
+        ╞═════╪══════════╡
+        │ x   ┆ 1        │
+        │ y   ┆ 2        │
+        │ z   ┆ 3        │
+        └─────┴──────────┘
+        >>> df.with_columns(replaced=pl.col("a").replace(mapping, default=None))
+        shape: (3, 2)
+        ┌─────┬──────────┐
+        │ a   ┆ replaced │
+        │ --- ┆ ---      │
+        │ str ┆ i64      │
+        ╞═════╪══════════╡
+        │ x   ┆ 1        │
+        │ y   ┆ 2        │
+        │ z   ┆ 3        │
+        └─────┴──────────┘
+
+        Set the `return_dtype` parameter to control the resulting data type directly.
 
         >>> df.with_columns(
-        ...     pl.struct("country_code", "row_nr")
-        ...     .replace(
-        ...         mapping=country_code_map,
-        ...         default=pl.col("row_nr").cast(pl.Utf8),
+        ...     replaced=pl.col("a").replace(mapping, return_dtype=pl.UInt8)
+        ... )
+        shape: (3, 2)
+        ┌─────┬──────────┐
+        │ a   ┆ replaced │
+        │ --- ┆ ---      │
+        │ str ┆ u8       │
+        ╞═════╪══════════╡
+        │ x   ┆ 1        │
+        │ y   ┆ 2        │
+        │ z   ┆ 3        │
+        └─────┴──────────┘
+
+        Expression input is supported for all parameters.
+
+        >>> df = pl.DataFrame({"a": [1, 2, 2, 3], "b": [1.5, 2.5, 5.0, 1.0]})
+        >>> df.with_columns(
+        ...     replaced=pl.col("a").replace(
+        ...         old=pl.col("a").max(),
+        ...         new=pl.col("b").sum(),
+        ...         default=pl.col("b"),
         ...     )
-        ...     .alias("replaced")
         ... )
         shape: (4, 3)
-        ┌────────┬──────────────┬─────────────┐
-        │ row_nr ┆ country_code ┆ replaced    │
-        │ ---    ┆ ---          ┆ ---         │
-        │ u32    ┆ str          ┆ str         │
-        ╞════════╪══════════════╪═════════════╡
-        │ 0      ┆ FR           ┆ France      │
-        │ 1      ┆ ES           ┆ 1           │
-        │ 2      ┆ DE           ┆ Germany     │
-        │ 3      ┆ null         ┆ unspecified │
-        └────────┴──────────────┴─────────────┘
+        ┌─────┬─────┬──────────┐
+        │ a   ┆ b   ┆ replaced │
+        │ --- ┆ --- ┆ ---      │
+        │ i64 ┆ f64 ┆ f64      │
+        ╞═════╪═════╪══════════╡
+        │ 1   ┆ 1.5 ┆ 1.5      │
+        │ 2   ┆ 2.5 ┆ 2.5      │
+        │ 2   ┆ 5.0 ┆ 5.0      │
+        │ 3   ┆ 1.0 ┆ 10.0     │
+        └─────┴─────┴──────────┘
         """
+        if new is no_default and isinstance(old, Mapping):
+            new = pl.Series(old.values())
+            old = pl.Series(old.keys())
+        else:
+            if isinstance(old, Sequence) and not isinstance(old, (str, pl.Series)):
+                old = pl.Series(old)
+            if isinstance(new, Sequence) and not isinstance(new, (str, pl.Series)):
+                new = pl.Series(new)
 
-        def _remap_key_or_value_series(
-            name: str,
-            values: Iterable[Any],
-            dtype: PolarsDataType | None,
-            dtype_if_empty: PolarsDataType,
-            dtype_keys: PolarsDataType | None,
-            *,
-            is_keys: bool,
-        ) -> Series:
-            """
-            Convert mapping keys or mapping values to `Series` with `dtype`.
+        old = parse_as_expression(old, str_as_lit=True)  # type: ignore[arg-type]
+        new = parse_as_expression(new, str_as_lit=True)  # type: ignore[arg-type]
 
-            Try to convert the mapping keys or mapping values to `Series` with
-            the specified dtype and check that none of the values are accidentally
-            lost (replaced by nulls) during the conversion.
+        default = (
+            None
+            if default is no_default
+            else parse_as_expression(default, str_as_lit=True)
+        )
 
-            Parameters
-            ----------
-            name
-                Name of the keys or values Series.
-            values
-                Values for the Series: `mapping.keys()` or `mapping.values()`.
-            dtype
-                User specified dtype. If None,
-            dtype_if_empty
-                If no dtype is specified and values contains None, an empty list,
-                or a list with only None values, set the Polars dtype of the Series
-                data.
-            dtype_keys
-                If user set dtype is None, try to see if Series for mapping.values()
-                can be converted to same dtype as the mapping.keys() Series dtype.
-            is_keys
-                If values contains keys or values from mapping dict.
-
-            """
-            try:
-                if dtype is None:
-                    # If no dtype was set, which should only happen when:
-                    #     values = mapping.values()
-                    # create a Series from those values and infer the dtype.
-                    s = pl.Series(
-                        name,
-                        values,
-                        dtype=None,
-                        dtype_if_empty=dtype_if_empty,
-                        strict=True,
-                    )
-
-                    if dtype_keys is not None:
-                        if s.dtype == dtype_keys:
-                            # Values Series has same dtype as keys Series.
-                            dtype = s.dtype
-                        elif (
-                            (s.dtype.is_integer() and dtype_keys.is_integer())
-                            or (s.dtype.is_float() and dtype_keys.is_float())
-                            or (s.dtype == Utf8 and dtype_keys == Categorical)
-                        ):
-                            # Values Series and keys Series are of similar dtypes,
-                            # that we can assume that the user wants the values Series
-                            # of the same dtype as the key Series.
-                            dtype = dtype_keys
-                            s = pl.Series(
-                                name,
-                                values,
-                                dtype=dtype_keys,
-                                dtype_if_empty=dtype_if_empty,
-                                strict=True,
-                            )
-                            if dtype != s.dtype:
-                                raise ValueError(
-                                    f"mapping values for `replace` could not be converted to {dtype!r}: found {s.dtype!r}"
-                                )
-                else:
-                    # dtype was set, which should always be the case when:
-                    #     values = mapping.keys()
-                    # and in cases where the user set the output dtype when:
-                    #     values = mapping.values()
-                    s = pl.Series(
-                        name,
-                        values,
-                        dtype=dtype,
-                        dtype_if_empty=dtype_if_empty,
-                        strict=True,
-                    )
-                    if dtype != s.dtype:
-                        raise ValueError(
-                            f"mapping {'keys' if is_keys else 'values'} for `replace` could not be converted to {dtype!r}: found {s.dtype!r}"
-                        )
-
-            except OverflowError as exc:
-                if is_keys:
-                    raise ValueError(
-                        f"mapping keys for `replace` could not be converted to {dtype!r}: {exc!s}"
-                    ) from exc
-                else:
-                    raise ValueError(
-                        f"choose a more suitable output dtype for `replace` as mapping value could not be converted to {dtype!r}: {exc!s}"
-                    ) from exc
-
-            if is_keys:
-                # values = mapping.keys()
-                if s.null_count() == 0:  # noqa: SIM114
-                    pass
-                elif s.null_count() == 1 and None in mapping:
-                    pass
-                else:
-                    raise ValueError(
-                        f"mapping keys for `replace` could not be converted to {dtype!r} without losing values in the conversion"
-                    )
-            else:
-                # values = mapping.values()
-                if s.null_count() == 0:  # noqa: SIM114
-                    pass
-                elif s.len() - s.null_count() == len(list(filter(None, values))):
-                    pass
-                else:
-                    raise ValueError(
-                        f"remapping values for `replace` could not be converted to {dtype!r} without losing values in the conversion"
-                    )
-            return s
-
-        def inner_func(s: Series, default_value: Any = None) -> Series:
-            # Convert Series to:
-            #   - multicolumn DataFrame, if Series is a Struct.
-            #   - one column DataFrame in other cases.
-            df = s.to_frame().unnest(s.name) if s.dtype == Struct else s.to_frame()
-
-            # For struct we always apply mapping to the first column.
-            column = df.columns[0]
-            input_dtype = df.dtypes[0]
-            remap_key_column = f"__POLARS_REMAP_KEY_{column}"
-            remap_value_column = f"__POLARS_REMAP_VALUE_{column}"
-            is_remapped_column = f"__POLARS_REMAP_IS_REMAPPED_{column}"
-
-            # Set output dtype:
-            #  - to dtype, if specified.
-            #  - to same dtype as expression specified as default value.
-            #  - to None, if dtype was not specified and default was not an expression.
-            return_dtype_ = (
-                df.lazy().select(default).dtypes[0]
-                if return_dtype is None and isinstance(default, Expr)
-                else return_dtype
-            )
-            remap_key_s = _remap_key_or_value_series(
-                name=remap_key_column,
-                values=mapping.keys(),
-                dtype=input_dtype,
-                dtype_if_empty=input_dtype,
-                dtype_keys=input_dtype,
-                is_keys=True,
-            )
-            if return_dtype_:
-                # Create remap value Series with specified output dtype.
-                remap_value_s = pl.Series(
-                    remap_value_column,
-                    mapping.values(),
-                    dtype=return_dtype_,
-                    dtype_if_empty=input_dtype,
-                )
-            else:
-                # Create remap value Series with same output dtype as remap key Series,
-                # if possible (if both are integers, both are floats or remap value
-                # Series is pl.Utf8 and remap key Series is pl.Categorical).
-                remap_value_s = _remap_key_or_value_series(
-                    name=remap_value_column,
-                    values=mapping.values(),
-                    dtype=None,
-                    dtype_if_empty=input_dtype,
-                    dtype_keys=input_dtype,
-                    is_keys=False,
-                )
-
-            remap_frame = pl.LazyFrame(data=[remap_key_s, remap_value_s]).with_columns(
-                F.lit(True).alias(is_remapped_column)
-            )
-            mapped = df.lazy().join(
-                other=remap_frame,
-                how="left",
-                left_on=column,
-                right_on=remap_key_column,
-                join_nulls=True,
-            )
-            if default_value is None:
-                result_index = 1
-            else:
-                expr_default = parse_as_expression(default_value, str_as_lit=True)
-                default_parsed = self._from_pyexpr(expr_default)
-                mapped = mapped.select(
-                    F.when(F.col(is_remapped_column).is_not_null())
-                    .then(F.col(remap_value_column))
-                    .otherwise(default_parsed)
-                    .alias(column)
-                )
-                result_index = 0
-
-            return mapped.collect(no_optimization=True).to_series(index=result_index)
-
-        if default is no_default:
-            default = F.first()
-
-        mapping_func = partial(inner_func, default_value=default)
-        return self.map_batches(function=mapping_func, return_dtype=return_dtype)
+        return self._from_pyexpr(self._pyexpr.replace(old, new, default, return_dtype))
 
     @deprecate_renamed_function("map_batches", version="0.19.0")
     def map(

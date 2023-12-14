@@ -37,6 +37,8 @@ mod moment;
 mod pct_change;
 #[cfg(feature = "rank")]
 mod rank;
+#[cfg(feature = "replace")]
+mod replace;
 #[cfg(feature = "rle")]
 mod rle;
 #[cfg(feature = "rolling_window")]
@@ -91,6 +93,8 @@ pub use pct_change::*;
 use polars_core::prelude::*;
 #[cfg(feature = "rank")]
 pub use rank::*;
+#[cfg(feature = "replace")]
+pub use replace::*;
 #[cfg(feature = "rle")]
 pub use rle::*;
 #[cfg(feature = "rolling_window")]
