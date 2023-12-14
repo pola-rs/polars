@@ -1,5 +1,4 @@
 use polars_core::prelude::*;
-use polars_utils::float::IsFloat;
 #[cfg(feature = "moment")]
 use {
     crate::series::ops::moment::MomentSeries,
@@ -19,7 +18,7 @@ fn rolling_skew<T>(
 where
     ChunkedArray<T>: IntoSeries,
     T: PolarsFloatType,
-    T::Native: Float + IsFloat + SubAssign + num::pow::Pow<T::Native, Output = T::Native>,
+    T::Native: Float + SubAssign + num::pow::Pow<T::Native, Output = T::Native>,
 {
     with_unstable_series(ca.dtype(), |us| {
         ca.rolling_map_float(window_size, |arr| {
