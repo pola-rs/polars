@@ -81,7 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .with_columns([col("value").fill_nan(lit(NULL)).alias("value")])
-        .mean()
+        .mean()?
         .collect()?;
     println!("{}", &mean_nan_df);
     // --8<-- [end:nanfill]
