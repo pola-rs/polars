@@ -6272,11 +6272,8 @@ class Series:
             Defaults to keeping the original value.
             Accepts expression input. Non-expression inputs are parsed as literals.
         return_dtype
-            Set return dtype to override automatic return dtype determination.
-
-            .. deprecated:: 0.20.0
-                Cast the output to the desired data type, or make sure the inputs are
-                of the correct types instead.
+            The data type of the resulting Series. If set to `None` (default),
+            the data type is determined automatically based on the other inputs.
 
         See Also
         --------
@@ -6359,6 +6356,17 @@ class Series:
         >>> s.replace(mapping, default=None)
         shape: (3,)
         Series: '' [i64]
+        [
+                1
+                2
+                3
+        ]
+
+        Set the `return_dtype` parameter to control the resulting data type directly.
+
+        >>> s.replace(mapping, return_dtype=pl.UInt8)
+        shape: (3,)
+        Series: '' [u8]
         [
                 1
                 2

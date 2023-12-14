@@ -870,10 +870,21 @@ impl PyExpr {
         self.inner.clone().set_sorted_flag(is_sorted).into()
     }
 
-    fn replace(&self, old: PyExpr, new: PyExpr, default: Option<PyExpr>) -> Self {
+    fn replace(
+        &self,
+        old: PyExpr,
+        new: PyExpr,
+        default: Option<PyExpr>,
+        return_dtype: Option<Wrap<DataType>>,
+    ) -> Self {
         self.inner
             .clone()
-            .replace(old.inner, new.inner, default.map(|e| e.inner))
+            .replace(
+                old.inner,
+                new.inner,
+                default.map(|e| e.inner),
+                return_dtype.map(|dt| dt.0),
+            )
             .into()
     }
 

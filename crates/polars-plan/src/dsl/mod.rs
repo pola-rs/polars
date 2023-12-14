@@ -1310,17 +1310,19 @@ impl Expr {
 
     #[cfg(feature = "replace")]
     /// Replace the given values with other values.
-    pub fn replace<E: Into<Expr>>(self, old: E, new: E, default: Option<E>) -> Expr {
-        match default {
-            Some(default) => {
-                let args: &[Expr] = &[old.into(), new.into(), default.into()];
-                self.apply_many_private(FunctionExpr::Replace, args, false, false)
-            },
-            None => {
-                let args: &[Expr] = &[old.into(), new.into(), self.clone()];
-                self.apply_many_private(FunctionExpr::Replace, args, false, false)
-            },
-        }
+    pub fn replace<E: Into<Expr>>(
+        self,
+        old: E,
+        new: E,
+        default: Option<E>,
+        return_dtype: Option<DataType>,
+    ) -> Expr {
+        let default_expr = match default {
+            Some(expr) => expr.into(),
+            None => self.clone(),
+        };
+        let args: &[Expr] = &[old.into(), new.into(), default_expr];
+        self.apply_many_private(FunctionExpr::Replace { return_dtype }, args, false, false)
     }
 
     #[cfg(feature = "cutqcut")]

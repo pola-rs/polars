@@ -6,11 +6,21 @@ use crate::frame::join::*;
 use crate::prelude::*;
 use crate::series::is_in;
 
-pub fn replace(s: &Series, old: &Series, new: &Series, default: &Series) -> PolarsResult<Series> {
-    let output_dtype = try_get_supertype(new.dtype(), default.dtype())?;
+pub fn replace(
+    s: &Series,
+    old: &Series,
+    new: &Series,
+    default: &Series,
+    return_dtype: Option<DataType>,
+) -> PolarsResult<Series> {
+    let return_dtype = match return_dtype {
+        Some(dtype) => dtype,
+        None => try_get_supertype(new.dtype(), default.dtype())?,
+    };
+
     let default = match default.len() {
-        len if len == s.len() => default.cast(&output_dtype)?,
-        1 => default.cast(&output_dtype)?.new_from_index(0, s.len()),
+        len if len == s.len() => default.cast(&return_dtype)?,
+        1 => default.cast(&return_dtype)?.new_from_index(0, s.len()),
         _ => {
             polars_bail!(
                 ComputeError:
@@ -22,11 +32,14 @@ pub fn replace(s: &Series, old: &Series, new: &Series, default: &Series) -> Pola
     if old.len() == 0 {
         return Ok(default);
     }
-    if new.len() == 1 {
-        return replace_by_single(s, old, new, &default);
-    }
 
-    replace_by_multiple(s, old, new, &default)
+    let new = new.cast(&return_dtype)?;
+
+    if new.len() == 1 {
+        replace_by_single(s, old, &new, &default)
+    } else {
+        replace_by_multiple(s, old, new, &default)
+    }
 }
 
 // Fast path for replacing by a single value
@@ -45,7 +58,7 @@ fn replace_by_single(
 fn replace_by_multiple(
     s: &Series,
     old: &Series,
-    new: &Series,
+    new: Series,
     default: &Series,
 ) -> PolarsResult<Series> {
     polars_ensure!(
@@ -67,29 +80,32 @@ fn replace_by_multiple(
         },
     )?;
 
-    let replaced = joined.column("__POLARS_REPLACE_NEW").unwrap().clone();
-    let mask = match joined.column("__POLARS_REPLACE_MASK").ok() {
-        Some(col) => col.bool()?.clone(),
-        None => replaced.is_not_null(),
-    };
+    let replaced = joined.column("__POLARS_REPLACE_NEW").unwrap();
 
-    replaced.zip_with(&mask, default)
+    match joined.column("__POLARS_REPLACE_MASK") {
+        Ok(col) => {
+            let mask = col.bool()?;
+            replaced.zip_with(mask, default)
+        },
+        Err(_) => {
+            let mask = &replaced.is_not_null();
+            replaced.zip_with(mask, default)
+        },
+    }
 }
 
 // Build replacer dataframe
-fn create_replacer(s: &Series, old: &Series, new: &Series) -> PolarsResult<DataFrame> {
+fn create_replacer(s: &Series, old: &Series, mut new: Series) -> PolarsResult<DataFrame> {
     let mut old = old.cast(s.dtype())?;
     old.rename("__POLARS_REPLACE_OLD");
-
-    let mut new = new.clone();
     new.rename("__POLARS_REPLACE_NEW");
 
-    let out = if new.null_count() > 0 {
-        // If we replace some values by null, we need to track which values were replaced
+    let cols = if new.null_count() > 0 {
         let mask = Series::new("__POLARS_REPLACE_MASK", &[true]).new_from_index(0, new.len());
-        DataFrame::new_no_checks(vec![old, new, mask])
+        vec![old, new, mask]
     } else {
-        DataFrame::new_no_checks(vec![old, new])
+        vec![old, new]
     };
+    let out = DataFrame::new_no_checks(cols);
     Ok(out)
 }

@@ -276,7 +276,7 @@ impl FunctionExpr {
             #[cfg(feature = "ewma")]
             EwmVar { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "replace")]
-            Replace => mapper.replace_dtype(),
+            Replace { return_dtype } => mapper.replace_dtype(return_dtype.clone()),
         }
     }
 }
@@ -462,9 +462,12 @@ impl<'a> FieldsMapper<'a> {
     }
 
     #[cfg(feature = "replace")]
-    pub fn replace_dtype(&self) -> PolarsResult<Field> {
-        // Supertype of `new` and `default`
-        let supertype = try_get_supertype(self.fields[2].data_type(), self.fields[3].data_type())?;
-        self.with_dtype(supertype)
+    pub fn replace_dtype(&self, return_dtype: Option<DataType>) -> PolarsResult<Field> {
+        let dtype = match return_dtype {
+            Some(dtype) => dtype,
+            // Supertype of `new` and `default`
+            None => try_get_supertype(self.fields[2].data_type(), self.fields[3].data_type())?,
+        };
+        self.with_dtype(dtype)
     }
 }

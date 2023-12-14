@@ -131,6 +131,6 @@ pub(super) fn hist(
 }
 
 #[cfg(feature = "replace")]
-pub(super) fn replace(s: &[Series]) -> PolarsResult<Series> {
-    polars_ops::series::replace(&s[0], &s[1], &s[2], &s[3])
+pub(super) fn replace(s: &[Series], return_dtype: Option<DataType>) -> PolarsResult<Series> {
+    polars_ops::series::replace(&s[0], &s[1], &s[2], &s[3], return_dtype)
 }

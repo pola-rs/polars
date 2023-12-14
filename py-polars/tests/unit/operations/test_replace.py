@@ -150,10 +150,9 @@ def test_replace_int_to_int_null_return_dtype() -> None:
     df = pl.DataFrame({"int": [None, 1, None, 3]}, schema={"int": pl.Int16})
     mapping = {3: None}
 
-    with pytest.deprecated_call():
-        result = df.select(
-            replaced=pl.col("int").replace(mapping, default=6, return_dtype=pl.Int32)
-        )
+    result = df.select(
+        replaced=pl.col("int").replace(mapping, default=6, return_dtype=pl.Int32)
+    )
 
     expected = pl.DataFrame(
         {"replaced": [6, 6, 6, None]}, schema={"replaced": pl.Int32}
@@ -229,12 +228,11 @@ def test_replace_str_to_int_fill_null() -> None:
     lf = pl.LazyFrame({"a": ["one", "two"]})
     mapping = {"one": 1}
 
-    with pytest.deprecated_call():
-        result = lf.select(
-            pl.col("a")
-            .replace(mapping, default=None, return_dtype=pl.UInt32)
-            .fill_null(999)
-        )
+    result = lf.select(
+        pl.col("a")
+        .replace(mapping, default=None, return_dtype=pl.UInt32)
+        .fill_null(999)
+    )
 
     expected = pl.LazyFrame({"a": [1, 999]})
     assert_frame_equal(result, expected)
@@ -300,16 +298,14 @@ def test_replace_int_to_int4(int_mapping: dict[int, int]) -> None:
 
 def test_replace_int_to_int4_return_dtype(int_mapping: dict[int, int]) -> None:
     s = pl.Series([-1, 22, None, 44, -5], dtype=pl.Int16)
-    with pytest.deprecated_call():
-        result = s.replace(int_mapping, return_dtype=pl.Float32)
+    result = s.replace(int_mapping, return_dtype=pl.Float32)
     expected = pl.Series([-1.0, 22.0, None, 44.0, -5.0], dtype=pl.Float32)
     assert_series_equal(result, expected)
 
 
 def test_replace_int_to_int5_return_dtype(int_mapping: dict[int, int]) -> None:
     s = pl.Series([1, 22, None, 44, -5], dtype=pl.Int16)
-    with pytest.deprecated_call():
-        result = s.replace(int_mapping, default=9, return_dtype=pl.Float32)
+    result = s.replace(int_mapping, default=9, return_dtype=pl.Float32)
     expected = pl.Series([11.0, 9.0, 9.0, 9.0, 9.0], dtype=pl.Float32)
     assert_series_equal(result, expected)
 

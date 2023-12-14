@@ -52,7 +52,6 @@ from polars.utils.deprecation import (
     deprecate_renamed_function,
     deprecate_renamed_parameter,
     deprecate_saturating,
-    issue_deprecation_warning,
 )
 from polars.utils.meta import threadpool_size
 from polars.utils.various import (
@@ -9112,11 +9111,8 @@ class Expr:
             Defaults to keeping the original value.
             Accepts expression input. Non-expression inputs are parsed as literals.
         return_dtype
-            Set return dtype to override automatic return dtype determination.
-
-            .. deprecated:: 0.20.0
-                Cast the output to the desired data type, or make sure the inputs are
-                of the correct types instead.
+            The data type of the resulting expression. If set to `None` (default),
+            the data type is determined automatically based on the other inputs.
 
         See Also
         --------
@@ -9206,6 +9202,22 @@ class Expr:
         │ z   ┆ 3        │
         └─────┴──────────┘
 
+        Set the `return_dtype` parameter to control the resulting data type directly.
+
+        >>> df.with_columns(
+        ...     replaced=pl.col("a").replace(mapping, return_dtype=pl.UInt8)
+        ... )
+        shape: (3, 2)
+        ┌─────┬──────────┐
+        │ a   ┆ replaced │
+        │ --- ┆ ---      │
+        │ str ┆ u8       │
+        ╞═════╪══════════╡
+        │ x   ┆ 1        │
+        │ y   ┆ 2        │
+        │ z   ┆ 3        │
+        └─────┴──────────┘
+
         Expression input is supported for all parameters.
 
         >>> df = pl.DataFrame({"a": [1, 2, 2, 3], "b": [1.5, 2.5, 5.0, 1.0]})
@@ -9246,18 +9258,7 @@ class Expr:
             else parse_as_expression(default, str_as_lit=True)
         )
 
-        result = self._from_pyexpr(self._pyexpr.replace(old, new, default))
-
-        if return_dtype is not None:
-            issue_deprecation_warning(
-                "The `return_dtype` parameter for `replace` is deprecated."
-                " Cast the output to the desired data type,"
-                " or make sure the inputs are of the correct types instead.",
-                version="0.20.0",
-            )
-            result = result.cast(return_dtype)
-
-        return result
+        return self._from_pyexpr(self._pyexpr.replace(old, new, default, return_dtype))
 
     @deprecate_renamed_function("map_batches", version="0.19.0")
     def map(
