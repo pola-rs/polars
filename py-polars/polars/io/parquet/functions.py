@@ -9,7 +9,7 @@ import polars._reexport as pl
 from polars.convert import from_arrow
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.io._utils import _prepare_file_arg
-from polars.utils.various import normalize_filepath
+from polars.utils.various import is_int_sequence, normalize_filepath
 
 with contextlib.suppress(ImportError):
     from polars.polars import read_parquet_schema as _read_parquet_schema
@@ -121,8 +121,11 @@ def read_parquet(
 
         pyarrow_options = pyarrow_options or {}
 
+        # TODO: Update _prepare_file_arg to handle list[Path] input
         with _prepare_file_arg(
-            source, use_pyarrow=use_pyarrow, **storage_options
+            source,  # type: ignore[arg-type]
+            use_pyarrow=use_pyarrow,
+            **storage_options,
         ) as source_prep:
             return from_arrow(  # type: ignore[return-value]
                 pa.parquet.read_table(
@@ -168,7 +171,7 @@ def read_parquet(
 
     if columns is not None:
         # Handle columns specified as ints
-        if columns and isinstance(columns[0], int):
+        if is_int_sequence(columns):
             columns = [lf.columns[i] for i in columns]
 
         lf = lf.select(columns)
