@@ -317,7 +317,8 @@ fn test_window_exprs_in_binary_exprs() -> PolarsResult<()> {
             .cast(DataType::Int32)
             .alias("stdized3"),
     ])
-    .sum();
+    .sum()
+    .unwrap();
 
     let df = q.collect()?;
 
@@ -376,7 +377,7 @@ fn test_window_naive_any() -> PolarsResult<()> {
         .collect()?;
 
     let res = df.column("res")?;
-    assert_eq!(res.sum::<usize>(), Some(5));
+    assert_eq!(res.sum::<usize>().unwrap(), 5);
     Ok(())
 }
 

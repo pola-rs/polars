@@ -465,7 +465,7 @@ pub(super) fn count_matches(args: &[Series]) -> PolarsResult<Series> {
 }
 
 pub(super) fn sum(s: &Series) -> PolarsResult<Series> {
-    Ok(s.list()?.lst_sum())
+    s.list()?.lst_sum()
 }
 
 pub(super) fn length(s: &Series) -> PolarsResult<Series> {
@@ -473,11 +473,11 @@ pub(super) fn length(s: &Series) -> PolarsResult<Series> {
 }
 
 pub(super) fn max(s: &Series) -> PolarsResult<Series> {
-    Ok(s.list()?.lst_max())
+    s.list()?.lst_max()
 }
 
 pub(super) fn min(s: &Series) -> PolarsResult<Series> {
-    Ok(s.list()?.lst_min())
+    s.list()?.lst_min()
 }
 
 pub(super) fn mean(s: &Series) -> PolarsResult<Series> {

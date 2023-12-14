@@ -15,7 +15,7 @@ use polars::prelude::*;
 use polars_core::export::arrow::datatypes::IntegerType;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::*;
-use polars_core::prelude::{IndexOrder, QuantileInterpolOptions};
+use polars_core::prelude::IndexOrder;
 use polars_core::utils::arrow::compute::cast::CastOptions;
 use polars_core::utils::try_get_supertype;
 #[cfg(feature = "pivot")]
@@ -1256,34 +1256,6 @@ impl PyDataFrame {
         self.df.clone().lazy().into()
     }
 
-    pub fn max(&self) -> Self {
-        self.df.max().into()
-    }
-
-    pub fn min(&self) -> Self {
-        self.df.min().into()
-    }
-
-    pub fn sum(&self) -> Self {
-        self.df.sum().into()
-    }
-
-    pub fn mean(&self) -> Self {
-        self.df.mean().into()
-    }
-
-    pub fn std(&self, ddof: u8) -> Self {
-        self.df.std(ddof).into()
-    }
-
-    pub fn var(&self, ddof: u8) -> Self {
-        self.df.var(ddof).into()
-    }
-
-    pub fn median(&self) -> Self {
-        self.df.median().into()
-    }
-
     pub fn max_horizontal(&self) -> PyResult<Option<PySeries>> {
         let s = self.df.max_horizontal().map_err(PyPolarsErr::from)?;
         Ok(s.map(|s| s.into()))
@@ -1318,18 +1290,6 @@ impl PyDataFrame {
             .mean_horizontal(null_strategy)
             .map_err(PyPolarsErr::from)?;
         Ok(s.map(|s| s.into()))
-    }
-
-    pub fn quantile(
-        &self,
-        quantile: f64,
-        interpolation: Wrap<QuantileInterpolOptions>,
-    ) -> PyResult<Self> {
-        let df = self
-            .df
-            .quantile(quantile, interpolation.0)
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
     }
 
     #[pyo3(signature = (columns, separator, drop_first=false))]

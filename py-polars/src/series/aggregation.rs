@@ -18,6 +18,7 @@ impl PySeries {
         Ok(Wrap(
             self.series
                 .max_as_series()
+                .map_err(PyPolarsErr::from)?
                 .get(0)
                 .map_err(PyPolarsErr::from)?,
         )
@@ -48,29 +49,32 @@ impl PySeries {
         Ok(Wrap(
             self.series
                 .min_as_series()
+                .map_err(PyPolarsErr::from)?
                 .get(0)
                 .map_err(PyPolarsErr::from)?,
         )
         .into_py(py))
     }
 
-    fn quantile(&self, quantile: f64, interpolation: Wrap<QuantileInterpolOptions>) -> PyObject {
-        Python::with_gil(|py| {
-            Wrap(
-                self.series
-                    .quantile_as_series(quantile, interpolation.0)
-                    .expect("invalid quantile")
-                    .get(0)
-                    .unwrap_or(AnyValue::Null),
-            )
-            .into_py(py)
-        })
+    fn quantile(
+        &self,
+        quantile: f64,
+        interpolation: Wrap<QuantileInterpolOptions>,
+    ) -> PyResult<PyObject> {
+        let tmp = self
+            .series
+            .quantile_as_series(quantile, interpolation.0)
+            .map_err(PyPolarsErr::from)?;
+        let out = tmp.get(0).unwrap_or(AnyValue::Null);
+
+        Ok(Python::with_gil(|py| Wrap(out).into_py(py)))
     }
 
     fn sum(&self, py: Python) -> PyResult<PyObject> {
         Ok(Wrap(
             self.series
                 .sum_as_series()
+                .map_err(PyPolarsErr::from)?
                 .get(0)
                 .map_err(PyPolarsErr::from)?,
         )

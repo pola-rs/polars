@@ -342,48 +342,32 @@ impl Series {
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    ///
-    /// ```
-    /// # use polars_core::prelude::*;
-    /// let s = Series::new("days", &[1, 2, 3]);
-    /// assert_eq!(s.sum(), Some(6));
-    /// ```
-    pub fn sum<T>(&self) -> Option<T>
+    pub fn sum<T>(&self) -> PolarsResult<T>
     where
         T: NumCast,
     {
-        let sum = self.sum_as_series().cast(&DataType::Float64).ok()?;
-        T::from(sum.f64().unwrap().get(0)?)
+        let sum = self.sum_as_series()?.cast(&DataType::Float64)?;
+        Ok(T::from(sum.f64().unwrap().get(0).unwrap()).unwrap())
     }
 
     /// Returns the minimum value in the array, according to the natural order.
     /// Returns an option because the array is nullable.
-    /// ```
-    /// # use polars_core::prelude::*;
-    /// let s = Series::new("days", [1, 2, 3].as_ref());
-    /// assert_eq!(s.min(), Some(1));
-    /// ```
-    pub fn min<T>(&self) -> Option<T>
+    pub fn min<T>(&self) -> PolarsResult<Option<T>>
     where
         T: NumCast,
     {
-        let min = self.min_as_series().cast(&DataType::Float64).ok()?;
-        T::from(min.f64().unwrap().get(0)?)
+        let min = self.min_as_series()?.cast(&DataType::Float64)?;
+        Ok(min.f64().unwrap().get(0).and_then(T::from))
     }
 
     /// Returns the maximum value in the array, according to the natural order.
     /// Returns an option because the array is nullable.
-    /// ```
-    /// # use polars_core::prelude::*;
-    /// let s = Series::new("days", [1, 2, 3].as_ref());
-    /// assert_eq!(s.max(), Some(3));
-    /// ```
-    pub fn max<T>(&self) -> Option<T>
+    pub fn max<T>(&self) -> PolarsResult<Option<T>>
     where
         T: NumCast,
     {
-        let max = self.max_as_series().cast(&DataType::Float64).ok()?;
-        T::from(max.f64().unwrap().get(0)?)
+        let max = self.max_as_series()?.cast(&DataType::Float64)?;
+        Ok(max.f64().unwrap().get(0).and_then(T::from))
     }
 
     /// Explode a list Series. This expands every item to a new row..
@@ -615,7 +599,7 @@ impl Series {
     }
 
     #[cfg(feature = "dot_product")]
-    pub fn dot(&self, other: &Series) -> Option<f64> {
+    pub fn dot(&self, other: &Series) -> PolarsResult<f64> {
         (self * other).sum::<f64>()
     }
 
@@ -624,14 +608,8 @@ impl Series {
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    pub fn sum_as_series(&self) -> Series {
+    pub fn sum_as_series(&self) -> PolarsResult<Series> {
         use DataType::*;
-        if self.is_empty()
-            && (self.dtype().is_numeric() || matches!(self.dtype(), DataType::Boolean))
-        {
-            let zero = Series::new(self.name(), [0]);
-            return zero.cast(self.dtype()).unwrap().sum_as_series();
-        }
         match self.dtype() {
             Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().sum_as_series(),
             _ => self._sum_as_series(),

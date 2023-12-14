@@ -177,7 +177,7 @@ fn test_rolling_map() {
 
     let out = ca
         .rolling_map(
-            &|s| s.sum_as_series(),
+            &|s| s.sum_as_series().unwrap(),
             RollingOptionsFixedWindow {
                 window_size: 3,
                 min_periods: 3,
