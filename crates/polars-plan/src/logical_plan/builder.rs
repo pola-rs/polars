@@ -116,6 +116,7 @@ impl LogicalPlanBuilder {
             rechunk: false,
             file_counter: Default::default(),
             hive_partitioning: false,
+            use_glob: false,
         };
 
         Ok(LogicalPlan::Scan {
@@ -147,6 +148,7 @@ impl LogicalPlanBuilder {
         cloud_options: Option<CloudOptions>,
         use_statistics: bool,
         hive_partitioning: bool,
+        use_glob: bool,
     ) -> PolarsResult<Self> {
         use polars_io::{is_cloud_url, SerReader as _};
 
@@ -201,7 +203,6 @@ impl LogicalPlanBuilder {
         if hive_partitioning {
             file_info.init_hive_partitions(path.as_path())?;
         }
-
         let options = FileScanOptions {
             with_columns: None,
             cache,
@@ -210,6 +211,7 @@ impl LogicalPlanBuilder {
             row_count,
             file_counter: Default::default(),
             hive_partitioning,
+            use_glob,
         };
         Ok(LogicalPlan::Scan {
             paths,
@@ -237,6 +239,7 @@ impl LogicalPlanBuilder {
         cache: bool,
         row_count: Option<RowCount>,
         rechunk: bool,
+        use_glob: bool,
     ) -> PolarsResult<Self> {
         use polars_io::SerReader as _;
 
@@ -262,6 +265,7 @@ impl LogicalPlanBuilder {
             file_counter: Default::default(),
             // TODO! add
             hive_partitioning: false,
+            use_glob,
         };
         Ok(LogicalPlan::Scan {
             paths: Arc::new([path]),
@@ -298,6 +302,7 @@ impl LogicalPlanBuilder {
         try_parse_dates: bool,
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
+        use_glob: bool,
     ) -> PolarsResult<Self> {
         let path = path.into();
         let mut file = polars_utils::open_file(&path)?;
@@ -365,6 +370,7 @@ impl LogicalPlanBuilder {
             file_counter: Default::default(),
             // TODO! add
             hive_partitioning: false,
+            use_glob,
         };
         Ok(LogicalPlan::Scan {
             paths,

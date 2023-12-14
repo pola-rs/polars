@@ -12,6 +12,7 @@ pub struct ScanArgsIpc {
     pub rechunk: bool,
     pub row_count: Option<RowCount>,
     pub memmap: bool,
+    pub use_glob: bool,
 }
 
 impl Default for ScanArgsIpc {
@@ -22,6 +23,7 @@ impl Default for ScanArgsIpc {
             rechunk: true,
             row_count: None,
             memmap: true,
+            use_glob: true,
         }
     }
 }
@@ -58,6 +60,7 @@ impl LazyFileListReader for LazyIpcReader {
             args.cache,
             args.row_count.clone(),
             args.rechunk,
+            args.use_glob,
         )?
         .build()
         .into();

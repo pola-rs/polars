@@ -345,6 +345,7 @@ class LazyFrame:
         eol_char: str = "\n",
         raise_if_empty: bool = True,
         truncate_ragged_lines: bool = True,
+        use_glob: bool = True,
     ) -> Self:
         """
         Lazily read from a CSV file or multiple files via glob patterns.
@@ -392,6 +393,7 @@ class LazyFrame:
             encoding,
             _prepare_row_count_args(row_count_name, row_count_offset),
             try_parse_dates,
+            use_glob,
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,
             truncate_ragged_lines=truncate_ragged_lines,
@@ -415,6 +417,7 @@ class LazyFrame:
         use_statistics: bool = True,
         hive_partitioning: bool = True,
         retries: int = 0,
+        use_glob: bool = True,
     ) -> Self:
         """
         Lazily read from a parquet file or multiple files via glob patterns.
@@ -439,6 +442,7 @@ class LazyFrame:
             can_use_fsspec
             and not _is_local_file(source)  # type: ignore[arg-type]
             and not _is_supported_cloud(source)  # type: ignore[arg-type]
+            # and use_glob
         ):
             scan = _scan_parquet_fsspec(source, storage_options)  # type: ignore[arg-type]
             if n_rows:
@@ -464,6 +468,7 @@ class LazyFrame:
             use_statistics=use_statistics,
             hive_partitioning=hive_partitioning,
             retries=retries,
+            use_glob=use_glob,
         )
         return self
 
@@ -479,6 +484,7 @@ class LazyFrame:
         row_count_offset: int = 0,
         storage_options: dict[str, object] | None = None,
         memory_map: bool = True,
+        use_glob: bool = True,
     ) -> Self:
         """
         Lazily read from an Arrow IPC (Feather v2) file.
@@ -516,6 +522,7 @@ class LazyFrame:
             cache,
             rechunk,
             _prepare_row_count_args(row_count_name, row_count_offset),
+            use_glob,
             memory_map=memory_map,
         )
         return self

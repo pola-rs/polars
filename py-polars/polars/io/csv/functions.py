@@ -53,6 +53,7 @@ def read_csv(
     eol_char: str = "\n",
     raise_if_empty: bool = True,
     truncate_ragged_lines: bool = False,
+    use_glob: bool = True,
 ) -> DataFrame:
     r"""
     Read a CSV file into a DataFrame.
@@ -171,6 +172,8 @@ def read_csv(
         is set to False, an empty DataFrame (with no columns) is returned instead.
     truncate_ragged_lines
         Truncate lines that are longer than the schema.
+    use_glob
+        If `source` is a glob pattern, use it to match files.
 
     Returns
     -------
@@ -394,6 +397,7 @@ def read_csv(
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,
             truncate_ragged_lines=truncate_ragged_lines,
+            use_glob=use_glob,
         )
 
     if new_columns:
@@ -731,6 +735,7 @@ def scan_csv(
     new_columns: Sequence[str] | None = None,
     raise_if_empty: bool = True,
     truncate_ragged_lines: bool = False,
+    use_glob: bool = True,
 ) -> LazyFrame:
     r"""
     Lazily read from a CSV file or multiple files via glob patterns.
@@ -823,6 +828,8 @@ def scan_csv(
         is set to False, an empty LazyFrame (with no columns) is returned instead.
     truncate_ragged_lines
         Truncate lines that are longer than the schema.
+    use_glob
+        If `source` is a glob pattern, use it to match files.
 
     Returns
     -------
@@ -942,4 +949,5 @@ def scan_csv(
         eol_char=eol_char,
         raise_if_empty=raise_if_empty,
         truncate_ragged_lines=truncate_ragged_lines,
+        use_glob=use_glob,
     )

@@ -693,6 +693,7 @@ class DataFrame:
         eol_char: str = "\n",
         raise_if_empty: bool = True,
         truncate_ragged_lines: bool = False,
+        use_glob: bool = True,
     ) -> DataFrame:
         """
         Read a CSV file into a DataFrame.
@@ -734,7 +735,7 @@ class DataFrame:
 
         if isinstance(columns, str):
             columns = [columns]
-        if isinstance(source, str) and _is_glob_pattern(source):
+        if isinstance(source, str) and _is_glob_pattern(source) and use_glob:
             dtypes_dict = None
             if dtype_list is not None:
                 dtypes_dict = dict(dtype_list)
@@ -767,6 +768,7 @@ class DataFrame:
                 eol_char=eol_char,
                 raise_if_empty=raise_if_empty,
                 truncate_ragged_lines=truncate_ragged_lines,
+                use_glob=use_glob,
             )
             if columns is None:
                 return scan.collect()
@@ -843,29 +845,29 @@ class DataFrame:
         if isinstance(columns, str):
             columns = [columns]
 
-        if use_glob:
-            if isinstance(source, str) and _is_glob_pattern(source):
-                from polars import scan_parquet
+        if isinstance(source, str) and _is_glob_pattern(source) and use_glob:
+            from polars import scan_parquet
 
-                scan = scan_parquet(
-                    source,
-                    n_rows=n_rows,
-                    rechunk=True,
-                    parallel=parallel,
-                    row_count_name=row_count_name,
-                    row_count_offset=row_count_offset,
-                    low_memory=low_memory,
+            scan = scan_parquet(
+                source,
+                n_rows=n_rows,
+                rechunk=True,
+                parallel=parallel,
+                row_count_name=row_count_name,
+                row_count_offset=row_count_offset,
+                low_memory=low_memory,
+                use_glob=use_glob,
+            )
+
+            if columns is None:
+                return scan.collect()
+            elif is_str_sequence(columns, allow_str=False):
+                return scan.select(columns).collect()
+            else:
+                raise TypeError(
+                    "cannot use glob patterns and integer based projection as `columns` argument"
+                    "\n\nUse columns: List[str]"
                 )
-
-                if columns is None:
-                    return scan.collect()
-                elif is_str_sequence(columns, allow_str=False):
-                    return scan.select(columns).collect()
-                else:
-                    raise TypeError(
-                        "cannot use glob patterns and integer based projection as `columns` argument"
-                        "\n\nUse columns: List[str]"
-                    )
 
         projection, columns = handle_projection_columns(columns)
         self = cls.__new__(cls)
@@ -923,6 +925,7 @@ class DataFrame:
         row_count_offset: int = 0,
         rechunk: bool = True,
         memory_map: bool = True,
+        use_glob: bool = True,
     ) -> Self:
         """
         Read into a DataFrame from Arrow IPC file format.
@@ -948,7 +951,9 @@ class DataFrame:
         rechunk
             Make sure that all data is contiguous.
         memory_map
-            Memory map the file
+            Memory map the file.
+        use_glob
+            If `source` is a glob pattern, use it to match files.
 
         """
         if isinstance(source, (str, Path)):
@@ -960,6 +965,7 @@ class DataFrame:
             isinstance(source, str)
             and _is_glob_pattern(source)
             and _is_local_file(source)
+            and use_glob
         ):
             from polars import scan_ipc
 

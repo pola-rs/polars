@@ -203,6 +203,7 @@ fn test_ipc_globbing() -> PolarsResult<()> {
             rechunk: false,
             row_count: None,
             memmap: true,
+            use_glob: true,
         },
     )?
     .collect()?;

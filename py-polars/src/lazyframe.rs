@@ -150,7 +150,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (path, paths, separator, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
         low_memory, comment_prefix, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
-        encoding, row_count, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, schema
+        encoding, row_count, try_parse_dates, use_glob, eol_char, raise_if_empty, truncate_ragged_lines, schema
     )
     )]
     fn new_from_csv(
@@ -175,6 +175,7 @@ impl PyLazyFrame {
         encoding: Wrap<CsvEncoding>,
         row_count: Option<(String, IdxSize)>,
         try_parse_dates: bool,
+        use_glob: bool,
         eol_char: &str,
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
@@ -221,7 +222,8 @@ impl PyLazyFrame {
             .with_null_values(null_values)
             .with_missing_is_null(!missing_utf8_is_empty_string)
             .truncate_ragged_lines(truncate_ragged_lines)
-            .raise_if_empty(raise_if_empty);
+            .raise_if_empty(raise_if_empty)
+            .use_glob(use_glob);
 
         if let Some(lambda) = with_schema_modify {
             let f = |schema: Schema| {
@@ -252,7 +254,7 @@ impl PyLazyFrame {
     #[cfg(feature = "parquet")]
     #[staticmethod]
     #[pyo3(signature = (path, paths, n_rows, cache, parallel, rechunk, row_count,
-        low_memory, cloud_options, use_statistics, hive_partitioning, retries)
+        low_memory, cloud_options, use_statistics, hive_partitioning, retries, use_glob)
     )]
     fn new_from_parquet(
         path: Option<PathBuf>,
@@ -267,6 +269,7 @@ impl PyLazyFrame {
         use_statistics: bool,
         hive_partitioning: bool,
         retries: usize,
+        use_glob: bool,
     ) -> PyResult<Self> {
         let first_path = if let Some(path) = &path {
             path
@@ -300,6 +303,7 @@ impl PyLazyFrame {
             cloud_options,
             use_statistics,
             hive_partitioning,
+            use_glob,
         };
 
         let lf = if path.is_some() {
@@ -313,7 +317,7 @@ impl PyLazyFrame {
 
     #[cfg(feature = "ipc")]
     #[staticmethod]
-    #[pyo3(signature = (path, paths, n_rows, cache, rechunk, row_count, memory_map))]
+    #[pyo3(signature = (path, paths, n_rows, cache, rechunk, row_count, use_glob, memory_map))]
     fn new_from_ipc(
         path: Option<PathBuf>,
         paths: Vec<PathBuf>,
@@ -321,6 +325,7 @@ impl PyLazyFrame {
         cache: bool,
         rechunk: bool,
         row_count: Option<(String, IdxSize)>,
+        use_glob: bool,
         memory_map: bool,
     ) -> PyResult<Self> {
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
@@ -329,6 +334,7 @@ impl PyLazyFrame {
             cache,
             rechunk,
             row_count,
+            use_glob,
             memmap: memory_map,
         };
 

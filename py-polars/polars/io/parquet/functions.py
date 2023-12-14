@@ -184,6 +184,7 @@ def scan_parquet(
     use_statistics: bool = True,
     hive_partitioning: bool = True,
     retries: int = 0,
+    use_glob: bool = True,
 ) -> LazyFrame:
     """
     Lazily read from a local or cloud-hosted parquet file (or files).
@@ -234,6 +235,8 @@ def scan_parquet(
         to prune reads.
     retries
         Number of retries if accessing a cloud instance fails.
+    use_glob
+        If `source` is a glob pattern, use it to match files.
 
     See Also
     --------
@@ -276,4 +279,5 @@ def scan_parquet(
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
         retries=retries,
+        use_glob=use_glob,
     )

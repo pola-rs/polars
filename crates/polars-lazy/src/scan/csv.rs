@@ -36,6 +36,7 @@ pub struct LazyCsvReader<'a> {
     row_count: Option<RowCount>,
     try_parse_dates: bool,
     raise_if_empty: bool,
+    use_glob: bool,
 }
 
 #[cfg(feature = "csv")]
@@ -70,6 +71,7 @@ impl<'a> LazyCsvReader<'a> {
             try_parse_dates: false,
             raise_if_empty: true,
             truncate_ragged_lines: false,
+            use_glob: true,
         }
     }
 
@@ -230,6 +232,13 @@ impl<'a> LazyCsvReader<'a> {
         self
     }
 
+    /// Truncate lines that are longer than the schema.
+    #[must_use]
+    pub fn use_glob(mut self, toggle: bool) -> Self {
+        self.use_glob = toggle;
+        self
+    }
+
     /// Modify a schema before we run the lazy scanning.
     ///
     /// Important! Run this function latest in the builder!
@@ -303,6 +312,7 @@ impl LazyFileListReader for LazyCsvReader<'_> {
             self.try_parse_dates,
             self.raise_if_empty,
             self.truncate_ragged_lines,
+            self.use_glob,
         )?
         .build()
         .into();
