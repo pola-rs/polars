@@ -777,8 +777,10 @@ mod test {
         let collection = vec![ps];
         let s = collection.to_series();
         assert_eq!(
-            s.iter().map(|s| s.sum::<i32>()).collect::<Vec<_>>(),
-            vec![Some(6)]
+            s.iter()
+                .map(|s| s.sum::<i32>().unwrap())
+                .collect::<Vec<_>>(),
+            vec![6]
         );
     }
 }
