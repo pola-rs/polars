@@ -588,3 +588,33 @@ def test_parquet_12831() -> None:
     df.write_parquet(f, row_group_size=int(1e8), data_page_size=512)
     f.seek(0)
     assert_frame_equal(pl.from_arrow(pq.read_table(f)), df)  # type: ignore[arg-type]
+
+
+@pytest.mark.write_disk()
+def test_parquet_struct_categorical(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame(
+        [
+            pl.Series("a", ["bob"], pl.Categorical),
+            pl.Series("b", ["foo"], pl.Categorical),
+        ]
+    )
+
+    file_path = tmp_path / "categorical.parquet"
+    df.write_parquet(file_path)
+
+    with pl.StringCache():
+        out = pl.read_parquet(file_path).select(pl.col("b").value_counts())
+    assert out.to_dict(as_series=False) == {"b": [{"b": "foo", "count": 1}]}
+
+
+@pytest.mark.write_disk()
+def test_null_parquet(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame([pl.Series("foo", [], dtype=pl.Int8)])
+    file_path = tmp_path / "null.parquet"
+    df.write_parquet(file_path)
+    out = pl.read_parquet(file_path)
+    assert_frame_equal(out, df)
