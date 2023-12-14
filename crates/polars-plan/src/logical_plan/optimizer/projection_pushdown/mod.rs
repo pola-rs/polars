@@ -655,6 +655,8 @@ impl ProjectionPushDown {
                 lp_arena,
                 expr_arena,
             ),
+            #[cfg(feature = "horizontal_concat")]
+            lp @ HConcat { .. } => Ok(lp), // TODO
             // These nodes only have inputs and exprs, so we can use same logic.
             lp @ Slice { .. } | lp @ Sink { .. } => process_generic(
                 self,

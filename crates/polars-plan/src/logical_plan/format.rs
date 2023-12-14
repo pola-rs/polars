@@ -96,6 +96,16 @@ impl LogicalPlan {
                 }
                 write!(f, "\n{:indent$}END {}", "", name)
             },
+            #[cfg(feature = "horizontal_concat")]
+            HConcat { inputs, .. } => {
+                let sub_sub_indent = sub_indent + 2;
+                write!(f, "{:indent$}HCONCAT", "")?;
+                for (i, plan) in inputs.iter().enumerate() {
+                    write!(f, "\n{:sub_indent$}PLAN {i}:", "")?;
+                    plan._format(f, sub_sub_indent)?;
+                }
+                write!(f, "\n{:indent$}END HCONCAT", "")
+            },
             Cache { input, id, count } => {
                 write!(f, "{:indent$}CACHE[id: {:x}, count: {}]", "", *id, *count)?;
                 input._format(f, sub_indent)

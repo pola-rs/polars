@@ -286,6 +286,21 @@ pub fn concat_lf_diagonal(
 }
 
 #[pyfunction]
+pub fn concat_lf_horizontal(lfs: &PyAny) -> PyResult<PyLazyFrame> {
+    let iter = lfs.iter()?;
+
+    let lfs = iter
+        .map(|item| {
+            let item = item?;
+            get_lf(item)
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+
+    let lf = dsl::functions::concat_lf_horizontal(lfs).map_err(PyPolarsErr::from)?;
+    Ok(lf.into())
+}
+
+#[pyfunction]
 pub fn concat_expr(e: Vec<PyExpr>, rechunk: bool) -> PyResult<PyExpr> {
     let e = e.to_exprs();
     let e = dsl::functions::concat_expr(e, rechunk).map_err(PyPolarsErr::from)?;

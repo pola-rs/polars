@@ -169,6 +169,54 @@ pub fn concat_lf_diagonal<L: AsRef<[LazyFrame]>>(
     concat(lfs_with_all_columns, args)
 }
 
+#[cfg(feature = "horizontal_concat")]
+/// Concat [LazyFrame]s horizontally.
+pub fn concat_lf_horizontal<L: AsRef<[LazyFrame]>>(inputs: L) -> PolarsResult<LazyFrame> {
+    let lfs = inputs.as_ref();
+    let mut opt_state = lfs.first().map(|lf| lf.opt_state).ok_or_else(
+        || polars_err!(NoData: "Require at least one LazyFrame for horizontal concatenation"),
+    )?;
+
+    for lf in &lfs[1..] {
+        // ensure we enable file caching if any lf has it enabled
+        opt_state.file_caching |= lf.opt_state.file_caching;
+    }
+
+    let schema_size = lfs
+        .iter()
+        .map(|lf| lf.schema().map(|schema| schema.len()))
+        .sum::<PolarsResult<_>>()?;
+    let mut column_names = PlHashSet::with_capacity(schema_size);
+    let mut combined_schema = Schema::with_capacity(schema_size);
+
+    let mut lps = Vec::with_capacity(lfs.len());
+
+    for lf in lfs.iter() {
+        let mut lf = lf.clone();
+        let schema = lf.schema()?;
+        schema.iter().try_for_each(|(name, dtype)| {
+            if !column_names.contains(name) {
+                column_names.insert(name.clone());
+                combined_schema.with_column(name.clone(), dtype.clone());
+                Ok(())
+            } else {
+               Err(polars_err!(Duplicate: "Column with name '{}' has more than one occurrence", name))
+            }
+        })?;
+        let lp = std::mem::take(&mut lf.logical_plan);
+        lps.push(lp);
+    }
+
+    let lp = LogicalPlan::HConcat {
+        inputs: lps,
+        schema: Arc::new(combined_schema),
+    };
+    let mut lf = LazyFrame::from(lp);
+    lf.opt_state = opt_state;
+
+    Ok(lf)
+}
+
 #[derive(Clone, Copy)]
 pub struct UnionArgs {
     pub parallel: bool,
@@ -247,6 +295,40 @@ mod test {
             "b" => [Some("a"), Some("b"), Some("a"), Some("b"), None, None],
             "c" => [None, None, Some(1), Some(2), Some(1), Some(2)],
             "d" => [None, None, None, None, Some(1), Some(2)]
+        ]?;
+
+        assert!(out.equals_missing(&expected));
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "horizontal_concat")]
+    fn test_horizontal_concat_lf() -> PolarsResult<()> {
+        let a = df![
+            "a1" => [1, 2, 3],
+            "a2" => ["a", "b", "c"]
+        ]?;
+
+        let b = df![
+            "b1" => [0.25, 0.5],
+        ]?;
+
+        let c = df![
+            "c1" => [1, 2, 3, 4],
+            "c2" => [5, 6, 7, 8],
+            "c3" => [9, 10, 11, 12]
+        ]?;
+
+        let out = concat_lf_horizontal(&[a.lazy(), b.lazy(), c.lazy()])?.collect()?;
+
+        let expected = df![
+            "a1" => [Some(1), Some(2), Some(3), None],
+            "a2" => [Some("a"), Some("b"), Some("c"), None],
+            "b1" => [Some(0.25), Some(0.5), None, None],
+            "c1" => [Some(1), Some(2), Some(3), Some(4)],
+            "c2" => [Some(5), Some(6), Some(7), Some(8)],
+            "c3" => [Some(9), Some(10), Some(11), Some(12)],
         ]?;
 
         assert!(out.equals_missing(&expected));

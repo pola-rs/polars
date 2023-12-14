@@ -164,6 +164,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_lf_diagonal))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::concat_lf_horizontal))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::dtype_cols))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::duration))

@@ -75,11 +75,16 @@ def test_concat_diagonal(
         assert_frame_equal(out, expected)
 
 
-def test_concat_horizontal() -> None:
+@pytest.mark.parametrize("lazy", [False, True])
+def test_concat_horizontal(lazy: bool) -> None:
     a = pl.DataFrame({"a": ["a", "b"], "b": [1, 2]})
     b = pl.DataFrame({"c": [5, 7, 8, 9], "d": [1, 2, 1, 2], "e": [1, 2, 1, 2]})
 
-    out = pl.concat([a, b], how="horizontal")
+    if lazy:
+        out = pl.concat([a.lazy(), b.lazy()], how="horizontal").collect()
+    else:
+        out = pl.concat([a, b], how="horizontal")
+
     expected = pl.DataFrame(
         {
             "a": ["a", "b", None, None],
@@ -90,6 +95,33 @@ def test_concat_horizontal() -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+def test_concat_horizontal_single_df(lazy: bool) -> None:
+    a = pl.DataFrame({"a": ["a", "b"], "b": [1, 2]})
+
+    if lazy:
+        out = pl.concat([a.lazy()], how="horizontal").collect()
+    else:
+        out = pl.concat([a], how="horizontal")
+
+    expected = a
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+def test_concat_horizontal_duplicate_col(lazy: bool) -> None:
+    a = pl.DataFrame({"a": ["a", "b"], "b": [1, 2]})
+    b = pl.DataFrame({"c": [5, 7, 8, 9], "d": [1, 2, 1, 2], "a": [1, 2, 1, 2]})
+
+    if lazy:
+        dfs: list[pl.DataFrame] | list[pl.LazyFrame] = [a.lazy(), b.lazy()]
+    else:
+        dfs = [a, b]
+
+    with pytest.raises(pl.DuplicateError):
+        pl.concat(dfs, how="horizontal")  # type: ignore[type-var]
 
 
 def test_concat_vertical() -> None:

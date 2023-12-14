@@ -35,7 +35,6 @@ def concat(
         DataFrames, LazyFrames, or Series to concatenate.
     how : {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'align'}
         Series only support the `vertical` strategy.
-        LazyFrames do not support the `horizontal` strategy.
 
         * vertical: Applies multiple `vstack` operations.
         * vertical_relaxed: Same as `vertical`, but additionally coerces columns to
@@ -226,10 +225,14 @@ def concat(
                     to_supertypes=how.endswith("relaxed"),
                 )
             )
-        else:
-            allowed = ", ".join(
-                repr(m) for m in get_args(ConcatMethod) if m != "horizontal"
+        elif how == "horizontal":
+            return wrap_ldf(
+                plr.concat_lf_horizontal(
+                    elems,
+                )
             )
+        else:
+            allowed = ", ".join(repr(m) for m in get_args(ConcatMethod))
             raise ValueError(
                 f"LazyFrame `how` must be one of {{{allowed}}}, got {how!r}"
             )

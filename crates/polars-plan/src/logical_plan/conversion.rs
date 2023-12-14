@@ -199,6 +199,14 @@ pub fn to_alp(
                 .collect::<PolarsResult<_>>()?;
             ALogicalPlan::Union { inputs, options }
         },
+        #[cfg(feature = "horizontal_concat")]
+        LogicalPlan::HConcat { inputs, schema } => {
+            let inputs = inputs
+                .into_iter()
+                .map(|lp| to_alp(lp, expr_arena, lp_arena))
+                .collect::<PolarsResult<_>>()?;
+            ALogicalPlan::HConcat { inputs, schema }
+        },
         LogicalPlan::Selection { input, predicate } => {
             let i = to_alp(*input, expr_arena, lp_arena)?;
             let p = to_aexpr(predicate, expr_arena);
@@ -630,6 +638,17 @@ impl ALogicalPlan {
                     .map(|node| convert_to_lp(node, lp_arena))
                     .collect();
                 LogicalPlan::Union { inputs, options }
+            },
+            #[cfg(feature = "horizontal_concat")]
+            ALogicalPlan::HConcat { inputs, schema } => {
+                let inputs = inputs
+                    .into_iter()
+                    .map(|node| convert_to_lp(node, lp_arena))
+                    .collect();
+                LogicalPlan::HConcat {
+                    inputs,
+                    schema: schema.clone(),
+                }
             },
             ALogicalPlan::Slice { input, offset, len } => {
                 let lp = convert_to_lp(input, lp_arena);
