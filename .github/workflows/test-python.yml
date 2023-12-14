@@ -29,7 +29,7 @@ defaults:
     shell: bash
 
 jobs:
-  ubuntu:
+  test-python:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
