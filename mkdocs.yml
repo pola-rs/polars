@@ -15,7 +15,6 @@ nav:
     - user-guide/installation.md
     - Basics:
       - user-guide/basics/index.md
-      - user-guide/basics/series-dataframes.md
       - user-guide/basics/reading-writing.md
       - user-guide/basics/expressions.md
       - user-guide/basics/joins.md

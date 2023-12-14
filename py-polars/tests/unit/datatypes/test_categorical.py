@@ -196,14 +196,6 @@ def test_nested_cache_composition() -> None:
     assert pl.using_string_cache() is False
 
 
-def test_categorical_max_null_5437() -> None:
-    assert (
-        pl.DataFrame({"strings": ["c", "b", "a", "c"], "values": [0, 1, 2, 3]})
-        .with_columns(pl.col("strings").cast(pl.Categorical).alias("cats"))
-        .select(pl.all().max())
-    ).to_dict(as_series=False) == {"strings": ["c"], "values": [3], "cats": [None]}
-
-
 def test_categorical_in_struct_nulls() -> None:
     s = pl.Series(
         "job", ["doctor", "waiter", None, None, None, "doctor"], pl.Categorical

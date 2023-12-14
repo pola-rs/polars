@@ -22,21 +22,46 @@ def test_df_describe() -> None:
     )
 
     result = df.describe()
-
     expected = pl.DataFrame(
-        [
-            ("count", 3.0, 2.0, 3.0, 2, 2, 3),
-            ("null_count", 0.0, 1.0, 0.0, 1, 1, 0),
-            ("mean", 2.266667, 4.5, 0.666667, None, None, "2020-12-31 16:00:00"),
-            ("std", 1.101514, 0.707107, 0.57735, None, None, None),
-            ("min", 1.0, 4.0, 0.0, "b", None, "2020-01-01"),
-            ("25%", 1.0, 4.0, None, None, None, None),
-            ("50%", 2.8, 5.0, None, None, None, None),
-            ("75%", 3.0, 5.0, None, None, None, None),
-            ("max", 3.0, 5.0, 1.0, "c", None, "2022-01-01"),
-        ],
-        schema=["describe"] + df.columns,
-        schema_overrides={"e": pl.Utf8},
+        {
+            "describe": [
+                "count",
+                "null_count",
+                "mean",
+                "std",
+                "min",
+                "25%",
+                "50%",
+                "75%",
+                "max",
+            ],
+            "a": [
+                3.0,
+                0.0,
+                2.2666666666666666,
+                1.1015141094572205,
+                1.0,
+                1.0,
+                2.8,
+                3.0,
+                3.0,
+            ],
+            "b": [2.0, 1.0, 4.5, 0.7071067811865476, 4.0, 4.0, 5.0, 5.0, 5.0],
+            "c": ["3", "0", None, None, "False", None, None, None, "True"],
+            "d": ["2", "1", None, None, "b", None, None, None, "c"],
+            "e": ["2", "1", None, None, None, None, None, None, None],
+            "f": [
+                "3",
+                "0",
+                "2020-12-31 16:00:00",
+                None,
+                "2020-01-01",
+                None,
+                None,
+                None,
+                "2022-01-01",
+            ],
+        }
     )
     assert_frame_equal(result, expected)
 

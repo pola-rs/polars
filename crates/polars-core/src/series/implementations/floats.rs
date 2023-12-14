@@ -295,23 +295,23 @@ macro_rules! impl_dyn_series {
                 ChunkShift::shift(&self.0, periods).into_series()
             }
 
-            fn _sum_as_series(&self) -> Series {
-                ChunkAggSeries::sum_as_series(&self.0)
+            fn _sum_as_series(&self) -> PolarsResult<Series> {
+                Ok(ChunkAggSeries::sum_as_series(&self.0))
             }
-            fn max_as_series(&self) -> Series {
-                ChunkAggSeries::max_as_series(&self.0)
+            fn max_as_series(&self) -> PolarsResult<Series> {
+                Ok(ChunkAggSeries::max_as_series(&self.0))
             }
-            fn min_as_series(&self) -> Series {
-                ChunkAggSeries::min_as_series(&self.0)
+            fn min_as_series(&self) -> PolarsResult<Series> {
+                Ok(ChunkAggSeries::min_as_series(&self.0))
             }
-            fn median_as_series(&self) -> Series {
-                QuantileAggSeries::median_as_series(&self.0)
+            fn median_as_series(&self) -> PolarsResult<Series> {
+                Ok(QuantileAggSeries::median_as_series(&self.0))
             }
-            fn var_as_series(&self, ddof: u8) -> Series {
-                VarAggSeries::var_as_series(&self.0, ddof)
+            fn var_as_series(&self, ddof: u8) -> PolarsResult<Series> {
+                Ok(VarAggSeries::var_as_series(&self.0, ddof))
             }
-            fn std_as_series(&self, ddof: u8) -> Series {
-                VarAggSeries::std_as_series(&self.0, ddof)
+            fn std_as_series(&self, ddof: u8) -> PolarsResult<Series> {
+                Ok(VarAggSeries::std_as_series(&self.0, ddof))
             }
             fn quantile_as_series(
                 &self,
