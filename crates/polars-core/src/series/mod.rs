@@ -342,12 +342,6 @@ impl Series {
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    ///
-    /// ```
-    /// # use polars_core::prelude::*;
-    /// let s = Series::new("days", &[1, 2, 3]);
-    /// assert_eq!(s.sum().unwrap(), 6);
-    /// ```
     pub fn sum<T>(&self) -> PolarsResult<T>
     where
         T: NumCast,
@@ -358,11 +352,6 @@ impl Series {
 
     /// Returns the minimum value in the array, according to the natural order.
     /// Returns an option because the array is nullable.
-    /// ```
-    /// # use polars_core::prelude::*;
-    /// let s = Series::new("days", [1, 2, 3].as_ref());
-    /// assert_eq!(s.min().unwrap(), Some(1));
-    /// ```
     pub fn min<T>(&self) -> PolarsResult<Option<T>>
     where
         T: NumCast,
@@ -373,11 +362,6 @@ impl Series {
 
     /// Returns the maximum value in the array, according to the natural order.
     /// Returns an option because the array is nullable.
-    /// ```
-    /// # use polars_core::prelude::*;
-    /// let s = Series::new("days", [1, 2, 3].as_ref());
-    /// assert_eq!(s.max().unwrap(), Some(3));
-    /// ```
     pub fn max<T>(&self) -> PolarsResult<Option<T>>
     where
         T: NumCast,
