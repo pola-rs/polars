@@ -41,7 +41,7 @@ pub fn deserialize_iter<'a>(
         buf.push(',');
 
         let next_row_length = row_iter.peek().map(|row| row.len()).unwrap_or(0);
-        if buf.len() + next_row_length > std::u32::MAX as usize {
+        if buf.len() + next_row_length >= std::u32::MAX as usize {
             let _ = buf.pop();
             buf.push(']');
             arr.push(_deserializer(&mut buf, data_type.clone())?);
