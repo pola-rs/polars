@@ -1,3 +1,5 @@
+use arrow::array::Array;
+use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use simd_json::BorrowedValue;
 
 use super::*;
@@ -17,24 +19,45 @@ pub fn deserialize_iter<'a>(
     buf_size: usize,
     count: usize,
 ) -> PolarsResult<ArrayRef> {
-    let mut buf = String::with_capacity(buf_size + count + 2);
+    let mut arr: Vec<Box<dyn Array>> = Vec::new();
+    let mut buf =
+        String::with_capacity(std::cmp::min(buf_size + count + 2, std::u32::MAX as usize));
     buf.push('[');
-    for row in rows {
+
+    fn _deserializer(s: &mut str, data_type: ArrowDataType) -> PolarsResult<Box<dyn Array>> {
+        let slice = unsafe { s.as_bytes_mut() };
+        let out = simd_json::to_borrowed_value(slice)
+            .map_err(|e| PolarsError::ComputeError(format!("json parsing error: '{e}'").into()))?;
+        Ok(if let BorrowedValue::Array(rows) = out {
+            super::super::json::deserialize::_deserialize(&rows, data_type.clone())
+        } else {
+            unreachable!()
+        })
+    }
+    let mut row_iter = rows.peekable();
+
+    while let Some(row) = row_iter.next() {
         buf.push_str(row);
-        buf.push(',')
+        buf.push(',');
+
+        let next_row_length = row_iter.peek().map(|row| row.len()).unwrap_or(0);
+        if buf.len() + next_row_length >= std::u32::MAX as usize {
+            let _ = buf.pop();
+            buf.push(']');
+            arr.push(_deserializer(&mut buf, data_type.clone())?);
+            buf.clear();
+            buf.push('[');
+        }
     }
     if buf.len() > 1 {
         let _ = buf.pop();
     }
     buf.push(']');
-    let slice = unsafe { buf.as_bytes_mut() };
-    let out = simd_json::to_borrowed_value(slice)
-        .map_err(|e| PolarsError::ComputeError(format!("json parsing error: '{e}'").into()))?;
-    if let BorrowedValue::Array(rows) = out {
-        Ok(super::super::json::deserialize::_deserialize(
-            &rows, data_type,
-        ))
+
+    if arr.is_empty() {
+        _deserializer(&mut buf, data_type.clone())
     } else {
-        unreachable!()
+        arr.push(_deserializer(&mut buf, data_type.clone())?);
+        concatenate_owned_unchecked(&arr)
     }
 }
