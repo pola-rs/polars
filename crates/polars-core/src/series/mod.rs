@@ -346,7 +346,7 @@ impl Series {
     /// ```
     /// # use polars_core::prelude::*;
     /// let s = Series::new("days", &[1, 2, 3]);
-    /// assert_eq!(s.sum(), Some(6));
+    /// assert_eq!(s.sum().unwrap(), 6);
     /// ```
     pub fn sum<T>(&self) -> PolarsResult<T>
     where
@@ -361,7 +361,7 @@ impl Series {
     /// ```
     /// # use polars_core::prelude::*;
     /// let s = Series::new("days", [1, 2, 3].as_ref());
-    /// assert_eq!(s.min(), Some(1));
+    /// assert_eq!(s.min().unwrap(), Some(1));
     /// ```
     pub fn min<T>(&self) -> PolarsResult<Option<T>>
     where
@@ -376,7 +376,7 @@ impl Series {
     /// ```
     /// # use polars_core::prelude::*;
     /// let s = Series::new("days", [1, 2, 3].as_ref());
-    /// assert_eq!(s.max(), Some(3));
+    /// assert_eq!(s.max().unwrap(), Some(3));
     /// ```
     pub fn max<T>(&self) -> PolarsResult<Option<T>>
     where
