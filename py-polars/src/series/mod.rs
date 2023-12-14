@@ -773,7 +773,7 @@ mod test {
 
         let s = unsafe { std::mem::transmute::<PySeries, Series>(ps.clone()) };
 
-        assert_eq!(s.sum::<i32>(), Some(6));
+        assert_eq!(s.sum::<i32>().unwrap(), 6);
         let collection = vec![ps];
         let s = collection.to_series();
         assert_eq!(
