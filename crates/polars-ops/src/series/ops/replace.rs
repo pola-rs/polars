@@ -12,11 +12,10 @@ pub fn replace(s: &Series, old: &Series, new: &Series) -> PolarsResult<Series> {
         return s.cast(&output_dtype);
     }
     if new.len() == 1 {
-        return replace_many_to_one(s, old, new, s);
+        return replace_by_single(s, old, new, s);
     }
 
-    let (replaced, mask) = get_replaced(s, old, new)?;
-    coalesce_replaced(&replaced, s, &mask)
+    replace_by_multiple(s, old, new, s)
 }
 
 pub fn replace_with_default(
@@ -26,7 +25,6 @@ pub fn replace_with_default(
     default: &Series,
 ) -> PolarsResult<Series> {
     let output_dtype = try_get_supertype(new.dtype(), default.dtype())?;
-
     let default = match default.len() {
         len if len == s.len() => default.cast(&output_dtype)?,
         1 => default.cast(&output_dtype)?.new_from_index(0, s.len()),
@@ -42,53 +40,38 @@ pub fn replace_with_default(
         return Ok(default);
     }
     if new.len() == 1 {
-        return replace_many_to_one(s, old, new, &default);
+        return replace_by_single(s, old, new, &default);
     }
 
-    let (replaced, mask) = get_replaced(s, old, new)?;
-    coalesce_replaced(&replaced, &default, &mask)
+    replace_by_multiple(s, old, new, &default)
 }
 
 // Fast path for replacing by a single value
-fn replace_many_to_one(
+fn replace_by_single(
     s: &Series,
     old: &Series,
     new: &Series,
     default: &Series,
 ) -> PolarsResult<Series> {
-    let condition = is_in(s, old)?;
-    let new = new.new_from_index(0, default.len());
-    new.zip_with(&condition, default)
+    let mask = is_in(s, old)?;
+    let new_broadcast = new.new_from_index(0, default.len());
+    new_broadcast.zip_with(&mask, default)
 }
 
-/// Create a Series containing only the replaced values and nulls everywhere else.
-fn get_replaced(s: &Series, old: &Series, new: &Series) -> PolarsResult<(Series, Series)> {
-    // length 1 is many-to-one replace, otherwise it's one-to-one
+/// General case for replacing by multiple values
+fn replace_by_multiple(
+    s: &Series,
+    old: &Series,
+    new: &Series,
+    default: &Series,
+) -> PolarsResult<Series> {
     polars_ensure!(
-        (new.len() == old.len()) || new.len() == 1,
+        new.len() == old.len(),
         ComputeError: "`new` input for `replace` must have the same length as `old` or have length 1"
     );
 
     let df = DataFrame::new_no_checks(vec![s.clone()]);
-
-    // Build replacer dataframe
-    let mut old = if old.dtype() == s.dtype() {
-        old.clone()
-    } else {
-        old.cast(s.dtype())?
-    };
-    old.rename("__POLARS_REPLACE_OLD");
-
-    let mut new = new.clone();
-    new.rename("__POLARS_REPLACE_NEW");
-
-    let replacer = if new.null_count() > 0 {
-        // If we replace some values by null, we need to track which values were replaced
-        let mask = Series::new("__POLARS_REPLACE_MASK", &[true]).new_from_index(0, new.len());
-        DataFrame::new_no_checks(vec![old, new, mask])
-    } else {
-        DataFrame::new_no_checks(vec![old, new])
-    };
+    let replacer = create_replacer(s, old, new)?;
 
     let joined = df.join(
         &replacer,
@@ -103,14 +86,31 @@ fn get_replaced(s: &Series, old: &Series, new: &Series) -> PolarsResult<(Series,
 
     let replaced = joined.column("__POLARS_REPLACE_NEW").unwrap().clone();
     let mask = match joined.column("__POLARS_REPLACE_MASK").ok() {
-        Some(col) => col.clone(),
-        None => replaced.is_not_null().into_series(),
+        Some(col) => col.bool()?.clone(),
+        None => replaced.is_not_null(),
     };
 
-    Ok((replaced, mask))
+    replaced.zip_with(&mask, default)
 }
 
-/// Coalesce the replaced values with another column to get the final result.
-fn coalesce_replaced(replaced: &Series, other: &Series, mask: &Series) -> PolarsResult<Series> {
-    replaced.zip_with(mask.bool()?, other)
+// Build replacer dataframe
+fn create_replacer(s: &Series, old: &Series, new: &Series) -> PolarsResult<DataFrame> {
+    let mut old = if old.dtype() == s.dtype() {
+        old.clone()
+    } else {
+        old.cast(s.dtype())?
+    };
+    old.rename("__POLARS_REPLACE_OLD");
+
+    let mut new = new.clone();
+    new.rename("__POLARS_REPLACE_NEW");
+
+    let out = if new.null_count() > 0 {
+        // If we replace some values by null, we need to track which values were replaced
+        let mask = Series::new("__POLARS_REPLACE_MASK", &[true]).new_from_index(0, new.len());
+        DataFrame::new_no_checks(vec![old, new, mask])
+    } else {
+        DataFrame::new_no_checks(vec![old, new])
+    };
+    Ok(out)
 }
