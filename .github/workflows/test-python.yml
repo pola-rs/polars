@@ -75,6 +75,12 @@ jobs:
           source activate
           maturin develop
 
+      - name: Run doctests
+        if: github.ref_name != 'main' && matrix.python-version == '3.12' && matrix.os == 'ubuntu-latest'
+        run: |
+          python tests/docs/run_doctest.py
+          pytest tests/docs/test_user_guide.py -m docs
+  
       - name: Run tests and report coverage
         if: github.ref_name != 'main'
         env:
@@ -87,12 +93,6 @@ jobs:
       - name: Run tests async reader tests
         if: github.ref_name != 'main' && matrix.os != 'windows-latest'
         run: POLARS_FORCE_ASYNC=1 pytest -m "not benchmark and not docs" tests/unit/io/
-
-      - name: Run doctests
-        if: github.ref_name != 'main' && matrix.python-version == '3.12' && matrix.os == 'ubuntu-latest'
-        run: |
-          python tests/docs/run_doctest.py
-          pytest tests/docs/test_user_guide.py -m docs
 
       - name: Check import without optional dependencies
         if: github.ref_name != 'main' && matrix.python-version == '3.12' && matrix.os == 'ubuntu-latest'
