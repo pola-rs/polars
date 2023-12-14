@@ -179,7 +179,8 @@ impl DataType {
         let is_cat = false;
 
         let phys = self.to_physical();
-        (phys.is_numeric() || matches!(phys, DataType::Binary | DataType::Boolean)) && !is_cat
+        (phys.is_numeric() || matches!(phys, DataType::Binary | DataType::Utf8 | DataType::Boolean))
+            && !is_cat
     }
 
     /// Check if this [`DataType`] is a Decimal type (of any scale/precision).
