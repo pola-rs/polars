@@ -172,6 +172,75 @@ def test_equality_enum() -> None:
         _ = pl.Series(["d", "d", "d", "c"], dtype=pl.Utf8) == s2
 
 
+def test_equality_missing_enum() -> None:
+    dtype = pl.Enum(["a", "b", "c"])
+    df = pl.DataFrame(
+        {
+            "a": pl.Series([None, "a", "b", "c"], dtype=dtype),
+            "b": pl.Series([None, "b", "b", "c"], dtype=dtype),
+            "c": pl.Series([None, "b", "b", "c"]),
+        }
+    )
+
+    for col in ["b", "c"]:
+        out = df.select(pl.col("a").eq_missing(pl.col(col)).alias("cmp")).get_column(
+            "cmp"
+        )
+        expected = pl.Series("cmp", [True, False, True, True], dtype=pl.Boolean)
+        assert_series_equal(out, expected)
+
+    for col in ["b", "c"]:
+        out = df.select(pl.col("a").ne_missing(pl.col(col)).alias("cmp")).get_column(
+            "cmp"
+        )
+        expected = pl.Series("cmp", [False, True, False, False], dtype=pl.Boolean)
+        assert_series_equal(out, expected)
+
+
+def test_equality_missing_enum_scalar() -> None:
+    dtype = pl.Enum(["a", "b", "c"])
+    df = pl.DataFrame({"a": pl.Series([None, "a", "b", "c"], dtype=dtype)})
+
+    out = df.select(
+        pl.col("a").eq_missing(pl.lit("c", dtype=dtype)).alias("cmp")
+    ).get_column("cmp")
+    expected = pl.Series("cmp", [False, False, False, True], dtype=pl.Boolean)
+    assert_series_equal(out, expected)
+
+    out_utf8 = df.select(pl.col("a").eq_missing(pl.lit("c")).alias("cmp")).get_column(
+        "cmp"
+    )
+    assert_series_equal(out_utf8, expected)
+
+    out = df.select(
+        pl.col("a").ne_missing(pl.lit("c", dtype=dtype)).alias("cmp")
+    ).get_column("cmp")
+    expected = pl.Series("cmp", [True, True, True, False], dtype=pl.Boolean)
+    assert_series_equal(out, expected)
+
+    out_utf8 = df.select(pl.col("a").ne_missing(pl.lit("c")).alias("cmp")).get_column(
+        "cmp"
+    )
+    assert_series_equal(out_utf8, expected)
+
+
+def test_equality_missing_enum_none_scalar() -> None:
+    dtype = pl.Enum(["a", "b", "c"])
+    df = pl.DataFrame({"a": pl.Series([None, "a", "b", "c"], dtype=dtype)})
+
+    out = df.select(
+        pl.col("a").eq_missing(pl.lit(None, dtype=dtype)).alias("cmp")
+    ).get_column("cmp")
+    expected = pl.Series("cmp", [True, False, False, False], dtype=pl.Boolean)
+    assert_series_equal(out, expected)
+
+    out = df.select(
+        pl.col("a").ne_missing(pl.lit(None, dtype=dtype)).alias("cmp")
+    ).get_column("cmp")
+    expected = pl.Series("cmp", [False, True, True, True], dtype=pl.Boolean)
+    assert_series_equal(out, expected)
+
+
 @pytest.mark.parametrize(
     ("op", "expected"),
     [

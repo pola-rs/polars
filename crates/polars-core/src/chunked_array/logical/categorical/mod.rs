@@ -151,17 +151,19 @@ impl CategoricalChunked {
             .physical()
             .into_iter()
             .map(|opt_v: Option<u32>| {
-                opt_v
-                    .map(|v| {
-                        idx_map.get(&v).copied().ok_or_else(|| {
-                            polars_err!(
-                                not_in_enum,
-                                value = old_rev_map.get(v),
-                                categories = &categories
-                            )
-                        })
-                    })
-                    .transpose()
+                let Some(v) = opt_v else {
+                    return Ok(None);
+                };
+
+                let Some(idx) = idx_map.get(&v) else {
+                    polars_bail!(
+                        not_in_enum,
+                        value = old_rev_map.get(v),
+                        categories = &categories
+                    );
+                };
+
+                Ok(Some(*idx))
             })
             .collect::<PolarsResult<_>>()?;
 

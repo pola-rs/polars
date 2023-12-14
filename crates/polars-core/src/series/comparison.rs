@@ -7,6 +7,7 @@ use super::Series;
 use crate::apply_method_physical_numeric;
 use crate::prelude::*;
 use crate::series::arithmetic::coerce_lhs_rhs;
+use crate::series::nulls::replace_non_null;
 
 macro_rules! impl_compare {
     ($self:expr, $rhs:expr, $method:ident) => {{
@@ -218,7 +219,13 @@ impl ChunkCompare<&str> for Series {
     }
 
     fn equal_missing(&self, rhs: &str) -> Self::Item {
-        self.equal(rhs)
+        validate_types(self.dtype(), &DataType::Utf8)?;
+        match self.dtype() {
+            DataType::Utf8 => Ok(self.utf8().unwrap().equal_missing(rhs)),
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(_, _) => self.categorical().unwrap().equal_missing(rhs),
+            _ => Ok(replace_non_null(self.name(), self.0.chunks(), false)),
+        }
     }
 
     fn not_equal(&self, rhs: &str) -> PolarsResult<BooleanChunked> {
@@ -232,7 +239,13 @@ impl ChunkCompare<&str> for Series {
     }
 
     fn not_equal_missing(&self, rhs: &str) -> Self::Item {
-        self.not_equal(rhs)
+        validate_types(self.dtype(), &DataType::Utf8)?;
+        match self.dtype() {
+            DataType::Utf8 => Ok(self.utf8().unwrap().not_equal_missing(rhs)),
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(_, _) => self.categorical().unwrap().not_equal_missing(rhs),
+            _ => Ok(replace_non_null(self.name(), self.0.chunks(), true)),
+        }
     }
 
     fn gt(&self, rhs: &str) -> PolarsResult<BooleanChunked> {
