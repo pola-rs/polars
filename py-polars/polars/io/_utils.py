@@ -54,7 +54,7 @@ def _prepare_file_arg(
     file: str | list[str] | TextIO | Path | BinaryIO | bytes,
     encoding: str | None = None,
     *,
-    use_pyarrow: bool | None = None,
+    use_pyarrow: bool = False,
     raise_if_empty: bool = True,
     **kwargs: Any,
 ) -> ContextManager[str | BinaryIO | list[str] | list[BinaryIO]]:
