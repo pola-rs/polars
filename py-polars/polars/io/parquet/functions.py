@@ -152,8 +152,6 @@ def read_parquet(
                 rechunk=rechunk,
             )
 
-    print(type(source))
-
     lf = scan_parquet(
         source,
         n_rows=n_rows,
