@@ -452,23 +452,23 @@ impl<'a> AnyValue<'a> {
     }
 
     pub fn strict_cast(&self, dtype: &'a DataType) -> PolarsResult<AnyValue<'a>> {
-        macro_rules! cast_numeric(
-            ($av:expr) => {
-                match dtype {
-                    DataType::UInt8 => AnyValue::UInt8($av.try_extract::<u8>()?),
-                    DataType::UInt16 => AnyValue::UInt16($av.try_extract::<u16>()?),
-                    DataType::UInt32 => AnyValue::UInt32($av.try_extract::<u32>()?),
-                    DataType::UInt64 => AnyValue::UInt64($av.try_extract::<u64>()?),
-                    DataType::Int8 => AnyValue::Int8($av.try_extract::<i8>()?),
-                    DataType::Int16 => AnyValue::Int16($av.try_extract::<i16>()?),
-                    DataType::Int32 => AnyValue::Int32($av.try_extract::<i32>()?),
-                    DataType::Int64 => AnyValue::Int64($av.try_extract::<i64>()?),
-                    DataType::Float32 => AnyValue::Float32($av.try_extract::<f32>()?),
-                    DataType::Float64 => AnyValue::Float64($av.try_extract::<f64>()?),
-                    _ => polars_bail!(ComputeError: "cannot cast any-value {:?} to dtype '{}'", $av, dtype),
-                }
-            }
-        );
+        fn cast_numeric<'a>(av: &AnyValue, dtype: &'a DataType) -> PolarsResult<AnyValue<'a>> {
+            Ok(match dtype {
+                DataType::UInt8 => AnyValue::UInt8(av.try_extract::<u8>()?),
+                DataType::UInt16 => AnyValue::UInt16(av.try_extract::<u16>()?),
+                DataType::UInt32 => AnyValue::UInt32(av.try_extract::<u32>()?),
+                DataType::UInt64 => AnyValue::UInt64(av.try_extract::<u64>()?),
+                DataType::Int8 => AnyValue::Int8(av.try_extract::<i8>()?),
+                DataType::Int16 => AnyValue::Int16(av.try_extract::<i16>()?),
+                DataType::Int32 => AnyValue::Int32(av.try_extract::<i32>()?),
+                DataType::Int64 => AnyValue::Int64(av.try_extract::<i64>()?),
+                DataType::Float32 => AnyValue::Float32(av.try_extract::<f32>()?),
+                DataType::Float64 => AnyValue::Float64(av.try_extract::<f64>()?),
+                _ => {
+                    polars_bail!(ComputeError: "cannot cast any-value {:?} to dtype '{}'", av, dtype)
+                },
+            })
+        }
 
         let new_av = match self {
             _ if (self.is_boolean()
@@ -490,7 +490,7 @@ impl<'a> AnyValue<'a> {
                     DataType::Utf8 => {
                         AnyValue::Utf8Owned(format_smartstring!("{}", self.try_extract::<i64>()?))
                     },
-                    _ => cast_numeric!(self),
+                    _ => return cast_numeric(self, dtype),
                 }
             },
             #[cfg(feature = "dtype-datetime")]
@@ -517,14 +517,14 @@ impl<'a> AnyValue<'a> {
                     };
                     AnyValue::Time(ns_since_midnight)
                 },
-                _ => cast_numeric!(self),
+                _ => return cast_numeric(self, dtype),
             },
             #[cfg(feature = "dtype-duration")]
             AnyValue::Duration(v, _) => match dtype {
                 DataType::Time | DataType::Date | DataType::Datetime(_, _) => {
                     polars_bail!(ComputeError: "cannot cast any-value {:?} to dtype '{}'", v, dtype)
                 },
-                _ => cast_numeric!(self),
+                _ => return cast_numeric(self, dtype),
             },
             #[cfg(feature = "dtype-time")]
             AnyValue::Time(v) => match dtype {
@@ -538,7 +538,7 @@ impl<'a> AnyValue<'a> {
                     };
                     AnyValue::Duration(duration_value, *tu)
                 },
-                _ => cast_numeric!(self),
+                _ => return cast_numeric(self, dtype),
             },
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => match dtype {
@@ -554,7 +554,7 @@ impl<'a> AnyValue<'a> {
                     let value = func(ndt);
                     AnyValue::Datetime(value, *tu, &None)
                 },
-                _ => cast_numeric!(self),
+                _ => return cast_numeric(self, dtype),
             },
             _ => polars_bail!(ComputeError: "cannot cast non numeric any-value to numeric dtype"),
         };
