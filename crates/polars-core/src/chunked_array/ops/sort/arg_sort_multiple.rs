@@ -31,7 +31,7 @@ pub(crate) fn arg_sort_multiple_impl<T: TotalOrd + Send + Copy>(
     let compare_inner: Vec<_> = options
         .other
         .iter()
-        .map(|s| s.into_partial_ord_inner())
+        .map(|s| s.into_total_ord_inner())
         .collect_trusted();
 
     let first_descending = descending[0];

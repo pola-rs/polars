@@ -5,7 +5,7 @@ use arrow::legacy::prelude::QuantileInterpolOptions;
 
 use super::{private, IntoSeries, SeriesTrait, *};
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::ops::compare_inner::{IntoPartialOrdInner, PartialOrdInner};
+use crate::chunked_array::ops::compare_inner::{IntoTotalOrdInner, TotalOrdInner};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
 #[cfg(feature = "algorithm_group_by")]
@@ -90,11 +90,11 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
             .zip_with(mask, other.categorical()?)
             .map(|ca| ca.into_series())
     }
-    fn into_partial_ord_inner<'a>(&'a self) -> Box<dyn PartialOrdInner + 'a> {
+    fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
         if self.0.uses_lexical_ordering() {
-            (&self.0).into_partial_ord_inner()
+            (&self.0).into_total_ord_inner()
         } else {
-            self.0.physical().into_partial_ord_inner()
+            self.0.physical().into_total_ord_inner()
         }
     }
 

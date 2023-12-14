@@ -4,7 +4,7 @@ use std::borrow::Cow;
 use ahash::RandomState;
 
 use crate::chunked_array::object::PolarsObjectSafe;
-use crate::chunked_array::ops::compare_inner::{IntoPartialEqInner, PartialEqInner};
+use crate::chunked_array::ops::compare_inner::{IntoTotalEqInner, TotalEqInner};
 #[cfg(feature = "chunked_ids")]
 use crate::chunked_array::ops::take::TakeChunked;
 use crate::chunked_array::Settings;
@@ -53,8 +53,8 @@ where
         self.0.agg_list(groups)
     }
 
-    fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
-        (&self.0).into_partial_eq_inner()
+    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
+        (&self.0).into_total_eq_inner()
     }
 
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {

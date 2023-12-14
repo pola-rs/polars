@@ -15,7 +15,7 @@ use crate::frame::group_by::{GroupsIdx, IdxItem};
 use crate::hashing::{
     _df_rows_to_hashes_threaded_vertical, series_to_hashes, IdBuildHasher, IdxHash, *,
 };
-use crate::prelude::compare_inner::PartialEqInner;
+use crate::prelude::compare_inner::TotalEqInner;
 use crate::prelude::*;
 use crate::utils::{flatten, split_df, CustomIterTools};
 use crate::POOL;
@@ -318,7 +318,7 @@ where
 
 #[inline]
 pub(crate) unsafe fn compare_keys<'a>(
-    keys_cmp: &'a [Box<dyn PartialEqInner + 'a>],
+    keys_cmp: &'a [Box<dyn TotalEqInner + 'a>],
     idx_a: usize,
     idx_b: usize,
 ) -> bool {
@@ -330,7 +330,7 @@ pub(crate) unsafe fn compare_keys<'a>(
     true
 }
 
-// Differs in the because this one uses the PartialEqInner trait objects
+// Differs in the because this one uses the TotalEqInner trait objects
 // is faster when multiple chunks. Not yet used in join.
 pub(crate) fn populate_multiple_key_hashmap2<'a, V, H, F, G>(
     hash_tbl: &mut HashMap<IdxHash, V, H>,
@@ -340,7 +340,7 @@ pub(crate) fn populate_multiple_key_hashmap2<'a, V, H, F, G>(
     original_h: u64,
     // keys of the hash table (will not be inserted, the indexes will be used)
     // the keys are needed for the equality check
-    keys_cmp: &'a [Box<dyn PartialEqInner + 'a>],
+    keys_cmp: &'a [Box<dyn TotalEqInner + 'a>],
     // value to insert
     vacant_fn: G,
     // function that gets a mutable ref to the occupied value in the hash table
@@ -391,7 +391,7 @@ pub(crate) fn group_by_threaded_multiple_keys_flat(
     // trait object to compare inner types.
     let keys_cmp = keys
         .iter()
-        .map(|s| s.into_partial_eq_inner())
+        .map(|s| s.into_total_eq_inner())
         .collect::<Vec<_>>();
 
     // We will create a hashtable in every thread.
@@ -473,7 +473,7 @@ pub(crate) fn group_by_multiple_keys(keys: DataFrame, sorted: bool) -> PolarsRes
     // trait object to compare inner types.
     let keys_cmp = keys
         .iter()
-        .map(|s| s.into_partial_eq_inner())
+        .map(|s| s.into_total_eq_inner())
         .collect::<Vec<_>>();
 
     // IndexMap, the indexes are stored in flat vectors

@@ -44,7 +44,7 @@ pub(crate) mod private {
     use ahash::RandomState;
 
     use super::*;
-    use crate::chunked_array::ops::compare_inner::{PartialEqInner, PartialOrdInner};
+    use crate::chunked_array::ops::compare_inner::{TotalEqInner, TotalOrdInner};
     use crate::chunked_array::Settings;
     #[cfg(feature = "algorithm_group_by")]
     use crate::frame::group_by::GroupsProxy;
@@ -96,12 +96,12 @@ pub(crate) mod private {
             invalid_operation_panic!(equal_element, self)
         }
         #[allow(clippy::wrong_self_convention)]
-        fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
-            invalid_operation_panic!(into_partial_eq_inner, self)
+        fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
+            invalid_operation_panic!(into_total_eq_inner, self)
         }
         #[allow(clippy::wrong_self_convention)]
-        fn into_partial_ord_inner<'a>(&'a self) -> Box<dyn PartialOrdInner + 'a> {
-            invalid_operation_panic!(into_partial_ord_inner, self)
+        fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
+            invalid_operation_panic!(into_total_ord_inner, self)
         }
         fn vec_hash(&self, _build_hasher: RandomState, _buf: &mut Vec<u64>) -> PolarsResult<()> {
             polars_bail!(opq = vec_hash, self._dtype());
