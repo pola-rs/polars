@@ -37,6 +37,8 @@ from polars.datatypes import (
     INTEGER_DTYPES,
     N_INFER_DEFAULT,
     Boolean,
+    Categorical,
+    Enum,
     Float64,
     Null,
     Object,
@@ -4317,6 +4319,12 @@ class DataFrame:
         -----
         The median is included by default as the 50% percentile.
 
+        Warning
+        -------
+        We will never guarantee the output of describe to be stable.
+        It will show statistics that we deem informative and may
+        be updated in the future.
+
         See Also
         --------
         glimpse
@@ -4326,12 +4334,12 @@ class DataFrame:
         >>> from datetime import date
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": [1.0, 2.8, 3.0],
-        ...         "b": [4, 5, None],
-        ...         "c": [True, False, True],
-        ...         "d": [None, "b", "c"],
-        ...         "e": ["usd", "eur", None],
-        ...         "f": [date(2020, 1, 1), date(2021, 1, 1), date(2022, 1, 1)],
+        ...         "float": [1.0, 2.8, 3.0],
+        ...         "int": [4, 5, None],
+        ...         "bool": [True, False, True],
+        ...         "str": [None, "b", "c"],
+        ...         "str2": ["usd", "eur", None],
+        ...         "date": [date(2020, 1, 1), date(2021, 1, 1), date(2022, 1, 1)],
         ...     }
         ... )
         >>> df.describe()
@@ -4357,9 +4365,7 @@ class DataFrame:
             raise TypeError("cannot describe a DataFrame without any columns")
 
         # Determine which columns should get std/mean/percentile statistics
-        stat_cols = {
-            c for c, dt in self.schema.items() if dt.is_numeric() or dt == Boolean
-        }
+        stat_cols = {c for c, dt in self.schema.items() if dt.is_numeric()}
 
         # Determine metrics and optional/additional percentiles
         metrics = ["count", "null_count", "mean", "std", "min"]
@@ -4384,7 +4390,8 @@ class DataFrame:
         minmax_cols = {
             c
             for c, dt in self.schema.items()
-            if not dt.is_nested() and dt not in (Object, Null, Unknown)
+            if not dt.is_nested()
+            and dt not in (Object, Null, Unknown, Categorical, Enum)
         }
         min_exprs = [
             (F.col(c).min() if c in minmax_cols else F.lit(None)).alias(f"min:{c}")
@@ -8312,7 +8319,7 @@ class DataFrame:
             axis = 0
 
         if axis == 0:
-            return self._from_pydf(self._df.max())
+            return self.lazy().max().collect(_eager=True)  # type: ignore[return-value]
         if axis == 1:
             return wrap_s(self._df.max_horizontal())
         raise ValueError("axis should be 0 or 1")
@@ -8401,7 +8408,7 @@ class DataFrame:
             axis = 0
 
         if axis == 0:
-            return self._from_pydf(self._df.min())
+            return self.lazy().min().collect(_eager=True)  # type: ignore[return-value]
         if axis == 1:
             return wrap_s(self._df.min_horizontal())
         raise ValueError("axis should be 0 or 1")
@@ -8514,7 +8521,7 @@ class DataFrame:
             axis = 0
 
         if axis == 0:
-            return self._from_pydf(self._df.sum())
+            return self.lazy().sum().collect(_eager=True)  # type: ignore[return-value]
         if axis == 1:
             if null_strategy == "ignore":
                 ignore_nulls = True
@@ -8642,7 +8649,7 @@ class DataFrame:
             axis = 0
 
         if axis == 0:
-            return self._from_pydf(self._df.mean())
+            return self.lazy().mean().collect(_eager=True)  # type: ignore[return-value]
         if axis == 1:
             if null_strategy == "ignore":
                 ignore_nulls = True
@@ -8729,7 +8736,7 @@ class DataFrame:
         └──────────┴──────────┴──────┘
 
         """
-        return self._from_pydf(self._df.std(ddof))
+        return self.lazy().std(ddof).collect(_eager=True)  # type: ignore[return-value]
 
     def var(self, ddof: int = 1) -> Self:
         """
@@ -8771,7 +8778,7 @@ class DataFrame:
         └──────────┴──────────┴──────┘
 
         """
-        return self._from_pydf(self._df.var(ddof))
+        return self.lazy().var(ddof).collect(_eager=True)  # type: ignore[return-value]
 
     def median(self) -> Self:
         """
@@ -8797,7 +8804,7 @@ class DataFrame:
         └─────┴─────┴──────┘
 
         """
-        return self._from_pydf(self._df.median())
+        return self.lazy().median().collect(_eager=True)  # type: ignore[return-value]
 
     def product(self) -> DataFrame:
         """
@@ -8824,7 +8831,14 @@ class DataFrame:
         └─────┴──────┴─────┘
 
         """
-        return self.select(F.all().product())
+        exprs = []
+        for name, dt in self.schema.items():
+            if dt.is_numeric() or isinstance(dt, Boolean):
+                exprs.append(F.col(name).product())
+            else:
+                exprs.append(F.lit(None).alias(name))
+
+        return self.select(exprs)
 
     def quantile(
         self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
@@ -8859,7 +8873,7 @@ class DataFrame:
         └─────┴─────┴──────┘
 
         """
-        return self._from_pydf(self._df.quantile(quantile, interpolation))
+        return self.lazy().quantile(quantile, interpolation).collect(_eager=True)  # type: ignore[return-value]
 
     def to_dummies(
         self,

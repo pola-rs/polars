@@ -248,15 +248,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         ChunkShift::shift(&self.0, periods).into_series()
     }
 
-    fn _sum_as_series(&self) -> Series {
-        ChunkAggSeries::sum_as_series(&self.0)
-    }
-    fn max_as_series(&self) -> Series {
-        ChunkAggSeries::max_as_series(&self.0)
-    }
-    fn min_as_series(&self) -> Series {
-        ChunkAggSeries::min_as_series(&self.0)
-    }
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }

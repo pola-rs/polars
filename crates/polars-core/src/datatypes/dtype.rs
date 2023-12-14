@@ -166,6 +166,22 @@ impl DataType {
         self.is_float() || self.is_integer()
     }
 
+    /// Check if this [`DataType`] is a basic numeric type (excludes Decimal).
+    pub fn is_bool(&self) -> bool {
+        matches!(self, DataType::Boolean)
+    }
+
+    /// Check if type is sortable
+    pub fn is_ord(&self) -> bool {
+        #[cfg(feature = "dtype-categorical")]
+        let is_cat = matches!(self, DataType::Categorical(_, _));
+        #[cfg(not(feature = "dtype-categorical"))]
+        let is_cat = false;
+
+        let phys = self.to_physical();
+        (phys.is_numeric() || matches!(phys, DataType::Binary | DataType::Boolean)) && !is_cat
+    }
+
     /// Check if this [`DataType`] is a Decimal type (of any scale/precision).
     pub fn is_decimal(&self) -> bool {
         match self {

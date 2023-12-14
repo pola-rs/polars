@@ -270,46 +270,52 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         ChunkShift::shift(&self.0, periods).into_series()
     }
 
-    fn _sum_as_series(&self) -> Series {
-        ChunkAggSeries::sum_as_series(&self.0)
+    fn _sum_as_series(&self) -> PolarsResult<Series> {
+        Ok(ChunkAggSeries::sum_as_series(&self.0))
     }
-    fn max_as_series(&self) -> Series {
-        ChunkAggSeries::max_as_series(&self.0)
+    fn max_as_series(&self) -> PolarsResult<Series> {
+        Ok(ChunkAggSeries::max_as_series(&self.0))
     }
-    fn min_as_series(&self) -> Series {
-        ChunkAggSeries::min_as_series(&self.0)
+    fn min_as_series(&self) -> PolarsResult<Series> {
+        Ok(ChunkAggSeries::min_as_series(&self.0))
     }
-    fn median_as_series(&self) -> Series {
+    fn median_as_series(&self) -> PolarsResult<Series> {
         // first convert array to f32 as that's cheaper
         // finally the single value to f64
-        self.0
+        Ok(self
+            .0
             .cast(&DataType::Float32)
             .unwrap()
             .median_as_series()
-            .cast(&DataType::Float64)
             .unwrap()
+            .cast(&DataType::Float64)
+            .unwrap())
     }
     /// Get the variance of the Series as a new Series of length 1.
-    fn var_as_series(&self, _ddof: u8) -> Series {
+    fn var_as_series(&self, _ddof: u8) -> PolarsResult<Series> {
         // first convert array to f32 as that's cheaper
         // finally the single value to f64
-        self.0
+        Ok(self
+            .0
             .cast(&DataType::Float32)
             .unwrap()
             .var_as_series(_ddof)
-            .cast(&DataType::Float64)
             .unwrap()
+            .cast(&DataType::Float64)
+            .unwrap())
     }
     /// Get the standard deviation of the Series as a new Series of length 1.
-    fn std_as_series(&self, _ddof: u8) -> Series {
+    fn std_as_series(&self, _ddof: u8) -> PolarsResult<Series> {
         // first convert array to f32 as that's cheaper
         // finally the single value to f64
-        self.0
+        Ok(self
+            .0
             .cast(&DataType::Float32)
             .unwrap()
             .std_as_series(_ddof)
-            .cast(&DataType::Float64)
             .unwrap()
+            .cast(&DataType::Float64)
+            .unwrap())
     }
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))

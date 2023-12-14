@@ -590,8 +590,9 @@ impl PySeries {
         self.series.shrink_to_fit();
     }
 
-    fn dot(&self, other: &PySeries) -> Option<f64> {
-        self.series.dot(&other.series)
+    fn dot(&self, other: &PySeries) -> PyResult<f64> {
+        let out = self.series.dot(&other.series).map_err(PyPolarsErr::from)?;
+        Ok(out)
     }
 
     #[cfg(feature = "ipc_streaming")]

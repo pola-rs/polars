@@ -527,41 +527,13 @@ impl BinaryChunked {
 
 impl ChunkAggSeries for BinaryChunked {
     fn sum_as_series(&self) -> Series {
-        BinaryChunked::full_null(self.name(), 1).into_series()
+        unimplemented!()
     }
     fn max_as_series(&self) -> Series {
         Series::new(self.name(), [self.max_binary()])
     }
     fn min_as_series(&self) -> Series {
         Series::new(self.name(), [self.min_binary()])
-    }
-}
-
-impl ChunkAggSeries for ListChunked {
-    fn sum_as_series(&self) -> Series {
-        ListChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype()).into_series()
-    }
-    fn max_as_series(&self) -> Series {
-        ListChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype()).into_series()
-    }
-    fn min_as_series(&self) -> Series {
-        ListChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype()).into_series()
-    }
-}
-
-#[cfg(feature = "dtype-array")]
-impl ChunkAggSeries for ArrayChunked {
-    fn sum_as_series(&self) -> Series {
-        ArrayChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype(), self.width())
-            .into_series()
-    }
-    fn max_as_series(&self) -> Series {
-        ArrayChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype(), self.width())
-            .into_series()
-    }
-    fn min_as_series(&self) -> Series {
-        ArrayChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype(), self.width())
-            .into_series()
     }
 }
 
