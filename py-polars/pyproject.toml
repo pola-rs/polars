@@ -175,6 +175,10 @@ ignore = [
   "D206",
   "W191",
 ]
+
+[tool.ruff.format]
+docstring-code-format = true
+
 [tool.ruff.pycodestyle]
 max-doc-length = 88
 

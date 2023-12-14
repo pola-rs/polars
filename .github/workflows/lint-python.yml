@@ -34,9 +34,6 @@ jobs:
       - name: Run ruff formatter
         run: ruff format --diff .
 
-      - name: Run blackdoc
-        run: blackdoc --diff .
-
   mypy:
     runs-on: ubuntu-latest
     strategy:
