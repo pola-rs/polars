@@ -6249,14 +6249,14 @@ class Series:
 
     def replace(
         self,
-        old: IntoExpr | Mapping[Any, Any],
-        new: IntoExpr | NoDefault = no_default,
+        old: IntoExpr | Sequence[Any] | Mapping[Any, Any],
+        new: IntoExpr | Sequence[Any] | NoDefault = no_default,
         *,
         default: IntoExpr | NoDefault = no_default,
         return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
-        Replace values according to the given mapping.
+        Replace values by different values.
 
         Parameters
         ----------
@@ -6284,8 +6284,7 @@ class Series:
 
         Notes
         -----
-        Needs a global string cache for lazily evaluated queries on columns of
-        type `Categorical`.
+        The global string cache must be enabled when replacing categorical values.
 
         Examples
         --------

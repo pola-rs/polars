@@ -9124,8 +9124,7 @@ class Expr:
 
         Notes
         -----
-        Needs a global string cache for lazily evaluated queries on columns of
-        type `Categorical`.
+        The global string cache must be enabled when replacing categorical values.
 
         Examples
         --------
