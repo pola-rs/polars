@@ -122,7 +122,7 @@ fn test_outer_join() -> PolarsResult<()> {
         JoinArgs::new(JoinType::Outer { coalesce: true }),
     )?;
     assert_eq!(joined.height(), 5);
-    assert_eq!(joined.column("days")?.sum::<i32>(), Some(7));
+    assert_eq!(joined.column("days")?.sum::<i32>().unwrap(), 7);
 
     let df_left = df!(
             "a"=> ["a", "b", "a", "z"],

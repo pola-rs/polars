@@ -224,25 +224,6 @@ where
     fn as_any(&self) -> &dyn Any {
         &self.0
     }
-
-    fn _sum_as_series(&self) -> Series {
-        ObjectChunked::<T>::full_null(self.name(), 1).into_series()
-    }
-    fn max_as_series(&self) -> Series {
-        ObjectChunked::<T>::full_null(self.name(), 1).into_series()
-    }
-    fn min_as_series(&self) -> Series {
-        ObjectChunked::<T>::full_null(self.name(), 1).into_series()
-    }
-    fn median_as_series(&self) -> Series {
-        ObjectChunked::<T>::full_null(self.name(), 1).into_series()
-    }
-    fn var_as_series(&self, _ddof: u8) -> Series {
-        ObjectChunked::<T>::full_null(self.name(), 1).into_series()
-    }
-    fn std_as_series(&self, _ddof: u8) -> Series {
-        ObjectChunked::<T>::full_null(self.name(), 1).into_series()
-    }
 }
 
 #[cfg(test)]

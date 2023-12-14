@@ -590,8 +590,9 @@ impl PySeries {
         self.series.shrink_to_fit();
     }
 
-    fn dot(&self, other: &PySeries) -> Option<f64> {
-        self.series.dot(&other.series)
+    fn dot(&self, other: &PySeries) -> PyResult<f64> {
+        let out = self.series.dot(&other.series).map_err(PyPolarsErr::from)?;
+        Ok(out)
     }
 
     #[cfg(feature = "ipc_streaming")]
@@ -785,12 +786,14 @@ mod test {
 
         let s = unsafe { std::mem::transmute::<PySeries, Series>(ps.clone()) };
 
-        assert_eq!(s.sum::<i32>(), Some(6));
+        assert_eq!(s.sum::<i32>().unwrap(), 6);
         let collection = vec![ps];
         let s = collection.to_series();
         assert_eq!(
-            s.iter().map(|s| s.sum::<i32>()).collect::<Vec<_>>(),
-            vec![Some(6)]
+            s.iter()
+                .map(|s| s.sum::<i32>().unwrap())
+                .collect::<Vec<_>>(),
+            vec![6]
         );
     }
 }

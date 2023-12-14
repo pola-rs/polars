@@ -1447,14 +1447,6 @@ def test_true_divide() -> None:
     )
 
 
-def test_invalid_categorical() -> None:
-    s = pl.Series("cat_series", ["a", "b", "b", "c", "a"]).cast(pl.Categorical)
-    assert s.std() is None
-    assert s.var() is None
-    assert s.median() is None
-    assert s.quantile(0.5) is None
-
-
 def test_bitwise() -> None:
     a = pl.Series("a", [1, 2, 3])
     b = pl.Series("b", [3, 4, 5])

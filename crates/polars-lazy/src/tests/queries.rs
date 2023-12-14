@@ -214,7 +214,7 @@ fn test_lazy_binary_ops() {
         .select([col("a").eq(lit(2)).alias("foo")])
         .collect()
         .unwrap();
-    assert_eq!(new.column("foo").unwrap().sum::<i32>(), Some(1));
+    assert_eq!(new.column("foo").unwrap().sum::<i32>().unwrap(), 1);
 }
 
 #[test]

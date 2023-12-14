@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 
 use ahash::RandomState;
-use arrow::legacy::prelude::QuantileInterpolOptions;
 
 use super::{private, IntoSeries, SeriesTrait, *};
 use crate::chunked_array::comparison::*;
@@ -297,32 +296,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
 
     fn shift(&self, periods: i64) -> Series {
         self.with_state(false, |ca| ca.shift(periods)).into_series()
-    }
-
-    fn _sum_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.0.physical().name(), 1).into_series()
-    }
-    fn max_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.0.physical().name(), 1).into_series()
-    }
-    fn min_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.0.physical().name(), 1).into_series()
-    }
-    fn median_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.0.physical().name(), 1).into_series()
-    }
-    fn var_as_series(&self, _ddof: u8) -> Series {
-        CategoricalChunked::full_null(self.0.physical().name(), 1).into_series()
-    }
-    fn std_as_series(&self, _ddof: u8) -> Series {
-        CategoricalChunked::full_null(self.0.physical().name(), 1).into_series()
-    }
-    fn quantile_as_series(
-        &self,
-        _quantile: f64,
-        _interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Series> {
-        Ok(CategoricalChunked::full_null(self.0.physical().name(), 1).into_series())
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

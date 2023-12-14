@@ -412,28 +412,28 @@ pub trait SeriesTrait:
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    fn _sum_as_series(&self) -> Series {
-        Series::full_null(self.name(), 1, self.dtype())
+    fn _sum_as_series(&self) -> PolarsResult<Series> {
+        polars_bail!(opq = sum, self._dtype());
     }
     /// Get the max of the Series as a new Series of length 1.
-    fn max_as_series(&self) -> Series {
-        Series::full_null(self.name(), 1, self.dtype())
+    fn max_as_series(&self) -> PolarsResult<Series> {
+        polars_bail!(opq = max, self._dtype());
     }
     /// Get the min of the Series as a new Series of length 1.
-    fn min_as_series(&self) -> Series {
-        Series::full_null(self.name(), 1, self.dtype())
+    fn min_as_series(&self) -> PolarsResult<Series> {
+        polars_bail!(opq = min, self._dtype());
     }
     /// Get the median of the Series as a new Series of length 1.
-    fn median_as_series(&self) -> Series {
-        Series::full_null(self.name(), 1, self.dtype())
+    fn median_as_series(&self) -> PolarsResult<Series> {
+        polars_bail!(opq = median, self._dtype());
     }
     /// Get the variance of the Series as a new Series of length 1.
-    fn var_as_series(&self, _ddof: u8) -> Series {
-        Series::full_null(self.name(), 1, self.dtype())
+    fn var_as_series(&self, _ddof: u8) -> PolarsResult<Series> {
+        polars_bail!(opq = var, self._dtype());
     }
     /// Get the standard deviation of the Series as a new Series of length 1.
-    fn std_as_series(&self, _ddof: u8) -> Series {
-        Series::full_null(self.name(), 1, self.dtype())
+    fn std_as_series(&self, _ddof: u8) -> PolarsResult<Series> {
+        polars_bail!(opq = std, self._dtype());
     }
     /// Get the quantile of the ChunkedArray as a new Series of length 1.
     fn quantile_as_series(
@@ -441,7 +441,7 @@ pub trait SeriesTrait:
         _quantile: f64,
         _interpol: QuantileInterpolOptions,
     ) -> PolarsResult<Series> {
-        Ok(Series::full_null(self.name(), 1, self.dtype()))
+        polars_bail!(opq = quantile, self._dtype());
     }
 
     /// Clone inner ChunkedArray and wrap in a new Arc

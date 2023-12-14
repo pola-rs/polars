@@ -12,29 +12,19 @@ fn test_series_arithmetic() {
 }
 
 #[test]
-fn test_aggregates() {
-    let a = &Series::new("a", &[9, 11, 10]);
-    assert_eq!(a.max(), Some(11));
-    assert_eq!(a.min(), Some(9));
-    assert_eq!(a.sum(), Some(30));
-    assert_eq!(a.mean(), Some(10.0));
-    assert_eq!(a.median(), Some(10.0));
-}
-
-#[test]
 fn test_min_max_sorted_asc() {
     let a = &mut Series::new("a", &[1, 2, 3, 4]);
     a.set_sorted_flag(IsSorted::Ascending);
-    assert_eq!(a.max(), Some(4));
-    assert_eq!(a.min(), Some(1));
+    assert_eq!(a.max().unwrap(), Some(4));
+    assert_eq!(a.min().unwrap(), Some(1));
 }
 
 #[test]
 fn test_min_max_sorted_desc() {
     let a = &mut Series::new("a", &[4, 3, 2, 1]);
     a.set_sorted_flag(IsSorted::Descending);
-    assert_eq!(a.max(), Some(4));
-    assert_eq!(a.min(), Some(1));
+    assert_eq!(a.max().unwrap(), Some(4));
+    assert_eq!(a.min().unwrap(), Some(1));
 }
 
 #[test]

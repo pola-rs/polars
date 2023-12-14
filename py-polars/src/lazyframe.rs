@@ -866,44 +866,58 @@ impl PyLazyFrame {
         ldf.fill_nan(fill_value.inner).into()
     }
 
-    fn min(&self) -> Self {
+    fn min(&self) -> PyResult<Self> {
         let ldf = self.ldf.clone();
-        ldf.min().into()
+        let out = ldf.min().map_err(PyPolarsErr::from)?;
+        Ok(out.into())
     }
 
-    fn max(&self) -> Self {
+    fn max(&self) -> PyResult<Self> {
         let ldf = self.ldf.clone();
-        ldf.max().into()
+        let out = ldf.max().map_err(PyPolarsErr::from)?;
+        Ok(out.into())
     }
 
-    fn sum(&self) -> Self {
+    fn sum(&self) -> PyResult<Self> {
         let ldf = self.ldf.clone();
-        ldf.sum().into()
+        let out = ldf.sum().map_err(PyPolarsErr::from)?;
+        Ok(out.into())
     }
 
-    fn mean(&self) -> Self {
+    fn mean(&self) -> PyResult<Self> {
         let ldf = self.ldf.clone();
-        ldf.mean().into()
+        let out = ldf.mean().map_err(PyPolarsErr::from)?;
+        Ok(out.into())
     }
 
-    fn std(&self, ddof: u8) -> Self {
+    fn std(&self, ddof: u8) -> PyResult<Self> {
         let ldf = self.ldf.clone();
-        ldf.std(ddof).into()
+        let out = ldf.std(ddof).map_err(PyPolarsErr::from)?;
+        Ok(out.into())
     }
 
-    fn var(&self, ddof: u8) -> Self {
+    fn var(&self, ddof: u8) -> PyResult<Self> {
         let ldf = self.ldf.clone();
-        ldf.var(ddof).into()
+        let out = ldf.var(ddof).map_err(PyPolarsErr::from)?;
+        Ok(out.into())
     }
 
-    fn median(&self) -> Self {
+    fn median(&self) -> PyResult<Self> {
         let ldf = self.ldf.clone();
-        ldf.median().into()
+        let out = ldf.median().map_err(PyPolarsErr::from)?;
+        Ok(out.into())
     }
 
-    fn quantile(&self, quantile: PyExpr, interpolation: Wrap<QuantileInterpolOptions>) -> Self {
+    fn quantile(
+        &self,
+        quantile: PyExpr,
+        interpolation: Wrap<QuantileInterpolOptions>,
+    ) -> PyResult<Self> {
         let ldf = self.ldf.clone();
-        ldf.quantile(quantile.inner, interpolation.0).into()
+        let out = ldf
+            .quantile(quantile.inner, interpolation.0)
+            .map_err(PyPolarsErr::from)?;
+        Ok(out.into())
     }
 
     fn explode(&self, column: Vec<PyExpr>) -> Self {
