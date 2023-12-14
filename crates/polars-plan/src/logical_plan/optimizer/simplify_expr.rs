@@ -634,17 +634,11 @@ fn inline_cast(input: &AExpr, dtype: &DataType, strict: bool) -> PolarsResult<Op
                     #[cfg(feature = "dtype-struct")]
                     (_, DataType::Struct(_)) => return Ok(None),
                     (av, _) => {
-                        // raise in debug builds so we can fix them
-                        // in release we continue and apply the cast later
-                        #[cfg(debug_assertions)]
-                        let out = { av.cast(dtype)? };
-                        #[cfg(not(debug_assertions))]
-                        let out = {
-                            match av.cast(&dtype) {
-                                Ok(out) => out,
-                                Err(_) => return Ok(None),
-                            }
-                        };
+                        let out = if strict {
+                            av.strict_cast(dtype)
+                        } else {
+                            av.cast(dtype)
+                        }?;
                         out.try_into()?
                     },
                 }
