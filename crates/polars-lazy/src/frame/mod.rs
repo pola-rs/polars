@@ -1403,7 +1403,7 @@ impl LazyFrame {
         interpol: QuantileInterpolOptions,
     ) -> PolarsResult<LazyFrame> {
         self.stats_helper(
-            |dt| dt.is_numeric() || dt.is_bool(),
+            |dt| dt.is_numeric(),
             |name| col(name).quantile(quantile.clone(), interpol),
         )
     }
