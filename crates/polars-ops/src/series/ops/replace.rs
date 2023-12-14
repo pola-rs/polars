@@ -6,24 +6,7 @@ use crate::frame::join::*;
 use crate::prelude::*;
 use crate::series::is_in;
 
-pub fn replace(s: &Series, old: &Series, new: &Series) -> PolarsResult<Series> {
-    if old.len() == 0 {
-        let output_dtype = try_get_supertype(s.dtype(), new.dtype())?;
-        return s.cast(&output_dtype);
-    }
-    if new.len() == 1 {
-        return replace_by_single(s, old, new, s);
-    }
-
-    replace_by_multiple(s, old, new, s)
-}
-
-pub fn replace_with_default(
-    s: &Series,
-    old: &Series,
-    new: &Series,
-    default: &Series,
-) -> PolarsResult<Series> {
+pub fn replace(s: &Series, old: &Series, new: &Series, default: &Series) -> PolarsResult<Series> {
     let output_dtype = try_get_supertype(new.dtype(), default.dtype())?;
     let default = match default.len() {
         len if len == s.len() => default.cast(&output_dtype)?,
@@ -95,11 +78,7 @@ fn replace_by_multiple(
 
 // Build replacer dataframe
 fn create_replacer(s: &Series, old: &Series, new: &Series) -> PolarsResult<DataFrame> {
-    let mut old = if old.dtype() == s.dtype() {
-        old.clone()
-    } else {
-        old.cast(s.dtype())?
-    };
+    let mut old = old.cast(s.dtype())?;
     old.rename("__POLARS_REPLACE_OLD");
 
     let mut new = new.clone();
