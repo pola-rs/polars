@@ -104,7 +104,32 @@ class OpNames:
 # numpy functions that we can map to native expressions
 _NUMPY_MODULE_ALIASES = frozenset(("np", "numpy"))
 _NUMPY_FUNCTIONS = frozenset(
-    ("cbrt", "cos", "cosh", "sin", "sinh", "sqrt", "tan", "tanh")
+    (
+        # "abs",  # TODO: this one clashes with Python builtin abs
+        "arccos",
+        "arccosh",
+        "arcsin",
+        "arcsinh",
+        "arctan",
+        "arctanh",
+        "cbrt",
+        "ceil",
+        "cos",
+        "cosh",
+        "degrees",
+        "exp",
+        "floor",
+        "log",
+        "log10",
+        "log1p",
+        "radians",
+        "sign",
+        "sin",
+        "sinh",
+        "sqrt",
+        "tan",
+        "tanh",
+    )
 )
 
 # python functions that we can map to native expressions
