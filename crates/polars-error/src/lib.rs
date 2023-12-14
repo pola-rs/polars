@@ -219,6 +219,9 @@ macro_rules! polars_err {
     (unpack) => {
         polars_err!(SchemaMismatch: "cannot unpack series, data types don't match")
     };
+    (not_in_enum,value=$value:expr,categories=$categories:expr) =>{
+        polars_err!(ComputeError: "value '{}' is not present in Enum: {:?}",$value,$categories)
+    };
     (string_cache_mismatch) => {
         polars_err!(StringCacheMismatch: r#"
 cannot compare categoricals coming from different sources, consider setting a global StringCache.

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import io
-from typing import TYPE_CHECKING, Any
+import operator
+import re
+from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
 
@@ -11,7 +13,7 @@ from polars.exceptions import (
     CategoricalRemappingWarning,
     StringCacheMismatchError,
 )
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars.type_aliases import PolarsDataType
@@ -125,6 +127,77 @@ def test_unset_sorted_on_append() -> None:
     assert df.group_by("key").count()["count"].to_list() == [4, 4]
 
 
+def test_categorical_equality() -> None:
+    df_cat = pl.DataFrame(
+        [
+            pl.Series("a_cat", ["a", "b", "c", "c", "b", "a"], dtype=pl.Categorical),
+            pl.Series("b_cat", ["a", "b", "c", "a", "b", "c"], dtype=pl.Categorical),
+        ]
+    )
+    df_cat_eq = df_cat.filter(pl.col("a_cat") == pl.col("b_cat"))
+    assert df_cat_eq.select(pl.col("a_cat")).to_dict(as_series=False) == {
+        "a_cat": ["a", "b", "c", "b"]
+    }
+
+    df_cat_neq = df_cat.filter(pl.col("a_cat") != pl.col("b_cat"))
+    assert df_cat_neq.select(pl.col("a_cat")).to_dict(as_series=False) == {
+        "a_cat": ["c", "a"]
+    }
+
+
+def test_categorical_error_on_local_ordering() -> None:
+    df_cat = pl.DataFrame(
+        [
+            pl.Series("a_cat", ["c", "a", "b", "c", "b"], dtype=pl.Categorical),
+            pl.Series("b_cat", ["c", "a", "b", "c", "b"], dtype=pl.Categorical),
+        ]
+    )
+    for op in [operator.gt, operator.ge, operator.lt, operator.le]:
+        with pytest.raises(
+            pl.ComputeError,
+            match=re.escape(
+                "can not compare (<, <=, >, >=) two categoricals, unless they are of Enum type"
+            ),
+        ):
+            df_cat.filter(op(pl.col("a_cat"), pl.col("b_cat")))
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        (operator.le, pl.Series([None, True, True, True, True, True])),
+        (operator.lt, pl.Series([None, False, False, False, True, True])),
+        (operator.ge, pl.Series([None, True, True, True, False, False])),
+        (operator.gt, pl.Series([None, False, False, False, False, False])),
+    ],
+)
+def test_compare_categorical(
+    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
+) -> None:
+    s = pl.Series([None, "a", "b", "c", "b", "a"], dtype=pl.Categorical)
+    s2 = pl.Series([None, "a", "b", "c", "c", "b"])
+
+    assert_series_equal(op(s, s2), expected)
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        (operator.le, pl.Series([None, True, True, False, True, True])),
+        (operator.lt, pl.Series([None, True, False, False, False, True])),
+        (operator.ge, pl.Series([None, False, True, True, True, False])),
+        (operator.gt, pl.Series([None, False, False, True, False, False])),
+    ],
+)
+def test_compare_categorical_single(
+    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
+) -> None:
+    s = pl.Series([None, "a", "b", "c", "b", "a"], dtype=pl.Categorical)
+    s2 = "b"
+
+    assert_series_equal(op(s, s2), expected)  # type: ignore[arg-type]
+
+
 def test_categorical_error_on_local_cmp() -> None:
     df_cat = pl.DataFrame(
         [
@@ -133,11 +206,8 @@ def test_categorical_error_on_local_cmp() -> None:
         ]
     )
     with pytest.raises(
-        pl.ComputeError,
-        match=(
-            "cannot compare categoricals originating from different sources; consider"
-            " setting a global string cache"
-        ),
+        StringCacheMismatchError,
+        match="cannot compare categoricals coming from different sources",
     ):
         df_cat.filter(pl.col("a_cat") == pl.col("b_cat"))
 

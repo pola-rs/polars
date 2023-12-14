@@ -30,6 +30,7 @@ from polars.datatypes import (
     Datetime,
     Decimal,
     Duration,
+    Enum,
     Float64,
     Int8,
     Int16,
@@ -537,7 +538,7 @@ class Series:
             assert f is not None
             return self._from_pyseries(f(td))
 
-        elif self.dtype == Categorical and not isinstance(other, Series):
+        elif self.dtype in [Categorical, Enum] and not isinstance(other, Series):
             other = Series([other])
 
         elif isinstance(other, date) and self.dtype == Date:

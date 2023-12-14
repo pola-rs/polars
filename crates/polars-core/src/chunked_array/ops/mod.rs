@@ -29,7 +29,7 @@ pub mod gather;
 mod interpolate;
 #[cfg(feature = "zip_with")]
 pub(crate) mod min_max_binary;
-mod nulls;
+pub(crate) mod nulls;
 mod reverse;
 pub(crate) mod rolling_window;
 mod set;
