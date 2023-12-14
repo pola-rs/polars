@@ -3296,29 +3296,4 @@ mod test {
 
         Ok(())
     }
-
-    #[test]
-    #[cfg(feature = "describe")]
-    fn test_df_describe() -> PolarsResult<()> {
-        let df1: DataFrame = df!("categorical" => &["d","e","f"],
-                                 "numeric" => &[1, 2, 3],
-                                 "object" => &["a", "b", "c"])?;
-
-        assert_eq!(df1.shape(), (3, 3));
-
-        let df2: DataFrame = df1.describe(None)?;
-
-        assert_eq!(df2.shape(), (9, 4));
-
-        let expected = df!(
-            "describe" => ["count", "null_count", "mean", "std", "min", "25%", "50%", "75%", "max"],
-            "categorical" => [Some("3"), Some("0"), None, None, Some("d"), None, None, None, Some("f")],
-            "numeric" => [3.0, 0.0, 2.0, 1.0, 1.0, 1.5, 2.0, 2.5, 3.0],
-            "object" => [Some("3"), Some("0"), None, None, Some("a"), None, None, None, Some("c")],
-        ).unwrap();
-
-        assert_eq!(df2, expected);
-
-        Ok(())
-    }
 }

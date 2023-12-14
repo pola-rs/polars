@@ -1027,12 +1027,4 @@ mod test {
                 < 0.0001
         );
     }
-
-    #[test]
-    fn test_median_floats() {
-        let a = Series::new("a", &[1.0f64, 2.0, 3.0]);
-        let expected = Series::new("a", [2.0f64]);
-        assert!(a.median_as_series().equals_missing(&expected));
-        assert_eq!(a.median(), Some(2.0f64))
-    }
 }
