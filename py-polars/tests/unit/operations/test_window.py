@@ -283,7 +283,7 @@ def test_nested_aggregation_window_expression() -> None:
         {
             "x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 2, 13, 4, 15, 6, None, None, 19],
             "y": [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-            "foo": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, None, None, 1],
+            "foo": [None, 1, 1, 1, 1, 1, 1, 1, 1, 1, None, 1, 1, 1, 1, None, None, 1],
         },
         # Resulting column is Int32, see https://github.com/pola-rs/polars/issues/8041
         schema_overrides={"foo": pl.Int32},
