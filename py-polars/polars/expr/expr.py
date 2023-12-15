@@ -3599,7 +3599,7 @@ class Expr:
         │ --- │
         │ f64 │
         ╞═════╡
-        │ 1.0 │
+        │ 2.0 │
         └─────┘
         >>> df.select(pl.col("a").quantile(0.3, interpolation="higher"))
         shape: (1, 1)
