@@ -43,12 +43,12 @@ mod utils;
 use jemallocator::Jemalloc;
 #[cfg(any(not(target_family = "unix"), use_mimalloc))]
 use mimalloc::MiMalloc;
-#[cfg(feature = "object")]
-use on_startup::__register_startup_deps;
 use pyo3::panic::PanicException;
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 
+#[cfg(feature = "csv")]
+use crate::batched_csv::PyBatchedCsv;
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::error::{
@@ -61,6 +61,8 @@ use crate::functions::PyStringCacheHolder;
 use crate::lazyframe::PyLazyFrame;
 use crate::lazygroupby::PyLazyGroupBy;
 use crate::series::PySeries;
+#[cfg(feature = "sql")]
+use crate::sql::PySQLContext;
 
 #[global_allocator]
 #[cfg(all(target_family = "unix", not(use_mimalloc)))]
@@ -80,9 +82,9 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyExpr>().unwrap();
     m.add_class::<PyStringCacheHolder>().unwrap();
     #[cfg(feature = "csv")]
-    m.add_class::<batched_csv::PyBatchedCsv>().unwrap();
+    m.add_class::<PyBatchedCsv>().unwrap();
     #[cfg(feature = "sql")]
-    m.add_class::<sql::PySQLContext>().unwrap();
+    m.add_class::<PySQLContext>().unwrap();
 
     // Functions - eager
     m.add_wrapped(wrap_pyfunction!(functions::concat_df))
@@ -235,7 +237,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::dtype_str_repr))
         .unwrap();
     #[cfg(feature = "object")]
-    m.add_wrapped(wrap_pyfunction!(__register_startup_deps))
+    m.add_wrapped(wrap_pyfunction!(on_startup::__register_startup_deps))
         .unwrap();
 
     // Functions - random

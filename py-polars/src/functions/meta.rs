@@ -1,4 +1,3 @@
-use polars_core;
 use polars_core::fmt::FloatFmt;
 use polars_core::prelude::IDX_DTYPE;
 use polars_core::POOL;
