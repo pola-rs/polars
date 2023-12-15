@@ -55,7 +55,7 @@ def _prepare_file_arg(
 
 @overload
 def _prepare_file_arg(
-    file: str | list[str] | TextIO | Path | BinaryIO | bytes,
+    file: str | list[str] | Path | TextIO | BinaryIO | bytes,
     encoding: str | None = ...,
     *,
     use_pyarrow: bool = ...,
@@ -66,13 +66,13 @@ def _prepare_file_arg(
 
 
 def _prepare_file_arg(
-    file: str | list[str] | TextIO | Path | BinaryIO | bytes,
+    file: str | list[str] | Path | TextIO | BinaryIO | bytes,
     encoding: str | None = None,
     *,
     use_pyarrow: bool = False,
     raise_if_empty: bool = True,
     storage_options: dict[str, Any] | None = None,
-) -> ContextManager[str | BinaryIO | list[str] | list[BinaryIO]]:
+) -> ContextManager[str | list[str] | BinaryIO | list[BinaryIO]]:
     """
     Prepare file argument.
 
