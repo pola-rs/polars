@@ -116,8 +116,12 @@ pub(crate) fn coerce_data_type<A: Borrow<ArrowDataType>>(datatypes: &[A]) -> Arr
     if are_all_equal {
         return datatypes[0].borrow().clone();
     }
-
-    let are_all_structs = datatypes.iter().all(|x| matches!(x.borrow(), Struct(_)));
+    let mut are_all_structs = true;
+    let mut are_all_lists = true;
+    for dt in datatypes {
+        are_all_structs &= matches!(dt.borrow(), Struct(_));
+        are_all_lists &= matches!(dt.borrow(), LargeList(_));
+    }
 
     if are_all_structs {
         // all are structs => union of all fields (that may have equal names)
@@ -153,6 +157,22 @@ pub(crate) fn coerce_data_type<A: Borrow<ArrowDataType>>(datatypes: &[A]) -> Arr
             })
             .collect();
         return Struct(fields);
+    } else if are_all_lists {
+        let inner_types: Vec<&ArrowDataType> = datatypes
+            .iter()
+            .map(|dt| {
+                if let LargeList(inner) = dt.borrow() {
+                    inner.data_type()
+                } else {
+                    unreachable!();
+                }
+            })
+            .collect();
+        return LargeList(Box::new(Field::new(
+            ITEM_NAME,
+            coerce_data_type(inner_types.as_slice()),
+            true,
+        )));
     } else if datatypes.len() > 2 {
         return LargeUtf8;
     }
