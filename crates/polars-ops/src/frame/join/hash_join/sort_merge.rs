@@ -222,12 +222,14 @@ pub fn _sort_or_hash_inner(
                 eprintln!("right key will be descending sorted in inner join operation.")
             }
 
-            let sort_idx = s_right.arg_sort(SortOptions {
-                descending: false,
-                nulls_last: false,
-                multithreaded: true,
-                maintain_order: false,
-            }).unwrap();
+            let sort_idx = s_right
+                .arg_sort(SortOptions {
+                    descending: false,
+                    nulls_last: false,
+                    multithreaded: true,
+                    maintain_order: false,
+                })
+                .unwrap();
             let s_right = unsafe { s_right.take_unchecked(&sort_idx) };
             let ids = par_sorted_merge_inner_no_nulls(s_left, &s_right);
             let reverse_idx_map = create_reverse_map_from_arg_sort(sort_idx);
@@ -249,12 +251,14 @@ pub fn _sort_or_hash_inner(
                 eprintln!("left key will be descending sorted in inner join operation.")
             }
 
-            let sort_idx = s_left.arg_sort(SortOptions {
-                descending: false,
-                nulls_last: false,
-                multithreaded: true,
-                maintain_order: false,
-            }).unwrap();
+            let sort_idx = s_left
+                .arg_sort(SortOptions {
+                    descending: false,
+                    nulls_last: false,
+                    multithreaded: true,
+                    maintain_order: false,
+                })
+                .unwrap();
             let s_left = unsafe { s_left.take_unchecked(&sort_idx) };
             let ids = par_sorted_merge_inner_no_nulls(&s_left, s_right);
             let reverse_idx_map = create_reverse_map_from_arg_sort(sort_idx);
@@ -320,12 +324,14 @@ pub(super) fn sort_or_hash_left(
                 eprintln!("right key will be reverse sorted in left join operation.")
             }
 
-            let sort_idx = s_right.arg_sort(SortOptions {
-                descending: false,
-                nulls_last: false,
-                multithreaded: true,
-                maintain_order: false,
-            }).unwrap();
+            let sort_idx = s_right
+                .arg_sort(SortOptions {
+                    descending: false,
+                    nulls_last: false,
+                    multithreaded: true,
+                    maintain_order: false,
+                })
+                .unwrap();
             let s_right = unsafe { s_right.take_unchecked(&sort_idx) };
 
             let ids = par_sorted_merge_left(s_left, &s_right);

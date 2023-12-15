@@ -205,7 +205,13 @@ where
         let iter = ca
             .downcast_iter()
             .map(|arr| arr.iter().map(|opt| opt.copied()));
-        Ok(arg_sort::arg_sort(ca.name(), iter, options, ca.null_count(), ca.len()))
+        Ok(arg_sort::arg_sort(
+            ca.name(),
+            iter,
+            options,
+            ca.null_count(),
+            ca.len(),
+        ))
     }
 }
 
@@ -245,11 +251,11 @@ impl<T> ChunkSort<T> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn sort_with(&self, options: SortOptions) -> PolarsResult<ChunkedArray<T>>{
+    fn sort_with(&self, options: SortOptions) -> PolarsResult<ChunkedArray<T>> {
         sort_with_numeric(self, options)
     }
 
-    fn sort(&self, descending: bool) ->PolarsResult< ChunkedArray<T>> {
+    fn sort(&self, descending: bool) -> PolarsResult<ChunkedArray<T>> {
         self.sort_with(SortOptions {
             descending,
             ..Default::default()
@@ -546,7 +552,6 @@ impl<T: PolarsObject> ChunkSort<ObjectType<T>> for ObjectChunked<T> {
     fn arg_sort(&self, _options: SortOptions) -> PolarsResult<IdxCa> {
         polars_bail!(opq = arg_sort, self.dtype());
     }
-
 }
 
 pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series> {

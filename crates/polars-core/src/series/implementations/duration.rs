@@ -336,7 +336,8 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     }
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
-        Ok(self.0
+        Ok(self
+            .0
             .sort_with(options)
             .unwrap()
             .into_duration(self.0.time_unit())

@@ -97,7 +97,8 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
             descending,
             nulls_last: true,
             ..Default::default()
-        }).unwrap()
+        })
+        .unwrap()
         .slice(0, len - null_count);
 
     let chunk_refs: Vec<_> = s.chunks().iter().map(|c| &**c).collect();

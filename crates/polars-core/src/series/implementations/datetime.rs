@@ -288,7 +288,8 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     }
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
-        Ok(self.0
+        Ok(self
+            .0
             .sort_with(options)
             .unwrap()
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())

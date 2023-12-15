@@ -184,7 +184,9 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
     }
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
-        Ok(ChunkSort::sort_with(&self.0, options).unwrap().into_series())
+        Ok(ChunkSort::sort_with(&self.0, options)
+            .unwrap()
+            .into_series())
     }
 
     fn arg_sort(&self, options: SortOptions) -> PolarsResult<IdxCa> {

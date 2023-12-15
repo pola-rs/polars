@@ -174,12 +174,14 @@ impl Sink for SortSink {
             let io_thread = lock.as_ref().unwrap();
 
             let dist = Series::from_any_values("", &self.dist_sample, false).unwrap();
-            let dist = dist.sort_with(SortOptions {
-                descending: self.sort_args.descending[0],
-                nulls_last: self.sort_args.nulls_last,
-                multithreaded: true,
-                maintain_order: self.sort_args.maintain_order,
-            }).unwrap();
+            let dist = dist
+                .sort_with(SortOptions {
+                    descending: self.sort_args.descending[0],
+                    nulls_last: self.sort_args.nulls_last,
+                    multithreaded: true,
+                    maintain_order: self.sort_args.maintain_order,
+                })
+                .unwrap();
 
             block_thread_until_io_thread_done(io_thread);
 
