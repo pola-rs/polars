@@ -44,8 +44,7 @@ def read_parquet(
     ----------
     source
         Path to a file, or a file-like object. If the path is a directory, files in that
-        directory will all be read. If `fsspec` is installed, it will be used to open
-        remote files.
+        directory will all be read.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
         of column names.
@@ -106,6 +105,7 @@ def read_parquet(
         benchmarking the parquet-reader as `rechunk` can be an expensive operation
         that should not contribute to the timings.
     """
+    # Dispatch to pyarrow if requested
     if use_pyarrow:
         if not _PYARROW_AVAILABLE:
             raise ModuleNotFoundError(
@@ -133,10 +133,9 @@ def read_parquet(
                 )
             )
 
-    if isinstance(source, (BinaryIO, BytesIO, bytes)):
-        with _prepare_file_arg(
-            source, use_pyarrow=False, storage_options=storage_options
-        ) as source_prep:
+    # Read binary types using `read_parquet`
+    elif isinstance(source, (BinaryIO, BytesIO, bytes)):
+        with _prepare_file_arg(source, use_pyarrow=False) as source_prep:
             return pl.DataFrame._read_parquet(
                 source_prep,
                 columns=columns,
@@ -149,6 +148,7 @@ def read_parquet(
                 rechunk=rechunk,
             )
 
+    # For other inputs, defer to `scan_parquet`
     lf = scan_parquet(
         source,
         n_rows=n_rows,
@@ -165,10 +165,8 @@ def read_parquet(
     )
 
     if columns is not None:
-        # Handle columns specified as ints
         if is_int_sequence(columns):
             columns = [lf.columns[i] for i in columns]
-
         lf = lf.select(columns)
 
     return lf.collect(no_optimization=True)
