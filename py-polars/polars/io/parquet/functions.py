@@ -118,13 +118,12 @@ def read_parquet(
         import pyarrow.parquet
 
         pyarrow_options = pyarrow_options or {}
-        storage_options = storage_options or {}
 
         # TODO: Update _prepare_file_arg to handle list[Path] input
         with _prepare_file_arg(
             source,  # type: ignore[arg-type]
             use_pyarrow=use_pyarrow,
-            **storage_options,
+            storage_options=storage_options,
         ) as source_prep:
             return from_arrow(  # type: ignore[return-value]
                 pa.parquet.read_table(
@@ -136,10 +135,8 @@ def read_parquet(
             )
 
     if isinstance(source, (BinaryIO, BytesIO, bytes)):
-        storage_options = storage_options or {}
-
         with _prepare_file_arg(
-            source, use_pyarrow=use_pyarrow, **storage_options
+            source, use_pyarrow=use_pyarrow, storage_options=storage_options
         ) as source_prep:
             return pl.DataFrame._read_parquet(
                 source_prep,
