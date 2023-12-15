@@ -44,7 +44,7 @@ impl<'a, T> ChunkSet<'a, T::Native, T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn set_at_idx<I: IntoIterator<Item = IdxSize>>(
+    fn scatter_single<I: IntoIterator<Item = IdxSize>>(
         &'a self,
         idx: I,
         value: Option<T::Native>,
@@ -122,7 +122,7 @@ where
 }
 
 impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
-    fn set_at_idx<I: IntoIterator<Item = IdxSize>>(
+    fn scatter_single<I: IntoIterator<Item = IdxSize>>(
         &'a self,
         idx: I,
         value: Option<bool>,
@@ -174,7 +174,7 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
 }
 
 impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
-    fn set_at_idx<I: IntoIterator<Item = IdxSize>>(
+    fn scatter_single<I: IntoIterator<Item = IdxSize>>(
         &'a self,
         idx: I,
         opt_value: Option<&'a str>,
@@ -238,7 +238,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
 }
 
 impl<'a> ChunkSet<'a, &'a [u8], Vec<u8>> for BinaryChunked {
-    fn set_at_idx<I: IntoIterator<Item = IdxSize>>(
+    fn scatter_single<I: IntoIterator<Item = IdxSize>>(
         &'a self,
         idx: I,
         opt_value: Option<&'a [u8]>,
@@ -328,10 +328,10 @@ mod test {
         let ca = ca.set(&mask, Some(5)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(5), Some(2), Some(3)]);
 
-        let ca = ca.set_at_idx(vec![0, 1], Some(10)).unwrap();
+        let ca = ca.scatter_single(vec![0, 1], Some(10)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(10), Some(10), Some(3)]);
 
-        assert!(ca.set_at_idx(vec![0, 10], Some(0)).is_err());
+        assert!(ca.scatter_single(vec![0, 10], Some(0)).is_err());
 
         // test booleans
         let ca = BooleanChunked::new("a", &[true, true, true]);
