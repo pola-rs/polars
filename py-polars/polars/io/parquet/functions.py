@@ -71,8 +71,19 @@ def read_parquet(
     low_memory
         Reduce memory pressure at the expense of performance.
     storage_options
-        Extra options that make sense for `fsspec.open()` or a particular storage
-        connection, e.g. host, port, username, password, etc.
+        Options that indicate how to connect to a cloud provider.
+        If the cloud provider is not supported by Polars, the storage options
+        are passed to `fsspec.open()`.
+
+        The cloud providers currently supported are AWS, GCP, and Azure.
+        See supported keys here:
+
+        * `aws <https://docs.rs/object_store/0.7.0/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+        * `gcp <https://docs.rs/object_store/0.7.0/object_store/gcp/enum.GoogleConfigKey.html>`_
+        * `azure <https://docs.rs/object_store/0.7.0/object_store/azure/enum.AzureConfigKey.html>`_
+
+        If `storage_options` is not provided, Polars will try to infer the information
+        from environment variables.
     retries
         Number of retries if accessing a cloud instance fails.
     use_pyarrow
@@ -247,18 +258,19 @@ def scan_parquet(
     cache
         Cache the result after reading.
     storage_options
-        Options that inform use how to connect to the cloud provider.
-        If the cloud provider is not supported by us, the storage options
+        Options that indicate how to connect to a cloud provider.
+        If the cloud provider is not supported by Polars, the storage options
         are passed to `fsspec.open()`.
-        Currently supported providers are: {'aws', 'gcp', 'azure' }.
+
+        The cloud providers currently supported are AWS, GCP, and Azure.
         See supported keys here:
 
         * `aws <https://docs.rs/object_store/0.7.0/object_store/aws/enum.AmazonS3ConfigKey.html>`_
         * `gcp <https://docs.rs/object_store/0.7.0/object_store/gcp/enum.GoogleConfigKey.html>`_
         * `azure <https://docs.rs/object_store/0.7.0/object_store/azure/enum.AzureConfigKey.html>`_
 
-        If `storage_options` are not provided we will try to infer them from the
-        environment variables.
+        If `storage_options` is not provided, Polars will try to infer the information
+        from environment variables.
     retries
         Number of retries if accessing a cloud instance fails.
 
