@@ -13,37 +13,38 @@ extern crate pyo3_built;
 mod build {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
-pub mod arrow_interop;
+
+mod arrow_interop;
 #[cfg(feature = "csv")]
 mod batched_csv;
-pub mod conversion;
-pub mod dataframe;
-pub mod datatypes;
-pub mod error;
-pub mod expr;
-pub mod file;
+mod conversion;
+mod dataframe;
+mod datatypes;
+mod error;
+mod expr;
+mod file;
 mod functions;
-pub(crate) mod gil_once_cell;
-pub mod lazyframe;
-pub mod lazygroupby;
-pub mod map;
+mod gil_once_cell;
+mod lazyframe;
+mod lazygroupby;
+mod map;
 #[cfg(feature = "object")]
 mod object;
 #[cfg(feature = "object")]
 mod on_startup;
-pub mod prelude;
-pub(crate) mod py_modules;
-pub mod series;
+mod prelude;
+mod py_modules;
+mod series;
 #[cfg(feature = "sql")]
 mod sql;
-pub mod utils;
+mod utils;
 
 #[cfg(all(target_family = "unix", not(use_mimalloc)))]
 use jemallocator::Jemalloc;
 #[cfg(any(not(target_family = "unix"), use_mimalloc))]
 use mimalloc::MiMalloc;
 #[cfg(feature = "object")]
-pub use on_startup::__register_startup_deps;
+use on_startup::__register_startup_deps;
 use pyo3::panic::PanicException;
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
