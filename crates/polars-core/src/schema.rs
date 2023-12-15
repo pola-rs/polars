@@ -1,5 +1,6 @@
 use std::fmt::{Debug, Formatter};
 
+use arrow::datatypes::ArrowSchemaRef;
 use indexmap::map::MutableKeys;
 use indexmap::IndexMap;
 #[cfg(feature = "serde-lazy")]
@@ -50,22 +51,7 @@ where
             IndexMap::with_capacity_and_hasher(iter.size_hint().0, ahash::RandomState::default());
         for fld in iter {
             let fld = fld.into();
-
-            #[cfg(feature = "dtype-decimal")]
-            let fld = match fld.dtype {
-                DataType::Decimal(_, _) => {
-                    if crate::config::decimal_is_active() {
-                        fld
-                    } else {
-                        let mut fld = fld.clone();
-                        fld.coerce(DataType::Float64);
-                        fld
-                    }
-                },
-                _ => fld,
-            };
-
-            map.insert(fld.name().clone(), fld.data_type().clone());
+            map.insert(fld.name, fld.dtype);
         }
         Self { inner: map }
     }
@@ -381,6 +367,13 @@ impl Schema {
         self.inner.iter().map(|(_name, dtype)| dtype)
     }
 
+    /// Iterates over mut references to the dtypes in this schema
+    pub fn iter_dtypes_mut(
+        &mut self,
+    ) -> impl Iterator<Item = &mut DataType> + '_ + ExactSizeIterator {
+        self.inner.iter_mut().map(|(_name, dtype)| dtype)
+    }
+
     /// Iterates over references to the names in this schema
     pub fn iter_names(&self) -> impl Iterator<Item = &SmartString> + '_ + ExactSizeIterator {
         self.inner.iter().map(|(name, _dtype)| name)
@@ -455,5 +448,28 @@ impl IndexOfSchema for ArrowSchema {
 
     fn get_names(&self) -> Vec<&str> {
         self.fields.iter().map(|f| f.name.as_str()).collect()
+    }
+}
+
+impl From<&ArrowSchema> for Schema {
+    fn from(value: &ArrowSchema) -> Self {
+        Self::from_iter(value.fields.iter())
+    }
+}
+impl From<ArrowSchema> for Schema {
+    fn from(value: ArrowSchema) -> Self {
+        Self::from(&value)
+    }
+}
+
+impl From<ArrowSchemaRef> for Schema {
+    fn from(value: ArrowSchemaRef) -> Self {
+        Self::from(value.as_ref())
+    }
+}
+
+impl From<&ArrowSchemaRef> for Schema {
+    fn from(value: &ArrowSchemaRef) -> Self {
+        Self::from(value.as_ref())
     }
 }

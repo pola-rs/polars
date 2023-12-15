@@ -24,13 +24,13 @@ def read_avro(
     ----------
     source
         Path to a file or a file-like object (by file-like object, we refer to objects
-        that have a ``read()`` method, such as a file handler (e.g. via builtin ``open``
-        function) or ``BytesIO``).
+        that have a `read()` method, such as a file handler (e.g. via builtin `open`
+        function) or `BytesIO`).
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
         of column names.
     n_rows
-        Stop reading from Apache Avro file after reading ``n_rows``.
+        Stop reading from Apache Avro file after reading `n_rows`.
 
     Returns
     -------

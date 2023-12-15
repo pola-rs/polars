@@ -3,17 +3,17 @@ use super::*;
 /// Generate a range of integers.
 ///
 /// Alias for `int_range`.
-pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
-    int_range(start, end, step)
+pub fn arange(start: Expr, end: Expr, step: i64, dtype: DataType) -> Expr {
+    int_range(start, end, step, dtype)
 }
 
 /// Generate a range of integers.
-pub fn int_range(start: Expr, end: Expr, step: i64) -> Expr {
+pub fn int_range(start: Expr, end: Expr, step: i64, dtype: DataType) -> Expr {
     let input = vec![start, end];
 
     Expr::Function {
         input,
-        function: FunctionExpr::Range(RangeFunction::IntRange { step }),
+        function: FunctionExpr::Range(RangeFunction::IntRange { step, dtype }),
         options: FunctionOptions {
             allow_rename: true,
             ..Default::default()
@@ -56,7 +56,7 @@ pub fn date_range(
             time_zone,
         }),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             cast_to_supertypes: true,
             allow_rename: true,
             ..Default::default()
@@ -85,7 +85,7 @@ pub fn date_ranges(
             time_zone,
         }),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             cast_to_supertypes: true,
             allow_rename: true,
             ..Default::default()
@@ -114,7 +114,7 @@ pub fn datetime_range(
             time_zone,
         }),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             cast_to_supertypes: true,
             allow_rename: true,
             ..Default::default()
@@ -143,7 +143,7 @@ pub fn datetime_ranges(
             time_zone,
         }),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             cast_to_supertypes: true,
             allow_rename: true,
             ..Default::default()
@@ -160,7 +160,7 @@ pub fn time_range(start: Expr, end: Expr, interval: Duration, closed: ClosedWind
         input,
         function: FunctionExpr::Range(RangeFunction::TimeRange { interval, closed }),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             allow_rename: true,
             ..Default::default()
         },
@@ -176,7 +176,7 @@ pub fn time_ranges(start: Expr, end: Expr, interval: Duration, closed: ClosedWin
         input,
         function: FunctionExpr::Range(RangeFunction::TimeRanges { interval, closed }),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::GroupWise,
             allow_rename: true,
             ..Default::default()
         },

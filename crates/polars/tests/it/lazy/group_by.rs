@@ -50,7 +50,7 @@ fn test_filter_after_tail() -> PolarsResult<()> {
         "a" => ["bar"],
         "b" => [3]
     ]?;
-    assert!(out.frame_equal(&expected));
+    assert!(out.equals(&expected));
 
     Ok(())
 }

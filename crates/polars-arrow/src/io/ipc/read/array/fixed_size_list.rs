@@ -8,12 +8,12 @@ use super::super::deserialize::{read, skip};
 use super::super::read_basic::*;
 use super::super::{Compression, Dictionaries, IpcBuffer, Node, Version};
 use crate::array::FixedSizeListArray;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_fixed_size_list<R: Read + Seek>(
     field_nodes: &mut VecDeque<Node>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     ipc_field: &IpcField,
     buffers: &mut VecDeque<IpcBuffer>,
     reader: &mut R,
@@ -65,7 +65,7 @@ pub fn read_fixed_size_list<R: Read + Seek>(
 
 pub fn skip_fixed_size_list(
     field_nodes: &mut VecDeque<Node>,
-    data_type: &DataType,
+    data_type: &ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
 ) -> PolarsResult<()> {
     let _ = field_nodes.pop_front().ok_or_else(|| {

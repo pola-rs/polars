@@ -11,7 +11,6 @@ from polars.utils.deprecation import (
     deprecate_renamed_function,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
-    warn_closed_future_change,
 )
 
 
@@ -72,30 +71,3 @@ def test_deprecate_nonkeyword_arguments_method_warning() -> None:
     )
     with pytest.deprecated_call(match=msg):
         Foo().bar("qux", "quox")
-
-
-def test_warn_closed_future_change() -> None:
-    @warn_closed_future_change()
-    def rolling_test(by: str | None = None, closed: str = "left") -> None:
-        ...
-
-    # If we pass `by` but not `closed``, we expect a warning
-    with pytest.deprecated_call():
-        rolling_test(by="b")
-
-
-def test_warn_closed_future_change_no_warning(recwarn: Any) -> None:
-    @warn_closed_future_change()
-    def rolling_test(by: str | None = None, closed: str = "left") -> None:
-        ...
-
-    # No warning if we do not pass `by`
-    rolling_test()
-
-    # If we pass `by`` and `closed`, we expect no warning...
-    rolling_test(by="b", closed="left")
-
-    # ... regardless of the value
-    rolling_test(by="b", closed="right")
-
-    assert len(recwarn) == 0

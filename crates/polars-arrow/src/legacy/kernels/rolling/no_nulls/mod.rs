@@ -17,7 +17,7 @@ pub use variance::*;
 
 use super::*;
 use crate::array::PrimitiveArray;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::legacy::error::{polars_bail, PolarsResult};
 use crate::legacy::utils::CustomIterTools;
 use crate::types::NativeType;
@@ -42,7 +42,7 @@ pub(super) fn rolling_apply_agg_window<'a, Agg, T, Fo>(
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
     Agg: RollingAggWindowNoNulls<'a, T>,
-    T: Debug + IsFloat + NativeType,
+    T: Debug + NativeType,
 {
     let len = values.len();
     let (start, end) = det_offsets_fn(0, window_size, len);
@@ -102,7 +102,7 @@ where
 
     let validity = create_validity(min_periods, len, window_size, det_offsets_fn);
     Ok(Box::new(PrimitiveArray::new(
-        DataType::from(T::PRIMITIVE),
+        ArrowDataType::from(T::PRIMITIVE),
         out.into(),
         validity.map(|b| b.into()),
     )))

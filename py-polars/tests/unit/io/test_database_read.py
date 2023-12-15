@@ -15,10 +15,18 @@ from sqlalchemy.sql.expression import cast as alchemy_cast
 
 import polars as pl
 from polars.exceptions import UnsuitableSQLError
+from polars.io.database import _ARROW_DRIVER_REGISTRY_
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import DbReadEngine, SchemaDefinition, SchemaDict
+    import pyarrow as pa
+
+    from polars.type_aliases import (
+        ConnectionOrCursor,
+        DbReadEngine,
+        SchemaDefinition,
+        SchemaDict,
+    )
 
 
 def adbc_sqlite_connect(*args: Any, **kwargs: Any) -> Any:
@@ -30,6 +38,12 @@ def adbc_sqlite_connect(*args: Any, **kwargs: Any) -> Any:
 
 def create_temp_sqlite_db(test_db: str) -> None:
     Path(test_db).unlink(missing_ok=True)
+
+    def convert_date(val: bytes) -> date:
+        """Convert ISO 8601 date to datetime.date object."""
+        return date.fromisoformat(val.decode())
+
+    sqlite3.register_converter("date", convert_date)
 
     # NOTE: at the time of writing adcb/connectorx have weak SQLite support (poor or
     # no bool/date/datetime dtypes, for example) and there is a bug in connectorx that
@@ -84,6 +98,77 @@ class ExceptionTestParams(NamedTuple):
     kwargs: dict[str, Any] | None = None
 
 
+class MockConnection:
+    """Mock connection class for databases we can't test in CI."""
+
+    def __init__(
+        self,
+        driver: str,
+        batch_size: int | None,
+        test_data: pa.Table,
+        repeat_batch_calls: bool,
+    ) -> None:
+        self.__class__.__module__ = driver
+        self._cursor = MockCursor(
+            repeat_batch_calls=repeat_batch_calls,
+            batched=(batch_size is not None),
+            test_data=test_data,
+        )
+
+    def close(self) -> None:  # noqa: D102
+        pass
+
+    def cursor(self) -> Any:  # noqa: D102
+        return self._cursor
+
+
+class MockCursor:
+    """Mock cursor class for databases we can't test in CI."""
+
+    def __init__(
+        self,
+        batched: bool,
+        test_data: pa.Table,
+        repeat_batch_calls: bool,
+    ) -> None:
+        self.resultset = MockResultSet(test_data, batched, repeat_batch_calls)
+        self.called: list[str] = []
+        self.batched = batched
+        self.n_calls = 1
+
+    def __getattr__(self, item: str) -> Any:
+        if "fetch" in item:
+            self.called.append(item)
+            return self.resultset
+        super().__getattr__(item)  # type: ignore[misc]
+
+    def close(self) -> Any:  # noqa: D102
+        pass
+
+    def execute(self, query: str) -> Any:  # noqa: D102
+        return self
+
+
+class MockResultSet:
+    """Mock resultset class for databases we can't test in CI."""
+
+    def __init__(
+        self, test_data: pa.Table, batched: bool, repeat_batch_calls: bool = False
+    ):
+        self.test_data = test_data
+        self.repeat_batched_calls = repeat_batch_calls
+        self.batched = batched
+        self.n_calls = 1
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:  # noqa: D102
+        if self.repeat_batched_calls:
+            res = self.test_data[: None if self.n_calls else 0]
+            self.n_calls -= 1
+        else:
+            res = iter((self.test_data,))
+        return res
+
+
 @pytest.mark.write_disk()
 @pytest.mark.parametrize(
     (
@@ -109,6 +194,10 @@ class ExceptionTestParams(NamedTuple):
                 schema_overrides={"id": pl.UInt8},
             ),
             id="uri: connectorx",
+            marks=pytest.mark.skipif(
+                sys.version_info > (3, 11),
+                reason="connectorx cannot be installed on Python 3.12 yet.",
+            ),
         ),
         pytest.param(
             *DatabaseReadTestParams(
@@ -280,11 +369,15 @@ def test_read_database_alchemy_selectable(tmp_path: Path) -> None:
     )
 
 
-def test_read_database_parameterisd(tmp_path: Path) -> None:
+def test_read_database_parameterised(tmp_path: Path) -> None:
     # setup underlying test data
     tmp_path.mkdir(exist_ok=True)
     create_temp_sqlite_db(test_db := str(tmp_path / "test.db"))
-    conn = create_engine(f"sqlite:///{test_db}")
+
+    # raw cursor "execute" only takes positional params, alchemy cursor takes kwargs
+    raw_conn: ConnectionOrCursor = sqlite3.connect(test_db)
+    alchemy_conn: ConnectionOrCursor = create_engine(f"sqlite:///{test_db}").connect()
+    test_conns = (alchemy_conn, raw_conn)
 
     # establish parameterised queries and validate usage
     query = """
@@ -297,55 +390,20 @@ def test_read_database_parameterisd(tmp_path: Path) -> None:
         ("?", (0,)),
         ("?", [0]),
     ):
-        assert_frame_equal(
-            pl.read_database(
-                query.format(n=param),
-                connection=conn.connect(),
-                execute_options={"parameters": param_value},
-            ),
-            pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]}),
-        )
+        for conn in test_conns:
+            assert_frame_equal(
+                pl.read_database(
+                    query.format(n=param),
+                    connection=conn,
+                    execute_options={"parameters": param_value},
+                ),
+                pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]}),
+            )
 
 
-def test_read_database_mocked() -> None:
-    arr = pl.DataFrame({"x": [1, 2, 3], "y": ["aa", "bb", "cc"]}).to_arrow()
-
-    class MockConnection:
-        def __init__(self, driver: str, batch_size: int | None = None) -> None:
-            self.__class__.__module__ = driver
-            self._cursor = MockCursor(batched=batch_size is not None)
-
-        def close(self) -> None:
-            pass
-
-        def cursor(self) -> Any:
-            return self._cursor
-
-    class MockCursor:
-        def __init__(self, batched: bool) -> None:
-            self.called: list[str] = []
-            self.batched = batched
-
-        def __getattr__(self, item: str) -> Any:
-            if "fetch" in item:
-                res = (
-                    (lambda *args, **kwargs: (arr for _ in range(1)))
-                    if self.batched
-                    else (lambda *args, **kwargs: arr)
-                )
-                self.called.append(item)
-                return res
-            super().__getattr__(item)  # type: ignore[misc]
-
-        def close(self) -> Any:
-            pass
-
-        def execute(self, query: str) -> Any:
-            return self
-
-    # since we don't have access to snowflake/databricks/etc from CI we
-    # mock them so we can check that we're calling the expected methods
-    for driver, batch_size, iter_batches, expected_call in (
+@pytest.mark.parametrize(
+    ("driver", "batch_size", "iter_batches", "expected_call"),
+    [
         ("snowflake", None, False, "fetch_arrow_all"),
         ("snowflake", 10_000, False, "fetch_arrow_all"),
         ("snowflake", 10_000, True, "fetch_arrow_batches"),
@@ -358,20 +416,34 @@ def test_read_database_mocked() -> None:
         ("adbc_driver_postgresql", None, False, "fetch_arrow_table"),
         ("adbc_driver_postgresql", 75_000, False, "fetch_arrow_table"),
         ("adbc_driver_postgresql", 75_000, True, "fetch_arrow_table"),
-    ):
-        mc = MockConnection(driver, batch_size)
-        res = pl.read_database(  # type: ignore[call-overload]
-            query="SELECT * FROM test_data",
-            connection=mc,
-            iter_batches=iter_batches,
-            batch_size=batch_size,
-        )
-        assert expected_call in mc.cursor().called
-        if iter_batches:
-            assert isinstance(res, GeneratorType)
-            res = pl.concat(res)
+    ],
+)
+def test_read_database_mocked(
+    driver: str, batch_size: int | None, iter_batches: bool, expected_call: str
+) -> None:
+    # since we don't have access to snowflake/databricks/etc from CI we
+    # mock them so we can check that we're calling the expected methods
+    arrow = pl.DataFrame({"x": [1, 2, 3], "y": ["aa", "bb", "cc"]}).to_arrow()
+    mc = MockConnection(
+        driver,
+        batch_size,
+        test_data=arrow,
+        repeat_batch_calls=_ARROW_DRIVER_REGISTRY_.get(driver, {}).get(  # type: ignore[call-overload]
+            "repeat_batch_calls", False
+        ),
+    )
+    res = pl.read_database(  # type: ignore[call-overload]
+        query="SELECT * FROM test_data",
+        connection=mc,
+        iter_batches=iter_batches,
+        batch_size=batch_size,
+    )
+    if iter_batches:
+        assert isinstance(res, GeneratorType)
+        res = pl.concat(res)
 
-        assert res.rows() == [(1, "aa"), (2, "bb"), (3, "cc")]
+    assert expected_call in mc.cursor().called
+    assert res.rows() == [(1, "aa"), (2, "bb"), (3, "cc")]
 
 
 @pytest.mark.parametrize(
@@ -532,6 +604,10 @@ def test_read_database_exceptions(
         read_database(**params)
 
 
+@pytest.mark.skipif(
+    sys.version_info > (3, 11),
+    reason="connectorx cannot be installed on Python 3.12 yet.",
+)
 @pytest.mark.parametrize(
     "uri",
     [

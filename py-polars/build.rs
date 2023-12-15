@@ -8,13 +8,14 @@ fn main() {
         use std::env;
         use std::path::Path;
 
-        let src = env::var("CARGO_MANIFEST_DIR").unwrap();
-        let dst = Path::new(&env::var("OUT_DIR").unwrap()).join("built.rs");
-        let mut opts = built::Options::default();
+        // We must specify the workspace root as the source
+        let py_polars_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+        let src = Path::new(&py_polars_dir).parent().unwrap();
 
-        opts.set_dependencies(true).set_compiler(true).set_env(true);
+        let out_dir = &env::var("OUT_DIR").unwrap();
+        let dst = Path::new(&out_dir).join("built.rs");
 
-        built::write_built_file_with_opts(&opts, Path::new(&src), &dst)
+        built::write_built_file_with_opts(Some(src), &dst)
             .expect("Failed to acquire build-time information");
     }
 }

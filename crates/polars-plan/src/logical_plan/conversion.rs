@@ -31,9 +31,14 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             data_type,
             strict,
         },
-        Expr::Take { expr, idx } => AExpr::Take {
+        Expr::Gather {
+            expr,
+            idx,
+            returns_scalar,
+        } => AExpr::Gather {
             expr: to_aexpr(*expr, arena),
             idx: to_aexpr(*idx, arena),
+            returns_scalar,
         },
         Expr::Sort { expr, options } => AExpr::Sort {
             expr: to_aexpr(*expr, arena),
@@ -74,7 +79,9 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
                 AggExpr::Last(expr) => AAggExpr::Last(to_aexpr(*expr, arena)),
                 AggExpr::Mean(expr) => AAggExpr::Mean(to_aexpr(*expr, arena)),
                 AggExpr::Implode(expr) => AAggExpr::Implode(to_aexpr(*expr, arena)),
-                AggExpr::Count(expr) => AAggExpr::Count(to_aexpr(*expr, arena)),
+                AggExpr::Count(expr, include_nulls) => {
+                    AAggExpr::Count(to_aexpr(*expr, arena), include_nulls)
+                },
                 AggExpr::Quantile {
                     expr,
                     quantile,
@@ -147,8 +154,8 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         Expr::Count => AExpr::Count,
         Expr::Nth(i) => AExpr::Nth(i),
         Expr::SubPlan { .. } => panic!("no SQLSubquery expected at this point"),
-        Expr::KeepName(_) => panic!("no keep_name expected at this point"),
-        Expr::Exclude(_, _) => panic!("no exclude expected at this point"),
+        Expr::KeepName(_) => panic!("no `name.keep` expected at this point"),
+        Expr::Exclude(_, _) => panic!("no `exclude` expected at this point"),
         Expr::RenameAlias { .. } => panic!("no `rename_alias` expected at this point"),
         Expr::Columns { .. } => panic!("no `columns` expected at this point"),
         Expr::DtypeColumn { .. } => panic!("no `dtype-columns` expected at this point"),
@@ -168,13 +175,13 @@ pub fn to_alp(
     let v = match lp {
         LogicalPlan::Scan {
             file_info,
-            path,
+            paths,
             predicate,
             scan_type,
             file_options: options,
         } => ALogicalPlan::Scan {
             file_info,
-            path,
+            paths,
             output_schema: None,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
             scan_type,
@@ -399,12 +406,17 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 options,
             }
         },
-        AExpr::Take { expr, idx } => {
+        AExpr::Gather {
+            expr,
+            idx,
+            returns_scalar,
+        } => {
             let expr = node_to_expr(expr, expr_arena);
             let idx = node_to_expr(idx, expr_arena);
-            Expr::Take {
+            Expr::Gather {
                 expr: Box::new(expr),
                 idx: Box::new(idx),
+                returns_scalar,
             }
         },
         AExpr::SortBy {
@@ -509,9 +521,9 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::AggGroups(Box::new(exp)).into()
             },
-            AAggExpr::Count(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::Count(Box::new(exp)).into()
+            AAggExpr::Count(expr, include_nulls) => {
+                let expr = node_to_expr(expr, expr_arena);
+                AggExpr::Count(Box::new(expr), include_nulls).into()
             },
         },
         AExpr::Ternary {
@@ -597,14 +609,14 @@ impl ALogicalPlan {
         };
         match lp {
             ALogicalPlan::Scan {
-                path,
+                paths,
                 file_info,
                 predicate,
                 scan_type,
                 output_schema: _,
                 file_options: options,
             } => LogicalPlan::Scan {
-                path,
+                paths,
                 file_info,
                 predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
                 scan_type,

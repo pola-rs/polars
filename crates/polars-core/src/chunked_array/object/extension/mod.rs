@@ -134,6 +134,8 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
 mod test {
     use std::fmt::{Display, Formatter};
 
+    use polars_utils::idxvec;
+
     use super::*;
 
     #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
@@ -197,7 +199,8 @@ mod test {
         let values = &[Some(foo1), None, Some(foo2), None];
         let ca = ObjectChunked::new("", values);
 
-        let groups = GroupsProxy::Idx(vec![(0, vec![0, 1]), (2, vec![2]), (3, vec![3])].into());
+        let groups =
+            GroupsProxy::Idx(vec![(0, idxvec![0, 1]), (2, idxvec![2]), (3, idxvec![3])].into());
         let out = unsafe { ca.agg_list(&groups) };
         assert!(matches!(out.dtype(), DataType::List(_)));
         assert_eq!(out.len(), groups.len());
@@ -220,7 +223,7 @@ mod test {
         let values = &[Some(foo1.clone()), None, Some(foo2.clone()), None];
         let ca = ObjectChunked::new("", values);
 
-        let groups = vec![(0, vec![0, 1]), (2, vec![2]), (3, vec![3])].into();
+        let groups = vec![(0, idxvec![0, 1]), (2, idxvec![2]), (3, idxvec![3])].into();
         let out = unsafe { ca.agg_list(&GroupsProxy::Idx(groups)) };
         let a = out.explode().unwrap();
 

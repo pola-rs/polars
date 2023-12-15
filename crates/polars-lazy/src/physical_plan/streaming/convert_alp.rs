@@ -356,7 +356,14 @@ pub(crate) fn insert_streaming_nodes(
                         #[cfg(feature = "object")]
                         DataType::Object(_) => false,
                         #[cfg(feature = "dtype-categorical")]
-                        DataType::Categorical(_) => string_cache,
+                        DataType::Categorical(_, _) => string_cache,
+                        DataType::List(inner) => allowed_dtype(inner, string_cache),
+                        #[cfg(feature = "dtype-struct")]
+                        DataType::Struct(fields) => fields
+                            .iter()
+                            .all(|fld| allowed_dtype(fld.data_type(), string_cache)),
+                        // We need to be able to sink to disk or produce the aggregate return dtype.
+                        DataType::Unknown => false,
                         _ => true,
                     }
                 }

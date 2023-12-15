@@ -34,14 +34,12 @@ fn polars_glob(pattern: &str, cloud_options: Option<&CloudOptions>) -> PolarsRes
 /// Use [LazyFileListReader::finish] to get the final [LazyFrame].
 pub trait LazyFileListReader: Clone {
     /// Get the final [LazyFrame].
-    fn finish(mut self) -> PolarsResult<LazyFrame> {
+    fn finish(self) -> PolarsResult<LazyFrame> {
         if let Some(paths) = self.iter_paths()? {
             let lfs = paths
-                .enumerate()
-                .map(|(i, r)| {
+                .map(|r| {
                     let path = r?;
-                    let lf = self
-                        .clone()
+                    self.clone()
                         .with_path(path.clone())
                         .with_rechunk(false)
                         .finish_no_glob()
@@ -49,15 +47,7 @@ pub trait LazyFileListReader: Clone {
                             polars_err!(
                                 ComputeError: "error while reading {}: {}", path.display(), e
                             )
-                        });
-
-                    if i == 0 {
-                        let lf = lf?;
-                        self.set_known_schema(lf.schema()?);
-                        Ok(lf)
-                    } else {
-                        lf
-                    }
+                        })
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
 
@@ -108,7 +98,7 @@ pub trait LazyFileListReader: Clone {
     /// Set paths of the scanned files.
     /// Doesn't glob patterns.
     #[must_use]
-    fn with_paths(self, paths: Vec<PathBuf>) -> Self;
+    fn with_paths(self, paths: Arc<[PathBuf]>) -> Self;
 
     /// Rechunk the memory to contiguous chunks when parsing is done.
     fn rechunk(&self) -> bool;
@@ -128,14 +118,6 @@ pub trait LazyFileListReader: Clone {
     fn cloud_options(&self) -> Option<&CloudOptions> {
         None
     }
-
-    /// Set a schema on first glob pattern, so that others don't have to fetch metadata
-    /// from cloud
-    fn known_schema(&self) -> Option<SchemaRef> {
-        None
-    }
-
-    fn set_known_schema(&mut self, _known_schema: SchemaRef) {}
 
     /// Get list of files referenced by this reader.
     ///

@@ -1,7 +1,7 @@
 use crate::array::*;
 use crate::bitmap::Bitmap;
 use crate::datatypes::PhysicalType;
-use crate::{match_integer_type, with_match_primitive_type};
+use crate::{match_integer_type, with_match_primitive_type_full};
 
 fn validity_size(validity: Option<&Bitmap>) -> usize {
     validity.as_ref().map(|b| b.as_slice().0.len()).unwrap_or(0)
@@ -42,7 +42,7 @@ pub fn estimated_bytes_size(array: &dyn Array) -> usize {
             let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
             array.values().as_slice().0.len() + validity_size(array.validity())
         },
-        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             let array = array
                 .as_any()
                 .downcast_ref::<PrimitiveArray<$T>>()

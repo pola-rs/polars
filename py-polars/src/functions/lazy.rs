@@ -1,7 +1,7 @@
 use polars::lazy::dsl;
 use polars::lazy::dsl::Expr;
 use polars::prelude::*;
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 
@@ -188,8 +188,8 @@ pub fn count() -> PyExpr {
 }
 
 #[pyfunction]
-pub fn cov(a: PyExpr, b: PyExpr) -> PyExpr {
-    dsl::cov(a.inner, b.inner).into()
+pub fn cov(a: PyExpr, b: PyExpr, ddof: u8) -> PyExpr {
+    dsl::cov(a.inner, b.inner, ddof).into()
 }
 
 #[pyfunction]
@@ -205,19 +205,19 @@ pub fn arctan2d(y: PyExpr, x: PyExpr) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn cumfold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init: bool) -> PyExpr {
+pub fn cum_fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init: bool) -> PyExpr {
     let exprs = exprs.to_exprs();
 
     let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
-    dsl::cumfold_exprs(acc.inner, func, exprs, include_init).into()
+    dsl::cum_fold_exprs(acc.inner, func, exprs, include_init).into()
 }
 
 #[pyfunction]
-pub fn cumreduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
+pub fn cum_reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
 
     let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
-    dsl::cumreduce_exprs(func, exprs).into()
+    dsl::cum_reduce_exprs(func, exprs).into()
 }
 
 #[pyfunction]
@@ -394,8 +394,8 @@ pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
         });
         Ok(dsl::lit(s).into())
     } else {
-        Err(PyValueError::new_err(format!(
-            "could not convert value {:?} as a Literal",
+        Err(PyTypeError::new_err(format!(
+            "invalid literal value: {:?}",
             value.str()?
         )))
     }

@@ -10,13 +10,17 @@ pub struct DataChunk {
 
 impl DataChunk {
     pub(crate) fn new(chunk_index: IdxSize, data: DataFrame) -> Self {
+        // Check the invariant that all columns have a single chunk.
+        #[cfg(debug_assertions)]
+        {
+            for c in data.get_columns() {
+                assert_eq!(c.chunks().len(), 1);
+            }
+        }
         Self { chunk_index, data }
     }
     pub(crate) fn with_data(&self, data: DataFrame) -> Self {
-        DataChunk {
-            chunk_index: self.chunk_index,
-            data,
-        }
+        Self::new(self.chunk_index, data)
     }
     pub(crate) fn is_empty(&self) -> bool {
         self.data.height() == 0

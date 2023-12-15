@@ -17,7 +17,7 @@
 //!     let mut file = File::create("example.csv").expect("could not create file");
 //!
 //!     CsvWriter::new(&mut file)
-//!     .has_header(true)
+//!     .include_header(true)
 //!     .with_separator(b',')
 //!     .finish(df)
 //! }
@@ -59,7 +59,7 @@ use polars_core::prelude::*;
 use polars_time::prelude::*;
 #[cfg(feature = "temporal")]
 use rayon::prelude::*;
-pub use read::{CsvEncoding, CsvReader, NullValues};
+pub use read::{CommentPrefix, CsvEncoding, CsvReader, NullValues};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 pub use write::{BatchedWriter, CsvWriter, QuoteStyle};

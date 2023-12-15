@@ -10,17 +10,16 @@ from decimal import Decimal as PyDecimal
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Collection,
     ForwardRef,
     Optional,
-    TypeVar,
     Union,
     get_args,
     overload,
 )
 
 from polars.datatypes import (
+    Array,
     Binary,
     Boolean,
     Categorical,
@@ -68,15 +67,6 @@ if TYPE_CHECKING:
     from typing import Literal
 
     from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict
-
-
-T = TypeVar("T")
-
-
-def cache(function: Callable[..., T]) -> T:  # noqa: D103
-    # need this to satisfy mypy issue with "@property/@cache combination"
-    # See: https://github.com/python/mypy/issues/5858
-    return functools.lru_cache()(function)  # type: ignore[return-value]
 
 
 PY_STR_TO_DTYPE: SchemaDict = {
@@ -142,9 +132,7 @@ def _map_py_type_to_dtype(
             if len(nested) == 1:
                 nested = nested[0]
             return (
-                dtype
-                if nested is None
-                else dtype(_map_py_type_to_dtype(nested))  # type: ignore[operator]
+                dtype if nested is None else dtype(_map_py_type_to_dtype(nested))  # type: ignore[operator]
             )
 
     raise TypeError("invalid type")
@@ -203,7 +191,7 @@ def unpack_dtypes(
 
     unpacked: set[PolarsDataType] = set()
     for tp in dtypes:
-        if isinstance(tp, List):
+        if isinstance(tp, (List, Array)):
             if include_compound:
                 unpacked.add(tp)
             unpacked.update(unpack_dtypes(tp.inner, include_compound=include_compound))
@@ -220,7 +208,7 @@ def unpack_dtypes(
 
 class _DataTypeMappings:
     @property
-    @cache
+    @functools.lru_cache  # noqa: B019
     def DTYPE_TO_FFINAME(self) -> dict[PolarsDataType, str]:
         return {
             Int8: "i8",
@@ -248,7 +236,7 @@ class _DataTypeMappings:
         }
 
     @property
-    @cache
+    @functools.lru_cache  # noqa: B019
     def DTYPE_TO_CTYPE(self) -> dict[PolarsDataType, Any]:
         return {
             UInt8: ctypes.c_uint8,
@@ -268,7 +256,7 @@ class _DataTypeMappings:
         }
 
     @property
-    @cache
+    @functools.lru_cache  # noqa: B019
     def DTYPE_TO_PY_TYPE(self) -> dict[PolarsDataType, PythonDataType]:
         return {
             Float64: float,
@@ -294,10 +282,11 @@ class _DataTypeMappings:
         }
 
     @property
-    @cache
+    @functools.lru_cache  # noqa: B019
     def NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE(self) -> dict[tuple[str, int], PolarsDataType]:
         return {
             # (np.dtype().kind, np.dtype().itemsize)
+            ("b", 1): Boolean,
             ("i", 1): Int8,
             ("i", 2): Int16,
             ("i", 4): Int32,
@@ -311,7 +300,7 @@ class _DataTypeMappings:
         }
 
     @property
-    @cache
+    @functools.lru_cache  # noqa: B019
     def PY_TYPE_TO_ARROW_TYPE(self) -> dict[PythonDataType, pa.lib.DataType]:
         return {
             float: pa.float64(),
@@ -326,12 +315,12 @@ class _DataTypeMappings:
         }
 
     @property
-    @cache
+    @functools.lru_cache  # noqa: B019
     def REPR_TO_DTYPE(self) -> dict[str, PolarsDataType]:
         def _dtype_str_repr_safe(o: Any) -> PolarsDataType | None:
             try:
                 return _dtype_str_repr(o.base_type()).split("[")[0]
-            except ValueError:
+            except TypeError:
                 return None
 
         return {

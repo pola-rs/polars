@@ -3,7 +3,7 @@ from datetime import datetime
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing import assert_frame_equal
 
 
 def test_when_then() -> None:
@@ -123,7 +123,7 @@ def test_nested_when_then_and_wildcard_expansion_6284() -> None:
     )
 
     assert_frame_equal(out0, out1)
-    assert out0.to_dict(False) == {
+    assert out0.to_dict(as_series=False) == {
         "1": ["a", "b"],
         "2": ["c", "d"],
         "result": ["a", "d"],
@@ -193,10 +193,10 @@ def test_when_then_edge_cases_3994() -> None:
             pl.when(pl.col("type").list.len() == 0)
             .then(pl.lit(None))
             .otherwise(pl.col("type"))
-            .keep_name()
+            .name.keep()
         )
         .collect()
-    ).to_dict(False) == {"id": [1], "type": [[2, 2]]}
+    ).to_dict(as_series=False) == {"id": [1], "type": [[2, 2]]}
 
     # this tests ternary with an empty argument
     assert (
@@ -207,9 +207,9 @@ def test_when_then_edge_cases_3994() -> None:
             pl.when(pl.col("type").list.len() == 0)
             .then(pl.lit(None))
             .otherwise(pl.col("type"))
-            .keep_name()
+            .name.keep()
         )
-    ).to_dict(False) == {"id": [], "type": []}
+    ).to_dict(as_series=False) == {"id": [], "type": []}
 
 
 def test_object_when_then_4702() -> None:
@@ -221,7 +221,7 @@ def test_object_when_then_4702() -> None:
         .then(pl.lit(pl.UInt16, allow_object=True))
         .otherwise(pl.lit(pl.UInt8, allow_object=True))
         .alias("New_Type")
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "Row": [1, 2],
         "Type": [pl.Date, pl.UInt8],
         "New_Type": [pl.UInt16, pl.UInt8],
@@ -242,17 +242,275 @@ def test_comp_categorical_lit_dtype() -> None:
     ).dtypes == [pl.Categorical, pl.Int32]
 
 
-def test_when_then_deprecated_string_input() -> None:
+def test_predicate_broadcast() -> None:
     df = pl.DataFrame(
         {
-            "a": [True, False],
-            "b": [1, 2],
-            "c": [3, 4],
+            "key": ["a", "a", "b", "b", "c", "c"],
+            "val": [1, 2, 3, 4, 5, 6],
+        }
+    )
+    out = df.group_by("key", maintain_order=True).agg(
+        agg=pl.when(pl.col("val").min() >= 3).then(pl.col("val")),
+    )
+    assert out.to_dict(as_series=False) == {
+        "key": ["a", "b", "c"],
+        "agg": [[None, None], [3, 4], [5, 6]],
+    }
+
+
+@pytest.mark.parametrize(
+    "mask_expr",
+    [
+        pl.lit(True),
+        pl.first("true"),
+        pl.lit(False),
+        pl.first("false"),
+        pl.lit(None, dtype=pl.Boolean),
+        pl.col("null_bool"),
+        pl.col("true"),
+        pl.col("false"),
+    ],
+)
+@pytest.mark.parametrize(
+    "truthy_expr",
+    [
+        pl.lit(1),
+        pl.first("x"),
+        pl.col("x"),
+    ],
+)
+@pytest.mark.parametrize(
+    "falsy_expr",
+    [
+        pl.lit(1),
+        pl.first("x"),
+        pl.col("x"),
+    ],
+)
+@pytest.mark.parametrize(
+    "df",
+    [
+        pl.Series("x", 5 * [1], dtype=pl.Int32)
+        .to_frame()
+        .with_columns(true=True, false=False, null_bool=pl.lit(None, dtype=pl.Boolean))
+    ],
+)
+def test_single_element_broadcast(
+    mask_expr: pl.Expr,
+    truthy_expr: pl.Expr,
+    falsy_expr: pl.Expr,
+    df: pl.DataFrame,
+) -> None:
+    # Given that the lengths of the mask, truthy and falsy are all either:
+    # - Length 1
+    # - Equal length to the maximum length of the 3.
+    # This test checks that all length-1 exprs are broadcasted to the max length.
+
+    expect = df.select("x").head(
+        df.select(
+            pl.max_horizontal(mask_expr.len(), truthy_expr.len(), falsy_expr.len())
+        ).item()
+    )
+
+    actual = df.select(
+        pl.when(mask_expr).then(truthy_expr.alias("x")).otherwise(falsy_expr)
+    )
+
+    assert_frame_equal(
+        expect,
+        actual,
+    )
+
+    actual = (
+        df.group_by(pl.lit(True).alias("key"))
+        .agg(pl.when(mask_expr).then(truthy_expr.alias("x")).otherwise(falsy_expr))
+        .drop("key")
+    )
+
+    if expect.height > 1:
+        actual = actual.explode(pl.all())
+
+    assert_frame_equal(
+        expect,
+        actual,
+    )
+
+
+@pytest.mark.parametrize(
+    "df",
+    [pl.DataFrame({"x": range(5)}), pl.DataFrame({"x": 5 * [[*range(5)]]})],
+)
+@pytest.mark.parametrize(
+    "ternary_expr",
+    [
+        pl.when(True).then(pl.col("x").head(2)).otherwise(pl.col("x")),
+        pl.when(False).then(pl.col("x").head(2)).otherwise(pl.col("x")),
+    ],
+)
+def test_mismatched_height_should_raise(
+    df: pl.DataFrame, ternary_expr: pl.Expr
+) -> None:
+    with pytest.raises(pl.ShapeError):
+        df.select(ternary_expr)
+
+    with pytest.raises(pl.ShapeError):
+        df.group_by(pl.lit(True).alias("key")).agg(ternary_expr)
+
+
+def test_when_then_output_name_12380() -> None:
+    df = pl.DataFrame(
+        {"x": range(5), "y": range(5, 10)}, schema={"x": pl.Int8, "y": pl.Int64}
+    ).with_columns(true=True, false=False, null_bool=pl.lit(None, dtype=pl.Boolean))
+
+    expect = df.select(pl.col("x").cast(pl.Int64))
+    for true_expr in (pl.first("true"), pl.col("true"), pl.lit(True)):
+        ternary_expr = pl.when(true_expr).then(pl.col("x")).otherwise(pl.col("y"))
+
+        actual = df.select(ternary_expr)
+        assert_frame_equal(
+            expect,
+            actual,
+        )
+        actual = (
+            df.group_by(pl.lit(True).alias("key"))
+            .agg(ternary_expr)
+            .drop("key")
+            .explode(pl.all())
+        )
+        assert_frame_equal(
+            expect,
+            actual,
+        )
+
+    expect = df.select(pl.col("y").alias("x"))
+    for false_expr in (
+        pl.first("false"),
+        pl.col("false"),
+        pl.lit(False),
+        pl.first("null_bool"),
+        pl.col("null_bool"),
+        pl.lit(None, dtype=pl.Boolean),
+    ):
+        ternary_expr = pl.when(false_expr).then(pl.col("x")).otherwise(pl.col("y"))
+
+        actual = df.select(ternary_expr)
+        assert_frame_equal(
+            expect,
+            actual,
+        )
+        actual = (
+            df.group_by(pl.lit(True).alias("key"))
+            .agg(ternary_expr)
+            .drop("key")
+            .explode(pl.all())
+        )
+        assert_frame_equal(
+            expect,
+            actual,
+        )
+
+
+def test_when_then_nested_non_unit_literal_predicate_agg_broadcast_12242() -> None:
+    df = pl.DataFrame(
+        {
+            "array_name": ["A", "A", "A", "B", "B"],
+            "array_idx": [5, 0, 3, 7, 2],
+            "array_val": [1, 2, 3, 4, 5],
         }
     )
 
-    with pytest.deprecated_call():
-        result = df.select(pl.when("a").then("b").otherwise("c").alias("when"))
+    int_range = pl.int_range(pl.min("array_idx"), pl.max("array_idx") + 1)
 
-    expected = pl.Series("when", ["b", "c"])
-    assert_series_equal(result.to_series(), expected)
+    is_valid_idx = int_range.is_in("array_idx")
+
+    idxs = is_valid_idx.cum_sum() - 1
+
+    ternary_expr = pl.when(is_valid_idx).then(pl.col("array_val").gather(idxs))
+
+    expect = pl.DataFrame(
+        [
+            pl.Series("array_name", ["A", "B"], dtype=pl.Utf8),
+            pl.Series(
+                "array_val",
+                [[1, None, None, 2, None, 3], [4, None, None, None, None, 5]],
+                dtype=pl.List(pl.Int64),
+            ),
+        ]
+    )
+
+    assert_frame_equal(
+        expect, df.group_by("array_name").agg(ternary_expr).sort("array_name")
+    )
+
+
+def test_when_then_non_unit_literal_predicate_agg_broadcast_12382() -> None:
+    df = pl.DataFrame({"id": [1, 1], "value": [0, 3]})
+
+    expect = pl.DataFrame({"id": [1], "literal": [["yes", None, None, "yes", None]]})
+    actual = df.group_by("id").agg(
+        pl.when(pl.int_range(0, 5).is_in("value")).then(pl.lit("yes"))
+    )
+
+    assert_frame_equal(expect, actual)
+
+
+def test_when_then_binary_op_predicate_agg_12526() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 1],
+            "b": [1, 2, 5],
+        }
+    )
+
+    expect = pl.DataFrame(
+        {"a": [1], "col": [None]}, schema={"a": pl.Int64, "col": pl.Utf8}
+    )
+
+    actual = df.group_by("a").agg(
+        col=(
+            pl.when(
+                pl.col("a").shift(1) > 2,
+                pl.col("b").is_not_null(),
+            )
+            .then(pl.lit("abc"))
+            .when(
+                pl.col("a").shift(1) > 1,
+                pl.col("b").is_not_null(),
+            )
+            .then(pl.lit("def"))
+            .otherwise(pl.lit(None))
+            .first()
+        )
+    )
+
+    assert_frame_equal(expect, actual)
+
+
+def test_when_predicates_kwargs() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [10, 20, 30, 40],
+            "y": [15, -20, None, 1],
+            "z": ["a", "b", "c", "d"],
+        }
+    )
+    assert_frame_equal(  # kwargs only
+        df.select(matched=pl.when(x=30, z="c").then(True).otherwise(False)),
+        pl.DataFrame({"matched": [False, False, True, False]}),
+    )
+    assert_frame_equal(  # mixed predicates & kwargs
+        df.select(matched=pl.when(pl.col("x") < 30, z="b").then(True).otherwise(False)),
+        pl.DataFrame({"matched": [False, True, False, False]}),
+    )
+    assert_frame_equal(  # chained when/then with mixed predicates/kwargs
+        df.select(
+            misc=pl.when(pl.col("x") > 50)
+            .then(pl.lit("x>50"))
+            .when(y=1)
+            .then(pl.lit("y=1"))
+            .when(pl.col("z").is_in(["a", "b"]), pl.col("y") < 0)
+            .then(pl.lit("z in (a|b), y<0"))
+            .otherwise(pl.lit("?"))
+        ),
+        pl.DataFrame({"misc": ["?", "z in (a|b), y<0", "?", "y=1"]}),
+    )

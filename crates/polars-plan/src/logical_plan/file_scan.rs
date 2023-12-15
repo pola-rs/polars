@@ -1,5 +1,5 @@
 #[cfg(feature = "parquet")]
-use arrow::io::parquet::write::FileMetaData;
+use polars_parquet::write::FileMetaData;
 
 use super::*;
 
@@ -50,6 +50,17 @@ impl PartialEq for FileScan {
 }
 
 impl FileScan {
+    pub(crate) fn remove_metadata(&mut self) {
+        match self {
+            #[cfg(feature = "parquet")]
+            Self::Parquet { metadata, .. } => {
+                *metadata = None;
+            },
+            _ => {},
+        }
+    }
+
+    #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv", feature = "cse"))]
     pub(crate) fn skip_rows(&self) -> usize {
         #[allow(unreachable_patterns)]
         match self {

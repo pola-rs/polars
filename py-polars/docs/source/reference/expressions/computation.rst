@@ -19,6 +19,11 @@ Computation
     Expr.cos
     Expr.cosh
     Expr.cot
+    Expr.cum_count
+    Expr.cum_max
+    Expr.cum_min
+    Expr.cum_prod
+    Expr.cum_sum
     Expr.cumcount
     Expr.cummax
     Expr.cummin
@@ -34,6 +39,7 @@ Computation
     Expr.ewm_var
     Expr.exp
     Expr.hash
+    Expr.hist
     Expr.kurtosis
     Expr.log
     Expr.log10

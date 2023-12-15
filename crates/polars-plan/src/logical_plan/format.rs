@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter, Write};
-use std::path::Path;
+use std::path::PathBuf;
 
 use crate::prelude::*;
 
@@ -9,7 +9,7 @@ use crate::prelude::*;
 fn write_scan<P: Display>(
     f: &mut Formatter,
     name: &str,
-    path: &Path,
+    path: &[PathBuf],
     indent: usize,
     n_columns: i64,
     total_columns: usize,
@@ -19,7 +19,17 @@ fn write_scan<P: Display>(
     if indent != 0 {
         writeln!(f)?;
     }
-    write!(f, "{:indent$}{} SCAN {}", "", name, path.display())?;
+    let path_fmt = match path.len() {
+        1 => path[0].to_string_lossy(),
+        0 => "".into(),
+        _ => Cow::Owned(format!(
+            "{} files: first file: {}",
+            path.len(),
+            path[0].to_string_lossy()
+        )),
+    };
+
+    write!(f, "{:indent$}{} SCAN {}", "", name, path_fmt)?;
     if n_columns > 0 {
         write!(
             f,
@@ -58,7 +68,7 @@ impl LogicalPlan {
                 write_scan(
                     f,
                     "PYTHON",
-                    Path::new(""),
+                    &[],
                     sub_indent,
                     n_columns,
                     total_columns,
@@ -91,7 +101,7 @@ impl LogicalPlan {
                 input._format(f, sub_indent)
             },
             Scan {
-                path,
+                paths,
                 file_info,
                 predicate,
                 scan_type,
@@ -106,7 +116,7 @@ impl LogicalPlan {
                 write_scan(
                     f,
                     scan_type.into(),
-                    path,
+                    paths,
                     sub_indent,
                     n_columns,
                     file_info.schema.len(),
@@ -268,8 +278,16 @@ impl Debug for Expr {
             Filter { input, by } => {
                 write!(f, "{input:?}.filter({by:?})")
             },
-            Take { expr, idx } => {
-                write!(f, "{expr:?}.take({idx:?})")
+            Gather {
+                expr,
+                idx,
+                returns_scalar,
+            } => {
+                if *returns_scalar {
+                    write!(f, "{expr:?}.get({idx:?})")
+                } else {
+                    write!(f, "{expr:?}.gather({idx:?})")
+                }
             },
             SubPlan(lf, _) => {
                 write!(f, ".subplan({lf:?})")
@@ -305,7 +323,7 @@ impl Debug for Expr {
                     NUnique(expr) => write!(f, "{expr:?}.n_unique()"),
                     Sum(expr) => write!(f, "{expr:?}.sum()"),
                     AggGroups(expr) => write!(f, "{expr:?}.groups()"),
-                    Count(expr) => write!(f, "{expr:?}.count()"),
+                    Count(expr, _) => write!(f, "{expr:?}.count()"),
                     Var(expr, _) => write!(f, "{expr:?}.var()"),
                     Std(expr, _) => write!(f, "{expr:?}.std()"),
                     Quantile { expr, .. } => write!(f, "{expr:?}.quantile()"),
@@ -353,7 +371,7 @@ impl Debug for Expr {
             } => write!(f, "{input:?}.slice(offset={offset:?}, length={length:?})",),
             Wildcard => write!(f, "*"),
             Exclude(column, names) => write!(f, "{column:?}.exclude({names:?})"),
-            KeepName(e) => write!(f, "{e:?}.keep_name()"),
+            KeepName(e) => write!(f, "{e:?}.name.keep()"),
             RenameAlias { expr, .. } => write!(f, ".rename_alias({expr:?})"),
             Columns(names) => write!(f, "cols({names:?})"),
             DtypeColumn(dt) => write!(f, "dtype_columns({dt:?})"),

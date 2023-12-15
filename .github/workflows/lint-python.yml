@@ -23,23 +23,26 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Install Python dependencies
         run: pip install -r requirements-lint.txt
 
-      - name: Lint Python
-        run: |
-          ruff --exit-non-zero-on-fix .
-          black --check .
-          blackdoc --check .
+      - name: Run ruff linter
+        run: ruff check --no-fix .
+
+      - name: Run ruff formatter
+        run: ruff format --diff .
+
+      - name: Run blackdoc
+        run: blackdoc --diff .
 
   mypy:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.8', '3.11']
+        python-version: ['3.8', '3.12']
     defaults:
       run:
         working-directory: py-polars

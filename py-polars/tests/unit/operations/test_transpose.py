@@ -4,8 +4,8 @@ from typing import Iterator
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
-from polars.testing import assert_frame_equal
+from polars.exceptions import ComputeError, StringCacheMismatchError
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_transpose_supertype() -> None:
@@ -129,6 +129,44 @@ def test_transpose_arguments() -> None:
         }
     )
     assert_frame_equal(expected, out)
+
+
+def test_transpose_categorical_data() -> None:
+    with pl.StringCache():
+        df = pl.DataFrame(
+            [
+                pl.Series(["a", "b", "c"], dtype=pl.Categorical),
+                pl.Series(["c", "g", "c"], dtype=pl.Categorical),
+                pl.Series(["d", "b", "c"], dtype=pl.Categorical),
+            ]
+        )
+        df_transposed = df.transpose(
+            include_header=False, column_names=["col1", "col2", "col3"]
+        )
+        assert_series_equal(
+            df_transposed.get_column("col1"),
+            pl.Series("col1", ["a", "c", "d"], dtype=pl.Categorical),
+        )
+
+    # Without string Cache only works if they have the same categories in the same order
+    df = pl.DataFrame(
+        [
+            pl.Series(["a", "b", "c", "c"], dtype=pl.Categorical),
+            pl.Series(["a", "b", "b", "c"], dtype=pl.Categorical),
+            pl.Series(["a", "a", "b", "c"], dtype=pl.Categorical),
+        ]
+    )
+    df_transposed = df.transpose(
+        include_header=False, column_names=["col1", "col2", "col3", "col4"]
+    )
+
+    with pytest.raises(StringCacheMismatchError):
+        pl.DataFrame(
+            [
+                pl.Series(["a", "b", "c", "c"], dtype=pl.Categorical),
+                pl.Series(["c", "b", "b", "c"], dtype=pl.Categorical),
+            ]
+        ).transpose()
 
 
 def test_transpose_logical_data() -> None:

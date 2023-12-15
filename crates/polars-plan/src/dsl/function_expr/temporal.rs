@@ -6,6 +6,62 @@ use polars_core::chunked_array::ops::arity::try_binary_elementwise;
 use polars_time::prelude::*;
 
 use super::*;
+use crate::{map, map_as_slice};
+
+impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+    fn from(func: TemporalFunction) -> Self {
+        use TemporalFunction::*;
+        match func {
+            Year => map!(datetime::year),
+            IsLeapYear => map!(datetime::is_leap_year),
+            IsoYear => map!(datetime::iso_year),
+            Month => map!(datetime::month),
+            Quarter => map!(datetime::quarter),
+            Week => map!(datetime::week),
+            WeekDay => map!(datetime::weekday),
+            Day => map!(datetime::day),
+            OrdinalDay => map!(datetime::ordinal_day),
+            Time => map!(datetime::time),
+            Date => map!(datetime::date),
+            Datetime => map!(datetime::datetime),
+            Hour => map!(datetime::hour),
+            Minute => map!(datetime::minute),
+            Second => map!(datetime::second),
+            Millisecond => map!(datetime::millisecond),
+            Microsecond => map!(datetime::microsecond),
+            Nanosecond => map!(datetime::nanosecond),
+            ToString(format) => map!(datetime::to_string, &format),
+            TimeStamp(tu) => map!(datetime::timestamp, tu),
+            #[cfg(feature = "timezones")]
+            ConvertTimeZone(tz) => map!(datetime::convert_time_zone, &tz),
+            WithTimeUnit(tu) => map!(datetime::with_time_unit, tu),
+            CastTimeUnit(tu) => map!(datetime::cast_time_unit, tu),
+            Truncate(offset) => {
+                map_as_slice!(datetime::truncate, &offset)
+            },
+            #[cfg(feature = "date_offset")]
+            MonthStart => map!(datetime::month_start),
+            #[cfg(feature = "date_offset")]
+            MonthEnd => map!(datetime::month_end),
+            #[cfg(feature = "timezones")]
+            BaseUtcOffset => map!(datetime::base_utc_offset),
+            #[cfg(feature = "timezones")]
+            DSTOffset => map!(datetime::dst_offset),
+            Round(every, offset) => map_as_slice!(datetime::round, &every, &offset),
+            #[cfg(feature = "timezones")]
+            ReplaceTimeZone(tz) => {
+                map_as_slice!(dispatch::replace_time_zone, tz.as_deref())
+            },
+            Combine(tu) => map_as_slice!(temporal::combine, tu),
+            DatetimeFunction {
+                time_unit,
+                time_zone,
+            } => {
+                map_as_slice!(temporal::datetime, &time_unit, time_zone.as_deref())
+            },
+        }
+    }
+}
 
 pub(super) fn datetime(
     s: &[Series],

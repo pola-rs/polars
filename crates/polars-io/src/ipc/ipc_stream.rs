@@ -31,7 +31,7 @@
 //!
 //! // read the buffer into a DataFrame
 //! let df_read = IpcStreamReader::new(buf).finish().unwrap();
-//! assert!(df.frame_equal(&df_read));
+//! assert!(df.equals(&df_read));
 //! ```
 use std::io::{Read, Write};
 use std::path::PathBuf;

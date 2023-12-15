@@ -21,20 +21,21 @@ use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub, SubAssign};
 
-use ahash::RandomState;
 pub use aliases::*;
 pub use any_value::*;
-use arrow::compute::comparison::Simd8;
 #[cfg(feature = "dtype-categorical")]
 use arrow::datatypes::IntegerType;
-pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit as ArrowTimeUnit};
-use arrow::legacy::data_types::IsFloat;
+pub use arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use bytemuck::Zeroable;
 pub use dtype::*;
 pub use field::*;
 use num_traits::{Bounded, FromPrimitive, Num, NumCast, One, Zero};
+use polars_utils::abs_diff::AbsDiff;
+use polars_utils::float::IsFloat;
+use polars_utils::min_max::MinMax;
+use polars_utils::nulls::IsNull;
 #[cfg(feature = "serde")]
 use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
@@ -61,7 +62,7 @@ pub struct Flat;
 ///
 /// The StaticArray and dtype return must be correct.
 pub unsafe trait PolarsDataType: Send + Sync + Sized {
-    type Physical<'a>;
+    type Physical<'a>: std::fmt::Debug;
     type ZeroablePhysical<'a>: Zeroable + From<Self::Physical<'a>>;
     type Array: for<'a> StaticArray<
         ValueT<'a> = Self::Physical<'a>,
@@ -246,7 +247,7 @@ pub trait NumericNative:
     + Zero
     + One
     + Simd
-    + Simd8
+    // + Simd8
     + std::iter::Sum<Self>
     + Add<Output = Self>
     + Sub<Output = Self>
@@ -255,10 +256,13 @@ pub trait NumericNative:
     + Rem<Output = Self>
     + AddAssign
     + SubAssign
+    + AbsDiff
     + Bounded
     + FromPrimitive
     + IsFloat
     + ArrayArithmetics
+    + MinMax
+    + IsNull
 {
     type PolarsType: PolarsNumericType;
 }

@@ -4,7 +4,7 @@ use super::{primitive_as_primitive, primitive_to_primitive, CastOptions};
 use crate::array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray};
 use crate::compute::cast::cast;
 use crate::compute::take::take;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::match_integer_type;
 
 macro_rules! key_cast {
@@ -30,7 +30,7 @@ macro_rules! key_cast {
 /// This function errors if the values are not castable to `values_type`
 pub fn dictionary_to_dictionary_values<K: DictionaryKey>(
     from: &DictionaryArray<K>,
-    values_type: &DataType,
+    values_type: &ArrowDataType,
 ) -> PolarsResult<DictionaryArray<K>> {
     let keys = from.keys();
     let values = from.values();
@@ -47,7 +47,7 @@ pub fn dictionary_to_dictionary_values<K: DictionaryKey>(
 /// Similar to dictionary_to_dictionary_values, but overflowing cast is wrapped
 pub fn wrapping_dictionary_to_dictionary_values<K: DictionaryKey>(
     from: &DictionaryArray<K>,
-    values_type: &DataType,
+    values_type: &ArrowDataType,
 ) -> PolarsResult<DictionaryArray<K>> {
     let keys = from.keys();
     let values = from.values();
@@ -88,7 +88,7 @@ where
     if casted_keys.null_count() > keys.null_count() {
         polars_bail!(ComputeError: "overflow")
     } else {
-        let data_type = DataType::Dictionary(
+        let data_type = ArrowDataType::Dictionary(
             K2::KEY_TYPE,
             Box::new(values.data_type().clone()),
             is_ordered,
@@ -115,7 +115,7 @@ where
     if casted_keys.null_count() > keys.null_count() {
         polars_bail!(ComputeError: "overflow")
     } else {
-        let data_type = DataType::Dictionary(
+        let data_type = ArrowDataType::Dictionary(
             K2::KEY_TYPE,
             Box::new(values.data_type().clone()),
             is_ordered,
@@ -127,7 +127,7 @@ where
 
 pub(super) fn dictionary_cast_dyn<K: DictionaryKey + num_traits::NumCast>(
     array: &dyn Array,
-    to_type: &DataType,
+    to_type: &ArrowDataType,
     options: CastOptions,
 ) -> PolarsResult<Box<dyn Array>> {
     let array = array.as_any().downcast_ref::<DictionaryArray<K>>().unwrap();
@@ -135,7 +135,7 @@ pub(super) fn dictionary_cast_dyn<K: DictionaryKey + num_traits::NumCast>(
     let values = array.values();
 
     match to_type {
-        DataType::Dictionary(to_keys_type, to_values_type, _) => {
+        ArrowDataType::Dictionary(to_keys_type, to_values_type, _) => {
             let values = cast(values.as_ref(), to_values_type, options)?;
 
             // create the appropriate array type
@@ -155,7 +155,7 @@ pub(super) fn dictionary_cast_dyn<K: DictionaryKey + num_traits::NumCast>(
 fn unpack_dictionary<K>(
     keys: &PrimitiveArray<K>,
     values: &dyn Array,
-    to_type: &DataType,
+    to_type: &ArrowDataType,
     options: CastOptions,
 ) -> PolarsResult<Box<dyn Array>>
 where
@@ -166,19 +166,19 @@ where
     let values = cast(values, to_type, options)?;
 
     // take requires first casting i32
-    let indices = primitive_to_primitive::<_, i32>(keys, &DataType::Int32);
+    let indices = primitive_to_primitive::<_, i32>(keys, &ArrowDataType::Int32);
 
     take(values.as_ref(), &indices)
 }
 
-/// Casts a [`DictionaryArray`] to its values' [`DataType`], also known as unpacking.
+/// Casts a [`DictionaryArray`] to its values' [`ArrowDataType`], also known as unpacking.
 /// The resulting array has the same length.
 pub fn dictionary_to_values<K>(from: &DictionaryArray<K>) -> Box<dyn Array>
 where
     K: DictionaryKey + num_traits::NumCast,
 {
     // take requires first casting i64
-    let indices = primitive_to_primitive::<_, i64>(from.keys(), &DataType::Int64);
+    let indices = primitive_to_primitive::<_, i64>(from.keys(), &ArrowDataType::Int64);
 
     // unwrap: The dictionary guarantees that the keys are not out-of-bounds.
     take(from.values().as_ref(), &indices).unwrap()

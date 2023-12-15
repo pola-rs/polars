@@ -1,6 +1,6 @@
 # Functions
 
-`Polars` expressions have a large number of built in functions. These allow you to create complex queries without the need for [user defined functions](user-defined-functions.md). There are too many to go through here, but we will cover some of the more popular use cases. If you want to view all the functions go to the API Reference for your programming language.
+Polars expressions have a large number of built in functions. These allow you to create complex queries without the need for [user defined functions](user-defined-functions.md). There are too many to go through here, but we will cover some of the more popular use cases. If you want to view all the functions go to the API Reference for your programming language.
 
 In the examples below we will use the following `DataFrame`:
 
@@ -37,16 +37,16 @@ You can change the output name of an expression by using the `alias` function
 --8<-- "python/user-guide/expressions/functions.py:samenamealias"
 ```
 
-In case of multiple columns for example when using `all()` or `col(*)` you can apply a mapping function `map_alias` to change the original column name into something else. In case you want to add a suffix (`suffix()`) or prefix (`prefix()`) these are also built in.
+In case of multiple columns for example when using `all()` or `col(*)` you can apply a mapping function `name.map` to change the original column name into something else. In case you want to add a suffix (`name.suffix()`) or prefix (`name.prefix()`) these are also built in.
 
 === ":fontawesome-brands-python: Python"
-[:material-api: `prefix`](https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.prefix.html)
-[:material-api: `suffix`](https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.suffix.html)
-[:material-api: `map_alias`](https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.map_alias.html)
+[:material-api: `name.prefix`](https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.name.prefix.html)
+[:material-api: `name.suffix`](https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.name.suffix.html)
+[:material-api: `name.map`](https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.name.map.html)
 
 ## Count unique values
 
-There are two ways to count unique values in `Polars`: an exact methodology and an approximation. The approximation uses the [HyperLogLog++](https://en.wikipedia.org/wiki/HyperLogLog) algorithm to approximate the cardinality and is especially useful for very large datasets where an approximation is good enough.
+There are two ways to count unique values in Polars: an exact methodology and an approximation. The approximation uses the [HyperLogLog++](https://en.wikipedia.org/wiki/HyperLogLog) algorithm to approximate the cardinality and is especially useful for very large datasets where an approximation is good enough.
 
 {{code_block('user-guide/expressions/functions','countunique',['n_unique','approx_n_unique'])}}
 
@@ -56,7 +56,7 @@ There are two ways to count unique values in `Polars`: an exact methodology and 
 
 ## Conditionals
 
-`Polars` supports if-else like conditions in expressions with the `when`, `then`, `otherwise` syntax. The predicate is placed in the `when` clause and when this evaluates to `true` the `then` expression is applied otherwise the `otherwise` expression is applied (row-wise).
+Polars supports if-else like conditions in expressions with the `when`, `then`, `otherwise` syntax. The predicate is placed in the `when` clause and when this evaluates to `true` the `then` expression is applied otherwise the `otherwise` expression is applied (row-wise).
 
 {{code_block('user-guide/expressions/functions','conditional',['when'])}}
 

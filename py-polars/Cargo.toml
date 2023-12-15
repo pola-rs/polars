@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.19.8"
+version = "0.19.18"
 edition = "2021"
 
 [lib]
@@ -8,30 +8,30 @@ name = "polars"
 crate-type = ["cdylib"]
 
 [dependencies]
-polars-algo = { path = "../crates/polars-algo", default-features = false }
-polars-core = { path = "../crates/polars-core", default-features = false, features = ["python"] }
-polars-error = { path = "../crates/polars-error" }
-polars-lazy = { path = "../crates/polars-lazy", default-features = false, features = ["python"] }
-polars-ops = { path = "../crates/polars-ops", default-features = false, features = ["convert_index"] }
-polars-plan = { path = "../crates/polars-plan", default-features = false }
+polars-core = { workspace = true, features = ["python"] }
+polars-error = { workspace = true }
+polars-lazy = { workspace = true, features = ["python"] }
+polars-ops = { workspace = true, features = ["convert_index"] }
+polars-parquet = { workspace = true, optional = true }
+polars-plan = { workspace = true }
+polars-utils = { workspace = true }
 
-ahash = "0.8"
-ciborium = "0.2"
-either = "1.8"
-lexical-core = "0.8"
+ahash = { workspace = true }
+ciborium = { workspace = true }
+either = { workspace = true }
+itoa = { workspace = true }
 libc = "0.2"
-ndarray = { version = "0.15", default-features = false }
+ndarray = { workspace = true }
 numpy = { version = "0.20", default-features = false }
-once_cell = "1"
-pyo3 = { version = "0.20", features = ["abi3-py38", "extension-module", "multiple-pymethods"] }
+once_cell = { workspace = true }
+pyo3 = { workspace = true, features = ["abi3-py38", "extension-module", "multiple-pymethods"] }
 pyo3-built = { version = "0.4", optional = true }
-serde_json = { version = "1", optional = true }
-smartstring = "1"
-thiserror = "1"
+serde_json = { workspace = true, optional = true }
+smartstring = { workspace = true }
+thiserror = { workspace = true }
 
 [dependencies.polars]
-path = "../crates/polars"
-default-features = false
+workspace = true
 features = [
   "abs",
   "approx_unique",
@@ -68,6 +68,7 @@ features = [
   "range",
   "rank",
   "reinterpret",
+  "replace",
   "rolling_window",
   "round_series",
   "row_hash",
@@ -75,23 +76,25 @@ features = [
   "semi_anti_join",
   "serde-lazy",
   "string_encoding",
-  "string_from_radix",
-  "string_justify",
+  "string_reverse",
+  "string_to_integer",
+  "string_pad",
   "strings",
   "temporal",
   "to_dummies",
   "true_div",
   "unique_counts",
   "zip_with",
+  "cov",
 ]
 
 [build-dependencies]
-built = { version = "0.6", features = ["chrono", "git2"], optional = true }
+built = { version = "0.7", features = ["chrono", "git2", "cargo-lock"], optional = true }
 
-[target.'cfg(any(not(target_os = "linux"), use_mimalloc))'.dependencies]
+[target.'cfg(any(not(target_family = "unix"), use_mimalloc))'.dependencies]
 mimalloc = { version = "0.1", default-features = false }
 
-[target.'cfg(all(target_os = "linux", not(use_mimalloc)))'.dependencies]
+[target.'cfg(all(target_family = "unix", not(use_mimalloc)))'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 # features are only there to enable building a slim binary for the benchmark in CI
@@ -102,7 +105,7 @@ dtype-i16 = []
 dtype-u8 = []
 dtype-u16 = []
 avro = ["polars/avro"]
-parquet = ["polars/parquet"]
+parquet = ["polars/parquet", "polars-parquet"]
 ipc = ["polars/ipc"]
 ipc_streaming = ["polars/ipc_streaming"]
 is_in = ["polars/is_in"]
@@ -132,19 +135,21 @@ performant = ["polars/performant"]
 timezones = ["polars/timezones"]
 cse = ["polars/cse"]
 merge_sorted = ["polars/merge_sorted"]
-list_take = ["polars/list_take"]
+list_gather = ["polars/list_gather"]
 list_count = ["polars/list_count"]
 binary_encoding = ["polars/binary_encoding"]
 list_sets = ["polars-lazy/list_sets"]
 list_any_all = ["polars/list_any_all"]
 list_drop_nulls = ["polars/list_drop_nulls"]
+list_sample = ["polars/list_sample"]
 cutqcut = ["polars/cutqcut"]
 rle = ["polars/rle"]
 extract_groups = ["polars/extract_groups"]
 ffi_plugin = ["polars-plan/ffi_plugin"]
-cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure"]
+cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure", "polars/http"]
 cloud_write = ["cloud", "polars/cloud_write"]
 peaks = ["polars/peaks"]
+hist = ["polars/hist"]
 
 dtypes = [
   "dtype-i8",
@@ -161,11 +166,12 @@ operations = [
   "trigonometry",
   "sign",
   "performant",
-  "list_take",
+  "list_gather",
   "list_count",
   "list_sets",
   "list_any_all",
   "list_drop_nulls",
+  "list_sample",
   "cutqcut",
   "rle",
   "extract_groups",
@@ -180,6 +186,7 @@ operations = [
   "propagate_nans",
   "timezones",
   "peaks",
+  "hist",
 ]
 
 io = [
@@ -221,25 +228,3 @@ default = [
   "all",
   "nightly",
 ]
-
-[profile.opt-dev]
-inherits = "dev"
-opt-level = 1
-
-[profile.debug-release]
-inherits = "release"
-debug = true
-incremental = true
-codegen-units = 16
-lto = "thin"
-
-[profile.release]
-codegen-units = 1
-lto = "fat"
-
-# This is ignored here; would be set in .cargo/config.toml.
-# Should not be used when packaging
-# target-cpu = "native"
-
-# Prevent package from thinking it's in the workspace
-[workspace]

@@ -129,7 +129,7 @@ impl PyLazyFrame {
         let r = if let Some(path) = &path {
             LazyJsonLineReader::new(path)
         } else {
-            LazyJsonLineReader::new_paths(paths)
+            LazyJsonLineReader::new_paths(paths.into())
         };
 
         let lf = r
@@ -149,7 +149,7 @@ impl PyLazyFrame {
     #[staticmethod]
     #[cfg(feature = "csv")]
     #[pyo3(signature = (path, paths, separator, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
-        low_memory, comment_char, quote_char, null_values, missing_utf8_is_empty_string,
+        low_memory, comment_prefix, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
         encoding, row_count, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, schema
     )
@@ -165,7 +165,7 @@ impl PyLazyFrame {
         cache: bool,
         overwrite_dtype: Option<Vec<(&str, Wrap<DataType>)>>,
         low_memory: bool,
-        comment_char: Option<&str>,
+        comment_prefix: Option<&str>,
         quote_char: Option<&str>,
         null_values: Option<Wrap<NullValues>>,
         missing_utf8_is_empty_string: bool,
@@ -182,7 +182,6 @@ impl PyLazyFrame {
         schema: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
-        let comment_char = comment_char.map(|s| s.as_bytes()[0]);
         let quote_char = quote_char.map(|s| s.as_bytes()[0]);
         let separator = separator.as_bytes()[0];
         let eol_char = eol_char.as_bytes()[0];
@@ -198,7 +197,7 @@ impl PyLazyFrame {
         let r = if let Some(path) = path.as_ref() {
             LazyCsvReader::new(path)
         } else {
-            LazyCsvReader::new_paths(paths)
+            LazyCsvReader::new_paths(paths.into())
         };
 
         let mut r = r
@@ -212,7 +211,7 @@ impl PyLazyFrame {
             .with_dtype_overwrite(overwrite_dtype.as_ref())
             .with_schema(schema.map(|schema| Arc::new(schema.0)))
             .low_memory(low_memory)
-            .with_comment_char(comment_char)
+            .with_comment_prefix(comment_prefix)
             .with_quote_char(quote_char)
             .with_end_of_line_char(eol_char)
             .with_rechunk(rechunk)
@@ -274,7 +273,7 @@ impl PyLazyFrame {
             path
         } else {
             paths
-                .get(0)
+                .first()
                 .ok_or_else(|| PyValueError::new_err("expected a path argument"))?
         };
 
@@ -297,7 +296,7 @@ impl PyLazyFrame {
         let lf = if path.is_some() {
             LazyFrame::scan_parquet(first_path, args)
         } else {
-            LazyFrame::scan_parquet_files(paths, args)
+            LazyFrame::scan_parquet_files(Arc::from(paths), args)
         }
         .map_err(PyPolarsErr::from)?;
         Ok(lf.into())
@@ -327,7 +326,7 @@ impl PyLazyFrame {
         let lf = if let Some(path) = &path {
             LazyFrame::scan_ipc(path, args)
         } else {
-            LazyFrame::scan_ipc_files(paths, args)
+            LazyFrame::scan_ipc_files(paths.into(), args)
         }
         .map_err(PyPolarsErr::from)?;
         Ok(lf.into())
@@ -606,12 +605,13 @@ impl PyLazyFrame {
     }
 
     #[cfg(all(feature = "streaming", feature = "csv"))]
-    #[pyo3(signature = (path, has_header, separator, line_terminator, quote_char, batch_size, datetime_format, date_format, time_format, float_precision, null_value, quote_style, maintain_order))]
+    #[pyo3(signature = (path, include_bom, include_header, separator, line_terminator, quote_char, batch_size, datetime_format, date_format, time_format, float_precision, null_value, quote_style, maintain_order))]
     fn sink_csv(
         &self,
         py: Python,
         path: PathBuf,
-        has_header: bool,
+        include_bom: bool,
+        include_header: bool,
         separator: u8,
         line_terminator: String,
         quote_char: u8,
@@ -640,7 +640,8 @@ impl PyLazyFrame {
         };
 
         let options = CsvWriterOptions {
-            has_header,
+            include_bom,
+            include_header,
             maintain_order,
             batch_size,
             serialize_options,
@@ -651,6 +652,21 @@ impl PyLazyFrame {
         py.allow_threads(|| {
             let ldf = self.ldf.clone();
             ldf.sink_csv(path, options).map_err(PyPolarsErr::from)
+        })?;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[cfg(all(feature = "streaming", feature = "json"))]
+    #[pyo3(signature = (path, maintain_order))]
+    fn sink_json(&self, py: Python, path: PathBuf, maintain_order: bool) -> PyResult<()> {
+        let options = JsonWriterOptions { maintain_order };
+
+        // if we don't allow threads and we have udfs trying to acquire the gil from different
+        // threads we deadlock.
+        py.allow_threads(|| {
+            let ldf = self.ldf.clone();
+            ldf.sink_json(path, options).map_err(PyPolarsErr::from)
         })?;
         Ok(())
     }
@@ -690,7 +706,7 @@ impl PyLazyFrame {
         PyLazyGroupBy { lgb: Some(lazy_gb) }
     }
 
-    fn group_by_rolling(
+    fn rolling(
         &mut self,
         index_column: PyExpr,
         period: &str,
@@ -809,6 +825,7 @@ impl PyLazyFrame {
         right_on: Vec<PyExpr>,
         allow_parallel: bool,
         force_parallel: bool,
+        join_nulls: bool,
         how: Wrap<JoinType>,
         suffix: String,
         validate: Wrap<JoinValidation>,
@@ -831,6 +848,7 @@ impl PyLazyFrame {
             .right_on(right_on)
             .allow_parallel(allow_parallel)
             .force_parallel(force_parallel)
+            .join_nulls(join_nulls)
             .how(how.0)
             .validate(validate.0)
             .suffix(suffix)
@@ -863,14 +881,13 @@ impl PyLazyFrame {
         ldf.reverse().into()
     }
 
-    fn shift(&self, periods: i64) -> Self {
-        let ldf = self.ldf.clone();
-        ldf.shift(periods).into()
-    }
-
-    fn shift_and_fill(&self, periods: i64, fill_value: PyExpr) -> Self {
-        let ldf = self.ldf.clone();
-        ldf.shift_and_fill(periods, fill_value.inner).into()
+    fn shift(&self, n: PyExpr, fill_value: Option<PyExpr>) -> Self {
+        let lf = self.ldf.clone();
+        let out = match fill_value {
+            Some(v) => lf.shift_and_fill(n.inner, v.inner),
+            None => lf.shift(n.inner),
+        };
+        out.into()
     }
 
     fn fill_nan(&self, fill_value: PyExpr) -> Self {
@@ -878,44 +895,58 @@ impl PyLazyFrame {
         ldf.fill_nan(fill_value.inner).into()
     }
 
-    fn min(&self) -> Self {
+    fn min(&self) -> PyResult<Self> {
         let ldf = self.ldf.clone();
-        ldf.min().into()
+        let out = ldf.min().map_err(PyPolarsErr::from)?;
+        Ok(out.into())
     }
 
-    fn max(&self) -> Self {
+    fn max(&self) -> PyResult<Self> {
         let ldf = self.ldf.clone();
-        ldf.max().into()
+        let out = ldf.max().map_err(PyPolarsErr::from)?;
+        Ok(out.into())
     }
 
-    fn sum(&self) -> Self {
+    fn sum(&self) -> PyResult<Self> {
         let ldf = self.ldf.clone();
-        ldf.sum().into()
+        let out = ldf.sum().map_err(PyPolarsErr::from)?;
+        Ok(out.into())
     }
 
-    fn mean(&self) -> Self {
+    fn mean(&self) -> PyResult<Self> {
         let ldf = self.ldf.clone();
-        ldf.mean().into()
+        let out = ldf.mean().map_err(PyPolarsErr::from)?;
+        Ok(out.into())
     }
 
-    fn std(&self, ddof: u8) -> Self {
+    fn std(&self, ddof: u8) -> PyResult<Self> {
         let ldf = self.ldf.clone();
-        ldf.std(ddof).into()
+        let out = ldf.std(ddof).map_err(PyPolarsErr::from)?;
+        Ok(out.into())
     }
 
-    fn var(&self, ddof: u8) -> Self {
+    fn var(&self, ddof: u8) -> PyResult<Self> {
         let ldf = self.ldf.clone();
-        ldf.var(ddof).into()
+        let out = ldf.var(ddof).map_err(PyPolarsErr::from)?;
+        Ok(out.into())
     }
 
-    fn median(&self) -> Self {
+    fn median(&self) -> PyResult<Self> {
         let ldf = self.ldf.clone();
-        ldf.median().into()
+        let out = ldf.median().map_err(PyPolarsErr::from)?;
+        Ok(out.into())
     }
 
-    fn quantile(&self, quantile: PyExpr, interpolation: Wrap<QuantileInterpolOptions>) -> Self {
+    fn quantile(
+        &self,
+        quantile: PyExpr,
+        interpolation: Wrap<QuantileInterpolOptions>,
+    ) -> PyResult<Self> {
         let ldf = self.ldf.clone();
-        ldf.quantile(quantile.inner, interpolation.0).into()
+        let out = ldf
+            .quantile(quantile.inner, interpolation.0)
+            .map_err(PyPolarsErr::from)?;
+        Ok(out.into())
     }
 
     fn explode(&self, column: Vec<PyExpr>) -> Self {

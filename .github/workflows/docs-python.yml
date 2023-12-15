@@ -13,8 +13,9 @@ on:
       - py-polars/docs/**
       - py-polars/polars/**
       - .github/workflows/docs-python.yml
-    tags:
-      - py-**
+  repository_dispatch:
+    types:
+      - python-release
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -24,11 +25,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.client_payload.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: '3.12'
           cache: pip
           cache-dependency-path: py-polars/docs/requirements-docs.txt
 
@@ -40,7 +43,7 @@ jobs:
         working-directory: py-polars/docs
         env:
           SPHINXOPTS: -W --jobs=auto
-          POLARS_VERSION: ${{ github.ref_name }}
+          POLARS_VERSION: ${{ github.event.client_payload.tag }}
         run: make html
 
       - name: Deploy Python docs for latest development version
@@ -53,17 +56,17 @@ jobs:
 
       - name: Parse the tag to find the major/minor version of Polars
         id: version
-        if: ${{ github.ref_type == 'tag' }}
+        if: github.event_name == 'repository_dispatch'
         shell: bash
         run: |
-          tag="${{ github.ref_name }}"
+          tag="${{ github.event.client_payload.tag }}"
           regex="py-([0-9]+\.[0-9]+)\.[0-9]+.*"
           [[ $tag =~ $regex ]]
           version=${BASH_REMATCH[1]}
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Deploy Python docs for latest release version - versioned
-        if: ${{ github.ref_type == 'tag' }}
+        if: github.event_name == 'repository_dispatch'
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html
@@ -71,7 +74,7 @@ jobs:
           single-commit: true
 
       - name: Deploy Python docs for latest release version - stable
-        if: ${{ github.ref_type == 'tag' }}
+        if: github.event_name == 'repository_dispatch'
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html

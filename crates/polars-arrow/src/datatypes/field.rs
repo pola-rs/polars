@@ -1,23 +1,23 @@
-#[cfg(feature = "serde_types")]
-use serde_derive::{Deserialize, Serialize};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
-use super::{DataType, Metadata};
+use super::{ArrowDataType, Metadata};
 
 /// Represents Arrow's metadata of a "column".
 ///
 /// A [`Field`] is the closest representation of the traditional "column": a logical type
-/// ([`DataType`]) with a name and nullability.
+/// ([`ArrowDataType`]) with a name and nullability.
 /// A Field has optional [`Metadata`] that can be used to annotate the field with custom metadata.
 ///
 /// Almost all IO in this crate uses [`Field`] to represent logical information about the data
 /// to be serialized.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Field {
     /// Its name
     pub name: String,
-    /// Its logical [`DataType`]
-    pub data_type: DataType,
+    /// Its logical [`ArrowDataType`]
+    pub data_type: ArrowDataType,
     /// Its nullability
     pub is_nullable: bool,
     /// Additional custom (opaque) metadata.
@@ -26,7 +26,7 @@ pub struct Field {
 
 impl Field {
     /// Creates a new [`Field`].
-    pub fn new<T: Into<String>>(name: T, data_type: DataType, is_nullable: bool) -> Self {
+    pub fn new<T: Into<String>>(name: T, data_type: ArrowDataType, is_nullable: bool) -> Self {
         Field {
             name: name.into(),
             data_type,
@@ -46,9 +46,9 @@ impl Field {
         }
     }
 
-    /// Returns the [`Field`]'s [`DataType`].
+    /// Returns the [`Field`]'s [`ArrowDataType`].
     #[inline]
-    pub fn data_type(&self) -> &DataType {
+    pub fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 }

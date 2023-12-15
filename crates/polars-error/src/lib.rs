@@ -18,7 +18,7 @@ where
     T: Into<Cow<'static, str>>,
 {
     fn from(msg: T) -> Self {
-        if env::var("POLARS_PANIC_ON_ERR").is_ok() {
+        if env::var("POLARS_PANIC_ON_ERR").as_deref().unwrap_or("") == "1" {
             panic!("{}", msg.into())
         } else {
             ErrString(msg.into())
@@ -88,13 +88,6 @@ impl From<object_store::Error> for PolarsError {
             std::io::ErrorKind::Other,
             format!("object-store error: {err:?}"),
         ))
-    }
-}
-
-#[cfg(feature = "parquet2")]
-impl From<parquet2::error::Error> for PolarsError {
-    fn from(err: parquet2::error::Error) -> Self {
-        polars_err!(ComputeError: "parquet error: {err:?}")
     }
 }
 
@@ -225,6 +218,9 @@ macro_rules! polars_err {
     };
     (unpack) => {
         polars_err!(SchemaMismatch: "cannot unpack series, data types don't match")
+    };
+    (not_in_enum,value=$value:expr,categories=$categories:expr) =>{
+        polars_err!(ComputeError: "value '{}' is not present in Enum: {:?}",$value,$categories)
     };
     (string_cache_mismatch) => {
         polars_err!(StringCacheMismatch: r#"

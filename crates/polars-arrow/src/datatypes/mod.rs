@@ -1,5 +1,4 @@
-#![forbid(unsafe_code)]
-//! Contains all metadata, such as [`PhysicalType`], [`DataType`], [`Field`] and [`Schema`].
+//! Contains all metadata, such as [`PhysicalType`], [`ArrowDataType`], [`Field`] and [`ArrowSchema`].
 
 mod field;
 mod physical_type;
@@ -10,11 +9,11 @@ use std::sync::Arc;
 
 pub use field::Field;
 pub use physical_type::*;
-pub use schema::Schema;
-#[cfg(feature = "serde_types")]
-use serde_derive::{Deserialize, Serialize};
+pub use schema::{ArrowSchema, ArrowSchemaRef};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
-/// typedef for [BTreeMap<String, String>] denoting [`Field`]'s and [`Schema`]'s metadata.
+/// typedef for [BTreeMap<String, String>] denoting [`Field`]'s and [`ArrowSchema`]'s metadata.
 pub type Metadata = BTreeMap<String, String>;
 /// typedef for [Option<(String, Option<String>)>] descr
 pub(crate) type Extension = Option<(String, Option<String>)>;
@@ -23,13 +22,13 @@ pub(crate) type Extension = Option<(String, Option<String>)>;
 ///
 /// Each variant uniquely identifies a logical type, which define specific semantics to the data
 /// (e.g. how it should be represented).
-/// Each variant has a corresponding [`PhysicalType`], obtained via [`DataType::to_physical_type`],
+/// Each variant has a corresponding [`PhysicalType`], obtained via [`ArrowDataType::to_physical_type`],
 /// which declares the in-memory representation of data.
-/// The [`DataType::Extension`] is special in that it augments a [`DataType`] with metadata to support custom types.
+/// The [`ArrowDataType::Extension`] is special in that it augments a [`ArrowDataType`] with metadata to support custom types.
 /// Use `to_logical_type` to desugar such type and return its corresponding logical type.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
-pub enum DataType {
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum ArrowDataType {
     /// Null type
     Null,
     /// `true` and `false`.
@@ -104,10 +103,11 @@ pub enum DataType {
     FixedSizeList(Box<Field>, usize),
     /// A list of some logical data type whose offsets are represented as [`i64`].
     LargeList(Box<Field>),
-    /// A nested [`DataType`] with a given number of [`Field`]s.
+    /// A nested [`ArrowDataType`] with a given number of [`Field`]s.
     Struct(Vec<Field>),
     /// A nested datatype that can represent slots of differing types.
     /// Third argument represents mode
+    #[cfg_attr(feature = "serde", serde(skip))]
     Union(Vec<Field>, Option<Vec<i32>>, UnionMode),
     /// A nested type that is represented as
     ///
@@ -147,7 +147,7 @@ pub enum DataType {
     /// arrays or a limited set of primitive types as integers.
     ///
     /// The `bool` value indicates the `Dictionary` is sorted if set to `true`.
-    Dictionary(IntegerType, Box<DataType>, bool),
+    Dictionary(IntegerType, Box<ArrowDataType>, bool),
     /// Decimal value with precision and scale
     /// precision is the number of digits in the number and
     /// scale is the number of decimal places.
@@ -156,70 +156,74 @@ pub enum DataType {
     /// Decimal backed by 256 bits
     Decimal256(usize, usize),
     /// Extension type.
-    Extension(String, Box<DataType>, Option<String>),
+    Extension(String, Box<ArrowDataType>, Option<String>),
 }
 
 #[cfg(feature = "arrow_rs")]
-impl From<DataType> for arrow_schema::DataType {
-    fn from(value: DataType) -> Self {
+impl From<ArrowDataType> for arrow_schema::DataType {
+    fn from(value: ArrowDataType) -> Self {
         use arrow_schema::{Field as ArrowField, UnionFields};
 
         match value {
-            DataType::Null => Self::Null,
-            DataType::Boolean => Self::Boolean,
-            DataType::Int8 => Self::Int8,
-            DataType::Int16 => Self::Int16,
-            DataType::Int32 => Self::Int32,
-            DataType::Int64 => Self::Int64,
-            DataType::UInt8 => Self::UInt8,
-            DataType::UInt16 => Self::UInt16,
-            DataType::UInt32 => Self::UInt32,
-            DataType::UInt64 => Self::UInt64,
-            DataType::Float16 => Self::Float16,
-            DataType::Float32 => Self::Float32,
-            DataType::Float64 => Self::Float64,
-            DataType::Timestamp(unit, tz) => Self::Timestamp(unit.into(), tz.map(Into::into)),
-            DataType::Date32 => Self::Date32,
-            DataType::Date64 => Self::Date64,
-            DataType::Time32(unit) => Self::Time32(unit.into()),
-            DataType::Time64(unit) => Self::Time64(unit.into()),
-            DataType::Duration(unit) => Self::Duration(unit.into()),
-            DataType::Interval(unit) => Self::Interval(unit.into()),
-            DataType::Binary => Self::Binary,
-            DataType::FixedSizeBinary(size) => Self::FixedSizeBinary(size as _),
-            DataType::LargeBinary => Self::LargeBinary,
-            DataType::Utf8 => Self::Utf8,
-            DataType::LargeUtf8 => Self::LargeUtf8,
-            DataType::List(f) => Self::List(Arc::new((*f).into())),
-            DataType::FixedSizeList(f, size) => {
+            ArrowDataType::Null => Self::Null,
+            ArrowDataType::Boolean => Self::Boolean,
+            ArrowDataType::Int8 => Self::Int8,
+            ArrowDataType::Int16 => Self::Int16,
+            ArrowDataType::Int32 => Self::Int32,
+            ArrowDataType::Int64 => Self::Int64,
+            ArrowDataType::UInt8 => Self::UInt8,
+            ArrowDataType::UInt16 => Self::UInt16,
+            ArrowDataType::UInt32 => Self::UInt32,
+            ArrowDataType::UInt64 => Self::UInt64,
+            ArrowDataType::Float16 => Self::Float16,
+            ArrowDataType::Float32 => Self::Float32,
+            ArrowDataType::Float64 => Self::Float64,
+            ArrowDataType::Timestamp(unit, tz) => Self::Timestamp(unit.into(), tz.map(Into::into)),
+            ArrowDataType::Date32 => Self::Date32,
+            ArrowDataType::Date64 => Self::Date64,
+            ArrowDataType::Time32(unit) => Self::Time32(unit.into()),
+            ArrowDataType::Time64(unit) => Self::Time64(unit.into()),
+            ArrowDataType::Duration(unit) => Self::Duration(unit.into()),
+            ArrowDataType::Interval(unit) => Self::Interval(unit.into()),
+            ArrowDataType::Binary => Self::Binary,
+            ArrowDataType::FixedSizeBinary(size) => Self::FixedSizeBinary(size as _),
+            ArrowDataType::LargeBinary => Self::LargeBinary,
+            ArrowDataType::Utf8 => Self::Utf8,
+            ArrowDataType::LargeUtf8 => Self::LargeUtf8,
+            ArrowDataType::List(f) => Self::List(Arc::new((*f).into())),
+            ArrowDataType::FixedSizeList(f, size) => {
                 Self::FixedSizeList(Arc::new((*f).into()), size as _)
             },
-            DataType::LargeList(f) => Self::LargeList(Arc::new((*f).into())),
-            DataType::Struct(f) => Self::Struct(f.into_iter().map(ArrowField::from).collect()),
-            DataType::Union(fields, Some(ids), mode) => {
+            ArrowDataType::LargeList(f) => Self::LargeList(Arc::new((*f).into())),
+            ArrowDataType::Struct(f) => Self::Struct(f.into_iter().map(ArrowField::from).collect()),
+            ArrowDataType::Union(fields, Some(ids), mode) => {
                 let ids = ids.into_iter().map(|x| x as _);
                 let fields = fields.into_iter().map(ArrowField::from);
                 Self::Union(UnionFields::new(ids, fields), mode.into())
             },
-            DataType::Union(fields, None, mode) => {
+            ArrowDataType::Union(fields, None, mode) => {
                 let ids = 0..fields.len() as i8;
                 let fields = fields.into_iter().map(ArrowField::from);
                 Self::Union(UnionFields::new(ids, fields), mode.into())
             },
-            DataType::Map(f, ordered) => Self::Map(Arc::new((*f).into()), ordered),
-            DataType::Dictionary(key, value, _) => Self::Dictionary(
-                Box::new(DataType::from(key).into()),
+            ArrowDataType::Map(f, ordered) => Self::Map(Arc::new((*f).into()), ordered),
+            ArrowDataType::Dictionary(key, value, _) => Self::Dictionary(
+                Box::new(ArrowDataType::from(key).into()),
                 Box::new((*value).into()),
             ),
-            DataType::Decimal(precision, scale) => Self::Decimal128(precision as _, scale as _),
-            DataType::Decimal256(precision, scale) => Self::Decimal256(precision as _, scale as _),
-            DataType::Extension(_, d, _) => (*d).into(),
+            ArrowDataType::Decimal(precision, scale) => {
+                Self::Decimal128(precision as _, scale as _)
+            },
+            ArrowDataType::Decimal256(precision, scale) => {
+                Self::Decimal256(precision as _, scale as _)
+            },
+            ArrowDataType::Extension(_, d, _) => (*d).into(),
         }
     }
 }
 
 #[cfg(feature = "arrow_rs")]
-impl From<arrow_schema::DataType> for DataType {
+impl From<arrow_schema::DataType> for ArrowDataType {
     fn from(value: arrow_schema::DataType) -> Self {
         use arrow_schema::DataType;
         match value {
@@ -283,7 +287,7 @@ impl From<arrow_schema::DataType> for DataType {
     }
 }
 
-/// Mode of [`DataType::Union`]
+/// Mode of [`ArrowDataType::Union`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
 pub enum UnionMode {
@@ -337,7 +341,7 @@ impl UnionMode {
 
 /// The time units defined in Arrow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum TimeUnit {
     /// Time in seconds.
     Second,
@@ -375,7 +379,7 @@ impl From<arrow_schema::TimeUnit> for TimeUnit {
 
 /// Interval units defined in Arrow
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum IntervalUnit {
     /// The number of elapsed whole months.
     YearMonth,
@@ -408,10 +412,10 @@ impl From<arrow_schema::IntervalUnit> for IntervalUnit {
     }
 }
 
-impl DataType {
-    /// the [`PhysicalType`] of this [`DataType`].
+impl ArrowDataType {
+    /// the [`PhysicalType`] of this [`ArrowDataType`].
     pub fn to_physical_type(&self) -> PhysicalType {
-        use DataType::*;
+        use ArrowDataType::*;
         match self {
             Null => PhysicalType::Null,
             Boolean => PhysicalType::Boolean,
@@ -452,11 +456,11 @@ impl DataType {
         }
     }
 
-    /// Returns `&self` for all but [`DataType::Extension`]. For [`DataType::Extension`],
-    /// (recursively) returns the inner [`DataType`].
-    /// Never returns the variant [`DataType::Extension`].
-    pub fn to_logical_type(&self) -> &DataType {
-        use DataType::*;
+    /// Returns `&self` for all but [`ArrowDataType::Extension`]. For [`ArrowDataType::Extension`],
+    /// (recursively) returns the inner [`ArrowDataType`].
+    /// Never returns the variant [`ArrowDataType::Extension`].
+    pub fn to_logical_type(&self) -> &ArrowDataType {
+        use ArrowDataType::*;
         match self {
             Extension(_, key, _) => key.to_logical_type(),
             _ => self,
@@ -464,45 +468,45 @@ impl DataType {
     }
 }
 
-impl From<IntegerType> for DataType {
+impl From<IntegerType> for ArrowDataType {
     fn from(item: IntegerType) -> Self {
         match item {
-            IntegerType::Int8 => DataType::Int8,
-            IntegerType::Int16 => DataType::Int16,
-            IntegerType::Int32 => DataType::Int32,
-            IntegerType::Int64 => DataType::Int64,
-            IntegerType::UInt8 => DataType::UInt8,
-            IntegerType::UInt16 => DataType::UInt16,
-            IntegerType::UInt32 => DataType::UInt32,
-            IntegerType::UInt64 => DataType::UInt64,
+            IntegerType::Int8 => ArrowDataType::Int8,
+            IntegerType::Int16 => ArrowDataType::Int16,
+            IntegerType::Int32 => ArrowDataType::Int32,
+            IntegerType::Int64 => ArrowDataType::Int64,
+            IntegerType::UInt8 => ArrowDataType::UInt8,
+            IntegerType::UInt16 => ArrowDataType::UInt16,
+            IntegerType::UInt32 => ArrowDataType::UInt32,
+            IntegerType::UInt64 => ArrowDataType::UInt64,
         }
     }
 }
 
-impl From<PrimitiveType> for DataType {
+impl From<PrimitiveType> for ArrowDataType {
     fn from(item: PrimitiveType) -> Self {
         match item {
-            PrimitiveType::Int8 => DataType::Int8,
-            PrimitiveType::Int16 => DataType::Int16,
-            PrimitiveType::Int32 => DataType::Int32,
-            PrimitiveType::Int64 => DataType::Int64,
-            PrimitiveType::UInt8 => DataType::UInt8,
-            PrimitiveType::UInt16 => DataType::UInt16,
-            PrimitiveType::UInt32 => DataType::UInt32,
-            PrimitiveType::UInt64 => DataType::UInt64,
-            PrimitiveType::Int128 => DataType::Decimal(32, 32),
-            PrimitiveType::Int256 => DataType::Decimal256(32, 32),
-            PrimitiveType::Float16 => DataType::Float16,
-            PrimitiveType::Float32 => DataType::Float32,
-            PrimitiveType::Float64 => DataType::Float64,
-            PrimitiveType::DaysMs => DataType::Interval(IntervalUnit::DayTime),
-            PrimitiveType::MonthDayNano => DataType::Interval(IntervalUnit::MonthDayNano),
+            PrimitiveType::Int8 => ArrowDataType::Int8,
+            PrimitiveType::Int16 => ArrowDataType::Int16,
+            PrimitiveType::Int32 => ArrowDataType::Int32,
+            PrimitiveType::Int64 => ArrowDataType::Int64,
+            PrimitiveType::UInt8 => ArrowDataType::UInt8,
+            PrimitiveType::UInt16 => ArrowDataType::UInt16,
+            PrimitiveType::UInt32 => ArrowDataType::UInt32,
+            PrimitiveType::UInt64 => ArrowDataType::UInt64,
+            PrimitiveType::Int128 => ArrowDataType::Decimal(32, 32),
+            PrimitiveType::Int256 => ArrowDataType::Decimal256(32, 32),
+            PrimitiveType::Float16 => ArrowDataType::Float16,
+            PrimitiveType::Float32 => ArrowDataType::Float32,
+            PrimitiveType::Float64 => ArrowDataType::Float64,
+            PrimitiveType::DaysMs => ArrowDataType::Interval(IntervalUnit::DayTime),
+            PrimitiveType::MonthDayNano => ArrowDataType::Interval(IntervalUnit::MonthDayNano),
         }
     }
 }
 
-/// typedef for [`Arc<Schema>`].
-pub type SchemaRef = Arc<Schema>;
+/// typedef for [`Arc<ArrowSchema>`].
+pub type SchemaRef = Arc<ArrowSchema>;
 
 /// support get extension for metadata
 pub fn get_extension(metadata: &Metadata) -> Extension {

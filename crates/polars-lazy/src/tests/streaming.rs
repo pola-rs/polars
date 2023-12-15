@@ -173,7 +173,7 @@ fn test_streaming_cross_join() -> PolarsResult<()> {
         .cross_join(q.clone())
         .filter(col("calories").gt(col("calories_right")));
     let q2 = q1
-        .select([all().suffix("_second")])
+        .select([all().name().suffix("_second")])
         .cross_join(q)
         .filter(col("calories_right_second").lt(col("calories")))
         .select([
@@ -293,11 +293,11 @@ fn test_streaming_partial() -> PolarsResult<()> {
         .left_on([col("a")])
         .right_on([col("a")])
         .suffix("_foo")
-        .how(JoinType::Outer)
+        .how(JoinType::Outer { coalesce: true })
         .finish();
 
     let q = q.left_join(
-        lf_left.select([all().suffix("_foo")]),
+        lf_left.select([all().name().suffix("_foo")]),
         col("a"),
         col("a_foo"),
     );
@@ -382,7 +382,7 @@ fn test_sort_maintain_order_streaming() -> PolarsResult<()> {
         .slice(0, 3)
         .with_streaming(true)
         .collect()?;
-    assert!(res.frame_equal(&df![
+    assert!(res.equals(&df![
         "A" => [1, 1, 1],
         "B" => ["A", "B", "C"],
     ]?));

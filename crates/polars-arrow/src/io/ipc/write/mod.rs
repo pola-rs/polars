@@ -25,10 +25,10 @@ pub mod stream_async;
 pub mod file_async;
 
 use super::IpcField;
-use crate::datatypes::{DataType, Field};
+use crate::datatypes::{ArrowDataType, Field};
 
-fn default_ipc_field(data_type: &DataType, current_id: &mut i64) -> IpcField {
-    use crate::datatypes::DataType::*;
+fn default_ipc_field(data_type: &ArrowDataType, current_id: &mut i64) -> IpcField {
+    use crate::datatypes::ArrowDataType::*;
     match data_type.to_logical_type() {
         // single child => recurse
         Map(inner, ..) | FixedSizeList(inner, _) | LargeList(inner) | List(inner) => IpcField {

@@ -19,7 +19,7 @@ fn iss_8419() {
             col("Sales"),
             col("Sales")
                 .sort(true)
-                .cumsum(false)
+                .cum_sum(false)
                 .alias("SalesCumulative"),
         ])
         .sort("SalesCumulative", SortOptions::default())
@@ -41,5 +41,5 @@ fn iss_8419() {
     "#;
     let df = ctx.execute(query).unwrap().collect().unwrap();
 
-    assert!(df.frame_equal(&expected))
+    assert!(df.equals(&expected))
 }

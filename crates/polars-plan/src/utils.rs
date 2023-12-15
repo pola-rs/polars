@@ -8,7 +8,7 @@ use smartstring::alias::String as SmartString;
 
 use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::Context;
-use crate::prelude::names::COUNT;
+use crate::prelude::consts::{COUNT, LITERAL_NAME};
 use crate::prelude::*;
 
 /// Utility to write comma delimited strings
@@ -88,6 +88,7 @@ impl PushNode for &mut [Option<Node>] {
 }
 
 /// A projection that only takes a column or a column + alias.
+#[cfg(feature = "meta")]
 pub(crate) fn aexpr_is_simple_projection(current_node: Node, arena: &Arena<AExpr>) -> bool {
     arena
         .iter(current_node)
@@ -99,7 +100,7 @@ pub(crate) fn aexpr_is_elementwise(current_node: Node, arena: &Arena<AExpr>) -> 
         use AExpr::*;
         match e {
             AnonymousFunction { options, .. } | Function { options, .. } => {
-                !matches!(options.collect_groups, ApplyOptions::ApplyGroups)
+                !matches!(options.collect_groups, ApplyOptions::GroupWise)
             },
             Column(_)
             | Alias(_, _)
@@ -147,6 +148,17 @@ pub(crate) fn has_leaf_literal(e: &Expr) -> bool {
         },
     }
 }
+/// Check if leaf expression is a literal
+#[cfg(feature = "is_in")]
+pub(crate) fn all_leaf_literal(e: &Expr) -> bool {
+    match e {
+        Expr::Literal(_) => true,
+        _ => {
+            let roots = expr_to_root_column_exprs(e);
+            roots.iter().all(|e| matches!(e, Expr::Literal(_)))
+        },
+    }
+}
 
 pub fn has_null(current_expr: &Expr) -> bool {
     has_expr(current_expr, |e| {
@@ -171,6 +183,12 @@ pub fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
                 "this expression may produce multiple output names"
             ),
             Expr::Count => return Ok(Arc::from(COUNT)),
+            Expr::Literal(val) => {
+                return match val {
+                    LiteralValue::Series(s) => Ok(Arc::from(s.name())),
+                    _ => Ok(Arc::from(LITERAL_NAME)),
+                }
+            },
             _ => {},
         }
     }
@@ -186,7 +204,7 @@ pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
     for e in expr {
         match e {
             Expr::Filter { input, .. } => return get_single_leaf(input),
-            Expr::Take { expr, .. } => return get_single_leaf(expr),
+            Expr::Gather { expr, .. } => return get_single_leaf(expr),
             Expr::SortBy { expr, .. } => return get_single_leaf(expr),
             Expr::Window { function, .. } => return get_single_leaf(function),
             Expr::Column(name) => return Ok(name.clone()),
@@ -249,27 +267,6 @@ pub(crate) fn aexpr_to_column_nodes_iter<'a>(
 
 pub(crate) fn aexpr_to_column_nodes(root: Node, arena: &Arena<AExpr>) -> Vec<Node> {
     aexpr_to_column_nodes_iter(root, arena).collect()
-}
-
-/// Rename the roots of the expression to a single name.
-/// Most of the times used with columns that have a single root.
-/// In some cases we can have multiple roots.
-/// For instance in predicate pushdown the predicates are combined by their root column
-/// When combined they may be a binary expression with the same root columns
-pub(crate) fn rename_aexpr_leaf_names(
-    node: Node,
-    arena: &mut Arena<AExpr>,
-    new_name: Arc<str>,
-) -> Node {
-    // we convert to expression as we cannot easily copy the aexpr.
-    let mut new_expr = node_to_expr(node, arena);
-    new_expr.mutate().apply(|e| {
-        if let Expr::Column(name) = e {
-            *name = new_name.clone()
-        }
-        true
-    });
-    to_aexpr(new_expr, arena)
 }
 
 /// If the leaf names match `current`, the node will be replaced

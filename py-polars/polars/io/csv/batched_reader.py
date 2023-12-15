@@ -32,7 +32,7 @@ class BatchedCsvReader:
         has_header: bool = True,
         columns: Sequence[int] | Sequence[str] | None = None,
         separator: str = ",",
-        comment_char: str | None = None,
+        comment_prefix: str | None = None,
         quote_char: str | None = '"',
         skip_rows: int = 0,
         dtypes: None | (SchemaDict | Sequence[PolarsDataType]) = None,
@@ -92,7 +92,7 @@ class BatchedCsvReader:
             overwrite_dtype=dtype_list,
             overwrite_dtype_slice=dtype_slice,
             low_memory=low_memory,
-            comment_char=comment_char,
+            comment_prefix=comment_prefix,
             quote_char=quote_char,
             null_values=processed_null_values,
             missing_utf8_is_empty_string=missing_utf8_is_empty_string,
@@ -108,9 +108,9 @@ class BatchedCsvReader:
 
     def next_batches(self, n: int) -> list[DataFrame] | None:
         """
-        Read ``n`` batches from the reader.
+        Read `n` batches from the reader.
 
-        The ``n`` chunks will be parallelized over the
+        The `n` chunks will be parallelized over the
         available threads.
 
         Parameters

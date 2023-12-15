@@ -32,27 +32,30 @@ pub(super) fn corr(s: &[Series], ddof: u8, method: CorrelationMethod) -> PolarsR
         CorrelationMethod::SpearmanRank(propagate_nans) => {
             spearman_rank_corr(s, ddof, propagate_nans)
         },
-        CorrelationMethod::Covariance => covariance(s),
+        CorrelationMethod::Covariance => covariance(s, ddof),
     }
 }
 
-fn covariance(s: &[Series]) -> PolarsResult<Series> {
+fn covariance(s: &[Series], ddof: u8) -> PolarsResult<Series> {
     let a = &s[0];
     let b = &s[1];
     let name = "cov";
 
-    use polars_core::functions::cov;
+    use polars_ops::chunked_array::cov::cov;
     let ret = match a.dtype() {
-        DataType::Float32 => cov(a.f32().unwrap(), b.f32().unwrap()),
-        DataType::Float64 => cov(a.f64().unwrap(), b.f64().unwrap()),
-        DataType::Int32 => cov(a.i32().unwrap(), b.i32().unwrap()),
-        DataType::Int64 => cov(a.i64().unwrap(), b.i64().unwrap()),
-        DataType::UInt32 => cov(a.u32().unwrap(), b.u32().unwrap()),
-        DataType::UInt64 => cov(a.u64().unwrap(), b.u64().unwrap()),
+        DataType::Float32 => {
+            let ret = cov(a.f32().unwrap(), b.f32().unwrap(), ddof).map(|v| v as f32);
+            return Ok(Series::new(name, &[ret]));
+        },
+        DataType::Float64 => cov(a.f64().unwrap(), b.f64().unwrap(), ddof),
+        DataType::Int32 => cov(a.i32().unwrap(), b.i32().unwrap(), ddof),
+        DataType::Int64 => cov(a.i64().unwrap(), b.i64().unwrap(), ddof),
+        DataType::UInt32 => cov(a.u32().unwrap(), b.u32().unwrap(), ddof),
+        DataType::UInt64 => cov(a.u64().unwrap(), b.u64().unwrap(), ddof),
         _ => {
             let a = a.cast(&DataType::Float64)?;
             let b = b.cast(&DataType::Float64)?;
-            cov(a.f64().unwrap(), b.f64().unwrap())
+            cov(a.f64().unwrap(), b.f64().unwrap(), ddof)
         },
     };
     Ok(Series::new(name, &[ret]))
@@ -63,9 +66,12 @@ fn pearson_corr(s: &[Series], ddof: u8) -> PolarsResult<Series> {
     let b = &s[1];
     let name = "pearson_corr";
 
-    use polars_core::functions::pearson_corr;
+    use polars_ops::chunked_array::cov::pearson_corr;
     let ret = match a.dtype() {
-        DataType::Float32 => pearson_corr(a.f32().unwrap(), b.f32().unwrap(), ddof),
+        DataType::Float32 => {
+            let ret = pearson_corr(a.f32().unwrap(), b.f32().unwrap(), ddof).map(|v| v as f32);
+            return Ok(Series::new(name, &[ret]));
+        },
         DataType::Float64 => pearson_corr(a.f64().unwrap(), b.f64().unwrap(), ddof),
         DataType::Int32 => pearson_corr(a.i32().unwrap(), b.i32().unwrap(), ddof),
         DataType::Int64 => pearson_corr(a.i64().unwrap(), b.i64().unwrap(), ddof),

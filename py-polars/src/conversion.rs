@@ -13,11 +13,12 @@ use polars::prelude::AnyValue;
 use polars::series::ops::NullBehavior;
 use polars_core::frame::row::any_values_to_dtype;
 use polars_core::prelude::{IndexOrder, QuantileInterpolOptions};
+use polars_core::utils::arrow::array::Utf8Array;
 use polars_core::utils::arrow::types::NativeType;
-use polars_core::utils::arrow::util::total_ord::TotalEq;
 use polars_lazy::prelude::*;
 #[cfg(feature = "cloud")]
 use polars_rs::io::cloud::CloudOptions;
+use polars_utils::total_ord::TotalEq;
 use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::{PyTypeError, PyValueError};
@@ -191,7 +192,13 @@ fn decimal_to_digits(v: i128, buf: &mut [u128; 3]) -> usize {
     // safety: transmute is safe as there are 48 bytes in 3 128bit ints
     // and the minimal alignment of u8 fits u16
     let buf = unsafe { std::mem::transmute::<&mut [u128; 3], &mut [u8; 48]>(buf) };
-    let len = lexical_core::write(v, buf).len();
+    let mut buffer = itoa::Buffer::new();
+    let value = buffer.format(v);
+    let len = value.len();
+    for (dst, src) in buf.iter_mut().zip(value.as_bytes().iter()) {
+        *dst = *src
+    }
+
     let ptr = buf.as_mut_ptr() as *mut i128;
     unsafe {
         // this is safe because we know that the buffer is exactly 48 bytes long
@@ -290,36 +297,78 @@ impl ToPyObject for Wrap<DataType> {
         let pl = POLARS.as_ref(py);
 
         match &self.0 {
-            DataType::Int8 => pl.getattr(intern!(py, "Int8")).unwrap().into(),
-            DataType::Int16 => pl.getattr(intern!(py, "Int16")).unwrap().into(),
-            DataType::Int32 => pl.getattr(intern!(py, "Int32")).unwrap().into(),
-            DataType::Int64 => pl.getattr(intern!(py, "Int64")).unwrap().into(),
-            DataType::UInt8 => pl.getattr(intern!(py, "UInt8")).unwrap().into(),
-            DataType::UInt16 => pl.getattr(intern!(py, "UInt16")).unwrap().into(),
-            DataType::UInt32 => pl.getattr(intern!(py, "UInt32")).unwrap().into(),
-            DataType::UInt64 => pl.getattr(intern!(py, "UInt64")).unwrap().into(),
-            DataType::Float32 => pl.getattr(intern!(py, "Float32")).unwrap().into(),
-            DataType::Float64 => pl.getattr(intern!(py, "Float64")).unwrap().into(),
-            DataType::Decimal(precision, scale) => pl
-                .getattr(intern!(py, "Decimal"))
-                .unwrap()
-                .call1((*scale, *precision))
-                .unwrap()
-                .into(),
-            DataType::Boolean => pl.getattr(intern!(py, "Boolean")).unwrap().into(),
-            DataType::Utf8 => pl.getattr(intern!(py, "Utf8")).unwrap().into(),
-            DataType::Binary => pl.getattr(intern!(py, "Binary")).unwrap().into(),
+            DataType::Int8 => {
+                let class = pl.getattr(intern!(py, "Int8")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::Int16 => {
+                let class = pl.getattr(intern!(py, "Int16")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::Int32 => {
+                let class = pl.getattr(intern!(py, "Int32")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::Int64 => {
+                let class = pl.getattr(intern!(py, "Int64")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::UInt8 => {
+                let class = pl.getattr(intern!(py, "UInt8")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::UInt16 => {
+                let class = pl.getattr(intern!(py, "UInt16")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::UInt32 => {
+                let class = pl.getattr(intern!(py, "UInt32")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::UInt64 => {
+                let class = pl.getattr(intern!(py, "UInt64")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::Float32 => {
+                let class = pl.getattr(intern!(py, "Float32")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::Float64 => {
+                let class = pl.getattr(intern!(py, "Float64")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::Decimal(precision, scale) => {
+                let class = pl.getattr(intern!(py, "Decimal")).unwrap();
+                let args = (*precision, *scale);
+                class.call1(args).unwrap().into()
+            },
+            DataType::Boolean => {
+                let class = pl.getattr(intern!(py, "Boolean")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::Utf8 => {
+                let class = pl.getattr(intern!(py, "Utf8")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::Binary => {
+                let class = pl.getattr(intern!(py, "Binary")).unwrap();
+                class.call0().unwrap().into()
+            },
             DataType::Array(inner, size) => {
+                let class = pl.getattr(intern!(py, "Array")).unwrap();
                 let inner = Wrap(*inner.clone()).to_object(py);
-                let list_class = pl.getattr(intern!(py, "Array")).unwrap();
-                list_class.call1((*size, inner)).unwrap().into()
+                let args = (inner, *size);
+                class.call1(args).unwrap().into()
             },
             DataType::List(inner) => {
+                let class = pl.getattr(intern!(py, "List")).unwrap();
                 let inner = Wrap(*inner.clone()).to_object(py);
-                let list_class = pl.getattr(intern!(py, "List")).unwrap();
-                list_class.call1((inner,)).unwrap().into()
+                class.call1((inner,)).unwrap().into()
             },
-            DataType::Date => pl.getattr(intern!(py, "Date")).unwrap().into(),
+            DataType::Date => {
+                let class = pl.getattr(intern!(py, "Date")).unwrap();
+                class.call0().unwrap().into()
+            },
             DataType::Datetime(tu, tz) => {
                 let datetime_class = pl.getattr(intern!(py, "Datetime")).unwrap();
                 datetime_class
@@ -332,8 +381,24 @@ impl ToPyObject for Wrap<DataType> {
                 duration_class.call1((tu.to_ascii(),)).unwrap().into()
             },
             #[cfg(feature = "object")]
-            DataType::Object(_) => pl.getattr(intern!(py, "Object")).unwrap().into(),
-            DataType::Categorical(_) => pl.getattr(intern!(py, "Categorical")).unwrap().into(),
+            DataType::Object(_) => {
+                let class = pl.getattr(intern!(py, "Object")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::Categorical(rev_map, ordering) => {
+                if let Some(rev_map) = rev_map {
+                    if let RevMapping::Enum(categories, _) = &**rev_map {
+                        let class = pl.getattr(intern!(py, "Enum")).unwrap();
+                        let ca = Utf8Chunked::from_iter(categories);
+                        return class.call1((Wrap(&ca).to_object(py),)).unwrap().into();
+                    }
+                }
+                let class = pl.getattr(intern!(py, "Categorical")).unwrap();
+                class
+                    .call1((Wrap(*ordering).to_object(py),))
+                    .unwrap()
+                    .into()
+            },
             DataType::Time => pl.getattr(intern!(py, "Time")).unwrap().into(),
             DataType::Struct(fields) => {
                 let field_class = pl.getattr(intern!(py, "Field")).unwrap();
@@ -346,8 +411,14 @@ impl ToPyObject for Wrap<DataType> {
                 let struct_class = pl.getattr(intern!(py, "Struct")).unwrap();
                 struct_class.call1((fields,)).unwrap().into()
             },
-            DataType::Null => pl.getattr(intern!(py, "Null")).unwrap().into(),
-            DataType::Unknown => pl.getattr(intern!(py, "Unknown")).unwrap().into(),
+            DataType::Null => {
+                let class = pl.getattr(intern!(py, "Null")).unwrap();
+                class.call0().unwrap().into()
+            },
+            DataType::Unknown => {
+                let class = pl.getattr(intern!(py, "Unknown")).unwrap();
+                class.call0().unwrap().into()
+            },
         }
     }
 }
@@ -384,7 +455,12 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Utf8" => DataType::Utf8,
                     "Binary" => DataType::Binary,
                     "Boolean" => DataType::Boolean,
-                    "Categorical" => DataType::Categorical(None),
+                    "Categorical" => DataType::Categorical(None, Default::default()),
+                    "Enum" => {
+                        return Err(PyTypeError::new_err(
+                            "Enum types must be instantiated with a list of categories",
+                        ))
+                    },
                     "Date" => DataType::Date,
                     "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
                     "Time" => DataType::Time,
@@ -400,12 +476,41 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Null" => DataType::Null,
                     "Unknown" => DataType::Unknown,
                     dt => {
-                        return Err(PyValueError::new_err(format!(
-                            "{dt} is not a recognised polars DataType.",
+                        return Err(PyTypeError::new_err(format!(
+                            "'{dt}' is not a Polars data type",
                         )))
                     },
                 }
             },
+            "Int8" => DataType::Int8,
+            "Int16" => DataType::Int16,
+            "Int32" => DataType::Int32,
+            "Int64" => DataType::Int64,
+            "UInt8" => DataType::UInt8,
+            "UInt16" => DataType::UInt16,
+            "UInt32" => DataType::UInt32,
+            "UInt64" => DataType::UInt64,
+            "Utf8" => DataType::Utf8,
+            "Binary" => DataType::Binary,
+            "Boolean" => DataType::Boolean,
+            "Categorical" => {
+                let ordering = ob.getattr(intern!(py, "ordering")).unwrap();
+                let ordering = ordering.extract::<Wrap<CategoricalOrdering>>()?.0;
+                DataType::Categorical(None, ordering)
+            },
+            "Enum" => {
+                let categories = ob.getattr(intern!(py, "categories")).unwrap();
+                let categories = categories.extract::<Wrap<Utf8Chunked>>()?.0;
+                let arr = categories.rechunk().into_series().to_arrow(0);
+                let arr = arr.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+                create_enum_data_type(arr.clone())
+            },
+            "Date" => DataType::Date,
+            "Time" => DataType::Time,
+            "Float32" => DataType::Float32,
+            "Float64" => DataType::Float64,
+            "Null" => DataType::Null,
+            "Unknown" => DataType::Unknown,
             "Duration" => {
                 let time_unit = ob.getattr(intern!(py, "time_unit")).unwrap();
                 let time_unit = time_unit.extract::<Wrap<TimeUnit>>()?.0;
@@ -446,8 +551,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
             },
             dt => {
                 return Err(PyTypeError::new_err(format!(
-                    "A {dt} object is not a recognised polars DataType. \
-                    Hint: use the class without instantiating it.",
+                    "'{dt}' is not a Polars data type",
                 )))
             },
         };
@@ -458,6 +562,16 @@ impl FromPyObject<'_> for Wrap<DataType> {
 impl ToPyObject for Wrap<AnyValue<'_>> {
     fn to_object(&self, py: Python) -> PyObject {
         self.clone().into_py(py)
+    }
+}
+
+impl ToPyObject for Wrap<CategoricalOrdering> {
+    fn to_object(&self, py: Python<'_>) -> PyObject {
+        let ordering = match self.0 {
+            CategoricalOrdering::Physical => "physical",
+            CategoricalOrdering::Lexical => "lexical",
+        };
+        ordering.into_py(py)
     }
 }
 
@@ -831,7 +945,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                         if ob.is_instance_of::<PyBool>() {
                             get_bool
                             // TODO: this heap allocs on failure
-                        } else if ob.extract::<i64>().is_ok() {
+                        } else if ob.extract::<i64>().is_ok() || ob.extract::<u64>().is_ok() {
                             get_int
                         } else if ob.is_instance_of::<PyFloat>() {
                             get_float
@@ -1209,7 +1323,8 @@ impl FromPyObject<'_> for Wrap<JoinType> {
         let parsed = match ob.extract::<&str>()? {
             "inner" => JoinType::Inner,
             "left" => JoinType::Left,
-            "outer" => JoinType::Outer,
+            "outer" => JoinType::Outer{coalesce: false},
+            "outer_coalesce" => JoinType::Outer{coalesce: true},
             "semi" => JoinType::Semi,
             "anti" => JoinType::Anti,
             #[cfg(feature = "cross_join")]

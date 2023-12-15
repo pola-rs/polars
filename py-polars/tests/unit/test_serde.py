@@ -32,20 +32,6 @@ def test_lazyframe_serde() -> None:
     assert_series_equal(result.collect().to_series(), pl.Series("a", [1, 2, 3]))
 
 
-def test_lazyframe_deprecated_serde() -> None:
-    lf = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).lazy().select(pl.col("a"))
-
-    with pytest.deprecated_call():
-        json = lf.write_json()
-    with pytest.deprecated_call():
-        result_from = pl.LazyFrame.from_json(json)
-    with pytest.deprecated_call():
-        result_read = pl.LazyFrame.read_json(io.StringIO(json))
-
-    assert_series_equal(result_from.collect().to_series(), pl.Series("a", [1, 2, 3]))
-    assert_series_equal(result_read.collect().to_series(), pl.Series("a", [1, 2, 3]))
-
-
 def test_serde_time_unit() -> None:
     assert pickle.loads(
         pickle.dumps(
@@ -136,7 +122,9 @@ def test_pickle_udf_expression() -> None:
     b = pickle.dumps(e)
     e = pickle.loads(b)
 
-    assert df.select(e).to_dict(False) == {"a": [2, 4, 6]}
+    result = df.select(e)
+    expected = pl.DataFrame({"a": [2, 4, 6]})
+    assert_frame_equal(result, expected)
 
     e = pl.col("a").map_batches(times2, return_dtype=pl.Utf8)
     b = pickle.dumps(e)

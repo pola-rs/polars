@@ -10,7 +10,8 @@ description = "Lazy query engine for the Polars DataFrame library"
 
 [dependencies]
 arrow = { workspace = true }
-polars-core = { workspace = true, features = ["lazy", "zip_with", "random"], default-features = false }
+futures = { workspace = true, optional = true }
+polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-io = { workspace = true, features = ["lazy"] }
 polars-json = { workspace = true, optional = true }
 polars-ops = { workspace = true }
@@ -37,18 +38,26 @@ version_check = { workspace = true }
 [features]
 nightly = ["polars-core/nightly", "polars-pipe?/nightly", "polars-plan/nightly"]
 streaming = ["chunked_ids", "polars-pipe", "polars-plan/streaming", "polars-ops/chunked_ids"]
-parquet = ["polars-core/parquet", "polars-io/parquet", "polars-plan/parquet", "polars-pipe?/parquet"]
+parquet = ["polars-io/parquet", "polars-plan/parquet", "polars-pipe?/parquet"]
 async = [
   "polars-plan/async",
   "polars-io/cloud",
   "polars-pipe?/async",
 ]
-cloud = ["async", "polars-pipe?/cloud", "polars-plan/cloud", "tokio"]
+cloud = ["async", "polars-pipe?/cloud", "polars-plan/cloud", "tokio", "futures"]
 cloud_write = ["cloud"]
 ipc = ["polars-io/ipc", "polars-plan/ipc", "polars-pipe?/ipc"]
-json = ["polars-io/json", "polars-plan/json", "polars-json"]
+json = ["polars-io/json", "polars-plan/json", "polars-json", "polars-pipe/json"]
 csv = ["polars-io/csv", "polars-plan/csv", "polars-pipe?/csv"]
-temporal = ["dtype-datetime", "dtype-date", "dtype-time", "dtype-duration", "polars-plan/temporal"]
+temporal = [
+  "dtype-datetime",
+  "dtype-date",
+  "dtype-time",
+  "dtype-i8",
+  "dtype-i16",
+  "dtype-duration",
+  "polars-plan/temporal",
+]
 # debugging purposes
 fmt = ["polars-core/fmt", "polars-plan/fmt"]
 strings = ["polars-plan/strings"]
@@ -70,7 +79,7 @@ date_offset = ["polars-plan/date_offset"]
 trigonometry = ["polars-plan/trigonometry"]
 sign = ["polars-plan/sign"]
 timezones = ["polars-plan/timezones"]
-list_take = ["polars-ops/list_take", "polars-plan/list_take"]
+list_gather = ["polars-ops/list_gather", "polars-plan/list_gather"]
 list_count = ["polars-ops/list_count", "polars-plan/list_count"]
 
 true_div = ["polars-plan/true_div"]
@@ -113,8 +122,9 @@ chunked_ids = ["polars-plan/chunked_ids", "polars-core/chunked_ids", "polars-ops
 list_to_struct = ["polars-plan/list_to_struct"]
 python = ["pyo3", "polars-plan/python", "polars-core/python", "polars-io/python"]
 row_hash = ["polars-plan/row_hash"]
-string_justify = ["polars-plan/string_justify"]
-string_from_radix = ["polars-plan/string_from_radix"]
+string_pad = ["polars-plan/string_pad"]
+string_reverse = ["polars-plan/string_reverse"]
+string_to_integer = ["polars-plan/string_to_integer"]
 arg_where = ["polars-plan/arg_where"]
 search_sorted = ["polars-plan/search_sorted"]
 merge_sorted = ["polars-plan/merge_sorted"]
@@ -138,12 +148,17 @@ fused = ["polars-plan/fused", "polars-ops/fused"]
 list_sets = ["polars-plan/list_sets", "polars-ops/list_sets"]
 list_any_all = ["polars-ops/list_any_all", "polars-plan/list_any_all"]
 list_drop_nulls = ["polars-ops/list_drop_nulls", "polars-plan/list_drop_nulls"]
+list_sample = ["polars-ops/list_sample", "polars-plan/list_sample"]
 cutqcut = ["polars-plan/cutqcut", "polars-ops/cutqcut"]
 rle = ["polars-plan/rle", "polars-ops/rle"]
 extract_groups = ["polars-plan/extract_groups"]
 peaks = ["polars-plan/peaks"]
+cov = ["polars-ops/cov", "polars-plan/cov"]
+hist = ["polars-plan/hist"]
+replace = ["polars-plan/replace"]
 
 binary_encoding = ["polars-plan/binary_encoding"]
+string_encoding = ["polars-plan/string_encoding"]
 
 bigidx = ["polars-plan/bigidx"]
 
@@ -173,8 +188,8 @@ test_all = [
   "regex",
   "ipc",
   "row_hash",
-  "string_justify",
-  "string_from_radix",
+  "string_pad",
+  "string_to_integer",
   "search_sorted",
   "top_k",
   "pivot",
@@ -183,6 +198,107 @@ test_all = [
 ]
 
 [package.metadata.docs.rs]
-all-features = true
+features = [
+  "serde",
+  "cloud",
+  "temporal",
+  "streaming",
+  "cross_join",
+  "chunked_ids",
+  "dtype-duration",
+  "dynamic_group_by",
+  "asof_join",
+  "nightly",
+  "dtype-array",
+  "dtype-date",
+  "dtype-datetime",
+  "json",
+  "csv",
+  "async",
+  "ipc",
+  "parquet",
+  "round_series",
+  "is_in",
+  "dtype-i8",
+  "list_drop_nulls",
+  "fused",
+  "list_any_all",
+  "dtype-categorical",
+  "pivot",
+  "dtype-decimal",
+  "list_count",
+  "moment",
+  "list_sample",
+  "cutqcut",
+  "fmt",
+  "dtype-u16",
+  "list_sets",
+  "dtype-u8",
+  "dtype-i16",
+  "rle",
+  "rolling_window",
+  "dtype-time",
+  "list_gather",
+  "diff",
+  "cov",
+  "search_sorted",
+  "date_offset",
+  "polars-time",
+  "tokio",
+  "trigonometry",
+  "is_last_distinct",
+  "extract_groups",
+  "polars-pipe",
+  "peaks",
+  "random",
+  "top_k",
+  "approx_unique",
+  "concat_str",
+  "string_reverse",
+  "string_to_integer",
+  "cse",
+  "dot_diagram",
+  "panic_on_schema",
+  "regex",
+  "arg_where",
+  "futures",
+  "is_first_distinct",
+  "string_pad",
+  "rank",
+  "is_unique",
+  "dtype-struct",
+  "timezones",
+  "object",
+  "pct_change",
+  "unique_counts",
+  "cum_agg",
+  "propagate_nans",
+  "abs",
+  "sign",
+  "string_encoding",
+  "bigidx",
+  "row_hash",
+  "semi_anti_join",
+  "list_to_struct",
+  "range",
+  "ewma",
+  "log",
+  "repeat_by",
+  "cloud_write",
+  "polars-json",
+  "meta",
+  "coalesce",
+  "interpolate",
+  "true_div",
+  "strings",
+  "mode",
+  "binary_encoding",
+  "merge_sorted",
+  "cumulative_eval",
+  "list_eval",
+  "diagonal_concat",
+  "hist",
+  "replace",
+]
 # defines the configuration attribute `docsrs`
 rustdoc-args = ["--cfg", "docsrs"]

@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
 use polars_io::csv::utils::infer_file_schema;
-use polars_io::csv::{CsvEncoding, NullValues};
+use polars_io::csv::{CommentPrefix, CsvEncoding, NullValues};
 use polars_io::utils::get_reader_bytes;
 use polars_io::RowCount;
 
@@ -13,7 +13,7 @@ use crate::prelude::*;
 #[cfg(feature = "csv")]
 pub struct LazyCsvReader<'a> {
     path: PathBuf,
-    paths: Vec<PathBuf>,
+    paths: Arc<[PathBuf]>,
     separator: u8,
     has_header: bool,
     ignore_errors: bool,
@@ -23,7 +23,7 @@ pub struct LazyCsvReader<'a> {
     schema: Option<SchemaRef>,
     schema_overwrite: Option<&'a Schema>,
     low_memory: bool,
-    comment_char: Option<u8>,
+    comment_prefix: Option<CommentPrefix>,
     quote_char: Option<u8>,
     eol_char: u8,
     null_values: Option<NullValues>,
@@ -40,14 +40,14 @@ pub struct LazyCsvReader<'a> {
 
 #[cfg(feature = "csv")]
 impl<'a> LazyCsvReader<'a> {
-    pub fn new_paths(paths: Vec<PathBuf>) -> Self {
+    pub fn new_paths(paths: Arc<[PathBuf]>) -> Self {
         Self::new("").with_paths(paths)
     }
 
     pub fn new(path: impl AsRef<Path>) -> Self {
         LazyCsvReader {
             path: path.as_ref().to_owned(),
-            paths: vec![],
+            paths: Arc::new([]),
             separator: b',',
             has_header: true,
             ignore_errors: false,
@@ -57,7 +57,7 @@ impl<'a> LazyCsvReader<'a> {
             schema: None,
             schema_overwrite: None,
             low_memory: false,
-            comment_char: None,
+            comment_prefix: None,
             quote_char: Some(b'"'),
             eol_char: b'\n',
             null_values: None,
@@ -147,10 +147,16 @@ impl<'a> LazyCsvReader<'a> {
         self
     }
 
-    /// Set the comment character. Lines starting with this character will be ignored.
+    /// Set the comment prefix for this instance. Lines starting with this prefix will be ignored.
     #[must_use]
-    pub fn with_comment_char(mut self, comment_char: Option<u8>) -> Self {
-        self.comment_char = comment_char;
+    pub fn with_comment_prefix(mut self, comment_prefix: Option<&str>) -> Self {
+        self.comment_prefix = comment_prefix.map(|s| {
+            if s.len() == 1 && s.chars().next().unwrap().is_ascii() {
+                CommentPrefix::Single(s.as_bytes()[0])
+            } else {
+                CommentPrefix::Multi(s.to_string())
+            }
+        });
         self
     }
 
@@ -252,7 +258,7 @@ impl<'a> LazyCsvReader<'a> {
             None,
             &mut skip_rows,
             self.skip_rows_after_header,
-            self.comment_char,
+            self.comment_prefix.as_ref(),
             self.quote_char,
             self.eol_char,
             None,
@@ -285,7 +291,7 @@ impl LazyFileListReader for LazyCsvReader<'_> {
             self.schema,
             self.schema_overwrite,
             self.low_memory,
-            self.comment_char,
+            self.comment_prefix,
             self.quote_char,
             self.eol_char,
             self.null_values,
@@ -317,7 +323,7 @@ impl LazyFileListReader for LazyCsvReader<'_> {
         self
     }
 
-    fn with_paths(mut self, paths: Vec<PathBuf>) -> Self {
+    fn with_paths(mut self, paths: Arc<[PathBuf]>) -> Self {
         self.paths = paths;
         self
     }

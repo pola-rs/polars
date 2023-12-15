@@ -7,22 +7,21 @@ use std::cmp::Ordering;
 
 pub use agg_list::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::legacy::data_types::IsFloat;
 use arrow::legacy::kernels::rolling;
 use arrow::legacy::kernels::rolling::no_nulls::{
     MaxWindow, MeanWindow, MinWindow, QuantileWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
 };
 use arrow::legacy::kernels::rolling::nulls::RollingAggWindowNulls;
-use arrow::legacy::kernels::rolling::{
-    compare_fn_nan_max, compare_fn_nan_min, DynArgs, RollingQuantileParams, RollingVarParams,
-};
+use arrow::legacy::kernels::rolling::{RollingQuantileParams, RollingVarParams};
 use arrow::legacy::kernels::take_agg::*;
 use arrow::legacy::prelude::QuantileInterpolOptions;
 use arrow::legacy::trusted_len::TrustedLenPush;
-use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num_traits::pow::Pow;
 use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
+use polars_utils::float::IsFloat;
+use polars_utils::idx_vec::IdxVec;
+use polars_utils::ord::{compare_fn_nan_max, compare_fn_nan_min};
 use rayon::prelude::*;
 
 #[cfg(feature = "object")]
@@ -157,7 +156,7 @@ where
 /// Helper that combines the groups into a parallel iterator over `(first, all): (u32, &Vec<u32>)`.
 pub fn _agg_helper_idx<T, F>(groups: &GroupsIdx, f: F) -> Series
 where
-    F: Fn((IdxSize, &Vec<IdxSize>)) -> Option<T::Native> + Send + Sync,
+    F: Fn((IdxSize, &IdxVec)) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
 {
@@ -168,7 +167,7 @@ where
 /// Same helper as `_agg_helper_idx` but for aggregations that don't return an Option.
 pub fn _agg_helper_idx_no_null<T, F>(groups: &GroupsIdx, f: F) -> Series
 where
-    F: Fn((IdxSize, &Vec<IdxSize>)) -> T::Native + Send + Sync,
+    F: Fn((IdxSize, &IdxVec)) -> T::Native + Send + Sync,
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
 {
@@ -180,7 +179,7 @@ where
 /// this doesn't have traverse the `first: Vec<u32>` memory and is therefore faster.
 fn agg_helper_idx_on_all<T, F>(groups: &GroupsIdx, f: F) -> Series
 where
-    F: Fn(&Vec<IdxSize>) -> Option<T::Native> + Send + Sync,
+    F: Fn(&IdxVec) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
 {
@@ -447,14 +446,10 @@ where
         + Num
         + NumCast
         + Zero
-        + Simd
         + Bounded
         + std::iter::Sum<T::Native>
         + TakeExtremum,
-    <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
-        + arrow::compute::aggregate::Sum<T::Native>
-        + arrow::compute::aggregate::SimdOrd<T::Native>,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoSeries + ChunkAgg<T::Native>,
 {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
         // faster paths
@@ -479,20 +474,13 @@ where
                     } else if idx.len() == 1 {
                         arr.get(first as usize)
                     } else if no_nulls {
-                        Some(take_agg_no_null_primitive_iter_unchecked(
+                        take_agg_no_null_primitive_iter_unchecked::<_, T::Native, _, _>(
                             arr,
                             idx2usize(idx),
                             |a, b| a.take_min(b),
-                            T::Native::max_value(),
-                        ))
-                    } else {
-                        take_agg_primitive_iter_unchecked::<T::Native, _, _>(
-                            arr,
-                            idx2usize(idx),
-                            |a, b| a.take_min(b),
-                            T::Native::max_value(),
-                            idx.len() as IdxSize,
                         )
+                    } else {
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| a.take_min(b))
                     }
                 })
             },
@@ -560,22 +548,13 @@ where
                     } else if idx.len() == 1 {
                         arr.get(first as usize)
                     } else if no_nulls {
-                        Some({
-                            take_agg_no_null_primitive_iter_unchecked(
-                                arr,
-                                idx2usize(idx),
-                                |a, b| a.take_max(b),
-                                T::Native::min_value(),
-                            )
-                        })
-                    } else {
-                        take_agg_primitive_iter_unchecked::<T::Native, _, _>(
+                        take_agg_no_null_primitive_iter_unchecked::<_, T::Native, _, _>(
                             arr,
                             idx2usize(idx),
                             |a, b| a.take_max(b),
-                            T::Native::min_value(),
-                            idx.len() as IdxSize,
                         )
+                    } else {
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| a.take_max(b))
                     }
                 })
             },
@@ -632,21 +611,11 @@ where
                     } else if idx.len() == 1 {
                         arr.get(first as usize).unwrap_or(T::Native::zero())
                     } else if no_nulls {
-                        take_agg_no_null_primitive_iter_unchecked(
-                            arr,
-                            idx2usize(idx),
-                            |a, b| a + b,
-                            T::Native::zero(),
-                        )
+                        take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| a + b)
+                            .unwrap_or(T::Native::zero())
                     } else {
-                        take_agg_primitive_iter_unchecked::<T::Native, _, _>(
-                            arr,
-                            idx2usize(idx),
-                            |a, b| a + b,
-                            T::Native::zero(),
-                            idx.len() as IdxSize,
-                        )
-                        .unwrap_or(T::Native::zero())
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx), |a, b| a + b)
+                            .unwrap_or(T::Native::zero())
                     }
                 })
             },
@@ -691,12 +660,13 @@ where
 impl<T> SeriesWrap<ChunkedArray<T>>
 where
     T: PolarsFloatType,
-    ChunkedArray<T>:
-        IntoSeries + ChunkVar + VarAggSeries + ChunkQuantile<T::Native> + QuantileAggSeries,
-    T::Native: Simd + NumericNative + Pow<T::Native, Output = T::Native>,
-    <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
-        + arrow::compute::aggregate::Sum<T::Native>
-        + arrow::compute::aggregate::SimdOrd<T::Native>,
+    ChunkedArray<T>: IntoSeries
+        + ChunkVar
+        + VarAggSeries
+        + ChunkQuantile<T::Native>
+        + QuantileAggSeries
+        + ChunkAgg<T::Native>,
+    T::Native: Pow<T::Native, Output = T::Native>,
 {
     pub(crate) unsafe fn agg_mean(&self, groups: &GroupsProxy) -> Series {
         match groups {
@@ -716,12 +686,12 @@ where
                     } else if idx.len() == 1 {
                         arr.get(first as usize).map(|sum| sum.to_f64().unwrap())
                     } else if no_nulls {
-                        take_agg_no_null_primitive_iter_unchecked(
+                        take_agg_no_null_primitive_iter_unchecked::<_, T::Native, _, _>(
                             arr,
                             idx2usize(idx),
                             |a, b| a + b,
-                            T::Native::zero(),
                         )
+                        .unwrap()
                         .to_f64()
                         .map(|sum| sum / idx.len() as f64)
                     } else {
@@ -932,11 +902,8 @@ impl Float64Chunked {
 impl<T> ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoSeries + ChunkAgg<T::Native> + ChunkVar,
     T::Native: NumericNative + Ord,
-    <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
-        + arrow::compute::aggregate::Sum<T::Native>
-        + arrow::compute::aggregate::SimdOrd<T::Native>,
 {
     pub(crate) unsafe fn agg_mean(&self, groups: &GroupsProxy) -> Series {
         match groups {
@@ -955,15 +922,13 @@ where
                     } else {
                         match (self.has_validity(), self.chunks.len()) {
                             (false, 1) => {
-                                take_agg_no_null_primitive_iter_unchecked(
+                                take_agg_no_null_primitive_iter_unchecked::<_, f64, _, _>(
                                     self.downcast_iter().next().unwrap(),
                                     idx2usize(idx),
                                     |a, b| a + b,
-                                    0.0f64,
                                 )
-                            }
-                            .to_f64()
-                            .map(|sum| sum / idx.len() as f64),
+                                .map(|sum| sum / idx.len() as f64)
+                            },
                             (_, 1) => {
                                 {
                                     take_agg_primitive_iter_unchecked_count_nulls::<

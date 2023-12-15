@@ -69,6 +69,11 @@ impl PySeries {
                     PyArray1::from_iter(py, ca.into_iter().map(|opt_v| opt_v.to_object(py)));
                 Ok(np_arr.into_py(py))
             },
+            DataType::Null => {
+                let n = s.len();
+                let np_arr = PyArray1::from_iter(py, std::iter::repeat(f32::NAN).take(n));
+                Ok(np_arr.into_py(py))
+            },
             dt => {
                 raise_err!(
                     format!("'to_numpy' not supported for dtype: {dt:?}"),
@@ -95,7 +100,7 @@ impl PySeries {
                     DataType::Int64 => PyList::new(py, series.i64().unwrap()),
                     DataType::Float32 => PyList::new(py, series.f32().unwrap()),
                     DataType::Float64 => PyList::new(py, series.f64().unwrap()),
-                    DataType::Categorical(_) => {
+                    DataType::Categorical(_, _) => {
                         PyList::new(py, series.categorical().unwrap().iter_str())
                     },
                     #[cfg(feature = "object")]

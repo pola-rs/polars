@@ -4,7 +4,7 @@ use crate::array::DictionaryKey;
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
 
 /// Helper trait to support `Offset` and `OffsetBuffer`
-pub(crate) trait OffsetsContainer<O> {
+pub trait OffsetsContainer<O> {
     fn last(&self) -> usize;
     fn as_slice(&self) -> &[O];
 }
@@ -33,11 +33,11 @@ impl<O: Offset> OffsetsContainer<O> for Offsets<O> {
     }
 }
 
-pub(crate) fn try_check_offsets_bounds<O: Offset, C: OffsetsContainer<O>>(
-    offsets: &C,
+pub(crate) fn try_check_offsets_bounds<O: Offset>(
+    offsets: &[O],
     values_len: usize,
 ) -> PolarsResult<()> {
-    if offsets.last() > values_len {
+    if offsets.last().unwrap().to_usize() > values_len {
         polars_bail!(ComputeError: "offsets must not exceed the values length")
     } else {
         Ok(())
@@ -47,27 +47,27 @@ pub(crate) fn try_check_offsets_bounds<O: Offset, C: OffsetsContainer<O>>(
 /// # Error
 /// * any offset is larger or equal to `values_len`.
 /// * any slice of `values` between two consecutive pairs from `offsets` is invalid `utf8`, or
-pub(crate) fn try_check_utf8<O: Offset, C: OffsetsContainer<O>>(
-    offsets: &C,
-    values: &[u8],
-) -> PolarsResult<()> {
-    if offsets.as_slice().len() == 1 {
+pub fn try_check_utf8<O: Offset>(offsets: &[O], values: &[u8]) -> PolarsResult<()> {
+    if offsets.len() == 1 {
         return Ok(());
     }
+    assert!(offsets.len() > 1);
+    let end = offsets.last().unwrap().to_usize();
+    let start = offsets.first().unwrap().to_usize();
 
     try_check_offsets_bounds(offsets, values.len())?;
+    let values_range = &values[start..end];
 
-    if values.is_ascii() {
+    if values_range.is_ascii() {
         Ok(())
     } else {
-        simdutf8::basic::from_utf8(values).map_err(to_compute_err)?;
+        simdutf8::basic::from_utf8(values_range).map_err(to_compute_err)?;
 
         // offsets can be == values.len()
         // find first offset from the end that is smaller
         // Example:
         // values.len() = 10
         // offsets = [0, 5, 10, 10]
-        let offsets = offsets.as_slice();
         let last = offsets
             .iter()
             .enumerate()
@@ -98,9 +98,7 @@ pub(crate) fn try_check_utf8<O: Offset, C: OffsetsContainer<O>>(
 
             // A valid code-point iff it does not start with 0b10xxxxxx
             // Bit-magic taken from `std::str::is_char_boundary`
-            if (b as i8) < -0x40 {
-                any_invalid = true
-            }
+            any_invalid |= (b as i8) < -0x40;
         }
         if any_invalid {
             polars_bail!(ComputeError: "non-valid char boundary detected")
@@ -119,11 +117,7 @@ pub(crate) unsafe fn check_indexes_unchecked<K: DictionaryKey>(
     let mut invalid = false;
 
     // this loop is auto-vectorized
-    keys.iter().for_each(|k| {
-        if k.as_usize() > len {
-            invalid = true;
-        }
-    });
+    keys.iter().for_each(|k| invalid |= k.as_usize() > len);
 
     if invalid {
         let key = keys.iter().map(|k| k.as_usize()).max().unwrap();
@@ -168,12 +162,12 @@ mod tests {
         fn check_utf8_validation(values in binary_strategy()) {
 
             for offset in 0..values.len() - 1 {
-                let offsets = vec![0, offset as i32, values.len() as i32].try_into().unwrap();
+                let offsets: OffsetsBuffer<i32> = vec![0, offset as i32, values.len() as i32].try_into().unwrap();
 
                 let mut is_valid = std::str::from_utf8(&values[..offset]).is_ok();
                 is_valid &= std::str::from_utf8(&values[offset..]).is_ok();
 
-                assert_eq!(try_check_utf8::<i32, Offsets<i32>>(&offsets, &values).is_ok(), is_valid)
+                assert_eq!(try_check_utf8::<i32>(&offsets, &values).is_ok(), is_valid)
             }
         }
     }

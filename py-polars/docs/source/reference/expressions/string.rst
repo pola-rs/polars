@@ -20,6 +20,7 @@ The following methods are available under the `expr.str` attribute.
     Expr.str.extract
     Expr.str.extract_all
     Expr.str.extract_groups
+    Expr.str.json_decode
     Expr.str.json_extract
     Expr.str.json_path_match
     Expr.str.len_bytes
@@ -28,8 +29,11 @@ The following methods are available under the `expr.str` attribute.
     Expr.str.ljust
     Expr.str.lstrip
     Expr.str.n_chars
+    Expr.str.pad_end
+    Expr.str.pad_start
     Expr.str.replace
     Expr.str.replace_all
+    Expr.str.reverse
     Expr.str.rjust
     Expr.str.rstrip
     Expr.str.slice
@@ -47,6 +51,7 @@ The following methods are available under the `expr.str` attribute.
     Expr.str.to_date
     Expr.str.to_datetime
     Expr.str.to_decimal
+    Expr.str.to_integer
     Expr.str.to_lowercase
     Expr.str.to_titlecase
     Expr.str.to_time

@@ -40,8 +40,7 @@ impl Default for ScanArgsParquet {
 struct LazyParquetReader {
     args: ScanArgsParquet,
     path: PathBuf,
-    paths: Vec<PathBuf>,
-    known_schema: Option<SchemaRef>,
+    paths: Arc<[PathBuf]>,
 }
 
 impl LazyParquetReader {
@@ -49,19 +48,33 @@ impl LazyParquetReader {
         Self {
             args,
             path,
-            paths: vec![],
-            known_schema: None,
+            paths: Arc::new([]),
         }
     }
 }
 
 impl LazyFileListReader for LazyParquetReader {
-    fn finish_no_glob(mut self) -> PolarsResult<LazyFrame> {
-        let known_schema = self.known_schema();
+    /// Get the final [LazyFrame].
+    fn finish(mut self) -> PolarsResult<LazyFrame> {
+        if let Some(paths) = self.iter_paths()? {
+            let paths = paths
+                .into_iter()
+                .collect::<PolarsResult<Arc<[PathBuf]>>>()?;
+            self.paths = paths;
+        }
+        self.finish_no_glob()
+    }
+
+    fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
         let row_count = self.args.row_count;
-        let path = self.path;
+
+        let paths = if self.paths.is_empty() {
+            Arc::new([self.path]) as Arc<[PathBuf]>
+        } else {
+            self.paths
+        };
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(
-            path,
+            paths,
             self.args.n_rows,
             self.args.cache,
             self.args.parallel,
@@ -71,7 +84,6 @@ impl LazyFileListReader for LazyParquetReader {
             self.args.cloud_options,
             self.args.use_statistics,
             self.args.hive_partitioning,
-            known_schema,
         )?
         .build()
         .into();
@@ -80,7 +92,6 @@ impl LazyFileListReader for LazyParquetReader {
         if let Some(row_count) = row_count {
             lf = lf.with_row_count(&row_count.name, Some(row_count.offset))
         }
-        self.known_schema = Some(lf.schema()?);
 
         lf.opt_state.file_caching = true;
         Ok(lf)
@@ -99,7 +110,7 @@ impl LazyFileListReader for LazyParquetReader {
         self
     }
 
-    fn with_paths(mut self, paths: Vec<PathBuf>) -> Self {
+    fn with_paths(mut self, paths: Arc<[PathBuf]>) -> Self {
         self.paths = paths;
         self
     }
@@ -121,13 +132,6 @@ impl LazyFileListReader for LazyParquetReader {
         self.args.n_rows
     }
 
-    fn known_schema(&self) -> Option<SchemaRef> {
-        self.known_schema.clone()
-    }
-    fn set_known_schema(&mut self, known_schema: SchemaRef) {
-        self.known_schema = Some(known_schema);
-    }
-
     fn row_count(&self) -> Option<&RowCount> {
         self.args.row_count.as_ref()
     }
@@ -140,7 +144,7 @@ impl LazyFrame {
     }
 
     /// Create a LazyFrame directly from a parquet scan.
-    pub fn scan_parquet_files(paths: Vec<PathBuf>, args: ScanArgsParquet) -> PolarsResult<Self> {
+    pub fn scan_parquet_files(paths: Arc<[PathBuf]>, args: ScanArgsParquet) -> PolarsResult<Self> {
         LazyParquetReader::new(PathBuf::new(), args)
             .with_paths(paths)
             .finish()

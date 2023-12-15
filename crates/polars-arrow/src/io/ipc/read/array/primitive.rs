@@ -7,13 +7,13 @@ use polars_error::{polars_err, PolarsResult};
 use super::super::read_basic::*;
 use super::super::{Compression, IpcBuffer, Node, OutOfSpecKind};
 use crate::array::PrimitiveArray;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::types::NativeType;
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_primitive<T: NativeType, R: Read + Seek>(
     field_nodes: &mut VecDeque<Node>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
     reader: &mut R,
     block_offset: u64,

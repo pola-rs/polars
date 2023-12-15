@@ -71,7 +71,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             }
         },
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(rev_map) => {
+        DataType::Categorical(rev_map, _) => {
             let arr = &*(arr as *const dyn Array as *const UInt32Array);
             let v = arr.value_unchecked(idx);
             AnyValue::Categorical(v, rev_map.as_ref().unwrap().as_ref(), SyncPtr::new_null())
@@ -145,7 +145,7 @@ impl<'a> AnyValue<'a> {
 
                                 if arr.is_valid_unchecked(idx) {
                                     let v = arr.value_unchecked(idx);
-                                    let DataType::Categorical(Some(rev_map)) = fld.data_type()
+                                    let DataType::Categorical(Some(rev_map), _) = fld.data_type()
                                     else {
                                         unimplemented!()
                                     };

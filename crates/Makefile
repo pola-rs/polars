@@ -10,7 +10,7 @@ fmt:  ## Run rustfmt and dprint
 
 .PHONY: check
 check:  ## Run cargo check with all features
-	cargo check --workspace --all-targets --all-features
+	cargo check -p polars --all-features
 
 .PHONY: clippy
 clippy:  ## Run clippy with all features
@@ -42,30 +42,30 @@ miri:  ## Run miri
 .PHONY: test
 test:  ## Run tests
 	cargo test --all-features \
-		-p polars-lazy \
-		-p polars-io \
 		-p polars-core \
-		-p polars-time \
-		-p polars-utils \
-		-p polars-row \
-		-p polars-sql \
+		-p polars-io \
+		-p polars-lazy \
 		-p polars-ops \
 		-p polars-plan \
+		-p polars-row \
+		-p polars-sql \
+		-p polars-time \
+		-p polars-utils \
 		-- \
 		--test-threads=2
 
 .PHONY: nextest
 nextest:  ## Run tests with nextest
 	cargo nextest run --all-features \
-		-p polars-lazy \
-		-p polars-io \
 		-p polars-core \
-		-p polars-time \
-		-p polars-utils \
-		-p polars-row \
-		-p polars-sql \
+		-p polars-io \
+		-p polars-lazy \
 		-p polars-ops \
 		-p polars-plan \
+		-p polars-row \
+		-p polars-sql \
+		-p polars-time \
+		-p polars-utils \
 
 .PHONY: integration-tests
 integration-tests:  ## Run integration tests
@@ -109,6 +109,7 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-ffi
 	cargo publish --allow-dirty -p polars-ops
 	cargo publish --allow-dirty -p polars-time
+	cargo publish --allow-dirty -p polars-parquet
 	cargo publish --allow-dirty -p polars-io
 	cargo publish --allow-dirty -p polars-plan
 	cargo publish --allow-dirty -p polars-pipe
@@ -145,4 +146,5 @@ check-wasm:  ## Check wasm build without supported features
 		--exclude-features parquet            \
 		--exclude-features performant         \
 		--exclude-features streaming          \
+		--exclude-features http          	  \
 		--exclude-features test

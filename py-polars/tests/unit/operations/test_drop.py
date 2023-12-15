@@ -23,7 +23,7 @@ def test_drop_explode_6641() -> None:
         .drop(["identifier", "alternate"])
         .select(pl.concat_list([pl.col("test"), pl.col("test")]))
         .collect()
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "test": [
             [
                 {"identifier": "chr1:10426:10429:ACC>A", "alternate": "A"},
@@ -111,7 +111,7 @@ def test_drop_columns() -> None:
 
 
 def test_drop_nan_ignore_null_3525() -> None:
-    df = pl.DataFrame({"a": [1.0, float("NaN"), 2.0, None, 3.0, 4.0]})
+    df = pl.DataFrame({"a": [1.0, float("nan"), 2.0, None, 3.0, 4.0]})
     assert df.select(pl.col("a").drop_nans()).to_series().to_list() == [
         1.0,
         2.0,

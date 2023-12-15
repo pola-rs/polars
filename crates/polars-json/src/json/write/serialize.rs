@@ -2,16 +2,15 @@ use std::io::Write;
 
 use arrow::array::*;
 use arrow::bitmap::utils::ZipValidity;
-use arrow::datatypes::{DataType, IntegerType, TimeUnit};
+use arrow::datatypes::{ArrowDataType, IntegerType, TimeUnit};
 use arrow::io::iterator::BufStreamingIterator;
 use arrow::offset::Offset;
 #[cfg(feature = "chrono-tz")]
 use arrow::temporal_conversions::parse_offset_tz;
 use arrow::temporal_conversions::{
-    date32_to_date, date64_to_date, duration_ms_to_duration, duration_ns_to_duration,
-    duration_s_to_duration, duration_us_to_duration, parse_offset, timestamp_ms_to_datetime,
-    timestamp_ns_to_datetime, timestamp_s_to_datetime, timestamp_to_datetime,
-    timestamp_us_to_datetime,
+    date32_to_date, duration_ms_to_duration, duration_ns_to_duration, duration_s_to_duration,
+    duration_us_to_duration, parse_offset, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
+    timestamp_s_to_datetime, timestamp_to_datetime, timestamp_us_to_datetime,
 };
 use arrow::types::NativeType;
 use chrono::{Duration, NaiveDate, NaiveDateTime};
@@ -374,59 +373,56 @@ pub(crate) fn new_serializer<'a>(
     take: usize,
 ) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
     match array.data_type().to_logical_type() {
-        DataType::Boolean => {
+        ArrowDataType::Boolean => {
             boolean_serializer(array.as_any().downcast_ref().unwrap(), offset, take)
         },
-        DataType::Int8 => {
+        ArrowDataType::Int8 => {
             primitive_serializer::<i8>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
-        DataType::Int16 => {
+        ArrowDataType::Int16 => {
             primitive_serializer::<i16>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
-        DataType::Int32 => {
+        ArrowDataType::Int32 => {
             primitive_serializer::<i32>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
-        DataType::Int64 => {
+        ArrowDataType::Int64 => {
             primitive_serializer::<i64>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
-        DataType::UInt8 => {
+        ArrowDataType::UInt8 => {
             primitive_serializer::<u8>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
-        DataType::UInt16 => {
+        ArrowDataType::UInt16 => {
             primitive_serializer::<u16>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
-        DataType::UInt32 => {
+        ArrowDataType::UInt32 => {
             primitive_serializer::<u32>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
-        DataType::UInt64 => {
+        ArrowDataType::UInt64 => {
             primitive_serializer::<u64>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
-        DataType::Float32 => {
+        ArrowDataType::Float32 => {
             float_serializer::<f32>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
-        DataType::Float64 => {
+        ArrowDataType::Float64 => {
             float_serializer::<f64>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
-        DataType::Utf8 => {
+        ArrowDataType::Utf8 => {
             utf8_serializer::<i32>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
-        DataType::LargeUtf8 => {
+        ArrowDataType::LargeUtf8 => {
             utf8_serializer::<i64>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
-        DataType::Struct(_) => {
+        ArrowDataType::Struct(_) => {
             struct_serializer(array.as_any().downcast_ref().unwrap(), offset, take)
         },
-        DataType::FixedSizeList(_, _) => {
+        ArrowDataType::FixedSizeList(_, _) => {
             fixed_size_list_serializer(array.as_any().downcast_ref().unwrap(), offset, take)
         },
-        DataType::List(_) => {
-            list_serializer::<i32>(array.as_any().downcast_ref().unwrap(), offset, take)
-        },
-        DataType::LargeList(_) => {
+        ArrowDataType::LargeList(_) => {
             list_serializer::<i64>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
-        other @ DataType::Dictionary(k, v, _) => match (k, &**v) {
-            (IntegerType::UInt32, DataType::LargeUtf8) => {
+        other @ ArrowDataType::Dictionary(k, v, _) => match (k, &**v) {
+            (IntegerType::UInt32, ArrowDataType::LargeUtf8) => {
                 let array = array
                     .as_any()
                     .downcast_ref::<DictionaryArray<u32>>()
@@ -437,19 +433,13 @@ pub(crate) fn new_serializer<'a>(
                 todo!("Writing {:?} to JSON", other)
             },
         },
-        DataType::Date32 => date_serializer(
+        ArrowDataType::Date32 => date_serializer(
             array.as_any().downcast_ref().unwrap(),
             date32_to_date,
             offset,
             take,
         ),
-        DataType::Date64 => date_serializer(
-            array.as_any().downcast_ref().unwrap(),
-            date64_to_date,
-            offset,
-            take,
-        ),
-        DataType::Timestamp(tu, None) => {
+        ArrowDataType::Timestamp(tu, None) => {
             let convert = match tu {
                 TimeUnit::Nanosecond => timestamp_ns_to_datetime,
                 TimeUnit::Microsecond => timestamp_us_to_datetime,
@@ -463,14 +453,14 @@ pub(crate) fn new_serializer<'a>(
                 take,
             )
         },
-        DataType::Timestamp(time_unit, Some(tz)) => timestamp_tz_serializer(
+        ArrowDataType::Timestamp(time_unit, Some(tz)) => timestamp_tz_serializer(
             array.as_any().downcast_ref().unwrap(),
             *time_unit,
             tz,
             offset,
             take,
         ),
-        DataType::Duration(tu) => {
+        ArrowDataType::Duration(tu) => {
             let convert = match tu {
                 TimeUnit::Nanosecond => duration_ns_to_duration,
                 TimeUnit::Microsecond => duration_us_to_duration,
@@ -484,7 +474,7 @@ pub(crate) fn new_serializer<'a>(
                 take,
             )
         },
-        DataType::Null => null_serializer(array.len(), offset, take),
+        ArrowDataType::Null => null_serializer(array.len(), offset, take),
         other => todo!("Writing {:?} to JSON", other),
     }
 }

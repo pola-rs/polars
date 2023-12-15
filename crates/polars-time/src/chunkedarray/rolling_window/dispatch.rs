@@ -132,32 +132,7 @@ pub trait SeriesOpsTime: AsSeries {
             )
         })
     }
-    /// Apply a rolling median to a Series.
-    #[cfg(feature = "rolling_window")]
-    fn rolling_median(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
-        let s = self.as_series().to_float()?;
 
-        // At the last possible second, right before we do computations, make sure we're using the
-        // right quantile parameters to get a median. This also lets us have the convenience of
-        // calling `rolling_median` from Rust without a bunch of dedicated functions that just call
-        // out to the `rolling_quantile` anyway.
-        let mut options = options.clone();
-        options.fn_params = Some(Arc::new(RollingQuantileParams {
-            prob: 0.5,
-            interpol: QuantileInterpolOptions::Linear,
-        }) as Arc<dyn std::any::Any + Send + Sync>);
-
-        with_match_physical_float_polars_type!(s.dtype(), |$T| {
-            let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-        rolling_agg(
-            ca,
-            options,
-            &rolling::no_nulls::rolling_quantile,
-            &rolling::nulls::rolling_quantile,
-            Some(&super::rolling_kernels::no_nulls::rolling_quantile),
-        )
-        })
-    }
     /// Apply a rolling quantile to a Series.
     #[cfg(feature = "rolling_window")]
     fn rolling_quantile(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
@@ -217,10 +192,26 @@ pub trait SeriesOpsTime: AsSeries {
     #[cfg(feature = "rolling_window")]
     fn rolling_var(&self, options: RollingOptionsImpl) -> PolarsResult<Series> {
         let s = self.as_series().to_float()?;
+
         with_match_physical_float_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+            let mut ca = ca.clone();
+
+            if let Some(idx) = ca.first_non_null() {
+                let k = ca.get(idx).unwrap();
+                // TODO! remove this!
+                // This is a temporary hack to improve numeric stability.
+                // var(X) = var(X - k)
+                // This is temporary as we will rework the rolling methods
+                // the 100.0 absolute boundary is arbitrarily chosen.
+                // the algorithm will square numbers, so it loses precision rapidly
+                if k.abs() > 100.0 {
+                    ca = ca - k;
+                }
+            }
+
             rolling_agg(
-                ca,
+                &ca,
                 options,
                 &rolling::no_nulls::rolling_var,
                 &rolling::nulls::rolling_var,

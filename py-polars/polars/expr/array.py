@@ -24,7 +24,7 @@ class ExprArrayNameSpace:
         --------
         >>> df = pl.DataFrame(
         ...     data={"a": [[1, 2], [4, 3]]},
-        ...     schema={"a": pl.Array(width=2, inner=pl.Int64)},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
         ... )
         >>> df.select(pl.col("a").arr.min())
         shape: (2, 1)
@@ -38,7 +38,7 @@ class ExprArrayNameSpace:
         └─────┘
 
         """
-        return wrap_expr(self._pyexpr.array_min())
+        return wrap_expr(self._pyexpr.arr_min())
 
     def max(self) -> Expr:
         """
@@ -48,7 +48,7 @@ class ExprArrayNameSpace:
         --------
         >>> df = pl.DataFrame(
         ...     data={"a": [[1, 2], [4, 3]]},
-        ...     schema={"a": pl.Array(width=2, inner=pl.Int64)},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
         ... )
         >>> df.select(pl.col("a").arr.max())
         shape: (2, 1)
@@ -62,7 +62,7 @@ class ExprArrayNameSpace:
         └─────┘
 
         """
-        return wrap_expr(self._pyexpr.array_max())
+        return wrap_expr(self._pyexpr.arr_max())
 
     def sum(self) -> Expr:
         """
@@ -72,7 +72,7 @@ class ExprArrayNameSpace:
         --------
         >>> df = pl.DataFrame(
         ...     data={"a": [[1, 2], [4, 3]]},
-        ...     schema={"a": pl.Array(width=2, inner=pl.Int64)},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
         ... )
         >>> df.select(pl.col("a").arr.sum())
         shape: (2, 1)
@@ -86,7 +86,7 @@ class ExprArrayNameSpace:
         └─────┘
 
         """
-        return wrap_expr(self._pyexpr.array_sum())
+        return wrap_expr(self._pyexpr.arr_sum())
 
     def unique(self, *, maintain_order: bool = False) -> Expr:
         """
@@ -103,7 +103,7 @@ class ExprArrayNameSpace:
         ...     {
         ...         "a": [[1, 1, 2]],
         ...     },
-        ...     schema_overrides={"a": pl.Array(width=3, inner=pl.Int64)},
+        ...     schema={"a": pl.Array(pl.Int64, 3)},
         ... )
         >>> df.select(pl.col("a").arr.unique())
         shape: (1, 1)
@@ -116,4 +116,33 @@ class ExprArrayNameSpace:
         └───────────┘
 
         """
-        return wrap_expr(self._pyexpr.array_unique(maintain_order))
+        return wrap_expr(self._pyexpr.arr_unique(maintain_order))
+
+    def to_list(self) -> Expr:
+        """
+        Convert an Array column into a List column with the same inner data type.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`List`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2], [3, 4]]},
+        ...     schema={"a": pl.Array(pl.Int8, 2)},
+        ... )
+        >>> df.select(pl.col("a").arr.to_list())
+        shape: (2, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ list[i8] │
+        ╞══════════╡
+        │ [1, 2]   │
+        │ [3, 4]   │
+        └──────────┘
+
+        """
+        return wrap_expr(self._pyexpr.arr_to_list())

@@ -11,6 +11,7 @@ use polars_core::{downcast_as_macro_arg_physical, POOL};
 use polars_ops::frame::join::{
     default_join_ids, private_left_join_multiple_keys, ChunkJoinOptIds, JoinValidation,
 };
+use polars_ops::frame::SeriesJoin;
 use polars_utils::format_smartstring;
 use polars_utils::sort::perfect_sort;
 use polars_utils::sync::SyncPtr;
@@ -280,7 +281,7 @@ impl WindowExpr {
         agg_col
     }
 
-    /// check if the the branches have an aggregation
+    /// Check if the branches have an aggregation
     /// when(a > sum)
     /// then (foo)
     /// otherwise(bar - sum)
@@ -301,8 +302,8 @@ impl WindowExpr {
                         },
                         Expr::Function { options, .. }
                         | Expr::AnonymousFunction { options, .. } => {
-                            if options.auto_explode
-                                && matches!(options.collect_groups, ApplyOptions::ApplyGroups)
+                            if options.returns_scalar
+                                && matches!(options.collect_groups, ApplyOptions::GroupWise)
                             {
                                 agg_col = true;
                             }
@@ -562,13 +563,16 @@ impl PhysicalExpr for WindowExpr {
                                 // group key from right column
                                 let right = &keys[0];
                                 group_by_columns[0]
-                                    .hash_join_left(right, JoinValidation::ManyToMany)
+                                    .hash_join_left(right, JoinValidation::ManyToMany, true)
                                     .unwrap()
                                     .1
                             } else {
                                 let df_right = DataFrame::new_no_checks(keys);
                                 let df_left = DataFrame::new_no_checks(group_by_columns);
-                                private_left_join_multiple_keys(&df_left, &df_right, None, None).1
+                                private_left_join_multiple_keys(
+                                    &df_left, &df_right, None, None, false,
+                                )
+                                .1
                             }
                         };
 
@@ -621,10 +625,6 @@ impl PhysicalExpr for WindowExpr {
 
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
-    }
-
-    fn is_valid_aggregation(&self) -> bool {
-        false
     }
 }
 
@@ -716,7 +716,7 @@ where
                         .zip(groups.all().par_iter())
                         .for_each(|(v, g)| {
                             let ptr = sync_ptr_values.get();
-                            for idx in g {
+                            for idx in g.as_slice() {
                                 debug_assert!((*idx as usize) < len);
                                 unsafe { *ptr.add(*idx as usize) = *v }
                             }
@@ -766,7 +766,7 @@ where
                 let validity_ptr = sync_ptr_validity.get();
 
                 ca.into_iter().zip(groups.iter()).for_each(|(opt_v, g)| {
-                    for idx in g {
+                    for idx in g.as_slice() {
                         let idx = *idx as usize;
                         debug_assert!(idx < len);
                         unsafe {

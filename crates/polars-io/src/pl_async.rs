@@ -1,21 +1,47 @@
-use std::collections::BTreeSet;
 use std::future::Future;
 use std::ops::Deref;
 use std::sync::RwLock;
+use std::thread::ThreadId;
 
 use once_cell::sync::Lazy;
 use polars_core::POOL;
+use polars_utils::aliases::PlHashSet;
 use tokio::runtime::{Builder, Runtime};
+use tokio::sync::Semaphore;
+
+static CONCURRENCY_BUDGET: std::sync::OnceLock<(Semaphore, u32)> = std::sync::OnceLock::new();
+pub(super) const MAX_BUDGET_PER_REQUEST: usize = 10;
+
+pub async fn with_concurrency_budget<F, Fut>(requested_budget: u32, callable: F) -> Fut::Output
+where
+    F: FnOnce() -> Fut,
+    Fut: Future,
+{
+    let (semaphore, initial_budget) = CONCURRENCY_BUDGET.get_or_init(|| {
+        let permits = std::env::var("POLARS_CONCURRENCY_BUDGET")
+            .map(|s| s.parse::<usize>().expect("integer"))
+            .unwrap_or_else(|_| std::cmp::max(POOL.current_num_threads(), MAX_BUDGET_PER_REQUEST));
+        (Semaphore::new(permits), permits as u32)
+    });
+
+    // This would never finish otherwise.
+    assert!(requested_budget <= *initial_budget);
+
+    // Keep permit around.
+    // On drop it is returned to the semaphore.
+    let _permit_acq = semaphore.acquire_many(requested_budget).await.unwrap();
+    callable().await
+}
 
 pub struct RuntimeManager {
     rt: Runtime,
-    blocking_rayon_threads: RwLock<BTreeSet<usize>>,
+    blocking_threads: RwLock<PlHashSet<ThreadId>>,
 }
 
 impl RuntimeManager {
     fn new() -> Self {
         let rt = Builder::new_multi_thread()
-            .worker_threads(std::cmp::max(POOL.current_num_threads() / 2, 4))
+            .worker_threads(std::cmp::max(POOL.current_num_threads(), 4))
             .enable_io()
             .enable_time()
             .build()
@@ -23,7 +49,7 @@ impl RuntimeManager {
 
         Self {
             rt,
-            blocking_rayon_threads: Default::default(),
+            blocking_threads: Default::default(),
         }
     }
 
@@ -36,31 +62,15 @@ impl RuntimeManager {
         F: Future + Send,
         F::Output: Send,
     {
-        if let Some(thread_id) = POOL.current_thread_index() {
-            if self
-                .blocking_rayon_threads
-                .read()
-                .unwrap()
-                .contains(&thread_id)
-            {
-                std::thread::scope(|s| s.spawn(|| self.rt.block_on(future)).join().unwrap())
-            } else {
-                self.blocking_rayon_threads
-                    .write()
-                    .unwrap()
-                    .insert(thread_id);
-                let out = self.rt.block_on(future);
-                self.blocking_rayon_threads
-                    .write()
-                    .unwrap()
-                    .remove(&thread_id);
-                out
-            }
-        }
-        // Assumption that the main thread never runs rayon tasks, so we wouldn't be rescheduled
-        // on the main thread and thus we can always block.
-        else {
-            self.rt.block_on(future)
+        let thread_id = std::thread::current().id();
+
+        if self.blocking_threads.read().unwrap().contains(&thread_id) {
+            std::thread::scope(|s| s.spawn(|| self.rt.block_on(future)).join().unwrap())
+        } else {
+            self.blocking_threads.write().unwrap().insert(thread_id);
+            let out = self.rt.block_on(future);
+            self.blocking_threads.write().unwrap().remove(&thread_id);
+            out
         }
     }
 

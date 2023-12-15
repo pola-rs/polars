@@ -7,7 +7,7 @@ use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use super::ArrowSchema;
 use crate::datatypes::{
-    DataType, Extension, Field, IntegerType, IntervalUnit, Metadata, TimeUnit, UnionMode,
+    ArrowDataType, Extension, Field, IntegerType, IntervalUnit, Metadata, TimeUnit, UnionMode,
 };
 
 #[allow(dead_code)]
@@ -39,20 +39,22 @@ unsafe extern "C" fn c_release_schema(schema: *mut ArrowSchema) {
 }
 
 /// allocate (and hold) the children
-fn schema_children(data_type: &DataType, flags: &mut i64) -> Box<[*mut ArrowSchema]> {
+fn schema_children(data_type: &ArrowDataType, flags: &mut i64) -> Box<[*mut ArrowSchema]> {
     match data_type {
-        DataType::List(field) | DataType::FixedSizeList(field, _) | DataType::LargeList(field) => {
+        ArrowDataType::List(field)
+        | ArrowDataType::FixedSizeList(field, _)
+        | ArrowDataType::LargeList(field) => {
             Box::new([Box::into_raw(Box::new(ArrowSchema::new(field.as_ref())))])
         },
-        DataType::Map(field, is_sorted) => {
+        ArrowDataType::Map(field, is_sorted) => {
             *flags += (*is_sorted as i64) * 4;
             Box::new([Box::into_raw(Box::new(ArrowSchema::new(field.as_ref())))])
         },
-        DataType::Struct(fields) | DataType::Union(fields, _, _) => fields
+        ArrowDataType::Struct(fields) | ArrowDataType::Union(fields, _, _) => fields
             .iter()
             .map(|field| Box::into_raw(Box::new(ArrowSchema::new(field))))
             .collect::<Box<[_]>>(),
-        DataType::Extension(_, inner, _) => schema_children(inner, flags),
+        ArrowDataType::Extension(_, inner, _) => schema_children(inner, flags),
         _ => Box::new([]),
     }
 }
@@ -69,7 +71,8 @@ impl ArrowSchema {
         let children_ptr = schema_children(field.data_type(), &mut flags);
         let n_children = children_ptr.len() as i64;
 
-        let dictionary = if let DataType::Dictionary(_, values, is_ordered) = field.data_type() {
+        let dictionary = if let ArrowDataType::Dictionary(_, values, is_ordered) = field.data_type()
+        {
             flags += *is_ordered as i64;
             // we do not store field info in the dict values, so can't recover it all :(
             let field = Field::new("", values.as_ref().clone(), true);
@@ -80,26 +83,27 @@ impl ArrowSchema {
 
         let metadata = &field.metadata;
 
-        let metadata = if let DataType::Extension(name, _, extension_metadata) = field.data_type() {
-            // append extension information.
-            let mut metadata = metadata.clone();
+        let metadata =
+            if let ArrowDataType::Extension(name, _, extension_metadata) = field.data_type() {
+                // append extension information.
+                let mut metadata = metadata.clone();
 
-            // metadata
-            if let Some(extension_metadata) = extension_metadata {
-                metadata.insert(
-                    "ARROW:extension:metadata".to_string(),
-                    extension_metadata.clone(),
-                );
-            }
+                // metadata
+                if let Some(extension_metadata) = extension_metadata {
+                    metadata.insert(
+                        "ARROW:extension:metadata".to_string(),
+                        extension_metadata.clone(),
+                    );
+                }
 
-            metadata.insert("ARROW:extension:name".to_string(), name.clone());
+                metadata.insert("ARROW:extension:name".to_string(), name.clone());
 
-            Some(metadata_to_bytes(&metadata))
-        } else if !metadata.is_empty() {
-            Some(metadata_to_bytes(metadata))
-        } else {
-            None
-        };
+                Some(metadata_to_bytes(&metadata))
+            } else if !metadata.is_empty() {
+                Some(metadata_to_bytes(metadata))
+            } else {
+                None
+            };
 
         let name = CString::new(name).unwrap();
         let format = CString::new(format).unwrap();
@@ -143,6 +147,10 @@ impl ArrowSchema {
             release: None,
             private_data: std::ptr::null_mut(),
         }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.private_data.is_null()
     }
 
     /// returns the format of this schema.
@@ -197,14 +205,14 @@ pub(crate) unsafe fn to_field(schema: &ArrowSchema) -> PolarsResult<Field> {
         let indices = to_integer_type(schema.format())?;
         let values = to_field(dictionary)?;
         let is_ordered = schema.flags & 1 == 1;
-        DataType::Dictionary(indices, Box::new(values.data_type().clone()), is_ordered)
+        ArrowDataType::Dictionary(indices, Box::new(values.data_type().clone()), is_ordered)
     } else {
         to_data_type(schema)?
     };
     let (metadata, extension) = unsafe { metadata_from_bytes(schema.metadata) };
 
     let data_type = if let Some((name, extension_metadata)) = extension {
-        DataType::Extension(name, Box::new(data_type), extension_metadata)
+        ArrowDataType::Extension(name, Box::new(data_type), extension_metadata)
     } else {
         data_type
     };
@@ -232,77 +240,81 @@ fn to_integer_type(format: &str) -> PolarsResult<IntegerType> {
     })
 }
 
-unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<DataType> {
+unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<ArrowDataType> {
     Ok(match schema.format() {
-        "n" => DataType::Null,
-        "b" => DataType::Boolean,
-        "c" => DataType::Int8,
-        "C" => DataType::UInt8,
-        "s" => DataType::Int16,
-        "S" => DataType::UInt16,
-        "i" => DataType::Int32,
-        "I" => DataType::UInt32,
-        "l" => DataType::Int64,
-        "L" => DataType::UInt64,
-        "e" => DataType::Float16,
-        "f" => DataType::Float32,
-        "g" => DataType::Float64,
-        "z" => DataType::Binary,
-        "Z" => DataType::LargeBinary,
-        "u" => DataType::Utf8,
-        "U" => DataType::LargeUtf8,
-        "tdD" => DataType::Date32,
-        "tdm" => DataType::Date64,
-        "tts" => DataType::Time32(TimeUnit::Second),
-        "ttm" => DataType::Time32(TimeUnit::Millisecond),
-        "ttu" => DataType::Time64(TimeUnit::Microsecond),
-        "ttn" => DataType::Time64(TimeUnit::Nanosecond),
-        "tDs" => DataType::Duration(TimeUnit::Second),
-        "tDm" => DataType::Duration(TimeUnit::Millisecond),
-        "tDu" => DataType::Duration(TimeUnit::Microsecond),
-        "tDn" => DataType::Duration(TimeUnit::Nanosecond),
-        "tiM" => DataType::Interval(IntervalUnit::YearMonth),
-        "tiD" => DataType::Interval(IntervalUnit::DayTime),
+        "n" => ArrowDataType::Null,
+        "b" => ArrowDataType::Boolean,
+        "c" => ArrowDataType::Int8,
+        "C" => ArrowDataType::UInt8,
+        "s" => ArrowDataType::Int16,
+        "S" => ArrowDataType::UInt16,
+        "i" => ArrowDataType::Int32,
+        "I" => ArrowDataType::UInt32,
+        "l" => ArrowDataType::Int64,
+        "L" => ArrowDataType::UInt64,
+        "e" => ArrowDataType::Float16,
+        "f" => ArrowDataType::Float32,
+        "g" => ArrowDataType::Float64,
+        "z" => ArrowDataType::Binary,
+        "Z" => ArrowDataType::LargeBinary,
+        "u" => ArrowDataType::Utf8,
+        "U" => ArrowDataType::LargeUtf8,
+        "tdD" => ArrowDataType::Date32,
+        "tdm" => ArrowDataType::Date64,
+        "tts" => ArrowDataType::Time32(TimeUnit::Second),
+        "ttm" => ArrowDataType::Time32(TimeUnit::Millisecond),
+        "ttu" => ArrowDataType::Time64(TimeUnit::Microsecond),
+        "ttn" => ArrowDataType::Time64(TimeUnit::Nanosecond),
+        "tDs" => ArrowDataType::Duration(TimeUnit::Second),
+        "tDm" => ArrowDataType::Duration(TimeUnit::Millisecond),
+        "tDu" => ArrowDataType::Duration(TimeUnit::Microsecond),
+        "tDn" => ArrowDataType::Duration(TimeUnit::Nanosecond),
+        "tiM" => ArrowDataType::Interval(IntervalUnit::YearMonth),
+        "tiD" => ArrowDataType::Interval(IntervalUnit::DayTime),
         "+l" => {
             let child = schema.child(0);
-            DataType::List(Box::new(to_field(child)?))
+            ArrowDataType::List(Box::new(to_field(child)?))
         },
         "+L" => {
             let child = schema.child(0);
-            DataType::LargeList(Box::new(to_field(child)?))
+            ArrowDataType::LargeList(Box::new(to_field(child)?))
         },
         "+m" => {
             let child = schema.child(0);
 
             let is_sorted = (schema.flags & 4) != 0;
-            DataType::Map(Box::new(to_field(child)?), is_sorted)
+            ArrowDataType::Map(Box::new(to_field(child)?), is_sorted)
         },
         "+s" => {
             let children = (0..schema.n_children as usize)
                 .map(|x| to_field(schema.child(x)))
                 .collect::<PolarsResult<Vec<_>>>()?;
-            DataType::Struct(children)
+            ArrowDataType::Struct(children)
         },
         other => {
             match other.splitn(2, ':').collect::<Vec<_>>()[..] {
                 // Timestamps with no timezone
-                ["tss", ""] => DataType::Timestamp(TimeUnit::Second, None),
-                ["tsm", ""] => DataType::Timestamp(TimeUnit::Millisecond, None),
-                ["tsu", ""] => DataType::Timestamp(TimeUnit::Microsecond, None),
-                ["tsn", ""] => DataType::Timestamp(TimeUnit::Nanosecond, None),
+                ["tss", ""] => ArrowDataType::Timestamp(TimeUnit::Second, None),
+                ["tsm", ""] => ArrowDataType::Timestamp(TimeUnit::Millisecond, None),
+                ["tsu", ""] => ArrowDataType::Timestamp(TimeUnit::Microsecond, None),
+                ["tsn", ""] => ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
 
                 // Timestamps with timezone
-                ["tss", tz] => DataType::Timestamp(TimeUnit::Second, Some(tz.to_string())),
-                ["tsm", tz] => DataType::Timestamp(TimeUnit::Millisecond, Some(tz.to_string())),
-                ["tsu", tz] => DataType::Timestamp(TimeUnit::Microsecond, Some(tz.to_string())),
-                ["tsn", tz] => DataType::Timestamp(TimeUnit::Nanosecond, Some(tz.to_string())),
+                ["tss", tz] => ArrowDataType::Timestamp(TimeUnit::Second, Some(tz.to_string())),
+                ["tsm", tz] => {
+                    ArrowDataType::Timestamp(TimeUnit::Millisecond, Some(tz.to_string()))
+                },
+                ["tsu", tz] => {
+                    ArrowDataType::Timestamp(TimeUnit::Microsecond, Some(tz.to_string()))
+                },
+                ["tsn", tz] => ArrowDataType::Timestamp(TimeUnit::Nanosecond, Some(tz.to_string())),
 
                 ["w", size_raw] => {
                     // Example: "w:42" fixed-width binary [42 bytes]
                     let size = size_raw
                         .parse::<usize>()
                         .map_err(|_| polars_err!(ComputeError: "size is not a valid integer"))?;
-                    DataType::FixedSizeBinary(size)
+                    ArrowDataType::FixedSizeBinary(size)
                 },
                 ["+w", size_raw] => {
                     // Example: "+w:123" fixed-sized list [123 items]
@@ -310,7 +322,7 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<DataType> {
                         .parse::<usize>()
                         .map_err(|_| polars_err!(ComputeError: "size is not a valid integer"))?;
                     let child = to_field(schema.child(0))?;
-                    DataType::FixedSizeList(Box::new(child), size)
+                    ArrowDataType::FixedSizeList(Box::new(child), size)
                 },
                 ["d", raw] => {
                     // Decimal
@@ -326,7 +338,7 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<DataType> {
                                 polars_err!(ComputeError: "Decimal bit width is not a valid integer")
                             })?;
                             if bit_width == 256 {
-                                return Ok(DataType::Decimal256(
+                                return Ok(ArrowDataType::Decimal256(
                                     precision_raw.parse::<usize>().map_err(|_| {
                                         polars_err!(ComputeError: "Decimal precision is not a valid integer")
                                     })?,
@@ -344,7 +356,7 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<DataType> {
                         },
                     };
 
-                    DataType::Decimal(
+                    ArrowDataType::Decimal(
                         precision.parse::<usize>().map_err(|_| {
                             polars_err!(ComputeError:
                             "Decimal precision is not a valid integer"
@@ -375,7 +387,7 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<DataType> {
                     let fields = (0..schema.n_children as usize)
                         .map(|x| to_field(schema.child(x)))
                         .collect::<PolarsResult<Vec<_>>>()?;
-                    DataType::Union(fields, Some(type_ids), mode)
+                    ArrowDataType::Union(fields, Some(type_ids), mode)
                 },
                 _ => {
                     polars_bail!(ComputeError:
@@ -388,47 +400,47 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<DataType> {
 }
 
 /// the inverse of [to_field]
-fn to_format(data_type: &DataType) -> String {
+fn to_format(data_type: &ArrowDataType) -> String {
     match data_type {
-        DataType::Null => "n".to_string(),
-        DataType::Boolean => "b".to_string(),
-        DataType::Int8 => "c".to_string(),
-        DataType::UInt8 => "C".to_string(),
-        DataType::Int16 => "s".to_string(),
-        DataType::UInt16 => "S".to_string(),
-        DataType::Int32 => "i".to_string(),
-        DataType::UInt32 => "I".to_string(),
-        DataType::Int64 => "l".to_string(),
-        DataType::UInt64 => "L".to_string(),
-        DataType::Float16 => "e".to_string(),
-        DataType::Float32 => "f".to_string(),
-        DataType::Float64 => "g".to_string(),
-        DataType::Binary => "z".to_string(),
-        DataType::LargeBinary => "Z".to_string(),
-        DataType::Utf8 => "u".to_string(),
-        DataType::LargeUtf8 => "U".to_string(),
-        DataType::Date32 => "tdD".to_string(),
-        DataType::Date64 => "tdm".to_string(),
-        DataType::Time32(TimeUnit::Second) => "tts".to_string(),
-        DataType::Time32(TimeUnit::Millisecond) => "ttm".to_string(),
-        DataType::Time32(_) => {
+        ArrowDataType::Null => "n".to_string(),
+        ArrowDataType::Boolean => "b".to_string(),
+        ArrowDataType::Int8 => "c".to_string(),
+        ArrowDataType::UInt8 => "C".to_string(),
+        ArrowDataType::Int16 => "s".to_string(),
+        ArrowDataType::UInt16 => "S".to_string(),
+        ArrowDataType::Int32 => "i".to_string(),
+        ArrowDataType::UInt32 => "I".to_string(),
+        ArrowDataType::Int64 => "l".to_string(),
+        ArrowDataType::UInt64 => "L".to_string(),
+        ArrowDataType::Float16 => "e".to_string(),
+        ArrowDataType::Float32 => "f".to_string(),
+        ArrowDataType::Float64 => "g".to_string(),
+        ArrowDataType::Binary => "z".to_string(),
+        ArrowDataType::LargeBinary => "Z".to_string(),
+        ArrowDataType::Utf8 => "u".to_string(),
+        ArrowDataType::LargeUtf8 => "U".to_string(),
+        ArrowDataType::Date32 => "tdD".to_string(),
+        ArrowDataType::Date64 => "tdm".to_string(),
+        ArrowDataType::Time32(TimeUnit::Second) => "tts".to_string(),
+        ArrowDataType::Time32(TimeUnit::Millisecond) => "ttm".to_string(),
+        ArrowDataType::Time32(_) => {
             unreachable!("Time32 is only supported for seconds and milliseconds")
         },
-        DataType::Time64(TimeUnit::Microsecond) => "ttu".to_string(),
-        DataType::Time64(TimeUnit::Nanosecond) => "ttn".to_string(),
-        DataType::Time64(_) => {
+        ArrowDataType::Time64(TimeUnit::Microsecond) => "ttu".to_string(),
+        ArrowDataType::Time64(TimeUnit::Nanosecond) => "ttn".to_string(),
+        ArrowDataType::Time64(_) => {
             unreachable!("Time64 is only supported for micro and nanoseconds")
         },
-        DataType::Duration(TimeUnit::Second) => "tDs".to_string(),
-        DataType::Duration(TimeUnit::Millisecond) => "tDm".to_string(),
-        DataType::Duration(TimeUnit::Microsecond) => "tDu".to_string(),
-        DataType::Duration(TimeUnit::Nanosecond) => "tDn".to_string(),
-        DataType::Interval(IntervalUnit::YearMonth) => "tiM".to_string(),
-        DataType::Interval(IntervalUnit::DayTime) => "tiD".to_string(),
-        DataType::Interval(IntervalUnit::MonthDayNano) => {
+        ArrowDataType::Duration(TimeUnit::Second) => "tDs".to_string(),
+        ArrowDataType::Duration(TimeUnit::Millisecond) => "tDm".to_string(),
+        ArrowDataType::Duration(TimeUnit::Microsecond) => "tDu".to_string(),
+        ArrowDataType::Duration(TimeUnit::Nanosecond) => "tDn".to_string(),
+        ArrowDataType::Interval(IntervalUnit::YearMonth) => "tiM".to_string(),
+        ArrowDataType::Interval(IntervalUnit::DayTime) => "tiD".to_string(),
+        ArrowDataType::Interval(IntervalUnit::MonthDayNano) => {
             todo!("Spec for FFI for MonthDayNano still not defined.")
         },
-        DataType::Timestamp(unit, tz) => {
+        ArrowDataType::Timestamp(unit, tz) => {
             let unit = match unit {
                 TimeUnit::Second => "s",
                 TimeUnit::Millisecond => "m",
@@ -441,14 +453,14 @@ fn to_format(data_type: &DataType) -> String {
                 tz.as_ref().map(|x| x.as_ref()).unwrap_or("")
             )
         },
-        DataType::Decimal(precision, scale) => format!("d:{precision},{scale}"),
-        DataType::Decimal256(precision, scale) => format!("d:{precision},{scale},256"),
-        DataType::List(_) => "+l".to_string(),
-        DataType::LargeList(_) => "+L".to_string(),
-        DataType::Struct(_) => "+s".to_string(),
-        DataType::FixedSizeBinary(size) => format!("w:{size}"),
-        DataType::FixedSizeList(_, size) => format!("+w:{size}"),
-        DataType::Union(f, ids, mode) => {
+        ArrowDataType::Decimal(precision, scale) => format!("d:{precision},{scale}"),
+        ArrowDataType::Decimal256(precision, scale) => format!("d:{precision},{scale},256"),
+        ArrowDataType::List(_) => "+l".to_string(),
+        ArrowDataType::LargeList(_) => "+L".to_string(),
+        ArrowDataType::Struct(_) => "+s".to_string(),
+        ArrowDataType::FixedSizeBinary(size) => format!("w:{size}"),
+        ArrowDataType::FixedSizeList(_, size) => format!("+w:{size}"),
+        ArrowDataType::Union(f, ids, mode) => {
             let sparsness = if mode.is_sparse() { 's' } else { 'd' };
             let mut r = format!("+u{sparsness}:");
             let ids = if let Some(ids) = ids {
@@ -461,21 +473,21 @@ fn to_format(data_type: &DataType) -> String {
             r.push_str(ids);
             r
         },
-        DataType::Map(_, _) => "+m".to_string(),
-        DataType::Dictionary(index, _, _) => to_format(&(*index).into()),
-        DataType::Extension(_, inner, _) => to_format(inner.as_ref()),
+        ArrowDataType::Map(_, _) => "+m".to_string(),
+        ArrowDataType::Dictionary(index, _, _) => to_format(&(*index).into()),
+        ArrowDataType::Extension(_, inner, _) => to_format(inner.as_ref()),
     }
 }
 
-pub(super) fn get_child(data_type: &DataType, index: usize) -> PolarsResult<DataType> {
+pub(super) fn get_child(data_type: &ArrowDataType, index: usize) -> PolarsResult<ArrowDataType> {
     match (index, data_type) {
-        (0, DataType::List(field)) => Ok(field.data_type().clone()),
-        (0, DataType::FixedSizeList(field, _)) => Ok(field.data_type().clone()),
-        (0, DataType::LargeList(field)) => Ok(field.data_type().clone()),
-        (0, DataType::Map(field, _)) => Ok(field.data_type().clone()),
-        (index, DataType::Struct(fields)) => Ok(fields[index].data_type().clone()),
-        (index, DataType::Union(fields, _, _)) => Ok(fields[index].data_type().clone()),
-        (index, DataType::Extension(_, subtype, _)) => get_child(subtype, index),
+        (0, ArrowDataType::List(field)) => Ok(field.data_type().clone()),
+        (0, ArrowDataType::FixedSizeList(field, _)) => Ok(field.data_type().clone()),
+        (0, ArrowDataType::LargeList(field)) => Ok(field.data_type().clone()),
+        (0, ArrowDataType::Map(field, _)) => Ok(field.data_type().clone()),
+        (index, ArrowDataType::Struct(fields)) => Ok(fields[index].data_type().clone()),
+        (index, ArrowDataType::Union(fields, _, _)) => Ok(fields[index].data_type().clone()),
+        (index, ArrowDataType::Extension(_, subtype, _)) => get_child(subtype, index),
         (child, data_type) => polars_bail!(ComputeError:
             "Requested child {child} to type {data_type:?} that has no such child",
         ),
@@ -546,60 +558,79 @@ mod tests {
     #[test]
     fn test_all() {
         let mut dts = vec![
-            DataType::Null,
-            DataType::Boolean,
-            DataType::UInt8,
-            DataType::UInt16,
-            DataType::UInt32,
-            DataType::UInt64,
-            DataType::Int8,
-            DataType::Int16,
-            DataType::Int32,
-            DataType::Int64,
-            DataType::Float32,
-            DataType::Float64,
-            DataType::Date32,
-            DataType::Date64,
-            DataType::Time32(TimeUnit::Second),
-            DataType::Time32(TimeUnit::Millisecond),
-            DataType::Time64(TimeUnit::Microsecond),
-            DataType::Time64(TimeUnit::Nanosecond),
-            DataType::Decimal(5, 5),
-            DataType::Utf8,
-            DataType::LargeUtf8,
-            DataType::Binary,
-            DataType::LargeBinary,
-            DataType::FixedSizeBinary(2),
-            DataType::List(Box::new(Field::new("example", DataType::Boolean, false))),
-            DataType::FixedSizeList(Box::new(Field::new("example", DataType::Boolean, false)), 2),
-            DataType::LargeList(Box::new(Field::new("example", DataType::Boolean, false))),
-            DataType::Struct(vec![
-                Field::new("a", DataType::Int64, true),
+            ArrowDataType::Null,
+            ArrowDataType::Boolean,
+            ArrowDataType::UInt8,
+            ArrowDataType::UInt16,
+            ArrowDataType::UInt32,
+            ArrowDataType::UInt64,
+            ArrowDataType::Int8,
+            ArrowDataType::Int16,
+            ArrowDataType::Int32,
+            ArrowDataType::Int64,
+            ArrowDataType::Float32,
+            ArrowDataType::Float64,
+            ArrowDataType::Date32,
+            ArrowDataType::Date64,
+            ArrowDataType::Time32(TimeUnit::Second),
+            ArrowDataType::Time32(TimeUnit::Millisecond),
+            ArrowDataType::Time64(TimeUnit::Microsecond),
+            ArrowDataType::Time64(TimeUnit::Nanosecond),
+            ArrowDataType::Decimal(5, 5),
+            ArrowDataType::Utf8,
+            ArrowDataType::LargeUtf8,
+            ArrowDataType::Binary,
+            ArrowDataType::LargeBinary,
+            ArrowDataType::FixedSizeBinary(2),
+            ArrowDataType::List(Box::new(Field::new(
+                "example",
+                ArrowDataType::Boolean,
+                false,
+            ))),
+            ArrowDataType::FixedSizeList(
+                Box::new(Field::new("example", ArrowDataType::Boolean, false)),
+                2,
+            ),
+            ArrowDataType::LargeList(Box::new(Field::new(
+                "example",
+                ArrowDataType::Boolean,
+                false,
+            ))),
+            ArrowDataType::Struct(vec![
+                Field::new("a", ArrowDataType::Int64, true),
                 Field::new(
                     "b",
-                    DataType::List(Box::new(Field::new("item", DataType::Int32, true))),
+                    ArrowDataType::List(Box::new(Field::new("item", ArrowDataType::Int32, true))),
                     true,
                 ),
             ]),
-            DataType::Map(Box::new(Field::new("a", DataType::Int64, true)), true),
-            DataType::Union(
+            ArrowDataType::Map(Box::new(Field::new("a", ArrowDataType::Int64, true)), true),
+            ArrowDataType::Union(
                 vec![
-                    Field::new("a", DataType::Int64, true),
+                    Field::new("a", ArrowDataType::Int64, true),
                     Field::new(
                         "b",
-                        DataType::List(Box::new(Field::new("item", DataType::Int32, true))),
+                        ArrowDataType::List(Box::new(Field::new(
+                            "item",
+                            ArrowDataType::Int32,
+                            true,
+                        ))),
                         true,
                     ),
                 ],
                 Some(vec![1, 2]),
                 UnionMode::Dense,
             ),
-            DataType::Union(
+            ArrowDataType::Union(
                 vec![
-                    Field::new("a", DataType::Int64, true),
+                    Field::new("a", ArrowDataType::Int64, true),
                     Field::new(
                         "b",
-                        DataType::List(Box::new(Field::new("item", DataType::Int32, true))),
+                        ArrowDataType::List(Box::new(Field::new(
+                            "item",
+                            ArrowDataType::Int32,
+                            true,
+                        ))),
                         true,
                     ),
                 ],
@@ -613,16 +644,19 @@ mod tests {
             TimeUnit::Microsecond,
             TimeUnit::Nanosecond,
         ] {
-            dts.push(DataType::Timestamp(time_unit, None));
-            dts.push(DataType::Timestamp(time_unit, Some("00:00".to_string())));
-            dts.push(DataType::Duration(time_unit));
+            dts.push(ArrowDataType::Timestamp(time_unit, None));
+            dts.push(ArrowDataType::Timestamp(
+                time_unit,
+                Some("00:00".to_string()),
+            ));
+            dts.push(ArrowDataType::Duration(time_unit));
         }
         for interval_type in [
             IntervalUnit::DayTime,
             IntervalUnit::YearMonth,
             //IntervalUnit::MonthDayNano, // not yet defined on the C data interface
         ] {
-            dts.push(DataType::Interval(interval_type));
+            dts.push(ArrowDataType::Interval(interval_type));
         }
 
         for expected in dts {

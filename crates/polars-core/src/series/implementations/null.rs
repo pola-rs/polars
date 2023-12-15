@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use arrow::legacy::prelude::ArrayRef;
+use arrow::array::ArrayRef;
 use polars_error::constants::LENGTH_LIMIT_MSG;
 use polars_utils::IdxSize;
 
@@ -70,6 +70,18 @@ impl PrivateSeries for NullChunked {
     }
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         ExplodeByOffsets::explode_by_offsets(self, offsets)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
+        Ok(if self.is_empty() {
+            GroupsProxy::default()
+        } else {
+            GroupsProxy::Slice {
+                groups: vec![[0, self.length]],
+                rolling: false,
+            }
+        })
     }
 
     fn _get_flags(&self) -> Settings {

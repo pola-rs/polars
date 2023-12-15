@@ -259,7 +259,7 @@ mod tests {
             .unwrap();
         CsvWriter::new(&mut cloud_writer)
             .finish(&mut df)
-            .expect("Could not write dataframe as CSV to remote location");
+            .expect("Could not write DataFrame as CSV to remote location");
     }
 
     // Skip this tests on Windows since it does not have a convenient /tmp/ location.
@@ -280,6 +280,6 @@ mod tests {
 
         CsvWriter::new(&mut cloud_writer)
             .finish(&mut df)
-            .expect("Could not write dataframe as CSV to remote location");
+            .expect("Could not write DataFrame as CSV to remote location");
     }
 }

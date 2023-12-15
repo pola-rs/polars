@@ -13,7 +13,7 @@ def test_tail_union() -> None:
         )
         .tail(1)
         .collect()
-    ).to_dict(False) == {"a": [6]}
+    ).to_dict(as_series=False) == {"a": [6]}
 
 
 def test_python_slicing_data_frame() -> None:
@@ -83,7 +83,7 @@ def test_python_slicing_lazy_frame() -> None:
         assert ldf[py_slice].collect().rows() == ldf.collect().rows()[py_slice]
 
     assert_frame_equal(ldf[::-1], ldf.reverse())
-    assert_frame_equal(ldf[::-2], ldf.reverse().take_every(2))
+    assert_frame_equal(ldf[::-2], ldf.reverse().gather_every(2))
 
 
 def test_head_tail_limit() -> None:
@@ -112,3 +112,12 @@ def test_head_tail_limit() -> None:
     assert len(df.head(-12)) == 0
     assert len(df.limit(-12)) == 0
     assert len(df.tail(-12)) == 0
+
+
+def test_hstack_slice_pushdown() -> None:
+    lf = pl.LazyFrame({f"column_{i}": [i] for i in range(2)})
+
+    out = lf.with_columns(pl.col("column_0") * 1000).slice(0, 5)
+    plan = out.explain()
+
+    assert not plan.startswith("SLICE")

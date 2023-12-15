@@ -124,31 +124,31 @@ impl<'a> ALogicalPlanBuilder<'a> {
 
         let mut schema =
             aexprs_to_schema(&keys, &current_schema, Context::Default, self.expr_arena);
-        let other = aexprs_to_schema(
+
+        #[cfg(feature = "dynamic_group_by")]
+        {
+            if let Some(options) = options.rolling.as_ref() {
+                let name = &options.index_column;
+                let dtype = current_schema.get(name).unwrap();
+                schema.with_column(name.clone(), dtype.clone());
+            } else if let Some(options) = options.dynamic.as_ref() {
+                let name = &options.index_column;
+                let dtype = current_schema.get(name).unwrap();
+                if options.include_boundaries {
+                    schema.with_column("_lower_boundary".into(), dtype.clone());
+                    schema.with_column("_upper_boundary".into(), dtype.clone());
+                }
+                schema.with_column(name.clone(), dtype.clone());
+            }
+        }
+
+        let agg_schema = aexprs_to_schema(
             &aggs,
             &current_schema,
             Context::Aggregation,
             self.expr_arena,
         );
-        schema.merge(other);
-
-        #[cfg(feature = "dynamic_group_by")]
-        {
-            let index_columns = &[
-                options
-                    .rolling
-                    .as_ref()
-                    .map(|options| &options.index_column),
-                options
-                    .dynamic
-                    .as_ref()
-                    .map(|options| &options.index_column),
-            ];
-            for &name in index_columns.iter().flatten() {
-                let dtype = current_schema.get(name).unwrap();
-                schema.with_column(name.clone(), dtype.clone());
-            }
-        }
+        schema.merge(agg_schema);
 
         let lp = ALogicalPlan::Aggregate {
             input: self.root,

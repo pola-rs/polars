@@ -8,6 +8,7 @@ impl CategoricalChunked {
             CategoricalChunked::from_cats_and_rev_map_unchecked(
                 cats,
                 Arc::new(RevMapping::default()),
+                Default::default(),
             )
         }
     }

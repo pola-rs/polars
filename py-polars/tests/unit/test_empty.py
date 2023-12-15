@@ -28,10 +28,10 @@ def test_empty_cross_join() -> None:
 
 def test_empty_string_replace() -> None:
     s = pl.Series("", [], dtype=pl.Utf8)
-    assert s.str.replace("a", "b", literal=True).series_equal(s)
-    assert s.str.replace("a", "b").series_equal(s)
-    assert s.str.replace("ab", "b", literal=True).series_equal(s)
-    assert s.str.replace("ab", "b").series_equal(s)
+    assert_series_equal(s.str.replace("a", "b", literal=True), s)
+    assert_series_equal(s.str.replace("a", "b"), s)
+    assert_series_equal(s.str.replace("ab", "b", literal=True), s)
+    assert_series_equal(s.str.replace("ab", "b"), s)
 
 
 def test_empty_window_function() -> None:
@@ -64,12 +64,58 @@ def test_empty_sort_by_args() -> None:
 
 def test_empty_9137() -> None:
     out = (
-        pl.DataFrame({"id": [], "value": []})
+        pl.DataFrame(
+            {"id": [], "value": []},
+            schema={"id": pl.Float32, "value": pl.Float32},
+        )
         .group_by("id")
         .agg(pl.col("value").pow(2).mean())
     )
     assert out.shape == (0, 2)
     assert out.dtypes == [pl.Float32, pl.Float32]
+
+
+@pytest.mark.parametrize("dtype", [pl.Utf8, pl.Binary, pl.UInt32])
+@pytest.mark.parametrize(
+    "set_operation",
+    ["set_intersection", "set_union", "set_difference", "set_symmetric_difference"],
+)
+def test_empty_df_set_operations(set_operation: str, dtype: pl.DataType) -> None:
+    expr = getattr(pl.col("list1").list, set_operation)(pl.col("list2"))
+    df = pl.DataFrame([], {"list1": pl.List(dtype), "list2": pl.List(dtype)})
+    assert df.select(expr).is_empty()
+
+
+def test_empty_set_intersection() -> None:
+    full = pl.Series("full", [[1, 2, 3]], pl.List(pl.UInt32))
+    empty = pl.Series("empty", [[]], pl.List(pl.UInt32))
+
+    assert_series_equal(empty.rename("full"), full.list.set_intersection(empty))
+    assert_series_equal(empty, empty.list.set_intersection(full))
+
+
+def test_empty_set_difference() -> None:
+    full = pl.Series("full", [[1, 2, 3]], pl.List(pl.UInt32))
+    empty = pl.Series("empty", [[]], pl.List(pl.UInt32))
+
+    assert_series_equal(full, full.list.set_difference(empty))
+    assert_series_equal(empty, empty.list.set_difference(full))
+
+
+def test_empty_set_union() -> None:
+    full = pl.Series("full", [[1, 2, 3]], pl.List(pl.UInt32))
+    empty = pl.Series("empty", [[]], pl.List(pl.UInt32))
+
+    assert_series_equal(full, full.list.set_union(empty))
+    assert_series_equal(full.rename("empty"), empty.list.set_union(full))
+
+
+def test_empty_set_symteric_difference() -> None:
+    full = pl.Series("full", [[1, 2, 3]], pl.List(pl.UInt32))
+    empty = pl.Series("empty", [[]], pl.List(pl.UInt32))
+
+    assert_series_equal(full, full.list.set_symmetric_difference(empty))
+    assert_series_equal(full.rename("empty"), empty.list.set_symmetric_difference(full))
 
 
 @pytest.mark.parametrize("name", ["sort", "unique", "head", "tail", "shift", "reverse"])

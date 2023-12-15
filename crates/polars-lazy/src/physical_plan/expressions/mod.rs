@@ -23,6 +23,7 @@ use std::fmt::{Display, Formatter};
 pub(crate) use aggregation::*;
 pub(crate) use alias::*;
 pub(crate) use apply::*;
+use arrow::array::ArrayRef;
 use arrow::legacy::utils::CustomIterTools;
 pub(crate) use binary::*;
 pub(crate) use cast::*;
@@ -74,11 +75,30 @@ impl AggState {
             _ => true,
         }
     }
+
+    fn try_map<F>(&self, func: F) -> PolarsResult<Self>
+    where
+        F: FnOnce(&Series) -> PolarsResult<Series>,
+    {
+        Ok(match self {
+            AggState::AggregatedList(s) => AggState::AggregatedList(func(s)?),
+            AggState::AggregatedScalar(s) => AggState::AggregatedScalar(func(s)?),
+            AggState::Literal(s) => AggState::Literal(func(s)?),
+            AggState::NotAggregated(s) => AggState::NotAggregated(func(s)?),
+        })
+    }
+
+    fn map<F>(&self, func: F) -> Self
+    where
+        F: FnOnce(&Series) -> Series,
+    {
+        self.try_map(|s| Ok(func(s))).unwrap()
+    }
 }
 
 // lazy update strategy
 #[cfg_attr(debug_assertions, derive(Debug))]
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 pub(crate) enum UpdateGroups {
     /// don't update groups
     No,
@@ -110,11 +130,6 @@ pub struct AggregationContext<'a> {
     /// This is true when the Series and GroupsProxy still have all
     /// their original values. Not the case when filtered
     original_len: bool,
-    // special state that just should propagate nulls on aggregations.
-    // this is needed as (expr - expr.mean()) could leave nulls but is
-    // not really a final aggregation as left is still a list, but right only
-    // contains null and thus propagates that.
-    null_propagated: bool,
 }
 
 impl<'a> AggregationContext<'a> {
@@ -212,8 +227,11 @@ impl<'a> AggregationContext<'a> {
             sorted: false,
             update_groups: UpdateGroups::No,
             original_len: true,
-            null_propagated: false,
         }
+    }
+
+    fn with_agg_state(&mut self, agg_state: AggState) {
+        self.state = agg_state;
     }
 
     fn from_agg_state(agg_state: AggState, groups: Cow<'a, GroupsProxy>) -> AggregationContext<'a> {
@@ -223,7 +241,6 @@ impl<'a> AggregationContext<'a> {
             sorted: false,
             update_groups: UpdateGroups::No,
             original_len: true,
-            null_propagated: false,
         }
     }
 
@@ -234,7 +251,6 @@ impl<'a> AggregationContext<'a> {
             sorted: false,
             update_groups: UpdateGroups::No,
             original_len: true,
-            null_propagated: false,
         }
     }
 
@@ -593,14 +609,9 @@ pub trait PhysicalExpr: Send + Sync {
     /// Can take &dyn Statistics and determine of a file should be
     /// read -> `true`
     /// or not -> `false`
-    #[cfg(feature = "parquet")]
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
         None
     }
-
-    //
-    fn is_valid_aggregation(&self) -> bool;
-
     fn is_literal(&self) -> bool {
         false
     }
@@ -624,7 +635,7 @@ pub struct PhysicalIoHelper {
 }
 
 impl PhysicalIoExpr for PhysicalIoHelper {
-    fn evaluate(&self, df: &DataFrame) -> PolarsResult<Series> {
+    fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series> {
         let mut state: ExecutionState = Default::default();
         if self.has_window_function {
             state.insert_has_window_function_flag();

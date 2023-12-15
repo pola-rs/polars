@@ -175,6 +175,20 @@ def test_selector_datetime(df: pl.DataFrame) -> None:
     )
 
 
+def test_select_decimal(df: pl.DataFrame) -> None:
+    assert df.select(cs.decimal()).columns == []
+    df = pl.DataFrame(
+        schema={
+            "zz0": pl.Float64,
+            "zz1": pl.Decimal,
+            "zz2": pl.Decimal(10, 10),
+        }
+    )
+    assert df.select(cs.numeric()).columns == ["zz0", "zz1", "zz2"]
+    assert df.select(cs.decimal()).columns == ["zz1", "zz2"]
+    assert df.select(~cs.decimal()).columns == ["zz0"]
+
+
 def test_selector_drop(df: pl.DataFrame) -> None:
     dfd = df.drop(cs.numeric(), cs.temporal())
     assert dfd.columns == ["eee", "fgg", "qqR"]
@@ -441,7 +455,7 @@ def test_selector_expr_dispatch() -> None:
     assert_frame_equal(
         expected,
         df.with_columns(
-            pl.when(cs.float().is_finite()).then(cs.float()).otherwise(0.0).keep_name()
+            pl.when(cs.float().is_finite()).then(cs.float()).otherwise(0.0).name.keep()
         ),
     )
 
@@ -449,7 +463,7 @@ def test_selector_expr_dispatch() -> None:
     assert_frame_equal(
         expected,
         df.with_columns(
-            pl.when(~cs.float().is_finite()).then(0.0).otherwise(cs.float()).keep_name()
+            pl.when(~cs.float().is_finite()).then(0.0).otherwise(cs.float()).name.keep()
         ),
     )
 
@@ -462,7 +476,7 @@ def test_selector_expr_dispatch() -> None:
         assert_frame_equal(
             expected,
             df.with_columns(
-                pl.when(nan_or_inf).then(0.0).otherwise(cs.float()).keep_name()
+                pl.when(nan_or_inf).then(0.0).otherwise(cs.float()).name.keep()
             ).fill_null(0),
         )
 
@@ -494,5 +508,9 @@ def test_selector_or() -> None:
         }
     ).with_row_count("rn")
 
-    out = df.select(cs.by_name("rn") | ~cs.numeric())
-    assert out.to_dict(False) == {"rn": [0, 1, 2], "str": ["x", "y", "z"]}
+    result = df.select(cs.by_name("rn") | ~cs.numeric())
+
+    expected = pl.DataFrame(
+        {"rn": [0, 1, 2], "str": ["x", "y", "z"]}, schema_overrides={"rn": pl.UInt32}
+    )
+    assert_frame_equal(result, expected)

@@ -7,7 +7,7 @@ use super::BooleanArray;
 use crate::array::physical_binary::extend_validity;
 use crate::array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
 use crate::bitmap::MutableBitmap;
-use crate::datatypes::{DataType, PhysicalType};
+use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::trusted_len::TrustedLen;
 
 /// The Arrow's equivalent to `Vec<Option<bool>>`, but with `1/16` of its size.
@@ -16,7 +16,7 @@ use crate::trusted_len::TrustedLen;
 /// This struct does not allocate a validity until one is required (i.e. push a null to it).
 #[derive(Debug, Clone)]
 pub struct MutableBooleanArray {
-    data_type: DataType,
+    data_type: ArrowDataType,
     values: MutableBitmap,
     validity: Option<MutableBitmap>,
 }
@@ -56,7 +56,7 @@ impl MutableBooleanArray {
     /// * The validity is not `None` and its length is different from `values`'s length
     /// * The `data_type`'s [`PhysicalType`] is not equal to [`PhysicalType::Boolean`].
     pub fn try_new(
-        data_type: DataType,
+        data_type: ArrowDataType,
         values: MutableBitmap,
         validity: Option<MutableBitmap>,
     ) -> PolarsResult<Self> {
@@ -85,7 +85,7 @@ impl MutableBooleanArray {
     /// Creates an new [`MutableBooleanArray`] with a capacity of values.
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            data_type: DataType::Boolean,
+            data_type: ArrowDataType::Boolean,
             values: MutableBitmap::with_capacity(capacity),
             validity: None,
         }
@@ -245,7 +245,7 @@ impl MutableBooleanArray {
     #[inline]
     pub fn from_trusted_len_values_iter<I: TrustedLen<Item = bool>>(iterator: I) -> Self {
         Self::try_new(
-            DataType::Boolean,
+            ArrowDataType::Boolean,
             MutableBitmap::from_trusted_len_iter(iterator),
             None,
         )
@@ -264,7 +264,7 @@ impl MutableBooleanArray {
     ) -> Self {
         let mut mutable = MutableBitmap::new();
         mutable.extend_from_trusted_len_iter_unchecked(iterator);
-        MutableBooleanArray::try_new(DataType::Boolean, mutable, None).unwrap()
+        MutableBooleanArray::try_new(ArrowDataType::Boolean, mutable, None).unwrap()
     }
 
     /// Creates a new [`MutableBooleanArray`] from a slice of `bool`.
@@ -287,7 +287,7 @@ impl MutableBooleanArray {
     {
         let (validity, values) = trusted_len_unzip(iterator);
 
-        Self::try_new(DataType::Boolean, values, validity).unwrap()
+        Self::try_new(ArrowDataType::Boolean, values, validity).unwrap()
     }
 
     /// Creates a [`BooleanArray`] from a [`TrustedLen`].
@@ -321,7 +321,7 @@ impl MutableBooleanArray {
             None
         };
 
-        Ok(Self::try_new(DataType::Boolean, values, validity).unwrap())
+        Ok(Self::try_new(ArrowDataType::Boolean, values, validity).unwrap())
     }
 
     /// Creates a [`BooleanArray`] from a [`TrustedLen`].
@@ -471,7 +471,7 @@ impl<Ptr: std::borrow::Borrow<Option<bool>>> FromIterator<Ptr> for MutableBoolea
             None
         };
 
-        MutableBooleanArray::try_new(DataType::Boolean, values, validity).unwrap()
+        MutableBooleanArray::try_new(ArrowDataType::Boolean, values, validity).unwrap()
     }
 }
 
@@ -494,7 +494,7 @@ impl MutableArray for MutableBooleanArray {
         array.arced()
     }
 
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 

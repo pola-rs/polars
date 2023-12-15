@@ -2,25 +2,6 @@ use super::*;
 
 #[test]
 #[cfg(feature = "dtype-datetime")]
-fn test_agg_list_type() -> PolarsResult<()> {
-    let s = Series::new("foo", &[1, 2, 3]);
-    let s = s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
-
-    let l = unsafe { s.agg_list(&GroupsProxy::Idx(vec![(0, vec![0, 1, 2])].into())) };
-
-    let result = match l.dtype() {
-        DataType::List(inner) => {
-            matches!(&**inner, DataType::Datetime(TimeUnit::Nanoseconds, None))
-        },
-        _ => false,
-    };
-    assert!(result);
-
-    Ok(())
-}
-
-#[test]
-#[cfg(feature = "dtype-datetime")]
 #[cfg_attr(miri, ignore)]
 fn test_datelike_join() -> PolarsResult<()> {
     let s = Series::new("foo", &[1, 2, 3]);
@@ -184,5 +165,5 @@ fn test_duration_date_arithmetic() {
 }
 
 fn assert_series_eq(s1: &Series, s2: &Series) {
-    assert!(s1.series_equal(s2))
+    assert!(s1.equals(s2))
 }

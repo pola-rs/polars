@@ -201,6 +201,10 @@ impl<T> Buffer<T> {
     /// * has not been imported from the c data interface (FFI)
     #[inline]
     pub fn into_mut(mut self) -> Either<Self, Vec<T>> {
+        // We loose information if the data is sliced.
+        if self.length != self.data.len() {
+            return Either::Left(self);
+        }
         match Arc::get_mut(&mut self.data)
             .and_then(|b| b.get_vec())
             .map(std::mem::take)

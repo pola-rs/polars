@@ -23,13 +23,16 @@ These functions are available from the polars module root and can be used as exp
    arctan2d
    arg_sort_by
    arg_where
-   avg
    coalesce
    concat_list
    concat_str
    corr
    count
    cov
+   cum_fold
+   cum_reduce
+   cum_sum
+   cum_sum_horizontal
    cumfold
    cumreduce
    cumsum

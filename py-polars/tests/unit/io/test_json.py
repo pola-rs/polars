@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import io
 import json
+from collections import OrderedDict
+from io import BytesIO
 from typing import TYPE_CHECKING
 
 import pytest
@@ -140,9 +142,9 @@ def test_write_ndjson_with_trailing_newline() -> None:
 
 
 def test_read_ndjson_empty_array() -> None:
-    assert pl.read_ndjson(io.StringIO("""{"foo": {"bar": []}}""")).to_dict(False) == {
-        "foo": [{"": None}]
-    }
+    assert pl.read_ndjson(io.StringIO("""{"foo": {"bar": []}}""")).to_dict(
+        as_series=False
+    ) == {"foo": [{"bar": []}]}
 
 
 def test_ndjson_nested_null() -> None:
@@ -152,12 +154,12 @@ def test_ndjson_nested_null() -> None:
     # 'bar' represents an empty list of structs; check the schema is correct (eg: picks
     # up that it IS a list of structs), but confirm that list is empty (ref: #11301)
     assert df.schema == {"foo": pl.Struct([pl.Field("bar", pl.List(pl.Struct([])))])}
-    assert df.to_dict(False) == {"foo": [{"bar": []}]}
+    assert df.to_dict(as_series=False) == {"foo": [{"bar": []}]}
 
 
 def test_ndjson_nested_utf8_int() -> None:
     ndjson = """{"Accumulables":[{"Value":32395888},{"Value":"539454"}]}"""
-    assert pl.read_ndjson(io.StringIO(ndjson)).to_dict(False) == {
+    assert pl.read_ndjson(io.StringIO(ndjson)).to_dict(as_series=False) == {
         "Accumulables": [[{"Value": "32395888"}, {"Value": "539454"}]]
     }
 
@@ -210,7 +212,18 @@ def test_json_deserialize_9687() -> None:
 
     result = pl.read_json(json.dumps(response).encode())
 
-    assert result.to_dict(False) == {k: [v] for k, v in response.items()}
+    assert result.to_dict(as_series=False) == {k: [v] for k, v in response.items()}
+
+
+def test_json_infer_schema_length_11148() -> None:
+    response = [{"col1": 1}] * 2 + [{"col1": 1, "col2": 2}] * 1
+    result = pl.read_json(json.dumps(response).encode(), infer_schema_length=2)
+    with pytest.raises(AssertionError):
+        assert set(result.columns) == {"col1", "col2"}
+
+    response = [{"col1": 1}] * 2 + [{"col1": 1, "col2": 2}] * 1
+    result = pl.read_json(json.dumps(response).encode(), infer_schema_length=3)
+    assert set(result.columns) == {"col1", "col2"}
 
 
 def test_ndjson_ignore_errors() -> None:
@@ -221,7 +234,7 @@ def test_ndjson_ignore_errors() -> None:
     buf = io.BytesIO(jsonl.encode())
 
     # check if we can replace with nulls
-    assert pl.read_ndjson(buf, ignore_errors=True).to_dict(False) == {
+    assert pl.read_ndjson(buf, ignore_errors=True).to_dict(as_series=False) == {
         "Type": ["insert", "insert"],
         "Key": [[1], [1]],
         "SeqNo": [1, 1],
@@ -238,7 +251,9 @@ def test_ndjson_ignore_errors() -> None:
         )
     }
     # schema argument only parses Fields
-    assert pl.read_ndjson(buf, schema=schema, ignore_errors=True).to_dict(False) == {
+    assert pl.read_ndjson(buf, schema=schema, ignore_errors=True).to_dict(
+        as_series=False
+    ) == {
         "Fields": [
             [{"Name": "added_id", "Value": 2}, {"Name": "body", "Value": None}],
             [{"Name": "added_id", "Value": 2}, {"Name": "body", "Value": None}],
@@ -246,9 +261,8 @@ def test_ndjson_ignore_errors() -> None:
     }
 
     # schema_overrides argument does schema inference, but overrides Fields
-    assert pl.read_ndjson(buf, schema_overrides=schema, ignore_errors=True).to_dict(
-        False
-    ) == {
+    result = pl.read_ndjson(buf, schema_overrides=schema, ignore_errors=True)
+    expected = {
         "Type": ["insert", "insert"],
         "Key": [[1], [1]],
         "SeqNo": [1, 1],
@@ -258,6 +272,7 @@ def test_ndjson_ignore_errors() -> None:
             [{"Name": "added_id", "Value": 2}, {"Name": "body", "Value": None}],
         ],
     }
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_write_json_duration() -> None:
@@ -271,4 +286,43 @@ def test_write_json_duration() -> None:
     assert (
         df.write_json(row_oriented=True)
         == '[{"a":"P1DT5362.939S"},{"a":"P1DT5362.890S"},{"a":"PT6020.836S"}]'
+    )
+
+
+def test_json_null_infer() -> None:
+    json = BytesIO(
+        bytes(
+            """
+    [
+      {
+        "a": 1,
+        "b": null
+      }
+    ]
+    """,
+            "UTF-8",
+        )
+    )
+
+    assert pl.read_json(json).schema == OrderedDict({"a": pl.Int64, "b": pl.Null})
+
+
+def test_ndjson_null_buffer() -> None:
+    data = io.BytesIO(
+        b"""\
+    {"id": 1, "zero_column": 0, "empty_array_column": [], "empty_object_column": {}, "null_column": null}
+    {"id": 2, "zero_column": 0, "empty_array_column": [], "empty_object_column": {}, "null_column": null}
+    {"id": 3, "zero_column": 0, "empty_array_column": [], "empty_object_column": {}, "null_column": null}
+    {"id": 4, "zero_column": 0, "empty_array_column": [], "empty_object_column": {}, "null_column": null}
+    """
+    )
+
+    assert pl.read_ndjson(data).schema == OrderedDict(
+        [
+            ("id", pl.Int64),
+            ("zero_column", pl.Int64),
+            ("empty_array_column", pl.List(pl.Null)),
+            ("empty_object_column", pl.Struct([pl.Field("", pl.Null)])),
+            ("null_column", pl.Null),
+        ]
     )

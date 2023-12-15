@@ -1,11 +1,12 @@
+use std::fmt::Debug;
 use std::mem::MaybeUninit;
 
 use arrow::array::{BooleanArray, PrimitiveArray};
 use arrow::bitmap::Bitmap;
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
-use arrow::util::total_ord::{canonical_f32, canonical_f64};
 use polars_utils::slice::*;
+use polars_utils::total_ord::{canonical_f32, canonical_f64};
 
 use crate::row::{RowsEncoded, SortField};
 
@@ -26,7 +27,7 @@ impl<const N: usize> FromSlice for [u8; N] {
 }
 
 /// Encodes a value of a particular fixed width type into bytes
-pub trait FixedLengthEncoding: Copy {
+pub trait FixedLengthEncoding: Copy + Debug {
     // 1 is validity 0 or 1
     // bit repr of encoding
     const ENCODED_LEN: usize = 1 + std::mem::size_of::<Self::Encoded>();
@@ -36,6 +37,13 @@ pub trait FixedLengthEncoding: Copy {
     fn encode(self) -> Self::Encoded;
 
     fn decode(encoded: Self::Encoded) -> Self;
+
+    fn decode_reverse(mut encoded: Self::Encoded) -> Self {
+        for v in encoded.as_mut() {
+            *v = !*v
+        }
+        Self::decode(encoded)
+    }
 }
 
 impl FixedLengthEncoding for bool {
@@ -215,7 +223,7 @@ pub(super) unsafe fn decode_primitive<T: NativeType + FixedLengthEncoding>(
 where
     T::Encoded: FromSlice,
 {
-    let data_type: DataType = T::PRIMITIVE.into();
+    let data_type: ArrowDataType = T::PRIMITIVE.into();
     let mut has_nulls = false;
     let null_sentinel = get_null_sentinel(field);
 
@@ -228,7 +236,12 @@ where
             let end = start + T::ENCODED_LEN - 1;
             let slice = row.get_unchecked_release(start..end);
             let bytes = T::Encoded::from_slice(slice);
-            T::decode(bytes)
+
+            if field.descending {
+                T::decode_reverse(bytes)
+            } else {
+                T::decode(bytes)
+            }
         })
         .collect::<Vec<_>>();
 
@@ -259,7 +272,12 @@ pub(super) unsafe fn decode_bool(rows: &mut [&[u8]], field: &SortField) -> Boole
             let end = start + bool::ENCODED_LEN - 1;
             let slice = row.get_unchecked_release(start..end);
             let bytes = <bool as FixedLengthEncoding>::Encoded::from_slice(slice);
-            bool::decode(bytes)
+
+            if field.descending {
+                bool::decode_reverse(bytes)
+            } else {
+                bool::decode(bytes)
+            }
         })
         .collect::<Bitmap>();
 
@@ -273,7 +291,7 @@ pub(super) unsafe fn decode_bool(rows: &mut [&[u8]], field: &SortField) -> Boole
     let increment_len = bool::ENCODED_LEN;
 
     increment_row_counter(rows, increment_len);
-    BooleanArray::new(DataType::Boolean, values, validity)
+    BooleanArray::new(ArrowDataType::Boolean, values, validity)
 }
 unsafe fn increment_row_counter(rows: &mut [&[u8]], fixed_size: usize) {
     for row in rows {

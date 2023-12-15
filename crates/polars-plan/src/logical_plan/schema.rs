@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::path::Path;
 
+use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
 use polars_utils::format_smartstring;
 #[cfg(feature = "serde")]
@@ -41,32 +42,65 @@ impl LogicalPlan {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FileInfo {
     pub schema: SchemaRef,
-    // - known size
-    // - estimated size
+    /// Stores the schema used for the reader, as the main schema can contain
+    /// extra hive columns.
+    pub reader_schema: Option<ArrowSchemaRef>,
+    /// - known size
+    /// - estimated size
     pub row_estimation: (Option<usize>, usize),
     pub hive_parts: Option<Arc<hive::HivePartitions>>,
 }
 
 impl FileInfo {
-    pub fn new(schema: SchemaRef, row_estimation: (Option<usize>, usize)) -> Self {
+    pub fn new(
+        schema: SchemaRef,
+        reader_schema: Option<ArrowSchemaRef>,
+        row_estimation: (Option<usize>, usize),
+    ) -> Self {
         Self {
-            schema,
+            schema: schema.clone(),
+            reader_schema,
             row_estimation,
             hive_parts: None,
         }
     }
 
-    pub fn set_hive_partitions(&mut self, url: &Path) {
+    /// Updates the statistics and merges the hive partitions schema with the file one.
+    pub fn init_hive_partitions(&mut self, url: &Path) -> PolarsResult<()> {
         self.hive_parts = hive::HivePartitions::parse_url(url).map(|hive_parts| {
-            let schema = Arc::make_mut(&mut self.schema);
-            schema.merge(hive_parts.get_statistics().schema().clone());
+            let hive_schema = hive_parts.get_statistics().schema().clone();
+            let expected_len = self.schema.len() + hive_schema.len();
 
-            Arc::new(hive_parts)
-        });
+            let schema = Arc::make_mut(&mut self.schema);
+            schema.merge((**hive_parts.get_statistics().schema()).clone());
+
+            polars_ensure!(schema.len() == expected_len, ComputeError: "invalid hive partitions\n\n\
+            Extending the schema with the hive partitioned columns creates duplicate fields.");
+
+            Ok(Arc::new(hive_parts))
+        }).transpose()?;
+        Ok(())
+    }
+
+    /// Updates the statistics, but not the schema.
+    pub fn update_hive_partitions(&mut self, url: &Path) -> PolarsResult<()> {
+        if let Some(current) = &mut self.hive_parts {
+            let new = hive::HivePartitions::parse_url(url).ok_or_else(|| polars_err!(ComputeError: "expected hive partitioned path, got {}\n\n\
+            This error occurs if 'hive_partitioning=true' some paths are hive partitioned and some paths are not.", url.display()))?;
+            match Arc::get_mut(current) {
+                Some(current) => {
+                    *current = new;
+                },
+                _ => {
+                    *current = Arc::new(new);
+                },
+            }
+        }
+        Ok(())
     }
 }
 
@@ -125,7 +159,7 @@ pub fn set_estimated_row_counts(
                 mut options,
             } = lp_arena.take(root)
             {
-                let mut sum_output = (None, 0);
+                let mut sum_output = (None, 0usize);
                 for input in &inputs {
                     let mut out =
                         set_estimated_row_counts(*input, lp_arena, expr_arena, 0, scratch);
@@ -134,7 +168,7 @@ pub fn set_estimated_row_counts(
                     }
                     // todo! deal with known as well
                     let out = estimate_sizes(out.0, out.1, out.2);
-                    sum_output.1 += out.1;
+                    sum_output.1 = sum_output.1.saturating_add(out.1);
                 }
                 options.rows = sum_output;
                 lp_arena.replace(root, Union { inputs, options });
@@ -168,7 +202,7 @@ pub fn set_estimated_row_counts(
                         let (known_size, estimated_size) = options.rows_left;
                         (known_size, estimated_size, filter_count_left)
                     },
-                    JoinType::Cross | JoinType::Outer => {
+                    JoinType::Cross | JoinType::Outer { .. } => {
                         let (known_size_left, estimated_size_left) = options.rows_left;
                         let (known_size_right, estimated_size_right) = options.rows_right;
                         match (known_size_left, known_size_right) {
@@ -249,13 +283,9 @@ pub(crate) fn det_join_schema(
         #[cfg(feature = "semi_anti_join")]
         JoinType::Semi | JoinType::Anti => Ok(schema_left.clone()),
         _ => {
-            // column names of left table
-            let mut names: PlHashSet<&str> =
-                PlHashSet::with_capacity(schema_left.len() + schema_right.len());
             let mut new_schema = Schema::with_capacity(schema_left.len() + schema_right.len());
 
             for (name, dtype) in schema_left.iter() {
-                names.insert(name.as_str());
                 new_schema.with_column(name.clone(), dtype.clone());
             }
 
@@ -273,7 +303,7 @@ pub(crate) fn det_join_schema(
             // so the columns that are joined on, may have different
             // values so if the right has a different name, it is added to the schema
             #[cfg(feature = "asof_join")]
-            if let JoinType::AsOf(_) = &options.args.how {
+            if !options.args.how.merges_join_keys() {
                 for (left_on, right_on) in left_on.iter().zip(right_on) {
                     let field_left =
                         left_on.to_field_amortized(schema_left, Context::Default, &mut arena)?;
@@ -292,15 +322,18 @@ pub(crate) fn det_join_schema(
                 }
             }
 
-            let mut right_names: PlHashSet<_> = PlHashSet::with_capacity(right_on.len());
+            let mut join_on_right: PlHashSet<_> = PlHashSet::with_capacity(right_on.len());
             for e in right_on {
                 let field = e.to_field_amortized(schema_right, Context::Default, &mut arena)?;
-                right_names.insert(field.name);
+                join_on_right.insert(field.name);
             }
 
             for (name, dtype) in schema_right.iter() {
-                if !right_names.contains(name.as_str()) {
-                    if names.contains(name.as_str()) {
+                if !join_on_right.contains(name.as_str())  // The names that are joined on are merged
+                || matches!(&options.args.how, JoinType::Outer{coalesce: false})
+                // The names are not merged
+                {
+                    if schema_left.contains(name.as_str()) {
                         #[cfg(feature = "asof_join")]
                         if let JoinType::AsOf(asof_options) = &options.args.how {
                             if let (Some(left_by), Some(right_by)) =

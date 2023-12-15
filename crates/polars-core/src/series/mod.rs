@@ -30,7 +30,7 @@ pub use series_trait::{IsSorted, *};
 use crate::chunked_array::Settings;
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
-use crate::utils::{_split_offsets, get_casting_failures, split_ca, split_series, Wrap};
+use crate::utils::{_split_offsets, handle_casting_failures, split_ca, split_series, Wrap};
 use crate::POOL;
 
 /// # Series
@@ -135,7 +135,7 @@ pub struct Series(pub Arc<dyn SeriesTrait>);
 
 impl PartialEq for Wrap<Series> {
     fn eq(&self, other: &Self) -> bool {
-        self.0.series_equal_missing(other)
+        self.0.equals_missing(other)
     }
 }
 
@@ -181,6 +181,7 @@ impl Series {
 
     /// # Safety
     /// The caller must ensure the length and the data types of `ArrayRef` does not change.
+    /// And that the null_count is updated (e.g. with a `compute_len()`)
     pub unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
         #[allow(unused_mut)]
         let mut ca = self._get_inner_mut();
@@ -250,15 +251,34 @@ impl Series {
     ///
     /// See [`ChunkedArray::append`] and [`ChunkedArray::extend`].
     pub fn append(&mut self, other: &Series) -> PolarsResult<&mut Self> {
-        self._get_inner_mut().append(other)?;
+        let must_cast = can_extend_dtype(self.dtype(), other.dtype())?;
+
+        if must_cast {
+            let other = other.cast(self.dtype())?;
+            self._get_inner_mut().append(&other)?;
+        } else {
+            self._get_inner_mut().append(other)?;
+        }
         Ok(self)
+    }
+
+    /// Redo a length and null_count compute
+    pub fn compute_len(&mut self) {
+        self._get_inner_mut().compute_len()
     }
 
     /// Extend the memory backed by this array with the values from `other`.
     ///
     /// See [`ChunkedArray::extend`] and [`ChunkedArray::append`].
     pub fn extend(&mut self, other: &Series) -> PolarsResult<&mut Self> {
-        self._get_inner_mut().extend(other)?;
+        let must_cast = can_extend_dtype(self.dtype(), other.dtype())?;
+
+        if must_cast {
+            let other = other.cast(self.dtype())?;
+            self._get_inner_mut().extend(&other)?;
+        } else {
+            self._get_inner_mut().extend(other)?;
+        }
         Ok(self)
     }
 
@@ -322,48 +342,32 @@ impl Series {
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    ///
-    /// ```
-    /// # use polars_core::prelude::*;
-    /// let s = Series::new("days", &[1, 2, 3]);
-    /// assert_eq!(s.sum(), Some(6));
-    /// ```
-    pub fn sum<T>(&self) -> Option<T>
+    pub fn sum<T>(&self) -> PolarsResult<T>
     where
         T: NumCast,
     {
-        let sum = self.sum_as_series().cast(&DataType::Float64).ok()?;
-        T::from(sum.f64().unwrap().get(0)?)
+        let sum = self.sum_as_series()?.cast(&DataType::Float64)?;
+        Ok(T::from(sum.f64().unwrap().get(0).unwrap()).unwrap())
     }
 
     /// Returns the minimum value in the array, according to the natural order.
     /// Returns an option because the array is nullable.
-    /// ```
-    /// # use polars_core::prelude::*;
-    /// let s = Series::new("days", [1, 2, 3].as_ref());
-    /// assert_eq!(s.min(), Some(1));
-    /// ```
-    pub fn min<T>(&self) -> Option<T>
+    pub fn min<T>(&self) -> PolarsResult<Option<T>>
     where
         T: NumCast,
     {
-        let min = self.min_as_series().cast(&DataType::Float64).ok()?;
-        T::from(min.f64().unwrap().get(0)?)
+        let min = self.min_as_series()?.cast(&DataType::Float64)?;
+        Ok(min.f64().unwrap().get(0).and_then(T::from))
     }
 
     /// Returns the maximum value in the array, according to the natural order.
     /// Returns an option because the array is nullable.
-    /// ```
-    /// # use polars_core::prelude::*;
-    /// let s = Series::new("days", [1, 2, 3].as_ref());
-    /// assert_eq!(s.max(), Some(3));
-    /// ```
-    pub fn max<T>(&self) -> Option<T>
+    pub fn max<T>(&self) -> PolarsResult<Option<T>>
     where
         T: NumCast,
     {
-        let max = self.max_as_series().cast(&DataType::Float64).ok()?;
-        T::from(max.f64().unwrap().get(0)?)
+        let max = self.max_as_series()?.cast(&DataType::Float64)?;
+        Ok(max.f64().unwrap().get(0).and_then(T::from))
     }
 
     /// Explode a list Series. This expands every item to a new row..
@@ -439,7 +443,7 @@ impl Series {
             Date => Cow::Owned(self.cast(&Int32).unwrap()),
             Datetime(_, _) | Duration(_) | Time => Cow::Owned(self.cast(&Int64).unwrap()),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_) => Cow::Owned(self.cast(&UInt32).unwrap()),
+            Categorical(_, _) => Cow::Owned(self.cast(&UInt32).unwrap()),
             List(inner) => Cow::Owned(self.cast(&List(Box::new(inner.to_physical()))).unwrap()),
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
@@ -565,7 +569,7 @@ impl Series {
     }
 
     /// Traverse and collect every nth element in a new array.
-    pub fn take_every(&self, n: usize) -> Series {
+    pub fn gather_every(&self, n: usize) -> Series {
         let idx = (0..self.len() as IdxSize).step_by(n).collect_ca("");
         // SAFETY: we stay in-bounds.
         unsafe { self.take_unchecked(&idx) }
@@ -595,7 +599,7 @@ impl Series {
     }
 
     #[cfg(feature = "dot_product")]
-    pub fn dot(&self, other: &Series) -> Option<f64> {
+    pub fn dot(&self, other: &Series) -> PolarsResult<f64> {
         (self * other).sum::<f64>()
     }
 
@@ -604,105 +608,11 @@ impl Series {
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    pub fn sum_as_series(&self) -> Series {
+    pub fn sum_as_series(&self) -> PolarsResult<Series> {
         use DataType::*;
-        if self.is_empty()
-            && (self.dtype().is_numeric() || matches!(self.dtype(), DataType::Boolean))
-        {
-            let zero = Series::new(self.name(), [0]);
-            return zero.cast(self.dtype()).unwrap().sum_as_series();
-        }
         match self.dtype() {
             Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().sum_as_series(),
             _ => self._sum_as_series(),
-        }
-    }
-
-    /// Get an array with the cumulative max computed at every element.
-    pub fn cummax(&self, _reverse: bool) -> Series {
-        #[cfg(feature = "cum_agg")]
-        {
-            self._cummax(_reverse)
-        }
-        #[cfg(not(feature = "cum_agg"))]
-        {
-            panic!("activate 'cum_agg' feature")
-        }
-    }
-
-    /// Get an array with the cumulative min computed at every element.
-    pub fn cummin(&self, _reverse: bool) -> Series {
-        #[cfg(feature = "cum_agg")]
-        {
-            self._cummin(_reverse)
-        }
-        #[cfg(not(feature = "cum_agg"))]
-        {
-            panic!("activate 'cum_agg' feature")
-        }
-    }
-
-    /// Get an array with the cumulative sum computed at every element
-    ///
-    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
-    /// first cast to `Int64` to prevent overflow issues.
-    #[allow(unused_variables)]
-    pub fn cumsum(&self, reverse: bool) -> Series {
-        #[cfg(feature = "cum_agg")]
-        {
-            use DataType::*;
-            match self.dtype() {
-                Boolean => self.cast(&DataType::UInt32).unwrap().cumsum(reverse),
-                Int8 | UInt8 | Int16 | UInt16 => {
-                    let s = self.cast(&Int64).unwrap();
-                    s.cumsum(reverse)
-                },
-                Int32 => self.i32().unwrap().cumsum(reverse).into_series(),
-                UInt32 => self.u32().unwrap().cumsum(reverse).into_series(),
-                UInt64 => self.u64().unwrap().cumsum(reverse).into_series(),
-                Int64 => self.i64().unwrap().cumsum(reverse).into_series(),
-                Float32 => self.f32().unwrap().cumsum(reverse).into_series(),
-                Float64 => self.f64().unwrap().cumsum(reverse).into_series(),
-                #[cfg(feature = "dtype-duration")]
-                Duration(tu) => {
-                    let ca = self.to_physical_repr();
-                    let ca = ca.i64().unwrap();
-                    ca.cumsum(reverse).cast(&Duration(*tu)).unwrap()
-                },
-                dt => panic!("cumsum not supported for dtype: {dt:?}"),
-            }
-        }
-        #[cfg(not(feature = "cum_agg"))]
-        {
-            panic!("activate 'cum_agg' feature")
-        }
-    }
-
-    /// Get an array with the cumulative product computed at every element.
-    ///
-    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16, Int32, UInt32}` the `Series` is
-    /// first cast to `Int64` to prevent overflow issues.
-    #[allow(unused_variables)]
-    pub fn cumprod(&self, reverse: bool) -> Series {
-        #[cfg(feature = "cum_agg")]
-        {
-            use DataType::*;
-            match self.dtype() {
-                Boolean => self.cast(&DataType::Int64).unwrap().cumprod(reverse),
-                Int8 | UInt8 | Int16 | UInt16 | Int32 | UInt32 => {
-                    let s = self.cast(&Int64).unwrap();
-                    s.cumprod(reverse)
-                },
-                Int64 => self.i64().unwrap().cumprod(reverse).into_series(),
-                UInt64 => self.u64().unwrap().cumprod(reverse).into_series(),
-                Float32 => self.f32().unwrap().cumprod(reverse).into_series(),
-                Float64 => self.f64().unwrap().cumprod(reverse).into_series(),
-                dt => panic!("cumprod not supported for dtype: {dt:?}"),
-            }
-        }
-        #[cfg(not(feature = "cum_agg"))]
-        {
-            panic!("activate 'cum_agg' feature")
         }
     }
 
@@ -749,16 +659,9 @@ impl Series {
         }
         let s = self.0.cast(dtype)?;
         if null_count != s.null_count() {
-            let failures = get_casting_failures(self, &s)?;
-            polars_bail!(
-                ComputeError:
-                "strict conversion from `{}` to `{}` failed for column: {}, value(s) {}; \
-                if you were trying to cast Utf8 to temporal dtypes, consider using `strptime`",
-                self.dtype(), dtype, s.name(), failures.fmt_list(),
-            );
-        } else {
-            Ok(s)
+            handle_casting_failures(self, &s)?;
         }
+        Ok(s)
     }
 
     #[cfg(feature = "dtype-time")]
@@ -798,6 +701,8 @@ impl Series {
             dt => panic!("date not implemented for {dt:?}"),
         }
     }
+
+    #[allow(unused_variables)]
     pub(crate) fn into_datetime(self, timeunit: TimeUnit, tz: Option<TimeZone>) -> Series {
         #[cfg(not(feature = "dtype-datetime"))]
         {
@@ -823,6 +728,7 @@ impl Series {
         }
     }
 
+    #[allow(unused_variables)]
     pub(crate) fn into_duration(self, timeunit: TimeUnit) -> Series {
         #[cfg(not(feature = "dtype-duration"))]
         {
@@ -845,26 +751,6 @@ impl Series {
                 .into_series(),
             dt => panic!("into_duration not implemented for {dt:?}"),
         }
-    }
-
-    #[cfg(feature = "abs")]
-    /// convert numerical values to their absolute value
-    pub fn abs(&self) -> PolarsResult<Series> {
-        let a = self.to_physical_repr();
-        use DataType::*;
-        let out = match a.dtype() {
-            #[cfg(feature = "dtype-i8")]
-            Int8 => a.i8().unwrap().abs().into_series(),
-            #[cfg(feature = "dtype-i16")]
-            Int16 => a.i16().unwrap().abs().into_series(),
-            Int32 => a.i32().unwrap().abs().into_series(),
-            Int64 => a.i64().unwrap().abs().into_series(),
-            UInt8 | UInt16 | UInt32 | UInt64 => self.clone(),
-            Float32 => a.f32().unwrap().abs().into_series(),
-            Float64 => a.f64().unwrap().abs().into_series(),
-            dt => polars_bail!(opq = abs, dt),
-        };
-        out.cast(self.dtype())
     }
 
     // used for formatting
@@ -960,8 +846,10 @@ impl Series {
             .sum();
         match self.dtype() {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(Some(rv)) => match &**rv {
-                RevMapping::Local(arr) => size += estimated_bytes_size(arr),
+            DataType::Categorical(Some(rv), _) => match &**rv {
+                RevMapping::Local(arr, _) | RevMapping::Enum(arr, _) => {
+                    size += estimated_bytes_size(arr)
+                },
                 RevMapping::Global(map, arr, _) => {
                     size +=
                         map.capacity() * std::mem::size_of::<u32>() * 2 + estimated_bytes_size(arr);
@@ -976,17 +864,16 @@ impl Series {
     /// Packs every element into a list.
     pub fn as_list(&self) -> ListChunked {
         let s = self.rechunk();
-        let values = s.to_arrow(0);
+        // don't  use `to_arrow` as we need the physical types
+        let values = s.chunks()[0].clone();
         let offsets = (0i64..(s.len() as i64 + 1)).collect::<Vec<_>>();
         let offsets = unsafe { Offsets::new_unchecked(offsets) };
 
-        let new_arr = LargeListArray::new(
-            DataType::List(Box::new(s.dtype().clone())).to_arrow(),
-            offsets.into(),
-            values,
-            None,
-        );
-        ListChunked::with_chunk(s.name(), new_arr)
+        let data_type = LargeListArray::default_datatype(s.dtype().to_physical().to_arrow());
+        let new_arr = LargeListArray::new(data_type, offsets.into(), values, None);
+        let mut out = ListChunked::with_chunk(s.name(), new_arr);
+        out.set_inner_dtype(s.dtype().clone());
+        out
     }
 }
 
@@ -1130,14 +1017,5 @@ mod test {
         let _ = series.slice(-3, 4);
         let _ = series.slice(-6, 2);
         let _ = series.slice(4, 2);
-    }
-
-    #[test]
-    #[cfg(feature = "round_series")]
-    fn test_round_series() {
-        let series = Series::new("a", &[1.003, 2.23222, 3.4352]);
-        let out = series.round(2).unwrap();
-        let ca = out.f64().unwrap();
-        assert_eq!(ca.get(0), Some(1.0));
     }
 }

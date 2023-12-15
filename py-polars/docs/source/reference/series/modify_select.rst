@@ -27,8 +27,9 @@ Manipulation/selection
     Series.fill_null
     Series.filter
     Series.floor
+    Series.gather
+    Series.gather_every
     Series.head
-    Series.hist
     Series.interpolate
     Series.item
     Series.limit
@@ -41,7 +42,9 @@ Manipulation/selection
     Series.rle
     Series.rle_id
     Series.round
+    Series.round_sig_figs
     Series.sample
+    Series.scatter
     Series.set
     Series.set_at_idx
     Series.shift

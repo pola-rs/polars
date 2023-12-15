@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use arrow::array::ValueSize;
 use jsonpath_lib::PathCompiled;
 use serde_json::Value;
 
@@ -9,7 +10,7 @@ pub fn extract_json<'a>(expr: &PathCompiled, json_str: &'a str) -> Option<Cow<'a
     serde_json::from_str(json_str).ok().and_then(|value| {
         // TODO: a lot of heap allocations here. Improve json path by adding a take?
         let result = expr.select(&value).ok()?;
-        let first = *result.get(0)?;
+        let first = *result.first()?;
 
         match first {
             Value::String(s) => Some(Cow::Owned(s.clone())),
@@ -64,7 +65,7 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
     }
 
     /// Extracts a typed-JSON value for each row in the Utf8Chunked
-    fn json_extract(
+    fn json_decode(
         &self,
         dtype: Option<DataType>,
         infer_schema_len: Option<usize>,
@@ -74,7 +75,6 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
             Some(dt) => dt,
             None => ca.json_infer(infer_schema_len)?,
         };
-
         let buf_size = ca.get_values_size() + ca.null_count() * "null".len();
         let iter = ca.into_iter().map(|x| x.unwrap_or("null"));
 
@@ -103,7 +103,7 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
         infer_schema_len: Option<usize>,
     ) -> PolarsResult<Series> {
         let selected_json = self.as_utf8().json_path_select(json_path)?;
-        selected_json.json_extract(dtype, infer_schema_len)
+        selected_json.json_decode(dtype, infer_schema_len)
     }
 }
 
@@ -163,7 +163,7 @@ mod tests {
     }
 
     #[test]
-    fn test_json_extract() {
+    fn test_json_decode() {
         let s = Series::new(
             "json",
             [
@@ -187,13 +187,13 @@ mod tests {
         let expected_dtype = expected_series.dtype().clone();
 
         assert!(ca
-            .json_extract(None, None)
+            .json_decode(None, None)
             .unwrap()
-            .series_equal_missing(&expected_series));
+            .equals_missing(&expected_series));
         assert!(ca
-            .json_extract(Some(expected_dtype), None)
+            .json_decode(Some(expected_dtype), None)
             .unwrap()
-            .series_equal_missing(&expected_series));
+            .equals_missing(&expected_series));
     }
 
     #[test]
@@ -213,7 +213,7 @@ mod tests {
             .json_path_select("$")
             .unwrap()
             .into_series()
-            .series_equal_missing(&s));
+            .equals_missing(&s));
 
         let b_series = Series::new(
             "json",
@@ -228,14 +228,14 @@ mod tests {
             .json_path_select("$.b")
             .unwrap()
             .into_series()
-            .series_equal_missing(&b_series));
+            .equals_missing(&b_series));
 
         let c_series = Series::new("json", [None, Some(r#"[0,1]"#), Some(r#"[2,5]"#), None]);
         assert!(ca
             .json_path_select("$.b[:].c")
             .unwrap()
             .into_series()
-            .series_equal_missing(&c_series));
+            .equals_missing(&c_series));
     }
 
     #[test]
@@ -265,6 +265,6 @@ mod tests {
             .json_path_extract("$.b[:].c", None, None)
             .unwrap()
             .into_series()
-            .series_equal_missing(&c_series));
+            .equals_missing(&c_series));
     }
 }

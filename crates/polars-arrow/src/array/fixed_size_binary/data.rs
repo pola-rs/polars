@@ -3,7 +3,7 @@ use arrow_data::{ArrayData, ArrayDataBuilder};
 use crate::array::{Arrow2Arrow, FixedSizeBinaryArray};
 use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 impl Arrow2Arrow for FixedSizeBinaryArray {
     fn to_data(&self) -> ArrayData {
@@ -18,9 +18,9 @@ impl Arrow2Arrow for FixedSizeBinaryArray {
     }
 
     fn from_data(data: &ArrayData) -> Self {
-        let data_type: DataType = data.data_type().clone().into();
+        let data_type: ArrowDataType = data.data_type().clone().into();
         let size = match data_type {
-            DataType::FixedSizeBinary(size) => size,
+            ArrowDataType::FixedSizeBinary(size) => size,
             _ => unreachable!("must be FixedSizeBinary"),
         };
 

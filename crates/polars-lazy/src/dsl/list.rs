@@ -1,5 +1,6 @@
 use std::sync::Mutex;
 
+use arrow::array::ValueSize;
 use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_plan::constants::MAP_LIST_NAME;
@@ -23,11 +24,9 @@ impl IntoListNameSpace for ListNameSpace {
 fn offsets_to_groups(offsets: &[i64]) -> Option<GroupsProxy> {
     let mut start = offsets[0];
     let end = *offsets.last().unwrap();
-    let fits_into_idx = (end - start) <= IdxSize::MAX as i64;
-    if !fits_into_idx {
+    if IdxSize::try_from(end - start).is_err() {
         return None;
     }
-
     let groups = offsets
         .iter()
         .skip(1)
@@ -150,7 +149,7 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
                 match e {
                     #[cfg(feature = "dtype-categorical")]
                     Expr::Cast {
-                        data_type: DataType::Categorical(_),
+                        data_type: DataType::Categorical(_, _),
                         ..
                     } => {
                         polars_bail!(
@@ -176,7 +175,7 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
                 return Ok(Some(Series::new_empty(s.name(), output_field.data_type())));
             }
             if lst.null_count() == lst.len() {
-                return Ok(Some(s));
+                return Ok(Some(s.cast(output_field.data_type())?));
             }
 
             let fits_idx_size = lst.get_values_size() <= (IdxSize::MAX as usize);

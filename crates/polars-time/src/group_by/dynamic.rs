@@ -7,6 +7,7 @@ use polars_core::series::IsSorted;
 use polars_core::utils::ensure_sorted_arg;
 use polars_core::utils::flatten::flatten_par;
 use polars_core::POOL;
+use polars_utils::idx_vec::IdxVec;
 use polars_utils::slice::{GetSaferUnchecked, SortedSlice};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -30,7 +31,7 @@ pub struct DynamicGroupOptions {
     pub offset: Duration,
     /// Truncate the time column values to the window.
     pub label: Label,
-    /// Add the boundaries to the dataframe.
+    /// Add the boundaries to the DataFrame.
     pub include_boundaries: bool,
     pub closed_window: ClosedWindow,
     pub start_by: StartBy,
@@ -633,8 +634,8 @@ fn update_subgroups_slice(sub_groups: &[[IdxSize; 2]], base_g: [IdxSize; 2]) -> 
 
 fn update_subgroups_idx(
     sub_groups: &[[IdxSize; 2]],
-    base_g: (IdxSize, &Vec<IdxSize>),
-) -> Vec<(IdxSize, Vec<IdxSize>)> {
+    base_g: (IdxSize, &IdxVec),
+) -> Vec<(IdxSize, IdxVec)> {
     sub_groups
         .iter()
         .map(|&[first, len]| {
@@ -650,7 +651,7 @@ fn update_subgroups_idx(
             let len = len as usize;
             let idx = (first..first + len)
                 .map(|i| unsafe { *base_g.1.get_unchecked_release(i) })
-                .collect_trusted::<Vec<_>>();
+                .collect::<IdxVec>();
             (new_first, idx)
         })
         .collect_trusted::<Vec<_>>()
@@ -659,6 +660,8 @@ fn update_subgroups_idx(
 #[cfg(test)]
 mod test {
     use chrono::prelude::*;
+    use polars_ops::prelude::*;
+    use polars_utils::idxvec;
 
     use super::*;
 
@@ -777,11 +780,11 @@ mod test {
             "",
             [0.0, 8.0, 4.000000000000002, 6.666666666666667, 24.5, 0.0],
         );
-        assert!((var - expected).abs().unwrap().lt(1e-12).unwrap().all());
+        assert!(abs(&(var - expected)).unwrap().lt(1e-12).unwrap().all());
 
         let var = unsafe { nulls.agg_var(&groups, 1) };
         let expected = Series::new("", [0.0, 8.0, 8.0, 9.333333333333343, 24.5, 0.0]);
-        assert!((var - expected).abs().unwrap().lt(1e-12).unwrap().all());
+        assert!(abs(&(var - expected)).unwrap().lt(1e-12).unwrap().all());
 
         let quantile = unsafe { a.agg_quantile(&groups, 0.5, QuantileInterpolOptions::Linear) };
         let expected = Series::new("", [3.0, 5.0, 5.0, 6.0, 5.5, 1.0]);
@@ -896,12 +899,12 @@ mod test {
 
         let expected = GroupsProxy::Idx(
             vec![
-                (0 as IdxSize, vec![0 as IdxSize, 1, 2]),
-                (2, vec![2]),
-                (5, vec![5, 6]),
-                (6, vec![6]),
-                (3, vec![3, 4]),
-                (4, vec![4]),
+                (0 as IdxSize, idxvec![0 as IdxSize, 1, 2]),
+                (2, idxvec![2]),
+                (5, idxvec![5, 6]),
+                (6, idxvec![6]),
+                (3, idxvec![3, 4]),
+                (4, idxvec![4]),
             ]
             .into(),
         );
@@ -953,7 +956,7 @@ mod test {
             .unwrap();
         time_key.rename("");
         let lower_bound = keys[1].clone().with_name("");
-        assert!(time_key.series_equal(&lower_bound));
+        assert!(time_key.equals(&lower_bound));
         Ok(())
     }
 }

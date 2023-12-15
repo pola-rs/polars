@@ -7,7 +7,7 @@ def test_categorical_lexical_sort() -> None:
         {"cats": ["z", "z", "k", "a", "b"], "vals": [3, 1, 2, 2, 3]}
     ).with_columns(
         [
-            pl.col("cats").cast(pl.Categorical).cat.set_ordering("lexical"),
+            pl.col("cats").cast(pl.Categorical("lexical")),
         ]
     )
 
@@ -29,8 +29,8 @@ def test_categorical_lexical_sort() -> None:
     )
     assert_frame_equal(out.with_columns(pl.col("cats").cast(pl.Utf8)), expected)
 
-    s = pl.Series(["a", "c", "a", "b", "a"], dtype=pl.Categorical)
-    assert s.cat.set_ordering("lexical").sort().cast(pl.Utf8).to_list() == [
+    s = pl.Series(["a", "c", "a", "b", "a"], dtype=pl.Categorical("lexical"))
+    assert s.sort().cast(pl.Utf8).to_list() == [
         "a",
         "a",
         "a",
@@ -44,26 +44,20 @@ def test_categorical_lexical_ordering_after_concat() -> None:
         ldf1 = (
             pl.DataFrame([pl.Series("key1", [8, 5]), pl.Series("key2", ["fox", "baz"])])
             .lazy()
-            .with_columns(
-                pl.col("key2").cast(pl.Categorical).cat.set_ordering("lexical")
-            )
+            .with_columns(pl.col("key2").cast(pl.Categorical("lexical")))
         )
         ldf2 = (
             pl.DataFrame(
                 [pl.Series("key1", [6, 8, 6]), pl.Series("key2", ["fox", "foo", "bar"])]
             )
             .lazy()
-            .with_columns(
-                pl.col("key2").cast(pl.Categorical).cat.set_ordering("lexical")
-            )
+            .with_columns(pl.col("key2").cast(pl.Categorical("lexical")))
         )
-        df = (
-            pl.concat([ldf1, ldf2])
-            .with_columns(pl.col("key2").cat.set_ordering("lexical"))
-            .collect()
-        )
+        df = pl.concat([ldf1, ldf2]).select(pl.col("key2")).collect()
 
-        df.sort(["key1", "key2"])
+        assert df.sort("key2").to_dict(as_series=False) == {
+            "key2": ["bar", "baz", "foo", "fox", "fox"]
+        }
 
 
 def test_sort_categoricals_6014() -> None:
@@ -74,13 +68,13 @@ def test_sort_categoricals_6014() -> None:
         )
         # create lexically-ordered categorical
         df2 = pl.DataFrame({"key": ["bbb", "aaa", "ccc"]}).with_columns(
-            pl.col("key").cast(pl.Categorical).cat.set_ordering("lexical")
+            pl.col("key").cast(pl.Categorical("lexical"))
         )
 
     out = df1.sort("key")
-    assert out.to_dict(False) == {"key": ["bbb", "aaa", "ccc"]}
+    assert out.to_dict(as_series=False) == {"key": ["bbb", "aaa", "ccc"]}
     out = df2.sort("key")
-    assert out.to_dict(False) == {"key": ["aaa", "bbb", "ccc"]}
+    assert out.to_dict(as_series=False) == {"key": ["aaa", "bbb", "ccc"]}
 
 
 def test_categorical_get_categories() -> None:
@@ -143,8 +137,8 @@ def test_cat_uses_lexical_ordering() -> None:
     s = pl.Series(["a", "b", None, "b"]).cast(pl.Categorical)
     assert s.cat.uses_lexical_ordering() is False
 
-    s = s.cat.set_ordering("lexical")
+    s = s.cast(pl.Categorical("lexical"))
     assert s.cat.uses_lexical_ordering() is True
 
-    s = s.cat.set_ordering("physical")
+    s = s.cast(pl.Categorical("physical"))
     assert s.cat.uses_lexical_ordering() is False

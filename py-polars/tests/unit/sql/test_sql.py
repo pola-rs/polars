@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import math
 from pathlib import Path
 
@@ -7,6 +8,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -69,6 +71,11 @@ def test_sql_cast() -> None:
         (5.0, 5.0, 5, 5, 5, 1, "5", "5.5", b"e", b"e", "true"),
     ]
 
+    with pytest.raises(ComputeError, match="unsupported use of FORMAT in CAST"):
+        pl.SQLContext(df=df, eager_execution=True).execute(
+            "SELECT CAST(a AS STRING FORMAT 'HEX') FROM df"
+        )
+
 
 def test_sql_any_all() -> None:
     df = pl.DataFrame(
@@ -98,7 +105,7 @@ def test_sql_any_all() -> None:
         eager=True,
     )
 
-    assert res.to_dict(False) == {
+    assert res.to_dict(as_series=False) == {
         "All Geq": [0, 0, 0, 0, 1, 1],
         "All G": [0, 0, 0, 0, 0, 1],
         "All L": [1, 0, 0, 0, 0, 0],
@@ -135,14 +142,14 @@ def test_sql_distinct() -> None:
         ORDER BY two_a ASC, half_b DESC
         """,
     )
-    assert res2.to_dict(False) == {
+    assert res2.to_dict(as_series=False) == {
         "two_a": [2, 2, 4, 6],
         "half_b": [1, 0, 2, 3],
     }
 
     # test unregistration
     ctx.unregister("df")
-    with pytest.raises(pl.ComputeError, match=".*'df'.*not found"):
+    with pytest.raises(ComputeError, match=".*'df'.*not found"):
         ctx.execute("SELECT * FROM df")
 
 
@@ -198,7 +205,7 @@ def test_sql_equal_not_equal() -> None:
     assert out.select(cs.contains("_aware").null_count().sum()).row(0) == (0, 0, 0)
     assert out.select(cs.contains("_unaware").null_count().sum()).row(0) == (2, 2, 2)
 
-    assert out.to_dict(False) == {
+    assert out.to_dict(as_series=False) == {
         "1_eq_unaware": [True, None, True, False, None],
         "2_neq_unaware": [False, None, False, True, None],
         "3_neq_unaware": [False, None, False, True, None],
@@ -288,7 +295,7 @@ def test_sql_trig() -> None:
                 0.866025,
                 0.707107,
                 0.000016,
-                float("NaN"),
+                float("nan"),
                 0.000016,
                 0.707107,
                 0.866025,
@@ -299,7 +306,7 @@ def test_sql_trig() -> None:
                 -1.732051,
                 -1.0,
                 -0.000016,
-                float("NaN"),
+                float("nan"),
                 0.000016,
                 1.0,
                 1.732051,
@@ -310,7 +317,7 @@ def test_sql_trig() -> None:
                 -0.5,
                 -0.707107,
                 -1.0,
-                float("NaN"),
+                float("nan"),
                 1,
                 0.707107,
                 0.5,
@@ -321,7 +328,7 @@ def test_sql_trig() -> None:
                 -0.57735,
                 -1,
                 -63662.613851,
-                float("NaN"),
+                float("nan"),
                 63662.613851,
                 1,
                 0.57735,
@@ -332,7 +339,7 @@ def test_sql_trig() -> None:
                 0.866025,
                 0.707107,
                 0.000016,
-                float("NaN"),
+                float("nan"),
                 0.000016,
                 0.707107,
                 0.866025,
@@ -343,7 +350,7 @@ def test_sql_trig() -> None:
                 -1.732051,
                 -1.0,
                 -0.000016,
-                float("NaN"),
+                float("nan"),
                 0.000016,
                 1.0,
                 1.732051,
@@ -354,7 +361,7 @@ def test_sql_trig() -> None:
                 -0.5,
                 -0.707107,
                 -1.0,
-                float("NaN"),
+                float("nan"),
                 1,
                 0.707107,
                 0.5,
@@ -365,7 +372,7 @@ def test_sql_trig() -> None:
                 -0.57735,
                 -1,
                 -63662.613851,
-                float("NaN"),
+                float("nan"),
                 63662.613851,
                 1,
                 0.57735,
@@ -387,7 +394,7 @@ def test_sql_trig() -> None:
                 1.910633,
                 2.094395,
                 3.137121,
-                float("NaN"),
+                float("nan"),
                 0.004472,
                 1.047198,
                 1.230959,
@@ -398,7 +405,7 @@ def test_sql_trig() -> None:
                 -0.339837,
                 -0.523599,
                 -1.566324,
-                float("NaN"),
+                float("nan"),
                 1.566324,
                 0.523599,
                 0.339837,
@@ -420,7 +427,7 @@ def test_sql_trig() -> None:
                 109.471221,
                 120.0,
                 179.743767,
-                float("NaN"),
+                float("nan"),
                 0.256233,
                 60.0,
                 70.528779,
@@ -431,7 +438,7 @@ def test_sql_trig() -> None:
                 -19.471221,
                 -30.0,
                 -89.743767,
-                float("NaN"),
+                float("nan"),
                 89.743767,
                 30.0,
                 19.471221,
@@ -473,7 +480,7 @@ def test_sql_group_by(foods_ipc_path: Path) -> None:
         ORDER BY n, category DESC
         """
     )
-    assert out.to_dict(False) == {
+    assert out.to_dict(as_series=False) == {
         "category": ["vegetables", "fruit", "seafood"],
         "n": [7, 7, 8],
         "calories": [45, 130, 200],
@@ -501,7 +508,7 @@ def test_sql_group_by(foods_ipc_path: Path) -> None:
         HAVING n_dist_attr > 1
         """
     )
-    assert out.to_dict(False) == {"grp": ["c"], "n_dist_attr": [2]}
+    assert out.to_dict(as_series=False) == {"grp": ["c"], "n_dist_attr": [2]}
 
 
 def test_sql_left() -> None:
@@ -511,12 +518,12 @@ def test_sql_left() -> None:
         'SELECT scol, LEFT(scol,2) AS "scol:left2" FROM df',
     ).collect()
 
-    assert res.to_dict(False) == {
+    assert res.to_dict(as_series=False) == {
         "scol": ["abcde", "abc", "a", None],
         "scol:left2": ["ab", "ab", "a", None],
     }
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="Invalid 'length' for Left: 'xyz'",
     ):
         ctx.execute(
@@ -611,7 +618,7 @@ def test_sql_join_inner(foods_ipc_path: Path, join_clause: str) -> None:
         LIMIT 2
         """
     )
-    assert out.collect().to_dict(False) == {
+    assert out.collect().to_dict(as_series=False) == {
         "category": ["vegetables", "vegetables"],
         "calories": [45, 20],
         "fats_g": [0.5, 0.0],
@@ -652,7 +659,7 @@ def test_sql_join_left() -> None:
 def test_sql_non_equi_joins(constraint: str) -> None:
     # no support (yet) for non equi-joins in polars joins
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match=r"SQL interface \(currently\) only supports basic equi-join constraints",
     ), pl.SQLContext({"tbl": pl.DataFrame({"a": [1, 2, 3], "b": [4, 3, 2]})}) as ctx:
         ctx.execute(
@@ -727,11 +734,11 @@ def test_sql_regex_operators_error() -> None:
     df = pl.LazyFrame({"sval": ["ABC", "abc", "000", "A0C", "a0c"]})
     with pl.SQLContext(df=df, eager_execution=True) as ctx:
         with pytest.raises(
-            pl.ComputeError, match="Invalid pattern for '~' operator: 12345"
+            ComputeError, match="Invalid pattern for '~' operator: 12345"
         ):
             ctx.execute("SELECT * FROM df WHERE sval ~ 12345")
         with pytest.raises(
-            pl.ComputeError,
+            ComputeError,
             match=r"""Invalid pattern for '!~\*' operator: col\("abcde"\)""",
         ):
             ctx.execute("SELECT * FROM df WHERE sval !~* abcde")
@@ -771,19 +778,19 @@ def test_sql_regexp_like(
 def test_sql_regexp_like_errors() -> None:
     with pl.SQLContext(df=pl.DataFrame({"scol": ["xyz"]})) as ctx:
         with pytest.raises(
-            pl.InvalidOperationError,
+            InvalidOperationError,
             match="Invalid/empty 'flags' for RegexpLike",
         ):
             ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol,'[x-z]+','')")
 
         with pytest.raises(
-            pl.InvalidOperationError,
+            InvalidOperationError,
             match="Invalid arguments for RegexpLike",
         ):
             ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol,999,999)")
 
         with pytest.raises(
-            pl.InvalidOperationError,
+            InvalidOperationError,
             match="Invalid number of arguments for RegexpLike",
         ):
             ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol)")
@@ -815,7 +822,7 @@ def test_sql_round_ndigits(decimals: int, expected: list[float]) -> None:
 def test_sql_round_ndigits_errors() -> None:
     df = pl.DataFrame({"n": [99.999]})
     with pl.SQLContext(df=df, eager_execution=True) as ctx, pytest.raises(
-        pl.InvalidOperationError, match="Invalid 'decimals' for Round: -1"
+        InvalidOperationError, match="Invalid 'decimals' for Round: -1"
     ):
         ctx.execute("SELECT ROUND(n,-1) AS n FROM df")
 
@@ -835,7 +842,7 @@ def test_sql_string_case() -> None:
             """
         ).collect()
 
-        assert res.to_dict(False) == {
+        assert res.to_dict(as_series=False) == {
             "words": ["Test SOME words"],
             "cap": ["Test Some Words"],
             "upper": ["TEST SOME WORDS"],
@@ -857,7 +864,7 @@ def test_sql_string_lengths() -> None:
             """
         ).collect()
 
-    assert res.to_dict(False) == {
+    assert res.to_dict(as_series=False) == {
         "words": ["Café", None, "東京"],
         "n_chars": [4, None, 2],
         "n_bytes": [5, None, 6],
@@ -865,15 +872,12 @@ def test_sql_string_lengths() -> None:
 
 
 def test_sql_substr() -> None:
-    df = pl.DataFrame(
-        {
-            "scol": ["abcdefg", "abcde", "abc", None],
-        }
-    )
+    df = pl.DataFrame({"scol": ["abcdefg", "abcde", "abc", None]})
     with pl.SQLContext(df=df) as ctx:
         res = ctx.execute(
             """
             SELECT
+              -- note: sql is 1-indexed
               SUBSTR(scol,1) AS s1,
               SUBSTR(scol,2) AS s2,
               SUBSTR(scol,3) AS s3,
@@ -884,18 +888,26 @@ def test_sql_substr() -> None:
             """
         ).collect()
 
-    assert res.to_dict(False) == {
-        "s1": ["bcdefg", "bcde", "bc", None],
-        "s2": ["cdefg", "cde", "c", None],
-        "s3": ["defg", "de", "", None],
-        "s1_5": ["bcdef", "bcde", "bc", None],
-        "s2_2": ["cd", "cd", "c", None],
-        "s3_1": ["d", "d", "", None],
+    assert res.to_dict(as_series=False) == {
+        "s1": ["abcdefg", "abcde", "abc", None],
+        "s2": ["bcdefg", "bcde", "bc", None],
+        "s3": ["cdefg", "cde", "c", None],
+        "s1_5": ["abcde", "abcde", "abc", None],
+        "s2_2": ["bc", "bc", "bc", None],
+        "s3_1": ["c", "c", "c", None],
     }
+
+    # negative indexes are expected to be invalid
+    with pytest.raises(
+        InvalidOperationError,
+        match="Invalid 'start' for Substring: -1",
+    ), pl.SQLContext(df=df) as ctx:
+        ctx.execute("SELECT SUBSTR(scol,-1) FROM df")
 
 
 def test_sql_trim(foods_ipc_path: Path) -> None:
-    out = pl.SQLContext(foods1=pl.scan_ipc(foods_ipc_path)).execute(
+    lf = pl.scan_ipc(foods_ipc_path)
+    out = pl.SQLContext(foods1=lf).execute(
         """
         SELECT DISTINCT TRIM(LEADING 'vmf' FROM category) as new_category
         FROM foods1
@@ -903,9 +915,19 @@ def test_sql_trim(foods_ipc_path: Path) -> None:
         """,
         eager=True,
     )
-    assert out.to_dict(False) == {
+    assert out.to_dict(as_series=False) == {
         "new_category": ["seafood", "ruit", "egetables", "eat"]
     }
+    with pytest.raises(
+        ComputeError,
+        match="unsupported TRIM",
+    ):
+        # currently unsupported (snowflake) trim syntax
+        pl.SQLContext(foods=lf).execute(
+            """
+            SELECT DISTINCT TRIM('*^xxxx^*', '^*') as new_category FROM foods
+            """,
+        )
 
 
 @pytest.mark.parametrize(
@@ -941,12 +963,11 @@ def test_sql_trim(foods_ipc_path: Path) -> None:
             "BY NAME",
             [(1, "zz"), (2, "yy"), (3, "xx")],
         ),
-        (
-            # note: waiting for "https://github.com/sqlparser-rs/sqlparser-rs/pull/997"
+        pytest.param(
             ["c1", "c2"],
             ["c2", "c1"],
             "DISTINCT BY NAME",
-            None,  # [(1, "zz"), (2, "yy"), (3, "xx")],
+            [(1, "zz"), (2, "yy"), (3, "xx")],
         ),
     ],
 )
@@ -954,7 +975,7 @@ def test_sql_union(
     cols1: list[str],
     cols2: list[str],
     union_subtype: str,
-    expected: dict[str, list[int] | list[str]] | None,
+    expected: list[tuple[int, str]],
 ) -> None:
     with pl.SQLContext(
         frame1=pl.DataFrame({"c1": [1, 2], "c2": ["zz", "yy"]}),
@@ -966,11 +987,7 @@ def test_sql_union(
             UNION {union_subtype}
             SELECT {', '.join(cols2)} FROM frame2
         """
-        if expected is not None:
-            assert sorted(ctx.execute(query).rows()) == expected
-        else:
-            with pytest.raises(pl.ComputeError, match="sql parser error"):
-                ctx.execute(query)
+        assert sorted(ctx.execute(query).rows()) == expected
 
 
 def test_sql_nullif_coalesce(foods_ipc_path: Path) -> None:
@@ -994,7 +1011,7 @@ def test_sql_nullif_coalesce(foods_ipc_path: Path) -> None:
         eager=True,
     )
 
-    assert res.to_dict(False) == {
+    assert res.to_dict(as_series=False) == {
         "coal": [1, 4, 2, 3, None, 4],
         "nullif x_y": [1, None, 2, None, None, 4],
         "nullif y_z": [5, None, None, None, None, 2],
@@ -1019,7 +1036,7 @@ def test_sql_order_by(foods_ipc_path: Path) -> None:
         """,
         eager=True,
     )
-    assert order_by_distinct_res.to_dict(False) == {
+    assert order_by_distinct_res.to_dict(as_series=False) == {
         "category": ["vegetables", "seafood", "meat", "fruit"]
     }
 
@@ -1032,7 +1049,7 @@ def test_sql_order_by(foods_ipc_path: Path) -> None:
         """,
         eager=True,
     )
-    assert order_by_group_by_res.to_dict(False) == {
+    assert order_by_group_by_res.to_dict(as_series=False) == {
         "category": ["vegetables", "seafood", "meat", "fruit"]
     }
 
@@ -1045,7 +1062,7 @@ def test_sql_order_by(foods_ipc_path: Path) -> None:
         """,
         eager=True,
     )
-    assert order_by_constructed_group_by_res.to_dict(False) == {
+    assert order_by_constructed_group_by_res.to_dict(as_series=False) == {
         "category": ["seafood", "meat", "fruit", "vegetables"],
         "summed_calories": [1250, 540, 410, 192],
     }
@@ -1059,7 +1076,7 @@ def test_sql_order_by(foods_ipc_path: Path) -> None:
         """,
         eager=True,
     )
-    assert order_by_unselected_res.to_dict(False) == {
+    assert order_by_unselected_res.to_dict(as_series=False) == {
         "summed_calories": [1250, 540, 410, 192],
     }
 
@@ -1073,7 +1090,7 @@ def test_sql_order_by(foods_ipc_path: Path) -> None:
         """,
         eager=True,
     )
-    assert order_by_unselected_nums_res.to_dict(False) == {
+    assert order_by_unselected_nums_res.to_dict(as_series=False) == {
         "x": [3, 2, 1],
         "y_alias": [2, 3, 4],
     }
@@ -1088,7 +1105,7 @@ def test_sql_order_by(foods_ipc_path: Path) -> None:
         """,
         eager=True,
     )
-    assert order_by_wildcard_res.to_dict(False) == {
+    assert order_by_wildcard_res.to_dict(as_series=False) == {
         "x": [3, 2, 1],
         "y": [2, 3, 4],
         "y_alias": [2, 3, 4],
@@ -1103,7 +1120,7 @@ def test_sql_order_by(foods_ipc_path: Path) -> None:
         """,
         eager=True,
     )
-    assert order_by_qualified_wildcard_res.to_dict(False) == {
+    assert order_by_qualified_wildcard_res.to_dict(as_series=False) == {
         "x": [3, 2, 1],
         "y": [2, 3, 4],
     }
@@ -1117,7 +1134,7 @@ def test_sql_order_by(foods_ipc_path: Path) -> None:
         """,
         eager=True,
     )
-    assert order_by_exclude_res.to_dict(False) == {
+    assert order_by_exclude_res.to_dict(as_series=False) == {
         "x": [3, 2, 1],
     }
 
@@ -1130,7 +1147,7 @@ def test_sql_order_by(foods_ipc_path: Path) -> None:
         """,
         eager=True,
     )
-    assert order_by_qualified_exclude_res.to_dict(False) == {
+    assert order_by_qualified_exclude_res.to_dict(as_series=False) == {
         "x": [3, 2, 1],
     }
 
@@ -1143,7 +1160,7 @@ def test_sql_order_by(foods_ipc_path: Path) -> None:
         """,
         eager=True,
     )
-    assert order_by_expression_res.to_dict(False) == {
+    assert order_by_expression_res.to_dict(as_series=False) == {
         "modded": [1, 1, 2],
     }
 
@@ -1174,18 +1191,19 @@ def test_sql_expr() -> None:
         [
             "MIN(a)",
             "POWER(a,a) AS aa",
-            "SUBSTR(b,1,2) AS b2",
+            "SUBSTR(b,2,2) AS b2",
         ]
     )
+    result = df.select(*sql_exprs)
     expected = pl.DataFrame(
-        {"a": [1, 1, 1], "aa": [1, 4, 27], "b2": ["yz", "bc", None]}
+        {"a": [1, 1, 1], "aa": [1.0, 4.0, 27.0], "b2": ["yz", "bc", None]}
     )
-    assert df.select(*sql_exprs).frame_equal(expected)
+    assert_frame_equal(result, expected)
 
     # expect expressions that can't reasonably be parsed as expressions to raise
     # (for example: those that explicitly reference tables and/or use wildcards)
     with pytest.raises(
-        pl.InvalidOperationError, match=r"Unable to parse 'xyz\.\*' as Expr"
+        InvalidOperationError, match=r"Unable to parse 'xyz\.\*' as Expr"
     ):
         pl.sql_expr("xyz.*")
 
@@ -1202,9 +1220,49 @@ def test_sql_unary_ops_8890(match_float: bool) -> None:
             FROM df WHERE a IN {in_values}
             """
         )
-        assert res.collect().to_dict(False) == {
+        assert res.collect().to_dict(as_series=False) == {
             "a": [-1, 2],
             "b": ["x", "z"],
             "c": [-3, -3],
             "d": [4, 4],
         }
+
+
+def test_sql_in_no_ops_11946() -> None:
+    df = pl.LazyFrame(
+        [
+            {"i1": 1},
+            {"i1": 2},
+            {"i1": 3},
+        ]
+    )
+
+    ctx = pl.SQLContext(frame_data=df, eager_execution=False)
+
+    out = ctx.execute(
+        "SELECT * FROM frame_data WHERE i1 in (1, 3)", eager=False
+    ).collect()
+    assert out.to_dict(as_series=False) == {"i1": [1, 3]}
+
+
+def test_sql_date() -> None:
+    df = pl.DataFrame(
+        {
+            "date": [
+                datetime.date(2021, 3, 15),
+                datetime.date(2021, 3, 28),
+                datetime.date(2021, 4, 4),
+            ],
+            "version": ["0.0.1", "0.7.3", "0.7.4"],
+        }
+    )
+
+    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+        result = ctx.execute("SELECT date < DATE('2021-03-20') from df")
+
+    expected = pl.DataFrame({"date": [True, False, False]})
+    assert_frame_equal(result, expected)
+
+    result = pl.select(pl.sql_expr("""CAST(DATE('2023-03', '%Y-%m') as STRING)"""))
+    expected = pl.DataFrame({"literal": ["2023-03-01"]})
+    assert_frame_equal(result, expected)

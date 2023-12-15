@@ -329,6 +329,11 @@ impl ExprIdentifierVisitor<'_> {
                 function: FunctionExpr::Random { .. },
                 ..
             } => REFUSE_NO_MEMBER,
+            #[cfg(feature = "rolling_window")]
+            AExpr::Function {
+                function: FunctionExpr::RollingExpr { .. },
+                ..
+            } => REFUSE_NO_MEMBER,
             AExpr::AnonymousFunction { .. } => REFUSE_NO_MEMBER,
             _ => {
                 // During aggregation we only store elementwise operation in the state

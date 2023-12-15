@@ -89,7 +89,7 @@ def test_sink_parquet_10115(tmp_path: Path) -> None:
         .sink_parquet(out_path)  #
     )
 
-    assert pl.read_parquet(out_path).to_dict(False) == {
+    assert pl.read_parquet(out_path).to_dict(as_series=False) == {
         "x": [1],
         "y": ["foo"],
         "z": ["_"],
@@ -136,7 +136,8 @@ def test_sink_csv_with_options() -> None:
     with unittest.mock.patch.object(df, "_ldf") as ldf:
         df.sink_csv(
             "path",
-            has_header=False,
+            include_bom=True,
+            include_header=False,
             separator=";",
             line_terminator="|",
             quote_char="$",
@@ -152,7 +153,8 @@ def test_sink_csv_with_options() -> None:
 
         ldf.optimization_toggle().sink_csv.assert_called_with(
             path="path",
-            has_header=False,
+            include_bom=True,
+            include_header=False,
             separator=ord(";"),
             line_terminator="|",
             quote_char=ord("$"),
@@ -184,7 +186,7 @@ def test_sink_csv_exception_for_quote(value: str) -> None:
 def test_scan_csv_only_header_10792(io_files_path: Path) -> None:
     foods_file_path = io_files_path / "only_header.csv"
     df = pl.scan_csv(foods_file_path).collect(streaming=True)
-    assert df.to_dict(False) == {"Name": [], "Address": []}
+    assert df.to_dict(as_series=False) == {"Name": [], "Address": []}
 
 
 def test_scan_empty_csv_10818(io_files_path: Path) -> None:

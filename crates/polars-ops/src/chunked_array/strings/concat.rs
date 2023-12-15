@@ -1,35 +1,36 @@
-use arrow::array::Utf8Array;
+use arrow::array::{Utf8Array, ValueSize};
 use arrow::legacy::array::default_arrays::FromDataUtf8;
 use polars_core::prelude::*;
 
 // Vertically concatenate all strings in a Utf8Chunked.
-pub fn str_concat(ca: &Utf8Chunked, delimiter: &str) -> Utf8Chunked {
-    if ca.len() <= 1 {
+pub fn str_concat(ca: &Utf8Chunked, delimiter: &str, ignore_nulls: bool) -> Utf8Chunked {
+    if ca.is_empty() {
+        return Utf8Chunked::new(ca.name(), &[""]);
+    }
+
+    // Propagate null value.
+    if !ignore_nulls && ca.null_count() != 0 {
+        return Utf8Chunked::full_null(ca.name(), 1);
+    }
+
+    if ca.len() == 1 {
         return ca.clone();
     }
 
     // Calculate capacity.
-    let null_str_len = 4;
-    let capacity =
-        ca.get_values_size() + ca.null_count() * null_str_len + delimiter.len() * (ca.len() - 1);
+    let capacity = ca.get_values_size() + delimiter.len() * (ca.len() - 1);
 
     let mut buf = String::with_capacity(capacity);
     let mut first = true;
-    for arr in ca.downcast_iter() {
-        for val in arr.into_iter() {
+    ca.for_each(|val| {
+        if let Some(val) = val {
             if !first {
                 buf.push_str(delimiter);
             }
-
-            if let Some(s) = val {
-                buf.push_str(s);
-            } else {
-                buf.push_str("null");
-            }
-
+            buf.push_str(val);
             first = false;
         }
-    }
+    });
 
     let buf = buf.into_bytes();
     let offsets = vec![0, buf.len() as i64];
@@ -131,10 +132,10 @@ mod test {
     fn test_str_concat() {
         let ca = Int32Chunked::new("foo", &[Some(1), None, Some(3)]);
         let ca_str = ca.cast(&DataType::Utf8).unwrap();
-        let out = str_concat(&ca_str.utf8().unwrap(), "-");
+        let out = str_concat(ca_str.utf8().unwrap(), "-", true);
 
         let out = out.get(0);
-        assert_eq!(out, Some("1-null-3"));
+        assert_eq!(out, Some("1-3"));
     }
 
     #[test]

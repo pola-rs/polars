@@ -1,6 +1,6 @@
 use std::borrow::Borrow;
 
-use arrow::datatypes::{DataType, Field, Schema};
+use arrow::datatypes::{ArrowDataType, ArrowSchema, Field};
 use indexmap::map::Entry;
 use indexmap::IndexMap;
 use simd_json::borrowed::Object;
@@ -10,25 +10,25 @@ use super::*;
 
 const ITEM_NAME: &str = "item";
 
-/// Infers [`DataType`] from [`Value`][Value].
+/// Infers [`ArrowDataType`] from [`Value`][Value].
 ///
 /// [Value]: simd_json::value::Value
-pub fn infer(json: &BorrowedValue) -> PolarsResult<DataType> {
+pub fn infer(json: &BorrowedValue) -> PolarsResult<ArrowDataType> {
     Ok(match json {
-        BorrowedValue::Static(StaticNode::Bool(_)) => DataType::Boolean,
-        BorrowedValue::Static(StaticNode::U64(_) | StaticNode::I64(_)) => DataType::Int64,
-        BorrowedValue::Static(StaticNode::F64(_)) => DataType::Float64,
-        BorrowedValue::Static(StaticNode::Null) => DataType::Null,
+        BorrowedValue::Static(StaticNode::Bool(_)) => ArrowDataType::Boolean,
+        BorrowedValue::Static(StaticNode::U64(_) | StaticNode::I64(_)) => ArrowDataType::Int64,
+        BorrowedValue::Static(StaticNode::F64(_)) => ArrowDataType::Float64,
+        BorrowedValue::Static(StaticNode::Null) => ArrowDataType::Null,
         BorrowedValue::Array(array) => infer_array(array)?,
-        BorrowedValue::String(_) => DataType::LargeUtf8,
+        BorrowedValue::String(_) => ArrowDataType::LargeUtf8,
         BorrowedValue::Object(inner) => infer_object(inner)?,
     })
 }
 
-/// Infers [`Schema`] from JSON [`Value`][Value] in (pandas-compatible) records format.
+/// Infers [`ArrowSchema`] from JSON [`Value`][Value] in (pandas-compatible) records format.
 ///
 /// [Value]: simd_json::value::Value
-pub fn infer_records_schema(json: &BorrowedValue) -> PolarsResult<Schema> {
+pub fn infer_records_schema(json: &BorrowedValue) -> PolarsResult<ArrowSchema> {
     let outer_array = match json {
         BorrowedValue::Array(array) => Ok(array),
         _ => Err(PolarsError::ComputeError(
@@ -44,7 +44,7 @@ pub fn infer_records_schema(json: &BorrowedValue) -> PolarsResult<Schema> {
 
                 Ok(Field {
                     name: name.to_string(),
-                    data_type: DataType::LargeList(Box::new(Field {
+                    data_type: ArrowDataType::LargeList(Box::new(Field {
                         name: format!("{name}-records"),
                         data_type,
                         is_nullable: true,
@@ -61,41 +61,28 @@ pub fn infer_records_schema(json: &BorrowedValue) -> PolarsResult<Schema> {
         )),
     }?;
 
-    Ok(Schema {
+    Ok(ArrowSchema {
         fields,
         metadata: Default::default(),
     })
 }
 
-fn filter_map_nulls(dt: DataType) -> Option<DataType> {
-    if dt == DataType::Null {
-        None
-    } else {
-        Some(dt)
-    }
-}
-
-fn infer_object(inner: &Object) -> PolarsResult<DataType> {
+fn infer_object(inner: &Object) -> PolarsResult<ArrowDataType> {
     let fields = inner
         .iter()
-        .filter_map(|(key, value)| {
-            infer(value)
-                .map(|dt| filter_map_nulls(dt).map(|dt| (key, dt)))
-                .transpose()
-        })
+        .map(|(key, value)| infer(value).map(|dt| (key, dt)))
         .map(|maybe_dt| {
             let (key, dt) = maybe_dt?;
             Ok(Field::new(key.as_ref(), dt, true))
         })
         .collect::<PolarsResult<Vec<_>>>()?;
-    Ok(DataType::Struct(fields))
+    Ok(ArrowDataType::Struct(fields))
 }
 
-fn infer_array(values: &[BorrowedValue]) -> PolarsResult<DataType> {
+fn infer_array(values: &[BorrowedValue]) -> PolarsResult<ArrowDataType> {
     let types = values
         .iter()
         .map(infer)
-        .filter_map(|x| x.map(filter_map_nulls).transpose())
         // deduplicate entries
         .collect::<PolarsResult<PlHashSet<_>>>()?;
 
@@ -103,26 +90,22 @@ fn infer_array(values: &[BorrowedValue]) -> PolarsResult<DataType> {
         let types = types.into_iter().collect::<Vec<_>>();
         coerce_data_type(&types)
     } else {
-        DataType::Null
+        ArrowDataType::Null
     };
 
-    // if a record contains only nulls, it is not
-    // added to values
-    Ok(if dt == DataType::Null {
-        dt
-    } else {
-        DataType::LargeList(Box::new(Field::new(ITEM_NAME, dt, true)))
-    })
+    Ok(ArrowDataType::LargeList(Box::new(Field::new(
+        ITEM_NAME, dt, true,
+    ))))
 }
 
-/// Coerce an heterogeneous set of [`DataType`] into a single one. Rules:
+/// Coerce an heterogeneous set of [`ArrowDataType`] into a single one. Rules:
 /// * The empty set is coerced to `Null`
 /// * `Int64` and `Float64` are `Float64`
 /// * Lists and scalars are coerced to a list of a compatible scalar
 /// * Structs contain the union of all fields
 /// * All other types are coerced to `Utf8`
-pub(crate) fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
-    use DataType::*;
+pub(crate) fn coerce_data_type<A: Borrow<ArrowDataType>>(datatypes: &[A]) -> ArrowDataType {
+    use ArrowDataType::*;
 
     if datatypes.is_empty() {
         return Null;
@@ -133,8 +116,12 @@ pub(crate) fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType
     if are_all_equal {
         return datatypes[0].borrow().clone();
     }
-
-    let are_all_structs = datatypes.iter().all(|x| matches!(x.borrow(), Struct(_)));
+    let mut are_all_structs = true;
+    let mut are_all_lists = true;
+    for dt in datatypes {
+        are_all_structs &= matches!(dt.borrow(), Struct(_));
+        are_all_lists &= matches!(dt.borrow(), LargeList(_));
+    }
 
     if are_all_structs {
         // all are structs => union of all fields (that may have equal names)
@@ -146,7 +133,7 @@ pub(crate) fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType
         });
         // group fields by unique
         let fields = fields.iter().fold(
-            IndexMap::<&str, PlHashSet<&DataType>, ahash::RandomState>::default(),
+            IndexMap::<&str, PlHashSet<&ArrowDataType>, ahash::RandomState>::default(),
             |mut acc, field| {
                 match acc.entry(field.name.as_str()) {
                     Entry::Occupied(mut v) => {
@@ -170,6 +157,22 @@ pub(crate) fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType
             })
             .collect();
         return Struct(fields);
+    } else if are_all_lists {
+        let inner_types: Vec<&ArrowDataType> = datatypes
+            .iter()
+            .map(|dt| {
+                if let LargeList(inner) = dt.borrow() {
+                    inner.data_type()
+                } else {
+                    unreachable!();
+                }
+            })
+            .collect();
+        return LargeList(Box::new(Field::new(
+            ITEM_NAME,
+            coerce_data_type(inner_types.as_slice()),
+            true,
+        )));
     } else if datatypes.len() > 2 {
         return LargeUtf8;
     }

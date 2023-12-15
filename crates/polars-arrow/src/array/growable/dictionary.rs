@@ -4,14 +4,14 @@ use super::utils::{build_extend_null_bits, ExtendNullBits};
 use super::{make_growable, Growable};
 use crate::array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray};
 use crate::bitmap::MutableBitmap;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 /// Concrete [`Growable`] for the [`DictionaryArray`].
 /// # Implementation
 /// This growable does not perform collision checks and instead concatenates
 /// the values of each [`DictionaryArray`] one after the other.
 pub struct GrowableDictionary<'a, K: DictionaryKey> {
-    data_type: DataType,
+    data_type: ArrowDataType,
     keys_values: Vec<&'a [K]>,
     key_values: Vec<K>,
     key_validity: MutableBitmap,

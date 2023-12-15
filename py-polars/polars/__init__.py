@@ -16,6 +16,7 @@ from polars import api
 from polars.config import Config
 from polars.convert import (
     from_arrow,
+    from_dataframe,
     from_dict,
     from_dicts,
     from_numpy,
@@ -29,6 +30,7 @@ from polars.datatypes import (
     DURATION_DTYPES,
     FLOAT_DTYPES,
     INTEGER_DTYPES,
+    NESTED_DTYPES,
     NUMERIC_DTYPES,
     TEMPORAL_DTYPES,
     Array,
@@ -40,6 +42,7 @@ from polars.datatypes import (
     Datetime,
     Decimal,
     Duration,
+    Enum,
     Field,
     Float32,
     Float64,
@@ -61,6 +64,7 @@ from polars.datatypes import (
 )
 from polars.exceptions import (
     ArrowError,
+    CategoricalRemappingWarning,
     ChronoFormatWarning,
     ColumnNotFoundError,
     ComputeError,
@@ -88,7 +92,6 @@ from polars.functions import (
     arctan2d,
     arg_sort_by,
     arg_where,
-    avg,
     coalesce,
     col,
     collect_all,
@@ -99,6 +102,10 @@ from polars.functions import (
     corr,
     count,
     cov,
+    cum_fold,
+    cum_reduce,
+    cum_sum,
+    cum_sum_horizontal,
     cumfold,
     cumreduce,
     cumsum,
@@ -154,7 +161,6 @@ from polars.functions import (
     when,
     zeros,
 )
-from polars.interchange.from_dataframe import from_dataframe
 from polars.io import (
     read_avro,
     read_csv,
@@ -215,6 +221,8 @@ __all__ = [
     "SchemaFieldNotFoundError",
     "ShapeError",
     "StructFieldNotFoundError",
+    # warnings
+    "CategoricalRemappingWarning",
     # core classes
     "DataFrame",
     "Expr",
@@ -230,6 +238,7 @@ __all__ = [
     "Datetime",
     "Decimal",
     "Duration",
+    "Enum",
     "Field",
     "Float32",
     "Float64",
@@ -253,6 +262,7 @@ __all__ = [
     "DURATION_DTYPES",
     "FLOAT_DTYPES",
     "INTEGER_DTYPES",
+    "NESTED_DTYPES",
     "NUMERIC_DTYPES",
     "TEMPORAL_DTYPES",
     # polars.type_aliases
@@ -306,12 +316,14 @@ __all__ = [
     # polars.functions.aggregation
     "all",
     "any",
+    "cum_sum",
     "cumsum",
     "max",
     "min",
     "sum",
     "all_horizontal",
     "any_horizontal",
+    "cum_sum_horizontal",
     "cumsum_horizontal",
     "max_horizontal",
     "min_horizontal",
@@ -323,7 +335,6 @@ __all__ = [
     "arctan2",
     "arctan2d",
     "arg_sort_by",
-    "avg",
     "coalesce",
     "col",
     "collect_all",
@@ -333,6 +344,8 @@ __all__ = [
     "corr",
     "count",
     "cov",
+    "cum_fold",
+    "cum_reduce",
     "cumfold",
     "cumreduce",
     "date",  # named date_, see import above

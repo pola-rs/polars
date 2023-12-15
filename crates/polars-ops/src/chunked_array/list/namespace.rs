@@ -1,12 +1,12 @@
 use std::convert::TryFrom;
 use std::fmt::Write;
 
+use arrow::array::ValueSize;
 use arrow::legacy::kernels::list::sublist_get;
-use arrow::legacy::prelude::ValueSize;
 use polars_core::chunked_array::builder::get_list_builder;
-#[cfg(feature = "list_take")]
+#[cfg(feature = "list_gather")]
 use polars_core::export::num::ToPrimitive;
-#[cfg(feature = "list_take")]
+#[cfg(feature = "list_gather")]
 use polars_core::export::num::{NumCast, Signed, Zero};
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
@@ -17,6 +17,8 @@ use super::*;
 use crate::chunked_array::list::any_all::*;
 use crate::chunked_array::list::min_max::{list_max_function, list_min_function};
 use crate::chunked_array::list::sum_mean::sum_with_nulls;
+#[cfg(feature = "diff")]
+use crate::prelude::diff;
 use crate::prelude::list::sum_mean::{mean_list_numerical, sum_list_numerical};
 use crate::series::ArgAgg;
 
@@ -154,7 +156,7 @@ pub trait ListNameSpaceImpl: AsList {
         Ok(builder.finish())
     }
 
-    fn lst_max(&self) -> Series {
+    fn lst_max(&self) -> PolarsResult<Series> {
         list_max_function(self.as_list())
     }
 
@@ -170,11 +172,11 @@ pub trait ListNameSpaceImpl: AsList {
         list_any(ca)
     }
 
-    fn lst_min(&self) -> Series {
+    fn lst_min(&self) -> PolarsResult<Series> {
         list_min_function(self.as_list())
     }
 
-    fn lst_sum(&self) -> Series {
+    fn lst_sum(&self) -> PolarsResult<Series> {
         let ca = self.as_list();
 
         if has_inner_nulls(ca) {
@@ -182,8 +184,8 @@ pub trait ListNameSpaceImpl: AsList {
         };
 
         match ca.inner_dtype() {
-            DataType::Boolean => count_boolean_bits(ca).into_series(),
-            dt if dt.is_numeric() => sum_list_numerical(ca, &dt),
+            DataType::Boolean => Ok(count_boolean_bits(ca).into_series()),
+            dt if dt.is_numeric() => Ok(sum_list_numerical(ca, &dt)),
             dt => sum_with_nulls(ca, &dt),
         }
     }
@@ -256,7 +258,7 @@ pub trait ListNameSpaceImpl: AsList {
     #[cfg(feature = "diff")]
     fn lst_diff(&self, n: i64, null_behavior: NullBehavior) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
-        ca.try_apply_amortized(|s| s.as_ref().diff(n, null_behavior))
+        ca.try_apply_amortized(|s| diff(s.as_ref(), n, null_behavior))
     }
 
     fn lst_shift(&self, periods: &Series) -> PolarsResult<ListChunked> {
@@ -316,8 +318,8 @@ pub trait ListNameSpaceImpl: AsList {
             .cast(&ca.inner_dtype())
     }
 
-    #[cfg(feature = "list_take")]
-    fn lst_take(&self, idx: &Series, null_on_oob: bool) -> PolarsResult<Series> {
+    #[cfg(feature = "list_gather")]
+    fn lst_gather(&self, idx: &Series, null_on_oob: bool) -> PolarsResult<Series> {
         let list_ca = self.as_list();
 
         let index_typed_index = |idx: &Series| {
@@ -368,8 +370,8 @@ pub trait ListNameSpaceImpl: AsList {
                 Ok(out.into_series())
             },
             UInt32 | UInt64 => index_typed_index(idx),
-            dt if dt.is_signed() => {
-                if let Some(min) = idx.min::<i64>() {
+            dt if dt.is_signed_integer() => {
+                if let Some(min) = idx.min::<i64>().unwrap() {
                     if min >= 0 {
                         index_typed_index(idx)
                     } else {
@@ -402,6 +404,86 @@ pub trait ListNameSpaceImpl: AsList {
         list_ca.apply_amortized(|s| s.as_ref().drop_nulls())
     }
 
+    #[cfg(feature = "list_sample")]
+    fn lst_sample_n(
+        &self,
+        n: &Series,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> PolarsResult<ListChunked> {
+        let ca = self.as_list();
+
+        let n_s = n.cast(&IDX_DTYPE)?;
+        let n = n_s.idx()?;
+
+        let out = match n.len() {
+            1 => {
+                if let Some(n) = n.get(0) {
+                    ca.try_apply_amortized(|s| {
+                        s.as_ref()
+                            .sample_n(n as usize, with_replacement, shuffle, seed)
+                    })
+                } else {
+                    Ok(ListChunked::full_null_with_dtype(
+                        ca.name(),
+                        ca.len(),
+                        &ca.inner_dtype(),
+                    ))
+                }
+            },
+            _ => ca.try_zip_and_apply_amortized(n, |opt_s, opt_n| match (opt_s, opt_n) {
+                (Some(s), Some(n)) => s
+                    .as_ref()
+                    .sample_n(n as usize, with_replacement, shuffle, seed)
+                    .map(Some),
+                _ => Ok(None),
+            }),
+        };
+        out.map(|ok| self.same_type(ok))
+    }
+
+    #[cfg(feature = "list_sample")]
+    fn lst_sample_fraction(
+        &self,
+        fraction: &Series,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> PolarsResult<ListChunked> {
+        let ca = self.as_list();
+
+        let fraction_s = fraction.cast(&DataType::Float64)?;
+        let fraction = fraction_s.f64()?;
+
+        let out = match fraction.len() {
+            1 => {
+                if let Some(fraction) = fraction.get(0) {
+                    ca.try_apply_amortized(|s| {
+                        let n = (s.as_ref().len() as f64 * fraction) as usize;
+                        s.as_ref().sample_n(n, with_replacement, shuffle, seed)
+                    })
+                } else {
+                    Ok(ListChunked::full_null_with_dtype(
+                        ca.name(),
+                        ca.len(),
+                        &ca.inner_dtype(),
+                    ))
+                }
+            },
+            _ => ca.try_zip_and_apply_amortized(fraction, |opt_s, opt_n| match (opt_s, opt_n) {
+                (Some(s), Some(fraction)) => {
+                    let n = (s.as_ref().len() as f64 * fraction) as usize;
+                    s.as_ref()
+                        .sample_n(n, with_replacement, shuffle, seed)
+                        .map(Some)
+                },
+                _ => Ok(None),
+            }),
+        };
+        out.map(|ok| self.same_type(ok))
+    }
+
     fn lst_concat(&self, other: &[Series]) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
         let other_len = other.len();
@@ -414,14 +496,14 @@ pub trait ListNameSpaceImpl: AsList {
                 DataType::List(inner_type) => {
                     inner_super_type = try_get_supertype(&inner_super_type, inner_type)?;
                     #[cfg(feature = "dtype-categorical")]
-                    if let DataType::Categorical(_) = &inner_super_type {
+                    if let DataType::Categorical(_, _) = &inner_super_type {
                         inner_super_type = merge_dtypes(&inner_super_type, inner_type)?;
                     }
                 },
                 dt => {
                     inner_super_type = try_get_supertype(&inner_super_type, dt)?;
                     #[cfg(feature = "dtype-categorical")]
-                    if let DataType::Categorical(_) = &inner_super_type {
+                    if let DataType::Categorical(_, _) = &inner_super_type {
                         inner_super_type = merge_dtypes(&inner_super_type, dt)?;
                     }
                 },
@@ -551,7 +633,7 @@ pub trait ListNameSpaceImpl: AsList {
 
 impl ListNameSpaceImpl for ListChunked {}
 
-#[cfg(feature = "list_take")]
+#[cfg(feature = "list_gather")]
 fn take_series(s: &Series, idx: Series, null_on_oob: bool) -> PolarsResult<Series> {
     let len = s.len();
     let idx = cast_index(idx, len, null_on_oob)?;
@@ -559,7 +641,7 @@ fn take_series(s: &Series, idx: Series, null_on_oob: bool) -> PolarsResult<Serie
     s.take(idx)
 }
 
-#[cfg(feature = "list_take")]
+#[cfg(feature = "list_gather")]
 fn cast_signed_index_ca<T: PolarsNumericType>(idx: &ChunkedArray<T>, len: usize) -> Series
 where
     T::Native: Copy + PartialOrd + PartialEq + NumCast + Signed + Zero,
@@ -570,7 +652,7 @@ where
         .into_series()
 }
 
-#[cfg(feature = "list_take")]
+#[cfg(feature = "list_gather")]
 fn cast_unsigned_index_ca<T: PolarsNumericType>(idx: &ChunkedArray<T>, len: usize) -> Series
 where
     T::Native: Copy + PartialOrd + ToPrimitive,
@@ -590,7 +672,7 @@ where
         .into_series()
 }
 
-#[cfg(feature = "list_take")]
+#[cfg(feature = "list_gather")]
 fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series> {
     let idx_null_count = idx.null_count();
     use DataType::*;
@@ -631,7 +713,7 @@ fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series
                 idx
             }
         },
-        dt if dt.is_unsigned() => idx.cast(&IDX_DTYPE).unwrap(),
+        dt if dt.is_unsigned_integer() => idx.cast(&IDX_DTYPE).unwrap(),
         Int8 => {
             let a = idx.i8().unwrap();
             cast_signed_index_ca(a, len)
@@ -654,7 +736,7 @@ fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series
     };
     polars_ensure!(
         out.null_count() == idx_null_count || null_on_oob,
-        ComputeError: "take indices are out of bounds"
+        ComputeError: "gather indices are out of bounds"
     );
     Ok(out)
 }

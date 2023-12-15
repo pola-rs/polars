@@ -2,6 +2,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use once_cell::sync::Lazy;
+#[cfg(any(feature = "csv", feature = "json"))]
 use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
 use regex::{Regex, RegexBuilder};
@@ -36,11 +37,6 @@ pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
             // we have to read to an owned buffer to get the bytes.
             let mut bytes = Vec::with_capacity(1024 * 128);
             reader.read_to_end(&mut bytes)?;
-            if !bytes.is_empty()
-                && (bytes[bytes.len() - 1] != b'\n' || bytes[bytes.len() - 1] != b'\r')
-            {
-                bytes.push(b'\n')
-            }
             Ok(ReaderBytes::Owned(bytes))
         }
     }
@@ -73,25 +69,6 @@ pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> Ar
         .map(|idx| fields[*idx].clone())
         .collect::<Vec<_>>();
     ArrowSchema::from(fields)
-}
-
-#[cfg(feature = "parquet")]
-pub(crate) fn apply_projection_pl_schema(schema: &Schema, projection: &[usize]) -> Schema {
-    Schema::from_iter(projection.iter().map(|idx| {
-        let (name, dt) = schema.get_at_index(*idx).unwrap();
-        Field::new(name.as_str(), dt.clone())
-    }))
-}
-
-#[cfg(feature = "parquet")]
-pub(crate) fn columns_to_projection_pl_schema(
-    columns: &[String],
-    schema: &Schema,
-) -> PolarsResult<Vec<usize>> {
-    columns
-        .iter()
-        .map(|name| schema.try_get_full(name).map(|(idx, _, _)| idx))
-        .collect()
 }
 
 #[cfg(any(
@@ -132,6 +109,7 @@ pub(crate) fn columns_to_projection(
 
 /// Because of threading every row starts from `0` or from `offset`.
 /// We must correct that so that they are monotonically increasing.
+#[cfg(any(feature = "csv", feature = "json"))]
 pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, IdxSize)], offset: IdxSize) {
     if !dfs.is_empty() {
         let mut previous = dfs[0].1 + offset;
@@ -146,6 +124,7 @@ pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, IdxSize)], offset: IdxSiz
 
 /// Because of threading every row starts from `0` or from `offset`.
 /// We must correct that so that they are monotonically increasing.
+#[cfg(any(feature = "csv", feature = "json"))]
 pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
     if !dfs.is_empty() {
         let mut previous = dfs[0].height() as IdxSize + offset;
@@ -157,6 +136,30 @@ pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
             previous += n_read;
         }
     }
+}
+
+/// Compute `remaining_rows_to_read` to be taken per file up front, so we can actually read
+/// concurrently/parallel
+///
+/// This takes an iterator over the number of rows per file.
+pub fn get_sequential_row_statistics<I>(
+    iter: I,
+    mut total_rows_to_read: usize,
+) -> Vec<(usize, usize)>
+where
+    I: Iterator<Item = usize>,
+{
+    let mut cumulative_read = 0;
+    iter.map(|rows_this_file| {
+        let remaining_rows_to_read = total_rows_to_read;
+        total_rows_to_read = total_rows_to_read.saturating_sub(rows_this_file);
+
+        let current_cumulative_read = cumulative_read;
+        cumulative_read += rows_this_file;
+
+        (remaining_rows_to_read, current_cumulative_read)
+    })
+    .collect()
 }
 
 #[cfg(feature = "json")]
@@ -213,6 +216,53 @@ pub fn materialize_projection(
             })
         },
     }
+}
+
+pub fn check_projected_schema_impl(
+    a: &Schema,
+    b: &Schema,
+    projected_names: Option<&[String]>,
+    msg: &str,
+) -> PolarsResult<()> {
+    if !projected_names
+        .map(|projected_names| {
+            projected_names
+                .iter()
+                .all(|name| a.get(name) == b.get(name))
+        })
+        .unwrap_or_else(|| a == b)
+    {
+        polars_bail!(ComputeError: "{msg}\n\n\
+                    Expected: {:?}\n\n\
+                    Got: {:?}", a, b)
+    }
+    Ok(())
+}
+
+/// Checks if the projected columns are equal
+pub fn check_projected_arrow_schema(
+    a: &ArrowSchema,
+    b: &ArrowSchema,
+    projected_names: Option<&[String]>,
+    msg: &str,
+) -> PolarsResult<()> {
+    if a != b {
+        let a = Schema::from(a);
+        let b = Schema::from(b);
+        check_projected_schema_impl(&a, &b, projected_names, msg)
+    } else {
+        Ok(())
+    }
+}
+
+/// Checks if the projected columns are equal
+pub fn check_projected_schema(
+    a: &Schema,
+    b: &Schema,
+    projected_names: Option<&[String]>,
+    msg: &str,
+) -> PolarsResult<()> {
+    check_projected_schema_impl(a, b, projected_names, msg)
 }
 
 #[cfg(test)]

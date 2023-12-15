@@ -38,7 +38,7 @@ impl CsvExec {
             .with_null_values(std::mem::take(&mut self.options.null_values))
             .with_predicate(predicate)
             .with_encoding(CsvEncoding::LossyUtf8)
-            .with_comment_char(self.options.comment_char)
+            ._with_comment_prefix(std::mem::take(&mut self.options.comment_prefix))
             .with_quote_char(self.options.quote_char)
             .with_end_of_line_char(self.options.eol_char)
             .with_encoding(self.options.encoding)
@@ -54,7 +54,7 @@ impl CsvExec {
 impl Executor for CsvExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let finger_print = FileFingerPrint {
-            path: self.path.clone(),
+            paths: Arc::new([self.path.clone()]),
             predicate: self
                 .predicate
                 .as_ref()

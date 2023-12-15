@@ -41,7 +41,7 @@ def test_from_dict_with_scalars() -> None:
     df1 = pl.DataFrame(
         {"key": ["aa", "bb", "cc"], "misc": "xyz", "other": None, "value": 0}
     )
-    assert df1.to_dict(False) == {
+    assert df1.to_dict(as_series=False) == {
         "key": ["aa", "bb", "cc"],
         "misc": ["xyz", "xyz", "xyz"],
         "other": [None, None, None],
@@ -50,7 +50,7 @@ def test_from_dict_with_scalars() -> None:
 
     # edge-case: all scalars
     df2 = pl.DataFrame({"key": "aa", "misc": "xyz", "other": None, "value": 0})
-    assert df2.to_dict(False) == {
+    assert df2.to_dict(as_series=False) == {
         "key": ["aa"],
         "misc": ["xyz"],
         "other": [None],
@@ -59,7 +59,7 @@ def test_from_dict_with_scalars() -> None:
 
     # edge-case: single unsized generator
     df3 = pl.DataFrame({"vals": map(float, [1, 2, 3])})
-    assert df3.to_dict(False) == {"vals": [1.0, 2.0, 3.0]}
+    assert df3.to_dict(as_series=False) == {"vals": [1.0, 2.0, 3.0]}
 
     # ensure we don't accidentally consume or expand map/range/generator
     # cols, and can properly apply schema dtype/ordering directives
@@ -78,7 +78,7 @@ def test_from_dict_with_scalars() -> None:
         },
     )
     assert df4.columns == ["value", "other", "misc", "key"]
-    assert df4.to_dict(False) == {
+    assert df4.to_dict(as_series=False) == {
         "value": ["x", "y", "z"],
         "other": [7.0, 8.0, 9.0],
         "misc": [4, 5, 6],

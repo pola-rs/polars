@@ -44,22 +44,6 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    #[cfg(feature = "cum_agg")]
-    fn _cummax(&self, reverse: bool) -> Series {
-        self.0
-            .cummax(reverse)
-            .into_duration(self.0.time_unit())
-            .into_series()
-    }
-
-    #[cfg(feature = "cum_agg")]
-    fn _cummin(&self, reverse: bool) -> Series {
-        self.0
-            .cummin(reverse)
-            .into_duration(self.0.time_unit())
-            .into_series()
-    }
-
     fn _set_flags(&mut self, flags: Settings) {
         self.0.deref_mut().set_flags(flags)
     }
@@ -413,23 +397,41 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    fn _sum_as_series(&self) -> Series {
-        self.0.sum_as_series().into_duration(self.0.time_unit())
+    fn _sum_as_series(&self) -> PolarsResult<Series> {
+        Ok(self.0.sum_as_series().into_duration(self.0.time_unit()))
     }
 
-    fn max_as_series(&self) -> Series {
-        self.0.max_as_series().into_duration(self.0.time_unit())
+    fn max_as_series(&self) -> PolarsResult<Series> {
+        Ok(self.0.max_as_series().into_duration(self.0.time_unit()))
     }
-    fn min_as_series(&self) -> Series {
-        self.0.min_as_series().into_duration(self.0.time_unit())
+    fn min_as_series(&self) -> PolarsResult<Series> {
+        Ok(self.0.min_as_series().into_duration(self.0.time_unit()))
     }
-    fn median_as_series(&self) -> Series {
-        self.0
+    fn std_as_series(&self, ddof: u8) -> PolarsResult<Series> {
+        Ok(self
+            .0
+            .std_as_series(ddof)
+            .cast(&self.dtype().to_physical())
+            .unwrap()
+            .into_duration(self.0.time_unit()))
+    }
+
+    fn var_as_series(&self, ddof: u8) -> PolarsResult<Series> {
+        Ok(self
+            .0
+            .var_as_series(ddof)
+            .cast(&self.dtype().to_physical())
+            .unwrap()
+            .into_duration(self.0.time_unit()))
+    }
+    fn median_as_series(&self) -> PolarsResult<Series> {
+        Ok(self
+            .0
             .median_as_series()
             .cast(&self.dtype().to_physical())
             .unwrap()
             .cast(self.dtype())
-            .unwrap()
+            .unwrap())
     }
     fn quantile_as_series(
         &self,

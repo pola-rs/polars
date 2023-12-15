@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
-use arrow::legacy::utils::CustomIterTools;
 use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_ops::chunked_array::ListNameSpaceImpl;
+use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 
 use crate::physical_plan::state::ExecutionState;
@@ -26,7 +27,7 @@ impl SortExpr {
 }
 
 /// Map arg_sort result back to the indices on the `GroupIdx`
-pub(crate) fn map_sorted_indices_to_group_idx(sorted_idx: &IdxCa, idx: &[IdxSize]) -> Vec<IdxSize> {
+pub(crate) fn map_sorted_indices_to_group_idx(sorted_idx: &IdxCa, idx: &[IdxSize]) -> IdxVec {
     sorted_idx
         .cont_slice()
         .unwrap()
@@ -35,19 +36,16 @@ pub(crate) fn map_sorted_indices_to_group_idx(sorted_idx: &IdxCa, idx: &[IdxSize
             debug_assert!(idx.get(i as usize).is_some());
             unsafe { *idx.get_unchecked(i as usize) }
         })
-        .collect_trusted()
+        .collect()
 }
 
-pub(crate) fn map_sorted_indices_to_group_slice(
-    sorted_idx: &IdxCa,
-    first: IdxSize,
-) -> Vec<IdxSize> {
+pub(crate) fn map_sorted_indices_to_group_slice(sorted_idx: &IdxCa, first: IdxSize) -> IdxVec {
     sorted_idx
         .cont_slice()
         .unwrap()
         .iter()
         .map(|&i| i + first)
-        .collect_trusted()
+        .collect()
 }
 
 impl PhysicalExpr for SortExpr {
@@ -114,9 +112,5 @@ impl PhysicalExpr for SortExpr {
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.physical_expr.to_field(input_schema)
-    }
-
-    fn is_valid_aggregation(&self) -> bool {
-        true
     }
 }

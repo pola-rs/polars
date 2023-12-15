@@ -1,7 +1,3 @@
-use std::any::Any;
-
-use polars_core::prelude::QuantileInterpolOptions::Linear;
-
 use super::*;
 
 #[test]
@@ -181,7 +177,7 @@ fn test_rolling_map() {
 
     let out = ca
         .rolling_map(
-            &|s| s.sum_as_series(),
+            &|s| s.sum_as_series().unwrap(),
             RollingOptionsFixedWindow {
                 window_size: 3,
                 min_periods: 3,
@@ -291,137 +287,4 @@ fn test_rolling_var() {
         "{:?} is not approximately equal to {:?}",
         out, exp_res
     );
-}
-
-#[test]
-fn test_median_quantile_types() {
-    let s = Int32Chunked::new("foo", &[1, 2, 3, 2, 1]).into_series();
-    let rol_med = s
-        .rolling_median(RollingOptionsImpl {
-            window_size: Duration::new(2),
-            min_periods: 1,
-            ..Default::default()
-        })
-        .unwrap();
-
-    let rol_med_weighted = s
-        .rolling_median(RollingOptionsImpl {
-            window_size: Duration::new(2),
-            min_periods: 1,
-            weights: Some(vec![1.0, 2.0]),
-            ..Default::default()
-        })
-        .unwrap();
-
-    let rq_params = Some(Arc::new(RollingQuantileParams {
-        prob: 0.3,
-        interpol: Linear,
-    }) as Arc<dyn Any + Send + Sync>);
-    let rol_quantile = s
-        .rolling_quantile(RollingOptionsImpl {
-            window_size: Duration::new(2),
-            min_periods: 1,
-            fn_params: rq_params.clone(),
-            ..Default::default()
-        })
-        .unwrap();
-
-    let rol_quantile_weighted = s
-        .rolling_quantile(RollingOptionsImpl {
-            window_size: Duration::new(2),
-            min_periods: 1,
-            weights: Some(vec![1.0, 2.0]),
-            fn_params: rq_params.clone(),
-            ..Default::default()
-        })
-        .unwrap();
-
-    assert_eq!(*rol_med.dtype(), DataType::Float64);
-    assert_eq!(*rol_med_weighted.dtype(), DataType::Float64);
-    assert_eq!(*rol_quantile.dtype(), DataType::Float64);
-    assert_eq!(*rol_quantile_weighted.dtype(), DataType::Float64);
-
-    let s = Float32Chunked::new("foo", &[1.0, 2.0, 3.0, 2.0, 1.0]).into_series();
-    let rol_med = s
-        .rolling_median(RollingOptionsImpl {
-            window_size: Duration::new(2),
-            min_periods: 1,
-            ..Default::default()
-        })
-        .unwrap();
-
-    let rol_med_weighted = s
-        .rolling_median(RollingOptionsImpl {
-            window_size: Duration::new(2),
-            min_periods: 1,
-            weights: Some(vec![1.0, 2.0]),
-            ..Default::default()
-        })
-        .unwrap();
-
-    let rol_quantile = s
-        .rolling_quantile(RollingOptionsImpl {
-            window_size: Duration::new(2),
-            min_periods: 1,
-            fn_params: rq_params.clone(),
-            ..Default::default()
-        })
-        .unwrap();
-
-    let rol_quantile_weighted = s
-        .rolling_quantile(RollingOptionsImpl {
-            window_size: Duration::new(2),
-            min_periods: 1,
-            weights: Some(vec![1.0, 2.0]),
-            fn_params: rq_params.clone(),
-            ..Default::default()
-        })
-        .unwrap();
-
-    assert_eq!(*rol_med.dtype(), DataType::Float32);
-    assert_eq!(*rol_med_weighted.dtype(), DataType::Float32);
-    assert_eq!(*rol_quantile.dtype(), DataType::Float32);
-    assert_eq!(*rol_quantile_weighted.dtype(), DataType::Float32);
-
-    let s1 = Float64Chunked::new("foo", &[1.0, 2.0, 3.0, 2.0, 1.0]).into_series();
-    let rol_med = s1
-        .rolling_median(RollingOptionsImpl {
-            window_size: Duration::new(2),
-            min_periods: 1,
-            ..Default::default()
-        })
-        .unwrap();
-
-    let rol_med_weighted = s1
-        .rolling_median(RollingOptionsImpl {
-            window_size: Duration::new(2),
-            min_periods: 1,
-            weights: Some(vec![1.0, 2.0]),
-            ..Default::default()
-        })
-        .unwrap();
-
-    let rol_quantile = s1
-        .rolling_quantile(RollingOptionsImpl {
-            window_size: Duration::new(2),
-            min_periods: 1,
-            fn_params: rq_params.clone(),
-            ..Default::default()
-        })
-        .unwrap();
-
-    let rol_quantile_weighted = s1
-        .rolling_quantile(RollingOptionsImpl {
-            window_size: Duration::new(2),
-            min_periods: 1,
-            weights: Some(vec![1.0, 2.0]),
-            fn_params: rq_params.clone(),
-            ..Default::default()
-        })
-        .unwrap();
-
-    assert_eq!(*rol_med.dtype(), DataType::Float64);
-    assert_eq!(*rol_med_weighted.dtype(), DataType::Float64);
-    assert_eq!(*rol_quantile.dtype(), DataType::Float64);
-    assert_eq!(*rol_quantile_weighted.dtype(), DataType::Float64);
 }

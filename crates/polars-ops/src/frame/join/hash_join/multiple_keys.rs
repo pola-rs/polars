@@ -1,3 +1,4 @@
+use arrow::array::{MutablePrimitiveArray, PrimitiveArray};
 use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
 use polars_core::hashing::{
@@ -5,6 +6,7 @@ use polars_core::hashing::{
 };
 use polars_core::utils::{_set_partition_size, split_df};
 use polars_core::POOL;
+use polars_utils::hashing::hash_to_partition;
 
 use super::*;
 
@@ -14,9 +16,12 @@ pub(crate) unsafe fn compare_df_rows2(
     right: &DataFrame,
     left_idx: usize,
     right_idx: usize,
+    join_nulls: bool,
 ) -> bool {
     for (l, r) in left.get_columns().iter().zip(right.get_columns()) {
-        if !(l.get_unchecked(left_idx) == r.get_unchecked(right_idx)) {
+        let l = l.get_unchecked(left_idx);
+        let r = r.get_unchecked(right_idx);
+        if !l.eq_missing(&r, join_nulls) {
             return false;
         }
     }
@@ -36,11 +41,9 @@ pub(crate) fn create_probe_table(
         (0..n_partitions)
             .into_par_iter()
             .map(|part_no| {
-                let part_no = part_no as u64;
                 let mut hash_tbl: HashMap<IdxHash, Vec<IdxSize>, IdBuildHasher> =
                     HashMap::with_capacity_and_hasher(_HASHMAP_INIT_SIZE, Default::default());
 
-                let n_partitions = n_partitions as u64;
                 let mut offset = 0;
                 for hashes in hashes {
                     for hashes in hashes.data_views() {
@@ -49,7 +52,7 @@ pub(crate) fn create_probe_table(
                         hashes.iter().for_each(|h| {
                             // partition hashes by thread no.
                             // So only a part of the hashes go to this hashmap
-                            if this_partition(*h, part_no, n_partitions) {
+                            if part_no == hash_to_partition(*h, n_partitions) {
                                 let idx = idx + offset;
                                 populate_multiple_key_hashmap(
                                     &mut hash_tbl,
@@ -85,11 +88,9 @@ fn create_build_table_outer(
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
     POOL.install(|| {
         (0..n_partitions).into_par_iter().map(|part_no| {
-            let part_no = part_no as u64;
             let mut hash_tbl: HashMap<IdxHash, (bool, Vec<IdxSize>), IdBuildHasher> =
                 HashMap::with_capacity_and_hasher(_HASHMAP_INIT_SIZE, Default::default());
 
-            let n_partitions = n_partitions as u64;
             let mut offset = 0;
             for hashes in hashes {
                 for hashes in hashes.data_views() {
@@ -98,7 +99,7 @@ fn create_build_table_outer(
                     hashes.iter().for_each(|h| {
                         // partition hashes by thread no.
                         // So only a part of the hashes go to this hashmap
-                        if this_partition(*h, part_no, n_partitions) {
+                        if part_no == hash_to_partition(*h, n_partitions) {
                             let idx = idx + offset;
                             populate_multiple_key_hashmap(
                                 &mut hash_tbl,
@@ -128,10 +129,11 @@ fn probe_inner<F>(
     hash_tbls: &[HashMap<IdxHash, Vec<IdxSize>, IdBuildHasher>],
     results: &mut Vec<(IdxSize, IdxSize)>,
     local_offset: usize,
-    n_tables: u64,
+    n_tables: usize,
     a: &DataFrame,
     b: &DataFrame,
     swap_fn: F,
+    join_nulls: bool,
 ) where
     F: Fn(IdxSize, IdxSize) -> (IdxSize, IdxSize),
 {
@@ -140,13 +142,13 @@ fn probe_inner<F>(
         for &h in probe_hashes {
             // probe table that contains the hashed value
             let current_probe_table =
-                unsafe { get_hash_tbl_threaded_join_partitioned(h, hash_tbls, n_tables) };
+                unsafe { hash_tbls.get_unchecked(hash_to_partition(h, n_tables)) };
 
             let entry = current_probe_table.raw_entry().from_hash(h, |idx_hash| {
                 let idx_b = idx_hash.idx;
                 // Safety:
                 // indices in a join operation are always in bounds.
-                unsafe { compare_df_rows2(a, b, idx_a as usize, idx_b as usize) }
+                unsafe { compare_df_rows2(a, b, idx_a as usize, idx_b as usize, join_nulls) }
             });
 
             if let Some((_, indexes_b)) = entry {
@@ -174,6 +176,7 @@ pub fn _inner_join_multiple_keys(
     a: &mut DataFrame,
     b: &mut DataFrame,
     swap: bool,
+    join_nulls: bool,
 ) -> (Vec<IdxSize>, Vec<IdxSize>) {
     // we assume that the b DataFrame is the shorter relation.
     // b will be used for the build phase.
@@ -190,7 +193,7 @@ pub fn _inner_join_multiple_keys(
     // early drop to reduce memory pressure
     drop(build_hashes);
 
-    let n_tables = hash_tbls.len() as u64;
+    let n_tables = hash_tbls.len();
     let offsets = get_offsets(&probe_hashes);
     // next we probe the other relation
     // code duplication is because we want to only do the swap check once
@@ -215,6 +218,7 @@ pub fn _inner_join_multiple_keys(
                         a,
                         b,
                         |idx_a, idx_b| (idx_b, idx_a),
+                        join_nulls,
                     )
                 } else {
                     probe_inner(
@@ -226,6 +230,7 @@ pub fn _inner_join_multiple_keys(
                         a,
                         b,
                         |idx_a, idx_b| (idx_a, idx_b),
+                        join_nulls,
                     )
                 }
 
@@ -242,10 +247,17 @@ pub fn private_left_join_multiple_keys(
     // only needed if we have non contiguous memory
     chunk_mapping_left: Option<&[ChunkId]>,
     chunk_mapping_right: Option<&[ChunkId]>,
+    join_nulls: bool,
 ) -> LeftJoinIds {
     let mut a = DataFrame::new_no_checks(_to_physical_and_bit_repr(a.get_columns()));
     let mut b = DataFrame::new_no_checks(_to_physical_and_bit_repr(b.get_columns()));
-    _left_join_multiple_keys(&mut a, &mut b, chunk_mapping_left, chunk_mapping_right)
+    _left_join_multiple_keys(
+        &mut a,
+        &mut b,
+        chunk_mapping_left,
+        chunk_mapping_right,
+        join_nulls,
+    )
 }
 
 pub fn _left_join_multiple_keys(
@@ -255,6 +267,7 @@ pub fn _left_join_multiple_keys(
     // only needed if we have non contiguous memory
     chunk_mapping_left: Option<&[ChunkId]>,
     chunk_mapping_right: Option<&[ChunkId]>,
+    join_nulls: bool,
 ) -> LeftJoinIds {
     // we should not join on logical types
     debug_assert!(!a.iter().any(|s| s.dtype().is_logical()));
@@ -272,7 +285,7 @@ pub fn _left_join_multiple_keys(
     // early drop to reduce memory pressure
     drop(build_hashes);
 
-    let n_tables = hash_tbls.len() as u64;
+    let n_tables = hash_tbls.len();
     let offsets = get_offsets(&probe_hashes);
 
     // next we probe the other relation
@@ -294,15 +307,16 @@ pub fn _left_join_multiple_keys(
                 for probe_hashes in probe_hashes.data_views() {
                     for &h in probe_hashes {
                         // probe table that contains the hashed value
-                        let current_probe_table = unsafe {
-                            get_hash_tbl_threaded_join_partitioned(h, hash_tbls, n_tables)
-                        };
+                        let current_probe_table =
+                            unsafe { hash_tbls.get_unchecked(hash_to_partition(h, n_tables)) };
 
                         let entry = current_probe_table.raw_entry().from_hash(h, |idx_hash| {
                             let idx_b = idx_hash.idx;
                             // Safety:
                             // indices in a join operation are always in bounds.
-                            unsafe { compare_df_rows2(a, b, idx_a as usize, idx_b as usize) }
+                            unsafe {
+                                compare_df_rows2(a, b, idx_a as usize, idx_b as usize, join_nulls)
+                            }
                         });
 
                         match entry {
@@ -346,11 +360,9 @@ pub(crate) fn create_build_table_semi_anti(
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
     POOL.install(|| {
         (0..n_partitions).into_par_iter().map(|part_no| {
-            let part_no = part_no as u64;
             let mut hash_tbl: HashMap<IdxHash, (), IdBuildHasher> =
                 HashMap::with_capacity_and_hasher(_HASHMAP_INIT_SIZE, Default::default());
 
-            let n_partitions = n_partitions as u64;
             let mut offset = 0;
             for hashes in hashes {
                 for hashes in hashes.data_views() {
@@ -359,7 +371,7 @@ pub(crate) fn create_build_table_semi_anti(
                     hashes.iter().for_each(|h| {
                         // partition hashes by thread no.
                         // So only a part of the hashes go to this hashmap
-                        if this_partition(*h, part_no, n_partitions) {
+                        if part_no == hash_to_partition(*h, n_partitions) {
                             let idx = idx + offset;
                             populate_multiple_key_hashmap(
                                 &mut hash_tbl,
@@ -386,6 +398,7 @@ pub(crate) fn create_build_table_semi_anti(
 pub(crate) fn semi_anti_join_multiple_keys_impl<'a>(
     a: &'a mut DataFrame,
     b: &'a mut DataFrame,
+    join_nulls: bool,
 ) -> impl ParallelIterator<Item = (IdxSize, bool)> + 'a {
     // we should not join on logical types
     debug_assert!(!a.iter().any(|s| s.dtype().is_logical()));
@@ -403,7 +416,7 @@ pub(crate) fn semi_anti_join_multiple_keys_impl<'a>(
     // early drop to reduce memory pressure
     drop(build_hashes);
 
-    let n_tables = hash_tbls.len() as u64;
+    let n_tables = hash_tbls.len();
     let offsets = get_offsets(&probe_hashes);
 
     // next we probe the other relation
@@ -423,15 +436,16 @@ pub(crate) fn semi_anti_join_multiple_keys_impl<'a>(
                 for probe_hashes in probe_hashes.data_views() {
                     for &h in probe_hashes {
                         // probe table that contains the hashed value
-                        let current_probe_table = unsafe {
-                            get_hash_tbl_threaded_join_partitioned(h, hash_tbls, n_tables)
-                        };
+                        let current_probe_table =
+                            unsafe { hash_tbls.get_unchecked(hash_to_partition(h, n_tables)) };
 
                         let entry = current_probe_table.raw_entry().from_hash(h, |idx_hash| {
                             let idx_b = idx_hash.idx;
                             // Safety:
                             // indices in a join operation are always in bounds.
-                            unsafe { compare_df_rows2(a, b, idx_a as usize, idx_b as usize) }
+                            unsafe {
+                                compare_df_rows2(a, b, idx_a as usize, idx_b as usize, join_nulls)
+                            }
                         });
 
                         match entry {
@@ -450,16 +464,24 @@ pub(crate) fn semi_anti_join_multiple_keys_impl<'a>(
 }
 
 #[cfg(feature = "semi_anti_join")]
-pub fn _left_anti_multiple_keys(a: &mut DataFrame, b: &mut DataFrame) -> Vec<IdxSize> {
-    semi_anti_join_multiple_keys_impl(a, b)
+pub fn _left_anti_multiple_keys(
+    a: &mut DataFrame,
+    b: &mut DataFrame,
+    join_nulls: bool,
+) -> Vec<IdxSize> {
+    semi_anti_join_multiple_keys_impl(a, b, join_nulls)
         .filter(|tpls| !tpls.1)
         .map(|tpls| tpls.0)
         .collect()
 }
 
 #[cfg(feature = "semi_anti_join")]
-pub fn _left_semi_multiple_keys(a: &mut DataFrame, b: &mut DataFrame) -> Vec<IdxSize> {
-    semi_anti_join_multiple_keys_impl(a, b)
+pub fn _left_semi_multiple_keys(
+    a: &mut DataFrame,
+    b: &mut DataFrame,
+    join_nulls: bool,
+) -> Vec<IdxSize> {
+    semi_anti_join_multiple_keys_impl(a, b, join_nulls)
         .filter(|tpls| tpls.1)
         .map(|tpls| tpls.0)
         .collect()
@@ -471,8 +493,11 @@ pub fn _left_semi_multiple_keys(a: &mut DataFrame, b: &mut DataFrame) -> Vec<Idx
 fn probe_outer<F, G, H>(
     probe_hashes: &[UInt64Chunked],
     hash_tbls: &mut [HashMap<IdxHash, (bool, Vec<IdxSize>), IdBuildHasher>],
-    results: &mut Vec<(Option<IdxSize>, Option<IdxSize>)>,
-    n_tables: u64,
+    results: &mut (
+        MutablePrimitiveArray<IdxSize>,
+        MutablePrimitiveArray<IdxSize>,
+    ),
+    n_tables: usize,
     a: &DataFrame,
     b: &DataFrame,
     // Function that get index_a, index_b when there is a match and pushes to result
@@ -481,6 +506,7 @@ fn probe_outer<F, G, H>(
     swap_fn_no_match: G,
     // Function that get index_b from the build table that did not match any in A and pushes to result
     swap_fn_drain: H,
+    join_nulls: bool,
 ) where
     // idx_a, idx_b -> ...
     F: Fn(IdxSize, IdxSize) -> (Option<IdxSize>, Option<IdxSize>),
@@ -499,7 +525,7 @@ fn probe_outer<F, G, H>(
             for &h in probe_hashes {
                 // probe table that contains the hashed value
                 let current_probe_table =
-                    unsafe { get_hash_tbl_threaded_join_mut_partitioned(h, hash_tbls, n_tables) };
+                    unsafe { hash_tbls.get_unchecked_mut(hash_to_partition(h, n_tables)) };
 
                 let entry = current_probe_table
                     .raw_entry_mut()
@@ -507,7 +533,9 @@ fn probe_outer<F, G, H>(
                         let idx_b = idx_hash.idx;
                         // Safety:
                         // indices in a join operation are always in bounds.
-                        unsafe { compare_df_rows2(a, b, idx_a as usize, idx_b as usize) }
+                        unsafe {
+                            compare_df_rows2(a, b, idx_a as usize, idx_b as usize, join_nulls)
+                        }
                     });
 
                 match entry {
@@ -515,10 +543,18 @@ fn probe_outer<F, G, H>(
                     RawEntryMut::Occupied(mut occupied) => {
                         let (tracker, indexes_b) = occupied.get_mut();
                         *tracker = true;
-                        results.extend(indexes_b.iter().map(|&idx_b| swap_fn_match(idx_a, idx_b)))
+
+                        for (l, r) in indexes_b.iter().map(|&idx_b| swap_fn_match(idx_a, idx_b)) {
+                            results.0.push(l);
+                            results.1.push(r);
+                        }
                     },
                     // no match
-                    RawEntryMut::Vacant(_) => results.push(swap_fn_no_match(idx_a)),
+                    RawEntryMut::Vacant(_) => {
+                        let (l, r) = swap_fn_no_match(idx_a);
+                        results.0.push(l);
+                        results.1.push(r);
+                    },
                 }
                 idx_a += 1;
             }
@@ -529,7 +565,10 @@ fn probe_outer<F, G, H>(
         hash_tbl.iter().for_each(|(_k, (tracker, indexes_b))| {
             // remaining unmatched joined values from the right table
             if !*tracker {
-                results.extend(indexes_b.iter().map(|&idx_b| swap_fn_drain(idx_b)))
+                for (l, r) in indexes_b.iter().map(|&idx_b| swap_fn_drain(idx_b)) {
+                    results.0.push(l);
+                    results.1.push(r);
+                }
             }
         });
     }
@@ -539,12 +578,16 @@ pub fn _outer_join_multiple_keys(
     a: &mut DataFrame,
     b: &mut DataFrame,
     swap: bool,
-) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
+    join_nulls: bool,
+) -> (PrimitiveArray<IdxSize>, PrimitiveArray<IdxSize>) {
     // we assume that the b DataFrame is the shorter relation.
     // b will be used for the build phase.
 
     let size = a.height() + b.height();
-    let mut results = Vec::with_capacity(size);
+    let mut results = (
+        MutablePrimitiveArray::with_capacity(size),
+        MutablePrimitiveArray::with_capacity(size),
+    );
 
     let n_threads = POOL.current_num_threads();
     let dfs_a = split_df(a, n_threads).unwrap();
@@ -558,7 +601,7 @@ pub fn _outer_join_multiple_keys(
     // early drop to reduce memory pressure
     drop(build_hashes);
 
-    let n_tables = hash_tbls.len() as u64;
+    let n_tables = hash_tbls.len();
     // probe the hash table.
     // Note: indexes from b that are not matched will be None, Some(idx_b)
     // Therefore we remove the matches and the remaining will be joined from the right
@@ -575,6 +618,7 @@ pub fn _outer_join_multiple_keys(
             |idx_a, idx_b| (Some(idx_b), Some(idx_a)),
             |idx_a| (None, Some(idx_a)),
             |idx_b| (Some(idx_b), None),
+            join_nulls,
         )
     } else {
         probe_outer(
@@ -587,7 +631,8 @@ pub fn _outer_join_multiple_keys(
             |idx_a, idx_b| (Some(idx_a), Some(idx_b)),
             |idx_a| (Some(idx_a), None),
             |idx_b| (None, Some(idx_b)),
+            join_nulls,
         )
     }
-    results
+    (results.0.into(), results.1.into())
 }

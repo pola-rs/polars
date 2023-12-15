@@ -29,19 +29,25 @@ def test_cse_expr_selection_streaming(monkeypatch: Any, capfd: Any) -> None:
         (derived2 * 10).alias("d3"),
     ]
 
-    assert q.select(exprs).collect(comm_subexpr_elim=True, streaming=True).to_dict(
-        False
-    ) == {"d1": [1, 4, 9, 16], "d2": [1, 16, 81, 256], "d3": [10, 160, 810, 2560]}
-    assert q.with_columns(exprs).collect(
-        comm_subexpr_elim=True, streaming=True
-    ).to_dict(False) == {
-        "a": [1, 2, 3, 4],
-        "b": [1, 2, 3, 4],
-        "c": [1, 2, 3, 4],
-        "d1": [1, 4, 9, 16],
-        "d2": [1, 16, 81, 256],
-        "d3": [10, 160, 810, 2560],
-    }
+    result = q.select(exprs).collect(comm_subexpr_elim=True, streaming=True)
+    expected = pl.DataFrame(
+        {"d1": [1, 4, 9, 16], "d2": [1, 16, 81, 256], "d3": [10, 160, 810, 2560]}
+    )
+    assert_frame_equal(result, expected)
+
+    result = q.with_columns(exprs).collect(comm_subexpr_elim=True, streaming=True)
+    expected = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4],
+            "b": [1, 2, 3, 4],
+            "c": [1, 2, 3, 4],
+            "d1": [1, 4, 9, 16],
+            "d2": [1, 16, 81, 256],
+            "d3": [10, 160, 810, 2560],
+        }
+    )
+    assert_frame_equal(result, expected)
+
     err = capfd.readouterr().err
     assert "df -> projection[cse] -> ordered_sink" in err
     assert "df -> hstack[cse] -> ordered_sink" in err
@@ -73,7 +79,7 @@ def test_cse_expr_group_by() -> None:
     # check if it uses CSE_expr
     # and is a complete pipeline
     assert "__POLARS_CSER" in s
-    assert s.startswith("--- PIPELINE")
+    assert s.startswith("--- STREAMING")
 
     expected = pl.DataFrame(
         {"a": [1, 2, 3, 4], "sum": [1, 4, 9, 16], "min": [1, 4, 9, 16]}

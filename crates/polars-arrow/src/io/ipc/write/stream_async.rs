@@ -17,37 +17,6 @@ use crate::datatypes::*;
 /// A sink that writes array [`chunks`](crate::chunk::Chunk) as an IPC stream.
 ///
 /// The stream header is automatically written before writing the first chunk.
-///
-/// # Examples
-///
-/// ```
-/// use futures::SinkExt;
-/// use polars_arrow::array::{Array, Int32Array};
-/// use polars_arrow::datatypes::{DataType, Field, Schema};
-/// use polars_arrow::chunk::Chunk;
-/// # use polars_arrow::io::ipc::write::stream_async::StreamSink;
-/// # futures::executor::block_on(async move {
-/// let schema = Schema::from(vec![
-///     Field::new("values", DataType::Int32, true),
-/// ]);
-///
-/// let mut buffer = vec![];
-/// let mut sink = StreamSink::new(
-///     &mut buffer,
-///     &schema,
-///     None,
-///     Default::default(),
-/// );
-///
-/// for i in 0..3 {
-///     let values = Int32Array::from(&[Some(i), None]);
-///     let chunk = Chunk::new(vec![values.boxed()]);
-///     sink.feed(chunk.into()).await?;
-/// }
-/// sink.close().await?;
-/// # polars_arrow::error::Result::Ok(())
-/// # }).unwrap();
-/// ```
 pub struct StreamSink<'a, W: AsyncWrite + Unpin + Send + 'a> {
     writer: Option<W>,
     task: Option<BoxFuture<'a, PolarsResult<Option<W>>>>,
@@ -63,7 +32,7 @@ where
     /// Create a new [`StreamSink`].
     pub fn new(
         writer: W,
-        schema: &Schema,
+        schema: &ArrowSchema,
         ipc_fields: Option<Vec<IpcField>>,
         write_options: WriteOptions,
     ) -> Self {
@@ -83,7 +52,7 @@ where
 
     fn start(
         mut writer: W,
-        schema: &Schema,
+        schema: &ArrowSchema,
         ipc_fields: &[IpcField],
     ) -> BoxFuture<'a, PolarsResult<Option<W>>> {
         let message = EncodedData {

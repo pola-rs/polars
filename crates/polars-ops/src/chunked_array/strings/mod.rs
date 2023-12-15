@@ -6,10 +6,10 @@ mod concat;
 mod extract;
 #[cfg(feature = "extract_jsonpath")]
 mod json_path;
-#[cfg(feature = "string_justify")]
-mod justify;
 #[cfg(feature = "strings")]
 mod namespace;
+#[cfg(feature = "string_pad")]
+mod pad;
 #[cfg(feature = "strings")]
 mod replace;
 #[cfg(feature = "strings")]
@@ -18,6 +18,9 @@ mod split;
 mod strip;
 #[cfg(feature = "strings")]
 mod substring;
+
+#[cfg(all(not(feature = "nightly"), feature = "strings"))]
+mod unicode_internals;
 
 #[cfg(feature = "strings")]
 pub use concat::*;
@@ -30,6 +33,8 @@ use polars_core::prelude::*;
 pub use split::*;
 #[cfg(feature = "strings")]
 pub use strip::*;
+#[cfg(feature = "string_reverse")]
+mod reverse;
 
 pub trait AsUtf8 {
     fn as_utf8(&self) -> &Utf8Chunked;

@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 import io
-from typing import Any
+import operator
+import re
+from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
 
 import polars as pl
 from polars import StringCache
-from polars.exceptions import StringCacheMismatchError
-from polars.testing import assert_frame_equal
+from polars.exceptions import (
+    CategoricalRemappingWarning,
+    StringCacheMismatchError,
+)
+from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars.type_aliases import PolarsDataType
 
 
 @StringCache()
@@ -30,8 +38,15 @@ def test_categorical_outer_join() -> None:
     ).lazy()
 
     expected = pl.DataFrame(
-        {"key1": [42], "key2": ["bar"], "val1": [1], "val2": [2]},
-        schema_overrides={"key2": pl.Categorical},
+        {
+            "key1": [42],
+            "key2": ["bar"],
+            "val1": [1],
+            "key1_right": [42],
+            "key2_right": ["bar"],
+            "val2": [2],
+        },
+        schema_overrides={"key2": pl.Categorical, "key2_right": pl.Categorical},
     )
 
     out = df1.join(df2, on=["key1", "key2"], how="outer").collect()
@@ -52,7 +67,8 @@ def test_categorical_outer_join() -> None:
 
     df = dfa.join(dfb, on="key", how="outer")
     # the cast is important to test the rev map
-    assert df["key"].cast(pl.Utf8).to_list() == ["bar", "baz", "foo"]
+    assert df["key"].cast(pl.Utf8).to_list() == ["bar", None, "foo"]
+    assert df["key_right"].cast(pl.Utf8).to_list() == ["bar", "baz", None]
 
 
 def test_read_csv_categorical() -> None:
@@ -66,7 +82,7 @@ def test_read_csv_categorical() -> None:
 def test_cat_to_dummies() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3, 4], "bar": ["a", "b", "a", "c"]})
     df = df.with_columns(pl.col("bar").cast(pl.Categorical))
-    assert df.to_dummies().to_dict(False) == {
+    assert df.to_dummies().to_dict(as_series=False) == {
         "foo_1": [1, 0, 0, 0],
         "foo_2": [0, 1, 0, 0],
         "foo_3": [0, 0, 1, 0],
@@ -75,13 +91,6 @@ def test_cat_to_dummies() -> None:
         "bar_b": [0, 1, 0, 0],
         "bar_c": [0, 0, 0, 1],
     }
-
-
-def test_categorical_describe_3487() -> None:
-    # test if we don't err
-    df = pl.DataFrame({"cats": ["a", "b"]})
-    df = df.with_columns(pl.col("cats").cast(pl.Categorical))
-    df.describe()
 
 
 @StringCache()
@@ -94,7 +103,7 @@ def test_categorical_is_in_list() -> None:
     ).with_columns(pl.col("b").cast(pl.Categorical))
 
     cat_list = ("a", "b", "c")
-    assert df.filter(pl.col("b").is_in(cat_list)).to_dict(False) == {
+    assert df.filter(pl.col("b").is_in(cat_list)).to_dict(as_series=False) == {
         "a": [1, 2, 3],
         "b": ["a", "b", "c"],
     }
@@ -118,6 +127,77 @@ def test_unset_sorted_on_append() -> None:
     assert df.group_by("key").count()["count"].to_list() == [4, 4]
 
 
+def test_categorical_equality() -> None:
+    df_cat = pl.DataFrame(
+        [
+            pl.Series("a_cat", ["a", "b", "c", "c", "b", "a"], dtype=pl.Categorical),
+            pl.Series("b_cat", ["a", "b", "c", "a", "b", "c"], dtype=pl.Categorical),
+        ]
+    )
+    df_cat_eq = df_cat.filter(pl.col("a_cat") == pl.col("b_cat"))
+    assert df_cat_eq.select(pl.col("a_cat")).to_dict(as_series=False) == {
+        "a_cat": ["a", "b", "c", "b"]
+    }
+
+    df_cat_neq = df_cat.filter(pl.col("a_cat") != pl.col("b_cat"))
+    assert df_cat_neq.select(pl.col("a_cat")).to_dict(as_series=False) == {
+        "a_cat": ["c", "a"]
+    }
+
+
+def test_categorical_error_on_local_ordering() -> None:
+    df_cat = pl.DataFrame(
+        [
+            pl.Series("a_cat", ["c", "a", "b", "c", "b"], dtype=pl.Categorical),
+            pl.Series("b_cat", ["c", "a", "b", "c", "b"], dtype=pl.Categorical),
+        ]
+    )
+    for op in [operator.gt, operator.ge, operator.lt, operator.le]:
+        with pytest.raises(
+            pl.ComputeError,
+            match=re.escape(
+                "can not compare (<, <=, >, >=) two categoricals, unless they are of Enum type"
+            ),
+        ):
+            df_cat.filter(op(pl.col("a_cat"), pl.col("b_cat")))
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        (operator.le, pl.Series([None, True, True, True, True, True])),
+        (operator.lt, pl.Series([None, False, False, False, True, True])),
+        (operator.ge, pl.Series([None, True, True, True, False, False])),
+        (operator.gt, pl.Series([None, False, False, False, False, False])),
+    ],
+)
+def test_compare_categorical(
+    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
+) -> None:
+    s = pl.Series([None, "a", "b", "c", "b", "a"], dtype=pl.Categorical)
+    s2 = pl.Series([None, "a", "b", "c", "c", "b"])
+
+    assert_series_equal(op(s, s2), expected)
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        (operator.le, pl.Series([None, True, True, False, True, True])),
+        (operator.lt, pl.Series([None, True, False, False, False, True])),
+        (operator.ge, pl.Series([None, False, True, True, True, False])),
+        (operator.gt, pl.Series([None, False, False, True, False, False])),
+    ],
+)
+def test_compare_categorical_single(
+    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
+) -> None:
+    s = pl.Series([None, "a", "b", "c", "b", "a"], dtype=pl.Categorical)
+    s2 = "b"
+
+    assert_series_equal(op(s, s2), expected)  # type: ignore[arg-type]
+
+
 def test_categorical_error_on_local_cmp() -> None:
     df_cat = pl.DataFrame(
         [
@@ -126,11 +206,8 @@ def test_categorical_error_on_local_cmp() -> None:
         ]
     )
     with pytest.raises(
-        pl.ComputeError,
-        match=(
-            "cannot compare categoricals originating from different sources; consider"
-            " setting a global string cache"
-        ),
+        StringCacheMismatchError,
+        match="cannot compare categoricals coming from different sources",
     ):
         df_cat.filter(pl.col("a_cat") == pl.col("b_cat"))
 
@@ -139,16 +216,6 @@ def test_cast_null_to_categorical() -> None:
     assert pl.DataFrame().with_columns(
         [pl.lit(None).cast(pl.Categorical).alias("nullable_enum")]
     ).dtypes == [pl.Categorical]
-
-
-def test_shift_and_fill() -> None:
-    df = pl.DataFrame({"a": ["a", "b"]}).with_columns(
-        [pl.col("a").cast(pl.Categorical)]
-    )
-
-    s = df.with_columns(pl.col("a").shift_and_fill("c", periods=1))["a"]
-    assert s.dtype == pl.Categorical
-    assert s.to_list() == ["c", "a"]
 
 
 @StringCache()
@@ -163,7 +230,7 @@ def test_merge_lit_under_global_cache_4491() -> None:
         pl.when(pl.col("value") > 5)
         .then(pl.col("label"))
         .otherwise(pl.lit(None, pl.Categorical))
-    ).to_dict(False) == {"label": [None, "bar"], "value": [3, 9]}
+    ).to_dict(as_series=False) == {"label": [None, "bar"], "value": [3, 9]}
 
 
 def test_nested_cache_composition() -> None:
@@ -199,14 +266,6 @@ def test_nested_cache_composition() -> None:
     assert pl.using_string_cache() is False
 
 
-def test_categorical_max_null_5437() -> None:
-    assert (
-        pl.DataFrame({"strings": ["c", "b", "a", "c"], "values": [0, 1, 2, 3]})
-        .with_columns(pl.col("strings").cast(pl.Categorical).alias("cats"))
-        .select(pl.all().max())
-    ).to_dict(False) == {"strings": ["c"], "values": [3], "cats": [None]}
-
-
 def test_categorical_in_struct_nulls() -> None:
     s = pl.Series(
         "job", ["doctor", "waiter", None, None, None, "doctor"], pl.Categorical
@@ -214,9 +273,9 @@ def test_categorical_in_struct_nulls() -> None:
     df = pl.DataFrame([s])
     s = (df.select(pl.col("job").value_counts(sort=True)))["job"]
 
-    assert s[0] == {"job": None, "counts": 3}
-    assert s[1] == {"job": "doctor", "counts": 2}
-    assert s[2] == {"job": "waiter", "counts": 1}
+    assert s[0] == {"job": None, "count": 3}
+    assert s[1] == {"job": "doctor", "count": 2}
+    assert s[2] == {"job": "waiter", "count": 1}
 
 
 def test_cast_inner_categorical() -> None:
@@ -241,12 +300,29 @@ def test_stringcache() -> None:
         df = pl.DataFrame({"cats": pl.arange(0, N, eager=True)}).select(
             [pl.col("cats").cast(pl.Utf8).cast(pl.Categorical)]
         )
-        assert df.filter(pl.col("cats").is_in(["1", "2"])).to_dict(False) == {
+        assert df.filter(pl.col("cats").is_in(["1", "2"])).to_dict(as_series=False) == {
             "cats": ["1", "2"]
         }
 
 
+@pytest.mark.parametrize(
+    ("dtype", "outcome"),
+    [
+        (pl.Categorical, ["foo", "bar", "baz"]),
+        (pl.Categorical("physical"), ["foo", "bar", "baz"]),
+        (pl.Categorical("lexical"), ["bar", "baz", "foo"]),
+    ],
+)
+def test_categorical_sort_order_by_parameter(
+    dtype: PolarsDataType, outcome: list[str]
+) -> None:
+    s = pl.Series(["foo", "bar", "baz"], dtype=dtype)
+    df = pl.DataFrame({"cat": s})
+    assert df.sort(["cat"])["cat"].to_list() == outcome
+
+
 @StringCache()
+@pytest.mark.filterwarnings("ignore:`set_ordering` is deprecated:DeprecationWarning")
 def test_categorical_sort_order(monkeypatch: Any) -> None:
     # create the categorical ordering first
     pl.Series(["foo", "bar", "baz"], dtype=pl.Categorical)
@@ -267,6 +343,9 @@ def test_categorical_sort_order(monkeypatch: Any) -> None:
     assert df.with_columns(pl.col("x").cat.set_ordering("lexical")).sort(["n", "x"])[
         "x"
     ].to_list() == ["bar", "baz", "foo"]
+    assert df.with_columns(pl.col("x").cast(pl.Categorical("lexical"))).sort(
+        ["n", "x"]
+    )["x"].to_list() == ["bar", "baz", "foo"]
 
 
 def test_err_on_categorical_asof_join_by_arg() -> None:
@@ -309,15 +388,9 @@ def test_nested_categorical_aggregation_7848() -> None:
         }
     ).with_columns([pl.col("letter").cast(pl.Categorical)]).group_by(
         maintain_order=True, by=["group"]
-    ).all().with_columns(
-        [pl.col("letter").list.len().alias("c_group")]
-    ).group_by(
+    ).all().with_columns(pl.col("letter").list.len().alias("c_group")).group_by(
         by=["c_group"], maintain_order=True
-    ).agg(
-        pl.col("letter")
-    ).to_dict(
-        False
-    ) == {
+    ).agg(pl.col("letter")).to_dict(as_series=False) == {
         "c_group": [2, 3],
         "letter": [[["a", "b"], ["f", "g"]], [["c", "d", "e"]]],
     }
@@ -347,14 +420,10 @@ def test_struct_categorical_nesting() -> None:
 
 def test_categorical_fill_null_existing_category() -> None:
     # ensure physical types align
-    assert pl.DataFrame(
-        {"col": ["a", None, "a"]}, schema={"col": pl.Categorical}
-    ).fill_null("a").with_columns(pl.col("col").to_physical().alias("code")).to_dict(
-        False
-    ) == {
-        "col": ["a", "a", "a"],
-        "code": [0, 0, 0],
-    }
+    df = pl.DataFrame({"col": ["a", None, "a"]}, schema={"col": pl.Categorical})
+    result = df.fill_null("a").with_columns(pl.col("col").to_physical().alias("code"))
+    expected = {"col": ["a", "a", "a"], "code": [0, 0, 0]}
+    assert result.to_dict(as_series=False) == expected
 
 
 @StringCache()
@@ -365,7 +434,7 @@ def test_categorical_fill_null_stringcache() -> None:
     )
     a = df.select(pl.col("cat").fill_null("hi")).collect()
 
-    assert a.to_dict(False) == {"cat": ["a", "b", "hi"]}
+    assert a.to_dict(as_series=False) == {"cat": ["a", "b", "hi"]}
     assert a.dtypes == [pl.Categorical]
 
 
@@ -405,7 +474,7 @@ def test_list_builder_different_categorical_rev_maps() -> None:
         s1 = pl.Series(["a", "b"], dtype=pl.Categorical)
         s2 = pl.Series(["c", "d"], dtype=pl.Categorical)
 
-    assert pl.DataFrame({"c": [s1, s2]}).to_dict(False) == {
+    assert pl.DataFrame({"c": [s1, s2]}).to_dict(as_series=False) == {
         "c": [["a", "b"], ["c", "d"]]
     }
 
@@ -418,7 +487,81 @@ def test_categorical_collect_11408() -> None:
 
     assert df.group_by("groups").agg(
         pl.col("cats").filter(pl.col("amount") == pl.col("amount").min()).first()
-    ).sort("groups").to_dict(False) == {
+    ).sort("groups").to_dict(as_series=False) == {
         "groups": ["a", "b", "c"],
         "cats": ["a", "b", "c"],
     }
+
+
+def test_categorical_nested_cast_unchecked() -> None:
+    s = pl.Series("cat", [["cat"]]).cast(pl.List(pl.Categorical))
+    assert pl.Series([s]).to_list() == [[["cat"]]]
+
+
+def test_categorical_update_lengths() -> None:
+    with pl.StringCache():
+        s1 = pl.Series(["", ""], dtype=pl.Categorical)
+        s2 = pl.Series([None, "", ""], dtype=pl.Categorical)
+
+    s = pl.concat([s1, s2], rechunk=False)
+    assert s.null_count() == 1
+    assert s.len() == 5
+
+
+def test_categorical_zip_append_local_different_rev_map() -> None:
+    s1 = pl.Series(["cat1", "cat2", "cat1"], dtype=pl.Categorical)
+    s2 = pl.Series(["cat2", "cat2", "cat3"], dtype=pl.Categorical)
+    with pytest.warns(
+        CategoricalRemappingWarning,
+        match="Local categoricals have different encodings",
+    ):
+        s3 = s1.append(s2)
+    categories = s3.cat.get_categories()
+    assert len(categories) == 3
+    assert set(categories) == {"cat1", "cat2", "cat3"}
+
+
+def test_categorical_zip_extend_local_different_rev_map() -> None:
+    s1 = pl.Series(["cat1", "cat2", "cat1"], dtype=pl.Categorical)
+    s2 = pl.Series(["cat2", "cat2", "cat3"], dtype=pl.Categorical)
+    with pytest.warns(
+        CategoricalRemappingWarning,
+        match="Local categoricals have different encodings",
+    ):
+        s3 = s1.extend(s2)
+    categories = s3.cat.get_categories()
+    assert len(categories) == 3
+    assert set(categories) == {"cat1", "cat2", "cat3"}
+
+
+def test_categorical_zip_with_local_different_rev_map() -> None:
+    s1 = pl.Series(["cat1", "cat2", "cat1"], dtype=pl.Categorical)
+    mask = pl.Series([True, False, False])
+    s2 = pl.Series(["cat2", "cat2", "cat3"], dtype=pl.Categorical)
+    with pytest.warns(
+        CategoricalRemappingWarning,
+        match="Local categoricals have different encodings",
+    ):
+        s3 = s1.zip_with(mask, s2)
+    categories = s3.cat.get_categories()
+    assert len(categories) == 3
+    assert set(categories) == {"cat1", "cat2", "cat3"}
+
+
+def test_categorical_vstack_with_local_different_rev_map() -> None:
+    df1 = pl.DataFrame({"a": pl.Series(["a", "b", "c"], dtype=pl.Categorical)})
+    df2 = pl.DataFrame({"a": pl.Series(["d", "e", "f"], dtype=pl.Categorical)})
+    with pytest.warns(
+        CategoricalRemappingWarning,
+        match="Local categoricals have different encodings",
+    ):
+        df3 = df1.vstack(df2)
+    assert df3.get_column("a").cat.get_categories().to_list() == [
+        "a",
+        "b",
+        "c",
+        "d",
+        "e",
+        "f",
+    ]
+    assert df3.get_column("a").cast(pl.UInt32).to_list() == [0, 1, 2, 3, 4, 5]

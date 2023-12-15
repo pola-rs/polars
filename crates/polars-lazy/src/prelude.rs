@@ -1,5 +1,6 @@
-pub(crate) use polars_ops::prelude::*;
 pub use polars_ops::prelude::{JoinArgs, JoinType, JoinValidation};
+#[cfg(feature = "rank")]
+pub use polars_ops::prelude::{RankMethod, RankOptions};
 pub use polars_plan::logical_plan::{
     AnonymousScan, AnonymousScanOptions, Literal, LiteralValue, LogicalPlan, Null, NULL,
 };
@@ -7,6 +8,8 @@ pub use polars_plan::logical_plan::{
 pub use polars_plan::prelude::CsvWriterOptions;
 #[cfg(feature = "ipc")]
 pub use polars_plan::prelude::IpcWriterOptions;
+#[cfg(feature = "json")]
+pub use polars_plan::prelude::JsonWriterOptions;
 #[cfg(feature = "parquet")]
 pub use polars_plan::prelude::ParquetWriteOptions;
 pub(crate) use polars_plan::prelude::*;

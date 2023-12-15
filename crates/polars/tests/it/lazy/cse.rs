@@ -34,7 +34,7 @@ fn test_cse_union_schema_6504() -> PolarsResult<()> {
         "a" => [1, 0],
         "b" => [2, 1],
     ]?;
-    assert!(out.frame_equal(&expected));
+    assert!(out.equals(&expected));
 
     Ok(())
 }

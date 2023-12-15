@@ -1,35 +1,79 @@
+use ahash::RandomState;
+
 use super::*;
 
-pub(super) struct ListCategoricalChunkedBuilder {
-    inner: ListPrimitiveChunkedBuilder<UInt32Type>,
-    inner_dtype: RevMapMerger,
+pub fn create_categorical_chunked_listbuilder(
+    name: &str,
+    ordering: CategoricalOrdering,
+    capacity: usize,
+    values_capacity: usize,
+    rev_map: Arc<RevMapping>,
+) -> Box<dyn ListBuilderTrait> {
+    match &*rev_map {
+        RevMapping::Enum(_, h) => Box::new(ListEnumCategoricalChunkedBuilder::new(
+            name,
+            ordering,
+            capacity,
+            values_capacity,
+            (*rev_map).clone(),
+            *h,
+        )),
+        RevMapping::Local(_, h) => Box::new(ListLocalCategoricalChunkedBuilder::new(
+            name,
+            ordering,
+            capacity,
+            values_capacity,
+            *h,
+        )),
+        RevMapping::Global(_, _, _) => Box::new(ListGlobalCategoricalChunkedBuilder::new(
+            name,
+            ordering,
+            capacity,
+            values_capacity,
+            rev_map,
+        )),
+    }
 }
 
-impl ListCategoricalChunkedBuilder {
+struct ListEnumCategoricalChunkedBuilder {
+    inner: ListPrimitiveChunkedBuilder<UInt32Type>,
+    ordering: CategoricalOrdering,
+    rev_map: RevMapping,
+    hash: u128,
+}
+
+impl ListEnumCategoricalChunkedBuilder {
     pub(super) fn new(
         name: &str,
+        ordering: CategoricalOrdering,
         capacity: usize,
         values_capacity: usize,
-        logical_type: DataType,
+        rev_map: RevMapping,
+        hash: u128,
     ) -> Self {
-        let inner =
-            ListPrimitiveChunkedBuilder::new(name, capacity, values_capacity, logical_type.clone());
-        let DataType::Categorical(Some(rev_map)) = logical_type else {
-            panic!("expected categorical type")
-        };
         Self {
-            inner,
-            inner_dtype: RevMapMerger::new(rev_map),
+            inner: ListPrimitiveChunkedBuilder::new(
+                name,
+                capacity,
+                values_capacity,
+                DataType::UInt32,
+            ),
+            ordering,
+            rev_map,
+            hash,
         }
     }
 }
 
-impl ListBuilderTrait for ListCategoricalChunkedBuilder {
+impl ListBuilderTrait for ListEnumCategoricalChunkedBuilder {
     fn append_series(&mut self, s: &Series) -> PolarsResult<()> {
-        let DataType::Categorical(Some(rev_map)) = s.dtype() else {
+        let DataType::Categorical(Some(rev_map), _) = s.dtype() else {
             polars_bail!(ComputeError: "expected categorical type")
         };
-        self.inner_dtype.merge_map(rev_map)?;
+        let RevMapping::Enum(_, new_hash) = &**rev_map else {
+            polars_bail!(ComputeError: "Can not combine enum with categorical, consider casting to one of the two")
+        };
+        polars_ensure!(*new_hash == self.hash,ComputeError: "Can not combine enums with different variants");
         self.inner.append_series(s)
     }
 
@@ -38,8 +82,176 @@ impl ListBuilderTrait for ListCategoricalChunkedBuilder {
     }
 
     fn finish(&mut self) -> ListChunked {
-        let rev_map = std::mem::take(&mut self.inner_dtype).finish();
-        let inner_dtype = DataType::Categorical(Some(rev_map));
+        let inner_dtype =
+            DataType::Categorical(Some(Arc::new(self.rev_map.clone())), self.ordering);
+        let mut ca = self.inner.finish();
+        unsafe { ca.set_dtype(DataType::List(Box::new(inner_dtype))) }
+        ca
+    }
+}
+
+struct ListLocalCategoricalChunkedBuilder {
+    inner: ListPrimitiveChunkedBuilder<UInt32Type>,
+    idx_lookup: PlHashMap<KeyWrapper, ()>,
+    ordering: CategoricalOrdering,
+    categories: MutableUtf8Array<i64>,
+    categories_hash: u128,
+}
+
+// Wrap u32 key to avoid incorrect usage of hashmap with custom lookup
+struct KeyWrapper(u32);
+
+impl ListLocalCategoricalChunkedBuilder {
+    #[inline]
+    pub fn get_hash_builder() -> RandomState {
+        RandomState::with_seed(0)
+    }
+
+    pub(super) fn new(
+        name: &str,
+        ordering: CategoricalOrdering,
+        capacity: usize,
+        values_capacity: usize,
+        hash: u128,
+    ) -> Self {
+        Self {
+            inner: ListPrimitiveChunkedBuilder::new(
+                name,
+                capacity,
+                values_capacity,
+                DataType::UInt32,
+            ),
+            idx_lookup: PlHashMap::with_capacity_and_hasher(
+                capacity,
+                ListLocalCategoricalChunkedBuilder::get_hash_builder(),
+            ),
+            ordering,
+            categories: MutableUtf8Array::with_capacity(capacity),
+            categories_hash: hash,
+        }
+    }
+}
+
+impl ListBuilderTrait for ListLocalCategoricalChunkedBuilder {
+    fn append_series(&mut self, s: &Series) -> PolarsResult<()> {
+        let DataType::Categorical(Some(rev_map), _) = s.dtype() else {
+            polars_bail!(ComputeError: "expected categorical type")
+        };
+        let RevMapping::Local(cats_right, new_hash) = &**rev_map else {
+            polars_bail!(string_cache_mismatch)
+        };
+        let ca = s.categorical().unwrap();
+
+        // Fast path rev_maps are compatible & lookup is initialized
+        if self.categories_hash == *new_hash && !self.idx_lookup.is_empty() {
+            return self.inner.append_series(s);
+        }
+
+        let hash_builder = ListLocalCategoricalChunkedBuilder::get_hash_builder();
+
+        // Map the physical of the appended series to be compatible with the existing rev map
+        let mut idx_mapping = PlHashMap::with_capacity(ca.len());
+
+        for (idx, cat) in cats_right.values_iter().enumerate() {
+            let hash_cat = hash_builder.hash_one(cat);
+            let len = self.idx_lookup.len();
+
+            // Custom hashing / equality functions for comparing the &str to the idx
+            // Safety: index in hashmap are within bounds of categories
+            let r = unsafe {
+                self.idx_lookup.raw_table_mut().find_or_find_insert_slot(
+                    hash_cat,
+                    |(k, _)| self.categories.value_unchecked(k.0 as usize) == cat,
+                    |(k, _): &(KeyWrapper, ())| {
+                        hash_builder.hash_one(self.categories.value_unchecked(k.0 as usize))
+                    },
+                )
+            };
+
+            match r {
+                Ok(v) => {
+                    // Safety: Bucket is initialized
+                    idx_mapping.insert_unique_unchecked(idx as u32, unsafe { v.as_ref().0 .0 });
+                },
+                Err(e) => {
+                    idx_mapping.insert_unique_unchecked(idx as u32, len as u32);
+                    self.categories.push(Some(cat));
+                    // Safety: No mutations in hashmap since find_or_find_insert_slot call
+                    unsafe {
+                        self.idx_lookup.raw_table_mut().insert_in_slot(
+                            hash_cat,
+                            e,
+                            (KeyWrapper(len as u32), ()),
+                        )
+                    };
+                },
+            }
+        }
+
+        let op = |opt_v: Option<&u32>| opt_v.map(|v| *idx_mapping.get(v).unwrap());
+        let iters = ca.physical().downcast_iter().map(|arr| arr.iter().map(op));
+
+        for iter in iters {
+            self.inner.append_iter(iter)
+        }
+
+        Ok(())
+    }
+
+    fn append_null(&mut self) {
+        self.inner.append_null()
+    }
+
+    fn finish(&mut self) -> ListChunked {
+        let categories: Utf8Array<i64> = std::mem::take(&mut self.categories).into();
+        let rev_map = RevMapping::build_local(categories);
+        let inner_dtype = DataType::Categorical(Some(Arc::new(rev_map)), self.ordering);
+        let mut ca = self.inner.finish();
+        unsafe { ca.set_dtype(DataType::List(Box::new(inner_dtype))) }
+        ca
+    }
+}
+
+struct ListGlobalCategoricalChunkedBuilder {
+    inner: ListPrimitiveChunkedBuilder<UInt32Type>,
+    ordering: CategoricalOrdering,
+    map_merger: GlobalRevMapMerger,
+}
+
+impl ListGlobalCategoricalChunkedBuilder {
+    pub(super) fn new(
+        name: &str,
+        ordering: CategoricalOrdering,
+        capacity: usize,
+        values_capacity: usize,
+        rev_map: Arc<RevMapping>,
+    ) -> Self {
+        let inner =
+            ListPrimitiveChunkedBuilder::new(name, capacity, values_capacity, DataType::UInt32);
+        Self {
+            inner,
+            ordering,
+            map_merger: GlobalRevMapMerger::new(rev_map),
+        }
+    }
+}
+
+impl ListBuilderTrait for ListGlobalCategoricalChunkedBuilder {
+    fn append_series(&mut self, s: &Series) -> PolarsResult<()> {
+        let DataType::Categorical(Some(rev_map), _) = s.dtype() else {
+            polars_bail!(ComputeError: "expected categorical type")
+        };
+        self.map_merger.merge_map(rev_map)?;
+        self.inner.append_series(s)
+    }
+
+    fn append_null(&mut self) {
+        self.inner.append_null()
+    }
+
+    fn finish(&mut self) -> ListChunked {
+        let rev_map = std::mem::take(&mut self.map_merger).finish();
+        let inner_dtype = DataType::Categorical(Some(rev_map), self.ordering);
         let mut ca = self.inner.finish();
         unsafe { ca.set_dtype(DataType::List(Box::new(inner_dtype))) }
         ca

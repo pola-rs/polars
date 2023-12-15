@@ -3,8 +3,10 @@ use std::sync::Arc;
 
 use polars_core::datatypes::Field;
 use polars_core::error::PolarsResult;
+use polars_core::frame::DataFrame;
 use polars_core::prelude::{DataType, SchemaRef, Series, IDX_DTYPE};
 use polars_core::schema::Schema;
+use polars_io::predicates::PhysicalIoExpr;
 use polars_plan::dsl::Expr;
 use polars_plan::logical_plan::{ArenaExprIter, Context};
 use polars_plan::prelude::{AAggExpr, AExpr};
@@ -23,6 +25,11 @@ use crate::operators::DataChunk;
 
 struct Count {}
 
+impl PhysicalIoExpr for Count {
+    fn evaluate_io(&self, _df: &DataFrame) -> PolarsResult<Series> {
+        unimplemented!()
+    }
+}
 impl PhysicalPipedExpr for Count {
     fn evaluate(&self, chunk: &DataChunk, _lazy_state: &dyn Any) -> PolarsResult<Series> {
         // the length must match the chunks as the operators expect that
@@ -81,7 +88,7 @@ pub fn can_convert_to_hash_agg(
                         | AAggExpr::First(_)
                         | AAggExpr::Last(_)
                         | AAggExpr::Mean(_)
-                        | AAggExpr::Count(_)
+                        | AAggExpr::Count(_, false)
                 ) || (matches!(
                     agg_fn,
                     AAggExpr::Max {
@@ -170,7 +177,7 @@ where
                 let logical_dtype = phys_expr.field(schema).unwrap().dtype;
 
                 #[cfg(feature = "dtype-categorical")]
-                if matches!(logical_dtype, DataType::Categorical(_)) {
+                if matches!(logical_dtype, DataType::Categorical(_, _)) {
                     return (
                         logical_dtype.clone(),
                         phys_expr,
@@ -208,7 +215,7 @@ where
 
                 let logical_dtype = phys_expr.field(schema).unwrap().dtype;
                 #[cfg(feature = "dtype-categorical")]
-                if matches!(logical_dtype, DataType::Categorical(_)) {
+                if matches!(logical_dtype, DataType::Categorical(_, _)) {
                     return (
                         logical_dtype.clone(),
                         phys_expr,
@@ -241,7 +248,7 @@ where
                     AggregateFunction::Last(LastAgg::new(logical_dtype.to_physical())),
                 )
             },
-            AAggExpr::Count(input) => {
+            AAggExpr::Count(input, _) => {
                 let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
                 let logical_dtype = phys_expr.field(schema).unwrap().dtype;
                 (

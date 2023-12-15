@@ -282,10 +282,20 @@ impl Bitmap {
     /// Initializes an new [`Bitmap`] filled with unset values.
     #[inline]
     pub fn new_zeroed(length: usize) -> Self {
-        // don't use `MutableBitmap::from_len_zeroed().into()`
-        // it triggers a bitcount
-        let bytes = vec![0; length.saturating_add(7) / 8];
-        unsafe { Bitmap::from_inner_unchecked(Arc::new(bytes.into()), 0, length, length) }
+        Self::new_with_value(false, length)
+    }
+
+    /// Initializes an new [`Bitmap`] filled with the given value.
+    #[inline]
+    pub fn new_with_value(value: bool, length: usize) -> Self {
+        // Don't use `MutableBitmap::from_len_zeroed().into()`, it triggers a bitcount.
+        let bytes = if value {
+            vec![u8::MAX; length.saturating_add(7) / 8]
+        } else {
+            vec![0; length.saturating_add(7) / 8]
+        };
+        let unset_bits = if value { 0 } else { length };
+        unsafe { Bitmap::from_inner_unchecked(Arc::new(bytes.into()), 0, length, unset_bits) }
     }
 
     /// Counts the nulls (unset bits) starting from `offset` bits and for `length` bits.

@@ -5,7 +5,10 @@ from typing import TYPE_CHECKING, Any, Callable, Sequence
 from polars import functions as F
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
-from polars.utils.deprecation import deprecate_renamed_function
+from polars.utils.deprecation import (
+    deprecate_renamed_function,
+    deprecate_renamed_parameter,
+)
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
@@ -85,7 +88,7 @@ class ListNameSpace:
         """
         Return the number of elements in each list.
 
-        Null values are treated like regular elements in this context.
+        Null values count towards the total.
 
         Returns
         -------
@@ -121,6 +124,46 @@ class ListNameSpace:
             [1, 2]
             []
             [3, 4]
+        ]
+
+        """
+
+    def sample(
+        self,
+        n: int | IntoExprColumn | None = None,
+        *,
+        fraction: float | IntoExprColumn | None = None,
+        with_replacement: bool = False,
+        shuffle: bool = False,
+        seed: int | None = None,
+    ) -> Series:
+        """
+        Sample from this list.
+
+        Parameters
+        ----------
+        n
+            Number of items to return. Cannot be used with `fraction`. Defaults to 1 if
+            `fraction` is None.
+        fraction
+            Fraction of items to return. Cannot be used with `n`.
+        with_replacement
+            Allow values to be sampled more than once.
+        shuffle
+            Shuffle the order of sampled data points.
+        seed
+            Seed for the random number generator. If set to None (default), a
+            random seed is generated for each sample operation.
+
+        Examples
+        --------
+        >>> s = pl.Series("values", [[1, 2, 3], [4, 5]])
+        >>> s.list.sample(n=pl.Series("n", [2, 1]), seed=1)
+        shape: (2,)
+        Series: 'values' [list[i64]]
+        [
+            [2, 1]
+            [5]
         ]
 
         """
@@ -206,25 +249,27 @@ class ListNameSpace:
 
         """
 
-    def take(
-        self, index: Series | list[int] | list[list[int]], *, null_on_oob: bool = False
+    def gather(
+        self,
+        indices: Series | list[int] | list[list[int]],
+        *,
+        null_on_oob: bool = False,
     ) -> Series:
         """
         Take sublists by multiple indices.
 
         The indices may be defined in a single column, or by sublists in another
-        column of dtype ``List``.
+        column of dtype `List`.
 
         Parameters
         ----------
-        index
+        indices
             Indices to return per sublist
         null_on_oob
             Behavior if an index is out of bounds:
             True -> set as null
             False -> raise an error
             Note that defaulting to raising an error is much cheaper
-
         """
 
     def __getitem__(self, item: int) -> Series:
@@ -307,7 +352,7 @@ class ListNameSpace:
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Series:
         """
-        Calculate the n-th discrete difference of every sublist.
+        Calculate the first discrete difference between shifted items of every sublist.
 
         Parameters
         ----------
@@ -345,24 +390,43 @@ class ListNameSpace:
 
         """
 
-    def shift(self, periods: int | IntoExprColumn = 1) -> Series:
+    @deprecate_renamed_parameter("periods", "n", version="0.19.11")
+    def shift(self, n: int | IntoExprColumn = 1) -> Series:
         """
-        Shift values by the given period.
+        Shift list values by the given number of indices.
 
         Parameters
         ----------
-        periods
-            Number of places to shift (may be negative).
+        n
+            Number of indices to shift forward. If a negative value is passed, values
+            are shifted in the opposite direction instead.
+
+        Notes
+        -----
+        This method is similar to the `LAG` operation in SQL when the value for `n`
+        is positive. With a negative value for `n`, it is similar to `LEAD`.
 
         Examples
         --------
-        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        By default, list values are shifted forward by one index.
+
+        >>> s = pl.Series([[1, 2, 3], [4, 5]])
         >>> s.list.shift()
         shape: (2,)
-        Series: 'a' [list[i64]]
+        Series: '' [list[i64]]
         [
-            [null, 1, … 3]
-            [null, 10, 2]
+                [null, 1, 2]
+                [null, 4]
+        ]
+
+        Pass a negative value to shift in the opposite direction instead.
+
+        >>> s.list.shift(-2)
+        shape: (2,)
+        Series: '' [list[i64]]
+        [
+                [3, null, null]
+                [null, null]
         ]
 
         """
@@ -376,7 +440,7 @@ class ListNameSpace:
         offset
             Start index. Negative indexing is supported.
         length
-            Length of the slice. If set to ``None`` (default), the slice is taken to the
+            Length of the slice. If set to `None` (default), the slice is taken to the
             end of the list.
 
         Examples
@@ -470,12 +534,39 @@ class ListNameSpace:
         self, element: float | str | bool | int | date | datetime | time | Expr
     ) -> Expr:
         """
-        Count how often the value produced by ``element`` occurs.
+        Count how often the value produced by `element` occurs.
 
         Parameters
         ----------
         element
             An expression that produces a single value
+
+        """
+
+    def to_array(self, width: int) -> Series:
+        """
+        Convert a List column into an Array column with the same inner data type.
+
+        Parameters
+        ----------
+        width
+            Width of the resulting Array column.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Array`.
+
+        Examples
+        --------
+        >>> s = pl.Series([[1, 2], [3, 4]], dtype=pl.List(pl.Int8))
+        >>> s.list.to_array(2)
+        shape: (2,)
+        Series: '' [array[i8, 2]]
+        [
+                [1, 2]
+                [3, 4]
+        ]
 
         """
 
@@ -485,7 +576,7 @@ class ListNameSpace:
         fields: Callable[[int], str] | Sequence[str] | None = None,
     ) -> Series:
         """
-        Convert the series of type ``List`` to a series of type ``Struct``.
+        Convert the series of type `List` to a series of type `Struct`.
 
         Parameters
         ----------
@@ -589,7 +680,7 @@ class ListNameSpace:
 
     def set_union(self, other: Series) -> Series:
         """
-        Compute the SET UNION between the elements in this list and the elements of ``other``.
+        Compute the SET UNION between the elements in this list and the elements of `other`.
 
         Parameters
         ----------
@@ -614,7 +705,7 @@ class ListNameSpace:
 
     def set_difference(self, other: Series) -> Series:
         """
-        Compute the SET DIFFERENCE between the elements in this list and the elements of ``other``.
+        Compute the SET DIFFERENCE between the elements in this list and the elements of `other`.
 
         Parameters
         ----------
@@ -643,7 +734,7 @@ class ListNameSpace:
 
     def set_intersection(self, other: Series) -> Series:
         """
-        Compute the SET INTERSECTION between the elements in this list and the elements of ``other``.
+        Compute the SET INTERSECTION between the elements in this list and the elements of `other`.
 
         Parameters
         ----------
@@ -668,7 +759,7 @@ class ListNameSpace:
 
     def set_symmetric_difference(self, other: Series) -> Series:
         """
-        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of ``other``.
+        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of `other`.
 
         Parameters
         ----------
@@ -677,56 +768,12 @@ class ListNameSpace:
 
         """  # noqa: W505
 
-    @deprecate_renamed_function("set_union", version="0.18.10")
-    def union(self, other: Series) -> Series:
-        """
-        Compute the SET UNION between the elements in this list and the elements of ``other``.
-
-        .. deprecated:: 0.18.10
-            This method has been renamed to ``Series.list.set_union``.
-
-        """  # noqa: W505
-        return self.set_union(other)
-
-    @deprecate_renamed_function("set_difference", version="0.18.10")
-    def difference(self, other: Series) -> Series:
-        """
-        Compute the SET DIFFERENCE between the elements in this list and the elements of ``other``.
-
-        .. deprecated:: 0.18.10
-            This method has been renamed to ``Series.list.set_difference``.
-
-        """  # noqa: W505
-        return self.set_difference(other)
-
-    @deprecate_renamed_function("set_intersection", version="0.18.10")
-    def intersection(self, other: Series) -> Series:
-        """
-        Compute the SET INTERSECTION between the elements in this list and the elements of ``other``.
-
-        .. deprecated:: 0.18.10
-            This method has been renamed to ``Series.list.set_intersection``.
-
-        """  # noqa: W505
-        return self.set_intersection(other)
-
-    @deprecate_renamed_function("set_symmetric_difference", version="0.18.10")
-    def symmetric_difference(self, other: Series) -> Series:
-        """
-        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of ``other``.
-
-        .. deprecated:: 0.18.10
-            This method has been renamed to ``Series.list.set_symmetric_difference``.
-
-        """  # noqa: W505
-        return self.set_symmetric_difference(other)
-
     @deprecate_renamed_function("count_matches", version="0.19.3")
     def count_match(
         self, element: float | str | bool | int | date | datetime | time | Expr
     ) -> Expr:
         """
-        Count how often the value produced by ``element`` occurs.
+        Count how often the value produced by `element` occurs.
 
         .. deprecated:: 0.19.3
             This method has been renamed to :func:`count_matches`.
@@ -746,4 +793,29 @@ class ListNameSpace:
         .. deprecated:: 0.19.8
             This method has been renamed to :func:`len`.
 
+        """
+
+    @deprecate_renamed_function("gather", version="0.19.14")
+    @deprecate_renamed_parameter("index", "indices", version="0.19.14")
+    def take(
+        self,
+        indices: Series | list[int] | list[list[int]],
+        *,
+        null_on_oob: bool = False,
+    ) -> Series:
+        """
+        Take sublists by multiple indices.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :func:`gather`.
+
+        Parameters
+        ----------
+        indices
+            Indices to return per sublist
+        null_on_oob
+            Behavior if an index is out of bounds:
+            True -> set as null
+            False -> raise an error
+            Note that defaulting to raising an error is much cheaper
         """

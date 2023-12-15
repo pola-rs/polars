@@ -19,16 +19,20 @@ where
     T: PolarsDataType,
     for<'a> T::Physical<'a>: TotalOrd,
 {
-    // If either is empty (or completely null), copy the sorted flag from the other.
-    if ca.len() == ca.null_count() {
+    // TODO: attempt to maintain sortedness better in case of nulls.
+
+    // If either is empty, copy the sorted flag from the other.
+    if ca.is_empty() {
         ca.set_sorted_flag(other.is_sorted_flag());
         return;
     }
-    if other.len() == other.null_count() {
+    if other.is_empty() {
         return;
     }
 
-    // Both need to be sorted, in the same order.
+    // Both need to be sorted, in the same order, if the order is maintained.
+    // TODO: rework sorted flags, ascending and descending are not mutually
+    // exclusive for all-equal/all-null arrays.
     let ls = ca.is_sorted_flag();
     let rs = other.is_sorted_flag();
     if ls != rs || ls == IsSorted::Not || rs == IsSorted::Not {
@@ -38,12 +42,23 @@ where
 
     // Check the order is maintained.
     let still_sorted = {
-        let left = ca.get(ca.last_non_null().unwrap()).unwrap();
-        let right = other.get(other.first_non_null().unwrap()).unwrap();
-        if ca.is_sorted_ascending_flag() {
-            left.tot_le(&right)
+        // To prevent potential quadratic append behavior we do not find
+        // the last non-null element in ca.
+        if let Some(left) = ca.last() {
+            if let Some(right_idx) = other.first_non_null() {
+                let right = other.get(right_idx).unwrap();
+                if ca.is_sorted_ascending_flag() {
+                    left.tot_le(&right)
+                } else {
+                    left.tot_ge(&right)
+                }
+            } else {
+                // Right is only nulls, trivially sorted.
+                true
+            }
         } else {
-            left.tot_ge(&right)
+            // Last element in left is null, pessimistically assume not sorted.
+            false
         }
     };
     if !still_sorted {
@@ -63,6 +78,7 @@ where
         update_sorted_flag_before_append::<T>(self, other);
         let len = self.len();
         self.length += other.length;
+        self.null_count += other.null_count;
         new_chunks(&mut self.chunks, &other.chunks, len);
     }
 }
@@ -75,6 +91,7 @@ impl ListChunked {
 
         let len = self.len();
         self.length += other.length;
+        self.null_count += other.null_count;
         new_chunks(&mut self.chunks, &other.chunks, len);
         self.set_sorted_flag(IsSorted::Not);
         if !other._can_fast_explode() {
@@ -93,6 +110,7 @@ impl ArrayChunked {
 
         let len = self.len();
         self.length += other.length;
+        self.null_count += other.null_count;
         new_chunks(&mut self.chunks, &other.chunks, len);
         self.set_sorted_flag(IsSorted::Not);
         Ok(())
@@ -105,6 +123,7 @@ impl<T: PolarsObject> ObjectChunked<T> {
     pub fn append(&mut self, other: &Self) {
         let len = self.len();
         self.length += other.length;
+        self.null_count += other.null_count;
         self.set_sorted_flag(IsSorted::Not);
         new_chunks(&mut self.chunks, &other.chunks, len);
     }

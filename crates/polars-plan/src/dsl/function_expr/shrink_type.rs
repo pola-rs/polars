@@ -4,9 +4,9 @@ pub(super) fn shrink(s: Series) -> PolarsResult<Series> {
     if s.dtype().is_numeric() {
         if s.dtype().is_float() {
             s.cast(&DataType::Float32)
-        } else if s.dtype().is_unsigned() {
+        } else if s.dtype().is_unsigned_integer() {
             let max = s
-                .max_as_series()
+                .max_as_series()?
                 .get(0)
                 .unwrap()
                 .extract::<u64>()
@@ -22,13 +22,13 @@ pub(super) fn shrink(s: Series) -> PolarsResult<Series> {
             }
         } else {
             let min = s
-                .min_as_series()
+                .min_as_series()?
                 .get(0)
                 .unwrap()
                 .extract::<i64>()
                 .unwrap_or(0_i64);
             let max = s
-                .max_as_series()
+                .max_as_series()?
                 .get(0)
                 .unwrap()
                 .extract::<i64>()

@@ -16,7 +16,8 @@ use crate::csv::parser::{next_line_position, skip_bom, skip_line_ending, SplitLi
 use crate::csv::splitfields::SplitFields;
 use crate::csv::CsvEncoding;
 use crate::mmap::ReaderBytes;
-use crate::prelude::NullValues;
+use crate::prelude::parser::is_comment_line;
+use crate::prelude::{CommentPrefix, NullValues};
 use crate::utils::{BOOLEAN_RE, FLOAT_RE, INTEGER_RE};
 
 pub(crate) fn get_file_chunks(
@@ -142,7 +143,7 @@ pub fn infer_file_schema_inner(
     // on the schema inference
     skip_rows: &mut usize,
     skip_rows_after_header: usize,
-    comment_char: Option<u8>,
+    comment_prefix: Option<&CommentPrefix>,
     quote_char: Option<u8>,
     eol_char: u8,
     null_values: Option<&NullValues>,
@@ -162,30 +163,23 @@ pub fn infer_file_schema_inner(
         polars_ensure!(!bytes.is_empty(), NoData: "empty CSV");
     };
     let mut lines = SplitLines::new(bytes, quote_char.unwrap_or(b'"'), eol_char).skip(*skip_rows);
-    // it can be that we have a single line without eol char
-    let has_eol = bytes.contains(&eol_char);
 
     // get or create header names
     // when has_header is false, creates default column names with column_ prefix
 
     // skip lines that are comments
     let mut first_line = None;
-    if let Some(comment_ch) = comment_char {
-        for (i, line) in (&mut lines).enumerate() {
-            if let Some(ch) = line.first() {
-                if *ch != comment_ch {
-                    first_line = Some(line);
-                    *skip_rows += i;
-                    break;
-                }
-            }
+
+    for (i, line) in (&mut lines).enumerate() {
+        if !is_comment_line(line, comment_prefix) {
+            first_line = Some(line);
+            *skip_rows += i;
+            break;
         }
-    } else {
-        first_line = lines.next();
     }
-    // edge case where we have a single row, no header and no eol char.
-    if first_line.is_none() && !has_eol && !has_header {
-        first_line = Some(bytes);
+
+    if first_line.is_none() {
+        first_line = lines.next();
     }
 
     // now that we've found the first non-comment line we parse the headers, or we create a header
@@ -254,7 +248,7 @@ pub fn infer_file_schema_inner(
             schema_overwrite,
             skip_rows,
             skip_rows_after_header,
-            comment_char,
+            comment_prefix,
             quote_char,
             eol_char,
             null_values,
@@ -306,11 +300,13 @@ pub fn infer_file_schema_inner(
         // keep track so that we can determine the amount of bytes read
         end_ptr = line.as_ptr() as usize + line.len();
 
-        if let Some(c) = comment_char {
-            // line is a comment -> skip
-            if line[0] == c {
-                continue;
-            }
+        if line.is_empty() {
+            continue;
+        }
+
+        // line is a comment -> skip
+        if is_comment_line(line, comment_prefix) {
+            continue;
         }
 
         let len = line.len();
@@ -428,7 +424,11 @@ pub fn infer_file_schema_inner(
     // if there is a single line after the header without an eol
     // we copy the bytes add an eol and rerun this function
     // so that the inference is consistent with and without eol char
-    if rows_count == 0 && reader_bytes[reader_bytes.len() - 1] != eol_char && recursion_count == 0 {
+    if rows_count == 0
+        && !reader_bytes.is_empty()
+        && reader_bytes[reader_bytes.len() - 1] != eol_char
+        && recursion_count == 0
+    {
         let mut rb = Vec::with_capacity(reader_bytes.len() + 1);
         rb.extend_from_slice(reader_bytes);
         rb.push(eol_char);
@@ -440,7 +440,7 @@ pub fn infer_file_schema_inner(
             schema_overwrite,
             skip_rows,
             skip_rows_after_header,
-            comment_char,
+            comment_prefix,
             quote_char,
             eol_char,
             null_values,
@@ -473,7 +473,7 @@ pub fn infer_file_schema(
     // on the schema inference
     skip_rows: &mut usize,
     skip_rows_after_header: usize,
-    comment_char: Option<u8>,
+    comment_prefix: Option<&CommentPrefix>,
     quote_char: Option<u8>,
     eol_char: u8,
     null_values: Option<&NullValues>,
@@ -488,7 +488,7 @@ pub fn infer_file_schema(
         schema_overwrite,
         skip_rows,
         skip_rows_after_header,
-        comment_char,
+        comment_prefix,
         quote_char,
         eol_char,
         null_values,
@@ -503,6 +503,7 @@ const GZIP: [u8; 2] = [31, 139];
 const ZLIB0: [u8; 2] = [0x78, 0x01];
 const ZLIB1: [u8; 2] = [0x78, 0x9C];
 const ZLIB2: [u8; 2] = [0x78, 0xDA];
+const ZSTD: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
 
 /// check if csv file is compressed
 pub fn is_compressed(bytes: &[u8]) -> bool {
@@ -510,6 +511,7 @@ pub fn is_compressed(bytes: &[u8]) -> bool {
         || bytes.starts_with(&ZLIB1)
         || bytes.starts_with(&ZLIB2)
         || bytes.starts_with(&GZIP)
+        || bytes.starts_with(&ZSTD)
 }
 
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
@@ -598,6 +600,9 @@ pub(crate) fn decompress(
         decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
     } else if bytes.starts_with(&ZLIB0) || bytes.starts_with(&ZLIB1) || bytes.starts_with(&ZLIB2) {
         let mut decoder = flate2::read::ZlibDecoder::new(bytes);
+        decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
+    } else if bytes.starts_with(&ZSTD) {
+        let mut decoder = zstd::Decoder::new(bytes).ok()?;
         decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
     } else {
         None

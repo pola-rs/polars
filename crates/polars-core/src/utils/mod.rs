@@ -15,7 +15,6 @@ use smartstring::alias::String as SmartString;
 pub use supertype::*;
 pub use {arrow, rayon};
 
-pub use crate::chunked_array::ops::sort::arg_sort_no_nulls;
 use crate::prelude::*;
 use crate::POOL;
 
@@ -29,20 +28,9 @@ impl<T> Deref for Wrap<T> {
     }
 }
 
+#[inline(always)]
 pub fn _set_partition_size() -> usize {
-    let mut n_partitions = POOL.current_num_threads();
-    if n_partitions == 1 {
-        return 1;
-    }
-    // set n_partitions to closest 2^n size
-    loop {
-        if n_partitions.is_power_of_two() {
-            break;
-        } else {
-            n_partitions -= 1;
-        }
-    }
-    n_partitions
+    POOL.current_num_threads()
 }
 
 /// Just a wrapper structure. Useful for certain impl specializations
@@ -631,6 +619,9 @@ pub fn accumulate_dataframes_horizontal(dfs: Vec<DataFrame>) -> PolarsResult<Dat
     Ok(acc_df)
 }
 
+/// Ensure the chunks in both ChunkedArrays have the same length.
+/// # Panics
+/// This will panic if `left.len() != right.len()` and array is chunked.
 pub fn align_chunks_binary<'a, T, B>(
     left: &'a ChunkedArray<T>,
     right: &'a ChunkedArray<B>,
@@ -639,17 +630,31 @@ where
     B: PolarsDataType,
     T: PolarsDataType,
 {
+    let assert = || {
+        assert_eq!(
+            left.len(),
+            right.len(),
+            "expected arrays of the same length"
+        )
+    };
     match (left.chunks.len(), right.chunks.len()) {
         (1, 1) => (Cow::Borrowed(left), Cow::Borrowed(right)),
-        (_, 1) => (
-            Cow::Borrowed(left),
-            Cow::Owned(right.match_chunks(left.chunk_id())),
-        ),
-        (1, _) => (
-            Cow::Owned(left.match_chunks(right.chunk_id())),
-            Cow::Borrowed(right),
-        ),
+        (_, 1) => {
+            assert();
+            (
+                Cow::Borrowed(left),
+                Cow::Owned(right.match_chunks(left.chunk_id())),
+            )
+        },
+        (1, _) => {
+            assert();
+            (
+                Cow::Owned(left.match_chunks(right.chunk_id())),
+                Cow::Borrowed(right),
+            )
+        },
         (_, _) => {
+            assert();
             // could optimize to choose to rechunk a primitive and not a string or list type
             let left = left.rechunk();
             (
@@ -879,6 +884,7 @@ pub fn coalesce_nulls<'a, T: PolarsDataType>(
                 *arr_b = arr_b.with_validity(arr.validity().cloned())
             }
         }
+        b.compute_len();
         (Cow::Owned(a), Cow::Owned(b))
     } else {
         (Cow::Borrowed(a), Cow::Borrowed(b))
@@ -899,6 +905,8 @@ pub fn coalesce_nulls_series(a: &Series, b: &Series) -> (Series, Series) {
             *arr_a = arr_a.with_validity(validity.clone());
             *arr_b = arr_b.with_validity(validity);
         }
+        a.compute_len();
+        b.compute_len();
         (a, b)
     } else {
         (a.clone(), b.clone())

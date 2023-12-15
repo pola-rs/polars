@@ -2,31 +2,19 @@ use nulls;
 use nulls::{rolling_apply_agg_window, RollingAggWindowNulls};
 
 use super::*;
-use crate::bitmap::utils::{count_zeros, ZipValidityIter};
+use crate::array::iterator::NonNullValuesIter;
+use crate::bitmap::utils::count_zeros;
 
-pub fn is_reverse_sorted_max_nulls<T: NativeType + PartialOrd + IsFloat>(
-    values: &[T],
-    validity: &Bitmap,
-) -> bool {
-    let mut current_max = None;
-    for opt_v in ZipValidityIter::new(values.iter(), validity.iter()) {
-        match (current_max, opt_v) {
-            // do nothing
-            (None, None) => {},
-            (None, Some(v)) => current_max = Some(*v),
-            (Some(current), Some(val)) => {
-                match compare_fn_nan_min(&current, val) {
-                    Ordering::Greater => {
-                        current_max = Some(*val);
-                    },
-                    // allowed
-                    Ordering::Equal => {},
-                    // not sorted
-                    Ordering::Less => return false,
-                }
-            },
-            (Some(_current), None) => {},
+pub fn is_reverse_sorted_max_nulls<T: NativeType>(values: &[T], validity: &Bitmap) -> bool {
+    let mut it = NonNullValuesIter::new(values, Some(validity));
+    let Some(mut prev) = it.next() else {
+        return true;
+    };
+    for v in it {
+        if prev.tot_lt(&v) {
+            return false;
         }
+        prev = v
     }
 
     true
@@ -99,12 +87,11 @@ pub struct MinMaxWindow<'a, T: NativeType + PartialOrd + IsFloat> {
     last_start: usize,
     last_end: usize,
     null_count: usize,
-    compare_fn_nan: fn(&T, &T) -> Ordering,
+    is_better: fn(&T, &T) -> bool,
     take_extremum: fn(T, T) -> T,
     // ordering on which the window needs to act.
     // for min kernel this is Less
     // for max kernel this is Greater
-    agg_ordering: Ordering,
 }
 
 impl<'a, T: NativeType + IsFloat + PartialOrd> MinMaxWindow<'a, T> {
@@ -122,7 +109,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> MinMaxWindow<'a, T> {
             if valid {
                 // early return
                 if let Some(current_min) = self.extremum {
-                    if matches!(compare_fn_nan_min(value, &current_min), Ordering::Equal) {
+                    if value.tot_eq(&current_min) {
                         return Some(current_min);
                     }
                 }
@@ -166,9 +153,8 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> MinMaxWindow<'a, T> {
         validity: &'a Bitmap,
         start: usize,
         end: usize,
-        compare_fn: fn(&T, &T) -> Ordering,
+        is_better: fn(&T, &T) -> bool,
         take_extremum: fn(T, T) -> T,
-        agg_ordering: Ordering,
     ) -> Self {
         let mut out = Self {
             slice,
@@ -177,9 +163,8 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> MinMaxWindow<'a, T> {
             last_start: start,
             last_end: end,
             null_count: 0,
-            compare_fn_nan: compare_fn,
+            is_better,
             take_extremum,
-            agg_ordering,
         };
         let extremum = out.compute_extremum_and_update_null_count(start, end);
         out.extremum = extremum;
@@ -206,10 +191,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> MinMaxWindow<'a, T> {
 
                 // if the leaving value is the
                 // min value, we need to recompute the min.
-                if matches!(
-                    (self.compare_fn_nan)(leaving_value, &self.extremum.unwrap()),
-                    Ordering::Equal
-                ) {
+                if leaving_value.tot_eq(&self.extremum.unwrap()) {
                     recompute_extremum = true;
                     break;
                 }
@@ -241,44 +223,21 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> MinMaxWindow<'a, T> {
                 }
             },
             (Some(current_extremum), Some(entering_extremum)) => {
-                if recompute_extremum {
-                    match (self.compare_fn_nan)(&current_extremum, &entering_extremum) {
-                        // do nothing
-                        Ordering::Equal => {},
-                        // leaving < entering
-                        ord if ord == self.agg_ordering => {
-                            // leaving value could be the smallest, we might need to recompute
-
-                            let min_in_between =
-                                self.compute_extremum_in_between_leaving_and_entering(start);
-                            match min_in_between {
-                                None => self.extremum = Some(entering_extremum),
-                                Some(extremum_in_between) => {
-                                    if (self.compare_fn_nan)(
-                                        &extremum_in_between,
-                                        &entering_extremum,
-                                    ) == self.agg_ordering
-                                    {
-                                        self.extremum = Some(extremum_in_between)
-                                    } else {
-                                        self.extremum = Some(entering_extremum)
-                                    }
-                                },
-                            }
-                        },
-                        // leaving > entering
-                        _ => {
-                            if (self.compare_fn_nan)(&entering_extremum, &current_extremum)
-                                == self.agg_ordering
-                            {
-                                self.extremum = Some(entering_extremum)
-                            }
+                if (self.is_better)(&entering_extremum, &current_extremum) {
+                    self.extremum = Some(entering_extremum)
+                } else if recompute_extremum
+                    && (self.is_better)(&current_extremum, &entering_extremum)
+                {
+                    // leaving value could be the smallest, we might need to recompute
+                    let min_in_between =
+                        self.compute_extremum_in_between_leaving_and_entering(start);
+                    match min_in_between {
+                        None => self.extremum = Some(entering_extremum),
+                        Some(extremum_in_between) => {
+                            self.extremum =
+                                Some((self.take_extremum)(extremum_in_between, entering_extremum));
                         },
                     }
-                } else if (self.compare_fn_nan)(&entering_extremum, &current_extremum)
-                    == self.agg_ordering
-                {
-                    self.extremum = Some(entering_extremum)
                 }
             },
         }
@@ -296,10 +255,6 @@ pub struct MinWindow<'a, T: NativeType + PartialOrd + IsFloat> {
     inner: MinMaxWindow<'a, T>,
 }
 
-fn take_min<T: NativeType + IsFloat + PartialOrd>(a: T, b: T) -> T {
-    std::cmp::min_by(a, b, compare_fn_nan_min)
-}
-
 impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for MinWindow<'a, T> {
     unsafe fn new(
         slice: &'a [T],
@@ -314,9 +269,8 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for 
                 validity,
                 start,
                 end,
-                compare_fn_nan_min,
-                take_min,
-                Ordering::Less,
+                |a, b| a.nan_max_lt(b),
+                |a, b| a.min_ignore_nan(b),
             ),
         }
     }
@@ -369,10 +323,6 @@ pub struct MaxWindow<'a, T: NativeType + PartialOrd + IsFloat> {
     inner: MinMaxWindow<'a, T>,
 }
 
-fn take_max<T: NativeType + IsFloat + PartialOrd>(a: T, b: T) -> T {
-    std::cmp::max_by(a, b, compare_fn_nan_max)
-}
-
 impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for MaxWindow<'a, T> {
     unsafe fn new(
         slice: &'a [T],
@@ -387,9 +337,8 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for 
                 validity,
                 start,
                 end,
-                compare_fn_nan_max,
-                take_max,
-                Ordering::Greater,
+                |a, b| b.nan_min_lt(a),
+                |a, b| a.max_ignore_nan(b),
             ),
         }
     }

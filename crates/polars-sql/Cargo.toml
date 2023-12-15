@@ -12,7 +12,7 @@ description = "SQL transpiler for Polars. Converts SQL to Polars logical plans"
 arrow = { workspace = true }
 polars-core = { workspace = true }
 polars-error = { workspace = true }
-polars-lazy = { workspace = true, features = ["strings", "cross_join", "trigonometry", "abs", "round_series", "log", "regex", "is_in", "meta", "cum_agg"] }
+polars-lazy = { workspace = true, features = ["strings", "cross_join", "trigonometry", "abs", "round_series", "log", "regex", "is_in", "meta", "cum_agg", "dtype-date"] }
 polars-plan = { workspace = true }
 
 rand = { workspace = true }
@@ -29,3 +29,4 @@ ipc = ["polars-lazy/ipc"]
 parquet = ["polars-lazy/parquet"]
 semi_anti_join = ["polars-lazy/semi_anti_join"]
 diagonal_concat = ["polars-lazy/diagonal_concat"]
+nightly = []

@@ -12,6 +12,8 @@ use object_store::azure::MicrosoftAzureBuilder;
 use object_store::gcp::GoogleCloudStorageBuilder;
 #[cfg(feature = "gcp")]
 pub use object_store::gcp::GoogleConfigKey;
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+use object_store::ClientOptions;
 #[cfg(feature = "cloud")]
 use object_store::ObjectStore;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
@@ -42,7 +44,7 @@ static BUCKET_REGION: Lazy<std::sync::Mutex<FastFixedCache<SmartString, SmartStr
 #[allow(dead_code)]
 type Configs<T> = Vec<(T, String)>;
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// Options to connect to various cloud providers.
 pub struct CloudOptions {
@@ -53,6 +55,20 @@ pub struct CloudOptions {
     #[cfg(feature = "gcp")]
     gcp: Option<Configs<GoogleConfigKey>>,
     pub max_retries: usize,
+}
+
+impl Default for CloudOptions {
+    fn default() -> Self {
+        Self {
+            max_retries: 2,
+            #[cfg(feature = "aws")]
+            aws: Default::default(),
+            #[cfg(feature = "azure")]
+            azure: Default::default(),
+            #[cfg(feature = "gcp")]
+            gcp: Default::default(),
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -81,6 +97,39 @@ pub enum CloudType {
     Azure,
     File,
     Gcp,
+    Http,
+}
+
+impl CloudType {
+    #[cfg(feature = "cloud")]
+    pub(crate) fn from_url(parsed: &Url) -> PolarsResult<Self> {
+        Ok(match parsed.scheme() {
+            "s3" | "s3a" => Self::Aws,
+            "az" | "azure" | "adl" | "abfs" | "abfss" => Self::Azure,
+            "gs" | "gcp" | "gcs" => Self::Gcp,
+            "file" => Self::File,
+            "http" | "https" => Self::Http,
+            _ => polars_bail!(ComputeError: "unknown url scheme"),
+        })
+    }
+}
+
+#[cfg(feature = "cloud")]
+pub(crate) fn parse_url(url: &str) -> std::result::Result<Url, url::ParseError> {
+    match Url::parse(url) {
+        Err(err) => match err {
+            url::ParseError::RelativeUrlWithoutBase => {
+                let parsed = Url::parse(&format!(
+                    "file://{}/",
+                    std::env::current_dir().unwrap().to_string_lossy()
+                ))
+                .unwrap();
+                parsed.join(url)
+            },
+            err => Err(err),
+        },
+        parsed => parsed,
+    }
 }
 
 impl FromStr for CloudType {
@@ -88,14 +137,8 @@ impl FromStr for CloudType {
 
     #[cfg(feature = "cloud")]
     fn from_str(url: &str) -> Result<Self, Self::Err> {
-        let parsed = Url::parse(url).map_err(to_compute_err)?;
-        Ok(match parsed.scheme() {
-            "s3" | "s3a" => Self::Aws,
-            "az" | "azure" | "adl" | "abfs" | "abfss" => Self::Azure,
-            "gs" | "gcp" | "gcs" => Self::Gcp,
-            "file" => Self::File,
-            _ => polars_bail!(ComputeError: "unknown url scheme"),
-        })
+        let parsed = parse_url(url).map_err(to_compute_err)?;
+        Self::from_url(&parsed)
     }
 
     #[cfg(not(feature = "cloud"))]
@@ -110,6 +153,17 @@ fn get_retry_config(max_retries: usize) -> RetryConfig {
         max_retries,
         retry_timeout: std::time::Duration::from_secs(10),
     }
+}
+
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+pub(super) fn get_client_options() -> ClientOptions {
+    ClientOptions::default()
+        // We set request timeout super high as the timeout isn't reset at ACK,
+        // but starts from the moment we start downloading a body.
+        // https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html#method.timeout
+        .with_timeout(std::time::Duration::from_secs(60 * 5))
+        // Concurrency can increase connection latency, so also set high.
+        .with_connect_timeout(std::time::Duration::from_secs(30))
 }
 
 impl CloudOptions {
@@ -177,6 +231,7 @@ impl CloudOptions {
         };
 
         builder
+            .with_client_options(get_client_options())
             .with_retry(get_retry_config(self.max_retries))
             .build()
             .map_err(to_compute_err)
@@ -209,6 +264,7 @@ impl CloudOptions {
         }
 
         builder
+            .with_client_options(get_client_options())
             .with_url(url)
             .with_retry(get_retry_config(self.max_retries))
             .build()
@@ -242,6 +298,7 @@ impl CloudOptions {
         }
 
         builder
+            .with_client_options(get_client_options())
             .with_url(url)
             .with_retry(get_retry_config(self.max_retries))
             .build()
@@ -278,6 +335,7 @@ impl CloudOptions {
                 }
             },
             CloudType::File => Ok(Self::default()),
+            CloudType::Http => Ok(Self::default()),
             CloudType::Gcp => {
                 #[cfg(feature = "gcp")]
                 {

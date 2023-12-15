@@ -218,9 +218,9 @@ fn modify_supertype(
         match (type_left, type_right, left, right) {
             // if the we compare a categorical to a literal string we want to cast the literal to categorical
             #[cfg(feature = "dtype-categorical")]
-            (Categorical(_), Utf8, _, AExpr::Literal(_))
-            | (Utf8, Categorical(_), AExpr::Literal(_), _) => {
-                st = Categorical(None);
+            (Categorical(_, ordering), Utf8, _, AExpr::Literal(_))
+            | (Utf8, Categorical(_, ordering), AExpr::Literal(_), _) => {
+                st = Categorical(None, *ordering);
             },
             // when then expression literals can have a different list type.
             // so we cast the literal to the other hand side.
@@ -359,9 +359,9 @@ impl OptimizationRule for TypeCoercionRule {
                     // cast both local and global string cache
                     // note that there might not yet be a rev
                     #[cfg(feature = "dtype-categorical")]
-                    (DataType::Categorical(_), DataType::Utf8) => AExpr::Cast {
+                    (DataType::Categorical(_, ordering), DataType::Utf8) => AExpr::Cast {
                         expr: other_node,
-                        data_type: DataType::Categorical(None),
+                        data_type: DataType::Categorical(None, *ordering),
                         strict: false,
                     },
                     #[cfg(feature = "dtype-decimal")]
@@ -412,6 +412,60 @@ impl OptimizationRule for TypeCoercionRule {
 
                 Some(AExpr::Function {
                     function: FunctionExpr::Boolean(BooleanFunction::IsIn),
+                    input,
+                    options,
+                })
+            },
+            // shift and fill should only cast left and fill value to super type.
+            AExpr::Function {
+                function: FunctionExpr::ShiftAndFill,
+                ref input,
+                options,
+            } => {
+                let mut input = input.clone();
+
+                let input_schema = get_schema(lp_arena, lp_node);
+                let left_node = input[0];
+                let fill_value_node = input[2];
+                let (left, type_left) =
+                    unpack!(get_aexpr_and_type(expr_arena, left_node, &input_schema));
+                let (fill_value, type_fill_value) = unpack!(get_aexpr_and_type(
+                    expr_arena,
+                    fill_value_node,
+                    &input_schema
+                ));
+
+                unpack!(early_escape(&type_left, &type_fill_value));
+
+                let super_type = unpack!(get_supertype(&type_left, &type_fill_value));
+                let super_type =
+                    modify_supertype(super_type, left, fill_value, &type_left, &type_fill_value);
+
+                let new_node_left = if type_left != super_type {
+                    expr_arena.add(AExpr::Cast {
+                        expr: left_node,
+                        data_type: super_type.clone(),
+                        strict: false,
+                    })
+                } else {
+                    left_node
+                };
+
+                let new_node_fill_value = if type_fill_value != super_type {
+                    expr_arena.add(AExpr::Cast {
+                        expr: fill_value_node,
+                        data_type: super_type.clone(),
+                        strict: false,
+                    })
+                } else {
+                    fill_value_node
+                };
+
+                input[0] = new_node_left;
+                input[2] = new_node_fill_value;
+
+                Some(AExpr::Function {
+                    function: FunctionExpr::ShiftAndFill,
                     input,
                     options,
                 })
@@ -556,7 +610,7 @@ mod test {
 
         let df = DataFrame::new(Vec::from([Series::new_empty(
             "fruits",
-            &DataType::Categorical(None),
+            &DataType::Categorical(None, Default::default()),
         )]))
         .unwrap();
 

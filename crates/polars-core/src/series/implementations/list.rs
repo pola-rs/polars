@@ -6,7 +6,7 @@ use ahash::RandomState;
 
 use super::*;
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::ops::compare_inner::{IntoPartialEqInner, PartialEqInner};
+use crate::chunked_array::ops::compare_inner::{IntoTotalEqInner, TotalEqInner};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::{AsSinglePtr, Settings};
 #[cfg(feature = "algorithm_group_by")]
@@ -72,8 +72,8 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
         Ok(())
     }
 
-    fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
-        (&self.0).into_partial_eq_inner()
+    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
+        (&self.0).into_total_eq_inner()
     }
 }
 
@@ -248,15 +248,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         ChunkShift::shift(&self.0, periods).into_series()
     }
 
-    fn _sum_as_series(&self) -> Series {
-        ChunkAggSeries::sum_as_series(&self.0)
-    }
-    fn max_as_series(&self) -> Series {
-        ChunkAggSeries::max_as_series(&self.0)
-    }
-    fn min_as_series(&self) -> Series {
-        ChunkAggSeries::min_as_series(&self.0)
-    }
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }

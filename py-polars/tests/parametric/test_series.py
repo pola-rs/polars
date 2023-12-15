@@ -5,10 +5,8 @@ from __future__ import annotations
 
 from typing import Any
 
-import numpy as np
 from hypothesis import given, settings
 from hypothesis.strategies import booleans, floats, sampled_from
-from numpy.testing import assert_array_equal
 
 import polars as pl
 from polars.expr.expr import _prepare_alpha
@@ -132,29 +130,29 @@ def test_series_datetime_timeunits(
 def test_series_duration_timeunits(
     s: pl.Series,
 ) -> None:
-    nanos = s.dt.nanoseconds().to_list()
-    micros = s.dt.microseconds().to_list()
-    millis = s.dt.milliseconds().to_list()
+    nanos = s.dt.total_nanoseconds().to_list()
+    micros = s.dt.total_microseconds().to_list()
+    millis = s.dt.total_milliseconds().to_list()
 
     scale = {
         "ns": 1,
         "us": 1_000,
         "ms": 1_000_000,
     }
-    assert nanos == [v * scale[s.dtype.time_unit] for v in s.to_physical()]  # type: ignore[union-attr]
+    assert nanos == [v * scale[s.dtype.time_unit] for v in s.to_physical()]  # type: ignore[attr-defined]
     assert micros == [int(v / 1_000) for v in nanos]
     assert millis == [int(v / 1_000) for v in micros]
 
     # special handling for ns timeunit (as we may generate a microsecs-based
     # timedelta that results in 64bit overflow on conversion to nanosecs)
-    micros = s.dt.microseconds().to_list()
+    micros = s.dt.total_microseconds().to_list()
     lower_bound, upper_bound = -(2**63), (2**63) - 1
     if all(
         (lower_bound <= (us * 1000) <= upper_bound)
         for us in micros
         if isinstance(us, int)
     ):
-        for ns, us in zip(s.dt.nanoseconds(), micros):
+        for ns, us in zip(s.dt.total_nanoseconds(), micros):
             assert ns == (us * 1000)
 
 
@@ -179,27 +177,3 @@ def test_series_slice(
 
     assert sliced_py_data == sliced_pl_data, f"slice [{start}:{stop}:{step}] failed"
     assert_series_equal(srs, srs, check_exact=True)
-
-
-@given(
-    s=series(
-        min_size=1, max_size=10, excluded_dtypes=[pl.Categorical, pl.List, pl.Struct]
-    ).filter(
-        lambda x: (
-            getattr(x.dtype, "time_unit", None) in (None, "us", "ns")
-            and (x.dtype != pl.Utf8 or not x.str.contains("\x00").any())
-        )
-    ),
-)
-@settings(max_examples=250)
-def test_series_to_numpy(
-    s: pl.Series,
-) -> None:
-    dtype = {
-        pl.Datetime("ns"): "datetime64[ns]",
-        pl.Datetime("us"): "datetime64[us]",
-        pl.Duration("ns"): "timedelta64[ns]",
-        pl.Duration("us"): "timedelta64[us]",
-    }
-    np_array = np.array(s.to_list(), dtype=dtype.get(s.dtype))  # type: ignore[call-overload]
-    assert_array_equal(np_array, s.to_numpy())

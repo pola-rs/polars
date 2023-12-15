@@ -1,14 +1,17 @@
+use std::fs;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 
 use crossbeam_channel::{bounded, Sender};
+use polars_core::error::ErrString;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 use polars_io::prelude::*;
 
+use crate::executors::sinks::get_base_temp_dir;
 use crate::pipeline::morsels_per_sink;
 
 pub(in crate::executors::sinks) type DfIter =
@@ -33,11 +36,36 @@ fn get_lockfile_path(dir: &Path) -> PathBuf {
     lockfile_path
 }
 
+fn get_spill_dir(operation_name: &'static str) -> PolarsResult<PathBuf> {
+    let uuid = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+
+    let mut dir = std::path::PathBuf::from(get_base_temp_dir());
+    dir.push(&format!("polars/{operation_name}/{uuid}"));
+
+    if !dir.exists() {
+        fs::create_dir_all(&dir).map_err(|err| {
+            PolarsError::ComputeError(ErrString::from(format!(
+                "Failed to create spill directory: {}",
+                err
+            )))
+        })?;
+    } else if !dir.is_dir() {
+        return Err(PolarsError::ComputeError(
+            "Specified spill path is not a directory".into(),
+        ));
+    }
+
+    Ok(dir)
+}
+
 /// Starts a new thread that will clean up operations of directories that don't
 /// have a lockfile (opened with 'w' permissions).
 fn gc_thread(operation_name: &'static str) {
     let _ = std::thread::spawn(move || {
-        let mut dir = std::env::temp_dir();
+        let mut dir = std::path::PathBuf::from(get_base_temp_dir());
         dir.push(&format!("polars/{operation_name}"));
 
         // if the directory does not exist, there is nothing to clean
@@ -77,17 +105,10 @@ impl IOThread {
     pub(in crate::executors::sinks) fn try_new(
         // Schema of the file that will be dumped to disk
         schema: SchemaRef,
-        // Will be used as subdirectory name in `~/.polars/`
+        // Will be used as subdirectory name in `~/.base_dir/polars/`
         operation_name: &'static str,
     ) -> PolarsResult<Self> {
-        let uuid = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-
-        let mut dir = std::env::temp_dir();
-        dir.push(&format!("polars/{operation_name}/{uuid}"));
-        std::fs::create_dir_all(&dir)?;
+        let dir = get_spill_dir(operation_name)?;
 
         // make sure we create lockfile before we GC
         let lockfile_path = get_lockfile_path(&dir);

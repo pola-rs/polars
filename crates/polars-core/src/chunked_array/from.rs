@@ -1,3 +1,5 @@
+use polars_error::constants::LENGTH_LIMIT_MSG;
+
 use super::*;
 
 #[allow(clippy::all)]
@@ -14,7 +16,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
         // arrow dictionaries are not nested as dictionaries, but only by their keys, so we must
         // change the list-value array to the keys and store the dictionary values in the datatype.
         // if a global string cache is set, we also must modify the keys.
-        DataType::List(inner) if *inner == DataType::Categorical(None) => {
+        DataType::List(inner) if matches!(*inner, DataType::Categorical(None, _)) => {
             let array = concatenate_owned_unchecked(chunks).unwrap();
             let list_arr = array.as_any().downcast_ref::<ListArray<i64>>().unwrap();
             let values_arr = list_arr.values();
@@ -41,7 +43,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             DataType::List(Box::new(cat.dtype().clone()))
         },
         #[cfg(all(feature = "dtype-array", feature = "dtype-categorical"))]
-        DataType::Array(inner, width) if *inner == DataType::Categorical(None) => {
+        DataType::Array(inner, width) if matches!(*inner, DataType::Categorical(None, _)) => {
             let array = concatenate_owned_unchecked(chunks).unwrap();
             let list_arr = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
             let values_arr = list_arr.values();
@@ -143,10 +145,12 @@ where
         );
 
         let mut length = 0;
+        let mut null_count = 0;
         let chunks = chunks
             .into_iter()
             .map(|x| {
                 length += x.len();
+                null_count += x.null_count();
                 Box::new(x) as Box<dyn Array>
             })
             .collect();
@@ -156,7 +160,8 @@ where
             chunks,
             phantom: PhantomData,
             bit_settings: Default::default(),
-            length: length.try_into().unwrap(),
+            length: length.try_into().expect(LENGTH_LIMIT_MSG),
+            null_count: null_count as IdxSize,
         }
     }
 
@@ -184,6 +189,7 @@ where
             phantom: PhantomData,
             bit_settings: Default::default(),
             length: 0,
+            null_count: 0,
         };
         out.compute_len();
         out
@@ -213,6 +219,7 @@ where
             phantom: PhantomData,
             bit_settings: Default::default(),
             length: 0,
+            null_count: 0,
         };
         out.compute_len();
         out
@@ -235,6 +242,7 @@ where
             phantom: PhantomData,
             bit_settings,
             length: 0,
+            null_count: 0,
         };
         out.compute_len();
         if !keep_sorted {
@@ -258,6 +266,7 @@ where
             phantom: PhantomData,
             bit_settings: Default::default(),
             length: 0,
+            null_count: 0,
         };
         out.compute_len();
         out
@@ -273,12 +282,8 @@ where
         Self::with_chunk(name, to_primitive::<T>(v, None))
     }
 
-    /// Nullify values in slice with an existing null bitmap
-    pub fn new_from_owned_with_null_bitmap(
-        name: &str,
-        values: Vec<T::Native>,
-        buffer: Option<Bitmap>,
-    ) -> Self {
+    /// Create a new ChunkedArray from a Vec and a validity mask.
+    pub fn from_vec_validity(name: &str, values: Vec<T::Native>, buffer: Option<Bitmap>) -> Self {
         let arr = to_array::<T>(values, buffer);
         let mut out = ChunkedArray {
             field: Arc::new(Field::new(name, T::get_dtype())),

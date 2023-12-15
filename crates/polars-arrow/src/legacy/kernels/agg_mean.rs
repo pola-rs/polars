@@ -5,12 +5,12 @@ use std::simd::{
 
 use multiversion::multiversion;
 use num_traits::ToPrimitive;
+use polars_utils::float::IsFloat;
 
 use crate::array::{Array, PrimitiveArray};
 use crate::bitmap::utils::{BitChunkIterExact, BitChunksExact};
 use crate::bitmap::Bitmap;
 use crate::datatypes::PhysicalType::Primitive;
-use crate::legacy::data_types::IsFloat;
 use crate::types::NativeType;
 use crate::with_match_primitive_type;
 
