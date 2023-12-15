@@ -4354,7 +4354,7 @@ class DataFrame:
         │ mean       ┆ 2.266667 ┆ 4.5      ┆ null  ┆ null ┆ null ┆ 2020-12-31 16:00:00 │
         │ std        ┆ 1.101514 ┆ 0.707107 ┆ null  ┆ null ┆ null ┆ null                │
         │ min        ┆ 1.0      ┆ 4.0      ┆ False ┆ b    ┆ eur  ┆ 2020-01-01          │
-        │ 25%        ┆ 1.0      ┆ 4.0      ┆ null  ┆ null ┆ null ┆ null                │
+        │ 25%        ┆ 2.8      ┆ 4.0      ┆ null  ┆ null ┆ null ┆ null                │
         │ 50%        ┆ 2.8      ┆ 5.0      ┆ null  ┆ null ┆ null ┆ null                │
         │ 75%        ┆ 3.0      ┆ 5.0      ┆ null  ┆ null ┆ null ┆ null                │
         │ max        ┆ 3.0      ┆ 5.0      ┆ True  ┆ c    ┆ usd  ┆ 2022-01-01          │
