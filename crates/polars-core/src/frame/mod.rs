@@ -2129,7 +2129,7 @@ impl DataFrame {
     ///
     /// df.try_apply("foo", |s| {
     ///     s.utf8()?
-    ///     .set_at_idx_with(idx, |opt_val| opt_val.map(|string| format!("{}-is-modified", string)))
+    ///     .scatter_with(idx, |opt_val| opt_val.map(|string| format!("{}-is-modified", string)))
     /// });
     /// # Ok::<(), PolarsError>(())
     /// ```

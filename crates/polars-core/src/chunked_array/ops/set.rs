@@ -6,7 +6,7 @@ use arrow::legacy::prelude::FromData;
 use crate::prelude::*;
 use crate::utils::{align_chunks_binary, CustomIterTools};
 
-macro_rules! impl_set_at_idx_with {
+macro_rules! impl_scatter_with {
     ($self:ident, $builder:ident, $idx:ident, $f:ident) => {{
         let mut ca_iter = $self.into_iter().enumerate();
 
@@ -77,10 +77,10 @@ where
                 }
             }
         }
-        self.set_at_idx_with(idx, |_| value)
+        self.scatter_with(idx, |_| value)
     }
 
-    fn set_at_idx_with<I: IntoIterator<Item = IdxSize>, F>(
+    fn scatter_with<I: IntoIterator<Item = IdxSize>, F>(
         &'a self,
         idx: I,
         f: F,
@@ -89,7 +89,7 @@ where
         F: Fn(Option<T::Native>) -> Option<T::Native>,
     {
         let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
-        impl_set_at_idx_with!(self, builder, idx, f)
+        impl_scatter_with!(self, builder, idx, f)
     }
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<T::Native>) -> PolarsResult<Self> {
@@ -127,10 +127,10 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
         idx: I,
         value: Option<bool>,
     ) -> PolarsResult<Self> {
-        self.set_at_idx_with(idx, |_| value)
+        self.scatter_with(idx, |_| value)
     }
 
-    fn set_at_idx_with<I: IntoIterator<Item = IdxSize>, F>(
+    fn scatter_with<I: IntoIterator<Item = IdxSize>, F>(
         &'a self,
         idx: I,
         f: F,
@@ -206,7 +206,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
         Ok(ca)
     }
 
-    fn set_at_idx_with<I: IntoIterator<Item = IdxSize>, F>(
+    fn scatter_with<I: IntoIterator<Item = IdxSize>, F>(
         &'a self,
         idx: I,
         f: F,
@@ -216,7 +216,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
         F: Fn(Option<&'a str>) -> Option<String>,
     {
         let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
-        impl_set_at_idx_with!(self, builder, idx, f)
+        impl_scatter_with!(self, builder, idx, f)
     }
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<&'a str>) -> PolarsResult<Self>
@@ -270,7 +270,7 @@ impl<'a> ChunkSet<'a, &'a [u8], Vec<u8>> for BinaryChunked {
         Ok(ca)
     }
 
-    fn set_at_idx_with<I: IntoIterator<Item = IdxSize>, F>(
+    fn scatter_with<I: IntoIterator<Item = IdxSize>, F>(
         &'a self,
         idx: I,
         f: F,
@@ -281,7 +281,7 @@ impl<'a> ChunkSet<'a, &'a [u8], Vec<u8>> for BinaryChunked {
     {
         let mut builder =
             BinaryChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
-        impl_set_at_idx_with!(self, builder, idx, f)
+        impl_scatter_with!(self, builder, idx, f)
     }
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<&'a [u8]>) -> PolarsResult<Self>

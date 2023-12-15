@@ -162,11 +162,11 @@ pub trait ChunkSet<'a, A, B> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// let ca = Int32Chunked::new("a", &[1, 2, 3]);
-    /// let new = ca.set_at_idx_with(vec![0, 1], |opt_v| opt_v.map(|v| v - 5)).unwrap();
+    /// let new = ca.scatter_with(vec![0, 1], |opt_v| opt_v.map(|v| v - 5)).unwrap();
     ///
     /// assert_eq!(Vec::from(&new), &[Some(-4), Some(-3), Some(3)]);
     /// ```
-    fn set_at_idx_with<I: IntoIterator<Item = IdxSize>, F>(
+    fn scatter_with<I: IntoIterator<Item = IdxSize>, F>(
         &'a self,
         idx: I,
         f: F,
