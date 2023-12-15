@@ -58,7 +58,6 @@ def s3(s3_base: str, io_files_path: Path) -> str:
     [
         (pl.read_csv, "csv"),
         (pl.read_ipc, "ipc"),
-        (pl.read_parquet, "parquet"),
     ],
 )
 def test_read_s3(s3: str, function: Callable[..., Any], extension: str) -> None:

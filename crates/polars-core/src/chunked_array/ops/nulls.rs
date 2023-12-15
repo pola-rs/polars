@@ -49,6 +49,18 @@ pub fn is_null(name: &str, chunks: &[ArrayRef]) -> BooleanChunked {
     BooleanChunked::from_chunk_iter(name, chunks)
 }
 
+pub fn replace_non_null(name: &str, chunks: &[ArrayRef], default: bool) -> BooleanChunked {
+    BooleanChunked::from_chunk_iter(
+        name,
+        chunks.iter().map(|el| {
+            BooleanArray::from_data_default(
+                Bitmap::new_with_value(default, el.len()),
+                el.validity().cloned(),
+            )
+        }),
+    )
+}
+
 pub(crate) fn coalesce_nulls(chunks: &[ArrayRef], other: &[ArrayRef]) -> Vec<ArrayRef> {
     assert_eq!(chunks.len(), other.len());
     chunks

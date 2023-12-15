@@ -106,6 +106,7 @@ impl RevMapping {
         matches!(self, Self::Local(_, _))
     }
 
+    #[inline]
     pub fn is_enum(&self) -> bool {
         matches!(self, Self::Enum(_, _))
     }
@@ -586,9 +587,9 @@ impl CategoricalChunked {
             .map(|opt_s: Option<&str>| {
                 opt_s
                     .map(|s| {
-                        map.get(s).copied().ok_or_else(
-                            || polars_err!(ComputeError: "value '{}' is not present in Enum: {:?}",s,categories),
-                        )
+                        map.get(s).copied().ok_or_else(|| {
+                            polars_err!(not_in_enum, value = s, categories = categories)
+                        })
                     })
                     .transpose()
             })

@@ -686,6 +686,19 @@ impl PySeries {
     fn tail(&self, n: usize) -> Self {
         self.series.tail(Some(n)).into()
     }
+
+    fn value_counts(&self, sort: bool, parallel: bool) -> PyResult<PyDataFrame> {
+        let out = self
+            .series
+            .value_counts(sort, parallel)
+            .map_err(PyPolarsErr::from)?;
+        Ok(out.into())
+    }
+
+    fn slice(&self, offset: i64, length: Option<usize>) -> Self {
+        let length = length.unwrap_or_else(|| self.series.len());
+        self.series.slice(offset, length).into()
+    }
 }
 
 macro_rules! impl_set_with_mask {

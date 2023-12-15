@@ -1,11 +1,7 @@
 use std::fmt::Write;
-use std::ops::Add;
 
-use arrow::array::PrimitiveArray;
 use arrow::legacy::index::IdxSize;
-use arrow::types::simd::Simd;
 use num_traits::ToPrimitive;
-use polars_compute::min_max::MinMaxKernel;
 use polars_core::datatypes::PolarsNumericType;
 use polars_core::prelude::{
     ChunkCast, ChunkSort, ChunkedArray, DataType, StructChunked, UInt32Type, Utf8ChunkedBuilder, *,
@@ -24,10 +20,7 @@ fn compute_hist<T>(
 ) -> Series
 where
     T: PolarsNumericType,
-    PrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
-    T::Native: IsFloat,
-    <T::Native as Simd>::Simd:
-        Add<Output = <T::Native as Simd>::Simd> + arrow::compute::aggregate::Sum<T::Native>,
+    ChunkedArray<T>: ChunkAgg<T::Native>,
 {
     let (breaks, count) = if let Some(bins) = bins {
         let mut breaks = Vec::with_capacity(bins.len() + 1);
@@ -74,8 +67,8 @@ where
         }
         (breaks, count)
     } else {
-        let min = ca.min().unwrap().to_f64().unwrap();
-        let max = ca.max().unwrap().to_f64().unwrap();
+        let min = ChunkAgg::min(ca).unwrap().to_f64().unwrap();
+        let max = ChunkAgg::max(ca).unwrap().to_f64().unwrap();
 
         let start = min.floor() - 1.0;
         let end = max.ceil() + 1.0;

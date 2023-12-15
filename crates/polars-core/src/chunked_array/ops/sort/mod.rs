@@ -13,11 +13,10 @@ use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
 use arrow::legacy::prelude::FromData;
 use arrow::legacy::trusted_len::TrustedLenPush;
-use polars_utils::ord::compare_fn_nan_max;
 use rayon::prelude::*;
 pub use slice::*;
 
-use crate::prelude::compare_inner::PartialOrdInner;
+use crate::prelude::compare_inner::TotalOrdInner;
 #[cfg(feature = "dtype-struct")]
 use crate::prelude::sort::arg_sort_multiple::_get_rows_encoded_ca;
 use crate::prelude::sort::arg_sort_multiple::{arg_sort_multiple_impl, args_validate};
@@ -271,7 +270,7 @@ where
 }
 
 fn ordering_other_columns<'a>(
-    compare_inner: &'a [Box<dyn PartialOrdInner + 'a>],
+    compare_inner: &'a [Box<dyn TotalOrdInner + 'a>],
     descending: &[bool],
     idx_a: usize,
     idx_b: usize,

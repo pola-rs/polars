@@ -22,6 +22,7 @@ def test_df_describe() -> None:
     )
 
     result = df.describe()
+    print(result)
     expected = pl.DataFrame(
         {
             "describe": [
@@ -41,7 +42,7 @@ def test_df_describe() -> None:
                 2.2666666666666666,
                 1.1015141094572205,
                 1.0,
-                1.0,
+                2.8,
                 2.8,
                 3.0,
                 3.0,

@@ -4,8 +4,6 @@ use num_traits::FromPrimitive;
 use rayon::prelude::*;
 use rayon::ThreadPool;
 
-use crate::float::IsFloat;
-use crate::ord::compare_fn_nan_max;
 use crate::total_ord::TotalOrd;
 use crate::IdxSize;
 
@@ -77,14 +75,6 @@ pub unsafe fn perfect_sort(
     // Safety:
     // all elements are written
     out.set_len(idx.len());
-}
-
-/// used a lot, ensure there is a single impl
-pub fn sort_slice_ascending<T: IsFloat + PartialOrd>(v: &mut [T]) {
-    v.sort_unstable_by(|a, b| compare_fn_nan_max(a, b))
-}
-pub fn sort_slice_descending<T: IsFloat + PartialOrd>(v: &mut [T]) {
-    v.sort_unstable_by(|a, b| compare_fn_nan_max(b, a))
 }
 
 unsafe fn assume_init_mut<T>(slice: &mut [MaybeUninit<T>]) -> &mut [T] {

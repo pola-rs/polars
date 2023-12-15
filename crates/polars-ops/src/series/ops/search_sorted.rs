@@ -1,12 +1,11 @@
 use std::cmp::Ordering;
 use std::fmt::Debug;
 
-use arrow::array::{Array, BinaryArray, PrimitiveArray};
+use arrow::array::Array;
 use arrow::legacy::prelude::*;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
-use polars_utils::float::IsFloat;
-use polars_utils::ord::compare_fn_nan_max;
+use polars_utils::total_ord::{TotalEq, TotalOrd};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -19,33 +18,16 @@ pub enum SearchSortedSide {
     Right,
 }
 
-// Utility trait to make generics work
-trait GetArray<T> {
-    unsafe fn _get_value_unchecked(&self, i: usize) -> Option<T>;
-}
-
-impl<T: NumericNative> GetArray<T> for &PrimitiveArray<T> {
-    unsafe fn _get_value_unchecked(&self, i: usize) -> Option<T> {
-        self.get_unchecked(i)
-    }
-}
-
-impl<'a> GetArray<&'a [u8]> for &'a BinaryArray<i64> {
-    unsafe fn _get_value_unchecked(&self, i: usize) -> Option<&'a [u8]> {
-        self.get_unchecked(i)
-    }
-}
-
 /// Search the left or right index that still fulfills the requirements.
-fn finish_side<G, I>(
+fn finish_side<'a, A>(
     side: SearchSortedSide,
     out: &mut Vec<IdxSize>,
     mid: IdxSize,
-    arr: G,
+    arr: &'a A,
     len: usize,
 ) where
-    G: GetArray<I>,
-    I: PartialEq + Debug + Copy,
+    A: StaticArray,
+    A::ValueT<'a>: TotalOrd + Debug + Copy,
 {
     let mut mid = mid;
 
@@ -60,14 +42,14 @@ fn finish_side<G, I>(
                 mid -= 1;
             }
 
-            let current = unsafe { arr._get_value_unchecked(mid as usize) };
+            let current = unsafe { arr.get_unchecked(mid as usize) };
             loop {
                 if mid == 0 {
                     out.push(mid);
                     break;
                 }
                 mid -= 1;
-                if current != unsafe { arr._get_value_unchecked(mid as usize) } {
+                if current.tot_ne(unsafe { &arr.get_unchecked(mid as usize) }) {
                     out.push(mid + 1);
                     break;
                 }
@@ -78,7 +60,7 @@ fn finish_side<G, I>(
                 out.push(mid);
                 return;
             }
-            let current = unsafe { arr._get_value_unchecked(mid as usize) };
+            let current = unsafe { arr.get_unchecked(mid as usize) };
             let bound = (len - 1) as IdxSize;
             loop {
                 if mid >= bound {
@@ -86,7 +68,7 @@ fn finish_side<G, I>(
                     break;
                 }
                 mid += 1;
-                if current != unsafe { arr._get_value_unchecked(mid as usize) } {
+                if current.tot_ne(unsafe { &arr.get_unchecked(mid as usize) }) {
                     out.push(mid);
                     break;
                 }
@@ -95,16 +77,16 @@ fn finish_side<G, I>(
     }
 }
 
-fn binary_search_array<G, I>(
+fn binary_search_array<'a, A>(
     side: SearchSortedSide,
     out: &mut Vec<IdxSize>,
-    arr: G,
+    arr: &'a A,
     len: usize,
-    search_value: I,
+    search_value: A::ValueT<'a>,
     descending: bool,
 ) where
-    G: GetArray<I>,
-    I: PartialEq + Debug + Copy + PartialOrd + IsFloat,
+    A: StaticArray,
+    A::ValueT<'a>: TotalOrd + Debug + Copy,
 {
     let mut size = len as IdxSize;
     let mut left = 0 as IdxSize;
@@ -116,13 +98,13 @@ fn binary_search_array<G, I>(
         // SAFETY: the call is made safe by the following invariants:
         // - `mid >= 0`
         // - `mid < size`: `mid` is limited by `[left; right)` bound.
-        let cmp = match unsafe { arr._get_value_unchecked(mid as usize) } {
+        let cmp = match unsafe { arr.get_unchecked(mid as usize) } {
             None => Ordering::Less,
             Some(value) => {
                 if descending {
-                    compare_fn_nan_max(&search_value, &value)
+                    search_value.tot_cmp(&value)
                 } else {
-                    compare_fn_nan_max(&value, &search_value)
+                    value.tot_cmp(&search_value)
                 }
             },
         };

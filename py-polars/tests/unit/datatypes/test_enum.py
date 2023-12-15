@@ -1,3 +1,6 @@
+import operator
+from typing import Callable
+
 import pytest
 
 import polars as pl
@@ -152,3 +155,175 @@ def test_series_init_uninstantiated_enum() -> None:
         TypeError, match="Enum types must be instantiated with a list of categories"
     ):
         pl.Series(["a", "b", "a"], dtype=pl.Enum)
+
+
+def test_equality_enum() -> None:
+    s = pl.Series([None, "a", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
+    s2 = pl.Series([None, "c", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
+
+    expected = pl.Series([None, False, True, True], dtype=pl.Boolean)
+    assert_series_equal(s == s2, expected)
+
+    s_utf = pl.Series(["c"], dtype=pl.Utf8)
+    expected = pl.Series([None, True, False, True], dtype=pl.Boolean)
+    assert_series_equal(s2 == s_utf, expected)
+
+    with pytest.raises(pl.ComputeError, match="value 'd' is not present in Enum"):
+        _ = pl.Series(["d", "d", "d", "c"], dtype=pl.Utf8) == s2
+
+
+def test_equality_missing_enum() -> None:
+    dtype = pl.Enum(["a", "b", "c"])
+    df = pl.DataFrame(
+        {
+            "a": pl.Series([None, "a", "b", "c"], dtype=dtype),
+            "b": pl.Series([None, "b", "b", "c"], dtype=dtype),
+            "c": pl.Series([None, "b", "b", "c"]),
+        }
+    )
+
+    for col in ["b", "c"]:
+        out = df.select(pl.col("a").eq_missing(pl.col(col)).alias("cmp")).get_column(
+            "cmp"
+        )
+        expected = pl.Series("cmp", [True, False, True, True], dtype=pl.Boolean)
+        assert_series_equal(out, expected)
+
+    for col in ["b", "c"]:
+        out = df.select(pl.col("a").ne_missing(pl.col(col)).alias("cmp")).get_column(
+            "cmp"
+        )
+        expected = pl.Series("cmp", [False, True, False, False], dtype=pl.Boolean)
+        assert_series_equal(out, expected)
+
+
+def test_equality_missing_enum_scalar() -> None:
+    dtype = pl.Enum(["a", "b", "c"])
+    df = pl.DataFrame({"a": pl.Series([None, "a", "b", "c"], dtype=dtype)})
+
+    out = df.select(
+        pl.col("a").eq_missing(pl.lit("c", dtype=dtype)).alias("cmp")
+    ).get_column("cmp")
+    expected = pl.Series("cmp", [False, False, False, True], dtype=pl.Boolean)
+    assert_series_equal(out, expected)
+
+    out_utf8 = df.select(pl.col("a").eq_missing(pl.lit("c")).alias("cmp")).get_column(
+        "cmp"
+    )
+    assert_series_equal(out_utf8, expected)
+
+    out = df.select(
+        pl.col("a").ne_missing(pl.lit("c", dtype=dtype)).alias("cmp")
+    ).get_column("cmp")
+    expected = pl.Series("cmp", [True, True, True, False], dtype=pl.Boolean)
+    assert_series_equal(out, expected)
+
+    out_utf8 = df.select(pl.col("a").ne_missing(pl.lit("c")).alias("cmp")).get_column(
+        "cmp"
+    )
+    assert_series_equal(out_utf8, expected)
+
+
+def test_equality_missing_enum_none_scalar() -> None:
+    dtype = pl.Enum(["a", "b", "c"])
+    df = pl.DataFrame({"a": pl.Series([None, "a", "b", "c"], dtype=dtype)})
+
+    out = df.select(
+        pl.col("a").eq_missing(pl.lit(None, dtype=dtype)).alias("cmp")
+    ).get_column("cmp")
+    expected = pl.Series("cmp", [True, False, False, False], dtype=pl.Boolean)
+    assert_series_equal(out, expected)
+
+    out = df.select(
+        pl.col("a").ne_missing(pl.lit(None, dtype=dtype)).alias("cmp")
+    ).get_column("cmp")
+    expected = pl.Series("cmp", [False, True, True, True], dtype=pl.Boolean)
+    assert_series_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        (operator.le, pl.Series([None, True, True, True])),
+        (operator.lt, pl.Series([None, True, False, False])),
+        (operator.ge, pl.Series([None, False, True, True])),
+        (operator.gt, pl.Series([None, False, False, False])),
+    ],
+)
+def test_compare_enum(
+    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
+) -> None:
+    s = pl.Series([None, "a", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
+    s2 = pl.Series([None, "c", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
+
+    assert_series_equal(op(s, s2), expected)
+
+    s2_string = s2.cast(pl.Utf8)
+    assert_series_equal(op(s, s2_string), expected)
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        (operator.le, pl.Series([None, False, True, True])),
+        (operator.lt, pl.Series([None, False, False, True])),
+        (operator.ge, pl.Series([None, True, True, False])),
+        (operator.gt, pl.Series([None, True, False, False])),
+    ],
+)
+def test_compare_enum_str_single(
+    op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
+) -> None:
+    s = pl.Series(
+        [None, "HIGH", "MEDIUM", "LOW"], dtype=pl.Enum(["LOW", "MEDIUM", "HIGH"])
+    )
+    s2 = "MEDIUM"
+
+    assert_series_equal(op(s, s2), expected)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(("op"), [operator.le, operator.lt, operator.ge, operator.gt])
+def test_compare_enum_str_single_raise(
+    op: Callable[[pl.Series, pl.Series], pl.Series]
+) -> None:
+    s = pl.Series(
+        [None, "HIGH", "MEDIUM", "LOW"], dtype=pl.Enum(["LOW", "MEDIUM", "HIGH"])
+    )
+    s2 = "NOTEXIST"
+
+    with pytest.raises(
+        pl.ComputeError, match="value 'NOTEXIST' is not present in Enum"
+    ):
+        op(s, s2)  # type: ignore[arg-type]
+
+
+def test_compare_enum_str_raise() -> None:
+    s = pl.Series([None, "a", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
+    s2 = pl.Series([None, "d", "d", "d"])
+    s_broadcast = pl.Series(["d"])
+
+    for s_compare in [s2, s_broadcast]:
+        for op in [operator.le, operator.gt, operator.ge, operator.lt]:
+            with pytest.raises(
+                pl.ComputeError, match="value 'd' is not present in Enum"
+            ):
+                op(s, s_compare)
+
+
+def test_different_enum_comparison_order() -> None:
+    df_enum = pl.DataFrame(
+        [
+            pl.Series(
+                "a_cat", ["c", "a", "b", "c", "b"], dtype=pl.Enum(["a", "b", "c"])
+            ),
+            pl.Series(
+                "b_cat", ["F", "G", "E", "G", "G"], dtype=pl.Enum(["F", "G", "E"])
+            ),
+        ]
+    )
+    for op in [operator.gt, operator.ge, operator.lt, operator.le]:
+        with pytest.raises(
+            pl.ComputeError,
+            match="can only compare Enum types with the same categories",
+        ):
+            df_enum.filter(op(pl.col("a_cat"), pl.col("b_cat")))

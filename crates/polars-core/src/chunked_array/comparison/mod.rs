@@ -1,5 +1,8 @@
 mod scalar;
 
+#[cfg(feature = "dtype-categorical")]
+mod categorical;
+
 use std::ops::Not;
 
 use arrow::array::BooleanArray;

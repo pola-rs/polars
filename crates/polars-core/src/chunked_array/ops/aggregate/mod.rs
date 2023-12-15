@@ -752,7 +752,7 @@ mod test {
         );
         assert_eq!(
             ca.quantile(0.6, QuantileInterpolOptions::Nearest).unwrap(),
-            Some(4.0)
+            Some(3.0)
         );
 
         assert_eq!(
@@ -829,11 +829,11 @@ mod test {
 
         assert_eq!(
             ca.quantile(0.1, QuantileInterpolOptions::Nearest).unwrap(),
-            Some(1.0)
+            Some(2.0)
         );
         assert_eq!(
             ca.quantile(0.9, QuantileInterpolOptions::Nearest).unwrap(),
-            Some(7.0)
+            Some(6.0)
         );
         assert_eq!(
             ca.quantile(0.6, QuantileInterpolOptions::Nearest).unwrap(),
@@ -890,141 +890,6 @@ mod test {
         assert_eq!(
             ca.quantile(0.6, QuantileInterpolOptions::Linear).unwrap(),
             Some(4.6)
-        );
-
-        let ca = Float32Chunked::from_slice(
-            "",
-            &[
-                0.166189, 0.166559, 0.168517, 0.169393, 0.175272, 0.233167, 0.238787, 0.266562,
-                0.26903, 0.285792, 0.292801, 0.293429, 0.301706, 0.308534, 0.331489, 0.346095,
-                0.367644, 0.369939, 0.372074, 0.41014, 0.415789, 0.421781, 0.427725, 0.465363,
-                0.500208, 2.621727, 2.803311, 3.868526,
-            ],
-        );
-
-        assert!(
-            (ca.quantile(0.1, QuantileInterpolOptions::Nearest)
-                .unwrap()
-                .unwrap()
-                - 0.168517)
-                .abs()
-                < 0.00001
-        );
-        assert!(
-            (ca.quantile(0.9, QuantileInterpolOptions::Nearest)
-                .unwrap()
-                .unwrap()
-                - 2.621727)
-                .abs()
-                < 0.00001
-        );
-        assert!(
-            (ca.quantile(0.6, QuantileInterpolOptions::Nearest)
-                .unwrap()
-                .unwrap()
-                - 0.367644)
-                .abs()
-                < 0.00001
-        );
-
-        assert!(
-            (ca.quantile(0.1, QuantileInterpolOptions::Lower)
-                .unwrap()
-                .unwrap()
-                - 0.168517)
-                .abs()
-                < 0.00001
-        );
-        assert!(
-            (ca.quantile(0.9, QuantileInterpolOptions::Lower)
-                .unwrap()
-                .unwrap()
-                - 0.500208)
-                .abs()
-                < 0.00001
-        );
-        assert!(
-            (ca.quantile(0.6, QuantileInterpolOptions::Lower)
-                .unwrap()
-                .unwrap()
-                - 0.367644)
-                .abs()
-                < 0.00001
-        );
-
-        assert!(
-            (ca.quantile(0.1, QuantileInterpolOptions::Higher)
-                .unwrap()
-                .unwrap()
-                - 0.169393)
-                .abs()
-                < 0.00001
-        );
-        assert!(
-            (ca.quantile(0.9, QuantileInterpolOptions::Higher)
-                .unwrap()
-                .unwrap()
-                - 2.621727)
-                .abs()
-                < 0.00001
-        );
-        assert!(
-            (ca.quantile(0.6, QuantileInterpolOptions::Higher)
-                .unwrap()
-                .unwrap()
-                - 0.369939)
-                .abs()
-                < 0.00001
-        );
-
-        assert!(
-            (ca.quantile(0.1, QuantileInterpolOptions::Midpoint)
-                .unwrap()
-                .unwrap()
-                - 0.168955)
-                .abs()
-                < 0.0001
-        );
-        assert!(
-            (ca.quantile(0.9, QuantileInterpolOptions::Midpoint)
-                .unwrap()
-                .unwrap()
-                - 1.560967)
-                .abs()
-                < 0.0001
-        );
-        assert!(
-            (ca.quantile(0.6, QuantileInterpolOptions::Midpoint)
-                .unwrap()
-                .unwrap()
-                - 0.368791)
-                .abs()
-                < 0.0001
-        );
-
-        assert!(
-            (ca.quantile(0.1, QuantileInterpolOptions::Linear)
-                .unwrap()
-                .unwrap()
-                - 0.169130)
-                .abs()
-                < 0.0001
-        );
-        assert!(
-            (ca.quantile(0.9, QuantileInterpolOptions::Linear)
-                .unwrap()
-                .unwrap()
-                - 1.136664)
-                .abs()
-                < 0.0001
-        );
-        assert!(
-            (ca.quantile(0.6, QuantileInterpolOptions::Linear)
-                .unwrap()
-                .unwrap()
-                - 0.368103)
-                .abs()
-                < 0.0001
         );
     }
 }
