@@ -67,7 +67,7 @@ fn sort_by_groups_single_by(
                 // We are already in par iter.
                 multithreaded: false,
                 ..Default::default()
-            });
+            }).unwrap();
             map_sorted_indices_to_group_idx(&sorted_idx, idx)
         },
         GroupsIndicator::Slice([first, len]) => {
@@ -77,7 +77,7 @@ fn sort_by_groups_single_by(
                 // We are already in par iter.
                 multithreaded: false,
                 ..Default::default()
-            });
+            }).unwrap();
             map_sorted_indices_to_group_slice(&sorted_idx, first)
         },
     };
@@ -110,7 +110,7 @@ fn sort_by_groups_no_match_single<'a>(
                         // We are already in par iter.
                         multithreaded: false,
                         ..Default::default()
-                    });
+                    }).unwrap();
                     Ok(Some(unsafe { s.take_unchecked(&idx) }))
                 },
                 _ => Ok(None),
@@ -176,11 +176,11 @@ impl PhysicalExpr for SortByExpr {
 
         let (series, sorted_idx) = if self.by.len() == 1 {
             let sorted_idx_f = || {
-                let s_sort_by = self.by[0].evaluate(df, state)?;
-                Ok(s_sort_by.arg_sort(SortOptions {
+                let s_sort_by = self.by[0].evaluate(df, state).unwrap();
+                s_sort_by.arg_sort(SortOptions {
                     descending: descending[0],
                     ..Default::default()
-                }))
+                })
             };
             POOL.install(|| rayon::join(series_f, sorted_idx_f))
         } else {

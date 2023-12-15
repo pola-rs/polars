@@ -333,13 +333,13 @@ pub trait SeriesTrait:
         invalid_operation_panic!(get_unchecked, self)
     }
 
-    fn sort_with(&self, _options: SortOptions) -> Series {
+    fn sort_with(&self, _options: SortOptions) -> PolarsResult<Series> {
         invalid_operation_panic!(sort_with, self)
     }
 
     /// Retrieve the indexes needed for a sort.
     #[allow(unused)]
-    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+    fn arg_sort(&self, options: SortOptions) -> PolarsResult<IdxCa> {
         invalid_operation_panic!(arg_sort, self)
     }
 

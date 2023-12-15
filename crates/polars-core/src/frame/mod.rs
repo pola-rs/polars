@@ -1849,14 +1849,14 @@ impl DataFrame {
                 // no need to compute the sort indices and then take by these indices
                 // simply sort and return as frame
                 if df.width() == 1 && df.check_name_to_idx(s.name()).is_ok() {
-                    let mut out = s.sort_with(options);
+                    let mut out = s.sort_with(options)?;
                     if let Some((offset, len)) = slice {
                         out = out.slice(offset, len);
                     }
 
                     return Ok(out.into_frame());
                 }
-                s.arg_sort(options)
+                s.arg_sort(options)?
             },
             _ => {
                 if nulls_last || has_struct || std::env::var("POLARS_ROW_FMT_SORT").is_ok() {
@@ -2702,7 +2702,7 @@ impl DataFrame {
                     },
                 };
 
-                let last_idx = last_idx.sort(false);
+                let last_idx = last_idx.sort(false).unwrap();
                 return Ok(unsafe { df.take_unchecked(&last_idx) });
             },
             (UniqueKeepStrategy::First | UniqueKeepStrategy::Any, false) => {

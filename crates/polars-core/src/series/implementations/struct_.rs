@@ -329,7 +329,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         &self.0
     }
 
-    fn sort_with(&self, options: SortOptions) -> Series {
+    fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
         let df = self.0.clone().unnest();
 
         let desc = if options.descending {
@@ -347,10 +347,10 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
                 options.multithreaded,
             )
             .unwrap();
-        StructChunked::new_unchecked(self.name(), &out.columns).into_series()
+        Ok(StructChunked::new_unchecked(self.name(), &out.columns).into_series())
     }
 
-    fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        self.0.arg_sort(options)
+    fn arg_sort(&self, options: SortOptions) -> PolarsResult<IdxCa> {
+        Ok(self.0.arg_sort(options).unwrap())
     }
 }

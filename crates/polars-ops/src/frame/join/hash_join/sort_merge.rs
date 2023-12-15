@@ -227,7 +227,7 @@ pub fn _sort_or_hash_inner(
                 nulls_last: false,
                 multithreaded: true,
                 maintain_order: false,
-            });
+            }).unwrap();
             let s_right = unsafe { s_right.take_unchecked(&sort_idx) };
             let ids = par_sorted_merge_inner_no_nulls(s_left, &s_right);
             let reverse_idx_map = create_reverse_map_from_arg_sort(sort_idx);
@@ -254,7 +254,7 @@ pub fn _sort_or_hash_inner(
                 nulls_last: false,
                 multithreaded: true,
                 maintain_order: false,
-            });
+            }).unwrap();
             let s_left = unsafe { s_left.take_unchecked(&sort_idx) };
             let ids = par_sorted_merge_inner_no_nulls(&s_left, s_right);
             let reverse_idx_map = create_reverse_map_from_arg_sort(sort_idx);
@@ -325,7 +325,7 @@ pub(super) fn sort_or_hash_left(
                 nulls_last: false,
                 multithreaded: true,
                 maintain_order: false,
-            });
+            }).unwrap();
             let s_right = unsafe { s_right.take_unchecked(&sort_idx) };
 
             let ids = par_sorted_merge_left(s_left, &s_right);

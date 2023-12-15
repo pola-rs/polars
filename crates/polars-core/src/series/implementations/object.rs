@@ -197,6 +197,14 @@ where
         ChunkUnique::arg_unique(&self.0)
     }
 
+    fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
+        ChunkSort::sort_with(&self.0, options).map(|ca| ca.into_series())
+    }
+
+    fn arg_sort(&self, options: SortOptions) -> PolarsResult<IdxCa> {
+        ChunkSort::arg_sort(&self.0, options)
+    }
+
     fn is_null(&self) -> BooleanChunked {
         ObjectChunked::is_null(&self.0)
     }

@@ -20,7 +20,7 @@ where
     ChunkedArray<T>: ChunkSort<T>,
 {
     if k >= ca.len() {
-        return ca.sort(!descending);
+        return ca.sort(!descending).unwrap();
     }
 
     // descending is opposite from sort as top-k returns largest

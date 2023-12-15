@@ -123,7 +123,7 @@ where
                 }
             },
             IsSorted::Not => {
-                let sorted = self.sort(false);
+                let sorted = self.sort(false)?;
                 sorted.unique()
             },
         }
@@ -164,7 +164,7 @@ where
                 }
             },
             IsSorted::Not => {
-                let sorted = self.sort(false);
+                let sorted = self.sort(false)?;
                 sorted.n_unique()
             },
         }

@@ -286,7 +286,7 @@ impl Series {
         self.sort_with(SortOptions {
             descending,
             ..Default::default()
-        })
+        }).unwrap()
     }
 
     /// Only implemented for numeric types

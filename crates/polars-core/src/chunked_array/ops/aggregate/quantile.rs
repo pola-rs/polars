@@ -123,7 +123,7 @@ where
     }
 
     let (idx, float_idx, top_idx) = quantile_idx(quantile, length, null_count, interpol);
-    let sorted = ca.sort(false);
+    let sorted = ca.sort(false).unwrap();
     let lower = sorted.get(idx).map(|v| v.to_f64().unwrap());
 
     let opt = match interpol {
