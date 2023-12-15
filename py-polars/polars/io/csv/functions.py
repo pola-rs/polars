@@ -230,7 +230,7 @@ def read_csv(
             encoding=None,
             use_pyarrow=True,
             raise_if_empty=raise_if_empty,
-            **storage_options,
+            storage_options=storage_options,
         ) as data:
             import pyarrow as pa
             import pyarrow.csv
@@ -364,7 +364,7 @@ def read_csv(
         encoding=encoding,
         use_pyarrow=False,
         raise_if_empty=raise_if_empty,
-        **storage_options,
+        storage_options=storage_options,
     ) as data:
         df = pl.DataFrame._read_csv(
             data,
