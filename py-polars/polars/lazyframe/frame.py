@@ -450,6 +450,9 @@ class LazyFrame:
         if storage_options is not None:
             storage_options = list(storage_options.items())  #  type: ignore[assignment]
 
+        print(source)
+        print(storage_options)
+
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_parquet(
             source,

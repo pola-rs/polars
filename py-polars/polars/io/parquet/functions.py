@@ -106,8 +106,6 @@ def read_parquet(
         benchmarking the parquet-reader as `rechunk` can be an expensive operation
         that should not contribute to the timings.
     """
-    storage_options = storage_options or {}
-
     if use_pyarrow:
         if not _PYARROW_AVAILABLE:
             raise ModuleNotFoundError(
@@ -120,6 +118,7 @@ def read_parquet(
         import pyarrow.parquet
 
         pyarrow_options = pyarrow_options or {}
+        storage_options = storage_options or {}
 
         # TODO: Update _prepare_file_arg to handle list[Path] input
         with _prepare_file_arg(
@@ -137,6 +136,8 @@ def read_parquet(
             )
 
     if isinstance(source, (BinaryIO, BytesIO, bytes)):
+        storage_options = storage_options or {}
+
         with _prepare_file_arg(
             source, use_pyarrow=use_pyarrow, **storage_options
         ) as source_prep:
