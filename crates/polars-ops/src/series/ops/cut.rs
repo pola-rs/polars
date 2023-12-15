@@ -104,7 +104,7 @@ pub fn qcut(
     include_breaks: bool,
 ) -> PolarsResult<Series> {
     let s = s.cast(&DataType::Float64)?;
-    let s2 = s.sort(false);
+    let s2 = s.sort(false).unwrap();
     let ca = s2.f64()?;
     let f = |&p| {
         ca.quantile(p, QuantileInterpolOptions::Linear)

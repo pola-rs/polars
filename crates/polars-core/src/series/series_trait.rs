@@ -334,13 +334,13 @@ pub trait SeriesTrait:
     }
 
     fn sort_with(&self, _options: SortOptions) -> PolarsResult<Series> {
-        invalid_operation_panic!(sort_with, self)
+        polars_bail!(opq = sort_with, self.dtype());
     }
 
     /// Retrieve the indexes needed for a sort.
     #[allow(unused)]
     fn arg_sort(&self, options: SortOptions) -> PolarsResult<IdxCa> {
-        invalid_operation_panic!(arg_sort, self)
+        polars_bail!(opq = arg_sort, self.dtype());
     }
 
     /// Count the null values.
