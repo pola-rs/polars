@@ -1,6 +1,6 @@
 use arrow::array::ValueSize;
 use arrow::bitmap::MutableBitmap;
-use arrow::legacy::kernels::set::{set_at_idx_no_null, set_with_mask};
+use arrow::legacy::kernels::set::{scatter_single_non_null, set_with_mask};
 use arrow::legacy::prelude::FromData;
 
 use crate::prelude::*;
@@ -53,7 +53,7 @@ where
             if let Some(value) = value {
                 // Fast path uses kernel.
                 if self.chunks.len() == 1 {
-                    let arr = set_at_idx_no_null(
+                    let arr = scatter_single_non_null(
                         self.downcast_iter().next().unwrap(),
                         idx,
                         value,
