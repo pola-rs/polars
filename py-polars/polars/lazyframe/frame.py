@@ -442,7 +442,7 @@ class LazyFrame:
             can_use_fsspec
             and not _is_local_file(source)  # type: ignore[arg-type]
             and not _is_supported_cloud(source)  # type: ignore[arg-type]
-            # and use_glob
+            and use_glob
         ):
             scan = _scan_parquet_fsspec(source, storage_options)  # type: ignore[arg-type]
             if n_rows:
