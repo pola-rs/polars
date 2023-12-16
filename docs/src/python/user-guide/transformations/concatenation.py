@@ -1,6 +1,5 @@
 # --8<-- [start:setup]
 import polars as pl
-from datetime import datetime
 
 # --8<-- [end:setup]
 
