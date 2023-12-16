@@ -232,8 +232,8 @@ Help: if you're using Python, this may look something like:
         # Initialize Categoricals.
         df1 = pl.DataFrame({'a': ['1', '2']}, schema={'a': pl.Categorical})
         df2 = pl.DataFrame({'a': ['1', '3']}, schema={'a': pl.Categorical})
-        # Your operations go here.
-        pl.concat([df1, df2])
+    # Your operations go here.
+    pl.concat([df1, df2])
 
 Alternatively, if the performance cost is acceptable, you could just set:
 
