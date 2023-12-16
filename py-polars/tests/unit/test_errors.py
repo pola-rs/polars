@@ -686,7 +686,7 @@ def test_multiple_errors_encountered() -> None:
     with pytest.raises(pl.ComputeError, match="Multiple AlreadyEncountered"):
         df.collect()
 
-        
+
 def test_non_existent_expr_inputs_in_lazy() -> None:
     with pytest.raises(pl.ColumnNotFoundError):
         pl.LazyFrame().filter(pl.col("x") == 1).explain()  # tests: 12074
