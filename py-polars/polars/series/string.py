@@ -1761,7 +1761,7 @@ class StringNameSpace:
 
         Examples
         --------
-        >>> pl.Config.set_fmt_str_lengths(100)
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
         >>> s = pl.Series(
         ...     "lyrics",
         ...     [
@@ -1805,7 +1805,7 @@ class StringNameSpace:
 
         Examples
         --------
-        >>> pl.Config.set_fmt_str_lengths(100)
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
         >>> s = pl.Series(
         ...     "lyrics",
         ...     [

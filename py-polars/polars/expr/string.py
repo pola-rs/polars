@@ -2302,7 +2302,7 @@ class ExprStringNameSpace:
 
         Examples
         --------
-        >>> pl.Config.set_fmt_str_lengths(100)
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
         >>> df = pl.DataFrame(
         ...     {
         ...         "lyrics": [
@@ -2357,7 +2357,7 @@ class ExprStringNameSpace:
 
         Examples
         --------
-        >>> pl.Config.set_fmt_str_lengths(100)
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
         >>> df = pl.DataFrame(
         ...     {
         ...         "lyrics": [
@@ -2388,10 +2388,21 @@ class ExprStringNameSpace:
         >>> df.with_columns(
         ...     pl.col("lyrics")
         ...     .str.replace_many(
-        ...         ["me", "you"]["you", "me"],
+        ...         ["me", "you"],
+        ...         ["you", "me"],
         ...     )
         ...     .alias("confusing")
         ... )
+        shape: (3, 2)
+        ┌────────────────────────────────────────────────────┬───────────────────────────────────────────────────┐
+        │ lyrics                                             ┆ confusing                                         │
+        │ ---                                                ┆ ---                                               │
+        │ str                                                ┆ str                                               │
+        ╞════════════════════════════════════════════════════╪═══════════════════════════════════════════════════╡
+        │ Everybody wants to rule the world                  ┆ Everybody wants to rule the world                 │
+        │ Tell me what you want, what you really really want ┆ Tell you what me want, what me really really want │
+        │ Can you feel the love tonight                      ┆ Can me feel the love tonight                      │
+        └────────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
 
         """  # noqa: W505
         patterns = parse_as_expression(patterns, str_as_lit=False, list_as_lit=False)
