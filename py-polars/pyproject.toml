@@ -146,7 +146,7 @@ select = [
 ]
 
 ignore = [
-  # Line length regulated by black
+  # Line length regulated by formatter
   "E501",
   # pydocstyle: http://www.pydocstyle.org/en/stable/error_codes.html
   # numpy convention with a few additional lints
