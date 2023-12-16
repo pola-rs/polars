@@ -2,11 +2,13 @@
 //!
 //! Functions on expressions that might be useful.
 mod arity;
+#[cfg(feature = "dtype-struct")]
 mod coerce;
 mod concat;
 #[cfg(feature = "cov")]
 mod correlation;
 pub(crate) mod horizontal;
+#[cfg(any(feature = "range", feature = "arg_where"))]
 mod index;
 #[cfg(feature = "range")]
 mod range;
@@ -16,11 +18,13 @@ mod syntactic_sugar;
 mod temporal;
 
 pub use arity::*;
+#[cfg(feature = "dtype-struct")]
 pub use coerce::*;
 pub use concat::*;
 #[cfg(feature = "cov")]
 pub use correlation::*;
 pub use horizontal::*;
+#[cfg(any(feature = "range", feature = "arg_where"))]
 pub use index::*;
 #[cfg(feature = "temporal")]
 use polars_core::export::arrow::temporal_conversions::{MICROSECONDS, MILLISECONDS, NANOSECONDS};
