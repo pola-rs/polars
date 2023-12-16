@@ -51,8 +51,8 @@ python:
   interpolate: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.interpolate.html
   fill_nan: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.fill_nan.html
   operators: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/operators.html
-  map: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.map.html
-  apply: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.apply.html
+  map_batches: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.map_batches.html
+  map_elements: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.map_elements.html
   over: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.over.html
   implode: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.implode.html
   DataFrame.explode: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.explode.html
