@@ -24,7 +24,7 @@ where
 
 /// Like [`map_binary`], but used in a group_by-aggregation context.
 ///
-/// See [`Expr::apply`] for the difference between [`map`](Expr::map) and [`apply`](Expr::apply).
+/// See [`Expr::map_elements`] for the difference between [`map_batches`](Expr::map_batches) and [`map_elements`](Expr::map_elements).
 pub fn apply_binary<F: 'static>(a: Expr, b: Expr, f: F, output_type: GetOutput) -> Expr
 where
     F: Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync,

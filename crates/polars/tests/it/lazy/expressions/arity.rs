@@ -53,7 +53,7 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
     let res = df
         .lazy()
         .with_column(
-            when(col("a").map(
+            when(col("a").map_batches(
                 move |s| {
                     s.utf8()?
                         .to_lowercase()
@@ -83,7 +83,7 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
     let res = df
         .lazy()
         .with_column(
-            when(col("b").map(
+            when(col("b").map_batches(
                 move |s| {
                     s.utf8()?
                         .to_lowercase()

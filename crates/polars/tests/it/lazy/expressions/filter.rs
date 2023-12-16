@@ -26,7 +26,7 @@ fn test_filter_in_group_by_agg() -> PolarsResult<()> {
         .group_by([col("a")])
         .agg([(col("b")
             .filter(col("b").eq(lit(100)))
-            .map(|v| Ok(Some(v)), GetOutput::same_type()))
+            .map_batches(|v| Ok(Some(v)), GetOutput::same_type()))
         .mean()
         .alias("b_mean")])
         .collect()?;

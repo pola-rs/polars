@@ -1571,7 +1571,7 @@ impl LazyFrame {
     /// The function has access to the whole materialized DataFrame at the time it is
     /// called.
     ///
-    /// To apply specific functions to specific columns, use [`Expr::map`] in conjunction
+    /// To apply specific functions to specific columns, use [`Expr::map_batches`] in conjunction
     /// with `LazyFrame::with_column` or `with_columns`.
     ///
     /// ## Warning

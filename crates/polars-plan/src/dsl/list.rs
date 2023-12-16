@@ -258,7 +258,7 @@ impl ListNameSpace {
         let out_dtype = Arc::new(RwLock::new(None::<DataType>));
 
         self.0
-            .map(
+            .map_batches(
                 move |s| {
                     s.list()?
                         .to_struct(n_fields, name_generator.clone())

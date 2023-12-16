@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .group_by(["keys"])
         .agg([
             col("values")
-                .map(|s| Ok(Some(s.shift(1))), GetOutput::default())
+                .map_batches(|s| Ok(Some(s.shift(1))), GetOutput::default())
                 .alias("shift_map"),
             col("values").shift(lit(1)).alias("shift_expression"),
         ])
@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .group_by([col("keys")])
         .agg([
             col("values")
-                .apply(|s| Ok(Some(s.shift(1))), GetOutput::default())
+                .map_elements(|s| Ok(Some(s.shift(1))), GetOutput::default())
                 .alias("shift_map"),
             col("values").shift(lit(1)).alias("shift_expression"),
         ])
@@ -48,7 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // pack to struct to get access to multiple fields in a custom `apply/map`
             as_struct(vec![col("keys"), col("values")])
                 // we will compute the len(a) + b
-                .apply(
+                .map_elements(
                     |s| {
                         // downcast to struct
                         let ca = s.struct_()?;

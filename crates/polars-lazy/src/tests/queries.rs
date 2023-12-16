@@ -90,7 +90,7 @@ fn test_lazy_udf() {
     let df = get_df();
     let new = df
         .lazy()
-        .select([col("sepal.width").map(|s| Ok(Some(s * 200.0)), GetOutput::same_type())])
+        .select([col("sepal.width").map_batches(|s| Ok(Some(s * 200.0)), GetOutput::same_type())])
         .collect()
         .unwrap();
     assert_eq!(
@@ -222,7 +222,7 @@ fn test_lazy_query_2() {
     let df = load_df();
     let ldf = df
         .lazy()
-        .with_column(col("a").map(|s| Ok(Some(s * 2)), GetOutput::same_type()))
+        .with_column(col("a").map_batches(|s| Ok(Some(s * 2)), GetOutput::same_type()))
         .filter(col("a").lt(lit(2)))
         .select([col("b"), col("a")]);
 
@@ -258,7 +258,7 @@ fn test_lazy_query_4() {
         .agg([
             col("day").alias("day"),
             col("cumcases")
-                .apply(
+                .map_elements(
                     |s: Series| Ok(Some(&s - &(s.shift(1)))),
                     GetOutput::same_type(),
                 )
@@ -697,7 +697,7 @@ fn test_lazy_group_by_apply() {
 
     df.lazy()
         .group_by([col("fruits")])
-        .agg([col("cars").apply(
+        .agg([col("cars").map_elements(
             |s: Series| Ok(Some(Series::new("", &[s.len() as u32]))),
             GetOutput::same_type(),
         )])

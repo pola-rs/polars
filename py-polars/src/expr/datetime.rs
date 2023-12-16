@@ -17,7 +17,7 @@ impl PyExpr {
     fn dt_epoch_seconds(&self) -> Self {
         self.inner
             .clone()
-            .map(
+            .map_batches(
                 |s| {
                     s.timestamp(TimeUnit::Milliseconds)
                         .map(|ca| Some((ca / 1000).into_series()))
@@ -144,7 +144,7 @@ impl PyExpr {
     fn dt_total_days(&self) -> Self {
         self.inner
             .clone()
-            .map(
+            .map_batches(
                 |s| Ok(Some(s.duration()?.days().into_series())),
                 GetOutput::from_type(DataType::Int64),
             )
@@ -153,7 +153,7 @@ impl PyExpr {
     fn dt_total_hours(&self) -> Self {
         self.inner
             .clone()
-            .map(
+            .map_batches(
                 |s| Ok(Some(s.duration()?.hours().into_series())),
                 GetOutput::from_type(DataType::Int64),
             )
@@ -162,7 +162,7 @@ impl PyExpr {
     fn dt_total_minutes(&self) -> Self {
         self.inner
             .clone()
-            .map(
+            .map_batches(
                 |s| Ok(Some(s.duration()?.minutes().into_series())),
                 GetOutput::from_type(DataType::Int64),
             )
@@ -171,7 +171,7 @@ impl PyExpr {
     fn dt_total_seconds(&self) -> Self {
         self.inner
             .clone()
-            .map(
+            .map_batches(
                 |s| Ok(Some(s.duration()?.seconds().into_series())),
                 GetOutput::from_type(DataType::Int64),
             )
@@ -180,7 +180,7 @@ impl PyExpr {
     fn dt_total_milliseconds(&self) -> Self {
         self.inner
             .clone()
-            .map(
+            .map_batches(
                 |s| Ok(Some(s.duration()?.milliseconds().into_series())),
                 GetOutput::from_type(DataType::Int64),
             )
@@ -189,7 +189,7 @@ impl PyExpr {
     fn dt_total_microseconds(&self) -> Self {
         self.inner
             .clone()
-            .map(
+            .map_batches(
                 |s| Ok(Some(s.duration()?.microseconds().into_series())),
                 GetOutput::from_type(DataType::Int64),
             )
@@ -198,7 +198,7 @@ impl PyExpr {
     fn dt_total_nanoseconds(&self) -> Self {
         self.inner
             .clone()
-            .map(
+            .map_batches(
                 |s| Ok(Some(s.duration()?.nanoseconds().into_series())),
                 GetOutput::from_type(DataType::Int64),
             )

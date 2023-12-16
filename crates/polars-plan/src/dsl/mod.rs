@@ -453,14 +453,14 @@ impl Expr {
 
     /// Apply a function/closure once the logical plan get executed.
     ///
-    /// This function is very similar to [`Expr::apply`], but differs in how it handles aggregations.
+    /// This function is very similar to [`Expr::map_elements`], but differs in how it handles aggregations.
     ///
-    ///  * `map` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
+    ///  * `map_batches` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
     ///  * `apply` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
     ///
     /// It is the responsibility of the caller that the schema is correct by giving
     /// the correct output_type. If None given the output type of the input expr is used.
-    pub fn map<F>(self, function: F, output_type: GetOutput) -> Self
+    pub fn map_batches<F>(self, function: F, output_type: GetOutput) -> Self
     where
         F: Fn(Series) -> PolarsResult<Option<Series>> + 'static + Send + Sync,
     {
@@ -472,7 +472,7 @@ impl Expr {
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
-                fmt_str: "map",
+                fmt_str: "map_batches",
                 ..Default::default()
             },
         }
@@ -491,7 +491,7 @@ impl Expr {
 
     /// Apply a function/closure once the logical plan get executed with many arguments.
     ///
-    /// See the [`Expr::map`] function for the differences between [`map`](Expr::map) and [`apply`](Expr::apply).
+    /// See the [`Expr::map_batches`] function for the differences between [`map_batches`](Expr::map_batches) and [`map_elements`](Expr::map_elements).
     pub fn map_many<F>(self, function: F, arguments: &[Expr], output_type: GetOutput) -> Self
     where
         F: Fn(&mut [Series]) -> PolarsResult<Option<Series>> + 'static + Send + Sync,
@@ -513,7 +513,7 @@ impl Expr {
 
     /// Apply a function/closure once the logical plan get executed.
     ///
-    /// This function is very similar to [apply](Expr::apply), but differs in how it handles aggregations.
+    /// This function is very similar to [apply](Expr::map_elements), but differs in how it handles aggregations.
     ///
     ///  * `map` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
     ///  * `apply` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
@@ -561,11 +561,11 @@ impl Expr {
     /// It is the responsibility of the caller that the schema is correct by giving
     /// the correct output_type. If None given the output type of the input expr is used.
     ///
-    /// This difference with [map](Self::map) is that `apply` will create a separate `Series` per group.
+    /// This difference with [map_batches](Self::map_batches) is that `map_elements` will create a separate `Series` per group.
     ///
-    /// * `map` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
-    /// * `apply` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
-    pub fn apply<F>(self, function: F, output_type: GetOutput) -> Self
+    /// * `map_batches` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
+    /// * `map_elements` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
+    pub fn map_elements<F>(self, function: F, output_type: GetOutput) -> Self
     where
         F: Fn(Series) -> PolarsResult<Option<Series>> + 'static + Send + Sync,
     {
@@ -596,7 +596,7 @@ impl Expr {
 
     /// Apply a function/closure over the groups with many arguments. This should only be used in a group_by aggregation.
     ///
-    /// See the [`Expr::apply`] function for the differences between [`map`](Expr::map) and [`apply`](Expr::apply).
+    /// See the [`Expr::map_elements`] function for the differences between [`map_batches`](Expr::map_batches) and [`map_elements`](Expr::map_elements).
     pub fn apply_many<F>(self, function: F, arguments: &[Expr], output_type: GetOutput) -> Self
     where
         F: Fn(&mut [Series]) -> PolarsResult<Option<Series>> + 'static + Send + Sync,
@@ -1247,7 +1247,7 @@ impl Expr {
         output_type: GetOutput,
         options: RollingOptionsFixedWindow,
     ) -> Expr {
-        self.apply(
+        self.map_elements(
             move |s| s.rolling_map(f.as_ref(), options.clone()).map(Some),
             output_type,
         )
@@ -1262,7 +1262,7 @@ impl Expr {
     where
         F: 'static + FnMut(&mut Float64Chunked) -> Option<f64> + Send + Sync + Copy,
     {
-        self.apply(
+        self.map_elements(
             move |s| {
                 let out = match s.dtype() {
                     DataType::Float64 => s

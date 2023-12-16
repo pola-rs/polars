@@ -360,7 +360,7 @@ impl PyExpr {
         Ok(self
             .inner
             .clone()
-            .apply(
+            .map_elements(
                 move |s| s.fill_null(strat).map(Some),
                 GetOutput::same_type(),
             )
@@ -419,7 +419,7 @@ impl PyExpr {
     fn gather_every(&self, n: usize) -> Self {
         self.inner
             .clone()
-            .map(
+            .map_batches(
                 move |s: Series| {
                     polars_ensure!(n > 0, InvalidOperation: "gather_every(n): n can't be zero");
                     Ok(Some(s.gather_every(n)))
@@ -448,7 +448,7 @@ impl PyExpr {
     fn rechunk(&self) -> Self {
         self.inner
             .clone()
-            .map(|s| Ok(Some(s.rechunk())), GetOutput::same_type())
+            .map_batches(|s| Ok(Some(s.rechunk())), GetOutput::same_type())
             .into()
     }
 
@@ -689,7 +689,7 @@ impl PyExpr {
         };
         self.inner
             .clone()
-            .map(function, GetOutput::from_type(dt))
+            .map_batches(function, GetOutput::from_type(dt))
             .into()
     }
     fn mode(&self) -> Self {
@@ -823,7 +823,7 @@ impl PyExpr {
         let value = value.into_py(py);
         self.inner
             .clone()
-            .apply(
+            .map_elements(
                 move |s| {
                     Python::with_gil(|py| {
                         let value = value.extract::<Wrap<AnyValue>>(py).unwrap().0;

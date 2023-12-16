@@ -71,7 +71,7 @@ fn test_pass_unrelated_apply() -> PolarsResult<()> {
 
     let q = df
         .lazy()
-        .with_column(col("A").map(
+        .with_column(col("A").map_batches(
             |s| Ok(Some(s.is_null().into_series())),
             GetOutput::from_type(DataType::Boolean),
         ))
