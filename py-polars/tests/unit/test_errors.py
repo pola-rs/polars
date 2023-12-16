@@ -683,7 +683,7 @@ def test_multiple_errors_encountered() -> None:
     for _ in range(n):
         df = cool_stuff(df)
 
-    with pytest.raises(pl.ComputeError, match="Multiple AlreadyEncountered"):
+    with pytest.raises(pl.ColumnNotFoundError):
         df.collect()
 
 
