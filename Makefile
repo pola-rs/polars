@@ -35,9 +35,15 @@ clippy-default:  ## Run clippy with default features
 	cargo clippy --all-targets --locked -- -D warnings
 
 .PHONY: fmt
-fmt:  ## Run rustfmt and dprint
-	cargo fmt --all
+fmt:  ## Run autoformatting and linting
+	$(VENV_BIN)/ruff check .
+	$(VENV_BIN)/ruff format .
 	dprint fmt
+	cargo fmt --all
+	$(VENV_BIN)/typos .
+
+.PHONY: pre-commit
+pre-commit: fmt clippy clippy-default  ## Run all code quality checks
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts
