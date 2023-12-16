@@ -685,3 +685,20 @@ def test_sort_by_error() -> None:
         df.group_by("id", maintain_order=True).agg(
             pl.col("cost").filter(pl.col("type") == "A").sort_by("number")
         )
+
+
+def test_multiple_errors_encountered() -> None:
+    def cool_stuff(lf: pl.LazyFrame) -> pl.LazyFrame:
+        return (
+            lf.select([pl.col("a"), pl.col("b")])
+            .filter(pl.col("a") > pl.col("b"))
+            .sort("a")
+        )
+
+    df = pl.DataFrame({"a": [1, 2, 3], "c": [1, 2, 3]}).lazy()
+    n = 10
+    for _ in range(n):
+        df = cool_stuff(df)
+
+    with pytest.raises(pl.ComputeError, match="Multiple AlreadyEncountered"):
+        df.collect()
