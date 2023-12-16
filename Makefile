@@ -22,8 +22,8 @@ requirements: .venv  ## Install/refresh Python project requirements
 	$(VENV_BIN)/pip install --upgrade -r py-polars/docs/requirements-docs.txt
 	$(VENV_BIN)/pip install --upgrade -r docs/requirements.txt
 
-.PHONY: build-python
-build-python: .venv  ## Compile and install Python Polars for development
+.PHONY: build
+build: .venv  ## Compile and install Python Polars for development
 	@$(MAKE) -s -C py-polars build
 
 .PHONY: clippy
