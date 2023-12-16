@@ -1020,7 +1020,14 @@ mod test {
             .unwrap();
 
         assert_eq!(
-            Vec::from(&adf.column("N_sum").unwrap().i32().unwrap().sort(false)),
+            Vec::from(
+                &adf.column("N_sum")
+                    .unwrap()
+                    .i32()
+                    .unwrap()
+                    .sort(false)
+                    .unwrap()
+            ),
             &[Some(1), Some(2), Some(2), Some(6)]
         );
     }

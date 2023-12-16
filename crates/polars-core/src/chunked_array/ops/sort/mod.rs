@@ -628,20 +628,24 @@ mod test {
                 Some(1), // 7
             ],
         );
-        let idx = a.arg_sort(SortOptions {
-            descending: false,
-            ..Default::default()
-        });
-        let idx = idx.unwrap().cont_slice().unwrap();
+        let idx = a
+            .arg_sort(SortOptions {
+                descending: false,
+                ..Default::default()
+            })
+            .unwrap();
+        let idx = idx.cont_slice().unwrap();
 
         let expected = [2, 4, 0, 3, 7, 6, 5, 1];
         assert_eq!(idx, expected);
 
-        let idx = a.arg_sort(SortOptions {
-            descending: true,
-            ..Default::default()
-        });
-        let idx = idx.unwrap().cont_slice().unwrap();
+        let idx = a
+            .arg_sort(SortOptions {
+                descending: true,
+                ..Default::default()
+            })
+            .unwrap();
+        let idx = idx.cont_slice().unwrap();
         // the duplicates are in reverse order of appearance, so we cannot reverse expected
         let expected = [4, 2, 1, 5, 6, 0, 3, 7];
         assert_eq!(idx, expected);
