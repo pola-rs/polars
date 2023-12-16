@@ -330,8 +330,11 @@ rust:
     link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/dt/struct.DateLikeNameSpace.html#method.day
     feature_flags: [temporal]
 
-  list.eval: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/trait.ListNameSpaceExtension.html#method.eval
-
+  list.eval: 
+    name: list.eval
+    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/trait.ListNameSpaceExtension.html#method.eval
+    feature_flags: [list_eval]
+    
   str.contains:
     name: str.contains
     link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.contains

@@ -1,23 +1,23 @@
 use super::*;
 
-pub(super) fn cumcount(s: &Series, reverse: bool) -> PolarsResult<Series> {
-    polars_ops::prelude::cumcount(s, reverse)
+pub(super) fn cum_count(s: &Series, reverse: bool) -> PolarsResult<Series> {
+    polars_ops::prelude::cum_count(s, reverse)
 }
 
-pub(super) fn cumsum(s: &Series, reverse: bool) -> PolarsResult<Series> {
-    polars_ops::prelude::cumsum(s, reverse)
+pub(super) fn cum_sum(s: &Series, reverse: bool) -> PolarsResult<Series> {
+    polars_ops::prelude::cum_sum(s, reverse)
 }
 
-pub(super) fn cumprod(s: &Series, reverse: bool) -> PolarsResult<Series> {
-    polars_ops::prelude::cumprod(s, reverse)
+pub(super) fn cum_prod(s: &Series, reverse: bool) -> PolarsResult<Series> {
+    polars_ops::prelude::cum_prod(s, reverse)
 }
 
-pub(super) fn cummin(s: &Series, reverse: bool) -> PolarsResult<Series> {
-    polars_ops::prelude::cummin(s, reverse)
+pub(super) fn cum_min(s: &Series, reverse: bool) -> PolarsResult<Series> {
+    polars_ops::prelude::cum_min(s, reverse)
 }
 
-pub(super) fn cummax(s: &Series, reverse: bool) -> PolarsResult<Series> {
-    polars_ops::prelude::cummax(s, reverse)
+pub(super) fn cum_max(s: &Series, reverse: bool) -> PolarsResult<Series> {
+    polars_ops::prelude::cum_max(s, reverse)
 }
 
 pub(super) mod dtypes {
@@ -25,7 +25,7 @@ pub(super) mod dtypes {
 
     use super::*;
 
-    pub fn cumsum(dt: &DataType) -> DataType {
+    pub fn cum_sum(dt: &DataType) -> DataType {
         if dt.is_logical() {
             dt.clone()
         } else {
@@ -41,7 +41,7 @@ pub(super) mod dtypes {
         }
     }
 
-    pub fn cumprod(dt: &DataType) -> DataType {
+    pub fn cum_prod(dt: &DataType) -> DataType {
         match dt {
             Boolean => Int64,
             UInt64 => UInt64,

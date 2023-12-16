@@ -8,7 +8,7 @@ from polars import functions as F
 from polars.functions.range._utils import parse_interval_argument
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import issue_deprecation_warning
+from polars.utils.deprecation import deprecate_saturating
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -29,7 +29,6 @@ def time_range(
     *,
     closed: ClosedInterval = ...,
     eager: Literal[False] = ...,
-    name: str | None = ...,
 ) -> Expr:
     ...
 
@@ -42,7 +41,6 @@ def time_range(
     *,
     closed: ClosedInterval = ...,
     eager: Literal[True],
-    name: str | None = ...,
 ) -> Series:
     ...
 
@@ -55,7 +53,6 @@ def time_range(
     *,
     closed: ClosedInterval = ...,
     eager: bool,
-    name: str | None = ...,
 ) -> Series | Expr:
     ...
 
@@ -67,7 +64,6 @@ def time_range(
     *,
     closed: ClosedInterval = "both",
     eager: bool = False,
-    name: str | None = None,
 ) -> Series | Expr:
     """
     Generate a time range.
@@ -76,23 +72,18 @@ def time_range(
     ----------
     start
         Lower bound of the time range.
-        If omitted, defaults to ``time(0,0,0,0)``.
+        If omitted, defaults to `time(0,0,0,0)`.
     end
         Upper bound of the time range.
-        If omitted, defaults to ``time(23,59,59,999999)``.
+        If omitted, defaults to `time(23,59,59,999999)`.
     interval
-        Interval of the range periods, specified as a Python ``timedelta`` object
+        Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     eager
-        Evaluate immediately and return a ``Series``.
-        If set to ``False`` (default), return an expression instead.
-    name
-        Name of the output column.
-
-        .. deprecated:: 0.18.0
-            This argument is deprecated. Use the ``alias`` method instead.
+        Evaluate immediately and return a `Series`.
+        If set to `False` (default), return an expression instead.
 
     Returns
     -------
@@ -117,10 +108,6 @@ def time_range(
 
     Or combine them:
     "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
-
-    Suffix with `"_saturating"` to indicate that dates too large for
-    their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-    instead of erroring.
 
     By "calendar day", we mean the corresponding time on the next day (which may
     not be 24 hours, due to daylight savings). Similarly for "calendar week",
@@ -148,11 +135,7 @@ def time_range(
     ]
 
     """
-    if name is not None:
-        issue_deprecation_warning(
-            "the `name` argument is deprecated. Use the `alias` method instead.",
-            version="0.18.0",
-        )
+    interval = deprecate_saturating(interval)
 
     interval = parse_interval_argument(interval)
     for unit in ("y", "mo", "w", "d"):
@@ -168,9 +151,6 @@ def time_range(
     end_pyexpr = parse_as_expression(end)
 
     result = wrap_expr(plr.time_range(start_pyexpr, end_pyexpr, interval, closed))
-
-    if name is not None:
-        result = result.alias(name)
 
     if eager:
         return F.select(result).to_series()
@@ -229,23 +209,23 @@ def time_ranges(
     ----------
     start
         Lower bound of the time range.
-        If omitted, defaults to ``time(0, 0, 0, 0)``.
+        If omitted, defaults to `time(0, 0, 0, 0)`.
     end
         Upper bound of the time range.
-        If omitted, defaults to ``time(23, 59, 59, 999999)``.
+        If omitted, defaults to `time(23, 59, 59, 999999)`.
     interval
-        Interval of the range periods, specified as a Python ``timedelta`` object
+        Interval of the range periods, specified as a Python `timedelta` object
         or using the Polars duration string language (see "Notes" section below).
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     eager
-        Evaluate immediately and return a ``Series``.
-        If set to ``False`` (default), return an expression instead.
+        Evaluate immediately and return a `Series`.
+        If set to `False` (default), return an expression instead.
 
     Returns
     -------
     Expr or Series
-        Column of data type ``List(Time)``.
+        Column of data type `List(Time)`.
 
     Notes
     -----
@@ -265,10 +245,6 @@ def time_ranges(
 
     Or combine them:
     "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
-
-    Suffix with `"_saturating"` to indicate that dates too large for
-    their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-    instead of erroring.
 
     By "calendar day", we mean the corresponding time on the next day (which may
     not be 24 hours, due to daylight savings). Similarly for "calendar week",
@@ -299,6 +275,7 @@ def time_ranges(
     └──────────┴──────────┴────────────────────────────────┘
 
     """
+    interval = deprecate_saturating(interval)
     interval = parse_interval_argument(interval)
     for unit in ("y", "mo", "w", "d"):
         if unit in interval:

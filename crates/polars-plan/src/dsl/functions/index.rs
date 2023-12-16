@@ -9,7 +9,7 @@ use super::*;
 pub fn arg_sort_by<E: AsRef<[Expr]>>(by: E, descending: &[bool]) -> Expr {
     let e = &by.as_ref()[0];
     let name = expr_output_name(e).unwrap();
-    int_range(lit(0 as IdxSize), count().cast(IDX_DTYPE), 1)
+    int_range(lit(0 as IdxSize), count().cast(IDX_DTYPE), 1, IDX_DTYPE)
         .sort_by(by, descending)
         .alias(name.as_ref())
 }

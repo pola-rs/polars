@@ -38,9 +38,9 @@ pub mod series;
 mod sql;
 pub mod utils;
 
-#[cfg(all(target_os = "linux", not(use_mimalloc)))]
+#[cfg(all(target_family = "unix", not(use_mimalloc)))]
 use jemallocator::Jemalloc;
-#[cfg(any(not(target_os = "linux"), use_mimalloc))]
+#[cfg(any(not(target_family = "unix"), use_mimalloc))]
 use mimalloc::MiMalloc;
 #[cfg(feature = "object")]
 pub use on_startup::__register_startup_deps;
@@ -51,8 +51,9 @@ use pyo3::wrap_pyfunction;
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::error::{
-    ColumnNotFoundError, ComputeError, DuplicateError, InvalidOperationError, NoDataError,
-    OutOfBoundsError, PyPolarsErr, SchemaError, SchemaFieldNotFoundError, StructFieldNotFoundError,
+    CategoricalRemappingWarning, ColumnNotFoundError, ComputeError, DuplicateError,
+    InvalidOperationError, NoDataError, OutOfBoundsError, PyPolarsErr, SchemaError,
+    SchemaFieldNotFoundError, StructFieldNotFoundError,
 };
 use crate::expr::PyExpr;
 use crate::functions::string_cache::PyStringCacheHolder;
@@ -61,11 +62,11 @@ use crate::lazygroupby::PyLazyGroupBy;
 use crate::series::PySeries;
 
 #[global_allocator]
-#[cfg(all(target_os = "linux", not(use_mimalloc)))]
+#[cfg(all(target_family = "unix", not(use_mimalloc)))]
 static ALLOC: Jemalloc = Jemalloc;
 
 #[global_allocator]
-#[cfg(any(not(target_os = "linux"), use_mimalloc))]
+#[cfg(any(not(target_family = "unix"), use_mimalloc))]
 static ALLOC: MiMalloc = MiMalloc;
 
 #[pymodule]
@@ -149,9 +150,9 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::cov))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::cumfold))
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::cum_fold))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::cumreduce))
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::cum_reduce))
         .unwrap();
     #[cfg(feature = "trigonometry")]
     m.add_wrapped(wrap_pyfunction!(functions::lazy::arctan2))
@@ -225,13 +226,27 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         functions::string_cache::using_string_cache
     ))
     .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::meta::set_float_fmt))
+
+    // Numeric formatting
+    m.add_wrapped(wrap_pyfunction!(functions::meta::get_thousands_separator))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::set_thousands_separator))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::meta::get_float_fmt))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::get_float_precision))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::get_decimal_separator))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::get_trim_decimal_zeros))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::set_float_fmt))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::meta::set_float_precision))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::meta::get_float_precision))
+    m.add_wrapped(wrap_pyfunction!(functions::meta::set_decimal_separator))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::set_trim_decimal_zeros))
         .unwrap();
 
     // Functions - misc
@@ -258,6 +273,11 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     )
     .unwrap();
     m.add("NoDataError", py.get_type::<NoDataError>()).unwrap();
+    m.add(
+        "CategoricalRemappingWarning",
+        py.get_type::<CategoricalRemappingWarning>(),
+    )
+    .unwrap();
     m.add("OutOfBoundsError", py.get_type::<OutOfBoundsError>())
         .unwrap();
     m.add("PolarsPanicError", py.get_type::<PanicException>())

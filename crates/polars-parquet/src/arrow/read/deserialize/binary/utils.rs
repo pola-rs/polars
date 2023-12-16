@@ -1,37 +1,11 @@
 use arrow::offset::{Offset, Offsets};
-
-use super::super::utils::Pushable;
+use arrow::pushable::Pushable;
 
 /// [`Pushable`] for variable length binary data.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Binary<O: Offset> {
     pub offsets: Offsets<O>,
     pub values: Vec<u8>,
-}
-
-impl<O: Offset> Pushable<usize> for Offsets<O> {
-    fn reserve(&mut self, additional: usize) {
-        self.reserve(additional)
-    }
-    #[inline]
-    fn len(&self) -> usize {
-        self.len_proxy()
-    }
-
-    #[inline]
-    fn push(&mut self, value: usize) {
-        self.try_push(value).unwrap()
-    }
-
-    #[inline]
-    fn push_null(&mut self) {
-        self.extend_constant(1);
-    }
-
-    #[inline]
-    fn extend_constant(&mut self, additional: usize, _: usize) {
-        self.extend_constant(additional)
-    }
 }
 
 impl<O: Offset> Binary<O> {
@@ -132,39 +106,5 @@ impl<'a> Iterator for BinaryIter<'a> {
         let (result, remaining) = remaining.split_at(length);
         self.values = remaining;
         Some(result)
-    }
-}
-
-#[derive(Debug)]
-pub struct SizedBinaryIter<'a> {
-    iter: BinaryIter<'a>,
-    remaining: usize,
-}
-
-impl<'a> SizedBinaryIter<'a> {
-    pub fn new(values: &'a [u8], size: usize) -> Self {
-        let iter = BinaryIter::new(values);
-        Self {
-            iter,
-            remaining: size,
-        }
-    }
-}
-
-impl<'a> Iterator for SizedBinaryIter<'a> {
-    type Item = &'a [u8];
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.remaining == 0 {
-            return None;
-        } else {
-            self.remaining -= 1
-        };
-        self.iter.next()
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.remaining, Some(self.remaining))
     }
 }

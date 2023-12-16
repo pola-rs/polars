@@ -90,7 +90,7 @@ fn partitionable_gb(
                                                 | AAggExpr::Sum(_)
                                                 | AAggExpr::Last(_)
                                                 | AAggExpr::First(_)
-                                                | AAggExpr::Count(_)
+                                                | AAggExpr::Count(_, true)
                                         )
                         },
                         Function {input, options, ..} => {
@@ -193,6 +193,7 @@ pub fn create_physical_plan(
                 state.has_windows,
             )))
         },
+        #[allow(unused_variables)]
         Scan {
             paths,
             file_info,

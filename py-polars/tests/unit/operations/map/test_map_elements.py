@@ -24,9 +24,7 @@ def test_map_elements_infer_list() -> None:
 
 def test_map_elements_arithmetic_consistency() -> None:
     df = pl.DataFrame({"A": ["a", "a"], "B": [2, 3]})
-    with pytest.warns(
-        PolarsInefficientMapWarning, match="In this case, you can replace"
-    ):
+    with pytest.warns(PolarsInefficientMapWarning, match="with this one instead"):
         assert df.group_by("A").agg(pl.col("B").map_elements(lambda x: x + 1.0))[
             "B"
         ].to_list() == [[3.0, 4.0]]
@@ -84,12 +82,12 @@ def test_datelike_identity() -> None:
 def test_map_elements_list_anyvalue_fallback() -> None:
     with pytest.warns(
         PolarsInefficientMapWarning,
-        match=r'(?s)replace your `map_elements` with.*pl.col\("text"\).str.json_extract()',
+        match=r'(?s)with this one instead:.*pl.col\("text"\).str.json_decode()',
     ):
         df = pl.DataFrame({"text": ['[{"x": 1, "y": 2}, {"x": 3, "y": 4}]']})
-        assert df.select(pl.col("text").map_elements(json.loads)).to_dict(False) == {
-            "text": [[{"x": 1, "y": 2}, {"x": 3, "y": 4}]]
-        }
+        assert df.select(pl.col("text").map_elements(json.loads)).to_dict(
+            as_series=False
+        ) == {"text": [[{"x": 1, "y": 2}, {"x": 3, "y": 4}]]}
 
         # starts with empty list '[]'
         df = pl.DataFrame(
@@ -101,9 +99,9 @@ def test_map_elements_list_anyvalue_fallback() -> None:
                 ]
             }
         )
-        assert df.select(pl.col("text").map_elements(json.loads)).to_dict(False) == {
-            "text": [[], [{"x": 1, "y": 2}, {"x": 3, "y": 4}], [{"x": 1, "y": 2}]]
-        }
+        assert df.select(pl.col("text").map_elements(json.loads)).to_dict(
+            as_series=False
+        ) == {"text": [[], [{"x": 1, "y": 2}, {"x": 3, "y": 4}], [{"x": 1, "y": 2}]]}
 
 
 def test_map_elements_all_types() -> None:
@@ -143,7 +141,7 @@ def test_map_elements_type_propagation() -> None:
                 .otherwise(None)
             ]
         )
-    ).to_dict(False) == {"a": [1, 2, 3], "b": [1.0, 2.0, None]}
+    ).to_dict(as_series=False) == {"a": [1, 2, 3], "b": [1.0, 2.0, None]}
 
 
 def test_empty_list_in_map_elements() -> None:
@@ -155,7 +153,7 @@ def test_empty_list_in_map_elements() -> None:
         pl.struct(["a", "b"]).map_elements(
             lambda row: list(set(row["a"]) & set(row["b"]))
         )
-    ).to_dict(False) == {"a": [[], [1, 2], [], [5]]}
+    ).to_dict(as_series=False) == {"a": [[], [1, 2], [], [5]]}
 
 
 def test_map_elements_skip_nulls() -> None:
@@ -172,7 +170,7 @@ def test_map_elements_skip_nulls() -> None:
 def test_map_elements_object_dtypes() -> None:
     with pytest.warns(
         PolarsInefficientMapWarning,
-        match=r"(?s)replace your `map_elements` with.*lambda x:",
+        match=r"(?s)Replace this expression.*lambda x:",
     ):
         assert pl.DataFrame(
             {"a": pl.Series([1, 2, "a", 4, 5], dtype=pl.Object)}
@@ -188,7 +186,7 @@ def test_map_elements_object_dtypes() -> None:
                 .map_elements(lambda x: isinstance(x, (int, float)))
                 .alias("is_numeric_infer"),
             ]
-        ).to_dict(False) == {
+        ).to_dict(as_series=False) == {
             "a": [2, 4, "aa", 8, 10],
             "is_numeric1": [True, True, False, True, True],
             "is_numeric_infer": [True, True, False, True, True],
@@ -205,21 +203,21 @@ def test_map_elements_explicit_list_output_type() -> None:
     )
 
     assert out.dtypes == [pl.List(pl.Int64)]
-    assert out.to_dict(False) == {"str": [[1, 2, 3], [1, 2, 3]]}
+    assert out.to_dict(as_series=False) == {"str": [[1, 2, 3], [1, 2, 3]]}
 
 
 def test_map_elements_dict() -> None:
     with pytest.warns(
         PolarsInefficientMapWarning,
-        match=r'(?s)replace your `map_elements` with.*pl.col\("abc"\).str.json_extract()',
+        match=r'(?s)with this one instead:.*pl.col\("abc"\).str.json_decode()',
     ):
         df = pl.DataFrame({"abc": ['{"A":"Value1"}', '{"B":"Value2"}']})
-        assert df.select(pl.col("abc").map_elements(json.loads)).to_dict(False) == {
-            "abc": [{"A": "Value1", "B": None}, {"A": None, "B": "Value2"}]
-        }
+        assert df.select(pl.col("abc").map_elements(json.loads)).to_dict(
+            as_series=False
+        ) == {"abc": [{"A": "Value1", "B": None}, {"A": None, "B": "Value2"}]}
         assert pl.DataFrame(
             {"abc": ['{"A":"Value1", "B":"Value2"}', '{"B":"Value3"}']}
-        ).select(pl.col("abc").map_elements(json.loads)).to_dict(False) == {
+        ).select(pl.col("abc").map_elements(json.loads)).to_dict(as_series=False) == {
             "abc": [{"A": "Value1", "B": "Value2"}, {"A": None, "B": "Value3"}]
         }
 
@@ -239,13 +237,13 @@ def test_map_elements_pass_name() -> None:
 
     assert df.group_by("bar", maintain_order=True).agg(
         pl.col("foo").map_elements(element_mapper, pass_name=True),
-    ).to_dict(False) == {"bar": [1, 2], "foo": [["foo1"], ["foo1"]]}
+    ).to_dict(as_series=False) == {"bar": [1, 2], "foo": [["foo1"], ["foo1"]]}
 
 
 def test_map_elements_binary() -> None:
     assert pl.DataFrame({"bin": [b"\x11" * 12, b"\x22" * 12, b"\xaa" * 12]}).select(
         pl.col("bin").map_elements(bytes.hex)
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "bin": [
             "111111111111111111111111",
             "222222222222222222222222",
@@ -264,7 +262,7 @@ def test_map_elements_set_datetime_output_8984() -> None:
 
 def test_map_elements_dict_order_10128() -> None:
     df = pl.select(pl.lit("").map_elements(lambda x: {"c": 1, "b": 2, "a": 3}))
-    assert df.to_dict(False) == {"literal": [{"c": 1, "b": 2, "a": 3}]}
+    assert df.to_dict(as_series=False) == {"literal": [{"c": 1, "b": 2, "a": 3}]}
 
 
 def test_map_elements_10237() -> None:
@@ -275,22 +273,23 @@ def test_map_elements_10237() -> None:
 
 
 def test_map_elements_on_empty_col_10639() -> None:
-    df = pl.DataFrame({"A": [], "B": []})
+    df = pl.DataFrame({"A": [], "B": []}, schema={"A": pl.Float32, "B": pl.Float32})
     res = df.group_by("B").agg(
         pl.col("A")
         .map_elements(lambda x: x, return_dtype=pl.Int32, strategy="threading")
         .alias("Foo")
     )
-    assert res.to_dict(False) == {
+    assert res.to_dict(as_series=False) == {
         "B": [],
         "Foo": [],
     }
+
     res = df.group_by("B").agg(
         pl.col("A")
         .map_elements(lambda x: x, return_dtype=pl.Int32, strategy="thread_local")
         .alias("Foo")
     )
-    assert res.to_dict(False) == {
+    assert res.to_dict(as_series=False) == {
         "B": [],
         "Foo": [],
     }

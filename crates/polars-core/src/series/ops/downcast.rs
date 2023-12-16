@@ -138,7 +138,7 @@ impl Series {
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Categorical]`
     #[cfg(feature = "dtype-categorical")]
     pub fn categorical(&self) -> PolarsResult<&CategoricalChunked> {
-        unpack_chunked!(self, DataType::Categorical(_) => CategoricalChunked, "Categorical")
+        unpack_chunked!(self, DataType::Categorical(_,_) => CategoricalChunked, "Categorical")
     }
 
     /// Unpack to [`ChunkedArray`] of dtype `[DataType::Struct]`

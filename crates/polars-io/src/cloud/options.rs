@@ -1,3 +1,7 @@
+#[cfg(feature = "aws")]
+use std::io::Read;
+#[cfg(feature = "aws")]
+use std::path::Path;
 use std::str::FromStr;
 
 #[cfg(feature = "aws")]
@@ -12,6 +16,8 @@ use object_store::azure::MicrosoftAzureBuilder;
 use object_store::gcp::GoogleCloudStorageBuilder;
 #[cfg(feature = "gcp")]
 pub use object_store::gcp::GoogleConfigKey;
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+use object_store::ClientOptions;
 #[cfg(feature = "cloud")]
 use object_store::ObjectStore;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
@@ -22,12 +28,17 @@ use polars_core::error::{PolarsError, PolarsResult};
 use polars_error::*;
 #[cfg(feature = "aws")]
 use polars_utils::cache::FastFixedCache;
+#[cfg(feature = "aws")]
+use regex::Regex;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "aws")]
 use smartstring::alias::String as SmartString;
 #[cfg(feature = "cloud")]
 use url::Url;
+
+#[cfg(feature = "aws")]
+use crate::utils::resolve_homedir;
 
 #[cfg(feature = "aws")]
 static BUCKET_REGION: Lazy<std::sync::Mutex<FastFixedCache<SmartString, SmartString>>> =
@@ -42,7 +53,7 @@ static BUCKET_REGION: Lazy<std::sync::Mutex<FastFixedCache<SmartString, SmartStr
 #[allow(dead_code)]
 type Configs<T> = Vec<(T, String)>;
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// Options to connect to various cloud providers.
 pub struct CloudOptions {
@@ -53,6 +64,20 @@ pub struct CloudOptions {
     #[cfg(feature = "gcp")]
     gcp: Option<Configs<GoogleConfigKey>>,
     pub max_retries: usize,
+}
+
+impl Default for CloudOptions {
+    fn default() -> Self {
+        Self {
+            max_retries: 2,
+            #[cfg(feature = "aws")]
+            aws: Default::default(),
+            #[cfg(feature = "azure")]
+            azure: Default::default(),
+            #[cfg(feature = "gcp")]
+            gcp: Default::default(),
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -81,6 +106,7 @@ pub enum CloudType {
     Azure,
     File,
     Gcp,
+    Http,
 }
 
 impl CloudType {
@@ -91,6 +117,7 @@ impl CloudType {
             "az" | "azure" | "adl" | "abfs" | "abfss" => Self::Azure,
             "gs" | "gcp" | "gcs" => Self::Gcp,
             "file" => Self::File,
+            "http" | "https" => Self::Http,
             _ => polars_bail!(ComputeError: "unknown url scheme"),
         })
     }
@@ -102,7 +129,7 @@ pub(crate) fn parse_url(url: &str) -> std::result::Result<Url, url::ParseError> 
         Err(err) => match err {
             url::ParseError::RelativeUrlWithoutBase => {
                 let parsed = Url::parse(&format!(
-                    "file://{}",
+                    "file://{}/",
                     std::env::current_dir().unwrap().to_string_lossy()
                 ))
                 .unwrap();
@@ -137,6 +164,51 @@ fn get_retry_config(max_retries: usize) -> RetryConfig {
     }
 }
 
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+pub(super) fn get_client_options() -> ClientOptions {
+    ClientOptions::default()
+        // We set request timeout super high as the timeout isn't reset at ACK,
+        // but starts from the moment we start downloading a body.
+        // https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html#method.timeout
+        .with_timeout(std::time::Duration::from_secs(60 * 5))
+        // Concurrency can increase connection latency, so also set high.
+        .with_connect_timeout(std::time::Duration::from_secs(30))
+        .with_allow_http(true)
+}
+
+#[cfg(feature = "aws")]
+fn read_config(
+    builder: &mut AmazonS3Builder,
+    items: &[(&Path, &[(&str, AmazonS3ConfigKey)])],
+) -> Option<()> {
+    for (path, keys) in items {
+        if keys
+            .iter()
+            .all(|(_, key)| builder.get_config_value(key).is_some())
+        {
+            continue;
+        }
+
+        let mut config = std::fs::File::open(&resolve_homedir(path)).ok()?;
+        let mut buf = vec![];
+        config.read_to_end(&mut buf).ok()?;
+        let content = std::str::from_utf8(buf.as_ref()).ok()?;
+
+        for (pattern, key) in keys.iter() {
+            let local = std::mem::take(builder);
+
+            if builder.get_config_value(key).is_none() {
+                let reg = Regex::new(pattern).unwrap();
+                let cap = reg.captures(content)?;
+                let m = cap.get(1)?;
+                let parsed = m.as_str();
+                *builder = local.with_config(*key, parsed)
+            }
+        }
+    }
+    Some(())
+}
+
 impl CloudOptions {
     /// Set the configuration for AWS connections. This is the preferred API from rust.
     #[cfg(feature = "aws")]
@@ -164,6 +236,27 @@ impl CloudOptions {
             }
         }
 
+        read_config(
+            &mut builder,
+            &[(
+                Path::new("~/.aws/config"),
+                &[("region = (.*)\n", AmazonS3ConfigKey::Region)],
+            )],
+        );
+        read_config(
+            &mut builder,
+            &[(
+                Path::new("~/.aws/credentials"),
+                &[
+                    ("aws_access_key_id = (.*)\n", AmazonS3ConfigKey::AccessKeyId),
+                    (
+                        "aws_secret_access_key = (.*)\n",
+                        AmazonS3ConfigKey::SecretAccessKey,
+                    ),
+                ],
+            )],
+        );
+
         if builder
             .get_config_value(&AmazonS3ConfigKey::DefaultRegion)
             .is_none()
@@ -182,26 +275,36 @@ impl CloudOptions {
                     builder = builder.with_config(AmazonS3ConfigKey::Region, region.as_str())
                 },
                 None => {
-                    polars_warn!("'(default_)region' not set; polars will try to get it from bucket\n\nSet the region manually to silence this warning.");
-                    let result = reqwest::Client::builder()
-                        .build()
-                        .unwrap()
-                        .head(format!("https://{bucket}.s3.amazonaws.com"))
-                        .send()
-                        .await
-                        .map_err(to_compute_err)?;
-                    if let Some(region) = result.headers().get("x-amz-bucket-region") {
-                        let region =
-                            std::str::from_utf8(region.as_bytes()).map_err(to_compute_err)?;
-                        let mut bucket_region = BUCKET_REGION.lock().unwrap();
-                        bucket_region.insert(bucket.into(), region.into());
-                        builder = builder.with_config(AmazonS3ConfigKey::Region, region)
+                    if builder
+                        .get_config_value(&AmazonS3ConfigKey::Endpoint)
+                        .is_some()
+                    {
+                        // Set a default value if the endpoint is not aws.
+                        // See: #13042
+                        builder = builder.with_config(AmazonS3ConfigKey::Region, "us-east-1");
+                    } else {
+                        polars_warn!("'(default_)region' not set; polars will try to get it from bucket\n\nSet the region manually to silence this warning.");
+                        let result = reqwest::Client::builder()
+                            .build()
+                            .unwrap()
+                            .head(format!("https://{bucket}.s3.amazonaws.com"))
+                            .send()
+                            .await
+                            .map_err(to_compute_err)?;
+                        if let Some(region) = result.headers().get("x-amz-bucket-region") {
+                            let region =
+                                std::str::from_utf8(region.as_bytes()).map_err(to_compute_err)?;
+                            let mut bucket_region = BUCKET_REGION.lock().unwrap();
+                            bucket_region.insert(bucket.into(), region.into());
+                            builder = builder.with_config(AmazonS3ConfigKey::Region, region)
+                        }
                     }
                 },
             };
         };
 
         builder
+            .with_client_options(get_client_options())
             .with_retry(get_retry_config(self.max_retries))
             .build()
             .map_err(to_compute_err)
@@ -234,6 +337,7 @@ impl CloudOptions {
         }
 
         builder
+            .with_client_options(get_client_options())
             .with_url(url)
             .with_retry(get_retry_config(self.max_retries))
             .build()
@@ -267,6 +371,7 @@ impl CloudOptions {
         }
 
         builder
+            .with_client_options(get_client_options())
             .with_url(url)
             .with_retry(get_retry_config(self.max_retries))
             .build()
@@ -303,6 +408,7 @@ impl CloudOptions {
                 }
             },
             CloudType::File => Ok(Self::default()),
+            CloudType::Http => Ok(Self::default()),
             CloudType::Gcp => {
                 #[cfg(feature = "gcp")]
                 {

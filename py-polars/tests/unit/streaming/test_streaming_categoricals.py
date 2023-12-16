@@ -8,7 +8,7 @@ def test_streaming_nested_categorical() -> None:
         .group_by("numbers")
         .agg(pl.col("cat").first())
         .sort("numbers")
-    ).collect(streaming=True).to_dict(False) == {
+    ).collect(streaming=True).to_dict(as_series=False) == {
         "numbers": [1, 2],
         "cat": [["str"], ["bar"]],
     }

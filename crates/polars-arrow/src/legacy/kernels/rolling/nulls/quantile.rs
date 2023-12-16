@@ -1,4 +1,7 @@
+use polars_utils::slice::GetSaferUnchecked;
+
 use super::*;
+use crate::array::MutablePrimitiveArray;
 
 pub struct QuantileWindow<'a, T: NativeType + IsFloat + PartialOrd> {
     sorted: SortedBufNulls<'a, T>,
@@ -65,7 +68,8 @@ impl<
             QuantileInterpolOptions::Midpoint => {
                 let top_idx = ((length as f64 - 1.0) * self.prob).ceil() as usize;
                 Some(
-                    (values[idx].unwrap() + values[top_idx].unwrap())
+                    (values.get_unchecked_release(idx).unwrap()
+                        + values.get_unchecked_release(top_idx).unwrap())
                         / T::from::<f64>(2.0f64).unwrap(),
                 )
             },
@@ -74,16 +78,18 @@ impl<
                 let top_idx = f64::ceil(float_idx) as usize;
 
                 if top_idx == idx {
-                    Some(values[idx].unwrap())
+                    Some(values.get_unchecked_release(idx).unwrap())
                 } else {
                     let proportion = T::from(float_idx - idx as f64).unwrap();
                     Some(
-                        proportion * (values[top_idx].unwrap() - values[idx].unwrap())
-                            + values[idx].unwrap(),
+                        proportion
+                            * (values.get_unchecked_release(top_idx).unwrap()
+                                - values.get_unchecked_release(idx).unwrap())
+                            + values.get_unchecked_release(idx).unwrap(),
                     )
                 }
             },
-            _ => Some(values[idx].unwrap()),
+            _ => Some(values.get_unchecked_release(idx).unwrap()),
         }
     }
 
@@ -121,6 +127,19 @@ where
         true => det_offsets_center,
         false => det_offsets,
     };
+    if !center {
+        let params = params.as_ref().unwrap();
+        let params = params.downcast_ref::<RollingQuantileParams>().unwrap();
+        let out = super::quantile_filter::rolling_quantile::<_, MutablePrimitiveArray<_>>(
+            params.interpol,
+            min_periods,
+            window_size,
+            arr.clone(),
+            params.prob,
+        );
+        let out: PrimitiveArray<T> = out.into();
+        return Box::new(out);
+    }
     rolling_apply_agg_window::<QuantileWindow<_>, _, _>(
         arr.values().as_slice(),
         arr.validity().as_ref().unwrap(),
@@ -135,14 +154,14 @@ where
 mod test {
     use super::*;
     use crate::buffer::Buffer;
-    use crate::datatypes::DataType;
+    use crate::datatypes::ArrowDataType;
     use crate::legacy::kernels::rolling::nulls::{rolling_max, rolling_min};
 
     #[test]
     fn test_rolling_median_nulls() {
         let buf = Buffer::from(vec![1.0, 2.0, 3.0, 4.0]);
         let arr = &PrimitiveArray::new(
-            DataType::Float64,
+            ArrowDataType::Float64,
             buf,
             Some(Bitmap::from(&[true, false, true, true])),
         );
@@ -182,7 +201,7 @@ mod test {
         // compare quantiles to corresponding min/max/median values
         let buf = Buffer::<f64>::from(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
         let values = &PrimitiveArray::new(
-            DataType::Float64,
+            ArrowDataType::Float64,
             buf,
             Some(Bitmap::from(&[true, false, false, true, true])),
         );

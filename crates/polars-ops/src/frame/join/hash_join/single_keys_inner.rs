@@ -1,28 +1,30 @@
 use polars_core::utils::flatten;
+use polars_utils::hashing::{hash_to_partition, DirtyHash};
+use polars_utils::idx_vec::IdxVec;
 use polars_utils::iter::EnumerateIdxTrait;
+use polars_utils::nulls::IsNull;
 use polars_utils::sync::SyncPtr;
 
 use super::*;
 
 pub(super) fn probe_inner<T, F, I>(
     probe: I,
-    hash_tbls: &[PlHashMap<T, Vec<IdxSize>>],
+    hash_tbls: &[PlHashMap<T, IdxVec>],
     results: &mut Vec<(IdxSize, IdxSize)>,
     local_offset: IdxSize,
-    n_tables: u64,
+    n_tables: usize,
     swap_fn: F,
 ) where
-    T: Send + Hash + Eq + Sync + Copy + AsU64,
+    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
     I: IntoIterator<Item = T>,
     // <I as IntoIterator>::IntoIter: TrustedLen,
     F: Fn(IdxSize, IdxSize) -> (IdxSize, IdxSize),
 {
-    assert!(hash_tbls.len().is_power_of_two());
     probe.into_iter().enumerate_idx().for_each(|(idx_a, k)| {
         let idx_a = idx_a + local_offset;
         // probe table that contains the hashed value
         let current_probe_table =
-            unsafe { get_hash_tbl_threaded_join_partitioned(k.as_u64(), hash_tbls, n_tables) };
+            unsafe { hash_tbls.get_unchecked(hash_to_partition(k.dirty_hash(), n_tables)) };
 
         let value = current_probe_table.get(&k);
 
@@ -39,29 +41,29 @@ pub(super) fn hash_join_tuples_inner<T, I>(
     // Because b should be the shorter relation we could need to swap to keep left left and right right.
     swapped: bool,
     validate: JoinValidation,
+    join_nulls: bool,
 ) -> PolarsResult<(Vec<IdxSize>, Vec<IdxSize>)>
 where
-    I: IntoIterator<Item = T> + Send + Sync + Copy,
+    I: IntoIterator<Item = T> + Send + Sync + Clone,
     // <I as IntoIterator>::IntoIter: TrustedLen,
-    T: Send + Hash + Eq + Sync + Copy + AsU64,
+    T: Send + Hash + Eq + Sync + Copy + DirtyHash + IsNull,
 {
     // NOTE: see the left join for more elaborate comments
     // first we hash one relation
     let hash_tbls = if validate.needs_checks() {
         let expected_size = build
             .iter()
-            .map(|v| v.into_iter().size_hint().1.unwrap())
+            .map(|v| v.clone().into_iter().size_hint().1.unwrap())
             .sum();
-        let hash_tbls = build_tables(build);
+        let hash_tbls = build_tables(build, join_nulls);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
         validate.validate_build(build_size, expected_size, swapped)?;
         hash_tbls
     } else {
-        build_tables(build)
+        build_tables(build, join_nulls)
     };
 
-    let n_tables = hash_tbls.len() as u64;
-    debug_assert!(n_tables.is_power_of_two());
+    let n_tables = hash_tbls.len();
     let offsets = probe_to_offsets(&probe);
     // next we probe the other relation
     // code duplication is because we want to only do the swap check once

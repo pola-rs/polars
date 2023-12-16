@@ -8,6 +8,7 @@ mod ndjson;
 mod parquet;
 
 use std::mem;
+#[cfg(any(feature = "parquet", feature = "ipc", feature = "cse"))]
 use std::ops::Deref;
 
 #[cfg(feature = "csv")]
@@ -18,12 +19,14 @@ pub(crate) use ipc::IpcExec;
 pub(crate) use parquet::ParquetExec;
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 use polars_io::predicates::PhysicalIoExpr;
+#[cfg(any(feature = "parquet", feature = "csv", feature = "ipc", feature = "cse"))]
 use polars_io::prelude::*;
 use polars_plan::global::_set_n_rows_for_scan;
 #[cfg(any(feature = "parquet", feature = "csv", feature = "ipc", feature = "cse"))]
 use polars_plan::logical_plan::FileFingerPrint;
 
 use super::*;
+#[cfg(any(feature = "ipc", feature = "parquet"))]
 use crate::physical_plan::expressions::phys_expr_to_io_expr;
 use crate::prelude::*;
 
@@ -34,15 +37,12 @@ type Predicate = Option<Arc<dyn PhysicalIoExpr>>;
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 fn prepare_scan_args(
-    path: &std::path::Path,
-    predicate: &Option<Arc<dyn PhysicalExpr>>,
+    predicate: Option<Arc<dyn PhysicalExpr>>,
     with_columns: &mut Option<Arc<Vec<String>>>,
     schema: &mut SchemaRef,
     has_row_count: bool,
     hive_partitions: Option<&[Series]>,
-) -> (std::io::Result<std::fs::File>, Projection, Predicate) {
-    let file = std::fs::File::open(path);
-
+) -> (Projection, Predicate) {
     let with_columns = mem::take(with_columns);
     let schema = mem::take(schema);
 
@@ -53,9 +53,9 @@ fn prepare_scan_args(
         has_row_count,
     );
 
-    let predicate = predicate.clone().map(phys_expr_to_io_expr);
+    let predicate = predicate.map(phys_expr_to_io_expr);
 
-    (file, projection, predicate)
+    (projection, predicate)
 }
 
 /// Producer of an in memory DataFrame

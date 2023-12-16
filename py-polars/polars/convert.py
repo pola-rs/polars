@@ -17,6 +17,7 @@ from polars.utils.various import _cast_repr_strings_with_schema
 if TYPE_CHECKING:
     from polars import DataFrame, Series
     from polars.dependencies import numpy as np
+    from polars.interchange.protocol import SupportsInterchange
     from polars.type_aliases import Orientation, SchemaDefinition, SchemaDict
 
 
@@ -29,7 +30,7 @@ def from_dict(
     """
     Construct a DataFrame from a dictionary of sequences.
 
-    This operation clones data, unless you pass a ``{str: pl.Series,}`` dict.
+    This operation clones data, unless you pass a `{str: pl.Series,}` dict.
 
     Parameters
     ----------
@@ -101,7 +102,7 @@ def from_dicts(
         to rename after loading the frame.
 
         If you want to drop some of the fields found in the input dictionaries, a
-        _partial_ schema can be declared, in which case omitted fields will not be
+        *partial* schema can be declared, in which case omitted fields will not be
         loaded. Similarly, you can extend the loaded frame with empty columns by
         adding them to the schema.
     schema_overrides : dict, default None
@@ -130,7 +131,7 @@ def from_dicts(
     │ 3   ┆ 6   │
     └─────┴─────┘
 
-    Declaring a partial ``schema`` will drop the omitted columns.
+    Declaring a partial `schema` will drop the omitted columns.
 
     >>> df = pl.from_dicts(data, schema={"a": pl.Int32})
     >>> df
@@ -145,7 +146,7 @@ def from_dicts(
     │ 3   │
     └─────┘
 
-    Can also use the ``schema`` param to extend the loaded columns with one
+    Can also use the `schema` param to extend the loaded columns with one
     or more additional (empty) columns that are not present in the input dicts:
 
     >>> pl.from_dicts(
@@ -286,8 +287,14 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
                 coldata.pop(idx)
 
     # init cols as utf8 Series, handle "null" -> None, create schema from repr dtype
-    data = [pl.Series([(None if v == "null" else v) for v in cd]) for cd in coldata]
+    data = [
+        pl.Series([(None if v == "null" else v) for v in cd], dtype=Utf8)
+        for cd in coldata
+    ]
     schema = dict(zip(headers, (dtype_short_repr_to_dtype(d) for d in dtypes)))
+    if schema and data and (n_extend_cols := (len(schema) - len(data))) > 0:
+        empty_data = [None] * len(data[0])
+        data.extend((pl.Series(empty_data, dtype=Utf8)) for _ in range(n_extend_cols))
     for dtype in set(schema.values()):
         if dtype in (List, Struct, Object):
             raise NotImplementedError(
@@ -307,6 +314,8 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
                 df.write_csv(file=buf)
                 df = read_csv(buf, new_columns=df.columns, try_parse_dates=True)
             return df
+    elif schema and not data:
+        return df.cast(schema)  # type: ignore[arg-type]
     else:
         return _cast_repr_strings_with_schema(df, schema)
 
@@ -667,7 +676,7 @@ def from_pandas(
     rechunk : bool, default True
         Make sure that all data is in contiguous memory.
     nan_to_null : bool, default True
-        If data contains `NaN` values PyArrow will convert the ``NaN`` to ``None``
+        If data contains `NaN` values PyArrow will convert the `NaN` to `None`
     include_index : bool, default False
         Load any non-default pandas indexes as columns.
 
@@ -722,3 +731,56 @@ def from_pandas(
         raise TypeError(
             f"expected pandas DataFrame or Series, got {type(data).__name__!r}"
         )
+
+
+def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataFrame:
+    """
+    Build a Polars DataFrame from any dataframe supporting the interchange protocol.
+
+    Parameters
+    ----------
+    df
+        Object supporting the dataframe interchange protocol, i.e. must have implemented
+        the `__dataframe__` method.
+    allow_copy
+        Allow memory to be copied to perform the conversion. If set to False, causes
+        conversions that are not zero-copy to fail.
+
+    Notes
+    -----
+    Details on the Python dataframe interchange protocol:
+    https://data-apis.org/dataframe-protocol/latest/index.html
+
+    Using a dedicated function like :func:`from_pandas` or :func:`from_arrow` is a more
+    efficient method of conversion.
+
+    Polars currently relies on pyarrow's implementation of the dataframe interchange
+    protocol for `from_dataframe`. Therefore, pyarrow>=11.0.0 is required for this
+    function to work.
+
+    Because Polars can not currently guarantee zero-copy conversion from Arrow for
+    categorical columns, `allow_copy=False` will not work if the dataframe contains
+    categorical data.
+
+    Examples
+    --------
+    Convert a pandas dataframe to Polars through the interchange protocol.
+
+    >>> import pandas as pd
+    >>> df_pd = pd.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["x", "y"]})
+    >>> dfi = df_pd.__dataframe__()
+    >>> pl.from_dataframe(dfi)
+    shape: (2, 3)
+    ┌─────┬─────┬─────┐
+    │ a   ┆ b   ┆ c   │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ f64 ┆ str │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 3.0 ┆ x   │
+    │ 2   ┆ 4.0 ┆ y   │
+    └─────┴─────┴─────┘
+
+    """
+    from polars.interchange.from_dataframe import from_dataframe
+
+    return from_dataframe(df, allow_copy=allow_copy)

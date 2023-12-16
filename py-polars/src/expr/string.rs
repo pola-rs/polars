@@ -7,8 +7,12 @@ use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {
-    fn str_concat(&self, delimiter: &str) -> Self {
-        self.inner.clone().str().concat(delimiter).into()
+    fn str_concat(&self, delimiter: &str, ignore_nulls: bool) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .concat(delimiter, ignore_nulls)
+            .into()
     }
 
     #[pyo3(signature = (format, strict, exact, cache))]
@@ -137,6 +141,10 @@ impl PyExpr {
             .into()
     }
 
+    fn str_reverse(&self) -> Self {
+        self.inner.clone().str().reverse().into()
+    }
+
     fn str_pad_start(&self, length: usize, fill_char: char) -> Self {
         self.inner.clone().str().pad_start(length, fill_char).into()
     }
@@ -167,66 +175,34 @@ impl PyExpr {
     }
 
     fn str_hex_encode(&self) -> Self {
-        self.inner
-            .clone()
-            .map(
-                move |s| s.utf8().map(|s| Some(s.hex_encode().into_series())),
-                GetOutput::same_type(),
-            )
-            .with_fmt("str.hex_encode")
-            .into()
+        self.inner.clone().str().hex_encode().into()
     }
 
     #[cfg(feature = "binary_encoding")]
     fn str_hex_decode(&self, strict: bool) -> Self {
-        self.inner
-            .clone()
-            .map(
-                move |s| s.utf8()?.hex_decode(strict).map(|s| Some(s.into_series())),
-                GetOutput::from_type(DataType::Binary),
-            )
-            .with_fmt("str.hex_decode")
-            .into()
+        self.inner.clone().str().hex_decode(strict).into()
     }
 
     fn str_base64_encode(&self) -> Self {
-        self.inner
-            .clone()
-            .map(
-                move |s| s.utf8().map(|s| Some(s.base64_encode().into_series())),
-                GetOutput::same_type(),
-            )
-            .with_fmt("str.base64_encode")
-            .into()
+        self.inner.clone().str().base64_encode().into()
     }
 
     #[cfg(feature = "binary_encoding")]
     fn str_base64_decode(&self, strict: bool) -> Self {
-        self.inner
-            .clone()
-            .map(
-                move |s| {
-                    s.utf8()?
-                        .base64_decode(strict)
-                        .map(|s| Some(s.into_series()))
-                },
-                GetOutput::from_type(DataType::Binary),
-            )
-            .with_fmt("str.base64_decode")
-            .into()
+        self.inner.clone().str().base64_decode(strict).into()
     }
 
-    fn str_parse_int(&self, radix: u32, strict: bool) -> Self {
+    fn str_to_integer(&self, base: u32, strict: bool) -> Self {
         self.inner
             .clone()
             .str()
-            .from_radix(radix, strict)
-            .with_fmt("str.parse_int")
+            .to_integer(base, strict)
+            .with_fmt("str.to_integer")
             .into()
     }
 
     #[cfg(feature = "extract_jsonpath")]
-    fn str_json_extract(
+    fn str_json_decode(
         &self,
         dtype: Option<Wrap<DataType>>,
         infer_schema_len: Option<usize>,
@@ -235,7 +211,7 @@ impl PyExpr {
         self.inner
             .clone()
             .str()
-            .json_extract(dtype, infer_schema_len)
+            .json_decode(dtype, infer_schema_len)
             .into()
     }
 
@@ -308,5 +284,27 @@ impl PyExpr {
 
     fn str_to_decimal(&self, infer_len: usize) -> Self {
         self.inner.clone().str().to_decimal(infer_len).into()
+    }
+
+    #[cfg(feature = "find_many")]
+    fn str_contains_any(&self, patterns: PyExpr, ascii_case_insensitive: bool) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .contains_any(patterns.inner, ascii_case_insensitive)
+            .into()
+    }
+    #[cfg(feature = "find_many")]
+    fn str_replace_many(
+        &self,
+        patterns: PyExpr,
+        replace_with: PyExpr,
+        ascii_case_insensitive: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .replace_many(patterns.inner, replace_with.inner, ascii_case_insensitive)
+            .into()
     }
 }

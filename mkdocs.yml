@@ -10,19 +10,18 @@ repo_name: pola-rs/polars
 nav:
   - Home: index.md
 
-  - Getting started:
-    - getting-started/intro.md
-    - getting-started/installation.md
-    - getting-started/series-dataframes.md
-    - getting-started/reading-writing.md
-    - getting-started/expressions.md
-    - getting-started/joins.md
-
   - User guide:
     - user-guide/index.md
     - user-guide/installation.md
+    - Basics:
+      - user-guide/basics/index.md
+      - user-guide/basics/reading-writing.md
+      - user-guide/basics/expressions.md
+      - user-guide/basics/joins.md
     - Concepts:
-      - user-guide/concepts/data-types.md
+      - Data types:
+        - user-guide/concepts/data-types/overview.md
+        - user-guide/concepts/data-types/categoricals.md
       - user-guide/concepts/data-structures.md
       - user-guide/concepts/contexts.md
       - user-guide/concepts/expressions.md
@@ -86,13 +85,19 @@ nav:
   - API reference: api/index.md
 
   - Development:
-    - development/contributing.md
+    - Contributing:
+      - development/contributing/index.md
+      - development/contributing/ide.md
+      - development/contributing/test.md
+      - development/contributing/ci.md
+      - development/contributing/code-style.md
     - development/versioning.md
 
   - Releases:
     - releases/changelog.md
     - Upgrade guides:
       - releases/upgrade/index.md
+      - releases/upgrade/0.20.md
       - releases/upgrade/0.19.md
 
 not_in_nav: |

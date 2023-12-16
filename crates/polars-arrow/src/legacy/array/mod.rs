@@ -1,9 +1,6 @@
-use crate::array::{
-    Array, BinaryArray, BooleanArray, FixedSizeListArray, ListArray, PrimitiveArray, Utf8Array,
-};
+use crate::array::{Array, BinaryArray, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
 use crate::bitmap::MutableBitmap;
-use crate::datatypes::DataType;
-use crate::legacy::prelude::*;
+use crate::datatypes::ArrowDataType;
 use crate::legacy::utils::CustomIterTools;
 use crate::offset::Offsets;
 use crate::types::NativeType;
@@ -18,64 +15,6 @@ pub mod slice;
 pub mod utf8;
 
 pub use slice::*;
-
-pub trait ValueSize {
-    /// Useful for a Utf8 or a List to get underlying value size.
-    /// During a rechunk this is handy
-    fn get_values_size(&self) -> usize;
-}
-
-impl ValueSize for ListArray<i64> {
-    fn get_values_size(&self) -> usize {
-        self.values().len()
-    }
-}
-
-impl ValueSize for FixedSizeListArray {
-    fn get_values_size(&self) -> usize {
-        self.values().len()
-    }
-}
-
-impl ValueSize for Utf8Array<i64> {
-    fn get_values_size(&self) -> usize {
-        self.values().len()
-    }
-}
-
-impl ValueSize for BinaryArray<i64> {
-    fn get_values_size(&self) -> usize {
-        self.values().len()
-    }
-}
-
-impl ValueSize for ArrayRef {
-    fn get_values_size(&self) -> usize {
-        match self.data_type() {
-            DataType::LargeUtf8 => self
-                .as_any()
-                .downcast_ref::<Utf8Array<i64>>()
-                .unwrap()
-                .get_values_size(),
-            DataType::FixedSizeList(_, _) => self
-                .as_any()
-                .downcast_ref::<FixedSizeListArray>()
-                .unwrap()
-                .get_values_size(),
-            DataType::LargeList(_) => self
-                .as_any()
-                .downcast_ref::<ListArray<i64>>()
-                .unwrap()
-                .get_values_size(),
-            DataType::LargeBinary => self
-                .as_any()
-                .downcast_ref::<BinaryArray<i64>>()
-                .unwrap()
-                .get_values_size(),
-            _ => unimplemented!(),
-        }
-    }
-}
 
 macro_rules! iter_to_values {
     ($iterator:expr, $validity:expr, $offsets:expr, $length_so_far:expr) => {{
@@ -106,7 +45,7 @@ pub trait ListFromIter {
     /// Will produce incorrect arrays if size hint is incorrect.
     unsafe fn from_iter_primitive_trusted_len<T, P, I>(
         iter: I,
-        data_type: DataType,
+        data_type: ArrowDataType,
     ) -> ListArray<i64>
     where
         T: NativeType,
@@ -156,7 +95,7 @@ pub trait ListFromIter {
         // Safety:
         // Offsets are monotonically increasing.
         ListArray::new(
-            ListArray::<i64>::default_datatype(DataType::Boolean),
+            ListArray::<i64>::default_datatype(ArrowDataType::Boolean),
             Offsets::new_unchecked(offsets).into(),
             Box::new(values),
             Some(validity.into()),
@@ -202,7 +141,7 @@ pub trait ListFromIter {
         // Safety:
         // offsets are monotonically increasing
         ListArray::new(
-            ListArray::<i64>::default_datatype(DataType::LargeUtf8),
+            ListArray::<i64>::default_datatype(ArrowDataType::LargeUtf8),
             Offsets::new_unchecked(offsets).into(),
             Box::new(values),
             Some(validity.into()),
@@ -248,7 +187,7 @@ pub trait ListFromIter {
         // Safety:
         // offsets are monotonically increasing
         ListArray::new(
-            ListArray::<i64>::default_datatype(DataType::LargeBinary),
+            ListArray::<i64>::default_datatype(ArrowDataType::LargeBinary),
             Offsets::new_unchecked(offsets).into(),
             Box::new(values),
             Some(validity.into()),

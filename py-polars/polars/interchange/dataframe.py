@@ -24,7 +24,7 @@ class PolarsDataFrame(InterchangeDataFrame):
     column
         The Polars DataFrame backing the dataframe object.
     allow_copy
-        Allow data to be copied during operations on this column. If set to ``False``,
+        Allow data to be copied during operations on this column. If set to `False`,
         a RuntimeError is raised if data would be copied.
 
     """
@@ -46,14 +46,14 @@ class PolarsDataFrame(InterchangeDataFrame):
         Parameters
         ----------
         nan_as_null
-            Overwrite null values in the data with ``NaN``.
+            Overwrite null values in the data with `NaN`.
 
             .. warning::
                 This functionality has not been implemented and the parameter will be
                 removed in a future version.
-                Setting this to ``True`` will raise a ``NotImplementedError``.
+                Setting this to `True` will raise a `NotImplementedError`.
         allow_copy
-            Allow memory to be copied to perform the conversion. If set to ``False``,
+            Allow memory to be copied to perform the conversion. If set to `False`,
             causes conversions that are not zero-copy to fail.
 
         """
@@ -82,7 +82,7 @@ class PolarsDataFrame(InterchangeDataFrame):
         """
         Return the number of chunks the dataframe consists of.
 
-        It is possible for a Polars dataframe to consist of columns with a varying
+        It is possible for a Polars DataFrame to consist of columns with a varying
         number of chunks. This method returns the number of chunks of the first
         column.
 
@@ -174,11 +174,11 @@ class PolarsDataFrame(InterchangeDataFrame):
         ----------
         n_chunks
             The number of chunks to return. Must be a multiple of the number of chunks
-            in the dataframe. If set to ``None`` (default), returns all chunks.
+            in the dataframe. If set to `None` (default), returns all chunks.
 
         Notes
         -----
-        When the columns in the dataframe are chunked unevenly, or when ``n_chunks`` is
+        When the columns in the dataframe are chunked unevenly, or when `n_chunks` is
         higher than the number of chunks in the dataframe, a slice must be performed
         that is not on the chunk boundary. This will trigger some compute for columns
         that contain null values and boolean columns.

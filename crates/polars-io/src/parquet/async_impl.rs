@@ -1,30 +1,32 @@
 //! Read parquet files in parallel from the Object Store without a third party crate.
 use std::ops::Range;
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
 use bytes::Bytes;
 use object_store::path::Path as ObjectPath;
 use object_store::ObjectStore;
+use polars_core::config::{get_rg_prefetch_size, verbose};
 use polars_core::datatypes::PlHashMap;
 use polars_core::error::{to_compute_err, PolarsResult};
 use polars_core::prelude::*;
 use polars_parquet::read::{self as parquet2_read, RowGroupMetaData};
 use polars_parquet::write::FileMetaData;
 use smartstring::alias::String as SmartString;
+use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::Mutex;
 
 use super::cloud::{build_object_store, CloudLocation, CloudReader};
 use super::mmap::ColumnStore;
 use crate::cloud::CloudOptions;
 use crate::parquet::read_impl::compute_row_group_range;
-use crate::pl_async::get_runtime;
+use crate::pl_async::{get_runtime, with_concurrency_budget, MAX_BUDGET_PER_REQUEST};
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::predicates::read_this_row_group;
 
 type DownloadedRowGroup = Vec<(u64, Bytes)>;
 type QueuePayload = (usize, DownloadedRowGroup);
-type QueueSend = Arc<SyncSender<PolarsResult<QueuePayload>>>;
+type QueueSend = Arc<Sender<PolarsResult<QueuePayload>>>;
 
 pub struct ParquetObjectStore {
     store: Arc<dyn ObjectStore>,
@@ -50,17 +52,27 @@ impl ParquetObjectStore {
     }
 
     async fn get_range(&self, start: usize, length: usize) -> PolarsResult<Bytes> {
-        self.store
-            .get_range(&self.path, start..start + length)
-            .await
-            .map_err(to_compute_err)
+        with_concurrency_budget(1, || async {
+            self.store
+                .get_range(&self.path, start..start + length)
+                .await
+                .map_err(to_compute_err)
+        })
+        .await
     }
 
     async fn get_ranges(&self, ranges: &[Range<usize>]) -> PolarsResult<Vec<Bytes>> {
-        self.store
-            .get_ranges(&self.path, ranges)
-            .await
-            .map_err(to_compute_err)
+        // Object-store has a maximum of 10 concurrent.
+        with_concurrency_budget(
+            (ranges.len() as u32).clamp(0, MAX_BUDGET_PER_REQUEST as u32),
+            || async {
+                self.store
+                    .get_ranges(&self.path, ranges)
+                    .await
+                    .map_err(to_compute_err)
+            },
+        )
+        .await
     }
 
     /// Initialize the length property of the object, unless it has already been fetched.
@@ -131,21 +143,21 @@ async fn download_projection(
     let mut offsets = Vec::with_capacity(fields.len());
     fields.iter().for_each(|name| {
         let columns = row_group.columns();
-        let (offset, range) = columns
-            .iter()
-            .filter_map(|meta| {
-                if meta.descriptor().path_in_schema[0] == name.as_str() {
-                    let (offset, len) = meta.byte_range();
-                    Some((offset, offset as usize..(offset + len) as usize))
-                } else {
-                    None
-                }
-            })
-            .next()
-            .unwrap();
 
-        offsets.push(offset);
-        ranges.push(range);
+        // A single column can have multiple matches (structs).
+        let iter = columns.iter().filter_map(|meta| {
+            if meta.descriptor().path_in_schema[0] == name.as_str() {
+                let (offset, len) = meta.byte_range();
+                Some((offset, offset as usize..(offset + len) as usize))
+            } else {
+                None
+            }
+        });
+
+        for (offset, range) in iter {
+            offsets.push(offset);
+            ranges.push(range);
+        }
     });
 
     let result = async_reader.get_ranges(&ranges).await.map(|bytes| {
@@ -158,7 +170,7 @@ async fn download_projection(
                 .collect::<Vec<_>>(),
         )
     });
-    sender.send(result).is_ok()
+    sender.send(result).await.is_ok()
 }
 
 async fn download_row_group(
@@ -179,7 +191,7 @@ async fn download_row_group(
         .unwrap();
 
     let result = async_reader
-        .get_range(offset as usize, (max_offset + len) as usize)
+        .get_range(offset as usize, (max_offset - offset + len) as usize)
         .await
         .map(|bytes| {
             let base_offset = offset;
@@ -200,7 +212,7 @@ async fn download_row_group(
             )
         });
 
-    sender.send(result).is_ok()
+    sender.send(result).await.is_ok()
 }
 
 pub struct FetchRowGroupsFromObjectStore {
@@ -249,15 +261,19 @@ impl FetchRowGroupsFromObjectStore {
             row_groups.iter().cloned().enumerate().collect()
         };
         let reader = Arc::new(reader);
-        let msg_limit = 5;
+        let msg_limit = get_rg_prefetch_size();
 
-        let (snd, rcv) = sync_channel(msg_limit);
+        if verbose() {
+            eprintln!("POLARS ROW_GROUP PREFETCH_SIZE: {}", msg_limit)
+        }
+
+        let (snd, rcv) = channel(msg_limit);
         let snd = Arc::new(snd);
 
         let _ = std::thread::spawn(move || {
             get_runtime().block_on(async {
                 let chunk_len = msg_limit;
-                let mut handles = Vec::with_capacity(chunk_len);
+                let mut handles = Vec::with_capacity(chunk_len.clamp(0, row_groups.len()));
                 for chunk in row_groups.chunks_mut(chunk_len) {
                     // Start downloads concurrently
                     for (i, rg) in chunk {
@@ -311,17 +327,19 @@ impl FetchRowGroupsFromObjectStore {
         })
     }
 
-    pub(crate) fn fetch_row_groups(
+    pub(crate) async fn fetch_row_groups(
         &mut self,
         row_groups: Range<usize>,
     ) -> PolarsResult<ColumnStore> {
-        let guard = self.rg_q.lock().unwrap();
+        let mut guard = self.rg_q.lock().await;
 
         while !row_groups
             .clone()
             .all(|i| self.prefetched_rg.contains_key(&i))
         {
-            let Ok(fetched) = guard.recv() else { break };
+            let Some(fetched) = guard.recv().await else {
+                break;
+            };
             let (rg_i, payload) = fetched?;
 
             self.prefetched_rg.insert(rg_i, payload);

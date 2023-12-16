@@ -7,4 +7,4 @@ pub mod chunked_array;
 pub use frame::pivot;
 pub mod frame;
 pub mod prelude;
-mod series;
+pub mod series;

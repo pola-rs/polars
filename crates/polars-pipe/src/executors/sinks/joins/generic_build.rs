@@ -2,14 +2,14 @@ use std::any::Any;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use arrow::array::BinaryArray;
+use arrow::array::{ArrayRef, BinaryArray};
 use hashbrown::hash_map::RawEntryMut;
 use polars_core::datatypes::ChunkId;
 use polars_core::error::PolarsResult;
 use polars_core::export::ahash::RandomState;
 use polars_core::prelude::*;
 use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
-use polars_utils::hash_to_partition;
+use polars_utils::hashing::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 
 use super::*;
@@ -74,6 +74,7 @@ pub struct GenericBuild {
     join_type: JoinType,
     // the join order is swapped to ensure we hash the smaller table
     swapped: bool,
+    join_nulls: bool,
 }
 
 impl GenericBuild {
@@ -83,6 +84,7 @@ impl GenericBuild {
         swapped: bool,
         join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
+        join_nulls: bool,
     ) -> Self {
         let hb: RandomState = Default::default();
         let partitions = _set_partition_size();
@@ -99,6 +101,7 @@ impl GenericBuild {
             materialized_join_cols: vec![],
             hash_tables,
             hashes: vec![],
+            join_nulls,
         }
     }
 }
@@ -280,6 +283,7 @@ impl Sink for GenericBuild {
             self.swapped,
             self.join_columns_left.clone(),
             self.join_columns_right.clone(),
+            self.join_nulls,
         );
         new.hb = self.hb.clone();
         Box::new(new)
@@ -324,6 +328,7 @@ impl Sink for GenericBuild {
                     hashes,
                     context,
                     self.join_type.clone(),
+                    self.join_nulls,
                 );
                 Ok(FinalizedSink::Operator(Box::new(probe_operator)))
             },

@@ -1,6 +1,6 @@
 use std::ops::Div;
 
-use arrow::array::{Array, PrimitiveArray};
+use arrow::array::{Array, ArrayRef, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::types::NativeType;
@@ -70,54 +70,54 @@ pub(super) fn sum_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Ser
     Series::try_from((ca.name(), chunks)).unwrap()
 }
 
-pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Series {
+pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> PolarsResult<Series> {
     use DataType::*;
     // TODO: add fast path for smaller ints?
     let mut out = match inner_dtype {
         Boolean => {
             let out: IdxCa =
-                ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum::<IdxSize>()));
+                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<IdxSize>().unwrap()));
             out.into_series()
         },
         UInt32 => {
             let out: UInt32Chunked =
-                ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum::<u32>()));
+                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<u32>().unwrap()));
             out.into_series()
         },
         UInt64 => {
             let out: UInt64Chunked =
-                ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum::<u64>()));
+                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<u64>().unwrap()));
             out.into_series()
         },
         Int32 => {
             let out: Int32Chunked =
-                ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum::<i32>()));
+                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<i32>().unwrap()));
             out.into_series()
         },
         Int64 => {
             let out: Int64Chunked =
-                ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum::<i64>()));
+                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<i64>().unwrap()));
             out.into_series()
         },
         Float32 => {
             let out: Float32Chunked =
-                ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum::<f32>()));
+                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<f32>().unwrap()));
             out.into_series()
         },
         Float64 => {
             let out: Float64Chunked =
-                ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum::<f64>()));
+                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().sum::<f64>().unwrap()));
             out.into_series()
         },
         // slowest sum_as_series path
         _ => ca
-            .apply_amortized(|s| s.as_ref().sum_as_series())
+            .try_apply_amortized(|s| s.as_ref().sum_as_series())?
             .explode()
             .unwrap()
             .into_series(),
     };
     out.rename(ca.name());
-    out
+    Ok(out)
 }
 
 fn mean_between_offsets<T, S>(values: &[T], offset: &[i64]) -> Vec<S>

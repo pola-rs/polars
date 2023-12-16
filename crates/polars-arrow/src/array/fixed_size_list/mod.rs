@@ -1,13 +1,13 @@
 use super::{new_empty_array, new_null_array, Array};
 use crate::bitmap::Bitmap;
-use crate::datatypes::{DataType, Field};
+use crate::datatypes::{ArrowDataType, Field};
 
 #[cfg(feature = "arrow_rs")]
 mod data;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
-pub use iterator::*;
+
 mod mutable;
 pub use mutable::*;
 use polars_error::{polars_bail, PolarsResult};
@@ -17,7 +17,7 @@ use polars_error::{polars_bail, PolarsResult};
 #[derive(Clone)]
 pub struct FixedSizeListArray {
     size: usize, // this is redundant with `data_type`, but useful to not have to deconstruct the data_type.
-    data_type: DataType,
+    data_type: ArrowDataType,
     values: Box<dyn Array>,
     validity: Option<Bitmap>,
 }
@@ -32,7 +32,7 @@ impl FixedSizeListArray {
     /// * The length of `values` is not a multiple of `size` in `data_type`
     /// * the validity's length is not equal to `values.len() / size`.
     pub fn try_new(
-        data_type: DataType,
+        data_type: ArrowDataType,
         values: Box<dyn Array>,
         validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
@@ -69,7 +69,7 @@ impl FixedSizeListArray {
     }
 
     /// Alias to `Self::try_new(...).unwrap()`
-    pub fn new(data_type: DataType, values: Box<dyn Array>, validity: Option<Bitmap>) -> Self {
+    pub fn new(data_type: ArrowDataType, values: Box<dyn Array>, validity: Option<Bitmap>) -> Self {
         Self::try_new(data_type, values, validity).unwrap()
     }
 
@@ -79,13 +79,13 @@ impl FixedSizeListArray {
     }
 
     /// Returns a new empty [`FixedSizeListArray`].
-    pub fn new_empty(data_type: DataType) -> Self {
+    pub fn new_empty(data_type: ArrowDataType) -> Self {
         let values = new_empty_array(Self::get_child_and_size(&data_type).0.data_type().clone());
         Self::new(data_type, values, None)
     }
 
     /// Returns a new null [`FixedSizeListArray`].
-    pub fn new_null(data_type: DataType, length: usize) -> Self {
+    pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
         let (field, size) = Self::get_child_and_size(&data_type);
 
         let values = new_null_array(field.data_type().clone(), length * size);
@@ -178,9 +178,9 @@ impl FixedSizeListArray {
 }
 
 impl FixedSizeListArray {
-    pub(crate) fn try_child_and_size(data_type: &DataType) -> PolarsResult<(&Field, usize)> {
+    pub(crate) fn try_child_and_size(data_type: &ArrowDataType) -> PolarsResult<(&Field, usize)> {
         match data_type.to_logical_type() {
-            DataType::FixedSizeList(child, size) => {
+            ArrowDataType::FixedSizeList(child, size) => {
                 if *size == 0 {
                     polars_bail!(ComputeError: "FixedSizeBinaryArray expects a positive size")
                 }
@@ -190,14 +190,14 @@ impl FixedSizeListArray {
         }
     }
 
-    pub(crate) fn get_child_and_size(data_type: &DataType) -> (&Field, usize) {
+    pub(crate) fn get_child_and_size(data_type: &ArrowDataType) -> (&Field, usize) {
         Self::try_child_and_size(data_type).unwrap()
     }
 
-    /// Returns a [`DataType`] consistent with [`FixedSizeListArray`].
-    pub fn default_datatype(data_type: DataType, size: usize) -> DataType {
+    /// Returns a [`ArrowDataType`] consistent with [`FixedSizeListArray`].
+    pub fn default_datatype(data_type: ArrowDataType, size: usize) -> ArrowDataType {
         let field = Box::new(Field::new("item", data_type, true));
-        DataType::FixedSizeList(field, size)
+        ArrowDataType::FixedSizeList(field, size)
     }
 }
 

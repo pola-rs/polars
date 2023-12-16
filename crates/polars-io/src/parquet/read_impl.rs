@@ -13,6 +13,7 @@ use polars_parquet::read;
 use polars_parquet::read::{ArrayIter, FileMetaData, RowGroupMetaData};
 use rayon::prelude::*;
 
+use super::materialize_empty_df;
 use super::mmap::ColumnStore;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 #[cfg(feature = "cloud")]
@@ -21,7 +22,7 @@ use crate::parquet::mmap::mmap_columns;
 use crate::parquet::predicates::read_this_row_group;
 use crate::parquet::{mmap, FileMetaDataRef, ParallelStrategy};
 use crate::predicates::{apply_predicate, PhysicalIoExpr};
-use crate::utils::{apply_projection, get_reader_bytes};
+use crate::utils::get_reader_bytes;
 use crate::RowCount;
 
 fn enlarge_data_type(mut data_type: ArrowDataType) -> ArrowDataType {
@@ -328,21 +329,6 @@ fn rg_to_dfs_par_over_rg(
     Ok(dfs.into_iter().flatten().collect())
 }
 
-fn materialize_empty_df(
-    projection: Option<&[usize]>,
-    reader_schema: &ArrowSchema,
-    hive_partition_columns: Option<&[Series]>,
-) -> DataFrame {
-    let schema = if let Some(projection) = projection {
-        Cow::Owned(apply_projection(reader_schema, projection))
-    } else {
-        Cow::Borrowed(reader_schema)
-    };
-    let mut df = DataFrame::from(schema.as_ref());
-    materialize_hive_partitions(&mut df, hive_partition_columns, 0);
-    df
-}
-
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet<R: MmapBytesReader>(
     mut reader: R,
@@ -362,6 +348,7 @@ pub fn read_parquet<R: MmapBytesReader>(
             projection,
             reader_schema,
             hive_partition_columns,
+            row_count.as_ref(),
         ));
     }
 
@@ -416,7 +403,7 @@ pub fn read_parquet<R: MmapBytesReader>(
         &file_metadata,
         reader_schema,
         predicate,
-        row_count,
+        row_count.clone(),
         parallel,
         &materialized_projection,
         use_statistics,
@@ -428,6 +415,7 @@ pub fn read_parquet<R: MmapBytesReader>(
             projection,
             reader_schema,
             hive_partition_columns,
+            row_count.as_ref(),
         ))
     } else {
         accumulate_dataframes_vertical(dfs)
@@ -476,11 +464,11 @@ impl From<FetchRowGroupsFromMmapReader> for RowGroupFetcher {
 }
 
 impl RowGroupFetcher {
-    fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
+    async fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
         match self {
             RowGroupFetcher::Local(f) => f.fetch_row_groups(_row_groups),
             #[cfg(feature = "cloud")]
-            RowGroupFetcher::ObjectStore(f) => f.fetch_row_groups(_row_groups),
+            RowGroupFetcher::ObjectStore(f) => f.fetch_row_groups(_row_groups).await,
         }
     }
 }
@@ -592,8 +580,9 @@ impl BatchedParquetReader {
             return Ok(None);
         }
 
+        let mut skipped_all_rgs = false;
         // fill up fifo stack
-        if self.row_group_offset <= self.n_row_groups && self.chunks_fifo.len() < n {
+        if self.row_group_offset < self.n_row_groups && self.chunks_fifo.len() < n {
             // Ensure we apply the limit on the metadata, before we download the row-groups.
             let row_group_start = self.row_group_offset;
             let row_group_end = compute_row_group_range(
@@ -605,7 +594,8 @@ impl BatchedParquetReader {
 
             let store = self
                 .row_group_fetcher
-                .fetch_row_groups(row_group_start..row_group_end)?;
+                .fetch_row_groups(row_group_start..row_group_end)
+                .await?;
 
             let dfs = rg_to_dfs(
                 &store,
@@ -632,12 +622,14 @@ impl BatchedParquetReader {
                     Some(&self.projection),
                     self.schema.as_ref(),
                     self.hive_partition_columns.as_deref(),
+                    self.row_count.as_ref(),
                 )]));
             }
 
             // TODO! this is slower than it needs to be
             // we also need to parallelize over row groups here.
 
+            skipped_all_rgs |= dfs.is_empty();
             for mut df in dfs {
                 // make sure that the chunks are not too large
                 let n = df.shape().0 / self.chunk_size;
@@ -652,7 +644,16 @@ impl BatchedParquetReader {
         };
 
         if self.chunks_fifo.is_empty() {
-            Ok(None)
+            if skipped_all_rgs {
+                Ok(Some(vec![materialize_empty_df(
+                    Some(self.projection.as_slice()),
+                    self.schema(),
+                    self.hive_partition_columns.as_deref(),
+                    self.row_count.as_ref(),
+                )]))
+            } else {
+                Ok(None)
+            }
         } else {
             let mut chunks = Vec::with_capacity(n);
             let mut i = 0;

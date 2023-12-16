@@ -126,7 +126,7 @@ shape: (5, 8)
  └────────┴────────┘
 >>> ## OPTION 2
 >>> # Don't materialize the query, but return as LazyFrame
->>> # and continue in python
+>>> # and continue in Python
 >>> lf = context.execute(query)
 >>> (lf.join(other_table)
 ...      .group_by("foo")
@@ -158,7 +158,7 @@ Refer to the [Polars CLI repository](https://github.com/pola-rs/polars-cli) for 
 Polars is very fast. In fact, it is one of the best performing solutions available.
 See the results in [DuckDB's db-benchmark](https://duckdblabs.github.io/db-benchmark/).
 
-In the [TPCH benchmarks](https://www.pola.rs/benchmarks.html) polars is orders of magnitudes faster than pandas, dask, modin and vaex
+In the [TPCH benchmarks](https://www.pola.rs/benchmarks.html) Polars is orders of magnitudes faster than pandas, dask, modin and vaex
 on full queries (including IO).
 
 ### Lightweight
@@ -200,8 +200,8 @@ You can also install the dependencies directly.
 | Tag        | Description                                                                  |
 | ---------- | ---------------------------------------------------------------------------- |
 | **all**    | Install all optional dependencies (all of the following)                     |
-| pandas     | Install with Pandas for converting data to and from Pandas Dataframes/Series |
-| numpy      | Install with numpy for converting data to and from numpy arrays              |
+| pandas     | Install with pandas for converting data to and from pandas DataFrames/Series |
+| numpy      | Install with NumPy for converting data to and from NumPy arrays              |
 | pyarrow    | Reading data formats using PyArrow                                           |
 | fsspec     | Support for reading from remote file systems                                 |
 | connectorx | Support for reading from SQL databases                                       |
@@ -228,9 +228,9 @@ Required Rust version `>=1.71`.
 
 Want to contribute? Read our [contribution guideline](/CONTRIBUTING.md).
 
-## Python: compile polars from source
+## Python: compile Polars from source
 
-If you want a bleeding edge release or maximal performance you should compile **polars** from source.
+If you want a bleeding edge release or maximal performance you should compile **Polars** from source.
 
 This can be done by going through the following steps in sequence:
 
@@ -249,24 +249,24 @@ Note that the Rust crate implementing the Python bindings is called `py-polars` 
 Rust crate `polars` itself. However, both the Python package and the Python module are named `polars`, so you
 can `pip install polars` and `import polars`.
 
-## Use custom Rust function in python?
+## Use custom Rust function in Python?
 
-Extending polars with UDFs compiled in Rust is easy. We expose pyo3 extensions for `DataFrame` and `Series`
+Extending Polars with UDFs compiled in Rust is easy. We expose pyo3 extensions for `DataFrame` and `Series`
 data structures. See more in https://github.com/pola-rs/pyo3-polars.
 
 ## Going big...
 
 Do you expect more than `2^32` ~4,2 billion rows? Compile polars with the `bigidx` feature flag.
 
-Or for python users install `pip install polars-u64-idx`.
+Or for Python users install `pip install polars-u64-idx`.
 
-Don't use this unless you hit the row boundary as the default polars is faster and consumes less memory.
+Don't use this unless you hit the row boundary as the default Polars is faster and consumes less memory.
 
 ## Legacy
 
-Do you want polars to run on an old CPU (e.g. dating from before 2011), or on an `x86-64` build
+Do you want Polars to run on an old CPU (e.g. dating from before 2011), or on an `x86-64` build
 of Python on Apple Silicon under Rosetta? Install `pip install polars-lts-cpu`. This version of
-polars is compiled without [AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) target
+Polars is compiled without [AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) target
 features.
 
 ## Sponsors

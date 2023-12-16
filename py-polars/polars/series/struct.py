@@ -9,9 +9,8 @@ from polars.utils._wrap import wrap_df
 from polars.utils.various import sphinx_accessor
 
 if TYPE_CHECKING:
-    from polars import DataFrame, Series
+    from polars import DataFrame, DataType, Series
     from polars.polars import PySeries
-    from polars.type_aliases import SchemaDict
 elif os.getenv("BUILDING_SPHINX_DOCS"):
     property = sphinx_accessor
 
@@ -66,10 +65,10 @@ class StructNameSpace:
         """
 
     @property
-    def schema(self) -> SchemaDict:
+    def schema(self) -> OrderedDict[str, DataType]:
         """Get the struct definition as a name/dtype schema dict."""
         if getattr(self, "_s", None) is None:
-            return {}
+            return OrderedDict()
         return OrderedDict(self._s.dtype().to_schema())
 
     def unnest(self) -> DataFrame:
@@ -92,3 +91,20 @@ class StructNameSpace:
 
         """
         return wrap_df(self._s.struct_unnest())
+
+    def json_encode(self) -> Series:
+        """
+        Convert this struct to a string column with json values.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [{"a": [1, 2], "b": [45]}, {"a": [9, 1, 3], "b": None}])
+        >>> s.struct.json_encode()
+        shape: (2,)
+        Series: 'a' [str]
+        [
+            "{"a":[1,2],"b"…
+            "{"a":[9,1,3],"…
+        ]
+
+        """

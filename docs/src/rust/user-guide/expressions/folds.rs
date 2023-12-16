@@ -1,7 +1,6 @@
 use polars::prelude::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    
     // --8<-- [start:mansum]
     let df = df!(
         "a" => &[1, 2, 3],

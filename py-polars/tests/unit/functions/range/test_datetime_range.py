@@ -8,13 +8,13 @@ import pytest
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.exceptions import ComputeError, TimeZoneAwareConstructorWarning
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
     from polars.datatypes import PolarsDataType
-    from polars.type_aliases import TimeUnit
+    from polars.type_aliases import ClosedInterval, TimeUnit
 else:
     from polars.utils.convert import get_zoneinfo as ZoneInfo
 
@@ -37,7 +37,7 @@ def test_datetime_range() -> None:
             time_unit=time_unit,
             eager=True,
         )
-        assert rng.dtype.time_unit == time_unit  # type: ignore[union-attr]
+        assert rng.dtype.time_unit == time_unit  # type: ignore[attr-defined]
         assert rng.shape == (13,)
         assert rng.dt[0] == datetime(2020, 1, 1)
         assert rng.dt[-1] == datetime(2020, 1, 2)
@@ -67,7 +67,7 @@ def test_datetime_range() -> None:
         datetime(2022, 1, 1), datetime(2022, 1, 1, 0, 1), "987456321ns", eager=True
     )
     assert len(result) == 61
-    assert result.dtype.time_unit == "ns"  # type: ignore[union-attr]
+    assert result.dtype.time_unit == "ns"  # type: ignore[attr-defined]
     assert result.dt.second()[-1] == 59
     assert result.cast(pl.Utf8)[-1] == "2022-01-01 00:00:59.247379260"
 
@@ -139,7 +139,7 @@ def test_datetime_range_lazy_with_expressions(
         pl.datetime_ranges(low, high, interval="1d").alias("dts")
     )
 
-    assert result_df.to_dict(False) == {
+    assert result_df.to_dict(as_series=False) == {
         "start": [datetime(2000, 1, 1, 0, 0), datetime(2022, 6, 1, 0, 0)],
         "stop": [datetime(2000, 1, 2, 0, 0), datetime(2022, 6, 2, 0, 0)],
         "dts": [
@@ -454,6 +454,19 @@ def test_datetime_range_schema_upcasts_to_datetime(
     )
     assert_frame_equal(result.collect(), expected)
 
+    # check datetime_range too
+    result_single = pl.datetime_range(
+        date(2020, 1, 1),
+        date(2020, 1, 3),
+        interval=interval,
+        time_unit=input_time_unit,
+        time_zone=input_time_zone,
+        eager=True,
+    )
+    assert_series_equal(
+        result_single, expected["datetime_range"].explode().rename("datetime")
+    )
+
 
 def test_datetime_ranges_no_alias_schema_9037() -> None:
     df = pl.DataFrame(
@@ -475,3 +488,87 @@ def test_datetime_range_invalid_interval(interval: timedelta) -> None:
         pl.datetime_range(
             datetime(2000, 3, 20), datetime(2000, 3, 21), interval="-1h", eager=True
         )
+
+
+@pytest.mark.parametrize(
+    ("closed", "expected_values"),
+    [
+        ("right", [datetime(2020, 2, 29), datetime(2020, 3, 31)]),
+        ("left", [datetime(2020, 1, 31), datetime(2020, 2, 29)]),
+        ("none", [datetime(2020, 2, 29)]),
+        ("both", [datetime(2020, 1, 31), datetime(2020, 2, 29), datetime(2020, 3, 31)]),
+    ],
+)
+def test_datetime_range_end_of_month_5441(
+    closed: ClosedInterval, expected_values: list[datetime]
+) -> None:
+    start = date(2020, 1, 31)
+    stop = date(2020, 3, 31)
+    result = pl.datetime_range(start, stop, interval="1mo", closed=closed, eager=True)
+    expected = pl.Series("datetime", expected_values)
+    assert_series_equal(result, expected)
+
+
+def test_datetime_ranges_broadcasting() -> None:
+    df = pl.DataFrame(
+        {
+            "datetimes": [
+                datetime(2021, 1, 1),
+                datetime(2021, 1, 2),
+                datetime(2021, 1, 3),
+            ]
+        }
+    )
+    result = df.select(
+        pl.datetime_ranges(start="datetimes", end=datetime(2021, 1, 3)).alias("end"),
+        pl.datetime_ranges(start=datetime(2021, 1, 1), end="datetimes").alias("start"),
+    )
+    expected = pl.DataFrame(
+        {
+            "end": [
+                [datetime(2021, 1, 1), datetime(2021, 1, 2), datetime(2021, 1, 3)],
+                [datetime(2021, 1, 2), datetime(2021, 1, 3)],
+                [datetime(2021, 1, 3)],
+            ],
+            "start": [
+                [datetime(2021, 1, 1)],
+                [datetime(2021, 1, 1), datetime(2021, 1, 2)],
+                [datetime(2021, 1, 1), datetime(2021, 1, 2), datetime(2021, 1, 3)],
+            ],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_datetime_range_specifying_ambiguous_11713() -> None:
+    result = pl.datetime_range(
+        pl.datetime(2023, 10, 29, 2, 0).dt.replace_time_zone(
+            "Europe/Madrid", ambiguous="earliest"
+        ),
+        pl.datetime(2023, 10, 29, 3, 0).dt.replace_time_zone("Europe/Madrid"),
+        "1h",
+        eager=True,
+    )
+    expected = pl.Series(
+        "datetime",
+        [
+            datetime(2023, 10, 29, 2),
+            datetime(2023, 10, 29, 2),
+            datetime(2023, 10, 29, 3),
+        ],
+    ).dt.replace_time_zone(
+        "Europe/Madrid", ambiguous=pl.Series(["earliest", "latest", "raise"])
+    )
+    assert_series_equal(result, expected)
+    result = pl.datetime_range(
+        pl.datetime(2023, 10, 29, 2, 0).dt.replace_time_zone(
+            "Europe/Madrid", ambiguous="latest"
+        ),
+        pl.datetime(2023, 10, 29, 3, 0).dt.replace_time_zone("Europe/Madrid"),
+        "1h",
+        eager=True,
+    )
+    expected = pl.Series(
+        "datetime", [datetime(2023, 10, 29, 2), datetime(2023, 10, 29, 3)]
+    ).dt.replace_time_zone("Europe/Madrid", ambiguous=pl.Series(["latest", "raise"]))
+    assert_series_equal(result, expected)

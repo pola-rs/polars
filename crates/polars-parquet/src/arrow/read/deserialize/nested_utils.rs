@@ -4,8 +4,7 @@ use arrow::array::Array;
 use arrow::bitmap::MutableBitmap;
 use polars_error::PolarsResult;
 
-use super::super::Pages;
-pub use super::utils::Zip;
+use super::super::PagesIter;
 use super::utils::{DecodedState, MaybeNext, PageState};
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::page::{split_buffer, DataPage, DictPage, Page};
@@ -268,6 +267,7 @@ pub(super) trait NestedDecoder<'a> {
 }
 
 /// The initial info of nested data types.
+/// The `bool` indicates if the type is nullable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InitNested {
     /// Primitive data types
@@ -353,7 +353,13 @@ impl NestedState {
 }
 
 /// Extends `items` by consuming `page`, first trying to complete the last `item`
-/// and extending it if more are needed
+/// and extending it if more are needed.
+///
+/// Note that as the page iterator being passed does not guarantee it reads to
+/// the end, this function cannot always determine whether it has finished
+/// reading. It therefore returns a bool indicating:
+/// * true  : the row is fully read
+/// * false : the row may not be fully read
 pub(super) fn extend<'a, D: NestedDecoder<'a>>(
     page: &'a DataPage,
     init: &[InitNested],
@@ -362,53 +368,54 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
     remaining: &mut usize,
     decoder: &D,
     chunk_size: Option<usize>,
-) -> PolarsResult<()> {
+) -> PolarsResult<bool> {
     let mut values_page = decoder.build_state(page, dict)?;
     let mut page = NestedPage::try_new(page)?;
 
-    let capacity = chunk_size.unwrap_or(0);
-    // chunk_size = None, remaining = 44 => chunk_size = 44
+    debug_assert!(
+        items.len() < 2,
+        "Should have yielded already completed item before reading more."
+    );
+
     let chunk_size = chunk_size.unwrap_or(usize::MAX);
+    let mut first_item_is_fully_read = false;
 
-    let (mut nested, mut decoded) = if let Some((nested, decoded)) = items.pop_back() {
-        (nested, decoded)
-    } else {
-        // there is no state => initialize it
-        (init_nested(init, capacity), decoder.with_capacity(0))
-    };
-    let existing = nested.len();
+    loop {
+        if let Some((mut nested, mut decoded)) = items.pop_back() {
+            let existing = nested.len();
+            let additional = (chunk_size - existing).min(*remaining);
 
-    let additional = (chunk_size - existing).min(*remaining);
+            let is_fully_read = extend_offsets2(
+                &mut page,
+                &mut values_page,
+                &mut nested.nested,
+                &mut decoded,
+                decoder,
+                additional,
+            )?;
+            first_item_is_fully_read |= is_fully_read;
+            *remaining -= nested.len() - existing;
+            items.push_back((nested, decoded));
 
-    // extend the current state
-    extend_offsets2(
-        &mut page,
-        &mut values_page,
-        &mut nested.nested,
-        &mut decoded,
-        decoder,
-        additional,
-    )?;
-    *remaining -= nested.len() - existing;
-    items.push_back((nested, decoded));
+            if page.len() == 0 {
+                break;
+            }
 
-    while page.len() > 0 && *remaining > 0 {
-        let additional = chunk_size.min(*remaining);
+            if is_fully_read && *remaining == 0 {
+                break;
+            };
+        };
 
-        let mut nested = init_nested(init, additional);
-        let mut decoded = decoder.with_capacity(0);
-        extend_offsets2(
-            &mut page,
-            &mut values_page,
-            &mut nested.nested,
-            &mut decoded,
-            decoder,
-            additional,
-        )?;
-        *remaining -= nested.len();
+        // At this point:
+        // * There are more pages.
+        // * The remaining rows have not been fully read.
+        // * The deque is empty, or the last item already holds completed data.
+        let nested = init_nested(init, chunk_size.min(*remaining));
+        let decoded = decoder.with_capacity(0);
         items.push_back((nested, decoded));
     }
-    Ok(())
+
+    Ok(first_item_is_fully_read)
 }
 
 fn extend_offsets2<'a, D: NestedDecoder<'a>>(
@@ -418,7 +425,7 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
     decoded: &mut D::DecodedState,
     decoder: &D,
     additional: usize,
-) -> PolarsResult<()> {
+) -> PolarsResult<bool> {
     let max_depth = nested.len();
 
     let mut cum_sum = vec![0u32; max_depth + 1];
@@ -434,12 +441,22 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
     }
 
     let mut rows = 0;
-    while let Some((rep, def)) = page.iter.next() {
-        let rep = rep?;
-        let def = def?;
-        if rep == 0 {
+    loop {
+        // SAFETY: page.iter is always non-empty on first loop.
+        // The current function gets called multiple times with iterators that
+        // yield batches of pages. This means e.g. it could be that the very
+        // first page is a new row, and the existing nested state has already
+        // contains all data from the additional rows.
+        if page.iter.peek().unwrap().0.as_ref().copied().unwrap() == 0 {
+            if rows == additional {
+                return Ok(true);
+            }
             rows += 1;
         }
+
+        let (rep, def) = page.iter.next().unwrap();
+        let rep = rep?;
+        let def = def?;
 
         let mut is_required = false;
         for depth in 0..max_depth {
@@ -469,19 +486,12 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
             }
         }
 
-        let next_rep = *page
-            .iter
-            .peek()
-            .map(|x| x.0.as_ref())
-            .transpose()
-            .unwrap() // todo: fix this
-            .unwrap_or(&0);
-
-        if next_rep == 0 && rows == additional {
+        if page.iter.len() == 0 {
             break;
         }
     }
-    Ok(())
+
+    Ok(false)
 }
 
 #[inline]
@@ -495,12 +505,12 @@ pub(super) fn next<'a, I, D>(
     decoder: &D,
 ) -> MaybeNext<PolarsResult<(NestedState, D::DecodedState)>>
 where
-    I: Pages,
+    I: PagesIter,
     D: NestedDecoder<'a>,
 {
     // front[a1, a2, a3, ...]back
-    if *remaining == 0 && items.is_empty() {
-        return MaybeNext::None;
+    if items.len() > 1 {
+        return MaybeNext::Some(Ok(items.pop_front().unwrap()));
     }
 
     match iter.next() {
@@ -522,7 +532,7 @@ where
             };
 
             // there is a new page => consume the page from the start
-            let error = extend(
+            let is_fully_read = extend(
                 page,
                 init,
                 items,
@@ -531,19 +541,11 @@ where
                 decoder,
                 chunk_size,
             );
-            match error {
-                Ok(_) => {},
-                Err(e) => return MaybeNext::Some(Err(e)),
-            };
 
-            // this comparison is strictly greater to ensure the contents of the
-            // row are fully read.
-            if !items.is_empty()
-                && items.front().unwrap().0.len() > chunk_size.unwrap_or(usize::MAX)
-            {
-                MaybeNext::Some(Ok(items.pop_front().unwrap()))
-            } else {
-                MaybeNext::More
+            match is_fully_read {
+                Ok(true) => MaybeNext::Some(Ok(items.pop_front().unwrap())),
+                Ok(false) => MaybeNext::More,
+                Err(e) => MaybeNext::Some(Err(e)),
             }
         },
     }

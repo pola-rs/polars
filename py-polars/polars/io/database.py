@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import sys
 from importlib import import_module
+from inspect import Parameter, signature
 from typing import TYPE_CHECKING, Any, Iterable, Literal, Sequence, TypedDict, overload
 
 from polars.convert import from_arrow
@@ -190,10 +191,10 @@ class ConnectionExecutor:
             if conn.driver == "databricks-sql-python":  # type: ignore[union-attr]
                 # take advantage of the raw connection to get arrow integration
                 self.driver_name = "databricks"
-                return conn.raw_connection().cursor()  # type: ignore[union-attr]
+                return conn.raw_connection().cursor()  # type: ignore[union-attr, return-value]
             else:
                 # sqlalchemy engine; direct use is deprecated, so prefer the connection
-                return conn.connect()  # type: ignore[union-attr]
+                return conn.connect()  # type: ignore[union-attr, return-value]
 
         elif hasattr(conn, "cursor"):
             # connection has a dedicated cursor; prefer over direct execute
@@ -332,9 +333,26 @@ class ConnectionExecutor:
 
                 query = text(query)  # type: ignore[assignment]
 
-        if (result := cursor_execute(query, **options)) is None:
-            result = self.cursor  # some cursors execute in-place
+        # note: some cursor execute methods (eg: sqlite3) only take positional
+        # params, hence the slightly convoluted resolution of the 'options' dict
+        try:
+            params = signature(cursor_execute).parameters
+        except ValueError:
+            params = {}
 
+        if not options or any(
+            p.kind in (Parameter.KEYWORD_ONLY, Parameter.POSITIONAL_OR_KEYWORD)
+            for p in params.values()
+        ):
+            result = cursor_execute(query, **options)
+        else:
+            positional_options = (
+                options[o] for o in (params or options) if (not options or o in options)
+            )
+            result = cursor_execute(query, *positional_options)
+
+        # note: some cursors execute in-place
+        result = self.cursor if result is None else result
         self.result = result
         return self
 
@@ -422,7 +440,7 @@ def read_database(  # noqa: D417
     connection
         An instantiated connection (or cursor/client object) that the query can be
         executed against. Can also pass a valid ODBC connection string, starting with
-        "Driver=", in which case the ``arrow-odbc`` package will be used to establish
+        "Driver=", in which case the `arrow-odbc` package will be used to establish
         the connection and return Arrow-native data to Polars.
     iter_batches
         Return an iterator of DataFrames, where each DataFrame represents a batch of
@@ -433,8 +451,8 @@ def read_database(  # noqa: D417
         the database as the data is returned). If the backend does not support changing
         the batch size then a single DataFrame is yielded from the iterator.
     batch_size
-        Indicate the size of each batch when ``iter_batches`` is True (note that you can
-        still set this when ``iter_batches`` is False, in which case the resulting
+        Indicate the size of each batch when `iter_batches` is True (note that you can
+        still set this when `iter_batches` is False, in which case the resulting
         DataFrame is constructed internally using batched return before being returned
         to you. Note that some backends may support batched operation but not allow for
         an explicit size; in this case you will still receive batches, but their exact
@@ -444,11 +462,11 @@ def read_database(  # noqa: D417
         inferred from the query cursor or given by the incoming Arrow data (depending
         on driver/backend). This can be useful if the given types can be more precisely
         defined (for example, if you know that a given column can be declared as `u32`
-        instead of ``i64``).
+        instead of `i64`).
     execute_options
         These options will be passed through into the underlying query execution method
         as kwargs. In the case of connections made using an ODBC string (which use
-        `arrow-odbc`) these options are passed to the ``read_arrow_batches_from_odbc``
+        `arrow-odbc`) these options are passed to the `read_arrow_batches_from_odbc`
         method.
 
     Notes
@@ -460,17 +478,17 @@ def read_database(  # noqa: D417
       efficiently instantiate the DataFrame; otherwise, the DataFrame is initialised
       from row-wise data.
 
-    * Support for Arrow Flight SQL data is available via the ``adbc-driver-flightsql``
+    * Support for Arrow Flight SQL data is available via the `adbc-driver-flightsql`
       package; see https://arrow.apache.org/adbc/current/driver/flight_sql.html for
       more details about using this driver (notable databases implementing Flight SQL
       include Dremio and InfluxDB).
 
-    * The ``read_database_uri`` function is likely to be noticeably faster than
-      ``read_database`` if you are using a SQLAlchemy or DBAPI2 connection, as
-      ``connectorx`` will optimise translation of the result set into Arrow format
+    * The `read_database_uri` function is likely to be noticeably faster than
+      `read_database` if you are using a SQLAlchemy or DBAPI2 connection, as
+      `connectorx` will optimise translation of the result set into Arrow format
       in Rust, whereas these libraries will return row-wise data to Python *before*
       we can load into Arrow. Note that you can easily determine the connection's
-      URI from a SQLAlchemy engine object by calling ``str(conn.engine.url)``.
+      URI from a SQLAlchemy engine object by calling `str(conn.engine.url)`.
 
     * If polars has to create a cursor from your connection in order to execute the
       query then that cursor will be automatically closed when the query completes;
@@ -490,7 +508,7 @@ def read_database(  # noqa: D417
     ...     schema_overrides={"normalised_score": pl.UInt8},
     ... )  # doctest: +SKIP
 
-    Use a parameterised SQLAlchemy query, passing named values via ``execute_options``:
+    Use a parameterised SQLAlchemy query, passing named values via `execute_options`:
 
     >>> df = pl.read_database(
     ...     query="SELECT * FROM test_data WHERE metric > :value",
@@ -498,7 +516,7 @@ def read_database(  # noqa: D417
     ...     execute_options={"parameters": {"value": 0}},
     ... )  # doctest: +SKIP
 
-    Use 'qmark' style parameterisation; values are still passed via ``execute_options``,
+    Use 'qmark' style parameterisation; values are still passed via `execute_options`,
     but in this case the "parameters" value is a sequence of literals, not a dict:
 
     >>> df = pl.read_database(
@@ -507,7 +525,7 @@ def read_database(  # noqa: D417
     ...     execute_options={"parameters": [0]},
     ... )  # doctest: +SKIP
 
-    Instantiate a DataFrame using an ODBC connection string (requires ``arrow-odbc``)
+    Instantiate a DataFrame using an ODBC connection string (requires `arrow-odbc`)
     setting upper limits on the buffer size of variadic text/binary columns, returning
     the result as an iterator over DataFrames containing batches of 1000 rows:
 
@@ -609,14 +627,14 @@ def read_database_uri(
     engine : {'connectorx', 'adbc'}
         Selects the engine used for reading the database (defaulting to connectorx):
 
-        * ``'connectorx'``
+        * `'connectorx'`
           Supports a range of databases, such as PostgreSQL, Redshift, MySQL, MariaDB,
           Clickhouse, Oracle, BigQuery, SQL Server, and so on. For an up-to-date list
           please see the connectorx docs:
 
           * https://github.com/sfu-db/connector-x#supported-sources--destinations
 
-        * ``'adbc'``
+        * `'adbc'`
           Currently there is limited support for this engine, with a relatively small
           number of drivers available, most of which are still in development. For
           an up-to-date list of drivers please see the ADBC docs:
@@ -628,11 +646,11 @@ def read_database_uri(
 
     Notes
     -----
-    For ``connectorx``, ensure that you have ``connectorx>=0.3.2``. The documentation
+    For `connectorx`, ensure that you have `connectorx>=0.3.2`. The documentation
     is available `here <https://sfu-db.github.io/connector-x/intro.html>`_.
 
-    For ``adbc`` you will need to have installed ``pyarrow`` and the ADBC driver associated
-    with the backend you are connecting to, eg: ``adbc-driver-postgresql``.
+    For `adbc` you will need to have installed `pyarrow` and the ADBC driver associated
+    with the backend you are connecting to, eg: `adbc-driver-postgresql`.
 
     See Also
     --------
@@ -677,7 +695,7 @@ def read_database_uri(
     ...     engine="adbc",
     ... )  # doctest: +SKIP
 
-    """  # noqa: W505
+    """
     if not isinstance(uri, str):
         raise TypeError(
             f"expected connection to be a URI string; found {type(uri).__name__!r}"
@@ -718,8 +736,7 @@ def _read_sql_connectorx(
         import connectorx as cx
     except ModuleNotFoundError:
         raise ModuleNotFoundError(
-            "connectorx is not installed"
-            "\n\nPlease run: pip install connectorx>=0.3.2"
+            "connectorx is not installed" "\n\nPlease run: pip install connectorx"
         ) from None
 
     try:

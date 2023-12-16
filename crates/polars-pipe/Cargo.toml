@@ -10,6 +10,8 @@ description = "Lazy query engine for the Polars DataFrame library"
 
 [dependencies]
 arrow = { workspace = true }
+futures = { workspace = true, optional = true }
+polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random", "rows", "chunked_ids"] }
 polars-io = { workspace = true, features = ["ipc"] }
 polars-ops = { workspace = true, features = ["search_sorted"] }
@@ -31,9 +33,10 @@ version_check = { workspace = true }
 
 [features]
 csv = ["polars-plan/csv", "polars-io/csv"]
-cloud = ["async", "polars-io/cloud", "polars-plan/cloud", "tokio"]
+cloud = ["async", "polars-io/cloud", "polars-plan/cloud", "tokio", "futures"]
 parquet = ["polars-plan/parquet", "polars-io/parquet", "polars-io/async"]
 ipc = ["polars-plan/ipc", "polars-io/ipc"]
+json = ["polars-plan/json", "polars-io/json"]
 async = ["polars-plan/async", "polars-io/async"]
 nightly = ["polars-core/nightly", "polars-utils/nightly", "hashbrown/nightly"]
 cross_join = ["polars-ops/cross_join"]

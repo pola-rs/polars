@@ -7,6 +7,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
+import polars.interchange.from_dataframe
 from polars.testing import assert_frame_equal
 
 
@@ -102,7 +103,7 @@ def test_from_dataframe_pyarrow_min_version(monkeypatch: Any) -> None:
     dfi = pl.DataFrame({"a": [1, 2]}).to_arrow().__dataframe__()
 
     monkeypatch.setattr(
-        pl.convert.pa,  # type: ignore[attr-defined]
+        pl.interchange.from_dataframe.pa,  # type: ignore[attr-defined]
         "__version__",
         "10.0.0",
     )
@@ -121,11 +122,6 @@ def test_from_dataframe_data_type_not_implemented_by_arrow(
         pl.from_dataframe(dfi)
 
 
-# Remove xfail marker when the issue is fixed:
-# https://github.com/apache/arrow/issues/37050
-@pytest.mark.xfail(
-    reason="Bug in pyarrow's implementation of the interchange protocol."
-)
 def test_from_dataframe_empty_arrow_interchange_object() -> None:
     df = pl.Series("a", dtype=pl.Int8).to_frame()
     df_pa = df.to_arrow()

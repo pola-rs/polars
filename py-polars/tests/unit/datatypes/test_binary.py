@@ -9,7 +9,7 @@ def test_binary_filter() -> None:
             "content": [b"aa", b"aaabbb", b"aa", b"\xc6i\xea"],
         }
     )
-    assert df.filter(pl.col("content") == b"\xc6i\xea").to_dict(False) == {
+    assert df.filter(pl.col("content") == b"\xc6i\xea").to_dict(as_series=False) == {
         "name": ["d"],
         "content": [b"\xc6i\xea"],
     }

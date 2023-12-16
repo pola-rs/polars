@@ -55,7 +55,13 @@ pub use schema::*;
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv", feature = "cse"))]
+#[cfg(any(
+    feature = "ipc",
+    feature = "parquet",
+    feature = "csv",
+    feature = "cse",
+    feature = "json"
+))]
 pub use crate::logical_plan::optimizer::file_caching::{
     collect_fingerprints, find_column_union_and_fingerprints, FileCacher, FileFingerPrint,
 };

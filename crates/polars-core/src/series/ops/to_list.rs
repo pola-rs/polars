@@ -52,7 +52,7 @@ impl Series {
 
     pub fn reshape(&self, dims: &[i64]) -> PolarsResult<Series> {
         if dims.is_empty() {
-            panic!("dimensions cannot be empty")
+            polars_bail!(ComputeError: "reshape `dimensions` cannot be empty")
         }
         let s = if let DataType::List(_) = self.dtype() {
             Cow::Owned(self.explode()?)
@@ -137,7 +137,7 @@ mod test {
         let expected = builder.finish();
 
         let out = s.implode()?;
-        assert!(expected.into_series().series_equal(&out.into_series()));
+        assert!(expected.into_series().equals(&out.into_series()));
 
         Ok(())
     }

@@ -55,6 +55,7 @@ where
                     .zip(rhs.downcast_iter_mut())
                     .for_each(|(lhs, rhs)| kernel(lhs, rhs));
             }
+            lhs.compute_len();
             lhs.set_sorted_flag(IsSorted::Not);
             lhs
         },

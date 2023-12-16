@@ -1,5 +1,5 @@
 use arrow::array::*;
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 use arrow::offset::Offsets;
 use polars_error::PolarsResult;
 
@@ -7,14 +7,14 @@ use super::make_mutable;
 
 #[derive(Debug)]
 pub struct DynMutableListArray {
-    data_type: DataType,
+    data_type: ArrowDataType,
     pub inner: Box<dyn MutableArray>,
 }
 
 impl DynMutableListArray {
-    pub fn try_with_capacity(data_type: DataType, capacity: usize) -> PolarsResult<Self> {
+    pub fn try_with_capacity(data_type: ArrowDataType, capacity: usize) -> PolarsResult<Self> {
         let inner = match data_type.to_logical_type() {
-            DataType::List(inner) | DataType::LargeList(inner) => inner.data_type(),
+            ArrowDataType::List(inner) | ArrowDataType::LargeList(inner) => inner.data_type(),
             _ => unreachable!(),
         };
         let inner = make_mutable(inner, capacity)?;
@@ -24,7 +24,7 @@ impl DynMutableListArray {
 }
 
 impl MutableArray for DynMutableListArray {
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 
@@ -40,7 +40,7 @@ impl MutableArray for DynMutableListArray {
         let inner = self.inner.as_box();
 
         match self.data_type.to_logical_type() {
-            DataType::List(_) => {
+            ArrowDataType::List(_) => {
                 let offsets =
                     Offsets::try_from_lengths(std::iter::repeat(1).take(inner.len())).unwrap();
                 Box::new(ListArray::<i32>::new(
@@ -50,7 +50,7 @@ impl MutableArray for DynMutableListArray {
                     None,
                 ))
             },
-            DataType::LargeList(_) => {
+            ArrowDataType::LargeList(_) => {
                 let offsets =
                     Offsets::try_from_lengths(std::iter::repeat(1).take(inner.len())).unwrap();
                 Box::new(ListArray::<i64>::new(

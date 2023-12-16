@@ -14,7 +14,6 @@ from polars.utils.convert import (
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
 )
-from polars.utils.deprecation import issue_deprecation_warning
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -46,11 +45,11 @@ def lit(
     -----
     Expected datatypes
 
-    - ``pl.lit([])`` -> empty  Series Float32
-    - ``pl.lit([1, 2, 3])`` -> Series Int64
-    - ``pl.lit([[]])``-> empty  Series List<Null>
-    - ``pl.lit([[1, 2, 3]])`` -> Series List<i64>
-    - ``pl.lit(None)`` -> Series Null
+    - `pl.lit([])` -> empty  Series Float32
+    - `pl.lit([1, 2, 3])` -> Series Int64
+    - `pl.lit([[]])`-> empty  Series List<Null>
+    - `pl.lit([[1, 2, 3]])` -> Series List<i64>
+    - `pl.lit(None)` -> Series Null
 
     Examples
     --------
@@ -114,24 +113,14 @@ def lit(
         return lit(datetime(value.year, value.month, value.day)).cast(Date)
 
     elif isinstance(value, pl.Series):
-        name = value.name
         value = value._s
-        e = wrap_expr(plr.lit(value, allow_object))
-        if name == "":
-            return e
-        return e.alias(name)
+        return wrap_expr(plr.lit(value, allow_object))
 
     elif _check_for_numpy(value) and isinstance(value, np.ndarray):
-        return lit(pl.Series("", value))
+        return lit(pl.Series("literal", value, dtype=dtype))
 
     elif isinstance(value, (list, tuple)):
-        issue_deprecation_warning(
-            "Behavior for `lit` will change for sequence inputs."
-            " The result will change to be a literal of type List."
-            " To retain the old behavior, pass a Series instead, e.g. `Series(sequence)`.",
-            version="0.18.14",
-        )
-        return lit(pl.Series("", value))
+        return lit(pl.Series("literal", [value], dtype=dtype))
 
     if dtype:
         return wrap_expr(plr.lit(value, allow_object)).cast(dtype)

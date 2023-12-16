@@ -1,5 +1,6 @@
 // --8<-- [start:setup]
-use polars::{lazy::dsl::count, prelude::*};
+use polars::lazy::dsl::count;
+use polars::prelude::*;
 // --8<-- [end:setup]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:ratings_df]
@@ -77,7 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = ratings
         .clone()
         .lazy()
-        .with_columns([as_struct(&[col("Count"), col("Avg_Rating")])
+        .with_columns([as_struct(vec![col("Count"), col("Avg_Rating")])
             .rank(
                 RankOptions {
                     method: RankMethod::Dense,

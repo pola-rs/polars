@@ -23,7 +23,7 @@ mod test {
         buf.set_position(0);
 
         let df_read = IpcStreamReader::new(buf).finish().unwrap();
-        assert!(df.frame_equal(&df_read));
+        assert!(df.equals(&df_read));
     }
 
     #[test]
@@ -42,7 +42,7 @@ mod test {
             .finish()
             .unwrap();
         assert_eq!(df_read.shape(), (3, 2));
-        df_read.frame_equal(&expected);
+        df_read.equals(&expected);
     }
 
     #[test]
@@ -60,7 +60,7 @@ mod test {
             .with_columns(Some(vec!["c".to_string(), "b".to_string()]))
             .finish()
             .unwrap();
-        df_read.frame_equal(&expected);
+        df_read.equals(&expected);
 
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
         let mut df = df![
@@ -90,7 +90,7 @@ mod test {
             ]))
             .finish()
             .unwrap();
-        df_read.frame_equal(&expected);
+        df_read.equals(&expected);
     }
 
     #[test]
@@ -117,7 +117,7 @@ mod test {
             let df_read = IpcStreamReader::new(buf)
                 .finish()
                 .unwrap_or_else(|_| panic!("IPC reader: {:?}", compression));
-            assert!(df.frame_equal(&df_read));
+            assert!(df.equals(&df_read));
         }
     }
 
@@ -133,6 +133,6 @@ mod test {
         buf.set_position(0);
 
         let df_read = IpcStreamReader::new(buf).finish().unwrap();
-        assert!(df.frame_equal(&df_read));
+        assert!(df.equals(&df_read));
     }
 }

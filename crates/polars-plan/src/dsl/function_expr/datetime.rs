@@ -60,8 +60,11 @@ impl TemporalFunction {
         use TemporalFunction::*;
         match self {
             Year | IsoYear => mapper.with_dtype(DataType::Int32),
-            Month | Quarter | Week | WeekDay | Day | OrdinalDay | Hour | Minute | Millisecond
-            | Microsecond | Nanosecond | Second => mapper.with_dtype(DataType::UInt32),
+            OrdinalDay => mapper.with_dtype(DataType::Int16),
+            Month | Quarter | Week | WeekDay | Day | Hour | Minute | Second => {
+                mapper.with_dtype(DataType::Int8)
+            },
+            Millisecond | Microsecond | Nanosecond => mapper.with_dtype(DataType::Int32),
             ToString(_) => mapper.with_dtype(DataType::Utf8),
             WithTimeUnit(_) => mapper.with_same_dtype(),
             CastTimeUnit(tu) => mapper.try_map_dtype(|dt| match dt {
@@ -319,23 +322,22 @@ pub(super) fn cast_time_unit(s: &Series, tu: TimeUnit) -> PolarsResult<Series> {
 pub(super) fn truncate(s: &[Series], offset: &str) -> PolarsResult<Series> {
     let time_series = &s[0];
     let every = s[1].utf8()?;
-    let ambiguous = s[2].utf8()?;
 
     let mut out = match time_series.dtype() {
         DataType::Datetime(_, tz) => match tz {
             #[cfg(feature = "timezones")]
             Some(tz) => time_series
                 .datetime()?
-                .truncate(tz.parse::<Tz>().ok().as_ref(), every, offset, ambiguous)?
+                .truncate(tz.parse::<Tz>().ok().as_ref(), every, offset)?
                 .into_series(),
             _ => time_series
                 .datetime()?
-                .truncate(None, every, offset, ambiguous)?
+                .truncate(None, every, offset)?
                 .into_series(),
         },
         DataType::Date => time_series
             .date()?
-            .truncate(None, every, offset, ambiguous)?
+            .truncate(None, every, offset)?
             .into_series(),
         dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
     };
@@ -415,7 +417,6 @@ pub(super) fn round(s: &[Series], every: &str, offset: &str) -> PolarsResult<Ser
     let offset = Duration::parse(offset);
 
     let time_series = &s[0];
-    let ambiguous = s[1].utf8()?;
 
     Ok(match time_series.dtype() {
         DataType::Datetime(_, tz) => match tz {
@@ -423,18 +424,18 @@ pub(super) fn round(s: &[Series], every: &str, offset: &str) -> PolarsResult<Ser
             Some(tz) => time_series
                 .datetime()
                 .unwrap()
-                .round(every, offset, tz.parse::<Tz>().ok().as_ref(), ambiguous)?
+                .round(every, offset, tz.parse::<Tz>().ok().as_ref())?
                 .into_series(),
             _ => time_series
                 .datetime()
                 .unwrap()
-                .round(every, offset, None, ambiguous)?
+                .round(every, offset, None)?
                 .into_series(),
         },
         DataType::Date => time_series
             .date()
             .unwrap()
-            .round(every, offset, None, ambiguous)?
+            .round(every, offset, None)?
             .into_series(),
         dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
     })

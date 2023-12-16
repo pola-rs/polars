@@ -1,12 +1,10 @@
 #[cfg(feature = "timezones")]
-use chrono_tz::Tz;
+use polars_core::chunked_array::temporal::parse_time_zone;
 use polars_core::prelude::*;
 use polars_core::utils::ensure_sorted_arg;
 use polars_ops::prelude::*;
 
 use crate::prelude::*;
-#[cfg(feature = "timezones")]
-use crate::utils::unlocalize_timestamp;
 
 pub trait PolarsUpsample {
     /// Upsample a [`DataFrame`] at a regular frequency.
@@ -35,10 +33,6 @@ pub trait PolarsUpsample {
     ///
     /// Or combine them:
     /// "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
-    ///
-    /// Suffix with `"_saturating"` to saturate dates with days too
-    /// large for their month to the last day of the month (e.g.
-    /// 2022-02-29 to 2022-02-28).
     ///
     /// By "calendar day", we mean the corresponding time on the next
     /// day (which may not be 24 hours, depending on daylight savings).
@@ -78,10 +72,6 @@ pub trait PolarsUpsample {
     ///
     /// Or combine them:
     /// "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
-    ///
-    /// Suffix with `"_saturating"` to saturate dates with days too
-    /// large for their month to the last day of the month (e.g.
-    /// 2022-02-29 to 2022-02-28).
     ///
     /// By "calendar day", we mean the corresponding time on the next
     /// day (which may not be 24 hours, depending on daylight savings).
@@ -174,18 +164,15 @@ fn upsample_single_impl(
             let last = ca.into_iter().flatten().next_back();
             match (first, last) {
                 (Some(first), Some(last)) => {
-                    let (first, last) = match tz {
+                    let tz = match tz {
                         #[cfg(feature = "timezones")]
-                        Some(tz) => (
-                            unlocalize_timestamp(first, *tu, tz.parse::<Tz>().unwrap()),
-                            unlocalize_timestamp(last, *tu, tz.parse::<Tz>().unwrap()),
-                        ),
-                        _ => (first, last),
+                        Some(tz) => Some(parse_time_zone(tz)?),
+                        _ => None,
                     };
                     let first = match tu {
-                        TimeUnit::Nanoseconds => offset.add_ns(first, None)?,
-                        TimeUnit::Microseconds => offset.add_us(first, None)?,
-                        TimeUnit::Milliseconds => offset.add_ms(first, None)?,
+                        TimeUnit::Nanoseconds => offset.add_ns(first, tz.as_ref())?,
+                        TimeUnit::Microseconds => offset.add_us(first, tz.as_ref())?,
+                        TimeUnit::Milliseconds => offset.add_ms(first, tz.as_ref())?,
                     };
                     let range = datetime_range_impl(
                         index_col_name,

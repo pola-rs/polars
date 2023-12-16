@@ -72,7 +72,7 @@ impl PhysicalExpr for TakeExpr {
                 // A previous aggregation may have updated the groups.
                 let groups = ac.groups();
 
-                // Determine the take indices.
+                // Determine the gather indices.
                 let idx: IdxCa = match groups.as_ref() {
                     GroupsProxy::Idx(groups) => {
                         if groups.all().iter().zip(idx).any(|(g, idx)| match idx {
@@ -204,9 +204,5 @@ impl PhysicalExpr for TakeExpr {
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.phys_expr.to_field(input_schema)
-    }
-
-    fn is_valid_aggregation(&self) -> bool {
-        true
     }
 }

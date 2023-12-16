@@ -4,7 +4,7 @@ use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
 
 #[cfg(feature = "approx_unique")]
-use crate::series::HyperLogLog;
+use crate::series::ops::approx_algo::HyperLogLog;
 
 fn approx_n_unique_ca<'a, T>(ca: &'a ChunkedArray<T>) -> PolarsResult<Series>
 where

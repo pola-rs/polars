@@ -11,6 +11,7 @@ use crate::parquet::page::DataPage;
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::{serialize_statistics, PrimitiveStatistics};
 use crate::parquet::types::NativeType as ParquetNativeType;
+use crate::read::Page;
 
 pub(crate) fn encode_plain<T, P>(
     array: &PrimitiveArray<T>,
@@ -92,7 +93,7 @@ pub fn array_to_page_integer<T, P>(
     options: WriteOptions,
     type_: PrimitiveType,
     encoding: Encoding,
-) -> PolarsResult<DataPage>
+) -> PolarsResult<Page>
 where
     T: NativeType,
     P: ParquetNativeType,
@@ -100,10 +101,11 @@ where
     P: num_traits::AsPrimitive<i64>,
 {
     match encoding {
-        Encoding::DeltaBinaryPacked => array_to_page(array, options, type_, encoding, encode_delta),
         Encoding::Plain => array_to_page(array, options, type_, encoding, encode_plain),
+        Encoding::DeltaBinaryPacked => array_to_page(array, options, type_, encoding, encode_delta),
         other => polars_bail!(nyi = "Encoding integer as {other:?}"),
     }
+    .map(Page::Data)
 }
 
 pub fn array_to_page<T, P, F: Fn(&PrimitiveArray<T>, bool, Vec<u8>) -> Vec<u8>>(

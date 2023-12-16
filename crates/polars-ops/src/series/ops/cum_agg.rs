@@ -70,7 +70,7 @@ where
     }
 }
 
-fn cummax_numeric<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
+fn cum_max_numeric<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
@@ -84,7 +84,7 @@ where
     out.with_name(ca.name())
 }
 
-fn cummin_numeric<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
+fn cum_min_numeric<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
@@ -97,7 +97,7 @@ where
     out.with_name(ca.name())
 }
 
-fn cumsum_numeric<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
+fn cum_sum_numeric<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
@@ -110,7 +110,7 @@ where
     out.with_name(ca.name())
 }
 
-fn cumprod_numeric<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
+fn cum_prod_numeric<T>(ca: &ChunkedArray<T>, reverse: bool) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
@@ -127,18 +127,18 @@ where
 ///
 /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16, Int32, UInt32}` the `Series` is
 /// first cast to `Int64` to prevent overflow issues.
-pub fn cumprod(s: &Series, reverse: bool) -> PolarsResult<Series> {
+pub fn cum_prod(s: &Series, reverse: bool) -> PolarsResult<Series> {
     use DataType::*;
     let out = match s.dtype() {
         Boolean | Int8 | UInt8 | Int16 | UInt16 | Int32 | UInt32 => {
             let s = s.cast(&Int64)?;
-            cumprod_numeric(s.i64()?, reverse).into_series()
+            cum_prod_numeric(s.i64()?, reverse).into_series()
         },
-        Int64 => cumprod_numeric(s.i64()?, reverse).into_series(),
-        UInt64 => cumprod_numeric(s.u64()?, reverse).into_series(),
-        Float32 => cumprod_numeric(s.f32()?, reverse).into_series(),
-        Float64 => cumprod_numeric(s.f64()?, reverse).into_series(),
-        dt => polars_bail!(opq = cumprod, dt),
+        Int64 => cum_prod_numeric(s.i64()?, reverse).into_series(),
+        UInt64 => cum_prod_numeric(s.u64()?, reverse).into_series(),
+        Float32 => cum_prod_numeric(s.f32()?, reverse).into_series(),
+        Float64 => cum_prod_numeric(s.f64()?, reverse).into_series(),
+        dt => polars_bail!(opq = cum_prod, dt),
     };
     Ok(out)
 }
@@ -147,43 +147,43 @@ pub fn cumprod(s: &Series, reverse: bool) -> PolarsResult<Series> {
 ///
 /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
 /// first cast to `Int64` to prevent overflow issues.
-pub fn cumsum(s: &Series, reverse: bool) -> PolarsResult<Series> {
+pub fn cum_sum(s: &Series, reverse: bool) -> PolarsResult<Series> {
     use DataType::*;
     let out = match s.dtype() {
         Boolean => {
             let s = s.cast(&UInt32)?;
-            cumsum_numeric(s.u32()?, reverse).into_series()
+            cum_sum_numeric(s.u32()?, reverse).into_series()
         },
         Int8 | UInt8 | Int16 | UInt16 => {
             let s = s.cast(&Int64)?;
-            cumsum_numeric(s.i64()?, reverse).into_series()
+            cum_sum_numeric(s.i64()?, reverse).into_series()
         },
-        Int32 => cumsum_numeric(s.i32()?, reverse).into_series(),
-        UInt32 => cumsum_numeric(s.u32()?, reverse).into_series(),
-        Int64 => cumsum_numeric(s.i64()?, reverse).into_series(),
-        UInt64 => cumsum_numeric(s.u64()?, reverse).into_series(),
-        Float32 => cumsum_numeric(s.f32()?, reverse).into_series(),
-        Float64 => cumsum_numeric(s.f64()?, reverse).into_series(),
+        Int32 => cum_sum_numeric(s.i32()?, reverse).into_series(),
+        UInt32 => cum_sum_numeric(s.u32()?, reverse).into_series(),
+        Int64 => cum_sum_numeric(s.i64()?, reverse).into_series(),
+        UInt64 => cum_sum_numeric(s.u64()?, reverse).into_series(),
+        Float32 => cum_sum_numeric(s.f32()?, reverse).into_series(),
+        Float64 => cum_sum_numeric(s.f64()?, reverse).into_series(),
         #[cfg(feature = "dtype-duration")]
         Duration(tu) => {
             let s = s.to_physical_repr();
             let ca = s.i64()?;
-            cumsum_numeric(ca, reverse).cast(&Duration(*tu))?
+            cum_sum_numeric(ca, reverse).cast(&Duration(*tu))?
         },
-        dt => polars_bail!(opq = cumsum, dt),
+        dt => polars_bail!(opq = cum_sum, dt),
     };
     Ok(out)
 }
 
 /// Get an array with the cumulative min computed at every element.
-pub fn cummin(s: &Series, reverse: bool) -> PolarsResult<Series> {
+pub fn cum_min(s: &Series, reverse: bool) -> PolarsResult<Series> {
     let original_type = s.dtype();
     let s = s.to_physical_repr();
     match s.dtype() {
         dt if dt.is_numeric() => {
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                let out = cummin_numeric(ca, reverse).into_series();
+                let out = cum_min_numeric(ca, reverse).into_series();
                 if original_type.is_logical(){
                     out.cast(original_type)
                 }else{
@@ -191,19 +191,19 @@ pub fn cummin(s: &Series, reverse: bool) -> PolarsResult<Series> {
                 }
             })
         },
-        dt => polars_bail!(opq = cummin, dt),
+        dt => polars_bail!(opq = cum_min, dt),
     }
 }
 
 /// Get an array with the cumulative max computed at every element.
-pub fn cummax(s: &Series, reverse: bool) -> PolarsResult<Series> {
+pub fn cum_max(s: &Series, reverse: bool) -> PolarsResult<Series> {
     let original_type = s.dtype();
     let s = s.to_physical_repr();
     match s.dtype() {
         dt if dt.is_numeric() => {
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                let out = cummax_numeric(ca, reverse).into_series();
+                let out = cum_max_numeric(ca, reverse).into_series();
                 if original_type.is_logical(){
                     out.cast(original_type)
                 }else{
@@ -211,11 +211,11 @@ pub fn cummax(s: &Series, reverse: bool) -> PolarsResult<Series> {
                 }
             })
         },
-        dt => polars_bail!(opq = cummin, dt),
+        dt => polars_bail!(opq = cum_min, dt),
     }
 }
 
-pub fn cumcount(s: &Series, reverse: bool) -> PolarsResult<Series> {
+pub fn cum_count(s: &Series, reverse: bool) -> PolarsResult<Series> {
     if reverse {
         let ca: NoNull<UInt32Chunked> = (0u32..s.len() as u32).rev().collect();
         let mut ca = ca.into_inner();

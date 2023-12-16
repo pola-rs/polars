@@ -27,7 +27,10 @@ def test_hive_partitioned_predicate_pushdown(
         use_legacy_dataset=True,
     )
     q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=False)
+    # checks schema
     assert q.columns == ["calories", "sugars_g"]
+    # checks materialization
+    assert q.collect().columns == ["calories", "sugars_g"]
 
     q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
     assert q.columns == ["calories", "sugars_g", "category", "fats_g"]
@@ -54,6 +57,12 @@ def test_hive_partitioned_predicate_pushdown(
 
     # tests: 11536
     assert q.filter(pl.col("sugars_g") == 25).collect().shape == (1, 4)
+
+    # tests: 12570
+    assert q.filter(pl.col("fats_g") == 1225.0).select("category").collect().shape == (
+        0,
+        1,
+    )
 
 
 @pytest.mark.write_disk()
@@ -120,10 +129,10 @@ def test_hive_partitioned_projection_pushdown(
             parallel=parallel,  # type: ignore[arg-type]
         )
 
-        expect = q.collect().select("category")
-        actual = q.select("category").collect()
+        expected = q.collect().select("category")
+        result = q.select("category").collect()
 
-        assert expect.frame_equal(actual)
+        assert_frame_equal(result, expected)
 
 
 @pytest.mark.write_disk()

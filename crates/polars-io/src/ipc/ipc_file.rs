@@ -30,7 +30,7 @@
 //!
 //! // read the buffer into a DataFrame
 //! let df_read = IpcReader::new(buf).finish().unwrap();
-//! assert!(df.frame_equal(&df_read));
+//! assert!(df.equals(&df_read));
 //! ```
 use std::io::{Read, Seek};
 use std::sync::Arc;

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import polars.functions as F
+from polars.utils.deprecation import deprecate_renamed_function
 
 if TYPE_CHECKING:
     from polars import Expr
@@ -12,8 +13,8 @@ def all(*names: str, ignore_nulls: bool = True) -> Expr:
     """
     Either return an expression representing all columns, or evaluate a bitwise AND operation.
 
-    If no arguments are passed, this function is syntactic sugar for ``col("*")``.
-    Otherwise, this function is syntactic sugar for ``col(names).all()``.
+    If no arguments are passed, this function is syntactic sugar for `col("*")`.
+    Otherwise, this function is syntactic sugar for `col(names).all()`.
 
     Parameters
     ----------
@@ -22,9 +23,9 @@ def all(*names: str, ignore_nulls: bool = True) -> Expr:
     ignore_nulls
         Ignore null values (default).
 
-        If set to ``False``, `Kleene logic`_ is used to deal with nulls:
-        if the column contains any null values and no ``True`` values,
-        the output is ``None``.
+        If set to `False`, `Kleene logic`_ is used to deal with nulls:
+        if the column contains any null values and no `True` values,
+        the output is `None`.
 
         .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
@@ -75,7 +76,7 @@ def any(*names: str, ignore_nulls: bool = True) -> Expr | bool | None:
     """
     Evaluate a bitwise OR operation.
 
-    Syntactic sugar for ``col(names).any()``.
+    Syntactic sugar for `col(names).any()`.
 
     See Also
     --------
@@ -88,9 +89,9 @@ def any(*names: str, ignore_nulls: bool = True) -> Expr | bool | None:
     ignore_nulls
         Ignore null values (default).
 
-        If set to ``False``, `Kleene logic`_ is used to deal with nulls:
-        if the column contains any null values and no ``True`` values,
-        the output is ``None``.
+        If set to `False`, `Kleene logic`_ is used to deal with nulls:
+        if the column contains any null values and no `True` values,
+        the output is `None`.
 
         .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
@@ -120,7 +121,7 @@ def max(*names: str) -> Expr:
     """
     Get the maximum value.
 
-    Syntactic sugar for ``col(names).max()``.
+    Syntactic sugar for `col(names).max()`.
 
     Parameters
     ----------
@@ -181,7 +182,7 @@ def min(*names: str) -> Expr:
     """
     Get the minimum value.
 
-    Syntactic sugar for ``col(names).min()``.
+    Syntactic sugar for `col(names).min()`.
 
     Parameters
     ----------
@@ -242,7 +243,7 @@ def sum(*names: str) -> Expr:
     """
     Sum all values.
 
-    Syntactic sugar for ``col(name).sum()``.
+    Syntactic sugar for `col(name).sum()`.
 
     Parameters
     ----------
@@ -299,11 +300,11 @@ def sum(*names: str) -> Expr:
     return F.col(*names).sum()
 
 
-def cumsum(*names: str) -> Expr:
+def cum_sum(*names: str) -> Expr:
     """
     Cumulatively sum all values.
 
-    Syntactic sugar for ``col(names).cumsum()``.
+    Syntactic sugar for `col(names).cum_sum()`.
 
     Parameters
     ----------
@@ -322,7 +323,7 @@ def cumsum(*names: str) -> Expr:
     ...         "b": [4, 5, 6],
     ...     }
     ... )
-    >>> df.select(pl.cumsum("a"))
+    >>> df.select(pl.cum_sum("a"))
     shape: (3, 1)
     ┌─────┐
     │ a   │
@@ -335,4 +336,21 @@ def cumsum(*names: str) -> Expr:
     └─────┘
 
     """
-    return F.col(*names).cumsum()
+    return F.col(*names).cum_sum()
+
+
+@deprecate_renamed_function("cum_sum", version="0.19.14")
+def cumsum(*names: str) -> Expr:
+    """
+    Cumulatively sum all values.
+
+    .. deprecated:: 0.19.14
+        This function has been renamed to :func:`cum_sum`.
+
+    Parameters
+    ----------
+    *names
+        Name(s) of the columns to use in the aggregation.
+
+    """
+    return cum_sum(*names)

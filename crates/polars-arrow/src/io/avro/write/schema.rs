@@ -7,7 +7,7 @@ use polars_error::{polars_bail, PolarsResult};
 use crate::datatypes::*;
 
 /// Converts a [`ArrowSchema`] to an Avro [`Record`].
-pub fn to_record(schema: &ArrowSchema) -> PolarsResult<Record> {
+pub fn to_record(schema: &ArrowSchema, name: String) -> PolarsResult<Record> {
     let mut name_counter: i32 = 0;
     let fields = schema
         .fields
@@ -15,7 +15,7 @@ pub fn to_record(schema: &ArrowSchema) -> PolarsResult<Record> {
         .map(|f| field_to_field(f, &mut name_counter))
         .collect::<PolarsResult<_>>()?;
     Ok(Record {
-        name: "".to_string(),
+        name,
         namespace: None,
         doc: None,
         aliases: vec![],
@@ -29,7 +29,7 @@ fn field_to_field(field: &Field, name_counter: &mut i32) -> PolarsResult<AvroFie
 }
 
 fn type_to_schema(
-    data_type: &DataType,
+    data_type: &ArrowDataType,
     is_nullable: bool,
     name_counter: &mut i32,
 ) -> PolarsResult<AvroSchema> {
@@ -48,44 +48,48 @@ fn _get_field_name(name_counter: &mut i32) -> String {
     format!("r{name_counter}")
 }
 
-fn _type_to_schema(data_type: &DataType, name_counter: &mut i32) -> PolarsResult<AvroSchema> {
+fn _type_to_schema(data_type: &ArrowDataType, name_counter: &mut i32) -> PolarsResult<AvroSchema> {
     Ok(match data_type.to_logical_type() {
-        DataType::Null => AvroSchema::Null,
-        DataType::Boolean => AvroSchema::Boolean,
-        DataType::Int32 => AvroSchema::Int(None),
-        DataType::Int64 => AvroSchema::Long(None),
-        DataType::Float32 => AvroSchema::Float,
-        DataType::Float64 => AvroSchema::Double,
-        DataType::Binary => AvroSchema::Bytes(None),
-        DataType::LargeBinary => AvroSchema::Bytes(None),
-        DataType::Utf8 => AvroSchema::String(None),
-        DataType::LargeUtf8 => AvroSchema::String(None),
-        DataType::LargeList(inner) | DataType::List(inner) => AvroSchema::Array(Box::new(
-            type_to_schema(&inner.data_type, inner.is_nullable, name_counter)?,
-        )),
-        DataType::Struct(fields) => AvroSchema::Record(Record::new(
+        ArrowDataType::Null => AvroSchema::Null,
+        ArrowDataType::Boolean => AvroSchema::Boolean,
+        ArrowDataType::Int32 => AvroSchema::Int(None),
+        ArrowDataType::Int64 => AvroSchema::Long(None),
+        ArrowDataType::Float32 => AvroSchema::Float,
+        ArrowDataType::Float64 => AvroSchema::Double,
+        ArrowDataType::Binary => AvroSchema::Bytes(None),
+        ArrowDataType::LargeBinary => AvroSchema::Bytes(None),
+        ArrowDataType::Utf8 => AvroSchema::String(None),
+        ArrowDataType::LargeUtf8 => AvroSchema::String(None),
+        ArrowDataType::LargeList(inner) | ArrowDataType::List(inner) => {
+            AvroSchema::Array(Box::new(type_to_schema(
+                &inner.data_type,
+                inner.is_nullable,
+                name_counter,
+            )?))
+        },
+        ArrowDataType::Struct(fields) => AvroSchema::Record(Record::new(
             _get_field_name(name_counter),
             fields
                 .iter()
                 .map(|f| field_to_field(f, name_counter))
                 .collect::<PolarsResult<Vec<_>>>()?,
         )),
-        DataType::Date32 => AvroSchema::Int(Some(IntLogical::Date)),
-        DataType::Time32(TimeUnit::Millisecond) => AvroSchema::Int(Some(IntLogical::Time)),
-        DataType::Time64(TimeUnit::Microsecond) => AvroSchema::Long(Some(LongLogical::Time)),
-        DataType::Timestamp(TimeUnit::Millisecond, None) => {
+        ArrowDataType::Date32 => AvroSchema::Int(Some(IntLogical::Date)),
+        ArrowDataType::Time32(TimeUnit::Millisecond) => AvroSchema::Int(Some(IntLogical::Time)),
+        ArrowDataType::Time64(TimeUnit::Microsecond) => AvroSchema::Long(Some(LongLogical::Time)),
+        ArrowDataType::Timestamp(TimeUnit::Millisecond, None) => {
             AvroSchema::Long(Some(LongLogical::LocalTimestampMillis))
         },
-        DataType::Timestamp(TimeUnit::Microsecond, None) => {
+        ArrowDataType::Timestamp(TimeUnit::Microsecond, None) => {
             AvroSchema::Long(Some(LongLogical::LocalTimestampMicros))
         },
-        DataType::Interval(IntervalUnit::MonthDayNano) => {
+        ArrowDataType::Interval(IntervalUnit::MonthDayNano) => {
             let mut fixed = Fixed::new("", 12);
             fixed.logical = Some(FixedLogical::Duration);
             AvroSchema::Fixed(fixed)
         },
-        DataType::FixedSizeBinary(size) => AvroSchema::Fixed(Fixed::new("", *size)),
-        DataType::Decimal(p, s) => AvroSchema::Bytes(Some(BytesLogical::Decimal(*p, *s))),
+        ArrowDataType::FixedSizeBinary(size) => AvroSchema::Fixed(Fixed::new("", *size)),
+        ArrowDataType::Decimal(p, s) => AvroSchema::Bytes(Some(BytesLogical::Decimal(*p, *s))),
         other => polars_bail!(nyi = "write {other:?} to avro"),
     })
 }

@@ -1,6 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use polars_core::config::verbose;
+#[cfg(feature = "cloud")]
+use polars_core::config::{get_file_prefetch_size, verbose};
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::FileMetaData;
@@ -16,6 +17,7 @@ pub struct ParquetExec {
     #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
     file_options: FileScanOptions,
+    #[allow(dead_code)]
     metadata: Option<Arc<FileMetaData>>,
 }
 
@@ -69,23 +71,22 @@ impl ParquetExec {
                 .iter()
                 .map(|path| {
                     let mut file_info = self.file_info.clone();
-                    file_info.update_hive_partitions(path);
+                    file_info.update_hive_partitions(path)?;
 
                     let hive_partitions = file_info
                         .hive_parts
                         .as_ref()
                         .map(|hive| hive.materialize_partition_columns());
 
-                    let (file, projection, predicate) = prepare_scan_args(
-                        path,
-                        &self.predicate,
+                    let file = std::fs::File::open(path)?;
+                    let (projection, predicate) = prepare_scan_args(
+                        self.predicate.clone(),
                         &mut self.file_options.with_columns.clone(),
                         &mut self.file_info.schema.clone(),
                         base_row_count.is_some(),
                         hive_partitions.as_deref(),
                     );
 
-                    let file = file?;
                     let mut reader = ParquetReader::new(file)
                         .with_schema(self.file_info.reader_schema.clone())
                         .read_parallel(parallel)
@@ -130,10 +131,9 @@ impl ParquetExec {
                             reader
                                 .with_n_rows(remaining_rows_to_read)
                                 .with_row_count(row_count)
-                                ._finish_with_scan_ops(
-                                    predicate.clone(),
-                                    projection.as_ref().map(|v| v.as_ref()),
-                                )
+                                .with_predicate(predicate.clone())
+                                .with_projection(projection.clone())
+                                .finish()
                         },
                     )
                     .collect::<PolarsResult<Vec<_>>>()
@@ -163,9 +163,19 @@ impl ParquetExec {
             .expect("should be set");
         let first_metadata = &self.metadata;
         let cloud_options = self.cloud_options.as_ref();
+        let with_columns = self
+            .file_options
+            .with_columns
+            .as_ref()
+            .map(|v| v.as_slice());
 
         let mut result = vec![];
-        let batch_size = 5;
+        let batch_size = get_file_prefetch_size();
+
+        if verbose {
+            eprintln!("POLARS PREFETCH_SIZE: {}", batch_size)
+        }
+
         let mut remaining_rows_to_read = self.file_options.n_rows.unwrap_or(usize::MAX);
         let mut base_row_count = self.file_options.row_count.take();
         let mut processed = 0;
@@ -186,7 +196,11 @@ impl ParquetExec {
             let iter = paths.iter().enumerate().map(|(i, path)| async move {
                 let first_file = batch_idx == 0 && i == 0;
                 // use the cached one as this saves a cloud call
-                let (metadata, schema) = if first_file { (first_metadata.clone(), Some((*first_schema).clone())) } else { (None, None) };
+                let (metadata, schema) = if first_file {
+                    (first_metadata.clone(), Some((*first_schema).clone()))
+                } else {
+                    (None, None)
+                };
                 let mut reader = ParquetAsyncReader::from_uri(
                     &path.to_string_lossy(),
                     cloud_options,
@@ -197,7 +211,13 @@ impl ParquetExec {
                 .await?;
 
                 if !first_file {
-                    polars_ensure!(reader.schema().await?.as_ref() == first_schema.as_ref(), ComputeError: "schema of all files in a single scan_parquet must be equal");
+                    let schema = reader.schema().await?;
+                    check_projected_arrow_schema(
+                        first_schema.as_ref(),
+                        schema.as_ref(),
+                        with_columns,
+                        "schema of all files in a single scan_parquet must be equal",
+                    )?
                 }
 
                 let num_rows = reader.num_rows().await?;
@@ -247,16 +267,15 @@ impl ParquetExec {
                             offset: rc.offset + *cumulative_read as IdxSize,
                         });
 
-                        file_info.update_hive_partitions(path);
+                        file_info.update_hive_partitions(path)?;
 
                         let hive_partitions = file_info
                             .hive_parts
                             .as_ref()
                             .map(|hive| hive.materialize_partition_columns());
 
-                        let (_, projection, predicate) = prepare_scan_args(
-                            Path::new(""),
-                            predicate,
+                        let (projection, predicate) = prepare_scan_args(
+                            predicate.clone(),
                             &mut file_options.with_columns.clone(),
                             &mut file_info.schema.clone(),
                             row_count.is_some(),
@@ -293,7 +312,29 @@ impl ParquetExec {
     }
 
     fn read(&mut self) -> PolarsResult<DataFrame> {
-        let is_cloud = is_cloud_url(self.paths[0].as_path());
+        let is_cloud = match self.paths.first() {
+            Some(p) => is_cloud_url(p.as_path()),
+            None => {
+                let hive_partitions = self
+                    .file_info
+                    .hive_parts
+                    .as_ref()
+                    .map(|hive| hive.materialize_partition_columns());
+                let (projection, _) = prepare_scan_args(
+                    None,
+                    &mut self.file_options.with_columns,
+                    &mut self.file_info.schema,
+                    self.file_options.row_count.is_some(),
+                    hive_partitions.as_deref(),
+                );
+                return Ok(materialize_empty_df(
+                    projection.as_deref(),
+                    self.file_info.reader_schema.as_ref().unwrap(),
+                    hive_partitions.as_deref(),
+                    self.file_options.row_count.as_ref(),
+                ));
+            },
+        };
         let force_async = std::env::var("POLARS_FORCE_ASYNC").as_deref().unwrap_or("") == "1";
 
         let out = if is_cloud || force_async {

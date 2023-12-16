@@ -7,7 +7,6 @@ Manipulation/selection
    :toctree: api/
 
     LazyFrame.approx_n_unique
-    LazyFrame.approx_unique
     LazyFrame.bottom_k
     LazyFrame.cast
     LazyFrame.clear
@@ -15,6 +14,7 @@ Manipulation/selection
     LazyFrame.drop
     LazyFrame.drop_nulls
     LazyFrame.explode
+    LazyFrame.gather_every
     LazyFrame.fill_nan
     LazyFrame.fill_null
     LazyFrame.filter

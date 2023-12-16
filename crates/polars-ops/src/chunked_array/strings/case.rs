@@ -131,6 +131,7 @@ pub(super) fn to_uppercase<'a>(ca: &'a Utf8Chunked) -> Utf8Chunked {
     ca.apply_mut(f)
 }
 
+#[cfg(feature = "nightly")]
 pub(super) fn to_titlecase<'a>(ca: &'a Utf8Chunked) -> Utf8Chunked {
     // Amortize allocation.
     let mut buf = Vec::new();

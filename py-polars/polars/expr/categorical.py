@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars.utils._wrap import wrap_expr
+from polars.utils.deprecation import deprecate_function
 
 if TYPE_CHECKING:
     from polars import Expr
@@ -17,6 +18,12 @@ class ExprCatNameSpace:
     def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
 
+    @deprecate_function(
+        "Set the ordering directly on the datatype `pl.Categorical('lexical')`"
+        " or `pl.Categorical('physical')` or `cast()` to the intended data type."
+        " This method will be removed in the next breaking change",
+        version="0.19.19",
+    )
     def set_ordering(self, ordering: CategoricalOrdering) -> Expr:
         """
         Determine how this categorical series should be sorted.
@@ -29,30 +36,6 @@ class ExprCatNameSpace:
             - 'physical' -> Use the physical representation of the categories to
                 determine the order (default).
             - 'lexical' -> Use the string values to determine the ordering.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {"cats": ["z", "z", "k", "a", "b"], "vals": [3, 1, 2, 2, 3]}
-        ... ).with_columns(
-        ...     [
-        ...         pl.col("cats").cast(pl.Categorical).cat.set_ordering("lexical"),
-        ...     ]
-        ... )
-        >>> df.sort(["cats", "vals"])
-        shape: (5, 2)
-        ┌──────┬──────┐
-        │ cats ┆ vals │
-        │ ---  ┆ ---  │
-        │ cat  ┆ i64  │
-        ╞══════╪══════╡
-        │ a    ┆ 2    │
-        │ b    ┆ 3    │
-        │ k    ┆ 2    │
-        │ z    ┆ 1    │
-        │ z    ┆ 3    │
-        └──────┴──────┘
-
         """
         return wrap_expr(self._pyexpr.cat_set_ordering(ordering))
 

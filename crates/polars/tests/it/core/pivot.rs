@@ -19,7 +19,7 @@ fn test_pivot_date() -> PolarsResult<()> {
         "B" => [8i32, 2, 3, 6],
         "1972-09-27" => [first, 3, 2, 2]
     ]?;
-    assert!(out.frame_equal_missing(&expected));
+    assert!(out.equals_missing(&expected));
 
     let mut out = pivot_stable(&df, ["C"], ["B"], ["A"], true, Some(PivotAgg::First), None)?;
     out.try_apply("1", |s| {
@@ -31,7 +31,7 @@ fn test_pivot_date() -> PolarsResult<()> {
         "B" => [8i32, 2, 3, 6],
         "1" => ["1972-27-09", "1972-27-09", "1972-27-09", "1972-27-09"]
     ]?;
-    assert!(out.frame_equal_missing(&expected));
+    assert!(out.equals_missing(&expected));
 
     Ok(())
 }
@@ -124,7 +124,9 @@ fn test_pivot_categorical() -> PolarsResult<()> {
         "B" => [8, 2, 3, 6, 3, 6, 2, 2],
         "C" => ["a", "b", "c", "a", "b", "c", "a", "b"]
     ]?;
-    df.try_apply("C", |s| s.cast(&DataType::Categorical(None)))?;
+    df.try_apply("C", |s| {
+        s.cast(&DataType::Categorical(None, Default::default()))
+    })?;
 
     let out = pivot(&df, ["A"], ["B"], ["C"], true, Some(PivotAgg::Count), None)?;
     assert_eq!(out.get_column_names(), &["B", "a", "b", "c"]);
@@ -161,7 +163,7 @@ fn test_pivot_new() -> PolarsResult<()> {
         "large" => [Some(4), None, Some(4), Some(7)],
         "small" => [1, 6, 5, 6],
     ]?;
-    assert!(out.frame_equal_missing(&expected));
+    assert!(out.equals_missing(&expected));
 
     let out = pivot_stable(
         &df,
@@ -181,7 +183,7 @@ fn test_pivot_new() -> PolarsResult<()> {
         "jam" => [1, 3, 4, 13],
         "potato" => [None, None, Some(5), None]
     ]?;
-    assert!(out.frame_equal_missing(&expected));
+    assert!(out.equals_missing(&expected));
 
     Ok(())
 }
@@ -209,7 +211,7 @@ fn test_pivot_2() -> PolarsResult<()> {
         "act" => [None, None, Some(1.)],
         "test" => [Some(0.4), Some(0.2), None],
     ]?;
-    assert!(out.frame_equal_missing(&expected));
+    assert!(out.equals_missing(&expected));
 
     Ok(())
 }
@@ -241,7 +243,7 @@ fn test_pivot_datetime() -> PolarsResult<()> {
         "x" => [150],
         "y" => [420]
     ]?;
-    assert!(out.frame_equal(&expected));
+    assert!(out.equals(&expected));
 
     Ok(())
 }

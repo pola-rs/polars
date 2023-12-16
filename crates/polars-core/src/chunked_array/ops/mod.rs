@@ -29,7 +29,7 @@ pub mod gather;
 mod interpolate;
 #[cfg(feature = "zip_with")]
 pub(crate) mod min_max_binary;
-mod nulls;
+pub(crate) mod nulls;
 mod reverse;
 pub(crate) mod rolling_window;
 mod set;
@@ -92,6 +92,7 @@ pub trait ChunkExplode {
     fn explode(&self) -> PolarsResult<Series> {
         self.explode_and_offsets().map(|t| t.0)
     }
+    fn offsets(&self) -> PolarsResult<OffsetsBuffer<i64>>;
     fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)>;
 }
 

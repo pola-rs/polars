@@ -1,9 +1,11 @@
 #![allow(ambiguous_glob_reexports)]
 //! Domain specific language for the Lazy API.
-#[cfg(feature = "rolling_window")]
-use polars_core::utils::ensure_sorted_arg;
 #[cfg(feature = "dtype-categorical")]
 pub mod cat;
+
+#[cfg(feature = "rolling_window")]
+use std::any::Any;
+
 #[cfg(feature = "dtype-categorical")]
 pub use cat::*;
 mod arithmetic;
@@ -29,11 +31,13 @@ pub mod python_udf;
 #[cfg(feature = "random")]
 mod random;
 mod selector;
+mod statistics;
 #[cfg(feature = "strings")]
 pub mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
 pub mod udf;
+
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -188,57 +192,6 @@ impl Expr {
     /// Drop NaN values.
     pub fn drop_nans(self) -> Self {
         self.apply_private(FunctionExpr::DropNans)
-    }
-
-    /// Reduce groups to minimal value.
-    pub fn min(self) -> Self {
-        AggExpr::Min {
-            input: Box::new(self),
-            propagate_nans: false,
-        }
-        .into()
-    }
-
-    /// Reduce groups to maximum value.
-    pub fn max(self) -> Self {
-        AggExpr::Max {
-            input: Box::new(self),
-            propagate_nans: false,
-        }
-        .into()
-    }
-
-    /// Reduce groups to minimal value.
-    pub fn nan_min(self) -> Self {
-        AggExpr::Min {
-            input: Box::new(self),
-            propagate_nans: true,
-        }
-        .into()
-    }
-
-    /// Reduce groups to maximum value.
-    pub fn nan_max(self) -> Self {
-        AggExpr::Max {
-            input: Box::new(self),
-            propagate_nans: true,
-        }
-        .into()
-    }
-
-    /// Reduce groups to the mean value.
-    pub fn mean(self) -> Self {
-        AggExpr::Mean(Box::new(self)).into()
-    }
-
-    /// Reduce groups to the median value.
-    pub fn median(self) -> Self {
-        AggExpr::Median(Box::new(self)).into()
-    }
-
-    /// Reduce groups to the sum of all the values.
-    pub fn sum(self) -> Self {
-        AggExpr::Sum(Box::new(self)).into()
     }
 
     /// Get the number of unique values in the groups.
@@ -441,8 +394,8 @@ impl Expr {
     }
 
     /// Take the values by idx.
-    pub fn take<E: Into<Expr>>(self, idx: E) -> Self {
-        Expr::Take {
+    pub fn gather<E: Into<Expr>>(self, idx: E) -> Self {
+        Expr::Gather {
             expr: Box::new(self),
             idx: Box::new(idx.into()),
             returns_scalar: false,
@@ -451,7 +404,7 @@ impl Expr {
 
     /// Take the values by a single index.
     pub fn get<E: Into<Expr>>(self, idx: E) -> Self {
-        Expr::Take {
+        Expr::Gather {
             expr: Box::new(self),
             idx: Box::new(idx.into()),
             returns_scalar: true,
@@ -748,32 +701,32 @@ impl Expr {
 
     /// Cumulatively count values from 0 to len.
     #[cfg(feature = "cum_agg")]
-    pub fn cumcount(self, reverse: bool) -> Self {
-        self.apply_private(FunctionExpr::Cumcount { reverse })
+    pub fn cum_count(self, reverse: bool) -> Self {
+        self.apply_private(FunctionExpr::CumCount { reverse })
     }
 
     /// Get an array with the cumulative sum computed at every element.
     #[cfg(feature = "cum_agg")]
-    pub fn cumsum(self, reverse: bool) -> Self {
-        self.apply_private(FunctionExpr::Cumsum { reverse })
+    pub fn cum_sum(self, reverse: bool) -> Self {
+        self.apply_private(FunctionExpr::CumSum { reverse })
     }
 
     /// Get an array with the cumulative product computed at every element.
     #[cfg(feature = "cum_agg")]
-    pub fn cumprod(self, reverse: bool) -> Self {
-        self.apply_private(FunctionExpr::Cumprod { reverse })
+    pub fn cum_prod(self, reverse: bool) -> Self {
+        self.apply_private(FunctionExpr::CumProd { reverse })
     }
 
     /// Get an array with the cumulative min computed at every element.
     #[cfg(feature = "cum_agg")]
-    pub fn cummin(self, reverse: bool) -> Self {
-        self.apply_private(FunctionExpr::Cummin { reverse })
+    pub fn cum_min(self, reverse: bool) -> Self {
+        self.apply_private(FunctionExpr::CumMin { reverse })
     }
 
     /// Get an array with the cumulative max computed at every element.
     #[cfg(feature = "cum_agg")]
-    pub fn cummax(self, reverse: bool) -> Self {
-        self.apply_private(FunctionExpr::Cummax { reverse })
+    pub fn cum_max(self, reverse: bool) -> Self {
+        self.apply_private(FunctionExpr::CumMax { reverse })
     }
 
     /// Get the product aggregation of an expression.
@@ -814,6 +767,12 @@ impl Expr {
     #[cfg(feature = "round_series")]
     pub fn round(self, decimals: u32) -> Self {
         self.map_private(FunctionExpr::Round { decimals })
+    }
+
+    /// Round to a number of significant figures.
+    #[cfg(feature = "round_series")]
+    pub fn round_sig_figs(self, digits: i32) -> Self {
+        self.map_private(FunctionExpr::RoundSF { digits })
     }
 
     /// Floor underlying floating point array to the lowest integers smaller or equal to the float value.
@@ -998,17 +957,11 @@ impl Expr {
     /// or
     /// Get counts of the group by operation.
     pub fn count(self) -> Self {
-        AggExpr::Count(Box::new(self)).into()
+        AggExpr::Count(Box::new(self), false).into()
     }
 
-    /// Standard deviation of the values of the Series.
-    pub fn std(self, ddof: u8) -> Self {
-        AggExpr::Std(Box::new(self), ddof).into()
-    }
-
-    /// Variance of the values of the Series.
-    pub fn var(self, ddof: u8) -> Self {
-        AggExpr::Var(Box::new(self), ddof).into()
+    pub fn len(self) -> Self {
+        AggExpr::Count(Box::new(self), true).into()
     }
 
     /// Get a mask of duplicated values.
@@ -1182,72 +1135,22 @@ impl Expr {
     fn finish_rolling(
         self,
         options: RollingOptions,
-        expr_name: &'static str,
-        expr_name_by: &'static str,
-        rolling_fn: Arc<
-            dyn (Fn(&Series, RollingOptionsImpl) -> PolarsResult<Series>) + Send + Sync,
-        >,
-        output_type: GetOutput,
+        rolling_function: fn(RollingOptions) -> RollingFunction,
+        rolling_function_by: fn(RollingOptions) -> RollingFunction,
     ) -> Expr {
         if let Some(ref by) = options.by {
-            self.apply_many(
-                move |s| {
-                    let mut by = s[1].clone();
-                    by = by.rechunk();
-                    let s = &s[0];
-
-                    polars_ensure!(
-                        options.weights.is_none(),
-                        ComputeError: "`weights` is not supported in 'rolling by' expression"
-                    );
-                    let (by, tz) = match by.dtype() {
-                        DataType::Datetime(tu, tz) => {
-                            (by.cast(&DataType::Datetime(*tu, None))?, tz)
-                        },
-                        DataType::Date => (
-                            by.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
-                            &None,
-                        ),
-                        dt => polars_bail!(opq = expr_name, got = dt, expected = "date/datetime"),
-                    };
-                    ensure_sorted_arg(&by, expr_name)?;
-                    let by = by.datetime().unwrap();
-                    let by_values = by.cont_slice().map_err(|_| {
-                        polars_err!(
-                            ComputeError:
-                            "`by` column should not have null values in 'rolling by' expression"
-                        )
-                    })?;
-                    let tu = by.time_unit();
-
-                    let options = RollingOptionsImpl {
-                        window_size: options.window_size,
-                        min_periods: options.min_periods,
-                        weights: None,
-                        center: options.center,
-                        by: Some(by_values),
-                        tu: Some(tu),
-                        tz: tz.as_ref(),
-                        closed_window: options.closed_window,
-                        fn_params: options.fn_params.clone(),
-                    };
-
-                    rolling_fn(s, options).map(Some)
-                },
-                &[col(by)],
-                output_type,
+            let name = by.clone();
+            self.apply_many_private(
+                FunctionExpr::RollingExpr(rolling_function_by(options)),
+                &[col(&name)],
+                true,
+                false,
             )
-            .with_fmt(expr_name_by)
         } else {
             if !options.window_size.parsed_int {
                 panic!("if dynamic windows are used in a rolling aggregation, the 'by' argument must be set")
             }
-
-            self.apply(
-                move |s| rolling_fn(&s, options.clone().into()).map(Some),
-                output_type,
-            )
-            .with_fmt(expr_name)
+            self.apply_private(FunctionExpr::RollingExpr(rolling_function(options)))
         }
     }
 
@@ -1256,13 +1159,7 @@ impl Expr {
     /// See: [`RollingAgg::rolling_min`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_min(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(
-            options,
-            "rolling_min",
-            "rolling_min_by",
-            Arc::new(|s, options| s.rolling_min(options)),
-            GetOutput::same_type(),
-        )
+        self.finish_rolling(options, RollingFunction::Min, RollingFunction::MinBy)
     }
 
     /// Apply a rolling maximum.
@@ -1270,13 +1167,7 @@ impl Expr {
     /// See: [`RollingAgg::rolling_max`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_max(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(
-            options,
-            "rolling_max",
-            "rolling_max_by",
-            Arc::new(|s, options| s.rolling_max(options)),
-            GetOutput::same_type(),
-        )
+        self.finish_rolling(options, RollingFunction::Max, RollingFunction::MaxBy)
     }
 
     /// Apply a rolling mean.
@@ -1284,13 +1175,7 @@ impl Expr {
     /// See: [`RollingAgg::rolling_mean`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_mean(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(
-            options,
-            "rolling_mean",
-            "rolling_mean_by",
-            Arc::new(|s, options| s.rolling_mean(options)),
-            GetOutput::float_type(),
-        )
+        self.finish_rolling(options, RollingFunction::Mean, RollingFunction::MeanBy)
     }
 
     /// Apply a rolling sum.
@@ -1298,13 +1183,7 @@ impl Expr {
     /// See: [`RollingAgg::rolling_sum`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_sum(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(
-            options,
-            "rolling_sum",
-            "rolling_sum_by",
-            Arc::new(|s, options| s.rolling_sum(options)),
-            GetOutput::same_type(),
-        )
+        self.finish_rolling(options, RollingFunction::Sum, RollingFunction::SumBy)
     }
 
     /// Apply a rolling median.
@@ -1312,58 +1191,51 @@ impl Expr {
     /// See: [`RollingAgg::rolling_median`]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_median(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(
-            options,
-            "rolling_median",
-            "rolling_median_by",
-            Arc::new(|s, options| s.rolling_median(options)),
-            GetOutput::same_type(),
-        )
+        self.rolling_quantile(QuantileInterpolOptions::Linear, 0.5, options)
     }
 
     /// Apply a rolling quantile.
     ///
     /// See: [`RollingAgg::rolling_quantile`]
     #[cfg(feature = "rolling_window")]
-    pub fn rolling_quantile(self, options: RollingOptions) -> Expr {
+    pub fn rolling_quantile(
+        self,
+        interpol: QuantileInterpolOptions,
+        quantile: f64,
+        mut options: RollingOptions,
+    ) -> Expr {
+        options.fn_params = Some(Arc::new(RollingQuantileParams {
+            prob: quantile,
+            interpol,
+        }) as Arc<dyn Any + Send + Sync>);
+
         self.finish_rolling(
             options,
-            "rolling_quantile",
-            "rolling_quantile_by",
-            Arc::new(|s, options| s.rolling_quantile(options)),
-            GetOutput::float_type(),
+            RollingFunction::Quantile,
+            RollingFunction::QuantileBy,
         )
     }
 
     /// Apply a rolling variance.
     #[cfg(feature = "rolling_window")]
     pub fn rolling_var(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(
-            options,
-            "rolling_var",
-            "rolling_var_by",
-            Arc::new(|s, options| s.rolling_var(options)),
-            GetOutput::float_type(),
-        )
+        self.finish_rolling(options, RollingFunction::Var, RollingFunction::VarBy)
     }
 
     /// Apply a rolling std-dev.
     #[cfg(feature = "rolling_window")]
     pub fn rolling_std(self, options: RollingOptions) -> Expr {
-        self.finish_rolling(
-            options,
-            "rolling_std",
-            "rolling_std_by",
-            Arc::new(|s, options| s.rolling_std(options)),
-            GetOutput::float_type(),
-        )
+        self.finish_rolling(options, RollingFunction::Std, RollingFunction::StdBy)
     }
 
     /// Apply a rolling skew.
     #[cfg(feature = "rolling_window")]
     #[cfg(feature = "moment")]
     pub fn rolling_skew(self, window_size: usize, bias: bool) -> Expr {
-        self.apply_private(FunctionExpr::RollingSkew { window_size, bias })
+        self.apply_private(FunctionExpr::RollingExpr(RollingFunction::Skew(
+            window_size,
+            bias,
+        )))
     }
 
     #[cfg(feature = "rolling_window")]
@@ -1434,6 +1306,23 @@ impl Expr {
     /// Assign ranks to data, dealing with ties appropriately.
     pub fn rank(self, options: RankOptions, seed: Option<u64>) -> Expr {
         self.apply_private(FunctionExpr::Rank { options, seed })
+    }
+
+    #[cfg(feature = "replace")]
+    /// Replace the given values with other values.
+    pub fn replace<E: Into<Expr>>(
+        self,
+        old: E,
+        new: E,
+        default: Option<E>,
+        return_dtype: Option<DataType>,
+    ) -> Expr {
+        let default_expr = match default {
+            Some(expr) => expr.into(),
+            None => self.clone(),
+        };
+        let args: &[Expr] = &[old.into(), new.into(), default_expr];
+        self.apply_many_private(FunctionExpr::Replace { return_dtype }, args, false, false)
     }
 
     #[cfg(feature = "cutqcut")]

@@ -20,7 +20,7 @@ def test_profile_columns() -> None:
 
 
 def test_profile_with_cse() -> None:
-    df = pl.DataFrame({"x": [], "y": []})
+    df = pl.DataFrame({"x": [], "y": []}, schema={"x": pl.Float32, "y": pl.Float32})
 
     x = pl.col("x")
     y = pl.col("y")

@@ -52,7 +52,7 @@ fn join_produces_null(how: &JoinType) -> LeftRight<bool> {
     {
         match how {
             JoinType::Left => LeftRight(false, true),
-            JoinType::Outer | JoinType::Cross | JoinType::AsOf(_) => LeftRight(true, true),
+            JoinType::Outer { .. } | JoinType::Cross | JoinType::AsOf(_) => LeftRight(true, true),
             _ => LeftRight(false, false),
         }
     }
@@ -60,7 +60,7 @@ fn join_produces_null(how: &JoinType) -> LeftRight<bool> {
     {
         match how {
             JoinType::Left => LeftRight(false, true),
-            JoinType::Outer | JoinType::Cross => LeftRight(true, true),
+            JoinType::Outer { .. } | JoinType::Cross => LeftRight(true, true),
             _ => LeftRight(false, false),
         }
     }
@@ -115,33 +115,32 @@ pub(super) fn process_join(
         let mut filter_left = false;
         let mut filter_right = false;
 
-        // predicate should not have an aggregation or window function as that would
-        // be influenced by join
-        #[allow(clippy::suspicious_else_formatting)]
-        if !predicate_is_pushdown_boundary(predicate, expr_arena) {
-            if check_input_node(predicate, &schema_left, expr_arena) && !block_pushdown_left {
-                insert_and_combine_predicate(&mut pushdown_left, predicate, expr_arena);
-                filter_left = true;
-            }
+        debug_assert_aexpr_allows_predicate_pushdown(predicate, expr_arena);
 
-            // if the predicate is in the left hand side
-            // the right hand side should be renamed with the suffix.
-            // in that case we should not push down as the user wants to filter on `x`
-            // not on `x_rhs`.
-            if !filter_left
-                && check_input_node(predicate, &schema_right, expr_arena)
-                && !block_pushdown_right
-                // However, if we push down to the left and all predicate columns are also
-                // join columns, we also push down right
-                || filter_left
-                    && all_pred_cols_in_left_on(predicate, expr_arena, &left_on)
-                    // TODO: Restricting to Inner and Left Join is probably too conservative
-                    && matches!(&options.args.how, JoinType::Inner | JoinType::Left)
-            {
-                insert_and_combine_predicate(&mut pushdown_right, predicate, expr_arena);
-                filter_right = true;
+        if check_input_node(predicate, &schema_left, expr_arena) && !block_pushdown_left {
+            insert_and_combine_predicate(&mut pushdown_left, predicate, expr_arena);
+            filter_left = true;
+            // If we push down to the left and all predicate columns are also
+            // join columns, we also push down right for inner, left or semi join
+            if all_pred_cols_in_left_on(predicate, expr_arena, &left_on) {
+                filter_right = match &options.args.how {
+                    JoinType::Inner | JoinType::Left => true,
+                    #[cfg(feature = "semi_anti_join")]
+                    JoinType::Semi => true,
+                    _ => false,
+                }
             }
+        // this is `else if` because if the predicate is in the left hand side
+        // the right hand side should be renamed with the suffix.
+        // in that case we should not push down as the user wants to filter on `x`
+        // not on `x_rhs`.
+        } else if check_input_node(predicate, &schema_right, expr_arena) && !block_pushdown_right {
+            filter_right = true
         }
+        if filter_right {
+            insert_and_combine_predicate(&mut pushdown_right, predicate, expr_arena);
+        }
+
         match (filter_left, filter_right, &options.args.how) {
             // if not pushed down on one of the tables we have to do it locally.
             (false, false, _) |

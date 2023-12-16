@@ -55,128 +55,176 @@ impl PhysicalExpr for AggregationExpr {
         let keep_name = ac.series().name().to_string();
         polars_ensure!(!matches!(ac.agg_state(), AggState::Literal(_)), ComputeError: "cannot aggregate a literal");
 
-        macro_rules! check_null_prop {
-            () => {
-                match ac.agg_state() {
-                    AggState::AggregatedScalar(_) => {
-                        if ac.null_propagated {
-                            let agg_s = ac.aggregated();
-                            let out = rename_series(agg_s, &keep_name);
-                            return Ok(AggregationContext::new(out, Cow::Borrowed(groups), true))
-                        } else {
-                            polars_bail!(ComputeError: "cannot aggregate as {}, the column is already aggregated", self.agg_type);
-                        }
-                    },
-                    _ => ()
-                }
+        if let AggregatedScalar(_) = ac.agg_state() {
+            match self.agg_type {
+                GroupByMethod::Implode => {},
+                _ => {
+                    polars_bail!(ComputeError: "cannot aggregate as {}, the column is already aggregated", self.agg_type);
+                },
             }
         }
+
         // Safety:
         // groups must always be in bounds.
         let out = unsafe {
             match self.agg_type {
                 GroupByMethod::Min => {
-                    check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_min(&groups);
                     AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::Max => {
-                    check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_max(&groups);
                     AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::Median => {
-                    check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_median(&groups);
                     AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::Mean => {
-                    check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_mean(&groups);
                     AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::Sum => {
-                    check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_sum(&groups);
                     AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
-                GroupByMethod::Count => {
-                    // a few fast paths that prevent materializing new groups
-                    match ac.update_groups {
-                        UpdateGroups::WithSeriesLen => {
-                            let list = ac
-                                .series()
-                                .list()
-                                .expect("impl error, should be a list at this point");
+                GroupByMethod::Count { include_nulls } => {
+                    if include_nulls || ac.series().null_count() == 0 {
+                        // a few fast paths that prevent materializing new groups
+                        match ac.update_groups {
+                            UpdateGroups::WithSeriesLen => {
+                                let list = ac
+                                    .series()
+                                    .list()
+                                    .expect("impl error, should be a list at this point");
 
-                            let mut s = match list.chunks().len() {
-                                1 => {
-                                    let arr = list.downcast_iter().next().unwrap();
-                                    let offsets = arr.offsets().as_slice();
+                                let mut s = match list.chunks().len() {
+                                    1 => {
+                                        let arr = list.downcast_iter().next().unwrap();
+                                        let offsets = arr.offsets().as_slice();
 
-                                    let mut previous = 0i64;
-                                    let counts: NoNull<IdxCa> = offsets[1..]
-                                        .iter()
-                                        .map(|&o| {
-                                            let len = (o - previous) as IdxSize;
-                                            previous = o;
-                                            len
-                                        })
-                                        .collect_trusted();
-                                    counts.into_inner()
-                                },
-                                _ => {
-                                    let counts: NoNull<IdxCa> = list
-                                        .amortized_iter()
-                                        .map(|s| {
-                                            if let Some(s) = s {
-                                                s.as_ref().len() as IdxSize
-                                            } else {
-                                                1
-                                            }
-                                        })
-                                        .collect_trusted();
-                                    counts.into_inner()
-                                },
-                            };
-                            s.rename(&keep_name);
-                            AggregatedScalar(s.into_series())
-                        },
-                        UpdateGroups::WithGroupsLen => {
-                            // no need to update the groups
-                            // we can just get the attribute, because we only need the length,
-                            // not the correct order
-                            let mut ca = ac.groups.group_count();
-                            ca.rename(&keep_name);
-                            AggregatedScalar(ca.into_series())
-                        },
-                        // materialize groups
-                        _ => {
-                            let mut ca = ac.groups().group_count();
-                            ca.rename(&keep_name);
-                            AggregatedScalar(ca.into_series())
-                        },
+                                        let mut previous = 0i64;
+                                        let counts: NoNull<IdxCa> = offsets[1..]
+                                            .iter()
+                                            .map(|&o| {
+                                                let len = (o - previous) as IdxSize;
+                                                previous = o;
+                                                len
+                                            })
+                                            .collect_trusted();
+                                        counts.into_inner()
+                                    },
+                                    _ => {
+                                        let counts: NoNull<IdxCa> = list
+                                            .amortized_iter()
+                                            .map(|s| {
+                                                if let Some(s) = s {
+                                                    s.as_ref().len() as IdxSize
+                                                } else {
+                                                    1
+                                                }
+                                            })
+                                            .collect_trusted();
+                                        counts.into_inner()
+                                    },
+                                };
+                                s.rename(&keep_name);
+                                AggregatedScalar(s.into_series())
+                            },
+                            UpdateGroups::WithGroupsLen => {
+                                // no need to update the groups
+                                // we can just get the attribute, because we only need the length,
+                                // not the correct order
+                                let mut ca = ac.groups.group_count();
+                                ca.rename(&keep_name);
+                                AggregatedScalar(ca.into_series())
+                            },
+                            // materialize groups
+                            _ => {
+                                let mut ca = ac.groups().group_count();
+                                ca.rename(&keep_name);
+                                AggregatedScalar(ca.into_series())
+                            },
+                        }
+                    } else {
+                        // TODO: optimize this/and write somewhere else.
+                        match ac.agg_state() {
+                            AggState::Literal(s) | AggState::AggregatedScalar(s) => {
+                                AggregatedScalar(Series::new(
+                                    &keep_name,
+                                    [(s.len() as IdxSize - s.null_count() as IdxSize)],
+                                ))
+                            },
+                            AggState::AggregatedList(s) => {
+                                let ca = s.list()?;
+                                let out: IdxCa = ca
+                                    .into_iter()
+                                    .map(|opt_s| {
+                                        opt_s
+                                            .map(|s| s.len() as IdxSize - s.null_count() as IdxSize)
+                                    })
+                                    .collect();
+                                AggregatedScalar(rename_series(out.into_series(), &keep_name))
+                            },
+                            AggState::NotAggregated(s) => {
+                                let s = s.clone();
+                                let groups = ac.groups();
+                                match groups.as_ref() {
+                                    GroupsProxy::Idx(idx) => {
+                                        let s = s.rechunk();
+                                        let array = &s.chunks()[0];
+                                        let validity = array.validity().unwrap();
+
+                                        let out: IdxCa = idx
+                                            .iter()
+                                            .map(|(_, g)| {
+                                                let mut count = 0 as IdxSize;
+                                                // Count valid values
+                                                g.iter().for_each(|i| {
+                                                    count += validity.get_bit_unchecked(*i as usize)
+                                                        as IdxSize;
+                                                });
+                                                count
+                                            })
+                                            .collect_ca_trusted_with_dtype(&keep_name, IDX_DTYPE);
+                                        AggregatedScalar(out.into_series())
+                                    },
+                                    GroupsProxy::Slice { groups, .. } => {
+                                        // Slice and use computed null count
+                                        let out: IdxCa = groups
+                                            .iter()
+                                            .map(|g| {
+                                                let start = g[0];
+                                                let len = g[1];
+                                                len - s
+                                                    .slice(start as i64, len as usize)
+                                                    .null_count()
+                                                    as IdxSize
+                                            })
+                                            .collect_ca_trusted_with_dtype(&keep_name, IDX_DTYPE);
+                                        AggregatedScalar(out.into_series())
+                                    },
+                                }
+                            },
+                        }
                     }
                 },
                 GroupByMethod::First => {
-                    check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_first(&groups);
                     AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::Last => {
-                    check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_last(&groups);
                     AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::NUnique => {
-                    check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_n_unique(&groups);
                     AggregatedScalar(rename_series(agg_s, &keep_name))
@@ -205,13 +253,11 @@ impl PhysicalExpr for AggregationExpr {
                     AggregatedScalar(column.into_series())
                 },
                 GroupByMethod::Std(ddof) => {
-                    check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_std(&groups, ddof);
                     AggregatedScalar(rename_series(agg_s, &keep_name))
                 },
                 GroupByMethod::Var(ddof) => {
-                    check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_var(&groups, ddof);
                     AggregatedScalar(rename_series(agg_s, &keep_name))
@@ -223,7 +269,6 @@ impl PhysicalExpr for AggregationExpr {
                 GroupByMethod::NanMin => {
                     #[cfg(feature = "propagate_nans")]
                     {
-                        check_null_prop!();
                         let (s, groups) = ac.get_final_aggregation();
                         let agg_s = if s.dtype().is_float() {
                             nan_propagating_aggregate::group_agg_nan_min_s(&s, &groups)
@@ -240,7 +285,6 @@ impl PhysicalExpr for AggregationExpr {
                 GroupByMethod::NanMax => {
                     #[cfg(feature = "propagate_nans")]
                     {
-                        check_null_prop!();
                         let (s, groups) = ac.get_final_aggregation();
                         let agg_s = if s.dtype().is_float() {
                             nan_propagating_aggregate::group_agg_nan_max_s(&s, &groups)
@@ -273,10 +317,6 @@ impl PhysicalExpr for AggregationExpr {
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
-    }
-
-    fn is_valid_aggregation(&self) -> bool {
-        true
     }
 }
 
@@ -358,7 +398,9 @@ impl PartitionedAggregation for AggregationExpr {
                     agg.rename(series.name());
                     Ok(agg)
                 },
-                GroupByMethod::Count => {
+                GroupByMethod::Count {
+                    include_nulls: true,
+                } => {
                     let mut ca = groups.group_count();
                     ca.rename(series.name());
                     Ok(ca.into_series())
@@ -377,7 +419,10 @@ impl PartitionedAggregation for AggregationExpr {
         _state: &ExecutionState,
     ) -> PolarsResult<Series> {
         match self.agg_type {
-            GroupByMethod::Count | GroupByMethod::Sum => {
+            GroupByMethod::Count {
+                include_nulls: true,
+            }
+            | GroupByMethod::Sum => {
                 let mut agg = unsafe { partitioned.agg_sum(groups) };
                 agg.rename(partitioned.name());
                 Ok(agg)
@@ -557,9 +602,5 @@ impl PhysicalExpr for AggQuantileExpr {
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema)
-    }
-
-    fn is_valid_aggregation(&self) -> bool {
-        true
     }
 }

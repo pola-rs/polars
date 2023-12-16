@@ -2,12 +2,13 @@ use std::collections::VecDeque;
 
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::MutableBitmap;
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
-use super::super::{utils, Pages};
+use super::super::utils::MaybeNext;
+use super::super::{utils, PagesIter};
 use super::basic::{deserialize_plain, Values, ValuesDictionary};
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{DataPage, DictPage};
@@ -160,18 +161,18 @@ where
 }
 
 fn finish<T: NativeType>(
-    data_type: &DataType,
+    data_type: &ArrowDataType,
     values: Vec<T>,
     validity: MutableBitmap,
 ) -> PrimitiveArray<T> {
     PrimitiveArray::new(data_type.clone(), values.into(), validity.into())
 }
 
-/// An iterator adapter over [`Pages`] assumed to be encoded as boolean arrays
+/// An iterator adapter over [`PagesIter`] assumed to be encoded as boolean arrays
 #[derive(Debug)]
 pub struct NestedIter<T, I, P, F>
 where
-    I: Pages,
+    I: PagesIter,
     T: NativeType,
 
     P: ParquetNativeType,
@@ -179,7 +180,7 @@ where
 {
     iter: I,
     init: Vec<InitNested>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     items: VecDeque<(NestedState, (Vec<T>, MutableBitmap))>,
     dict: Option<Vec<T>>,
     remaining: usize,
@@ -189,7 +190,7 @@ where
 
 impl<T, I, P, F> NestedIter<T, I, P, F>
 where
-    I: Pages,
+    I: PagesIter,
     T: NativeType,
 
     P: ParquetNativeType,
@@ -198,7 +199,7 @@ where
     pub fn new(
         iter: I,
         init: Vec<InitNested>,
-        data_type: DataType,
+        data_type: ArrowDataType,
         num_rows: usize,
         chunk_size: Option<usize>,
         op: F,
@@ -218,7 +219,7 @@ where
 
 impl<T, I, P, F> Iterator for NestedIter<T, I, P, F>
 where
-    I: Pages,
+    I: PagesIter,
     T: NativeType,
 
     P: ParquetNativeType,
@@ -227,22 +228,24 @@ where
     type Item = PolarsResult<(NestedState, PrimitiveArray<T>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let maybe_state = next(
-            &mut self.iter,
-            &mut self.items,
-            &mut self.dict,
-            &mut self.remaining,
-            &self.init,
-            self.chunk_size,
-            &self.decoder,
-        );
-        match maybe_state {
-            utils::MaybeNext::Some(Ok((nested, state))) => {
-                Some(Ok((nested, finish(&self.data_type, state.0, state.1))))
-            },
-            utils::MaybeNext::Some(Err(e)) => Some(Err(e)),
-            utils::MaybeNext::None => None,
-            utils::MaybeNext::More => self.next(),
+        loop {
+            let maybe_state = next(
+                &mut self.iter,
+                &mut self.items,
+                &mut self.dict,
+                &mut self.remaining,
+                &self.init,
+                self.chunk_size,
+                &self.decoder,
+            );
+            match maybe_state {
+                MaybeNext::Some(Ok((nested, state))) => {
+                    return Some(Ok((nested, finish(&self.data_type, state.0, state.1))))
+                },
+                MaybeNext::Some(Err(e)) => return Some(Err(e)),
+                MaybeNext::None => return None,
+                MaybeNext::More => continue,
+            }
         }
     }
 }

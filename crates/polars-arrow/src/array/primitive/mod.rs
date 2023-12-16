@@ -1,6 +1,9 @@
+use std::ops::Range;
+
 use either::Either;
 
 use super::Array;
+use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
@@ -13,11 +16,13 @@ mod data;
 mod ffi;
 pub(super) mod fmt;
 mod from_natural;
-mod iterator;
-pub use iterator::*;
+pub mod iterator;
+
 mod mutable;
 pub use mutable::*;
 use polars_error::{polars_bail, PolarsResult};
+use polars_utils::index::{Bounded, Indexable, NullCount};
+use polars_utils::slice::SliceAble;
 
 /// A [`PrimitiveArray`] is Arrow's semantically equivalent of an immutable `Vec<Option<T>>` where
 /// T is [`NativeType`] (e.g. [`i32`]). It implements [`Array`].
@@ -46,13 +51,13 @@ use polars_error::{polars_bail, PolarsResult};
 /// ```
 #[derive(Clone)]
 pub struct PrimitiveArray<T: NativeType> {
-    data_type: DataType,
+    data_type: ArrowDataType,
     values: Buffer<T>,
     validity: Option<Bitmap>,
 }
 
 pub(super) fn check<T: NativeType>(
-    data_type: &DataType,
+    data_type: &ArrowDataType,
     values: &[T],
     validity_len: Option<usize>,
 ) -> PolarsResult<()> {
@@ -76,7 +81,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     /// * The validity is not `None` and its length is different from `values`'s length
     /// * The `data_type`'s [`PhysicalType`] is not equal to [`PhysicalType::Primitive(T::PRIMITIVE)`]
     pub fn try_new(
-        data_type: DataType,
+        data_type: ArrowDataType,
         values: Buffer<T>,
         validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
@@ -90,14 +95,14 @@ impl<T: NativeType> PrimitiveArray<T> {
 
     /// Returns a new [`PrimitiveArray`] with a different logical type.
     ///
-    /// This function is useful to assign a different [`DataType`] to the array.
+    /// This function is useful to assign a different [`ArrowDataType`] to the array.
     /// Used to change the arrays' logical type (see example).
     /// # Example
     /// ```
     /// use polars_arrow::array::Int32Array;
-    /// use polars_arrow::datatypes::DataType;
+    /// use polars_arrow::datatypes::ArrowDataType;
     ///
-    /// let array = Int32Array::from(&[Some(1), None, Some(2)]).to(DataType::Date32);
+    /// let array = Int32Array::from(&[Some(1), None, Some(2)]).to(ArrowDataType::Date32);
     /// assert_eq!(
     ///    format!("{:?}", array),
     ///    "Date32[1970-01-02, None, 1970-01-03]"
@@ -107,7 +112,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     /// Panics iff the `data_type`'s [`PhysicalType`] is not equal to [`PhysicalType::Primitive(T::PRIMITIVE)`]
     #[inline]
     #[must_use]
-    pub fn to(self, data_type: DataType) -> Self {
+    pub fn to(self, data_type: ArrowDataType) -> Self {
         check(
             &data_type,
             &self.values,
@@ -146,6 +151,12 @@ impl<T: NativeType> PrimitiveArray<T> {
         self.values().iter()
     }
 
+    /// Returns an iterator of the non-null values `T`.
+    #[inline]
+    pub fn non_null_values_iter(&self) -> NonNullValuesIter<'_, [T]> {
+        NonNullValuesIter::new(self.values(), self.validity())
+    }
+
     /// Returns the length of this array
     #[inline]
     pub fn len(&self) -> usize {
@@ -165,9 +176,9 @@ impl<T: NativeType> PrimitiveArray<T> {
         self.validity.as_ref()
     }
 
-    /// Returns the arrays' [`DataType`].
+    /// Returns the arrays' [`ArrowDataType`].
     #[inline]
-    pub fn data_type(&self) -> &DataType {
+    pub fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 
@@ -190,18 +201,18 @@ impl<T: NativeType> PrimitiveArray<T> {
         *self.values.get_unchecked(i)
     }
 
-    /// Returns the element at index `i` or `None` if it is null
-    /// # Panics
-    /// iff `i >= self.len()`
-    #[inline]
-    pub fn get(&self, i: usize) -> Option<T> {
-        if !self.is_null(i) {
-            // soundness: Array::is_null panics if i >= self.len
-            unsafe { Some(self.value_unchecked(i)) }
-        } else {
-            None
-        }
-    }
+    // /// Returns the element at index `i` or `None` if it is null
+    // /// # Panics
+    // /// iff `i >= self.len()`
+    // #[inline]
+    // pub fn get(&self, i: usize) -> Option<T> {
+    //     if !self.is_null(i) {
+    //         // soundness: Array::is_null panics if i >= self.len
+    //         unsafe { Some(self.value_unchecked(i)) }
+    //     } else {
+    //         None
+    //     }
+    // }
 
     /// Slices this [`PrimitiveArray`] by an offset and length.
     /// # Implementation
@@ -273,7 +284,7 @@ impl<T: NativeType> PrimitiveArray<T> {
 
     /// Returns its internal representation
     #[must_use]
-    pub fn into_inner(self) -> (DataType, Buffer<T>, Option<Bitmap>) {
+    pub fn into_inner(self) -> (ArrowDataType, Buffer<T>, Option<Bitmap>) {
         let Self {
             data_type,
             values,
@@ -285,7 +296,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     /// Creates a `[PrimitiveArray]` from its internal representation.
     /// This is the inverted from `[PrimitiveArray::into_inner]`
     pub fn from_inner(
-        data_type: DataType,
+        data_type: ArrowDataType,
         values: Buffer<T>,
         validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
@@ -299,7 +310,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     /// # Safety
     /// Callers must ensure all invariants of this struct are upheld.
     pub unsafe fn from_inner_unchecked(
-        data_type: DataType,
+        data_type: ArrowDataType,
         values: Buffer<T>,
         validity: Option<Bitmap>,
     ) -> Self {
@@ -355,13 +366,13 @@ impl<T: NativeType> PrimitiveArray<T> {
     }
 
     /// Returns a new empty (zero-length) [`PrimitiveArray`].
-    pub fn new_empty(data_type: DataType) -> Self {
+    pub fn new_empty(data_type: ArrowDataType) -> Self {
         Self::new(data_type, Buffer::new(), None)
     }
 
     /// Returns a new [`PrimitiveArray`] where all slots are null / `None`.
     #[inline]
-    pub fn new_null(data_type: DataType, length: usize) -> Self {
+    pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
         Self::new(
             data_type,
             vec![T::default(); length].into(),
@@ -420,7 +431,7 @@ impl<T: NativeType> PrimitiveArray<T> {
     /// This function errors iff:
     /// * The validity is not `None` and its length is different from `values`'s length
     /// * The `data_type`'s [`PhysicalType`] is not equal to [`PhysicalType::Primitive`].
-    pub fn new(data_type: DataType, values: Buffer<T>, validity: Option<Bitmap>) -> Self {
+    pub fn new(data_type: ArrowDataType, values: Buffer<T>, validity: Option<Bitmap>) -> Self {
         Self::try_new(data_type, values, validity).unwrap()
     }
 }
@@ -435,6 +446,37 @@ impl<T: NativeType> Array for PrimitiveArray<T> {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
+    }
+}
+
+impl<T: NativeType> SliceAble for PrimitiveArray<T> {
+    unsafe fn slice_unchecked(&self, range: Range<usize>) -> Self {
+        self.clone().sliced_unchecked(range.start, range.len())
+    }
+
+    fn slice(&self, range: Range<usize>) -> Self {
+        self.clone().sliced(range.start, range.len())
+    }
+}
+
+impl<T: NativeType> Indexable for PrimitiveArray<T> {
+    type Item = Option<T>;
+
+    fn get(&self, i: usize) -> Self::Item {
+        if !self.is_null(i) {
+            // soundness: Array::is_null panics if i >= self.len
+            unsafe { Some(self.value_unchecked(i)) }
+        } else {
+            None
+        }
+    }
+
+    unsafe fn get_unchecked(&self, i: usize) -> Self::Item {
+        if !self.is_null_unchecked(i) {
+            Some(self.value_unchecked(i))
+        } else {
+            None
+        }
     }
 }
 
@@ -503,5 +545,17 @@ pub type UInt64Vec = MutablePrimitiveArray<u64>;
 impl<T: NativeType> Default for PrimitiveArray<T> {
     fn default() -> Self {
         PrimitiveArray::new(T::PRIMITIVE.into(), Default::default(), None)
+    }
+}
+
+impl<T: NativeType> Bounded for PrimitiveArray<T> {
+    fn len(&self) -> usize {
+        self.values.len()
+    }
+}
+
+impl<T: NativeType> NullCount for PrimitiveArray<T> {
+    fn null_count(&self) -> usize {
+        <Self as Array>::null_count(self)
     }
 }

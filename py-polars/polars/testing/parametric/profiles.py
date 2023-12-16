@@ -25,7 +25,7 @@ def load_profile(
         a custom profile with that value).
 
     set_environment : bool, default False
-        If True, also set the environment variable ``POLARS_HYPOTHESIS_PROFILE``
+        If True, also set the environment variable `POLARS_HYPOTHESIS_PROFILE`
         to the given profile name/value.
 
     Examples
@@ -73,7 +73,7 @@ def load_profile(
 
 def set_profile(profile: ParametricProfileNames | int) -> None:
     """
-    Set the env var ``POLARS_HYPOTHESIS_PROFILE`` to the given profile name/value.
+    Set the env var `POLARS_HYPOTHESIS_PROFILE` to the given profile name/value.
 
     Parameters
     ----------

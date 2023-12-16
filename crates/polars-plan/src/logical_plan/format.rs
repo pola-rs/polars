@@ -278,7 +278,7 @@ impl Debug for Expr {
             Filter { input, by } => {
                 write!(f, "{input:?}.filter({by:?})")
             },
-            Take {
+            Gather {
                 expr,
                 idx,
                 returns_scalar,
@@ -286,7 +286,7 @@ impl Debug for Expr {
                 if *returns_scalar {
                     write!(f, "{expr:?}.get({idx:?})")
                 } else {
-                    write!(f, "{expr:?}.take({idx:?})")
+                    write!(f, "{expr:?}.gather({idx:?})")
                 }
             },
             SubPlan(lf, _) => {
@@ -323,7 +323,7 @@ impl Debug for Expr {
                     NUnique(expr) => write!(f, "{expr:?}.n_unique()"),
                     Sum(expr) => write!(f, "{expr:?}.sum()"),
                     AggGroups(expr) => write!(f, "{expr:?}.groups()"),
-                    Count(expr) => write!(f, "{expr:?}.count()"),
+                    Count(expr, _) => write!(f, "{expr:?}.count()"),
                     Var(expr, _) => write!(f, "{expr:?}.var()"),
                     Std(expr, _) => write!(f, "{expr:?}.std()"),
                     Quantile { expr, .. } => write!(f, "{expr:?}.quantile()"),

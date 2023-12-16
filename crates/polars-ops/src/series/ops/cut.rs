@@ -13,7 +13,7 @@ fn map_cats(
     let cl: Vec<&str> = cutlabs.iter().map(String::as_str).collect();
 
     let out_name = format!("{}_bin", s.name());
-    let mut bld = CategoricalChunkedBuilder::new(&out_name, s.len());
+    let mut bld = CategoricalChunkedBuilder::new(&out_name, s.len(), Default::default());
     let s2 = s.cast(&DataType::Float64)?;
     // It would be nice to parallelize this
     let s_iter = s2.f64()?.into_iter();

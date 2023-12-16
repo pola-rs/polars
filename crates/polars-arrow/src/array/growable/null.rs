@@ -2,23 +2,23 @@ use std::sync::Arc;
 
 use super::Growable;
 use crate::array::{Array, NullArray};
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 /// Concrete [`Growable`] for the [`NullArray`].
 pub struct GrowableNull {
-    data_type: DataType,
+    data_type: ArrowDataType,
     length: usize,
 }
 
 impl Default for GrowableNull {
     fn default() -> Self {
-        Self::new(DataType::Null)
+        Self::new(ArrowDataType::Null)
     }
 }
 
 impl GrowableNull {
     /// Creates a new [`GrowableNull`].
-    pub fn new(data_type: DataType) -> Self {
+    pub fn new(data_type: ArrowDataType) -> Self {
         Self {
             data_type,
             length: 0,

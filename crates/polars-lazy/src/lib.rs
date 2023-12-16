@@ -60,7 +60,7 @@
 //!
 //! assert!(new.column("new_column")
 //!     .unwrap()
-//!     .series_equal(
+//!     .equals(
 //!         &Series::new("new_column", &[50, 40, 30, 20, 10])
 //!     )
 //! );
@@ -93,7 +93,7 @@
 //!
 //! assert!(new.column("new_column")
 //!     .unwrap()
-//!     .series_equal(
+//!     .equals(
 //!         &Series::new("new_column", &[100, 100, 3, 4, 5])
 //!     )
 //! );
@@ -130,7 +130,7 @@
 //! Below we lazily call a custom closure of type `Series => Result<Series>`. Because the closure
 //! changes the type/variant of the Series we also define the return type. This is important because
 //! due to the laziness the types should be known beforehand. Note that by applying these custom
-//! functions you have access the the whole **eager API** of the Series/ChunkedArrays.
+//! functions you have access to the whole **eager API** of the Series/ChunkedArrays.
 //!
 //!```rust
 //! #[macro_use] extern crate polars_core;

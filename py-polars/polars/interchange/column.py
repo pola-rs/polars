@@ -31,7 +31,7 @@ class PolarsColumn(Column):
     column
         The Polars Series backing the column object.
     allow_copy
-        Allow data to be copied during operations on this column. If set to ``False``,
+        Allow data to be copied during operations on this column. If set to `False`,
         a RuntimeError will be raised if data would be copied.
 
     """
@@ -118,7 +118,7 @@ class PolarsColumn(Column):
 
         Notes
         -----
-        When ``n_chunks`` is higher than the number of chunks in the column, a slice
+        When `n_chunks` is higher than the number of chunks in the column, a slice
         must be performed that is not on the chunk boundary. This will trigger some
         compute if the column contains null values or if the column is of data type
         boolean.

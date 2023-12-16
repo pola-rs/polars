@@ -1,9 +1,11 @@
+use polars_utils::hashing::{hash_to_partition, DirtyHash};
+
 use super::*;
 
 /// Only keeps track of membership in right table
 pub(super) fn create_probe_table_semi_anti<T, I>(keys: Vec<I>) -> Vec<PlHashSet<T>>
 where
-    T: Send + Hash + Eq + Sync + Copy + AsU64,
+    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
     I: IntoIterator<Item = T> + Copy + Send + Sync,
 {
     let n_partitions = _set_partition_size();
@@ -13,14 +15,10 @@ where
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
     POOL.install(|| {
         (0..n_partitions).into_par_iter().map(|partition_no| {
-            let partition_no = partition_no as u64;
-
             let mut hash_tbl: PlHashSet<T> = PlHashSet::with_capacity(_HASHMAP_INIT_SIZE);
-
-            let n_partitions = n_partitions as u64;
             for keys in &keys {
                 keys.into_iter().for_each(|k| {
-                    if this_partition(k.as_u64(), partition_no, n_partitions) {
+                    if partition_no == hash_to_partition(k.dirty_hash(), n_partitions) {
                         hash_tbl.insert(k);
                     }
                 });
@@ -37,7 +35,7 @@ pub(super) fn semi_anti_impl<T, I>(
 ) -> impl ParallelIterator<Item = (IdxSize, bool)>
 where
     I: IntoIterator<Item = T> + Copy + Send + Sync,
-    T: Send + Hash + Eq + Sync + Copy + AsU64,
+    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
 {
     // first we hash one relation
     let hash_sets = create_probe_table_semi_anti(build);
@@ -45,8 +43,7 @@ where
     // we determine the offset so that we later know which index to store in the join tuples
     let offsets = probe_to_offsets(&probe);
 
-    let n_tables = hash_sets.len() as u64;
-    debug_assert!(n_tables.is_power_of_two());
+    let n_tables = hash_sets.len();
 
     // next we probe the other relation
     POOL.install(move || {
@@ -67,7 +64,7 @@ where
                     let idx_a = (idx_a + offset) as IdxSize;
                     // probe table that contains the hashed value
                     let current_probe_table = unsafe {
-                        get_hash_tbl_threaded_join_partitioned(k.as_u64(), hash_sets, n_tables)
+                        hash_sets.get_unchecked(hash_to_partition(k.dirty_hash(), n_tables))
                     };
 
                     // we already hashed, so we don't have to hash again.
@@ -88,7 +85,7 @@ where
 pub(super) fn hash_join_tuples_left_anti<T, I>(probe: Vec<I>, build: Vec<I>) -> Vec<IdxSize>
 where
     I: IntoIterator<Item = T> + Copy + Send + Sync,
-    T: Send + Hash + Eq + Sync + Copy + AsU64,
+    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
 {
     semi_anti_impl(probe, build)
         .filter(|tpls| !tpls.1)
@@ -99,7 +96,7 @@ where
 pub(super) fn hash_join_tuples_left_semi<T, I>(probe: Vec<I>, build: Vec<I>) -> Vec<IdxSize>
 where
     I: IntoIterator<Item = T> + Copy + Send + Sync,
-    T: Send + Hash + Eq + Sync + Copy + AsU64,
+    T: Send + Hash + Eq + Sync + Copy + DirtyHash,
 {
     semi_anti_impl(probe, build)
         .filter(|tpls| tpls.1)

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import os
+import tempfile
 import time
 from datetime import date
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -12,8 +15,6 @@ from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from polars.type_aliases import JoinStrategy
 
 pytestmark = pytest.mark.xdist_group("streaming")
@@ -41,7 +42,7 @@ def test_streaming_categoricals_5921() -> None:
 
     for out in [out_eager, out_lazy]:
         assert out.dtypes == [pl.Categorical, pl.Int64]
-        assert out.to_dict(False) == {"X": ["a", "b"], "Y": [2, 1]}
+        assert out.to_dict(as_series=False) == {"X": ["a", "b"], "Y": [2, 1]}
 
 
 def test_streaming_block_on_literals_6054() -> None:
@@ -50,7 +51,7 @@ def test_streaming_block_on_literals_6054() -> None:
 
     assert df.lazy().with_columns(s).group_by("col_1").agg(pl.all().first()).collect(
         streaming=True
-    ).sort("col_1").to_dict(False) == {"col_1": [0, 1], "col_2": [0, 5]}
+    ).sort("col_1").to_dict(as_series=False) == {"col_1": [0, 1], "col_2": [0, 5]}
 
 
 def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
@@ -63,7 +64,10 @@ def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
             schema={"a": pl.Int64, "b": pl.Int64},
             streamable=True,
         )
-    ).collect(streaming=True).to_dict(False) == {"a": [1, 2, 3], "b": [1, 2, 3]}
+    ).collect(streaming=True).to_dict(as_series=False) == {
+        "a": [1, 2, 3],
+        "b": [1, 2, 3],
+    }
 
     (_, err) = capfd.readouterr()
     assert "df -> function -> ordered_sink" in err
@@ -94,19 +98,19 @@ def test_streaming_literal_expansion() -> None:
         z=pl.col("z"),
     )
 
-    assert q.collect(streaming=True).to_dict(False) == {
+    assert q.collect(streaming=True).to_dict(as_series=False) == {
         "x": ["constant", "constant"],
         "y": ["a", "b"],
         "z": [1, 2],
     }
     assert q.group_by(["x", "y"]).agg(pl.mean("z")).sort("y").collect(
         streaming=True
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "x": ["constant", "constant"],
         "y": ["a", "b"],
         "z": [1.0, 2.0],
     }
-    assert q.group_by(["x"]).agg(pl.mean("z")).collect().to_dict(False) == {
+    assert q.group_by(["x"]).agg(pl.mean("z")).collect().to_dict(as_series=False) == {
         "x": ["constant"],
         "z": [1.5],
     }
@@ -153,9 +157,7 @@ def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
 
     q = pl.DataFrame({"a": [1, 2]}).lazy()
 
-    with pytest.warns(
-        PolarsInefficientMapWarning, match="In this case, you can replace"
-    ):
+    with pytest.warns(PolarsInefficientMapWarning, match="with this one instead"):
         (
             q.select(
                 pl.col("a").map_elements(lambda x: x * 2, return_dtype=pl.Int64)
@@ -173,7 +175,7 @@ def test_streaming_ternary() -> None:
             pl.when(pl.col("a") >= 2).then(pl.col("a")).otherwise(None).alias("b"),
         )
         .explain(streaming=True)
-        .startswith("--- PIPELINE")
+        .startswith("--- STREAMING")
     )
 
 
@@ -190,7 +192,10 @@ def test_streaming_sortedness_propagation_9494() -> None:
         .group_by_dynamic("when", every="1mo")
         .agg(pl.col("what").sum())
         .collect(streaming=True)
-    ).to_dict(False) == {"when": [date(2023, 5, 1), date(2023, 6, 1)], "what": [3, 3]}
+    ).to_dict(as_series=False) == {
+        "when": [date(2023, 5, 1), date(2023, 6, 1)],
+        "what": [3, 3],
+    }
 
 
 @pytest.mark.write_disk()
@@ -272,13 +277,13 @@ def test_streaming_empty_df() -> None:
         .collect(streaming=True)
     )
 
-    assert result.to_dict(False) == {"a": [], "b": [], "b_right": []}
+    assert result.to_dict(as_series=False) == {"a": [], "b": [], "b_right": []}
 
 
 def test_streaming_duplicate_cols_5537() -> None:
     assert pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]}).lazy().with_columns(
         [(pl.col("a") * 2).alias("foo"), (pl.col("a") * 3)]
-    ).collect(streaming=True).to_dict(False) == {
+    ).collect(streaming=True).to_dict(as_series=False) == {
         "a": [3, 6, 9],
         "b": [1, 2, 3],
         "foo": [2, 4, 6],
@@ -290,12 +295,12 @@ def test_null_sum_streaming_10455() -> None:
         {
             "x": [1] * 10,
             "y": [None] * 10,
-        }
+        },
+        schema={"x": pl.Int64, "y": pl.Float32},
     )
-    assert df.lazy().group_by("x").sum().collect(streaming=True).to_dict(False) == {
-        "x": [1],
-        "y": [0.0],
-    }
+    result = df.lazy().group_by("x").sum().collect(streaming=True)
+    expected = {"x": [1], "y": [0.0]}
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_boolean_agg_schema() -> None:
@@ -323,4 +328,20 @@ def test_streaming_11219() -> None:
 
     assert lf.with_context([lf_other, lf_other2]).select(
         pl.col("b") + pl.col("c").first()
-    ).collect(streaming=True).to_dict(False) == {"b": ["afoo", "cfoo", None]}
+    ).collect(streaming=True).to_dict(as_series=False) == {"b": ["afoo", "cfoo", None]}
+
+
+@pytest.mark.write_disk()
+def test_custom_temp_dir(monkeypatch: Any) -> None:
+    test_temp_dir = "test_temp_dir"
+    temp_dir = Path(tempfile.gettempdir()) / test_temp_dir
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(temp_dir))
+
+    s = pl.arange(0, 100_000, eager=True).rename("idx")
+    df = s.shuffle().to_frame()
+    df.lazy().sort("idx").collect(streaming=True)
+
+    assert os.listdir(temp_dir), f"Temp directory '{temp_dir}' is empty"

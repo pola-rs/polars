@@ -764,6 +764,7 @@ fn test_rolling_lookback() {
             0,
             None,
         )
+        .unwrap()
         .collect::<PolarsResult<Vec<_>>>()
         .unwrap();
         let g1 = group_by_values_iter_partial_lookbehind(

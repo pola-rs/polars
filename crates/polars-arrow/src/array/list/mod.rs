@@ -1,7 +1,7 @@
 use super::specification::try_check_offsets_bounds;
 use super::{new_empty_array, Array};
 use crate::bitmap::Bitmap;
-use crate::datatypes::{DataType, Field};
+use crate::datatypes::{ArrowDataType, Field};
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
 
 #[cfg(feature = "arrow_rs")]
@@ -17,7 +17,7 @@ use polars_error::{polars_bail, PolarsResult};
 /// An [`Array`] semantically equivalent to `Vec<Option<Vec<Option<T>>>>` with Arrow's in-memory.
 #[derive(Clone)]
 pub struct ListArray<O: Offset> {
-    data_type: DataType,
+    data_type: ArrowDataType,
     offsets: OffsetsBuffer<O>,
     values: Box<dyn Array>,
     validity: Option<Bitmap>,
@@ -35,7 +35,7 @@ impl<O: Offset> ListArray<O> {
     /// # Implementation
     /// This function is `O(1)`
     pub fn try_new(
-        data_type: DataType,
+        data_type: ArrowDataType,
         offsets: OffsetsBuffer<O>,
         values: Box<dyn Array>,
         validity: Option<Bitmap>,
@@ -74,7 +74,7 @@ impl<O: Offset> ListArray<O> {
     /// # Implementation
     /// This function is `O(1)`
     pub fn new(
-        data_type: DataType,
+        data_type: ArrowDataType,
         offsets: OffsetsBuffer<O>,
         values: Box<dyn Array>,
         validity: Option<Bitmap>,
@@ -83,14 +83,14 @@ impl<O: Offset> ListArray<O> {
     }
 
     /// Returns a new empty [`ListArray`].
-    pub fn new_empty(data_type: DataType) -> Self {
+    pub fn new_empty(data_type: ArrowDataType) -> Self {
         let values = new_empty_array(Self::get_child_type(&data_type).clone());
         Self::new(data_type, OffsetsBuffer::default(), values, None)
     }
 
     /// Returns a new null [`ListArray`].
     #[inline]
-    pub fn new_null(data_type: DataType, length: usize) -> Self {
+    pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
         let child = Self::get_child_type(&data_type).clone();
         Self::new(
             data_type,
@@ -181,44 +181,44 @@ impl<O: Offset> ListArray<O> {
 }
 
 impl<O: Offset> ListArray<O> {
-    /// Returns a default [`DataType`]: inner field is named "item" and is nullable
-    pub fn default_datatype(data_type: DataType) -> DataType {
+    /// Returns a default [`ArrowDataType`]: inner field is named "item" and is nullable
+    pub fn default_datatype(data_type: ArrowDataType) -> ArrowDataType {
         let field = Box::new(Field::new("item", data_type, true));
         if O::IS_LARGE {
-            DataType::LargeList(field)
+            ArrowDataType::LargeList(field)
         } else {
-            DataType::List(field)
+            ArrowDataType::List(field)
         }
     }
 
     /// Returns a the inner [`Field`]
     /// # Panics
     /// Panics iff the logical type is not consistent with this struct.
-    pub fn get_child_field(data_type: &DataType) -> &Field {
+    pub fn get_child_field(data_type: &ArrowDataType) -> &Field {
         Self::try_get_child(data_type).unwrap()
     }
 
     /// Returns a the inner [`Field`]
     /// # Errors
     /// Panics iff the logical type is not consistent with this struct.
-    pub fn try_get_child(data_type: &DataType) -> PolarsResult<&Field> {
+    pub fn try_get_child(data_type: &ArrowDataType) -> PolarsResult<&Field> {
         if O::IS_LARGE {
             match data_type.to_logical_type() {
-                DataType::LargeList(child) => Ok(child.as_ref()),
+                ArrowDataType::LargeList(child) => Ok(child.as_ref()),
                 _ => polars_bail!(ComputeError: "ListArray<i64> expects DataType::LargeList"),
             }
         } else {
             match data_type.to_logical_type() {
-                DataType::List(child) => Ok(child.as_ref()),
+                ArrowDataType::List(child) => Ok(child.as_ref()),
                 _ => polars_bail!(ComputeError: "ListArray<i32> expects DataType::List"),
             }
         }
     }
 
-    /// Returns a the inner [`DataType`]
+    /// Returns a the inner [`ArrowDataType`]
     /// # Panics
     /// Panics iff the logical type is not consistent with this struct.
-    pub fn get_child_type(data_type: &DataType) -> &DataType {
+    pub fn get_child_type(data_type: &ArrowDataType) -> &ArrowDataType {
         Self::get_child_field(data_type).data_type()
     }
 }

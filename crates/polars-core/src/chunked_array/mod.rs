@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
-use arrow::legacy::prelude::ValueSize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -246,6 +245,19 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// Shrink the capacity of this array to fit its length.
     pub fn shrink_to_fit(&mut self) {
         self.chunks = vec![concatenate_owned_unchecked(self.chunks.as_slice()).unwrap()];
+    }
+
+    pub fn clear(&self) -> Self {
+        // SAFETY: we keep the correct dtype
+        unsafe {
+            self.copy_with_chunks(
+                vec![new_empty_array(
+                    self.chunks.first().unwrap().data_type().clone(),
+                )],
+                true,
+                true,
+            )
+        }
     }
 
     /// Unpack a [`Series`] to the same physical type.
@@ -828,7 +840,9 @@ pub(crate) mod test {
         let _lock = SINGLE_LOCK.lock();
         disable_string_cache();
         let ca = Utf8Chunked::new("", &[Some("foo"), None, Some("bar"), Some("ham")]);
-        let ca = ca.cast(&DataType::Categorical(None)).unwrap();
+        let ca = ca
+            .cast(&DataType::Categorical(None, Default::default()))
+            .unwrap();
         let ca = ca.categorical().unwrap();
         let v: Vec<_> = ca.physical().into_iter().collect();
         assert_eq!(v, &[Some(0), None, Some(1), Some(2)]);

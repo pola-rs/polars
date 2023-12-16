@@ -1,32 +1,35 @@
+use std::cell::Cell;
 use std::collections::VecDeque;
 use std::default::Default;
 
-use arrow::array::{Array, BinaryArray, Utf8Array};
+use arrow::array::specification::try_check_utf8;
+use arrow::array::{Array, BinaryArray, MutableBinaryValuesArray, Utf8Array};
 use arrow::bitmap::MutableBitmap;
-use arrow::datatypes::{DataType, PhysicalType};
+use arrow::datatypes::{ArrowDataType, PhysicalType};
 use arrow::offset::Offset;
-use polars_error::{to_compute_err, PolarsResult};
+use polars_error::PolarsResult;
 
 use super::super::utils::{
     extend_from_decoder, get_selected_rows, next, DecodedState, FilteredOptionalPageValidity,
     MaybeNext, OptionalPageValidity,
 };
-use super::super::{utils, Pages};
+use super::super::{utils, PagesIter};
 use super::utils::*;
 use crate::parquet::deserialize::SliceFilteredIter;
-use crate::parquet::encoding::{delta_length_byte_array, hybrid_rle, Encoding};
+use crate::parquet::encoding::{delta_bitpacked, delta_length_byte_array, hybrid_rle, Encoding};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::schema::Repetition;
+use crate::read::{ParquetError, PrimitiveLogicalType};
 
 #[derive(Debug)]
 pub(super) struct Required<'a> {
-    pub values: SizedBinaryIter<'a>,
+    pub values: std::iter::Take<BinaryIter<'a>>,
 }
 
 impl<'a> Required<'a> {
     pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
         let (_, _, values) = split_buffer(page)?;
-        let values = SizedBinaryIter::new(values, page.num_values());
+        let values = BinaryIter::new(values).take(page.num_values());
 
         Ok(Self { values })
     }
@@ -51,8 +54,8 @@ impl<'a> Delta<'a> {
         #[allow(clippy::needless_collect)] // we need to consume it to get the values
         let lengths = lengths_iter
             .by_ref()
-            .map(|x| x.map(|x| x as usize).map_err(to_compute_err))
-            .collect::<PolarsResult<Vec<_>>>()?;
+            .map(|x| x.map(|x| x as usize))
+            .collect::<Result<Vec<_>, ParquetError>>()?;
 
         let values = lengths_iter.into_values();
         Ok(Self {
@@ -83,13 +86,73 @@ impl<'a> Iterator for Delta<'a> {
 }
 
 #[derive(Debug)]
+pub(super) struct DeltaBytes<'a> {
+    prefix: std::vec::IntoIter<i32>,
+    suffix: std::vec::IntoIter<i32>,
+    data: &'a [u8],
+    data_offset: usize,
+    last_value: Vec<u8>,
+}
+
+impl<'a> DeltaBytes<'a> {
+    pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
+        let (_, _, values) = split_buffer(page)?;
+        let mut decoder = delta_bitpacked::Decoder::try_new(values)?;
+        let prefix = (&mut decoder)
+            .take(page.num_values())
+            .map(|r| r.map(|v| v as i32).unwrap())
+            .collect::<Vec<_>>();
+
+        let mut data_offset = decoder.consumed_bytes();
+        let mut decoder = delta_bitpacked::Decoder::try_new(&values[decoder.consumed_bytes()..])?;
+        let suffix = (&mut decoder)
+            .map(|r| r.map(|v| v as i32).unwrap())
+            .collect::<Vec<_>>();
+        data_offset += decoder.consumed_bytes();
+
+        Ok(Self {
+            prefix: prefix.into_iter(),
+            suffix: suffix.into_iter(),
+            data: values,
+            data_offset,
+            last_value: vec![],
+        })
+    }
+}
+
+impl<'a> Iterator for DeltaBytes<'a> {
+    type Item = &'a [u8];
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        let prefix_len = self.prefix.next()? as usize;
+        let suffix_len = self.suffix.next()? as usize;
+
+        self.last_value.truncate(prefix_len);
+        self.last_value
+            .extend_from_slice(&self.data[self.data_offset..self.data_offset + suffix_len]);
+        self.data_offset += suffix_len;
+
+        // SAFETY: the consumer will only keep one value around per iteration.
+        // We need a different API for this to work with safe code.
+        let extend_lifetime =
+            unsafe { std::mem::transmute::<&[u8], &'a [u8]>(self.last_value.as_slice()) };
+        Some(extend_lifetime)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.prefix.size_hint()
+    }
+}
+
+#[derive(Debug)]
 pub(super) struct FilteredRequired<'a> {
-    pub values: SliceFilteredIter<SizedBinaryIter<'a>>,
+    pub values: SliceFilteredIter<std::iter::Take<BinaryIter<'a>>>,
 }
 
 impl<'a> FilteredRequired<'a> {
     pub fn new(page: &'a DataPage) -> Self {
-        let values = SizedBinaryIter::new(page.buffer(), page.num_values());
+        let values = BinaryIter::new(page.buffer()).take(page.num_values());
 
         let rows = get_selected_rows(page);
         let values = SliceFilteredIter::new(values, rows);
@@ -122,7 +185,7 @@ impl<'a> FilteredDelta<'a> {
     }
 }
 
-pub(super) type Dict = Vec<Vec<u8>>;
+pub(super) type Dict = BinaryArray<i64>;
 
 #[derive(Debug)]
 pub(super) struct RequiredDictionary<'a> {
@@ -192,6 +255,8 @@ enum State<'a> {
     OptionalDictionary(OptionalPageValidity<'a>, ValuesDictionary<'a>),
     Delta(Delta<'a>),
     OptionalDelta(OptionalPageValidity<'a>, Delta<'a>),
+    DeltaByteArray(DeltaBytes<'a>),
+    OptionalDeltaByteArray(OptionalPageValidity<'a>, DeltaBytes<'a>),
     FilteredRequired(FilteredRequired<'a>),
     FilteredDelta(FilteredDelta<'a>),
     FilteredOptionalDelta(FilteredOptionalPageValidity<'a>, Delta<'a>),
@@ -215,6 +280,8 @@ impl<'a> utils::PageState<'a> for State<'a> {
             State::FilteredOptionalDelta(state, _) => state.len(),
             State::FilteredRequiredDictionary(values) => values.len(),
             State::FilteredOptionalDictionary(optional, _) => optional.len(),
+            State::DeltaByteArray(values) => values.size_hint().0,
+            State::OptionalDeltaByteArray(optional, _) => optional.len(),
         }
     }
 }
@@ -228,6 +295,7 @@ impl<O: Offset> DecodedState for (Binary<O>, MutableBitmap) {
 #[derive(Debug, Default)]
 struct BinaryDecoder<O: Offset> {
     phantom_o: std::marker::PhantomData<O>,
+    check_utf8: Cell<bool>,
 }
 
 impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
@@ -244,21 +312,41 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
 
+        let is_string = matches!(
+            page.descriptor.primitive_type.logical_type,
+            Some(PrimitiveLogicalType::String)
+        );
+        self.check_utf8.set(is_string);
+
         match (page.encoding(), dict, is_optional, is_filtered) {
-            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false, false) => Ok(
-                State::RequiredDictionary(RequiredDictionary::try_new(page, dict)?),
-            ),
+            (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false, false) => {
+                if is_string {
+                    try_check_utf8(dict.offsets(), dict.values())?;
+                }
+                Ok(State::RequiredDictionary(RequiredDictionary::try_new(
+                    page, dict,
+                )?))
+            },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), true, false) => {
+                if is_string {
+                    try_check_utf8(dict.offsets(), dict.values())?;
+                }
                 Ok(State::OptionalDictionary(
                     OptionalPageValidity::try_new(page)?,
                     ValuesDictionary::try_new(page, dict)?,
                 ))
             },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false, true) => {
+                if is_string {
+                    try_check_utf8(dict.offsets(), dict.values())?;
+                }
                 FilteredRequiredDictionary::try_new(page, dict)
                     .map(State::FilteredRequiredDictionary)
             },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), true, true) => {
+                if is_string {
+                    try_check_utf8(dict.offsets(), dict.values())?;
+                }
                 Ok(State::FilteredOptionalDictionary(
                     FilteredOptionalPageValidity::try_new(page)?,
                     ValuesDictionary::try_new(page, dict)?,
@@ -300,6 +388,13 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                 FilteredOptionalPageValidity::try_new(page)?,
                 Delta::try_new(page)?,
             )),
+            (Encoding::DeltaByteArray, _, true, false) => Ok(State::OptionalDeltaByteArray(
+                OptionalPageValidity::try_new(page)?,
+                DeltaBytes::try_new(page)?,
+            )),
+            (Encoding::DeltaByteArray, _, false, false) => {
+                Ok(State::DeltaByteArray(DeltaBytes::try_new(page)?))
+            },
             _ => Err(utils::not_implemented(page)),
         }
     }
@@ -316,8 +411,10 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
         state: &mut Self::State,
         decoded: &mut Self::DecodedState,
         additional: usize,
-    ) {
+    ) -> PolarsResult<()> {
         let (values, validity) = decoded;
+        let mut validate_utf8 = self.check_utf8.take();
+        let len_before = values.offsets.len();
         match state {
             State::Optional(page_validity, page_values) => extend_from_decoder(
                 validity,
@@ -366,6 +463,8 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                 }
             },
             State::OptionalDictionary(page_validity, page_values) => {
+                // Already done on the dict.
+                validate_utf8 = false;
                 let page_dict = &page_values.dict;
                 utils::extend_from_decoder(
                     validity,
@@ -375,16 +474,18 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                     &mut page_values
                         .values
                         .by_ref()
-                        .map(|index| page_dict[index.unwrap() as usize].as_ref()),
+                        .map(|index| page_dict.value(index.unwrap() as usize)),
                 )
             },
             State::RequiredDictionary(page) => {
+                // Already done on the dict.
+                validate_utf8 = false;
                 let page_dict = &page.dict;
 
                 for x in page
                     .values
                     .by_ref()
-                    .map(|index| page_dict[index.unwrap() as usize].as_ref())
+                    .map(|index| page_dict.value(index.unwrap() as usize))
                     .take(additional)
                 {
                     values.push(x)
@@ -409,17 +510,21 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                 );
             },
             State::FilteredRequiredDictionary(page) => {
+                // Already done on the dict.
+                validate_utf8 = false;
                 let page_dict = &page.dict;
                 for x in page
                     .values
                     .by_ref()
-                    .map(|index| page_dict[index.unwrap() as usize].as_ref())
+                    .map(|index| page_dict.value(index.unwrap() as usize))
                     .take(additional)
                 {
                     values.push(x)
                 }
             },
             State::FilteredOptionalDictionary(page_validity, page_values) => {
+                // Already done on the dict.
+                validate_utf8 = false;
                 let page_dict = &page_values.dict;
                 utils::extend_from_decoder(
                     validity,
@@ -429,9 +534,30 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                     &mut page_values
                         .values
                         .by_ref()
-                        .map(|index| page_dict[index.unwrap() as usize].as_ref()),
+                        .map(|index| page_dict.value(index.unwrap() as usize)),
                 )
             },
+            State::OptionalDeltaByteArray(page_validity, page_values) => {
+                utils::extend_from_decoder(
+                    validity,
+                    page_validity,
+                    Some(additional),
+                    values,
+                    page_values,
+                )
+            },
+            State::DeltaByteArray(page_values) => {
+                for x in page_values.take(additional) {
+                    values.push(x)
+                }
+            },
+        }
+
+        if validate_utf8 {
+            let offsets = &values.offsets.as_slice()[len_before..];
+            try_check_utf8(offsets, &values.values)
+        } else {
+            Ok(())
         }
     }
 
@@ -441,7 +567,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
 }
 
 pub(super) fn finish<O: Offset>(
-    data_type: &DataType,
+    data_type: &ArrowDataType,
     mut values: Binary<O>,
     mut validity: MutableBitmap,
 ) -> PolarsResult<Box<dyn Array>> {
@@ -457,28 +583,35 @@ pub(super) fn finish<O: Offset>(
             validity.into(),
         )
         .map(|x| x.boxed()),
-        PhysicalType::Utf8 | PhysicalType::LargeUtf8 => Utf8Array::<O>::try_new(
-            data_type.clone(),
-            values.offsets.into(),
-            values.values.into(),
-            validity.into(),
-        )
-        .map(|x| x.boxed()),
+        PhysicalType::Utf8 | PhysicalType::LargeUtf8 => unsafe {
+            Ok(Utf8Array::<O>::new_unchecked(
+                data_type.clone(),
+                values.offsets.into(),
+                values.values.into(),
+                validity.into(),
+            )
+            .boxed())
+        },
         _ => unreachable!(),
     }
 }
 
-pub struct Iter<O: Offset, I: Pages> {
+pub struct Iter<O: Offset, I: PagesIter> {
     iter: I,
-    data_type: DataType,
+    data_type: ArrowDataType,
     items: VecDeque<(Binary<O>, MutableBitmap)>,
     dict: Option<Dict>,
     chunk_size: Option<usize>,
     remaining: usize,
 }
 
-impl<O: Offset, I: Pages> Iter<O, I> {
-    pub fn new(iter: I, data_type: DataType, chunk_size: Option<usize>, num_rows: usize) -> Self {
+impl<O: Offset, I: PagesIter> Iter<O, I> {
+    pub fn new(
+        iter: I,
+        data_type: ArrowDataType,
+        chunk_size: Option<usize>,
+        num_rows: usize,
+    ) -> Self {
         Self {
             iter,
             data_type,
@@ -490,31 +623,38 @@ impl<O: Offset, I: Pages> Iter<O, I> {
     }
 }
 
-impl<O: Offset, I: Pages> Iterator for Iter<O, I> {
+impl<O: Offset, I: PagesIter> Iterator for Iter<O, I> {
     type Item = PolarsResult<Box<dyn Array>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let maybe_state = next(
-            &mut self.iter,
-            &mut self.items,
-            &mut self.dict,
-            &mut self.remaining,
-            self.chunk_size,
-            &BinaryDecoder::<O>::default(),
-        );
-        match maybe_state {
-            MaybeNext::Some(Ok((values, validity))) => {
-                Some(finish(&self.data_type, values, validity))
-            },
-            MaybeNext::Some(Err(e)) => Some(Err(e)),
-            MaybeNext::None => None,
-            MaybeNext::More => self.next(),
+        let decoder = BinaryDecoder::<O>::default();
+        loop {
+            let maybe_state = next(
+                &mut self.iter,
+                &mut self.items,
+                &mut self.dict,
+                &mut self.remaining,
+                self.chunk_size,
+                &decoder,
+            );
+            match maybe_state {
+                MaybeNext::Some(Ok((values, validity))) => {
+                    return Some(finish(&self.data_type, values, validity))
+                },
+                MaybeNext::Some(Err(e)) => return Some(Err(e)),
+                MaybeNext::None => return None,
+                MaybeNext::More => continue,
+            }
         }
     }
 }
 
 pub(super) fn deserialize_plain(values: &[u8], num_values: usize) -> Dict {
-    SizedBinaryIter::new(values, num_values)
-        .map(|x| x.to_vec())
-        .collect()
+    let all = BinaryIter::new(values).take(num_values).collect::<Vec<_>>();
+    let values_size = all.iter().map(|v| v.len()).sum::<usize>();
+    let mut dict_values = MutableBinaryValuesArray::<i64>::with_capacities(all.len(), values_size);
+    for v in all {
+        dict_values.push(v)
+    }
+    dict_values.into()
 }

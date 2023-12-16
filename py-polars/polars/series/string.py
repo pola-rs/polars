@@ -47,7 +47,7 @@ class StringNameSpace:
         format
             Format to use for conversion. Refer to the `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for the full specification. Example: ``"%Y-%m-%d"``.
+            for the full specification. Example: `"%Y-%m-%d"`.
             If set to None (default), the format is inferred from the data.
         strict
             Raise an error if any conversion fails.
@@ -56,7 +56,7 @@ class StringNameSpace:
             in the target string.
 
             .. note::
-                Using ``exact=False`` introduces a performance penalty - cleaning your
+                Using `exact=False` introduces a performance penalty - cleaning your
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the conversion.
@@ -96,13 +96,13 @@ class StringNameSpace:
         format
             Format to use for conversion. Refer to the `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for the full specification. Example: ``"%Y-%m-%d %H:%M:%S"``.
+            for the full specification. Example: `"%Y-%m-%d %H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
         time_unit : {None, 'us', 'ns', 'ms'}
             Unit of time for the resulting Datetime column. If set to None (default),
             the time unit is inferred from the format string if given, eg:
-            ``"%F %T%.3f"`` => ``Datetime("ms")``. If no fractional second component is
-            found, the default is ``"us"``.
+            `"%F %T%.3f"` => `Datetime("ms")`. If no fractional second component is
+            found, the default is `"us"`.
         time_zone
             Time zone for the resulting Datetime column.
         strict
@@ -112,7 +112,7 @@ class StringNameSpace:
             in the target string.
 
             .. note::
-                Using ``exact=False`` introduces a performance penalty - cleaning your
+                Using `exact=False` introduces a performance penalty - cleaning your
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted datetimes to apply the conversion.
@@ -122,24 +122,24 @@ class StringNameSpace:
 
             .. deprecated:: 0.18.0
                 This is now a no-op, you can safely remove it.
-                Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
+                Offset-naive strings are parsed as `pl.Datetime(time_unit)`,
                 and offset-aware strings are converted to
-                ``pl.Datetime(time_unit, "UTC")``.
+                `pl.Datetime(time_unit, "UTC")`.
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
-            - ``None`` (default): raise
-            - ``True``: use the earliest datetime
-            - ``False``: use the latest datetime
+            - `None` (default): raise
+            - `True`: use the earliest datetime
+            - `False`: use the latest datetime
 
             .. deprecated:: 0.19.0
                 Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
-            - ``'raise'`` (default): raise
-            - ``'earliest'``: use the earliest datetime
-            - ``'latest'``: use the latest datetime
+            - `'raise'` (default): raise
+            - `'earliest'`: use the earliest datetime
+            - `'latest'`: use the latest datetime
 
         Examples
         --------
@@ -168,7 +168,7 @@ class StringNameSpace:
         format
             Format to use for conversion. Refer to the `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for the full specification. Example: ``"%H:%M:%S"``.
+            for the full specification. Example: `"%H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
         strict
             Raise an error if any conversion fails.
@@ -210,7 +210,7 @@ class StringNameSpace:
         format
             Format to use for conversion. Refer to the `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for the full specification. Example: ``"%Y-%m-%d %H:%M:%S"``.
+            for the full specification. Example: `"%Y-%m-%d %H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
         strict
             Raise an error if any conversion fails.
@@ -219,31 +219,31 @@ class StringNameSpace:
             in the target string. Conversion to the Time type is always exact.
 
             .. note::
-                Using ``exact=False`` introduces a performance penalty - cleaning your
+                Using `exact=False` introduces a performance penalty - cleaning your
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
-            - ``None`` (default): raise
-            - ``True``: use the earliest datetime
-            - ``False``: use the latest datetime
+            - `None` (default): raise
+            - `True`: use the earliest datetime
+            - `False`: use the latest datetime
 
             .. deprecated:: 0.19.0
                 Use `ambiguous` instead
         ambiguous
             Determine how to deal with ambiguous datetimes:
 
-            - ``'raise'`` (default): raise
-            - ``'earliest'``: use the earliest datetime
-            - ``'latest'``: use the latest datetime
+            - `'raise'` (default): raise
+            - `'earliest'`: use the earliest datetime
+            - `'latest'`: use the latest datetime
 
         Notes
         -----
         When converting to a Datetime type, the time unit is inferred from the format
-        string if given, eg: ``"%F %T%.3f"`` => ``Datetime("ms")``. If no fractional
-        second component is found, the default is ``"us"``.
+        string if given, eg: `"%F %T%.3f"` => `Datetime("ms")`. If no fractional
+        second component is found, the default is `"us"`.
 
         Examples
         --------
@@ -294,7 +294,7 @@ class StringNameSpace:
         """
         Convert a Utf8 column into a Decimal column.
 
-        This method infers the needed parameters ``precision`` and ``scale``.
+        This method infers the needed parameters `precision` and `scale`.
 
         Parameters
         ----------
@@ -308,15 +308,15 @@ class StringNameSpace:
         ... )
         >>> s.str.to_decimal()
         shape: (7,)
-        Series: '' [decimal[2]]
+        Series: '' [decimal[*,2]]
         [
             40.12
             3420.13
             120134.19
             3212.98
-            12.9
+            12.90
             143.09
-            143.9
+            143.90
         ]
 
         """
@@ -390,7 +390,7 @@ class StringNameSpace:
 
         """
 
-    def concat(self, delimiter: str = "-") -> Series:
+    def concat(self, delimiter: str = "-", *, ignore_nulls: bool = True) -> Series:
         """
         Vertically concat the values in the Series to a single string value.
 
@@ -398,6 +398,11 @@ class StringNameSpace:
         ----------
         delimiter
             The delimiter to insert between consecutive string values.
+        ignore_nulls
+            Ignore null values (default).
+
+            If set to ``False``, null values will be propagated.
+            if the column contains any null values, the output is ``None``.
 
         Returns
         -------
@@ -406,8 +411,18 @@ class StringNameSpace:
 
         Examples
         --------
-        >>> pl.Series([1, None, 2]).str.concat("-")[0]
-        '1-null-2'
+        >>> pl.Series([1, None, 2]).str.concat("-")
+        shape: (1,)
+        Series: '' [str]
+        [
+            "1-2"
+        ]
+        >>> pl.Series([1, None, 2]).str.concat("-", ignore_nulls=False)
+        shape: (1,)
+        Series: '' [str]
+        [
+            null
+        ]
 
         """
 
@@ -423,7 +438,7 @@ class StringNameSpace:
             A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
         literal
-            Treat ``pattern`` as a literal string, not as a regular expression.
+            Treat `pattern` as a literal string, not as a regular expression.
         strict
             Raise an error if the underlying pattern is not a valid regex,
             otherwise mask out with a null value.
@@ -431,7 +446,7 @@ class StringNameSpace:
         Notes
         -----
         To modify regular expression behaviour (such as case-sensitivity) with
-        flags, use the inline ``(?iLmsuxU)`` syntax. For example:
+        flags, use the inline `(?iLmsuxU)` syntax. For example:
 
         Default (case-sensitive) match:
 
@@ -576,13 +591,13 @@ class StringNameSpace:
 
         """
 
-    def json_extract(
+    def json_decode(
         self, dtype: PolarsDataType | None = None, infer_schema_length: int | None = 100
     ) -> Series:
         """
         Parse string values as JSON.
 
-        Throw errors if encounter invalid JSON strings.
+        Throws an error if invalid JSON strings are encountered.
 
         Parameters
         ----------
@@ -591,7 +606,7 @@ class StringNameSpace:
             inferred from the JSON value.
         infer_schema_length
             How many rows to parse to determine the schema.
-            If ``None`` all rows are used.
+            If `None` all rows are used.
 
         See Also
         --------
@@ -601,7 +616,7 @@ class StringNameSpace:
         Examples
         --------
         >>> s = pl.Series("json", ['{"a":1, "b": true}', None, '{"a":2, "b": false}'])
-        >>> s.str.json_extract()
+        >>> s.str.json_decode()
         shape: (3,)
         Series: 'json' [struct[2]]
         [
@@ -674,7 +689,7 @@ class StringNameSpace:
         Notes
         -----
         To modify regular expression behaviour (such as multi-line matching)
-        with flags, use the inline ``(?iLmsuxU)`` syntax. For example:
+        with flags, use the inline `(?iLmsuxU)` syntax. For example:
 
         >>> s = pl.Series(
         ...     name="lines",
@@ -721,7 +736,7 @@ class StringNameSpace:
         Extract all matches for the given regex pattern.
 
         Extract each successive non-overlapping regex match in an individual string
-        as a list. If the haystack string is ``null``, ``null`` is returned.
+        as a list. If the haystack string is `null`, `null` is returned.
 
         Parameters
         ----------
@@ -732,7 +747,7 @@ class StringNameSpace:
         Notes
         -----
         To modify regular expression behaviour (such as "verbose" mode and/or
-        case-sensitive matching) with flags, use the inline ``(?iLmsuxU)`` syntax.
+        case-sensitive matching) with flags, use the inline `(?iLmsuxU)` syntax.
         For example:
 
         >>> s = pl.Series(
@@ -769,7 +784,7 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type ``List(Utf8)``.
+            Series of data type `List(Utf8)`.
 
         Examples
         --------
@@ -853,7 +868,7 @@ class StringNameSpace:
             <https://docs.rs/regex/latest/regex/>`_. Can also be a :class:`Series` of
             regular expressions.
         literal
-            Treat ``pattern`` as a literal string, not as a regular expression.
+            Treat `pattern` as a literal string, not as a regular expression.
 
         Returns
         -------
@@ -902,17 +917,17 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type ``List(Utf8)``.
+            Series of data type `List(Utf8)`.
 
         """
 
     def split_exact(self, by: IntoExpr, n: int, *, inclusive: bool = False) -> Series:
         """
-        Split the string by a substring using ``n`` splits.
+        Split the string by a substring using `n` splits.
 
-        Results in a struct of ``n+1`` fields.
+        Results in a struct of `n+1` fields.
 
-        If it cannot make ``n`` splits, the remaining field elements will be null.
+        If it cannot make `n` splits, the remaining field elements will be null.
 
         Parameters
         ----------
@@ -968,10 +983,10 @@ class StringNameSpace:
 
     def splitn(self, by: IntoExpr, n: int) -> Series:
         """
-        Split the string by a substring, restricted to returning at most ``n`` items.
+        Split the string by a substring, restricted to returning at most `n` items.
 
-        If the number of possible splits is less than ``n-1``, the remaining field
-        elements will be null. If the number of possible splits is ``n-1`` or greater,
+        If the number of possible splits is less than `n-1`, the remaining field
+        elements will be null. If the number of possible splits is `n-1` or greater,
         the last (nth) substring will contain the remainder of the string.
 
         Parameters
@@ -1045,7 +1060,7 @@ class StringNameSpace:
         Notes
         -----
         To modify regular expression behaviour (such as case-sensitivity) with flags,
-        use the inline ``(?iLmsuxU)`` syntax. For example:
+        use the inline `(?iLmsuxU)` syntax. For example:
 
         >>> s = pl.Series(
         ...     name="weather",
@@ -1342,7 +1357,7 @@ class StringNameSpace:
         """
         Pad the start of the string with zeros until it reaches the given length.
 
-        A sign prefix (``-``) is handled by inserting the padding after the sign
+        A sign prefix (`-`) is handled by inserting the padding after the sign
         character rather than before.
 
         Parameters
@@ -1426,6 +1441,23 @@ class StringNameSpace:
 
         """
 
+    def reverse(self) -> Series:
+        """
+        Returns string values in reversed order.
+
+        Examples
+        --------
+        >>> s = pl.Series("text", ["foo", "bar", "man\u0303ana"])
+        >>> s.str.reverse()
+        shape: (3,)
+        Series: 'text' [str]
+        [
+            "oof"
+            "rab"
+            "anañam"
+        ]
+        """
+
     def slice(self, offset: int, length: int | None = None) -> Series:
         """
         Create subslices of the string values of a Utf8 Series.
@@ -1435,7 +1467,7 @@ class StringNameSpace:
         offset
             Start index. Negative indexing is supported.
         length
-            Length of the slice. If set to ``None`` (default), the slice is taken to the
+            Length of the slice. If set to `None` (default), the slice is taken to the
             end of the string.
 
         Returns
@@ -1496,16 +1528,15 @@ class StringNameSpace:
 
         """
 
-    def parse_int(self, radix: int | None = None, *, strict: bool = True) -> Series:
+    def to_integer(self, *, base: int = 10, strict: bool = True) -> Series:
         """
-        Parse integers with base radix from strings.
-
-        ParseError/Overflows become Nulls.
+        Convert an Utf8 column into an Int64 column with base radix.
 
         Parameters
         ----------
-        radix
+        base
             Positive integer which is the base of the string we are parsing.
+            Default: 10.
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
             False silently convert to Null.
@@ -1513,14 +1544,14 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int32`.
+            Series of data type :class:`Int64`.
 
         Examples
         --------
         >>> s = pl.Series("bin", ["110", "101", "010", "invalid"])
-        >>> s.str.parse_int(2, strict=False)
+        >>> s.str.to_integer(base=2, strict=False)
         shape: (4,)
-        Series: 'bin' [i32]
+        Series: 'bin' [i64]
         [
                 6
                 5
@@ -1529,15 +1560,34 @@ class StringNameSpace:
         ]
 
         >>> s = pl.Series("hex", ["fa1e", "ff00", "cafe", None])
-        >>> s.str.parse_int(16)
+        >>> s.str.to_integer(base=16)
         shape: (4,)
-        Series: 'hex' [i32]
+        Series: 'hex' [i64]
         [
                 64030
                 65280
                 51966
                 null
         ]
+
+        """
+
+    @deprecate_renamed_function("to_integer", version="0.19.14")
+    @deprecate_renamed_parameter("radix", "base", version="0.19.14")
+    def parse_int(self, base: int | None = None, *, strict: bool = True) -> Series:
+        """
+        Parse integers with base radix from strings.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :func:`to_integer`.
+
+        Parameters
+        ----------
+        base
+            Positive integer which is the base of the string we are parsing.
+        strict
+            Bool, Default=True will raise any ParseError or overflow as ComputeError.
+            False silently convert to Null.
 
         """
 
@@ -1639,7 +1689,7 @@ class StringNameSpace:
     @deprecate_renamed_parameter("width", "length", version="0.19.12")
     def ljust(self, length: int, fill_char: str = " ") -> Series:
         """
-        Return the string left justified in a string of length ``length``.
+        Return the string left justified in a string of length `length`.
 
         .. deprecated:: 0.19.12
             This method has been renamed to :func:`pad_end`.
@@ -1657,7 +1707,7 @@ class StringNameSpace:
     @deprecate_renamed_parameter("width", "length", version="0.19.12")
     def rjust(self, length: int, fill_char: str = " ") -> Series:
         """
-        Return the string right justified in a string of length ``length``.
+        Return the string right justified in a string of length `length`.
 
         .. deprecated:: 0.19.12
             This method has been renamed to :func:`pad_start`.
@@ -1668,5 +1718,109 @@ class StringNameSpace:
             Justify right to this length.
         fill_char
             Fill with this ASCII character.
+
+        """
+
+    @deprecate_renamed_function("json_decode", version="0.19.15")
+    def json_extract(
+        self, dtype: PolarsDataType | None = None, infer_schema_length: int | None = 100
+    ) -> Series:
+        """
+        Parse string values as JSON.
+
+        .. deprecated:: 0.19.15
+            This method has been renamed to :meth:`json_decode`.
+
+        Parameters
+        ----------
+        dtype
+            The dtype to cast the extracted value to. If None, the dtype will be
+            inferred from the JSON value.
+        infer_schema_length
+            How many rows to parse to determine the schema.
+            If `None` all rows are used.
+        """
+        return self.json_decode(dtype, infer_schema_length)
+
+    def contains_any(
+        self, patterns: Series | list[str], *, ascii_case_insensitive: bool = False
+    ) -> Series:
+        """
+        Use the aho-corasick algorithm to find matches.
+
+        This version determines if any of the patterns find a match.
+
+        Parameters
+        ----------
+        patterns
+            String patterns to search.
+        ascii_case_insensitive
+            Enable ASCII-aware case insensitive matching.
+            When this option is enabled, searching will be performed without respect
+            to case for ASCII letters (a-z and A-Z) only.
+
+        Examples
+        --------
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> s = pl.Series(
+        ...     "lyrics",
+        ...     [
+        ...         "Everybody wants to rule the world",
+        ...         "Tell me what you want, what you really really want",
+        ...         "Can you feel the love tonight",
+        ...     ],
+        ... )
+        >>> s.str.contains_any(["you", "me"])
+        shape: (3,)
+        Series: 'lyrics' [bool]
+        [
+            false
+            true
+            true
+        ]
+
+        """
+
+    def replace_many(
+        self,
+        patterns: Series | list[str],
+        replace_with: Series | list[str] | str,
+        *,
+        ascii_case_insensitive: bool = False,
+    ) -> Series:
+        """
+        Use the aho-corasick algorithm to replace many matches.
+
+        Parameters
+        ----------
+        patterns
+            String patterns to search and replace.
+        replace_with
+            Strings to replace where a pattern was a match.
+            This can be broadcasted. So it supports many:one and many:many.
+        ascii_case_insensitive
+            Enable ASCII-aware case insensitive matching.
+            When this option is enabled, searching will be performed without respect
+            to case for ASCII letters (a-z and A-Z) only.
+
+        Examples
+        --------
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> s = pl.Series(
+        ...     "lyrics",
+        ...     [
+        ...         "Everybody wants to rule the world",
+        ...         "Tell me what you want, what you really really want",
+        ...         "Can you feel the love tonight",
+        ...     ],
+        ... )
+        >>> s.str.replace_many(["you", "me"], ["me", "you"])
+        shape: (3,)
+        Series: 'lyrics' [str]
+        [
+            "Everybody wants to rule the world"
+            "Tell you what me want, what me really really want"
+            "Can me feel the love tonight"
+        ]
 
         """

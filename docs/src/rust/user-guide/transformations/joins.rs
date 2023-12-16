@@ -58,7 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             df_orders.clone().lazy(),
             [col("customer_id")],
             [col("customer_id")],
-            JoinArgs::new(JoinType::Outer),
+            JoinArgs::new(JoinType::Outer { coalesce: true }),
         )
         .collect()?;
     println!("{}", &df_outer_join);

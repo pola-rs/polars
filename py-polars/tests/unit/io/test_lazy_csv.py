@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -182,13 +183,27 @@ def test_lazy_n_rows(foods_file_path: Path) -> None:
         .filter(pl.col("idx") > 2)
         .collect()
     )
-    assert df.to_dict(False) == {
+    assert df.to_dict(as_series=False) == {
         "idx": [3],
         "category": ["fruit"],
         "calories": [60],
         "fats_g": [0.0],
         "sugars_g": [11],
     }
+
+
+def test_lazy_row_count_no_push_down(foods_file_path: Path) -> None:
+    plan = (
+        pl.scan_csv(foods_file_path)
+        .with_row_count()
+        .filter(pl.col("row_nr") == 1)
+        .filter(pl.col("category") == pl.lit("vegetables"))
+        .explain(predicate_pushdown=True)
+    )
+    # related to row count is not pushed.
+    assert 'FILTER [(col("row_nr")) == (1)] FROM' in plan
+    # unrelated to row count is pushed.
+    assert 'SELECTION: [(col("category")) == (Utf8(vegetables))]' in plan
 
 
 @pytest.mark.write_disk()
@@ -205,10 +220,10 @@ foo,bar,baz
 1,2,3
 4,5,6
 7,8,9
-    """
+"""
         )
     file_path = tmp_path / "*.csv"
-    assert pl.read_csv(file_path, skip_rows=2).to_dict(False) == {
+    assert pl.read_csv(file_path, skip_rows=2).to_dict(as_series=False) == {
         "foo": [1, 4, 7, 1, 4, 7],
         "bar": [2, 5, 8, 2, 5, 8],
         "baz": [3, 6, 9, 3, 6, 9],
@@ -223,7 +238,7 @@ def test_glob_n_rows(io_files_path: Path) -> None:
     assert df.shape == (40, 4)
 
     # take first and last rows
-    assert df[[0, 39]].to_dict(False) == {
+    assert df[[0, 39]].to_dict(as_series=False) == {
         "category": ["vegetables", "seafood"],
         "calories": [45, 146],
         "fats_g": [0.5, 6.0],
@@ -252,3 +267,21 @@ def test_csv_list_arg(io_files_path: Path) -> None:
     assert df.shape == (54, 4)
     assert df.row(-1) == ("seafood", 194, 12.0, 1)
     assert df.row(0) == ("vegetables", 45, 0.5, 2)
+
+
+# https://github.com/pola-rs/polars/issues/9887
+def test_scan_csv_slice_offset_zero(io_files_path: Path) -> None:
+    lf = pl.scan_csv(io_files_path / "small.csv")
+    result = lf.slice(0)
+    assert result.collect().height == 4
+
+
+@pytest.mark.write_disk()
+def test_scan_empty_csv_with_row_count(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "small.parquet"
+    df = pl.DataFrame({"a": []})
+    df.write_csv(file_path)
+
+    read = pl.scan_csv(file_path).with_row_count("idx")
+    assert read.collect().schema == OrderedDict([("idx", pl.UInt32), ("a", pl.Utf8)])

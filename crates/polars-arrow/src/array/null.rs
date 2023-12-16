@@ -4,13 +4,13 @@ use polars_error::{polars_bail, PolarsResult};
 
 use crate::array::{Array, FromFfi, MutableArray, ToFfi};
 use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::datatypes::{DataType, PhysicalType};
+use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::ffi;
 
-/// The concrete [`Array`] of [`DataType::Null`].
+/// The concrete [`Array`] of [`ArrowDataType::Null`].
 #[derive(Clone)]
 pub struct NullArray {
-    data_type: DataType,
+    data_type: ArrowDataType,
     length: usize,
 }
 
@@ -19,7 +19,7 @@ impl NullArray {
     /// # Errors
     /// This function errors iff:
     /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to [`crate::datatypes::PhysicalType::Null`].
-    pub fn try_new(data_type: DataType, length: usize) -> PolarsResult<Self> {
+    pub fn try_new(data_type: ArrowDataType, length: usize) -> PolarsResult<Self> {
         if data_type.to_physical_type() != PhysicalType::Null {
             polars_bail!(ComputeError: "NullArray can only be initialized with a DataType whose physical type is Boolean");
         }
@@ -31,17 +31,17 @@ impl NullArray {
     /// # Panics
     /// This function errors iff:
     /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to [`crate::datatypes::PhysicalType::Null`].
-    pub fn new(data_type: DataType, length: usize) -> Self {
+    pub fn new(data_type: ArrowDataType, length: usize) -> Self {
         Self::try_new(data_type, length).unwrap()
     }
 
     /// Returns a new empty [`NullArray`].
-    pub fn new_empty(data_type: DataType) -> Self {
+    pub fn new_empty(data_type: ArrowDataType) -> Self {
         Self::new(data_type, 0)
     }
 
     /// Returns a new [`NullArray`].
-    pub fn new_null(data_type: DataType, length: usize) -> Self {
+    pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
         Self::new(data_type, length)
     }
 
@@ -98,7 +98,7 @@ impl MutableNullArray {
     /// # Panics
     /// This function errors iff:
     /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to [`crate::datatypes::PhysicalType::Null`].
-    pub fn new(data_type: DataType, length: usize) -> Self {
+    pub fn new(data_type: ArrowDataType, length: usize) -> Self {
         let inner = NullArray::try_new(data_type, length).unwrap();
         Self { inner }
     }
@@ -111,8 +111,8 @@ impl From<MutableNullArray> for NullArray {
 }
 
 impl MutableArray for MutableNullArray {
-    fn data_type(&self) -> &DataType {
-        &DataType::Null
+    fn data_type(&self) -> &ArrowDataType {
+        &ArrowDataType::Null
     }
 
     fn len(&self) -> usize {
@@ -193,7 +193,7 @@ mod arrow {
 
         /// Create this array from [`ArrayData`]
         pub fn from_data(data: &ArrayData) -> Self {
-            Self::new(DataType::Null, data.len())
+            Self::new(ArrowDataType::Null, data.len())
         }
     }
 }

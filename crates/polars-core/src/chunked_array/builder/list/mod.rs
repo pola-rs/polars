@@ -96,13 +96,14 @@ pub fn get_list_builder(
 ) -> PolarsResult<Box<dyn ListBuilderTrait>> {
     match inner_type_logical {
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(_) => {
-            return Ok(Box::new(ListCategoricalChunkedBuilder::new(
+        DataType::Categorical(Some(rev_map), ordering) => {
+            return Ok(create_categorical_chunked_listbuilder(
                 name,
+                *ordering,
                 list_capacity,
                 value_capacity,
-                inner_type_logical.clone(),
-            )))
+                rev_map.clone(),
+            ))
         },
         _ => {},
     }
@@ -120,6 +121,12 @@ pub fn get_list_builder(
         ))),
         DataType::Null => Ok(Box::new(ListNullChunkedBuilder::new(name, list_capacity))),
         DataType::List(_) => Ok(Box::new(AnonymousOwnedListBuilder::new(
+            name,
+            list_capacity,
+            Some(inner_type_logical.clone()),
+        ))),
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(..) => Ok(Box::new(AnonymousOwnedListBuilder::new(
             name,
             list_capacity,
             Some(inner_type_logical.clone()),

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 pub trait PhysicalIoExpr: Send + Sync {
     /// Take a [`DataFrame`] and produces a boolean [`Series`] that serves
     /// as a predicate mask
-    fn evaluate(&self, df: &DataFrame) -> PolarsResult<Series>;
+    fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series>;
 
     /// Can take &dyn Statistics and determine of a file should be
     /// read -> `true`
@@ -19,14 +19,14 @@ pub trait StatsEvaluator {
     fn should_read(&self, stats: &BatchStats) -> PolarsResult<bool>;
 }
 
-#[cfg(any(feature = "parquet", feature = "json",))]
+#[cfg(feature = "parquet")]
 pub(crate) fn apply_predicate(
     df: &mut DataFrame,
     predicate: Option<&dyn PhysicalIoExpr>,
     parallel: bool,
 ) -> PolarsResult<()> {
     if let (Some(predicate), false) = (&predicate, df.is_empty()) {
-        let s = predicate.evaluate(df)?;
+        let s = predicate.evaluate_io(df)?;
         let mask = s.bool().expect("filter predicates was not of type boolean");
 
         if parallel {
@@ -92,7 +92,7 @@ impl ColumnStats {
                 let s = self.null_count.as_ref()?;
                 // if all null, there are no statistics.
                 if s.null_count() != s.len() {
-                    s.sum()
+                    s.sum().ok()
                 } else {
                     None
                 }

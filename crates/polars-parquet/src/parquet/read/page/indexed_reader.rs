@@ -147,7 +147,7 @@ impl<R: Read + Seek> IndexedPageReader<R> {
     fn read_dict(&mut self) -> Option<Result<CompressedPage, Error>> {
         // a dictionary page exists iff the first data page is not at the start of
         // the column
-        let (start, length) = match self.pages.get(0) {
+        let (start, length) = match self.pages.front() {
             Some(page) => {
                 let length = (page.start - self.column_start) as usize;
                 if length > 0 {

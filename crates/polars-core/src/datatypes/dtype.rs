@@ -44,8 +44,8 @@ pub enum DataType {
     Null,
     #[cfg(feature = "dtype-categorical")]
     // The RevMapping has the internal state.
-    // This is ignored with casts, comparisons, hashing etc.
-    Categorical(Option<Arc<RevMapping>>),
+    // This is ignored with comparisons, hashing etc.
+    Categorical(Option<Arc<RevMapping>>, CategoricalOrdering),
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<Field>),
     // some logical types we cannot know statically, e.g. Datetime
@@ -70,7 +70,7 @@ impl PartialEq for DataType {
             match (self, other) {
                 // Don't include rev maps in comparisons
                 #[cfg(feature = "dtype-categorical")]
-                (Categorical(_), Categorical(_)) => true,
+                (Categorical(_, _), Categorical(_, _)) => true,
                 (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r)) => tu_l == tu_r && tz_l == tz_r,
                 (List(left_inner), List(right_inner)) => left_inner == right_inner,
                 #[cfg(feature = "dtype-duration")]
@@ -130,7 +130,7 @@ impl DataType {
             Duration(_) => Int64,
             Time => Int64,
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_) => UInt32,
+            Categorical(_, _) => UInt32,
             List(dt) => List(Box::new(dt.to_physical())),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
@@ -166,6 +166,32 @@ impl DataType {
         self.is_float() || self.is_integer()
     }
 
+    /// Check if this [`DataType`] is a basic numeric type (excludes Decimal).
+    pub fn is_bool(&self) -> bool {
+        matches!(self, DataType::Boolean)
+    }
+
+    /// Check if type is sortable
+    pub fn is_ord(&self) -> bool {
+        #[cfg(feature = "dtype-categorical")]
+        let is_cat = matches!(self, DataType::Categorical(_, _));
+        #[cfg(not(feature = "dtype-categorical"))]
+        let is_cat = false;
+
+        let phys = self.to_physical();
+        (phys.is_numeric() || matches!(phys, DataType::Binary | DataType::Utf8 | DataType::Boolean))
+            && !is_cat
+    }
+
+    /// Check if this [`DataType`] is a Decimal type (of any scale/precision).
+    pub fn is_decimal(&self) -> bool {
+        match self {
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(_, _) => true,
+            _ => false,
+        }
+    }
+
     /// Check if this [`DataType`] is a basic floating point type (excludes Decimal).
     pub fn is_float(&self) -> bool {
         matches!(self, DataType::Float32 | DataType::Float64)
@@ -186,75 +212,93 @@ impl DataType {
         )
     }
 
-    pub fn is_signed(&self) -> bool {
+    pub fn is_signed_integer(&self) -> bool {
         // allow because it cannot be replaced when object feature is activated
-        #[allow(clippy::match_like_matches_macro)]
         match self {
+            DataType::Int64 | DataType::Int32 => true,
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => true,
             #[cfg(feature = "dtype-i16")]
             DataType::Int16 => true,
-            DataType::Int32 | DataType::Int64 => true,
             _ => false,
         }
     }
-    pub fn is_unsigned(&self) -> bool {
-        self.is_numeric() && !self.is_signed()
+
+    pub fn is_unsigned_integer(&self) -> bool {
+        match self {
+            DataType::UInt64 | DataType::UInt32 => true,
+            #[cfg(feature = "dtype-u8")]
+            DataType::UInt8 => true,
+            #[cfg(feature = "dtype-u16")]
+            DataType::UInt16 => true,
+            _ => false,
+        }
     }
 
     /// Convert to an Arrow data type.
     #[inline]
     pub fn to_arrow(&self) -> ArrowDataType {
+        self.try_to_arrow().unwrap()
+    }
+
+    #[inline]
+    pub fn try_to_arrow(&self) -> PolarsResult<ArrowDataType> {
         use DataType::*;
         match self {
-            Boolean => ArrowDataType::Boolean,
-            UInt8 => ArrowDataType::UInt8,
-            UInt16 => ArrowDataType::UInt16,
-            UInt32 => ArrowDataType::UInt32,
-            UInt64 => ArrowDataType::UInt64,
-            Int8 => ArrowDataType::Int8,
-            Int16 => ArrowDataType::Int16,
-            Int32 => ArrowDataType::Int32,
-            Int64 => ArrowDataType::Int64,
-            Float32 => ArrowDataType::Float32,
-            Float64 => ArrowDataType::Float64,
+            Boolean => Ok(ArrowDataType::Boolean),
+            UInt8 => Ok(ArrowDataType::UInt8),
+            UInt16 => Ok(ArrowDataType::UInt16),
+            UInt32 => Ok(ArrowDataType::UInt32),
+            UInt64 => Ok(ArrowDataType::UInt64),
+            Int8 => Ok(ArrowDataType::Int8),
+            Int16 => Ok(ArrowDataType::Int16),
+            Int32 => Ok(ArrowDataType::Int32),
+            Int64 => Ok(ArrowDataType::Int64),
+            Float32 => Ok(ArrowDataType::Float32),
+            Float64 => Ok(ArrowDataType::Float64),
             #[cfg(feature = "dtype-decimal")]
             // note: what else can we do here other than setting precision to 38?..
-            Decimal(precision, scale) => ArrowDataType::Decimal(
+            Decimal(precision, scale) => Ok(ArrowDataType::Decimal(
                 (*precision).unwrap_or(38),
                 scale.unwrap_or(0), // and what else can we do here?
-            ),
-            Utf8 => ArrowDataType::LargeUtf8,
-            Binary => ArrowDataType::LargeBinary,
-            Date => ArrowDataType::Date32,
-            Datetime(unit, tz) => ArrowDataType::Timestamp(unit.to_arrow(), tz.clone()),
-            Duration(unit) => ArrowDataType::Duration(unit.to_arrow()),
-            Time => ArrowDataType::Time64(ArrowTimeUnit::Nanosecond),
+            )),
+            Utf8 => Ok(ArrowDataType::LargeUtf8),
+            Binary => Ok(ArrowDataType::LargeBinary),
+            Date => Ok(ArrowDataType::Date32),
+            Datetime(unit, tz) => Ok(ArrowDataType::Timestamp(unit.to_arrow(), tz.clone())),
+            Duration(unit) => Ok(ArrowDataType::Duration(unit.to_arrow())),
+            Time => Ok(ArrowDataType::Time64(ArrowTimeUnit::Nanosecond)),
             #[cfg(feature = "dtype-array")]
-            Array(dt, size) => ArrowDataType::FixedSizeList(
-                Box::new(arrow::datatypes::Field::new("item", dt.to_arrow(), true)),
+            Array(dt, size) => Ok(ArrowDataType::FixedSizeList(
+                Box::new(arrow::datatypes::Field::new(
+                    "item",
+                    dt.try_to_arrow()?,
+                    true,
+                )),
                 *size,
-            ),
-            List(dt) => ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
-                "item",
-                dt.to_arrow(),
-                true,
+            )),
+            List(dt) => Ok(ArrowDataType::LargeList(Box::new(
+                arrow::datatypes::Field::new("item", dt.to_arrow(), true),
             ))),
-            Null => ArrowDataType::Null,
+            Null => Ok(ArrowDataType::Null),
             #[cfg(feature = "object")]
-            Object(_) => panic!("cannot convert object to arrow"),
+            Object(_) => {
+                polars_bail!(InvalidOperation: "cannot convert Object dtype data to Arrow")
+            },
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_) => ArrowDataType::Dictionary(
+            Categorical(_, _) => Ok(ArrowDataType::Dictionary(
                 IntegerType::UInt32,
                 Box::new(ArrowDataType::LargeUtf8),
                 false,
-            ),
+            )),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
                 let fields = fields.iter().map(|fld| fld.to_arrow()).collect();
-                ArrowDataType::Struct(fields)
+                Ok(ArrowDataType::Struct(fields))
             },
-            Unknown => unreachable!(),
+            Unknown => {
+                polars_bail!(InvalidOperation: "cannot convert Unknown dtype data to Arrow")
+            },
         }
     }
 
@@ -295,11 +339,11 @@ impl Display for DataType {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
                 return match (precision, scale) {
-                    (_, None) => f.write_str("decimal[?]"), // shouldn't happen
-                    (None, Some(scale)) => f.write_str(&format!("decimal[{scale}]")),
                     (Some(precision), Some(scale)) => {
                         f.write_str(&format!("decimal[{precision},{scale}]"))
                     },
+                    (None, Some(scale)) => f.write_str(&format!("decimal[*,{scale}]")),
+                    _ => f.write_str("decimal[?]"), // shouldn't happen
                 };
             },
             DataType::Utf8 => "str",
@@ -320,7 +364,7 @@ impl Display for DataType {
             #[cfg(feature = "object")]
             DataType::Object(s) => s,
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => "cat",
+            DataType::Categorical(_, _) => "cat",
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
             DataType::Unknown => "unknown",
@@ -334,9 +378,18 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
     use DataType::*;
     Ok(match (left, right) {
         #[cfg(feature = "dtype-categorical")]
-        (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r))) => {
-            let rev_map = merge_rev_map(rev_map_l, rev_map_r)?;
-            Categorical(Some(rev_map))
+        (Categorical(Some(rev_map_l), ordering), Categorical(Some(rev_map_r), _)) => {
+            match (&**rev_map_l, &**rev_map_r) {
+                (RevMapping::Global(_, _, idl), RevMapping::Global(_, _, idr)) if idl == idr => {
+                    let mut merger = GlobalRevMapMerger::new(rev_map_l.clone());
+                    merger.merge_map(rev_map_r)?;
+                    Categorical(Some(merger.finish()), *ordering)
+                },
+                (RevMapping::Local(_, idl), RevMapping::Local(_, idr)) if idl == idr => {
+                    left.clone()
+                },
+                _ => polars_bail!(string_cache_mismatch),
+            }
         },
         (List(inner_l), List(inner_r)) => {
             let merged = merge_dtypes(inner_l, inner_r)?;
@@ -351,4 +404,36 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
         (left, right) if left == right => left.clone(),
         _ => polars_bail!(ComputeError: "unable to merge datatypes"),
     })
+}
+
+// if returns
+// `Ok(true)`: can extend, but must cast
+// `Ok(false)`: can extend as is
+// Error: cannot extend.
+pub(crate) fn can_extend_dtype(left: &DataType, right: &DataType) -> PolarsResult<bool> {
+    match (left, right) {
+        (DataType::List(l), DataType::List(r)) => can_extend_dtype(l, r),
+        #[cfg(feature = "dtype-struct")]
+        (DataType::Struct(l), DataType::Struct(r)) => {
+            let mut must_cast = false;
+            for (l, r) in l.iter().zip(r.iter()) {
+                must_cast |= can_extend_dtype(&l.dtype, &r.dtype)?;
+            }
+            Ok(must_cast)
+        },
+        (DataType::Null, DataType::Null) => Ok(false),
+        // Other way around we don't allow because we keep left dtype as is.
+        // We don't go to supertype, and we certainly don't want to cast self to null type.
+        (_, DataType::Null) => Ok(true),
+        (l, r) => {
+            polars_ensure!(l == r, SchemaMismatch: "cannot extend/append {:?} with {:?}", left, right);
+            Ok(false)
+        },
+    }
+}
+
+#[cfg(feature = "dtype-categorical")]
+pub fn create_enum_data_type(categories: Utf8Array<i64>) -> DataType {
+    let rev_map = RevMapping::build_enum(categories.clone());
+    DataType::Categorical(Some(Arc::new(rev_map)), Default::default())
 }

@@ -3,14 +3,14 @@ use std::collections::VecDeque;
 use arrow::array::BooleanArray;
 use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::MutableBitmap;
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 use super::super::utils::{
     extend_from_decoder, get_selected_rows, next, DecodedState, Decoder,
     FilteredOptionalPageValidity, MaybeNext, OptionalPageValidity,
 };
-use super::super::{utils, Pages};
+use super::super::{utils, PagesIter};
 use crate::parquet::deserialize::SliceFilteredIter;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
@@ -147,7 +147,7 @@ impl<'a> Decoder<'a> for BooleanDecoder {
         state: &mut Self::State,
         decoded: &mut Self::DecodedState,
         remaining: usize,
-    ) {
+    ) -> PolarsResult<()> {
         let (values, validity) = decoded;
         match state {
             State::Optional(page_validity, page_values) => extend_from_decoder(
@@ -178,27 +178,37 @@ impl<'a> Decoder<'a> for BooleanDecoder {
                 );
             },
         }
+        Ok(())
     }
 
     fn deserialize_dict(&self, _: &DictPage) -> Self::Dict {}
 }
 
-fn finish(data_type: &DataType, values: MutableBitmap, validity: MutableBitmap) -> BooleanArray {
+fn finish(
+    data_type: &ArrowDataType,
+    values: MutableBitmap,
+    validity: MutableBitmap,
+) -> BooleanArray {
     BooleanArray::new(data_type.clone(), values.into(), validity.into())
 }
 
-/// An iterator adapter over [`Pages`] assumed to be encoded as boolean arrays
+/// An iterator adapter over [`PagesIter`] assumed to be encoded as boolean arrays
 #[derive(Debug)]
-pub struct Iter<I: Pages> {
+pub struct Iter<I: PagesIter> {
     iter: I,
-    data_type: DataType,
+    data_type: ArrowDataType,
     items: VecDeque<(MutableBitmap, MutableBitmap)>,
     chunk_size: Option<usize>,
     remaining: usize,
 }
 
-impl<I: Pages> Iter<I> {
-    pub fn new(iter: I, data_type: DataType, chunk_size: Option<usize>, num_rows: usize) -> Self {
+impl<I: PagesIter> Iter<I> {
+    pub fn new(
+        iter: I,
+        data_type: ArrowDataType,
+        chunk_size: Option<usize>,
+        num_rows: usize,
+    ) -> Self {
         Self {
             iter,
             data_type,
@@ -209,25 +219,27 @@ impl<I: Pages> Iter<I> {
     }
 }
 
-impl<I: Pages> Iterator for Iter<I> {
+impl<I: PagesIter> Iterator for Iter<I> {
     type Item = PolarsResult<BooleanArray>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let maybe_state = next(
-            &mut self.iter,
-            &mut self.items,
-            &mut None,
-            &mut self.remaining,
-            self.chunk_size,
-            &BooleanDecoder::default(),
-        );
-        match maybe_state {
-            MaybeNext::Some(Ok((values, validity))) => {
-                Some(Ok(finish(&self.data_type, values, validity)))
-            },
-            MaybeNext::Some(Err(e)) => Some(Err(e)),
-            MaybeNext::None => None,
-            MaybeNext::More => self.next(),
+        loop {
+            let maybe_state = next(
+                &mut self.iter,
+                &mut self.items,
+                &mut None,
+                &mut self.remaining,
+                self.chunk_size,
+                &BooleanDecoder::default(),
+            );
+            match maybe_state {
+                MaybeNext::Some(Ok((values, validity))) => {
+                    return Some(Ok(finish(&self.data_type, values, validity)))
+                },
+                MaybeNext::Some(Err(e)) => return Some(Err(e)),
+                MaybeNext::None => return None,
+                MaybeNext::More => continue,
+            }
         }
     }
 }

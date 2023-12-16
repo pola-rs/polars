@@ -34,7 +34,7 @@ pub fn unix_time() -> NaiveDateTime {
 
 // a separate function so that it is not compiled twice
 #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
-pub(crate) fn months_to_quarters(mut ca: UInt32Chunked) -> UInt32Chunked {
+pub(crate) fn months_to_quarters(mut ca: Int8Chunked) -> Int8Chunked {
     ca.apply_mut(|month| (month + 2) / 3);
     ca
 }

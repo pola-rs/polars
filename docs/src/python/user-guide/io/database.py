@@ -2,7 +2,7 @@
 # --8<-- [start:read_uri]
 import polars as pl
 
-uri = "postgres://username:password@server:port/database"
+uri = "postgresql://username:password@server:port/database"
 query = "SELECT * FROM foo"
 
 pl.read_database_uri(query=query, uri=uri)
@@ -21,21 +21,21 @@ pl.read_database(query=query, connection=conn.connect())
 
 
 # --8<-- [start:adbc]
-uri = "postgres://username:password@server:port/database"
+uri = "postgresql://username:password@server:port/database"
 query = "SELECT * FROM foo"
 
 pl.read_database_uri(query=query, uri=uri, engine="adbc")
 # --8<-- [end:adbc]
 
 # --8<-- [start:write]
-uri = "postgres://username:password@server:port/database"
+uri = "postgresql://username:password@server:port/database"
 df = pl.DataFrame({"foo": [1, 2, 3]})
 
 df.write_database(table_name="records",  uri=uri)
 # --8<-- [end:write]
 
 # --8<-- [start:write_adbc]
-uri = "postgres://username:password@server:port/database"
+uri = "postgresql://username:password@server:port/database"
 df = pl.DataFrame({"foo": [1, 2, 3]})
 
 df.write_database(table_name="records", uri=uri, engine="adbc")

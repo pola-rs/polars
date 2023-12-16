@@ -220,9 +220,9 @@ def test_iter_rows() -> None:
     ]
 
 
-def test_row_constructor_schema() -> None:
-    expected = {"d": [1, 2, 3]}
-    for primitive in [
+@pytest.mark.parametrize(
+    "primitive",
+    [
         pl.UInt8,
         pl.Int8,
         pl.UInt16,
@@ -231,17 +231,16 @@ def test_row_constructor_schema() -> None:
         pl.Int32,
         pl.UInt64,
         pl.Int64,
-    ]:
-        out = pl.DataFrame(
-            data=[
-                [1],
-                [2],
-                [3],
-            ],
-            schema={"d": primitive},
-        )
-        assert out.dtypes == [primitive]
-        assert out.to_dict(False) == expected
+    ],
+)
+def test_row_constructor_schema(primitive: pl.DataType) -> None:
+    result = pl.DataFrame(
+        data=[[1], [2], [3]],
+        schema={"d": primitive},
+    )
+
+    assert result.dtypes == [primitive]
+    assert result.to_dict(as_series=False) == {"d": [1, 2, 3]}
 
 
 def test_row_constructor_uint64() -> None:

@@ -48,7 +48,7 @@ pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
 
 pub fn to_rust_df(rb: &[&PyAny]) -> PyResult<DataFrame> {
     let schema = rb
-        .get(0)
+        .first()
         .ok_or_else(|| PyPolarsErr::Other("empty table".into()))?
         .getattr("schema")?;
     let names = schema.getattr("names")?.extract::<Vec<String>>()?;

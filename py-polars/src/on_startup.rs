@@ -8,6 +8,7 @@ use polars_core::chunked_array::object::registry::AnonymousObjectBuilder;
 use polars_core::error::PolarsError::ComputeError;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
+use polars_error::PolarsWarning;
 use pyo3::intern;
 use pyo3::prelude::*;
 
@@ -57,14 +58,14 @@ fn python_function_caller_df(df: DataFrame, lambda: &PyObject) -> PolarsResult<D
     })
 }
 
-fn warning_function(msg: &str) {
+fn warning_function(msg: &str, warning: PolarsWarning) {
     Python::with_gil(|py| {
         let warn_fn = UTILS
             .as_ref(py)
             .getattr(intern!(py, "_polars_warn"))
             .unwrap();
 
-        if let Err(e) = warn_fn.call1((msg,)) {
+        if let Err(e) = warn_fn.call1((msg, Wrap(warning))) {
             eprintln!("{e}")
         }
     });

@@ -1,6 +1,6 @@
 # Lists and Arrays
 
-`Polars` has first-class support for `List` columns: that is, columns where each row is a list of homogeneous elements, of varying lengths. `Polars` also has an `Array` datatype, which is analogous to `numpy`'s `ndarray` objects, where the length is identical across rows.
+Polars has first-class support for `List` columns: that is, columns where each row is a list of homogeneous elements, of varying lengths. Polars also has an `Array` datatype, which is analogous to NumPy's `ndarray` objects, where the length is identical across rows.
 
 Note: this is different from Python's `list` object, where the elements can be of any type. Polars can store these within columns, but as a generic `Object` datatype that doesn't have the special list manipulation features that we're about to discuss.
 
@@ -74,7 +74,7 @@ What if we chose the regex route (i.e. recognizing the presence of _any_ alphabe
 --8<-- "python/user-guide/expressions/lists.py:count_errors_regex"
 ```
 
-If you're unfamiliar with the `(?i)`, it's a good time to look at the documentation for the `str.contains` function in Polars! The rust regex crate provides a lot of additional regex flags that might come in handy.
+If you're unfamiliar with the `(?i)`, it's a good time to look at the documentation for the `str.contains` function in Polars! The Rust regex crate provides a lot of additional regex flags that might come in handy.
 
 ## Row-wise computations
 
@@ -88,7 +88,7 @@ We can apply **any** Polars operations on the elements of the list with the `lis
 --8<-- "python/user-guide/expressions/lists.py:weather_by_day"
 ```
 
-Let's do something interesting, where we calculate the percentage rank of the temperatures by day, measured across stations. Pandas allows you to compute the percentages of the `rank` values. `Polars` doesn't provide a special function to do this directly, but because expressions are so versatile we can create our own percentage rank expression for highest temperature. Let's try that!
+Let's do something interesting, where we calculate the percentage rank of the temperatures by day, measured across stations. Pandas allows you to compute the percentages of the `rank` values. Polars doesn't provide a special function to do this directly, but because expressions are so versatile we can create our own percentage rank expression for highest temperature. Let's try that!
 
 {{code_block('user-guide/expressions/lists','weather_by_day_rank',['list.eval'])}}
 

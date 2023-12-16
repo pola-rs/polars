@@ -6,7 +6,7 @@ use crate::types::NativeType;
 /// Find partition indexes such that every partition contains unique groups.
 fn find_partition_points<T>(values: &[T], n: usize, descending: bool) -> Vec<usize>
 where
-    T: Debug + NativeType + PartialOrd,
+    T: Debug + NativeType,
 {
     let len = values.len();
     if n > len {
@@ -31,9 +31,9 @@ where
 
         let latest_val = values[end_idx];
         let idx = if descending {
-            part.partition_point(|v| *v > latest_val)
+            part.partition_point(|v| v.tot_gt(&latest_val))
         } else {
-            part.partition_point(|v| *v < latest_val)
+            part.partition_point(|v| v.tot_lt(&latest_val))
         };
 
         if idx != 0 {
@@ -47,7 +47,7 @@ where
 
 pub fn create_clean_partitions<T>(values: &[T], n: usize, descending: bool) -> Vec<&[T]>
 where
-    T: Debug + NativeType + PartialOrd,
+    T: Debug + NativeType,
 {
     let part_idx = find_partition_points(values, n, descending);
     let mut out = Vec::with_capacity(n + 1);
@@ -74,9 +74,9 @@ pub fn partition_to_groups_amortized<T>(
     offset: IdxSize,
     out: &mut Vec<[IdxSize; 2]>,
 ) where
-    T: Debug + NativeType + PartialOrd,
+    T: Debug + NativeType,
 {
-    if let Some(mut first) = values.get(0) {
+    if let Some(mut first) = values.first() {
         out.clear();
         if nulls_first && first_group_offset > 0 {
             out.push([0, first_group_offset])
@@ -86,7 +86,7 @@ pub fn partition_to_groups_amortized<T>(
 
         for val in values {
             // new group reached
-            if val != first {
+            if val.tot_ne(first) {
                 let val_ptr = val as *const T;
                 let first_ptr = first as *const T;
 
@@ -125,7 +125,7 @@ pub fn partition_to_groups<T>(
     offset: IdxSize,
 ) -> Vec<[IdxSize; 2]>
 where
-    T: Debug + NativeType + PartialOrd,
+    T: Debug + NativeType,
 {
     if values.is_empty() {
         return vec![];

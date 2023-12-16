@@ -64,6 +64,7 @@ fn write_integer<I: itoa::Integer>(f: &mut Vec<u8>, val: I) {
     f.extend_from_slice(value.as_bytes())
 }
 
+#[allow(unused_variables)]
 unsafe fn write_anyvalue(
     f: &mut Vec<u8>,
     value: AnyValue,
@@ -492,5 +493,12 @@ pub(crate) fn write_header<W: Write>(
             .as_bytes(),
     )?;
     writer.write_all(options.line_terminator.as_bytes())?;
+    Ok(())
+}
+
+/// Writes a UTF-8 BOM to `writer`.
+pub(crate) fn write_bom<W: Write>(writer: &mut W) -> PolarsResult<()> {
+    const BOM: [u8; 3] = [0xEF, 0xBB, 0xBF];
+    writer.write_all(&BOM)?;
     Ok(())
 }

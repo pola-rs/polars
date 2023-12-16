@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use arrow::array::Array;
 use arrow::bitmap::MutableBitmap;
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 use arrow::offset::Offset;
 use polars_error::PolarsResult;
 
@@ -11,7 +11,7 @@ use super::super::utils;
 use super::super::utils::MaybeNext;
 use super::basic::{deserialize_plain, finish, Dict, ValuesDictionary};
 use super::utils::*;
-use crate::arrow::read::Pages;
+use crate::arrow::read::PagesIter;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::schema::Repetition;
@@ -107,7 +107,7 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
                 let item = page
                     .values
                     .next()
-                    .map(|index| dict_values[index.unwrap() as usize].as_ref())
+                    .map(|index| dict_values.value(index.unwrap() as usize))
                     .unwrap_or_default();
                 values.push(item);
             },
@@ -116,7 +116,7 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
                 let item = page
                     .values
                     .next()
-                    .map(|index| dict_values[index.unwrap() as usize].as_ref())
+                    .map(|index| dict_values.value(index.unwrap() as usize))
                     .unwrap_or_default();
                 values.push(item);
                 validity.push(true);
@@ -136,9 +136,9 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
     }
 }
 
-pub struct NestedIter<O: Offset, I: Pages> {
+pub struct NestedIter<O: Offset, I: PagesIter> {
     iter: I,
-    data_type: DataType,
+    data_type: ArrowDataType,
     init: Vec<InitNested>,
     items: VecDeque<(NestedState, (Binary<O>, MutableBitmap))>,
     dict: Option<Dict>,
@@ -146,11 +146,11 @@ pub struct NestedIter<O: Offset, I: Pages> {
     remaining: usize,
 }
 
-impl<O: Offset, I: Pages> NestedIter<O, I> {
+impl<O: Offset, I: PagesIter> NestedIter<O, I> {
     pub fn new(
         iter: I,
         init: Vec<InitNested>,
-        data_type: DataType,
+        data_type: ArrowDataType,
         num_rows: usize,
         chunk_size: Option<usize>,
     ) -> Self {
@@ -166,7 +166,7 @@ impl<O: Offset, I: Pages> NestedIter<O, I> {
     }
 }
 
-impl<O: Offset, I: Pages> Iterator for NestedIter<O, I> {
+impl<O: Offset, I: PagesIter> Iterator for NestedIter<O, I> {
     type Item = PolarsResult<(NestedState, Box<dyn Array>)>;
 
     fn next(&mut self) -> Option<Self::Item> {

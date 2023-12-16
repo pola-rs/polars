@@ -3,7 +3,7 @@ macro_rules! with_match_arrow_primitive_type {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
-    use arrow::datatypes::DataType::*;
+    use arrow::datatypes::ArrowDataType::*;
     match $key_type {
         Int8 => __with_ty__! { i8 },
         Int16 => __with_ty__! { i16 },

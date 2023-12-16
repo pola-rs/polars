@@ -1,5 +1,5 @@
 use arrow::array::PrimitiveArray;
-use arrow::datatypes::{DataType, Field};
+use arrow::datatypes::{ArrowDataType, Field};
 use arrow::match_integer_type;
 use ethnum::I256;
 use polars_error::polars_bail;
@@ -46,7 +46,7 @@ pub fn columns_to_iter_recursive<'a, I: 'a>(
     chunk_size: Option<usize>,
 ) -> PolarsResult<NestedArrayIter<'a>>
 where
-    I: Pages,
+    I: PagesIter,
 {
     use arrow::datatypes::PhysicalType::*;
     use arrow::datatypes::PrimitiveType::*;
@@ -233,7 +233,7 @@ where
             ))
         },
         _ => match field.data_type().to_logical_type() {
-            DataType::Dictionary(key_type, _, _) => {
+            ArrowDataType::Dictionary(key_type, _, _) => {
                 init.push(InitNested::Primitive(field.is_nullable));
                 let type_ = types.pop().unwrap();
                 let iter = columns.pop().unwrap();
@@ -242,9 +242,9 @@ where
                     dict_read::<$K, _>(iter, init, type_, data_type, num_rows, chunk_size)
                 })?
             },
-            DataType::List(inner)
-            | DataType::LargeList(inner)
-            | DataType::FixedSizeList(inner, _) => {
+            ArrowDataType::List(inner)
+            | ArrowDataType::LargeList(inner)
+            | ArrowDataType::FixedSizeList(inner, _) => {
                 init.push(InitNested::List(field.is_nullable));
                 let iter = columns_to_iter_recursive(
                     columns,
@@ -261,7 +261,7 @@ where
                 });
                 Box::new(iter) as _
             },
-            DataType::Decimal(_, _) => {
+            ArrowDataType::Decimal(_, _) => {
                 init.push(InitNested::Primitive(field.is_nullable));
                 let type_ = types.pop().unwrap();
                 match type_.physical_type {
@@ -290,7 +290,7 @@ where
                         let iter = fixed_size_binary::NestedIter::new(
                             columns.pop().unwrap(),
                             init,
-                            DataType::FixedSizeBinary(n),
+                            ArrowDataType::FixedSizeBinary(n),
                             num_rows,
                             chunk_size,
                         );
@@ -324,7 +324,7 @@ where
                     },
                 }
             },
-            DataType::Decimal256(_, _) => {
+            ArrowDataType::Decimal256(_, _) => {
                 init.push(InitNested::Primitive(field.is_nullable));
                 let type_ = types.pop().unwrap();
                 match type_.physical_type {
@@ -348,7 +348,7 @@ where
                         let iter = fixed_size_binary::NestedIter::new(
                             columns.pop().unwrap(),
                             init,
-                            DataType::FixedSizeBinary(n),
+                            ArrowDataType::FixedSizeBinary(n),
                             num_rows,
                             chunk_size,
                         );
@@ -379,7 +379,7 @@ where
                         let iter = fixed_size_binary::NestedIter::new(
                             columns.pop().unwrap(),
                             init,
-                            DataType::FixedSizeBinary(n),
+                            ArrowDataType::FixedSizeBinary(n),
                             num_rows,
                             chunk_size,
                         );
@@ -418,7 +418,7 @@ where
                     },
                 }
             },
-            DataType::Struct(fields) => {
+            ArrowDataType::Struct(fields) => {
                 let columns = fields
                     .iter()
                     .rev()
@@ -441,7 +441,7 @@ where
                 let columns = columns.into_iter().rev().collect();
                 Box::new(struct_::StructIterator::new(columns, fields.clone()))
             },
-            DataType::Map(inner, _) => {
+            ArrowDataType::Map(inner, _) => {
                 init.push(InitNested::List(field.is_nullable));
                 let iter = columns_to_iter_recursive(
                     columns,
@@ -467,15 +467,15 @@ where
     })
 }
 
-fn dict_read<'a, K: DictionaryKey, I: 'a + Pages>(
+fn dict_read<'a, K: DictionaryKey, I: 'a + PagesIter>(
     iter: I,
     init: Vec<InitNested>,
     _type_: &PrimitiveType,
-    data_type: DataType,
+    data_type: ArrowDataType,
     num_rows: usize,
     chunk_size: Option<usize>,
 ) -> PolarsResult<NestedArrayIter<'a>> {
-    use DataType::*;
+    use ArrowDataType::*;
     let values_data_type = if let Dictionary(_, v, _) = &data_type {
         v.as_ref()
     } else {

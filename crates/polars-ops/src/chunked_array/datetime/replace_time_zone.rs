@@ -1,16 +1,14 @@
-use arrow::legacy::kernels::convert_to_naive_local;
+use std::str::FromStr;
+
+use arrow::legacy::kernels::{convert_to_naive_local, Ambiguous};
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
 use chrono::NaiveDateTime;
-use chrono_tz::{Tz, UTC};
+use chrono_tz::UTC;
 use polars_core::chunked_array::ops::arity::try_binary_elementwise;
+use polars_core::chunked_array::temporal::parse_time_zone;
 use polars_core::prelude::*;
-
-fn parse_time_zone(s: &str) -> PolarsResult<Tz> {
-    s.parse()
-        .map_err(|e| polars_err!(ComputeError: format!("unable to parse time zone: '{s}': {e}")))
-}
 
 pub fn replace_time_zone(
     datetime: &Logical<DatetimeType, Int64Type>,
@@ -46,7 +44,10 @@ pub fn replace_time_zone(
             Some(ambiguous) => datetime.0.try_apply(|timestamp| {
                 let ndt = timestamp_to_datetime(timestamp);
                 Ok(datetime_to_timestamp(convert_to_naive_local(
-                    &from_tz, &to_tz, ndt, ambiguous,
+                    &from_tz,
+                    &to_tz,
+                    ndt,
+                    Ambiguous::from_str(ambiguous)?,
                 )?))
             }),
             _ => Ok(datetime.0.apply(|_| None)),
@@ -56,7 +57,10 @@ pub fn replace_time_zone(
                 (Some(timestamp), Some(ambiguous)) => {
                     let ndt = timestamp_to_datetime(timestamp);
                     Ok(Some(datetime_to_timestamp(convert_to_naive_local(
-                        &from_tz, &to_tz, ndt, ambiguous,
+                        &from_tz,
+                        &to_tz,
+                        ndt,
+                        Ambiguous::from_str(ambiguous)?,
                     )?)))
                 },
                 _ => Ok(None),

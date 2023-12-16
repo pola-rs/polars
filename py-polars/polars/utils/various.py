@@ -13,9 +13,12 @@ from typing import TYPE_CHECKING, Any, Generator, Iterable, Literal, Sequence, T
 import polars as pl
 from polars import functions as F
 from polars.datatypes import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
     Boolean,
     Date,
     Datetime,
+    Decimal,
     Duration,
     Int64,
     Time,
@@ -29,7 +32,7 @@ if TYPE_CHECKING:
     from collections.abc import Reversible
 
     from polars import DataFrame
-    from polars.type_aliases import PolarsDataType, PolarsIntegerType, SizeUnit
+    from polars.type_aliases import PolarsDataType, SizeUnit
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec, TypeGuard
@@ -85,7 +88,7 @@ def is_int_sequence(
     if _check_for_numpy(val) and isinstance(val, np.ndarray):
         return np.issubdtype(val.dtype, np.integer)
     elif include_series and isinstance(val, pl.Series):
-        return val.dtype in pl.INTEGER_DTYPES
+        return val.dtype.is_integer()
     return isinstance(val, Sequence) and _is_iterable_of(val, int)
 
 
@@ -118,18 +121,29 @@ def is_str_sequence(
     return isinstance(val, Sequence) and _is_iterable_of(val, str)
 
 
+def _warn_null_comparison(obj: Any) -> None:
+    if obj is None:
+        warnings.warn(
+            "Comparisons with None always result in null. Consider using `.is_null()` or `.is_not_null()`.",
+            UserWarning,
+            stacklevel=find_stacklevel(),
+        )
+
+
 def range_to_series(
-    name: str, rng: range, dtype: PolarsIntegerType | None = None
+    name: str, rng: range, dtype: PolarsDataType | None = None
 ) -> pl.Series:
     """Fast conversion of the given range to a Series."""
     dtype = dtype or Int64
-    return F.int_range(
-        start=rng.start,
-        end=rng.stop,
-        step=rng.step,
-        dtype=dtype,
-        eager=True,
-    ).alias(name)
+    if dtype.is_integer():
+        range = F.int_range(  # type: ignore[call-overload]
+            start=rng.start, end=rng.stop, step=rng.step, dtype=dtype, eager=True
+        )
+    else:
+        range = F.int_range(
+            start=rng.start, end=rng.stop, step=rng.step, eager=True
+        ).cast(dtype)
+    return range.alias(name)
 
 
 def range_to_slice(rng: range) -> slice:
@@ -338,8 +352,36 @@ def _cast_repr_strings_with_schema(
                     .cast(tp)
                 )
             elif tp == Boolean:
-                cast_cols[c] = F.col(c).map_dict(
-                    {"true": True, "false": False}, return_dtype=Boolean
+                cast_cols[c] = F.col(c).replace(
+                    {"true": True, "false": False},
+                    default=None,
+                )
+            elif tp in INTEGER_DTYPES:
+                int_string = F.col(c).str.replace_all(r"[^\d+-]", "")
+                cast_cols[c] = (
+                    pl.when(int_string.str.len_bytes() > 0).then(int_string).cast(tp)
+                )
+            elif tp in FLOAT_DTYPES or tp.base_type() == Decimal:
+                # identify integer/fractional parts
+                integer_part = F.col(c).str.replace(r"^(.*)\D(\d*)$", "$1")
+                fractional_part = F.col(c).str.replace(r"^(.*)\D(\d*)$", "$2")
+                cast_cols[c] = (
+                    # check for empty string and/or integer format
+                    pl.when(F.col(c).str.contains(r"^[+-]?\d*$"))
+                    .then(pl.when(F.col(c).str.len_bytes() > 0).then(F.col(c)))
+                    # check for scientific notation
+                    .when(F.col(c).str.contains("[eE]"))
+                    .then(F.col(c).str.replace(r"[^eE\d]", "."))
+                    .otherwise(
+                        # recombine sanitised integer/fractional components
+                        pl.concat_str(
+                            integer_part.str.replace_all(r"[^\d+-]", ""),
+                            fractional_part,
+                            separator=".",
+                        )
+                    )
+                    .cast(Utf8)
+                    .cast(tp)
                 )
             elif tp != df.schema[c]:
                 cast_cols[c] = F.col(c).cast(tp)
@@ -430,9 +472,9 @@ def _get_stack_locals(
     of_type
         Only return objects of this type.
     n_objects
-        If specified, return only the most recent ``n`` matching objects.
+        If specified, return only the most recent `n` matching objects.
     n_frames
-        If specified, look at objects in the last ``n`` stack frames only.
+        If specified, look at objects in the last `n` stack frames only.
     named
         If specified, only return objects matching the given name(s).
 
@@ -473,9 +515,10 @@ def _get_stack_locals(
 
 
 # this is called from rust
-def _polars_warn(msg: str) -> None:
+def _polars_warn(msg: str, category: type[Warning] = UserWarning) -> None:
     warnings.warn(
         msg,
+        category=category,
         stacklevel=find_stacklevel(),
     )
 

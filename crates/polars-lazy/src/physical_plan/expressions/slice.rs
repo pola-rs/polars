@@ -65,10 +65,7 @@ fn check_argument(arg: &Series, groups: &GroupsProxy, name: &str, expr: &Expr) -
 
 fn slice_groups_idx(offset: i64, length: usize, first: IdxSize, idx: &[IdxSize]) -> IdxItem {
     let (offset, len) = slice_offsets(offset, length, idx.len());
-    (
-        first + offset as IdxSize,
-        idx[offset..offset + len].to_vec(),
-    )
+    (first + offset as IdxSize, idx[offset..offset + len].into())
 }
 
 fn slice_groups_slice(offset: i64, length: usize, first: IdxSize, len: IdxSize) -> [IdxSize; 2] {
@@ -249,16 +246,12 @@ impl PhysicalExpr for SliceExpr {
             },
         };
 
-        ac.with_groups(groups);
+        ac.with_groups(groups).set_original_len(false);
 
         Ok(ac)
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema)
-    }
-
-    fn is_valid_aggregation(&self) -> bool {
-        true
     }
 }

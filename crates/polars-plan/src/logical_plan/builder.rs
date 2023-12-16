@@ -23,26 +23,27 @@ use polars_io::RowCount;
 #[cfg(feature = "csv")]
 use polars_io::{
     csv::utils::{infer_file_schema, is_compressed},
+    csv::CommentPrefix,
     csv::CsvEncoding,
     csv::NullValues,
     utils::get_reader_bytes,
 };
 
 use super::builder_functions::*;
+use crate::dsl::functions::horizontal::all_horizontal;
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::projection::{is_regex_projection, rewrite_projections};
 use crate::logical_plan::schema::{det_join_schema, FileInfo};
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
 use crate::prelude::*;
-use crate::utils;
 
 pub(crate) fn prepare_projection(
     exprs: Vec<Expr>,
     schema: &Schema,
 ) -> PolarsResult<(Vec<Expr>, Schema)> {
     let exprs = rewrite_projections(exprs, schema, &[])?;
-    let schema = utils::expressions_to_schema(&exprs, schema, Context::Default)?;
+    let schema = expressions_to_schema(&exprs, schema, Context::Default)?;
     Ok((exprs, schema))
 }
 
@@ -285,7 +286,7 @@ impl LogicalPlanBuilder {
         mut schema: Option<Arc<Schema>>,
         schema_overwrite: Option<&Schema>,
         low_memory: bool,
-        comment_char: Option<u8>,
+        comment_prefix: Option<CommentPrefix>,
         quote_char: Option<u8>,
         eol_char: u8,
         null_values: Option<NullValues>,
@@ -299,15 +300,7 @@ impl LogicalPlanBuilder {
         truncate_ragged_lines: bool,
     ) -> PolarsResult<Self> {
         let path = path.into();
-        let mut file = polars_utils::open_file(&path).map_err(|e| {
-            let path = path.to_string_lossy();
-            if path.len() > 88 {
-                let path: String = path.chars().skip(path.len() - 88).collect();
-                polars_err!(ComputeError: "error open file: ...{}, {}", path, e)
-            } else {
-                polars_err!(ComputeError: "error open file: {}, {}", path, e)
-            }
-        })?;
+        let mut file = polars_utils::open_file(&path)?;
 
         let paths = Arc::new([path]);
 
@@ -333,7 +326,7 @@ impl LogicalPlanBuilder {
             schema_overwrite,
             &mut skip_rows,
             skip_rows_after_header,
-            comment_char,
+            comment_prefix.as_ref(),
             quote_char,
             eol_char,
             null_values.as_ref(),
@@ -385,7 +378,7 @@ impl LogicalPlanBuilder {
                     ignore_errors,
                     skip_rows,
                     low_memory,
-                    comment_char,
+                    comment_prefix,
                     quote_char,
                     eol_char,
                     null_values,
@@ -479,6 +472,29 @@ impl LogicalPlanBuilder {
         self.project(exprs, Default::default())
     }
 
+    pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> Self {
+        match subset {
+            None => {
+                let predicate =
+                    try_delayed!(all_horizontal([col("*").is_not_null()]), &self.0, into);
+                self.filter(predicate)
+            },
+            Some(subset) => {
+                let predicate = try_delayed!(
+                    all_horizontal(
+                        subset
+                            .into_iter()
+                            .map(|e| e.is_not_null())
+                            .collect::<Vec<_>>(),
+                    ),
+                    &self.0,
+                    into
+                );
+                self.filter(predicate)
+            },
+        }
+    }
+
     pub fn fill_nan(self, fill_value: Expr) -> Self {
         let schema = try_delayed!(self.0.schema(), &self.0, into);
 
@@ -566,6 +582,8 @@ impl LogicalPlanBuilder {
 
     /// Apply a filter
     pub fn filter(self, predicate: Expr) -> Self {
+        let schema = try_delayed!(self.0.schema(), &self.0, into);
+
         let predicate = if has_expr(&predicate, |e| match e {
             Expr::Column(name) => is_regex_projection(name),
             Expr::Wildcard
@@ -575,7 +593,6 @@ impl LogicalPlanBuilder {
             | Expr::Nth(_) => true,
             _ => false,
         }) {
-            let schema = try_delayed!(self.0.schema(), &self.0, into);
             let mut rewritten = try_delayed!(
                 rewrite_projections(vec![predicate], &schema, &[]),
                 &self.0,
@@ -616,6 +633,28 @@ impl LogicalPlanBuilder {
         } else {
             predicate
         };
+
+        // Check predicates refer to valid column names here, as this is not
+        // checked by predicate pushdown and may otherwise lead to incorrect
+        // optimizations. For example:
+        //
+        // (unoptimized)
+        // FILTER [(col("x")) == (1)] FROM
+        //   SELECT [col("x").alias("y")] FROM
+        //     DF ["x"]; PROJECT 1/1 COLUMNS; SELECTION: "None"
+        //
+        // (optimized)
+        // SELECT [col("x").alias("y")] FROM
+        //   DF ["x"]; PROJECT 1/1 COLUMNS; SELECTION: "[(col(\"x\")) == (1)]"
+        //                                             ^^^
+        // "x" is incorrectly pushed down even though it didn't exist after SELECT
+        try_delayed!(
+            expr_to_leaf_column_names_iter(&predicate)
+                .try_for_each(|c| schema.try_index_of(&c).and(Ok(()))),
+            &self.0,
+            into
+        );
+
         LogicalPlan::Selection {
             predicate,
             input: Box::new(self.0),
@@ -645,19 +684,42 @@ impl LogicalPlanBuilder {
             into
         );
 
+        // Initialize schema from keys
         let mut schema = try_delayed!(
-            utils::expressions_to_schema(&keys, current_schema, Context::Default),
+            expressions_to_schema(&keys, current_schema, Context::Default),
             &self.0,
             into
         );
-        let other = try_delayed!(
-            utils::expressions_to_schema(&aggs, current_schema, Context::Aggregation),
-            &self.0,
-            into
-        );
-        schema.merge(other);
 
-        if schema.len() < keys.len() + aggs.len() {
+        // Add dynamic groupby index column(s)
+        #[cfg(feature = "dynamic_group_by")]
+        {
+            if let Some(options) = rolling_options.as_ref() {
+                let name = &options.index_column;
+                let dtype = try_delayed!(current_schema.try_get(name), self.0, into);
+                schema.with_column(name.clone(), dtype.clone());
+            } else if let Some(options) = dynamic_options.as_ref() {
+                let name = &options.index_column;
+                let dtype = try_delayed!(current_schema.try_get(name), self.0, into);
+                if options.include_boundaries {
+                    schema.with_column("_lower_boundary".into(), dtype.clone());
+                    schema.with_column("_upper_boundary".into(), dtype.clone());
+                }
+                schema.with_column(name.clone(), dtype.clone());
+            }
+        }
+        let keys_index_len = schema.len();
+
+        // Add aggregation column(s)
+        let aggs_schema = try_delayed!(
+            expressions_to_schema(&aggs, current_schema, Context::Aggregation),
+            &self.0,
+            into
+        );
+        schema.merge(aggs_schema);
+
+        // Make sure aggregation columns do not contain keys or index columns
+        if schema.len() < (keys_index_len + aggs.len()) {
             let check_names = || {
                 let mut names = PlHashSet::with_capacity(schema.len());
                 for expr in aggs.iter().chain(keys.iter()) {
@@ -671,37 +733,13 @@ impl LogicalPlanBuilder {
             try_delayed!(check_names(), &self.0, into)
         }
 
-        #[cfg(feature = "dynamic_group_by")]
-        {
-            let index_columns = &[
-                rolling_options
-                    .as_ref()
-                    .map(|options| &options.index_column),
-                dynamic_options
-                    .as_ref()
-                    .map(|options| &options.index_column),
-            ];
-            for &name in index_columns.iter().flatten() {
-                let dtype = try_delayed!(
-                    current_schema
-                        .get(name)
-                        .ok_or_else(|| polars_err!(ColumnNotFound: "{}", name)),
-                    self.0,
-                    into
-                );
-                schema.with_column(name.clone(), dtype.clone());
-            }
-        }
-
-        #[cfg(feature = "dynamic_group_by")]
         let options = GroupbyOptions {
+            #[cfg(feature = "dynamic_group_by")]
             dynamic: dynamic_options,
+            #[cfg(feature = "dynamic_group_by")]
             rolling: rolling_options,
             slice: None,
         };
-
-        #[cfg(not(feature = "dynamic_group_by"))]
-        let options = GroupbyOptions { slice: None };
 
         LogicalPlan::Aggregate {
             input: Box::new(self.0),

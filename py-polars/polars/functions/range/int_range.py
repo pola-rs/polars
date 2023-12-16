@@ -76,14 +76,15 @@ def arange(
     step
         Step size of the range.
     dtype
-        Data type of the range. Defaults to ``Int64``.
+        Data type of the range. Defaults to `Int64`.
     eager
-        Evaluate immediately and return a ``Series``.
-        If set to ``False`` (default), return an expression instead.
+        Evaluate immediately and return a `Series`.
+        If set to `False` (default), return an expression instead.
 
     Returns
     -------
-    Column of data type ``dtype``.
+    Expr or Series
+        Column of integer data type `dtype`.
 
     See Also
     --------
@@ -100,7 +101,6 @@ def arange(
             1
             2
     ]
-
     """
     return int_range(start, end, step, dtype=dtype, eager=eager)
 
@@ -161,15 +161,15 @@ def int_range(
     step
         Step size of the range.
     dtype
-        Data type of the range. Defaults to ``Int64``.
+        Data type of the range.
     eager
-        Evaluate immediately and return a ``Series``.
-        If set to ``False`` (default), return an expression instead.
+        Evaluate immediately and return a `Series`.
+        If set to `False` (default), return an expression instead.
 
     Returns
     -------
     Expr or Series
-        Column of data type :class:`Int64`.
+        Column of integer data type `dtype`.
 
     See Also
     --------
@@ -185,7 +185,6 @@ def int_range(
             1
             2
     ]
-
     """
     start = parse_as_expression(start)
     end = parse_as_expression(end)
@@ -253,15 +252,15 @@ def int_ranges(
     step
         Step size of the range.
     dtype
-        Integer data type of the ranges. Defaults to ``Int64``.
+        Integer data type of the ranges. Defaults to `Int64`.
     eager
-        Evaluate immediately and return a ``Series``.
-        If set to ``False`` (default), return an expression instead.
+        Evaluate immediately and return a `Series`.
+        If set to `False` (default), return an expression instead.
 
     Returns
     -------
     Expr or Series
-        Column of data type ``List(dtype)``.
+        Column of data type `List(dtype)`.
 
     See Also
     --------

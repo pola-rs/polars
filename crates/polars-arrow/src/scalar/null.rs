@@ -1,5 +1,5 @@
 use super::Scalar;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 
 /// The representation of a single entry of a [`crate::array::NullArray`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,7 +31,7 @@ impl Scalar for NullScalar {
     }
 
     #[inline]
-    fn data_type(&self) -> &DataType {
-        &DataType::Null
+    fn data_type(&self) -> &ArrowDataType {
+        &ArrowDataType::Null
     }
 }

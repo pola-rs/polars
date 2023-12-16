@@ -117,6 +117,10 @@ impl Buffer<'_> {
                 buf.push(av);
                 Ok(())
             },
+            Null(builder) => {
+                builder.append_null();
+                Ok(())
+            },
             _ => panic!("unexpected dtype when deserializing ndjson"),
         }
     }

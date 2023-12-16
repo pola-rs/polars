@@ -2,9 +2,10 @@ use std::collections::VecDeque;
 
 use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::MutableBitmap;
+use arrow::pushable::Pushable;
 use polars_error::{polars_err, to_compute_err, PolarsError, PolarsResult};
 
-use super::super::Pages;
+use super::super::PagesIter;
 use crate::parquet::deserialize::{
     FilteredHybridEncoded, FilteredHybridRleDecoderIter, HybridDecoderBitmapIter, HybridEncoded,
 };
@@ -19,73 +20,12 @@ pub fn not_implemented(page: &DataPage) -> PolarsError {
     let required = if is_optional { "optional" } else { "required" };
     let is_filtered = if is_filtered { ", index-filtered" } else { "" };
     polars_err!(ComputeError:
-        "Decoding {:?} \"{:?}\"-encoded {} {} parquet pages",
+        "Decoding {:?} \"{:?}\"-encoded {} {} parquet pages not yet implemented",
         page.descriptor.primitive_type.physical_type,
         page.encoding(),
         required,
         is_filtered,
     )
-}
-
-/// A private trait representing structs that can receive elements.
-pub(super) trait Pushable<T>: Sized {
-    fn reserve(&mut self, additional: usize);
-    fn push(&mut self, value: T);
-    fn len(&self) -> usize;
-    fn push_null(&mut self);
-    fn extend_constant(&mut self, additional: usize, value: T);
-}
-
-impl Pushable<bool> for MutableBitmap {
-    #[inline]
-    fn reserve(&mut self, additional: usize) {
-        MutableBitmap::reserve(self, additional)
-    }
-    #[inline]
-    fn len(&self) -> usize {
-        self.len()
-    }
-
-    #[inline]
-    fn push(&mut self, value: bool) {
-        self.push(value)
-    }
-
-    #[inline]
-    fn push_null(&mut self) {
-        self.push(false)
-    }
-
-    #[inline]
-    fn extend_constant(&mut self, additional: usize, value: bool) {
-        self.extend_constant(additional, value)
-    }
-}
-
-impl<A: Copy + Default> Pushable<A> for Vec<A> {
-    #[inline]
-    fn reserve(&mut self, additional: usize) {
-        Vec::reserve(self, additional)
-    }
-    #[inline]
-    fn len(&self) -> usize {
-        self.len()
-    }
-
-    #[inline]
-    fn push_null(&mut self) {
-        self.push(A::default())
-    }
-
-    #[inline]
-    fn push(&mut self, value: A) {
-        self.push(value)
-    }
-
-    #[inline]
-    fn extend_constant(&mut self, additional: usize, value: A) {
-        self.resize(self.len() + additional, value);
-    }
 }
 
 /// The state of a partially deserialized page
@@ -287,14 +227,12 @@ impl<'a> PageValidity<'a> for OptionalPageValidity<'a> {
     }
 }
 
-/// Extends a [`Pushable`] from an iterator of non-null values and an hybrid-rle decoder
-pub(super) fn extend_from_decoder<T: Default, P: Pushable<T>, I: Iterator<Item = T>>(
+fn reserve_pushable_and_validity<'a, T: Default, P: Pushable<T>>(
     validity: &mut MutableBitmap,
-    page_validity: &mut dyn PageValidity,
+    page_validity: &'a mut dyn PageValidity,
     limit: Option<usize>,
     pushable: &mut P,
-    mut values_iter: I,
-) {
+) -> Vec<FilteredHybridEncoded<'a>> {
     let limit = limit.unwrap_or(usize::MAX);
 
     let mut runs = vec![];
@@ -321,6 +259,18 @@ pub(super) fn extend_from_decoder<T: Default, P: Pushable<T>, I: Iterator<Item =
     }
     pushable.reserve(reserve_pushable);
     validity.reserve(reserve_pushable);
+    runs
+}
+
+/// Extends a [`Pushable`] from an iterator of non-null values and an hybrid-rle decoder
+pub(super) fn extend_from_decoder<T: Default, P: Pushable<T>, I: Iterator<Item = T>>(
+    validity: &mut MutableBitmap,
+    page_validity: &mut dyn PageValidity,
+    limit: Option<usize>,
+    pushable: &mut P,
+    mut values_iter: I,
+) {
+    let runs = reserve_pushable_and_validity(validity, page_validity, limit, pushable);
 
     // then a second loop to really fill the buffers
     for run in runs {
@@ -395,7 +345,7 @@ pub(super) trait Decoder<'a> {
         page: &mut Self::State,
         decoded: &mut Self::DecodedState,
         additional: usize,
-    );
+    ) -> PolarsResult<()>;
 
     /// Deserializes a [`DictPage`] into [`Self::Dict`].
     fn deserialize_dict(&self, page: &DictPage) -> Self::Dict;
@@ -407,8 +357,8 @@ pub(super) fn extend_from_new_page<'a, T: Decoder<'a>>(
     items: &mut VecDeque<T::DecodedState>,
     remaining: &mut usize,
     decoder: &T,
-) {
-    let capacity = chunk_size.unwrap_or(0);
+) -> PolarsResult<()> {
+    let capacity = std::cmp::min(chunk_size.unwrap_or(0), *remaining);
     let chunk_size = chunk_size.unwrap_or(usize::MAX);
 
     let mut decoded = if let Some(decoded) = items.pop_back() {
@@ -421,7 +371,7 @@ pub(super) fn extend_from_new_page<'a, T: Decoder<'a>>(
 
     let additional = (chunk_size - existing).min(*remaining);
 
-    decoder.extend_from_state(&mut page, &mut decoded, additional);
+    decoder.extend_from_state(&mut page, &mut decoded, additional)?;
     *remaining -= decoded.len() - existing;
     items.push_back(decoded);
 
@@ -429,10 +379,11 @@ pub(super) fn extend_from_new_page<'a, T: Decoder<'a>>(
         let additional = chunk_size.min(*remaining);
 
         let mut decoded = decoder.with_capacity(additional);
-        decoder.extend_from_state(&mut page, &mut decoded, additional);
+        decoder.extend_from_state(&mut page, &mut decoded, additional)?;
         *remaining -= decoded.len();
         items.push_back(decoded)
     }
+    Ok(())
 }
 
 /// Represents what happened when a new page was consumed
@@ -447,7 +398,7 @@ pub enum MaybeNext<P> {
 }
 
 #[inline]
-pub(super) fn next<'a, I: Pages, D: Decoder<'a>>(
+pub(super) fn next<'a, I: PagesIter, D: Decoder<'a>>(
     iter: &'a mut I,
     items: &'a mut VecDeque<D::DecodedState>,
     dict: &'a mut Option<D::Dict>,
@@ -487,7 +438,9 @@ pub(super) fn next<'a, I: Pages, D: Decoder<'a>>(
                 Err(e) => return MaybeNext::Some(Err(e)),
             };
 
-            extend_from_new_page(page, chunk_size, items, remaining, decoder);
+            if let Err(e) = extend_from_new_page(page, chunk_size, items, remaining, decoder) {
+                return MaybeNext::Some(Err(e));
+            }
 
             if (items.len() == 1) && items.front().unwrap().len() < chunk_size.unwrap_or(usize::MAX)
             {

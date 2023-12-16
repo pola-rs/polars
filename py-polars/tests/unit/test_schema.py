@@ -72,16 +72,60 @@ def test_pow_dtype() -> None:
     df = pl.DataFrame(
         {
             "foo": [1, 2, 3, 4, 5],
-        }
+            "a": [1, 2, 3, 4, 5],
+            "b": [1, 2, 3, 4, 5],
+            "c": [1, 2, 3, 4, 5],
+            "d": [1, 2, 3, 4, 5],
+            "e": [1, 2, 3, 4, 5],
+            "f": [1, 2, 3, 4, 5],
+            "g": [1, 2, 1, 2, 1],
+            "h": [1, 2, 1, 2, 1],
+        },
+        schema_overrides={
+            "a": pl.Int64,
+            "b": pl.UInt64,
+            "c": pl.Int32,
+            "d": pl.UInt32,
+            "e": pl.Int16,
+            "f": pl.UInt16,
+            "g": pl.Int8,
+            "h": pl.UInt8,
+        },
     ).lazy()
 
-    df = df.with_columns([pl.col("foo").cast(pl.UInt32)]).with_columns(
-        [
-            (pl.col("foo") * 2**2).alias("scaled_foo"),
-            (pl.col("foo") * 2**2.1).alias("scaled_foo2"),
-        ]
+    df = (
+        df.with_columns([pl.col("foo").cast(pl.UInt32)])
+        .with_columns(
+            [
+                (pl.col("foo") * 2**2).alias("scaled_foo"),
+                (pl.col("foo") * 2**2.1).alias("scaled_foo2"),
+                (pl.col("a") ** pl.col("h")).alias("a_pow_h"),
+                (pl.col("b") ** pl.col("h")).alias("b_pow_h"),
+                (pl.col("c") ** pl.col("h")).alias("c_pow_h"),
+                (pl.col("d") ** pl.col("h")).alias("d_pow_h"),
+                (pl.col("e") ** pl.col("h")).alias("e_pow_h"),
+                (pl.col("f") ** pl.col("h")).alias("f_pow_h"),
+                (pl.col("g") ** pl.col("h")).alias("g_pow_h"),
+                (pl.col("h") ** pl.col("h")).alias("h_pow_h"),
+            ]
+        )
+        .drop(["a", "b", "c", "d", "e", "f", "g", "h"])
     )
-    assert df.collect().dtypes == [pl.UInt32, pl.UInt32, pl.Float64]
+    expected = [
+        pl.UInt32,
+        pl.UInt32,
+        pl.Float64,
+        pl.Int64,
+        pl.UInt64,
+        pl.Int32,
+        pl.UInt32,
+        pl.Int16,
+        pl.UInt16,
+        pl.Int8,
+        pl.UInt8,
+    ]
+    assert df.collect().dtypes == expected
+    assert df.dtypes == expected
 
 
 def test_bool_numeric_supertype() -> None:
@@ -109,16 +153,16 @@ def test_with_context() -> None:
 
     assert (
         df_a.with_context(df_b.lazy()).select([pl.col("b") + pl.col("c").first()])
-    ).collect().to_dict(False) == {"b": ["afoo", "cfoo", None]}
+    ).collect().to_dict(as_series=False) == {"b": ["afoo", "cfoo", None]}
 
     with pytest.raises(pl.ComputeError):
         (df_a.with_context(df_b.lazy()).select(["a", "c"])).collect()
 
 
 def test_from_dicts_nested_nulls() -> None:
-    assert pl.from_dicts([{"a": [None, None]}, {"a": [1, 2]}]).to_dict(False) == {
-        "a": [[None, None], [1, 2]]
-    }
+    assert pl.from_dicts([{"a": [None, None]}, {"a": [1, 2]}]).to_dict(
+        as_series=False
+    ) == {"a": [[None, None], [1, 2]]}
 
 
 def test_group_schema_err() -> None:
@@ -129,11 +173,13 @@ def test_group_schema_err() -> None:
 
 def test_schema_inference_from_rows() -> None:
     # these have to upcast to float
-    assert pl.from_records([[1, 2.1, 3], [4, 5, 6.4]]).to_dict(False) == {
+    assert pl.from_records([[1, 2.1, 3], [4, 5, 6.4]]).to_dict(as_series=False) == {
         "column_0": [1.0, 2.1, 3.0],
         "column_1": [4.0, 5.0, 6.4],
     }
-    assert pl.from_dicts([{"a": 1, "b": 2}, {"a": 3.1, "b": 4.5}]).to_dict(False) == {
+    assert pl.from_dicts([{"a": 1, "b": 2}, {"a": 3.1, "b": 4.5}]).to_dict(
+        as_series=False
+    ) == {
         "a": [1.0, 3.1],
         "b": [2.0, 4.5],
     }
@@ -168,7 +214,7 @@ def test_lazy_map_schema() -> None:
 
     assert df.lazy().map_batches(
         custom2, validate_output_schema=False
-    ).collect().to_dict(False) == {"a": ["1", "2", "3"], "b": ["a", "b", "c"]}
+    ).collect().to_dict(as_series=False) == {"a": ["1", "2", "3"], "b": ["a", "b", "c"]}
 
 
 def test_join_as_of_by_schema() -> None:
@@ -190,7 +236,7 @@ def test_unknown_map_elements() -> None:
         ]
     )
 
-    assert q.collect().to_dict(False) == {
+    assert q.collect().to_dict(as_series=False) == {
         "Amount": [10, 1, 1, 5],
         "Flour": [10.0, 100.0, 100.0, 20.0],
     }
@@ -262,7 +308,7 @@ def test_shrink_dtype() -> None:
         pl.Float32,
     ]
 
-    assert out.to_dict(False) == {
+    assert out.to_dict(as_series=False) == {
         "a": [1, 2, 3],
         "b": [1, 2, 8589934592],
         "c": [-1, 2, 1073741824],
@@ -310,7 +356,7 @@ def test_lazy_rename() -> None:
 
     assert (
         df.lazy().rename({"y": "x", "x": "y"}).select(["x", "y"]).collect()
-    ).to_dict(False) == {"x": [2], "y": [1]}
+    ).to_dict(as_series=False) == {"x": [2], "y": [1]}
 
 
 def test_all_null_cast_5826() -> None:
@@ -325,6 +371,18 @@ def test_empty_list_eval_schema_5734() -> None:
     assert df.filter(False).select(
         pl.col("a").list.eval(pl.element().struct.field("b"))
     ).schema == {"a": pl.List(pl.Int64)}
+
+
+def test_list_eval_type_cast_11188() -> None:
+    df = pl.DataFrame(
+        [
+            {"a": None},
+        ],
+        schema={"a": pl.List(pl.Int64)},
+    )
+    assert df.select(
+        pl.col("a").list.eval(pl.element().cast(pl.Utf8)).alias("a_str")
+    ).schema == {"a_str": pl.List(pl.Utf8)}
 
 
 def test_schema_true_divide_6643() -> None:
@@ -377,7 +435,7 @@ def test_duration_division_schema() -> None:
     )
 
     assert q.schema == {"a": pl.Float64}
-    assert q.collect().to_dict(False) == {"a": [1.0]}
+    assert q.collect().to_dict(as_series=False) == {"a": [1.0]}
 
 
 def test_int_operator_stability() -> None:
@@ -496,13 +554,13 @@ def test_concat_vertically_relaxed() -> None:
     )
     out = pl.concat([a, b], how="vertical_relaxed")
     assert out.schema == {"a": pl.Int16, "b": pl.Int64}
-    assert out.to_dict(False) == {
+    assert out.to_dict(as_series=False) == {
         "a": [1, 2, 3, 43, 2, 3],
         "b": [1, 0, None, 32, 1, None],
     }
     out = pl.concat([b, a], how="vertical_relaxed")
     assert out.schema == {"a": pl.Int16, "b": pl.Int64}
-    assert out.to_dict(False) == {
+    assert out.to_dict(as_series=False) == {
         "a": [43, 2, 3, 1, 2, 3],
         "b": [32, 1, None, 1, 0, None],
     }
@@ -512,13 +570,13 @@ def test_concat_vertically_relaxed() -> None:
 
     out = pl.concat([c, d], how="vertical_relaxed")
     assert out.schema == {"a": pl.Float64, "b": pl.Float64}
-    assert out.to_dict(False) == {
+    assert out.to_dict(as_series=False) == {
         "a": [1.0, 2.0, 1.0, 0.2],
         "b": [2.0, 1.0, None, 0.1],
     }
     out = pl.concat([d, c], how="vertical_relaxed")
     assert out.schema == {"a": pl.Float64, "b": pl.Float64}
-    assert out.to_dict(False) == {
+    assert out.to_dict(as_series=False) == {
         "a": [1.0, 0.2, 1.0, 2.0],
         "b": [None, 0.1, 2.0, 1.0],
     }
@@ -537,9 +595,23 @@ def test_lit_iter_schema() -> None:
         }
     )
 
-    assert df.group_by("key").agg(pl.col("dates").unique() + timedelta(days=1)).to_dict(
-        False
-    ) == {
+    result = df.group_by("key").agg(pl.col("dates").unique() + timedelta(days=1))
+    expected = {
         "key": ["A"],
         "dates": [[date(1970, 1, 2), date(1970, 1, 3), date(1970, 1, 4)]],
     }
+    assert result.to_dict(as_series=False) == expected
+
+
+def test_nested_binary_literal_super_type_12227() -> None:
+    # The `.alias` is important here to trigger the bug.
+    assert (
+        pl.select(x=1).select((pl.lit(0) + ((pl.col("x") > 0) * 0.1)).alias("x")).item()
+        == 0.1
+    )
+    assert (
+        pl.select(
+            (pl.lit(0) + (pl.lit(0) == pl.lit(0)) * pl.lit(0.1)) + pl.lit(0)
+        ).item()
+        == 0.1
+    )

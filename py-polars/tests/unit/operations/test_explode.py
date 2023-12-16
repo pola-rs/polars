@@ -82,7 +82,7 @@ def test_explode_empty_list_4003() -> None:
             {"id": 3, "nested": [2]},
         ]
     )
-    assert df.explode("nested").to_dict(False) == {
+    assert df.explode("nested").to_dict(as_series=False) == {
         "id": [1, 2, 3],
         "nested": [None, 1, 2],
     }
@@ -219,7 +219,7 @@ def test_explode_in_agg_context() -> None:
         .explode("idxs")
         .group_by("row_nr")
         .agg(pl.col("array").flatten())
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "row_nr": [0, 1, 2],
         "array": [[0.0, 3.5], [4.6, 0.0], [0.0, 7.8, 0.0, 0.0, 7.8, 0.0]],
     }
@@ -234,7 +234,10 @@ def test_explode_inner_lists_3985() -> None:
         df.group_by("id")
         .agg(pl.col("categories"))
         .with_columns(pl.col("categories").list.eval(pl.element().list.explode()))
-    ).collect().to_dict(False) == {"id": [1], "categories": [["a", "b", "a", "c"]]}
+    ).collect().to_dict(as_series=False) == {
+        "id": [1],
+        "categories": [["a", "b", "a", "c"]],
+    }
 
 
 def test_list_struct_explode_6905() -> None:
@@ -309,7 +312,7 @@ def test_explode_inner_null() -> None:
 def test_explode_array() -> None:
     df = pl.LazyFrame(
         {"a": [[1, 2], [2, 3]], "b": [1, 2]},
-        schema_overrides={"a": pl.Array(inner=pl.Int64, width=2)},
+        schema_overrides={"a": pl.Array(pl.Int64, 2)},
     )
     expected = pl.DataFrame({"a": [1, 2, 2, 3], "b": [1, 1, 2, 2]})
     for ex in ("a", ~cs.integer()):
@@ -342,7 +345,7 @@ def test_explode_null_struct() -> None:
         },
     ]
 
-    assert pl.DataFrame(df).explode("col1").to_dict(False) == {
+    assert pl.DataFrame(df).explode("col1").to_dict(as_series=False) == {
         "col1": [
             {"field1": None, "field2": None, "field3": None},
             {"field1": None, "field2": None, "field3": None},

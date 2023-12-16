@@ -4,6 +4,7 @@ use std::ops::Deref;
 use either::Either;
 use numpy::IntoPyArray;
 use polars::frame::row::{rows_to_schema_supertypes, Row};
+use polars::frame::NullStrategy;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
 #[cfg(feature = "ipc")]
@@ -14,7 +15,7 @@ use polars::prelude::*;
 use polars_core::export::arrow::datatypes::IntegerType;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::*;
-use polars_core::prelude::{IndexOrder, QuantileInterpolOptions};
+use polars_core::prelude::IndexOrder;
 use polars_core::utils::arrow::compute::cast::CastOptions;
 use polars_core::utils::try_get_supertype;
 #[cfg(feature = "pivot")]
@@ -50,42 +51,49 @@ impl PyDataFrame {
     fn finish_from_rows(
         rows: Vec<Row>,
         infer_schema_length: Option<usize>,
-        schema_overwrite: Option<Schema>,
+        schema: Option<Schema>,
+        schema_overrides_by_idx: Option<Vec<(usize, DataType)>>,
     ) -> PyResult<Self> {
         // Object builder must be registered, this is done on import.
-        let schema =
+        let mut final_schema =
             rows_to_schema_supertypes(&rows, infer_schema_length.map(|n| std::cmp::max(1, n)))
                 .map_err(PyPolarsErr::from)?;
-        // Replace inferred nulls with boolean and erase scale from inferred decimals.
-        let fields = schema.iter_fields().map(|mut fld| match fld.data_type() {
-            DataType::Null => {
-                fld.coerce(DataType::Boolean);
-                fld
-            },
-            DataType::Decimal(_, _) => {
-                fld.coerce(DataType::Decimal(None, None));
-                fld
-            },
-            _ => fld,
-        });
-        let mut schema = Schema::from_iter(fields);
 
-        if let Some(schema_overwrite) = schema_overwrite {
-            for (i, (name, dtype)) in schema_overwrite.into_iter().enumerate() {
-                if let Some((name_, dtype_)) = schema.get_at_index_mut(i) {
+        // Erase scale from inferred decimals.
+        for dtype in final_schema.iter_dtypes_mut() {
+            if let DataType::Decimal(_, _) = dtype {
+                *dtype = DataType::Decimal(None, None)
+            }
+        }
+
+        // Integrate explicit/inferred schema.
+        if let Some(schema) = schema {
+            for (i, (name, dtype)) in schema.into_iter().enumerate() {
+                if let Some((name_, dtype_)) = final_schema.get_at_index_mut(i) {
                     *name_ = name;
 
-                    // If user sets dtype unknown, we use the inferred datatype.
+                    // If schema dtype is Unknown, overwrite with inferred datatype.
                     if !matches!(dtype, DataType::Unknown) {
                         *dtype_ = dtype;
                     }
                 } else {
-                    schema.with_column(name, dtype);
+                    final_schema.with_column(name, dtype);
                 }
             }
         }
 
-        let df = DataFrame::from_rows_and_schema(&rows, &schema).map_err(PyPolarsErr::from)?;
+        // Optional per-field overrides; these supersede default/inferred dtypes.
+        if let Some(overrides) = schema_overrides_by_idx {
+            for (i, dtype) in overrides {
+                if let Some((_, dtype_)) = final_schema.get_at_index_mut(i) {
+                    if !matches!(dtype, DataType::Unknown) {
+                        *dtype_ = dtype;
+                    }
+                }
+            }
+        }
+        let df =
+            DataFrame::from_rows_and_schema(&rows, &final_schema).map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
@@ -165,7 +173,7 @@ impl PyDataFrame {
     #[pyo3(signature = (
         py_f, infer_schema_length, chunk_size, has_header, ignore_errors, n_rows,
         skip_rows, projection, separator, rechunk, columns, encoding, n_threads, path,
-        overwrite_dtype, overwrite_dtype_slice, low_memory, comment_char, quote_char,
+        overwrite_dtype, overwrite_dtype_slice, low_memory, comment_prefix, quote_char,
         null_values, missing_utf8_is_empty_string, try_parse_dates, skip_rows_after_header,
         row_count, sample_size, eol_char, raise_if_empty, truncate_ragged_lines, schema)
     )]
@@ -187,7 +195,7 @@ impl PyDataFrame {
         overwrite_dtype: Option<Vec<(&str, Wrap<DataType>)>>,
         overwrite_dtype_slice: Option<Vec<Wrap<DataType>>>,
         low_memory: bool,
-        comment_char: Option<&str>,
+        comment_prefix: Option<&str>,
         quote_char: Option<&str>,
         null_values: Option<Wrap<NullValues>>,
         missing_utf8_is_empty_string: bool,
@@ -201,7 +209,6 @@ impl PyDataFrame {
         schema: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
-        let comment_char = comment_char.map(|s| s.as_bytes()[0]);
         let eol_char = eol_char.as_bytes()[0];
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let quote_char = quote_char.and_then(|s| s.as_bytes().first().copied());
@@ -244,7 +251,7 @@ impl PyDataFrame {
             .low_memory(low_memory)
             .with_null_values(null_values)
             .with_missing_is_null(!missing_utf8_is_empty_string)
-            .with_comment_char(comment_char)
+            .with_comment_prefix(comment_prefix)
             .with_try_parse_dates(try_parse_dates)
             .with_quote_char(quote_char)
             .with_end_of_line_char(eol_char)
@@ -373,25 +380,28 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "avro")]
-    #[pyo3(signature = (py_f, compression))]
+    #[pyo3(signature = (py_f, compression, name))]
     pub fn write_avro(
         &mut self,
         py: Python,
         py_f: PyObject,
         compression: Wrap<Option<AvroCompression>>,
+        name: String,
     ) -> PyResult<()> {
         use polars::io::avro::AvroWriter;
 
         if let Ok(s) = py_f.extract::<&str>(py) {
-            let f = std::fs::File::create(s).unwrap();
+            let f = std::fs::File::create(s)?;
             AvroWriter::new(f)
                 .with_compression(compression.0)
+                .with_name(name)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         } else {
             let mut buf = get_file_like(py_f, true)?;
             AvroWriter::new(&mut buf)
                 .with_compression(compression.0)
+                .with_name(name)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         }
@@ -512,35 +522,40 @@ impl PyDataFrame {
     pub fn read_rows(
         rows: Vec<Wrap<Row>>,
         infer_schema_length: Option<usize>,
-        schema_overwrite: Option<Wrap<Schema>>,
+        schema: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
         // SAFETY: Wrap<T> is transparent.
         let rows = unsafe { std::mem::transmute::<Vec<Wrap<Row>>, Vec<Row>>(rows) };
-        Self::finish_from_rows(
-            rows,
-            infer_schema_length,
-            schema_overwrite.map(|wrap| wrap.0),
-        )
+        Self::finish_from_rows(rows, infer_schema_length, schema.map(|wrap| wrap.0), None)
     }
 
     #[staticmethod]
     pub fn read_dicts(
         dicts: &PyAny,
         infer_schema_length: Option<usize>,
-        schema_overwrite: Option<Wrap<Schema>>,
+        schema: Option<Wrap<Schema>>,
+        schema_overrides: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
         // If given, read dict fields in schema order.
         let mut schema_columns = PlIndexSet::new();
-        if let Some(schema) = &schema_overwrite {
-            schema_columns.extend(schema.0.iter_names().map(|n| n.to_string()))
+        if let Some(s) = &schema {
+            schema_columns.extend(s.0.iter_names().map(|n| n.to_string()))
         }
         let (rows, names) = dicts_to_rows(dicts, infer_schema_length, schema_columns)?;
+        let mut schema_overrides_by_idx: Vec<(usize, DataType)> = Vec::new();
+        if let Some(overrides) = schema_overrides {
+            for (idx, name) in names.iter().enumerate() {
+                if let Some(dtype) = overrides.0.get(name) {
+                    schema_overrides_by_idx.push((idx, dtype.clone()));
+                }
+            }
+        }
         let mut pydf = Self::finish_from_rows(
             rows,
             infer_schema_length,
-            schema_overwrite.map(|wrap| wrap.0),
+            schema.map(|wrap| wrap.0),
+            Some(schema_overrides_by_idx),
         )?;
-
         unsafe {
             for (s, name) in pydf.df.get_columns_mut().iter_mut().zip(&names) {
                 s.rename(name);
@@ -585,7 +600,8 @@ impl PyDataFrame {
         &mut self,
         py: Python,
         py_f: PyObject,
-        has_header: bool,
+        include_bom: bool,
+        include_header: bool,
         separator: u8,
         line_terminator: String,
         quote_char: u8,
@@ -600,11 +616,12 @@ impl PyDataFrame {
         let null = null_value.unwrap_or_default();
 
         if let Ok(s) = py_f.extract::<&str>(py) {
+            let f = std::fs::File::create(s)?;
             py.allow_threads(|| {
-                let f = std::fs::File::create(s).unwrap();
                 // No need for a buffered writer, because the csv writer does internal buffering.
                 CsvWriter::new(f)
-                    .has_header(has_header)
+                    .include_bom(include_bom)
+                    .include_header(include_header)
                     .with_separator(separator)
                     .with_line_terminator(line_terminator)
                     .with_quote_char(quote_char)
@@ -621,7 +638,8 @@ impl PyDataFrame {
         } else {
             let mut buf = get_file_like(py_f, true)?;
             CsvWriter::new(&mut buf)
-                .has_header(has_header)
+                .include_bom(include_bom)
+                .include_header(include_header)
                 .with_separator(separator)
                 .with_line_terminator(line_terminator)
                 .with_quote_char(quote_char)
@@ -647,8 +665,8 @@ impl PyDataFrame {
         compression: Wrap<Option<IpcCompression>>,
     ) -> PyResult<()> {
         if let Ok(s) = py_f.extract::<&str>(py) {
+            let f = std::fs::File::create(s)?;
             py.allow_threads(|| {
-                let f = std::fs::File::create(s).unwrap();
                 IpcWriter::new(f)
                     .with_compression(compression.0)
                     .finish(&mut self.df)
@@ -673,8 +691,8 @@ impl PyDataFrame {
         compression: Wrap<Option<IpcCompression>>,
     ) -> PyResult<()> {
         if let Ok(s) = py_f.extract::<&str>(py) {
+            let f = std::fs::File::create(s)?;
             py.allow_threads(|| {
-                let f = std::fs::File::create(s).unwrap();
                 IpcStreamWriter::new(f)
                     .with_compression(compression.0)
                     .finish(&mut self.df)
@@ -770,7 +788,7 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "parquet")]
-    #[pyo3(signature = (py_f, compression, compression_level, statistics, row_group_size))]
+    #[pyo3(signature = (py_f, compression, compression_level, statistics, row_group_size, data_page_size))]
     pub fn write_parquet(
         &mut self,
         py: Python,
@@ -779,16 +797,18 @@ impl PyDataFrame {
         compression_level: Option<i32>,
         statistics: bool,
         row_group_size: Option<usize>,
+        data_page_size: Option<usize>,
     ) -> PyResult<()> {
         let compression = parse_parquet_compression(compression, compression_level)?;
 
         if let Ok(s) = py_f.extract::<&str>(py) {
-            let f = std::fs::File::create(s).unwrap();
+            let f = std::fs::File::create(s)?;
             py.allow_threads(|| {
                 ParquetWriter::new(f)
                     .with_compression(compression)
                     .with_statistics(statistics)
                     .with_row_group_size(row_group_size)
+                    .with_data_page_size(data_page_size)
                     .finish(&mut self.df)
                     .map_err(PyPolarsErr::from)
             })?;
@@ -798,6 +818,7 @@ impl PyDataFrame {
                 .with_compression(compression)
                 .with_statistics(statistics)
                 .with_row_group_size(row_group_size)
+                .with_data_page_size(data_page_size)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         }
@@ -830,7 +851,7 @@ impl PyDataFrame {
                 .get_columns()
                 .iter()
                 .enumerate()
-                .filter(|(_i, s)| matches!(s.dtype(), DataType::Categorical(_)))
+                .filter(|(_i, s)| matches!(s.dtype(), DataType::Categorical(_, _)))
                 .map(|(i, _)| i)
                 .collect::<Vec<_>>();
 
@@ -1028,8 +1049,8 @@ impl PyDataFrame {
         self.df.select_at_idx(idx).map(|s| PySeries::new(s.clone()))
     }
 
-    pub fn find_idx_by_name(&self, name: &str) -> Option<usize> {
-        self.df.find_idx_by_name(name)
+    pub fn get_column_index(&self, name: &str) -> Option<usize> {
+        self.df.get_column_index(name)
     }
 
     pub fn get_column(&self, name: &str) -> PyResult<PySeries> {
@@ -1046,7 +1067,7 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn take(&self, indices: Wrap<Vec<IdxSize>>) -> PyResult<Self> {
+    pub fn gather(&self, indices: Wrap<Vec<IdxSize>>) -> PyResult<Self> {
         let indices = indices.0;
         let indices = IdxCa::from_vec("", indices);
         let df = self.df.take(&indices).map_err(PyPolarsErr::from)?;
@@ -1066,24 +1087,24 @@ impl PyDataFrame {
         Ok(())
     }
 
-    pub fn replace_at_idx(&mut self, index: usize, new_col: PySeries) -> PyResult<()> {
+    pub fn replace_column(&mut self, index: usize, new_column: PySeries) -> PyResult<()> {
         self.df
-            .replace_at_idx(index, new_col.series)
+            .replace_column(index, new_column.series)
             .map_err(PyPolarsErr::from)?;
         Ok(())
     }
 
-    pub fn insert_at_idx(&mut self, index: usize, new_col: PySeries) -> PyResult<()> {
+    pub fn insert_column(&mut self, index: usize, column: PySeries) -> PyResult<()> {
         self.df
-            .insert_at_idx(index, new_col.series)
+            .insert_column(index, column.series)
             .map_err(PyPolarsErr::from)?;
         Ok(())
     }
 
-    pub fn slice(&self, offset: usize, length: Option<usize>) -> Self {
+    pub fn slice(&self, offset: i64, length: Option<usize>) -> Self {
         let df = self
             .df
-            .slice(offset as i64, length.unwrap_or_else(|| self.df.height()));
+            .slice(offset, length.unwrap_or_else(|| self.df.height()));
         df.into()
     }
 
@@ -1107,11 +1128,11 @@ impl PyDataFrame {
         Ok(mask.into_series().into())
     }
 
-    pub fn frame_equal(&self, other: &PyDataFrame, null_equal: bool) -> bool {
+    pub fn equals(&self, other: &PyDataFrame, null_equal: bool) -> bool {
         if null_equal {
-            self.df.frame_equal_missing(&other.df)
+            self.df.equals_missing(&other.df)
         } else {
-            self.df.frame_equal(&other.df)
+            self.df.equals(&other.df)
         }
     }
 
@@ -1235,64 +1256,40 @@ impl PyDataFrame {
         self.df.clone().lazy().into()
     }
 
-    pub fn max(&self) -> Self {
-        self.df.max().into()
-    }
-
-    pub fn min(&self) -> Self {
-        self.df.min().into()
-    }
-
-    pub fn sum(&self) -> Self {
-        self.df.sum().into()
-    }
-
-    pub fn mean(&self) -> Self {
-        self.df.mean().into()
-    }
-
-    pub fn std(&self, ddof: u8) -> Self {
-        self.df.std(ddof).into()
-    }
-
-    pub fn var(&self, ddof: u8) -> Self {
-        self.df.var(ddof).into()
-    }
-
-    pub fn median(&self) -> Self {
-        self.df.median().into()
-    }
-
-    pub fn hmean(&self, null_strategy: Wrap<NullStrategy>) -> PyResult<Option<PySeries>> {
-        let s = self.df.hmean(null_strategy.0).map_err(PyPolarsErr::from)?;
+    pub fn max_horizontal(&self) -> PyResult<Option<PySeries>> {
+        let s = self.df.max_horizontal().map_err(PyPolarsErr::from)?;
         Ok(s.map(|s| s.into()))
     }
 
-    pub fn hmax(&self) -> PyResult<Option<PySeries>> {
-        let s = self.df.hmax().map_err(PyPolarsErr::from)?;
+    pub fn min_horizontal(&self) -> PyResult<Option<PySeries>> {
+        let s = self.df.min_horizontal().map_err(PyPolarsErr::from)?;
         Ok(s.map(|s| s.into()))
     }
 
-    pub fn hmin(&self) -> PyResult<Option<PySeries>> {
-        let s = self.df.hmin().map_err(PyPolarsErr::from)?;
-        Ok(s.map(|s| s.into()))
-    }
-
-    pub fn hsum(&self, null_strategy: Wrap<NullStrategy>) -> PyResult<Option<PySeries>> {
-        let s = self.df.hsum(null_strategy.0).map_err(PyPolarsErr::from)?;
-        Ok(s.map(|s| s.into()))
-    }
-
-    pub fn quantile(
-        &self,
-        quantile: f64,
-        interpolation: Wrap<QuantileInterpolOptions>,
-    ) -> PyResult<Self> {
-        let df = self
+    pub fn sum_horizontal(&self, ignore_nulls: bool) -> PyResult<Option<PySeries>> {
+        let null_strategy = if ignore_nulls {
+            NullStrategy::Ignore
+        } else {
+            NullStrategy::Propagate
+        };
+        let s = self
             .df
-            .quantile(quantile, interpolation.0)
+            .sum_horizontal(null_strategy)
             .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
+        Ok(s.map(|s| s.into()))
+    }
+
+    pub fn mean_horizontal(&self, ignore_nulls: bool) -> PyResult<Option<PySeries>> {
+        let null_strategy = if ignore_nulls {
+            NullStrategy::Ignore
+        } else {
+            NullStrategy::Propagate
+        };
+        let s = self
+            .df
+            .mean_horizontal(null_strategy)
+            .map_err(PyPolarsErr::from)?;
+        Ok(s.map(|s| s.into()))
     }
 
     #[pyo3(signature = (columns, separator, drop_first=false))]

@@ -15,7 +15,7 @@ impl Hasher for IdHasher {
     }
 
     fn write_u32(&mut self, i: u32) {
-        self.write_u64(i as u64)
+        self.hash = i as u64;
     }
 
     #[inline]
@@ -24,15 +24,11 @@ impl Hasher for IdHasher {
     }
 
     fn write_i32(&mut self, i: i32) {
-        // Safety:
-        // same number of bits
-        unsafe { self.write_u32(std::mem::transmute::<i32, u32>(i)) }
+        self.hash = i as u64;
     }
 
     fn write_i64(&mut self, i: i64) {
-        // Safety:
-        // same number of bits
-        unsafe { self.write_u64(std::mem::transmute::<i64, u64>(i)) }
+        self.hash = i as u64;
     }
 }
 

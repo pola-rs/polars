@@ -1,10 +1,8 @@
-use arrow::array::{Array, PrimitiveArray};
+use arrow::array::{Array, ArrayRef, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::legacy::array::PolarsArray;
-use arrow::legacy::data_types::{ArrayRef, IsFloat};
-use arrow::legacy::slice::ExtremaNanAware;
-use arrow::legacy::utils::CustomIterTools;
 use arrow::types::NativeType;
+use polars_compute::min_max::MinMaxKernel;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 
@@ -12,7 +10,8 @@ use crate::chunked_array::list::namespace::has_inner_nulls;
 
 fn min_between_offsets<T>(values: &[T], offset: &[i64]) -> PrimitiveArray<T>
 where
-    T: NativeType + PartialOrd + IsFloat,
+    T: NativeType,
+    [T]: for<'a> MinMaxKernel<Scalar<'a> = T>,
 {
     let mut running_offset = offset[0];
 
@@ -23,14 +22,15 @@ where
             running_offset = *end;
 
             let slice = unsafe { values.get_unchecked(current_offset as usize..*end as usize) };
-            slice.min_value_nan_aware().copied()
+            slice.min_ignore_nan_kernel()
         })
-        .collect_trusted()
+        .collect()
 }
 
 fn dispatch_min<T>(arr: &dyn Array, offsets: &[i64], validity: Option<&Bitmap>) -> ArrayRef
 where
-    T: NativeType + PartialOrd + IsFloat,
+    T: NativeType,
+    [T]: for<'a> MinMaxKernel<Scalar<'a> = T>,
 {
     let values = arr.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
     let values = values.values().as_slice();
@@ -73,13 +73,13 @@ fn min_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {
     Series::try_from((ca.name(), chunks)).unwrap()
 }
 
-pub(super) fn list_min_function(ca: &ListChunked) -> Series {
-    fn inner(ca: &ListChunked) -> Series {
+pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
+    fn inner(ca: &ListChunked) -> PolarsResult<Series> {
         match ca.inner_dtype() {
             DataType::Boolean => {
                 let out: BooleanChunked = ca
                     .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().bool().unwrap().min()));
-                out.into_series()
+                Ok(out.into_series())
             },
             dt if dt.is_numeric() => {
                 with_match_physical_numeric_polars_type!(dt, |$T| {
@@ -89,14 +89,14 @@ pub(super) fn list_min_function(ca: &ListChunked) -> Series {
                             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                             ca.min()
                     });
-                    out.into_series()
+                    Ok(out.into_series())
                 })
             },
-            _ => ca
-                .apply_amortized(|s| s.as_ref().min_as_series())
+            _ => Ok(ca
+                .try_apply_amortized(|s| s.as_ref().min_as_series())?
                 .explode()
                 .unwrap()
-                .into_series(),
+                .into_series()),
         }
     }
 
@@ -105,14 +105,15 @@ pub(super) fn list_min_function(ca: &ListChunked) -> Series {
     };
 
     match ca.inner_dtype() {
-        dt if dt.is_numeric() => min_list_numerical(ca, &dt),
+        dt if dt.is_numeric() => Ok(min_list_numerical(ca, &dt)),
         _ => inner(ca),
     }
 }
 
 fn max_between_offsets<T>(values: &[T], offset: &[i64]) -> PrimitiveArray<T>
 where
-    T: NativeType + PartialOrd + IsFloat,
+    T: NativeType,
+    [T]: for<'a> MinMaxKernel<Scalar<'a> = T>,
 {
     let mut running_offset = offset[0];
 
@@ -123,14 +124,15 @@ where
             running_offset = *end;
 
             let slice = unsafe { values.get_unchecked(current_offset as usize..*end as usize) };
-            slice.max_value_nan_aware().copied()
+            slice.max_ignore_nan_kernel()
         })
-        .collect_trusted()
+        .collect()
 }
 
 fn dispatch_max<T>(arr: &dyn Array, offsets: &[i64], validity: Option<&Bitmap>) -> ArrayRef
 where
-    T: NativeType + PartialOrd + IsFloat,
+    T: NativeType,
+    [T]: for<'a> MinMaxKernel<Scalar<'a> = T>,
 {
     let values = arr.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
     let values = values.values().as_slice();
@@ -173,13 +175,13 @@ fn max_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {
     Series::try_from((ca.name(), chunks)).unwrap()
 }
 
-pub(super) fn list_max_function(ca: &ListChunked) -> Series {
-    fn inner(ca: &ListChunked) -> Series {
+pub(super) fn list_max_function(ca: &ListChunked) -> PolarsResult<Series> {
+    fn inner(ca: &ListChunked) -> PolarsResult<Series> {
         match ca.inner_dtype() {
             DataType::Boolean => {
                 let out: BooleanChunked = ca
                     .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().bool().unwrap().max()));
-                out.into_series()
+                Ok(out.into_series())
             },
             dt if dt.is_numeric() => {
                 with_match_physical_numeric_polars_type!(dt, |$T| {
@@ -189,15 +191,15 @@ pub(super) fn list_max_function(ca: &ListChunked) -> Series {
                             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                             ca.max()
                     });
-                    out.into_series()
+                    Ok(out.into_series())
 
                 })
             },
-            _ => ca
-                .apply_amortized(|s| s.as_ref().max_as_series())
+            _ => Ok(ca
+                .try_apply_amortized(|s| s.as_ref().max_as_series())?
                 .explode()
                 .unwrap()
-                .into_series(),
+                .into_series()),
         }
     }
 
@@ -206,7 +208,7 @@ pub(super) fn list_max_function(ca: &ListChunked) -> Series {
     };
 
     match ca.inner_dtype() {
-        dt if dt.is_numeric() => max_list_numerical(ca, &dt),
+        dt if dt.is_numeric() => Ok(max_list_numerical(ca, &dt)),
         _ => inner(ca),
     }
 }

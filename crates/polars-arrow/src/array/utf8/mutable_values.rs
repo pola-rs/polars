@@ -8,7 +8,7 @@ use crate::array::physical_binary::*;
 use crate::array::specification::{try_check_offsets_bounds, try_check_utf8};
 use crate::array::{Array, ArrayValuesIter, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
 use crate::bitmap::MutableBitmap;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets};
 use crate::trusted_len::TrustedLen;
 
@@ -16,7 +16,7 @@ use crate::trusted_len::TrustedLen;
 /// from [`MutableUtf8Array`] in that it builds non-null [`Utf8Array`].
 #[derive(Debug, Clone)]
 pub struct MutableUtf8ValuesArray<O: Offset> {
-    data_type: DataType,
+    data_type: ArrowDataType,
     offsets: Offsets<O>,
     values: Vec<u8>,
 }
@@ -73,7 +73,7 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
     /// # Implementation
     /// This function is `O(N)` - checking utf8 is `O(N)`
     pub fn try_new(
-        data_type: DataType,
+        data_type: ArrowDataType,
         offsets: Offsets<O>,
         values: Vec<u8>,
     ) -> PolarsResult<Self> {
@@ -101,7 +101,11 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
     /// * The `values` between two consecutive `offsets` are not valid utf8
     /// # Implementation
     /// This function is `O(1)`
-    pub unsafe fn new_unchecked(data_type: DataType, offsets: Offsets<O>, values: Vec<u8>) -> Self {
+    pub unsafe fn new_unchecked(
+        data_type: ArrowDataType,
+        offsets: Offsets<O>,
+        values: Vec<u8>,
+    ) -> Self {
         try_check_offsets_bounds(&offsets, values.len())
             .expect("The length of the values must be equal to the last offset value");
 
@@ -116,9 +120,9 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
         }
     }
 
-    /// Returns the default [`DataType`] of this container: [`DataType::Utf8`] or [`DataType::LargeUtf8`]
+    /// Returns the default [`ArrowDataType`] of this container: [`ArrowDataType::Utf8`] or [`ArrowDataType::LargeUtf8`]
     /// depending on the generic [`Offset`].
-    pub fn default_data_type() -> DataType {
+    pub fn default_data_type() -> ArrowDataType {
         Utf8Array::<O>::default_data_type()
     }
 
@@ -223,7 +227,7 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
     }
 
     /// Extract the low-end APIs from the [`MutableUtf8ValuesArray`].
-    pub fn into_inner(self) -> (DataType, Offsets<O>, Vec<u8>) {
+    pub fn into_inner(self) -> (ArrowDataType, Offsets<O>, Vec<u8>) {
         (self.data_type, self.offsets, self.values)
     }
 }
@@ -247,7 +251,7 @@ impl<O: Offset> MutableArray for MutableUtf8ValuesArray<O> {
         array.arced()
     }
 
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 

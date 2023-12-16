@@ -41,19 +41,19 @@ impl<'a, T: StaticArray> GetInner for NonNull<&'a T> {
     }
 }
 
-pub trait PartialEqInner: Send + Sync {
+pub trait TotalEqInner: Send + Sync {
     /// # Safety
     /// Does not do any bound checks.
     unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool;
 }
 
-pub trait PartialOrdInner: Send + Sync {
+pub trait TotalOrdInner: Send + Sync {
     /// # Safety
     /// Does not do any bound checks.
     unsafe fn cmp_element_unchecked(&self, idx_a: usize, idx_b: usize) -> Ordering;
 }
 
-impl<T> PartialEqInner for T
+impl<T> TotalEqInner for T
 where
     T: GetInner + Send + Sync,
     T::Item: TotalEq,
@@ -64,19 +64,19 @@ where
     }
 }
 
-/// Create a type that implements PartialEqInner.
-pub(crate) trait IntoPartialEqInner<'a> {
+/// Create a type that implements TotalEqInner.
+pub(crate) trait IntoTotalEqInner<'a> {
     /// Create a type that implements `TakeRandom`.
-    fn into_partial_eq_inner(self) -> Box<dyn PartialEqInner + 'a>;
+    fn into_total_eq_inner(self) -> Box<dyn TotalEqInner + 'a>;
 }
 
 /// We use a trait object because we want to call this from Series and cannot use a typed enum.
-impl<'a, T> IntoPartialEqInner<'a> for &'a ChunkedArray<T>
+impl<'a, T> IntoTotalEqInner<'a> for &'a ChunkedArray<T>
 where
     T: PolarsDataType,
     T::Physical<'a>: TotalEq,
 {
-    fn into_partial_eq_inner(self) -> Box<dyn PartialEqInner + 'a> {
+    fn into_total_eq_inner(self) -> Box<dyn TotalEqInner + 'a> {
         match self.layout() {
             ChunkedArrayLayout::SingleNoNull(arr) => Box::new(NonNull(arr)),
             ChunkedArrayLayout::Single(arr) => Box::new(arr),
@@ -86,7 +86,7 @@ where
     }
 }
 
-impl<T> PartialOrdInner for T
+impl<T> TotalOrdInner for T
 where
     T: GetInner + Send + Sync,
     T::Item: TotalOrd,
@@ -99,18 +99,18 @@ where
     }
 }
 
-/// Create a type that implements PartialOrdInner.
-pub(crate) trait IntoPartialOrdInner<'a> {
+/// Create a type that implements TotalOrdInner.
+pub(crate) trait IntoTotalOrdInner<'a> {
     /// Create a type that implements `TakeRandom`.
-    fn into_partial_ord_inner(self) -> Box<dyn PartialOrdInner + 'a>;
+    fn into_total_ord_inner(self) -> Box<dyn TotalOrdInner + 'a>;
 }
 
-impl<'a, T> IntoPartialOrdInner<'a> for &'a ChunkedArray<T>
+impl<'a, T> IntoTotalOrdInner<'a> for &'a ChunkedArray<T>
 where
     T: PolarsDataType,
     T::Physical<'a>: TotalOrd,
 {
-    fn into_partial_ord_inner(self) -> Box<dyn PartialOrdInner + 'a> {
+    fn into_total_ord_inner(self) -> Box<dyn TotalOrdInner + 'a> {
         match self.layout() {
             ChunkedArrayLayout::SingleNoNull(arr) => Box::new(NonNull(arr)),
             ChunkedArrayLayout::Single(arr) => Box::new(arr),
@@ -153,12 +153,13 @@ impl<'a> GetInner for GlobalCategorical<'a> {
 }
 
 #[cfg(feature = "dtype-categorical")]
-impl<'a> IntoPartialOrdInner<'a> for &'a CategoricalChunked {
-    fn into_partial_ord_inner(self) -> Box<dyn PartialOrdInner + 'a> {
+impl<'a> IntoTotalOrdInner<'a> for &'a CategoricalChunked {
+    fn into_total_ord_inner(self) -> Box<dyn TotalOrdInner + 'a> {
         let cats = self.physical();
         match &**self.get_rev_map() {
             RevMapping::Global(p1, p2, _) => Box::new(GlobalCategorical { p1, p2, cats }),
-            RevMapping::Local(rev_map) => Box::new(LocalCategorical { rev_map, cats }),
+            RevMapping::Local(rev_map, _) => Box::new(LocalCategorical { rev_map, cats }),
+            RevMapping::Enum(rev_map, _) => Box::new(LocalCategorical { rev_map, cats }),
         }
     }
 }

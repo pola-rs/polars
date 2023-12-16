@@ -73,7 +73,7 @@ fn extract_prefix_expansion(url: &str) -> PolarsResult<(String, Option<String>)>
 }
 
 /// A location on cloud storage, may have wildcards.
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Default)]
 pub struct CloudLocation {
     /// The scheme (s3, ...).
     pub scheme: String,
@@ -91,6 +91,13 @@ impl CloudLocation {
         let (bucket, key) = if is_local {
             ("".into(), parsed.path())
         } else {
+            if parsed.scheme().starts_with("http") {
+                return Ok(CloudLocation {
+                    scheme: parsed.scheme().into(),
+                    ..Default::default()
+                });
+            }
+
             let key = parsed.path();
             let bucket = parsed
                 .host()
@@ -175,8 +182,7 @@ pub async fn glob(url: &str, cloud_options: Option<&CloudOptions>) -> PolarsResu
 
     let list_stream = store
         .list(Some(&Path::from(prefix)))
-        .await
-        .map_err(to_compute_err)?;
+        .map_err(to_compute_err);
     let locations: Vec<Path> = list_stream
         .then(|entry| async { Ok::<_, PolarsError>(entry.map_err(to_compute_err)?.location) })
         .filter(|name| ready(name.as_ref().map_or(true, |name| matcher.is_matching(name))))

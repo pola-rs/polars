@@ -66,6 +66,39 @@ def test_int_ranges(start: Any, end: Any, expected: pl.Series) -> None:
     assert_series_equal(result.to_series(), expected)
 
 
+def test_int_ranges_decreasing() -> None:
+    expected = pl.Series("int_range", [[5, 4, 3, 2, 1]], dtype=pl.List(pl.Int64))
+    assert_series_equal(pl.int_ranges(5, 0, -1, eager=True), expected)
+    assert_series_equal(pl.select(pl.int_ranges(5, 0, -1)).to_series(), expected)
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "step"),
+    [
+        (0, -5, 1),
+        (5, 0, 1),
+        (0, 5, -1),
+    ],
+)
+def test_int_ranges_empty(start: int, end: int, step: int) -> None:
+    assert_series_equal(
+        pl.int_range(start, end, step, eager=True),
+        pl.Series("int", [], dtype=pl.Int64),
+    )
+    assert_series_equal(
+        pl.int_ranges(start, end, step, eager=True),
+        pl.Series("int_range", [[]], dtype=pl.List(pl.Int64)),
+    )
+    assert_series_equal(
+        pl.Series("int", [], dtype=pl.Int64),
+        pl.select(pl.int_range(start, end, step)).to_series(),
+    )
+    assert_series_equal(
+        pl.Series("int_range", [[]], dtype=pl.List(pl.Int64)),
+        pl.select(pl.int_ranges(start, end, step)).to_series(),
+    )
+
+
 def test_int_ranges_eager() -> None:
     start = pl.Series([1, 2])
     result = pl.int_ranges(start, 4, eager=True)
@@ -128,3 +161,50 @@ def test_int_range_input_shape_multiple_values() -> None:
         pl.ComputeError, match="`start` must contain exactly one value, got 2 values"
     ):
         pl.int_range(multiple, multiple, eager=True)
+
+
+# https://github.com/pola-rs/polars/issues/10867
+def test_int_range_index_type_negative() -> None:
+    result = pl.select(pl.int_range(pl.lit(3).cast(pl.UInt32), -1, -1))
+    expected = pl.DataFrame({"int": [3, 2, 1, 0]})
+    assert_frame_equal(result, expected)
+
+
+def test_int_range_null_input() -> None:
+    with pytest.raises(pl.ComputeError, match="invalid null input for `int_range`"):
+        pl.select(pl.int_range(3, pl.lit(None), -1, dtype=pl.UInt32))
+
+
+def test_int_range_invalid_conversion() -> None:
+    with pytest.raises(pl.ComputeError, match="conversion from `i32` to `u32` failed"):
+        pl.select(pl.int_range(3, -1, -1, dtype=pl.UInt32))
+
+
+def test_int_range_non_integer_dtype() -> None:
+    with pytest.raises(
+        pl.ComputeError, match="non-integer `dtype` passed to `int_range`: Float64"
+    ):
+        pl.select(pl.int_range(3, -1, -1, dtype=pl.Float64))  # type: ignore[arg-type]
+
+
+def test_int_ranges_broadcasting() -> None:
+    df = pl.DataFrame({"int": [1, 2, 3]})
+    result = df.select(
+        pl.int_ranges("int", 3).alias("end"),
+        pl.int_ranges(1, "int").alias("start"),
+    )
+    expected = pl.DataFrame(
+        {
+            "end": [
+                [1, 2],
+                [2],
+                [],
+            ],
+            "start": [
+                [],
+                [1],
+                [1, 2],
+            ],
+        }
+    )
+    assert_frame_equal(result, expected)

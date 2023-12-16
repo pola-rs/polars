@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use arrow::array::BinaryArray;
+use arrow::array::{ArrayRef, BinaryArray};
 use polars_core::prelude::sort::_broadcast_descending;
 use polars_core::prelude::sort::arg_sort_multiple::_get_rows_encoded_compat_array;
 use polars_core::prelude::*;
@@ -29,9 +29,12 @@ fn get_sort_fields(sort_idx: &[usize], sort_args: &SortArguments) -> Vec<SortFie
 
 #[cfg(feature = "dtype-categorical")]
 fn sort_column_can_be_decoded(schema: &Schema, sort_idx: &[usize]) -> bool {
-    !sort_idx
-        .iter()
-        .any(|i| matches!(schema.get_at_index(*i).unwrap().1, DataType::Categorical(_)))
+    !sort_idx.iter().any(|i| {
+        matches!(
+            schema.get_at_index(*i).unwrap().1,
+            DataType::Categorical(_, _)
+        )
+    })
 }
 #[cfg(not(feature = "dtype-categorical"))]
 fn sort_column_can_be_decoded(_schema: &Schema, _sort_idx: &[usize]) -> bool {
@@ -227,6 +230,7 @@ impl SortSinkMultiple {
             )
         };
 
+        debug_assert_eq!(column.chunks().len(), 1);
         // Safety: length is correct
         unsafe { chunk.data.with_column_unchecked(column) };
         Ok(())

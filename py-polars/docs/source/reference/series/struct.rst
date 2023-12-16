@@ -18,4 +18,5 @@ The following methods are available under the `Series.struct` attribute.
    :template: autosummary/accessor_attribute.rst
 
     Series.struct.fields
+    Series.struct.json_encode
     Series.struct.schema

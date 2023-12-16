@@ -192,7 +192,7 @@ pub(crate) fn create_physical_expr(
                 node_to_expr(expression, expr_arena),
             )))
         },
-        Take {
+        Gather {
             expr,
             idx,
             returns_scalar,
@@ -274,14 +274,11 @@ pub(crate) fn create_physical_expr(
 
                                 match s.is_sorted_flag() {
                                     IsSorted::Ascending | IsSorted::Descending => {
-                                        Ok(Some(s.min_as_series()))
+                                        s.min_as_series().map(Some)
                                     },
-                                    IsSorted::Not => parallel_op_series(
-                                        |s| Ok(s.min_as_series()),
-                                        s,
-                                        None,
-                                        state,
-                                    ),
+                                    IsSorted::Not => {
+                                        parallel_op_series(|s| s.min_as_series(), s, None, state)
+                                    },
                                 }
                             }) as Arc<dyn SeriesUdf>)
                         },
@@ -310,20 +307,17 @@ pub(crate) fn create_physical_expr(
 
                                 match s.is_sorted_flag() {
                                     IsSorted::Ascending | IsSorted::Descending => {
-                                        Ok(Some(s.max_as_series()))
+                                        s.max_as_series().map(Some)
                                     },
-                                    IsSorted::Not => parallel_op_series(
-                                        |s| Ok(s.max_as_series()),
-                                        s,
-                                        None,
-                                        state,
-                                    ),
+                                    IsSorted::Not => {
+                                        parallel_op_series(|s| s.max_as_series(), s, None, state)
+                                    },
                                 }
                             }) as Arc<dyn SeriesUdf>)
                         },
                         AAggExpr::Median(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                             let s = std::mem::take(&mut s[0]);
-                            Ok(Some(s.median_as_series()))
+                            s.median_as_series().map(Some)
                         })
                             as Arc<dyn SeriesUdf>),
                         AAggExpr::NUnique(_) => {
@@ -339,12 +333,22 @@ pub(crate) fn create_physical_expr(
                         },
                         AAggExpr::First(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                             let s = std::mem::take(&mut s[0]);
-                            Ok(Some(s.head(Some(1))))
+                            let out = if s.is_empty() {
+                                Series::full_null(s.name(), 1, s.dtype())
+                            } else {
+                                s.head(Some(1))
+                            };
+                            Ok(Some(out))
                         })
                             as Arc<dyn SeriesUdf>),
                         AAggExpr::Last(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                             let s = std::mem::take(&mut s[0]);
-                            Ok(Some(s.tail(Some(1))))
+                            let out = if s.is_empty() {
+                                Series::full_null(s.name(), 1, s.dtype())
+                            } else {
+                                s.tail(Some(1))
+                            };
+                            Ok(Some(out))
                         })
                             as Arc<dyn SeriesUdf>),
                         AAggExpr::Mean(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
@@ -365,27 +369,28 @@ pub(crate) fn create_physical_expr(
                             let state = *state;
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
-                                parallel_op_series(|s| Ok(s.sum_as_series()), s, None, state)
+                                parallel_op_series(|s| s.sum_as_series(), s, None, state)
                             }) as Arc<dyn SeriesUdf>)
                         },
-                        AAggExpr::Count(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                            let s = std::mem::take(&mut s[0]);
-                            let count = s.len();
-                            Ok(Some(
-                                IdxCa::from_slice(s.name(), &[count as IdxSize]).into_series(),
-                            ))
-                        })
-                            as Arc<dyn SeriesUdf>),
+                        AAggExpr::Count(_, include_nulls) => {
+                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                                let s = std::mem::take(&mut s[0]);
+                                let count = s.len() - s.null_count() * !include_nulls as usize;
+                                Ok(Some(
+                                    IdxCa::from_slice(s.name(), &[count as IdxSize]).into_series(),
+                                ))
+                            }) as Arc<dyn SeriesUdf>)
+                        },
                         AAggExpr::Std(_, ddof) => {
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
-                                Ok(Some(s.std_as_series(ddof)))
+                                s.std_as_series(ddof).map(Some)
                             }) as Arc<dyn SeriesUdf>)
                         },
                         AAggExpr::Var(_, ddof) => {
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
-                                Ok(Some(s.var_as_series(ddof)))
+                                s.var_as_series(ddof).map(Some)
                             }) as Arc<dyn SeriesUdf>)
                         },
                         AAggExpr::AggGroups(_) => {

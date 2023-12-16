@@ -1,4 +1,4 @@
-type WarningFunction = fn(&str);
+type WarningFunction = fn(&str, PolarsWarning);
 static mut WARNING_FUNCTION: Option<WarningFunction> = None;
 
 /// Set the function that will be called by the `polars_warn!` macro.
@@ -10,9 +10,14 @@ static mut WARNING_FUNCTION: Option<WarningFunction> = None;
 pub unsafe fn set_warning_function(function: WarningFunction) {
     WARNING_FUNCTION = Some(function)
 }
+#[derive(Debug)]
+pub enum PolarsWarning {
+    UserWarning,
+    CategoricalRemappingWarning,
+}
 
-fn eprintln(fmt: &str) {
-    eprintln!("{}", fmt);
+fn eprintln(fmt: &str, warning: PolarsWarning) {
+    eprintln!("{:?}: {}", warning, fmt);
 }
 
 pub fn get_warning_function() -> WarningFunction {
@@ -20,10 +25,17 @@ pub fn get_warning_function() -> WarningFunction {
 }
 #[macro_export]
 macro_rules! polars_warn {
+    ($variant:ident, $fmt:literal $(, $arg:tt)*) => {
+        {{
+        let func = $crate::get_warning_function();
+        let warn = $crate::PolarsWarning::$variant;
+        func(format!($fmt, $($arg)*).as_ref(), warn)
+        }}
+    };
     ($fmt:literal, $($arg:tt)+) => {
         {{
         let func = $crate::get_warning_function();
-        func(format!($fmt, $($arg)+).as_ref())
+        func(format!($fmt, $($arg)+).as_ref(), $crate::PolarsWarning::UserWarning)
         }}
     };
     ($($arg:tt)+) => {

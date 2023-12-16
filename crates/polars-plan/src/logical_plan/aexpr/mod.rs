@@ -40,7 +40,7 @@ pub enum AAggExpr {
         interpol: QuantileInterpolOptions,
     },
     Sum(Node),
-    Count(Node),
+    Count(Node, bool),
     Std(Node, u8),
     Var(Node, u8),
     AggGroups(Node),
@@ -113,7 +113,7 @@ impl From<AAggExpr> for GroupByMethod {
             Mean(_) => GroupByMethod::Mean,
             Implode(_) => GroupByMethod::Implode,
             Sum(_) => GroupByMethod::Sum,
-            Count(_) => GroupByMethod::Count,
+            Count(_, include_nulls) => GroupByMethod::Count { include_nulls },
             Std(_, ddof) => GroupByMethod::Std(ddof),
             Var(_, ddof) => GroupByMethod::Var(ddof),
             AggGroups(_) => GroupByMethod::Groups,
@@ -143,7 +143,7 @@ pub enum AExpr {
         expr: Node,
         options: SortOptions,
     },
-    Take {
+    Gather {
         expr: Node,
         idx: Node,
         returns_scalar: bool,
@@ -226,10 +226,10 @@ impl AExpr {
             | Window { .. }
             | Count
             | Slice { .. }
-            | Take { .. }
+            | Gather { .. }
             | Nth(_)
              => true,
-            | Alias(_, _)
+            Alias(_, _)
             | Explode(_)
             | Column(_)
             | Literal(_)
@@ -268,7 +268,7 @@ impl AExpr {
             },
             Cast { expr, .. } => container.push(*expr),
             Sort { expr, .. } => container.push(*expr),
-            Take { expr, idx, .. } => {
+            Gather { expr, idx, .. } => {
                 container.push(*idx);
                 // latest, so that it is popped first
                 container.push(*expr);
@@ -347,7 +347,7 @@ impl AExpr {
                 *left = inputs[1];
                 return self;
             },
-            Take { expr, idx, .. } => {
+            Gather { expr, idx, .. } => {
                 *idx = inputs[0];
                 *expr = inputs[1];
                 return self;
@@ -440,7 +440,7 @@ impl AAggExpr {
             Implode(input) => Single(*input),
             Quantile { expr, quantile, .. } => Many(vec![*expr, *quantile]),
             Sum(input) => Single(*input),
-            Count(input) => Single(*input),
+            Count(input, _) => Single(*input),
             Std(input, _) => Single(*input),
             Var(input, _) => Single(*input),
             AggGroups(input) => Single(*input),
@@ -459,7 +459,7 @@ impl AAggExpr {
             Implode(input) => input,
             Quantile { expr, .. } => expr,
             Sum(input) => input,
-            Count(input) => input,
+            Count(input, _) => input,
             Std(input, _) => input,
             Var(input, _) => input,
             AggGroups(input) => input,

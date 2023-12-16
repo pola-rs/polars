@@ -1,41 +1,15 @@
-use std::cmp::Ordering;
-
-use arrow::legacy::kernels::rolling::compare_fn_nan_max;
 use either::Either;
 use polars_core::downcast_as_macro_arg_physical;
-use polars_core::prelude::sort::{sort_slice_ascending, sort_slice_descending};
 use polars_core::prelude::*;
+use polars_utils::total_ord::TotalOrd;
 
-#[repr(transparent)]
-struct Compare<T>(T);
-
-impl<T: PartialOrd + IsFloat> PartialEq for Compare<T> {
-    fn eq(&self, other: &Self) -> bool {
-        matches!(self.cmp(other), Ordering::Equal)
-    }
-}
-
-impl<T: PartialOrd + IsFloat> PartialOrd for Compare<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<T: PartialOrd + IsFloat> Eq for Compare<T> {}
-
-impl<T: PartialOrd + IsFloat> Ord for Compare<T> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        compare_fn_nan_max(&self.0, &other.0)
-    }
-}
-
-fn arg_partition<T: IsFloat + PartialOrd>(v: &mut [T], k: usize, descending: bool) -> &[T] {
-    let (lower, _el, upper) = v.select_nth_unstable_by(k, |a, b| compare_fn_nan_max(a, b));
+fn arg_partition<T: TotalOrd>(v: &mut [T], k: usize, descending: bool) -> &[T] {
+    let (lower, _el, upper) = v.select_nth_unstable_by(k, TotalOrd::tot_cmp);
     if descending {
-        sort_slice_ascending(lower);
+        lower.sort_unstable_by(|a, b| a.tot_cmp(b));
         lower
     } else {
-        sort_slice_descending(upper);
+        upper.sort_unstable_by(|a, b| b.tot_cmp(a));
         upper
     }
 }

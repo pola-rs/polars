@@ -33,6 +33,46 @@ impl StringNameSpace {
         )
     }
 
+    /// Uses aho-corasick to find many patterns.
+    /// # Arguments
+    /// - `patterns`: an expression that evaluates to an Utf8 column
+    /// - `ascii_case_insensitive`: Enable ASCII-aware case insensitive matching.
+    ///  When this option is enabled, searching will be performed without respect to case for ASCII letters (a-z and A-Z) only.
+    #[cfg(feature = "find_many")]
+    pub fn contains_any(self, patterns: Expr, ascii_case_insensitive: bool) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::ContainsMany {
+                ascii_case_insensitive,
+            }),
+            &[patterns],
+            false,
+            false,
+        )
+    }
+
+    /// Uses aho-corasick to replace many patterns.
+    /// # Arguments
+    /// - `patterns`: an expression that evaluates to an Utf8 column
+    /// - `replace_with`: an expression that evaluates to an Utf8 column
+    /// - `ascii_case_insensitive`: Enable ASCII-aware case insensitive matching.
+    ///  When this option is enabled, searching will be performed without respect to case for ASCII letters (a-z and A-Z) only.
+    #[cfg(feature = "find_many")]
+    pub fn replace_many(
+        self,
+        patterns: Expr,
+        replace_with: Expr,
+        ascii_case_insensitive: bool,
+    ) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::ReplaceMany {
+                ascii_case_insensitive,
+            }),
+            &[patterns, replace_with],
+            false,
+            false,
+        )
+    }
+
     /// Check if a string value ends with the `sub` string.
     pub fn ends_with(self, sub: Expr) -> Expr {
         self.0.map_many_private(
@@ -51,6 +91,32 @@ impl StringNameSpace {
             false,
             true,
         )
+    }
+
+    #[cfg(feature = "string_encoding")]
+    pub fn hex_encode(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::HexEncode))
+    }
+
+    #[cfg(feature = "binary_encoding")]
+    pub fn hex_decode(self, strict: bool) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::HexDecode(strict)))
+    }
+
+    #[cfg(feature = "string_encoding")]
+    pub fn base64_encode(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::Base64Encode))
+    }
+
+    #[cfg(feature = "binary_encoding")]
+    pub fn base64_decode(self, strict: bool) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::Base64Decode(
+                strict,
+            )))
     }
 
     /// Extract a regex pattern from the a string value. If `group_index` is out of bounds, null is returned.
@@ -208,9 +274,15 @@ impl StringNameSpace {
     ///
     /// * `delimiter` - A string that will act as delimiter between values.
     #[cfg(feature = "concat_str")]
-    pub fn concat(self, delimiter: &str) -> Expr {
+    pub fn concat(self, delimiter: &str, ignore_nulls: bool) -> Expr {
         self.0
-            .apply_private(StringFunction::ConcatVertical(delimiter.to_owned()).into())
+            .apply_private(
+                StringFunction::ConcatVertical {
+                    delimiter: delimiter.to_owned(),
+                    ignore_nulls,
+                }
+                .into(),
+            )
             .with_function_options(|mut options| {
                 options.returns_scalar = true;
                 options.collect_groups = ApplyOptions::GroupWise;
@@ -298,6 +370,17 @@ impl StringNameSpace {
         )
     }
 
+    #[cfg(feature = "string_reverse")]
+    /// Reverse each string
+    pub fn reverse(self) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Reverse),
+            &[],
+            false,
+            false,
+        )
+    }
+
     /// Remove leading and trailing characters, or whitespace if matches is None.
     pub fn strip_chars(self, matches: Expr) -> Expr {
         self.0.map_many_private(
@@ -367,12 +450,12 @@ impl StringNameSpace {
             .map_private(FunctionExpr::StringExpr(StringFunction::Titlecase))
     }
 
-    #[cfg(feature = "string_from_radix")]
+    #[cfg(feature = "string_to_integer")]
     /// Parse string in base radix into decimal.
-    pub fn from_radix(self, radix: u32, strict: bool) -> Expr {
+    pub fn to_integer(self, base: u32, strict: bool) -> Expr {
         self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::FromRadix(
-                radix, strict,
+            .map_private(FunctionExpr::StringExpr(StringFunction::ToInteger(
+                base, strict,
             )))
     }
 
@@ -415,9 +498,9 @@ impl StringNameSpace {
     }
 
     #[cfg(feature = "extract_jsonpath")]
-    pub fn json_extract(self, dtype: Option<DataType>, infer_schema_len: Option<usize>) -> Expr {
+    pub fn json_decode(self, dtype: Option<DataType>, infer_schema_len: Option<usize>) -> Expr {
         self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::JsonExtract {
+            .map_private(FunctionExpr::StringExpr(StringFunction::JsonDecode {
                 dtype,
                 infer_schema_len,
             }))

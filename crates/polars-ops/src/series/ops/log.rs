@@ -72,16 +72,16 @@ pub trait LogSeries: SeriesSealed {
 
     /// Compute the entropy as `-sum(pk * log(pk)`.
     /// where `pk` are discrete probabilities.
-    fn entropy(&self, base: f64, normalize: bool) -> Option<f64> {
+    fn entropy(&self, base: f64, normalize: bool) -> PolarsResult<f64> {
         let s = self.as_series().to_physical_repr();
         match s.dtype() {
             DataType::Float32 | DataType::Float64 => {
                 let pk = s.as_ref();
 
                 let pk = if normalize {
-                    let sum = pk.sum_as_series();
+                    let sum = pk.sum_as_series().unwrap();
 
-                    if sum.get(0).unwrap().extract::<f64>()? != 1.0 {
+                    if sum.get(0).unwrap().extract::<f64>().unwrap() != 1.0 {
                         pk / &sum
                     } else {
                         pk.clone()
@@ -95,8 +95,7 @@ pub trait LogSeries: SeriesSealed {
             },
             _ => s
                 .cast(&DataType::Float64)
-                .ok()
-                .and_then(|s| s.entropy(base, normalize)),
+                .map(|s| s.entropy(base, normalize))?,
         }
     }
 }

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use crate::array::{Array, DictionaryKey, FixedSizeListArray, ListArray, StructArray};
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::ffi::mmap::create_array;
 use crate::ffi::{export_array_to_c, try_from, ArrowArray, InternalArrowArray};
 use crate::io::ipc::read::{Dictionaries, IpcBuffer, Node, OutOfSpecKind};
@@ -120,9 +120,9 @@ fn mmap_fixed_size_binary<T: AsRef<[u8]>>(
     node: &Node,
     block_offset: usize,
     buffers: &mut VecDeque<IpcBuffer>,
-    data_type: &DataType,
+    data_type: &ArrowDataType,
 ) -> PolarsResult<ArrowArray> {
-    let bytes_per_row = if let DataType::FixedSizeBinary(bytes_per_row) = data_type {
+    let bytes_per_row = if let ArrowDataType::FixedSizeBinary(bytes_per_row) = data_type {
         bytes_per_row
     } else {
         polars_bail!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::InvalidDataType);
@@ -231,7 +231,7 @@ fn mmap_list<O: Offset, T: AsRef<[u8]>>(
     data: Arc<T>,
     node: &Node,
     block_offset: usize,
-    data_type: &DataType,
+    data_type: &ArrowDataType,
     ipc_field: &IpcField,
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
@@ -275,7 +275,7 @@ fn mmap_fixed_size_list<T: AsRef<[u8]>>(
     data: Arc<T>,
     node: &Node,
     block_offset: usize,
-    data_type: &DataType,
+    data_type: &ArrowDataType,
     ipc_field: &IpcField,
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
@@ -318,7 +318,7 @@ fn mmap_struct<T: AsRef<[u8]>>(
     data: Arc<T>,
     node: &Node,
     block_offset: usize,
-    data_type: &DataType,
+    data_type: &ArrowDataType,
     ipc_field: &IpcField,
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
@@ -366,7 +366,7 @@ fn mmap_dict<K: DictionaryKey, T: AsRef<[u8]>>(
     data: Arc<T>,
     node: &Node,
     block_offset: usize,
-    _: &DataType,
+    _: &ArrowDataType,
     ipc_field: &IpcField,
     dictionaries: &Dictionaries,
     _: &mut VecDeque<Node>,
@@ -401,7 +401,7 @@ fn mmap_dict<K: DictionaryKey, T: AsRef<[u8]>>(
 fn get_array<T: AsRef<[u8]>>(
     data: Arc<T>,
     block_offset: usize,
-    data_type: &DataType,
+    data_type: &ArrowDataType,
     ipc_field: &IpcField,
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
@@ -481,7 +481,7 @@ fn get_array<T: AsRef<[u8]>>(
 pub(crate) unsafe fn mmap<T: AsRef<[u8]>>(
     data: Arc<T>,
     block_offset: usize,
-    data_type: DataType,
+    data_type: ArrowDataType,
     ipc_field: &IpcField,
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,

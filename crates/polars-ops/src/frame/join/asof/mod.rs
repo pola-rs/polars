@@ -3,7 +3,7 @@ mod groups;
 use std::borrow::Cow;
 
 use default::*;
-pub(super) use groups::AsofJoinBy;
+pub use groups::AsofJoinBy;
 use polars_core::prelude::*;
 use polars_core::utils::ensure_sorted_arg;
 #[cfg(feature = "serde")]
@@ -12,10 +12,7 @@ use smartstring::alias::String as SmartString;
 
 #[cfg(feature = "dtype-categorical")]
 use super::_check_categorical_src;
-use super::{
-    _finish_join, build_tables, get_hash_tbl_threaded_join_partitioned, multiple_keys as mk,
-    prepare_bytes,
-};
+use super::{_finish_join, build_tables, multiple_keys as mk, prepare_bytes};
 use crate::frame::IntoDf;
 
 trait AsofJoinState<T>: Default {

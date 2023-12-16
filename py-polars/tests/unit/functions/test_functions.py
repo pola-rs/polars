@@ -136,7 +136,7 @@ def test_align_frames() -> None:
     import pandas as pd
 
     # setup some test frames
-    df1 = pd.DataFrame(
+    pdf1 = pd.DataFrame(
         {
             "date": pd.date_range(start="2019-01-02", periods=9),
             "a": np.array([0, 1, 2, np.nan, 4, 5, 6, 7, 8], dtype=np.float64),
@@ -144,7 +144,7 @@ def test_align_frames() -> None:
         }
     ).set_index("date")
 
-    df2 = pd.DataFrame(
+    pdf2 = pd.DataFrame(
         {
             "date": pd.date_range(start="2019-01-04", periods=7),
             "a": np.arange(9, 16, dtype=np.float64),
@@ -153,21 +153,21 @@ def test_align_frames() -> None:
     ).set_index("date")
 
     # calculate dot-product in pandas
-    pd_dot = (df1 * df2).sum(axis="columns").to_frame("dot").reset_index()
+    pd_dot = (pdf1 * pdf2).sum(axis="columns").to_frame("dot").reset_index()
 
     # use "align_frames" to calculate dot-product from disjoint rows. pandas uses an
     # index to automatically infer the correct frame-alignment for the calculation;
     # we need to do it explicitly (which also makes it clearer what is happening)
     pf1, pf2 = pl.align_frames(
-        pl.from_pandas(df1.reset_index()),
-        pl.from_pandas(df2.reset_index()),
+        pl.from_pandas(pdf1.reset_index()),
+        pl.from_pandas(pdf2.reset_index()),
         on="date",
     )
     pl_dot = (
         (pf1[["a", "b"]] * pf2[["a", "b"]])
         .fill_null(0)
         .select(pl.sum_horizontal("*").alias("dot"))
-        .insert_at_idx(0, pf1["date"])
+        .insert_column(0, pf1["date"])
     )
     # confirm we match the same operation in pandas
     assert_frame_equal(pl_dot, pl.from_pandas(pd_dot))
@@ -175,8 +175,8 @@ def test_align_frames() -> None:
 
     # (also: confirm alignment function works with lazyframes)
     lf1, lf2 = pl.align_frames(
-        pl.from_pandas(df1.reset_index()).lazy(),
-        pl.from_pandas(df2.reset_index()).lazy(),
+        pl.from_pandas(pdf1.reset_index()).lazy(),
+        pl.from_pandas(pdf2.reset_index()).lazy(),
         on="date",
     )
     assert isinstance(lf1, pl.LazyFrame)
@@ -189,20 +189,24 @@ def test_align_frames() -> None:
     # expected error condition
     with pytest.raises(TypeError):
         pl.align_frames(  # type: ignore[type-var]
-            pl.from_pandas(df1.reset_index()).lazy(),
-            pl.from_pandas(df2.reset_index()),
+            pl.from_pandas(pdf1.reset_index()).lazy(),
+            pl.from_pandas(pdf2.reset_index()),
             on="date",
         )
 
-    # descending
-    pf1, pf2 = pl.align_frames(
-        pl.DataFrame([[3, 5, 6], [5, 8, 9]], orient="row"),
-        pl.DataFrame([[2, 5, 6], [3, 8, 9], [4, 2, 0]], orient="row"),
-        on="column_0",
-        descending=True,
-    )
+    # descending result
+    df1 = pl.DataFrame([[3, 5, 6], [5, 8, 9]], orient="row")
+    df2 = pl.DataFrame([[2, 5, 6], [3, 8, 9], [4, 2, 0]], orient="row")
+
+    pf1, pf2 = pl.align_frames(df1, df2, on="column_0", descending=True)
     assert pf1.rows() == [(5, 8, 9), (4, None, None), (3, 5, 6), (2, None, None)]
     assert pf2.rows() == [(5, None, None), (4, 2, 0), (3, 8, 9), (2, 5, 6)]
+
+    # handle identical frames
+    pf1, pf2, pf3 = pl.align_frames(df1, df2, df2, on="column_0", descending=True)
+    assert pf1.rows() == [(5, 8, 9), (4, None, None), (3, 5, 6), (2, None, None)]
+    for pf in (pf2, pf3):
+        assert pf.rows() == [(5, None, None), (4, 2, 0), (3, 8, 9), (2, 5, 6)]
 
 
 def test_align_frames_duplicate_key() -> None:
@@ -300,7 +304,7 @@ def test_overflow_diff() -> None:
             "a": [20, 10, 30],
         }
     )
-    assert df.select(pl.col("a").cast(pl.UInt64).diff()).to_dict(False) == {
+    assert df.select(pl.col("a").cast(pl.UInt64).diff()).to_dict(as_series=False) == {
         "a": [None, -10, 20]
     }
 
@@ -319,7 +323,7 @@ def test_fill_null_unknown_output_type() -> None:
     )
     assert df.with_columns(
         np.exp(pl.col("a")).fill_null(pl.lit(1, pl.Float64))
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "a": [
             1.0,
             7.38905609893065,
@@ -358,8 +362,6 @@ def test_lazy_functions() -> None:
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
     out = df.select(pl.count("a"))
     assert list(out["a"]) == [3]
-    with pytest.deprecated_call():
-        assert pl.count(df["a"]) == 3
     out = df.select(
         [
             pl.var("b").alias("1"),
@@ -428,16 +430,10 @@ def test_lazy_functions() -> None:
 
 
 def test_head_tail(fruits_cars: pl.DataFrame) -> None:
-    res_expr = fruits_cars.select([pl.head("A", 2)])
-    with pytest.deprecated_call():
-        res_series = pl.head(fruits_cars["A"], 2)
+    res_expr = fruits_cars.select(pl.head("A", 2))
     expected = pl.Series("A", [1, 2])
-    assert_series_equal(res_expr.to_series(0), expected)
-    assert_series_equal(res_series, expected)
+    assert_series_equal(res_expr.to_series(), expected)
 
-    res_expr = fruits_cars.select([pl.tail("A", 2)])
-    with pytest.deprecated_call():
-        res_series = pl.tail(fruits_cars["A"], 2)
+    res_expr = fruits_cars.select(pl.tail("A", 2))
     expected = pl.Series("A", [4, 5])
-    assert_series_equal(res_expr.to_series(0), expected)
-    assert_series_equal(res_series, expected)
+    assert_series_equal(res_expr.to_series(), expected)

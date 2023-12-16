@@ -2,24 +2,24 @@ use std::collections::VecDeque;
 
 use arrow::array::{Array, DictionaryArray, DictionaryKey, FixedSizeBinaryArray};
 use arrow::bitmap::MutableBitmap;
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 use polars_error::PolarsResult;
 
 use super::super::dictionary::*;
 use super::super::utils::MaybeNext;
-use super::super::Pages;
+use super::super::PagesIter;
 use crate::arrow::read::deserialize::nested_utils::{InitNested, NestedState};
 use crate::parquet::page::DictPage;
 
-/// An iterator adapter over [`Pages`] assumed to be encoded as parquet's dictionary-encoded binary representation
+/// An iterator adapter over [`PagesIter`] assumed to be encoded as parquet's dictionary-encoded binary representation
 #[derive(Debug)]
 pub struct DictIter<K, I>
 where
-    I: Pages,
+    I: PagesIter,
     K: DictionaryKey,
 {
     iter: I,
-    data_type: DataType,
+    data_type: ArrowDataType,
     values: Option<Box<dyn Array>>,
     items: VecDeque<(Vec<K>, MutableBitmap)>,
     remaining: usize,
@@ -29,9 +29,14 @@ where
 impl<K, I> DictIter<K, I>
 where
     K: DictionaryKey,
-    I: Pages,
+    I: PagesIter,
 {
-    pub fn new(iter: I, data_type: DataType, num_rows: usize, chunk_size: Option<usize>) -> Self {
+    pub fn new(
+        iter: I,
+        data_type: ArrowDataType,
+        num_rows: usize,
+        chunk_size: Option<usize>,
+    ) -> Self {
         Self {
             iter,
             data_type,
@@ -43,9 +48,9 @@ where
     }
 }
 
-fn read_dict(data_type: DataType, dict: &DictPage) -> Box<dyn Array> {
+fn read_dict(data_type: ArrowDataType, dict: &DictPage) -> Box<dyn Array> {
     let data_type = match data_type {
-        DataType::Dictionary(_, values, _) => *values,
+        ArrowDataType::Dictionary(_, values, _) => *values,
         _ => data_type,
     };
 
@@ -58,7 +63,7 @@ fn read_dict(data_type: DataType, dict: &DictPage) -> Box<dyn Array> {
 
 impl<K, I> Iterator for DictIter<K, I>
 where
-    I: Pages,
+    I: PagesIter,
     K: DictionaryKey,
 {
     type Item = PolarsResult<DictionaryArray<K>>;
@@ -86,12 +91,12 @@ where
 #[derive(Debug)]
 pub struct NestedDictIter<K, I>
 where
-    I: Pages,
+    I: PagesIter,
     K: DictionaryKey,
 {
     iter: I,
     init: Vec<InitNested>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     values: Option<Box<dyn Array>>,
     items: VecDeque<(NestedState, (Vec<K>, MutableBitmap))>,
     remaining: usize,
@@ -100,13 +105,13 @@ where
 
 impl<K, I> NestedDictIter<K, I>
 where
-    I: Pages,
+    I: PagesIter,
     K: DictionaryKey,
 {
     pub fn new(
         iter: I,
         init: Vec<InitNested>,
-        data_type: DataType,
+        data_type: ArrowDataType,
         num_rows: usize,
         chunk_size: Option<usize>,
     ) -> Self {
@@ -124,27 +129,29 @@ where
 
 impl<K, I> Iterator for NestedDictIter<K, I>
 where
-    I: Pages,
+    I: PagesIter,
     K: DictionaryKey,
 {
     type Item = PolarsResult<(NestedState, DictionaryArray<K>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let maybe_state = nested_next_dict(
-            &mut self.iter,
-            &mut self.items,
-            &mut self.remaining,
-            &self.init,
-            &mut self.values,
-            self.data_type.clone(),
-            self.chunk_size,
-            |dict| read_dict(self.data_type.clone(), dict),
-        );
-        match maybe_state {
-            MaybeNext::Some(Ok(dict)) => Some(Ok(dict)),
-            MaybeNext::Some(Err(e)) => Some(Err(e)),
-            MaybeNext::None => None,
-            MaybeNext::More => self.next(),
+        loop {
+            let maybe_state = nested_next_dict(
+                &mut self.iter,
+                &mut self.items,
+                &mut self.remaining,
+                &self.init,
+                &mut self.values,
+                self.data_type.clone(),
+                self.chunk_size,
+                |dict| read_dict(self.data_type.clone(), dict),
+            );
+            match maybe_state {
+                MaybeNext::Some(Ok(dict)) => return Some(Ok(dict)),
+                MaybeNext::Some(Err(e)) => return Some(Err(e)),
+                MaybeNext::None => return None,
+                MaybeNext::More => continue,
+            }
         }
     }
 }

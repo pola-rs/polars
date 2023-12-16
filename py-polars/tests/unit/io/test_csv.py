@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, TypedDict
 import numpy as np
 import pyarrow as pa
 import pytest
+import zstandard
 
 import polars as pl
 from polars.exceptions import ComputeError, NoDataError
@@ -500,6 +501,16 @@ def test_compressed_csv(io_files_path: Path) -> None:
     )
     assert_frame_equal(out, expected)
 
+    # zstd compression
+    csv_bytes = zstandard.compress(csv.encode())
+    out = pl.read_csv(csv_bytes)
+    assert_frame_equal(out, expected)
+
+    # zstd compressed file
+    csv_file = io_files_path / "zstd_compressed.csv.zst"
+    out = pl.read_csv(str(csv_file), truncate_ragged_lines=True)
+    assert_frame_equal(out, expected)
+
     # no compression
     f2 = io.BytesIO(b"a,b\n1,2\n")
     out2 = pl.read_csv(f2)
@@ -513,6 +524,12 @@ def test_partial_decompression(foods_file_path: Path) -> None:
         f.write(foods_file_path.read_bytes())
 
     csv_bytes = f_out.getvalue()
+    for n_rows in [1, 5, 26]:
+        out = pl.read_csv(csv_bytes, n_rows=n_rows)
+        assert out.shape == (n_rows, 4)
+
+    # zstd compression
+    csv_bytes = zstandard.compress(foods_file_path.read_bytes())
     for n_rows in [1, 5, 26]:
         out = pl.read_csv(csv_bytes, n_rows=n_rows)
         assert out.shape == (n_rows, 4)
@@ -532,7 +549,7 @@ def test_empty_line_with_single_column() -> None:
         b"a\n\nb\n",
         new_columns=["A"],
         has_header=False,
-        comment_char="#",
+        comment_prefix="#",
         use_pyarrow=False,
     )
     expected = pl.DataFrame({"A": ["a", None, "b"]})
@@ -544,10 +561,29 @@ def test_empty_line_with_multiple_columns() -> None:
         b"a,b\n\nc,d\n",
         new_columns=["A", "B"],
         has_header=False,
-        comment_char="#",
+        comment_prefix="#",
         use_pyarrow=False,
     )
     expected = pl.DataFrame({"A": ["a", "c"], "B": ["b", "d"]})
+    assert_frame_equal(df, expected)
+
+
+def test_csv_multi_char_comment() -> None:
+    csv = textwrap.dedent(
+        """\
+        #a,b
+        ##c,d
+        """
+    )
+    f = io.StringIO(csv)
+    df = pl.read_csv(
+        f,
+        new_columns=["A", "B"],
+        has_header=False,
+        comment_prefix="##",
+        use_pyarrow=False,
+    )
+    expected = pl.DataFrame({"A": ["#a"], "B": ["b"]})
     assert_frame_equal(df, expected)
 
 
@@ -893,9 +929,8 @@ def test_glob_csv(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
 
 def test_csv_whitespace_separator_at_start_do_not_skip() -> None:
     csv = "\t\t\t\t0\t1"
-    assert pl.read_csv(csv.encode(), separator="\t", has_header=False).to_dict(
-        False
-    ) == {
+    result = pl.read_csv(csv.encode(), separator="\t", has_header=False)
+    expected = {
         "column_1": [None],
         "column_2": [None],
         "column_3": [None],
@@ -903,13 +938,13 @@ def test_csv_whitespace_separator_at_start_do_not_skip() -> None:
         "column_5": [0],
         "column_6": [1],
     }
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_csv_whitespace_separator_at_end_do_not_skip() -> None:
     csv = "0\t1\t\t\t\t"
-    assert pl.read_csv(csv.encode(), separator="\t", has_header=False).to_dict(
-        False
-    ) == {
+    result = pl.read_csv(csv.encode(), separator="\t", has_header=False)
+    expected = {
         "column_1": [0],
         "column_2": [1],
         "column_3": [None],
@@ -917,6 +952,7 @@ def test_csv_whitespace_separator_at_end_do_not_skip() -> None:
         "column_5": [None],
         "column_6": [None],
     }
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_csv_multiple_null_values() -> None:
@@ -987,7 +1023,7 @@ def test_skip_new_line_embedded_lines() -> None:
             infer_schema_length=0,
             missing_utf8_is_empty_string=empty_string,
         )
-        assert df.to_dict(False) == {
+        assert df.to_dict(as_series=False) == {
             "a": ["4", "7"],
             "b": ["5", "8"],
             "c": ["6", missing_value],
@@ -1157,7 +1193,7 @@ def test_skip_rows_different_field_len() -> None:
         csv.seek(0)
         assert pl.read_csv(
             csv, skip_rows_after_header=2, missing_utf8_is_empty_string=empty_string
-        ).to_dict(False) == {
+        ).to_dict(as_series=False) == {
             "a": [3, 4],
             "b": ["B", missing_value],
         }
@@ -1197,7 +1233,7 @@ def test_csv_categorical_lifetime() -> None:
 
     df = pl.read_csv(csv.encode(), dtypes={"a": pl.Categorical, "b": pl.Categorical})
     assert df.dtypes == [pl.Categorical, pl.Categorical]
-    assert df.to_dict(False) == {
+    assert df.to_dict(as_series=False) == {
         "a": ["needs_escape", ' "needs escape foo', ' "needs escape foo'],
         "b": ["b", "b", None],
     }
@@ -1221,13 +1257,13 @@ def test_batched_csv_reader(foods_file_path: Path) -> None:
 
     assert batches is not None
     assert len(batches) == 5
-    assert batches[0].to_dict(False) == {
+    assert batches[0].to_dict(as_series=False) == {
         "category": ["vegetables", "seafood", "meat", "fruit", "seafood", "meat"],
         "calories": [45, 150, 100, 60, 140, 120],
         "fats_g": [0.5, 5.0, 5.0, 0.0, 5.0, 10.0],
         "sugars_g": [2, 0, 0, 11, 1, 1],
     }
-    assert batches[-1].to_dict(False) == {
+    assert batches[-1].to_dict(as_series=False) == {
         "category": ["fruit", "meat", "vegetables", "fruit"],
         "calories": [130, 100, 30, 50],
         "fats_g": [0.0, 7.0, 0.0, 0.0],
@@ -1296,7 +1332,7 @@ def test_csv_single_categorical_null() -> None:
     )
 
     assert df.dtypes == [pl.Utf8, pl.Categorical, pl.Utf8]
-    assert df.to_dict(False) == {"x": ["A"], "y": [None], "z": ["A"]}
+    assert df.to_dict(as_series=False) == {"x": ["A"], "y": [None], "z": ["A"]}
 
 
 def test_csv_quoted_missing() -> None:
@@ -1550,7 +1586,7 @@ def test_ignore_errors_casting_dtypes() -> None:
         source=io.StringIO(csv),
         dtypes={"inventory": pl.Int8},
         ignore_errors=True,
-    ).to_dict(False) == {"inventory": [10, None, None, 90]}
+    ).to_dict(as_series=False) == {"inventory": [10, None, None, 90]}
 
     with pytest.raises(pl.ComputeError):
         pl.read_csv(
@@ -1575,13 +1611,13 @@ def test_csv_ragged_lines() -> None:
     assert (
         pl.read_csv(
             io.StringIO("A\nB,ragged\nC"), has_header=False, truncate_ragged_lines=True
-        ).to_dict(False)
+        ).to_dict(as_series=False)
         == expected
     )
     assert (
         pl.read_csv(
             io.StringIO("A\nB\nC,ragged"), has_header=False, truncate_ragged_lines=True
-        ).to_dict(False)
+        ).to_dict(as_series=False)
         == expected
     )
 
@@ -1598,8 +1634,79 @@ def test_provide_schema() -> None:
         io.StringIO("A\nB,ragged\nC"),
         has_header=False,
         schema={"A": pl.Utf8, "B": pl.Utf8, "C": pl.Utf8},
-    ).to_dict(False) == {
+    ).to_dict(as_series=False) == {
         "A": ["A", "B", "C"],
         "B": [None, "ragged", None],
         "C": [None, None, None],
+    }
+
+
+def test_custom_writeable_object() -> None:
+    df = pl.DataFrame({"a": [10, 20, 30], "b": ["x", "y", "z"]})
+
+    class CustomBuffer:
+        writes: list[bytes]
+
+        def __init__(self) -> None:
+            self.writes = []
+
+        def write(self, data: bytes) -> int:
+            self.writes.append(data)
+            return len(data)
+
+    buf = CustomBuffer()
+    df.write_csv(buf)  # type: ignore[call-overload]
+
+    assert b"".join(buf.writes) == b"a,b\n10,x\n20,y\n30,z\n"
+
+
+@pytest.mark.parametrize(
+    ("csv", "expected"),
+    [
+        (b"a,b\n1,2\n1,2\n", pl.DataFrame({"a": [1, 1], "b": [2, 2]})),
+        (b"a,b\n1,2\n1,2", pl.DataFrame({"a": [1, 1], "b": [2, 2]})),
+        (b"a\n1\n1\n", pl.DataFrame({"a": [1, 1]})),
+        (b"a\n1\n1", pl.DataFrame({"a": [1, 1]})),
+    ],
+    ids=[
+        "multiple columns, ends with LF",
+        "multiple columns, ends with non-LF",
+        "single column, ends with LF",
+        "single column, ends with non-LF",
+    ],
+)
+def test_read_filelike_object_12266(csv: bytes, expected: pl.DataFrame) -> None:
+    buf = io.BufferedReader(io.BytesIO(csv))  # type: ignore[arg-type]
+    df = pl.read_csv(buf)
+    assert_frame_equal(df, expected)
+
+
+def test_read_filelike_object_12404() -> None:
+    expected = pl.DataFrame({"a": [1, 1], "b": [2, 2]})
+    csv = expected.write_csv(line_terminator=";").encode()
+    buf = io.BufferedReader(io.BytesIO(csv))  # type: ignore[arg-type]
+    df = pl.read_csv(buf, eol_char=";")
+    assert_frame_equal(df, expected)
+
+
+def test_write_csv_bom() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
+    f = io.BytesIO()
+    df.write_csv(f, include_bom=True)
+    f.seek(0)
+    assert f.read() == b"\xef\xbb\xbfa,b\n1,1\n2,2\n3,3\n"
+
+
+def test_empty_csv_no_raise() -> None:
+    assert pl.read_csv(io.StringIO(), raise_if_empty=False, has_header=False).shape == (
+        0,
+        0,
+    )
+
+
+def test_csv_no_new_line_last() -> None:
+    csv = io.StringIO("a b\n" "1 1\n" "2 2\n" "3 2.1")
+    assert pl.read_csv(csv, separator=" ").to_dict(as_series=False) == {
+        "a": [1, 2, 3],
+        "b": [1.0, 2.0, 2.1],
     }

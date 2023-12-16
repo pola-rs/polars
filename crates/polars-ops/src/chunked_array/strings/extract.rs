@@ -55,7 +55,7 @@ pub(super) fn extract_groups(
             .map(|ca| ca.into_series());
     }
 
-    let data_type = dtype.to_arrow();
+    let data_type = dtype.try_to_arrow()?;
     let DataType::Struct(fields) = dtype else {
         unreachable!() // Implementation error if it isn't a struct.
     };

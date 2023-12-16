@@ -1,13 +1,12 @@
-use std::hash::Hash;
-
 use polars_core::prelude::*;
 use polars_core::utils::{try_get_supertype, CustomIterTools};
-use polars_core::with_match_physical_integer_polars_type;
+use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
 
 fn is_in_helper<'a, T>(ca: &'a ChunkedArray<T>, other: &Series) -> PolarsResult<BooleanChunked>
 where
     T: PolarsDataType,
-    T::Physical<'a>: Hash + Eq + Copy,
+    T::Physical<'a>: TotalHash + TotalEq + Copy,
 {
     let mut set = PlHashSet::with_capacity(other.len());
 
@@ -15,17 +14,17 @@ where
     other.downcast_iter().for_each(|iter| {
         iter.iter().for_each(|opt_val| {
             if let Some(v) = opt_val {
-                set.insert(v);
+                set.insert(TotalOrdWrap(v));
             }
         })
     });
-    Ok(ca.apply_values_generic(|val| set.contains(&val)))
+    Ok(ca.apply_values_generic(|val| set.contains(&TotalOrdWrap(val))))
 }
 
 fn is_in_numeric<T>(ca_in: &ChunkedArray<T>, other: &Series) -> PolarsResult<BooleanChunked>
 where
-    T: PolarsIntegerType,
-    T::Native: Hash + Eq,
+    T: PolarsNumericType,
+    T::Native: TotalHash + TotalEq,
 {
     // We check implicitly cast to supertype here
     match other.dtype() {
@@ -83,8 +82,8 @@ where
 fn is_in_utf8(ca_in: &Utf8Chunked, other: &Series) -> PolarsResult<BooleanChunked> {
     match other.dtype() {
         #[cfg(feature = "dtype-categorical")]
-        DataType::List(dt) if matches!(&**dt, DataType::Categorical(_)) => {
-            if let DataType::Categorical(Some(rev_map)) = &**dt {
+        DataType::List(dt) if matches!(&**dt, DataType::Categorical(_, _)) => {
+            if let DataType::Categorical(Some(rev_map), _) = &**dt {
                 let opt_val = ca_in.get(0);
 
                 let other = other.list()?;
@@ -339,7 +338,7 @@ fn is_in_struct(ca_in: &StructChunked, other: &Series) -> PolarsResult<BooleanCh
 pub fn is_in(s: &Series, other: &Series) -> PolarsResult<BooleanChunked> {
     match s.dtype() {
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(_) => {
+        DataType::Categorical(_, _) => {
             use crate::frame::join::_check_categorical_src;
             _check_categorical_src(s.dtype(), other.dtype())?;
             let ca = s.categorical().unwrap();
@@ -363,43 +362,9 @@ pub fn is_in(s: &Series, other: &Series) -> PolarsResult<BooleanChunked> {
             let ca = s.bool().unwrap();
             is_in_boolean(ca, other)
         },
-        DataType::Float32 => {
-            let other = match other.dtype() {
-                DataType::List(_) => {
-                    let other = other.cast(&DataType::List(Box::new(DataType::Float32)))?;
-                    let other = other.list().unwrap();
-                    other.reinterpret_unsigned()
-                },
-                _ => {
-                    let other = other.cast(&DataType::Float32)?;
-                    let other = other.f32().unwrap();
-                    other.reinterpret_unsigned()
-                },
-            };
-            let ca = s.f32().unwrap();
-            let s = ca.reinterpret_unsigned();
-            is_in(&s, &other)
-        },
-        DataType::Float64 => {
-            let other = match other.dtype() {
-                DataType::List(_) => {
-                    let other = other.cast(&DataType::List(Box::new(DataType::Float64)))?;
-                    let other = other.list().unwrap();
-                    other.reinterpret_unsigned()
-                },
-                _ => {
-                    let other = other.cast(&DataType::Float64)?;
-                    let other = other.f64().unwrap();
-                    other.reinterpret_unsigned()
-                },
-            };
-            let ca = s.f64().unwrap();
-            let s = ca.reinterpret_unsigned();
-            is_in(&s, &other)
-        },
-        dt if dt.to_physical().is_integer() => {
+        dt if dt.to_physical().is_numeric() => {
             let s = s.to_physical_repr();
-            with_match_physical_integer_polars_type!(s.dtype(), |$T| {
+            with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 is_in_numeric(ca, other)
             })

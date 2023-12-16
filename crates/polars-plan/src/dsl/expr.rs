@@ -26,7 +26,8 @@ pub enum AggExpr {
     Last(Box<Expr>),
     Mean(Box<Expr>),
     Implode(Box<Expr>),
-    Count(Box<Expr>),
+    // include_nulls
+    Count(Box<Expr>, bool),
     Quantile {
         expr: Box<Expr>,
         quantile: Box<Expr>,
@@ -50,7 +51,7 @@ impl AsRef<Expr> for AggExpr {
             Last(e) => e,
             Mean(e) => e,
             Implode(e) => e,
-            Count(e) => e,
+            Count(e, _) => e,
             Quantile { expr, .. } => expr,
             Sum(e) => e,
             AggGroups(e) => e,
@@ -86,7 +87,7 @@ pub enum Expr {
         expr: Box<Expr>,
         options: SortOptions,
     },
-    Take {
+    Gather {
         expr: Box<Expr>,
         idx: Box<Expr>,
         returns_scalar: bool,

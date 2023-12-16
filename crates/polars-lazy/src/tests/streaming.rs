@@ -293,7 +293,7 @@ fn test_streaming_partial() -> PolarsResult<()> {
         .left_on([col("a")])
         .right_on([col("a")])
         .suffix("_foo")
-        .how(JoinType::Outer)
+        .how(JoinType::Outer { coalesce: true })
         .finish();
 
     let q = q.left_join(
@@ -382,7 +382,7 @@ fn test_sort_maintain_order_streaming() -> PolarsResult<()> {
         .slice(0, 3)
         .with_streaming(true)
         .collect()?;
-    assert!(res.frame_equal(&df![
+    assert!(res.equals(&df![
         "A" => [1, 1, 1],
         "B" => ["A", "B", "C"],
     ]?));

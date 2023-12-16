@@ -10,7 +10,7 @@ pub fn _merge_sorted_dfs(
     check_schema: bool,
 ) -> PolarsResult<DataFrame> {
     if check_schema {
-        left.frame_equal_schema(right)?;
+        left.schema_equal(right)?;
     }
     let dtype_lhs = left_s.dtype();
     let dtype_rhs = right_s.dtype();
@@ -19,6 +19,13 @@ pub fn _merge_sorted_dfs(
         dtype_lhs == dtype_rhs,
         ComputeError: "merge-sort datatype mismatch: {} != {}", dtype_lhs, dtype_rhs
     );
+
+    // If one frame is empty, we can return the other immediately.
+    if right_s.is_empty() {
+        return Ok(left.clone());
+    } else if left_s.is_empty() {
+        return Ok(right.clone());
+    }
 
     let merge_indicator = series_to_merge_indicator(left_s, right_s);
     let new_columns = left
@@ -175,8 +182,6 @@ where
     for a in &mut a_iter {
         current_a = a;
         if a <= current_b {
-            // safety
-            // we pre-allocated enough
             out.push(A_INDICATOR);
             continue;
         }

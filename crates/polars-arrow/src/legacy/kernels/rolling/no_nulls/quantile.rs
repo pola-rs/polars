@@ -2,11 +2,12 @@ use std::fmt::Debug;
 
 use num_traits::ToPrimitive;
 use polars_error::polars_ensure;
+use polars_utils::slice::GetSaferUnchecked;
 
 use super::QuantileInterpolOptions::*;
 use super::*;
 
-pub struct QuantileWindow<'a, T: NativeType + IsFloat + PartialOrd> {
+pub struct QuantileWindow<'a, T: NativeType> {
     sorted: SortedBuf<'a, T>,
     prob: f64,
     interpol: QuantileInterpolOptions,
@@ -15,7 +16,6 @@ pub struct QuantileWindow<'a, T: NativeType + IsFloat + PartialOrd> {
 impl<
         'a,
         T: NativeType
-            + IsFloat
             + Float
             + std::iter::Sum
             + AddAssign
@@ -24,7 +24,6 @@ impl<
             + NumCast
             + One
             + Zero
-            + PartialOrd
             + Sub<Output = T>,
     > RollingAggWindowNoNulls<'a, T> for QuantileWindow<'a, T>
 {
@@ -42,53 +41,61 @@ impl<
         let vals = self.sorted.update(start, end);
         let length = vals.len();
 
-        let mut idx = match self.interpol {
-            QuantileInterpolOptions::Nearest => ((length as f64) * self.prob) as usize,
-            QuantileInterpolOptions::Lower
-            | QuantileInterpolOptions::Midpoint
-            | QuantileInterpolOptions::Linear => {
-                ((length as f64 - 1.0) * self.prob).floor() as usize
+        let idx = match self.interpol {
+            Linear => {
+                // Maybe add a fast path for median case? They could branch depending on odd/even.
+                let length_f = length as f64;
+                let idx = ((length_f - 1.0) * self.prob).floor() as usize;
+
+                let float_idx_top = (length_f - 1.0) * self.prob;
+                let top_idx = float_idx_top.ceil() as usize;
+                return if idx == top_idx {
+                    unsafe { *vals.get_unchecked_release(idx) }
+                } else {
+                    let proportion = T::from(float_idx_top - idx as f64).unwrap();
+                    let vi = unsafe { *vals.get_unchecked_release(idx) };
+                    let vj = unsafe { *vals.get_unchecked_release(top_idx) };
+
+                    proportion * (vj - vi) + vi
+                };
             },
-            QuantileInterpolOptions::Higher => ((length as f64 - 1.0) * self.prob).ceil() as usize,
+            Midpoint => {
+                let length_f = length as f64;
+                let idx = (length_f * self.prob) as usize;
+                let idx = std::cmp::min(idx, length - 1);
+
+                let top_idx = ((length_f - 1.0) * self.prob).ceil() as usize;
+                return if top_idx == idx {
+                    // safety
+                    // we are in bounds
+                    unsafe { *vals.get_unchecked_release(idx) }
+                } else {
+                    // safety
+                    // we are in bounds
+                    let (mid, mid_plus_1) = unsafe {
+                        (
+                            *vals.get_unchecked_release(idx),
+                            *vals.get_unchecked_release(idx + 1),
+                        )
+                    };
+
+                    (mid + mid_plus_1) / (T::one() + T::one())
+                };
+            },
+            Nearest => {
+                let idx = ((length as f64) * self.prob) as usize;
+                std::cmp::min(idx, length - 1)
+            },
+            Lower => ((length as f64 - 1.0) * self.prob).floor() as usize,
+            Higher => {
+                let idx = ((length as f64 - 1.0) * self.prob).ceil() as usize;
+                std::cmp::min(idx, length - 1)
+            },
         };
 
-        idx = std::cmp::min(idx, length - 1);
-
-        match self.interpol {
-            QuantileInterpolOptions::Midpoint => {
-                let top_idx = ((length as f64 - 1.0) * self.prob).ceil() as usize;
-                if top_idx == idx {
-                    // safety
-                    // we are in bounds
-                    unsafe { *vals.get_unchecked(idx) }
-                } else {
-                    // safety
-                    // we are in bounds
-                    let (mid, mid_plus_1) =
-                        unsafe { (*vals.get_unchecked(idx), *vals.get_unchecked(idx + 1)) };
-
-                    (mid + mid_plus_1) / T::from::<f64>(2.0f64).unwrap()
-                }
-            },
-            QuantileInterpolOptions::Linear => {
-                let float_idx = (length as f64 - 1.0) * self.prob;
-                let top_idx = f64::ceil(float_idx) as usize;
-
-                if top_idx == idx {
-                    // safety
-                    // we are in bounds
-                    unsafe { *vals.get_unchecked(idx) }
-                } else {
-                    let proportion = T::from(float_idx - idx as f64).unwrap();
-                    proportion * (vals[top_idx] - vals[idx]) + vals[idx]
-                }
-            },
-            _ => {
-                // safety
-                // we are in bounds
-                unsafe { *vals.get_unchecked(idx) }
-            },
-        }
+        // safety
+        // we are in bounds
+        unsafe { *vals.get_unchecked_release(idx) }
     }
 }
 
@@ -119,13 +126,33 @@ where
         false => det_offsets,
     };
     match weights {
-        None => rolling_apply_agg_window::<QuantileWindow<_>, _, _>(
-            values,
-            window_size,
-            min_periods,
-            offset_fn,
-            params,
-        ),
+        None => {
+            if !center {
+                let params = params.as_ref().unwrap();
+                let params = params.downcast_ref::<RollingQuantileParams>().unwrap();
+                let out = super::quantile_filter::rolling_quantile::<_, Vec<_>>(
+                    params.interpol,
+                    min_periods,
+                    window_size,
+                    values,
+                    params.prob,
+                );
+                let validity = create_validity(min_periods, values.len(), window_size, offset_fn);
+                return Ok(Box::new(PrimitiveArray::new(
+                    T::PRIMITIVE.into(),
+                    out.into(),
+                    validity.map(|b| b.into()),
+                )));
+            }
+
+            rolling_apply_agg_window::<QuantileWindow<_>, _, _>(
+                values,
+                window_size,
+                min_periods,
+                offset_fn,
+                params,
+            )
+        },
         Some(weights) => {
             let wsum = weights.iter().sum();
             polars_ensure!(
@@ -151,15 +178,7 @@ where
 #[inline]
 fn compute_wq<T>(buf: &[(T, f64)], p: f64, wsum: f64, interp: QuantileInterpolOptions) -> T
 where
-    T: Debug
-        + NativeType
-        + Mul<Output = T>
-        + Sub<Output = T>
-        + NumCast
-        + ToPrimitive
-        + Zero
-        + IsFloat
-        + PartialOrd,
+    T: Debug + NativeType + Mul<Output = T> + Sub<Output = T> + NumCast + ToPrimitive + Zero,
 {
     // There are a few ways to compute a weighted quantile but no "canonical" way.
     // This is mostly taken from the Julia implementation which was readable and reasonable
@@ -208,15 +227,7 @@ fn rolling_apply_weighted_quantile<T, Fo>(
 ) -> ArrayRef
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
-    T: Debug
-        + NativeType
-        + Mul<Output = T>
-        + Sub<Output = T>
-        + NumCast
-        + ToPrimitive
-        + Zero
-        + IsFloat
-        + PartialOrd,
+    T: Debug + NativeType + Mul<Output = T> + Sub<Output = T> + NumCast + ToPrimitive + Zero,
 {
     assert_eq!(weights.len(), window_size);
     // Keep nonzero weights and their indices to know which values we need each iteration.
@@ -234,7 +245,7 @@ where
                     .zip(nz_idx_wts.iter())
                     .for_each(|(b, (i, w))| *b = (*values.get_unchecked(i + start), **w));
             }
-            buf.sort_unstable_by(|&a, &b| compare_fn_nan_max(&a.0, &b.0));
+            buf.sort_unstable_by(|&a, &b| a.0.tot_cmp(&b.0));
             compute_wq(&buf, p, wsum, interpolation)
         })
         .collect_trusted::<Vec<T>>();

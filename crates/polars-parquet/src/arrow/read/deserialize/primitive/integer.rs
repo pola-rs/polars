@@ -2,19 +2,19 @@ use std::collections::VecDeque;
 
 use arrow::array::MutablePrimitiveArray;
 use arrow::bitmap::MutableBitmap;
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use num_traits::AsPrimitive;
-use polars_error::{to_compute_err, PolarsResult};
+use polars_error::PolarsResult;
 
-use super::super::{utils, Pages};
+use super::super::utils::MaybeNext;
+use super::super::{utils, PagesIter};
 use super::basic::{finish, PrimitiveDecoder, State as PrimitiveState};
 use crate::arrow::read::deserialize::utils::{
     get_selected_rows, FilteredOptionalPageValidity, OptionalPageValidity,
 };
 use crate::parquet::deserialize::SliceFilteredIter;
-use crate::parquet::encoding::delta_bitpacked::Decoder;
-use crate::parquet::encoding::Encoding;
+use crate::parquet::encoding::{delta_bitpacked, Encoding};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::parquet::schema::Repetition;
 use crate::parquet::types::NativeType as ParquetNativeType;
@@ -26,10 +26,13 @@ where
     T: NativeType,
 {
     Common(PrimitiveState<'a, T>),
-    DeltaBinaryPackedRequired(Decoder<'a>),
-    DeltaBinaryPackedOptional(OptionalPageValidity<'a>, Decoder<'a>),
-    FilteredDeltaBinaryPackedRequired(SliceFilteredIter<Decoder<'a>>),
-    FilteredDeltaBinaryPackedOptional(FilteredOptionalPageValidity<'a>, Decoder<'a>),
+    DeltaBinaryPackedRequired(delta_bitpacked::Decoder<'a>),
+    DeltaBinaryPackedOptional(OptionalPageValidity<'a>, delta_bitpacked::Decoder<'a>),
+    FilteredDeltaBinaryPackedRequired(SliceFilteredIter<delta_bitpacked::Decoder<'a>>),
+    FilteredDeltaBinaryPackedOptional(
+        FilteredOptionalPageValidity<'a>,
+        delta_bitpacked::Decoder<'a>,
+    ),
 }
 
 impl<'a, T> utils::PageState<'a> for State<'a, T>
@@ -92,20 +95,19 @@ where
         match (page.encoding(), dict, is_optional, is_filtered) {
             (Encoding::DeltaBinaryPacked, _, false, false) => {
                 let (_, _, values) = split_buffer(page)?;
-                Decoder::try_new(values)
-                    .map(State::DeltaBinaryPackedRequired)
-                    .map_err(to_compute_err)
+                Ok(delta_bitpacked::Decoder::try_new(values)
+                    .map(State::DeltaBinaryPackedRequired)?)
             },
             (Encoding::DeltaBinaryPacked, _, true, false) => {
                 let (_, _, values) = split_buffer(page)?;
                 Ok(State::DeltaBinaryPackedOptional(
                     OptionalPageValidity::try_new(page)?,
-                    Decoder::try_new(values)?,
+                    delta_bitpacked::Decoder::try_new(values)?,
                 ))
             },
             (Encoding::DeltaBinaryPacked, _, false, true) => {
                 let (_, _, values) = split_buffer(page)?;
-                let values = Decoder::try_new(values)?;
+                let values = delta_bitpacked::Decoder::try_new(values)?;
 
                 let rows = get_selected_rows(page);
                 let values = SliceFilteredIter::new(values, rows);
@@ -114,7 +116,7 @@ where
             },
             (Encoding::DeltaBinaryPacked, _, true, true) => {
                 let (_, _, values) = split_buffer(page)?;
-                let values = Decoder::try_new(values)?;
+                let values = delta_bitpacked::Decoder::try_new(values)?;
 
                 Ok(State::FilteredDeltaBinaryPackedOptional(
                     FilteredOptionalPageValidity::try_new(page)?,
@@ -134,10 +136,10 @@ where
         state: &mut Self::State,
         decoded: &mut Self::DecodedState,
         remaining: usize,
-    ) {
+    ) -> PolarsResult<()> {
         let (values, validity) = decoded;
         match state {
-            State::Common(state) => self.0.extend_from_state(state, decoded, remaining),
+            State::Common(state) => self.0.extend_from_state(state, decoded, remaining)?,
             State::DeltaBinaryPackedRequired(state) => {
                 values.extend(
                     state
@@ -180,6 +182,7 @@ where
                 );
             },
         }
+        Ok(())
     }
 
     fn deserialize_dict(&self, page: &DictPage) -> Self::Dict {
@@ -187,18 +190,18 @@ where
     }
 }
 
-/// An [`Iterator`] adapter over [`Pages`] assumed to be encoded as primitive arrays
+/// An [`Iterator`] adapter over [`PagesIter`] assumed to be encoded as primitive arrays
 /// encoded as parquet integer types
 #[derive(Debug)]
 pub struct IntegerIter<T, I, P, F>
 where
-    I: Pages,
+    I: PagesIter,
     T: NativeType,
     P: ParquetNativeType,
     F: Fn(P) -> T,
 {
     iter: I,
-    data_type: DataType,
+    data_type: ArrowDataType,
     items: VecDeque<(Vec<T>, MutableBitmap)>,
     remaining: usize,
     chunk_size: Option<usize>,
@@ -209,7 +212,7 @@ where
 
 impl<T, I, P, F> IntegerIter<T, I, P, F>
 where
-    I: Pages,
+    I: PagesIter,
     T: NativeType,
 
     P: ParquetNativeType,
@@ -217,7 +220,7 @@ where
 {
     pub fn new(
         iter: I,
-        data_type: DataType,
+        data_type: ArrowDataType,
         num_rows: usize,
         chunk_size: Option<usize>,
         op: F,
@@ -237,7 +240,7 @@ where
 
 impl<T, I, P, F> Iterator for IntegerIter<T, I, P, F>
 where
-    I: Pages,
+    I: PagesIter,
     T: NativeType,
     P: ParquetNativeType,
     i64: num_traits::AsPrimitive<P>,
@@ -246,21 +249,23 @@ where
     type Item = PolarsResult<MutablePrimitiveArray<T>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let maybe_state = utils::next(
-            &mut self.iter,
-            &mut self.items,
-            &mut self.dict,
-            &mut self.remaining,
-            self.chunk_size,
-            &IntDecoder::new(self.op),
-        );
-        match maybe_state {
-            utils::MaybeNext::Some(Ok((values, validity))) => {
-                Some(Ok(finish(&self.data_type, values, validity)))
-            },
-            utils::MaybeNext::Some(Err(e)) => Some(Err(e)),
-            utils::MaybeNext::None => None,
-            utils::MaybeNext::More => self.next(),
+        loop {
+            let maybe_state = utils::next(
+                &mut self.iter,
+                &mut self.items,
+                &mut self.dict,
+                &mut self.remaining,
+                self.chunk_size,
+                &IntDecoder::new(self.op),
+            );
+            match maybe_state {
+                MaybeNext::Some(Ok((values, validity))) => {
+                    return Some(Ok(finish(&self.data_type, values, validity)))
+                },
+                MaybeNext::Some(Err(e)) => return Some(Err(e)),
+                MaybeNext::None => return None,
+                MaybeNext::More => continue,
+            }
         }
     }
 }

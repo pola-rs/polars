@@ -1,6 +1,7 @@
 use super::*;
 
 #[test]
+#[cfg(feature = "cov")]
 fn test_pearson_corr() -> PolarsResult<()> {
     let df = df! {
         "uid" => [0, 0, 0, 1, 1, 1],
@@ -72,5 +73,5 @@ fn test_lazy_ternary() {
         )
         .collect()
         .unwrap();
-    assert_eq!(Some(43), df.column("new").unwrap().sum::<i32>());
+    assert_eq!(43, df.column("new").unwrap().sum::<i32>().unwrap());
 }

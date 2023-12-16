@@ -1,5 +1,6 @@
 #[cfg(feature = "abs")]
 mod abs;
+#[cfg(feature = "approx_unique")]
 mod approx_algo;
 #[cfg(feature = "approx_unique")]
 mod approx_unique;
@@ -36,6 +37,8 @@ mod moment;
 mod pct_change;
 #[cfg(feature = "rank")]
 mod rank;
+#[cfg(feature = "replace")]
+mod replace;
 #[cfg(feature = "rle")]
 mod rle;
 #[cfg(feature = "rolling_window")]
@@ -52,6 +55,7 @@ mod various;
 
 #[cfg(feature = "abs")]
 pub use abs::*;
+#[cfg(feature = "approx_unique")]
 pub use approx_algo::*;
 #[cfg(feature = "approx_unique")]
 pub use approx_unique::*;
@@ -89,6 +93,8 @@ pub use pct_change::*;
 use polars_core::prelude::*;
 #[cfg(feature = "rank")]
 pub use rank::*;
+#[cfg(feature = "replace")]
+pub use replace::*;
 #[cfg(feature = "rle")]
 pub use rle::*;
 #[cfg(feature = "rolling_window")]

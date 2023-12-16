@@ -3,7 +3,7 @@ from typing import Iterator
 import pytest
 
 import polars as pl
-from polars.exceptions import StringCacheMismatchError
+from polars.exceptions import CategoricalRemappingWarning
 from polars.testing import assert_frame_equal
 
 
@@ -119,16 +119,26 @@ def test_string_cache_enable_arg_deprecated() -> None:
 
 def test_string_cache_join() -> None:
     df1 = pl.DataFrame({"a": ["foo", "bar", "ham"], "b": [1, 2, 3]})
-    df2 = pl.DataFrame({"a": ["foo", "spam", "eggs"], "c": [3, 2, 2]})
+    df2 = pl.DataFrame({"a": ["eggs", "spam", "foo"], "c": [2, 2, 3]})
 
     # ensure cache is off when casting to categorical; the join will fail
     pl.disable_string_cache()
     assert pl.using_string_cache() is False
 
-    df1a = df1.with_columns(pl.col("a").cast(pl.Categorical))
-    df2a = df2.with_columns(pl.col("a").cast(pl.Categorical))
-    with pytest.raises(StringCacheMismatchError):
-        _ = df1a.join(df2a, on="a", how="inner")
+    with pytest.warns(
+        CategoricalRemappingWarning,
+        match="Local categoricals have different encodings",
+    ):
+        df1a = df1.with_columns(pl.col("a").cast(pl.Categorical))
+        df2a = df2.with_columns(pl.col("a").cast(pl.Categorical))
+        out = df1a.join(df2a, on="a", how="inner")
+
+    expected = pl.DataFrame(
+        {"a": ["foo"], "b": [1], "c": [3]}, schema_overrides={"a": pl.Categorical}
+    )
+
+    # Can not do equality checks on local categoricals with different categories
+    assert_frame_equal(out, expected, categorical_as_str=True)
 
     # now turn on the cache
     pl.enable_string_cache()

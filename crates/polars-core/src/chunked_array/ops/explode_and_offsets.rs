@@ -3,15 +3,20 @@ use arrow::bitmap::MutableBitmap;
 use super::*;
 
 impl ChunkExplode for ListChunked {
+    fn offsets(&self) -> PolarsResult<OffsetsBuffer<i64>> {
+        let ca = self.rechunk();
+        let listarr: &LargeListArray = ca.downcast_iter().next().unwrap();
+        let offsets = listarr.offsets().clone();
+
+        Ok(offsets)
+    }
+
     fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
         // A list array's memory layout is actually already 'exploded', so we can just take the values array
         // of the list. And we also return a slice of the offsets. This slice can be used to find the old
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
         let ca = self.rechunk();
-        let listarr: &LargeListArray = ca
-            .downcast_iter()
-            .next()
-            .ok_or_else(|| polars_err!(NoData: "cannot explode empty list"))?;
+        let listarr: &LargeListArray = ca.downcast_iter().next().unwrap();
         let offsets_buf = listarr.offsets().clone();
         let offsets = listarr.offsets().as_slice();
         let mut values = listarr.values().clone();
@@ -76,15 +81,20 @@ impl ChunkExplode for ListChunked {
 }
 
 impl ChunkExplode for Utf8Chunked {
+    fn offsets(&self) -> PolarsResult<OffsetsBuffer<i64>> {
+        let ca = self.rechunk();
+        let array: &Utf8Array<i64> = ca.downcast_iter().next().unwrap();
+        let offsets = array.offsets().clone();
+
+        Ok(offsets)
+    }
+
     fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
         // A list array's memory layout is actually already 'exploded', so we can just take the values array
         // of the list. And we also return a slice of the offsets. This slice can be used to find the old
         // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
         let ca = self.rechunk();
-        let array: &Utf8Array<i64> = ca
-            .downcast_iter()
-            .next()
-            .ok_or_else(|| polars_err!(NoData: "cannot explode empty str"))?;
+        let array: &Utf8Array<i64> = ca.downcast_iter().next().unwrap();
 
         let values = array.values();
         let old_offsets = array.offsets().clone();
@@ -191,15 +201,7 @@ impl ChunkExplode for Utf8Chunked {
 
 #[cfg(feature = "dtype-array")]
 impl ChunkExplode for ArrayChunked {
-    fn explode(&self) -> PolarsResult<Series> {
-        let ca = self.rechunk();
-        let arr = ca.downcast_iter().next().unwrap();
-        Ok(Series::try_from((self.name(), arr.values().clone())).unwrap())
-    }
-
-    fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
-        let s = self.explode().unwrap();
-
+    fn offsets(&self) -> PolarsResult<OffsetsBuffer<i64>> {
         let width = self.width() as i64;
         let offsets = (0..self.len() + 1)
             .map(|i| {
@@ -210,6 +212,18 @@ impl ChunkExplode for ArrayChunked {
         // safety: monotonically increasing
         let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
 
-        Ok((s, offsets))
+        Ok(offsets)
+    }
+
+    fn explode(&self) -> PolarsResult<Series> {
+        let ca = self.rechunk();
+        let arr = ca.downcast_iter().next().unwrap();
+        Ok(Series::try_from((self.name(), arr.values().clone())).unwrap())
+    }
+
+    fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
+        let s = self.explode().unwrap();
+
+        Ok((s, self.offsets()?))
     }
 }

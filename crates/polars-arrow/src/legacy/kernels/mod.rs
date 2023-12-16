@@ -5,8 +5,6 @@ use crate::bitmap::utils::BitChunks;
 #[cfg(feature = "simd")]
 pub mod agg_mean;
 pub mod atan2;
-#[cfg(feature = "dtype-array")]
-pub mod comparison;
 pub mod concatenate;
 pub mod ewm;
 pub mod float;
@@ -21,11 +19,11 @@ pub mod sorted_join;
 #[cfg(feature = "strings")]
 pub mod string;
 pub mod take_agg;
-#[cfg(feature = "timezones")]
 mod time;
 
+pub use time::Ambiguous;
 #[cfg(feature = "timezones")]
-pub use time::convert_to_naive_local;
+pub use time::{convert_to_naive_local, convert_to_naive_local_opt};
 
 /// Internal state of [SlicesIterator]
 #[derive(Debug, PartialEq)]

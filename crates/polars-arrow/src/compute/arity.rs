@@ -2,10 +2,10 @@
 
 use polars_error::PolarsResult;
 
-use super::utils::{check_same_len, combine_validities};
+use super::utils::{check_same_len, combine_validities_and};
 use crate::array::PrimitiveArray;
 use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::types::NativeType;
 
 /// Applies an unary and infallible function to a [`PrimitiveArray`]. This is the
@@ -18,7 +18,11 @@ use crate::types::NativeType;
 /// This implies that the operation must be infallible for any value of the
 /// corresponding type or this function may panic.
 #[inline]
-pub fn unary<I, F, O>(array: &PrimitiveArray<I>, op: F, data_type: DataType) -> PrimitiveArray<O>
+pub fn unary<I, F, O>(
+    array: &PrimitiveArray<I>,
+    op: F,
+    data_type: ArrowDataType,
+) -> PrimitiveArray<O>
 where
     I: NativeType,
     O: NativeType,
@@ -34,7 +38,7 @@ where
 pub fn try_unary<I, F, O>(
     array: &PrimitiveArray<I>,
     op: F,
-    data_type: DataType,
+    data_type: ArrowDataType,
 ) -> PolarsResult<PrimitiveArray<O>>
 where
     I: NativeType,
@@ -60,7 +64,7 @@ where
 pub fn unary_with_bitmap<I, F, O>(
     array: &PrimitiveArray<I>,
     op: F,
-    data_type: DataType,
+    data_type: ArrowDataType,
 ) -> (PrimitiveArray<O>, Bitmap)
 where
     I: NativeType,
@@ -92,7 +96,7 @@ where
 pub fn unary_checked<I, F, O>(
     array: &PrimitiveArray<I>,
     op: F,
-    data_type: DataType,
+    data_type: ArrowDataType,
 ) -> PrimitiveArray<O>
 where
     I: NativeType,
@@ -122,7 +126,7 @@ where
     // the iteration, then the validity is changed to None to mark the value
     // as Null
     let bitmap: Bitmap = mut_bitmap.into();
-    let validity = combine_validities(array.validity(), Some(&bitmap));
+    let validity = combine_validities_and(array.validity(), Some(&bitmap));
 
     PrimitiveArray::<O>::new(data_type, values, validity)
 }
@@ -144,7 +148,7 @@ where
 pub fn binary<T, D, F>(
     lhs: &PrimitiveArray<T>,
     rhs: &PrimitiveArray<D>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     op: F,
 ) -> PrimitiveArray<T>
 where
@@ -154,7 +158,7 @@ where
 {
     check_same_len(lhs, rhs).unwrap();
 
-    let validity = combine_validities(lhs.validity(), rhs.validity());
+    let validity = combine_validities_and(lhs.validity(), rhs.validity());
 
     let values = lhs
         .values()
@@ -172,7 +176,7 @@ where
 pub fn try_binary<T, D, F>(
     lhs: &PrimitiveArray<T>,
     rhs: &PrimitiveArray<D>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     op: F,
 ) -> PolarsResult<PrimitiveArray<T>>
 where
@@ -182,7 +186,7 @@ where
 {
     check_same_len(lhs, rhs)?;
 
-    let validity = combine_validities(lhs.validity(), rhs.validity());
+    let validity = combine_validities_and(lhs.validity(), rhs.validity());
 
     let values = lhs
         .values()
@@ -200,7 +204,7 @@ where
 pub fn binary_with_bitmap<T, D, F>(
     lhs: &PrimitiveArray<T>,
     rhs: &PrimitiveArray<D>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     op: F,
 ) -> (PrimitiveArray<T>, Bitmap)
 where
@@ -210,7 +214,7 @@ where
 {
     check_same_len(lhs, rhs).unwrap();
 
-    let validity = combine_validities(lhs.validity(), rhs.validity());
+    let validity = combine_validities_and(lhs.validity(), rhs.validity());
 
     let mut mut_bitmap = MutableBitmap::with_capacity(lhs.len());
 
@@ -238,7 +242,7 @@ where
 pub fn binary_checked<T, D, F>(
     lhs: &PrimitiveArray<T>,
     rhs: &PrimitiveArray<D>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     op: F,
 ) -> PrimitiveArray<T>
 where
@@ -268,13 +272,13 @@ where
         .into();
 
     let bitmap: Bitmap = mut_bitmap.into();
-    let validity = combine_validities(lhs.validity(), rhs.validity());
+    let validity = combine_validities_and(lhs.validity(), rhs.validity());
 
     // The validity has to be checked against the bitmap created during the
     // creation of the values with the iterator. If an error was found during
     // the iteration, then the validity is changed to None to mark the value
     // as Null
-    let validity = combine_validities(validity.as_ref(), Some(&bitmap));
+    let validity = combine_validities_and(validity.as_ref(), Some(&bitmap));
 
     PrimitiveArray::<T>::new(data_type, values, validity)
 }

@@ -120,10 +120,23 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// and will slice the best match when offset, or length is out of bounds
     #[inline]
     pub fn slice(&self, offset: i64, length: usize) -> Self {
-        let (chunks, len) = slice(&self.chunks, offset, length, self.len());
-        let mut out = unsafe { self.copy_with_chunks(chunks, true, true) };
-        out.length = len as IdxSize;
-        out
+        // The len: 0 special cases ensure we release memory.
+        // A normal slice, slice the buffers and thus keep the whole memory allocated.
+        let exec = || {
+            let (chunks, len) = slice(&self.chunks, offset, length, self.len());
+            let mut out = unsafe { self.copy_with_chunks(chunks, true, true) };
+            out.length = len as IdxSize;
+            out
+        };
+
+        match length {
+            0 => match self.dtype() {
+                #[cfg(feature = "object")]
+                DataType::Object(_) => exec(),
+                _ => self.clear(),
+            },
+            _ => exec(),
+        }
     }
 
     /// Take a view of top n elements
@@ -203,7 +216,9 @@ mod test {
     #[cfg(feature = "dtype-categorical")]
     fn test_categorical_map_after_rechunk() {
         let s = Series::new("", &["foo", "bar", "spam"]);
-        let mut a = s.cast(&DataType::Categorical(None)).unwrap();
+        let mut a = s
+            .cast(&DataType::Categorical(None, Default::default()))
+            .unwrap();
 
         a.append(&a.slice(0, 2)).unwrap();
         let a = a.rechunk();

@@ -12,6 +12,7 @@ pub use fallible_streaming_iterator::*;
 use polars_error::{PolarsError, PolarsResult};
 pub(crate) use serialize::new_serializer;
 use serialize::serialize;
+pub use utf8::serialize_to_utf8;
 
 /// [`FallibleStreamingIterator`] that serializes an [`Array`] to bytes of valid JSON
 /// # Implementation

@@ -21,7 +21,12 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     import pyarrow as pa
 
-    from polars.type_aliases import DbReadEngine, SchemaDefinition, SchemaDict
+    from polars.type_aliases import (
+        ConnectionOrCursor,
+        DbReadEngine,
+        SchemaDefinition,
+        SchemaDict,
+    )
 
 
 def adbc_sqlite_connect(*args: Any, **kwargs: Any) -> Any:
@@ -33,6 +38,12 @@ def adbc_sqlite_connect(*args: Any, **kwargs: Any) -> Any:
 
 def create_temp_sqlite_db(test_db: str) -> None:
     Path(test_db).unlink(missing_ok=True)
+
+    def convert_date(val: bytes) -> date:
+        """Convert ISO 8601 date to datetime.date object."""
+        return date.fromisoformat(val.decode())
+
+    sqlite3.register_converter("date", convert_date)
 
     # NOTE: at the time of writing adcb/connectorx have weak SQLite support (poor or
     # no bool/date/datetime dtypes, for example) and there is a bug in connectorx that
@@ -183,6 +194,10 @@ class MockResultSet:
                 schema_overrides={"id": pl.UInt8},
             ),
             id="uri: connectorx",
+            marks=pytest.mark.skipif(
+                sys.version_info > (3, 11),
+                reason="connectorx cannot be installed on Python 3.12 yet.",
+            ),
         ),
         pytest.param(
             *DatabaseReadTestParams(
@@ -354,11 +369,15 @@ def test_read_database_alchemy_selectable(tmp_path: Path) -> None:
     )
 
 
-def test_read_database_parameterisd(tmp_path: Path) -> None:
+def test_read_database_parameterised(tmp_path: Path) -> None:
     # setup underlying test data
     tmp_path.mkdir(exist_ok=True)
     create_temp_sqlite_db(test_db := str(tmp_path / "test.db"))
-    conn = create_engine(f"sqlite:///{test_db}")
+
+    # raw cursor "execute" only takes positional params, alchemy cursor takes kwargs
+    raw_conn: ConnectionOrCursor = sqlite3.connect(test_db)
+    alchemy_conn: ConnectionOrCursor = create_engine(f"sqlite:///{test_db}").connect()
+    test_conns = (alchemy_conn, raw_conn)
 
     # establish parameterised queries and validate usage
     query = """
@@ -371,14 +390,15 @@ def test_read_database_parameterisd(tmp_path: Path) -> None:
         ("?", (0,)),
         ("?", [0]),
     ):
-        assert_frame_equal(
-            pl.read_database(
-                query.format(n=param),
-                connection=conn.connect(),
-                execute_options={"parameters": param_value},
-            ),
-            pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]}),
-        )
+        for conn in test_conns:
+            assert_frame_equal(
+                pl.read_database(
+                    query.format(n=param),
+                    connection=conn,
+                    execute_options={"parameters": param_value},
+                ),
+                pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]}),
+            )
 
 
 @pytest.mark.parametrize(
@@ -584,6 +604,10 @@ def test_read_database_exceptions(
         read_database(**params)
 
 
+@pytest.mark.skipif(
+    sys.version_info > (3, 11),
+    reason="connectorx cannot be installed on Python 3.12 yet.",
+)
 @pytest.mark.parametrize(
     "uri",
     [

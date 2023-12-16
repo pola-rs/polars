@@ -44,7 +44,7 @@ mod tests {
         assert_eq!(result, expected_lengths);
 
         let result = iter.into_values();
-        assert_eq!(result, expected_values.as_str().as_bytes());
+        assert_eq!(result, expected_values.as_bytes());
         Ok(())
     }
 }
