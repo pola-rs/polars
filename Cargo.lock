@@ -2594,6 +2594,7 @@ dependencies = [
  "polars-io",
  "polars-lazy",
  "polars-ops",
+ "polars-plan",
  "polars-sql",
  "polars-time",
  "rand",
@@ -2830,6 +2831,7 @@ name = "polars-ops"
 version = "0.35.4"
 dependencies = [
  "ahash",
+ "aho-corasick",
  "argminmax",
  "base64",
  "bytemuck",

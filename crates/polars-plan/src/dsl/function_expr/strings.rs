@@ -108,6 +108,14 @@ pub enum StringFunction {
     Uppercase,
     #[cfg(feature = "string_pad")]
     ZFill(usize),
+    #[cfg(feature = "find_many")]
+    ContainsMany {
+        ascii_case_insensitive: bool,
+    },
+    #[cfg(feature = "find_many")]
+    ReplaceMany {
+        ascii_case_insensitive: bool,
+    },
 }
 
 impl StringFunction {
@@ -172,6 +180,10 @@ impl StringFunction {
                     .map(|i| Field::from_owned(format_smartstring!("field_{i}"), DataType::Utf8))
                     .collect(),
             )),
+            #[cfg(feature = "find_many")]
+            ContainsMany { .. } => mapper.with_dtype(DataType::Boolean),
+            #[cfg(feature = "find_many")]
+            ReplaceMany { .. } => mapper.with_same_dtype(),
         }
     }
 }
@@ -249,6 +261,10 @@ impl Display for StringFunction {
             Uppercase => "uppercase",
             #[cfg(feature = "string_pad")]
             ZFill(_) => "zfill",
+            #[cfg(feature = "find_many")]
+            ContainsMany { .. } => "contains_many",
+            #[cfg(feature = "find_many")]
+            ReplaceMany { .. } => "replace_many",
         };
         write!(f, "str.{s}")
     }
@@ -311,8 +327,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Replace { n, literal } => map_as_slice!(strings::replace, literal, n),
             #[cfg(feature = "string_reverse")]
             Reverse => map!(strings::reverse),
-            Uppercase => map!(strings::uppercase),
-            Lowercase => map!(strings::lowercase),
+            Uppercase => map!(uppercase),
+            Lowercase => map!(lowercase),
             #[cfg(feature = "nightly")]
             Titlecase => map!(strings::titlecase),
             StripChars => map_as_slice!(strings::strip_chars),
@@ -339,16 +355,50 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 dtype,
                 infer_schema_len,
             } => map!(strings::json_decode, dtype.clone(), infer_schema_len),
+            #[cfg(feature = "find_many")]
+            ContainsMany {
+                ascii_case_insensitive,
+            } => {
+                map_as_slice!(contains_many, ascii_case_insensitive)
+            },
+            #[cfg(feature = "find_many")]
+            ReplaceMany {
+                ascii_case_insensitive,
+            } => {
+                map_as_slice!(replace_many, ascii_case_insensitive)
+            },
         }
     }
 }
 
-pub(super) fn uppercase(s: &Series) -> PolarsResult<Series> {
+#[cfg(feature = "find_many")]
+fn contains_many(s: &[Series], ascii_case_insensitive: bool) -> PolarsResult<Series> {
+    let ca = s[0].utf8()?;
+    let patterns = s[1].utf8()?;
+    polars_ops::chunked_array::strings::contains_any(ca, patterns, ascii_case_insensitive)
+        .map(|out| out.into_series())
+}
+
+#[cfg(feature = "find_many")]
+fn replace_many(s: &[Series], ascii_case_insensitive: bool) -> PolarsResult<Series> {
+    let ca = s[0].utf8()?;
+    let patterns = s[1].utf8()?;
+    let replace_with = s[2].utf8()?;
+    polars_ops::chunked_array::strings::replace_all(
+        ca,
+        patterns,
+        replace_with,
+        ascii_case_insensitive,
+    )
+    .map(|out| out.into_series())
+}
+
+fn uppercase(s: &Series) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     Ok(ca.to_uppercase().into_series())
 }
 
-pub(super) fn lowercase(s: &Series) -> PolarsResult<Series> {
+fn lowercase(s: &Series) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     Ok(ca.to_lowercase().into_series())
 }
