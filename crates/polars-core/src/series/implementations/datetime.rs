@@ -368,22 +368,6 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         Series::new(self.name(), &[self.median().map(|v| v as i64)]).cast(self.dtype())
     }
 
-    fn var_as_series(&self, _ddof: u8) -> PolarsResult<Series> {
-        Int32Chunked::full_null(self.name(), 1).cast(self.dtype())
-    }
-
-    fn std_as_series(&self, _ddof: u8) -> PolarsResult<Series> {
-        Int32Chunked::full_null(self.name(), 1).cast(self.dtype())
-    }
-
-    fn quantile_as_series(
-        &self,
-        _quantile: f64,
-        _interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Series> {
-        Int32Chunked::full_null(self.name(), 1).cast(self.dtype())
-    }
-
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }

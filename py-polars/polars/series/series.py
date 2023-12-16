@@ -1787,8 +1787,6 @@ class Series:
         1.0
 
         """
-        if not self.dtype.is_numeric():
-            return None
         return self._s.std(ddof)
 
     def var(self, ddof: int = 1) -> float | None:
@@ -1809,8 +1807,6 @@ class Series:
         1.0
 
         """
-        if not self.dtype.is_numeric():
-            return None
         return self._s.var(ddof)
 
     def median(self) -> PythonLiteral | None:
