@@ -289,6 +289,7 @@ mod test {
             ca.unique()
                 .unwrap()
                 .sort(false)
+                .unwrap()
                 .into_iter()
                 .collect::<Vec<_>>(),
             vec![Some(1), Some(2), Some(3)]
@@ -301,7 +302,7 @@ mod test {
 
         let ca = Utf8Chunked::new("", &[Some("a"), None, Some("a"), Some("b"), None]);
         assert_eq!(
-            Vec::from(&ca.unique().unwrap().sort(false)),
+            Vec::from(&ca.unique().unwrap().sort(false).unwrap()),
             &[None, Some("a"), Some("b")]
         );
     }
