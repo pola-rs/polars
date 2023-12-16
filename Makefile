@@ -38,8 +38,8 @@ clippy-default:  ## Run clippy with default features
 fmt:  ## Run autoformatting and linting
 	$(VENV_BIN)/ruff check .
 	$(VENV_BIN)/ruff format .
-	dprint fmt
 	cargo fmt --all
+	dprint fmt
 	$(VENV_BIN)/typos .
 
 .PHONY: pre-commit
