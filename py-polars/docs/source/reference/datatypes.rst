@@ -56,6 +56,7 @@ Other
     Boolean
     Binary
     Categorical
+    Enum
     Null
     Object
     Utf8
