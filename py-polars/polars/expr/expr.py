@@ -3984,8 +3984,11 @@ class Expr:
         A reasonable use case for `map` functions is transforming the values
         represented by an expression using a third-party library.
 
-        Read more in `the book
-        <https://pola-rs.github.io/polars/user-guide/expressions/user-defined-functions>`_.
+        .. warning::
+            If you are looking to map a function over a window function or group_by
+            context, refer to :func:`map_elements` instead.
+            Read more in `the book
+            <https://pola-rs.github.io/polars/user-guide/expressions/user-defined-functions>`_.
 
         Parameters
         ----------
@@ -3995,11 +3998,6 @@ class Expr:
             Dtype of the output Series.
         agg_list
             Aggregate list.
-
-        Notes
-        -----
-        If you are looking to map a function over a window function or group_by context,
-        refer to func:`map_elements` instead.
 
         Warnings
         --------

@@ -4319,8 +4319,8 @@ class DataFrame:
         -----
         The median is included by default as the 50% percentile.
 
-        Warning
-        -------
+        Warnings
+        --------
         We will never guarantee the output of describe to be stable.
         It will show statistics that we deem informative and may
         be updated in the future.
