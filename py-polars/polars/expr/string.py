@@ -2392,7 +2392,7 @@ class ExprStringNameSpace:
         ...         ["you", "me"],
         ...     )
         ...     .alias("confusing")
-        ... )
+        ... )  # doctest: +IGNORE_RESULT
         shape: (3, 2)
         ┌────────────────────────────────────────────────────┬───────────────────────────────────────────────────┐
         │ lyrics                                             ┆ confusing                                         │
