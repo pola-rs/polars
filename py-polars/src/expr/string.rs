@@ -285,4 +285,26 @@ impl PyExpr {
     fn str_to_decimal(&self, infer_len: usize) -> Self {
         self.inner.clone().str().to_decimal(infer_len).into()
     }
+
+    #[cfg(feature = "find_many")]
+    fn str_contains_any(&self, patterns: PyExpr, ascii_case_insensitive: bool) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .contains_any(patterns.inner, ascii_case_insensitive)
+            .into()
+    }
+    #[cfg(feature = "find_many")]
+    fn str_replace_many(
+        &self,
+        patterns: PyExpr,
+        replace_with: PyExpr,
+        ascii_case_insensitive: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .replace_many(patterns.inner, replace_with.inner, ascii_case_insensitive)
+            .into()
+    }
 }

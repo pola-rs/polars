@@ -11,7 +11,7 @@ pub mod nan_propagating_aggregate;
 #[cfg(feature = "peaks")]
 pub mod peaks;
 mod set;
-mod strings;
+pub mod strings;
 mod sum;
 #[cfg(feature = "top_k")]
 mod top_k;

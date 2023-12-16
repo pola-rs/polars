@@ -765,7 +765,7 @@ class Series:
     def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> Self:
         if isinstance(other, pl.Expr):
             # expand pl.lit, pl.datetime, pl.duration Exprs to compatible Series
-            other = self.to_frame().select(other).to_series()
+            other = self.to_frame().select_seq(other).to_series()
         if isinstance(other, Series):
             return self._from_pyseries(getattr(self._s, op_s)(other._s))
         if _check_for_numpy(other) and isinstance(other, np.ndarray):
@@ -859,7 +859,7 @@ class Series:
 
         if not isinstance(other, pl.Expr):
             other = F.lit(other)
-        return self.to_frame().select(F.col(self.name) // other).to_series()
+        return self.to_frame().select_seq(F.col(self.name) // other).to_series()
 
     def __invert__(self) -> Series:
         return self.not_()
@@ -946,7 +946,7 @@ class Series:
             raise TypeError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
-        return self.to_frame().select(other ** F.col(self.name)).to_series()
+        return self.to_frame().select_seq(other ** F.col(self.name)).to_series()
 
     def __matmul__(self, other: Any) -> float | Series | None:
         if isinstance(other, Sequence) or (
@@ -1721,7 +1721,7 @@ class Series:
             )
         if _check_for_numpy(exponent) and isinstance(exponent, np.ndarray):
             exponent = Series(exponent)
-        return self.to_frame().select(F.col(self.name).pow(exponent)).to_series()
+        return self.to_frame().select_seq(F.col(self.name).pow(exponent)).to_series()
 
     def min(self) -> PythonLiteral | None:
         """

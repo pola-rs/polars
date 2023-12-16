@@ -15,6 +15,7 @@ polars-core = { workspace = true }
 polars-io = { workspace = true, optional = true }
 polars-lazy = { workspace = true, optional = true }
 polars-ops = { workspace = true }
+polars-plan = { workspace = true, optional = true }
 polars-sql = { workspace = true, optional = true }
 polars-time = { workspace = true, optional = true }
 
@@ -197,6 +198,7 @@ extract_groups = ["polars-lazy?/extract_groups"]
 peaks = ["polars-lazy/peaks"]
 cov = ["polars-lazy/cov"]
 replace = ["polars-ops/replace", "polars-lazy?/replace"]
+find_many = ["polars-plan/find_many"]
 
 test = [
   "lazy",

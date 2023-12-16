@@ -22,6 +22,7 @@ repository = "https://github.com/pola-rs/polars"
 license = "MIT"
 
 [workspace.dependencies]
+aho-corasick = "1.1"
 ahash = ">=0.8.5"
 arrow-array = { version = ">=41", default-features = false }
 arrow-buffer = { version = ">=41", default-features = false }
