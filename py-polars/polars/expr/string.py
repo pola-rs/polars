@@ -2313,11 +2313,11 @@ class ExprStringNameSpace:
         ...     }
         ... )
         >>> df.with_columns(
-        ...     pl.col("lyrics").str.contains_any(["you", "me"]).alias("contains_all")
+        ...     pl.col("lyrics").str.contains_any(["you", "me"]).alias("contains_any")
         ... )
         shape: (3, 2)
         ┌────────────────────────────────────────────────────┬──────────────┐
-        │ lyrics                                             ┆ contains_all │
+        │ lyrics                                             ┆ contains_any │
         │ ---                                                ┆ ---          │
         │ str                                                ┆ bool         │
         ╞════════════════════════════════════════════════════╪══════════════╡
