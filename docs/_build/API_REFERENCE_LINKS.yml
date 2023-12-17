@@ -51,8 +51,6 @@ python:
   interpolate: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.interpolate.html
   fill_nan: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.fill_nan.html
   operators: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/operators.html
-  map_batches: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.map_batches.html
-  map_elements: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.map_elements.html
   over: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.over.html
   implode: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.implode.html
   DataFrame.explode: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.explode.html
@@ -273,8 +271,6 @@ rust:
   concat_list:
     name: concat_lst
     link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/fn.concat_lst.html
-  map: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.map
-  apply: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.apply
   over: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.over
 
   alias: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.alias

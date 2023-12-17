@@ -66,7 +66,7 @@ If we would then apply a `shift` operation to the right, we'd expect:
 
 Let's try that out and see what we get:
 
-{{code_block('user-guide/expressions/user-defined-functions','shift_map_batches',['map_batches'])}}
+{{code_block('user-guide/expressions/user-defined-functions','shift_map_batches',[])}}
 
 ```python exec="on" result="text" session="user-guide/udf"
 --8<-- "python/user-guide/expressions/user-defined-functions.py:shift_map_batches"
@@ -89,7 +89,10 @@ That is:
 
 So with `map_elements` we should be able to fix our example:
 
-{{code_block('user-guide/expressions/user-defined-functions','map_elements',['map_elements'])}}
+=== ":fontawesome-brands-python: Python"
+[:material-api: `map_elements`](https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.map_elements.html)
+
+{{code_block('user-guide/expressions/user-defined-functions','map_elements',[])}}
 
 ```python exec="on" result="text" session="user-guide/udf"
 --8<-- "python/user-guide/expressions/user-defined-functions.py:map_elements"
@@ -114,7 +117,7 @@ Every iteration the result of the increment will be added to the element value.
 
 > Note, this example isn't provided in Rust. The reason is that the global `counter` value would lead to data races when this `apply` is evaluated in parallel. It would be possible to wrap it in a `Mutex` to protect the variable, but that would be obscuring the point of the example. This is a case where the Python Global Interpreter Lock's performance tradeoff provides some safety guarantees.
 
-{{code_block('user-guide/expressions/user-defined-functions','counter',['map_elements'])}}
+{{code_block('user-guide/expressions/user-defined-functions','counter',[])}}
 
 ```python exec="on" result="text" session="user-guide/udf"
 --8<-- "python/user-guide/expressions/user-defined-functions.py:counter"
@@ -136,7 +139,7 @@ type. This data type collects those columns as fields in the `struct`. So if we'
 
 In Python, those would be passed as `dict` to the calling Python function and can thus be indexed by `field: str`. In Rust, you'll get a `Series` with the `Struct` type. The fields of the struct can then be indexed and downcast.
 
-{{code_block('user-guide/expressions/user-defined-functions','combine',['map_elements','struct'])}}
+{{code_block('user-guide/expressions/user-defined-functions','combine',[])}}
 
 ```python exec="on" result="text" session="user-guide/udf"
 --8<-- "python/user-guide/expressions/user-defined-functions.py:combine"
