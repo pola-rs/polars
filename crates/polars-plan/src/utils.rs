@@ -148,11 +148,12 @@ pub(crate) fn has_leaf_literal(e: &Expr) -> bool {
         },
     }
 }
-/// Check if leaf expression is a literal
+/// Check if leaf expression returns a scalar
 #[cfg(feature = "is_in")]
-pub(crate) fn all_leaf_literal(e: &Expr) -> bool {
+pub(crate) fn all_return_scalar(e: &Expr) -> bool {
     match e {
         Expr::Literal(_) => true,
+        Expr::Function { options: opt, .. } => opt.returns_scalar,
         _ => {
             let roots = expr_to_root_column_exprs(e);
             roots.iter().all(|e| matches!(e, Expr::Literal(_)))

@@ -1025,7 +1025,7 @@ impl Expr {
         let has_literal = has_leaf_literal(&other);
 
         // lit(true).is_in() returns a scalar.
-        let returns_scalar = all_leaf_literal(&self);
+        let returns_scalar = all_return_scalar(&self);
 
         let arguments = &[other];
         // we don't have to apply on groups, so this is faster
