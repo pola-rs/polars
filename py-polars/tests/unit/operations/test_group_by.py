@@ -141,7 +141,7 @@ def test_group_by_args() -> None:
             [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3), date(2023, 1, 4)],
             [datetime(2023, 1, 2), datetime(2023, 1, 4)],
             pl.Date,
-            pl.Datetime("us"),
+            pl.Datetime("ms"),
         ),
         (
             [
@@ -239,7 +239,7 @@ def test_group_by_mean_by_dtype(
             [date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 4), date(2023, 1, 5)],
             [datetime(2023, 1, 2), datetime(2023, 1, 5)],
             pl.Date,
-            pl.Datetime("us"),
+            pl.Datetime("ms"),
         ),
         (
             [

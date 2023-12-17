@@ -28,7 +28,7 @@ use rayon::prelude::*;
 pub use series_trait::{IsSorted, *};
 
 #[cfg(feature = "dtype-date")]
-use crate::chunked_array::temporal::conversion::US_IN_DAY;
+use crate::chunked_array::temporal::conversion::MS_IN_DAY;
 use crate::chunked_array::Settings;
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
@@ -801,9 +801,9 @@ impl Series {
             },
             #[cfg(feature = "dtype-date")]
             DataType::Date => {
-                let us = US_IN_DAY as f64;
-                Series::new(self.name(), &[self.mean().map(|v| (v * us) as i64)])
-                    .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
+                let ms = MS_IN_DAY as f64;
+                Series::new(self.name(), &[self.mean().map(|v| (v * ms) as i64)])
+                    .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
                     .unwrap()
             },
             dt @ (DataType::Datetime(_, _) | DataType::Duration(_) | DataType::Time) => {

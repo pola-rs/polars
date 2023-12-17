@@ -1,6 +1,6 @@
 use super::*;
 #[cfg(feature = "dtype-date")]
-use crate::chunked_array::temporal::conversion::US_IN_DAY;
+use crate::chunked_array::temporal::conversion::MS_IN_DAY;
 
 // implemented on the series because we don't need types
 impl Series {
@@ -119,13 +119,13 @@ impl Series {
             },
             #[cfg(feature = "dtype-date")]
             Date => {
-                let s = self.cast(&Int64).unwrap() * (US_IN_DAY as f64);
+                let s = self.cast(&Int64).unwrap() * (MS_IN_DAY as f64);
                 // agg_median returns Float64
                 let out = s.agg_median(groups);
                 // cast back to Int64 and then to logical temporal type
                 out.cast(&Int64)
                     .unwrap()
-                    .cast(&Datetime(TimeUnit::Microseconds, None))
+                    .cast(&Datetime(TimeUnit::Milliseconds, None))
                     .unwrap()
             },
             dt @ (Datetime(_, _) | Duration(_) | Time) => {
@@ -181,13 +181,13 @@ impl Series {
             },
             #[cfg(feature = "dtype-date")]
             Date => {
-                let s = self.cast(&Int64).unwrap() * (US_IN_DAY as f64);
+                let s = self.cast(&Int64).unwrap() * (MS_IN_DAY as f64);
                 // agg_mean returns Float64
                 let out = s.agg_mean(groups);
                 // cast back to Int64 and then to logical temporal type
                 out.cast(&Int64)
                     .unwrap()
-                    .cast(&Datetime(TimeUnit::Microseconds, None))
+                    .cast(&Datetime(TimeUnit::Milliseconds, None))
                     .unwrap()
             },
             dt @ (Datetime(_, _) | Duration(_) | Time) => {
