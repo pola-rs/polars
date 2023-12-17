@@ -1,10 +1,6 @@
-use std::ops::Add;
-
-use arrow::compute;
 use arrow::legacy::kernels::set::set_at_nulls;
 use arrow::legacy::trusted_len::FromIteratorReversed;
 use arrow::legacy::utils::{CustomIterTools, FromTrustedLenIterator};
-use arrow::types::simd::Simd;
 use num_traits::{Bounded, NumCast, One, Zero};
 
 use crate::prelude::*;
@@ -290,9 +286,7 @@ fn fill_null_numeric<T>(
 ) -> PolarsResult<ChunkedArray<T>>
 where
     T: PolarsNumericType,
-    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
-        + compute::aggregate::Sum<T::Native>
-        + compute::aggregate::SimdOrd<T::Native>,
+    ChunkedArray<T>: ChunkAgg<T::Native>,
 {
     // Nothing to fill.
     if ca.null_count() == 0 {

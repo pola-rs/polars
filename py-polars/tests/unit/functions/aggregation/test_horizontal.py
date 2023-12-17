@@ -25,8 +25,8 @@ def test_all_any_horizontally() -> None:
         schema=["var1", "var2", "var3"],
     )
     result = df.select(
-        pl.any_horizontal(pl.col("var2"), pl.col("var3")),
-        pl.all_horizontal(pl.col("var2"), pl.col("var3")),
+        any=pl.any_horizontal(pl.col("var2"), pl.col("var3")),
+        all=pl.all_horizontal(pl.col("var2"), pl.col("var3")),
     )
     expected = pl.DataFrame(
         {
@@ -232,7 +232,7 @@ def test_sum_max_min() -> None:
     assert_series_equal(out["min"], pl.Series("min", [1.0, 2.0, 3.0]))
 
 
-def test_cumsum_fold() -> None:
+def test_cum_sum_horizontal() -> None:
     df = pl.DataFrame(
         {
             "a": [1, 2],
@@ -240,10 +240,23 @@ def test_cumsum_fold() -> None:
             "c": [5, 6],
         }
     )
-    result = df.select(pl.cumsum_horizontal("a", "c"))
-    assert result.to_dict(as_series=False) == {
-        "cumsum": [{"a": 1, "c": 6}, {"a": 2, "c": 8}]
-    }
+    result = df.select(pl.cum_sum_horizontal("a", "c"))
+    expected = pl.DataFrame({"cum_sum": [{"a": 1, "c": 6}, {"a": 2, "c": 8}]})
+    assert_frame_equal(result, expected)
+
+
+def test_cumsum_horizontal_deprecated() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [3, 4],
+            "c": [5, 6],
+        }
+    )
+    with pytest.deprecated_call():
+        result = df.select(pl.cumsum_horizontal("a", "c"))
+    expected = df = pl.DataFrame({"cumsum": [{"a": 1, "c": 6}, {"a": 2, "c": 8}]})
+    assert_frame_equal(result, expected)
 
 
 def test_sum_dtype_12028() -> None:

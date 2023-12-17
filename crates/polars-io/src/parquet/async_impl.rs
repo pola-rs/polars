@@ -20,7 +20,7 @@ use super::cloud::{build_object_store, CloudLocation, CloudReader};
 use super::mmap::ColumnStore;
 use crate::cloud::CloudOptions;
 use crate::parquet::read_impl::compute_row_group_range;
-use crate::pl_async::{get_runtime, with_concurrency_budget};
+use crate::pl_async::{get_runtime, with_concurrency_budget, MAX_BUDGET_PER_REQUEST};
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::predicates::read_this_row_group;
 
@@ -62,12 +62,16 @@ impl ParquetObjectStore {
     }
 
     async fn get_ranges(&self, ranges: &[Range<usize>]) -> PolarsResult<Vec<Bytes>> {
-        with_concurrency_budget(ranges.len() as u16, || async {
-            self.store
-                .get_ranges(&self.path, ranges)
-                .await
-                .map_err(to_compute_err)
-        })
+        // Object-store has a maximum of 10 concurrent.
+        with_concurrency_budget(
+            (ranges.len() as u32).clamp(0, MAX_BUDGET_PER_REQUEST as u32),
+            || async {
+                self.store
+                    .get_ranges(&self.path, ranges)
+                    .await
+                    .map_err(to_compute_err)
+            },
+        )
         .await
     }
 
@@ -139,21 +143,21 @@ async fn download_projection(
     let mut offsets = Vec::with_capacity(fields.len());
     fields.iter().for_each(|name| {
         let columns = row_group.columns();
-        let (offset, range) = columns
-            .iter()
-            .filter_map(|meta| {
-                if meta.descriptor().path_in_schema[0] == name.as_str() {
-                    let (offset, len) = meta.byte_range();
-                    Some((offset, offset as usize..(offset + len) as usize))
-                } else {
-                    None
-                }
-            })
-            .next()
-            .unwrap();
 
-        offsets.push(offset);
-        ranges.push(range);
+        // A single column can have multiple matches (structs).
+        let iter = columns.iter().filter_map(|meta| {
+            if meta.descriptor().path_in_schema[0] == name.as_str() {
+                let (offset, len) = meta.byte_range();
+                Some((offset, offset as usize..(offset + len) as usize))
+            } else {
+                None
+            }
+        });
+
+        for (offset, range) in iter {
+            offsets.push(offset);
+            ranges.push(range);
+        }
     });
 
     let result = async_reader.get_ranges(&ranges).await.map(|bytes| {
@@ -269,7 +273,7 @@ impl FetchRowGroupsFromObjectStore {
         let _ = std::thread::spawn(move || {
             get_runtime().block_on(async {
                 let chunk_len = msg_limit;
-                let mut handles = Vec::with_capacity(chunk_len);
+                let mut handles = Vec::with_capacity(chunk_len.clamp(0, row_groups.len()));
                 for chunk in row_groups.chunks_mut(chunk_len) {
                     // Start downloads concurrently
                     for (i, rg) in chunk {

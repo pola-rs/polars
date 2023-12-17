@@ -10,11 +10,13 @@ pub mod functions;
 pub mod hashing;
 pub mod idx_vec;
 pub mod mem;
+pub mod min_max;
 pub mod slice;
 pub mod sort;
 pub mod sync;
 #[cfg(feature = "sysinfo")]
 pub mod sys;
+pub mod total_ord;
 pub mod unwrap;
 
 pub use functions::*;
@@ -32,7 +34,10 @@ pub mod vec;
 #[cfg(target_family = "wasm")]
 pub mod wasm;
 
+pub mod float;
 pub mod index;
 pub mod io;
+pub mod nulls;
+pub mod ord;
 
 pub use io::open_file;

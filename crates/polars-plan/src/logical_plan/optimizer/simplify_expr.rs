@@ -434,6 +434,7 @@ impl OptimizationRule for SimplifyExprRule {
                 let right_aexpr = expr_arena.get(*right);
 
                 // lit(left) + lit(right) => lit(left + right)
+                use Operator::*;
                 #[allow(clippy::manual_map)]
                 let out = match op {
                     Plus => {
@@ -524,51 +525,7 @@ impl OptimizationRule for SimplifyExprRule {
                     return Ok(out);
                 }
 
-                // Null propagation.
-                let left_is_null = matches!(left_aexpr, AExpr::Literal(LiteralValue::Null));
-                let right_is_null = matches!(right_aexpr, AExpr::Literal(LiteralValue::Null));
-                use Operator::*;
-                match (left_is_null, op, right_is_null) {
-                    // all null operation null -> null
-                    (true, _, true) => Some(AExpr::Literal(LiteralValue::Null)),
-                    // null == column -> column.is_null()
-                    (true, Eq, false) => Some(AExpr::Function {
-                        input: vec![*right],
-                        function: BooleanFunction::IsNull.into(),
-                        options: FunctionOptions {
-                            collect_groups: ApplyOptions::GroupWise,
-                            ..Default::default()
-                        },
-                    }),
-                    // column == null -> column.is_null()
-                    (false, Eq, true) => Some(AExpr::Function {
-                        input: vec![*left],
-                        function: BooleanFunction::IsNull.into(),
-                        options: FunctionOptions {
-                            collect_groups: ApplyOptions::GroupWise,
-                            ..Default::default()
-                        },
-                    }),
-                    // null != column -> column.is_not_null()
-                    (true, NotEq, false) => Some(AExpr::Function {
-                        input: vec![*right],
-                        function: BooleanFunction::IsNotNull.into(),
-                        options: FunctionOptions {
-                            collect_groups: ApplyOptions::GroupWise,
-                            ..Default::default()
-                        },
-                    }),
-                    // column != null -> column.is_not_null()
-                    (false, NotEq, true) => Some(AExpr::Function {
-                        input: vec![*left],
-                        function: BooleanFunction::IsNotNull.into(),
-                        options: FunctionOptions {
-                            collect_groups: ApplyOptions::GroupWise,
-                            ..Default::default()
-                        },
-                    }),
-                    _ => None,
-                }
+                None
             },
             // sort().reverse() -> sort(reverse)
             // sort_by().reverse() -> sort_by(reverse)
@@ -596,7 +553,7 @@ impl OptimizationRule for SimplifyExprRule {
                         by: by.clone(),
                         descending: descending.iter().map(|r| !*r).collect(),
                     }),
-                    // TODO: add support for cumsum and other operation that allow reversing.
+                    // TODO: add support for cum_sum and other operation that allow reversing.
                     _ => None,
                 }
             },
@@ -671,23 +628,17 @@ fn inline_cast(input: &AExpr, dtype: &DataType, strict: bool) -> PolarsResult<Op
                     #[cfg(feature = "dtype-duration")]
                     (AnyValue::Duration(_, _), _) => return Ok(None),
                     #[cfg(feature = "dtype-categorical")]
-                    (AnyValue::Categorical(_, _, _), _) | (_, DataType::Categorical(_)) => {
+                    (AnyValue::Categorical(_, _, _), _) | (_, DataType::Categorical(_, _)) => {
                         return Ok(None)
                     },
                     #[cfg(feature = "dtype-struct")]
                     (_, DataType::Struct(_)) => return Ok(None),
                     (av, _) => {
-                        // raise in debug builds so we can fix them
-                        // in release we continue and apply the cast later
-                        #[cfg(debug_assertions)]
-                        let out = { av.cast(dtype)? };
-                        #[cfg(not(debug_assertions))]
-                        let out = {
-                            match av.cast(&dtype) {
-                                Ok(out) => out,
-                                Err(_) => return Ok(None),
-                            }
-                        };
+                        let out = if strict {
+                            av.strict_cast(dtype)
+                        } else {
+                            av.cast(dtype)
+                        }?;
                         out.try_into()?
                     },
                 }

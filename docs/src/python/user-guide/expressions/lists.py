@@ -98,8 +98,8 @@ array_df = pl.DataFrame(
         pl.Series("Array_2", [[1, 7, 3], [8, 1, 0]]),
     ],
     schema={
-        "Array_1": pl.Array(inner=pl.Int64, width=2),
-        "Array_2": pl.Array(inner=pl.Int64, width=3),
+        "Array_1": pl.Array(pl.Int64, 2),
+        "Array_2": pl.Array(pl.Int64, 3),
     },
 )
 print(array_df)

@@ -1,12 +1,17 @@
 use std::fmt::{Debug, Formatter};
-use std::io::Error;
+use std::io::{Error, ErrorKind};
 
 use polars::prelude::PolarsError;
-use pyo3::create_exception;
-use pyo3::exceptions::{PyException, PyIOError, PyRuntimeError};
+use polars_error::PolarsWarning;
+use pyo3::exceptions::{
+    PyException, PyFileExistsError, PyFileNotFoundError, PyIOError, PyPermissionError,
+    PyRuntimeError, PyUserWarning, PyWarning,
+};
 use pyo3::prelude::*;
+use pyo3::{create_exception, PyTypeInfo};
 use thiserror::Error;
 
+use crate::Wrap;
 #[derive(Error)]
 pub enum PyPolarsErr {
     #[error(transparent)]
@@ -34,7 +39,12 @@ impl std::convert::From<PyPolarsErr> for PyErr {
                 PolarsError::InvalidOperation(err) => {
                     InvalidOperationError::new_err(err.to_string())
                 },
-                PolarsError::Io(err) => PyIOError::new_err(err.to_string()),
+                PolarsError::Io(err) => match err.kind() {
+                    ErrorKind::NotFound => PyFileNotFoundError::new_err(err.to_string()),
+                    ErrorKind::PermissionDenied => PyPermissionError::new_err(err.to_string()),
+                    ErrorKind::AlreadyExists => PyFileExistsError::new_err(err.to_string()),
+                    _ => PyIOError::new_err(err.to_string()),
+                },
                 PolarsError::NoData(err) => NoDataError::new_err(err.to_string()),
                 PolarsError::OutOfBounds(err) => OutOfBoundsError::new_err(err.to_string()),
                 PolarsError::SchemaFieldNotFound(name) => {
@@ -75,6 +85,7 @@ create_exception!(polars.exceptions, SchemaFieldNotFoundError, PyException);
 create_exception!(polars.exceptions, ShapeError, PyException);
 create_exception!(polars.exceptions, StringCacheMismatchError, PyException);
 create_exception!(polars.exceptions, StructFieldNotFoundError, PyException);
+create_exception!(polars.exceptions, CategoricalRemappingWarning, PyWarning);
 
 #[macro_export]
 macro_rules! raise_err(
@@ -83,3 +94,14 @@ macro_rules! raise_err(
         unreachable!()
     }}
 );
+
+impl IntoPy<PyObject> for Wrap<PolarsWarning> {
+    fn into_py(self, py: Python<'_>) -> PyObject {
+        match self.0 {
+            PolarsWarning::CategoricalRemappingWarning => {
+                CategoricalRemappingWarning::type_object(py).to_object(py)
+            },
+            PolarsWarning::UserWarning => PyUserWarning::type_object(py).to_object(py),
+        }
+    }
+}

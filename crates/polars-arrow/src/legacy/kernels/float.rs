@@ -1,9 +1,8 @@
 use num_traits::Float;
 
-use crate::array::{BooleanArray, PrimitiveArray};
+use crate::array::{ArrayRef, BooleanArray, PrimitiveArray};
 use crate::bitmap::Bitmap;
 use crate::legacy::array::default_arrays::FromData;
-use crate::legacy::prelude::*;
 use crate::types::NativeType;
 
 pub fn is_nan<T>(arr: &PrimitiveArray<T>) -> ArrayRef

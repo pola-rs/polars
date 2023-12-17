@@ -7,7 +7,6 @@ Descriptive
    :toctree: api/
 
     DataFrame.approx_n_unique
-    DataFrame.approx_unique
     DataFrame.describe
     DataFrame.glimpse
     DataFrame.estimated_size

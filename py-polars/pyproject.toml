@@ -1,6 +1,5 @@
 [build-system]
-# TODO: Set to maturin>=1.3.2 when new maturion version is released
-requires = ["maturin @ git+https://github.com/PyO3/maturin.git@main"]
+requires = ["maturin>=1.3.2"]
 build-backend = "maturin"
 
 [project]
@@ -27,6 +26,7 @@ classifiers = [
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
   "Programming Language :: Rust",
   "Topic :: Scientific/Engineering",
 ]
@@ -42,7 +42,7 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 adbc = ["adbc_driver_sqlite"]
 cloudpickle = ["cloudpickle"]
 connectorx = ["connectorx >= 0.3.2"]
-deltalake = ["deltalake >= 0.13.0"]
+deltalake = ["deltalake >= 0.14.0"]
 fsspec = ["fsspec"]
 gevent = ["gevent"]
 matplotlib = ["matplotlib"]
@@ -79,7 +79,7 @@ disable_error_code = [
 [[tool.mypy.overrides]]
 module = [
   "IPython.*",
-  "adbc_driver_postgresql.*",
+  "adbc_driver_manager.*",
   "adbc_driver_sqlite.*",
   "arrow_odbc",
   "backports",
@@ -146,7 +146,7 @@ select = [
 ]
 
 ignore = [
-  # Line length regulated by black
+  # Line length regulated by formatter
   "E501",
   # pydocstyle: http://www.pydocstyle.org/en/stable/error_codes.html
   # numpy convention with a few additional lints
@@ -215,7 +215,9 @@ filterwarnings = [
   # Ignore warnings issued by dependency internals
   "ignore:.*is_sparse is deprecated.*:FutureWarning",
   "ignore:FigureCanvasAgg is non-interactive:UserWarning",
-  # Introspection under PyCharm IDE can generate this in 3.12
+  "ignore:datetime.datetime.utcfromtimestamp\\(\\) is deprecated.*:DeprecationWarning",
+  "ignore:datetime.datetime.utcnow\\(\\) is deprecated.*:DeprecationWarning",
+  # Introspection under PyCharm IDE can generate this in Python 3.12
   "ignore:.*co_lnotab is deprecated, use co_lines.*:DeprecationWarning",
 ]
 xfail_strict = true

@@ -1,7 +1,4 @@
 # --8<-- [start:setup]
-import os
-
-import pandas as pd
 import polars as pl
 
 # --8<-- [end:setup]
@@ -17,7 +14,7 @@ lf = pl.LazyFrame({"b": [4, 5, 6]})
 # Register all dataframes in the global namespace: registers both df and lf
 ctx = pl.SQLContext(register_globals=True)
 
-# Other option: register dataframe df as "df" and lazyframe lf as "lf"
+# Other option: register DataFrame df as "df" and lazyframe lf as "lf"
 ctx = pl.SQLContext(df=df, lf=lf)
 # --8<-- [end:register_context]
 
@@ -95,6 +92,8 @@ print(ctx.execute(query))
 # --8<-- [end:execute_multiple_sources]
 
 # --8<-- [start:clean_multiple_sources]
+import os
+
 os.remove("docs/data/products_categories.json")
 os.remove("docs/data/products_masterdata.csv")
 # --8<-- [end:clean_multiple_sources]

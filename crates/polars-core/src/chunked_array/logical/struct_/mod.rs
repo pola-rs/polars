@@ -73,7 +73,7 @@ impl StructChunked {
     }
     pub fn new(name: &str, fields: &[Series]) -> PolarsResult<Self> {
         let mut names = PlHashSet::with_capacity(fields.len());
-        let first_len = fields.get(0).map(|s| s.len()).unwrap_or(0);
+        let first_len = fields.first().map(|s| s.len()).unwrap_or(0);
         let mut max_len = first_len;
 
         let mut all_equal_len = true;
@@ -120,7 +120,7 @@ impl StructChunked {
     }
 
     #[inline]
-    pub(crate) fn chunks(&self) -> &Vec<ArrayRef> {
+    pub fn chunks(&self) -> &Vec<ArrayRef> {
         &self.chunks
     }
 
@@ -243,7 +243,7 @@ impl StructChunked {
     }
 
     pub fn len(&self) -> usize {
-        self.fields.get(0).map(|s| s.len()).unwrap_or(0)
+        self.fields.first().map(|s| s.len()).unwrap_or(0)
     }
     pub fn is_empty(&self) -> bool {
         self.len() == 0

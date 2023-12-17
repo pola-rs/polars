@@ -495,3 +495,10 @@ pub(crate) fn write_header<W: Write>(
     writer.write_all(options.line_terminator.as_bytes())?;
     Ok(())
 }
+
+/// Writes a UTF-8 BOM to `writer`.
+pub(crate) fn write_bom<W: Write>(writer: &mut W) -> PolarsResult<()> {
+    const BOM: [u8; 3] = [0xEF, 0xBB, 0xBF];
+    writer.write_all(&BOM)?;
+    Ok(())
+}

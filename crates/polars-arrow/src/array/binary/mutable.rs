@@ -8,7 +8,7 @@ use crate::array::physical_binary::*;
 use crate::array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets};
 use crate::trusted_len::TrustedLen;
 
@@ -57,7 +57,7 @@ impl<O: Offset> MutableBinaryArray<O> {
     /// # Implementation
     /// This function is `O(1)`
     pub fn try_new(
-        data_type: DataType,
+        data_type: ArrowDataType,
         offsets: Offsets<O>,
         values: Vec<u8>,
         validity: Option<MutableBitmap>,
@@ -80,7 +80,7 @@ impl<O: Offset> MutableBinaryArray<O> {
         Self::from_trusted_len_iter(slice.as_ref().iter().map(|x| x.as_ref()))
     }
 
-    fn default_data_type() -> DataType {
+    fn default_data_type() -> ArrowDataType {
         BinaryArray::<O>::default_data_type()
     }
 
@@ -202,7 +202,7 @@ impl<O: Offset> MutableArray for MutableBinaryArray<O> {
         array.arced()
     }
 
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         self.values.data_type()
     }
 

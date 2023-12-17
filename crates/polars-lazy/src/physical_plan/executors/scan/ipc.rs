@@ -12,15 +12,15 @@ pub struct IpcExec {
 
 impl IpcExec {
     fn read(&mut self, verbose: bool) -> PolarsResult<DataFrame> {
-        let (file, projection, predicate) = prepare_scan_args(
-            &self.path,
-            &self.predicate,
+        let file = std::fs::File::open(&self.path)?;
+        let (projection, predicate) = prepare_scan_args(
+            self.predicate.clone(),
             &mut self.file_options.with_columns,
             &mut self.schema,
             self.file_options.row_count.is_some(),
             None,
         );
-        IpcReader::new(file?)
+        IpcReader::new(file)
             .with_n_rows(self.file_options.n_rows)
             .with_row_count(std::mem::take(&mut self.file_options.row_count))
             .set_rechunk(self.file_options.rechunk)

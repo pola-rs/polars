@@ -1,9 +1,8 @@
 use crate::array::growable::{Growable, GrowableFixedSizeList};
-use crate::array::{Array, FixedSizeListArray, PrimitiveArray};
+use crate::array::{Array, ArrayRef, FixedSizeListArray, PrimitiveArray};
 use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::datatypes::{DataType, PhysicalType};
+use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::legacy::index::{IdxArr, IdxSize};
-use crate::legacy::prelude::ArrayRef;
 use crate::types::NativeType;
 use crate::with_match_primitive_type;
 
@@ -14,7 +13,7 @@ pub unsafe fn take_unchecked(values: &FixedSizeListArray, indices: &IdxArr) -> F
     ) {
         let idx = indices.values().as_slice();
         let child_values = values.values();
-        let DataType::FixedSizeList(_, width) = values.data_type() else {
+        let ArrowDataType::FixedSizeList(_, width) = values.data_type() else {
             unreachable!()
         };
 

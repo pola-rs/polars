@@ -291,8 +291,8 @@ def test_cse_mixed_window_functions() -> None:
         pl.col("b").last().over([pl.col("a")]).alias("b_last"),
         pl.col("b").shift().alias("b_lag_1"),
         pl.col("b").shift().alias("b_lead_1"),
-        pl.col("c").cumsum().alias("c_cumsum"),
-        pl.col("c").cumsum().over([pl.col("a")]).alias("c_cumsum_by_a"),
+        pl.col("c").cum_sum().alias("c_cumsum"),
+        pl.col("c").cum_sum().over([pl.col("a")]).alias("c_cumsum_by_a"),
         pl.col("c").diff().alias("c_diff"),
         pl.col("c").diff().over([pl.col("a")]).alias("c_diff_by_a"),
     ).collect(comm_subexpr_elim=True)
@@ -313,7 +313,7 @@ def test_cse_mixed_window_functions() -> None:
             "c_diff": [None],
             "c_diff_by_a": [None],
         },
-    ).with_columns(pl.col(pl.Float32).cast(pl.Int64))
+    ).with_columns(pl.col(pl.Null).cast(pl.Int64))
     assert_frame_equal(result, expected)
 
 
@@ -509,7 +509,7 @@ def test_no_cse_in_with_context() -> None:
         df1.lazy()
         .with_context(df2.lazy())
         .select(
-            pl.col("date_start", "label").take(
+            pl.col("date_start", "label").gather(
                 pl.col("date_start").search_sorted("timestamp") - 1
             ),
         )

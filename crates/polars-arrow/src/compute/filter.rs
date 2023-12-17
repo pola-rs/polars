@@ -6,10 +6,10 @@ use crate::array::*;
 use crate::bitmap::utils::{BitChunkIterExact, BitChunksExact, SlicesIterator};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::chunk::Chunk;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::types::simd::Simd;
 use crate::types::{BitChunkOnes, NativeType};
-use crate::with_match_primitive_type;
+use crate::with_match_primitive_type_full;
 
 /// Function that can filter arbitrary arrays
 pub type Filter<'a> = Box<dyn Fn(&dyn Array) -> Box<dyn Array> + 'a + Send + Sync>;
@@ -220,7 +220,7 @@ pub fn build_filter(filter: &BooleanArray) -> PolarsResult<Filter> {
     use crate::datatypes::PhysicalType::*;
     Ok(Box::new(move |array: &dyn Array| {
         match array.data_type().to_physical_type() {
-            Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+            Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
                 let array = array.as_any().downcast_ref().unwrap();
                 let mut growable =
                     growable::GrowablePrimitive::<$T>::new(vec![array], false, filter_count);
@@ -246,32 +246,13 @@ pub fn build_filter(filter: &BooleanArray) -> PolarsResult<Filter> {
     }))
 }
 
-/// Filters an [Array], returning elements matching the filter (i.e. where the values are true).
-///
-/// Note that the nulls of `filter` are interpreted as `false` will lead to these elements being
-/// masked out.
-///
-/// # Example
-/// ```rust
-/// # use polars_arrow::array::{Int32Array, PrimitiveArray, BooleanArray};
-/// # use polars_arrow::error::Result;
-/// # use polars_arrow::compute::filter::filter;
-/// # fn main() -> Result<()> {
-/// let array = PrimitiveArray::from_slice([5, 6, 7, 8, 9]);
-/// let filter_array = BooleanArray::from_slice(&vec![true, false, false, true, false]);
-/// let c = filter(&array, &filter_array)?;
-/// let c = c.as_any().downcast_ref::<Int32Array>().unwrap();
-/// assert_eq!(c, &PrimitiveArray::from_slice(vec![5, 8]));
-/// # Ok(())
-/// # }
-/// ```
 pub fn filter(array: &dyn Array, filter: &BooleanArray) -> PolarsResult<Box<dyn Array>> {
     // The validities may be masking out `true` bits, making the filter operation
     // based on the values incorrect
     if let Some(validities) = filter.validity() {
         let values = filter.values();
         let new_values = values & validities;
-        let filter = BooleanArray::new(DataType::Boolean, new_values, None);
+        let filter = BooleanArray::new(ArrowDataType::Boolean, new_values, None);
         return crate::compute::filter::filter(array, &filter);
     }
 
@@ -287,7 +268,7 @@ pub fn filter(array: &dyn Array, filter: &BooleanArray) -> PolarsResult<Box<dyn 
 
     use crate::datatypes::PhysicalType::*;
     match array.data_type().to_physical_type() {
-        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             let array = array.as_any().downcast_ref().unwrap();
             Ok(Box::new(filter_primitive::<$T>(array, filter)))
         }),

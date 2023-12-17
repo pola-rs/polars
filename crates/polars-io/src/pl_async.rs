@@ -1,43 +1,36 @@
 use std::future::Future;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::RwLock;
 use std::thread::ThreadId;
-use std::time::Duration;
 
 use once_cell::sync::Lazy;
 use polars_core::POOL;
 use polars_utils::aliases::PlHashSet;
 use tokio::runtime::{Builder, Runtime};
+use tokio::sync::Semaphore;
 
-static CONCURRENCY_BUDGET: AtomicI32 = AtomicI32::new(32);
+static CONCURRENCY_BUDGET: std::sync::OnceLock<(Semaphore, u32)> = std::sync::OnceLock::new();
+pub(super) const MAX_BUDGET_PER_REQUEST: usize = 10;
 
-pub async fn with_concurrency_budget<F, Fut>(requested_budget: u16, callable: F) -> Fut::Output
+pub async fn with_concurrency_budget<F, Fut>(requested_budget: u32, callable: F) -> Fut::Output
 where
     F: FnOnce() -> Fut,
     Fut: Future,
 {
-    loop {
-        let requested_budget = requested_budget as i32;
-        let available_budget = CONCURRENCY_BUDGET.fetch_sub(requested_budget, Ordering::Relaxed);
+    let (semaphore, initial_budget) = CONCURRENCY_BUDGET.get_or_init(|| {
+        let permits = std::env::var("POLARS_CONCURRENCY_BUDGET")
+            .map(|s| s.parse::<usize>().expect("integer"))
+            .unwrap_or_else(|_| std::cmp::max(POOL.current_num_threads(), MAX_BUDGET_PER_REQUEST));
+        (Semaphore::new(permits), permits as u32)
+    });
 
-        // Bail out, there was no budget
-        if available_budget < 0 {
-            CONCURRENCY_BUDGET.fetch_add(requested_budget, Ordering::Relaxed);
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        } else {
-            let fut = callable();
-            let out = fut.await;
-            CONCURRENCY_BUDGET.fetch_add(requested_budget, Ordering::Relaxed);
+    // This would never finish otherwise.
+    assert!(requested_budget <= *initial_budget);
 
-            return out;
-        }
-    }
-}
-
-/// Increase/decrease the concurrency budget and return the previous budget
-pub fn increase_concurrency_budget(increase: i32) -> i32 {
-    CONCURRENCY_BUDGET.fetch_add(increase, Ordering::Relaxed)
+    // Keep permit around.
+    // On drop it is returned to the semaphore.
+    let _permit_acq = semaphore.acquire_many(requested_budget).await.unwrap();
+    callable().await
 }
 
 pub struct RuntimeManager {
@@ -48,7 +41,7 @@ pub struct RuntimeManager {
 impl RuntimeManager {
     fn new() -> Self {
         let rt = Builder::new_multi_thread()
-            .worker_threads(std::cmp::max(POOL.current_num_threads() / 2, 4))
+            .worker_threads(std::cmp::max(POOL.current_num_threads(), 4))
             .enable_io()
             .enable_time()
             .build()

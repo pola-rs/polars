@@ -591,13 +591,13 @@ class StringNameSpace:
 
         """
 
-    def json_extract(
+    def json_decode(
         self, dtype: PolarsDataType | None = None, infer_schema_length: int | None = 100
     ) -> Series:
         """
         Parse string values as JSON.
 
-        Throw errors if encounter invalid JSON strings.
+        Throws an error if invalid JSON strings are encountered.
 
         Parameters
         ----------
@@ -616,7 +616,7 @@ class StringNameSpace:
         Examples
         --------
         >>> s = pl.Series("json", ['{"a":1, "b": true}', None, '{"a":2, "b": false}'])
-        >>> s.str.json_extract()
+        >>> s.str.json_decode()
         shape: (3,)
         Series: 'json' [struct[2]]
         [
@@ -1441,6 +1441,23 @@ class StringNameSpace:
 
         """
 
+    def reverse(self) -> Series:
+        """
+        Returns string values in reversed order.
+
+        Examples
+        --------
+        >>> s = pl.Series("text", ["foo", "bar", "man\u0303ana"])
+        >>> s.str.reverse()
+        shape: (3,)
+        Series: 'text' [str]
+        [
+            "oof"
+            "rab"
+            "anañam"
+        ]
+        """
+
     def slice(self, offset: int, length: int | None = None) -> Series:
         """
         Create subslices of the string values of a Utf8 Series.
@@ -1511,16 +1528,15 @@ class StringNameSpace:
 
         """
 
-    def parse_int(self, radix: int | None = None, *, strict: bool = True) -> Series:
+    def to_integer(self, *, base: int = 10, strict: bool = True) -> Series:
         """
-        Parse integers with base radix from strings.
-
-        ParseError/Overflows become Nulls.
+        Convert an Utf8 column into an Int64 column with base radix.
 
         Parameters
         ----------
-        radix
+        base
             Positive integer which is the base of the string we are parsing.
+            Default: 10.
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
             False silently convert to Null.
@@ -1528,14 +1544,14 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int32`.
+            Series of data type :class:`Int64`.
 
         Examples
         --------
         >>> s = pl.Series("bin", ["110", "101", "010", "invalid"])
-        >>> s.str.parse_int(2, strict=False)
+        >>> s.str.to_integer(base=2, strict=False)
         shape: (4,)
-        Series: 'bin' [i32]
+        Series: 'bin' [i64]
         [
                 6
                 5
@@ -1544,15 +1560,34 @@ class StringNameSpace:
         ]
 
         >>> s = pl.Series("hex", ["fa1e", "ff00", "cafe", None])
-        >>> s.str.parse_int(16)
+        >>> s.str.to_integer(base=16)
         shape: (4,)
-        Series: 'hex' [i32]
+        Series: 'hex' [i64]
         [
                 64030
                 65280
                 51966
                 null
         ]
+
+        """
+
+    @deprecate_renamed_function("to_integer", version="0.19.14")
+    @deprecate_renamed_parameter("radix", "base", version="0.19.14")
+    def parse_int(self, base: int | None = None, *, strict: bool = True) -> Series:
+        """
+        Parse integers with base radix from strings.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :func:`to_integer`.
+
+        Parameters
+        ----------
+        base
+            Positive integer which is the base of the string we are parsing.
+        strict
+            Bool, Default=True will raise any ParseError or overflow as ComputeError.
+            False silently convert to Null.
 
         """
 
@@ -1683,5 +1718,109 @@ class StringNameSpace:
             Justify right to this length.
         fill_char
             Fill with this ASCII character.
+
+        """
+
+    @deprecate_renamed_function("json_decode", version="0.19.15")
+    def json_extract(
+        self, dtype: PolarsDataType | None = None, infer_schema_length: int | None = 100
+    ) -> Series:
+        """
+        Parse string values as JSON.
+
+        .. deprecated:: 0.19.15
+            This method has been renamed to :meth:`json_decode`.
+
+        Parameters
+        ----------
+        dtype
+            The dtype to cast the extracted value to. If None, the dtype will be
+            inferred from the JSON value.
+        infer_schema_length
+            How many rows to parse to determine the schema.
+            If `None` all rows are used.
+        """
+        return self.json_decode(dtype, infer_schema_length)
+
+    def contains_any(
+        self, patterns: Series | list[str], *, ascii_case_insensitive: bool = False
+    ) -> Series:
+        """
+        Use the aho-corasick algorithm to find matches.
+
+        This version determines if any of the patterns find a match.
+
+        Parameters
+        ----------
+        patterns
+            String patterns to search.
+        ascii_case_insensitive
+            Enable ASCII-aware case insensitive matching.
+            When this option is enabled, searching will be performed without respect
+            to case for ASCII letters (a-z and A-Z) only.
+
+        Examples
+        --------
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> s = pl.Series(
+        ...     "lyrics",
+        ...     [
+        ...         "Everybody wants to rule the world",
+        ...         "Tell me what you want, what you really really want",
+        ...         "Can you feel the love tonight",
+        ...     ],
+        ... )
+        >>> s.str.contains_any(["you", "me"])
+        shape: (3,)
+        Series: 'lyrics' [bool]
+        [
+            false
+            true
+            true
+        ]
+
+        """
+
+    def replace_many(
+        self,
+        patterns: Series | list[str],
+        replace_with: Series | list[str] | str,
+        *,
+        ascii_case_insensitive: bool = False,
+    ) -> Series:
+        """
+        Use the aho-corasick algorithm to replace many matches.
+
+        Parameters
+        ----------
+        patterns
+            String patterns to search and replace.
+        replace_with
+            Strings to replace where a pattern was a match.
+            This can be broadcasted. So it supports many:one and many:many.
+        ascii_case_insensitive
+            Enable ASCII-aware case insensitive matching.
+            When this option is enabled, searching will be performed without respect
+            to case for ASCII letters (a-z and A-Z) only.
+
+        Examples
+        --------
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> s = pl.Series(
+        ...     "lyrics",
+        ...     [
+        ...         "Everybody wants to rule the world",
+        ...         "Tell me what you want, what you really really want",
+        ...         "Can you feel the love tonight",
+        ...     ],
+        ... )
+        >>> s.str.replace_many(["you", "me"], ["me", "you"])
+        shape: (3,)
+        Series: 'lyrics' [str]
+        [
+            "Everybody wants to rule the world"
+            "Tell you what me want, what me really really want"
+            "Can me feel the love tonight"
+        ]
 
         """

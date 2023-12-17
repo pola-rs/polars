@@ -25,8 +25,11 @@ backports.zoneinfo; python_version < '3.9'
 tzdata; platform_system == 'Windows'
 # Database
 SQLAlchemy
+adbc_driver_manager; python_version >= '3.9' and platform_system != 'Windows'
 adbc_driver_sqlite; python_version >= '3.9' and platform_system != 'Windows'
-connectorx
+# TODO: Remove version constraint for connectorx when Python 3.12 is supported:
+# https://github.com/sfu-db/connector-x/issues/527
+connectorx; python_version <= '3.11'
 # Cloud
 cloudpickle
 fsspec
@@ -38,7 +41,7 @@ openpyxl
 pyxlsb
 xlsx2csv
 XlsxWriter
-deltalake>=0.13.0
+deltalake>=0.14.0
 # Dataframe interchange protocol
 dataframe-api-compat >= 0.1.6
 pyiceberg >= 0.5.0
@@ -52,10 +55,10 @@ gevent
 # TOOLING
 # -------
 
-hypothesis==6.88.1
+hypothesis==6.91.0
 pytest==7.4.0
 pytest-cov==4.1.0
-pytest-xdist==3.3.1
+pytest-xdist==3.5.0
 
 # Need moto.server to mock s3fs - see: https://github.com/aio-libs/aiobotocore/issues/755
 moto[s3]==4.2.2

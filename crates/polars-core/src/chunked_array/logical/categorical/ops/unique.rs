@@ -6,7 +6,7 @@ impl CategoricalChunked {
         let cat_map = self.get_rev_map();
         if self.can_fast_unique() {
             let ca = match &**cat_map {
-                RevMapping::Local(a) => {
+                RevMapping::Local(a, _) | RevMapping::Enum(a, _) => {
                     UInt32Chunked::from_iter_values(self.physical().name(), 0..(a.len() as u32))
                 },
                 RevMapping::Global(map, _, _) => {
@@ -16,8 +16,11 @@ impl CategoricalChunked {
             // safety:
             // we only removed some indexes so we are still in bounds
             unsafe {
-                let mut out =
-                    CategoricalChunked::from_cats_and_rev_map_unchecked(ca, cat_map.clone());
+                let mut out = CategoricalChunked::from_cats_and_rev_map_unchecked(
+                    ca,
+                    cat_map.clone(),
+                    self.get_ordering(),
+                );
                 out.set_fast_unique(true);
                 Ok(out)
             }
@@ -29,6 +32,7 @@ impl CategoricalChunked {
                 Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
                     ca,
                     cat_map.clone(),
+                    self.get_ordering(),
                 ))
             }
         }

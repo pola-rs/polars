@@ -75,28 +75,66 @@ impl<'a> PredicatePushDown<'a> {
         let exprs = lp.get_exprs();
 
         if has_projections {
-            // This checks the exprs in the projections at this level.
-            if exprs
-                .iter()
-                .any(|e_n| aexpr_blocks_predicate_pushdown(*e_n, expr_arena))
-            {
-                return self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
-            }
-
             // projections should only have a single input.
             if inputs.len() > 1 {
                 // except for ExtContext
                 assert!(matches!(lp, ALogicalPlan::ExtContext { .. }));
             }
             let input = inputs[inputs.len() - 1];
-            let (local_predicates, projections) =
-                rewrite_projection_node(expr_arena, lp_arena, &mut acc_predicates, exprs, input);
+            let input_schema = lp_arena.get(input).schema(lp_arena);
+
+            let (eligibility, alias_rename_map) =
+                pushdown_eligibility(input_schema.as_ref(), &exprs, &acc_predicates, expr_arena)?;
+
+            let local_predicates = match eligibility {
+                PushdownEligibility::Full => vec![],
+                PushdownEligibility::Partial { to_local } => {
+                    let mut out = Vec::<Node>::with_capacity(to_local.len());
+                    for key in to_local {
+                        out.push(acc_predicates.remove(&key).unwrap());
+                    }
+                    out
+                },
+                PushdownEligibility::NoPushdown => {
+                    return self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+                },
+            };
+
+            if !alias_rename_map.is_empty() {
+                for (_, node) in acc_predicates.iter_mut() {
+                    let mut needs_rename = false;
+
+                    for (_, ae) in (&*expr_arena).iter(*node) {
+                        if let AExpr::Column(name) = ae {
+                            needs_rename |= alias_rename_map.contains_key(name);
+
+                            if needs_rename {
+                                break;
+                            }
+                        }
+                    }
+
+                    if needs_rename {
+                        let mut new_expr = node_to_expr(*node, expr_arena);
+                        new_expr.mutate().apply(|e| {
+                            if let Expr::Column(name) = e {
+                                if let Some(rename_to) = alias_rename_map.get(name) {
+                                    *name = rename_to.clone();
+                                };
+                            };
+                            true
+                        });
+                        let predicate = to_aexpr(new_expr, expr_arena);
+                        *node = predicate;
+                    }
+                }
+            }
 
             let alp = lp_arena.take(input);
             let alp = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
             lp_arena.replace(input, alp);
 
-            let lp = lp.with_exprs_and_input(projections, inputs);
+            let lp = lp.with_exprs_and_input(exprs, inputs);
             Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
         } else {
             let mut local_predicates = Vec::with_capacity(acc_predicates.len());
@@ -191,40 +229,36 @@ impl<'a> PredicatePushDown<'a> {
 
         match lp {
             Selection { predicate, input } => {
-                insert_and_combine_predicate(&mut acc_predicates, predicate, expr_arena);
+                // Use a tmp_key to avoid inadvertently combining predicates that otherwise would have
+                // been partially pushed:
+                //
+                // (1) .filter(pl.count().over("key") == 1)
+                // (2) .filter(pl.col("key") == 1)
+                //
+                // (2) can be pushed past (1) but they both have the same predicate
+                // key name in the hashtable.
+                let tmp_key = Arc::<str>::from(&*temporary_unique_key(&acc_predicates));
+                acc_predicates.insert(tmp_key.clone(), predicate);
 
-                // If the result of any predicate depends on the predicates that
-                // occur before it, then we must stop pushdown of all accumulated
-                // predicates at this level. Otherwise, if they are pushed past
-                // the boundary predicate, then the value of the boundary
-                // predicate itself will change and become incorrect.
-                // For example:
-                // (unoptimized)
-                // filter(y > 1) --> filter(x == min(x)) --> filter(y > 2)
-                //
-                // (incorrectly optimized)
-                // filter(y > 1) & filter(y > 2) --> filter(x == min(x))
-                // incorrect as min(x) in the subset where y > 2 may not be equal
-                // to min(x) in the subset where y > 1
-                //
-                // (correctly optimized)
-                // filter(y > 1) --> filter(x == min(x)) & filter(y > 2)
-                // pushdown of filter(y > 2) is correctly stopped at the boundary
-                //
-                // Assuming all predicates originate from the `Selection` node
-                // at the beginning of optimization, applying this step here
-                // guarantees that boundary predicates will not appear in other
-                // contexts. Note boundary projections are handled elsewhere.
-                let local_predicates = if acc_predicates
-                    .values()
-                    .any(|node| aexpr_blocks_predicate_pushdown(*node, expr_arena))
-                {
-                    let local_predicates = acc_predicates.values().copied().collect::<Vec<_>>();
-                    acc_predicates.clear();
-                    local_predicates
-                } else {
-                    vec![]
+                let local_predicates = match pushdown_eligibility(lp.schema(lp_arena).as_ref(), &vec![], &acc_predicates, expr_arena)?.0 {
+                    PushdownEligibility::Full => vec![],
+                    PushdownEligibility::Partial { to_local } => {
+                        let mut out = Vec::<Node>::with_capacity(to_local.len());
+                        for key in to_local {
+                            out.push(acc_predicates.remove(&key).unwrap());
+                        }
+                        out
+                    },
+                    PushdownEligibility::NoPushdown  => {
+                        let out = acc_predicates.values().copied().collect();
+                        acc_predicates.clear();
+                        out
+                    },
                 };
+
+                if let Some(predicate) = acc_predicates.remove(&tmp_key) {
+                    insert_and_combine_predicate(&mut acc_predicates, predicate, expr_arena);
+                }
 
                 let alp = lp_arena.take(input);
                 let new_input = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
@@ -413,14 +447,16 @@ impl<'a> PredicatePushDown<'a> {
                 schema,
                 options,
             } => {
-                process_join(self, lp_arena,
-                expr_arena,
-                input_left,
-                         input_right,
-                         left_on,
-                         right_on,
-                         schema,
-                         options,
+                process_join(
+                    self,
+                    lp_arena,
+                    expr_arena,
+                    input_left,
+                    input_right,
+                    left_on,
+                    right_on,
+                    schema,
+                    options,
                     acc_predicates
                 )
             }

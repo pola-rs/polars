@@ -355,7 +355,7 @@ mod test {
         // SAFETY: unstable series never lives longer than the iterator.
         unsafe {
             ca.amortized_iter().zip(&ca).for_each(|(s1, s2)| {
-                assert!(s1.unwrap().as_ref().series_equal(&s2.unwrap()));
+                assert!(s1.unwrap().as_ref().equals(&s2.unwrap()));
             })
         };
     }

@@ -1,4 +1,5 @@
 use super::ListArray;
+use crate::array::iterator::NonNullValuesIter;
 use crate::array::{Array, ArrayAccessor, ArrayValuesIter};
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::offset::Offset;
@@ -40,6 +41,12 @@ impl<'a, O: Offset> ListArray<O> {
     /// Returns an iterator of `Box<dyn Array>`
     pub fn values_iter(&'a self) -> ListValuesIter<'a, O> {
         ListValuesIter::new(self)
+    }
+
+    /// Returns an iterator of the non-null values `Box<dyn Array>`.
+    #[inline]
+    pub fn non_null_values_iter(&'a self) -> NonNullValuesIter<'a, ListArray<O>> {
+        NonNullValuesIter::new(self, self.validity())
     }
 }
 

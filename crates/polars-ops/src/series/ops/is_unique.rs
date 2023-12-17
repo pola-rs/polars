@@ -1,8 +1,8 @@
 use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
-use arrow::util::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
+use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
 
 // If invert is true then this is an `is_duplicated`.
 fn is_unique_ca<'a, T>(ca: &'a ChunkedArray<T>, invert: bool) -> BooleanChunked

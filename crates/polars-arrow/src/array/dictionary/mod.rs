@@ -3,7 +3,7 @@ use std::hint::unreachable_unchecked;
 
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
-use crate::datatypes::{DataType, IntegerType};
+use crate::datatypes::{ArrowDataType, IntegerType};
 use crate::scalar::{new_scalar, Scalar};
 use crate::trusted_len::TrustedLen;
 use crate::types::NativeType;
@@ -104,17 +104,17 @@ unsafe impl DictionaryKey for u64 {
 /// use `unchecked` calls to retrieve the values
 #[derive(Clone)]
 pub struct DictionaryArray<K: DictionaryKey> {
-    data_type: DataType,
+    data_type: ArrowDataType,
     keys: PrimitiveArray<K>,
     values: Box<dyn Array>,
 }
 
 fn check_data_type(
     key_type: IntegerType,
-    data_type: &DataType,
-    values_data_type: &DataType,
+    data_type: &ArrowDataType,
+    values_data_type: &ArrowDataType,
 ) -> PolarsResult<()> {
-    if let DataType::Dictionary(key, value, _) = data_type.to_logical_type() {
+    if let ArrowDataType::Dictionary(key, value, _) = data_type.to_logical_type() {
         if *key != key_type {
             polars_bail!(ComputeError: "DictionaryArray must be initialized with a DataType::Dictionary whose integer is compatible to its keys")
         }
@@ -138,7 +138,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     /// * the `data_type`'s values's data_type is not equal with `values.data_type()`
     /// * any of the keys's values is not represented in `usize` or is `>= values.len()`
     pub fn try_new(
-        data_type: DataType,
+        data_type: ArrowDataType,
         keys: PrimitiveArray<K>,
         values: Box<dyn Array>,
     ) -> PolarsResult<Self> {
@@ -181,7 +181,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     /// # Safety
     /// The caller must ensure that every keys's values is represented in `usize` and is `< values.len()`
     pub unsafe fn try_new_unchecked(
-        data_type: DataType,
+        data_type: ArrowDataType,
         keys: PrimitiveArray<K>,
         values: Box<dyn Array>,
     ) -> PolarsResult<Self> {
@@ -195,7 +195,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     }
 
     /// Returns a new empty [`DictionaryArray`].
-    pub fn new_empty(data_type: DataType) -> Self {
+    pub fn new_empty(data_type: ArrowDataType) -> Self {
         let values = Self::try_get_child(&data_type).unwrap();
         let values = new_empty_array(values.clone());
         Self::try_new(
@@ -208,7 +208,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
 
     /// Returns an [`DictionaryArray`] whose all elements are null
     #[inline]
-    pub fn new_null(data_type: DataType, length: usize) -> Self {
+    pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
         let values = Self::try_get_child(&data_type).unwrap();
         let values = new_null_array(values.clone(), 1);
         Self::try_new(
@@ -235,7 +235,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
         DictionaryValuesIter::new(self)
     }
 
-    /// Returns an iterator over the the values [`V::IterValue`].
+    /// Returns an iterator over the values [`V::IterValue`].
     ///
     /// # Panics
     ///
@@ -249,7 +249,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
         Ok(unsafe { DictionaryValuesIterTyped::new(keys, values) })
     }
 
-    /// Returns an iterator over the the optional values of  [`Option<V::IterValue>`].
+    /// Returns an iterator over the optional values of  [`Option<V::IterValue>`].
     ///
     /// # Panics
     ///
@@ -265,9 +265,9 @@ impl<K: DictionaryKey> DictionaryArray<K> {
         Ok(ZipValidity::new_with_validity(values_iter, self.validity()))
     }
 
-    /// Returns the [`DataType`] of this [`DictionaryArray`]
+    /// Returns the [`ArrowDataType`] of this [`DictionaryArray`]
     #[inline]
-    pub fn data_type(&self) -> &DataType {
+    pub fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 
@@ -275,13 +275,13 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     #[inline]
     pub fn is_ordered(&self) -> bool {
         match self.data_type.to_logical_type() {
-            DataType::Dictionary(_, _, is_ordered) => *is_ordered,
+            ArrowDataType::Dictionary(_, _, is_ordered) => *is_ordered,
             _ => unreachable!(),
         }
     }
 
-    pub(crate) fn default_data_type(values_datatype: DataType) -> DataType {
-        DataType::Dictionary(K::KEY_TYPE, Box::new(values_datatype), false)
+    pub(crate) fn default_data_type(values_datatype: ArrowDataType) -> ArrowDataType {
+        ArrowDataType::Dictionary(K::KEY_TYPE, Box::new(values_datatype), false)
     }
 
     /// Slices this [`DictionaryArray`].
@@ -379,9 +379,9 @@ impl<K: DictionaryKey> DictionaryArray<K> {
         new_scalar(self.values.as_ref(), index)
     }
 
-    pub(crate) fn try_get_child(data_type: &DataType) -> PolarsResult<&DataType> {
+    pub(crate) fn try_get_child(data_type: &ArrowDataType) -> PolarsResult<&ArrowDataType> {
         Ok(match data_type.to_logical_type() {
-            DataType::Dictionary(_, values, _) => values.as_ref(),
+            ArrowDataType::Dictionary(_, values, _) => values.as_ref(),
             _ => {
                 polars_bail!(ComputeError: "Dictionaries must be initialized with DataType::Dictionary")
             },

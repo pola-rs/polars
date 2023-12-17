@@ -42,7 +42,7 @@ By using the above command you install the core of Polars onto your system. Howe
 
 ```text
 # For example
-pip install polars[numpy, fsspec]
+pip install 'polars[numpy,fsspec]'
 ```
 
 | Tag        | Description                                                                                                                           |
@@ -91,7 +91,7 @@ The opt-in features are:
 - `timezones` - Activate timezone support.
 - `strings` - Extra string utilities for `Utf8Chunked`
     - `string_pad` - `pad_start`, `pad_end`, `zfill`
-    - `string_from_radix` - `parse_int`
+    - `string_to_integer` - `parse_int`
 - `object` - Support for generic ChunkedArrays called `ObjectChunked<T>` (generic over `T`).
   These are downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 - Performance related:
@@ -143,12 +143,12 @@ The opt-in features are:
     - `reinterpret` - Utility to reinterpret bits to signed/unsigned
     - `take_opt_iter` - Take from a Series with `Iterator<Item=Option<usize>>`
     - `mode` - [Return the most occurring value(s)](crate::chunked_array::ops::ChunkUnique::mode)
-    - `cum_agg` - cumsum, cummin, cummax aggregation.
+    - `cum_agg` - cum_sum, cum_min, cum_max aggregation.
     - `rolling_window` - rolling window functions, like rolling_mean
     - `interpolate` [interpolate None values](crate::chunked_array::ops::Interpolate)
     - `extract_jsonpath` - [Run jsonpath queries on Utf8Chunked](https://goessner.net/articles/JsonPath/)
     - `list` - List utils.
-      - `list_take` take sublist by multiple indices
+      - `list_gather` take sublist by multiple indices
     - `rank` - Ranking algorithms.
     - `moment` - kurtosis and skew statistics
     - `ewma` - Exponential moving average windows

@@ -2,7 +2,7 @@
 mod immutable;
 pub use immutable::*;
 
-mod iterator;
+pub mod iterator;
 pub use iterator::IntoIter;
 
 mod mutable;

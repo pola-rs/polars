@@ -1,18 +1,19 @@
 pub mod no_nulls;
 pub mod nulls;
+pub mod quantile_filter;
 mod window;
 
 use std::any::Any;
-use std::cmp::Ordering;
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 use std::sync::Arc;
 
 use num_traits::{Bounded, Float, NumCast, One, Zero};
+use polars_utils::float::IsFloat;
+use polars_utils::ord::{compare_fn_nan_max, compare_fn_nan_min};
 use window::*;
 
-use crate::array::PrimitiveArray;
+use crate::array::{ArrayRef, PrimitiveArray};
 use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::legacy::data_types::IsFloat;
 use crate::legacy::prelude::*;
 use crate::legacy::utils::CustomIterTools;
 use crate::types::NativeType;
@@ -23,50 +24,6 @@ type Idx = usize;
 type WindowSize = usize;
 type Len = usize;
 pub type DynArgs = Option<Arc<dyn Any + Sync + Send>>;
-
-#[inline]
-/// NaN will be smaller than every valid value
-pub fn compare_fn_nan_min<T>(a: &T, b: &T) -> Ordering
-where
-    T: PartialOrd + IsFloat,
-{
-    // this branch should be optimized away for integers
-    if T::is_float() {
-        match (a.is_nan(), b.is_nan()) {
-            // safety: we checked nans
-            (false, false) => unsafe { a.partial_cmp(b).unwrap_unchecked() },
-            (true, true) => Ordering::Equal,
-            (true, false) => Ordering::Less,
-            (false, true) => Ordering::Greater,
-        }
-    } else {
-        // Safety:
-        // all integers are Ord
-        unsafe { a.partial_cmp(b).unwrap_unchecked() }
-    }
-}
-
-#[inline]
-/// NaN will be larger than every valid value
-pub fn compare_fn_nan_max<T>(a: &T, b: &T) -> Ordering
-where
-    T: PartialOrd + IsFloat,
-{
-    // this branch should be optimized away for integers
-    if T::is_float() {
-        match (a.is_nan(), b.is_nan()) {
-            // safety: we checked nans
-            (false, false) => unsafe { a.partial_cmp(b).unwrap_unchecked() },
-            (true, true) => Ordering::Equal,
-            (true, false) => Ordering::Greater,
-            (false, true) => Ordering::Less,
-        }
-    } else {
-        // Safety:
-        // all integers are Ord
-        unsafe { a.partial_cmp(b).unwrap_unchecked() }
-    }
-}
 
 fn det_offsets(i: Idx, window_size: WindowSize, _len: Len) -> (usize, usize) {
     (i.saturating_sub(window_size - 1), i + 1)
@@ -92,9 +49,9 @@ where
         let mut validity = MutableBitmap::with_capacity(len);
         validity.extend_constant(len, true);
 
-        // set the null values at the boundaries
+        // Set the null values at the boundaries
 
-        // head
+        // Head.
         for i in 0..len {
             let (start, end) = det_offsets_fn(i, window_size, len);
             if (end - start) < min_periods {
@@ -103,7 +60,7 @@ where
                 break;
             }
         }
-        // tail
+        // Tail.
         for i in (0..len).rev() {
             let (start, end) = det_offsets_fn(i, window_size, len);
             if (end - start) < min_periods {
@@ -118,28 +75,8 @@ where
         None
     }
 }
-pub(super) fn sort_buf<T>(buf: &mut [T])
-where
-    T: IsFloat + NativeType + PartialOrd,
-{
-    if T::is_float() {
-        buf.sort_by(|a, b| {
-            match (a.is_nan(), b.is_nan()) {
-                // safety: we checked nans
-                (false, false) => unsafe { a.partial_cmp(b).unwrap_unchecked() },
-                (true, true) => Ordering::Equal,
-                (true, false) => Ordering::Greater,
-                (false, true) => Ordering::Less,
-            }
-        });
-    } else {
-        // Safety:
-        // all integers are Ord
-        unsafe { buf.sort_by(|a, b| a.partial_cmp(b).unwrap_unchecked()) };
-    }
-}
 
-//Parameters allowed for rolling operations.
+// Parameters allowed for rolling operations.
 #[derive(Clone, Copy, Debug)]
 pub struct RollingVarParams {
     pub ddof: u8,

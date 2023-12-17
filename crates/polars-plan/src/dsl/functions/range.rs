@@ -3,17 +3,17 @@ use super::*;
 /// Generate a range of integers.
 ///
 /// Alias for `int_range`.
-pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
-    int_range(start, end, step)
+pub fn arange(start: Expr, end: Expr, step: i64, dtype: DataType) -> Expr {
+    int_range(start, end, step, dtype)
 }
 
 /// Generate a range of integers.
-pub fn int_range(start: Expr, end: Expr, step: i64) -> Expr {
+pub fn int_range(start: Expr, end: Expr, step: i64, dtype: DataType) -> Expr {
     let input = vec![start, end];
 
     Expr::Function {
         input,
-        function: FunctionExpr::Range(RangeFunction::IntRange { step }),
+        function: FunctionExpr::Range(RangeFunction::IntRange { step, dtype }),
         options: FunctionOptions {
             allow_rename: true,
             ..Default::default()

@@ -31,7 +31,7 @@ pub struct DynamicGroupOptions {
     pub offset: Duration,
     /// Truncate the time column values to the window.
     pub label: Label,
-    /// Add the boundaries to the dataframe.
+    /// Add the boundaries to the DataFrame.
     pub include_boundaries: bool,
     pub closed_window: ClosedWindow,
     pub start_by: StartBy,
@@ -956,7 +956,7 @@ mod test {
             .unwrap();
         time_key.rename("");
         let lower_bound = keys[1].clone().with_name("");
-        assert!(time_key.series_equal(&lower_bound));
+        assert!(time_key.equals(&lower_bound));
         Ok(())
     }
 }

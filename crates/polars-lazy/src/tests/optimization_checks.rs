@@ -165,7 +165,7 @@ fn test_no_left_join_pass() -> PolarsResult<()> {
         "bar" => [5, 5],
     ]?;
 
-    assert!(out.frame_equal(&expected));
+    assert!(out.equals(&expected));
     Ok(())
 }
 
@@ -329,7 +329,7 @@ fn test_lazy_filter_and_rename() {
         "x" => &[4, 5]
     }
     .unwrap();
-    assert!(lf.collect().unwrap().frame_equal(&correct));
+    assert!(lf.collect().unwrap().equals(&correct));
 
     // now we check if the column is rename or added when we don't select
     let lf = df.lazy().rename(["a"], ["x"]).filter(col("x").map(
@@ -359,7 +359,7 @@ fn test_with_row_count_opts() -> PolarsResult<()> {
         "a" => [5, 6, 7, 8, 9],
     ]?;
 
-    assert!(out.frame_equal(&expected));
+    assert!(out.equals(&expected));
     let out = df
         .clone()
         .lazy()

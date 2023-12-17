@@ -73,7 +73,7 @@ macro_rules! dyn_growable {
 /// Creates a new [`Growable`] from an arbitrary number of [`Array`]s.
 /// # Panics
 /// This function panics iff
-/// * the arrays do not have the same [`DataType`].
+/// * the arrays do not have the same [`ArrowDataType`].
 /// * `arrays.is_empty()`.
 pub fn make_growable<'a>(
     arrays: &[&'a dyn Array],

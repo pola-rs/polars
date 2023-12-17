@@ -10,7 +10,7 @@ use crate::datatypes::PhysicalType;
 use crate::offset::{Offset, OffsetsBuffer};
 use crate::trusted_len::TrustedLen;
 use crate::types::NativeType;
-use crate::{match_integer_type, with_match_primitive_type};
+use crate::{match_integer_type, with_match_primitive_type_full};
 
 fn write_primitive<T: NativeType>(
     array: &PrimitiveArray<T>,
@@ -450,7 +450,7 @@ pub fn write(
             is_little_endian,
             compression,
         ),
-        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             let array = array.as_any().downcast_ref().unwrap();
             write_primitive::<$T>(array, buffers, arrow_data, offset, is_little_endian, compression)
         }),

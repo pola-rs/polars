@@ -249,7 +249,7 @@ mod test {
             "d" => [None, None, None, None, Some(1), Some(2)]
         ]?;
 
-        assert!(out.frame_equal_missing(&expected));
+        assert!(out.equals_missing(&expected));
 
         Ok(())
     }

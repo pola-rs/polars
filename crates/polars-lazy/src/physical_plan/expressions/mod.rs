@@ -23,6 +23,7 @@ use std::fmt::{Display, Formatter};
 pub(crate) use aggregation::*;
 pub(crate) use alias::*;
 pub(crate) use apply::*;
+use arrow::array::ArrayRef;
 use arrow::legacy::utils::CustomIterTools;
 pub(crate) use binary::*;
 pub(crate) use cast::*;
@@ -97,7 +98,7 @@ impl AggState {
 
 // lazy update strategy
 #[cfg_attr(debug_assertions, derive(Debug))]
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 pub(crate) enum UpdateGroups {
     /// don't update groups
     No,
@@ -231,7 +232,6 @@ impl<'a> AggregationContext<'a> {
 
     fn with_agg_state(&mut self, agg_state: AggState) {
         self.state = agg_state;
-        self.update_groups = UpdateGroups::No
     }
 
     fn from_agg_state(agg_state: AggState, groups: Cow<'a, GroupsProxy>) -> AggregationContext<'a> {
@@ -609,14 +609,9 @@ pub trait PhysicalExpr: Send + Sync {
     /// Can take &dyn Statistics and determine of a file should be
     /// read -> `true`
     /// or not -> `false`
-    #[cfg(feature = "parquet")]
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
         None
     }
-
-    //
-    fn is_valid_aggregation(&self) -> bool;
-
     fn is_literal(&self) -> bool {
         false
     }
@@ -640,7 +635,7 @@ pub struct PhysicalIoHelper {
 }
 
 impl PhysicalIoExpr for PhysicalIoHelper {
-    fn evaluate(&self, df: &DataFrame) -> PolarsResult<Series> {
+    fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series> {
         let mut state: ExecutionState = Default::default();
         if self.has_window_function {
             state.insert_has_window_function_flag();

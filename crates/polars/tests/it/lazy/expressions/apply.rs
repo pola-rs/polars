@@ -9,7 +9,7 @@ fn test_int_range_agg() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .with_columns([int_range(lit(0i32), count(), 1).over([col("x")])])
+        .with_columns([int_range(lit(0i32), count(), 1, DataType::Int64).over([col("x")])])
         .collect()?;
     assert_eq!(
         Vec::from_iter(out.column("int")?.i64()?.into_no_null_iter()),
@@ -70,7 +70,7 @@ fn test_expand_list() -> PolarsResult<()> {
         "b" => [2, 3],
     ]?
     .lazy()
-    .select([cols(["a", "b"]).cumsum(false)])
+    .select([cols(["a", "b"]).cum_sum(false)])
     .collect()?;
 
     let expected = df![
@@ -78,7 +78,7 @@ fn test_expand_list() -> PolarsResult<()> {
         "b" => [2, 5]
     ]?;
 
-    assert!(out.frame_equal(&expected));
+    assert!(out.equals(&expected));
 
     Ok(())
 }

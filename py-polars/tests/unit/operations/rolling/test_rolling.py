@@ -217,6 +217,13 @@ def test_rolling_crossing_dst(
     assert_frame_equal(result, expected)
 
 
+def test_rolling_infinity() -> None:
+    s = pl.Series("col", ["-inf", "5", "5"]).cast(pl.Float64)
+    s = s.rolling_mean(2)
+    expected = pl.Series("col", [None, "-inf", "5"]).cast(pl.Float64)
+    assert_series_equal(s, expected)
+
+
 def test_rolling_extrema() -> None:
     # sorted data and nulls flags trigger different kernels
     df = (
@@ -613,11 +620,44 @@ def test_rolling_aggregations_unsorted_raise_10991() -> None:
             "val": [1, 2, 3],
         }
     )
-    with pytest.raises(
-        pl.InvalidOperationError,
-        match="argument in operation 'rolling_sum' is not explicitly sorted",
+    with pytest.warns(
+        UserWarning, match="Series is not known to be sorted by `by` column."
     ):
-        df.with_columns(roll=pl.col("val").rolling_sum("2d", by="dt", closed="right"))
+        df.with_columns(roll=pl.col("val").rolling_sum("2d", by="dt"))
+
+
+def test_rolling_aggregations_with_over_11225() -> None:
+    start = datetime(2001, 1, 1)
+
+    df_temporal = pl.DataFrame(
+        {
+            "date": [start + timedelta(days=k) for k in range(5)],
+            "group": ["A"] * 2 + ["B"] * 3,
+        }
+    ).with_row_count()
+
+    df_temporal = df_temporal.sort("group", "date")
+
+    result = df_temporal.with_columns(
+        rolling_row_mean=pl.col("row_nr")
+        .rolling_mean(
+            window_size="2d",
+            by="date",
+            closed="left",
+            warn_if_unsorted=False,
+        )
+        .over("group")
+    )
+    expected = pl.DataFrame(
+        {
+            "row_nr": [0, 1, 2, 3, 4],
+            "date": pl.datetime_range(date(2001, 1, 1), date(2001, 1, 5), eager=True),
+            "group": ["A", "A", "B", "B", "B"],
+            "rolling_row_mean": [None, 0.0, None, 2.0, 2.5],
+        },
+        schema_overrides={"row_nr": pl.UInt32},
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_rolling() -> None:
@@ -656,7 +696,7 @@ def test_rolling() -> None:
         expected = pl.Series([None, 0.1, 0.2], dtype=dt)
         assert_series_equal(result, expected)
 
-    df = pl.DataFrame({"val": [1.0, 2.0, 3.0, np.NaN, 5.0, 6.0, 7.0]})
+    df = pl.DataFrame({"val": [1.0, 2.0, 3.0, np.nan, 5.0, 6.0, 7.0]})
 
     for e in [
         pl.col("val").rolling_min(window_size=3),
@@ -696,9 +736,7 @@ def test_rolling_by_date() -> None:
         }
     ).sort("dt")
 
-    result = df.with_columns(
-        roll=pl.col("val").rolling_sum("2d", by="dt", closed="right")
-    )
+    result = df.with_columns(roll=pl.col("val").rolling_sum("2d", by="dt"))
     expected = df.with_columns(roll=pl.Series([1, 3, 5]))
     assert_frame_equal(result, expected)
 
@@ -715,9 +753,7 @@ def test_rolling_nanoseconds_11003() -> None:
         }
     )
     df = df.with_columns(pl.col("dt").str.to_datetime(time_unit="ns")).set_sorted("dt")
-    result = df.with_columns(
-        pl.col("val").rolling_sum("500ns", by="dt", closed="right")
-    )
+    result = df.with_columns(pl.col("val").rolling_sum("500ns", by="dt"))
     expected = df.with_columns(val=pl.Series([1, 3, 6]))
     assert_frame_equal(result, expected)
 
@@ -790,3 +826,13 @@ def test_index_expr_output_name_12244() -> None:
         "int": [0, 1, 2],
         "A": [[1], [1, 2], [2, 3]],
     }
+
+
+def test_rolling_median() -> None:
+    for n in range(10, 25):
+        array = np.random.randint(0, 20, n)
+        for k in [3, 5, 7]:
+            a = pl.Series(array)
+            assert_series_equal(
+                a.rolling_median(k), pl.from_pandas(a.to_pandas().rolling(k).median())
+            )

@@ -15,12 +15,13 @@ nav:
     - user-guide/installation.md
     - Basics:
       - user-guide/basics/index.md
-      - user-guide/basics/series-dataframes.md
       - user-guide/basics/reading-writing.md
       - user-guide/basics/expressions.md
       - user-guide/basics/joins.md
     - Concepts:
-      - user-guide/concepts/data-types.md
+      - Data types:
+        - user-guide/concepts/data-types/overview.md
+        - user-guide/concepts/data-types/categoricals.md
       - user-guide/concepts/data-structures.md
       - user-guide/concepts/contexts.md
       - user-guide/concepts/expressions.md
@@ -96,6 +97,7 @@ nav:
     - releases/changelog.md
     - Upgrade guides:
       - releases/upgrade/index.md
+      - releases/upgrade/0.20.md
       - releases/upgrade/0.19.md
 
 not_in_nav: |

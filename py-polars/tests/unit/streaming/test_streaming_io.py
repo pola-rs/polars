@@ -125,6 +125,7 @@ def test_sink_csv_with_options() -> None:
     with unittest.mock.patch.object(df, "_ldf") as ldf:
         df.sink_csv(
             "path",
+            include_bom=True,
             include_header=False,
             separator=";",
             line_terminator="|",
@@ -141,6 +142,7 @@ def test_sink_csv_with_options() -> None:
 
         ldf.optimization_toggle().sink_csv.assert_called_with(
             path="path",
+            include_bom=True,
             include_header=False,
             separator=ord(";"),
             line_terminator="|",

@@ -44,6 +44,7 @@ use polars_plan::logical_plan::{
     ArenaLpIter, OptimizationRule, SimplifyExprRule, StackOptimizer, TypeCoercionRule,
 };
 
+#[cfg(feature = "cov")]
 use crate::dsl::pearson_corr;
 use crate::prelude::*;
 

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING, Any, Iterable
 
 import polars._reexport as pl
 from polars import functions as F
 from polars.exceptions import ComputeError
+from polars.utils._wrap import wrap_expr
+from polars.utils.deprecation import issue_deprecation_warning
 
 if TYPE_CHECKING:
     from polars import Expr
@@ -31,6 +32,9 @@ def parse_as_list_of_expressions(
     __structify
         Convert multi-column expressions to a single struct expression.
 
+    Returns
+    -------
+    list of PyExpr
     """
     exprs = _parse_regular_inputs(inputs, structify=__structify)
     if named_inputs:
@@ -76,8 +80,9 @@ def parse_as_expression(
     input: IntoExpr,
     *,
     str_as_lit: bool = False,
+    list_as_lit: bool = True,
     structify: bool = False,
-) -> PyExpr | Expr:
+) -> PyExpr:
     """
     Parse a single input into an expression.
 
@@ -88,36 +93,61 @@ def parse_as_expression(
     str_as_lit
         Interpret string input as a string literal. If set to `False` (default),
         strings are parsed as column names.
+    list_as_lit
+        Interpret list input as a lit literal, If set to `False`,
+        lists are parsed as `Series` literals.
     structify
         Convert multi-column expressions to a single struct expression.
 
+    Returns
+    -------
+    PyExpr
     """
     if isinstance(input, pl.Expr):
         expr = input
     elif isinstance(input, str) and not str_as_lit:
         expr = F.col(input)
         structify = False
-    elif (
-        isinstance(
-            input, (int, float, str, bytes, pl.Series, datetime, date, time, timedelta)
-        )
-        or input is None
-    ):
-        expr = F.lit(input)
-        structify = False
-    elif isinstance(input, (list, tuple)):
-        expr = F.lit(pl.Series("literal", [input]))
+    elif isinstance(input, list) and not list_as_lit:
+        expr = F.lit(pl.Series(input))
         structify = False
     else:
-        raise TypeError(
-            f"did not expect value {input!r} of type {type(input).__name__!r}"
-            "\n\nTry disambiguating with `lit` or `col`."
-        )
+        expr = F.lit(input)
+        structify = False
 
     if structify:
         expr = _structify_expression(expr)
 
     return expr._pyexpr
+
+
+def parse_when_constraint_expressions(
+    *predicates: IntoExpr | Iterable[IntoExpr],
+    **constraints: Any,
+) -> PyExpr:
+    all_predicates: list[pl.Expr] = []
+    for p in predicates:
+        all_predicates.extend(wrap_expr(x) for x in parse_as_list_of_expressions(p))
+
+    if "condition" in constraints:
+        if isinstance(constraints["condition"], pl.Expr):
+            all_predicates.append(constraints.pop("condition"))
+            issue_deprecation_warning(
+                "`when` no longer takes a 'condition' parameter.\n"
+                "To silence this warning you should omit the keyword and pass "
+                "as a positional argument instead.",
+                version="0.19.16",
+            )
+
+    all_predicates.extend(F.col(name).eq(value) for name, value in constraints.items())
+    if not all_predicates:
+        raise ValueError("No predicates or constraints provided to `when`.")
+
+    return (
+        F.all_horizontal(*all_predicates)
+        if len(all_predicates) > 1
+        else all_predicates[0]
+    )._pyexpr
 
 
 def _structify_expression(expr: Expr) -> Expr:

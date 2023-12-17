@@ -6,6 +6,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from polars.testing.asserts.series import assert_series_equal
 
 
 def test_predicate_4906() -> None:
@@ -108,10 +109,10 @@ def test_predicate_arr_first_6573() -> None:
 def test_fast_path_comparisons() -> None:
     s = pl.Series(np.sort(np.random.randint(0, 50, 100)))
 
-    assert (s > 25).series_equal(s.set_sorted() > 25)
-    assert (s >= 25).series_equal(s.set_sorted() >= 25)
-    assert (s < 25).series_equal(s.set_sorted() < 25)
-    assert (s <= 25).series_equal(s.set_sorted() <= 25)
+    assert_series_equal(s > 25, s.set_sorted() > 25)
+    assert_series_equal(s >= 25, s.set_sorted() >= 25)
+    assert_series_equal(s < 25, s.set_sorted() < 25)
+    assert_series_equal(s <= 25, s.set_sorted() <= 25)
 
 
 def test_predicate_pushdown_block_8661() -> None:
@@ -158,7 +159,7 @@ def test_predicate_pushdown_with_context_11014() -> None:
 def test_predicate_pushdown_cumsum_9566() -> None:
     df = pl.DataFrame({"A": range(10), "B": ["b"] * 5 + ["a"] * 5})
 
-    q = df.lazy().sort(["B", "A"]).filter(pl.col("A").is_in([8, 2]).cumsum() == 1)
+    q = df.lazy().sort(["B", "A"]).filter(pl.col("A").is_in([8, 2]).cum_sum() == 1)
 
     assert q.collect()["A"].to_list() == [8, 9, 0, 1]
 
@@ -252,7 +253,9 @@ def test_predicate_pushdown_boundary_12102() -> None:
         .filter(pl.col("y") > 2)
     )
 
-    assert lf.collect().frame_equal(lf.collect(predicate_pushdown=False))
+    result = lf.collect()
+    result_no_ppd = lf.collect(predicate_pushdown=False)
+    assert_frame_equal(result, result_no_ppd)
 
 
 def test_take_can_block_predicate_pushdown() -> None:
@@ -261,7 +264,7 @@ def test_take_can_block_predicate_pushdown() -> None:
     lf = (
         df.lazy()
         .filter(pl.col("y"))
-        .filter(pl.col("x") == pl.col("x").take(0))
+        .filter(pl.col("x") == pl.col("x").gather(0))
         .filter(pl.col("y"))
     )
     result = lf.collect(predicate_pushdown=True)
@@ -290,3 +293,109 @@ def test_literal_series_expr_predicate_pushdown() -> None:
 
     assert "FILTER" not in lf.explain()
     assert lf.collect().to_series().to_list() == [1]
+
+
+def test_multi_alias_pushdown() -> None:
+    lf = pl.LazyFrame({"a": [1], "b": [1]})
+
+    actual = lf.with_columns(m="a", n="b").filter((pl.col("m") + pl.col("n")) < 2)
+
+    plan = actual.explain()
+    assert "FILTER" not in plan
+    assert r'SELECTION: "[([(col(\"a\")) + (col(\"b\"))]) < (2)]' in plan
+
+
+def test_predicate_pushdown_with_window_projections_12637() -> None:
+    lf = pl.LazyFrame(
+        {
+            "key": [1],
+            "key_2": [1],
+            "key_3": [1],
+            "value": [1],
+            "value_2": [1],
+            "value_3": [1],
+        }
+    )
+
+    actual = lf.with_columns(
+        (pl.col("value") * 2).over("key").alias("value_2"),
+        (pl.col("value") * 2).over("key").alias("value_3"),
+    ).filter(pl.col("key") == 5)
+
+    plan = actual.explain()
+    assert "FILTER" not in plan
+    assert r'SELECTION: "[(col(\"key\")) == (5)]"' in plan
+
+    actual = (
+        lf.with_columns(
+            (pl.col("value") * 2).over("key", "key_2").alias("value_2"),
+            (pl.col("value") * 2).over("key", "key_2").alias("value_3"),
+        )
+        .filter(pl.col("key") == 5)
+        .filter(pl.col("key_2") == 5)
+    )
+
+    plan = actual.explain()
+    assert "FILTER" not in plan
+    assert (
+        # hashbrown::HashMap is unordered.
+        r'SELECTION: "[([(col(\"key\")) == (5)]) & ([(col(\"key_2\")) == (5)])]"'
+        in plan
+        or r'SELECTION: "[([(col(\"key_2\")) == (5)]) & ([(col(\"key\")) == (5)])]"'
+        in plan
+    )
+
+    actual = (
+        lf.with_columns(
+            (pl.col("value") * 2).over("key", "key_2").alias("value_2"),
+            (pl.col("value") * 2).over("key", "key_3").alias("value_3"),
+        )
+        .filter(pl.col("key") == 5)
+        .filter(pl.col("key_2") == 5)
+    )
+
+    plan = actual.explain()
+    assert "FILTER" in plan
+    assert r'SELECTION: "[(col(\"key\")) == (5)]"' in plan
+
+    actual = (
+        lf.with_columns(
+            (pl.col("value") * 2).over("key", pl.col("key_2") + 1).alias("value_2"),
+            (pl.col("value") * 2).over("key", "key_2").alias("value_3"),
+        )
+        .filter(pl.col("key") == 5)
+        .filter(pl.col("key_2") == 5)
+    )
+    plan = actual.explain()
+    assert "FILTER" in plan
+    assert r'SELECTION: "[(col(\"key\")) == (5)]"' in plan
+
+    # Should block when .over() contains groups-sensitive expr
+    actual = (
+        lf.with_columns(
+            (pl.col("value") * 2).over("key", pl.sum("key_2")).alias("value_2"),
+            (pl.col("value") * 2).over("key", "key_2").alias("value_3"),
+        )
+        .filter(pl.col("key") == 5)
+        .filter(pl.col("key_2") == 5)
+    )
+
+    plan = actual.explain()
+    assert "FILTER" in plan
+    assert 'SELECTION: "None"' in plan
+
+    # Ensure the implementation doesn't accidentally push a window expression
+    # that only refers to the common window keys.
+    actual = lf.with_columns(
+        (pl.col("value") * 2).over("key").alias("value_2"),
+    ).filter(pl.count().over("key") == 1)
+
+    plan = actual.explain()
+    assert r'FILTER [(count().over([col("key")])) == (1)]' in plan
+    assert 'SELECTION: "None"' in plan
+
+    # Test window in filter
+    actual = lf.filter(pl.count().over("key") == 1).filter(pl.col("key") == 1)
+    plan = actual.explain()
+    assert r'FILTER [(count().over([col("key")])) == (1)]' in plan
+    assert r'SELECTION: "[(col(\"key\")) == (1)]"' in plan

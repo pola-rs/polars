@@ -1,21 +1,21 @@
 mod nested;
 
 use arrow::array::NullArray;
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 pub(super) use nested::NestedIter;
 
-use super::super::{ArrayIter, Pages};
+use super::super::{ArrayIter, PagesIter};
 use crate::parquet::page::Page;
 
-/// Converts [`Pages`] to an [`ArrayIter`]
+/// Converts [`PagesIter`] to an [`ArrayIter`]
 pub fn iter_to_arrays<'a, I>(
     mut iter: I,
-    data_type: DataType,
+    data_type: ArrowDataType,
     chunk_size: Option<usize>,
     num_rows: usize,
 ) -> ArrayIter<'a>
 where
-    I: 'a + Pages,
+    I: 'a + PagesIter,
 {
     let mut len = 0usize;
 
@@ -55,7 +55,7 @@ where
 #[cfg(test)]
 mod tests {
     use arrow::array::NullArray;
-    use arrow::datatypes::DataType;
+    use arrow::datatypes::ArrowDataType;
     use polars_error::*;
 
     use super::iter_to_arrays;
@@ -94,12 +94,14 @@ mod tests {
         let p2 = new_page(100);
         let pages = vec![Result::<_, ParquetError>::Ok(&p1), Ok(&p2)];
         let pages = fallible_streaming_iterator::convert(pages.into_iter());
-        let arrays = iter_to_arrays(pages, DataType::Null, Some(10), 101);
+        let arrays = iter_to_arrays(pages, ArrowDataType::Null, Some(10), 101);
 
         let arrays = arrays.collect::<PolarsResult<Vec<_>>>().unwrap();
-        let expected = std::iter::repeat(NullArray::new(DataType::Null, 10).boxed())
+        let expected = std::iter::repeat(NullArray::new(ArrowDataType::Null, 10).boxed())
             .take(10)
-            .chain(std::iter::once(NullArray::new(DataType::Null, 1).boxed()));
+            .chain(std::iter::once(
+                NullArray::new(ArrowDataType::Null, 1).boxed(),
+            ));
         assert_eq!(arrays, expected.collect::<Vec<_>>())
     }
 }

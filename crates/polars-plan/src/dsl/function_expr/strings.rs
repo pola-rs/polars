@@ -47,13 +47,13 @@ pub enum StringFunction {
         dtype: DataType,
         pat: String,
     },
-    #[cfg(feature = "string_from_radix")]
-    FromRadix(u32, bool),
+    #[cfg(feature = "string_to_integer")]
+    ToInteger(u32, bool),
     LenBytes,
     LenChars,
     Lowercase,
     #[cfg(feature = "extract_jsonpath")]
-    JsonExtract {
+    JsonDecode {
         dtype: Option<DataType>,
         infer_schema_len: Option<usize>,
     },
@@ -64,6 +64,8 @@ pub enum StringFunction {
         n: i64,
         literal: bool,
     },
+    #[cfg(feature = "string_reverse")]
+    Reverse,
     #[cfg(feature = "string_pad")]
     PadStart {
         length: usize,
@@ -106,6 +108,14 @@ pub enum StringFunction {
     Uppercase,
     #[cfg(feature = "string_pad")]
     ZFill(usize),
+    #[cfg(feature = "find_many")]
+    ContainsMany {
+        ascii_case_insensitive: bool,
+    },
+    #[cfg(feature = "find_many")]
+    ReplaceMany {
+        ascii_case_insensitive: bool,
+    },
 }
 
 impl StringFunction {
@@ -123,14 +133,16 @@ impl StringFunction {
             ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::Utf8))),
             #[cfg(feature = "extract_groups")]
             ExtractGroups { dtype, .. } => mapper.with_dtype(dtype.clone()),
-            #[cfg(feature = "string_from_radix")]
-            FromRadix { .. } => mapper.with_dtype(DataType::Int32),
+            #[cfg(feature = "string_to_integer")]
+            ToInteger { .. } => mapper.with_dtype(DataType::Int64),
             #[cfg(feature = "extract_jsonpath")]
-            JsonExtract { dtype, .. } => mapper.with_opt_dtype(dtype.clone()),
+            JsonDecode { dtype, .. } => mapper.with_opt_dtype(dtype.clone()),
             LenBytes => mapper.with_dtype(DataType::UInt32),
             LenChars => mapper.with_dtype(DataType::UInt32),
             #[cfg(feature = "regex")]
             Replace { .. } => mapper.with_same_dtype(),
+            #[cfg(feature = "string_reverse")]
+            Reverse => mapper.with_same_dtype(),
             #[cfg(feature = "temporal")]
             Strptime(dtype, _) => mapper.with_dtype(dtype.clone()),
             Split(_) => mapper.with_dtype(DataType::List(Box::new(DataType::Utf8))),
@@ -168,6 +180,10 @@ impl StringFunction {
                     .map(|i| Field::from_owned(format_smartstring!("field_{i}"), DataType::Utf8))
                     .collect(),
             )),
+            #[cfg(feature = "find_many")]
+            ContainsMany { .. } => mapper.with_dtype(DataType::Boolean),
+            #[cfg(feature = "find_many")]
+            ReplaceMany { .. } => mapper.with_same_dtype(),
         }
     }
 }
@@ -189,10 +205,10 @@ impl Display for StringFunction {
             ExtractAll => "extract_all",
             #[cfg(feature = "extract_groups")]
             ExtractGroups { .. } => "extract_groups",
-            #[cfg(feature = "string_from_radix")]
-            FromRadix { .. } => "from_radix",
+            #[cfg(feature = "string_to_integer")]
+            ToInteger { .. } => "to_integer",
             #[cfg(feature = "extract_jsonpath")]
-            JsonExtract { .. } => "json_extract",
+            JsonDecode { .. } => "json_decode",
             LenBytes => "len_bytes",
             Lowercase => "lowercase",
             LenChars => "len_chars",
@@ -202,6 +218,8 @@ impl Display for StringFunction {
             PadStart { .. } => "pad_start",
             #[cfg(feature = "regex")]
             Replace { .. } => "replace",
+            #[cfg(feature = "string_reverse")]
+            Reverse => "reverse",
             #[cfg(feature = "string_encoding")]
             HexEncode => "hex_encode",
             #[cfg(feature = "binary_encoding")]
@@ -243,6 +261,10 @@ impl Display for StringFunction {
             Uppercase => "uppercase",
             #[cfg(feature = "string_pad")]
             ZFill(_) => "zfill",
+            #[cfg(feature = "find_many")]
+            ContainsMany { .. } => "contains_many",
+            #[cfg(feature = "find_many")]
+            ReplaceMany { .. } => "replace_many",
         };
         write!(f, "str.{s}")
     }
@@ -303,8 +325,10 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             ConcatHorizontal(delimiter) => map_as_slice!(strings::concat_hor, &delimiter),
             #[cfg(feature = "regex")]
             Replace { n, literal } => map_as_slice!(strings::replace, literal, n),
-            Uppercase => map!(strings::uppercase),
-            Lowercase => map!(strings::lowercase),
+            #[cfg(feature = "string_reverse")]
+            Reverse => map!(strings::reverse),
+            Uppercase => map!(uppercase),
+            Lowercase => map!(lowercase),
             #[cfg(feature = "nightly")]
             Titlecase => map!(strings::titlecase),
             StripChars => map_as_slice!(strings::strip_chars),
@@ -312,8 +336,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             StripCharsEnd => map_as_slice!(strings::strip_chars_end),
             StripPrefix => map_as_slice!(strings::strip_prefix),
             StripSuffix => map_as_slice!(strings::strip_suffix),
-            #[cfg(feature = "string_from_radix")]
-            FromRadix(radix, strict) => map!(strings::from_radix, radix, strict),
+            #[cfg(feature = "string_to_integer")]
+            ToInteger(base, strict) => map!(strings::to_integer, base, strict),
             Slice(start, length) => map!(strings::str_slice, start, length),
             #[cfg(feature = "string_encoding")]
             HexEncode => map!(strings::hex_encode),
@@ -327,20 +351,54 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "dtype-decimal")]
             ToDecimal(infer_len) => map!(strings::to_decimal, infer_len),
             #[cfg(feature = "extract_jsonpath")]
-            JsonExtract {
+            JsonDecode {
                 dtype,
                 infer_schema_len,
-            } => map!(strings::json_extract, dtype.clone(), infer_schema_len),
+            } => map!(strings::json_decode, dtype.clone(), infer_schema_len),
+            #[cfg(feature = "find_many")]
+            ContainsMany {
+                ascii_case_insensitive,
+            } => {
+                map_as_slice!(contains_many, ascii_case_insensitive)
+            },
+            #[cfg(feature = "find_many")]
+            ReplaceMany {
+                ascii_case_insensitive,
+            } => {
+                map_as_slice!(replace_many, ascii_case_insensitive)
+            },
         }
     }
 }
 
-pub(super) fn uppercase(s: &Series) -> PolarsResult<Series> {
+#[cfg(feature = "find_many")]
+fn contains_many(s: &[Series], ascii_case_insensitive: bool) -> PolarsResult<Series> {
+    let ca = s[0].utf8()?;
+    let patterns = s[1].utf8()?;
+    polars_ops::chunked_array::strings::contains_any(ca, patterns, ascii_case_insensitive)
+        .map(|out| out.into_series())
+}
+
+#[cfg(feature = "find_many")]
+fn replace_many(s: &[Series], ascii_case_insensitive: bool) -> PolarsResult<Series> {
+    let ca = s[0].utf8()?;
+    let patterns = s[1].utf8()?;
+    let replace_with = s[2].utf8()?;
+    polars_ops::chunked_array::strings::replace_all(
+        ca,
+        patterns,
+        replace_with,
+        ascii_case_insensitive,
+    )
+    .map(|out| out.into_series())
+}
+
+fn uppercase(s: &Series) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     Ok(ca.to_uppercase().into_series())
 }
 
-pub(super) fn lowercase(s: &Series) -> PolarsResult<Series> {
+fn lowercase(s: &Series) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     Ok(ca.to_lowercase().into_series())
 }
@@ -802,10 +860,16 @@ pub(super) fn replace(s: &[Series], literal: bool, n: i64) -> PolarsResult<Serie
     .map(|ca| ca.into_series())
 }
 
-#[cfg(feature = "string_from_radix")]
-pub(super) fn from_radix(s: &Series, radix: u32, strict: bool) -> PolarsResult<Series> {
+#[cfg(feature = "string_reverse")]
+pub(super) fn reverse(s: &Series) -> PolarsResult<Series> {
     let ca = s.utf8()?;
-    ca.parse_int(radix, strict).map(|ok| ok.into_series())
+    Ok(ca.str_reverse().into_series())
+}
+
+#[cfg(feature = "string_to_integer")]
+pub(super) fn to_integer(s: &Series, base: u32, strict: bool) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    ca.to_integer(base, strict).map(|ok| ok.into_series())
 }
 pub(super) fn str_slice(s: &Series, start: i64, length: Option<u64>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
@@ -844,11 +908,11 @@ pub(super) fn to_decimal(s: &Series, infer_len: usize) -> PolarsResult<Series> {
 }
 
 #[cfg(feature = "extract_jsonpath")]
-pub(super) fn json_extract(
+pub(super) fn json_decode(
     s: &Series,
     dtype: Option<DataType>,
     infer_schema_len: Option<usize>,
 ) -> PolarsResult<Series> {
     let ca = s.utf8()?;
-    ca.json_extract(dtype, infer_schema_len)
+    ca.json_decode(dtype, infer_schema_len)
 }

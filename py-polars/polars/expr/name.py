@@ -26,7 +26,7 @@ class ExprNameNameSpace:
 
         See Also
         --------
-        alias
+        Expr.alias
         map
 
         Examples

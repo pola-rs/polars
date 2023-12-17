@@ -3,7 +3,7 @@ use std::ops::BitOr;
 use polars_error::polars_err;
 
 use crate::array::*;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::legacy::array::default_arrays::FromData;
 use crate::legacy::error::PolarsResult;
 use crate::legacy::index::IdxSize;
@@ -42,7 +42,7 @@ pub fn set_with_mask<T: NativeType>(
     array: &PrimitiveArray<T>,
     mask: &BooleanArray,
     value: T,
-    data_type: DataType,
+    data_type: ArrowDataType,
 ) -> PrimitiveArray<T> {
     let values = array.values();
 
@@ -70,7 +70,7 @@ pub fn set_at_idx_no_null<T, I>(
     array: &PrimitiveArray<T>,
     idx: I,
     set_value: T,
-    data_type: DataType,
+    data_type: ArrowDataType,
 ) -> PolarsResult<PrimitiveArray<T>>
 where
     T: NativeType,
@@ -106,7 +106,7 @@ mod test {
     fn test_set_mask() {
         let mask = BooleanArray::from_iter((0..86).map(|v| v > 68 && v != 85).map(Some));
         let val = UInt32Array::from_iter((0..86).map(Some));
-        let a = set_with_mask(&val, &mask, 100, DataType::UInt32);
+        let a = set_with_mask(&val, &mask, 100, ArrowDataType::UInt32);
         let slice = a.values();
 
         assert_eq!(slice[a.len() - 1], 85);
@@ -120,12 +120,12 @@ mod test {
             false, true, false, true, false, true, false, true, false, false,
         ]);
         let val = UInt32Array::from_slice([0; 10]);
-        let out = set_with_mask(&val, &mask, 1, DataType::UInt32);
+        let out = set_with_mask(&val, &mask, 1, ArrowDataType::UInt32);
         assert_eq!(out.values().as_slice(), &[0, 1, 0, 1, 0, 1, 0, 1, 0, 0]);
 
         let val = UInt32Array::from(&[None, None, None]);
         let mask = BooleanArray::from(&[Some(true), Some(true), None]);
-        let out = set_with_mask(&val, &mask, 1, DataType::UInt32);
+        let out = set_with_mask(&val, &mask, 1, ArrowDataType::UInt32);
         let out: Vec<_> = out.iter().map(|v| v.copied()).collect();
         assert_eq!(out, &[Some(1), Some(1), None])
     }
@@ -133,9 +133,9 @@ mod test {
     #[test]
     fn test_set_at_idx() {
         let val = UInt32Array::from_slice([1, 2, 3]);
-        let out = set_at_idx_no_null(&val, std::iter::once(1), 100, DataType::UInt32).unwrap();
+        let out = set_at_idx_no_null(&val, std::iter::once(1), 100, ArrowDataType::UInt32).unwrap();
         assert_eq!(out.values().as_slice(), &[1, 100, 3]);
-        let out = set_at_idx_no_null(&val, std::iter::once(100), 100, DataType::UInt32);
+        let out = set_at_idx_no_null(&val, std::iter::once(100), 100, ArrowDataType::UInt32);
         assert!(out.is_err())
     }
 }

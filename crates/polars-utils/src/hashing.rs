@@ -1,5 +1,7 @@
 use std::hash::{Hash, Hasher};
 
+use crate::nulls::IsNull;
+
 /// Contains a byte slice and a precomputed hash for that string.
 /// During rehashes, we will rehash the hash instead of the string, that makes
 /// rehashing cheap and allows cache coherent small hash tables.
@@ -13,6 +15,21 @@ impl<'a> BytesHash<'a> {
     #[inline]
     pub fn new(s: Option<&'a [u8]>, hash: u64) -> Self {
         Self { payload: s, hash }
+    }
+}
+
+impl<'a> IsNull for BytesHash<'a> {
+    const HAS_NULLS: bool = true;
+    type Inner = BytesHash<'a>;
+
+    #[inline(always)]
+    fn is_null(&self) -> bool {
+        self.payload.is_none()
+    }
+
+    fn unwrap_inner(self) -> Self::Inner {
+        assert!(self.payload.is_some());
+        self
     }
 }
 

@@ -1,9 +1,10 @@
 use either::Either;
 
 use super::Array;
+use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::datatypes::{DataType, PhysicalType};
+use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::trusted_len::TrustedLen;
 
 #[cfg(feature = "arrow_rs")]
@@ -14,7 +15,6 @@ mod from;
 mod iterator;
 mod mutable;
 
-pub use iterator::*;
 pub use mutable::*;
 use polars_error::{polars_bail, PolarsResult};
 
@@ -45,7 +45,7 @@ use polars_error::{polars_bail, PolarsResult};
 /// ```
 #[derive(Clone)]
 pub struct BooleanArray {
-    data_type: DataType,
+    data_type: ArrowDataType,
     values: Bitmap,
     validity: Option<Bitmap>,
 }
@@ -57,7 +57,7 @@ impl BooleanArray {
     /// * The validity is not `None` and its length is different from `values`'s length
     /// * The `data_type`'s [`PhysicalType`] is not equal to [`PhysicalType::Boolean`].
     pub fn try_new(
-        data_type: DataType,
+        data_type: ArrowDataType,
         values: Bitmap,
         validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
@@ -80,7 +80,7 @@ impl BooleanArray {
     }
 
     /// Alias to `Self::try_new().unwrap()`
-    pub fn new(data_type: DataType, values: Bitmap, validity: Option<Bitmap>) -> Self {
+    pub fn new(data_type: ArrowDataType, values: Bitmap, validity: Option<Bitmap>) -> Self {
         Self::try_new(data_type, values, validity).unwrap()
     }
 
@@ -94,6 +94,12 @@ impl BooleanArray {
     #[inline]
     pub fn values_iter(&self) -> BitmapIter {
         self.values().iter()
+    }
+
+    /// Returns an iterator of the non-null values.
+    #[inline]
+    pub fn non_null_values_iter(&self) -> NonNullValuesIter<'_, BooleanArray> {
+        NonNullValuesIter::new(self, self.validity())
     }
 
     /// Returns the length of this array
@@ -115,9 +121,9 @@ impl BooleanArray {
         self.validity.as_ref()
     }
 
-    /// Returns the arrays' [`DataType`].
+    /// Returns the arrays' [`ArrowDataType`].
     #[inline]
-    pub fn data_type(&self) -> &DataType {
+    pub fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 
@@ -254,12 +260,12 @@ impl BooleanArray {
     }
 
     /// Returns a new empty [`BooleanArray`].
-    pub fn new_empty(data_type: DataType) -> Self {
+    pub fn new_empty(data_type: ArrowDataType) -> Self {
         Self::new(data_type, Bitmap::new(), None)
     }
 
     /// Returns a new [`BooleanArray`] whose all slots are null / `None`.
-    pub fn new_null(data_type: DataType, length: usize) -> Self {
+    pub fn new_null(data_type: ArrowDataType, length: usize) -> Self {
         let bitmap = Bitmap::new_zeroed(length);
         Self::new(data_type, bitmap.clone(), Some(bitmap))
     }
@@ -339,7 +345,7 @@ impl BooleanArray {
 
     /// Returns its internal representation
     #[must_use]
-    pub fn into_inner(self) -> (DataType, Bitmap, Option<Bitmap>) {
+    pub fn into_inner(self) -> (ArrowDataType, Bitmap, Option<Bitmap>) {
         let Self {
             data_type,
             values,
@@ -354,7 +360,7 @@ impl BooleanArray {
     /// # Safety
     /// Callers must ensure all invariants of this struct are upheld.
     pub unsafe fn from_inner_unchecked(
-        data_type: DataType,
+        data_type: ArrowDataType,
         values: Bitmap,
         validity: Option<Bitmap>,
     ) -> Self {
@@ -376,5 +382,15 @@ impl Array for BooleanArray {
     #[inline]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         Box::new(self.clone().with_validity(validity))
+    }
+}
+
+impl From<Bitmap> for BooleanArray {
+    fn from(values: Bitmap) -> Self {
+        Self {
+            data_type: ArrowDataType::Boolean,
+            values,
+            validity: None,
+        }
     }
 }

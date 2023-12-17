@@ -162,62 +162,19 @@ def test_group_by_iteration() -> None:
     assert result3 == expected3
 
 
-def bad_agg_parameters() -> list[Any]:
-    """Currently, IntoExpr and Iterable[IntoExpr] are supported."""
-    return [str, "b".join]
+@pytest.mark.parametrize("input", [[pl.col("b").sum()], pl.col("b").sum()])
+def test_group_by_agg_input_types(input: Any) -> None:
+    df = pl.LazyFrame({"a": [1, 1, 2, 2], "b": [1, 2, 3, 4]})
+    result = df.group_by("a", maintain_order=True).agg(input)
+    expected = pl.LazyFrame({"a": [1, 2], "b": [3, 7]})
+    assert_frame_equal(result, expected)
 
 
-def good_agg_parameters() -> list[pl.Expr | list[pl.Expr]]:
-    return [
-        [pl.col("b").sum()],
-        pl.col("b").sum(),
-    ]
-
-
-@pytest.mark.parametrize("lazy", [True, False])
-def test_group_by_agg_input_types(lazy: bool) -> None:
-    df = pl.DataFrame({"a": [1, 1, 2, 2], "b": [1, 2, 3, 4]})
-    df_or_lazy: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
-
-    for bad_param in bad_agg_parameters():
-        with pytest.raises(TypeError):  # noqa: PT012
-            result = df_or_lazy.group_by("a").agg(bad_param)
-            if lazy:
-                result.collect()  # type: ignore[union-attr]
-
-    expected = pl.DataFrame({"a": [1, 2], "b": [3, 7]})
-
-    for good_param in good_agg_parameters():
-        result = df_or_lazy.group_by("a", maintain_order=True).agg(good_param)
-        if lazy:
-            result = result.collect()  # type: ignore[union-attr]
-        assert_frame_equal(result, expected)
-
-
-@pytest.mark.parametrize("lazy", [True, False])
-def test_group_by_dynamic_agg_input_types(lazy: bool) -> None:
-    df = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]}).set_sorted(
-        "index_column"
-    )
-    df_or_lazy: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
-
-    for bad_param in bad_agg_parameters():
-        with pytest.raises(TypeError):  # noqa: PT012
-            result = df_or_lazy.group_by_dynamic(
-                index_column="index_column", every="2i", closed="right"
-            ).agg(bad_param)
-            if lazy:
-                result.collect()  # type: ignore[union-attr]
-
-    expected = pl.DataFrame({"index_column": [-2, 0, 2], "b": [1, 4, 2]})
-
-    for good_param in good_agg_parameters():
-        result = df_or_lazy.group_by_dynamic(
-            index_column="index_column", every="2i", closed="right"
-        ).agg(good_param)
-        if lazy:
-            result = result.collect()  # type: ignore[union-attr]
-        assert_frame_equal(result, expected)
+@pytest.mark.parametrize("input", [str, "b".join])
+def test_group_by_agg_bad_input_types(input: Any) -> None:
+    df = pl.LazyFrame({"a": [1, 1, 2, 2], "b": [1, 2, 3, 4]})
+    with pytest.raises(TypeError):
+        df.group_by("a").agg(input)
 
 
 def test_group_by_sorted_empty_dataframe_3680() -> None:
@@ -359,7 +316,7 @@ def test_group_by_dynamic_flat_agg_4814() -> None:
         (timedelta(seconds=10), "100s"),
     ],
 )
-@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu"])
+@pytest.mark.parametrize("time_zone", [None, "UTC", "Asia/Kathmandu"])
 def test_group_by_dynamic_overlapping_groups_flat_apply_multiple_5038(
     every: str | timedelta, period: str | timedelta, time_zone: str | None
 ) -> None:
@@ -850,18 +807,25 @@ def test_group_by_list_scalar_11749() -> None:
 
 def test_group_by_with_expr_as_key() -> None:
     gb = pl.select(x=1).group_by(pl.col("x").alias("key"))
-    assert gb.agg(pl.all().first()).frame_equal(gb.agg(pl.first("x")))
+    result = gb.agg(pl.all().first())
+    expected = gb.agg(pl.first("x"))
+    assert_frame_equal(result, expected)
 
     # tests: 11766
-    assert gb.head(0).frame_equal(gb.agg(pl.col("x").head(0)).explode("x"))
-    assert gb.tail(0).frame_equal(gb.agg(pl.col("x").tail(0)).explode("x"))
+    result = gb.head(0)
+    expected = gb.agg(pl.col("x").head(0)).explode("x")
+    assert_frame_equal(result, expected)
+
+    result = gb.tail(0)
+    expected = gb.agg(pl.col("x").tail(0)).explode("x")
+    assert_frame_equal(result, expected)
 
 
 def test_lazy_group_by_reuse_11767() -> None:
     lgb = pl.select(x=1).lazy().group_by("x")
     a = lgb.count()
     b = lgb.count()
-    assert a.collect().frame_equal(b.collect())
+    assert_frame_equal(a, b)
 
 
 def test_group_by_double_on_empty_12194() -> None:

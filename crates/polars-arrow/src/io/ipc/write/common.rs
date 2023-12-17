@@ -348,7 +348,7 @@ impl DictionaryTracker {
     ///   inserted.
     pub fn insert(&mut self, dict_id: i64, array: &dyn Array) -> PolarsResult<bool> {
         let values = match array.data_type() {
-            DataType::Dictionary(key_type, _, _) => {
+            ArrowDataType::Dictionary(key_type, _, _) => {
                 match_integer_type!(key_type, |$T| {
                     let array = array
                         .as_any()

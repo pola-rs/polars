@@ -192,10 +192,6 @@ impl PhysicalExpr for ColumnExpr {
             )
         })
     }
-
-    fn is_valid_aggregation(&self) -> bool {
-        false
-    }
 }
 
 impl PartitionedAggregation for ColumnExpr {

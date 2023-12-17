@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import io
 import itertools
 from dataclasses import dataclass
 from decimal import Decimal as D
 from typing import Any, NamedTuple
 
+import numpy as np
 import pytest
+from numpy.testing import assert_array_equal
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -34,6 +37,7 @@ def test_series_from_pydecimal_and_ints(
     for data in permutations_int_dec_none:
         s = pl.Series("name", data)
         assert s.dtype == pl.Decimal(scale=7)  # inferred scale = 7, precision = None
+        assert s.dtype.is_decimal()
         assert s.name == "name"
         assert s.null_count() == 1
         for i, d in enumerate(data):
@@ -94,12 +98,12 @@ def test_to_from_pydecimal_and_format(trim_zeros: bool, expected: str) -> None:
 
 def test_init_decimal_dtype() -> None:
     s = pl.Series("a", [D("-0.01"), D("1.2345678"), D("500")], dtype=pl.Decimal)
-    assert s.is_numeric()
+    assert s.dtype.is_numeric()
 
     df = pl.DataFrame(
         {"a": [D("-0.01"), D("1.2345678"), D("500")]}, schema={"a": pl.Decimal}
     )
-    assert df["a"].is_numeric()
+    assert df["a"].dtype.is_numeric()
 
 
 def test_decimal_convert_to_float_by_schema() -> None:
@@ -241,3 +245,44 @@ def test_decimal_aggregations() -> None:
         "min": [D("0.10")],
         "max": [D("9000.12")],
     }
+
+
+def test_decimal_in_filter() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": ["6", "7", "8"],
+        }
+    )
+    df = df.with_columns(pl.col("bar").cast(pl.Decimal))
+    assert df.filter(pl.col("foo") > 1).to_dict(as_series=False) == {
+        "foo": [2, 3],
+        "bar": [D("7"), D("8")],
+    }
+
+
+def test_decimal_write_parquet_12375() -> None:
+    f = io.BytesIO()
+    df = pl.DataFrame(
+        {"hi": [True, False, True, False], "bye": [1, 2, 3, D(47283957238957239875)]}
+    )
+    assert df["bye"].dtype == pl.Decimal
+
+    df.write_parquet(f)
+
+
+@pytest.mark.parametrize("use_pyarrow", [True, False])
+def test_decimal_numpy_export(use_pyarrow: bool) -> None:
+    decimal_data = [D("1.234"), D("2.345"), D("-3.456")]
+
+    s = pl.Series("n", decimal_data)
+    df = s.to_frame()
+
+    assert_array_equal(
+        np.array(decimal_data),
+        s.to_numpy(use_pyarrow=use_pyarrow),
+    )
+    assert_array_equal(
+        np.array(decimal_data).reshape((-1, 1)),
+        df.to_numpy(use_pyarrow=use_pyarrow),
+    )

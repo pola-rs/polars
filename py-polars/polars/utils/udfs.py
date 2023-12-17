@@ -104,7 +104,32 @@ class OpNames:
 # numpy functions that we can map to native expressions
 _NUMPY_MODULE_ALIASES = frozenset(("np", "numpy"))
 _NUMPY_FUNCTIONS = frozenset(
-    ("cbrt", "cos", "cosh", "sin", "sinh", "sqrt", "tan", "tanh")
+    (
+        # "abs",  # TODO: this one clashes with Python builtin abs
+        "arccos",
+        "arccosh",
+        "arcsin",
+        "arcsinh",
+        "arctan",
+        "arctanh",
+        "cbrt",
+        "ceil",
+        "cos",
+        "cosh",
+        "degrees",
+        "exp",
+        "floor",
+        "log",
+        "log10",
+        "log1p",
+        "radians",
+        "sign",
+        "sin",
+        "sinh",
+        "sqrt",
+        "tan",
+        "tanh",
+    )
 )
 
 # python functions that we can map to native expressions
@@ -432,22 +457,24 @@ class BytecodeParser:
                 apitype = "series"
                 clsname = "Series"
 
-            before_after_suggestion = (
+            before, after = (
                 (
-                    f"  \033[31m- {target_name}.map_elements({func_name})\033[0m\n"
-                    f"  \033[32m+ {suggested_expression}\033[0m\n{addendum}"
+                    f"  \033[31m- {target_name}.map_elements({func_name})\033[0m\n",
+                    f"  \033[32m+ {suggested_expression}\033[0m\n{addendum}",
                 )
                 if in_terminal_that_supports_colour()
                 else (
-                    f"  - {target_name}.map_elements({func_name})\n"
-                    f"  + {suggested_expression}\n{addendum}"
+                    f"  - {target_name}.map_elements({func_name})\n",
+                    f"  + {suggested_expression}\n{addendum}",
                 )
             )
             warnings.warn(
                 f"\n{clsname}.map_elements is significantly slower than the native {apitype} API.\n"
                 "Only use if you absolutely CANNOT implement your logic otherwise.\n"
-                "In this case, you can replace your `map_elements` with the following:\n"
-                f"{before_after_suggestion}",
+                "Replace this expression...\n"
+                f"{before}"
+                "with this one instead:\n"
+                f"{after}",
                 PolarsInefficientMapWarning,
                 stacklevel=find_stacklevel(),
             )
@@ -483,7 +510,7 @@ class InstructionTranslator:
         elif inst.opname in OpNames.UNARY:
             return OpNames.UNARY[inst.opname]
         elif inst.opname == "BINARY_SUBSCR":
-            return "map_dict"
+            return "replace"
         else:
             raise AssertionError(
                 "unrecognized opname"
@@ -520,7 +547,7 @@ class InstructionTranslator:
                         if " " in e1
                         else f"{not_}{e1}.is_in({e2})"
                     )
-                elif op == "map_dict":
+                elif op == "replace":
                     if not self._caller_variables:
                         self._caller_variables.update(_get_all_caller_variables())
                         if not isinstance(self._caller_variables.get(e1, None), dict):
@@ -729,7 +756,7 @@ class RewrittenInstructions:
                     attribute_count : 3 + attribute_count
                 ]
                 if inst1.argval == "json":
-                    expr_name = "str.json_extract"
+                    expr_name = "str.json_decode"
                 elif inst1.argval == "datetime":
                     fmt = matching_instructions[attribute_count + 3].argval
                     expr_name = f'str.to_datetime(format="{fmt}")'
@@ -815,7 +842,7 @@ def _is_raw_function(function: Callable[[Any], Any]) -> tuple[str, str]:
                 import json  # double-check since it is referenced via 'builtins'
 
                 if function is json.loads:
-                    return "json", "str.json_extract()"
+                    return "json", "str.json_decode()"
 
     except AttributeError:
         pass

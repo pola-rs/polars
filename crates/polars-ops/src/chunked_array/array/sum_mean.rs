@@ -1,4 +1,4 @@
-use arrow::array::{Array, PrimitiveArray};
+use arrow::array::{Array, ArrayRef, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::types::NativeType;
@@ -63,49 +63,49 @@ pub(super) fn sum_with_nulls(ca: &ArrayChunked, inner_dtype: &DataType) -> Polar
         Boolean => {
             let out: IdxCa = ca
                 .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().sum()))
+                .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
                 .collect();
             out.into_series()
         },
         UInt32 => {
             let out: UInt32Chunked = ca
                 .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().sum()))
+                .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
                 .collect();
             out.into_series()
         },
         UInt64 => {
             let out: UInt64Chunked = ca
                 .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().sum()))
+                .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
                 .collect();
             out.into_series()
         },
         Int32 => {
             let out: Int32Chunked = ca
                 .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().sum()))
+                .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
                 .collect();
             out.into_series()
         },
         Int64 => {
             let out: Int64Chunked = ca
                 .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().sum()))
+                .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
                 .collect();
             out.into_series()
         },
         Float32 => {
             let out: Float32Chunked = ca
                 .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().sum()))
+                .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
                 .collect();
             out.into_series()
         },
         Float64 => {
             let out: Float64Chunked = ca
                 .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().sum()))
+                .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
                 .collect();
             out.into_series()
         },

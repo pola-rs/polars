@@ -93,7 +93,7 @@ pub(super) fn shift_and_fill(args: &[Series]) -> PolarsResult<Series> {
             #[cfg(feature = "dtype-struct")]
             Struct(_) => shift_and_fill_with_mask(s, n, fill_value_s),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_) => shift_and_fill_with_mask(s, n, fill_value_s),
+            Categorical(_, _) => shift_and_fill_with_mask(s, n, fill_value_s),
             dt if dt.is_numeric() || dt.is_logical() => {
                 macro_rules! dispatch {
                     ($ca:expr, $n:expr, $fill_value:expr) => {{

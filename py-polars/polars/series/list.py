@@ -88,7 +88,7 @@ class ListNameSpace:
         """
         Return the number of elements in each list.
 
-        Null values are treated like regular elements in this context.
+        Null values count towards the total.
 
         Returns
         -------
@@ -249,8 +249,11 @@ class ListNameSpace:
 
         """
 
-    def take(
-        self, index: Series | list[int] | list[list[int]], *, null_on_oob: bool = False
+    def gather(
+        self,
+        indices: Series | list[int] | list[list[int]],
+        *,
+        null_on_oob: bool = False,
     ) -> Series:
         """
         Take sublists by multiple indices.
@@ -260,14 +263,13 @@ class ListNameSpace:
 
         Parameters
         ----------
-        index
+        indices
             Indices to return per sublist
         null_on_oob
             Behavior if an index is out of bounds:
             True -> set as null
             False -> raise an error
             Note that defaulting to raising an error is much cheaper
-
         """
 
     def __getitem__(self, item: int) -> Series:
@@ -766,50 +768,6 @@ class ListNameSpace:
 
         """  # noqa: W505
 
-    @deprecate_renamed_function("set_union", version="0.18.10")
-    def union(self, other: Series) -> Series:
-        """
-        Compute the SET UNION between the elements in this list and the elements of `other`.
-
-        .. deprecated:: 0.18.10
-            This method has been renamed to `Series.list.set_union`.
-
-        """  # noqa: W505
-        return self.set_union(other)
-
-    @deprecate_renamed_function("set_difference", version="0.18.10")
-    def difference(self, other: Series) -> Series:
-        """
-        Compute the SET DIFFERENCE between the elements in this list and the elements of `other`.
-
-        .. deprecated:: 0.18.10
-            This method has been renamed to `Series.list.set_difference`.
-
-        """  # noqa: W505
-        return self.set_difference(other)
-
-    @deprecate_renamed_function("set_intersection", version="0.18.10")
-    def intersection(self, other: Series) -> Series:
-        """
-        Compute the SET INTERSECTION between the elements in this list and the elements of `other`.
-
-        .. deprecated:: 0.18.10
-            This method has been renamed to `Series.list.set_intersection`.
-
-        """  # noqa: W505
-        return self.set_intersection(other)
-
-    @deprecate_renamed_function("set_symmetric_difference", version="0.18.10")
-    def symmetric_difference(self, other: Series) -> Series:
-        """
-        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of `other`.
-
-        .. deprecated:: 0.18.10
-            This method has been renamed to `Series.list.set_symmetric_difference`.
-
-        """  # noqa: W505
-        return self.set_symmetric_difference(other)
-
     @deprecate_renamed_function("count_matches", version="0.19.3")
     def count_match(
         self, element: float | str | bool | int | date | datetime | time | Expr
@@ -835,4 +793,29 @@ class ListNameSpace:
         .. deprecated:: 0.19.8
             This method has been renamed to :func:`len`.
 
+        """
+
+    @deprecate_renamed_function("gather", version="0.19.14")
+    @deprecate_renamed_parameter("index", "indices", version="0.19.14")
+    def take(
+        self,
+        indices: Series | list[int] | list[list[int]],
+        *,
+        null_on_oob: bool = False,
+    ) -> Series:
+        """
+        Take sublists by multiple indices.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :func:`gather`.
+
+        Parameters
+        ----------
+        indices
+            Indices to return per sublist
+        null_on_oob
+            Behavior if an index is out of bounds:
+            True -> set as null
+            False -> raise an error
+            Note that defaulting to raising an error is much cheaper
         """

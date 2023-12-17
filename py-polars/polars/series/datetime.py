@@ -85,7 +85,7 @@ class DateTimeNameSpace:
             if s.dtype == Date:
                 return _to_python_date(int(out))
             else:
-                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
+                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[attr-defined]
         return None
 
     def mean(self) -> dt.date | dt.datetime | None:
@@ -108,7 +108,7 @@ class DateTimeNameSpace:
             if s.dtype == Date:
                 return _to_python_date(int(out))
             else:
-                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
+                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[attr-defined]
         return None
 
     def to_string(self, format: str) -> Series:
@@ -275,7 +275,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`UInt32`.
+            Series of data type :class:`Int8`.
 
         Examples
         --------
@@ -285,7 +285,7 @@ class DateTimeNameSpace:
         ... )
         >>> date.dt.quarter()
         shape: (4,)
-        Series: 'date' [u32]
+        Series: 'date' [i8]
         [
                 1
                 1
@@ -307,7 +307,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`UInt32`.
+            Series of data type :class:`Int8`.
 
         Examples
         --------
@@ -317,7 +317,7 @@ class DateTimeNameSpace:
         ... )
         >>> date.dt.month()
         shape: (4,)
-        Series: 'date' [u32]
+        Series: 'date' [i8]
         [
                 1
                 2
@@ -339,7 +339,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`UInt32`.
+            Series of data type :class:`Int8`.
 
         Examples
         --------
@@ -349,7 +349,7 @@ class DateTimeNameSpace:
         ... )
         >>> date.dt.week()
         shape: (4,)
-        Series: 'date' [u32]
+        Series: 'date' [i8]
         [
                 1
                 5
@@ -370,7 +370,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`UInt32`.
+            Series of data type :class:`Int8`.
 
         Examples
         --------
@@ -378,7 +378,7 @@ class DateTimeNameSpace:
         >>> s = pl.date_range(date(2001, 1, 1), date(2001, 1, 7), eager=True)
         >>> s.dt.weekday()
         shape: (7,)
-        Series: 'date' [u32]
+        Series: 'date' [i8]
         [
                 1
                 2
@@ -403,7 +403,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`UInt32`.
+            Series of data type :class:`Int8`.
 
         Examples
         --------
@@ -413,7 +413,7 @@ class DateTimeNameSpace:
         ... )
         >>> s.dt.day()
         shape: (5,)
-        Series: 'date' [u32]
+        Series: 'date' [i8]
         [
                 1
                 3
@@ -436,7 +436,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`UInt32`.
+            Series of data type :class:`Int16`.
 
         Examples
         --------
@@ -446,7 +446,7 @@ class DateTimeNameSpace:
         ... )
         >>> s.dt.ordinal_day()
         shape: (3,)
-        Series: 'date' [u32]
+        Series: 'date' [i16]
         [
                 1
                 32
@@ -559,7 +559,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`UInt32`.
+            Series of data type :class:`Int8`.
 
         Examples
         --------
@@ -578,7 +578,7 @@ class DateTimeNameSpace:
         ]
         >>> date.dt.hour()
         shape: (4,)
-        Series: 'datetime' [u32]
+        Series: 'datetime' [i8]
         [
                 0
                 1
@@ -599,7 +599,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`UInt32`.
+            Series of data type :class:`Int8`.
 
         Examples
         --------
@@ -617,7 +617,7 @@ class DateTimeNameSpace:
         ]
         >>> date.dt.minute()
         shape: (3,)
-        Series: 'datetime' [u32]
+        Series: 'datetime' [i8]
         [
                 0
                 2
@@ -644,7 +644,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`UInt32` or :class:`Float64`.
+            Series of data type :class:`Int8` or :class:`Float64`.
 
         Examples
         --------
@@ -659,7 +659,7 @@ class DateTimeNameSpace:
         ... )
         >>> s.dt.second()
         shape: (3,)
-        Series: 'datetime' [u32]
+        Series: 'datetime' [i8]
         [
                 0
                 3
@@ -685,7 +685,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`UInt32`.
+            Series of data type :class:`Int32`.
 
         Examples
         --------
@@ -695,7 +695,7 @@ class DateTimeNameSpace:
         >>> s = pl.datetime_range(start, stop, interval="500ms", eager=True)
         >>> s.dt.millisecond()
         shape: (9,)
-        Series: 'datetime' [u32]
+        Series: 'datetime' [i32]
         [
                 0
                 500
@@ -719,7 +719,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`UInt32`.
+            Series of data type :class:`Int32`.
 
         Examples
         --------
@@ -743,7 +743,7 @@ class DateTimeNameSpace:
         ]
         >>> date.dt.microsecond()
         shape: (9,)
-        Series: 'datetime' [u32]
+        Series: 'datetime' [i32]
         [
                 0
                 500000
@@ -767,7 +767,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`UInt32`.
+            Series of data type :class:`Int32`.
 
         Examples
         --------
@@ -791,7 +791,7 @@ class DateTimeNameSpace:
         ]
         >>> date.dt.nanosecond()
         shape: (9,)
-        Series: 'datetime' [u32]
+        Series: 'datetime' [i32]
         [
                 0
                 500000000
@@ -1675,7 +1675,9 @@ class DateTimeNameSpace:
             2001-01-01 19:00:00
             2001-01-01 22:00:00
         ]
-        >>> s.dt.round("1h").series_equal(s.dt.round(timedelta(hours=1)))
+        >>> round_str = s.dt.round("1h")
+        >>> round_td = s.dt.round(timedelta(hours=1))
+        >>> round_str.equals(round_td)
         True
 
         >>> start = datetime(2001, 1, 1)

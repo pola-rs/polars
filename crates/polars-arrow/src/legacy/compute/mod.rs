@@ -1,6 +1,6 @@
 use crate::array::PrimitiveArray;
-use crate::datatypes::DataType;
-use crate::legacy::utils::combine_validities_and;
+use crate::compute::utils::combine_validities_and;
+use crate::datatypes::ArrowDataType;
 use crate::types::NativeType;
 
 pub mod arithmetics;
@@ -16,7 +16,7 @@ pub mod tile;
 pub fn binary_mut<T, D, F>(
     lhs: &PrimitiveArray<T>,
     rhs: &PrimitiveArray<D>,
-    data_type: DataType,
+    data_type: ArrowDataType,
     mut op: F,
 ) -> PrimitiveArray<T>
 where
@@ -42,7 +42,7 @@ where
 pub fn unary_mut<I, F, O>(
     array: &PrimitiveArray<I>,
     mut op: F,
-    data_type: DataType,
+    data_type: ArrowDataType,
 ) -> PrimitiveArray<O>
 where
     I: NativeType,

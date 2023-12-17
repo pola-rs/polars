@@ -47,13 +47,16 @@ def test_dt_to_string(series_of_int_dates: pl.Series) -> None:
     ("unit_attr", "expected"),
     [
         ("year", pl.Series(values=[1997, 2024, 2052], dtype=pl.Int32)),
-        ("month", pl.Series(values=[5, 10, 2], dtype=pl.UInt32)),
-        ("week", pl.Series(values=[21, 40, 8], dtype=pl.UInt32)),
-        ("day", pl.Series(values=[19, 4, 20], dtype=pl.UInt32)),
-        ("ordinal_day", pl.Series(values=[139, 278, 51], dtype=pl.UInt32)),
+        ("iso_year", pl.Series(values=[1997, 2024, 2052], dtype=pl.Int32)),
+        ("quarter", pl.Series(values=[2, 4, 1], dtype=pl.Int8)),
+        ("month", pl.Series(values=[5, 10, 2], dtype=pl.Int8)),
+        ("week", pl.Series(values=[21, 40, 8], dtype=pl.Int8)),
+        ("day", pl.Series(values=[19, 4, 20], dtype=pl.Int8)),
+        ("weekday", pl.Series(values=[1, 5, 2], dtype=pl.Int8)),
+        ("ordinal_day", pl.Series(values=[139, 278, 51], dtype=pl.Int16)),
     ],
 )
-def test_dt_extract_year_month_week_day_ordinal_day(
+def test_dt_extract_datetime_component(
     unit_attr: str,
     expected: pl.Series,
     series_of_int_dates: pl.Series,
@@ -64,12 +67,12 @@ def test_dt_extract_year_month_week_day_ordinal_day(
 @pytest.mark.parametrize(
     ("unit_attr", "expected"),
     [
-        ("hour", pl.Series(values=[0, 3], dtype=pl.UInt32)),
-        ("minute", pl.Series(values=[0, 20], dtype=pl.UInt32)),
-        ("second", pl.Series(values=[0, 10], dtype=pl.UInt32)),
-        ("millisecond", pl.Series(values=[0, 987], dtype=pl.UInt32)),
-        ("microsecond", pl.Series(values=[0, 987654], dtype=pl.UInt32)),
-        ("nanosecond", pl.Series(values=[0, 987654321], dtype=pl.UInt32)),
+        ("hour", pl.Series(values=[0, 3], dtype=pl.Int8)),
+        ("minute", pl.Series(values=[0, 20], dtype=pl.Int8)),
+        ("second", pl.Series(values=[0, 10], dtype=pl.Int8)),
+        ("millisecond", pl.Series(values=[0, 987], dtype=pl.Int32)),
+        ("microsecond", pl.Series(values=[0, 987654], dtype=pl.Int32)),
+        ("nanosecond", pl.Series(values=[0, 987654321], dtype=pl.Int32)),
     ],
 )
 def test_strptime_extract_times(
@@ -374,7 +377,7 @@ def test_dst_offset_invalid() -> None:
         ("s", pl.Series(values=[1_577_836_800, 1_580_613_610], dtype=pl.Int64)),
         (
             "ms",
-            pl.Series(values=[1_577_836_800_000, 1_580_613_610_000], dtype=pl.Int64),
+            pl.Series(values=[1_577_836_800_000, 1_580_613_610_987], dtype=pl.Int64),
         ),
     ],
 )

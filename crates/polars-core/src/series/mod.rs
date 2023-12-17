@@ -135,7 +135,7 @@ pub struct Series(pub Arc<dyn SeriesTrait>);
 
 impl PartialEq for Wrap<Series> {
     fn eq(&self, other: &Self) -> bool {
-        self.0.series_equal_missing(other)
+        self.0.equals_missing(other)
     }
 }
 
@@ -251,7 +251,14 @@ impl Series {
     ///
     /// See [`ChunkedArray::append`] and [`ChunkedArray::extend`].
     pub fn append(&mut self, other: &Series) -> PolarsResult<&mut Self> {
-        self._get_inner_mut().append(other)?;
+        let must_cast = can_extend_dtype(self.dtype(), other.dtype())?;
+
+        if must_cast {
+            let other = other.cast(self.dtype())?;
+            self._get_inner_mut().append(&other)?;
+        } else {
+            self._get_inner_mut().append(other)?;
+        }
         Ok(self)
     }
 
@@ -264,7 +271,14 @@ impl Series {
     ///
     /// See [`ChunkedArray::extend`] and [`ChunkedArray::append`].
     pub fn extend(&mut self, other: &Series) -> PolarsResult<&mut Self> {
-        self._get_inner_mut().extend(other)?;
+        let must_cast = can_extend_dtype(self.dtype(), other.dtype())?;
+
+        if must_cast {
+            let other = other.cast(self.dtype())?;
+            self._get_inner_mut().extend(&other)?;
+        } else {
+            self._get_inner_mut().extend(other)?;
+        }
         Ok(self)
     }
 
@@ -328,48 +342,32 @@ impl Series {
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    ///
-    /// ```
-    /// # use polars_core::prelude::*;
-    /// let s = Series::new("days", &[1, 2, 3]);
-    /// assert_eq!(s.sum(), Some(6));
-    /// ```
-    pub fn sum<T>(&self) -> Option<T>
+    pub fn sum<T>(&self) -> PolarsResult<T>
     where
         T: NumCast,
     {
-        let sum = self.sum_as_series().cast(&DataType::Float64).ok()?;
-        T::from(sum.f64().unwrap().get(0)?)
+        let sum = self.sum_as_series()?.cast(&DataType::Float64)?;
+        Ok(T::from(sum.f64().unwrap().get(0).unwrap()).unwrap())
     }
 
     /// Returns the minimum value in the array, according to the natural order.
     /// Returns an option because the array is nullable.
-    /// ```
-    /// # use polars_core::prelude::*;
-    /// let s = Series::new("days", [1, 2, 3].as_ref());
-    /// assert_eq!(s.min(), Some(1));
-    /// ```
-    pub fn min<T>(&self) -> Option<T>
+    pub fn min<T>(&self) -> PolarsResult<Option<T>>
     where
         T: NumCast,
     {
-        let min = self.min_as_series().cast(&DataType::Float64).ok()?;
-        T::from(min.f64().unwrap().get(0)?)
+        let min = self.min_as_series()?.cast(&DataType::Float64)?;
+        Ok(min.f64().unwrap().get(0).and_then(T::from))
     }
 
     /// Returns the maximum value in the array, according to the natural order.
     /// Returns an option because the array is nullable.
-    /// ```
-    /// # use polars_core::prelude::*;
-    /// let s = Series::new("days", [1, 2, 3].as_ref());
-    /// assert_eq!(s.max(), Some(3));
-    /// ```
-    pub fn max<T>(&self) -> Option<T>
+    pub fn max<T>(&self) -> PolarsResult<Option<T>>
     where
         T: NumCast,
     {
-        let max = self.max_as_series().cast(&DataType::Float64).ok()?;
-        T::from(max.f64().unwrap().get(0)?)
+        let max = self.max_as_series()?.cast(&DataType::Float64)?;
+        Ok(max.f64().unwrap().get(0).and_then(T::from))
     }
 
     /// Explode a list Series. This expands every item to a new row..
@@ -445,7 +443,7 @@ impl Series {
             Date => Cow::Owned(self.cast(&Int32).unwrap()),
             Datetime(_, _) | Duration(_) | Time => Cow::Owned(self.cast(&Int64).unwrap()),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_) => Cow::Owned(self.cast(&UInt32).unwrap()),
+            Categorical(_, _) => Cow::Owned(self.cast(&UInt32).unwrap()),
             List(inner) => Cow::Owned(self.cast(&List(Box::new(inner.to_physical()))).unwrap()),
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
@@ -571,7 +569,7 @@ impl Series {
     }
 
     /// Traverse and collect every nth element in a new array.
-    pub fn take_every(&self, n: usize) -> Series {
+    pub fn gather_every(&self, n: usize) -> Series {
         let idx = (0..self.len() as IdxSize).step_by(n).collect_ca("");
         // SAFETY: we stay in-bounds.
         unsafe { self.take_unchecked(&idx) }
@@ -601,7 +599,7 @@ impl Series {
     }
 
     #[cfg(feature = "dot_product")]
-    pub fn dot(&self, other: &Series) -> Option<f64> {
+    pub fn dot(&self, other: &Series) -> PolarsResult<f64> {
         (self * other).sum::<f64>()
     }
 
@@ -610,14 +608,8 @@ impl Series {
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
-    pub fn sum_as_series(&self) -> Series {
+    pub fn sum_as_series(&self) -> PolarsResult<Series> {
         use DataType::*;
-        if self.is_empty()
-            && (self.dtype().is_numeric() || matches!(self.dtype(), DataType::Boolean))
-        {
-            let zero = Series::new(self.name(), [0]);
-            return zero.cast(self.dtype()).unwrap().sum_as_series();
-        }
         match self.dtype() {
             Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().sum_as_series(),
             _ => self._sum_as_series(),
@@ -854,8 +846,10 @@ impl Series {
             .sum();
         match self.dtype() {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(Some(rv)) => match &**rv {
-                RevMapping::Local(arr) => size += estimated_bytes_size(arr),
+            DataType::Categorical(Some(rv), _) => match &**rv {
+                RevMapping::Local(arr, _) | RevMapping::Enum(arr, _) => {
+                    size += estimated_bytes_size(arr)
+                },
                 RevMapping::Global(map, arr, _) => {
                     size +=
                         map.capacity() * std::mem::size_of::<u32>() * 2 + estimated_bytes_size(arr);
@@ -875,13 +869,11 @@ impl Series {
         let offsets = (0i64..(s.len() as i64 + 1)).collect::<Vec<_>>();
         let offsets = unsafe { Offsets::new_unchecked(offsets) };
 
-        let new_arr = LargeListArray::new(
-            DataType::List(Box::new(s.dtype().clone())).to_arrow(),
-            offsets.into(),
-            values,
-            None,
-        );
-        ListChunked::with_chunk(s.name(), new_arr)
+        let data_type = LargeListArray::default_datatype(s.dtype().to_physical().to_arrow());
+        let new_arr = LargeListArray::new(data_type, offsets.into(), values, None);
+        let mut out = ListChunked::with_chunk(s.name(), new_arr);
+        out.set_inner_dtype(s.dtype().clone());
+        out
     }
 }
 

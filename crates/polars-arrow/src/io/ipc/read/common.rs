@@ -9,7 +9,7 @@ use super::deserialize::{read, skip};
 use super::Dictionaries;
 use crate::array::*;
 use crate::chunk::Chunk;
-use crate::datatypes::{DataType, Field};
+use crate::datatypes::{ArrowDataType, Field};
 use crate::io::ipc::read::OutOfSpecKind;
 use crate::io::ipc::{IpcField, IpcSchema};
 
@@ -179,10 +179,10 @@ pub fn read_record_batch<R: Read + Seek>(
 
 fn find_first_dict_field_d<'a>(
     id: i64,
-    data_type: &'a DataType,
+    data_type: &'a ArrowDataType,
     ipc_field: &'a IpcField,
 ) -> Option<(&'a Field, &'a IpcField)> {
-    use DataType::*;
+    use ArrowDataType::*;
     match data_type {
         Dictionary(_, inner, _) => find_first_dict_field_d(id, inner.as_ref(), ipc_field),
         List(field) | LargeList(field) | FixedSizeList(field, ..) | Map(field, ..) => {
@@ -259,12 +259,13 @@ pub fn read_dictionary<R: Read + Seek>(
         .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferData(err)))?
         .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingData))?;
 
-    let value_type =
-        if let DataType::Dictionary(_, value_type, _) = first_field.data_type.to_logical_type() {
-            value_type.as_ref()
-        } else {
-            polars_bail!(oos = OutOfSpecKind::InvalidIdDataType { requested_id: id })
-        };
+    let value_type = if let ArrowDataType::Dictionary(_, value_type, _) =
+        first_field.data_type.to_logical_type()
+    {
+        value_type.as_ref()
+    } else {
+        polars_bail!(oos = OutOfSpecKind::InvalidIdDataType { requested_id: id })
+    };
 
     // Make a fake schema for the dictionary batch.
     let fields = vec![Field::new("", value_type.clone(), false)];

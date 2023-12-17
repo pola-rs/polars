@@ -1,3 +1,5 @@
+use crate::POOL;
+
 // Formatting environment variables (typically referenced/set from the python-side Config object)
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 pub(crate) const FMT_MAX_COLS: &str = "POLARS_FMT_MAX_COLS";
@@ -28,10 +30,10 @@ pub(crate) const FMT_TABLE_ROUNDED_CORNERS: &str = "POLARS_FMT_TABLE_ROUNDED_COR
 pub(crate) const FMT_TABLE_CELL_LIST_LEN: &str = "POLARS_FMT_TABLE_CELL_LIST_LEN";
 
 // Other env vars
-#[cfg(feature = "dtype-decimal")]
+#[cfg(all(feature = "dtype-decimal", feature = "python"))]
 pub(crate) const DECIMAL_ACTIVE: &str = "POLARS_ACTIVATE_DECIMAL";
 
-#[cfg(feature = "dtype-decimal")]
+#[cfg(all(feature = "dtype-decimal", feature = "python"))]
 pub(crate) fn decimal_is_active() -> bool {
     std::env::var(DECIMAL_ACTIVE).as_deref().unwrap_or("") == "1"
 }
@@ -43,16 +45,12 @@ pub fn verbose() -> bool {
 pub fn get_file_prefetch_size() -> usize {
     std::env::var("POLARS_PREFETCH_SIZE")
         .map(|s| s.parse::<usize>().expect("integer"))
-        .unwrap_or_else(|_| {
-            std::cmp::max(
-                std::cmp::min(std::thread::available_parallelism().unwrap().get() * 2, 64),
-                32,
-            )
-        })
+        .unwrap_or_else(|_| std::cmp::max(POOL.current_num_threads() * 2, 16))
 }
 
 pub fn get_rg_prefetch_size() -> usize {
     std::env::var("POLARS_ROW_GROUP_PREFETCH_SIZE")
         .map(|s| s.parse::<usize>().expect("integer"))
-        .unwrap_or_else(|_| get_file_prefetch_size())
+        // Set it to something big, but not unlimited.
+        .unwrap_or_else(|_| std::cmp::max(get_file_prefetch_size(), 128))
 }

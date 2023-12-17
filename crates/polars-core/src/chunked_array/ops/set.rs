@@ -1,5 +1,5 @@
+use arrow::array::ValueSize;
 use arrow::bitmap::MutableBitmap;
-use arrow::legacy::array::ValueSize;
 use arrow::legacy::kernels::set::{set_at_idx_no_null, set_with_mask};
 use arrow::legacy::prelude::FromData;
 

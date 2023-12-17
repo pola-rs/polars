@@ -13,6 +13,7 @@ from typing import (
     Generator,
     Iterable,
     Literal,
+    Mapping,
     NoReturn,
     Sequence,
     Union,
@@ -22,12 +23,6 @@ from typing import (
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import (
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
-    NUMERIC_DTYPES,
-    SIGNED_INTEGER_DTYPES,
-    TEMPORAL_DTYPES,
-    UNSIGNED_INTEGER_DTYPES,
     Array,
     Boolean,
     Categorical,
@@ -35,12 +30,14 @@ from polars.datatypes import (
     Datetime,
     Decimal,
     Duration,
+    Enum,
     Float64,
     Int8,
     Int16,
     Int32,
     Int64,
     List,
+    Null,
     Object,
     Time,
     UInt32,
@@ -64,7 +61,7 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import ShapeError
+from polars.exceptions import ModuleUpgradeRequired, ShapeError
 from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
@@ -88,6 +85,7 @@ from polars.utils.convert import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
+    _timedelta_to_pl_timedelta,
 )
 from polars.utils.deprecation import (
     deprecate_function,
@@ -99,6 +97,8 @@ from polars.utils.deprecation import (
 from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _is_generator,
+    _warn_null_comparison,
+    no_default,
     parse_percentiles,
     parse_version,
     range_to_series,
@@ -114,7 +114,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
 
-    from polars import DataFrame, Expr
+    from polars import DataFrame, DataType, Expr
     from polars.series._numpy import SeriesView
     from polars.type_aliases import (
         ClosedInterval,
@@ -134,6 +134,9 @@ if TYPE_CHECKING:
         SizeUnit,
         TemporalLiteral,
     )
+    from polars.utils.various import (
+        NoDefault,
+    )
 
     if sys.version_info >= (3, 11):
         from typing import Self
@@ -147,8 +150,8 @@ ArrayLike = Union[
     "Series",
     "pa.Array",
     "pa.ChunkedArray",
-    "np.ndarray",
-    "pd.Series",
+    "np.ndarray[Any, Any]",
+    "pd.Series[Any]",
     "pd.DatetimeIndex",
 ]
 
@@ -161,7 +164,7 @@ class Series:
     Parameters
     ----------
     name : str, default None
-        Name of the series. Will be used as a column name when used in a DataFrame.
+        Name of the Series. Will be used as a column name when used in a DataFrame.
         When not specified, name is set to an empty string.
     values : ArrayLike, default None
         One-dimensional data in various forms. Supported are: Sequence, Series,
@@ -244,7 +247,7 @@ class Series:
         *,
         strict: bool = True,
         nan_to_null: bool = False,
-        dtype_if_empty: PolarsDataType | None = None,
+        dtype_if_empty: PolarsDataType = Null,
     ):
         # If 'Unknown' treat as None to attempt inference
         if dtype == Unknown:
@@ -278,7 +281,7 @@ class Series:
             self._s = series_to_pyseries(name, values)
 
         elif isinstance(values, range):
-            self._s = range_to_series(name, values, dtype=dtype)._s  # type: ignore[arg-type]
+            self._s = range_to_series(name, values, dtype=dtype)._s
 
         elif isinstance(values, Sequence):
             self._s = sequence_to_pyseries(
@@ -299,7 +302,7 @@ class Series:
                 if dtype is not None:
                     self._s = (
                         self.cast(dtype)
-                        .set_at_idx(np.argwhere(np.isnat(values)).flatten(), None)
+                        .scatter(np.argwhere(np.isnat(values)).flatten(), None)
                         ._s
                     )
                     return
@@ -367,7 +370,7 @@ class Series:
         return self._s.get_ptr()
 
     @property
-    def dtype(self) -> PolarsDataType:
+    def dtype(self) -> DataType:
         """
         Get the data type of this Series.
 
@@ -400,16 +403,26 @@ class Series:
         return out
 
     @property
-    def inner_dtype(self) -> PolarsDataType | None:
+    def inner_dtype(self) -> DataType | None:
         """
         Get the inner dtype in of a List typed Series.
+
+        .. deprecated:: 0.19.14
+            Use `Series.dtype.inner` instead.
 
         Returns
         -------
         DataType
 
         """
-        return self._s.inner_dtype()
+        issue_deprecation_warning(
+            "`Series.inner_dtype` is deprecated. Use `Series.dtype.inner` instead.",
+            version="0.19.14",
+        )
+        try:
+            return self.dtype.inner  # type: ignore[attr-defined]
+        except AttributeError:
+            return None
 
     @property
     def name(self) -> str:
@@ -482,12 +495,14 @@ class Series:
                 return self.clone()
             elif (other is False and op == "eq") or (other is True and op == "neq"):
                 return ~self
-        elif isinstance(other, float) and self.dtype in INTEGER_DTYPES:
+
+        elif isinstance(other, float) and self.dtype.is_integer():
             # require upcast when comparing int series to float value
             self = self.cast(Float64)
             f = get_ffi_func(op + "_<>", Float64, self._s)
             assert f is not None
             return self._from_pyseries(f(other))
+
         elif isinstance(other, datetime):
             if self.dtype == Date:
                 # require upcast when comparing date series to datetime
@@ -495,32 +510,43 @@ class Series:
                 time_unit = "us"
             elif self.dtype == Datetime:
                 # Use local time zone info
-                time_zone = self.dtype.time_zone  # type: ignore[union-attr]
+                time_zone = self.dtype.time_zone  # type: ignore[attr-defined]
                 if str(other.tzinfo) != str(time_zone):
                     raise TypeError(
                         f"Datetime time zone {other.tzinfo!r} does not match Series timezone {time_zone!r}"
                     )
-                time_unit = self.dtype.time_unit  # type: ignore[union-attr]
+                time_unit = self.dtype.time_unit  # type: ignore[attr-defined]
             else:
                 raise ValueError(
-                    f"cannot compare datetime.datetime to series of type {self.dtype}"
+                    f"cannot compare datetime.datetime to Series of type {self.dtype}"
                 )
             ts = _datetime_to_pl_timestamp(other, time_unit)  # type: ignore[arg-type]
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(ts))
+
         elif isinstance(other, time) and self.dtype == Time:
             d = _time_to_pl_time(other)
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(d))
-        elif self.dtype == Categorical and not isinstance(other, Series):
+
+        elif isinstance(other, timedelta) and self.dtype == Duration:
+            time_unit = self.dtype.time_unit  # type: ignore[attr-defined]
+            td = _timedelta_to_pl_timedelta(other, time_unit)  # type: ignore[arg-type]
+            f = get_ffi_func(op + "_<>", Int64, self._s)
+            assert f is not None
+            return self._from_pyseries(f(td))
+
+        elif self.dtype in [Categorical, Enum] and not isinstance(other, Series):
             other = Series([other])
+
         elif isinstance(other, date) and self.dtype == Date:
             d = _date_to_pl_date(other)
             f = get_ffi_func(op + "_<>", Int32, self._s)
             assert f is not None
             return self._from_pyseries(f(d))
+
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other, dtype_if_empty=self.dtype)
         if isinstance(other, Series):
@@ -535,7 +561,7 @@ class Series:
         return self._from_pyseries(f(other))
 
     @overload  # type: ignore[override]
-    def __eq__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __eq__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -543,12 +569,13 @@ class Series:
         ...
 
     def __eq__(self, other: Any) -> Series | Expr:
+        _warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__eq__(other)
         return self._comp(other, "eq")
 
     @overload  # type: ignore[override]
-    def __ne__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __ne__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -556,12 +583,13 @@ class Series:
         ...
 
     def __ne__(self, other: Any) -> Series | Expr:
+        _warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__ne__(other)
         return self._comp(other, "neq")
 
     @overload
-    def __gt__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __gt__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -569,12 +597,13 @@ class Series:
         ...
 
     def __gt__(self, other: Any) -> Series | Expr:
+        _warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__gt__(other)
         return self._comp(other, "gt")
 
     @overload
-    def __lt__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __lt__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -582,12 +611,13 @@ class Series:
         ...
 
     def __lt__(self, other: Any) -> Series | Expr:
+        _warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__lt__(other)
         return self._comp(other, "lt")
 
     @overload
-    def __ge__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __ge__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -595,12 +625,13 @@ class Series:
         ...
 
     def __ge__(self, other: Any) -> Series | Expr:
+        _warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__ge__(other)
         return self._comp(other, "gt_eq")
 
     @overload
-    def __le__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __le__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -608,6 +639,7 @@ class Series:
         ...
 
     def __le__(self, other: Any) -> Series | Expr:
+        _warn_null_comparison(other)
         if isinstance(other, pl.Expr):
             return F.lit(self).__le__(other)
         return self._comp(other, "lt_eq")
@@ -676,7 +708,7 @@ class Series:
         return self.__ne__(other)
 
     @overload
-    def ne_missing(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def ne_missing(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -733,14 +765,14 @@ class Series:
     def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> Self:
         if isinstance(other, pl.Expr):
             # expand pl.lit, pl.datetime, pl.duration Exprs to compatible Series
-            other = self.to_frame().select(other).to_series()
+            other = self.to_frame().select_seq(other).to_series()
         if isinstance(other, Series):
             return self._from_pyseries(getattr(self._s, op_s)(other._s))
         if _check_for_numpy(other) and isinstance(other, np.ndarray):
             return self._from_pyseries(getattr(self._s, op_s)(Series(other)._s))
         if (
             isinstance(other, (float, date, datetime, timedelta, str))
-            and not self.is_float()
+            and not self.dtype.is_float()
         ):
             _s = sequence_to_pyseries(self.name, [other])
             if "rhs" in op_ffi:
@@ -752,17 +784,17 @@ class Series:
             f = get_ffi_func(op_ffi, self.dtype, self._s)
         if f is None:
             raise TypeError(
-                f"cannot do arithmetic with series of dtype: {self.dtype!r} and argument"
+                f"cannot do arithmetic with Series of dtype: {self.dtype!r} and argument"
                 f" of type: {type(other).__name__!r}"
             )
         return self._from_pyseries(f(other))
 
     @overload
-    def __add__(self, other: DataFrame) -> DataFrame:  # type: ignore[misc]
+    def __add__(self, other: DataFrame) -> DataFrame:  # type: ignore[overload-overlap]
         ...
 
     @overload
-    def __add__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __add__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -779,7 +811,7 @@ class Series:
         return self._arithmetic(other, "add", "add_<>")
 
     @overload
-    def __sub__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __sub__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -792,7 +824,7 @@ class Series:
         return self._arithmetic(other, "sub", "sub_<>")
 
     @overload
-    def __truediv__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __truediv__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -802,17 +834,17 @@ class Series:
     def __truediv__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self) / other
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError("first cast to integer before dividing datelike dtypes")
 
         # this branch is exactly the floordiv function without rounding the floats
-        if self.is_float() or self.dtype == Decimal:
+        if self.dtype.is_float() or self.dtype == Decimal:
             return self._arithmetic(other, "div", "div_<>")
 
         return self.cast(Float64) / other
 
     @overload
-    def __floordiv__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __floordiv__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -822,22 +854,22 @@ class Series:
     def __floordiv__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self) // other
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError("first cast to integer before dividing datelike dtypes")
 
         if not isinstance(other, pl.Expr):
             other = F.lit(other)
-        return self.to_frame().select(F.col(self.name) // other).to_series()
+        return self.to_frame().select_seq(F.col(self.name) // other).to_series()
 
     def __invert__(self) -> Series:
         return self.not_()
 
     @overload
-    def __mul__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __mul__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
-    def __mul__(self, other: DataFrame) -> DataFrame:  # type: ignore[misc]
+    def __mul__(self, other: DataFrame) -> DataFrame:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -847,7 +879,7 @@ class Series:
     def __mul__(self, other: Any) -> Series | DataFrame | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self) * other
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError("first cast to integer before multiplying datelike dtypes")
         elif isinstance(other, pl.DataFrame):
             return other * self
@@ -855,7 +887,7 @@ class Series:
             return self._arithmetic(other, "mul", "mul_<>")
 
     @overload
-    def __mod__(self, other: Expr) -> Expr:  # type: ignore[misc]
+    def __mod__(self, other: Expr) -> Expr:  # type: ignore[overload-overlap]
         ...
 
     @overload
@@ -865,14 +897,14 @@ class Series:
     def __mod__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__mod__(other)
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError(
                 "first cast to integer before applying modulo on datelike dtypes"
             )
         return self._arithmetic(other, "rem", "rem_<>")
 
     def __rmod__(self, other: Any) -> Series:
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError(
                 "first cast to integer before applying modulo on datelike dtypes"
             )
@@ -887,9 +919,9 @@ class Series:
         return self._arithmetic(other, "sub", "sub_<>_rhs")
 
     def __rtruediv__(self, other: Any) -> Series:
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError("first cast to integer before dividing datelike dtypes")
-        if self.is_float():
+        if self.dtype.is_float():
             self.__rfloordiv__(other)
 
         if isinstance(other, int):
@@ -897,12 +929,12 @@ class Series:
         return self.cast(Float64).__rfloordiv__(other)
 
     def __rfloordiv__(self, other: Any) -> Series:
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError("first cast to integer before dividing datelike dtypes")
         return self._arithmetic(other, "div", "div_<>_rhs")
 
     def __rmul__(self, other: Any) -> Series:
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError("first cast to integer before multiplying datelike dtypes")
         return self._arithmetic(other, "mul", "mul_<>")
 
@@ -910,11 +942,11 @@ class Series:
         return self.pow(exponent)
 
     def __rpow__(self, other: Any) -> Series:
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
-        return self.to_frame().select(other ** F.col(self.name)).to_series()
+        return self.to_frame().select_seq(other ** F.col(self.name)).to_series()
 
     def __matmul__(self, other: Any) -> float | Series | None:
         if isinstance(other, Sequence) or (
@@ -980,7 +1012,7 @@ class Series:
         if self.dtype == idx_type:
             return self
 
-        if self.dtype not in INTEGER_DTYPES:
+        if not self.dtype.is_integer():
             raise NotImplementedError("unsupported idxs datatype")
 
         if self.len() == 0:
@@ -994,7 +1026,7 @@ class Series:
                 if self.min() < -(2**32):  # type: ignore[operator]
                     raise ValueError("index positions should be bigger than -2^32 + 1")
 
-        if self.dtype in SIGNED_INTEGER_DTYPES:
+        if self.dtype.is_signed_integer():
             if self.min() < 0:  # type: ignore[operator]
                 if idx_type == UInt32:
                     idxs = self.cast(Int32) if self.dtype in {Int8, Int16} else self
@@ -1035,7 +1067,7 @@ class Series:
         self,
         item: (int | Series | range | slice | np.ndarray[Any, Any] | list[int]),
     ) -> Any:
-        if isinstance(item, Series) and item.dtype in INTEGER_DTYPES:
+        if isinstance(item, Series) and item.dtype.is_integer():
             return self._take_with_series(item._pos_idxs(self.len()))
 
         elif _check_for_numpy(item) and isinstance(item, np.ndarray):
@@ -1076,11 +1108,11 @@ class Series:
     ) -> None:
         # do the single idx as first branch as those are likely in a tight loop
         if isinstance(key, int) and not isinstance(key, bool):
-            self.set_at_idx(key, value)
+            self.scatter(key, value)
             return None
         elif isinstance(value, Sequence) and not isinstance(value, str):
-            if self.is_numeric() or self.is_temporal():
-                self.set_at_idx(key, value)  # type: ignore[arg-type]
+            if self.dtype.is_numeric() or self.dtype.is_temporal():
+                self.scatter(key, value)  # type: ignore[arg-type]
                 return None
             raise TypeError(
                 f"cannot set Series of dtype: {self.dtype!r} with list/tuple as value;"
@@ -1090,15 +1122,15 @@ class Series:
             if key.dtype == Boolean:
                 self._s = self.set(key, value)._s
             elif key.dtype == UInt64:
-                self._s = self.set_at_idx(key.cast(UInt32), value)._s
+                self._s = self.scatter(key.cast(UInt32), value)._s
             elif key.dtype == UInt32:
-                self._s = self.set_at_idx(key, value)._s
+                self._s = self.scatter(key, value)._s
 
         # TODO: implement for these types without casting to series
         elif _check_for_numpy(key) and isinstance(key, np.ndarray):
             if key.dtype == np.bool_:
                 # boolean numpy mask
-                self._s = self.set_at_idx(np.argwhere(key)[:, 0], value)._s
+                self._s = self.scatter(np.argwhere(key)[:, 0], value)._s
             else:
                 s = self._from_pyseries(
                     PySeries.new_u32("", np.array(key, np.uint32), _strict=True)
@@ -1147,7 +1179,7 @@ class Series:
                     args.append(arg)
                 elif isinstance(arg, Series):
                     validity_mask &= arg.is_not_null()
-                    args.append(arg.view(ignore_nulls=True))
+                    args.append(arg._view(ignore_nulls=True))
                 else:
                     raise TypeError(
                         f"unsupported type {type(arg).__name__!r} for {arg!r}"
@@ -1221,7 +1253,7 @@ class Series:
     @deprecate_renamed_parameter("row", "index", version="0.19.3")
     def item(self, index: int | None = None) -> Any:
         """
-        Return the series as a scalar, or return the element at the given index.
+        Return the Series as a scalar, or return the element at the given index.
 
         If no index is provided, this is equivalent to `s[0]`, with a check
         that the shape is (1,). With an index, this is equivalent to `s[index]`.
@@ -1232,15 +1264,15 @@ class Series:
         >>> s1.item()
         1
         >>> s2 = pl.Series("a", [9, 8, 7])
-        >>> s2.cumsum().item(-1)
+        >>> s2.cum_sum().item(-1)
         24
 
         """
         if index is None:
             if len(self) != 1:
                 raise ValueError(
-                    "can only call '.item()' if the series is of length 1,"
-                    f" or an explicit index is provided (series is of length {len(self)})"
+                    "can only call '.item()' if the Series is of length 1,"
+                    f" or an explicit index is provided (Series is of length {len(self)})"
                 )
             return self._s.get_index(0)
 
@@ -1356,11 +1388,7 @@ class Series:
         >>> pl.Series([None, False]).any(ignore_nulls=False)  # Returns None
 
         """
-        return (
-            self.to_frame()
-            .select(F.col(self.name).any(ignore_nulls=ignore_nulls))
-            .item()
-        )
+        return self._s.any(ignore_nulls=ignore_nulls)
 
     @overload
     def all(self, *, ignore_nulls: Literal[True] = ...) -> bool:
@@ -1406,11 +1434,7 @@ class Series:
         >>> pl.Series([None, True]).all(ignore_nulls=False)  # Returns None
 
         """
-        return (
-            self.to_frame()
-            .select(F.col(self.name).all(ignore_nulls=ignore_nulls))
-            .item()
-        )
+        return self._s.all(ignore_nulls=ignore_nulls)
 
     def log(self, base: float = math.e) -> Series:
         """Compute the logarithm to a given base."""
@@ -1527,7 +1551,7 @@ class Series:
         self, percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75)
     ) -> DataFrame:
         """
-        Quick summary statistics of a series.
+        Quick summary statistics of a Series.
 
         Series with mixed datatypes will return summary statistics for the datatype of
         the first value.
@@ -1536,7 +1560,7 @@ class Series:
         ----------
         percentiles
             One or more percentiles to include in the summary statistics (if the
-            series has a numeric dtype). All values must be in the range `[0, 1]`.
+            Series has a numeric dtype). All values must be in the range `[0, 1]`.
 
         Notes
         -----
@@ -1549,8 +1573,8 @@ class Series:
 
         Examples
         --------
-        >>> series_num = pl.Series([1, 2, 3, 4, 5])
-        >>> series_num.describe()
+        >>> s = pl.Series([1, 2, 3, 4, 5])
+        >>> s.describe()
         shape: (9, 2)
         ┌────────────┬──────────┐
         │ statistic  ┆ value    │
@@ -1568,64 +1592,70 @@ class Series:
         │ max        ┆ 5.0      │
         └────────────┴──────────┘
 
-        >>> series_str = pl.Series(["a", "a", None, "b", "c"])
-        >>> series_str.describe()
+        Non-numeric data types may not have all statistics available.
+
+        >>> s = pl.Series(["a", "a", None, "b", "c"])
+        >>> s.describe()
         shape: (3, 2)
         ┌────────────┬───────┐
         │ statistic  ┆ value │
         │ ---        ┆ ---   │
         │ str        ┆ i64   │
         ╞════════════╪═══════╡
-        │ count      ┆ 5     │
+        │ count      ┆ 4     │
         │ null_count ┆ 1     │
         │ unique     ┆ 4     │
         └────────────┴───────┘
 
         """
         stats: dict[str, PythonLiteral | None]
+        stats_dtype: PolarsDataType
 
-        if self.len() == 0:
-            raise ValueError("Series must contain at least one value")
-
-        elif self.is_numeric():
-            s = self.cast(Float64)
+        if self.dtype.is_numeric():
+            stats_dtype = Float64
             stats = {
-                "count": s.len(),
-                "null_count": s.null_count(),
-                "mean": s.mean(),
-                "std": s.std(),
-                "min": s.min(),
+                "count": self.count(),
+                "null_count": self.null_count(),
+                "mean": self.mean(),
+                "std": self.std(),
+                "min": self.min(),
             }
             for p in parse_percentiles(percentiles):
-                stats[f"{p:.0%}"] = s.quantile(p)
-            stats["max"] = s.max()
+                stats[f"{p:.0%}"] = self.quantile(p)
+            stats["max"] = self.max()
 
-        elif self.is_boolean():
+        elif self.dtype == Boolean:
+            stats_dtype = Int64
             stats = {
-                "count": self.len(),
+                "count": self.count(),
                 "null_count": self.null_count(),
                 "sum": self.sum(),
             }
-        elif self.is_utf8():
+        elif self.dtype == Utf8:
+            stats_dtype = Int64
             stats = {
-                "count": self.len(),
+                "count": self.count(),
                 "null_count": self.null_count(),
-                "unique": len(self.unique()),
+                "unique": self.n_unique(),
             }
-        elif self.is_temporal():
+        elif self.dtype.is_temporal():
             # we coerce all to string, because a polars column
             # only has a single dtype and dates: datetime and count: int don't match
+            stats_dtype = Utf8
             stats = {
-                "count": str(self.len()),
+                "count": str(self.count()),
                 "null_count": str(self.null_count()),
                 "min": str(self.dt.min()),
                 "50%": str(self.dt.median()),
                 "max": str(self.dt.max()),
             }
         else:
-            raise TypeError("this type is not supported")
+            raise TypeError(f"cannot describe Series of data type {self.dtype}")
 
-        return pl.DataFrame({"statistic": stats.keys(), "value": stats.values()})
+        return pl.DataFrame(
+            {"statistic": stats.keys(), "value": stats.values()},
+            schema={"statistic": Utf8, "value": stats_dtype},
+        )
 
     def sum(self) -> int | float:
         """
@@ -1660,7 +1690,7 @@ class Series:
 
     def product(self) -> int | float:
         """Reduce this Series to the product value."""
-        return self.to_frame().select(F.col(self.name).product()).to_series().item()
+        return self._s.product()
 
     def pow(self, exponent: int | float | None | Series) -> Series:
         """
@@ -1685,13 +1715,13 @@ class Series:
         ]
 
         """
-        if self.is_temporal():
+        if self.dtype.is_temporal():
             raise TypeError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
         if _check_for_numpy(exponent) and isinstance(exponent, np.ndarray):
             exponent = Series(exponent)
-        return self.to_frame().select(F.col(self.name).pow(exponent)).to_series()
+        return self.to_frame().select_seq(F.col(self.name).pow(exponent)).to_series()
 
     def min(self) -> PythonLiteral | None:
         """
@@ -1727,7 +1757,7 @@ class Series:
         whereas polars defaults to ignoring them.
 
         """
-        return self.to_frame().select(F.col(self.name).nan_max()).item()
+        return self.to_frame().select_seq(F.col(self.name).nan_max()).item()
 
     def nan_min(self) -> int | float | date | datetime | timedelta | str:
         """
@@ -1737,7 +1767,7 @@ class Series:
         whereas polars defaults to ignoring them.
 
         """
-        return self.to_frame().select(F.col(self.name).nan_min()).item()
+        return self.to_frame().select_seq(F.col(self.name).nan_min()).item()
 
     def std(self, ddof: int = 1) -> float | None:
         """
@@ -1757,9 +1787,9 @@ class Series:
         1.0
 
         """
-        if not self.is_numeric():
+        if not self.dtype.is_numeric():
             return None
-        return self.to_frame().select(F.col(self.name).std(ddof)).to_series().item()
+        return self._s.std(ddof)
 
     def var(self, ddof: int = 1) -> float | None:
         """
@@ -1779,9 +1809,9 @@ class Series:
         1.0
 
         """
-        if not self.is_numeric():
+        if not self.dtype.is_numeric():
             return None
-        return self.to_frame().select(F.col(self.name).var(ddof)).to_series().item()
+        return self._s.var(ddof)
 
     def median(self) -> float | None:
         """
@@ -1888,7 +1918,6 @@ class Series:
         ...
 
     @deprecate_nonkeyword_arguments(["self", "breaks"], version="0.19.0")
-    @deprecate_renamed_parameter("bins", "breaks", version="0.18.8")
     @deprecate_renamed_parameter("series", "as_series", version="0.19.0")
     def cut(
         self,
@@ -2023,7 +2052,7 @@ class Series:
 
         result = (
             self.to_frame()
-            .select(
+            .select_seq(
                 F.col(self.name).cut(
                     breaks,
                     labels=labels,
@@ -2084,8 +2113,6 @@ class Series:
     ) -> Series | DataFrame:
         ...
 
-    @deprecate_renamed_parameter("series", "as_series", version="0.18.14")
-    @deprecate_renamed_parameter("q", "quantiles", version="0.18.12")
     def qcut(
         self,
         quantiles: Sequence[float] | int,
@@ -2209,13 +2236,13 @@ class Series:
             issue_deprecation_warning(
                 "The `break_point_label` parameter for `Series.cut` will be removed."
                 " Use `Series.struct.rename_fields` to rename the field instead.",
-                version="0.18.14",
+                version="0.19.0",
             )
         if category_label != "category":
             issue_deprecation_warning(
                 "The `category_label` parameter for `Series.cut` will be removed."
                 " Use `Series.struct.rename_fields` to rename the field instead.",
-                version="0.18.14",
+                version="0.19.0",
             )
         if not as_series:
             issue_deprecation_warning(
@@ -2223,7 +2250,7 @@ class Series:
                 " The same behavior can be achieved by setting `include_breaks=True`,"
                 " unnesting the resulting struct Series,"
                 " and adding the result to the original Series.",
-                version="0.18.14",
+                version="0.19.0",
             )
             temp_name = self.name + "_bin"
             return (
@@ -2329,6 +2356,8 @@ class Series:
         bins: list[float] | None = None,
         *,
         bin_count: int | None = None,
+        include_category: bool = True,
+        include_breakpoint: bool = True,
     ) -> DataFrame:
         """
         Bin values into buckets and count their occurrences.
@@ -2341,6 +2370,10 @@ class Series:
         bin_count
             If no bins provided, this will be used to determine
             the distance of the bins
+        include_breakpoint
+            Include a column that indicates the upper breakpoint.
+        include_category
+            Include a column that shows the intervals as categories.
 
         Returns
         -------
@@ -2356,22 +2389,35 @@ class Series:
         >>> a = pl.Series("a", [1, 3, 8, 8, 2, 1, 3])
         >>> a.hist(bin_count=4)
         shape: (5, 3)
-        ┌─────────────┬─────────────┬─────────┐
-        │ break_point ┆ category    ┆ a_count │
-        │ ---         ┆ ---         ┆ ---     │
-        │ f64         ┆ cat         ┆ u32     │
-        ╞═════════════╪═════════════╪═════════╡
-        │ 0.0         ┆ (-inf, 0.0] ┆ 0       │
-        │ 2.25        ┆ (0.0, 2.25] ┆ 3       │
-        │ 4.5         ┆ (2.25, 4.5] ┆ 2       │
-        │ 6.75        ┆ (4.5, 6.75] ┆ 0       │
-        │ inf         ┆ (6.75, inf] ┆ 2       │
-        └─────────────┴─────────────┴─────────┘
+        ┌─────────────┬─────────────┬───────┐
+        │ break_point ┆ category    ┆ count │
+        │ ---         ┆ ---         ┆ ---   │
+        │ f64         ┆ cat         ┆ u32   │
+        ╞═════════════╪═════════════╪═══════╡
+        │ 0.0         ┆ (-inf, 0.0] ┆ 0     │
+        │ 2.25        ┆ (0.0, 2.25] ┆ 3     │
+        │ 4.5         ┆ (2.25, 4.5] ┆ 2     │
+        │ 6.75        ┆ (4.5, 6.75] ┆ 0     │
+        │ inf         ┆ (6.75, inf] ┆ 2     │
+        └─────────────┴─────────────┴───────┘
 
         """
-        if bins:
-            bins = Series(bins, dtype=Float64)._s
-        return wrap_df(self._s.hist(bins, bin_count))
+        out = (
+            self.to_frame()
+            .select_seq(
+                F.col(self.name).hist(
+                    bins=bins,
+                    bin_count=bin_count,
+                    include_category=include_category,
+                    include_breakpoint=include_breakpoint,
+                )
+            )
+            .to_series()
+        )
+        if not include_breakpoint and not include_category:
+            return out.to_frame()
+        else:
+            return out.struct.unnest()
 
     def value_counts(self, *, sort: bool = False, parallel: bool = False) -> DataFrame:
         """
@@ -2399,34 +2445,32 @@ class Series:
         >>> s = pl.Series("color", ["red", "blue", "red", "green", "blue", "blue"])
         >>> s.value_counts()  # doctest: +IGNORE_RESULT
         shape: (3, 2)
-        ┌───────┬────────┐
-        │ color ┆ counts │
-        │ ---   ┆ ---    │
-        │ str   ┆ u32    │
-        ╞═══════╪════════╡
-        │ red   ┆ 2      │
-        │ green ┆ 1      │
-        │ blue  ┆ 3      │
-        └───────┴────────┘
+        ┌───────┬───────┐
+        │ color ┆ count │
+        │ ---   ┆ ---   │
+        │ str   ┆ u32   │
+        ╞═══════╪═══════╡
+        │ red   ┆ 2     │
+        │ green ┆ 1     │
+        │ blue  ┆ 3     │
+        └───────┴───────┘
 
         Sort the output by count.
 
+        >>> s.value_counts(sort=True)
         shape: (3, 2)
-        ┌───────┬────────┐
-        │ color ┆ counts │
-        │ ---   ┆ ---    │
-        │ str   ┆ u32    │
-        ╞═══════╪════════╡
-        │ blue  ┆ 3      │
-        │ red   ┆ 2      │
-        │ green ┆ 1      │
-        └───────┴────────┘
-
+        ┌───────┬───────┐
+        │ color ┆ count │
+        │ ---   ┆ ---   │
+        │ str   ┆ u32   │
+        ╞═══════╪═══════╡
+        │ blue  ┆ 3     │
+        │ red   ┆ 2     │
+        │ green ┆ 1     │
+        └───────┴───────┘
         """
-        return (
-            self.to_frame()
-            .select(F.col(self.name).value_counts(sort=sort, parallel=parallel))
-            .unnest(self.name)
+        return pl.DataFrame._from_pydf(
+            self._s.value_counts(sort=sort, parallel=parallel)
         )
 
     def unique_counts(self) -> Series:
@@ -2472,7 +2516,7 @@ class Series:
         """
         return (
             self.to_frame()
-            .select(F.col(self.name).entropy(base, normalize=normalize))
+            .select_seq(F.col(self.name).entropy(base, normalize=normalize))
             .to_series()
             .item()
         )
@@ -2616,7 +2660,7 @@ class Series:
         """
         return self._s.n_chunks()
 
-    def cummax(self, *, reverse: bool = False) -> Series:
+    def cum_max(self, *, reverse: bool = False) -> Series:
         """
         Get an array with the cumulative max computed at every element.
 
@@ -2628,7 +2672,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("s", [3, 5, 1])
-        >>> s.cummax()
+        >>> s.cum_max()
         shape: (3,)
         Series: 's' [i64]
         [
@@ -2639,7 +2683,7 @@ class Series:
 
         """
 
-    def cummin(self, *, reverse: bool = False) -> Series:
+    def cum_min(self, *, reverse: bool = False) -> Series:
         """
         Get an array with the cumulative min computed at every element.
 
@@ -2651,7 +2695,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("s", [1, 2, 3])
-        >>> s.cummin()
+        >>> s.cum_min()
         shape: (3,)
         Series: 's' [i64]
         [
@@ -2662,7 +2706,7 @@ class Series:
 
         """
 
-    def cumprod(self, *, reverse: bool = False) -> Series:
+    def cum_prod(self, *, reverse: bool = False) -> Series:
         """
         Get an array with the cumulative product computed at every element.
 
@@ -2679,7 +2723,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.cumprod()
+        >>> s.cum_prod()
         shape: (3,)
         Series: 'a' [i64]
         [
@@ -2690,7 +2734,7 @@ class Series:
 
         """
 
-    def cumsum(self, *, reverse: bool = False) -> Series:
+    def cum_sum(self, *, reverse: bool = False) -> Series:
         """
         Get an array with the cumulative sum computed at every element.
 
@@ -2707,7 +2751,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.cumsum()
+        >>> s.cum_sum()
         shape: (3,)
         Series: 'a' [i64]
         [
@@ -2742,43 +2786,18 @@ class Series:
         ]
 
         """
+        return self._from_pyseries(self._s.slice(offset=offset, length=length))
 
-    def append(self, other: Series, *, append_chunks: bool | None = None) -> Self:
+    def append(self, other: Series) -> Self:
         """
         Append a Series to this one.
+
+        The resulting series will consist of multiple chunks.
 
         Parameters
         ----------
         other
             Series to append.
-        append_chunks
-            .. deprecated:: 0.18.8
-                This argument will be removed and `append` will change to always
-                behave like `append_chunks=True` (the previous default). For the
-                behavior of `append_chunks=False`, use `Series.extend`.
-
-            If set to `True` the append operation will add the chunks from `other` to
-            self. This is super cheap.
-
-            If set to `False` the append operation will do the same as
-            `DataFrame.extend` which extends the memory backed by this `Series` with
-            the values from `other`.
-
-            Different from `append chunks`, `extend` appends the data from `other` to
-            the underlying memory locations and thus may cause a reallocation (which are
-            expensive).
-
-            If this does not cause a reallocation, the resulting data structure will not
-            have any extra chunks and thus will yield faster queries.
-
-            Prefer `extend` over `append_chunks` when you want to do a query after a
-            single append. For instance during online operations where you add `n` rows
-            and rerun a query.
-
-            Prefer `append_chunks` over `extend` when you want to append many times
-            before doing a query. For instance when you read in multiple files and when
-            to store them in a single `Series`. In the latter case, finish the sequence
-            of `append_chunks` operations with a `rechunk`.
 
         Warnings
         --------
@@ -2810,19 +2829,6 @@ class Series:
         2
 
         """
-        if append_chunks is not None:
-            issue_deprecation_warning(
-                "the `append_chunks` argument will be removed and `append` will change"
-                " to always behave like `append_chunks=True` (the previous default)."
-                " For the behavior of `append_chunks=False`, use `Series.extend`.",
-                version="0.18.8",
-            )
-        else:
-            append_chunks = True
-
-        if not append_chunks:
-            return self.extend(other)
-
         try:
             self._s.append(other._s)
         except RuntimeError as exc:
@@ -2963,7 +2969,7 @@ class Series:
         """
         if n < 0:
             n = max(0, self.len() + n)
-        return self.to_frame().select(F.col(self.name).head(n)).to_series()
+        return self._from_pyseries(self._s.head(n))
 
     def tail(self, n: int = 10) -> Series:
         """
@@ -3004,7 +3010,7 @@ class Series:
         """
         if n < 0:
             n = max(0, self.len() + n)
-        return self.to_frame().select(F.col(self.name).tail(n)).to_series()
+        return self._from_pyseries(self._s.tail(n))
 
     def limit(self, n: int = 10) -> Series:
         """
@@ -3025,14 +3031,19 @@ class Series:
         """
         return self.head(n)
 
-    def take_every(self, n: int) -> Series:
+    def gather_every(self, n: int) -> Series:
         """
         Take every nth value in the Series and return as new Series.
+
+        Parameters
+        ----------
+        n
+            Gather every *n*-th row.
 
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, 4])
-        >>> s.take_every(2)
+        >>> s.gather_every(2)
         shape: (2,)
         Series: 'a' [i64]
         [
@@ -3287,7 +3298,7 @@ class Series:
 
         """
 
-    def take(
+    def gather(
         self, indices: int | list[int] | Expr | Series | np.ndarray[Any, Any]
     ) -> Series:
         """
@@ -3301,7 +3312,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, 4])
-        >>> s.take([1, 3])
+        >>> s.gather([1, 3])
         shape: (2,)
         Series: 'a' [i64]
         [
@@ -3489,7 +3500,7 @@ class Series:
         Examples
         --------
         >>> import numpy as np
-        >>> s = pl.Series("a", [1.0, 2.0, 3.0, np.NaN])
+        >>> s = pl.Series("a", [1.0, 2.0, 3.0, np.nan])
         >>> s.is_nan()
         shape: (4,)
         Series: 'a' [bool]
@@ -3514,7 +3525,7 @@ class Series:
         Examples
         --------
         >>> import numpy as np
-        >>> s = pl.Series("a", [1.0, 2.0, 3.0, np.NaN])
+        >>> s = pl.Series("a", [1.0, 2.0, 3.0, np.nan])
         >>> s.is_not_nan()
         shape: (4,)
         Series: 'a' [bool]
@@ -3716,11 +3727,11 @@ class Series:
 
         """
 
-    def series_equal(
+    def equals(
         self, other: Series, *, null_equal: bool = True, strict: bool = False
     ) -> bool:
         """
-        Check if series is equal with another Series.
+        Check whether the Series is equal to another Series.
 
         Parameters
         ----------
@@ -3732,32 +3743,20 @@ class Series:
             Don't allow different numerical dtypes, e.g. comparing `pl.UInt32` with a
             `pl.Int64` will return `False`.
 
+        See Also
+        --------
+        assert_series_equal
+
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s1 = pl.Series("a", [1, 2, 3])
         >>> s2 = pl.Series("b", [4, 5, 6])
-        >>> s.series_equal(s)
+        >>> s1.equals(s1)
         True
-        >>> s.series_equal(s2)
+        >>> s1.equals(s2)
         False
-
         """
-        return self._s.series_equal(other._s, null_equal, strict)
-
-    def len(self) -> int:
-        """
-        Return the number of elements in this Series.
-
-        Null values are treated like regular elements in this context.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, 2, None])
-        >>> s.len()
-        3
-
-        """
-        return self._s.len()
+        return self._s.equals(other._s, null_equal, strict)
 
     def cast(
         self,
@@ -3956,157 +3955,19 @@ class Series:
         ]
 
         """
-        if isinstance(lower_bound, str):
-            lower_bound = F.lit(lower_bound)
-        if isinstance(upper_bound, str):
-            upper_bound = F.lit(upper_bound)
+        if closed == "none":
+            out = (self > lower_bound) & (self < upper_bound)
+        elif closed == "both":
+            out = (self >= lower_bound) & (self <= upper_bound)
+        elif closed == "right":
+            out = (self > lower_bound) & (self <= upper_bound)
+        elif closed == "left":
+            out = (self >= lower_bound) & (self < upper_bound)
 
-        return (
-            self.to_frame()
-            .select(F.col(self.name).is_between(lower_bound, upper_bound, closed))
-            .to_series()
-        )
+        if isinstance(out, pl.Expr):
+            out = F.select(out).to_series()
 
-    def is_numeric(self) -> bool:
-        """
-        Check if this Series datatype is numeric.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.is_numeric()
-        True
-
-        """
-        return self.dtype in NUMERIC_DTYPES
-
-    def is_integer(self, signed: bool | None = None) -> bool:
-        """
-        Check if this Series datatype is an integer (signed or unsigned).
-
-        Parameters
-        ----------
-        signed
-            * if `None`, both signed and unsigned integer dtypes will match.
-            * if `True`, only signed integer dtypes will be considered a match.
-            * if `False`, only unsigned integer dtypes will be considered a match.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, 2, 3], dtype=pl.UInt32)
-        >>> s.is_integer()
-        True
-        >>> s.is_integer(signed=False)
-        True
-        >>> s.is_integer(signed=True)
-        False
-
-        """
-        if signed is None:
-            return self.dtype in INTEGER_DTYPES
-        elif signed is True:
-            return self.dtype in SIGNED_INTEGER_DTYPES
-        elif signed is False:
-            return self.dtype in UNSIGNED_INTEGER_DTYPES
-
-        raise ValueError(f"`signed` must be None, True or False; got {signed!r}")
-
-    def is_temporal(self, excluding: OneOrMoreDataTypes | None = None) -> bool:
-        """
-        Check if this Series datatype is temporal.
-
-        Parameters
-        ----------
-        excluding
-            Optionally exclude one or more temporal dtypes from matching.
-
-        Examples
-        --------
-        >>> from datetime import date
-        >>> s = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
-        >>> s.is_temporal()
-        True
-        >>> s.is_temporal(excluding=[pl.Date])
-        False
-
-        """
-        if excluding is not None:
-            if not isinstance(excluding, Iterable):
-                excluding = [excluding]
-            if self.dtype in excluding:
-                return False
-
-        return self.dtype in TEMPORAL_DTYPES
-
-    def is_float(self) -> bool:
-        """
-        Check if this Series has floating point numbers.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1.0, 2.0, 3.0])
-        >>> s.is_float()
-        True
-
-        """
-        return self.dtype in FLOAT_DTYPES
-
-    def is_boolean(self) -> bool:
-        """
-        Check if this Series is a Boolean.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [True, False, True])
-        >>> s.is_boolean()
-        True
-
-        """
-        return self.dtype is Boolean
-
-    def is_utf8(self) -> bool:
-        """
-        Check if this Series datatype is a Utf8.
-
-        Examples
-        --------
-        >>> s = pl.Series("x", ["a", "b", "c"])
-        >>> s.is_utf8()
-        True
-
-        """
-        return self.dtype is Utf8
-
-    def view(self, *, ignore_nulls: bool = False) -> SeriesView:
-        """
-        Get a view into this Series data with a numpy array.
-
-        This operation doesn't clone data, but does not include missing values.
-        Don't use this unless you know what you are doing.
-
-        Parameters
-        ----------
-        ignore_nulls
-            If True then nulls are converted to 0.
-            If False then an Exception is raised if nulls are present.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, None])
-        >>> s.view(ignore_nulls=True)
-        SeriesView([1, 0])
-
-        """
-        if not ignore_nulls:
-            assert not self.null_count()
-
-        from polars.series._numpy import SeriesView, _ptr_to_numpy
-
-        ptr_type = dtype_to_ctype(self.dtype)
-        ptr = self._s.as_single_ptr()
-        array = _ptr_to_numpy(ptr, self.len(), ptr_type)
-        array.setflags(write=False)
-        return SeriesView(array, self)
+        return out
 
     def to_numpy(
         self,
@@ -4125,9 +3986,6 @@ class Series:
         - booleans can't be zero-copied.
 
         To ensure that no data is cloned, set `zero_copy_only=True`.
-
-        Alternatively, if you want a zero-copy view and know what you are doing,
-        use `.view()`.
 
         Parameters
         ----------
@@ -4163,9 +4021,9 @@ class Series:
             if self.dtype == Date:
                 tp = "datetime64[D]"
             elif self.dtype == Duration:
-                tp = f"timedelta64[{self.dtype.time_unit}]"  # type: ignore[union-attr]
+                tp = f"timedelta64[{self.dtype.time_unit}]"  # type: ignore[attr-defined]
             else:
-                tp = f"datetime64[{self.dtype.time_unit}]"  # type: ignore[union-attr]
+                tp = f"datetime64[{self.dtype.time_unit}]"  # type: ignore[attr-defined]
             return arr.astype(tp)
 
         def raise_no_zero_copy() -> None:
@@ -4178,34 +4036,34 @@ class Series:
                 writable=writable,
                 use_pyarrow=use_pyarrow,
             )
-            np_array.shape = (self.len(), self.dtype.width)  # type: ignore[union-attr]
+            np_array.shape = (self.len(), self.dtype.width)  # type: ignore[attr-defined]
             return np_array
 
         if (
             use_pyarrow
             and _PYARROW_AVAILABLE
             and self.dtype != Object
-            and not self.is_temporal(excluding=Time)
+            and (self.dtype == Time or not self.dtype.is_temporal())
         ):
             return self.to_arrow().to_numpy(
                 *args, zero_copy_only=zero_copy_only, writable=writable
             )
 
-        elif self.dtype == Time:
+        elif self.dtype in (Time, Decimal):
             raise_no_zero_copy()
-            # note: there is no native numpy "time" dtype
+            # note: there are no native numpy "time" or "decimal" dtypes
             return np.array(self.to_list(), dtype="object")
         else:
             if not self.null_count():
-                if self.is_temporal():
-                    np_array = convert_to_date(self.view(ignore_nulls=True))
-                elif self.is_numeric():
-                    np_array = self.view(ignore_nulls=True)
+                if self.dtype.is_temporal():
+                    np_array = convert_to_date(self._view(ignore_nulls=True))
+                elif self.dtype.is_numeric():
+                    np_array = self._view(ignore_nulls=True)
                 else:
                     raise_no_zero_copy()
                     np_array = self._s.to_numpy()
 
-            elif self.is_temporal():
+            elif self.dtype.is_temporal():
                 np_array = convert_to_date(self.to_physical()._s.to_numpy())
             else:
                 raise_no_zero_copy()
@@ -4216,6 +4074,40 @@ class Series:
                 return np_array.copy()
             else:
                 return np_array
+
+    def _view(self, *, ignore_nulls: bool = False) -> SeriesView:
+        """
+        Get a view into this Series data with a numpy array.
+
+        This operation doesn't clone data, but does not include missing values.
+
+        Returns
+        -------
+        SeriesView
+
+        Parameters
+        ----------
+        ignore_nulls
+            If True then nulls are converted to 0.
+            If False then an Exception is raised if nulls are present.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, None])
+        >>> s._view(ignore_nulls=True)
+        SeriesView([1, 0])
+
+        """
+        if not ignore_nulls:
+            assert not self.null_count()
+
+        from polars.series._numpy import SeriesView, _ptr_to_numpy
+
+        ptr_type = dtype_to_ctype(self.dtype)
+        ptr = self._s.as_single_ptr()
+        array = _ptr_to_numpy(ptr, self.len(), ptr_type)
+        array.setflags(write=False)
+        return SeriesView(array, self)
 
     def to_arrow(self) -> pa.Array:
         """
@@ -4289,14 +4181,12 @@ class Series:
 
         """
         if use_pyarrow_extension_array:
-            if parse_version(pd.__version__) < parse_version("1.5"):
-                raise ModuleNotFoundError(
+            if parse_version(pd.__version__) < (1, 5):
+                raise ModuleUpgradeRequired(
                     f'pandas>=1.5.0 is required for `to_pandas("use_pyarrow_extension_array=True")`, found Pandas {pd.__version__}'
                 )
-            if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < parse_version(
-                "8"
-            ):
-                raise ModuleNotFoundError(
+            if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < (8, 0):
+                raise ModuleUpgradeRequired(
                     f'pyarrow>=8.0.0 is required for `to_pandas("use_pyarrow_extension_array=True")`'
                     f", found pyarrow {pa.__version__!r}"
                     if _PYARROW_AVAILABLE
@@ -4351,6 +4241,40 @@ class Series:
             f'pl.Series("{self.name}", {self.head(n).to_list()}, dtype=pl.{self.dtype})'
         )
 
+    def count(self) -> int:
+        """
+        Return the number of non-null elements in the column.
+
+        See Also
+        --------
+        len
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, None])
+        >>> s.count()
+        2
+        """
+        return self.len() - self.null_count()
+
+    def len(self) -> int:
+        """
+        Return the number of elements in the Series.
+
+        Null values count towards the total.
+
+        See Also
+        --------
+        count
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, None])
+        >>> s.len()
+        3
+        """
+        return self._s.len()
+
     def set(self, filter: Series, value: int | float | str | bool | None) -> Series:
         """
         Set masked values.
@@ -4402,22 +4326,22 @@ class Series:
             return NotImplemented
         return self._from_pyseries(f(filter._s, value))
 
-    def set_at_idx(
+    def scatter(
         self,
-        idx: Series | np.ndarray[Any, Any] | Sequence[int] | int,
-        value: (
+        indices: Series | np.ndarray[Any, Any] | Sequence[int] | int,
+        values: (
             int
             | float
             | str
             | bool
+            | date
+            | datetime
             | Sequence[int]
             | Sequence[float]
             | Sequence[bool]
             | Sequence[str]
             | Sequence[date]
             | Sequence[datetime]
-            | date
-            | datetime
             | Series
             | None
         ),
@@ -4427,26 +4351,21 @@ class Series:
 
         Parameters
         ----------
-        idx
+        indices
             Integers representing the index locations.
-        value
-            replacement values.
-
-        Returns
-        -------
-        Series
-            The mutated series.
+        values
+            Replacement values.
 
         Notes
         -----
         Use of this function is frequently an anti-pattern, as it can
-        block optimisation (predicate pushdown, etc). Consider using
+        block optimization (predicate pushdown, etc). Consider using
         `pl.when(predicate).then(value).otherwise(self)` instead.
 
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.set_at_idx(1, 10)
+        >>> s.scatter(1, 10)
         shape: (3,)
         Series: 'a' [i64]
         [
@@ -4472,21 +4391,21 @@ class Series:
         └─────────┘
 
         """
-        if isinstance(idx, int):
-            idx = [idx]
-        if len(idx) == 0:
+        if isinstance(indices, int):
+            indices = [indices]
+        if len(indices) == 0:
             return self
 
-        idx = Series("", idx)
-        if isinstance(value, (int, float, bool, str)) or (value is None):
-            value = Series("", [value])
+        indices = Series("", indices)
+        if isinstance(values, (int, float, bool, str)) or (values is None):
+            values = Series("", [values])
 
             # if we need to set more than a single value, we extend it
-            if len(idx) > 0:
-                value = value.extend_constant(value[0], len(idx) - 1)
-        elif not isinstance(value, Series):
-            value = Series("", value)
-        self._s.set_at_idx(idx._s, value._s)
+            if len(indices) > 0:
+                values = values.extend_constant(values[0], len(indices) - 1)
+        elif not isinstance(values, Series):
+            values = Series("", values)
+        self._s.scatter(indices._s, values._s)
         return self
 
     def clear(self, n: int = 0) -> Series:
@@ -5916,6 +5835,12 @@ class Series:
         seed_3
             Random seed parameter. Defaults to `seed` if not set.
 
+        Notes
+        -----
+        This implementation of `hash` does not guarantee stable results
+        across different Polars versions. Its stability is only guaranteed within a
+        single version.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
@@ -6317,83 +6242,131 @@ class Series:
 
         """
 
-    def map_dict(
+    def replace(
         self,
-        remapping: dict[Any, Any],
+        old: IntoExpr | Sequence[Any] | Mapping[Any, Any],
+        new: IntoExpr | Sequence[Any] | NoDefault = no_default,
         *,
-        default: Any = None,
+        default: IntoExpr | NoDefault = no_default,
         return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
-        Replace values in the Series using a remapping dictionary.
+        Replace values by different values.
 
         Parameters
         ----------
-        remapping
-            Dictionary containing the before/after values to map.
+        old
+            Value or sequence of values to replace.
+            Also accepts a mapping of values to their replacement as syntactic sugar for
+            `replace(new=Series(mapping.keys()), old=Series(mapping.values()))`.
+        new
+            Value or sequence of values to replace by.
+            Length must match the length of `old` or have length 1.
         default
-            Value to use when the remapping dict does not contain the lookup value.
-            Use `pl.first()`, to keep the original value.
+            Set values that were not replaced to this value.
+            Defaults to keeping the original value.
+            Accepts expression input. Non-expression inputs are parsed as literals.
         return_dtype
-            Set return dtype to override automatic return dtype determination.
+            The data type of the resulting Series. If set to `None` (default),
+            the data type is determined automatically based on the other inputs.
+
+        See Also
+        --------
+        str.replace
+
+        Notes
+        -----
+        The global string cache must be enabled when replacing categorical values.
 
         Examples
         --------
-        >>> s = pl.Series("iso3166", ["TUR", "???", "JPN", "NLD"])
-        >>> country_lookup = {
-        ...     "JPN": "Japan",
-        ...     "TUR": "Türkiye",
-        ...     "NLD": "Netherlands",
-        ... }
+        Replace a single value by another value. Values that were not replaced remain
+        unchanged.
 
-        Remap, setting a default for unrecognised values...
-
-        >>> s.map_dict(country_lookup, default="Unspecified").alias("country_name")
+        >>> s = pl.Series([1, 2, 2, 3])
+        >>> s.replace(2, 100)
         shape: (4,)
-        Series: 'country_name' [str]
+        Series: '' [i64]
         [
-            "Türkiye"
-            "Unspecified"
-            "Japan"
-            "Netherlands"
+                1
+                100
+                100
+                3
         ]
 
-        ...or keep the original value, by making use of `pl.first()`:
+        Replace multiple values by passing sequences to the `old` and `new` parameters.
 
-        >>> s.map_dict(country_lookup, default=pl.first()).alias("country_name")
+        >>> s.replace([2, 3], [100, 200])
         shape: (4,)
-        Series: 'country_name' [str]
+        Series: '' [i64]
         [
-            "Türkiye"
-            "???"
-            "Japan"
-            "Netherlands"
+                1
+                100
+                100
+                200
         ]
 
-        ...or keep the original value, by assigning the input series:
+        Passing a mapping with replacements is also supported as syntactic sugar.
+        Specify a default to set all values that were not matched.
 
-        >>> s.map_dict(country_lookup, default=s).alias("country_name")
+        >>> mapping = {2: 100, 3: 200}
+        >>> s.replace(mapping, default=-1)
         shape: (4,)
-        Series: 'country_name' [str]
+        Series: '' [i64]
         [
-            "Türkiye"
-            "???"
-            "Japan"
-            "Netherlands"
+                -1
+                100
+                100
+                200
         ]
 
-        Override return dtype:
 
-        >>> s = pl.Series("int8", [5, 2, 3], dtype=pl.Int8)
-        >>> s.map_dict({2: 7}, default=pl.first(), return_dtype=pl.Int16)
+        The default can be another Series.
+
+        >>> default = pl.Series([2.5, 5.0, 7.5, 10.0])
+        >>> s.replace(2, 100, default=default)
+        shape: (4,)
+        Series: '' [f64]
+        [
+                2.5
+                100.0
+                100.0
+                10.0
+        ]
+
+        Replacing by values of a different data type sets the return type based on
+        a combination of the `new` data type and either the original data type or the
+        default data type if it was set.
+
+        >>> s = pl.Series(["x", "y", "z"])
+        >>> mapping = {"x": 1, "y": 2, "z": 3}
+        >>> s.replace(mapping)
         shape: (3,)
-        Series: 'int8' [i16]
+        Series: '' [str]
         [
-            5
-            7
-            3
+                "1"
+                "2"
+                "3"
+        ]
+        >>> s.replace(mapping, default=None)
+        shape: (3,)
+        Series: '' [i64]
+        [
+                1
+                2
+                3
         ]
 
+        Set the `return_dtype` parameter to control the resulting data type directly.
+
+        >>> s.replace(mapping, return_dtype=pl.UInt8)
+        shape: (3,)
+        Series: '' [u8]
+        [
+                1
+                2
+                3
+        ]
         """
 
     def reshape(self, dimensions: tuple[int, ...]) -> Series:
@@ -6930,6 +6903,356 @@ class Series:
             Number of places to shift (may be negative).
 
         """
+
+    @deprecate_function("Use `Series.dtype.is_float()` instead.", version="0.19.13")
+    def is_float(self) -> bool:
+        """
+        Check if this Series has floating point numbers.
+
+        .. deprecated:: 0.19.13
+            Use `Series.dtype.is_float()` instead.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1.0, 2.0, 3.0])
+        >>> s.is_float()  # doctest: +SKIP
+        True
+
+        """
+        return self.dtype.is_float()
+
+    @deprecate_function(
+        "Use `Series.dtype.is_integer()` instead."
+        " For signed/unsigned variants, use `Series.dtype.is_signed_integer()`"
+        " or `Series.dtype.is_unsigned_integer()`.",
+        version="0.19.13",
+    )
+    def is_integer(self, signed: bool | None = None) -> bool:
+        """
+        Check if this Series datatype is an integer (signed or unsigned).
+
+        .. deprecated:: 0.19.13
+            Use `Series.dtype.is_integer()` instead.
+            For signed/unsigned variants, use `Series.dtype.is_signed_integer()`
+            or `Series.dtype.is_unsigned_integer()`.
+
+        Parameters
+        ----------
+        signed
+            * if `None`, both signed and unsigned integer dtypes will match.
+            * if `True`, only signed integer dtypes will be considered a match.
+            * if `False`, only unsigned integer dtypes will be considered a match.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3], dtype=pl.UInt32)
+        >>> s.is_integer()  # doctest: +SKIP
+        True
+        >>> s.is_integer(signed=False)  # doctest: +SKIP
+        True
+        >>> s.is_integer(signed=True)  # doctest: +SKIP
+        False
+
+        """
+        if signed is None:
+            return self.dtype.is_integer()
+        elif signed is True:
+            return self.dtype.is_signed_integer()
+        elif signed is False:
+            return self.dtype.is_unsigned_integer()
+
+        raise ValueError(f"`signed` must be None, True or False; got {signed!r}")
+
+    @deprecate_function("Use `Series.dtype.is_numeric()` instead.", version="0.19.13")
+    def is_numeric(self) -> bool:
+        """
+        Check if this Series datatype is numeric.
+
+        .. deprecated:: 0.19.13
+            Use `Series.dtype.is_numeric()` instead.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.is_numeric()  # doctest: +SKIP
+        True
+
+        """
+        return self.dtype.is_numeric()
+
+    @deprecate_function("Use `Series.dtype.is_temporal()` instead.", version="0.19.13")
+    def is_temporal(self, excluding: OneOrMoreDataTypes | None = None) -> bool:
+        """
+        Check if this Series datatype is temporal.
+
+        .. deprecated:: 0.19.13
+            Use `Series.dtype.is_temporal()` instead.
+
+        Parameters
+        ----------
+        excluding
+            Optionally exclude one or more temporal dtypes from matching.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> s = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
+        >>> s.is_temporal()  # doctest: +SKIP
+        True
+        >>> s.is_temporal(excluding=[pl.Date])  # doctest: +SKIP
+        False
+
+        """
+        if excluding is not None:
+            if not isinstance(excluding, Iterable):
+                excluding = [excluding]
+            if self.dtype in excluding:
+                return False
+
+        return self.dtype.is_temporal()
+
+    @deprecate_function("Use `Series.dtype == pl.Boolean` instead.", version="0.19.14")
+    def is_boolean(self) -> bool:
+        """
+        Check if this Series is a Boolean.
+
+        .. deprecated:: 0.19.14
+            Use `Series.dtype == pl.Boolean` instead.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [True, False, True])
+        >>> s.is_boolean()  # doctest: +SKIP
+        True
+
+        """
+        return self.dtype == Boolean
+
+    @deprecate_function("Use `Series.dtype == pl.Utf8` instead.", version="0.19.14")
+    def is_utf8(self) -> bool:
+        """
+        Check if this Series datatype is a Utf8.
+
+        .. deprecated:: 0.19.14
+            Use `Series.dtype == pl.Utf8` instead.
+
+        Examples
+        --------
+        >>> s = pl.Series("x", ["a", "b", "c"])
+        >>> s.is_utf8()  # doctest: +SKIP
+        True
+
+        """
+        return self.dtype == Utf8
+
+    @deprecate_renamed_function("gather_every", version="0.19.14")
+    def take_every(self, n: int) -> Series:
+        """
+        Take every nth value in the Series and return as new Series.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`gather_every`.
+
+        Parameters
+        ----------
+        n
+            Gather every *n*-th row.
+        """
+        return self.gather_every(n)
+
+    @deprecate_renamed_function("gather", version="0.19.14")
+    def take(
+        self, indices: int | list[int] | Expr | Series | np.ndarray[Any, Any]
+    ) -> Series:
+        """
+        Take values by index.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`gather`.
+
+        Parameters
+        ----------
+        indices
+            Index location used for selection.
+        """
+        return self.gather(indices)
+
+    @deprecate_renamed_function("scatter", version="0.19.14")
+    @deprecate_renamed_parameter("idx", "indices", version="0.19.14")
+    @deprecate_renamed_parameter("value", "values", version="0.19.14")
+    def set_at_idx(
+        self,
+        indices: Series | np.ndarray[Any, Any] | Sequence[int] | int,
+        values: (
+            int
+            | float
+            | str
+            | bool
+            | date
+            | datetime
+            | Sequence[int]
+            | Sequence[float]
+            | Sequence[bool]
+            | Sequence[str]
+            | Sequence[date]
+            | Sequence[datetime]
+            | Series
+            | None
+        ),
+    ) -> Series:
+        """
+        Set values at the index locations.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`scatter`.
+
+        Parameters
+        ----------
+        indices
+            Integers representing the index locations.
+        values
+            Replacement values.
+        """
+        return self.scatter(indices, values)
+
+    @deprecate_renamed_function("cum_sum", version="0.19.14")
+    def cumsum(self, *, reverse: bool = False) -> Series:
+        """
+        Get an array with the cumulative sum computed at every element.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`cum_sum`.
+
+        Parameters
+        ----------
+        reverse
+            reverse the operation.
+
+        """
+        return self.cum_sum(reverse=reverse)
+
+    @deprecate_renamed_function("cum_max", version="0.19.14")
+    def cummax(self, *, reverse: bool = False) -> Series:
+        """
+        Get an array with the cumulative max computed at every element.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`cum_max`.
+
+        Parameters
+        ----------
+        reverse
+            reverse the operation.
+        """
+        return self.cum_max(reverse=reverse)
+
+    @deprecate_renamed_function("cum_min", version="0.19.14")
+    def cummin(self, *, reverse: bool = False) -> Series:
+        """
+        Get an array with the cumulative min computed at every element.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`cum_min`.
+
+        Parameters
+        ----------
+        reverse
+            reverse the operation.
+        """
+        return self.cum_min(reverse=reverse)
+
+    @deprecate_renamed_function("cum_prod", version="0.19.14")
+    def cumprod(self, *, reverse: bool = False) -> Series:
+        """
+        Get an array with the cumulative product computed at every element.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`cum_prod`.
+
+        Parameters
+        ----------
+        reverse
+            reverse the operation.
+        """
+        return self.cum_prod(reverse=reverse)
+
+    @deprecate_function(
+        "Use `Series.to_numpy(zero_copy_only=True) instead.", version="0.19.14"
+    )
+    def view(self, *, ignore_nulls: bool = False) -> SeriesView:
+        """
+        Get a view into this Series data with a numpy array.
+
+        .. deprecated:: 0.19.14
+            This method will be removed in a future version.
+
+        This operation doesn't clone data, but does not include missing values.
+        Don't use this unless you know what you are doing.
+
+        Parameters
+        ----------
+        ignore_nulls
+            If True then nulls are converted to 0.
+            If False then an Exception is raised if nulls are present.
+
+        """
+        return self._view(ignore_nulls=ignore_nulls)
+
+    @deprecate_function(
+        "It has been renamed to `replace`."
+        " The default behavior has changed to keep any values not present in the mapping unchanged."
+        " Pass `default=None` to keep existing behavior.",
+        version="0.19.16",
+    )
+    @deprecate_renamed_parameter("remapping", "mapping", version="0.19.16")
+    def map_dict(
+        self,
+        mapping: dict[Any, Any],
+        *,
+        default: Any = None,
+        return_dtype: PolarsDataType | None = None,
+    ) -> Self:
+        """
+        Replace values in the Series using a remapping dictionary.
+
+        .. deprecated:: 0.19.16
+            This method has been renamed to :meth:`replace`. The default behavior
+            has changed to keep any values not present in the mapping unchanged.
+            Pass `default=None` to keep existing behavior.
+
+        Parameters
+        ----------
+        mapping
+            Dictionary containing the before/after values to map.
+        default
+            Value to use when the remapping dict does not contain the lookup value.
+            Use `pl.first()`, to keep the original value.
+        return_dtype
+            Set return dtype to override automatic return dtype determination.
+        """
+        return self.replace(mapping, default=default, return_dtype=return_dtype)
+
+    @deprecate_renamed_function("equals", version="0.19.16")
+    def series_equal(
+        self, other: Series, *, null_equal: bool = True, strict: bool = False
+    ) -> bool:
+        """
+        Check whether the Series is equal to another Series.
+
+        .. deprecated:: 0.19.16
+            This method has been renamed to :meth:`equals`.
+
+        Parameters
+        ----------
+        other
+            Series to compare with.
+        null_equal
+            Consider null values as equal.
+        strict
+            Don't allow different numerical dtypes, e.g. comparing `pl.UInt32` with a
+            `pl.Int64` will return `False`.
+        """
+        return self.equals(other, null_equal=null_equal, strict=strict)
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`

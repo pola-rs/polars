@@ -3,7 +3,7 @@ mod rolling_kernels;
 
 use std::convert::TryFrom;
 
-use arrow::array::{Array, PrimitiveArray};
+use arrow::array::{Array, ArrayRef, PrimitiveArray};
 use arrow::legacy::kernels::rolling;
 pub use dispatch::*;
 use polars_core::prelude::*;
@@ -31,6 +31,8 @@ pub struct RollingOptions {
     /// Optional parameters for the rolling function
     #[cfg_attr(feature = "serde", serde(skip))]
     pub fn_params: DynArgs,
+    /// Warn if data is not known to be sorted by `by` column (if passed)
+    pub warn_if_unsorted: bool,
 }
 
 impl Default for RollingOptions {
@@ -43,6 +45,7 @@ impl Default for RollingOptions {
             by: None,
             closed_window: None,
             fn_params: None,
+            warn_if_unsorted: true,
         }
     }
 }

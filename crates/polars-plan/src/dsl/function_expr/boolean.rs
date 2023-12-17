@@ -37,12 +37,7 @@ pub enum BooleanFunction {
 
 impl BooleanFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
-        use BooleanFunction::*;
-        match self {
-            AllHorizontal => Ok(Field::new("all", DataType::Boolean)),
-            AnyHorizontal => Ok(Field::new("any", DataType::Boolean)),
-            _ => mapper.with_dtype(DataType::Boolean),
-        }
+        mapper.with_dtype(DataType::Boolean)
     }
 }
 
@@ -70,7 +65,7 @@ impl Display for BooleanFunction {
             IsIn => "is_in",
             AnyHorizontal => "any_horizontal",
             AllHorizontal => "all_horizontal",
-            Not => "not_",
+            Not => "not",
         };
         write!(f, "{s}")
     }
@@ -100,7 +95,7 @@ impl From<BooleanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             IsIn => wrap!(is_in),
             AllHorizontal => map_as_slice!(all_horizontal),
             AnyHorizontal => map_as_slice!(any_horizontal),
-            Not => map!(not_),
+            Not => map!(not),
         }
     }
 }
@@ -188,6 +183,6 @@ fn all_horizontal(s: &[Series]) -> PolarsResult<Series> {
     polars_ops::prelude::all_horizontal(s)
 }
 
-fn not_(s: &Series) -> PolarsResult<Series> {
+fn not(s: &Series) -> PolarsResult<Series> {
     Ok(s.bool()?.not().into_series())
 }

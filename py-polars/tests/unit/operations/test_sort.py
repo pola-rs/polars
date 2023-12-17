@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Any
 
 import pytest
 
@@ -255,7 +256,7 @@ def test_arg_sort_rank_nans() -> None:
     assert (
         pl.DataFrame(
             {
-                "val": [1.0, float("NaN")],
+                "val": [1.0, float("nan")],
             }
         )
         .with_columns(
@@ -478,6 +479,15 @@ def test_merge_sorted() -> None:
     }
 
 
+def test_merge_sorted_one_empty() -> None:
+    df1 = pl.DataFrame({"key": [1, 2, 3], "a": [1, 2, 3]})
+    df2 = pl.DataFrame([], schema=df1.schema)
+    out = df1.merge_sorted(df2, key="a")
+    assert_frame_equal(out, df1)
+    out = df2.merge_sorted(df1, key="a")
+    assert_frame_equal(out, df1)
+
+
 def test_sort_args() -> None:
     df = pl.DataFrame(
         {
@@ -682,11 +692,13 @@ def test_sorted_flag_partition_by() -> None:
     )
 
 
-def test_sorted_flag_singletons() -> None:
-    assert pl.DataFrame({"x": [1]})["x"].flags["SORTED_ASC"]
-    assert pl.DataFrame({"x": ["a"]})["x"].flags["SORTED_ASC"]
-    assert pl.DataFrame({"x": [True]})["x"].flags["SORTED_ASC"]
-    assert pl.DataFrame({"x": [None]})["x"].flags["SORTED_ASC"]
+@pytest.mark.parametrize("value", [1, "a", True])
+def test_sorted_flag_singletons(value: Any) -> None:
+    assert pl.DataFrame({"x": [value]})["x"].flags["SORTED_ASC"] is True
+
+
+def test_sorted_flag_null() -> None:
+    assert pl.DataFrame({"x": [None]})["x"].flags["SORTED_ASC"] is False
 
 
 def test_sorted_update_flags_10327() -> None:

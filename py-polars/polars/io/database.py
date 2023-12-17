@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import sys
 from importlib import import_module
+from inspect import Parameter, signature
 from typing import TYPE_CHECKING, Any, Iterable, Literal, Sequence, TypedDict, overload
 
 from polars.convert import from_arrow
@@ -190,10 +191,10 @@ class ConnectionExecutor:
             if conn.driver == "databricks-sql-python":  # type: ignore[union-attr]
                 # take advantage of the raw connection to get arrow integration
                 self.driver_name = "databricks"
-                return conn.raw_connection().cursor()  # type: ignore[union-attr]
+                return conn.raw_connection().cursor()  # type: ignore[union-attr, return-value]
             else:
                 # sqlalchemy engine; direct use is deprecated, so prefer the connection
-                return conn.connect()  # type: ignore[union-attr]
+                return conn.connect()  # type: ignore[union-attr, return-value]
 
         elif hasattr(conn, "cursor"):
             # connection has a dedicated cursor; prefer over direct execute
@@ -332,9 +333,26 @@ class ConnectionExecutor:
 
                 query = text(query)  # type: ignore[assignment]
 
-        if (result := cursor_execute(query, **options)) is None:
-            result = self.cursor  # some cursors execute in-place
+        # note: some cursor execute methods (eg: sqlite3) only take positional
+        # params, hence the slightly convoluted resolution of the 'options' dict
+        try:
+            params = signature(cursor_execute).parameters
+        except ValueError:
+            params = {}
 
+        if not options or any(
+            p.kind in (Parameter.KEYWORD_ONLY, Parameter.POSITIONAL_OR_KEYWORD)
+            for p in params.values()
+        ):
+            result = cursor_execute(query, **options)
+        else:
+            positional_options = (
+                options[o] for o in (params or options) if (not options or o in options)
+            )
+            result = cursor_execute(query, *positional_options)
+
+        # note: some cursors execute in-place
+        result = self.cursor if result is None else result
         self.result = result
         return self
 

@@ -8,6 +8,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -70,7 +71,7 @@ def test_sql_cast() -> None:
         (5.0, 5.0, 5, 5, 5, 1, "5", "5.5", b"e", b"e", "true"),
     ]
 
-    with pytest.raises(pl.ComputeError, match="unsupported use of FORMAT in CAST"):
+    with pytest.raises(ComputeError, match="unsupported use of FORMAT in CAST"):
         pl.SQLContext(df=df, eager_execution=True).execute(
             "SELECT CAST(a AS STRING FORMAT 'HEX') FROM df"
         )
@@ -148,7 +149,7 @@ def test_sql_distinct() -> None:
 
     # test unregistration
     ctx.unregister("df")
-    with pytest.raises(pl.ComputeError, match=".*'df'.*not found"):
+    with pytest.raises(ComputeError, match=".*'df'.*not found"):
         ctx.execute("SELECT * FROM df")
 
 
@@ -294,7 +295,7 @@ def test_sql_trig() -> None:
                 0.866025,
                 0.707107,
                 0.000016,
-                float("NaN"),
+                float("nan"),
                 0.000016,
                 0.707107,
                 0.866025,
@@ -305,7 +306,7 @@ def test_sql_trig() -> None:
                 -1.732051,
                 -1.0,
                 -0.000016,
-                float("NaN"),
+                float("nan"),
                 0.000016,
                 1.0,
                 1.732051,
@@ -316,7 +317,7 @@ def test_sql_trig() -> None:
                 -0.5,
                 -0.707107,
                 -1.0,
-                float("NaN"),
+                float("nan"),
                 1,
                 0.707107,
                 0.5,
@@ -327,7 +328,7 @@ def test_sql_trig() -> None:
                 -0.57735,
                 -1,
                 -63662.613851,
-                float("NaN"),
+                float("nan"),
                 63662.613851,
                 1,
                 0.57735,
@@ -338,7 +339,7 @@ def test_sql_trig() -> None:
                 0.866025,
                 0.707107,
                 0.000016,
-                float("NaN"),
+                float("nan"),
                 0.000016,
                 0.707107,
                 0.866025,
@@ -349,7 +350,7 @@ def test_sql_trig() -> None:
                 -1.732051,
                 -1.0,
                 -0.000016,
-                float("NaN"),
+                float("nan"),
                 0.000016,
                 1.0,
                 1.732051,
@@ -360,7 +361,7 @@ def test_sql_trig() -> None:
                 -0.5,
                 -0.707107,
                 -1.0,
-                float("NaN"),
+                float("nan"),
                 1,
                 0.707107,
                 0.5,
@@ -371,7 +372,7 @@ def test_sql_trig() -> None:
                 -0.57735,
                 -1,
                 -63662.613851,
-                float("NaN"),
+                float("nan"),
                 63662.613851,
                 1,
                 0.57735,
@@ -393,7 +394,7 @@ def test_sql_trig() -> None:
                 1.910633,
                 2.094395,
                 3.137121,
-                float("NaN"),
+                float("nan"),
                 0.004472,
                 1.047198,
                 1.230959,
@@ -404,7 +405,7 @@ def test_sql_trig() -> None:
                 -0.339837,
                 -0.523599,
                 -1.566324,
-                float("NaN"),
+                float("nan"),
                 1.566324,
                 0.523599,
                 0.339837,
@@ -426,7 +427,7 @@ def test_sql_trig() -> None:
                 109.471221,
                 120.0,
                 179.743767,
-                float("NaN"),
+                float("nan"),
                 0.256233,
                 60.0,
                 70.528779,
@@ -437,7 +438,7 @@ def test_sql_trig() -> None:
                 -19.471221,
                 -30.0,
                 -89.743767,
-                float("NaN"),
+                float("nan"),
                 89.743767,
                 30.0,
                 19.471221,
@@ -522,7 +523,7 @@ def test_sql_left() -> None:
         "scol:left2": ["ab", "ab", "a", None],
     }
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match="Invalid 'length' for Left: 'xyz'",
     ):
         ctx.execute(
@@ -658,7 +659,7 @@ def test_sql_join_left() -> None:
 def test_sql_non_equi_joins(constraint: str) -> None:
     # no support (yet) for non equi-joins in polars joins
     with pytest.raises(
-        pl.InvalidOperationError,
+        InvalidOperationError,
         match=r"SQL interface \(currently\) only supports basic equi-join constraints",
     ), pl.SQLContext({"tbl": pl.DataFrame({"a": [1, 2, 3], "b": [4, 3, 2]})}) as ctx:
         ctx.execute(
@@ -733,11 +734,11 @@ def test_sql_regex_operators_error() -> None:
     df = pl.LazyFrame({"sval": ["ABC", "abc", "000", "A0C", "a0c"]})
     with pl.SQLContext(df=df, eager_execution=True) as ctx:
         with pytest.raises(
-            pl.ComputeError, match="Invalid pattern for '~' operator: 12345"
+            ComputeError, match="Invalid pattern for '~' operator: 12345"
         ):
             ctx.execute("SELECT * FROM df WHERE sval ~ 12345")
         with pytest.raises(
-            pl.ComputeError,
+            ComputeError,
             match=r"""Invalid pattern for '!~\*' operator: col\("abcde"\)""",
         ):
             ctx.execute("SELECT * FROM df WHERE sval !~* abcde")
@@ -777,19 +778,19 @@ def test_sql_regexp_like(
 def test_sql_regexp_like_errors() -> None:
     with pl.SQLContext(df=pl.DataFrame({"scol": ["xyz"]})) as ctx:
         with pytest.raises(
-            pl.InvalidOperationError,
+            InvalidOperationError,
             match="Invalid/empty 'flags' for RegexpLike",
         ):
             ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol,'[x-z]+','')")
 
         with pytest.raises(
-            pl.InvalidOperationError,
+            InvalidOperationError,
             match="Invalid arguments for RegexpLike",
         ):
             ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol,999,999)")
 
         with pytest.raises(
-            pl.InvalidOperationError,
+            InvalidOperationError,
             match="Invalid number of arguments for RegexpLike",
         ):
             ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol)")
@@ -821,7 +822,7 @@ def test_sql_round_ndigits(decimals: int, expected: list[float]) -> None:
 def test_sql_round_ndigits_errors() -> None:
     df = pl.DataFrame({"n": [99.999]})
     with pl.SQLContext(df=df, eager_execution=True) as ctx, pytest.raises(
-        pl.InvalidOperationError, match="Invalid 'decimals' for Round: -1"
+        InvalidOperationError, match="Invalid 'decimals' for Round: -1"
     ):
         ctx.execute("SELECT ROUND(n,-1) AS n FROM df")
 
@@ -871,15 +872,12 @@ def test_sql_string_lengths() -> None:
 
 
 def test_sql_substr() -> None:
-    df = pl.DataFrame(
-        {
-            "scol": ["abcdefg", "abcde", "abc", None],
-        }
-    )
+    df = pl.DataFrame({"scol": ["abcdefg", "abcde", "abc", None]})
     with pl.SQLContext(df=df) as ctx:
         res = ctx.execute(
             """
             SELECT
+              -- note: sql is 1-indexed
               SUBSTR(scol,1) AS s1,
               SUBSTR(scol,2) AS s2,
               SUBSTR(scol,3) AS s3,
@@ -891,13 +889,20 @@ def test_sql_substr() -> None:
         ).collect()
 
     assert res.to_dict(as_series=False) == {
-        "s1": ["bcdefg", "bcde", "bc", None],
-        "s2": ["cdefg", "cde", "c", None],
-        "s3": ["defg", "de", "", None],
-        "s1_5": ["bcdef", "bcde", "bc", None],
-        "s2_2": ["cd", "cd", "c", None],
-        "s3_1": ["d", "d", "", None],
+        "s1": ["abcdefg", "abcde", "abc", None],
+        "s2": ["bcdefg", "bcde", "bc", None],
+        "s3": ["cdefg", "cde", "c", None],
+        "s1_5": ["abcde", "abcde", "abc", None],
+        "s2_2": ["bc", "bc", "bc", None],
+        "s3_1": ["c", "c", "c", None],
     }
+
+    # negative indexes are expected to be invalid
+    with pytest.raises(
+        InvalidOperationError,
+        match="Invalid 'start' for Substring: -1",
+    ), pl.SQLContext(df=df) as ctx:
+        ctx.execute("SELECT SUBSTR(scol,-1) FROM df")
 
 
 def test_sql_trim(foods_ipc_path: Path) -> None:
@@ -913,7 +918,10 @@ def test_sql_trim(foods_ipc_path: Path) -> None:
     assert out.to_dict(as_series=False) == {
         "new_category": ["seafood", "ruit", "egetables", "eat"]
     }
-    with pytest.raises(pl.ComputeError, match="unsupported TRIM"):
+    with pytest.raises(
+        ComputeError,
+        match="unsupported TRIM",
+    ):
         # currently unsupported (snowflake) trim syntax
         pl.SQLContext(foods=lf).execute(
             """
@@ -1183,18 +1191,19 @@ def test_sql_expr() -> None:
         [
             "MIN(a)",
             "POWER(a,a) AS aa",
-            "SUBSTR(b,1,2) AS b2",
+            "SUBSTR(b,2,2) AS b2",
         ]
     )
+    result = df.select(*sql_exprs)
     expected = pl.DataFrame(
-        {"a": [1, 1, 1], "aa": [1, 4, 27], "b2": ["yz", "bc", None]}
+        {"a": [1, 1, 1], "aa": [1.0, 4.0, 27.0], "b2": ["yz", "bc", None]}
     )
-    assert df.select(*sql_exprs).frame_equal(expected)
+    assert_frame_equal(result, expected)
 
     # expect expressions that can't reasonably be parsed as expressions to raise
     # (for example: those that explicitly reference tables and/or use wildcards)
     with pytest.raises(
-        pl.InvalidOperationError, match=r"Unable to parse 'xyz\.\*' as Expr"
+        InvalidOperationError, match=r"Unable to parse 'xyz\.\*' as Expr"
     ):
         pl.sql_expr("xyz.*")
 
@@ -1249,12 +1258,11 @@ def test_sql_date() -> None:
     )
 
     with pl.SQLContext(df=df, eager_execution=True) as ctx:
-        expected = pl.DataFrame({"date": [True, False, False]})
-        assert ctx.execute("SELECT date < DATE('2021-03-20') from df").frame_equal(
-            expected
-        )
+        result = ctx.execute("SELECT date < DATE('2021-03-20') from df")
 
+    expected = pl.DataFrame({"date": [True, False, False]})
+    assert_frame_equal(result, expected)
+
+    result = pl.select(pl.sql_expr("""CAST(DATE('2023-03', '%Y-%m') as STRING)"""))
     expected = pl.DataFrame({"literal": ["2023-03-01"]})
-    assert pl.select(
-        pl.sql_expr("""CAST(DATE('2023-03', '%Y-%m') as STRING)""")
-    ).frame_equal(expected)
+    assert_frame_equal(result, expected)

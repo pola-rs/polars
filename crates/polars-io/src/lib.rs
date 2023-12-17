@@ -17,8 +17,6 @@ pub mod json;
 pub mod ndjson;
 #[cfg(feature = "cloud")]
 pub use cloud::glob as async_glob;
-#[cfg(feature = "cloud")]
-pub use pl_async::increase_concurrency_budget;
 
 pub mod mmap;
 mod options;
@@ -113,7 +111,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
         }
 
         if let Some(predicate) = &predicate {
-            let s = predicate.evaluate(&df)?;
+            let s = predicate.evaluate_io(&df)?;
             let mask = s.bool().expect("filter predicates was not of type boolean");
             df = df.filter(mask)?;
         }
@@ -125,7 +123,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
                     .map(|df: &DataFrame| df.height())
                     .sum::<usize>();
                 if polars_core::config::verbose() {
-                    eprintln!("sliced off {} rows of the 'DataFrame'. These lines were read because they were in a single chunk.", df.height() - n)
+                    eprintln!("sliced off {} rows of the 'DataFrame'. These lines were read because they were in a single chunk.", df.height().saturating_sub(n))
                 }
                 parsed_dfs.push(df.slice(0, len));
                 break;
@@ -158,7 +156,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
 }
 
 static CLOUD_URL: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^(s3a?|gs|gcs|file|abfss?|azure|az|adl)://").unwrap());
+    Lazy::new(|| Regex::new(r"^(s3a?|gs|gcs|file|abfss?|azure|az|adl|https?)://").unwrap());
 
 /// Check if the path is a cloud url.
 pub fn is_cloud_url<P: AsRef<Path>>(p: P) -> bool {

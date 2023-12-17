@@ -32,7 +32,7 @@ impl UpperExp for AExpr {
                     options.descending as u8, options.nulls_last as u8, options.multithreaded as u8
                 )
             },
-            AExpr::Take { .. } => "take",
+            AExpr::Gather { .. } => "gather",
             AExpr::SortBy { descending, .. } => {
                 write!(f, "sort_by:")?;
                 for i in descending {

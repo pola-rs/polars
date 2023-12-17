@@ -1,8 +1,8 @@
 //! null-preserving operators such as [`and`], [`or`] and [`not`].
-use super::utils::combine_validities;
+use super::utils::combine_validities_and;
 use crate::array::{Array, BooleanArray};
 use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::scalar::BooleanScalar;
 
 fn assert_lengths(lhs: &BooleanArray, rhs: &BooleanArray) {
@@ -23,14 +23,14 @@ where
     F: Fn(&Bitmap, &Bitmap) -> Bitmap,
 {
     assert_lengths(lhs, rhs);
-    let validity = combine_validities(lhs.validity(), rhs.validity());
+    let validity = combine_validities_and(lhs.validity(), rhs.validity());
 
     let left_buffer = lhs.values();
     let right_buffer = rhs.values();
 
     let values = op(left_buffer, right_buffer);
 
-    BooleanArray::new(DataType::Boolean, values, validity)
+    BooleanArray::new(ArrowDataType::Boolean, values, validity)
 }
 
 /// Performs `&&` operation on two [`BooleanArray`], combining the validities.
@@ -131,7 +131,7 @@ pub fn or(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
 pub fn not(array: &BooleanArray) -> BooleanArray {
     let values = !array.values();
     let validity = array.validity().cloned();
-    BooleanArray::new(DataType::Boolean, values, validity)
+    BooleanArray::new(ArrowDataType::Boolean, values, validity)
 }
 
 /// Returns a non-null [`BooleanArray`] with whether each value of the array is null.
@@ -153,7 +153,7 @@ pub fn is_null(input: &dyn Array) -> BooleanArray {
         Some(buffer) => !buffer,
     };
 
-    BooleanArray::new(DataType::Boolean, values, None)
+    BooleanArray::new(ArrowDataType::Boolean, values, None)
 }
 
 /// Returns a non-null [`BooleanArray`] with whether each value of the array is not null.
@@ -175,7 +175,7 @@ pub fn is_not_null(input: &dyn Array) -> BooleanArray {
         },
         Some(buffer) => buffer.clone(),
     };
-    BooleanArray::new(DataType::Boolean, values, None)
+    BooleanArray::new(ArrowDataType::Boolean, values, None)
 }
 
 /// Performs `AND` operation on an array and a scalar value. If either left or right value
@@ -197,9 +197,9 @@ pub fn and_scalar(array: &BooleanArray, scalar: &BooleanScalar) -> BooleanArray 
         Some(true) => array.clone(),
         Some(false) => {
             let values = Bitmap::new_zeroed(array.len());
-            BooleanArray::new(DataType::Boolean, values, array.validity().cloned())
+            BooleanArray::new(ArrowDataType::Boolean, values, array.validity().cloned())
         },
-        None => BooleanArray::new_null(DataType::Boolean, array.len()),
+        None => BooleanArray::new_null(ArrowDataType::Boolean, array.len()),
     }
 }
 
@@ -222,10 +222,14 @@ pub fn or_scalar(array: &BooleanArray, scalar: &BooleanScalar) -> BooleanArray {
         Some(true) => {
             let mut values = MutableBitmap::new();
             values.extend_constant(array.len(), true);
-            BooleanArray::new(DataType::Boolean, values.into(), array.validity().cloned())
+            BooleanArray::new(
+                ArrowDataType::Boolean,
+                values.into(),
+                array.validity().cloned(),
+            )
         },
         Some(false) => array.clone(),
-        None => BooleanArray::new_null(DataType::Boolean, array.len()),
+        None => BooleanArray::new_null(ArrowDataType::Boolean, array.len()),
     }
 }
 

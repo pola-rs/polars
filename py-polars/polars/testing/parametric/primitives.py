@@ -14,7 +14,6 @@ from hypothesis.strategies._internal.utils import defines_strategy
 from polars.dataframe import DataFrame
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
-    FLOAT_DTYPES,
     Categorical,
     DataType,
     DataTypeClass,
@@ -387,7 +386,7 @@ def series(
             else:
                 dtype_strategy = strategy
 
-            if series_dtype in FLOAT_DTYPES and not allow_infinities:
+            if series_dtype.is_float() and not allow_infinities:
                 dtype_strategy = dtype_strategy.filter(
                     lambda x: not isinstance(x, float) or isfinite(x)
                 )

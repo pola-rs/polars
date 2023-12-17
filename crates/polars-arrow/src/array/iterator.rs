@@ -1,17 +1,21 @@
+use crate::bitmap::iterator::TrueIdxIter;
+use crate::bitmap::Bitmap;
 use crate::trusted_len::TrustedLen;
 
 mod private {
     pub trait Sealed {}
 
-    impl<'a, T: super::ArrayAccessor<'a>> Sealed for T {}
+    impl<'a, T: super::ArrayAccessor<'a> + ?Sized> Sealed for T {}
 }
 
-/// Sealed trait representing assess to a value of an array.
+/// Sealed trait representing access to a value of an array.
 /// # Safety
 /// Implementers of this trait guarantee that
 /// `value_unchecked` is safe when called up to `len`
 pub unsafe trait ArrayAccessor<'a>: private::Sealed {
     type Item: 'a;
+    /// # Safety
+    /// The index must be in-bounds in the array.
     unsafe fn value_unchecked(&'a self, index: usize) -> Self::Item;
     fn len(&self) -> usize;
 }
@@ -81,3 +85,35 @@ impl<'a, A: ArrayAccessor<'a>> DoubleEndedIterator for ArrayValuesIter<'a, A> {
 
 unsafe impl<'a, A: ArrayAccessor<'a>> TrustedLen for ArrayValuesIter<'a, A> {}
 impl<'a, A: ArrayAccessor<'a>> ExactSizeIterator for ArrayValuesIter<'a, A> {}
+
+pub struct NonNullValuesIter<'a, A: ?Sized> {
+    accessor: &'a A,
+    idxs: TrueIdxIter<'a>,
+}
+
+impl<'a, A: ArrayAccessor<'a> + ?Sized> NonNullValuesIter<'a, A> {
+    pub fn new(accessor: &'a A, validity: Option<&'a Bitmap>) -> Self {
+        Self {
+            idxs: TrueIdxIter::new(accessor.len(), validity),
+            accessor,
+        }
+    }
+}
+
+impl<'a, A: ArrayAccessor<'a> + ?Sized> Iterator for NonNullValuesIter<'a, A> {
+    type Item = A::Item;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(i) = self.idxs.next() {
+            return Some(unsafe { self.accessor.value_unchecked(i) });
+        }
+        None
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.idxs.size_hint()
+    }
+}
+
+unsafe impl<'a, A: ArrayAccessor<'a> + ?Sized> TrustedLen for NonNullValuesIter<'a, A> {}

@@ -43,10 +43,6 @@ impl PhysicalExpr for CountExpr {
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
     }
-
-    fn is_valid_aggregation(&self) -> bool {
-        true
-    }
 }
 
 impl PartitionedAggregation for CountExpr {

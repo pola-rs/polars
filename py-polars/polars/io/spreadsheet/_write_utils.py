@@ -8,7 +8,6 @@ from polars import functions as F
 from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
-    NUMERIC_DTYPES,
     Date,
     Datetime,
     Float64,
@@ -79,7 +78,7 @@ class _XLFormatCache:
 
 def _adjacent_cols(df: DataFrame, cols: Iterable[str], min_max: dict[str, Any]) -> bool:
     """Indicate if the given columns are all adjacent to one another."""
-    idxs = sorted(df.find_idx_by_name(col) for col in cols)
+    idxs = sorted(df.get_column_index(col) for col in cols)
     if idxs != sorted(range(min(idxs), max(idxs) + 1)):
         return False
     else:
@@ -189,7 +188,7 @@ def _xl_column_range(
     """Return the excel sheet range of a named column, accounting for all offsets."""
     col_start = (
         table_start[0] + int(include_header),
-        table_start[1] + df.find_idx_by_name(col) if isinstance(col, str) else col[0],
+        table_start[1] + df.get_column_index(col) if isinstance(col, str) else col[0],
     )
     col_finish = (
         col_start[0] + len(df) - 1,
@@ -371,9 +370,7 @@ def _xl_setup_table_columns(
     if not row_totals:
         row_total_funcs = {}
     else:
-        numeric_cols = {
-            col for col, tp in df.schema.items() if tp.base_type() in NUMERIC_DTYPES
-        }
+        numeric_cols = {col for col, tp in df.schema.items() if tp.is_numeric()}
         if not isinstance(row_totals, dict):
             sum_cols = (
                 numeric_cols
@@ -450,7 +447,7 @@ def _xl_setup_table_columns(
         if base_type in dtype_formats:
             fmt = dtype_formats.get(tp, dtype_formats[base_type])
             column_formats.setdefault(col, fmt)
-        if base_type in NUMERIC_DTYPES:
+        if base_type.is_numeric():
             if column_totals is True:
                 column_total_funcs.setdefault(col, "sum")
             elif isinstance(column_totals, str):

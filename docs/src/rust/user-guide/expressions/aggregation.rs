@@ -9,11 +9,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let url = "https://theunitedstates.io/congress-legislators/legislators-historical.csv";
 
     let mut schema = Schema::new();
-    schema.with_column("first_name".into(), DataType::Categorical(None));
-    schema.with_column("gender".into(), DataType::Categorical(None));
-    schema.with_column("type".into(), DataType::Categorical(None));
-    schema.with_column("state".into(), DataType::Categorical(None));
-    schema.with_column("party".into(), DataType::Categorical(None));
+    schema.with_column(
+        "first_name".into(),
+        DataType::Categorical(None, Default::default()),
+    );
+    schema.with_column(
+        "gender".into(),
+        DataType::Categorical(None, Default::default()),
+    );
+    schema.with_column(
+        "type".into(),
+        DataType::Categorical(None, Default::default()),
+    );
+    schema.with_column(
+        "state".into(),
+        DataType::Categorical(None, Default::default()),
+    );
+    schema.with_column(
+        "party".into(),
+        DataType::Categorical(None, Default::default()),
+    );
     schema.with_column("birthday".into(), DataType::Date);
 
     let data: Vec<u8> = Client::new().get(url).send()?.text()?.bytes().collect();

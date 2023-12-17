@@ -1,5 +1,5 @@
 use arrow::array::BinaryArray;
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
 use arrow::ffi::mmap;
 use arrow::offset::{Offsets, OffsetsBuffer};
 
@@ -38,7 +38,7 @@ unsafe fn rows_to_array(buf: Vec<u8>, offsets: Vec<usize>) -> BinaryArray<i64> {
     // Safety: monotonically increasing
     let offsets = Offsets::new_unchecked(offsets);
 
-    BinaryArray::new(DataType::LargeBinary, offsets.into(), buf.into(), None)
+    BinaryArray::new(ArrowDataType::LargeBinary, offsets.into(), buf.into(), None)
 }
 
 impl RowsEncoded {
@@ -70,7 +70,7 @@ impl RowsEncoded {
             let (_, offsets, _) = mmap::slice(offsets).into_inner();
             let offsets = OffsetsBuffer::new_unchecked(offsets);
 
-            BinaryArray::new(DataType::LargeBinary, offsets, values, None)
+            BinaryArray::new(ArrowDataType::LargeBinary, offsets, values, None)
         }
     }
 

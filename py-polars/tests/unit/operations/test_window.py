@@ -124,7 +124,7 @@ def test_window_range_no_rows() -> None:
         out, pl.DataFrame({"x": [5, 5, 4, 4, 2, 2], "int": [0, 1, 0, 1, 0, 1]})
     )
 
-    df = pl.DataFrame({"x": []})
+    df = pl.DataFrame({"x": []}, schema={"x": pl.Float32})
     out = df.with_columns(expr)
 
     expected = pl.DataFrame(schema={"x": pl.Float32, "int": pl.Int64})
@@ -135,7 +135,7 @@ def test_no_panic_on_nan_3067() -> None:
     df = pl.DataFrame(
         {
             "group": ["a", "a", "a", "b", "b", "b"],
-            "total": [1.0, 2, 3, 4, 5, np.NaN],
+            "total": [1.0, 2, 3, 4, 5, np.nan],
         }
     )
 
@@ -283,7 +283,7 @@ def test_nested_aggregation_window_expression() -> None:
         {
             "x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 2, 13, 4, 15, 6, None, None, 19],
             "y": [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-            "foo": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, None, None, 1],
+            "foo": [None, 1, 1, 1, 1, 1, 1, 1, 1, 1, None, 1, 1, 1, 1, None, None, 1],
         },
         # Resulting column is Int32, see https://github.com/pola-rs/polars/issues/8041
         schema_overrides={"foo": pl.Int32},

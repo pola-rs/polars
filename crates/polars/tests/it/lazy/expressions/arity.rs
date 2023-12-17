@@ -74,7 +74,7 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
         "a" => [Some("a1"), None, None],
         "b" => [Some("good hit"), None, None],
     }?;
-    assert!(res.frame_equal_missing(&exp_df));
+    assert!(res.equals_missing(&exp_df));
 
     let df = df! {
         "a" => ["a1", "a2", "a3", "a4", "a2"],
@@ -108,7 +108,7 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
         "b" => [Some("tree"), None, None, None, None],
         "c" => ["ok1", "ok2", "ft", "ft", "ok2"]
     }?;
-    assert!(res.frame_equal_missing(&exp_df));
+    assert!(res.equals_missing(&exp_df));
 
     Ok(())
 }
@@ -130,10 +130,10 @@ fn test_when_then_otherwise_cats() -> PolarsResult<()> {
     ]?.lazy();
 
     let out = lf
-        .with_column(col("book").cast(DataType::Categorical(None)))
-        .with_column(col("user").cast(DataType::Categorical(None)))
+        .with_column(col("book").cast(DataType::Categorical(None, Default::default())))
+        .with_column(col("user").cast(DataType::Categorical(None, Default::default())))
         .with_column(
-            when(col("book").eq(Null {}.lit()))
+            when(col("book").is_null())
                 .then(col("user"))
                 .otherwise(col("book"))
                 .alias("a"),
@@ -173,7 +173,7 @@ fn test_when_then_otherwise_single_bool() -> PolarsResult<()> {
         "sum_null_prop" => [Some(1), None]
     ]?;
 
-    assert!(out.frame_equal_missing(&expected));
+    assert!(out.equals_missing(&expected));
 
     Ok(())
 }
@@ -200,7 +200,7 @@ fn test_update_groups_in_cast() -> PolarsResult<()> {
         "id"=> [AnyValue::List(Series::new("", [-2i64, -1])), AnyValue::List(Series::new("", [-2i64, -1, -1]))]
     ]?;
 
-    assert!(out.frame_equal(&expected));
+    assert!(out.equals(&expected));
     Ok(())
 }
 
@@ -225,31 +225,9 @@ fn test_when_then_otherwise_sum_in_agg() -> PolarsResult<()> {
         "dist_a" => [None, Some(1.0f64)],
         "dist_b" => [Some(1.0f64), None]
     ]?;
-    assert!(q.collect()?.frame_equal_missing(&expected));
+    assert!(q.collect()?.equals_missing(&expected));
 
     Ok(())
-}
-
-#[test]
-fn test_null_commutativity() {
-    let df = DataFrame::new_no_checks(vec![]);
-    let out = df
-        .lazy()
-        .select([
-            lit(1).neq(NULL.lit()).alias("a"),
-            NULL.lit().neq(1).alias("b"),
-        ])
-        .collect()
-        .unwrap();
-
-    assert_eq!(
-        out.column("a").unwrap().get(0).unwrap(),
-        AnyValue::Boolean(true)
-    );
-    assert_eq!(
-        out.column("b").unwrap().get(0).unwrap(),
-        AnyValue::Boolean(true)
-    );
 }
 
 #[test]
@@ -306,7 +284,7 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
     );
     assert_eq!(
         out.get(1)?,
-        AnyValue::List(Series::new("", &[10 as IdxSize]))
+        AnyValue::List(Series::new("", &[10 as IdxSize, 10 as IdxSize]))
     );
 
     let out = df
@@ -326,7 +304,7 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
     );
     assert_eq!(
         out.get(0)?,
-        AnyValue::List(Series::new("", &[10 as IdxSize]))
+        AnyValue::List(Series::new("", &[10 as IdxSize, 10 as IdxSize]))
     );
 
     let out = df
@@ -341,7 +319,7 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
 
     let out = out.column("value")?;
     assert!(matches!(out.get(0)?, AnyValue::List(_)));
-    assert_eq!(out.get(1)?, AnyValue::Null);
+    assert!(matches!(out.get(1)?, AnyValue::List(_)));
 
     // swapped branch
     let out = df
@@ -355,7 +333,7 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
 
     let out = out.column("value")?;
     assert!(matches!(out.get(1)?, AnyValue::List(_)));
-    assert_eq!(out.get(0)?, AnyValue::Null);
+    assert!(matches!(out.get(0)?, AnyValue::List(_)));
 
     Ok(())
 }

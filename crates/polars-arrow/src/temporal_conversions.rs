@@ -5,7 +5,7 @@ use chrono::{Datelike, Duration, FixedOffset, NaiveDate, NaiveDateTime, NaiveTim
 use polars_error::{polars_err, PolarsResult};
 
 use crate::array::{PrimitiveArray, Utf8Array};
-use crate::datatypes::{DataType, TimeUnit};
+use crate::datatypes::{ArrowDataType, TimeUnit};
 use crate::offset::Offset;
 use crate::types::months_days_ns;
 
@@ -380,7 +380,8 @@ fn utf8_to_timestamp_impl<O: Offset, T: chrono::TimeZone>(
         .iter()
         .map(|x| x.and_then(|x| utf8_to_timestamp_scalar(x, fmt, &tz, &time_unit)));
 
-    PrimitiveArray::from_trusted_len_iter(iter).to(DataType::Timestamp(time_unit, Some(time_zone)))
+    PrimitiveArray::from_trusted_len_iter(iter)
+        .to(ArrowDataType::Timestamp(time_unit, Some(time_zone)))
 }
 
 /// Parses `value` to a [`chrono_tz::Tz`] with the Arrow's definition of timestamp with a timezone.
@@ -450,7 +451,7 @@ pub fn utf8_to_naive_timestamp<O: Offset>(
         .iter()
         .map(|x| x.and_then(|x| utf8_to_naive_timestamp_scalar(x, fmt, &time_unit)));
 
-    PrimitiveArray::from_trusted_len_iter(iter).to(DataType::Timestamp(time_unit, None))
+    PrimitiveArray::from_trusted_len_iter(iter).to(ArrowDataType::Timestamp(time_unit, None))
 }
 
 fn add_month(year: i32, month: u32, months: i32) -> chrono::NaiveDate {

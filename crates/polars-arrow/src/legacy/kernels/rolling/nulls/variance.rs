@@ -74,7 +74,7 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + Mul<Outpu
                     let leaving_value = *self.slice.get_unchecked(idx);
 
                     // if the leaving value is nan we need to recompute the window
-                    if T::is_float() && leaving_value.is_nan() {
+                    if T::is_float() && !leaving_value.is_finite() {
                         recompute_sum = true;
                         break;
                     }

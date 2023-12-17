@@ -3,7 +3,7 @@ use arrow_data::{ArrayData, ArrayDataBuilder};
 use crate::array::{
     from_data, to_data, Arrow2Arrow, DictionaryArray, DictionaryKey, PrimitiveArray,
 };
-use crate::datatypes::{DataType, PhysicalType};
+use crate::datatypes::{ArrowDataType, PhysicalType};
 
 impl<K: DictionaryKey> Arrow2Arrow for DictionaryArray<K> {
     fn to_data(&self) -> ArrayData {
@@ -23,7 +23,7 @@ impl<K: DictionaryKey> Arrow2Arrow for DictionaryArray<K> {
             d => panic!("unsupported dictionary type {d}"),
         };
 
-        let data_type = DataType::from(data.data_type().clone());
+        let data_type = ArrowDataType::from(data.data_type().clone());
         assert_eq!(
             data_type.to_physical_type(),
             PhysicalType::Dictionary(K::KEY_TYPE)

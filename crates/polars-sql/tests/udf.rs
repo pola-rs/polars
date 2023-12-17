@@ -97,7 +97,7 @@ fn test_udfs() -> PolarsResult<()> {
         "b" => &[1, 2, 3],
         "my_div" => &[1, 1, 1]
     }?;
-    assert!(expected.frame_equal_missing(&res));
+    assert!(expected.equals_missing(&res));
 
     Ok(())
 }

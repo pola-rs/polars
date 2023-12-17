@@ -8,14 +8,18 @@ use crate::offset::{Offset, Offsets};
 /// Auxiliary struct
 #[derive(Debug)]
 pub struct DynMutableListArray<O: Offset> {
-    data_type: DataType,
+    data_type: ArrowDataType,
     offsets: Offsets<O>,
     values: Box<dyn MutableArray>,
     validity: Option<MutableBitmap>,
 }
 
 impl<O: Offset> DynMutableListArray<O> {
-    pub fn new_from(values: Box<dyn MutableArray>, data_type: DataType, capacity: usize) -> Self {
+    pub fn new_from(
+        values: Box<dyn MutableArray>,
+        data_type: ArrowDataType,
+        capacity: usize,
+    ) -> Self {
         assert_eq!(values.len(), 0);
         ListArray::<O>::get_child_field(&data_type);
         Self {
@@ -94,7 +98,7 @@ impl<O: Offset> MutableArray for DynMutableListArray<O> {
         .arced()
     }
 
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 
@@ -122,7 +126,7 @@ impl<O: Offset> MutableArray for DynMutableListArray<O> {
 
 #[derive(Debug)]
 pub struct FixedItemsUtf8Dictionary {
-    data_type: DataType,
+    data_type: ArrowDataType,
     keys: MutablePrimitiveArray<i32>,
     values: Utf8Array<i32>,
 }
@@ -130,7 +134,7 @@ pub struct FixedItemsUtf8Dictionary {
 impl FixedItemsUtf8Dictionary {
     pub fn with_capacity(values: Utf8Array<i32>, capacity: usize) -> Self {
         Self {
-            data_type: DataType::Dictionary(
+            data_type: ArrowDataType::Dictionary(
                 IntegerType::Int32,
                 Box::new(values.data_type().clone()),
                 false,
@@ -181,7 +185,7 @@ impl MutableArray for FixedItemsUtf8Dictionary {
         )
     }
 
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 
@@ -210,13 +214,13 @@ impl MutableArray for FixedItemsUtf8Dictionary {
 /// Auxiliary struct
 #[derive(Debug)]
 pub struct DynMutableStructArray {
-    data_type: DataType,
+    data_type: ArrowDataType,
     values: Vec<Box<dyn MutableArray>>,
     validity: Option<MutableBitmap>,
 }
 
 impl DynMutableStructArray {
-    pub fn new(values: Vec<Box<dyn MutableArray>>, data_type: DataType) -> Self {
+    pub fn new(values: Vec<Box<dyn MutableArray>>, data_type: ArrowDataType) -> Self {
         Self {
             data_type,
             values,
@@ -285,7 +289,7 @@ impl MutableArray for DynMutableStructArray {
         ))
     }
 
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 

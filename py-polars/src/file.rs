@@ -3,10 +3,11 @@ use std::io;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom, Write};
 
 use polars::io::mmap::MmapBytesReader;
-use pyo3::exceptions::{PyFileNotFoundError, PyTypeError};
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString};
 
+use crate::error::PyPolarsErr;
 use crate::prelude::resolve_homedir;
 
 #[derive(Clone)]
@@ -189,17 +190,6 @@ pub enum EitherRustPythonFile {
     Rust(BufReader<File>),
 }
 
-fn no_such_file_err(file_path: &str) -> PyResult<()> {
-    let msg = if file_path.len() > 88 {
-        let file_path: String = file_path.chars().skip(file_path.len() - 88).collect();
-        format!("No such file or directory: ...{file_path}",)
-    } else {
-        format!("No such file or directory: {file_path}",)
-    };
-
-    Err(PyErr::new::<PyFileNotFoundError, _>(msg))
-}
-
 ///
 /// # Arguments
 /// * `truncate` - open or create a new file.
@@ -210,17 +200,12 @@ pub fn get_either_file(py_f: PyObject, truncate: bool) -> PyResult<EitherRustPyt
             let file_path = std::path::Path::new(&s);
             let file_path = resolve_homedir(file_path);
             let f = if truncate {
-                BufReader::new(File::create(file_path)?)
+                File::create(file_path)?
             } else {
-                match File::open(&file_path) {
-                    Ok(file) => BufReader::new(file),
-                    Err(_e) => {
-                        no_such_file_err(s)?;
-                        unreachable!();
-                    },
-                }
+                polars_utils::open_file(&file_path).map_err(PyPolarsErr::from)?
             };
-            Ok(EitherRustPythonFile::Rust(f))
+            let reader = BufReader::new(f);
+            Ok(EitherRustPythonFile::Rust(reader))
         } else {
             let f = PyFileLikeObject::with_requirements(py_f, !truncate, truncate, !truncate)?;
             Ok(EitherRustPythonFile::Py(f))
@@ -246,13 +231,7 @@ pub fn get_mmap_bytes_reader<'a>(py_f: &'a PyAny) -> PyResult<Box<dyn MmapBytesR
         let s = pstring.to_str()?;
         let p = std::path::Path::new(&s);
         let p = resolve_homedir(p);
-        let f = match File::open(p) {
-            Ok(file) => file,
-            Err(_e) => {
-                no_such_file_err(s)?;
-                unreachable!();
-            },
-        };
+        let f = polars_utils::open_file(p).map_err(PyPolarsErr::from)?;
         Ok(Box::new(f))
     }
     // a normal python file: with open(...) as f:.

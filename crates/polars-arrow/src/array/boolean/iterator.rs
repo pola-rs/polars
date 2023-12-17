@@ -1,5 +1,6 @@
 use super::super::MutableArray;
 use super::{BooleanArray, MutableBooleanArray};
+use crate::array::ArrayAccessor;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::IntoIter;
 
@@ -51,5 +52,19 @@ impl<'a> MutableBooleanArray {
     #[inline]
     pub fn values_iter(&'a self) -> BitmapIter<'a> {
         self.values().iter()
+    }
+}
+
+unsafe impl<'a> ArrayAccessor<'a> for BooleanArray {
+    type Item = bool;
+
+    #[inline]
+    unsafe fn value_unchecked(&'a self, index: usize) -> Self::Item {
+        (*self).value_unchecked(index)
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        (*self).len()
     }
 }

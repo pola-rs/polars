@@ -1,7 +1,7 @@
 use super::*;
 
 #[cfg(feature = "dtype-struct")]
-fn cumfold_dtype() -> GetOutput {
+fn cum_fold_dtype() -> GetOutput {
     GetOutput::map_fields(|fields| {
         let mut st = fields[0].dtype.clone();
         for fld in &fields[1..] {
@@ -98,7 +98,7 @@ where
 
 /// Accumulate over multiple columns horizontally / row wise.
 #[cfg(feature = "dtype-struct")]
-pub fn cumreduce_exprs<F: 'static, E: AsRef<[Expr]>>(f: F, exprs: E) -> Expr
+pub fn cum_reduce_exprs<F: 'static, E: AsRef<[Expr]>>(f: F, exprs: E) -> Expr
 where
     F: Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
 {
@@ -130,12 +130,12 @@ where
     Expr::AnonymousFunction {
         input: exprs,
         function,
-        output_type: cumfold_dtype(),
+        output_type: cum_fold_dtype(),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
             input_wildcard_expansion: true,
             returns_scalar: true,
-            fmt_str: "cumreduce",
+            fmt_str: "cum_reduce",
             ..Default::default()
         },
     }
@@ -143,7 +143,7 @@ where
 
 /// Accumulate over multiple columns horizontally / row wise.
 #[cfg(feature = "dtype-struct")]
-pub fn cumfold_exprs<F: 'static, E: AsRef<[Expr]>>(
+pub fn cum_fold_exprs<F: 'static, E: AsRef<[Expr]>>(
     acc: Expr,
     f: F,
     exprs: E,
@@ -179,23 +179,36 @@ where
     Expr::AnonymousFunction {
         input: exprs,
         function,
-        output_type: cumfold_dtype(),
+        output_type: cum_fold_dtype(),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
             input_wildcard_expansion: true,
             returns_scalar: true,
-            fmt_str: "cumfold",
+            fmt_str: "cum_fold",
             ..Default::default()
         },
     }
 }
 
-/// Create a new column with the the bitwise-and of the elements in each row.
+/// Create a new column with the bitwise-and of the elements in each row.
 ///
 /// The name of the resulting column will be "all"; use [`alias`](Expr::alias) to choose a different name.
 pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
     polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
+
+    // We prefer this path as the optimizer can better deal with the binary operations.
+    // However if we have a single expression, we might loose information.
+    // E.g. `all().is_null()` would reduce to `all().is_null()` (the & is not needed as there is no rhs (yet)
+    // And upon expansion, it becomes
+    // `col(i).is_null() for i in len(df))`
+    // so we would miss the boolean operator.
+    if exprs.len() > 1 {
+        return Ok(exprs
+            .into_iter()
+            .reduce(|l, r| l.cast(DataType::Boolean).and(r.cast(DataType::Boolean)))
+            .unwrap());
+    }
 
     Ok(Expr::Function {
         input: exprs,
@@ -211,12 +224,20 @@ pub fn all_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     })
 }
 
-/// Create a new column with the the bitwise-or of the elements in each row.
+/// Create a new column with the bitwise-or of the elements in each row.
 ///
 /// The name of the resulting column will be "any"; use [`alias`](Expr::alias) to choose a different name.
 pub fn any_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
     polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
+
+    // See comment in `all_horizontal`.
+    if exprs.len() > 1 {
+        return Ok(exprs
+            .into_iter()
+            .reduce(|l, r| l.cast(DataType::Boolean).or(r.cast(DataType::Boolean)))
+            .unwrap());
+    }
 
     Ok(Expr::Function {
         input: exprs,
@@ -232,7 +253,7 @@ pub fn any_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     })
 }
 
-/// Create a new column with the the maximum value per row.
+/// Create a new column with the maximum value per row.
 ///
 /// The name of the resulting column will be `"max"`; use [`alias`](Expr::alias) to choose a different name.
 pub fn max_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
@@ -252,7 +273,7 @@ pub fn max_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     })
 }
 
-/// Create a new column with the the minimum value per row.
+/// Create a new column with the minimum value per row.
 ///
 /// The name of the resulting column will be `"min"`; use [`alias`](Expr::alias) to choose a different name.
 pub fn min_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
@@ -272,9 +293,10 @@ pub fn min_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     })
 }
 
-/// Create a new column with the the sum of the values in each row.
+/// Create a new column with the sum of the values in each row.
 ///
-/// The name of the resulting column will be `"sum"`; use [`alias`](Expr::alias) to choose a different name.
+/// The name of the resulting column will be `"sum"`.
+/// Use [`alias`](Expr::alias) to choose a different name.
 pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
     polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");

@@ -427,8 +427,8 @@ def test_timezone() -> None:
     # different timezones are not considered equal
     # we check both `null_equal=True` and `null_equal=False`
     # https://github.com/pola-rs/polars/issues/5023
-    assert not s.series_equal(tz_s, null_equal=False)
-    assert not s.series_equal(tz_s, null_equal=True)
+    assert s.equals(tz_s, null_equal=False) is False
+    assert s.equals(tz_s, null_equal=True) is False
     assert_series_not_equal(tz_s, s)
     assert_series_equal(s.cast(int), tz_s.cast(int))
 
@@ -2312,12 +2312,33 @@ def test_truncate_by_multiple_weeks() -> None:
             ]
         )
     ).to_dict(as_series=False) == {
-        "2w": [date(2022, 4, 11), date(2022, 11, 21)],
-        "3w": [date(2022, 4, 4), date(2022, 11, 14)],
-        "4w": [date(2022, 3, 28), date(2022, 11, 7)],
-        "5w": [date(2022, 3, 21), date(2022, 10, 31)],
-        "17w": [date(2021, 12, 27), date(2022, 8, 8)],
+        "2w": [date(2022, 4, 18), date(2022, 11, 28)],
+        "3w": [date(2022, 4, 11), date(2022, 11, 28)],
+        "4w": [date(2022, 4, 18), date(2022, 11, 28)],
+        "5w": [date(2022, 3, 28), date(2022, 11, 28)],
+        "17w": [date(2022, 2, 21), date(2022, 10, 17)],
     }
+
+
+def test_truncate_by_multiple_weeks_diffs() -> None:
+    df = pl.DataFrame(
+        {
+            "ts": pl.date_range(date(2020, 1, 1), date(2020, 2, 1), eager=True),
+        }
+    )
+    result = df.select(
+        pl.col("ts").dt.truncate("1w").alias("1w"),
+        pl.col("ts").dt.truncate("2w").alias("2w"),
+        pl.col("ts").dt.truncate("3w").alias("3w"),
+    ).select(pl.all().diff().drop_nulls().unique())
+    expected = pl.DataFrame(
+        {
+            "1w": [timedelta(0), timedelta(days=7)],
+            "2w": [timedelta(0), timedelta(days=14)],
+            "3w": [timedelta(0), timedelta(days=21)],
+        }
+    ).select(pl.all().cast(pl.Duration("ms")))
+    assert_frame_equal(result, expected)
 
 
 def test_truncate_use_earliest() -> None:
@@ -2525,12 +2546,12 @@ def test_datetime_cum_agg_schema() -> None:
     assert (
         df.lazy()
         .with_columns(
-            (pl.col("timestamp").cummin()).alias("cummin"),
-            (pl.col("timestamp").cummax()).alias("cummax"),
+            (pl.col("timestamp").cum_min()).alias("cum_min"),
+            (pl.col("timestamp").cum_max()).alias("cum_max"),
         )
         .with_columns(
-            (pl.col("cummin") + pl.duration(hours=24)).alias("cummin+24"),
-            (pl.col("cummax") + pl.duration(hours=24)).alias("cummax+24"),
+            (pl.col("cum_min") + pl.duration(hours=24)).alias("cum_min+24"),
+            (pl.col("cum_max") + pl.duration(hours=24)).alias("cum_max+24"),
         )
         .collect()
     ).to_dict(as_series=False) == {
@@ -2539,22 +2560,22 @@ def test_datetime_cum_agg_schema() -> None:
             datetime(2023, 1, 2, 0, 0),
             datetime(2023, 1, 3, 0, 0),
         ],
-        "cummin": [
+        "cum_min": [
             datetime(2023, 1, 1, 0, 0),
             datetime(2023, 1, 1, 0, 0),
             datetime(2023, 1, 1, 0, 0),
         ],
-        "cummax": [
+        "cum_max": [
             datetime(2023, 1, 1, 0, 0),
             datetime(2023, 1, 2, 0, 0),
             datetime(2023, 1, 3, 0, 0),
         ],
-        "cummin+24": [
+        "cum_min+24": [
             datetime(2023, 1, 2, 0, 0),
             datetime(2023, 1, 2, 0, 0),
             datetime(2023, 1, 2, 0, 0),
         ],
-        "cummax+24": [
+        "cum_max+24": [
             datetime(2023, 1, 2, 0, 0),
             datetime(2023, 1, 3, 0, 0),
             datetime(2023, 1, 4, 0, 0),
@@ -2673,11 +2694,7 @@ def test_series_is_temporal() -> None:
         pl.Datetime("ns", "Europe/Amsterdam"),
     }:
         s = pl.Series([None], dtype=tp)
-        assert s.is_temporal() is True
-
-    s = pl.Series([datetime(2023, 2, 14, 11, 12, 13)], dtype=pl.Datetime)
-    for tp in (pl.Datetime, [pl.Datetime], [pl.Time, pl.Datetime]):  # type: ignore[assignment]
-        assert s.is_temporal(excluding=tp) is False
+        assert s.dtype.is_temporal() is True
 
 
 @pytest.mark.parametrize(
@@ -2745,6 +2762,6 @@ def test_rolling_duplicates() -> None:
             "value": [0, 1],
         }
     )
-    assert df.sort("ts").with_columns(
-        pl.col("value").rolling_max("1d", by="ts", closed="right")
-    )["value"].to_list() == [1, 1]
+    assert df.sort("ts").with_columns(pl.col("value").rolling_max("1d", by="ts"))[
+        "value"
+    ].to_list() == [1, 1]

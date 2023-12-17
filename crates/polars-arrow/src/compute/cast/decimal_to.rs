@@ -2,7 +2,7 @@ use num_traits::{AsPrimitive, Float, NumCast};
 use polars_error::PolarsResult;
 
 use crate::array::*;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::types::NativeType;
 
 #[inline]
@@ -29,7 +29,7 @@ fn decimal_to_decimal_impl<F: Fn(i128) -> Option<i128>>(
         })
     });
     PrimitiveArray::<i128>::from_trusted_len_iter(values)
-        .to(DataType::Decimal(to_precision, to_scale))
+        .to(ArrowDataType::Decimal(to_precision, to_scale))
 }
 
 /// Returns a [`PrimitiveArray<i128>`] with the casted values. Values are `None` on overflow
@@ -39,7 +39,7 @@ pub fn decimal_to_decimal(
     to_scale: usize,
 ) -> PrimitiveArray<i128> {
     let (from_precision, from_scale) =
-        if let DataType::Decimal(p, s) = from.data_type().to_logical_type() {
+        if let ArrowDataType::Decimal(p, s) = from.data_type().to_logical_type() {
             (*p, *s)
         } else {
             panic!("internal error: i128 is always a decimal")
@@ -47,7 +47,9 @@ pub fn decimal_to_decimal(
 
     if to_scale == from_scale && to_precision >= from_precision {
         // fast path
-        return from.clone().to(DataType::Decimal(to_precision, to_scale));
+        return from
+            .clone()
+            .to(ArrowDataType::Decimal(to_precision, to_scale));
     }
     // todo: other fast paths include increasing scale and precision by so that
     // a number will never overflow (validity is preserved)
@@ -86,7 +88,7 @@ where
     T: NativeType + Float,
     f64: AsPrimitive<T>,
 {
-    let (_, from_scale) = if let DataType::Decimal(p, s) = from.data_type().to_logical_type() {
+    let (_, from_scale) = if let ArrowDataType::Decimal(p, s) = from.data_type().to_logical_type() {
         (*p, *s)
     } else {
         panic!("internal error: i128 is always a decimal")
@@ -116,7 +118,7 @@ pub fn decimal_to_integer<T>(from: &PrimitiveArray<i128>) -> PrimitiveArray<T>
 where
     T: NativeType + NumCast,
 {
-    let (_, from_scale) = if let DataType::Decimal(p, s) = from.data_type().to_logical_type() {
+    let (_, from_scale) = if let ArrowDataType::Decimal(p, s) = from.data_type().to_logical_type() {
         (*p, *s)
     } else {
         panic!("internal error: i128 is always a decimal")

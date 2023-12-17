@@ -5,14 +5,13 @@ from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars import functions as F
-from polars.datatypes import Date, Datetime, Time, py_type_to_dtype
+from polars.datatypes import Date, Datetime, Int32, Time, py_type_to_dtype
 from polars.exceptions import ChronoFormatWarning
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.deprecation import (
     deprecate_renamed_function,
     deprecate_renamed_parameter,
-    issue_deprecation_warning,
     rename_use_earliest_to_ambiguous,
 )
 from polars.utils.various import find_stacklevel
@@ -1166,13 +1165,13 @@ class ExprStringNameSpace:
         prefix = parse_as_expression(prefix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_starts_with(prefix))
 
-    def json_extract(
+    def json_decode(
         self, dtype: PolarsDataType | None = None, infer_schema_length: int | None = 100
     ) -> Expr:
         """
         Parse string values as JSON.
 
-        Throw errors if encounter invalid JSON strings.
+        Throws an error if invalid JSON strings are encountered.
 
         Parameters
         ----------
@@ -1194,10 +1193,10 @@ class ExprStringNameSpace:
         ...     {"json": ['{"a":1, "b": true}', None, '{"a":2, "b": false}']}
         ... )
         >>> dtype = pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)])
-        >>> df.with_columns(extracted=pl.col("json").str.json_extract(dtype))
+        >>> df.with_columns(decoded=pl.col("json").str.json_decode(dtype))
         shape: (3, 2)
         ┌─────────────────────┬─────────────┐
-        │ json                ┆ extracted   │
+        │ json                ┆ decoded     │
         │ ---                 ┆ ---         │
         │ str                 ┆ struct[2]   │
         ╞═════════════════════╪═════════════╡
@@ -1209,7 +1208,7 @@ class ExprStringNameSpace:
         """
         if dtype is not None:
             dtype = py_type_to_dtype(dtype)
-        return wrap_expr(self._pyexpr.str_json_extract(dtype, infer_schema_length))
+        return wrap_expr(self._pyexpr.str_json_decode(dtype, infer_schema_length))
 
     def json_path_match(self, json_path: str) -> Expr:
         """
@@ -1945,6 +1944,27 @@ class ExprStringNameSpace:
         value = parse_as_expression(value, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_replace_all(pattern, value, literal))
 
+    def reverse(self) -> Expr:
+        """
+        Returns string values in reversed order.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"text": ["foo", "bar", "man\u0303ana"]})
+        >>> df.with_columns(pl.col("text").str.reverse().alias("reversed"))
+        shape: (3, 2)
+        ┌────────┬──────────┐
+        │ text   ┆ reversed │
+        │ ---    ┆ ---      │
+        │ str    ┆ str      │
+        ╞════════╪══════════╡
+        │ foo    ┆ oof      │
+        │ bar    ┆ rab      │
+        │ mañana ┆ anañam   │
+        └────────┴──────────┘
+        """
+        return wrap_expr(self._pyexpr.str_reverse())
+
     def slice(self, offset: int, length: int | None = None) -> Expr:
         """
         Create subslices of the string values of a Utf8 Series.
@@ -2030,16 +2050,15 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_explode())
 
-    def parse_int(self, radix: int | None = None, *, strict: bool = True) -> Expr:
+    def to_integer(self, *, base: int = 10, strict: bool = True) -> Expr:
         """
-        Parse integers with base radix from strings.
-
-        ParseError/Overflows become Nulls.
+        Convert an Utf8 column into an Int64 column with base radix.
 
         Parameters
         ----------
-        radix
+        base
             Positive integer which is the base of the string we are parsing.
+            Default: 10.
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
             False silently convert to Null.
@@ -2047,17 +2066,17 @@ class ExprStringNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Int32`.
+            Expression of data type :class:`Int64`.
 
         Examples
         --------
         >>> df = pl.DataFrame({"bin": ["110", "101", "010", "invalid"]})
-        >>> df.with_columns(parsed=pl.col("bin").str.parse_int(2, strict=False))
+        >>> df.with_columns(parsed=pl.col("bin").str.to_integer(base=2, strict=False))
         shape: (4, 2)
         ┌─────────┬────────┐
         │ bin     ┆ parsed │
         │ ---     ┆ ---    │
-        │ str     ┆ i32    │
+        │ str     ┆ i64    │
         ╞═════════╪════════╡
         │ 110     ┆ 6      │
         │ 101     ┆ 5      │
@@ -2066,12 +2085,12 @@ class ExprStringNameSpace:
         └─────────┴────────┘
 
         >>> df = pl.DataFrame({"hex": ["fa1e", "ff00", "cafe", None]})
-        >>> df.with_columns(parsed=pl.col("hex").str.parse_int(16, strict=True))
+        >>> df.with_columns(parsed=pl.col("hex").str.to_integer(base=16, strict=True))
         shape: (4, 2)
         ┌──────┬────────┐
         │ hex  ┆ parsed │
         │ ---  ┆ ---    │
-        │ str  ┆ i32    │
+        │ str  ┆ i64    │
         ╞══════╪════════╡
         │ fa1e ┆ 64030  │
         │ ff00 ┆ 65280  │
@@ -2080,15 +2099,31 @@ class ExprStringNameSpace:
         └──────┴────────┘
 
         """
-        if radix is None:
-            issue_deprecation_warning(
-                "The default value for the `radix` parameter of `parse_int` will be removed in a future version."
-                " Call `parse_int(radix=2)` to keep current behavior and silence this warning.",
-                version="0.19.8",
-            )
-            radix = 2
+        return wrap_expr(self._pyexpr.str_to_integer(base, strict))
 
-        return wrap_expr(self._pyexpr.str_parse_int(radix, strict))
+    @deprecate_renamed_function("to_integer", version="0.19.14")
+    @deprecate_renamed_parameter("radix", "base", version="0.19.14")
+    def parse_int(self, base: int | None = None, *, strict: bool = True) -> Expr:
+        """
+        Parse integers with base radix from strings.
+
+        ParseError/Overflows become Nulls.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :func:`to_integer`.
+
+        Parameters
+        ----------
+        base
+            Positive integer which is the base of the string we are parsing.
+        strict
+            Bool, Default=True will raise any ParseError or overflow as ComputeError.
+            False silently convert to Null.
+
+        """
+        if base is None:
+            base = 2
+        return self.to_integer(base=base, strict=strict).cast(Int32, strict=strict)
 
     @deprecate_renamed_function("strip_chars", version="0.19.3")
     def strip(self, characters: str | None = None) -> Expr:
@@ -2226,6 +2261,159 @@ class ExprStringNameSpace:
 
         """
         return self.pad_start(length, fill_char)
+
+    @deprecate_renamed_function("json_decode", version="0.19.12")
+    def json_extract(
+        self, dtype: PolarsDataType | None = None, infer_schema_length: int | None = 100
+    ) -> Expr:
+        """
+        Parse string values as JSON.
+
+        .. deprecated:: 0.19.15
+            This method has been renamed to :meth:`json_decode`.
+
+        Parameters
+        ----------
+        dtype
+            The dtype to cast the extracted value to. If None, the dtype will be
+            inferred from the JSON value.
+        infer_schema_length
+            How many rows to parse to determine the schema.
+            If `None` all rows are used.
+        """
+        return self.json_decode(dtype, infer_schema_length)
+
+    def contains_any(
+        self, patterns: IntoExpr, *, ascii_case_insensitive: bool = False
+    ) -> Expr:
+        """
+        Use the aho-corasick algorithm to find matches.
+
+        This version determines if any of the patterns find a match.
+
+        Parameters
+        ----------
+        patterns
+            String patterns to search.
+        ascii_case_insensitive
+            Enable ASCII-aware case insensitive matching.
+            When this option is enabled, searching will be performed without respect
+            to case for ASCII letters (a-z and A-Z) only.
+
+        Examples
+        --------
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "lyrics": [
+        ...             "Everybody wants to rule the world",
+        ...             "Tell me what you want, what you really really want",
+        ...             "Can you feel the love tonight",
+        ...         ]
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("lyrics").str.contains_any(["you", "me"]).alias("contains_all")
+        ... )
+        shape: (3, 2)
+        ┌────────────────────────────────────────────────────┬──────────────┐
+        │ lyrics                                             ┆ contains_all │
+        │ ---                                                ┆ ---          │
+        │ str                                                ┆ bool         │
+        ╞════════════════════════════════════════════════════╪══════════════╡
+        │ Everybody wants to rule the world                  ┆ false        │
+        │ Tell me what you want, what you really really want ┆ true         │
+        │ Can you feel the love tonight                      ┆ true         │
+        └────────────────────────────────────────────────────┴──────────────┘
+
+        """
+        patterns = parse_as_expression(patterns, str_as_lit=False, list_as_lit=False)
+        return wrap_expr(
+            self._pyexpr.str_contains_any(patterns, ascii_case_insensitive)
+        )
+
+    def replace_many(
+        self,
+        patterns: IntoExpr,
+        replace_with: IntoExpr,
+        *,
+        ascii_case_insensitive: bool = False,
+    ) -> Expr:
+        """
+
+        Use the aho-corasick algorithm to replace many matches.
+
+        Parameters
+        ----------
+        patterns
+            String patterns to search and replace.
+        replace_with
+            Strings to replace where a pattern was a match.
+            This can be broadcasted. So it supports many:one and many:many.
+        ascii_case_insensitive
+            Enable ASCII-aware case insensitive matching.
+            When this option is enabled, searching will be performed without respect
+            to case for ASCII letters (a-z and A-Z) only.
+
+        Examples
+        --------
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "lyrics": [
+        ...             "Everybody wants to rule the world",
+        ...             "Tell me what you want, what you really really want",
+        ...             "Can you feel the love tonight",
+        ...         ]
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("lyrics")
+        ...     .str.replace_many(
+        ...         ["me", "you", "they"],
+        ...         "",
+        ...     )
+        ...     .alias("removes_pronouns")
+        ... )
+        shape: (3, 2)
+        ┌────────────────────────────────────────────────────┬────────────────────────────────────────────┐
+        │ lyrics                                             ┆ removes_pronouns                           │
+        │ ---                                                ┆ ---                                        │
+        │ str                                                ┆ str                                        │
+        ╞════════════════════════════════════════════════════╪════════════════════════════════════════════╡
+        │ Everybody wants to rule the world                  ┆ Everybody wants to rule the world          │
+        │ Tell me what you want, what you really really want ┆ Tell  what  want, what  really really want │
+        │ Can you feel the love tonight                      ┆ Can  feel the love tonight                 │
+        └────────────────────────────────────────────────────┴────────────────────────────────────────────┘
+        >>> df.with_columns(
+        ...     pl.col("lyrics")
+        ...     .str.replace_many(
+        ...         ["me", "you"],
+        ...         ["you", "me"],
+        ...     )
+        ...     .alias("confusing")
+        ... )  # doctest: +IGNORE_RESULT
+        shape: (3, 2)
+        ┌────────────────────────────────────────────────────┬───────────────────────────────────────────────────┐
+        │ lyrics                                             ┆ confusing                                         │
+        │ ---                                                ┆ ---                                               │
+        │ str                                                ┆ str                                               │
+        ╞════════════════════════════════════════════════════╪═══════════════════════════════════════════════════╡
+        │ Everybody wants to rule the world                  ┆ Everybody wants to rule the world                 │
+        │ Tell me what you want, what you really really want ┆ Tell you what me want, what me really really want │
+        │ Can you feel the love tonight                      ┆ Can me feel the love tonight                      │
+        └────────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
+
+        """  # noqa: W505
+        patterns = parse_as_expression(patterns, str_as_lit=False, list_as_lit=False)
+        replace_with = parse_as_expression(
+            replace_with, str_as_lit=True, list_as_lit=False
+        )
+        return wrap_expr(
+            self._pyexpr.str_replace_many(
+                patterns, replace_with, ascii_case_insensitive
+            )
+        )
 
 
 def _validate_format_argument(format: str | None) -> None:

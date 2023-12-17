@@ -72,20 +72,7 @@ fn test_agg_unique_first() -> PolarsResult<()> {
 }
 
 #[test]
-#[cfg(feature = "csv")]
-fn test_lazy_agg_scan() {
-    let lf = scan_foods_csv;
-    let df = lf().min().collect().unwrap();
-    assert!(df.frame_equal_missing(&lf().collect().unwrap().min()));
-    let df = lf().max().collect().unwrap();
-    assert!(df.frame_equal_missing(&lf().collect().unwrap().max()));
-    // mean is not yet aggregated at scan.
-    let df = lf().mean().collect().unwrap();
-    assert!(df.frame_equal_missing(&lf().collect().unwrap().mean()));
-}
-
-#[test]
-fn test_cumsum_agg_as_key() -> PolarsResult<()> {
+fn test_cum_sum_agg_as_key() -> PolarsResult<()> {
     let df = df![
         "depth" => &[0i32, 1, 2, 3, 4, 5, 6, 7, 8, 9],
         "soil" => &["peat", "peat", "peat", "silt", "silt", "silt", "sand", "sand", "peat", "peat"]
@@ -96,7 +83,7 @@ fn test_cumsum_agg_as_key() -> PolarsResult<()> {
         .lazy()
         .group_by([col("soil")
             .neq(col("soil").shift_and_fill(lit(1), col("soil").first()))
-            .cumsum(false)
+            .cum_sum(false)
             .alias("key")])
         .agg([col("depth").max().name().keep()])
         .sort("depth", SortOptions::default())
@@ -457,7 +444,7 @@ fn take_aggregations() -> PolarsResult<()> {
         .agg([
             // keep the head as it test slice correctness
             col("book")
-                .take(
+                .gather(
                     col("count")
                         .arg_sort(SortOptions {
                             descending: true,

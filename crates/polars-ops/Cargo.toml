@@ -9,12 +9,14 @@ repository = { workspace = true }
 description = "More operations on Polars data structures"
 
 [dependencies]
-polars-core = { workspace = true, features = ["algorithm_group_by"] }
+polars-compute = { workspace = true }
+polars-core = { workspace = true, features = ["algorithm_group_by", "zip_with"] }
 polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
 polars-utils = { workspace = true }
 
 ahash = { workspace = true }
+aho-corasick = { workspace = true, optional = true }
 argminmax = { version = "0.6.1", default-features = false, features = ["float"] }
 arrow = { workspace = true }
 base64 = { workspace = true, optional = true }
@@ -35,9 +37,10 @@ regex = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { workspace = true, optional = true }
 smartstring = { workspace = true }
+unicode-reverse = { workspace = true, optional = true }
 
 [dev-dependencies]
-rand = { workspace = true }
+rand = { workspace = true, features = ["small_rng"] }
 
 [build-dependencies]
 version_check = { workspace = true }
@@ -73,6 +76,7 @@ rle = ["dtype-struct"]
 timezones = ["chrono-tz", "chrono"]
 random = ["rand", "rand_distr"]
 rank = ["rand"]
+find_many = ["aho-corasick"]
 
 # extra utilities for BinaryChunked
 binary_encoding = ["base64", "hex"]
@@ -87,11 +91,11 @@ diff = []
 pct_change = ["diff"]
 strings = ["polars-core/strings"]
 string_pad = ["polars-core/strings"]
-string_from_radix = ["polars-core/strings"]
+string_reverse = ["polars-core/strings", "unicode-reverse"]
+string_to_integer = ["polars-core/strings"]
 extract_jsonpath = ["serde_json", "jsonpath_lib", "polars-json"]
 log = []
 hash = []
-zip_with = ["polars-core/zip_with"]
 group_by_list = ["polars-core/group_by_list"]
 rolling_window = ["polars-core/rolling_window"]
 moment = []
@@ -104,16 +108,20 @@ cross_join = []
 chunked_ids = ["polars-core/chunked_ids"]
 asof_join = ["polars-core/asof_join"]
 semi_anti_join = []
-list_take = []
+list_gather = []
 list_sets = []
 list_any_all = []
 list_drop_nulls = []
 list_sample = []
 extract_groups = ["dtype-struct", "polars-core/regex"]
 is_in = ["polars-core/reinterpret"]
+hist = ["dtype-categorical", "dtype-struct"]
 convert_index = []
 repeat_by = []
 peaks = []
 cum_agg = []
 ewma = []
 abs = []
+cov = []
+gather = []
+replace = ["is_in"]

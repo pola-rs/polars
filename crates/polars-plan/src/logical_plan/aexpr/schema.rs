@@ -81,7 +81,7 @@ impl AExpr {
                 Ok(field)
             },
             Sort { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
-            Take { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
+            Gather { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
             SortBy { expr, .. } => arena.get(*expr).to_field(schema, ctxt, arena),
             Filter { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Agg(agg) => {
@@ -144,7 +144,7 @@ impl AExpr {
                         field.coerce(IDX_DTYPE);
                         Ok(field)
                     },
-                    Count(expr) => {
+                    Count(expr, _) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
                         field.coerce(IDX_DTYPE);

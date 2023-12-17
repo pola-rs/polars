@@ -187,8 +187,8 @@ def test_getitem_errs() -> None:
 def test_err_bubbling_up_to_lit() -> None:
     df = pl.DataFrame({"date": [date(2020, 1, 1)], "value": [42]})
 
-    with pytest.raises(ValueError):
-        df.filter(pl.col("date") == pl.Date("2020-01-01"))
+    with pytest.raises(TypeError):
+        df.filter(pl.col("date") == pl.Date("2020-01-01"))  # type: ignore[call-arg]
 
 
 def test_error_on_double_agg() -> None:
@@ -288,7 +288,7 @@ def test_invalid_sort_by() -> None:
     # `select a where b order by c desc`
     with pytest.raises(
         pl.ComputeError,
-        match=r"`sort_by` produced different length: 5 than the series that has to be sorted: 3",
+        match=r"`sort_by` produced different length \(5\) than the Series that has to be sorted \(3\)",
     ):
         df.select(pl.col("a").filter(pl.col("b") == "M").sort_by("c", descending=True))
 
@@ -434,7 +434,7 @@ def test_compare_different_len() -> None:
 
     s = pl.Series([2, 5, 8])
     with pytest.raises(
-        pl.ComputeError, match=r"cannot evaluate two series of different lengths"
+        pl.ComputeError, match=r"cannot evaluate two Series of different lengths"
     ):
         df.filter(pl.col("idx") == s)
 
@@ -442,7 +442,7 @@ def test_compare_different_len() -> None:
 def test_take_negative_index_is_oob() -> None:
     df = pl.DataFrame({"value": [1, 2, 3]})
     with pytest.raises(pl.ComputeError, match=r"index out of bounds"):
-        df["value"].take(-1)
+        df["value"].gather(-1)
 
 
 def test_string_numeric_arithmetic_err() -> None:
@@ -451,15 +451,6 @@ def test_string_numeric_arithmetic_err() -> None:
         pl.ComputeError, match=r"arithmetic on string and numeric not allowed"
     ):
         df.select(pl.col("s") + 1)
-
-
-def test_file_path_truncate_err() -> None:
-    content = "lskdfj".join(str(i) for i in range(25))
-    with pytest.raises(
-        FileNotFoundError,
-        match=r"\.\.\.lskdfj14lskdfj15lskdfj16lskdfj17lskdfj18lskdfj19lskdfj20lskdfj21lskdfj22lskdfj23lskdfj24",
-    ):
-        pl.read_csv(content)
 
 
 def test_ambiguous_filter_err() -> None:
@@ -496,7 +487,7 @@ def test_skip_nulls_err() -> None:
         pytest.param(
             pl.DataFrame({"A": [1, 2, 3], "B": ["1", "2", "help"]}),
             pl.UInt32,
-            "Conversion .* failed",
+            "conversion .* failed",
             id="Unsigned integer",
         )
     ],
@@ -584,16 +575,6 @@ def test_serde_validation() -> None:
         match=r"lengths don't match",
     ):
         pl.read_json(f)
-
-
-def test_transpose_categorical_cached() -> None:
-    with pytest.raises(
-        pl.ComputeError,
-        match=r"'transpose' of categorical can only be done if all are from the same global string cache",
-    ):
-        pl.DataFrame(
-            {"b": pl.Series(["a", "b", "c"], dtype=pl.Categorical)}
-        ).transpose()
 
 
 def test_overflow_msg() -> None:
@@ -697,7 +678,16 @@ def test_non_existent_expr_inputs_in_lazy() -> None:
 
     with pytest.raises(pl.ColumnNotFoundError):
         (
-            lf.select(pl.col("foo").cumsum().alias("bar"))
+            lf.select(pl.col("foo").cum_sum().alias("bar"))
             .filter(pl.col("bar") == pl.col("foo"))
             .explain()
         )
+
+
+def test_error_list_to_array() -> None:
+    with pytest.raises(
+        pl.ComputeError, match="not all elements have the specified width"
+    ):
+        pl.DataFrame(
+            data={"a": [[1, 2], [3, 4, 5]]}, schema={"a": pl.List(pl.Int8)}
+        ).with_columns(array=pl.col("a").list.to_array(2))

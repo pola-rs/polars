@@ -29,7 +29,7 @@ fn test_swap_rename() -> PolarsResult<()> {
         "b" => [1],
         "a" => [2],
     ]?;
-    assert!(df.frame_equal(&expected));
+    assert!(df.equals(&expected));
     Ok(())
 }
 
@@ -54,7 +54,7 @@ fn test_outer_join_with_column_2988() -> PolarsResult<()> {
             ldf2,
             [col("key1"), col("key2")],
             [col("key1"), col("key2")],
-            JoinType::Outer.into(),
+            JoinType::Outer { coalesce: true }.into(),
         )
         .with_columns([col("key1")])
         .collect()?;
@@ -114,7 +114,7 @@ fn test_many_aliasing_projections_5070() -> PolarsResult<()> {
         "val" => [2, 3],
         "output" => [0, 1],
     ]?;
-    assert!(out.frame_equal(&expected));
+    assert!(out.equals(&expected));
 
     Ok(())
 }
@@ -131,7 +131,11 @@ fn test_projection_5086() -> PolarsResult<()> {
         .lazy()
         .select([
             col("a"),
-            col("b").take("c").cumsum(false).over([col("a")]).gt(lit(0)),
+            col("b")
+                .gather("c")
+                .cum_sum(false)
+                .over([col("a")])
+                .gt(lit(0)),
         ])
         .select([
             col("a"),
@@ -147,7 +151,7 @@ fn test_projection_5086() -> PolarsResult<()> {
         "keep" => [true, false, false, true]
     ]?;
 
-    assert!(out.frame_equal(&expected));
+    assert!(out.equals(&expected));
 
     Ok(())
 }

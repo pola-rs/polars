@@ -1,13 +1,14 @@
 //! Everything you need to get started with Polars.
 pub use std::sync::Arc;
 
+pub use arrow::array::ArrayRef;
 pub(crate) use arrow::array::*;
 pub use arrow::datatypes::{ArrowSchema, Field as ArrowField};
 #[cfg(feature = "ewma")]
 pub use arrow::legacy::kernels::ewm::EWMOptions;
 pub use arrow::legacy::prelude::*;
 pub(crate) use arrow::legacy::trusted_len::TrustedLen;
-pub(crate) use arrow::util::total_ord::{TotalEq, TotalOrd};
+pub(crate) use polars_utils::total_ord::{TotalEq, TotalOrd};
 
 pub use crate::chunked_array::builder::{
     BinaryChunkedBuilder, BooleanChunkedBuilder, ChunkedBuilder, ListBinaryChunkedBuilder,
@@ -49,7 +50,6 @@ pub use crate::schema::*;
 pub use crate::series::arithmetic::checked::NumOpsDispatchChecked;
 pub use crate::series::arithmetic::{LhsNumOps, NumOpsDispatch};
 pub use crate::series::{IntoSeries, Series, SeriesTrait};
-pub use crate::testing::*;
 pub(crate) use crate::utils::CustomIterTools;
 pub use crate::utils::IntoVec;
 pub use crate::{datatypes, df};

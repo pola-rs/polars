@@ -21,6 +21,8 @@ from typing import (
 if TYPE_CHECKING:
     import sys
 
+    from sqlalchemy import Engine
+
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars.datatypes import DataType, DataTypeClass, IntegerType, TemporalType
     from polars.dependencies import numpy as np
@@ -134,7 +136,7 @@ AsofJoinStrategy: TypeAlias = Literal["backward", "forward", "nearest"]  # AsofS
 ClosedInterval: TypeAlias = Literal["left", "right", "both", "none"]  # ClosedWindow
 InterpolationMethod: TypeAlias = Literal["linear", "nearest"]
 JoinStrategy: TypeAlias = Literal[
-    "inner", "left", "outer", "semi", "anti", "cross"
+    "inner", "left", "outer", "semi", "anti", "cross", "outer_coalesce"
 ]  # JoinType
 RollingInterpolationMethod: TypeAlias = Literal[
     "nearest", "higher", "lower", "midpoint", "linear"
@@ -233,4 +235,4 @@ class Cursor(BasicCursor):  # noqa: D101
         """Fetch results in batches."""
 
 
-ConnectionOrCursor = Union[BasicConnection, BasicCursor, Cursor]
+ConnectionOrCursor = Union[BasicConnection, BasicCursor, Cursor, "Engine"]

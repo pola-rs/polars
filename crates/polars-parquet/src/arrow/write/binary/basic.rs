@@ -1,4 +1,4 @@
-use arrow::array::{Array, BinaryArray};
+use arrow::array::{Array, BinaryArray, ValueSize};
 use arrow::bitmap::Bitmap;
 use arrow::offset::Offset;
 use polars_error::{polars_bail, PolarsResult};
@@ -6,17 +6,21 @@ use polars_error::{polars_bail, PolarsResult};
 use super::super::{utils, WriteOptions};
 use crate::arrow::read::schema::is_nullable;
 use crate::parquet::encoding::{delta_bitpacked, Encoding};
-use crate::parquet::page::DataPage;
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::{
     serialize_statistics, BinaryStatistics, ParquetStatistics, Statistics,
 };
+use crate::write::Page;
 
 pub(crate) fn encode_plain<O: Offset>(
     array: &BinaryArray<O>,
     is_optional: bool,
     buffer: &mut Vec<u8>,
 ) {
+    let len_before = buffer.len();
+    let capacity =
+        array.get_values_size() + (array.len() - array.null_count()) * std::mem::size_of::<u32>();
+    buffer.reserve(capacity);
     // append the non-null values
     if is_optional {
         array.iter().for_each(|x| {
@@ -35,6 +39,8 @@ pub(crate) fn encode_plain<O: Offset>(
             buffer.extend_from_slice(x);
         })
     }
+    // Ensure we allocated properly.
+    debug_assert_eq!(buffer.len() - len_before, capacity);
 }
 
 pub fn array_to_page<O: Offset>(
@@ -42,7 +48,7 @@ pub fn array_to_page<O: Offset>(
     options: WriteOptions,
     type_: PrimitiveType,
     encoding: Encoding,
-) -> PolarsResult<DataPage> {
+) -> PolarsResult<Page> {
     let validity = array.validity();
     let is_optional = is_nullable(&type_.field_info);
 
@@ -93,6 +99,7 @@ pub fn array_to_page<O: Offset>(
         options,
         encoding,
     )
+    .map(Page::Data)
 }
 
 pub(crate) fn build_statistics<O: Offset>(

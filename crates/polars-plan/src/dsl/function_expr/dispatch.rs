@@ -38,7 +38,7 @@ pub(super) fn set_sorted_flag(s: &Series, sorted: IsSorted) -> PolarsResult<Seri
 pub(super) fn replace_time_zone(s: &[Series], time_zone: Option<&str>) -> PolarsResult<Series> {
     let s1 = &s[0];
     let ca = s1.datetime().unwrap();
-    let s2 = &s[1].utf8().unwrap();
+    let s2 = &s[1].utf8()?;
     Ok(polars_ops::prelude::replace_time_zone(ca, time_zone, s2)?.into_series())
 }
 
@@ -112,4 +112,25 @@ pub(super) fn arg_unique(s: &Series) -> PolarsResult<Series> {
 #[cfg(feature = "rank")]
 pub(super) fn rank(s: &Series, options: RankOptions, seed: Option<u64>) -> PolarsResult<Series> {
     Ok(s.rank(options, seed))
+}
+
+#[cfg(feature = "hist")]
+pub(super) fn hist(
+    s: &[Series],
+    bin_count: Option<usize>,
+    include_category: bool,
+    include_breakpoint: bool,
+) -> PolarsResult<Series> {
+    let bins = if s.len() == 2 {
+        Some(s[1].clone())
+    } else {
+        None
+    };
+    let s = &s[0];
+    hist_series(s, bin_count, bins, include_category, include_breakpoint)
+}
+
+#[cfg(feature = "replace")]
+pub(super) fn replace(s: &[Series], return_dtype: Option<DataType>) -> PolarsResult<Series> {
+    polars_ops::series::replace(&s[0], &s[1], &s[2], &s[3], return_dtype)
 }

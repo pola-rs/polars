@@ -7,7 +7,7 @@ use polars_error::PolarsResult;
 use super::array::*;
 use super::{Dictionaries, IpcBuffer, Node};
 use crate::array::*;
-use crate::datatypes::{DataType, Field, PhysicalType};
+use crate::datatypes::{ArrowDataType, Field, PhysicalType};
 use crate::io::ipc::IpcField;
 use crate::{match_integer_type, with_match_primitive_type_full};
 
@@ -230,7 +230,7 @@ pub fn read<R: Read + Seek>(
 
 pub fn skip(
     field_nodes: &mut VecDeque<Node>,
-    data_type: &DataType,
+    data_type: &ArrowDataType,
     buffers: &mut VecDeque<IpcBuffer>,
 ) -> PolarsResult<()> {
     use PhysicalType::*;

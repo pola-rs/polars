@@ -10,7 +10,7 @@ use crate::array::{
     Array, ArrayAccessor, ArrayValuesIter, MutableArray, TryExtend, TryExtendFromSelf, TryPush,
 };
 use crate::bitmap::MutableBitmap;
-use crate::datatypes::DataType;
+use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets};
 use crate::trusted_len::TrustedLen;
 
@@ -18,7 +18,7 @@ use crate::trusted_len::TrustedLen;
 /// from [`MutableBinaryArray`] in that it builds non-null [`BinaryArray`].
 #[derive(Debug, Clone)]
 pub struct MutableBinaryValuesArray<O: Offset> {
-    data_type: DataType,
+    data_type: ArrowDataType,
     offsets: Offsets<O>,
     values: Vec<u8>,
 }
@@ -66,7 +66,7 @@ impl<O: Offset> MutableBinaryValuesArray<O> {
     /// # Implementation
     /// This function is `O(1)`
     pub fn try_new(
-        data_type: DataType,
+        data_type: ArrowDataType,
         offsets: Offsets<O>,
         values: Vec<u8>,
     ) -> PolarsResult<Self> {
@@ -83,9 +83,9 @@ impl<O: Offset> MutableBinaryValuesArray<O> {
         })
     }
 
-    /// Returns the default [`DataType`] of this container: [`DataType::Utf8`] or [`DataType::LargeUtf8`]
+    /// Returns the default [`ArrowDataType`] of this container: [`ArrowDataType::Utf8`] or [`ArrowDataType::LargeUtf8`]
     /// depending on the generic [`Offset`].
-    pub fn default_data_type() -> DataType {
+    pub fn default_data_type() -> ArrowDataType {
         BinaryArray::<O>::default_data_type()
     }
 
@@ -186,7 +186,7 @@ impl<O: Offset> MutableBinaryValuesArray<O> {
     }
 
     /// Extract the low-end APIs from the [`MutableBinaryValuesArray`].
-    pub fn into_inner(self) -> (DataType, Offsets<O>, Vec<u8>) {
+    pub fn into_inner(self) -> (ArrowDataType, Offsets<O>, Vec<u8>) {
         (self.data_type, self.offsets, self.values)
     }
 }
@@ -210,7 +210,7 @@ impl<O: Offset> MutableArray for MutableBinaryValuesArray<O> {
         BinaryArray::new(data_type, offsets.into(), values.into(), None).arced()
     }
 
-    fn data_type(&self) -> &DataType {
+    fn data_type(&self) -> &ArrowDataType {
         &self.data_type
     }
 

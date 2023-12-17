@@ -10,4 +10,5 @@ The following methods are available under the `expr.struct` attribute.
    :template: autosummary/accessor_method.rst
 
     Expr.struct.field
+    Expr.struct.json_encode
     Expr.struct.rename_fields

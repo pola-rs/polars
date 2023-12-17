@@ -1,4 +1,3 @@
-mod hashing;
 pub mod join;
 #[cfg(feature = "pivot")]
 pub mod pivot;
@@ -28,7 +27,7 @@ impl IntoDf for DataFrame {
 impl<T: IntoDf> DataFrameOps for T {}
 
 pub trait DataFrameOps: IntoDf {
-    /// Create dummy variables.
+    /// Crea dummy variables.
     ///
     /// # Example
     ///

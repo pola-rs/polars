@@ -7,12 +7,13 @@ mod single_keys_outer;
 #[cfg(feature = "semi_anti_join")]
 mod single_keys_semi_anti;
 pub(super) mod sort_merge;
-mod zip_outer;
 
-pub use args::*;
+use arrow::array::ArrayRef;
 pub use multiple_keys::private_left_join_multiple_keys;
 pub(super) use multiple_keys::*;
-use polars_core::utils::{_set_partition_size, slice_slice, split_ca};
+#[cfg(any(feature = "chunked_ids", feature = "semi_anti_join"))]
+use polars_core::utils::slice_slice;
+use polars_core::utils::{_set_partition_size, slice_offsets, split_ca};
 use polars_core::POOL;
 pub(super) use single_keys::*;
 #[cfg(feature = "asof_join")]
@@ -24,7 +25,6 @@ use single_keys_outer::*;
 #[cfg(feature = "semi_anti_join")]
 use single_keys_semi_anti::*;
 pub use sort_merge::*;
-pub(super) use zip_outer::zip_outer_join_column;
 
 pub use super::*;
 
@@ -53,6 +53,8 @@ macro_rules! det_hash_prone_order {
 #[cfg(feature = "performant")]
 use arrow::legacy::conversion::primitive_to_vec;
 pub(super) use det_hash_prone_order;
+
+use crate::frame::join::general::coalesce_outer_join;
 
 pub trait JoinDispatch: IntoDf {
     /// # Safety
@@ -198,7 +200,7 @@ pub trait JoinDispatch: IntoDf {
             right.as_single_chunk_par();
             s_right = s_right.rechunk();
         }
-        let ids = sort_or_hash_left(&s_left, &s_right, verbose, args.validation)?;
+        let ids = sort_or_hash_left(&s_left, &s_right, verbose, args.validation, args.join_nulls)?;
         left._finish_left_join(ids, &right.drop(s_right.name()).unwrap(), args)
     }
 
@@ -246,72 +248,38 @@ pub trait JoinDispatch: IntoDf {
         #[cfg(feature = "dtype-categorical")]
         _check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
-        // store this so that we can keep original column order.
-        let join_column_index = ca_self
-            .iter()
-            .position(|s| s.name() == s_left.name())
-            .unwrap();
-
         // Get the indexes of the joined relations
-        let opt_join_tuples = s_left.hash_join_outer(s_right, args.validation)?;
-        let mut opt_join_tuples = &*opt_join_tuples;
+        let (mut join_idx_l, mut join_idx_r) =
+            s_left.hash_join_outer(s_right, args.validation, args.join_nulls)?;
 
         if let Some((offset, len)) = args.slice {
-            opt_join_tuples = slice_slice(opt_join_tuples, offset, len);
+            let (offset, len) = slice_offsets(offset, len, join_idx_l.len());
+            join_idx_l.slice(offset, len);
+            join_idx_r.slice(offset, len);
         }
+        let idx_ca_l = IdxCa::with_chunk("", join_idx_l);
+        let idx_ca_r = IdxCa::with_chunk("", join_idx_r);
 
         // Take the left and right dataframes by join tuples
-        let (mut df_left, df_right) = POOL.join(
-            || unsafe {
-                ca_self.drop(s_left.name()).unwrap().take_unchecked(
-                    &opt_join_tuples
-                        .iter()
-                        .copied()
-                        .map(|(left, _right)| left)
-                        .collect_ca("outer-join-left-indices"),
-                )
-            },
-            || unsafe {
-                other.drop(s_right.name()).unwrap().take_unchecked(
-                    &opt_join_tuples
-                        .iter()
-                        .copied()
-                        .map(|(_left, right)| right)
-                        .collect_ca("outer-join-right-indices"),
-                )
-            },
+        let (df_left, df_right) = POOL.join(
+            || unsafe { ca_self.take_unchecked(&idx_ca_l) },
+            || unsafe { other.take_unchecked(&idx_ca_r) },
         );
 
-        let s = unsafe {
-            zip_outer_join_column(
-                &s_left.to_physical_repr(),
-                &s_right.to_physical_repr(),
-                opt_join_tuples,
-            )
-            .with_name(s_left.name())
+        let JoinType::Outer { coalesce } = args.how else {
+            unreachable!()
         };
-        let s = match s_left.dtype() {
-            #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => {
-                let ca_left = s_left.categorical().unwrap();
-                let new_rev_map = ca_left._merge_categorical_map(s_right.categorical().unwrap())?;
-                let logical = s.u32().unwrap().clone();
-                // safety:
-                // categorical maps are merged
-                unsafe {
-                    CategoricalChunked::from_cats_and_rev_map_unchecked(logical, new_rev_map)
-                        .into_series()
-                }
-            },
-            dt @ DataType::Datetime(_, _)
-            | dt @ DataType::Time
-            | dt @ DataType::Date
-            | dt @ DataType::Duration(_) => s.cast(dt).unwrap(),
-            _ => s,
-        };
-
-        unsafe { df_left.get_columns_mut().insert(join_column_index, s) };
-        _finish_join(df_left, df_right, args.suffix.as_deref())
+        let out = _finish_join(df_left, df_right, args.suffix.as_deref());
+        if coalesce {
+            Ok(coalesce_outer_join(
+                out?,
+                &[s_left.name()],
+                &[s_right.name()],
+                args.suffix.as_deref(),
+            ))
+        } else {
+            out
+        }
     }
 }
 

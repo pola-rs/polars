@@ -2,14 +2,14 @@
 mod quantile;
 mod var;
 
-use std::cmp::Ordering;
 use std::ops::Add;
 
 use arrow::compute;
-use arrow::legacy::kernels::rolling::{compare_fn_nan_max, compare_fn_nan_min};
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num_traits::{Float, One, ToPrimitive, Zero};
+use polars_compute::min_max::MinMaxKernel;
+use polars_utils::min_max::MinMax;
 pub use quantile::*;
 pub use var::*;
 
@@ -19,7 +19,7 @@ use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::IsSorted;
 
-mod float_sum;
+pub mod float_sum;
 
 /// Aggregations that return [`Series`] of unit length. Those can be used in broadcasting operations.
 pub trait ChunkAggSeries {
@@ -44,9 +44,7 @@ pub trait ChunkAggSeries {
 fn sum<T: NumericNative + NativeType>(array: &PrimitiveArray<T>) -> T
 where
     T: NumericNative + NativeType,
-    <T as Simd>::Simd: Add<Output = <T as Simd>::Simd>
-        + compute::aggregate::Sum<T>
-        + compute::aggregate::SimdOrd<T>,
+    <T as Simd>::Simd: Add<Output = <T as Simd>::Simd> + compute::aggregate::Sum<T>,
 {
     if array.null_count() == array.len() {
         return T::default();
@@ -82,9 +80,9 @@ where
 impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
-        + compute::aggregate::Sum<T::Native>
-        + compute::aggregate::SimdOrd<T::Native>,
+    PrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
+    <T::Native as Simd>::Simd:
+        Add<Output = <T::Native as Simd>::Simd> + compute::aggregate::Sum<T::Native>,
 {
     fn sum(&self) -> Option<T::Native> {
         Some(
@@ -101,28 +99,20 @@ where
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 self.first_non_null().and_then(|idx| {
-                    // Safety:
-                    // first_non_null returns in bound index
+                    // SAFETY: first_non_null returns in bound index.
                     unsafe { self.get_unchecked(idx) }
                 })
             },
             IsSorted::Descending => {
                 self.last_non_null().and_then(|idx| {
-                    // Safety:
-                    // last returns in bound index
+                    // SAFETY: last returns in bound index.
                     unsafe { self.get_unchecked(idx) }
                 })
             },
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(compute::aggregate::min_primitive)
-                .reduce(|acc, v| {
-                    if matches!(compare_fn_nan_max(&acc, &v), Ordering::Less) {
-                        acc
-                    } else {
-                        v
-                    }
-                }),
+                .filter_map(MinMaxKernel::min_ignore_nan_kernel)
+                .reduce(MinMax::min_ignore_nan),
         }
     }
 
@@ -133,28 +123,22 @@ where
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 self.last_non_null().and_then(|idx| {
-                    // Safety:
+                    // SAFETY:
                     // last_non_null returns in bound index
                     unsafe { self.get_unchecked(idx) }
                 })
             },
             IsSorted::Descending => {
                 self.first_non_null().and_then(|idx| {
-                    // Safety:
+                    // SAFETY:
                     // first_non_null returns in bound index
                     unsafe { self.get_unchecked(idx) }
                 })
             },
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(compute::aggregate::max_primitive)
-                .reduce(|acc, v| {
-                    if matches!(compare_fn_nan_min(&acc, &v), Ordering::Greater) {
-                        acc
-                    } else {
-                        v
-                    }
-                }),
+                .filter_map(MinMaxKernel::max_ignore_nan_kernel)
+                .reduce(MinMax::max_ignore_nan),
         }
     }
 
@@ -279,9 +263,9 @@ impl BooleanChunked {
 impl<T> ChunkAggSeries for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
-        + compute::aggregate::Sum<T::Native>
-        + compute::aggregate::SimdOrd<T::Native>,
+    PrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
+    <T::Native as Simd>::Simd:
+        Add<Output = <T::Native as Simd>::Simd> + compute::aggregate::Sum<T::Native>,
     ChunkedArray<T>: IntoSeries,
 {
     fn sum_as_series(&self) -> Series {
@@ -327,9 +311,7 @@ where
 impl<T> VarAggSeries for ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
-        + compute::aggregate::Sum<T::Native>
-        + compute::aggregate::SimdOrd<T::Native>,
+    ChunkedArray<T>: ChunkVar,
 {
     fn var_as_series(&self, ddof: u8) -> Series {
         as_series::<Float64Type>(self.name(), self.var(ddof))
@@ -364,9 +346,8 @@ impl<T> QuantileAggSeries for ChunkedArray<T>
 where
     T: PolarsIntegerType,
     T::Native: Ord,
-    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
-        + compute::aggregate::Sum<T::Native>
-        + compute::aggregate::SimdOrd<T::Native>,
+    <T::Native as Simd>::Simd:
+        Add<Output = <T::Native as Simd>::Simd> + compute::aggregate::Sum<T::Native>,
 {
     fn quantile_as_series(
         &self,
@@ -441,22 +422,20 @@ impl Utf8Chunked {
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 self.last_non_null().and_then(|idx| {
-                    // Safety:
-                    // last_non_null returns in bound index
+                    // SAFETY: last_non_null returns in bound index
                     unsafe { self.get_unchecked(idx) }
                 })
             },
             IsSorted::Descending => {
                 self.first_non_null().and_then(|idx| {
-                    // Safety:
-                    // first_non_null returns in bound index
+                    // SAFETY: first_non_null returns in bound index
                     unsafe { self.get_unchecked(idx) }
                 })
             },
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(compute::aggregate::max_string)
-                .reduce(|acc, v| if acc > v { acc } else { v }),
+                .filter_map(MinMaxKernel::max_ignore_nan_kernel)
+                .reduce(MinMax::max_ignore_nan),
         }
     }
     pub(crate) fn min_str(&self) -> Option<&str> {
@@ -466,22 +445,20 @@ impl Utf8Chunked {
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 self.first_non_null().and_then(|idx| {
-                    // Safety:
-                    // first_non_null returns in bound index
+                    // SAFETY: first_non_null returns in bound index
                     unsafe { self.get_unchecked(idx) }
                 })
             },
             IsSorted::Descending => {
                 self.last_non_null().and_then(|idx| {
-                    // Safety:
-                    // last_non_null returns in bound index
+                    // SAFETY: last_non_null returns in bound index
                     unsafe { self.get_unchecked(idx) }
                 })
             },
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(compute::aggregate::min_string)
-                .reduce(|acc, v| if acc < v { acc } else { v }),
+                .filter_map(MinMaxKernel::min_ignore_nan_kernel)
+                .reduce(MinMax::min_ignore_nan),
         }
     }
 }
@@ -518,8 +495,8 @@ impl BinaryChunked {
             },
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(compute::aggregate::max_binary)
-                .reduce(|acc, v| if acc > v { acc } else { v }),
+                .filter_map(MinMaxKernel::max_ignore_nan_kernel)
+                .reduce(MinMax::max_ignore_nan),
         }
     }
 
@@ -542,49 +519,21 @@ impl BinaryChunked {
             },
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(compute::aggregate::min_binary)
-                .reduce(|acc, v| if acc < v { acc } else { v }),
+                .filter_map(MinMaxKernel::min_ignore_nan_kernel)
+                .reduce(MinMax::min_ignore_nan),
         }
     }
 }
 
 impl ChunkAggSeries for BinaryChunked {
     fn sum_as_series(&self) -> Series {
-        BinaryChunked::full_null(self.name(), 1).into_series()
+        unimplemented!()
     }
     fn max_as_series(&self) -> Series {
         Series::new(self.name(), [self.max_binary()])
     }
     fn min_as_series(&self) -> Series {
         Series::new(self.name(), [self.min_binary()])
-    }
-}
-
-impl ChunkAggSeries for ListChunked {
-    fn sum_as_series(&self) -> Series {
-        ListChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype()).into_series()
-    }
-    fn max_as_series(&self) -> Series {
-        ListChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype()).into_series()
-    }
-    fn min_as_series(&self) -> Series {
-        ListChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype()).into_series()
-    }
-}
-
-#[cfg(feature = "dtype-array")]
-impl ChunkAggSeries for ArrayChunked {
-    fn sum_as_series(&self) -> Series {
-        ArrayChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype(), self.width())
-            .into_series()
-    }
-    fn max_as_series(&self) -> Series {
-        ArrayChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype(), self.width())
-            .into_series()
-    }
-    fn min_as_series(&self) -> Series {
-        ArrayChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype(), self.width())
-            .into_series()
     }
 }
 
@@ -803,7 +752,7 @@ mod test {
         );
         assert_eq!(
             ca.quantile(0.6, QuantileInterpolOptions::Nearest).unwrap(),
-            Some(4.0)
+            Some(3.0)
         );
 
         assert_eq!(
@@ -880,11 +829,11 @@ mod test {
 
         assert_eq!(
             ca.quantile(0.1, QuantileInterpolOptions::Nearest).unwrap(),
-            Some(1.0)
+            Some(2.0)
         );
         assert_eq!(
             ca.quantile(0.9, QuantileInterpolOptions::Nearest).unwrap(),
-            Some(7.0)
+            Some(6.0)
         );
         assert_eq!(
             ca.quantile(0.6, QuantileInterpolOptions::Nearest).unwrap(),
@@ -942,148 +891,5 @@ mod test {
             ca.quantile(0.6, QuantileInterpolOptions::Linear).unwrap(),
             Some(4.6)
         );
-
-        let ca = Float32Chunked::from_slice(
-            "",
-            &[
-                0.166189, 0.166559, 0.168517, 0.169393, 0.175272, 0.233167, 0.238787, 0.266562,
-                0.26903, 0.285792, 0.292801, 0.293429, 0.301706, 0.308534, 0.331489, 0.346095,
-                0.367644, 0.369939, 0.372074, 0.41014, 0.415789, 0.421781, 0.427725, 0.465363,
-                0.500208, 2.621727, 2.803311, 3.868526,
-            ],
-        );
-
-        assert!(
-            (ca.quantile(0.1, QuantileInterpolOptions::Nearest)
-                .unwrap()
-                .unwrap()
-                - 0.168517)
-                .abs()
-                < 0.00001
-        );
-        assert!(
-            (ca.quantile(0.9, QuantileInterpolOptions::Nearest)
-                .unwrap()
-                .unwrap()
-                - 2.621727)
-                .abs()
-                < 0.00001
-        );
-        assert!(
-            (ca.quantile(0.6, QuantileInterpolOptions::Nearest)
-                .unwrap()
-                .unwrap()
-                - 0.367644)
-                .abs()
-                < 0.00001
-        );
-
-        assert!(
-            (ca.quantile(0.1, QuantileInterpolOptions::Lower)
-                .unwrap()
-                .unwrap()
-                - 0.168517)
-                .abs()
-                < 0.00001
-        );
-        assert!(
-            (ca.quantile(0.9, QuantileInterpolOptions::Lower)
-                .unwrap()
-                .unwrap()
-                - 0.500208)
-                .abs()
-                < 0.00001
-        );
-        assert!(
-            (ca.quantile(0.6, QuantileInterpolOptions::Lower)
-                .unwrap()
-                .unwrap()
-                - 0.367644)
-                .abs()
-                < 0.00001
-        );
-
-        assert!(
-            (ca.quantile(0.1, QuantileInterpolOptions::Higher)
-                .unwrap()
-                .unwrap()
-                - 0.169393)
-                .abs()
-                < 0.00001
-        );
-        assert!(
-            (ca.quantile(0.9, QuantileInterpolOptions::Higher)
-                .unwrap()
-                .unwrap()
-                - 2.621727)
-                .abs()
-                < 0.00001
-        );
-        assert!(
-            (ca.quantile(0.6, QuantileInterpolOptions::Higher)
-                .unwrap()
-                .unwrap()
-                - 0.369939)
-                .abs()
-                < 0.00001
-        );
-
-        assert!(
-            (ca.quantile(0.1, QuantileInterpolOptions::Midpoint)
-                .unwrap()
-                .unwrap()
-                - 0.168955)
-                .abs()
-                < 0.0001
-        );
-        assert!(
-            (ca.quantile(0.9, QuantileInterpolOptions::Midpoint)
-                .unwrap()
-                .unwrap()
-                - 1.560967)
-                .abs()
-                < 0.0001
-        );
-        assert!(
-            (ca.quantile(0.6, QuantileInterpolOptions::Midpoint)
-                .unwrap()
-                .unwrap()
-                - 0.368791)
-                .abs()
-                < 0.0001
-        );
-
-        assert!(
-            (ca.quantile(0.1, QuantileInterpolOptions::Linear)
-                .unwrap()
-                .unwrap()
-                - 0.169130)
-                .abs()
-                < 0.0001
-        );
-        assert!(
-            (ca.quantile(0.9, QuantileInterpolOptions::Linear)
-                .unwrap()
-                .unwrap()
-                - 1.136664)
-                .abs()
-                < 0.0001
-        );
-        assert!(
-            (ca.quantile(0.6, QuantileInterpolOptions::Linear)
-                .unwrap()
-                .unwrap()
-                - 0.368103)
-                .abs()
-                < 0.0001
-        );
-    }
-
-    #[test]
-    fn test_median_floats() {
-        let a = Series::new("a", &[1.0f64, 2.0, 3.0]);
-        let expected = Series::new("a", [2.0f64]);
-        assert!(a.median_as_series().series_equal_missing(&expected));
-        assert_eq!(a.median(), Some(2.0f64))
     }
 }

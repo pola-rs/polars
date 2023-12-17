@@ -87,7 +87,7 @@ if TYPE_CHECKING:
 
     import pyarrow as pa
 
-    from polars import DataFrame, Expr
+    from polars import DataFrame, DataType, Expr
     from polars.dependencies import numpy as np
     from polars.type_aliases import (
         AsofJoinStrategy,
@@ -323,7 +323,7 @@ class LazyFrame:
         *,
         has_header: bool = True,
         separator: str = ",",
-        comment_char: str | None = None,
+        comment_prefix: str | None = None,
         quote_char: str | None = '"',
         skip_rows: int = 0,
         dtypes: SchemaDict | None = None,
@@ -367,7 +367,7 @@ class LazyFrame:
             sources = source
             source = None  # type: ignore[assignment]
         else:
-            sources = []  # type: ignore[assignment]
+            sources = []
 
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_csv(
@@ -381,7 +381,7 @@ class LazyFrame:
             cache,
             dtype_list,
             low_memory,
-            comment_char,
+            comment_prefix,
             quote_char,
             processed_null_values,
             missing_utf8_is_empty_string,
@@ -432,7 +432,7 @@ class LazyFrame:
             can_use_fsspec = False
         else:
             can_use_fsspec = True
-            sources = []  # type: ignore[assignment]
+            sources = []
 
         # try fsspec scanner
         if (
@@ -447,8 +447,11 @@ class LazyFrame:
                 scan = scan.with_row_count(row_count_name, row_count_offset)
             return scan  # type: ignore[return-value]
 
-        if storage_options is not None:
+        if storage_options:
             storage_options = list(storage_options.items())  #  type: ignore[assignment]
+        else:
+            # Handle empty dict input
+            storage_options = None
 
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_parquet(
@@ -585,55 +588,6 @@ class LazyFrame:
         return self
 
     @classmethod
-    @deprecate_function(
-        "Convert the JSON string to `StringIO` and then use `LazyFrame.deserialize`.",
-        version="0.18.12",
-    )
-    def from_json(cls, json: str) -> Self:
-        """
-        Read a logical plan from a JSON string to construct a LazyFrame.
-
-        .. deprecated:: 0.18.12
-            This method is deprecated. Convert the JSON string to `StringIO`
-            and then use `LazyFrame.deserialize`.
-
-        Parameters
-        ----------
-        json
-            String in JSON format.
-
-        See Also
-        --------
-        deserialize
-
-        """
-        return cls.deserialize(StringIO(json))
-
-    @classmethod
-    @deprecate_renamed_function("deserialize", version="0.18.12")
-    @deprecate_renamed_parameter("file", "source", version="0.18.12")
-    def read_json(cls, source: str | Path | IOBase) -> Self:
-        """
-        Read a logical plan from a JSON file to construct a LazyFrame.
-
-        .. deprecated:: 0.18.12
-            This class method has been renamed to `deserialize`.
-
-        Parameters
-        ----------
-        source
-            Path to a file or a file-like object (by file-like object, we refer to
-            objects that have a `read()` method, such as a file handler (e.g.
-            via builtin `open` function) or `BytesIO`).
-
-        See Also
-        --------
-        deserialize
-
-        """
-        return cls.deserialize(source)
-
-    @classmethod
     def deserialize(cls, source: str | Path | IOBase) -> Self:
         """
         Read a logical plan from a JSON file to construct a LazyFrame.
@@ -693,7 +647,7 @@ class LazyFrame:
         return self._ldf.columns()
 
     @property
-    def dtypes(self) -> list[PolarsDataType]:
+    def dtypes(self) -> list[DataType]:
         """
         Get dtypes of columns in LazyFrame.
 
@@ -717,7 +671,7 @@ class LazyFrame:
         return self._ldf.dtypes()
 
     @property
-    def schema(self) -> SchemaDict:
+    def schema(self) -> OrderedDict[str, DataType]:
         """
         Get a dict[column name, DataType].
 
@@ -731,7 +685,7 @@ class LazyFrame:
         ...     }
         ... )
         >>> lf.schema
-        OrderedDict([('foo', Int64), ('bar', Float64), ('ham', Utf8)])
+        OrderedDict({'foo': Int64, 'bar': Float64, 'ham': Utf8})
 
         """
         return OrderedDict(self._ldf.schema())
@@ -914,30 +868,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             self._ldf.serialize(file)
         return None
 
-    @overload
-    def write_json(self, file: None = ...) -> str:
-        ...
-
-    @overload
-    def write_json(self, file: IOBase | str | Path) -> None:
-        ...
-
-    @deprecate_renamed_function("serialize", version="0.18.12")
-    def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
-        """
-        Serialize the logical plan of this LazyFrame to a file or string in JSON format.
-
-        .. deprecated:: 0.18.12
-            This method has been renamed to :func:`LazyFrame.serialize`.
-
-        Parameters
-        ----------
-        file
-            File path to which the result should be written. If set to `None`
-            (default), the output is returned as a string instead.
-        """
-        return self.serialize(file)
-
     def pipe(
         self,
         function: Callable[Concatenate[LazyFrame, P], T],
@@ -1011,9 +941,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return function(self, *args, **kwargs)
 
-    @deprecate_renamed_parameter(
-        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
-    )
     def explain(
         self,
         *,
@@ -1084,9 +1011,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             return ldf.describe_optimized_plan()
         return self._ldf.describe_plan()
 
-    @deprecate_renamed_parameter(
-        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
-    )
     def show_graph(
         self,
         *,
@@ -1212,7 +1136,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         >>> lf = pl.LazyFrame({"foo": [1, 1, -2, 3]})
         >>> (
-        ...     lf.with_columns(pl.col("foo").cumsum().alias("bar"))
+        ...     lf.with_columns(pl.col("foo").cum_sum().alias("bar"))
         ...     .inspect()  # print the node before the filter
         ...     .filter(pl.col("bar") == pl.col("foo"))
         ... )  # doctest: +ELLIPSIS
@@ -1508,9 +1432,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             self._ldf.bottom_k(k, by, descending, nulls_last, maintain_order)
         )
 
-    @deprecate_renamed_parameter(
-        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
-    )
     def profile(
         self,
         *,
@@ -1661,9 +1582,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return df, timings
 
-    @deprecate_renamed_parameter(
-        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
-    )
     def collect(
         self,
         *,
@@ -1839,7 +1757,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Collect DataFrame asynchronously in thread pool.
 
         Collects into a DataFrame (like :func:`collect`), but instead of returning
-        dataframe directly, they are scheduled to be collected inside thread pool,
+        DataFrame directly, they are scheduled to be collected inside thread pool,
         while this method returns almost instantly.
 
         May be useful if you use gevent or asyncio and want to release control to other
@@ -2110,6 +2028,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         path: str | Path,
         *,
+        include_bom: bool = False,
         include_header: bool = True,
         separator: str = ",",
         line_terminator: str = "\n",
@@ -2138,6 +2057,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         path
             File path to which the file should be written.
+        include_bom
+            Whether to include UTF-8 BOM in the CSV output.
         include_header
             Whether to include header in the CSV output.
         separator
@@ -2226,6 +2147,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return lf.sink_csv(
             path=path,
+            include_bom=include_bom,
             include_header=include_header,
             separator=ord(separator),
             line_terminator=line_terminator,
@@ -2239,6 +2161,64 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             quote_style=quote_style,
             maintain_order=maintain_order,
         )
+
+    def sink_ndjson(
+        self,
+        path: str | Path,
+        *,
+        maintain_order: bool = True,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = False,
+        slice_pushdown: bool = True,
+    ) -> DataFrame:
+        """
+        Persists a LazyFrame at the provided path.
+
+        This allows streaming results that are larger than RAM to be written to disk.
+
+        Parameters
+        ----------
+        path
+            File path to which the file should be written.
+        maintain_order
+            Maintain the order in which data is processed.
+            Setting this to `False` will  be slightly faster.
+        type_coercion
+            Do type coercion optimization.
+        predicate_pushdown
+            Do predicate pushdown optimization.
+        projection_pushdown
+            Do projection pushdown optimization.
+        simplify_expression
+            Run simplify expressions optimization.
+        no_optimization
+            Turn off (certain) optimizations.
+        slice_pushdown
+            Slice pushdown optimization.
+
+        Returns
+        -------
+        DataFrame
+
+        Examples
+        --------
+        >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
+        >>> lf.sink_json("out.json")  # doctest: +SKIP
+
+        """
+        lf = self._set_sink_optimizations(
+            type_coercion=type_coercion,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            no_optimization=no_optimization,
+            slice_pushdown=slice_pushdown,
+        )
+
+        return lf.sink_json(path=path, maintain_order=maintain_order)
 
     def _set_sink_optimizations(
         self,
@@ -2267,9 +2247,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             _eager=False,
         )
 
-    @deprecate_renamed_parameter(
-        "common_subplan_elimination", "comm_subplan_elim", version="0.18.9"
-    )
     def fetch(
         self,
         n_rows: int = 500,
@@ -2816,7 +2793,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └───────────┘
 
         Expressions with multiple outputs can be automatically instantiated as Structs
-        by enabling the experimental setting `Config.set_auto_structify(True)`:
+        by enabling the setting `Config.set_auto_structify(True)`:
 
         >>> with pl.Config(auto_structify=True):
         ...     lf.select(
@@ -3677,6 +3654,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         right_on: str | Expr | Sequence[str | Expr] | None = None,
         suffix: str = "_right",
         validate: JoinValidation = "m:m",
+        join_nulls: bool = False,
         allow_parallel: bool = True,
         force_parallel: bool = False,
     ) -> Self:
@@ -3690,8 +3668,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         on
             Join column of both DataFrames. If set, `left_on` and `right_on` should be
             None.
-        how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross'}
+        how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross', 'outer_coalesce'}
             Join strategy.
+
+            * *inner*
+                Returns rows that have matching values in both tables
+            * *left*
+                Returns all rows from the left table, and the matched rows from the
+                right table
+            * *outer*
+                 Returns all rows when there is a match in either left or right table
+            * *outer_coalesce*
+                 Same as 'outer', but coalesces the key columns
+            * *cross*
+                 Returns the cartisian product of rows from both tables
+            * *semi*
+                 Filter rows that have a match in the right table.
+            * *anti*
+                 Filter rows that not have a match in the right table.
 
             .. note::
                 A left join preserves the row order of the left DataFrame.
@@ -3717,6 +3711,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
                 - This is currently not supported the streaming engine.
                 - This is only supported when joined by single columns.
+        join_nulls
+            Join on null values. By default null values will never produce matches.
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
             DataFrames up to the join in parallel.
@@ -3754,17 +3750,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2   ┆ 7.0 ┆ b   ┆ y     │
         └─────┴─────┴─────┴───────┘
         >>> lf.join(other_lf, on="ham", how="outer").collect()
-        shape: (4, 4)
-        ┌──────┬──────┬─────┬───────┐
-        │ foo  ┆ bar  ┆ ham ┆ apple │
-        │ ---  ┆ ---  ┆ --- ┆ ---   │
-        │ i64  ┆ f64  ┆ str ┆ str   │
-        ╞══════╪══════╪═════╪═══════╡
-        │ 1    ┆ 6.0  ┆ a   ┆ x     │
-        │ 2    ┆ 7.0  ┆ b   ┆ y     │
-        │ null ┆ null ┆ d   ┆ z     │
-        │ 3    ┆ 8.0  ┆ c   ┆ null  │
-        └──────┴──────┴─────┴───────┘
+        shape: (4, 5)
+        ┌──────┬──────┬──────┬───────┬───────────┐
+        │ foo  ┆ bar  ┆ ham  ┆ apple ┆ ham_right │
+        │ ---  ┆ ---  ┆ ---  ┆ ---   ┆ ---       │
+        │ i64  ┆ f64  ┆ str  ┆ str   ┆ str       │
+        ╞══════╪══════╪══════╪═══════╪═══════════╡
+        │ 1    ┆ 6.0  ┆ a    ┆ x     ┆ a         │
+        │ 2    ┆ 7.0  ┆ b    ┆ y     ┆ b         │
+        │ null ┆ null ┆ null ┆ z     ┆ d         │
+        │ 3    ┆ 8.0  ┆ c    ┆ null  ┆ null      │
+        └──────┴──────┴──────┴───────┴───────────┘
         >>> lf.join(other_lf, on="ham", how="left").collect()
         shape: (3, 4)
         ┌─────┬─────┬─────┬───────┐
@@ -3810,6 +3806,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     [],
                     allow_parallel,
                     force_parallel,
+                    join_nulls,
                     how,
                     suffix,
                     validate,
@@ -3833,6 +3830,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 pyexprs_right,
                 allow_parallel,
                 force_parallel,
+                join_nulls,
                 how,
                 suffix,
                 validate,
@@ -3967,7 +3965,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴──────┴───────┴──────┴───────┘
 
         Expressions with multiple outputs can be automatically instantiated as Structs
-        by enabling the experimental setting `Config.set_auto_structify(True)`:
+        by enabling the setting `Config.set_auto_structify(True)`:
 
         >>> with pl.Config(auto_structify=True):
         ...     lf.drop("c").with_columns(
@@ -4064,7 +4062,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ null │
         └──────┘
 
-        Fill nulls with the median from another dataframe:
+        Fill nulls with the median from another DataFrame:
 
         >>> train_lf = pl.LazyFrame(
         ...     {"feature_0": [-1.0, 0, 1], "feature_1": [-1.0, 0, 1]}
@@ -4100,12 +4098,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *more_columns: ColumnNameOrSelector,
     ) -> Self:
         """
-        Remove columns from the dataframe.
+        Remove columns from the DataFrame.
 
         Parameters
         ----------
         columns
-            Name of the column(s) that should be removed from the dataframe.
+            Name of the column(s) that should be removed from the DataFrame.
         *more_columns
             Additional columns to drop, specified as positional arguments.
 
@@ -4176,8 +4174,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Notes
         -----
-        If names are swapped. E.g. 'A' points to 'B' and 'B' points to 'A', polars
-        will block projection and predicate pushdowns at this node.
+        If existing names are swapped (e.g. 'A' points to 'B' and 'B' points to 'A'),
+        polars will block projection and predicate pushdowns at this node.
 
         Examples
         --------
@@ -4574,17 +4572,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.select(F.all().approx_n_unique())
 
-    @deprecate_renamed_function("approx_n_unique", version="0.18.12")
-    def approx_unique(self) -> Self:
-        """
-        Approximate count of unique values.
-
-        .. deprecated:: 0.18.12
-            This method has been renamed to :func:`LazyFrame.approx_n_unique`.
-
-        """
-        return self.approx_n_unique()
-
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
         """
         Add a column at index 0 that counts the rows.
@@ -4624,9 +4611,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.with_row_count(name, offset))
 
-    def take_every(self, n: int) -> Self:
+    def gather_every(self, n: int) -> Self:
         """
         Take every nth row in the LazyFrame and return as a new LazyFrame.
+
+        Parameters
+        ----------
+        n
+            Gather every *n*-th row.
 
         Examples
         --------
@@ -4636,7 +4628,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "b": [5, 6, 7, 8],
         ...     }
         ... )
-        >>> lf.take_every(2).collect()
+        >>> lf.gather_every(2).collect()
         shape: (2, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -4646,9 +4638,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ 5   │
         │ 3   ┆ 7   │
         └─────┴─────┘
-
         """
-        return self.select(F.col("*").take_every(n))
+        return self.select(F.col("*").gather_every(n))
 
     def fill_null(
         self,
@@ -4797,8 +4788,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         >>> lf = pl.LazyFrame(
         ...     {
-        ...         "a": [1.5, 2, float("NaN"), 4],
-        ...         "b": [0.5, 4, float("NaN"), 13],
+        ...         "a": [1.5, 2, float("nan"), 4],
+        ...         "b": [0.5, 4, float("nan"), 13],
         ...     }
         ... )
         >>> lf.fill_nan(99).collect()
@@ -5095,7 +5086,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *more_columns: str | Expr,
     ) -> Self:
         """
-        Explode the dataframe to long format by exploding the given columns.
+        Explode the DataFrame to long format by exploding the given columns.
 
         Parameters
         ----------
@@ -5144,7 +5135,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         maintain_order: bool = False,
     ) -> Self:
         """
-        Drop duplicate rows from this dataframe.
+        Drop duplicate rows from this DataFrame.
 
         Parameters
         ----------
@@ -5292,7 +5283,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ┌──────┬──────┬──────┐
         │ a    ┆ b    ┆ c    │
         │ ---  ┆ ---  ┆ ---  │
-        │ f32  ┆ i64  ┆ i64  │
+        │ null ┆ i64  ┆ i64  │
         ╞══════╪══════╪══════╡
         │ null ┆ 1    ┆ 1    │
         │ null ┆ 2    ┆ null │
@@ -5307,7 +5298,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ┌──────┬─────┬──────┐
         │ a    ┆ b   ┆ c    │
         │ ---  ┆ --- ┆ ---  │
-        │ f32  ┆ i64 ┆ i64  │
+        │ null ┆ i64 ┆ i64  │
         ╞══════╪═════╪══════╡
         │ null ┆ 1   ┆ 1    │
         │ null ┆ 2   ┆ null │
@@ -5523,7 +5514,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Decompose struct columns into separate columns for each of their fields.
 
-        The new columns will be inserted into the dataframe at the location of the
+        The new columns will be inserted into the DataFrame at the location of the
         struct column.
 
         Parameters
@@ -5664,13 +5655,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         other: LazyFrame,
         on: str | Sequence[str] | None = None,
+        how: Literal["left", "inner", "outer"] = "left",
+        *,
         left_on: str | Sequence[str] | None = None,
         right_on: str | Sequence[str] | None = None,
-        how: Literal["left", "inner", "outer"] = "left",
-        include_nulls: bool | None = False,
+        include_nulls: bool = False,
     ) -> Self:
         """
         Update the values in this `LazyFrame` with the non-null values in `other`.
+
+        .. warning::
+            This functionality is experimental and may change without it being
+            considered a breaking change.
 
         Parameters
         ----------
@@ -5679,19 +5675,19 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         on
             Column names that will be joined on; if given `None` the implicit row
             index is used as a join key instead.
-        left_on
-           Join column(s) of the left DataFrame.
-        right_on
-           Join column(s) of the right DataFrame.
         how : {'left', 'inner', 'outer'}
             * 'left' will keep all rows from the left table; rows may be duplicated
               if multiple rows in the right frame match the left row's key.
             * 'inner' keeps only those rows where the key exists in both frames.
             * 'outer' will update existing rows where the key matches while also
               adding any new rows contained in the given frame.
+        left_on
+           Join column(s) of the left DataFrame.
+        right_on
+           Join column(s) of the right DataFrame.
         include_nulls
-            If True, null values from the right dataframe will be used to update the
-            left dataframe.
+            If True, null values from the right DataFrame will be used to update the
+            left DataFrame.
 
         Notes
         -----
@@ -5796,6 +5792,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             raise ValueError(
                 f"`how` must be one of {{'left', 'inner', 'outer'}}; found {how!r}"
             )
+        if how == "outer":
+            how = "outer_coalesce"  # type: ignore[assignment]
 
         row_count_used = False
         if on is None:
@@ -5831,7 +5829,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 raise ValueError(f"right join column {name!r} not found")
 
         # no need to join if *only* join columns are in other (inner/left update only)
-        if how != "outer" and len(other.columns) == len(right_on):
+        if how != "outer_coalesce" and len(other.columns) == len(right_on):  # type: ignore[comparison-overlap, redundant-expr]
             if row_count_used:
                 return self.drop(row_count_name)
             return self
@@ -6196,3 +6194,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         return self.shift(n, fill_value=fill_value)
+
+    @deprecate_renamed_function("gather_every", version="0.19.14")
+    def take_every(self, n: int) -> Self:
+        """
+        Take every nth row in the LazyFrame and return as a new LazyFrame.
+
+        .. deprecated:: 0.19.0
+            This method has been renamed to :meth:`gather_every`.
+
+        Parameters
+        ----------
+        n
+            Gather every *n*-th row.
+        """
+        return self.gather_every(n)

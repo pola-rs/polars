@@ -100,7 +100,7 @@ def test_filter_aggregation_any() -> None:
     result = (
         df.group_by("group")
         .agg(
-            pl.any_horizontal("pred_a", "pred_b"),
+            pl.any_horizontal("pred_a", "pred_b").alias("any"),
             pl.col("id")
             .filter(pl.any_horizontal("pred_a", "pred_b"))
             .alias("filtered"),
@@ -126,7 +126,7 @@ def test_predicate_order_explode_5950() -> None:
     assert (
         df.lazy()
         .explode("i")
-        .filter(pl.col("n").count().over(["i"]) == 2)
+        .filter(pl.count().over(["i"]) == 2)
         .filter(pl.col("n").is_not_null())
     ).collect().to_dict(as_series=False) == {"i": [1], "n": [0]}
 

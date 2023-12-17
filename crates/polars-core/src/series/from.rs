@@ -85,11 +85,12 @@ impl Series {
             Utf8 => Utf8Chunked::from_chunks(name, chunks).into_series(),
             Binary => BinaryChunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(rev_map) => {
+            Categorical(rev_map, ordering) => {
                 let cats = UInt32Chunked::from_chunks(name, chunks);
                 let mut ca = CategoricalChunked::from_cats_and_rev_map_unchecked(
                     cats,
                     rev_map.clone().unwrap(),
+                    *ordering,
                 );
                 ca.set_fast_unique(false);
                 ca.into_series()
@@ -202,13 +203,14 @@ impl Series {
             #[cfg(feature = "dtype-datetime")]
             ArrowDataType::Timestamp(tu, tz) => {
                 let mut tz = tz.clone();
-                if tz.as_deref() == Some("") {
-                    tz = None;
-                } else if tz.as_deref() == Some("+00:00") {
-                    tz = Some("UTC".to_string());
-                } else if let Some(_tz) = &tz {
-                    #[cfg(feature = "timezones")]
-                    validate_time_zone(_tz)?;
+                match tz.as_deref() {
+                    Some("") => tz = None,
+                    Some("+00:00") | Some("00:00") => tz = Some("UTC".to_string()),
+                    Some(_tz) => {
+                        #[cfg(feature = "timezones")]
+                        validate_time_zone(_tz)?;
+                    },
+                    None => (),
                 }
                 let chunks = cast_chunks(&chunks, &DataType::Int64, false).unwrap();
                 let s = Int64Chunked::from_chunks(name, chunks)

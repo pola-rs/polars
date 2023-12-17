@@ -133,9 +133,6 @@ pub fn ord_binary<'a>(a: &'a [u8], b: &'a [u8]) -> std::cmp::Ordering {
 
 #[inline]
 pub fn decode<T: NativeType>(chunk: &[u8]) -> T {
-    let chunk: <T as NativeType>::Bytes = match chunk.try_into() {
-        Ok(v) => v,
-        Err(_) => panic!(),
-    };
+    let chunk: <T as NativeType>::Bytes = chunk.try_into().unwrap();
     T::from_le_bytes(chunk)
 }

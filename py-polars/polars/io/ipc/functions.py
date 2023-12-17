@@ -15,8 +15,7 @@ with contextlib.suppress(ImportError):
 if TYPE_CHECKING:
     from io import BytesIO
 
-    from polars import DataFrame, LazyFrame
-    from polars.type_aliases import PolarsDataType
+    from polars import DataFrame, DataType, LazyFrame
 
 
 def read_ipc(
@@ -80,8 +79,9 @@ def read_ipc(
             "`n_rows` cannot be used with `use_pyarrow=True` and `memory_map=False`"
         )
 
-    storage_options = storage_options or {}
-    with _prepare_file_arg(source, use_pyarrow=use_pyarrow, **storage_options) as data:
+    with _prepare_file_arg(
+        source, use_pyarrow=use_pyarrow, storage_options=storage_options
+    ) as data:
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
                 raise ModuleNotFoundError(
@@ -155,8 +155,9 @@ def read_ipc_stream(
     DataFrame
 
     """
-    storage_options = storage_options or {}
-    with _prepare_file_arg(source, use_pyarrow=use_pyarrow, **storage_options) as data:
+    with _prepare_file_arg(
+        source, use_pyarrow=use_pyarrow, storage_options=storage_options
+    ) as data:
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
                 raise ModuleNotFoundError(
@@ -185,7 +186,7 @@ def read_ipc_stream(
         )
 
 
-def read_ipc_schema(source: str | BinaryIO | Path | bytes) -> dict[str, PolarsDataType]:
+def read_ipc_schema(source: str | BinaryIO | Path | bytes) -> dict[str, DataType]:
     """
     Get the schema of an IPC file without reading data.
 

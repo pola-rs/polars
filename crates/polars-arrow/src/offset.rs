@@ -1,5 +1,6 @@
 //! Contains the declaration of [`Offset`]
 use std::hint::unreachable_unchecked;
+use std::ops::Deref;
 
 use polars_error::{polars_bail, polars_err, PolarsError, PolarsResult};
 
@@ -17,6 +18,14 @@ impl<O: Offset> Default for Offsets<O> {
     #[inline]
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<O: Offset> Deref for Offsets<O> {
+    type Target = [O];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
     }
 }
 

@@ -250,22 +250,22 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
-    fn _sum_as_series(&self) -> Series {
-        self.apply_physical(|ca| {
+    fn _sum_as_series(&self) -> PolarsResult<Series> {
+        Ok(self.apply_physical(|ca| {
             let sum = ca.sum();
             Int128Chunked::from_slice_options(self.name(), &[sum])
-        })
+        }))
     }
-    fn min_as_series(&self) -> Series {
-        self.apply_physical(|ca| {
+    fn min_as_series(&self) -> PolarsResult<Series> {
+        Ok(self.apply_physical(|ca| {
             let min = ca.min();
             Int128Chunked::from_slice_options(self.name(), &[min])
-        })
+        }))
     }
-    fn max_as_series(&self) -> Series {
-        self.apply_physical(|ca| {
+    fn max_as_series(&self) -> PolarsResult<Series> {
+        Ok(self.apply_physical(|ca| {
             let max = ca.max();
             Int128Chunked::from_slice_options(self.name(), &[max])
-        })
+        }))
     }
 }

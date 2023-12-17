@@ -8,7 +8,7 @@ from polars import functions as F
 from polars.functions.range._utils import parse_interval_argument
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import deprecate_saturating, issue_deprecation_warning
+from polars.utils.deprecation import deprecate_saturating
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -29,7 +29,6 @@ def time_range(
     *,
     closed: ClosedInterval = ...,
     eager: Literal[False] = ...,
-    name: str | None = ...,
 ) -> Expr:
     ...
 
@@ -42,7 +41,6 @@ def time_range(
     *,
     closed: ClosedInterval = ...,
     eager: Literal[True],
-    name: str | None = ...,
 ) -> Series:
     ...
 
@@ -55,7 +53,6 @@ def time_range(
     *,
     closed: ClosedInterval = ...,
     eager: bool,
-    name: str | None = ...,
 ) -> Series | Expr:
     ...
 
@@ -67,7 +64,6 @@ def time_range(
     *,
     closed: ClosedInterval = "both",
     eager: bool = False,
-    name: str | None = None,
 ) -> Series | Expr:
     """
     Generate a time range.
@@ -88,11 +84,6 @@ def time_range(
     eager
         Evaluate immediately and return a `Series`.
         If set to `False` (default), return an expression instead.
-    name
-        Name of the output column.
-
-        .. deprecated:: 0.18.0
-            This argument is deprecated. Use the `alias` method instead.
 
     Returns
     -------
@@ -145,11 +136,6 @@ def time_range(
 
     """
     interval = deprecate_saturating(interval)
-    if name is not None:
-        issue_deprecation_warning(
-            "the `name` argument is deprecated. Use the `alias` method instead.",
-            version="0.18.0",
-        )
 
     interval = parse_interval_argument(interval)
     for unit in ("y", "mo", "w", "d"):
@@ -165,9 +151,6 @@ def time_range(
     end_pyexpr = parse_as_expression(end)
 
     result = wrap_expr(plr.time_range(start_pyexpr, end_pyexpr, interval, closed))
-
-    if name is not None:
-        result = result.alias(name)
 
     if eager:
         return F.select(result).to_series()

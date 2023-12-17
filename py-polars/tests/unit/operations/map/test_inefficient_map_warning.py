@@ -62,18 +62,42 @@ TEST_CASES = [
         'pl.col("a").is_in((1, 2, 3, 4, 3)) & ((pl.col("a") % 2) == 0) & (pl.col("a") > 0)',
     ),
     ("a", "lambda x: MY_CONSTANT + x", 'MY_CONSTANT + pl.col("a")'),
+    (
+        "a",
+        "lambda x: (float(x) * int(x)) // 2",
+        '(pl.col("a").cast(pl.Float64) * pl.col("a").cast(pl.Int64)) // 2',
+    ),
+    # ---------------------------------------------
+    # numpy
+    # ---------------------------------------------
+    ("e", "lambda x: np.arccos(x)", 'pl.col("e").arccos()'),
+    ("e", "lambda x: np.arccosh(x)", 'pl.col("e").arccosh()'),
+    ("e", "lambda x: np.arcsin(x)", 'pl.col("e").arcsin()'),
+    ("e", "lambda x: np.arcsinh(x)", 'pl.col("e").arcsinh()'),
+    ("e", "lambda x: np.arctan(x)", 'pl.col("e").arctan()'),
+    ("e", "lambda x: np.arctanh(x)", 'pl.col("e").arctanh()'),
     ("a", "lambda x: 0 + numpy.cbrt(x)", '0 + pl.col("a").cbrt()'),
+    ("e", "lambda x: np.ceil(x)", 'pl.col("e").ceil()'),
+    ("e", "lambda x: np.cos(x)", 'pl.col("e").cos()'),
+    ("e", "lambda x: np.cosh(x)", 'pl.col("e").cosh()'),
+    ("e", "lambda x: np.degrees(x)", 'pl.col("e").degrees()'),
+    ("e", "lambda x: np.exp(x)", 'pl.col("e").exp()'),
+    ("e", "lambda x: np.floor(x)", 'pl.col("e").floor()'),
+    ("e", "lambda x: np.log(x)", 'pl.col("e").log()'),
+    ("e", "lambda x: np.log10(x)", 'pl.col("e").log10()'),
+    ("e", "lambda x: np.log1p(x)", 'pl.col("e").log1p()'),
+    ("e", "lambda x: np.radians(x)", 'pl.col("e").radians()'),
+    ("a", "lambda x: np.sign(x)", 'pl.col("a").sign()'),
     ("a", "lambda x: np.sin(x) + 1", 'pl.col("a").sin() + 1'),
     (
         "a",  # note: functions operate on consts
         "lambda x: np.sin(3.14159265358979) + (x - 1) + abs(-3)",
         '(np.sin(3.14159265358979) + (pl.col("a") - 1)) + abs(-3)',
     ),
-    (
-        "a",
-        "lambda x: (float(x) * int(x)) // 2",
-        '(pl.col("a").cast(pl.Float64) * pl.col("a").cast(pl.Int64)) // 2',
-    ),
+    ("a", "lambda x: np.sinh(x) + 1", 'pl.col("a").sinh() + 1'),
+    ("a", "lambda x: np.sqrt(x) + 1", 'pl.col("a").sqrt() + 1'),
+    ("a", "lambda x: np.tan(x) + 1", 'pl.col("a").tan() + 1'),
+    ("e", "lambda x: np.tanh(x)", 'pl.col("e").tanh()'),
     # ---------------------------------------------
     # logical 'and/or' (validate nesting levels)
     # ---------------------------------------------
@@ -114,15 +138,15 @@ TEST_CASES = [
     # ---------------------------------------------
     # json expr: load/extract
     # ---------------------------------------------
-    ("c", "lambda x: json.loads(x)", 'pl.col("c").str.json_extract()'),
+    ("c", "lambda x: json.loads(x)", 'pl.col("c").str.json_decode()'),
     # ---------------------------------------------
-    # map_dict
+    # replace
     # ---------------------------------------------
-    ("a", "lambda x: MY_DICT[x]", 'pl.col("a").map_dict(MY_DICT)'),
+    ("a", "lambda x: MY_DICT[x]", 'pl.col("a").replace(MY_DICT)'),
     (
         "a",
         "lambda x: MY_DICT[x - 1] + MY_DICT[1 + x]",
-        '(pl.col("a") - 1).map_dict(MY_DICT) + (1 + pl.col("a")).map_dict(MY_DICT)',
+        '(pl.col("a") - 1).replace(MY_DICT) + (1 + pl.col("a")).replace(MY_DICT)',
     ),
     # ---------------------------------------------
     # standard library datetime parsing
@@ -169,6 +193,7 @@ NOOP_TEST_CASES = [
     "lambda x: MY_LIST[x]",
     "lambda x: MY_DICT[1]",
     'lambda x: "first" if x == 1 else "not first"',
+    'lambda x: np.sign(x, casting="unsafe")',
 ]
 
 EVAL_ENVIRONMENT = {
@@ -199,7 +224,7 @@ def test_parse_invalid_function(func: str) -> None:
 def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
     with pytest.warns(
         PolarsInefficientMapWarning,
-        match=r"(?s)Expr\.map_elements.*In this case, you can replace",
+        match=r"(?s)Expr\.map_elements.*with this one instead",
     ):
         parser = BytecodeParser(eval(func), map_target="expr")
         suggested_expression = parser.to_expression(col)
@@ -211,6 +236,7 @@ def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
                 "b": ["AB", "cd", "eF"],
                 "c": ['{"a": 1}', '{"b": 2}', '{"c": 3}'],
                 "d": ["2020-01-01", "2020-01-02", "2020-01-03"],
+                "e": [1.5, 2.4, 3.1],
             }
         )
         result_frame = df.select(
@@ -225,7 +251,7 @@ def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
 
 
 def test_parse_apply_raw_functions() -> None:
-    lf = pl.LazyFrame({"a": [1, 2, 3]})
+    lf = pl.LazyFrame({"a": [1.1, 2.0, 3.4]})
 
     # test bare 'numpy' functions
     for func_name in _NUMPY_FUNCTIONS:
@@ -238,20 +264,24 @@ def test_parse_apply_raw_functions() -> None:
         # ...but we ARE still able to warn
         with pytest.warns(
             PolarsInefficientMapWarning,
-            match=rf"(?s)Expr\.map_elements.*In this case, you can replace.*np\.{func_name}",
+            match=rf"(?s)Expr\.map_elements.*Replace this expression.*np\.{func_name}",
         ):
             df1 = lf.select(pl.col("a").map_elements(func)).collect()
             df2 = lf.select(getattr(pl.col("a"), func_name)()).collect()
+            if func_name == "sign":
+                # note: Polars' 'sign' function returns an Int64, while numpy's
+                # 'sign' function returns a Float64
+                df1 = df1.with_columns(pl.col("a").cast(pl.Int64))
             assert_frame_equal(df1, df2)
 
     # test bare 'json.loads'
     result_frames = []
     with pytest.warns(
         PolarsInefficientMapWarning,
-        match=r"(?s)Expr\.map_elements.*In this case, you can replace.*\.str\.json_extract",
+        match=r"(?s)Expr\.map_elements.*with this one instead:.*\.str\.json_decode",
     ):
         for expr in (
-            pl.col("value").str.json_extract(),
+            pl.col("value").str.json_decode(),
             pl.col("value").map_elements(json.loads),
         ):
             result_frames.append(
@@ -267,7 +297,7 @@ def test_parse_apply_raw_functions() -> None:
     for py_cast, pl_dtype in ((str, pl.Utf8), (int, pl.Int64), (float, pl.Float64)):
         with pytest.warns(
             PolarsInefficientMapWarning,
-            match=rf'(?s)replace.*pl\.col\("a"\)\.cast\(pl\.{pl_dtype.__name__}\)',
+            match=rf'(?s)with this one instead.*pl\.col\("a"\)\.cast\(pl\.{pl_dtype.__name__}\)',
         ):
             assert_frame_equal(
                 lf.select(pl.col("a").map_elements(py_cast)).collect(),
@@ -294,7 +324,7 @@ def test_parse_apply_miscellaneous() -> None:
     # literals as method parameters
     with pytest.warns(
         PolarsInefficientMapWarning,
-        match=r"(?s)Series\.map_elements.*replace.*\(np\.cos\(3\) \+ s\) - abs\(-1\)",
+        match=r"(?s)Series\.map_elements.*with this one instead.*\(np\.cos\(3\) \+ s\) - abs\(-1\)",
     ):
         pl_series = pl.Series("srs", [0, 1, 2, 3, 4])
         assert_series_equal(
@@ -358,8 +388,9 @@ def test_expr_exact_warning_message() -> None:
         "\n"
         "Expr.map_elements is significantly slower than the native expressions API.\n"
         "Only use if you absolutely CANNOT implement your logic otherwise.\n"
-        "In this case, you can replace your `map_elements` with the following:\n"
+        "Replace this expression...\n"
         f'  {red}- pl.col("a").map_elements(lambda x: ...){end_escape}\n'
+        "with this one instead:\n"
         f'  {green}+ pl.col("a") + 1{end_escape}\n'
     )
     # Check the EXACT warning message. If modifying the message in the future,

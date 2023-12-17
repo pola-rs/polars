@@ -22,8 +22,8 @@ requirements: .venv  ## Install/refresh Python project requirements
 	$(VENV_BIN)/pip install --upgrade -r py-polars/docs/requirements-docs.txt
 	$(VENV_BIN)/pip install --upgrade -r docs/requirements.txt
 
-.PHONY: build-python
-build-python: .venv  ## Compile and install Python Polars for development
+.PHONY: build
+build: .venv  ## Compile and install Python Polars for development
 	@$(MAKE) -s -C py-polars build
 
 .PHONY: clippy
@@ -35,9 +35,15 @@ clippy-default:  ## Run clippy with default features
 	cargo clippy --all-targets --locked -- -D warnings
 
 .PHONY: fmt
-fmt:  ## Run rustfmt and dprint
+fmt:  ## Run autoformatting and linting
+	$(VENV_BIN)/ruff check .
+	$(VENV_BIN)/ruff format .
 	cargo fmt --all
 	dprint fmt
+	$(VENV_BIN)/typos .
+
+.PHONY: pre-commit
+pre-commit: fmt clippy clippy-default  ## Run all code quality checks
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts

@@ -32,7 +32,7 @@ fn prepare_dataframe_unsorted(by: &[Series]) -> DataFrame {
         by.iter()
             .map(|s| match s.dtype() {
                 #[cfg(feature = "dtype-categorical")]
-                DataType::Categorical(_) => s.cast(&DataType::UInt32).unwrap(),
+                DataType::Categorical(_, _) => s.cast(&DataType::UInt32).unwrap(),
                 _ => {
                     if s.dtype().to_physical().is_numeric() {
                         let s = s.to_physical_repr();
@@ -69,7 +69,7 @@ impl DataFrame {
         if (minimal_by_len != df_height) && (self.width() > 0) {
             polars_ensure!(
                 minimal_by_len == 1,
-                ShapeMismatch: "series used as keys should have the same length as the dataframe"
+                ShapeMismatch: "series used as keys should have the same length as the DataFrame"
             );
             for by_key in by.iter_mut() {
                 if by_key.len() == minimal_by_len {
@@ -696,7 +696,12 @@ impl<'df> GroupBy<'df> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
 
         for agg_col in agg_cols {
-            let new_name = fmt_group_by_column(agg_col.name(), GroupByMethod::Count);
+            let new_name = fmt_group_by_column(
+                agg_col.name(),
+                GroupByMethod::Count {
+                    include_nulls: true,
+                },
+            );
             let mut ca = self.groups.group_count();
             ca.rename(&new_name);
             cols.push(ca.into_series());
@@ -860,7 +865,7 @@ pub enum GroupByMethod {
     Groups,
     NUnique,
     Quantile(f64, QuantileInterpolOptions),
-    Count,
+    Count { include_nulls: bool },
     Implode,
     Std(u8),
     Var(u8),
@@ -882,7 +887,7 @@ impl Display for GroupByMethod {
             Groups => "groups",
             NUnique => "n_unique",
             Quantile(_, _) => "quantile",
-            Count => "count",
+            Count { .. } => "count",
             Implode => "list",
             Std(_) => "std",
             Var(_) => "var",
@@ -906,7 +911,7 @@ pub fn fmt_group_by_column(name: &str, method: GroupByMethod) -> String {
         Sum => format!("{name}_sum"),
         Groups => "groups".to_string(),
         NUnique => format!("{name}_n_unique"),
-        Count => format!("{name}_count"),
+        Count { .. } => format!("{name}_count"),
         Implode => format!("{name}_agg_list"),
         Quantile(quantile, _interpol) => format!("{name}_quantile_{quantile:.2}"),
         Std(_) => format!("{name}_agg_std"),
@@ -1100,8 +1105,11 @@ mod test {
         }
         .unwrap();
 
-        df.apply("foo", |s| s.cast(&DataType::Categorical(None)).unwrap())
-            .unwrap();
+        df.apply("foo", |s| {
+            s.cast(&DataType::Categorical(None, Default::default()))
+                .unwrap()
+        })
+        .unwrap();
 
         // Use of deprecated `sum()` for testing purposes
         #[allow(deprecated)]
@@ -1172,7 +1180,9 @@ mod test {
             "int" => [1, 2, 3, 1, 1]
         ]?;
 
-        df.try_apply("g", |s| s.cast(&DataType::Categorical(None)))?;
+        df.try_apply("g", |s| {
+            s.cast(&DataType::Categorical(None, Default::default()))
+        })?;
 
         // Use of deprecated `sum()` for testing purposes
         #[allow(deprecated)]

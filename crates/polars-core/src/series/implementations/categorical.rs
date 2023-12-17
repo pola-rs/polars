@@ -1,11 +1,10 @@
 use std::borrow::Cow;
 
 use ahash::RandomState;
-use arrow::legacy::prelude::QuantileInterpolOptions;
 
 use super::{private, IntoSeries, SeriesTrait, *};
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::ops::compare_inner::{IntoPartialOrdInner, PartialOrdInner};
+use crate::chunked_array::ops::compare_inner::{IntoTotalOrdInner, TotalOrdInner};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
 #[cfg(feature = "algorithm_group_by")]
@@ -22,12 +21,15 @@ unsafe impl IntoSeries for CategoricalChunked {
 impl SeriesWrap<CategoricalChunked> {
     fn finish_with_state(&self, keep_fast_unique: bool, cats: UInt32Chunked) -> CategoricalChunked {
         let mut out = unsafe {
-            CategoricalChunked::from_cats_and_rev_map_unchecked(cats, self.0.get_rev_map().clone())
+            CategoricalChunked::from_cats_and_rev_map_unchecked(
+                cats,
+                self.0.get_rev_map().clone(),
+                self.0.get_ordering(),
+            )
         };
         if keep_fast_unique && self.0.can_fast_unique() {
             out.set_fast_unique(true)
         }
-        out.set_lexical_ordering(self.0.uses_lexical_ordering());
         out
     }
 
@@ -87,11 +89,11 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
             .zip_with(mask, other.categorical()?)
             .map(|ca| ca.into_series())
     }
-    fn into_partial_ord_inner<'a>(&'a self) -> Box<dyn PartialOrdInner + 'a> {
+    fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
         if self.0.uses_lexical_ordering() {
-            (&self.0).into_partial_ord_inner()
+            (&self.0).into_total_ord_inner()
         } else {
-            self.0.physical().into_partial_ord_inner()
+            self.0.physical().into_total_ord_inner()
         }
     }
 
@@ -165,13 +167,21 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), extend);
-        let other = other.categorical()?;
-        self.0.physical_mut().extend(other.physical());
-        let new_rev_map = self.0._merge_categorical_map(other)?;
-        // SAFETY
-        // rev_maps are merged
-        unsafe { self.0.set_rev_map(new_rev_map, false) };
-        Ok(())
+        let other_ca = other.categorical().unwrap();
+        // Fast path for globals of the same source
+        let rev_map_self = self.0.get_rev_map();
+        let rev_map_other = other_ca.get_rev_map();
+        match (&**rev_map_self, &**rev_map_other) {
+            (RevMapping::Global(_, _, idl), RevMapping::Global(_, _, idr)) if idl == idr => {
+                let mut rev_map_merger = GlobalRevMapMerger::new(rev_map_self.clone());
+                rev_map_merger.merge_map(rev_map_other)?;
+                self.0.physical_mut().extend(other_ca.physical());
+                // SAFETY: rev_maps are merged
+                unsafe { self.0.set_rev_map(rev_map_merger.finish(), false) };
+                Ok(())
+            },
+            _ => self.0.append(other_ca),
+        }
     }
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
@@ -286,32 +296,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
 
     fn shift(&self, periods: i64) -> Series {
         self.with_state(false, |ca| ca.shift(periods)).into_series()
-    }
-
-    fn _sum_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.0.physical().name(), 1).into_series()
-    }
-    fn max_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.0.physical().name(), 1).into_series()
-    }
-    fn min_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.0.physical().name(), 1).into_series()
-    }
-    fn median_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.0.physical().name(), 1).into_series()
-    }
-    fn var_as_series(&self, _ddof: u8) -> Series {
-        CategoricalChunked::full_null(self.0.physical().name(), 1).into_series()
-    }
-    fn std_as_series(&self, _ddof: u8) -> Series {
-        CategoricalChunked::full_null(self.0.physical().name(), 1).into_series()
-    }
-    fn quantile_as_series(
-        &self,
-        _quantile: f64,
-        _interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Series> {
-        Ok(CategoricalChunked::full_null(self.0.physical().name(), 1).into_series())
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

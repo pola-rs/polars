@@ -1,5 +1,5 @@
 use arrow::array::{Array, BinaryArray, PrimitiveArray, Utf8Array};
-use arrow::datatypes::{DataType, PhysicalType};
+use arrow::datatypes::{ArrowDataType, PhysicalType};
 use arrow::trusted_len::TrustedLen;
 use polars_error::{to_compute_err, PolarsResult};
 
@@ -8,7 +8,7 @@ use crate::parquet::indexes::PageIndex;
 
 pub fn deserialize(
     indexes: &[PageIndex<Vec<u8>>],
-    data_type: &DataType,
+    data_type: &ArrowDataType,
 ) -> PolarsResult<ColumnPageStatistics> {
     Ok(ColumnPageStatistics {
         min: deserialize_binary_iter(indexes.iter().map(|index| index.min.as_ref()), data_type)?,
@@ -23,7 +23,7 @@ pub fn deserialize(
 
 fn deserialize_binary_iter<'a, I: TrustedLen<Item = Option<&'a Vec<u8>>>>(
     iter: I,
-    data_type: &DataType,
+    data_type: &ArrowDataType,
 ) -> PolarsResult<Box<dyn Array>> {
     match data_type.to_physical_type() {
         PhysicalType::LargeBinary => Ok(Box::new(BinaryArray::<i64>::from_iter(iter))),

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import os
+import tempfile
 import time
 from datetime import date
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -12,8 +15,6 @@ from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from polars.type_aliases import JoinStrategy
 
 pytestmark = pytest.mark.xdist_group("streaming")
@@ -156,9 +157,7 @@ def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
 
     q = pl.DataFrame({"a": [1, 2]}).lazy()
 
-    with pytest.warns(
-        PolarsInefficientMapWarning, match="In this case, you can replace"
-    ):
+    with pytest.warns(PolarsInefficientMapWarning, match="with this one instead"):
         (
             q.select(
                 pl.col("a").map_elements(lambda x: x * 2, return_dtype=pl.Int64)
@@ -176,7 +175,7 @@ def test_streaming_ternary() -> None:
             pl.when(pl.col("a") >= 2).then(pl.col("a")).otherwise(None).alias("b"),
         )
         .explain(streaming=True)
-        .startswith("--- PIPELINE")
+        .startswith("--- STREAMING")
     )
 
 
@@ -296,14 +295,12 @@ def test_null_sum_streaming_10455() -> None:
         {
             "x": [1] * 10,
             "y": [None] * 10,
-        }
+        },
+        schema={"x": pl.Int64, "y": pl.Float32},
     )
-    assert df.lazy().group_by("x").sum().collect(streaming=True).to_dict(
-        as_series=False
-    ) == {
-        "x": [1],
-        "y": [0.0],
-    }
+    result = df.lazy().group_by("x").sum().collect(streaming=True)
+    expected = {"x": [1], "y": [0.0]}
+    assert result.to_dict(as_series=False) == expected
 
 
 def test_boolean_agg_schema() -> None:
@@ -332,3 +329,19 @@ def test_streaming_11219() -> None:
     assert lf.with_context([lf_other, lf_other2]).select(
         pl.col("b") + pl.col("c").first()
     ).collect(streaming=True).to_dict(as_series=False) == {"b": ["afoo", "cfoo", None]}
+
+
+@pytest.mark.write_disk()
+def test_custom_temp_dir(monkeypatch: Any) -> None:
+    test_temp_dir = "test_temp_dir"
+    temp_dir = Path(tempfile.gettempdir()) / test_temp_dir
+
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+    monkeypatch.setenv("POLARS_TEMP_DIR", str(temp_dir))
+
+    s = pl.arange(0, 100_000, eager=True).rename("idx")
+    df = s.shuffle().to_frame()
+    df.lazy().sort("idx").collect(streaming=True)
+
+    assert os.listdir(temp_dir), f"Temp directory '{temp_dir}' is empty"

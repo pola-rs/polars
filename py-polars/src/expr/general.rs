@@ -241,6 +241,9 @@ impl PyExpr {
     fn count(&self) -> Self {
         self.inner.clone().count().into()
     }
+    fn len(&self) -> Self {
+        self.inner.clone().len().into()
+    }
     fn value_counts(&self, sort: bool, parallel: bool) -> Self {
         self.inner.clone().value_counts(sort, parallel).into()
     }
@@ -318,8 +321,8 @@ impl PyExpr {
             .search_sorted(element.inner, side.0)
             .into()
     }
-    fn take(&self, idx: Self) -> Self {
-        self.inner.clone().take(idx.inner).into()
+    fn gather(&self, idx: Self) -> Self {
+        self.inner.clone().gather(idx.inner).into()
     }
 
     fn get(&self, idx: Self) -> Self {
@@ -413,17 +416,17 @@ impl PyExpr {
         self.inner.clone().explode().into()
     }
 
-    fn take_every(&self, n: usize) -> Self {
+    fn gather_every(&self, n: usize) -> Self {
         self.inner
             .clone()
             .map(
                 move |s: Series| {
-                    polars_ensure!(n > 0, InvalidOperation: "take_every(n): n can't be zero");
-                    Ok(Some(s.take_every(n)))
+                    polars_ensure!(n > 0, InvalidOperation: "gather_every(n): n can't be zero");
+                    Ok(Some(s.gather_every(n)))
                 },
                 GetOutput::same_type(),
             )
-            .with_fmt("take_every")
+            .with_fmt("gather_every")
             .into()
     }
     fn tail(&self, n: usize) -> Self {
@@ -632,18 +635,27 @@ impl PyExpr {
         self.inner.clone().cbrt().into()
     }
 
-    fn cumsum(&self, reverse: bool) -> Self {
-        self.inner.clone().cumsum(reverse).into()
+    fn cum_sum(&self, reverse: bool) -> Self {
+        self.inner.clone().cum_sum(reverse).into()
     }
-    fn cummax(&self, reverse: bool) -> Self {
-        self.inner.clone().cummax(reverse).into()
+    fn cum_max(&self, reverse: bool) -> Self {
+        self.inner.clone().cum_max(reverse).into()
     }
-    fn cummin(&self, reverse: bool) -> Self {
-        self.inner.clone().cummin(reverse).into()
+    fn cum_min(&self, reverse: bool) -> Self {
+        self.inner.clone().cum_min(reverse).into()
+    }
+    fn cum_prod(&self, reverse: bool) -> Self {
+        self.inner.clone().cum_prod(reverse).into()
+    }
+    fn cum_count(&self, reverse: bool) -> Self {
+        self.inner.clone().cum_count(reverse).into()
     }
 
-    fn cumprod(&self, reverse: bool) -> Self {
-        self.inner.clone().cumprod(reverse).into()
+    fn cumulative_eval(&self, expr: Self, min_periods: usize, parallel: bool) -> Self {
+        self.inner
+            .clone()
+            .cumulative_eval(expr.inner, min_periods, parallel)
+            .into()
     }
 
     fn product(&self) -> Self {
@@ -704,13 +716,6 @@ impl PyExpr {
         self.inner.clone().upper_bound().into()
     }
 
-    fn cumulative_eval(&self, expr: Self, min_periods: usize, parallel: bool) -> Self {
-        self.inner
-            .clone()
-            .cumulative_eval(expr.inner, min_periods, parallel)
-            .into()
-    }
-
     fn rank(&self, method: Wrap<RankMethod>, descending: bool, seed: Option<u64>) -> Self {
         let options = RankOptions {
             method: method.0,
@@ -737,10 +742,6 @@ impl PyExpr {
 
     fn reshape(&self, dims: Vec<i64>) -> Self {
         self.inner.clone().reshape(&dims).into()
-    }
-
-    fn cumcount(&self, reverse: bool) -> Self {
-        self.inner.clone().cumcount(reverse).into()
     }
 
     fn to_physical(&self) -> Self {
@@ -869,6 +870,24 @@ impl PyExpr {
         self.inner.clone().set_sorted_flag(is_sorted).into()
     }
 
+    fn replace(
+        &self,
+        old: PyExpr,
+        new: PyExpr,
+        default: Option<PyExpr>,
+        return_dtype: Option<Wrap<DataType>>,
+    ) -> Self {
+        self.inner
+            .clone()
+            .replace(
+                old.inner,
+                new.inner,
+                default.map(|e| e.inner),
+                return_dtype.map(|dt| dt.0),
+            )
+            .into()
+    }
+
     #[cfg(feature = "ffi_plugin")]
     fn register_plugin(
         &self,
@@ -915,5 +934,21 @@ impl PyExpr {
             },
         }
         .into())
+    }
+
+    #[cfg(feature = "hist")]
+    #[pyo3(signature = (bins, bin_count, include_category, include_breakpoint))]
+    fn hist(
+        &self,
+        bins: Option<PyExpr>,
+        bin_count: Option<usize>,
+        include_category: bool,
+        include_breakpoint: bool,
+    ) -> Self {
+        let bins = bins.map(|e| e.inner);
+        self.inner
+            .clone()
+            .hist(bins, bin_count, include_category, include_breakpoint)
+            .into()
     }
 }

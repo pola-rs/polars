@@ -11,8 +11,6 @@ pub enum RollingFunction {
     MeanBy(RollingOptions),
     Sum(RollingOptions),
     SumBy(RollingOptions),
-    Median(RollingOptions),
-    MedianBy(RollingOptions),
     Quantile(RollingOptions),
     QuantileBy(RollingOptions),
     Var(RollingOptions),
@@ -36,8 +34,6 @@ impl Display for RollingFunction {
             MeanBy(_) => "rolling_mean_by",
             Sum(_) => "rolling_sum",
             SumBy(_) => "rolling_sum_by",
-            Median(_) => "rolling_median",
-            MedianBy(_) => "rolling_median_by",
             Quantile(_) => "rolling_quantile",
             QuantileBy(_) => "rolling_quantile_by",
             Var(_) => "rolling_var",
@@ -89,7 +85,19 @@ fn convert<'a>(
             ),
             dt => polars_bail!(opq = expr_name, got = dt, expected = "date/datetime"),
         };
-        ensure_sorted_arg(&by, expr_name)?;
+        if by.is_sorted_flag() != IsSorted::Ascending && options.warn_if_unsorted {
+            polars_warn!(format!(
+                "Series is not known to be sorted by `by` column in {} operation.\n\
+                \n\
+                To silence this warning, you may want to try:\n\
+                - sorting your data by your `by` column beforehand;\n\
+                - setting `.set_sorted()` if you already know your data is sorted;\n\
+                - passing `warn_if_unsorted=False` if this warning is a false-positive\n  \
+                    (this is known to happen when combining rolling aggregations with `over`);\n\n\
+                before passing calling the rolling aggregation function.\n",
+                expr_name
+            ));
+        }
         let by = by.datetime().unwrap();
         let by_values = by.cont_slice().map_err(|_| {
             polars_err!(
@@ -145,14 +153,6 @@ pub(super) fn rolling_sum(s: &Series, options: RollingOptions) -> PolarsResult<S
 
 pub(super) fn rolling_sum_by(s: &[Series], options: RollingOptions) -> PolarsResult<Series> {
     convert(|options| s[0].rolling_sum(options), s, "rolling_sum")(options)
-}
-
-pub(super) fn rolling_median(s: &Series, options: RollingOptions) -> PolarsResult<Series> {
-    s.rolling_median(options.clone().into())
-}
-
-pub(super) fn rolling_median_by(s: &[Series], options: RollingOptions) -> PolarsResult<Series> {
-    convert(|options| s[0].rolling_median(options), s, "rolling_median")(options)
 }
 
 pub(super) fn rolling_quantile(s: &Series, options: RollingOptions) -> PolarsResult<Series> {

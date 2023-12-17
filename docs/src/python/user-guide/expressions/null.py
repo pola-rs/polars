@@ -1,6 +1,6 @@
 # --8<-- [start:setup]
-import polars as pl
 import numpy as np
+import polars as pl
 
 # --8<-- [end:setup]
 
@@ -70,7 +70,7 @@ print(fill_interpolation_df)
 # --8<-- [start:nan]
 nan_df = pl.DataFrame(
     {
-        "value": [1.0, np.NaN, float("nan"), 3.0],
+        "value": [1.0, np.nan, float("nan"), 3.0],
     },
 )
 print(nan_df)

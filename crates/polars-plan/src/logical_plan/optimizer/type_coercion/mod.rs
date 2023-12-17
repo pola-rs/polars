@@ -218,9 +218,9 @@ fn modify_supertype(
         match (type_left, type_right, left, right) {
             // if the we compare a categorical to a literal string we want to cast the literal to categorical
             #[cfg(feature = "dtype-categorical")]
-            (Categorical(_), Utf8, _, AExpr::Literal(_))
-            | (Utf8, Categorical(_), AExpr::Literal(_), _) => {
-                st = Categorical(None);
+            (Categorical(_, ordering), Utf8, _, AExpr::Literal(_))
+            | (Utf8, Categorical(_, ordering), AExpr::Literal(_), _) => {
+                st = Categorical(None, *ordering);
             },
             // when then expression literals can have a different list type.
             // so we cast the literal to the other hand side.
@@ -359,9 +359,9 @@ impl OptimizationRule for TypeCoercionRule {
                     // cast both local and global string cache
                     // note that there might not yet be a rev
                     #[cfg(feature = "dtype-categorical")]
-                    (DataType::Categorical(_), DataType::Utf8) => AExpr::Cast {
+                    (DataType::Categorical(_, ordering), DataType::Utf8) => AExpr::Cast {
                         expr: other_node,
-                        data_type: DataType::Categorical(None),
+                        data_type: DataType::Categorical(None, *ordering),
                         strict: false,
                     },
                     #[cfg(feature = "dtype-decimal")]
@@ -610,7 +610,7 @@ mod test {
 
         let df = DataFrame::new(Vec::from([Series::new_empty(
             "fruits",
-            &DataType::Categorical(None),
+            &DataType::Categorical(None, Default::default()),
         )]))
         .unwrap();
 

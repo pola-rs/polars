@@ -2,15 +2,16 @@ use std::collections::VecDeque;
 
 use arrow::array::FixedSizeBinaryArray;
 use arrow::bitmap::MutableBitmap;
-use arrow::datatypes::DataType;
+use arrow::datatypes::ArrowDataType;
+use arrow::pushable::Pushable;
 use polars_error::PolarsResult;
 
 use super::super::utils::{
     dict_indices_decoder, extend_from_decoder, get_selected_rows, next, not_implemented,
     DecodedState, Decoder, FilteredOptionalPageValidity, MaybeNext, OptionalPageValidity,
-    PageState, Pushable,
+    PageState,
 };
-use super::super::Pages;
+use super::super::PagesIter;
 use super::utils::FixedSizeBinary;
 use crate::parquet::deserialize::SliceFilteredIter;
 use crate::parquet::encoding::{hybrid_rle, Encoding};
@@ -209,7 +210,7 @@ impl<'a> Decoder<'a> for BinaryDecoder {
         decoded: &mut Self::DecodedState,
 
         remaining: usize,
-    ) {
+    ) -> PolarsResult<()> {
         let (values, validity) = decoded;
         match state {
             State::Optional(page) => extend_from_decoder(
@@ -262,6 +263,7 @@ impl<'a> Decoder<'a> for BinaryDecoder {
                 );
             },
         }
+        Ok(())
     }
 
     fn deserialize_dict(&self, page: &DictPage) -> Self::Dict {
@@ -270,16 +272,16 @@ impl<'a> Decoder<'a> for BinaryDecoder {
 }
 
 pub fn finish(
-    data_type: &DataType,
+    data_type: &ArrowDataType,
     values: FixedSizeBinary,
     validity: MutableBitmap,
 ) -> FixedSizeBinaryArray {
     FixedSizeBinaryArray::new(data_type.clone(), values.values.into(), validity.into())
 }
 
-pub struct Iter<I: Pages> {
+pub struct Iter<I: PagesIter> {
     iter: I,
-    data_type: DataType,
+    data_type: ArrowDataType,
     size: usize,
     items: VecDeque<(FixedSizeBinary, MutableBitmap)>,
     dict: Option<Dict>,
@@ -287,8 +289,13 @@ pub struct Iter<I: Pages> {
     remaining: usize,
 }
 
-impl<I: Pages> Iter<I> {
-    pub fn new(iter: I, data_type: DataType, num_rows: usize, chunk_size: Option<usize>) -> Self {
+impl<I: PagesIter> Iter<I> {
+    pub fn new(
+        iter: I,
+        data_type: ArrowDataType,
+        num_rows: usize,
+        chunk_size: Option<usize>,
+    ) -> Self {
         let size = FixedSizeBinaryArray::get_size(&data_type);
         Self {
             iter,
@@ -302,25 +309,27 @@ impl<I: Pages> Iter<I> {
     }
 }
 
-impl<I: Pages> Iterator for Iter<I> {
+impl<I: PagesIter> Iterator for Iter<I> {
     type Item = PolarsResult<FixedSizeBinaryArray>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let maybe_state = next(
-            &mut self.iter,
-            &mut self.items,
-            &mut self.dict,
-            &mut self.remaining,
-            self.chunk_size,
-            &BinaryDecoder { size: self.size },
-        );
-        match maybe_state {
-            MaybeNext::Some(Ok((values, validity))) => {
-                Some(Ok(finish(&self.data_type, values, validity)))
-            },
-            MaybeNext::Some(Err(e)) => Some(Err(e)),
-            MaybeNext::None => None,
-            MaybeNext::More => self.next(),
+        loop {
+            let maybe_state = next(
+                &mut self.iter,
+                &mut self.items,
+                &mut self.dict,
+                &mut self.remaining,
+                self.chunk_size,
+                &BinaryDecoder { size: self.size },
+            );
+            match maybe_state {
+                MaybeNext::Some(Ok((values, validity))) => {
+                    return Some(Ok(finish(&self.data_type, values, validity)))
+                },
+                MaybeNext::Some(Err(e)) => return Some(Err(e)),
+                MaybeNext::None => return None,
+                MaybeNext::More => continue,
+            }
         }
     }
 }

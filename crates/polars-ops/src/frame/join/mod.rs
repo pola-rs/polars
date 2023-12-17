@@ -34,13 +34,13 @@ pub use merge_sorted::_merge_sorted_dfs;
 use polars_core::hashing::{_df_rows_to_hashes_threaded_vertical, _HASHMAP_INIT_SIZE};
 use polars_core::prelude::*;
 pub(super) use polars_core::series::IsSorted;
-use polars_core::utils::{_to_physical_and_bit_repr, slice_slice};
+use polars_core::utils::{_to_physical_and_bit_repr, slice_offsets, slice_slice};
 use polars_core::POOL;
 use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;
 
-use super::hashing::{create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded};
 use super::IntoDf;
+use crate::frame::join::general::coalesce_outer_join;
 
 pub trait DataFrameJoinOps: IntoDf {
     /// Generic join method. Can be used to join on multiple columns.
@@ -100,11 +100,12 @@ pub trait DataFrameJoinOps: IntoDf {
 
     #[doc(hidden)]
     #[allow(clippy::too_many_arguments)]
+    #[allow(unused_mut)]
     fn _join_impl(
         &self,
         other: &DataFrame,
-        selected_left: Vec<Series>,
-        selected_right: Vec<Series>,
+        mut selected_left: Vec<Series>,
+        mut selected_right: Vec<Series>,
         args: JoinArgs,
         _check_rechunk: bool,
         _verbose: bool,
@@ -131,7 +132,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 let mut right = Cow::Borrowed(other);
                 if left_df.should_rechunk() {
                     if _verbose {
-                        eprintln!("{:?} join triggered a rechunk of the left dataframe: {} columns are affected", args.how, left_df.width());
+                        eprintln!("{:?} join triggered a rechunk of the left DataFrame: {} columns are affected", args.how, left_df.width());
                     }
 
                     let mut tmp_left = left_df.clone();
@@ -140,7 +141,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 }
                 if other.should_rechunk() {
                     if _verbose {
-                        eprintln!("{:?} join triggered a rechunk of the right dataframe: {} columns are affected", args.how, other.width());
+                        eprintln!("{:?} join triggered a rechunk of the right DataFrame: {} columns are affected", args.how, other.width());
                     }
                     let mut tmp_right = other.clone();
                     tmp_right.as_single_chunk_par();
@@ -182,14 +183,22 @@ pub trait DataFrameJoinOps: IntoDf {
         };
 
         #[cfg(feature = "dtype-categorical")]
-        for (l, r) in selected_left.iter().zip(&selected_right) {
-            _check_categorical_src(l.dtype(), r.dtype())?
+        for (l, r) in selected_left.iter_mut().zip(selected_right.iter_mut()) {
+            match _check_categorical_src(l.dtype(), r.dtype()) {
+                Ok(_) => {},
+                Err(_) => {
+                    let (ca_left, ca_right) =
+                        make_categoricals_compatible(l.categorical()?, r.categorical()?)?;
+                    *l = ca_left.into_series().with_name(l.name());
+                    *r = ca_right.into_series().with_name(r.name());
+                },
+            }
         }
 
         // Single keys.
         if selected_left.len() == 1 {
-            let s_left = left_df.column(selected_left[0].name())?;
-            let s_right = other.column(selected_right[0].name())?;
+            let s_left = &selected_left[0];
+            let s_right = &selected_right[0];
             return match args.how {
                 JoinType::Inner => {
                     left_df._inner_join_from_series(other, s_left, s_right, args, _verbose)
@@ -197,7 +206,9 @@ pub trait DataFrameJoinOps: IntoDf {
                 JoinType::Left => {
                     left_df._left_join_from_series(other, s_left, s_right, args, _verbose)
                 },
-                JoinType::Outer => left_df._outer_join_from_series(other, s_left, s_right, args),
+                JoinType::Outer { .. } => {
+                    left_df._outer_join_from_series(other, s_left, s_right, args)
+                },
                 #[cfg(feature = "semi_anti_join")]
                 JoinType::Anti => {
                     left_df._semi_anti_join_from_series(s_left, s_right, args.slice, true)
@@ -266,7 +277,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 let right = DataFrame::new_no_checks(selected_right_physical);
                 let (mut left, mut right, swap) = det_hash_prone_order!(left, right);
                 let (join_idx_left, join_idx_right) =
-                    _inner_join_multiple_keys(&mut left, &mut right, swap);
+                    _inner_join_multiple_keys(&mut left, &mut right, swap, args.join_nulls);
                 let mut join_idx_left = &*join_idx_left;
                 let mut join_idx_right = &*join_idx_right;
 
@@ -293,53 +304,48 @@ pub trait DataFrameJoinOps: IntoDf {
                 if let Some((offset, len)) = args.slice {
                     left = left.slice(offset, len);
                 }
-                let ids = _left_join_multiple_keys(&mut left, &mut right, None, None);
+                let ids =
+                    _left_join_multiple_keys(&mut left, &mut right, None, None, args.join_nulls);
                 left_df._finish_left_join(ids, &remove_selected(other, &selected_right), args)
             },
-            JoinType::Outer => {
+            JoinType::Outer { .. } => {
                 let left = DataFrame::new_no_checks(selected_left_physical);
                 let right = DataFrame::new_no_checks(selected_right_physical);
 
                 let (mut left, mut right, swap) = det_hash_prone_order!(left, right);
-                let opt_join_tuples = _outer_join_multiple_keys(&mut left, &mut right, swap);
-
-                let mut opt_join_tuples = &*opt_join_tuples;
+                let (mut join_idx_l, mut join_idx_r) =
+                    _outer_join_multiple_keys(&mut left, &mut right, swap, args.join_nulls);
 
                 if let Some((offset, len)) = args.slice {
-                    opt_join_tuples = slice_slice(opt_join_tuples, offset, len);
+                    let (offset, len) = slice_offsets(offset, len, join_idx_l.len());
+                    join_idx_l.slice(offset, len);
+                    join_idx_r.slice(offset, len);
                 }
+                let idx_ca_l = IdxCa::with_chunk("", join_idx_l);
+                let idx_ca_r = IdxCa::with_chunk("", join_idx_r);
 
                 // Take the left and right dataframes by join tuples
                 let (df_left, df_right) = POOL.join(
-                    || unsafe {
-                        remove_selected(left_df, &selected_left).take_unchecked(
-                            &opt_join_tuples
-                                .iter()
-                                .map(|(left, _right)| *left)
-                                .collect_ca(""),
-                        )
-                    },
-                    || unsafe {
-                        remove_selected(other, &selected_right).take_unchecked(
-                            &opt_join_tuples
-                                .iter()
-                                .map(|(_left, right)| *right)
-                                .collect_ca(""),
-                        )
-                    },
+                    || unsafe { left_df.take_unchecked(&idx_ca_l) },
+                    || unsafe { other.take_unchecked(&idx_ca_r) },
                 );
-                // Allocate a new vec for df_left so that the keys are left and then other values.
-                let mut keys = Vec::with_capacity(selected_left.len() + df_left.width());
-                for (s_left, s_right) in selected_left.iter().zip(&selected_right) {
-                    let s = unsafe {
-                        zip_outer_join_column(s_left, s_right, opt_join_tuples)
-                            .with_name(s_left.name())
-                    };
-                    keys.push(s)
+
+                let JoinType::Outer { coalesce } = args.how else {
+                    unreachable!()
+                };
+                let names_left = selected_left.iter().map(|s| s.name()).collect::<Vec<_>>();
+                let names_right = selected_right.iter().map(|s| s.name()).collect::<Vec<_>>();
+                let out = _finish_join(df_left, df_right, args.suffix.as_deref());
+                if coalesce {
+                    Ok(coalesce_outer_join(
+                        out?,
+                        &names_left,
+                        &names_right,
+                        args.suffix.as_deref(),
+                    ))
+                } else {
+                    out
                 }
-                keys.extend_from_slice(df_left.get_columns());
-                let df_left = DataFrame::new_no_checks(keys);
-                _finish_join(df_left, df_right, args.suffix.as_deref())
             },
             #[cfg(feature = "asof_join")]
             JoinType::AsOf(_) => polars_bail!(
@@ -351,9 +357,9 @@ pub trait DataFrameJoinOps: IntoDf {
                 let mut right = DataFrame::new_no_checks(selected_right_physical);
 
                 let idx = if matches!(args.how, JoinType::Anti) {
-                    _left_anti_multiple_keys(&mut left, &mut right)
+                    _left_anti_multiple_keys(&mut left, &mut right, args.join_nulls)
                 } else {
-                    _left_semi_multiple_keys(&mut left, &mut right)
+                    _left_semi_multiple_keys(&mut left, &mut right, args.join_nulls)
                 };
                 // Safety:
                 // indices are in bounds
@@ -452,7 +458,12 @@ pub trait DataFrameJoinOps: IntoDf {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        self.join(other, left_on, right_on, JoinArgs::new(JoinType::Outer))
+        self.join(
+            other,
+            left_on,
+            right_on,
+            JoinArgs::new(JoinType::Outer { coalesce: false }),
+        )
     }
 }
 
@@ -474,7 +485,7 @@ trait DataFrameJoinOpsPrivate: IntoDf {
         #[cfg(feature = "dtype-categorical")]
         _check_categorical_src(s_left.dtype(), s_right.dtype())?;
         let ((join_tuples_left, join_tuples_right), sorted) =
-            _sort_or_hash_inner(s_left, s_right, verbose, args.validation)?;
+            _sort_or_hash_inner(s_left, s_right, verbose, args.validation, args.join_nulls)?;
 
         let mut join_tuples_left = &*join_tuples_left;
         let mut join_tuples_right = &*join_tuples_right;

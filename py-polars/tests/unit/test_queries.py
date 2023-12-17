@@ -34,7 +34,7 @@ def test_repeat_expansion_in_group_by() -> None:
     out = (
         pl.DataFrame({"g": [1, 2, 2, 3, 3, 3]})
         .group_by("g", maintain_order=True)
-        .agg(pl.repeat(1, pl.count()).cumsum())
+        .agg(pl.repeat(1, pl.count()).cum_sum())
         .to_dict(as_series=False)
     )
     assert out == {"g": [1, 2, 3], "repeat": [[1], [1, 2], [1, 2, 3]]}

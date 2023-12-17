@@ -15,6 +15,7 @@ from typing import (
     Collection,
     FrozenSet,
     Iterable,
+    Mapping,
     NoReturn,
     Sequence,
     Set,
@@ -24,13 +25,7 @@ from typing import (
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import (
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
-    Categorical,
-    Null,
-    Struct,
     UInt32,
-    Utf8,
     is_polars_dtype,
     py_type_to_dtype,
 )
@@ -57,10 +52,13 @@ from polars.utils.deprecation import (
     deprecate_renamed_function,
     deprecate_renamed_parameter,
     deprecate_saturating,
-    warn_closed_future_change,
 )
 from polars.utils.meta import threadpool_size
-from polars.utils.various import sphinx_accessor
+from polars.utils.various import (
+    _warn_null_comparison,
+    no_default,
+    sphinx_accessor,
+)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
@@ -89,6 +87,9 @@ if TYPE_CHECKING:
         SearchSortedSide,
         TemporalLiteral,
         WindowMappingStrategy,
+    )
+    from polars.utils.various import (
+        NoDefault,
     )
 
     if sys.version_info >= (3, 11):
@@ -126,15 +127,18 @@ class Expr:
         return expr
 
     def _to_pyexpr(self, other: Any) -> PyExpr:
-        return self._to_expr(other)._pyexpr
-
-    def _to_expr(self, other: Any) -> Expr:
         if isinstance(other, Expr):
-            return other
-        return F.lit(other)
+            return other._pyexpr
+        else:
+            return F.lit(other)._pyexpr
 
     def _repr_html_(self) -> str:
         return self._pyexpr.to_str()
+
+    def __repr__(self) -> str:
+        if len(expr_str := self._pyexpr.to_str()) > 30:
+            expr_str = f"{expr_str[:30]}…"
+        return f"<{self.__class__.__name__} [{expr_str!r}] at 0x{id(self):X}>"
 
     def __str__(self) -> str:
         return self._pyexpr.to_str()
@@ -163,7 +167,8 @@ class Expr:
         return self._from_pyexpr(self._to_pyexpr(other)._and(self._pyexpr))
 
     def __eq__(self, other: Any) -> Self:  # type: ignore[override]
-        return self._from_pyexpr(self._pyexpr.eq(self._to_expr(other)._pyexpr))
+        _warn_null_comparison(other)
+        return self._from_pyexpr(self._pyexpr.eq(self._to_pyexpr(other)))
 
     def __floordiv__(self, other: Any) -> Self:
         return self._from_pyexpr(self._pyexpr // self._to_pyexpr(other))
@@ -172,19 +177,23 @@ class Expr:
         return self._from_pyexpr(self._to_pyexpr(other) // self._pyexpr)
 
     def __ge__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr.gt_eq(self._to_expr(other)._pyexpr))
+        _warn_null_comparison(other)
+        return self._from_pyexpr(self._pyexpr.gt_eq(self._to_pyexpr(other)))
 
     def __gt__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr.gt(self._to_expr(other)._pyexpr))
+        _warn_null_comparison(other)
+        return self._from_pyexpr(self._pyexpr.gt(self._to_pyexpr(other)))
 
     def __invert__(self) -> Self:
         return self.not_()
 
     def __le__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr.lt_eq(self._to_expr(other)._pyexpr))
+        _warn_null_comparison(other)
+        return self._from_pyexpr(self._pyexpr.lt_eq(self._to_pyexpr(other)))
 
     def __lt__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr.lt(self._to_expr(other)._pyexpr))
+        _warn_null_comparison(other)
+        return self._from_pyexpr(self._pyexpr.lt(self._to_pyexpr(other)))
 
     def __mod__(self, other: Any) -> Self:
         return self._from_pyexpr(self._pyexpr % self._to_pyexpr(other))
@@ -199,7 +208,8 @@ class Expr:
         return self._from_pyexpr(self._to_pyexpr(other) * self._pyexpr)
 
     def __ne__(self, other: Any) -> Self:  # type: ignore[override]
-        return self._from_pyexpr(self._pyexpr.neq(self._to_expr(other)._pyexpr))
+        _warn_null_comparison(other)
+        return self._from_pyexpr(self._pyexpr.neq(self._to_pyexpr(other)))
 
     def __neg__(self) -> Expr:
         neg_expr = F.lit(0) - self
@@ -1262,14 +1272,20 @@ class Expr:
 
     def count(self) -> Self:
         """
-        Return the number of elements in the column.
+        Return the number of non-null elements in the column.
 
-        .. warning::
-            Null values are treated like regular elements in this context.
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`UInt32`.
+
+        See Also
+        --------
+        len
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [None, 4, 4]})
         >>> df.select(pl.all().count())
         shape: (1, 2)
         ┌─────┬─────┐
@@ -1277,9 +1293,8 @@ class Expr:
         │ --- ┆ --- │
         │ u32 ┆ u32 │
         ╞═════╪═════╡
-        │ 3   ┆ 3   │
+        │ 3   ┆ 2   │
         └─────┴─────┘
-
         """
         return self._from_pyexpr(self._pyexpr.count())
 
@@ -1287,13 +1302,20 @@ class Expr:
         """
         Return the number of elements in the column.
 
-        Null values are treated like regular elements in this context.
+        Null values count towards the total.
 
-        Alias for :func:`count`.
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`UInt32`.
+
+        See Also
+        --------
+        count
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [None, 4, 4]})
         >>> df.select(pl.all().len())
         shape: (1, 2)
         ┌─────┬─────┐
@@ -1303,9 +1325,8 @@ class Expr:
         ╞═════╪═════╡
         │ 3   ┆ 3   │
         └─────┴─────┘
-
         """
-        return self.count()
+        return self._from_pyexpr(self._pyexpr.len())
 
     def slice(self, offset: int | Expr, length: int | Expr | None = None) -> Self:
         """
@@ -1475,7 +1496,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.drop_nans())
 
-    def cumsum(self, *, reverse: bool = False) -> Self:
+    def cum_sum(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative sum computed at every element.
 
@@ -1492,56 +1513,52 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
-        >>> df.select(
-        ...     [
-        ...         pl.col("a").cumsum(),
-        ...         pl.col("a").cumsum(reverse=True).alias("a_reverse"),
-        ...     ]
+        >>> df.with_columns(
+        ...     pl.col("a").cum_sum().alias("cum_sum"),
+        ...     pl.col("a").cum_sum(reverse=True).alias("cum_sum_reverse"),
         ... )
-        shape: (4, 2)
-        ┌─────┬───────────┐
-        │ a   ┆ a_reverse │
-        │ --- ┆ ---       │
-        │ i64 ┆ i64       │
-        ╞═════╪═══════════╡
-        │ 1   ┆ 10        │
-        │ 3   ┆ 9         │
-        │ 6   ┆ 7         │
-        │ 10  ┆ 4         │
-        └─────┴───────────┘
+        shape: (4, 3)
+        ┌─────┬─────────┬─────────────────┐
+        │ a   ┆ cum_sum ┆ cum_sum_reverse │
+        │ --- ┆ ---     ┆ ---             │
+        │ i64 ┆ i64     ┆ i64             │
+        ╞═════╪═════════╪═════════════════╡
+        │ 1   ┆ 1       ┆ 10              │
+        │ 2   ┆ 3       ┆ 9               │
+        │ 3   ┆ 6       ┆ 7               │
+        │ 4   ┆ 10      ┆ 4               │
+        └─────┴─────────┴─────────────────┘
 
         Null values are excluded, but can also be filled by calling `forward_fill`.
 
         >>> df = pl.DataFrame({"values": [None, 10, None, 8, 9, None, 16, None]})
         >>> df.with_columns(
-        ...     [
-        ...         pl.col("values").cumsum().alias("value_cumsum"),
-        ...         pl.col("values")
-        ...         .cumsum()
-        ...         .forward_fill()
-        ...         .alias("value_cumsum_all_filled"),
-        ...     ]
+        ...     pl.col("values").cum_sum().alias("value_cum_sum"),
+        ...     pl.col("values")
+        ...     .cum_sum()
+        ...     .forward_fill()
+        ...     .alias("value_cum_sum_all_filled"),
         ... )
         shape: (8, 3)
-        ┌────────┬──────────────┬─────────────────────────┐
-        │ values ┆ value_cumsum ┆ value_cumsum_all_filled │
-        │ ---    ┆ ---          ┆ ---                     │
-        │ i64    ┆ i64          ┆ i64                     │
-        ╞════════╪══════════════╪═════════════════════════╡
-        │ null   ┆ null         ┆ null                    │
-        │ 10     ┆ 10           ┆ 10                      │
-        │ null   ┆ null         ┆ 10                      │
-        │ 8      ┆ 18           ┆ 18                      │
-        │ 9      ┆ 27           ┆ 27                      │
-        │ null   ┆ null         ┆ 27                      │
-        │ 16     ┆ 43           ┆ 43                      │
-        │ null   ┆ null         ┆ 43                      │
-        └────────┴──────────────┴─────────────────────────┘
+        ┌────────┬───────────────┬──────────────────────────┐
+        │ values ┆ value_cum_sum ┆ value_cum_sum_all_filled │
+        │ ---    ┆ ---           ┆ ---                      │
+        │ i64    ┆ i64           ┆ i64                      │
+        ╞════════╪═══════════════╪══════════════════════════╡
+        │ null   ┆ null          ┆ null                     │
+        │ 10     ┆ 10            ┆ 10                       │
+        │ null   ┆ null          ┆ 10                       │
+        │ 8      ┆ 18            ┆ 18                       │
+        │ 9      ┆ 27            ┆ 27                       │
+        │ null   ┆ null          ┆ 27                       │
+        │ 16     ┆ 43            ┆ 43                       │
+        │ null   ┆ null          ┆ 43                       │
+        └────────┴───────────────┴──────────────────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.cumsum(reverse))
+        return self._from_pyexpr(self._pyexpr.cum_sum(reverse))
 
-    def cumprod(self, *, reverse: bool = False) -> Self:
+    def cum_prod(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative product computed at every element.
 
@@ -1558,28 +1575,26 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
-        >>> df.select(
-        ...     [
-        ...         pl.col("a").cumprod(),
-        ...         pl.col("a").cumprod(reverse=True).alias("a_reverse"),
-        ...     ]
+        >>> df.with_columns(
+        ...     pl.col("a").cum_prod().alias("cum_prod"),
+        ...     pl.col("a").cum_prod(reverse=True).alias("cum_prod_reverse"),
         ... )
-        shape: (4, 2)
-        ┌─────┬───────────┐
-        │ a   ┆ a_reverse │
-        │ --- ┆ ---       │
-        │ i64 ┆ i64       │
-        ╞═════╪═══════════╡
-        │ 1   ┆ 24        │
-        │ 2   ┆ 24        │
-        │ 6   ┆ 12        │
-        │ 24  ┆ 4         │
-        └─────┴───────────┘
+        shape: (4, 3)
+        ┌─────┬──────────┬──────────────────┐
+        │ a   ┆ cum_prod ┆ cum_prod_reverse │
+        │ --- ┆ ---      ┆ ---              │
+        │ i64 ┆ i64      ┆ i64              │
+        ╞═════╪══════════╪══════════════════╡
+        │ 1   ┆ 1        ┆ 24               │
+        │ 2   ┆ 2        ┆ 24               │
+        │ 3   ┆ 6        ┆ 12               │
+        │ 4   ┆ 24       ┆ 4                │
+        └─────┴──────────┴──────────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.cumprod(reverse))
+        return self._from_pyexpr(self._pyexpr.cum_prod(reverse))
 
-    def cummin(self, *, reverse: bool = False) -> Self:
+    def cum_min(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative min computed at every element.
 
@@ -1591,28 +1606,26 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
-        >>> df.select(
-        ...     [
-        ...         pl.col("a").cummin(),
-        ...         pl.col("a").cummin(reverse=True).alias("a_reverse"),
-        ...     ]
+        >>> df.with_columns(
+        ...     pl.col("a").cum_min().alias("cum_min"),
+        ...     pl.col("a").cum_min(reverse=True).alias("cum_min_reverse"),
         ... )
-        shape: (4, 2)
-        ┌─────┬───────────┐
-        │ a   ┆ a_reverse │
-        │ --- ┆ ---       │
-        │ i64 ┆ i64       │
-        ╞═════╪═══════════╡
-        │ 1   ┆ 1         │
-        │ 1   ┆ 2         │
-        │ 1   ┆ 3         │
-        │ 1   ┆ 4         │
-        └─────┴───────────┘
+        shape: (4, 3)
+        ┌─────┬─────────┬─────────────────┐
+        │ a   ┆ cum_min ┆ cum_min_reverse │
+        │ --- ┆ ---     ┆ ---             │
+        │ i64 ┆ i64     ┆ i64             │
+        ╞═════╪═════════╪═════════════════╡
+        │ 1   ┆ 1       ┆ 1               │
+        │ 2   ┆ 1       ┆ 2               │
+        │ 3   ┆ 1       ┆ 3               │
+        │ 4   ┆ 1       ┆ 4               │
+        └─────┴─────────┴─────────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.cummin(reverse))
+        return self._from_pyexpr(self._pyexpr.cum_min(reverse))
 
-    def cummax(self, *, reverse: bool = False) -> Self:
+    def cum_max(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative max computed at every element.
 
@@ -1624,56 +1637,49 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
-        >>> df.select(
-        ...     [
-        ...         pl.col("a").cummax(),
-        ...         pl.col("a").cummax(reverse=True).alias("a_reverse"),
-        ...     ]
+        >>> df.with_columns(
+        ...     pl.col("a").cum_max().alias("cum_max"),
+        ...     pl.col("a").cum_max(reverse=True).alias("cum_max_reverse"),
         ... )
-        shape: (4, 2)
-        ┌─────┬───────────┐
-        │ a   ┆ a_reverse │
-        │ --- ┆ ---       │
-        │ i64 ┆ i64       │
-        ╞═════╪═══════════╡
-        │ 1   ┆ 4         │
-        │ 2   ┆ 4         │
-        │ 3   ┆ 4         │
-        │ 4   ┆ 4         │
-        └─────┴───────────┘
+        shape: (4, 3)
+        ┌─────┬─────────┬─────────────────┐
+        │ a   ┆ cum_max ┆ cum_max_reverse │
+        │ --- ┆ ---     ┆ ---             │
+        │ i64 ┆ i64     ┆ i64             │
+        ╞═════╪═════════╪═════════════════╡
+        │ 1   ┆ 1       ┆ 4               │
+        │ 2   ┆ 2       ┆ 4               │
+        │ 3   ┆ 3       ┆ 4               │
+        │ 4   ┆ 4       ┆ 4               │
+        └─────┴─────────┴─────────────────┘
 
         Null values are excluded, but can also be filled by calling `forward_fill`.
 
         >>> df = pl.DataFrame({"values": [None, 10, None, 8, 9, None, 16, None]})
         >>> df.with_columns(
-        ...     [
-        ...         pl.col("values").cummax().alias("value_cummax"),
-        ...         pl.col("values")
-        ...         .cummax()
-        ...         .forward_fill()
-        ...         .alias("value_cummax_all_filled"),
-        ...     ]
+        ...     pl.col("values").cum_max().alias("cum_max"),
+        ...     pl.col("values").cum_max().forward_fill().alias("cum_max_all_filled"),
         ... )
         shape: (8, 3)
-        ┌────────┬──────────────┬─────────────────────────┐
-        │ values ┆ value_cummax ┆ value_cummax_all_filled │
-        │ ---    ┆ ---          ┆ ---                     │
-        │ i64    ┆ i64          ┆ i64                     │
-        ╞════════╪══════════════╪═════════════════════════╡
-        │ null   ┆ null         ┆ null                    │
-        │ 10     ┆ 10           ┆ 10                      │
-        │ null   ┆ null         ┆ 10                      │
-        │ 8      ┆ 10           ┆ 10                      │
-        │ 9      ┆ 10           ┆ 10                      │
-        │ null   ┆ null         ┆ 10                      │
-        │ 16     ┆ 16           ┆ 16                      │
-        │ null   ┆ null         ┆ 16                      │
-        └────────┴──────────────┴─────────────────────────┘
+        ┌────────┬─────────┬────────────────────┐
+        │ values ┆ cum_max ┆ cum_max_all_filled │
+        │ ---    ┆ ---     ┆ ---                │
+        │ i64    ┆ i64     ┆ i64                │
+        ╞════════╪═════════╪════════════════════╡
+        │ null   ┆ null    ┆ null               │
+        │ 10     ┆ 10      ┆ 10                 │
+        │ null   ┆ null    ┆ 10                 │
+        │ 8      ┆ 10      ┆ 10                 │
+        │ 9      ┆ 10      ┆ 10                 │
+        │ null   ┆ null    ┆ 10                 │
+        │ 16     ┆ 16      ┆ 16                 │
+        │ null   ┆ null    ┆ 16                 │
+        └────────┴─────────┴────────────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.cummax(reverse))
+        return self._from_pyexpr(self._pyexpr.cum_max(reverse))
 
-    def cumcount(self, *, reverse: bool = False) -> Self:
+    def cum_count(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative count computed at every element.
 
@@ -1687,26 +1693,24 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
-        >>> df.select(
-        ...     [
-        ...         pl.col("a").cumcount(),
-        ...         pl.col("a").cumcount(reverse=True).alias("a_reverse"),
-        ...     ]
+        >>> df.with_columns(
+        ...     pl.col("a").cum_count().alias("cum_count"),
+        ...     pl.col("a").cum_count(reverse=True).alias("cum_count_reverse"),
         ... )
-        shape: (4, 2)
-        ┌─────┬───────────┐
-        │ a   ┆ a_reverse │
-        │ --- ┆ ---       │
-        │ u32 ┆ u32       │
-        ╞═════╪═══════════╡
-        │ 0   ┆ 3         │
-        │ 1   ┆ 2         │
-        │ 2   ┆ 1         │
-        │ 3   ┆ 0         │
-        └─────┴───────────┘
+        shape: (4, 3)
+        ┌─────┬───────────┬───────────────────┐
+        │ a   ┆ cum_count ┆ cum_count_reverse │
+        │ --- ┆ ---       ┆ ---               │
+        │ i64 ┆ u32       ┆ u32               │
+        ╞═════╪═══════════╪═══════════════════╡
+        │ 1   ┆ 0         ┆ 3                 │
+        │ 2   ┆ 1         ┆ 2                 │
+        │ 3   ┆ 2         ┆ 1                 │
+        │ 4   ┆ 3         ┆ 0                 │
+        └─────┴───────────┴───────────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.cumcount(reverse))
+        return self._from_pyexpr(self._pyexpr.cum_count(reverse))
 
     def floor(self) -> Self:
         """
@@ -2348,7 +2352,7 @@ class Expr:
             )
         return self._from_pyexpr(self._pyexpr.sort_by(by, descending))
 
-    def take(
+    def gather(
         self, indices: int | list[int] | Expr | Series | np.ndarray[Any, Any]
     ) -> Self:
         """
@@ -2363,6 +2367,10 @@ class Expr:
         -------
         Expr
             Expression of the same data type.
+
+        See Also
+        --------
+        Expr.get : Take a single value
 
         Examples
         --------
@@ -2379,7 +2387,9 @@ class Expr:
         ...         "value": [1, 98, 2, 3, 99, 4],
         ...     }
         ... )
-        >>> df.group_by("group", maintain_order=True).agg(pl.col("value").take([2, 1]))
+        >>> df.group_by("group", maintain_order=True).agg(
+        ...     pl.col("value").gather([2, 1])
+        ... )
         shape: (2, 2)
         ┌───────┬───────────┐
         │ group ┆ value     │
@@ -2389,11 +2399,6 @@ class Expr:
         │ one   ┆ [2, 98]   │
         │ two   ┆ [4, 99]   │
         └───────┴───────────┘
-
-        See Also
-        --------
-        Expr.get : Take a single value
-
         """
         if isinstance(indices, list) or (
             _check_for_numpy(indices) and isinstance(indices, np.ndarray)
@@ -2401,7 +2406,7 @@ class Expr:
             indices_lit = F.lit(pl.Series("", indices, dtype=UInt32))._pyexpr
         else:
             indices_lit = parse_as_expression(indices)  # type: ignore[arg-type]
-        return self._from_pyexpr(self._pyexpr.take(indices_lit))
+        return self._from_pyexpr(self._pyexpr.gather(indices_lit))
 
     def get(self, index: int | Expr) -> Self:
         """
@@ -3594,7 +3599,7 @@ class Expr:
         │ --- │
         │ f64 │
         ╞═════╡
-        │ 1.0 │
+        │ 2.0 │
         └─────┘
         >>> df.select(pl.col("a").quantile(0.3, interpolation="higher"))
         shape: (1, 1)
@@ -3637,13 +3642,13 @@ class Expr:
         quantile = parse_as_expression(quantile)
         return self._from_pyexpr(self._pyexpr.quantile(quantile, interpolation))
 
-    @deprecate_nonkeyword_arguments(["self", "breaks"], version="0.18.14")
     def cut(
         self,
         breaks: Sequence[float],
+        *,
         labels: Sequence[str] | None = None,
-        left_closed: bool = False,  # noqa: FBT001
-        include_breaks: bool = False,  # noqa: FBT001
+        left_closed: bool = False,
+        include_breaks: bool = False,
     ) -> Self:
         """
         Bin continuous values into discrete categories.
@@ -3716,16 +3721,14 @@ class Expr:
             self._pyexpr.cut(breaks, labels, left_closed, include_breaks)
         )
 
-    @deprecate_nonkeyword_arguments(["self", "quantiles"], version="0.18.14")
-    @deprecate_renamed_parameter("probs", "quantiles", version="0.18.8")
-    @deprecate_renamed_parameter("q", "quantiles", version="0.18.12")
     def qcut(
         self,
         quantiles: Sequence[float] | int,
+        *,
         labels: Sequence[str] | None = None,
-        left_closed: bool = False,  # noqa: FBT001
-        allow_duplicates: bool = False,  # noqa: FBT001
-        include_breaks: bool = False,  # noqa: FBT001
+        left_closed: bool = False,
+        allow_duplicates: bool = False,
+        include_breaks: bool = False,
     ) -> Self:
         """
         Bin continuous values into discrete categories based on their quantiles.
@@ -3981,8 +3984,11 @@ class Expr:
         A reasonable use case for `map` functions is transforming the values
         represented by an expression using a third-party library.
 
-        Read more in `the book
-        <https://pola-rs.github.io/polars/user-guide/expressions/user-defined-functions>`_.
+        .. warning::
+            If you are looking to map a function over a window function or group_by
+            context, refer to :func:`map_elements` instead.
+            Read more in `the book
+            <https://pola-rs.github.io/polars/user-guide/expressions/user-defined-functions>`_.
 
         Parameters
         ----------
@@ -3993,11 +3999,6 @@ class Expr:
         agg_list
             Aggregate list.
 
-        Notes
-        -----
-        If you are looking to map a function over a window function or group_by context,
-        refer to func:`map_elements` instead.
-
         Warnings
         --------
         If `return_dtype` is not provided, this may lead to unexpected results.
@@ -4005,8 +4006,8 @@ class Expr:
 
         See Also
         --------
-        map_dict
         map_elements
+        replace
 
         Examples
         --------
@@ -4383,14 +4384,19 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.implode())
 
-    def take_every(self, n: int) -> Self:
+    def gather_every(self, n: int) -> Self:
         """
         Take every nth value in the Series and return as a new Series.
+
+        Parameters
+        ----------
+        n
+            Gather every *n*-th row.
 
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7, 8, 9]})
-        >>> df.select(pl.col("foo").take_every(3))
+        >>> df.select(pl.col("foo").gather_every(3))
         shape: (3, 1)
         ┌─────┐
         │ foo │
@@ -4403,7 +4409,7 @@ class Expr:
         └─────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.take_every(n))
+        return self._from_pyexpr(self._pyexpr.gather_every(n))
 
     def head(self, n: int | Expr = 10) -> Self:
         """
@@ -4602,7 +4608,7 @@ class Expr:
         ╞═════╪═════╪════════╡
         │ 1.0 ┆ 2.0 ┆ false  │
         │ 2.0 ┆ 2.0 ┆ true   │
-        │ NaN ┆ NaN ┆ false  │
+        │ NaN ┆ NaN ┆ true   │
         │ 4.0 ┆ 4.0 ┆ true   │
         └─────┴─────┴────────┘
 
@@ -4640,14 +4646,14 @@ class Expr:
         ╞══════╪══════╪════════╪════════════════╡
         │ 1.0  ┆ 2.0  ┆ false  ┆ false          │
         │ 2.0  ┆ 2.0  ┆ true   ┆ true           │
-        │ NaN  ┆ NaN  ┆ false  ┆ false          │
+        │ NaN  ┆ NaN  ┆ true   ┆ true           │
         │ 4.0  ┆ 4.0  ┆ true   ┆ true           │
         │ null ┆ 5.0  ┆ null   ┆ false          │
         │ null ┆ null ┆ null   ┆ true           │
         └──────┴──────┴────────┴────────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.eq_missing(self._to_expr(other)._pyexpr))
+        return self._from_pyexpr(self._pyexpr.eq_missing(self._to_pyexpr(other)))
 
     def ge(self, other: Any) -> Self:
         """
@@ -4677,7 +4683,7 @@ class Expr:
         ╞═════╪═════╪════════╡
         │ 5.0 ┆ 5.0 ┆ true   │
         │ 4.0 ┆ 3.0 ┆ true   │
-        │ NaN ┆ NaN ┆ false  │
+        │ NaN ┆ NaN ┆ true   │
         │ 2.0 ┆ 1.0 ┆ true   │
         └─────┴─────┴────────┘
 
@@ -4747,7 +4753,7 @@ class Expr:
         ╞═════╪═════╪════════╡
         │ 5.0 ┆ 5.0 ┆ true   │
         │ 4.0 ┆ 3.5 ┆ false  │
-        │ NaN ┆ NaN ┆ false  │
+        │ NaN ┆ NaN ┆ true   │
         │ 0.5 ┆ 2.0 ┆ true   │
         └─────┴─────┴────────┘
 
@@ -4817,7 +4823,7 @@ class Expr:
         ╞═════╪═════╪════════╡
         │ 1.0 ┆ 2.0 ┆ true   │
         │ 2.0 ┆ 2.0 ┆ false  │
-        │ NaN ┆ NaN ┆ true   │
+        │ NaN ┆ NaN ┆ false  │
         │ 4.0 ┆ 4.0 ┆ false  │
         └─────┴─────┴────────┘
 
@@ -4855,14 +4861,14 @@ class Expr:
         ╞══════╪══════╪════════╪════════════════╡
         │ 1.0  ┆ 2.0  ┆ true   ┆ true           │
         │ 2.0  ┆ 2.0  ┆ false  ┆ false          │
-        │ NaN  ┆ NaN  ┆ true   ┆ true           │
+        │ NaN  ┆ NaN  ┆ false  ┆ false          │
         │ 4.0  ┆ 4.0  ┆ false  ┆ false          │
         │ null ┆ 5.0  ┆ null   ┆ true           │
         │ null ┆ null ┆ null   ┆ false          │
         └──────┴──────┴────────┴────────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.neq_missing(self._to_expr(other)._pyexpr))
+        return self._from_pyexpr(self._pyexpr.neq_missing(self._to_pyexpr(other)))
 
     def add(self, other: Any) -> Self:
         """
@@ -4878,7 +4884,7 @@ class Expr:
         >>> df = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
         >>> df.with_columns(
         ...     pl.col("x").add(2).alias("x+int"),
-        ...     pl.col("x").add(pl.col("x").cumprod()).alias("x+expr"),
+        ...     pl.col("x").add(pl.col("x").cum_prod()).alias("x+expr"),
         ... )
         shape: (5, 3)
         ┌─────┬───────┬────────┐
@@ -5022,7 +5028,7 @@ class Expr:
         >>> df = pl.DataFrame({"x": [0, 1, 2, 3, 4]})
         >>> df.with_columns(
         ...     pl.col("x").sub(2).alias("x-2"),
-        ...     pl.col("x").sub(pl.col("x").cumsum()).alias("x-expr"),
+        ...     pl.col("x").sub(pl.col("x").cum_sum()).alias("x-expr"),
         ... )
         shape: (5, 3)
         ┌─────┬─────┬────────┐
@@ -5210,8 +5216,7 @@ class Expr:
         if isinstance(other, Collection) and not isinstance(other, str):
             if isinstance(other, (Set, FrozenSet)):
                 other = list(other)
-            implied_dtype = Null if len(other) == 0 else None
-            other = F.lit(pl.Series(other, dtype=implied_dtype))._pyexpr
+            other = F.lit(pl.Series(other))._pyexpr
         else:
             other = parse_as_expression(other)
         return self._from_pyexpr(self._pyexpr.is_in(other))
@@ -5383,6 +5388,12 @@ class Expr:
         seed_3
             Random seed parameter. Defaults to `seed` if not set.
 
+        Notes
+        -----
+        This implementation of `hash` does not guarantee stable results
+        across different Polars versions. Its stability is only guaranteed within a
+        single version.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -5453,7 +5464,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 1, 2]})
-        >>> df.select(pl.col("foo").cumsum().inspect("value is: {}").alias("bar"))
+        >>> df.select(pl.col("foo").cum_sum().inspect("value is: {}").alias("bar"))
         value is: shape: (3,)
         Series: 'foo' [i64]
         [
@@ -5557,7 +5568,6 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.interpolate(method))
 
-    @warn_closed_future_change()
     def rolling_min(
         self,
         window_size: int | timedelta | str,
@@ -5566,7 +5576,8 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
+        warn_if_unsorted: bool = True,
     ) -> Self:
         """
         Apply a rolling min (moving min) over the values in this array.
@@ -5634,6 +5645,9 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
@@ -5760,11 +5774,10 @@ class Expr:
         )
         return self._from_pyexpr(
             self._pyexpr.rolling_min(
-                window_size, weights, min_periods, center, by, closed
+                window_size, weights, min_periods, center, by, closed, warn_if_unsorted
             )
         )
 
-    @warn_closed_future_change()
     def rolling_max(
         self,
         window_size: int | timedelta | str,
@@ -5773,7 +5786,8 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
+        warn_if_unsorted: bool = True,
     ) -> Self:
         """
         Apply a rolling max (moving max) over the values in this array.
@@ -5837,6 +5851,9 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
@@ -5990,11 +6007,10 @@ class Expr:
         )
         return self._from_pyexpr(
             self._pyexpr.rolling_max(
-                window_size, weights, min_periods, center, by, closed
+                window_size, weights, min_periods, center, by, closed, warn_if_unsorted
             )
         )
 
-    @warn_closed_future_change()
     def rolling_mean(
         self,
         window_size: int | timedelta | str,
@@ -6003,7 +6019,8 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
+        warn_if_unsorted: bool = True,
     ) -> Self:
         """
         Apply a rolling mean (moving mean) over the values in this array.
@@ -6071,6 +6088,9 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
@@ -6224,11 +6244,16 @@ class Expr:
         )
         return self._from_pyexpr(
             self._pyexpr.rolling_mean(
-                window_size, weights, min_periods, center, by, closed
+                window_size,
+                weights,
+                min_periods,
+                center,
+                by,
+                closed,
+                warn_if_unsorted,
             )
         )
 
-    @warn_closed_future_change()
     def rolling_sum(
         self,
         window_size: int | timedelta | str,
@@ -6237,7 +6262,8 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
+        warn_if_unsorted: bool = True,
     ) -> Self:
         """
         Apply a rolling sum (moving sum) over the values in this array.
@@ -6301,6 +6327,9 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
@@ -6454,11 +6483,10 @@ class Expr:
         )
         return self._from_pyexpr(
             self._pyexpr.rolling_sum(
-                window_size, weights, min_periods, center, by, closed
+                window_size, weights, min_periods, center, by, closed, warn_if_unsorted
             )
         )
 
-    @warn_closed_future_change()
     def rolling_std(
         self,
         window_size: int | timedelta | str,
@@ -6467,8 +6495,9 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
         ddof: int = 1,
+        warn_if_unsorted: bool = True,
     ) -> Self:
         """
         Compute a rolling standard deviation.
@@ -6534,6 +6563,9 @@ class Expr:
             applicable if `by` has been set.
         ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
@@ -6687,11 +6719,17 @@ class Expr:
         )
         return self._from_pyexpr(
             self._pyexpr.rolling_std(
-                window_size, weights, min_periods, center, by, closed, ddof
+                window_size,
+                weights,
+                min_periods,
+                center,
+                by,
+                closed,
+                ddof,
+                warn_if_unsorted,
             )
         )
 
-    @warn_closed_future_change()
     def rolling_var(
         self,
         window_size: int | timedelta | str,
@@ -6700,8 +6738,9 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
         ddof: int = 1,
+        warn_if_unsorted: bool = True,
     ) -> Self:
         """
         Compute a rolling variance.
@@ -6767,6 +6806,9 @@ class Expr:
             applicable if `by` has been set.
         ddof
             "Delta Degrees of Freedom": The divisor for a length N window is N - ddof
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
@@ -6927,10 +6969,10 @@ class Expr:
                 by,
                 closed,
                 ddof,
+                warn_if_unsorted,
             )
         )
 
-    @warn_closed_future_change()
     def rolling_median(
         self,
         window_size: int | timedelta | str,
@@ -6939,7 +6981,8 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
+        warn_if_unsorted: bool = True,
     ) -> Self:
         """
         Compute a rolling median.
@@ -7003,6 +7046,9 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
@@ -7082,11 +7128,10 @@ class Expr:
         )
         return self._from_pyexpr(
             self._pyexpr.rolling_median(
-                window_size, weights, min_periods, center, by, closed
+                window_size, weights, min_periods, center, by, closed, warn_if_unsorted
             )
         )
 
-    @warn_closed_future_change()
     def rolling_quantile(
         self,
         quantile: float,
@@ -7097,7 +7142,8 @@ class Expr:
         *,
         center: bool = False,
         by: str | None = None,
-        closed: ClosedInterval = "left",
+        closed: ClosedInterval = "right",
+        warn_if_unsorted: bool = True,
     ) -> Self:
         """
         Compute a rolling quantile.
@@ -7165,6 +7211,9 @@ class Expr:
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
+        warn_if_unsorted
+            Warn if data is not known to be sorted by `by` column (if passed).
+            Experimental.
 
         Warnings
         --------
@@ -7280,6 +7329,7 @@ class Expr:
                 center,
                 by,
                 closed,
+                warn_if_unsorted,
             )
         )
 
@@ -8956,461 +9006,257 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.shrink_dtype())
 
-    @deprecate_function(
-        "This method now does nothing. It has been superseded by the"
-        " `comm_subexpr_elim` setting on `LazyFrame.collect`, which automatically"
-        " caches expressions that are equal.",
-        version="0.18.9",
-    )
-    def cache(self) -> Self:
-        """
-        Cache this expression so that it only is executed once per context.
-
-        .. deprecated:: 0.18.9
-            This method now does nothing. It has been superseded by the
-            `comm_subexpr_elim` setting on `LazyFrame.collect`, which automatically
-            caches expressions that are equal.
-
-        """
-        return self
-
-    def map_dict(
+    def hist(
         self,
-        remapping: dict[Any, Any],
+        bins: IntoExpr | None = None,
         *,
-        default: Any = None,
-        return_dtype: PolarsDataType | None = None,
+        bin_count: int | None = None,
+        include_category: bool = False,
+        include_breakpoint: bool = False,
     ) -> Self:
         """
-        Replace values in column according to remapping dictionary.
-
-        Needs a global string cache for lazily evaluated queries on columns of
-        type `pl.Categorical`.
+        Bin values into buckets and count their occurrences.
 
         Parameters
         ----------
-        remapping
-            Dictionary containing the before/after values to map.
-        default
-            Value to use when the remapping dict does not contain the lookup value.
-            Accepts expression input. Non-expression inputs are parsed as literals.
-            Use `pl.first()`, to keep the original value.
-        return_dtype
-            Set return dtype to override automatic return dtype determination.
+        bins
+            Discretizations to make.
+            If None given, we determine the boundaries based on the data.
+        bin_count
+            If no bins provided, this will be used to determine
+            the distance of the bins
+        include_breakpoint
+            Include a column that indicates the upper breakpoint.
+        include_category
+            Include a column that shows the intervals as categories.
 
-        See Also
+        Returns
+        -------
+        DataFrame
+
+        Warnings
         --------
-        map
+        This functionality is experimental and may change without it being considered a
+        breaking change.
 
         Examples
         --------
-        >>> country_code_dict = {
-        ...     "CA": "Canada",
-        ...     "DE": "Germany",
-        ...     "FR": "France",
-        ...     None: "Not specified",
-        ... }
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "country_code": ["FR", None, "ES", "DE"],
-        ...     }
-        ... ).with_row_count()
-        >>> df
-        shape: (4, 2)
-        ┌────────┬──────────────┐
-        │ row_nr ┆ country_code │
-        │ ---    ┆ ---          │
-        │ u32    ┆ str          │
-        ╞════════╪══════════════╡
-        │ 0      ┆ FR           │
-        │ 1      ┆ null         │
-        │ 2      ┆ ES           │
-        │ 3      ┆ DE           │
-        └────────┴──────────────┘
-
-        >>> df.with_columns(
-        ...     pl.col("country_code").map_dict(country_code_dict).alias("remapped")
-        ... )
-        shape: (4, 3)
-        ┌────────┬──────────────┬───────────────┐
-        │ row_nr ┆ country_code ┆ remapped      │
-        │ ---    ┆ ---          ┆ ---           │
-        │ u32    ┆ str          ┆ str           │
-        ╞════════╪══════════════╪═══════════════╡
-        │ 0      ┆ FR           ┆ France        │
-        │ 1      ┆ null         ┆ Not specified │
-        │ 2      ┆ ES           ┆ null          │
-        │ 3      ┆ DE           ┆ Germany       │
-        └────────┴──────────────┴───────────────┘
-
-        Set a default value for values that cannot be mapped...
-
-        >>> df.with_columns(
-        ...     pl.col("country_code")
-        ...     .map_dict(country_code_dict, default="unknown")
-        ...     .alias("remapped")
-        ... )
-        shape: (4, 3)
-        ┌────────┬──────────────┬───────────────┐
-        │ row_nr ┆ country_code ┆ remapped      │
-        │ ---    ┆ ---          ┆ ---           │
-        │ u32    ┆ str          ┆ str           │
-        ╞════════╪══════════════╪═══════════════╡
-        │ 0      ┆ FR           ┆ France        │
-        │ 1      ┆ null         ┆ Not specified │
-        │ 2      ┆ ES           ┆ unknown       │
-        │ 3      ┆ DE           ┆ Germany       │
-        └────────┴──────────────┴───────────────┘
-
-        ...or keep the original value, by making use of `pl.first()`:
-
-        >>> df.with_columns(
-        ...     pl.col("country_code")
-        ...     .map_dict(country_code_dict, default=pl.first())
-        ...     .alias("remapped")
-        ... )
-        shape: (4, 3)
-        ┌────────┬──────────────┬───────────────┐
-        │ row_nr ┆ country_code ┆ remapped      │
-        │ ---    ┆ ---          ┆ ---           │
-        │ u32    ┆ str          ┆ str           │
-        ╞════════╪══════════════╪═══════════════╡
-        │ 0      ┆ FR           ┆ France        │
-        │ 1      ┆ null         ┆ Not specified │
-        │ 2      ┆ ES           ┆ ES            │
-        │ 3      ┆ DE           ┆ Germany       │
-        └────────┴──────────────┴───────────────┘
-
-        ...or keep the original value, by explicitly referring to the column:
-
-        >>> df.with_columns(
-        ...     pl.col("country_code")
-        ...     .map_dict(country_code_dict, default=pl.col("country_code"))
-        ...     .alias("remapped")
-        ... )
-        shape: (4, 3)
-        ┌────────┬──────────────┬───────────────┐
-        │ row_nr ┆ country_code ┆ remapped      │
-        │ ---    ┆ ---          ┆ ---           │
-        │ u32    ┆ str          ┆ str           │
-        ╞════════╪══════════════╪═══════════════╡
-        │ 0      ┆ FR           ┆ France        │
-        │ 1      ┆ null         ┆ Not specified │
-        │ 2      ┆ ES           ┆ ES            │
-        │ 3      ┆ DE           ┆ Germany       │
-        └────────┴──────────────┴───────────────┘
-
-        If you need to access different columns to set a default value, a struct needs
-        to be constructed; in the first field is the column that you want to remap and
-        the rest of the fields are the other columns used in the default expression.
-
-        >>> df.with_columns(
-        ...     pl.struct(pl.col(["country_code", "row_nr"])).map_dict(
-        ...         remapping=country_code_dict,
-        ...         default=pl.col("row_nr").cast(pl.Utf8),
+        >>> df = pl.DataFrame({"a": [1, 3, 8, 8, 2, 1, 3]})
+        >>> df.select(pl.col("a").hist(bins=[1, 2, 3]))
+        shape: (4, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 2   │
+        │ 1   │
+        │ 2   │
+        │ 2   │
+        └─────┘
+        >>> df.select(
+        ...     pl.col("a").hist(
+        ...         bins=[1, 2, 3], include_breakpoint=True, include_category=True
         ...     )
         ... )
-        shape: (4, 2)
-        ┌────────┬───────────────┐
-        │ row_nr ┆ country_code  │
-        │ ---    ┆ ---           │
-        │ u32    ┆ str           │
-        ╞════════╪═══════════════╡
-        │ 0      ┆ France        │
-        │ 1      ┆ Not specified │
-        │ 2      ┆ 2             │
-        │ 3      ┆ Germany       │
-        └────────┴───────────────┘
-
-        Override return dtype:
-
-        >>> df.with_columns(
-        ...     pl.col("row_nr")
-        ...     .map_dict({1: 7, 3: 4}, default=3, return_dtype=pl.UInt8)
-        ...     .alias("remapped")
-        ... )
-        shape: (4, 3)
-        ┌────────┬──────────────┬──────────┐
-        │ row_nr ┆ country_code ┆ remapped │
-        │ ---    ┆ ---          ┆ ---      │
-        │ u32    ┆ str          ┆ u8       │
-        ╞════════╪══════════════╪══════════╡
-        │ 0      ┆ FR           ┆ 3        │
-        │ 1      ┆ null         ┆ 7        │
-        │ 2      ┆ ES           ┆ 3        │
-        │ 3      ┆ DE           ┆ 4        │
-        └────────┴──────────────┴──────────┘
+        shape: (4, 1)
+        ┌───────────────────────┐
+        │ a                     │
+        │ ---                   │
+        │ struct[3]             │
+        ╞═══════════════════════╡
+        │ {1.0,"(-inf, 1.0]",2} │
+        │ {2.0,"(1.0, 2.0]",1}  │
+        │ {3.0,"(2.0, 3.0]",2}  │
+        │ {inf,"(3.0, inf]",2}  │
+        └───────────────────────┘
 
         """
+        if bins is not None:
+            if isinstance(bins, list):
+                bins = pl.Series(bins)
+            bins = parse_as_expression(bins)
+        return self._from_pyexpr(
+            self._pyexpr.hist(bins, bin_count, include_category, include_breakpoint)
+        )
 
-        def _remap_key_or_value_series(
-            name: str,
-            values: Iterable[Any],
-            dtype: PolarsDataType | None,
-            dtype_if_empty: PolarsDataType | None,
-            dtype_keys: PolarsDataType | None,
-            *,
-            is_keys: bool,
-        ) -> Series:
-            """
-            Convert remapping keys or remapping values to `Series` with `dtype`.
+    def replace(
+        self,
+        old: IntoExpr | Sequence[Any] | Mapping[Any, Any],
+        new: IntoExpr | Sequence[Any] | NoDefault = no_default,
+        *,
+        default: IntoExpr | NoDefault = no_default,
+        return_dtype: PolarsDataType | None = None,
+    ) -> Self:
+        """
+        Replace values by different values.
 
-            Try to convert the remapping keys or remapping values to `Series` with
-            the specified dtype and check that none of the values are accidentally
-            lost (replaced by nulls) during the conversion.
+        Parameters
+        ----------
+        old
+            Value or sequence of values to replace.
+            Accepts expression input. Sequences are parsed as Series,
+            other non-expression inputs are parsed as literals.
+            Also accepts a mapping of values to their replacement as syntactic sugar for
+            `replace(new=Series(mapping.keys()), old=Series(mapping.values()))`.
+        new
+            Value or sequence of values to replace by.
+            Accepts expression input. Sequences are parsed as Series,
+            other non-expression inputs are parsed as literals.
+            Length must match the length of `old` or have length 1.
+        default
+            Set values that were not replaced to this value.
+            Defaults to keeping the original value.
+            Accepts expression input. Non-expression inputs are parsed as literals.
+        return_dtype
+            The data type of the resulting expression. If set to `None` (default),
+            the data type is determined automatically based on the other inputs.
 
-            Parameters
-            ----------
-            name
-                Name of the keys or values series.
-            values
-                Values for the series: `remapping.keys()` or `remapping.values()`.
-            dtype
-                User specified dtype. If None,
-            dtype_if_empty
-                If no dtype is specified and values contains None, an empty list,
-                or a list with only None values, set the Polars dtype of the Series
-                data.
-            dtype_keys
-                If user set dtype is None, try to see if Series for remapping.values()
-                can be converted to same dtype as the remapping.keys() Series dtype.
-            is_keys
-                If values contains keys or values from remapping dict.
+        See Also
+        --------
+        str.replace
 
-            """
-            try:
-                if dtype is None:
-                    # If no dtype was set, which should only happen when:
-                    #     values = remapping.values()
-                    # create a Series from those values and infer the dtype.
-                    s = pl.Series(
-                        name,
-                        values,
-                        dtype=None,
-                        dtype_if_empty=dtype_if_empty,
-                        strict=True,
-                    )
+        Notes
+        -----
+        The global string cache must be enabled when replacing categorical values.
 
-                    if dtype_keys is not None:
-                        if s.dtype == dtype_keys:
-                            # Values Series has same dtype as keys Series.
-                            dtype = s.dtype
-                        elif (
-                            (s.dtype in INTEGER_DTYPES and dtype_keys in INTEGER_DTYPES)
-                            or (s.dtype in FLOAT_DTYPES and dtype_keys in FLOAT_DTYPES)
-                            or (s.dtype == Utf8 and dtype_keys == Categorical)
-                        ):
-                            # Values Series and keys Series are of similar dtypes,
-                            # that we can assume that the user wants the values Series
-                            # of the same dtype as the key Series.
-                            dtype = dtype_keys
-                            s = pl.Series(
-                                name,
-                                values,
-                                dtype=dtype_keys,
-                                dtype_if_empty=dtype_if_empty,
-                                strict=True,
-                            )
-                            if dtype != s.dtype:
-                                raise ValueError(
-                                    f"remapping values for `map_dict` could not be converted to {dtype!r}: found {s.dtype!r}"
-                                )
-                else:
-                    # dtype was set, which should always be the case when:
-                    #     values = remapping.keys()
-                    # and in cases where the user set the output dtype when:
-                    #     values = remapping.values()
-                    s = pl.Series(
-                        name,
-                        values,
-                        dtype=dtype,
-                        dtype_if_empty=dtype_if_empty,
-                        strict=True,
-                    )
-                    if dtype != s.dtype:
-                        raise ValueError(
-                            f"remapping {'keys' if is_keys else 'values'} for `map_dict` could not be converted to {dtype!r}: found {s.dtype!r}"
-                        )
+        Examples
+        --------
+        Replace a single value by another value. Values that were not replaced remain
+        unchanged.
 
-            except OverflowError as exc:
-                if is_keys:
-                    raise ValueError(
-                        f"remapping keys for `map_dict` could not be converted to {dtype!r}: {exc!s}"
-                    ) from exc
-                else:
-                    raise ValueError(
-                        f"choose a more suitable output dtype for `map_dict` as remapping value could not be converted to {dtype!r}: {exc!s}"
-                    ) from exc
+        >>> df = pl.DataFrame({"a": [1, 2, 2, 3]})
+        >>> df.with_columns(replaced=pl.col("a").replace(2, 100))
+        shape: (4, 2)
+        ┌─────┬──────────┐
+        │ a   ┆ replaced │
+        │ --- ┆ ---      │
+        │ i64 ┆ i64      │
+        ╞═════╪══════════╡
+        │ 1   ┆ 1        │
+        │ 2   ┆ 100      │
+        │ 2   ┆ 100      │
+        │ 3   ┆ 3        │
+        └─────┴──────────┘
 
-            if is_keys:
-                # values = remapping.keys()
-                if s.null_count() == 0:  # noqa: SIM114
-                    pass
-                elif s.null_count() == 1 and None in remapping:
-                    pass
-                else:
-                    raise ValueError(
-                        f"remapping keys for `map_dict` could not be converted to {dtype!r} without losing values in the conversion"
-                    )
-            else:
-                # values = remapping.values()
-                if s.null_count() == 0:  # noqa: SIM114
-                    pass
-                elif s.len() - s.null_count() == len(list(filter(None, values))):
-                    pass
-                else:
-                    raise ValueError(
-                        f"remapping values for `map_dict` could not be converted to {dtype!r} without losing values in the conversion"
-                    )
+        Replace multiple values by passing sequences to the `old` and `new` parameters.
 
-            return s
+        >>> df.with_columns(replaced=pl.col("a").replace([2, 3], [100, 200]))
+        shape: (4, 2)
+        ┌─────┬──────────┐
+        │ a   ┆ replaced │
+        │ --- ┆ ---      │
+        │ i64 ┆ i64      │
+        ╞═════╪══════════╡
+        │ 1   ┆ 1        │
+        │ 2   ┆ 100      │
+        │ 2   ┆ 100      │
+        │ 3   ┆ 200      │
+        └─────┴──────────┘
 
-        # Use two functions to save unneeded work.
-        # This factors out allocations and branches.
-        def inner_with_default(s: Series) -> Series:
-            # Convert Series to:
-            #   - multicolumn DataFrame, if Series is a Struct.
-            #   - one column DataFrame in other cases.
-            df = s.to_frame().unnest(s.name) if s.dtype == Struct else s.to_frame()
+        Passing a mapping with replacements is also supported as syntactic sugar.
+        Specify a default to set all values that were not matched.
 
-            # For struct we always apply mapping to the first column.
-            column = df.columns[0]
-            input_dtype = df.dtypes[0]
-            remap_key_column = f"__POLARS_REMAP_KEY_{column}"
-            remap_value_column = f"__POLARS_REMAP_VALUE_{column}"
-            is_remapped_column = f"__POLARS_REMAP_IS_REMAPPED_{column}"
+        >>> mapping = {2: 100, 3: 200}
+        >>> df.with_columns(replaced=pl.col("a").replace(mapping, default=-1))
+        shape: (4, 2)
+        ┌─────┬──────────┐
+        │ a   ┆ replaced │
+        │ --- ┆ ---      │
+        │ i64 ┆ i64      │
+        ╞═════╪══════════╡
+        │ 1   ┆ -1       │
+        │ 2   ┆ 100      │
+        │ 2   ┆ 100      │
+        │ 3   ┆ 200      │
+        └─────┴──────────┘
 
-            # Set output dtype:
-            #  - to dtype, if specified.
-            #  - to same dtype as expression specified as default value.
-            #  - to None, if dtype was not specified and default was not an expression.
-            return_dtype_ = (
-                df.lazy().select(default).dtypes[0]
-                if return_dtype is None and isinstance(default, Expr)
-                else return_dtype
-            )
+        Replacing by values of a different data type sets the return type based on
+        a combination of the `new` data type and either the original data type or the
+        default data type if it was set.
 
-            remap_key_s = _remap_key_or_value_series(
-                name=remap_key_column,
-                values=remapping.keys(),
-                dtype=input_dtype,
-                dtype_if_empty=input_dtype,
-                dtype_keys=input_dtype,
-                is_keys=True,
-            )
+        >>> df = pl.DataFrame({"a": ["x", "y", "z"]})
+        >>> mapping = {"x": 1, "y": 2, "z": 3}
+        >>> df.with_columns(replaced=pl.col("a").replace(mapping))
+        shape: (3, 2)
+        ┌─────┬──────────┐
+        │ a   ┆ replaced │
+        │ --- ┆ ---      │
+        │ str ┆ str      │
+        ╞═════╪══════════╡
+        │ x   ┆ 1        │
+        │ y   ┆ 2        │
+        │ z   ┆ 3        │
+        └─────┴──────────┘
+        >>> df.with_columns(replaced=pl.col("a").replace(mapping, default=None))
+        shape: (3, 2)
+        ┌─────┬──────────┐
+        │ a   ┆ replaced │
+        │ --- ┆ ---      │
+        │ str ┆ i64      │
+        ╞═════╪══════════╡
+        │ x   ┆ 1        │
+        │ y   ┆ 2        │
+        │ z   ┆ 3        │
+        └─────┴──────────┘
 
-            if return_dtype_:
-                # Create remap value Series with specified output dtype.
-                remap_value_s = pl.Series(
-                    remap_value_column,
-                    remapping.values(),
-                    dtype=return_dtype_,
-                    dtype_if_empty=input_dtype,
-                )
-            else:
-                # Create remap value Series with same output dtype as remap key Series,
-                # if possible (if both are integers, both are floats or remap value
-                # Series is pl.Utf8 and remap key Series is pl.Categorical).
-                remap_value_s = _remap_key_or_value_series(
-                    name=remap_value_column,
-                    values=remapping.values(),
-                    dtype=None,
-                    dtype_if_empty=input_dtype,
-                    dtype_keys=input_dtype,
-                    is_keys=False,
-                )
+        Set the `return_dtype` parameter to control the resulting data type directly.
 
-            default_parsed = self._from_pyexpr(
-                parse_as_expression(default, str_as_lit=True)
-            )
-            return (
-                (
-                    df.lazy()
-                    .join(
-                        pl.DataFrame(
-                            [
-                                remap_key_s,
-                                remap_value_s,
-                            ]
-                        )
-                        .lazy()
-                        .with_columns(F.lit(True).alias(is_remapped_column)),
-                        how="left",
-                        left_on=column,
-                        right_on=remap_key_column,
-                    )
-                    .select(
-                        F.when(F.col(is_remapped_column).is_not_null())
-                        .then(F.col(remap_value_column))
-                        .otherwise(default_parsed)
-                        .alias(column)
-                    )
-                )
-                .collect(no_optimization=True)
-                .to_series()
-            )
+        >>> df.with_columns(
+        ...     replaced=pl.col("a").replace(mapping, return_dtype=pl.UInt8)
+        ... )
+        shape: (3, 2)
+        ┌─────┬──────────┐
+        │ a   ┆ replaced │
+        │ --- ┆ ---      │
+        │ str ┆ u8       │
+        ╞═════╪══════════╡
+        │ x   ┆ 1        │
+        │ y   ┆ 2        │
+        │ z   ┆ 3        │
+        └─────┴──────────┘
 
-        def inner(s: Series) -> Series:
-            column = s.name
-            input_dtype = s.dtype
-            remap_key_column = f"__POLARS_REMAP_KEY_{column}"
-            remap_value_column = f"__POLARS_REMAP_VALUE_{column}"
-            is_remapped_column = f"__POLARS_REMAP_IS_REMAPPED_{column}"
+        Expression input is supported for all parameters.
 
-            remap_key_s = _remap_key_or_value_series(
-                name=remap_key_column,
-                values=list(remapping.keys()),
-                dtype=input_dtype,
-                dtype_if_empty=input_dtype,
-                dtype_keys=input_dtype,
-                is_keys=True,
-            )
+        >>> df = pl.DataFrame({"a": [1, 2, 2, 3], "b": [1.5, 2.5, 5.0, 1.0]})
+        >>> df.with_columns(
+        ...     replaced=pl.col("a").replace(
+        ...         old=pl.col("a").max(),
+        ...         new=pl.col("b").sum(),
+        ...         default=pl.col("b"),
+        ...     )
+        ... )
+        shape: (4, 3)
+        ┌─────┬─────┬──────────┐
+        │ a   ┆ b   ┆ replaced │
+        │ --- ┆ --- ┆ ---      │
+        │ i64 ┆ f64 ┆ f64      │
+        ╞═════╪═════╪══════════╡
+        │ 1   ┆ 1.5 ┆ 1.5      │
+        │ 2   ┆ 2.5 ┆ 2.5      │
+        │ 2   ┆ 5.0 ┆ 5.0      │
+        │ 3   ┆ 1.0 ┆ 10.0     │
+        └─────┴─────┴──────────┘
+        """
+        if new is no_default and isinstance(old, Mapping):
+            new = pl.Series(old.values())
+            old = pl.Series(old.keys())
+        else:
+            if isinstance(old, Sequence) and not isinstance(old, (str, pl.Series)):
+                old = pl.Series(old)
+            if isinstance(new, Sequence) and not isinstance(new, (str, pl.Series)):
+                new = pl.Series(new)
 
-            if return_dtype:
-                # Create remap value Series with specified output dtype.
-                remap_value_s = pl.Series(
-                    remap_value_column,
-                    remapping.values(),
-                    dtype=return_dtype,
-                    dtype_if_empty=input_dtype,
-                )
-            else:
-                # Create remap value Series with same output dtype as remap key Series,
-                # if possible (if both are integers, both are floats or remap value
-                # Series is pl.Utf8 and remap key Series is pl.Categorical).
-                remap_value_s = _remap_key_or_value_series(
-                    name=remap_value_column,
-                    values=remapping.values(),
-                    dtype=None,
-                    dtype_if_empty=input_dtype,
-                    dtype_keys=input_dtype,
-                    is_keys=False,
-                )
+        old = parse_as_expression(old, str_as_lit=True)  # type: ignore[arg-type]
+        new = parse_as_expression(new, str_as_lit=True)  # type: ignore[arg-type]
 
-            return (
-                (
-                    s.to_frame()
-                    .lazy()
-                    .join(
-                        pl.DataFrame(
-                            [
-                                remap_key_s,
-                                remap_value_s,
-                            ]
-                        )
-                        .lazy()
-                        .with_columns(F.lit(True).alias(is_remapped_column)),
-                        how="left",
-                        left_on=column,
-                        right_on=remap_key_column,
-                    )
-                )
-                .collect(no_optimization=True)
-                .to_series(1)
-            )
+        default = (
+            None
+            if default is no_default
+            else parse_as_expression(default, str_as_lit=True)
+        )
 
-        func = inner_with_default if default is not None else inner
-        return self.map_batches(func)
+        return self._from_pyexpr(self._pyexpr.replace(old, new, default, return_dtype))
 
     @deprecate_renamed_function("map_batches", version="0.19.0")
     def map(
@@ -9723,6 +9569,149 @@ class Expr:
             cast_to_supertypes=cast_to_supertypes,
         )
 
+    @deprecate_renamed_function("gather_every", version="0.19.14")
+    def take_every(self, n: int) -> Self:
+        """
+        Take every nth value in the Series and return as a new Series.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`gather_every`.
+
+        Parameters
+        ----------
+        n
+            Gather every *n*-th row.
+        """
+        return self.gather_every(n)
+
+    @deprecate_renamed_function("gather", version="0.19.14")
+    def take(
+        self, indices: int | list[int] | Expr | Series | np.ndarray[Any, Any]
+    ) -> Self:
+        """
+        Take values by index.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`gather`.
+
+        Parameters
+        ----------
+        indices
+            An expression that leads to a UInt32 dtyped Series.
+        """
+        return self.gather(indices)
+
+    @deprecate_renamed_function("cum_sum", version="0.19.14")
+    def cumsum(self, *, reverse: bool = False) -> Self:
+        """
+        Get an array with the cumulative sum computed at every element.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`cum_sum`.
+
+        Parameters
+        ----------
+        reverse
+            Reverse the operation.
+        """
+        return self.cum_sum(reverse=reverse)
+
+    @deprecate_renamed_function("cum_prod", version="0.19.14")
+    def cumprod(self, *, reverse: bool = False) -> Self:
+        """
+        Get an array with the cumulative product computed at every element.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`cum_prod`.
+
+        Parameters
+        ----------
+        reverse
+            Reverse the operation.
+        """
+        return self.cum_prod(reverse=reverse)
+
+    @deprecate_renamed_function("cum_min", version="0.19.14")
+    def cummin(self, *, reverse: bool = False) -> Self:
+        """
+        Get an array with the cumulative min computed at every element.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`cum_min`.
+
+        Parameters
+        ----------
+        reverse
+            Reverse the operation.
+        """
+        return self.cum_min(reverse=reverse)
+
+    @deprecate_renamed_function("cum_max", version="0.19.14")
+    def cummax(self, *, reverse: bool = False) -> Self:
+        """
+        Get an array with the cumulative max computed at every element.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`cum_max`.
+
+        Parameters
+        ----------
+        reverse
+            Reverse the operation.
+        """
+        return self.cum_max(reverse=reverse)
+
+    @deprecate_renamed_function("cum_count", version="0.19.14")
+    def cumcount(self, *, reverse: bool = False) -> Self:
+        """
+        Get an array with the cumulative count computed at every element.
+
+        .. deprecated:: 0.19.14
+            This method has been renamed to :meth:`cum_count`.
+
+        Parameters
+        ----------
+        reverse
+            Reverse the operation.
+        """
+        return self.cum_count(reverse=reverse)
+
+    @deprecate_function(
+        "It has been renamed to `replace`."
+        " The default behavior has changed to keep any values not present in the mapping unchanged."
+        " Pass `default=None` to keep existing behavior.",
+        version="0.19.16",
+    )
+    @deprecate_renamed_parameter("remapping", "mapping", version="0.19.16")
+    def map_dict(
+        self,
+        mapping: dict[Any, Any],
+        *,
+        default: Any = None,
+        return_dtype: PolarsDataType | None = None,
+    ) -> Self:
+        """
+        Replace values in column according to remapping dictionary.
+
+        .. deprecated:: 0.19.16
+            This method has been renamed to :meth:`replace`. The default behavior
+            has changed to keep any values not present in the mapping unchanged.
+            Pass `default=None` to keep existing behavior.
+
+        Parameters
+        ----------
+        mapping
+            Dictionary containing the before/after values to map.
+        default
+            Value to use when the remapping dict does not contain the lookup value.
+            Accepts expression input. Non-expression inputs are parsed as literals.
+            Use `pl.first()`, to keep the original value.
+        return_dtype
+            Set return dtype to override automatic return dtype determination.
+
+        """
+        return self.replace(mapping, default=default, return_dtype=return_dtype)
+
     @property
     def bin(self) -> ExprBinaryNameSpace:
         """
@@ -9744,12 +9733,12 @@ class Expr:
         >>> df = pl.DataFrame({"values": ["a", "b"]}).select(
         ...     pl.col("values").cast(pl.Categorical)
         ... )
-        >>> df.select(pl.col("values").cat.set_ordering(ordering="physical"))
+        >>> df.select(pl.col("values").cat.get_categories())
         shape: (2, 1)
         ┌────────┐
         │ values │
         │ ---    │
-        │ cat    │
+        │ str    │
         ╞════════╡
         │ a      │
         │ b      │

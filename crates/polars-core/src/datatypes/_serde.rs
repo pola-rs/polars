@@ -3,7 +3,7 @@
 //!
 //! We could use [serde_1712](https://github.com/serde-rs/serde/issues/1712), but that gave problems caused by
 //! [rust_96956](https://github.com/rust-lang/rust/issues/96956), so we make a dummy type without static
-pub use arrow::datatypes::DataType as ArrowDataType;
+
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::*;
@@ -92,7 +92,7 @@ impl From<&DataType> for SerializableDataType {
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds.clone()),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_) => Self::Categorical,
+            Categorical(_, _) => Self::Categorical,
             #[cfg(feature = "object")]
             Object(name) => Self::Object(name.to_string()),
             dt => panic!("{dt:?} not supported"),
@@ -126,7 +126,7 @@ impl From<SerializableDataType> for DataType {
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds),
             #[cfg(feature = "dtype-categorical")]
-            Categorical => Self::Categorical(None),
+            Categorical => Self::Categorical(None, Default::default()),
             #[cfg(feature = "object")]
             Object(_) => Self::Object("unknown"),
         }

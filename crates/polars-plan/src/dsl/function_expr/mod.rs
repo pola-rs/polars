@@ -14,6 +14,7 @@ mod clip;
 #[cfg(feature = "dtype-struct")]
 mod coerce;
 mod concat;
+#[cfg(feature = "cov")]
 mod correlation;
 #[cfg(feature = "cum_agg")]
 mod cum;
@@ -66,6 +67,7 @@ use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "dtype-array")]
 pub(super) use array::ArrayFunction;
+#[cfg(feature = "cov")]
 pub(crate) use correlation::CorrelationMethod;
 #[cfg(feature = "fused")]
 pub(crate) use fused::FusedOperator;
@@ -121,6 +123,12 @@ pub enum FunctionExpr {
     Boolean(BooleanFunction),
     #[cfg(feature = "abs")]
     Abs,
+    #[cfg(feature = "hist")]
+    Hist {
+        bin_count: Option<usize>,
+        include_category: bool,
+        include_breakpoint: bool,
+    },
     NullCount,
     Pow(PowFunction),
     #[cfg(feature = "row_hash")]
@@ -173,23 +181,23 @@ pub enum FunctionExpr {
     #[cfg(feature = "top_k")]
     TopK(bool),
     #[cfg(feature = "cum_agg")]
-    Cumcount {
+    CumCount {
         reverse: bool,
     },
     #[cfg(feature = "cum_agg")]
-    Cumsum {
+    CumSum {
         reverse: bool,
     },
     #[cfg(feature = "cum_agg")]
-    Cumprod {
+    CumProd {
         reverse: bool,
     },
     #[cfg(feature = "cum_agg")]
-    Cummin {
+    CumMin {
         reverse: bool,
     },
     #[cfg(feature = "cum_agg")]
-    Cummax {
+    CumMax {
         reverse: bool,
     },
     Reverse,
@@ -241,6 +249,7 @@ pub enum FunctionExpr {
     #[cfg(feature = "fused")]
     Fused(fused::FusedOperator),
     ConcatExpr(bool),
+    #[cfg(feature = "cov")]
     Correlation {
         method: correlation::CorrelationMethod,
         ddof: u8,
@@ -307,6 +316,10 @@ pub enum FunctionExpr {
     EwmVar {
         options: EWMOptions,
     },
+    #[cfg(feature = "replace")]
+    Replace {
+        return_dtype: Option<DataType>,
+    },
 }
 
 impl Hash for FunctionExpr {
@@ -335,6 +348,7 @@ impl Hash for FunctionExpr {
             SearchSorted(f) => f.hash(state),
             #[cfg(feature = "random")]
             Random { method, .. } => method.hash(state),
+            #[cfg(feature = "cov")]
             Correlation { method, .. } => method.hash(state),
             #[cfg(feature = "range")]
             Range(f) => f.hash(state),
@@ -400,15 +414,15 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "top_k")]
             TopK(a) => a.hash(state),
             #[cfg(feature = "cum_agg")]
-            Cumcount { reverse } => reverse.hash(state),
+            CumCount { reverse } => reverse.hash(state),
             #[cfg(feature = "cum_agg")]
-            Cumsum { reverse } => reverse.hash(state),
+            CumSum { reverse } => reverse.hash(state),
             #[cfg(feature = "cum_agg")]
-            Cumprod { reverse } => reverse.hash(state),
+            CumProd { reverse } => reverse.hash(state),
             #[cfg(feature = "cum_agg")]
-            Cummin { reverse } => reverse.hash(state),
+            CumMin { reverse } => reverse.hash(state),
             #[cfg(feature = "cum_agg")]
-            Cummax { reverse } => reverse.hash(state),
+            CumMax { reverse } => reverse.hash(state),
             #[cfg(feature = "dtype-struct")]
             ValueCounts { sort, parallel } => {
                 sort.hash(state);
@@ -495,6 +509,18 @@ impl Hash for FunctionExpr {
             EwmStd { options } => options.hash(state),
             #[cfg(feature = "ewma")]
             EwmVar { options } => options.hash(state),
+            #[cfg(feature = "hist")]
+            Hist {
+                bin_count,
+                include_category,
+                include_breakpoint,
+            } => {
+                bin_count.hash(state);
+                include_category.hash(state);
+                include_breakpoint.hash(state);
+            },
+            #[cfg(feature = "replace")]
+            Replace { return_dtype } => return_dtype.hash(state),
         }
     }
 }
@@ -573,15 +599,15 @@ impl Display for FunctionExpr {
             },
             Shift => "shift",
             #[cfg(feature = "cum_agg")]
-            Cumcount { .. } => "cumcount",
+            CumCount { .. } => "cum_count",
             #[cfg(feature = "cum_agg")]
-            Cumsum { .. } => "cumsum",
+            CumSum { .. } => "cum_sum",
             #[cfg(feature = "cum_agg")]
-            Cumprod { .. } => "cumprod",
+            CumProd { .. } => "cum_prod",
             #[cfg(feature = "cum_agg")]
-            Cummin { .. } => "cummin",
+            CumMin { .. } => "cum_min",
             #[cfg(feature = "cum_agg")]
-            Cummax { .. } => "cummax",
+            CumMax { .. } => "cum_max",
             #[cfg(feature = "dtype-struct")]
             ValueCounts { .. } => "value_counts",
             #[cfg(feature = "unique_counts")]
@@ -625,6 +651,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "fused")]
             Fused(fused) => return Display::fmt(fused, f),
             ConcatExpr(_) => "concat_expr",
+            #[cfg(feature = "cov")]
             Correlation { method, .. } => return Display::fmt(method, f),
             #[cfg(feature = "peaks")]
             PeakMin => "peak_min",
@@ -658,6 +685,10 @@ impl Display for FunctionExpr {
             EwmStd { .. } => "ewm_std",
             #[cfg(feature = "ewma")]
             EwmVar { .. } => "ewm_var",
+            #[cfg(feature = "hist")]
+            Hist { .. } => "hist",
+            #[cfg(feature = "replace")]
+            Replace { .. } => "replace",
         };
         write!(f, "{s}")
     }
@@ -819,8 +850,6 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     MeanBy(options) => map_as_slice!(rolling::rolling_mean_by, options.clone()),
                     Sum(options) => map!(rolling::rolling_sum, options.clone()),
                     SumBy(options) => map_as_slice!(rolling::rolling_sum_by, options.clone()),
-                    Median(options) => map!(rolling::rolling_median, options.clone()),
-                    MedianBy(options) => map_as_slice!(rolling::rolling_median_by, options.clone()),
                     Quantile(options) => map!(rolling::rolling_quantile, options.clone()),
                     QuantileBy(options) => {
                         map_as_slice!(rolling::rolling_quantile_by, options.clone())
@@ -832,6 +861,19 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     #[cfg(feature = "moment")]
                     Skew(window_size, bias) => map!(rolling::rolling_skew, window_size, bias),
                 }
+            },
+            #[cfg(feature = "hist")]
+            Hist {
+                bin_count,
+                include_category,
+                include_breakpoint,
+            } => {
+                map_as_slice!(
+                    dispatch::hist,
+                    bin_count,
+                    include_category,
+                    include_breakpoint
+                )
             },
             ShiftAndFill => {
                 map_as_slice!(shift_and_fill::shift_and_fill)
@@ -861,15 +903,15 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             },
             Shift => map_as_slice!(shift_and_fill::shift),
             #[cfg(feature = "cum_agg")]
-            Cumcount { reverse } => map!(cum::cumcount, reverse),
+            CumCount { reverse } => map!(cum::cum_count, reverse),
             #[cfg(feature = "cum_agg")]
-            Cumsum { reverse } => map!(cum::cumsum, reverse),
+            CumSum { reverse } => map!(cum::cum_sum, reverse),
             #[cfg(feature = "cum_agg")]
-            Cumprod { reverse } => map!(cum::cumprod, reverse),
+            CumProd { reverse } => map!(cum::cum_prod, reverse),
             #[cfg(feature = "cum_agg")]
-            Cummin { reverse } => map!(cum::cummin, reverse),
+            CumMin { reverse } => map!(cum::cum_min, reverse),
             #[cfg(feature = "cum_agg")]
-            Cummax { reverse } => map!(cum::cummax, reverse),
+            CumMax { reverse } => map!(cum::cum_max, reverse),
             #[cfg(feature = "dtype-struct")]
             ValueCounts { sort, parallel } => map!(dispatch::value_counts, sort, parallel),
             #[cfg(feature = "unique_counts")]
@@ -909,6 +951,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "fused")]
             Fused(op) => map_as_slice!(fused::fused, op),
             ConcatExpr(rechunk) => map_as_slice!(concat::concat_expr, rechunk),
+            #[cfg(feature = "cov")]
             Correlation { method, ddof } => map_as_slice!(correlation::corr, ddof, method),
             #[cfg(feature = "peaks")]
             PeakMin => map!(peaks::peak_min),
@@ -993,6 +1036,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             EwmStd { options } => map!(ewm::ewm_std, options),
             #[cfg(feature = "ewma")]
             EwmVar { options } => map!(ewm::ewm_var, options),
+            #[cfg(feature = "replace")]
+            Replace { return_dtype } => {
+                map_as_slice!(dispatch::replace, return_dtype.clone())
+            },
         }
     }
 }
