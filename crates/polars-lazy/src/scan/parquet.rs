@@ -56,7 +56,7 @@ impl LazyParquetReader {
 impl LazyFileListReader for LazyParquetReader {
     /// Get the final [LazyFrame].
     fn finish(mut self) -> PolarsResult<LazyFrame> {
-        if let Some(paths) = self.iter_paths()? {
+        if let Some(paths) = self.iter_readers()? {
             let paths = paths
                 .into_iter()
                 .collect::<PolarsResult<Arc<[PathBuf]>>>()?;

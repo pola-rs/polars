@@ -1,5 +1,12 @@
+use std::fmt::Display;
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek};
+use std::path::PathBuf;
+
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
+use polars_error::PolarsResult;
 
 /// Trait used to get a hold to file handler or to the underlying bytes
 /// without performing a Read.
@@ -81,6 +88,44 @@ impl<'a, T: 'a + MmapBytesReader> From<&'a T> for ReaderBytes<'a> {
                 let mmap = unsafe { memmap::Mmap::map(f).unwrap() };
                 ReaderBytes::Mapped(mmap, f)
             },
+        }
+    }
+}
+
+/// Create MmapBytesReaders for a specific "file", either locally or remotely.
+#[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum ScanLocation {
+    /// A specific local file on the filesystem:
+    LocalFile {
+        path: PathBuf,
+    },
+    /// A cloud URL of a remote file, to be used with async APIs
+    RemoteFile {
+        uri: String,
+    },
+    // /// A wrapper around a Python callable that returns a file-like object.
+    // PyFileFactory { factory: PythonFunction }
+}
+
+impl Display for ScanLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ScanLocation::LocalFile { path, .. } => write!(f, "{}", path.to_string_lossy()),
+            ScanLocation::RemoteFile { uri: location } => write!(f, "{location}"),
+        }
+    }
+}
+
+impl ScanLocation {
+    /// Open the underlying file. Only works for non-RemoteFile.
+    pub fn mmapbytesreader(&self) -> PolarsResult<Box<dyn MmapBytesReader>> {
+        match self {
+            ScanLocation::LocalFile { path, .. } => {
+                let file = polars_utils::open_file(path)?;
+                Ok(Box::new(file))
+            },
+            ScanLocation::RemoteFile { .. } => panic!("RemoteFile needs to be handled by async code, not as MmapBytesReader"),
         }
     }
 }

@@ -9,11 +9,12 @@ use polars_io::RowCount;
 use crate::frame::LazyFileListReader;
 use crate::prelude::*;
 
+/// To load files once this is fully configured, use
+/// [LazyFileListReader::load_multiple],
+/// [LazyFileListReader::load_specific_file] or other related methods.
 #[derive(Clone)]
 #[cfg(feature = "csv")]
 pub struct LazyCsvReader<'a> {
-    path: PathBuf,
-    paths: Arc<[PathBuf]>,
     separator: u8,
     has_header: bool,
     ignore_errors: bool,
@@ -40,14 +41,8 @@ pub struct LazyCsvReader<'a> {
 
 #[cfg(feature = "csv")]
 impl<'a> LazyCsvReader<'a> {
-    pub fn new_paths(paths: Arc<[PathBuf]>) -> Self {
-        Self::new("").with_paths(paths)
-    }
-
-    pub fn new(path: impl AsRef<Path>) -> Self {
+    pub fn new() -> Self {
         LazyCsvReader {
-            path: path.as_ref().to_owned(),
-            paths: Arc::new([]),
             separator: b',',
             has_header: true,
             ignore_errors: false,
@@ -233,20 +228,12 @@ impl<'a> LazyCsvReader<'a> {
     /// Modify a schema before we run the lazy scanning.
     ///
     /// Important! Run this function latest in the builder!
-    pub fn with_schema_modify<F>(self, f: F) -> PolarsResult<Self>
+    pub fn with_schema_modify<F>(mut self, f: F, location: &ScanLocation) -> PolarsResult<Self>
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
-        let mut file = if let Some(mut paths) = self.iter_paths()? {
-            let path = match paths.next() {
-                Some(globresult) => globresult?,
-                None => polars_bail!(ComputeError: "globbing pattern did not match any files"),
-            };
-            polars_utils::open_file(path)
-        } else {
-            polars_utils::open_file(&self.path)
-        }?;
-        let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
+        let mut mmap_bytes_reader = location.mmapbytesreader()?;
+        let reader_bytes = get_reader_bytes(&mut mmap_bytes_reader).expect("could not mmap file");
         let mut skip_rows = self.skip_rows;
 
         let (schema, _, _) = infer_file_schema(
@@ -279,9 +266,9 @@ impl<'a> LazyCsvReader<'a> {
 }
 
 impl LazyFileListReader for LazyCsvReader<'_> {
-    fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
+    fn load_specific(self, location: ScanLocation) -> PolarsResult<LazyFrame> {
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_csv(
-            self.path,
+            location.mmapbytesreader(),
             self.separator,
             self.has_header,
             self.ignore_errors,
@@ -308,24 +295,6 @@ impl LazyFileListReader for LazyCsvReader<'_> {
         .into();
         lf.opt_state.file_caching = true;
         Ok(lf)
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-
-    fn paths(&self) -> &[PathBuf] {
-        &self.paths
-    }
-
-    fn with_path(mut self, path: PathBuf) -> Self {
-        self.path = path;
-        self
-    }
-
-    fn with_paths(mut self, paths: Arc<[PathBuf]>) -> Self {
-        self.paths = paths;
-        self
     }
 
     fn rechunk(&self) -> bool {

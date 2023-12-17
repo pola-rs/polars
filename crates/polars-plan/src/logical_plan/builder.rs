@@ -26,6 +26,7 @@ use polars_io::{
     csv::CommentPrefix,
     csv::CsvEncoding,
     csv::NullValues,
+    mmap::ScanLocation,
     utils::get_reader_bytes,
 };
 
@@ -119,7 +120,7 @@ impl LogicalPlanBuilder {
         };
 
         Ok(LogicalPlan::Scan {
-            paths: Arc::new([]),
+            scan_locations: Arc::new([]),
             file_info,
             predicate: None,
             file_options,
@@ -136,8 +137,8 @@ impl LogicalPlanBuilder {
 
     #[cfg(any(feature = "parquet", feature = "parquet_async"))]
     #[allow(clippy::too_many_arguments)]
-    pub fn scan_parquet<P: Into<Arc<[std::path::PathBuf]>>>(
-        paths: P,
+    pub fn scan_parquet(
+        scan_locations: Arc<[ScanLocation]>,
         n_rows: Option<usize>,
         cache: bool,
         parallel: polars_io::parquet::ParallelStrategy,
@@ -148,46 +149,56 @@ impl LogicalPlanBuilder {
         use_statistics: bool,
         hive_partitioning: bool,
     ) -> PolarsResult<Self> {
-        use polars_io::{is_cloud_url, SerReader as _};
+        use std::path::PathBuf;
 
-        let paths = paths.into();
-        polars_ensure!(paths.len() >= 1, ComputeError: "expected at least 1 path");
+        use polars_io::SerReader as _;
 
-        // Use first path to get schema.
-        let path = &paths[0];
+        polars_ensure!(scan_locations.len() >= 1, ComputeError: "expected at least 1 path");
 
-        let (schema, reader_schema, num_rows, metadata) = if is_cloud_url(path) {
-            #[cfg(not(feature = "cloud"))]
-            panic!(
-                "One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled."
-            );
+        // Use first reader to get schema.
+        let scan_location = scan_locations[0];
 
-            #[cfg(feature = "cloud")]
-            {
-                let uri = path.to_string_lossy();
-                get_runtime().block_on(async {
-                    let mut reader =
-                        ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref(), None, None)
-                            .await?;
-                    let reader_schema = reader.schema().await?;
-                    let num_rows = reader.num_rows().await?;
-                    let metadata = reader.get_metadata().await?.clone();
+        let (schema, reader_schema, num_rows, metadata, uri) = match scan_location {
+            ScanLocation::RemoteFile { uri } => {
+                #[cfg(not(feature = "cloud"))]
+                panic!(
+                    "One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled."
+                );
 
-                    let schema = prepare_schema((&reader_schema).into(), row_count.as_ref());
-                    PolarsResult::Ok((schema, reader_schema, Some(num_rows), Some(metadata)))
-                })?
-            }
-        } else {
-            let file = polars_utils::open_file(path)?;
-            let mut reader = ParquetReader::new(file);
-            let reader_schema = reader.schema()?;
-            let schema = prepare_schema((&reader_schema).into(), row_count.as_ref());
-            (
-                schema,
-                reader_schema,
-                Some(reader.num_rows()?),
-                Some(reader.get_metadata()?.clone()),
-            )
+                #[cfg(feature = "cloud")]
+                {
+                    get_runtime().block_on(async {
+                        let mut reader =
+                            ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref(), None, None)
+                                .await?;
+                        let reader_schema = reader.schema().await?;
+                        let num_rows = reader.num_rows().await?;
+                        let metadata = reader.get_metadata().await?.clone();
+
+                        let schema = prepare_schema((&reader_schema).into(), row_count.as_ref());
+                        PolarsResult::Ok((
+                            schema,
+                            reader_schema,
+                            Some(num_rows),
+                            Some(metadata),
+                            Some(uri),
+                        ))
+                    })?
+                }
+            },
+            ScanLocation::LocalFile { path } => {
+                let file = polars_utils::open_file(path)?;
+                let mut reader = ParquetReader::new(file);
+                let reader_schema = reader.schema()?;
+                let schema = prepare_schema((&reader_schema).into(), row_count.as_ref());
+                (
+                    schema,
+                    reader_schema,
+                    Some(reader.num_rows()?),
+                    Some(reader.get_metadata()?.clone()),
+                    None,
+                )
+            },
         };
 
         let mut file_info = FileInfo::new(
@@ -199,7 +210,10 @@ impl LogicalPlanBuilder {
         // We set the hive partitions of the first path to determine the schema.
         // On iteration the partition values will be re-set per file.
         if hive_partitioning {
-            file_info.init_hive_partitions(path.as_path())?;
+            if let Some(uri) = uri {
+                let path = PathBuf::from(uri);
+                file_info.init_hive_partitions(path.as_path())?;
+            }
         }
 
         let options = FileScanOptions {
@@ -212,7 +226,7 @@ impl LogicalPlanBuilder {
             hive_partitioning,
         };
         Ok(LogicalPlan::Scan {
-            paths,
+            scan_locations,
             file_info,
             file_options: options,
             predicate: None,
@@ -230,8 +244,8 @@ impl LogicalPlanBuilder {
     }
 
     #[cfg(feature = "ipc")]
-    pub fn scan_ipc<P: Into<std::path::PathBuf>>(
-        path: P,
+    pub fn scan_ipc(
+        scan_location: ScanLocation,
         options: IpcScanOptions,
         n_rows: Option<usize>,
         cache: bool,
@@ -240,9 +254,8 @@ impl LogicalPlanBuilder {
     ) -> PolarsResult<Self> {
         use polars_io::SerReader as _;
 
-        let path = path.into();
-        let file = polars_utils::open_file(&path)?;
-        let mut reader = IpcReader::new(file);
+        let reader = scan_location.mmapbytesreader()?;
+        let mut reader = IpcReader::new(reader);
 
         let reader_schema = reader.schema()?;
         let mut schema: Schema = (&reader_schema).into();
@@ -264,7 +277,7 @@ impl LogicalPlanBuilder {
             hive_partitioning: false,
         };
         Ok(LogicalPlan::Scan {
-            paths: Arc::new([path]),
+            scan_locations: Arc::new([scan_location]),
             file_info,
             file_options,
             predicate: None,
@@ -275,8 +288,8 @@ impl LogicalPlanBuilder {
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv")]
-    pub fn scan_csv<P: Into<std::path::PathBuf>>(
-        path: P,
+    pub fn scan_csv(
+        scan_location: ScanLocation,
         separator: u8,
         has_header: bool,
         ignore_errors: bool,
@@ -299,13 +312,10 @@ impl LogicalPlanBuilder {
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
     ) -> PolarsResult<Self> {
-        let path = path.into();
-        let mut file = polars_utils::open_file(&path)?;
-
-        let paths = Arc::new([path]);
-
+        let mut reader = scan_location.mmapbytesreader()?;
+        let scan_locations = Arc::new([scan_location]);
         let mut magic_nr = [0u8; 2];
-        let res = file.read_exact(&mut magic_nr);
+        let res = reader.read_exact(&mut magic_nr);
         if raise_if_empty {
             res.map_err(|_| polars_err!(NoData: "empty CSV"))?;
         };
@@ -313,8 +323,8 @@ impl LogicalPlanBuilder {
             !is_compressed(&magic_nr),
             ComputeError: "cannot scan compressed csv; use `read_csv` for compressed data",
         );
-        file.rewind()?;
-        let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
+        reader.rewind()?;
+        let reader_bytes = get_reader_bytes(&mut reader).expect("could not mmap file");
 
         // TODO! delay inferring schema until absolutely necessary
         // this needs a way to estimated bytes/rows.
@@ -367,7 +377,7 @@ impl LogicalPlanBuilder {
             hive_partitioning: false,
         };
         Ok(LogicalPlan::Scan {
-            paths,
+            scan_locations,
             file_info,
             file_options: options,
             predicate: None,

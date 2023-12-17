@@ -29,9 +29,9 @@
 //! let lf: LazyFrame = df.lazy();
 //!
 //! // scan a csv file lazily
-//! let lf: LazyFrame = LazyCsvReader::new("some_path")
+//! let lf: LazyFrame = LazyCsvReader::new()
 //!     .has_header(true)
-//!     .finish()?;
+//!     .load_specific_file("some_path")?;
 //!
 //! // scan a parquet file lazily
 //! let lf: LazyFrame = LazyFrame::scan_parquet("some_path", Default::default())?;
@@ -112,10 +112,10 @@
 //! use polars::prelude::*;
 //! # fn example() -> PolarsResult<()> {
 //!
-//!  let df = LazyCsvReader::new("reddit.csv")
+//!  let df = LazyCsvReader::new()
 //!     .has_header(true)
 //!     .with_separator(b',')
-//!     .finish()?
+//!     .load_specific_file("reddit.csv")?
 //!     .group_by([col("comment_karma")])
 //!     .agg([col("name").n_unique().alias("unique_names"), col("link_karma").max()])
 //!     // take only 100 rows.

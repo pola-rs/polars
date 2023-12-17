@@ -44,9 +44,8 @@ impl LazyIpcReader {
 }
 
 impl LazyFileListReader for LazyIpcReader {
-    fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
+    fn finish_no_glob(self, path: &Path) -> PolarsResult<LazyFrame> {
         let args = self.args;
-        let path = self.path;
 
         let options = IpcScanOptions {
             memmap: args.memmap,
