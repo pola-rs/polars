@@ -138,6 +138,7 @@ def _map_py_type_to_dtype(
     raise TypeError("invalid type")
 
 
+@functools.lru_cache
 def is_polars_dtype(dtype: Any, *, include_unknown: bool = False) -> bool:
     """Indicate whether the given input is a Polars dtype, or dtype specialisation."""
     try:
