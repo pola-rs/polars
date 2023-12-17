@@ -1,9 +1,5 @@
 # User-defined functions (Python)
 
-!!! warning "Not updated for Python Polars `0.19.0`"
-
-    This section of the user guide still needs to be updated for the latest Polars release.
-
 You should be convinced by now that Polars expressions are so powerful and flexible that there is much less need for custom Python functions
 than in other libraries.
 
@@ -12,28 +8,28 @@ over data in Polars.
 
 For this we provide the following expressions:
 
-- `map`
-- `apply`
+- `map_batches`
+- `map_elements`
 
-## To `map` or to `apply`.
+## To `map_batches` or to `map_elements`.
 
 These functions have an important distinction in how they operate and consequently what data they will pass to the user.
 
-A `map` passes the `Series` backed by the `expression` as is.
+A `map_batches` passes the `Series` backed by the `expression` as is.
 
-`map` follows the same rules in both the `select` and the `group_by` context, this will
+`map_batches` follows the same rules in both the `select` and the `group_by` context, this will
 mean that the `Series` represents a column in a `DataFrame`. Note that in the `group_by` context, that column is not yet
 aggregated!
 
-Use cases for `map` are for instance passing the `Series` in an expression to a third party library. Below we show how
-we could use `map` to pass an expression column to a neural network model.
+Use cases for `map_batches` are for instance passing the `Series` in an expression to a third party library. Below we show how
+we could use `map_batches` to pass an expression column to a neural network model.
 
 === ":fontawesome-brands-python: Python"
-[:material-api: `map`](https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.map.html)
+[:material-api: `map_batches`](https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.map_batches.html)
 
 ```python
 df.with_columns([
-    pl.col("features").map(lambda s: MyNeuralNetwork.forward(s.to_numpy())).alias("activations")
+    pl.col("features").map_batches(lambda s: MyNeuralNetwork.forward(s.to_numpy())).alias("activations")
 ])
 ```
 
@@ -45,9 +41,9 @@ df.with_columns([
 ])
 ```
 
-Use cases for `map` in the `group_by` context are slim. They are only used for performance reasons, but can quite easily lead to incorrect results. Let me explain why.
+Use cases for `map_batches` in the `group_by` context are slim. They are only used for performance reasons, but can quite easily lead to incorrect results. Let me explain why.
 
-{{code_block('user-guide/expressions/user-defined-functions','dataframe',['map'])}}
+{{code_block('user-guide/expressions/user-defined-functions','dataframe',[])}}
 
 ```python exec="on" result="text" session="user-guide/udf"
 --8<-- "python/user-guide/expressions/user-defined-functions.py:setup"
@@ -68,57 +64,50 @@ If we would then apply a `shift` operation to the right, we'd expect:
 "b" -> [null]
 ```
 
-Now, let's print and see what we've got.
+Let's try that out and see what we get:
 
-```python
-print(out)
-```
+{{code_block('user-guide/expressions/user-defined-functions','shift_map_batches',[])}}
 
-```
-shape: (2, 3)
-┌──────┬────────────┬──────────────────┐
-│ keys ┆ shift_map  ┆ shift_expression │
-│ ---  ┆ ---        ┆ ---              │
-│ str  ┆ list[i64]  ┆ list[i64]        │
-╞══════╪════════════╪══════════════════╡
-│ a    ┆ [null, 10] ┆ [null, 10]       │
-│ b    ┆ [7]        ┆ [null]           │
-└──────┴────────────┴──────────────────┘
+```python exec="on" result="text" session="user-guide/udf"
+--8<-- "python/user-guide/expressions/user-defined-functions.py:shift_map_batches"
 ```
 
 Ouch.. we clearly get the wrong results here. Group `"b"` even got a value from group `"a"` 😵.
 
-This went horribly wrong, because the `map` applies the function before we aggregate! So that means the whole column `[10, 7, 1`\] got shifted to `[null, 10, 7]` and was then aggregated.
+This went horribly wrong, because the `map_batches` applies the function before we aggregate! So that means the whole column `[10, 7, 1`\] got shifted to `[null, 10, 7]` and was then aggregated.
 
-So my advice is to never use `map` in the `group_by` context unless you know you need it and know what you are doing.
+So my advice is to never use `map_batches` in the `group_by` context unless you know you need it and know what you are doing.
 
-## To `apply`
+## To `map_elements`
 
-Luckily we can fix previous example with `apply`. `apply` works on the smallest logical elements for that operation.
+Luckily we can fix previous example with `map_elements`. `map_elements` works on the smallest logical elements for that operation.
 
 That is:
 
 - `select context` -> single elements
 - `group by context` -> single groups
 
-So with `apply` we should be able to fix our example:
+So with `map_elements` we should be able to fix our example:
 
-{{code_block('user-guide/expressions/user-defined-functions','apply',['apply'])}}
+=== ":fontawesome-brands-python: Python"
+[:material-api: `map_elements`](https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.map_elements.html)
+
+{{code_block('user-guide/expressions/user-defined-functions','map_elements',[])}}
 
 ```python exec="on" result="text" session="user-guide/udf"
---8<-- "python/user-guide/expressions/user-defined-functions.py:apply"
+--8<-- "python/user-guide/expressions/user-defined-functions.py:map_elements"
 ```
 
 And observe, a valid result! 🎉
 
-## `apply` in the `select` context
+## `map_elements` in the `select` context
 
-In the `select` context, the `apply` expression passes elements of the column to the Python function.
+In the `select` context, the `map_elements` expression passes elements of the column to the Python function.
 
 _Note that you are now running Python, this will be slow._
 
 Let's go through some examples to see what to expect. We will continue with the `DataFrame` we defined at the start of
-this section and show an example with the `apply` function and a counter example where we use the expression API to
+this section and show an example with the `map_elements` function and a counter example where we use the expression API to
 achieve the same goals.
 
 ### Adding a counter
@@ -126,9 +115,9 @@ achieve the same goals.
 In this example we create a global `counter` and then add the integer `1` to the global state at every element processed.
 Every iteration the result of the increment will be added to the element value.
 
-> Note, this example isn't provided in Rust. The reason is that the global `counter` value would lead to data races when this apply is evaluated in parallel. It would be possible to wrap it in a `Mutex` to protect the variable, but that would be obscuring the point of the example. This is a case where the Python Global Interpreter Lock's performance tradeoff provides some safety guarantees.
+> Note, this example isn't provided in Rust. The reason is that the global `counter` value would lead to data races when this `apply` is evaluated in parallel. It would be possible to wrap it in a `Mutex` to protect the variable, but that would be obscuring the point of the example. This is a case where the Python Global Interpreter Lock's performance tradeoff provides some safety guarantees.
 
-{{code_block('user-guide/expressions/user-defined-functions','counter',['apply'])}}
+{{code_block('user-guide/expressions/user-defined-functions','counter',[])}}
 
 ```python exec="on" result="text" session="user-guide/udf"
 --8<-- "python/user-guide/expressions/user-defined-functions.py:counter"
@@ -136,7 +125,7 @@ Every iteration the result of the increment will be added to the element value.
 
 ### Combining multiple column values
 
-If we want to have access to values of different columns in a single `apply` function call, we can create `struct` data
+If we want to have access to values of different columns in a single `map_elements` function call, we can create `struct` data
 type. This data type collects those columns as fields in the `struct`. So if we'd create a struct from the columns
 `"keys"` and `"values"`, we would get the following struct elements:
 
@@ -150,7 +139,7 @@ type. This data type collects those columns as fields in the `struct`. So if we'
 
 In Python, those would be passed as `dict` to the calling Python function and can thus be indexed by `field: str`. In Rust, you'll get a `Series` with the `Struct` type. The fields of the struct can then be indexed and downcast.
 
-{{code_block('user-guide/expressions/user-defined-functions','combine',['apply','struct'])}}
+{{code_block('user-guide/expressions/user-defined-functions','combine',[])}}
 
 ```python exec="on" result="text" session="user-guide/udf"
 --8<-- "python/user-guide/expressions/user-defined-functions.py:combine"
