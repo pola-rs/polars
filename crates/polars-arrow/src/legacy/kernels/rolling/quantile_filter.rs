@@ -476,6 +476,7 @@ where
     }
 
     fn get(&mut self, i: usize) -> Self::Item {
+        debug_assert!(i < self.block_left.len() + self.block_right.len());
         // Simple case, all elements are left.
         if self.block_right.n_element == 0 {
             unsafe { self.block_left.traverse_to_index(i) };
@@ -487,12 +488,18 @@ where
 
         // Needed: one of the block can point too far depending on what was (un)deleted in the other
         // block.
-        self.reverse();
+        let mut peek_index = self.block_left.current_index + self.block_right.current_index + 1;
+        while i <= peek_index {
+            self.reverse();
+            peek_index = self.block_left.current_index + self.block_right.current_index + 1;
+            if peek_index <= 1 && i <= 1 {
+                break;
+            }
+        }
 
         loop {
             // Current index position of merge sort
             let s = self.block_left.current_index + self.block_right.current_index;
-            debug_assert!(i >= s);
 
             let left = self.block_left.peek();
             let right = self.block_right.peek();
@@ -528,9 +535,7 @@ where
                         },
                     }
                 },
-                _ => {
-                    panic!()
-                },
+                (None, None) => {},
             }
         }
     }
@@ -767,8 +772,9 @@ where
             unsafe {
                 let mut union = BlockUnion::new(&mut *ptr_left, &mut *ptr_right);
                 union.set_state(j);
-
-                out.push(QuantileUpdate::new(interpol, min_periods, quantile, union).quantile());
+                let q: <A as Indexable>::Item =
+                    QuantileUpdate::new(interpol, min_periods, quantile, union).quantile();
+                out.push(q);
             }
         }
 
