@@ -222,3 +222,23 @@ def test_is_in_null_series() -> None:
     result = df.select(pl.col("a").is_in([None]))
     expected = pl.DataFrame({"a": [False, False, None]})
     assert_frame_equal(result, expected)
+
+
+def test_is_in_int_range() -> None:
+    r = pl.int_range(0, 3, eager=False)
+    out = pl.select(r.is_in([1, 2])).to_series()
+    assert out.to_list() == [False, True, True]
+
+    r = pl.int_range(0, 3, eager=True)  # type: ignore[assignment]
+    out = r.is_in([1, 2])  # type: ignore[assignment]
+    assert out.to_list() == [False, True, True]
+
+
+def test_is_in_date_range() -> None:
+    r = pl.date_range(date(2023, 1, 1), date(2023, 1, 3), eager=False)
+    out = pl.select(r.is_in([date(2023, 1, 2), date(2023, 1, 3)])).to_series()
+    assert out.to_list() == [False, True, True]
+
+    r = pl.date_range(date(2023, 1, 1), date(2023, 1, 3), eager=True)  # type: ignore[assignment]
+    out = r.is_in([date(2023, 1, 2), date(2023, 1, 3)])  # type: ignore[assignment]
+    assert out.to_list() == [False, True, True]
