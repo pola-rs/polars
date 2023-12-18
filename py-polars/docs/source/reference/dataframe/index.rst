@@ -14,6 +14,7 @@ This page gives an overview of all public DataFrame methods.
    descriptive
    export
    group_by
+   plotting
    modify_select
    miscellaneous
 

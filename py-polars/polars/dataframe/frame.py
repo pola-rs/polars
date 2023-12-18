@@ -33,6 +33,7 @@ import polars._reexport as pl
 from polars import functions as F
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
+from polars.dataframe.plotting import PlotNameSpace
 from polars.datatypes import (
     INTEGER_DTYPES,
     N_INFER_DEFAULT,
@@ -348,7 +349,12 @@ class DataFrame:
 
     """
 
-    _accessors: ClassVar[set[str]] = set()
+    _accessors: ClassVar[set[str]] = set("plot")
+
+    @property
+    def plot(self) -> PlotNameSpace:
+        """Create an object namespace of all plotting methods."""
+        return PlotNameSpace(self)
 
     def __init__(
         self,
