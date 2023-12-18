@@ -423,7 +423,8 @@ fn apply_multiple_elementwise<'a>(
             ac.with_series(out.into_series(), true, None)?;
             Ok(ac)
         },
-        _ => {
+        first_as => {
+            let check_lengths = check_lengths && !matches!(first_as, AggState::Literal(_));
             let mut s = acs
                 .iter_mut()
                 .enumerate()
