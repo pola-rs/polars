@@ -171,7 +171,10 @@ pub fn concat_lf_diagonal<L: AsRef<[LazyFrame]>>(
 
 #[cfg(feature = "horizontal_concat")]
 /// Concat [LazyFrame]s horizontally.
-pub fn concat_lf_horizontal<L: AsRef<[LazyFrame]>>(inputs: L) -> PolarsResult<LazyFrame> {
+pub fn concat_lf_horizontal<L: AsRef<[LazyFrame]>>(
+    inputs: L,
+    args: UnionArgs,
+) -> PolarsResult<LazyFrame> {
     let lfs = inputs.as_ref();
     let mut opt_state = lfs.first().map(|lf| lf.opt_state).ok_or_else(
         || polars_err!(NoData: "Require at least one LazyFrame for horizontal concatenation"),
@@ -207,9 +210,13 @@ pub fn concat_lf_horizontal<L: AsRef<[LazyFrame]>>(inputs: L) -> PolarsResult<La
         lps.push(lp);
     }
 
+    let options = HConcatOptions {
+        parallel: args.parallel,
+    };
     let lp = LogicalPlan::HConcat {
         inputs: lps,
         schema: Arc::new(combined_schema),
+        options,
     };
     let mut lf = LazyFrame::from(lp);
     lf.opt_state = opt_state;
@@ -320,7 +327,14 @@ mod test {
             "c3" => [9, 10, 11, 12]
         ]?;
 
-        let out = concat_lf_horizontal(&[a.lazy(), b.lazy(), c.lazy()])?.collect()?;
+        let out = concat_lf_horizontal(
+            &[a.lazy(), b.lazy(), c.lazy()],
+            UnionArgs {
+                parallel: false,
+                ..Default::default()
+            },
+        )?
+        .collect()?;
 
         let expected = df![
             "a1" => [Some(1), Some(2), Some(3), None],

@@ -229,6 +229,7 @@ def concat(
             return wrap_ldf(
                 plr.concat_lf_horizontal(
                     elems,
+                    parallel=parallel,
                 )
             )
         else:

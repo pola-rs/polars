@@ -286,7 +286,7 @@ pub fn concat_lf_diagonal(
 }
 
 #[pyfunction]
-pub fn concat_lf_horizontal(lfs: &PyAny) -> PyResult<PyLazyFrame> {
+pub fn concat_lf_horizontal(lfs: &PyAny, parallel: bool) -> PyResult<PyLazyFrame> {
     let iter = lfs.iter()?;
 
     let lfs = iter
@@ -296,7 +296,12 @@ pub fn concat_lf_horizontal(lfs: &PyAny) -> PyResult<PyLazyFrame> {
         })
         .collect::<PyResult<Vec<_>>>()?;
 
-    let lf = dsl::functions::concat_lf_horizontal(lfs).map_err(PyPolarsErr::from)?;
+    let args = UnionArgs {
+        rechunk: false, // No need to rechunk with horizontal concatenation
+        parallel,
+        to_supertypes: false,
+    };
+    let lf = dsl::functions::concat_lf_horizontal(lfs, args).map_err(PyPolarsErr::from)?;
     Ok(lf.into())
 }
 

@@ -102,6 +102,7 @@ pub enum ALogicalPlan {
     HConcat {
         inputs: Vec<Node>,
         schema: SchemaRef,
+        options: HConcatOptions,
     },
     ExtContext {
         input: Node,
@@ -232,9 +233,12 @@ impl ALogicalPlan {
                 options: *options,
             },
             #[cfg(feature = "horizontal_concat")]
-            HConcat { schema, .. } => HConcat {
+            HConcat {
+                schema, options, ..
+            } => HConcat {
                 inputs,
                 schema: schema.clone(),
+                options: *options,
             },
             Slice { offset, len, .. } => Slice {
                 input: inputs[0],

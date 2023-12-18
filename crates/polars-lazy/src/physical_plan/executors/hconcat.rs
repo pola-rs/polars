@@ -4,6 +4,7 @@ use super::*;
 
 pub(crate) struct HConcatExec {
     pub(crate) inputs: Vec<Box<dyn Executor>>,
+    pub(crate) options: HConcatOptions,
 }
 
 impl Executor for HConcatExec {
@@ -14,21 +15,46 @@ impl Executor for HConcatExec {
                 println!("run HConcatExec")
             }
         }
-        let inputs = std::mem::take(&mut self.inputs);
+        let mut inputs = std::mem::take(&mut self.inputs);
 
-        // TODO: Parallel impl depending on options
-        let mut dfs = Vec::with_capacity(inputs.len());
+        let dfs = if !self.options.parallel {
+            if state.verbose() {
+                println!("HCONCAT: `parallel=false` hconcat is run sequentially")
+            }
+            let mut dfs = Vec::with_capacity(inputs.len());
+            for (idx, mut input) in inputs.into_iter().enumerate() {
+                let mut state = state.split();
+                state.branch_idx += idx;
 
-        for (idx, mut input) in inputs.into_iter().enumerate() {
-            let mut state = state.split();
-            state.branch_idx += idx;
+                let df = input.execute(&mut state)?;
 
-            let df = input.execute(&mut state)?;
+                dfs.push(df);
+            }
+            dfs
+        } else {
+            if state.verbose() {
+                println!("HCONCAT: hconcat is run in parallel")
+            }
+            let out = POOL.install(|| {
+                inputs
+                    .chunks_mut(POOL.current_num_threads() * 3)
+                    .map(|chunk| {
+                        chunk
+                            .into_par_iter()
+                            .enumerate()
+                            .map(|(idx, input)| {
+                                let mut input = std::mem::take(input);
+                                let mut state = state.split();
+                                state.branch_idx += idx;
+                                input.execute(&mut state)
+                            })
+                            .collect::<PolarsResult<Vec<_>>>()
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()
+            });
+            out?.into_iter().flatten().collect()
+        };
 
-            dfs.push(df);
-        }
-
-        // TODO: does it make sense to allow rechunk?
         concat_df_horizontal(&dfs)
     }
 }

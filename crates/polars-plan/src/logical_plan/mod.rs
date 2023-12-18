@@ -243,6 +243,7 @@ pub enum LogicalPlan {
     HConcat {
         inputs: Vec<LogicalPlan>,
         schema: SchemaRef,
+        options: HConcatOptions,
     },
     /// Catches errors and throws them later
     #[cfg_attr(feature = "serde", serde(skip))]
