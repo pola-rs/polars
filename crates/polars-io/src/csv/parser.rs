@@ -471,26 +471,28 @@ pub(super) fn parse_lines<'a>(
                             buf.add_null(!missing_is_null && field.is_empty())
                         } else {
                             buf.add(field, ignore_errors, needs_escaping, missing_is_null)
-                                .map_err(|_| {
+                                .map_err(|e| {
                                     let bytes_offset = offset + field.as_ptr() as usize - start;
                                     let unparsable = String::from_utf8_lossy(field);
                                     let column_name = schema.get_at_index(idx as usize).unwrap().0;
                                     polars_err!(
                                         ComputeError:
-                                        "Could not parse `{}` as dtype `{}` at column '{}' (column number {}).\n\
+                                        "could not parse `{}` as dtype `{}` at column '{}' (column number {})\n\n\
                                         The current offset in the file is {} bytes.\n\
                                         \n\
                                         You might want to try:\n\
                                         - increasing `infer_schema_length` (e.g. `infer_schema_length=10000`),\n\
                                         - specifying correct dtype with the `dtypes` argument\n\
                                         - setting `ignore_errors` to `True`,\n\
-                                        - adding `{}` to the `null_values` list.",
+                                        - adding `{}` to the `null_values` list.\n\n\
+                                        Original error: ```{}```",
                                         &unparsable,
                                         buf.dtype(),
                                         column_name,
                                         idx + 1,
                                         bytes_offset,
                                         &unparsable,
+                                        e
                                     )
                                 })?;
                         }
