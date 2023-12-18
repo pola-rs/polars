@@ -495,7 +495,7 @@ impl ArrowDataType {
             Dictionary(keys, _, _) => (*keys).into(),
             Union(_, _, _) => unimplemented!(),
             Map(_, _) => unimplemented!(),
-            Extension(_, _, _) => unimplemented!(),
+            Extension(_, inner, _) => inner.underlying_physical_type(),
             _ => self.clone(),
         }
     }
