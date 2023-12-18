@@ -111,7 +111,7 @@ unsafe fn target_get_unchecked<'a, A: StaticArray>(
 }
 
 unsafe fn gather_idx_array_unchecked<A: StaticArray>(
-    dtype: DataType,
+    dtype: ArrowDataType,
     targets: &[&A],
     has_nulls: bool,
     indices: &[IdxSize],
@@ -153,7 +153,7 @@ impl<T: PolarsDataType, I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for 
         }
         let targets: Vec<_> = ca.downcast_iter().collect();
         let arr = gather_idx_array_unchecked(
-            ca.dtype().clone(),
+            ca.dtype().to_arrow(),
             &targets,
             ca.null_count() > 0,
             indices.as_ref(),
@@ -175,7 +175,7 @@ impl<T: PolarsDataType> ChunkTakeUnchecked<IdxCa> for ChunkedArray<T> {
         let targets: Vec<_> = ca.downcast_iter().collect();
 
         let chunks = indices.downcast_iter().map(|idx_arr| {
-            let dtype = ca.dtype().clone();
+            let dtype = ca.dtype().to_arrow();
             if idx_arr.null_count() == 0 {
                 gather_idx_array_unchecked(dtype, &targets, targets_have_nulls, idx_arr.values())
             } else if targets.len() == 1 {

@@ -23,6 +23,7 @@ use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub, SubAssign};
 
 pub use aliases::*;
 pub use any_value::*;
+pub use arrow::array::{ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype, StaticArray};
 #[cfg(feature = "dtype-categorical")]
 use arrow::datatypes::IntegerType;
 pub use arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
@@ -42,8 +43,6 @@ use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};
 use serde::{Deserialize, Serialize};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
 use serde::{Deserializer, Serializer};
-pub use static_array::StaticArray;
-pub use static_array_collect::{ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype};
 pub use time_unit::*;
 
 use crate::chunked_array::arithmetic::ArrayArithmetics;

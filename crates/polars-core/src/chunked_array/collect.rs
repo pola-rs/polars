@@ -26,7 +26,7 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
         T::Array: ArrayFromIterDtype<Self::Item>,
     {
         let field = Arc::new(Field::new(name, dtype.clone()));
-        let arr = self.collect_arr_with_dtype(dtype);
+        let arr = self.collect_arr_with_dtype(dtype.to_arrow());
         ChunkedArray::from_chunk_iter_and_field(field, [arr])
     }
 
@@ -36,7 +36,7 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
         T::Array: ArrayFromIterDtype<Self::Item>,
     {
         let field = Arc::clone(&name_dtype_src.field);
-        let arr = self.collect_arr_with_dtype(field.dtype.clone());
+        let arr = self.collect_arr_with_dtype(field.dtype.to_arrow());
         ChunkedArray::from_chunk_iter_and_field(field, [arr])
     }
 
@@ -47,7 +47,7 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
         Self: TrustedLen,
     {
         let field = Arc::new(Field::new(name, dtype.clone()));
-        let arr = self.collect_arr_trusted_with_dtype(dtype);
+        let arr = self.collect_arr_trusted_with_dtype(dtype.to_arrow());
         ChunkedArray::from_chunk_iter_and_field(field, [arr])
     }
 
@@ -58,7 +58,7 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
         Self: TrustedLen,
     {
         let field = Arc::clone(&name_dtype_src.field);
-        let arr = self.collect_arr_trusted_with_dtype(field.dtype.clone());
+        let arr = self.collect_arr_trusted_with_dtype(field.dtype.to_arrow());
         ChunkedArray::from_chunk_iter_and_field(field, [arr])
     }
 
@@ -73,7 +73,7 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
         Self: Iterator<Item = Result<U, E>>,
     {
         let field = Arc::new(Field::new(name, dtype.clone()));
-        let arr = self.try_collect_arr_with_dtype(dtype)?;
+        let arr = self.try_collect_arr_with_dtype(dtype.to_arrow())?;
         Ok(ChunkedArray::from_chunk_iter_and_field(field, [arr]))
     }
 
@@ -87,7 +87,7 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
         Self: Iterator<Item = Result<U, E>>,
     {
         let field = Arc::clone(&name_dtype_src.field);
-        let arr = self.try_collect_arr_with_dtype(field.dtype.clone())?;
+        let arr = self.try_collect_arr_with_dtype(field.dtype.to_arrow())?;
         Ok(ChunkedArray::from_chunk_iter_and_field(field, [arr]))
     }
 
@@ -102,7 +102,7 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
         Self: Iterator<Item = Result<U, E>> + TrustedLen,
     {
         let field = Arc::new(Field::new(name, dtype.clone()));
-        let arr = self.try_collect_arr_trusted_with_dtype(dtype)?;
+        let arr = self.try_collect_arr_trusted_with_dtype(dtype.to_arrow())?;
         Ok(ChunkedArray::from_chunk_iter_and_field(field, [arr]))
     }
 
@@ -116,7 +116,7 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
         Self: Iterator<Item = Result<U, E>> + TrustedLen,
     {
         let field = Arc::clone(&name_dtype_src.field);
-        let arr = self.try_collect_arr_trusted_with_dtype(field.dtype.clone())?;
+        let arr = self.try_collect_arr_trusted_with_dtype(field.dtype.to_arrow())?;
         Ok(ChunkedArray::from_chunk_iter_and_field(field, [arr]))
     }
 }
