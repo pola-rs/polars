@@ -43,8 +43,6 @@ use crate::chunked_array::ops::explode::ExplodeByOffsets;
 #[cfg(feature = "chunked_ids")]
 use crate::chunked_array::ops::take::TakeChunked;
 use crate::chunked_array::AsSinglePtr;
-#[cfg(feature = "algorithm_group_by")]
-use crate::frame::group_by::*;
 use crate::prelude::*;
 #[cfg(feature = "checked_arithmetic")]
 use crate::series::arithmetic::checked::NumOpsDispatchChecked;

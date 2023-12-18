@@ -41,7 +41,7 @@ pub use crate::frame::explode::MeltArgs;
 #[cfg(feature = "algorithm_group_by")]
 pub(crate) use crate::frame::group_by::aggregations::*;
 #[cfg(feature = "algorithm_group_by")]
-pub use crate::frame::group_by::{GroupsIdx, GroupsProxy, GroupsSlice, IntoGroupsProxy};
+pub use crate::frame::group_by::*;
 pub use crate::frame::{DataFrame, UniqueKeepStrategy};
 pub use crate::hashing::VecHash;
 pub use crate::named_from::{NamedFrom, NamedFromOwned};
