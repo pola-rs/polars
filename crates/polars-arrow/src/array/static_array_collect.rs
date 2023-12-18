@@ -8,6 +8,7 @@ use crate::array::{
 };
 use crate::bitmap::Bitmap;
 use crate::datatypes::ArrowDataType;
+#[cfg(feature = "dtype-array")]
 use crate::legacy::prelude::fixed_size_list::AnonymousBuilder as AnonymousFixedSizeListArrayBuilder;
 use crate::legacy::prelude::list::AnonymousBuilder as AnonymousListArrayBuilder;
 use crate::legacy::trusted_len::{TrustedLen, TrustedLenPush};
@@ -701,12 +702,9 @@ impl<T: AsArray> ArrayFromIterDtype<T> for ListArray<i64> {
         for arr in &iter_values {
             builder.push(arr.as_array());
         }
-        dbg!(&dtype);
         let inner = dtype
             .inner_dtype()
             .expect("expected nested type in ListArray collect");
-        dbg!(inner);
-        dbg!(inner.underlying_physical_type());
         builder
             .finish(Some(&inner.underlying_physical_type()))
             .unwrap()
@@ -753,20 +751,25 @@ impl ArrayFromIterDtype<Box<dyn Array>> for FixedSizeListArray {
         dtype: ArrowDataType,
         iter: I,
     ) -> Self {
-        let ArrowDataType::FixedSizeList(_, width) = &dtype else {
-            panic!("FixedSizeListArray::arr_from_iter_with_dtype called with non-Array dtype");
-        };
-        let iter_values: Vec<_> = iter.into_iter().collect();
-        let mut builder = AnonymousFixedSizeListArrayBuilder::new(iter_values.len(), *width);
-        for arr in iter_values {
-            builder.push(arr.into_boxed_array());
+        #[cfg(feature = "dtype-array")]
+        {
+            let ArrowDataType::FixedSizeList(_, width) = &dtype else {
+                panic!("FixedSizeListArray::arr_from_iter_with_dtype called with non-Array dtype");
+            };
+            let iter_values: Vec<_> = iter.into_iter().collect();
+            let mut builder = AnonymousFixedSizeListArrayBuilder::new(iter_values.len(), *width);
+            for arr in iter_values {
+                builder.push(arr.into_boxed_array());
+            }
+            let inner = dtype
+                .inner_dtype()
+                .expect("expected nested type in ListArray collect");
+            builder
+                .finish(Some(&inner.underlying_physical_type()))
+                .unwrap()
         }
-        let inner = dtype
-            .inner_dtype()
-            .expect("expected nested type in ListArray collect");
-        builder
-            .finish(Some(&inner.underlying_physical_type()))
-            .unwrap()
+        #[cfg(not(feature = "dtype-array"))]
+        panic!("activate 'dtype-array'")
     }
 
     fn try_arr_from_iter_with_dtype<E, I: IntoIterator<Item = Result<Box<dyn Array>, E>>>(
@@ -783,25 +786,30 @@ impl ArrayFromIterDtype<Option<Box<dyn Array>>> for FixedSizeListArray {
         dtype: ArrowDataType,
         iter: I,
     ) -> Self {
-        let ArrowDataType::FixedSizeList(_, width) = &dtype else {
-            panic!(
-                "FixedSizeListArray::arr_from_iter_with_dtype called with non-FixedSizeList dtype"
-            );
-        };
-        let iter_values: Vec<_> = iter.into_iter().collect();
-        let mut builder = AnonymousFixedSizeListArrayBuilder::new(iter_values.len(), *width);
-        for arr in iter_values {
-            match arr {
-                Some(a) => builder.push(a.into_boxed_array()),
-                None => builder.push_null(),
+        #[cfg(feature = "dtype-array")]
+        {
+            let ArrowDataType::FixedSizeList(_, width) = &dtype else {
+                panic!(
+                    "FixedSizeListArray::arr_from_iter_with_dtype called with non-FixedSizeList dtype"
+                );
+            };
+            let iter_values: Vec<_> = iter.into_iter().collect();
+            let mut builder = AnonymousFixedSizeListArrayBuilder::new(iter_values.len(), *width);
+            for arr in iter_values {
+                match arr {
+                    Some(a) => builder.push(a.into_boxed_array()),
+                    None => builder.push_null(),
+                }
             }
+            let inner = dtype
+                .inner_dtype()
+                .expect("expected nested type in ListArray collect");
+            builder
+                .finish(Some(&inner.underlying_physical_type()))
+                .unwrap()
         }
-        let inner = dtype
-            .inner_dtype()
-            .expect("expected nested type in ListArray collect");
-        builder
-            .finish(Some(&inner.underlying_physical_type()))
-            .unwrap()
+        #[cfg(not(feature = "dtype-array"))]
+        panic!("activate 'dtype-array'")
     }
 
     fn try_arr_from_iter_with_dtype<

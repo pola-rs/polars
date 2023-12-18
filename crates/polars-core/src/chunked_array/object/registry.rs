@@ -5,6 +5,7 @@ use std::any::Any;
 use std::ops::Deref;
 use std::sync::{Arc, RwLock};
 
+use arrow::datatypes::ArrowDataType;
 use once_cell::sync::Lazy;
 
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
@@ -21,6 +22,7 @@ struct GlobalObjectRegistry {
     builder_constructor: BuilderConstructor,
     // A function that converts AnyValue to Box<dyn Any> of the object type
     object_converter: ObjectConverter,
+    physical_dtype: ArrowDataType,
 }
 
 static GLOBAL_OBJECT_REGISTRY: Lazy<RwLock<Option<GlobalObjectRegistry>>> =
@@ -61,6 +63,7 @@ impl<T: PolarsObject> AnonymousObjectBuilder for ObjectChunkedBuilder<T> {
 pub fn register_object_builder(
     builder_constructor: BuilderConstructor,
     object_converter: ObjectConverter,
+    physical_dtype: ArrowDataType,
 ) {
     let reg = GLOBAL_OBJECT_REGISTRY.deref();
     let mut reg = reg.write().unwrap();
@@ -68,6 +71,7 @@ pub fn register_object_builder(
     *reg = Some(GlobalObjectRegistry {
         builder_constructor,
         object_converter,
+        physical_dtype,
     })
 }
 
@@ -75,6 +79,13 @@ pub fn is_object_builder_registered() -> bool {
     let reg = GLOBAL_OBJECT_REGISTRY.deref();
     let reg = reg.read().unwrap();
     reg.is_some()
+}
+
+#[cold]
+pub fn get_object_physical_type() -> ArrowDataType {
+    let reg = GLOBAL_OBJECT_REGISTRY.read().unwrap();
+    let reg = reg.as_ref().unwrap();
+    reg.physical_dtype.clone()
 }
 
 pub fn get_object_builder(name: &str, capacity: usize) -> Box<dyn AnonymousObjectBuilder> {

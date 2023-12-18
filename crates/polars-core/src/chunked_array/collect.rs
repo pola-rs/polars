@@ -12,12 +12,24 @@
 
 use std::sync::Arc;
 
+use arrow::datatypes::ArrowDataType;
 use arrow::legacy::trusted_len::TrustedLen;
 
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::{
     ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype, DataType, Field, PolarsDataType,
 };
+
+pub(crate) fn prepare_collect_dtype(dtype: &DataType) -> ArrowDataType {
+    match dtype {
+        #[cfg(feature = "object")]
+        DataType::Object(_) => {
+            use crate::chunked_array::object::registry;
+            registry::get_object_physical_type()
+        },
+        dt => dt.to_arrow(),
+    }
+}
 
 pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
     #[inline]
@@ -26,7 +38,8 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
         T::Array: ArrayFromIterDtype<Self::Item>,
     {
         let field = Arc::new(Field::new(name, dtype.clone()));
-        let arr = self.collect_arr_with_dtype(dtype.to_arrow());
+        let arrow_dtype = prepare_collect_dtype(&field.dtype);
+        let arr = self.collect_arr_with_dtype(arrow_dtype);
         ChunkedArray::from_chunk_iter_and_field(field, [arr])
     }
 
@@ -36,7 +49,8 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
         T::Array: ArrayFromIterDtype<Self::Item>,
     {
         let field = Arc::clone(&name_dtype_src.field);
-        let arr = self.collect_arr_with_dtype(field.dtype.to_arrow());
+        let arrow_dtype = prepare_collect_dtype(&field.dtype);
+        let arr = self.collect_arr_with_dtype(arrow_dtype);
         ChunkedArray::from_chunk_iter_and_field(field, [arr])
     }
 
@@ -47,7 +61,8 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
         Self: TrustedLen,
     {
         let field = Arc::new(Field::new(name, dtype.clone()));
-        let arr = self.collect_arr_trusted_with_dtype(dtype.to_arrow());
+        let arrow_dtype = prepare_collect_dtype(&field.dtype);
+        let arr = self.collect_arr_trusted_with_dtype(arrow_dtype);
         ChunkedArray::from_chunk_iter_and_field(field, [arr])
     }
 
@@ -58,7 +73,8 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
         Self: TrustedLen,
     {
         let field = Arc::clone(&name_dtype_src.field);
-        let arr = self.collect_arr_trusted_with_dtype(field.dtype.to_arrow());
+        let arrow_dtype = prepare_collect_dtype(&field.dtype);
+        let arr = self.collect_arr_trusted_with_dtype(arrow_dtype);
         ChunkedArray::from_chunk_iter_and_field(field, [arr])
     }
 
@@ -73,7 +89,8 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
         Self: Iterator<Item = Result<U, E>>,
     {
         let field = Arc::new(Field::new(name, dtype.clone()));
-        let arr = self.try_collect_arr_with_dtype(dtype.to_arrow())?;
+        let arrow_dtype = prepare_collect_dtype(&field.dtype);
+        let arr = self.try_collect_arr_with_dtype(arrow_dtype)?;
         Ok(ChunkedArray::from_chunk_iter_and_field(field, [arr]))
     }
 
@@ -87,7 +104,8 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
         Self: Iterator<Item = Result<U, E>>,
     {
         let field = Arc::clone(&name_dtype_src.field);
-        let arr = self.try_collect_arr_with_dtype(field.dtype.to_arrow())?;
+        let arrow_dtype = prepare_collect_dtype(&field.dtype);
+        let arr = self.try_collect_arr_with_dtype(arrow_dtype)?;
         Ok(ChunkedArray::from_chunk_iter_and_field(field, [arr]))
     }
 
@@ -102,7 +120,8 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
         Self: Iterator<Item = Result<U, E>> + TrustedLen,
     {
         let field = Arc::new(Field::new(name, dtype.clone()));
-        let arr = self.try_collect_arr_trusted_with_dtype(dtype.to_arrow())?;
+        let arrow_dtype = prepare_collect_dtype(&field.dtype);
+        let arr = self.try_collect_arr_trusted_with_dtype(arrow_dtype)?;
         Ok(ChunkedArray::from_chunk_iter_and_field(field, [arr]))
     }
 
@@ -116,7 +135,8 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
         Self: Iterator<Item = Result<U, E>> + TrustedLen,
     {
         let field = Arc::clone(&name_dtype_src.field);
-        let arr = self.try_collect_arr_trusted_with_dtype(field.dtype.to_arrow())?;
+        let arrow_dtype = prepare_collect_dtype(&field.dtype);
+        let arr = self.try_collect_arr_trusted_with_dtype(arrow_dtype)?;
         Ok(ChunkedArray::from_chunk_iter_and_field(field, [arr]))
     }
 }
