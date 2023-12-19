@@ -5,6 +5,11 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     # ensure the object constructor is known by polars
     # we set this once on import
 
+    # This must be done before import the Rust polars.
+    from polars._cpu_check import check_cpu_flags
+
+    check_cpu_flags()
+
     # we also set other function pointers needed
     # on the rust side. This function is highly
     # unsafe and should only be called once.

@@ -126,13 +126,22 @@ jobs:
 
       - name: Set RUSTFLAGS for x86-64
         if: matrix.architecture == 'x86-64' && matrix.package != 'polars-lts-cpu' && matrix.os != 'macos-latest'
-        run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt" >> $GITHUB_ENV
+        run: |
+          FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt
+          echo "RUSTFLAGS=-C target-feature=$FEATURES" >> $GITHUB_ENV
+          sed -i 's/^_POLARS_FEATURE_FLAGS = \"\"$/_POLARS_FEATURE_FLAGS = \"$FEATURES\"/g' py-polars/polars/_cpu_check.py
       - name: Set RUSTFLAGS for x86-64 MacOS
         if: matrix.architecture == 'x86-64' && matrix.package != 'polars-lts-cpu' && matrix.os == 'macos-latest'
-        run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma" >> $GITHUB_ENV
+        run: |
+          FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
+          echo "RUSTFLAGS=-C target-feature=$FEATURES" >> $GITHUB_ENV
+          sed -i 's/^_POLARS_FEATURE_FLAGS = \"\"$/_POLARS_FEATURE_FLAGS = \"$FEATURES\"/g' py-polars/polars/_cpu_check.py
       - name: Set RUSTFLAGS for x86-64 LTS CPU
         if: matrix.architecture == 'x86-64' && matrix.package == 'polars-lts-cpu'
-        run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt --cfg use_mimalloc" >> $GITHUB_ENV
+        run: |
+          FEATURES=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt
+          echo "RUSTFLAGS=-C target-feature=$FEATURES --cfg use_mimalloc" >> $GITHUB_ENV
+          sed -i 's/^_POLARS_FEATURE_FLAGS = \"\"$/_POLARS_FEATURE_FLAGS = \"$FEATURES\"/g' py-polars/polars/_cpu_check.py
 
       - name: Set Rust target for aarch64
         if: matrix.architecture == 'aarch64'
