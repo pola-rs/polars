@@ -565,3 +565,18 @@ def test_categorical_vstack_with_local_different_rev_map() -> None:
         "f",
     ]
     assert df3.get_column("a").cast(pl.UInt32).to_list() == [0, 1, 2, 3, 4, 5]
+
+
+def test_shift_over_13041() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [0, 0, 0, 1, 1, 1],
+            "cat_col": pl.Series(["a", "b", "c", "d", "e", "f"], dtype=pl.Categorical),
+        }
+    )
+    result = df.with_columns(pl.col("cat_col").shift(2).over("id"))
+
+    assert result.to_dict(as_series=False) == {
+        "id": [0, 0, 0, 1, 1, 1],
+        "cat_col": [None, None, "a", None, None, "d"],
+    }
